@@ -242,46 +242,198 @@ function TopNav({ page, setPage }) {
   );
 }
 
+/* ---- Social icons (inline SVGs) ---- */
+const SOCIAL_ICONS = {
+  instagram: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="5"/>
+      <circle cx="12" cy="12" r="4"/>
+      <circle cx="17.5" cy="6.5" r="0.9" fill="currentColor"/>
+    </svg>
+  ),
+  x: (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M17.53 3H20.7l-6.93 7.93L22 21h-6.36l-4.99-6.53L4.9 21H1.74l7.41-8.48L1.5 3h6.52l4.51 5.96L17.53 3Zm-1.11 16.2h1.76L7.66 4.69H5.78L16.42 19.2Z"/>
+    </svg>
+  ),
+  youtube: (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M21.58 7.19a2.51 2.51 0 0 0-1.77-1.77C18.23 5 12 5 12 5s-6.23 0-7.81.42A2.51 2.51 0 0 0 2.42 7.19 26.2 26.2 0 0 0 2 12a26.2 26.2 0 0 0 .42 4.81 2.51 2.51 0 0 0 1.77 1.77C5.77 19 12 19 12 19s6.23 0 7.81-.42a2.51 2.51 0 0 0 1.77-1.77A26.2 26.2 0 0 0 22 12a26.2 26.2 0 0 0-.42-4.81ZM10 15V9l5.2 3-5.2 3Z"/>
+    </svg>
+  ),
+  tiktok: (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M16.5 3a5.6 5.6 0 0 0 4.5 4.5v3a8.5 8.5 0 0 1-4.5-1.3v6.4a6 6 0 1 1-6-6v3a3 3 0 1 0 3 3V3h3Z"/>
+    </svg>
+  ),
+  linkedin: (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM3 9.5h4V21H3V9.5Zm6.5 0H13v1.7a4 4 0 0 1 3.5-1.9c3.6 0 4.5 2.3 4.5 5.4V21h-4v-5.5c0-1.4-.03-3.2-2-3.2s-2.3 1.5-2.3 3.1V21h-4V9.5Z"/>
+    </svg>
+  ),
+};
+
+function SocialLink({ name, href = "#", icon, label }) {
+  return (
+    <a className="footer-social" href={href} aria-label={label} target="_blank" rel="noopener noreferrer">
+      {icon}
+    </a>
+  );
+}
+
+/* ---- Newsletter form ---- */
+function NewsletterForm() {
+  const [email, setEmail] = useState("");
+  const [sent, setSent] = useState(false);
+  const onSubmit = (e) => {
+    e.preventDefault();
+    if (!email || !email.includes("@")) return;
+    setSent(true);
+    setTimeout(() => { setSent(false); setEmail(""); }, 3200);
+  };
+  return (
+    <div>
+      <form className={"newsletter-form" + (sent ? " is-sent" : "")} onSubmit={onSubmit}>
+        <input
+          type="email"
+          required
+          placeholder={sent ? "You're in. Watch your inbox." : "your@email.com"}
+          value={sent ? "" : email}
+          onChange={e => setEmail(e.target.value)}
+          aria-label="Email address"
+          disabled={sent}
+        />
+        <button type="submit">{sent ? "Sent ✓" : "Subscribe →"}</button>
+      </form>
+      <div className="newsletter-meta">
+        <span>MONTHLY · NO SPAM</span>
+        <span style={{opacity:0.4}}>·</span>
+        <span>UNSUBSCRIBE ANYTIME</span>
+      </div>
+    </div>
+  );
+}
+
 /* ---- Footer ---- */
 function Footer({ setPage }) {
+  const go = (id) => () => setPage(id);
+
+  const CHAPTERS_LIVE = ["Lagos", "Enugu", "Abuja", "Ibadan", "Kano", "Kaduna", "Onitsha", "Accra", "Kumasi"];
+  const CHAPTERS_COMING = ["Nairobi", "Dakar"];
+
+  const columns = [
+    {
+      h: "Programs",
+      links: [
+        { label: "Summer Students", page: "summer" },
+        { label: "Next Generation Genius Club", page: "club" },
+        { label: "Anchor 12", page: "anchor", badge: "NEW" },
+        { label: "Vanguard", page: "anchor" },
+      ],
+    },
+    {
+      h: "Movement",
+      links: [
+        { label: "The Journal", page: "blog" },
+        { label: "Media room", page: "media" },
+        { label: "Become a mentor", page: "volunteers" },
+        { label: "Member profile", page: "profile" },
+      ],
+    },
+    {
+      h: "Trust & contact",
+      links: [
+        { label: "For parents", page: "parents" },
+        { label: "Safeguarding", page: "parents" },
+        { label: "FAQ", page: "parents" },
+        { label: "Apply now", page: "join" },
+      ],
+    },
+  ];
+
   return (
     <footer className="footer">
       <div className="container">
-        <div style={{display:"grid", gridTemplateColumns:"1.4fr 1fr 1fr 1fr", gap:48}}>
+        {/* ---- Newsletter band ---- */}
+        <div className="footer-newsletter">
           <div>
-            <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
-              <BrandLogo size={48}/>
+            <span className="eyebrow" style={{color:"var(--gold-400)"}}>STAY CLOSE · THE DIGEST</span>
+            <h3>One letter a month.<br/>No noise.</h3>
+            <p>
+              Cohort stories, mentor essays, missions we're shipping next.
+              Written by the team, sent to your inbox the first Sunday of every month.
+            </p>
+          </div>
+          <NewsletterForm/>
+        </div>
+
+        {/* ---- Main grid ---- */}
+        <div className="footer-main">
+          <div className="footer-brand">
+            <div style={{display:"flex", alignItems:"center", gap:14, marginBottom:6}}>
+              <BrandLogo size={52}/>
               <div>
-                <div style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:18}}>Next Generation Genius</div>
-                <div className="mono" style={{fontSize:10, letterSpacing:"0.2em", textTransform:"uppercase", color:"rgba(255,255,255,0.55)", marginTop:3}}>An Afrovanguard movement</div>
+                <div className="footer-brand-line">Next Generation Genius</div>
+                <div className="footer-brand-tag">An Afrovanguard movement · est. 2024</div>
               </div>
             </div>
-            <p style={{color:"rgba(255,255,255,0.62)", fontSize:14, lineHeight:1.55, maxWidth:380}}>
+            <p>
               We are not a school. We are not a club. We are the structured runway from teenage potential to African leadership — built mission by mission, week by week.
             </p>
-            <div style={{display:"flex", gap:10, marginTop:18}}>
-              {["IG","X","YT","TT"].map(s => (
-                <a key={s} style={{width:38, height:38, borderRadius:"50%", background:"rgba(255,255,255,0.08)", display:"grid", placeItems:"center", fontSize:11, fontWeight:600, fontFamily:"var(--font-mono)", color:"white", cursor:"pointer", textDecoration:"none"}}>{s}</a>
-              ))}
+            <div className="footer-socials" aria-label="Social channels">
+              <SocialLink label="Instagram" icon={SOCIAL_ICONS.instagram}/>
+              <SocialLink label="X / Twitter" icon={SOCIAL_ICONS.x}/>
+              <SocialLink label="YouTube" icon={SOCIAL_ICONS.youtube}/>
+              <SocialLink label="TikTok" icon={SOCIAL_ICONS.tiktok}/>
+              <SocialLink label="LinkedIn" icon={SOCIAL_ICONS.linkedin}/>
             </div>
           </div>
-          {[
-            { h: "Programs", links: ["Summer Students", "NGGC", "Anchor 12", "Vanguard"] },
-            { h: "Movement", links: ["Journal", "Media", "Mentors", "Communities"] },
-            { h: "Trust",    links: ["Parents", "Safeguarding", "FAQ", "Contact"] },
-          ].map(col => (
-            <div key={col.h}>
-              <div className="eyebrow" style={{color:"var(--gold-400)", marginBottom:14}}>{col.h}</div>
-              <div className="col" style={{gap:10}}>
-                {col.links.map(l => <a key={l} style={{color:"white", textDecoration:"none", fontSize:14, opacity:0.8, cursor:"pointer"}}>{l}</a>)}
-              </div>
+
+          {columns.map(col => (
+            <div key={col.h} className="footer-col">
+              <h4>{col.h}</h4>
+              <ul>
+                {col.links.map(l => (
+                  <li key={l.label}>
+                    <button className="footer-link" onClick={go(l.page)}>
+                      {l.label}
+                      {l.badge && <span className="badge-new">{l.badge}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           ))}
         </div>
-        <hr style={{border:"none", borderTop:"1px solid rgba(255,255,255,0.08)", margin:"40px 0 20px"}}/>
-        <div className="footer-meta" style={{display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:12, color:"rgba(255,255,255,0.5)", flexWrap:"wrap", gap:8}}>
-          <span className="mono">© 2026 AFROVANGUARD · NEXT GENERATION GENIUS</span>
-          <span className="mono">BUILD TALENT · BUILD CHARACTER · BUILD AFRICA</span>
+
+        {/* ---- Chapters strip ---- */}
+        <div className="footer-chapters">
+          <span className="footer-chapters-label">09 communities · live</span>
+          <div className="footer-chapters-list">
+            {CHAPTERS_LIVE.map(c => (
+              <span key={c} className="chapter-pill">
+                <span className="city-dot"/>{c}
+              </span>
+            ))}
+            {CHAPTERS_COMING.map(c => (
+              <span key={c} className="chapter-pill coming" title="Opening soon">
+                <span className="city-dot"/>{c} · soon
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* ---- Bottom row ---- */}
+        <div className="footer-bottom">
+          <span className="copy">© 2026 AFROVANGUARD · ALL RIGHTS RESERVED</span>
+          <div className="legal-links">
+            <button className="legal" onClick={go("parents")}>Privacy</button>
+            <button className="legal" onClick={go("parents")}>Safeguarding</button>
+            <button className="legal" onClick={go("parents")}>Press kit</button>
+          </div>
+          <span className="made">
+            Made with <span className="heart" aria-hidden="true">♥</span> in Lagos
+          </span>
         </div>
       </div>
     </footer>
