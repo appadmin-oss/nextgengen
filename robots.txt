@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /_check/
+Disallow: /_check2/
+Disallow: /_check3/
+Disallow: /uploads/
