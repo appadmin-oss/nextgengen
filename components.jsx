@@ -226,58 +226,123 @@ function NavAuthSlot({ setPage }) {
 
 /* ---- Top nav ---- */
 function TopNav({ page, setPage }) {
-  const links = [
-    { id: "home",     label: "Home" },
-    { id: "summer",   label: "Summer" },
-    { id: "club",     label: "NGGC" },
-    { id: "anchor",   label: "Anchor 12" },
-    { id: "profile",  label: "Member" },
-    { id: "blog",     label: "Journal" },
-    { id: "media",    label: "Media" },
-    { id: "parents",  label: "Parents" },
+  // Primary nav structure — 4 top-level entries plus the right-rail.
+  // `mega` items expand to a rich dropdown panel.
+  const primary = [
+    { id: "home", label: "Home", kind: "link" },
+    { id: "programs", kind: "mega", label: "Programs", match: ["summer","club","anchor","book"], items: [
+      { id: "anchor",  label: "Anchor 12",       desc: "12-week flagship",         icon: "✦", badge: "FLAGSHIP" },
+      { id: "summer",  label: "Summer Students", desc: "The on-ramp · 6 weeks",    icon: "☀" },
+      { id: "club",    label: "NGGC",             desc: "Identity society",         icon: "◐" },
+      { id: "book",    label: "The Anchor book", desc: "Field manual",              icon: "▢" },
+    ]},
+    { id: "stay", kind: "mega", label: "The room", match: ["blog","media","volunteers","parents"], items: [
+      { id: "blog",       label: "The Journal",     desc: "Stories + essays",        icon: "✎" },
+      { id: "media",      label: "Media room",      desc: "Films · podcast · reels", icon: "▶" },
+      { id: "volunteers", label: "Become a mentor", desc: "Volunteer with NGG",      icon: "✚" },
+      { id: "parents",    label: "For parents",     desc: "Safeguarding · FAQ",      icon: "♡" },
+    ]},
   ];
-  const [open, setOpen] = useState(false);
+
+  const [open, setOpen]       = React.useState(false);
+  const [mega, setMega]       = React.useState(null);   // active mega panel id
+  const [scrolled, setScroll] = React.useState(false);
+  const navRef = React.useRef(null);
+  const megaTimer = React.useRef(0);
+
+  // Scroll-state — apply solid background when not at top.
+  React.useEffect(() => {
+    const onScroll = () => setScroll(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Body scroll lock when drawer open
-  useEffect(() => {
+  React.useEffect(() => {
     document.body.classList.toggle("no-scroll", open);
     return () => document.body.classList.remove("no-scroll");
   }, [open]);
 
-  // Close drawer on Escape
-  useEffect(() => {
-    if (!open) return;
-    const onKey = e => { if (e.key === "Escape") setOpen(false); };
+  // Close drawer + mega on Escape
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") { setOpen(false); setMega(null); }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, []);
 
-  // Close drawer when navigating
-  const go = (id) => { setPage(id); setOpen(false); };
+  // Click outside the mega closes it.
+  React.useEffect(() => {
+    if (!mega) return;
+    const onDoc = (e) => { if (navRef.current && !navRef.current.contains(e.target)) setMega(null); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [mega]);
+
+  const go = (id) => { setPage(id); setOpen(false); setMega(null); };
+
+  // Hover-intent: small open delay, longer close delay so cursor can travel.
+  const openMega  = (id) => { clearTimeout(megaTimer.current); megaTimer.current = setTimeout(() => setMega(id), 60); };
+  const closeMega = ()   => { clearTimeout(megaTimer.current); megaTimer.current = setTimeout(() => setMega(null), 180); };
+
+  const isItemActive = (item) =>
+    page === item.id || (item.kind === "mega" && item.match && item.match.indexOf(page) !== -1);
 
   return (
     <React.Fragment>
-      <div className="topnav">
+      <div ref={navRef} className={"topnav" + (scrolled ? " is-scrolled" : "") + (mega ? " has-mega" : "")}>
         <div className="topnav-inner">
-          <a className="brand" onClick={() => go("home")}>
+          <a className="brand" onClick={() => go("home")} role="link" tabIndex={0} aria-label="Next Generation Genius — Home">
             <BrandLogo size={42}/>
             <div className="brand-word">
               <b>Next Generation Genius</b>
               <span>Afrovanguard · est. 2024</span>
             </div>
           </a>
-          <nav className="nav-links">
-            {links.map(l => (
-              <button
-                key={l.id}
-                className={"nav-link" + (page === l.id ? " active" : "")}
-                onClick={() => setPage(l.id)}
-              >{l.label}</button>
-            ))}
+
+          <nav className="nav-links" aria-label="Primary navigation">
+            {primary.map(item => {
+              const active = isItemActive(item);
+              if (item.kind === "mega") {
+                return (
+                  <div
+                    key={item.id}
+                    className="nav-mega-wrap"
+                    onMouseEnter={() => openMega(item.id)}
+                    onMouseLeave={closeMega}
+                  >
+                    <button
+                      className={"nav-link nav-link-mega" + (active ? " active" : "") + (mega === item.id ? " is-expanded" : "")}
+                      onClick={() => setMega(m => m === item.id ? null : item.id)}
+                      aria-haspopup="true"
+                      aria-expanded={mega === item.id}
+                    >
+                      {item.label}
+                      <span className="nav-link-chev" aria-hidden="true">▾</span>
+                    </button>
+                  </div>
+                );
+              }
+              return (
+                <button
+                  key={item.id}
+                  className={"nav-link" + (active ? " active" : "")}
+                  onClick={() => { setPage(item.id); setMega(null); }}
+                  aria-current={active ? "page" : undefined}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </nav>
+
           <div className="nav-right">
             <NavAuthSlot setPage={setPage}/>
-            <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("join")}>Apply</button>
+            <Magnetic strength={6}>
+              <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("join")}>Apply →</button>
+            </Magnetic>
             <button
               className={"nav-burger" + (open ? " is-open" : "")}
               onClick={() => setOpen(v => !v)}
@@ -290,8 +355,50 @@ function TopNav({ page, setPage }) {
             </button>
           </div>
         </div>
+
+        {/* Mega panels — rendered inside the nav so hover-bridging works. */}
+        {primary.map(item => {
+          if (item.kind !== "mega") return null;
+          const isOpen = mega === item.id;
+          return (
+            <div
+              key={item.id}
+              className={"nav-mega" + (isOpen ? " is-open" : "")}
+              onMouseEnter={() => openMega(item.id)}
+              onMouseLeave={closeMega}
+              aria-hidden={!isOpen}
+            >
+              <div className="nav-mega-inner">
+                <div className="nav-mega-grid">
+                  {item.items.map(sub => (
+                    <button
+                      key={sub.id}
+                      className={"nav-mega-item" + (page === sub.id ? " is-active" : "")}
+                      onClick={() => go(sub.id)}
+                    >
+                      <span className="nav-mega-icon" aria-hidden="true">{sub.icon}</span>
+                      <span className="nav-mega-body">
+                        <span className="nav-mega-label">
+                          {sub.label}
+                          {sub.badge && <span className="nav-mega-badge">{sub.badge}</span>}
+                        </span>
+                        <span className="nav-mega-desc">{sub.desc}</span>
+                      </span>
+                      <span className="nav-mega-arrow" aria-hidden="true">→</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="nav-mega-foot">
+                  <span className="mono">PRESS <kbd>⌘</kbd><kbd>K</kbd> FOR QUICK NAV</span>
+                  <button className="btn btn-ghost btn-sm" onClick={() => go("join")}>Apply for a session →</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
+      {/* Mobile drawer */}
       <div className={"mobile-drawer" + (open ? " is-open" : "")} role="dialog" aria-modal="true">
         <div className="mobile-drawer-scrim" onClick={() => setOpen(false)}/>
         <div className="mobile-drawer-panel">
@@ -305,18 +412,34 @@ function TopNav({ page, setPage }) {
             </div>
             <button className="mobile-drawer-close" onClick={() => setOpen(false)} aria-label="Close menu">✕</button>
           </div>
-          {links.map(l => (
-            <button
-              key={l.id}
-              className={"nav-link" + (page === l.id ? " active" : "")}
-              onClick={() => go(l.id)}
-            >{l.label}</button>
-          ))}
-          <button
-            className={"nav-link" + (page === "volunteers" ? " active" : "")}
-            onClick={() => go("volunteers")}
-          >Volunteers</button>
+
           <DrawerAuthBlock go={go} close={() => setOpen(false)}/>
+
+          <button className={"nav-link" + (page === "home" ? " active" : "")} onClick={() => go("home")}>
+            <span className="drawer-link-icon">◉</span> Home
+          </button>
+
+          <div className="drawer-section">
+            <div className="drawer-section-h">PROGRAMS</div>
+            {primary.find(p => p.id === "programs").items.map(sub => (
+              <button key={sub.id} className={"nav-link" + (page === sub.id ? " active" : "")} onClick={() => go(sub.id)}>
+                <span className="drawer-link-icon" aria-hidden="true">{sub.icon}</span>
+                {sub.label}
+                {sub.badge && <span className="nav-mega-badge" style={{marginLeft:8}}>{sub.badge}</span>}
+              </button>
+            ))}
+          </div>
+
+          <div className="drawer-section">
+            <div className="drawer-section-h">THE ROOM</div>
+            {primary.find(p => p.id === "stay").items.map(sub => (
+              <button key={sub.id} className={"nav-link" + (page === sub.id ? " active" : "")} onClick={() => go(sub.id)}>
+                <span className="drawer-link-icon" aria-hidden="true">{sub.icon}</span>
+                {sub.label}
+              </button>
+            ))}
+          </div>
+
           <div className="mobile-drawer-cta">
             <button className="btn btn-primary" onClick={() => go("join")}>Apply for a session →</button>
           </div>

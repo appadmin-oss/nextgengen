@@ -8,6 +8,163 @@
 }
 
 /* ============================================================
+   PAGE UI POLISH — unified eyebrows, headings, section spacing,
+   button refinement. Loaded last so it wins on conflicts.
+   ============================================================ */
+
+/* Eyebrow — uppercase mono micro-label used everywhere. */
+.eyebrow {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--gold-500);
+  font-weight: 500;
+}
+
+/* Section heading rhythm */
+.section-h {
+  display: flex; flex-direction: column; gap: 14px;
+  margin: 0 0 clamp(40px, 6vw, 64px);
+  max-width: 760px;
+}
+.section-h h2 {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 5.2vw, 64px);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* Hairline divider used between sections that need a soft break. */
+.hr-soft {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(12,20,50,0.1) 25%, rgba(12,20,50,0.1) 75%, transparent 100%);
+  border: none;
+  margin: 0;
+}
+
+/* Button — production-grade, single source of truth.
+   We override the existing .btn slightly to lift hover/active feel
+   without breaking layouts. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 11px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
+  text-decoration: none;
+}
+.btn-lg {
+  padding: 15px 28px;
+  font-size: 15px;
+}
+.btn-sm {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+.btn-primary {
+  background: var(--navy-900);
+  color: white;
+  box-shadow: 0 3px 0 #050a1e;
+}
+.btn-primary:hover {
+  background: var(--navy-800);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 0 #050a1e;
+}
+.btn-primary:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #050a1e;
+}
+.btn-gold {
+  background: var(--gold-500);
+  color: var(--navy-900);
+  box-shadow: 0 3px 0 #b07c12;
+  font-weight: 700;
+}
+.btn-gold:hover {
+  background: var(--gold-400);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 0 #b07c12;
+}
+.btn-gold:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #b07c12;
+}
+.btn-ghost {
+  background: transparent;
+  border: 1.5px solid rgba(12, 20, 50, 0.18);
+  color: var(--ink-900);
+}
+.btn-ghost:hover {
+  border-color: var(--navy-900);
+  background: rgba(12, 20, 50, 0.04);
+}
+.btn-on-dark-ghost {
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  color: white;
+}
+.btn-on-dark-ghost:hover {
+  border-color: white;
+  background: rgba(255, 255, 255, 0.06);
+}
+.btn:disabled, .btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Chips — unify */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(12, 20, 50, 0.06);
+  color: var(--ink-900);
+}
+.chip-gold { background: var(--gold-500); color: var(--navy-900); }
+.chip-on-dark { background: rgba(255, 255, 255, 0.12); color: white; }
+.chip-lime { background: var(--lime); color: var(--lime-ink); }
+.chip-coral { background: var(--coral); color: white; }
+.chip-plum { background: var(--plum); color: white; }
+
+/* Cards — soft, intentional shadow */
+.card {
+  background: white;
+  border-radius: 18px;
+  border: 1px solid rgba(12, 20, 50, 0.05);
+  box-shadow: 0 1px 0 rgba(12, 20, 50, 0.02);
+}
+
+/* Section rhythm — generous vertical pacing */
+.section {
+  padding: clamp(72px, 9vw, 120px) 0;
+}
+.section-tight {
+  padding: clamp(48px, 6vw, 72px) 0;
+}
+
+/* ============================================================
    1b. GLOBAL MICRO-INTERACTIONS
    Subtle hover lift + active press on every card/CTA the site
    already classes. Respects reduced-motion automatically.
@@ -1521,6 +1678,259 @@ html { scroll-behavior: smooth; }
   letter-spacing: 0.1em;
   word-break: break-all;
 }
+
+/* ============================================================
+   0. TOP NAV — refined nav-bar + mega menu
+   Loaded after styles.css so its declarations win on conflict.
+   ============================================================ */
+.topnav {
+  /* Subtle initial state — almost-transparent paper, no border. */
+  background: rgba(251, 247, 237, 0.55);
+  border-bottom: 1px solid transparent;
+  transition: background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, backdrop-filter 0.22s ease;
+}
+.topnav.is-scrolled {
+  background: rgba(251, 247, 237, 0.94);
+  border-bottom-color: rgba(28, 42, 94, 0.08);
+  box-shadow: 0 8px 20px -16px rgba(12, 20, 50, 0.18);
+}
+.topnav.has-mega {
+  background: rgba(251, 247, 237, 0.96);
+  border-bottom-color: rgba(28, 42, 94, 0.06);
+}
+.topnav-inner {
+  padding: 14px 32px;
+  gap: 24px;
+}
+.brand-word b { font-size: 16px; }
+
+/* Refined nav links — pill-on-active, hover lift, animated underline. */
+.nav-link {
+  position: relative;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 999px;
+  color: var(--ink-700);
+  letter-spacing: -0.005em;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.nav-link::after { display: none; }   /* kill the legacy underline */
+.nav-link:hover { background: transparent; color: var(--navy-900); }
+.nav-link::before {
+  content: "";
+  position: absolute;
+  left: 14px; right: 14px;
+  bottom: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--navy-900);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.nav-link:hover::before { transform: scaleX(1); }
+.nav-link.active {
+  color: white;
+  background: var(--navy-900);
+}
+.nav-link.active::before { display: none; }
+
+/* Mega-menu trigger */
+.nav-link-mega { display: inline-flex; align-items: center; gap: 6px; }
+.nav-link-chev {
+  font-size: 9px;
+  opacity: 0.55;
+  transition: transform 0.22s ease;
+}
+.nav-link-mega.is-expanded .nav-link-chev { transform: rotate(180deg); }
+.nav-link-mega.is-expanded { color: var(--navy-900); }
+.nav-link-mega.is-expanded::before { transform: scaleX(1); }
+.nav-mega-wrap { position: relative; }
+
+/* The mega panel — full-width strip below the nav. */
+.nav-mega {
+  position: absolute;
+  left: 0; right: 0; top: 100%;
+  background: var(--paper);
+  border-bottom: 1px solid rgba(28, 42, 94, 0.06);
+  box-shadow: 0 24px 40px -24px rgba(12, 20, 50, 0.2);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  z-index: 1;
+}
+.nav-mega.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+.nav-mega-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 28px 32px 24px;
+}
+.nav-mega-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.nav-mega-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  padding: 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  color: var(--ink-900);
+  transition: background 0.16s ease, transform 0.16s ease;
+}
+.nav-mega-item:hover {
+  background: rgba(245, 176, 38, 0.08);
+  transform: translateX(2px);
+}
+.nav-mega-item.is-active {
+  background: var(--navy-900);
+  color: white;
+}
+.nav-mega-icon {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  background: white;
+  border: 1px solid rgba(12,20,50,0.06);
+  display: grid; place-items: center;
+  font-size: 18px;
+  color: var(--navy-900);
+}
+.nav-mega-item.is-active .nav-mega-icon {
+  background: var(--gold-500);
+  color: var(--navy-900);
+  border-color: transparent;
+}
+.nav-mega-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.nav-mega-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.nav-mega-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  background: var(--lime);
+  color: var(--lime-ink);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.nav-mega-item.is-active .nav-mega-badge {
+  background: var(--gold-500);
+}
+.nav-mega-desc {
+  font-size: 12.5px;
+  color: var(--ink-500);
+  line-height: 1.35;
+}
+.nav-mega-item.is-active .nav-mega-desc { color: rgba(255,255,255,0.7); }
+.nav-mega-arrow {
+  opacity: 0;
+  color: var(--ink-500);
+  font-weight: 600;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.nav-mega-item:hover .nav-mega-arrow {
+  opacity: 1;
+  transform: translateX(4px);
+  color: var(--navy-900);
+}
+.nav-mega-item.is-active .nav-mega-arrow { opacity: 1; color: var(--gold-500); }
+
+.nav-mega-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px dashed rgba(12, 20, 50, 0.08);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--ink-500);
+}
+.nav-mega-foot kbd {
+  background: rgba(12,20,50,0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin: 0 1px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+/* Apply button gets a permanent gold accent */
+.nav-apply {
+  background: var(--gold-500) !important;
+  color: var(--navy-900) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 3px 0 #b07c12;
+  border-radius: 999px !important;
+}
+.nav-apply:hover {
+  background: var(--gold-400) !important;
+  transform: translateY(-1px);
+}
+.nav-apply:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 #b07c12;
+}
+
+/* Drawer sections */
+.drawer-section {
+  margin-top: 18px;
+  border-top: 1px solid rgba(12, 20, 50, 0.06);
+  padding-top: 14px;
+}
+.drawer-section-h {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: var(--ink-500);
+  padding: 0 10px 8px;
+}
+.mobile-drawer .nav-link {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+}
+.drawer-link-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid rgba(12, 20, 50, 0.06);
+  font-size: 14px;
+  color: var(--navy-900);
+}
+.mobile-drawer .nav-link.active .drawer-link-icon {
+  background: var(--gold-500);
+  border-color: transparent;
+  color: var(--navy-900);
+}
+
+/* On mobile, hide mega panel; the burger covers the same content. */
+@media (max-width: 1024px) {
+  .nav-mega { display: none; }
+  .nav-link-mega { display: none; }
+  /* Reduce primary links to just Home — drawer carries the rest. */
+}
+
+/* On 820 and below, the existing breakpoint already hides .nav-links */
 
 /* ============================================================
    1a. SAFETY NETS: ErrorBoundary, Toast, SkipLink, focus rings
