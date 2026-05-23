@@ -319,8 +319,10 @@ function NewsletterForm() {
 function Footer({ setPage }) {
   const go = (id) => () => setPage(id);
 
-  const CHAPTERS_LIVE = ["Lagos", "Enugu", "Abuja", "Ibadan", "Kano", "Kaduna", "Onitsha", "Accra", "Kumasi"];
-  const CHAPTERS_COMING = ["Nairobi", "Dakar"];
+  // Two physical centres in Alimosho, Lagos. The strip in the footer renders
+  // them as live centres; we leave the "coming soon" slot empty for now.
+  const CHAPTERS_LIVE = ["CACENTRE Egbeda", "CACENTRE Ayobo"];
+  const CHAPTERS_COMING = [];
 
   const columns = [
     {
@@ -409,7 +411,7 @@ function Footer({ setPage }) {
 
         {/* ---- Chapters strip ---- */}
         <div className="footer-chapters">
-          <span className="footer-chapters-label">09 communities · live</span>
+          <span className="footer-chapters-label">{String(CHAPTERS_LIVE.length).padStart(2, "0")} centres · Alimosho, Lagos</span>
           <div className="footer-chapters-list">
             {CHAPTERS_LIVE.map(c => (
               <span key={c} className="chapter-pill">

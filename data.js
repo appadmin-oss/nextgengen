@@ -82,18 +82,18 @@ const TRACKS = [
 ];
 
 const MEMBERS = [
-  { id: 1, first: "Adaeze",    title: "Future Music Producer",   track: "Music",            level: 7, xp: 2140, badges: 9,  streak: 21, week: 8,  community: "Enugu",   quote: "I make beats from city noise." },
-  { id: 2, first: "Tunde",     title: "Tech Explorer",            track: "Tech",             level: 9, xp: 2980, badges: 12, streak: 34, week: 10, community: "Ibadan",  quote: "If I can break it, I can build it." },
-  { id: 3, first: "Zara",      title: "Voice of Influence",       track: "Public Speaking",  level: 6, xp: 1820, badges: 7,  streak: 12, week: 7,  community: "Abuja",   quote: "Speak so the back row leans in." },
-  { id: 4, first: "Kwame",     title: "Young Community Leader",   track: "Leadership",       level: 8, xp: 2410, badges: 11, streak: 28, week: 9,  community: "Accra",   quote: "Lead the work you would not delegate." },
-  { id: 5, first: "Ife",       title: "Creative Genius",          track: "Arts",             level: 5, xp: 1340, badges: 6,  streak: 8,  week: 5,  community: "Lagos",   quote: "Colour first, rules later." },
-  { id: 6, first: "Bayo",      title: "Future Vanguard",          track: "Leadership",       level: 10,xp: 3420, badges: 14, streak: 41, week: 11, community: "Lagos",   quote: "Stand for it, even when alone." },
-  { id: 7, first: "Nneka",     title: "Cultural Ambassador",      track: "Community Intel.", level: 6, xp: 1720, badges: 8,  streak: 17, week: 6,  community: "Onitsha", quote: "My grandmother is my syllabus." },
-  { id: 8, first: "Sefa",      title: "Tech Explorer",            track: "Tech",             level: 4, xp: 980,  badges: 4,  streak: 6,  week: 4,  community: "Kumasi",  quote: "Tiny script, big mischief." },
-  { id: 9, first: "Mariam",    title: "Discipline Award",         track: "Leadership",       level: 7, xp: 2050, badges: 9,  streak: 50, week: 8,  community: "Kano",    quote: "Show up. Show up. Show up." },
-  { id: 10, first: "Chinedu",  title: "Young Founder",            track: "Entrepreneurship", level: 5, xp: 1430, badges: 7,  streak: 11, week: 6,  community: "Enugu",   quote: "I sell what I would buy." },
-  { id: 11, first: "Tomi",     title: "Future Music Producer",    track: "Music",            level: 3, xp: 740,  badges: 3,  streak: 4,  week: 3,  community: "Lagos",   quote: "Headphones on. World off." },
-  { id: 12, first: "Hadiza",   title: "Voice of Influence",       track: "Public Speaking",  level: 6, xp: 1880, badges: 8,  streak: 19, week: 7,  community: "Kaduna",  quote: "A small voice carries far if it is true." },
+  { id: 1, first: "Adaeze",    title: "Future Music Producer",   track: "Music",            level: 7, xp: 2140, badges: 9,  streak: 21, week: 8,  community: "Egbeda", quote: "I make beats from city noise." },
+  { id: 2, first: "Tunde",     title: "Tech Explorer",            track: "Tech",             level: 9, xp: 2980, badges: 12, streak: 34, week: 10, community: "Ayobo",  quote: "If I can break it, I can build it." },
+  { id: 3, first: "Zara",      title: "Voice of Influence",       track: "Public Speaking",  level: 6, xp: 1820, badges: 7,  streak: 12, week: 7,  community: "Egbeda", quote: "Speak so the back row leans in." },
+  { id: 4, first: "Kwame",     title: "Young Community Leader",   track: "Leadership",       level: 8, xp: 2410, badges: 11, streak: 28, week: 9,  community: "Ayobo",  quote: "Lead the work you would not delegate." },
+  { id: 5, first: "Ife",       title: "Creative Genius",          track: "Arts",             level: 5, xp: 1340, badges: 6,  streak: 8,  week: 5,  community: "Egbeda", quote: "Colour first, rules later." },
+  { id: 6, first: "Bayo",      title: "Future Vanguard",          track: "Leadership",       level: 10,xp: 3420, badges: 14, streak: 41, week: 11, community: "Egbeda", quote: "Stand for it, even when alone." },
+  { id: 7, first: "Nneka",     title: "Cultural Ambassador",      track: "Community Intel.", level: 6, xp: 1720, badges: 8,  streak: 17, week: 6,  community: "Ayobo",  quote: "My grandmother is my syllabus." },
+  { id: 8, first: "Sefa",      title: "Tech Explorer",            track: "Tech",             level: 4, xp: 980,  badges: 4,  streak: 6,  week: 4,  community: "Ayobo",  quote: "Tiny script, big mischief." },
+  { id: 9, first: "Mariam",    title: "Discipline Award",         track: "Leadership",       level: 7, xp: 2050, badges: 9,  streak: 50, week: 8,  community: "Egbeda", quote: "Show up. Show up. Show up." },
+  { id: 10, first: "Chinedu",  title: "Young Founder",            track: "Entrepreneurship", level: 5, xp: 1430, badges: 7,  streak: 11, week: 6,  community: "Ayobo",  quote: "I sell what I would buy." },
+  { id: 11, first: "Tomi",     title: "Future Music Producer",    track: "Music",            level: 3, xp: 740,  badges: 3,  streak: 4,  week: 3,  community: "Egbeda", quote: "Headphones on. World off." },
+  { id: 12, first: "Hadiza",   title: "Voice of Influence",       track: "Public Speaking",  level: 6, xp: 1880, badges: 8,  streak: 19, week: 7,  community: "Ayobo",  quote: "A small voice carries far if it is true." },
 ];
 
 const WEEKS = [
@@ -132,9 +132,9 @@ const MISSIONS_THIS_WEEK = [
 ];
 
 const TESTIMONIALS = [
-  { from: "Adaeze, 15", role: "Music · Enugu",   q: "I came in shy with one beat. I left with a name, a team and a graduation showcase. NGG turned my hobby into my handle." },
+  { from: "Adaeze, 15", role: "Music · Egbeda",  q: "I came in shy with one beat. I left with a name, a team and a graduation showcase. NGG turned my hobby into my handle." },
   { from: "Mr. Okoye",  role: "Parent",          q: "I was sceptical. Three months in, my son leads his school's debate club. The discipline of Anchor 12 is real." },
-  { from: "Tunde, 16",  role: "Tech · Ibadan",   q: "I built my first app the week we did Digital Influence. The mentors do not let you hide behind 'someday'." },
+  { from: "Tunde, 16",  role: "Tech · Ayobo",    q: "I built my first app the week we did Digital Influence. The mentors do not let you hide behind 'someday'." },
   { from: "Dr. Ade",    role: "Mentor — 4 yrs",  q: "These teenagers do not need rescuing. They need a room with high ceilings. NGG is that room." },
 ];
 
@@ -144,7 +144,7 @@ const MEDIA_ITEMS = [
   { kind: "Performance",  label: "Lagos NGGC live showcase",     meta: "23:18 · Live cut" },
   { kind: "Podcast",      label: "Genius FM ep. 12 — Discipline",meta: "38:12 · Audio" },
   { kind: "Before/After", label: "Zara: From back row to mic",   meta: "1:32 · Story" },
-  { kind: "Day in life",  label: "A Tuesday in Enugu",           meta: "3:54 · Vlog" },
+  { kind: "Day in life",  label: "A Tuesday at CACENTRE Ayobo",  meta: "3:54 · Vlog" },
 ];
 
 const FAQ = [
@@ -152,7 +152,7 @@ const FAQ = [
   { q: "Is this religious or political?", a: "Neither. NGG is a values-based youth movement focused on identity, discipline, leadership and African excellence." },
   { q: "What does it cost?", a: "Summer Students is free for accepted applicants. NGGC and Anchor 12 use a sliding scholarship model — no qualified teen is turned away for money." },
   { q: "How much time per week?", a: "Anchor 12 expects ~4 hours/week of missions plus one in-person Saturday session. Less than a sport, more than a hobby." },
-  { q: "Where are the chapters?", a: "Lagos, Enugu, Abuja, Ibadan, Kano, Kaduna, Onitsha, Accra, Kumasi — and growing on request." },
+  { q: "Where do you meet?", a: "Two centres in Alimosho, Lagos: CACENTRE Egbeda and CACENTRE Ayobo. Saturdays — see the home page for the next session schedule." },
 ];
 
 const VOLUNTEER_ROLES = [

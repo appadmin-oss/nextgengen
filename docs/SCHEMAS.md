@@ -1,0 +1,340 @@
+# Google Sheets — schema (single source of truth)
+
+This document is the contract between Apps Script and PHP. **Every column
+name here must exist on the Sheet with the exact header text shown.** Apps
+Script reads/writes by header — column reordering is safe, header renames
+are not.
+
+Create one Google Sheet called e.g. `NGG Platform`. Add the tabs below.
+Header row is row 1, freeze it.
+
+---
+
+## Tab: `Members`
+
+Directory + auth lookup. One row per teen.
+
+| Column        | Type      | Required | Notes                                                                          |
+|---------------|-----------|----------|--------------------------------------------------------------------------------|
+| `memberId`    | text      | ✅       | Primary key. Format `NGG-2025-0042` (NGG) or `SUM-2025-0007` (Summer Students).|
+| `fullName`    | text      | ✅       | Display name. Used everywhere.                                                  |
+| `email`       | text      | ✅       | Login email — magic link + OTP delivered here.                                  |
+| `phone`       | text      |          | E.164 format `+234…`. Reserved for SMS OTP later.                               |
+| `type`        | enum      | ✅       | `Summer` \| `NGG`                                                               |
+| `status`      | enum      | ✅       | `active` \| `graduated-ngg` \| `graduated-vanguard` \| `suspended` \| `inactive` |
+| `role`        | enum      |          | `member` (default) \| `admin` \| `super_admin`. Empty = `member`.               |
+| `centre`      | enum      | ✅       | `Egbeda` \| `Ayobo`                                                             |
+| `photoUrl`    | url       |          | Direct image URL. Drive share links converted automatically by Apps Script.     |
+| `track`       | text      |          | `Music` / `Tech` / `Storyteller` / `Public Speaking` / `Leadership` / `Arts` / `Community Intel.` / `Entrepreneurship` |
+| `cohort`      | text      |          | "Summer 2025", "NGG 2024" etc. — graduation cohort label.                       |
+| `joinDate`    | date      |          | ISO `2025-07-15`.                                                               |
+| `dob`         | date      |          | For age gating. Optional.                                                       |
+| `parentName`  | text      |          | Parent / guardian name.                                                         |
+| `parentEmail` | text      |          | Parent contact — used for parent digest.                                        |
+| `parentPhone` | text      |          | Parent phone.                                                                   |
+| `school`      | text      |          | School name.                                                                    |
+| `bio`         | text      |          | Member-edited self-description (max 280 chars).                                 |
+| `socials`     | json      |          | JSON `{"ig":"@handle","x":"@handle","yt":"channel"}`.                           |
+| `totpSecret`  | text      |          | Base32 TOTP secret (admins only). Written by `/api/auth/admin-totp-setup`.      |
+| `notes`       | text      |          | Admin-only freeform.                                                            |
+| `createdAt`   | timestamp | auto     | Filled by Apps Script on insert.                                                |
+| `updatedAt`   | timestamp | auto     | Filled on every write.                                                          |
+
+---
+
+## Tab: `Mentors`
+
+Separate from members. A mentor *may* also be a member, but their mentor
+record is independent.
+
+| Column         | Type      | Required | Notes                                                          |
+|----------------|-----------|----------|----------------------------------------------------------------|
+| `mentorId`     | text      | ✅       | `MEN-2025-0007`                                                |
+| `fullName`     | text      | ✅       |                                                                |
+| `email`        | text      | ✅       |                                                                |
+| `phone`        | text      |          |                                                                |
+| `status`       | enum      | ✅       | `active` \| `pending-checks` \| `on-break` \| `retired`        |
+| `tracks`       | text      | ✅       | Comma-separated tracks they mentor: `Music, Tech`              |
+| `centre`       | enum      | ✅       | `Egbeda` \| `Ayobo` \| `Both`                                  |
+| `bio`          | text      |          | Public-facing bio.                                             |
+| `photoUrl`     | url       |          |                                                                |
+| `maxMentees`   | int       |          | Default 8. Used by assignment logic to throttle.               |
+| `availability` | json      |          | `{"sat":"09:00-15:00","wed":"16:00-18:00"}`                    |
+| `checkedAt`    | date      |          | Last background-check verification date.                       |
+| `joinedAt`     | date      |          |                                                                |
+| `createdAt`    | timestamp | auto     |                                                                |
+| `updatedAt`    | timestamp | auto     |                                                                |
+
+---
+
+## Tab: `MentorAssignments`
+
+Links members to mentors. Many-to-many through this table.
+
+| Column        | Type      | Notes                                          |
+|---------------|-----------|------------------------------------------------|
+| `memberId`    | text      | FK to Members                                  |
+| `mentorId`    | text      | FK to Mentors                                  |
+| `track`       | text      | Which track the mentorship covers              |
+| `sessionId`   | text      | FK to Sessions — assignments are per-session   |
+| `status`      | enum      | `active` \| `ended`                            |
+| `startedAt`   | timestamp |                                                |
+| `endedAt`     | timestamp |                                                |
+
+---
+
+## Tab: `Sessions`
+
+Calendar of the four annual sessions. Hybrid defaults: Apps Script will
+auto-create rows for the current year using defaults if missing, but admin
+can override any row.
+
+| Column      | Type      | Required | Notes                                                      |
+|-------------|-----------|----------|------------------------------------------------------------|
+| `sessionId` | text      | ✅       | Format `TONI-2026`, `MEDI-2026`, `SUMMER-2026`, `DOMI-2026` |
+| `code`      | enum      | ✅       | `TONI` \| `MEDI` \| `SUMMER` \| `DOMI`                      |
+| `year`      | int       | ✅       | `2026`                                                      |
+| `name`      | text      |          | Override display name; defaults to code                     |
+| `startDate` | date      | ✅       | ISO `2026-01-04`                                            |
+| `endDate`   | date      | ✅       | ISO `2026-03-29`                                            |
+| `theme`     | text      |          | Session theme, e.g. "Build the room."                       |
+| `isActive`  | bool      |          | Computed by Apps Script daily; admin can force.             |
+| `coverUrl`  | url       |          | Hero image for the session.                                 |
+| `notes`     | text      |          | Internal notes (rooms, partner sponsors, etc).              |
+| `createdAt` | timestamp | auto     |                                                             |
+| `updatedAt` | timestamp | auto     |                                                             |
+
+**Defaults** (Apps Script `Sessions.ensureYear()` will seed these if a year has no rows):
+- `TONI`   → Jan 4 → Mar 29  (~12 weeks)
+- `MEDI`   → Apr 6 → Jun 28  (~12 weeks)
+- `SUMMER` → Jul 6 → Aug 30  (~8 weeks intensive)
+- `DOMI`   → Sep 7 → Dec 13  (~14 weeks)
+
+These are starting points — admin edits them on the sheet for each year.
+
+---
+
+## Tab: `AnchorMissions`
+
+Master list of all anchor missions, sourced from the Anchor book. One row
+per mission. Admin manages these.
+
+| Column         | Type      | Notes                                                       |
+|----------------|-----------|-------------------------------------------------------------|
+| `missionId`    | text      | `ANCH-W03-M02` (week 3, mission 2)                          |
+| `week`         | int       | 1-12                                                        |
+| `order`        | int       | Display order within the week                               |
+| `theme`        | text      | Week theme (Identity, Discipline, Communication…)           |
+| `title`        | text      | Short title                                                 |
+| `prompt`       | text      | What the teen must do                                       |
+| `proof`        | enum      | `photo` \| `text` \| `audio` \| `video` \| `link` \| `none` |
+| `xp`           | int       | Award on completion                                         |
+| `type`         | enum      | `Make` \| `Read` \| `Speak` \| `Reflect` \| `Serve` \| `Move` |
+| `estimatedMin` | int       | Time estimate                                               |
+| `bookPage`     | int       | Page reference in the Anchor book                           |
+| `isActive`     | bool      | Whether currently assignable                                |
+| `createdAt`    | timestamp | auto                                                        |
+| `updatedAt`    | timestamp | auto                                                        |
+
+---
+
+## Tab: `MemberProgress`
+
+Per-member, per-mission progress. One row per (memberId × missionId) once
+the member has touched it.
+
+| Column         | Type      | Notes                                                  |
+|----------------|-----------|--------------------------------------------------------|
+| `memberId`     | text      | FK                                                     |
+| `missionId`    | text      | FK                                                     |
+| `sessionId`    | text      | FK — Anchor 12 progress is per-session                 |
+| `status`       | enum      | `started` \| `submitted` \| `verified` \| `rejected`   |
+| `proofUrl`     | text      | Uploaded media / text                                  |
+| `verifiedBy`   | text      | Mentor or admin memberId who verified                  |
+| `verifiedAt`   | timestamp |                                                        |
+| `xpAwarded`    | int       | Captured at time of verification (so XP edits are auditable) |
+| `note`         | text      | Member's reflection                                    |
+| `startedAt`    | timestamp |                                                        |
+| `submittedAt`  | timestamp |                                                        |
+
+---
+
+## Tab: `MemberStats`
+
+Denormalized cache of per-member rollups for fast dashboard rendering. One
+row per member. Apps Script recomputes on every progress write.
+
+| Column          | Type      | Notes                            |
+|-----------------|-----------|----------------------------------|
+| `memberId`      | text      | FK                               |
+| `xpTotal`       | int       |                                  |
+| `level`         | int       | floor(xpTotal/250)+1             |
+| `badgeCount`    | int       |                                  |
+| `badges`        | json      | Array of badge slugs             |
+| `streak`        | int       | Consecutive days with any activity |
+| `lastActiveAt`  | timestamp |                                  |
+| `currentWeek`   | int       | 1-12, derived from sessions      |
+| `completedThisSession` | int |                                |
+| `updatedAt`     | timestamp | auto                             |
+
+---
+
+## Tab: `Events`
+
+Upcoming events, showcases, parent meetings, etc. Admin posts. Members RSVP.
+
+| Column        | Type      | Notes                                                |
+|---------------|-----------|------------------------------------------------------|
+| `eventId`     | text      | `EVT-2026-0001`                                      |
+| `title`       | text      |                                                      |
+| `kind`        | enum      | `session` \| `showcase` \| `parent-meet` \| `community` \| `online` |
+| `sessionId`   | text      | optional FK to Sessions                              |
+| `startAt`     | timestamp |                                                      |
+| `endAt`       | timestamp |                                                      |
+| `centre`      | enum      | `Egbeda` \| `Ayobo` \| `Online` \| `Both`            |
+| `location`    | text      | Free text — room number, online URL, etc.            |
+| `coverUrl`    | url       |                                                      |
+| `body`        | text      | Long description (markdown allowed)                  |
+| `capacity`    | int       | Max RSVPs (0 = unlimited)                            |
+| `isPublic`    | bool      | If true, shown to non-members on public Events page  |
+| `status`      | enum      | `draft` \| `published` \| `cancelled`                |
+| `createdBy`   | text      | admin memberId                                       |
+| `createdAt`   | timestamp | auto                                                 |
+| `updatedAt`   | timestamp | auto                                                 |
+
+---
+
+## Tab: `EventRSVPs`
+
+| Column      | Type      | Notes                              |
+|-------------|-----------|------------------------------------|
+| `eventId`   | text      | FK                                 |
+| `memberId`  | text      | FK                                 |
+| `status`    | enum      | `going` \| `maybe` \| `cancelled`  |
+| `rsvpAt`    | timestamp |                                    |
+| `attendedAt`| timestamp | filled at check-in                 |
+
+---
+
+## Tab: `Posts`
+
+Blog / news / updates / promotions — one schema, filtered by `kind`.
+
+| Column       | Type      | Notes                                                          |
+|--------------|-----------|----------------------------------------------------------------|
+| `postId`     | text      | `POST-2026-0001`                                               |
+| `slug`       | text      | URL-safe, unique                                               |
+| `kind`       | enum      | `blog` \| `news` \| `update` \| `promo`                        |
+| `title`      | text      |                                                                |
+| `excerpt`    | text      |                                                                |
+| `body`       | text      | Markdown                                                       |
+| `coverUrl`   | url       |                                                                |
+| `category`   | text      | Editorial — "Member Story", "Mentor Note", etc.                |
+| `authorId`   | text      | memberId of author                                             |
+| `tags`       | text      | comma-separated                                                |
+| `status`     | enum      | `draft` \| `published` \| `archived`                           |
+| `publishAt`  | timestamp | scheduled publish; Apps Script flips status when reached       |
+| `featured`   | bool      | Pin to top of blog index                                       |
+| `promoCta`   | text      | (kind=promo only) CTA button label                             |
+| `promoUrl`   | text      | (kind=promo only) CTA URL                                      |
+| `promoExpires`| timestamp| (kind=promo only)                                              |
+| `createdAt`  | timestamp | auto                                                           |
+| `updatedAt`  | timestamp | auto                                                           |
+
+---
+
+## Tab: `Notifications`
+
+Per-member notification feed. Admin can push, system can push.
+
+| Column      | Type      | Notes                                                    |
+|-------------|-----------|----------------------------------------------------------|
+| `notifId`   | text      |                                                          |
+| `memberId`  | text      | FK — `*` means broadcast to all members                  |
+| `kind`      | enum      | `mission` \| `event` \| `badge` \| `announcement` \| `mentor` |
+| `title`     | text      |                                                          |
+| `body`      | text      |                                                          |
+| `linkPage`  | text      | App route to deep-link (e.g. `anchor`, `event:EVT-…`)    |
+| `readAt`    | timestamp |                                                          |
+| `createdAt` | timestamp | auto                                                     |
+
+---
+
+## Tab: `Journal`
+
+Private member journal. Only the member + admins can read theirs.
+
+| Column      | Type      | Notes                            |
+|-------------|-----------|----------------------------------|
+| `entryId`   | text      |                                  |
+| `memberId`  | text      | FK                               |
+| `sessionId` | text      | FK                               |
+| `week`      | int       |                                  |
+| `mood`      | enum      | `🔥` \| `🙂` \| `😐` \| `😔` \| `😴` |
+| `body`      | text      |                                  |
+| `private`   | bool      | If false, mentor can read         |
+| `createdAt` | timestamp | auto                             |
+
+---
+
+## Tab: `AuthSessions`
+
+Short-lived login challenges. Apps Script GCs expired rows daily.
+
+| Column       | Notes                                                  |
+|--------------|--------------------------------------------------------|
+| `token`      | 32-byte hex random — goes in the magic-link URL        |
+| `memberId`   |                                                        |
+| `email`      | snapshot                                               |
+| `otp`        | 6-digit code (also valid for verifying)                |
+| `attempts`   | int — 5 strikes and the row is invalid                  |
+| `createdAt`  | ISO timestamp                                          |
+| `expiresAt`  | ISO timestamp (15 min after createdAt)                 |
+| `verifiedAt` | filled when consumed                                   |
+| `ip`         | for abuse signals                                      |
+| `userAgent`  | for abuse signals                                      |
+
+---
+
+## Tab: `AuditLog`
+
+Rolling log, capped to last ~5000 rows by Apps Script (oldest deleted).
+
+| Column     | Notes                                                                  |
+|------------|------------------------------------------------------------------------|
+| `at`       | timestamp                                                              |
+| `actorId`  | who did it (memberId or `system`)                                      |
+| `event`    | `login.request`, `login.success`, `login.fail`, `mission.complete`, `admin.member.create`, etc. |
+| `subject`  | what they did it to (memberId / eventId / postId)                      |
+| `ip`       |                                                                        |
+| `meta`     | JSON freeform                                                          |
+
+---
+
+## Tab: `Settings`
+
+Singleton key-value store for site-wide config admin can tweak without a deploy.
+
+| Column      | Notes                                          |
+|-------------|------------------------------------------------|
+| `key`       | text                                           |
+| `value`     | JSON                                           |
+| `updatedAt` | timestamp                                      |
+| `updatedBy` | memberId                                       |
+
+Suggested initial keys:
+- `featured_session_id` → which session ID drives the homepage countdown
+- `homepage_promo` → JSON object with active promo banner content
+- `applications_open` → bool
+- `mentor_applications_open` → bool
+
+---
+
+## Indexes Apps Script maintains
+
+Apps Script keeps two **named ranges** as fast lookup indexes (rebuilt on
+member write):
+
+- `IDX_EMAIL_TO_MEMBER` — sheet with two columns: email, memberId. Used for
+  O(1) lookups during sign-in.
+- `IDX_SLUG_TO_POST` — published-post-only index for the public blog feed.

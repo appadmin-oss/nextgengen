@@ -69,7 +69,7 @@ function Hero({ setPage }) {
               </div>
               <div>
                 <div style={{color:"white", fontWeight:600, fontSize:14}}>517+ teen creators in motion</div>
-                <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.55)", marginTop:2}}>UPDATED LIVE · 22 communities</div>
+                <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.55)", marginTop:2}}>UPDATED LIVE · Alimosho, Lagos</div>
               </div>
             </div>
           </div>
@@ -384,11 +384,11 @@ function CommunityCollage() {
           <div>
             <span className="eyebrow" style={{color:"var(--gold-500)"}}>THE MOVEMENT, IN MOTION</span>
             <h2 className="display" style={{fontSize:"clamp(40px, 4.8vw, 68px)", margin:"8px 0 0", color:"white", lineHeight:0.98}}>
-              Twenty-two communities.<br/>One generation showing up.
+              Two centres.<br/>One generation showing up.
             </h2>
           </div>
           <p style={{color:"rgba(255,255,255,0.7)", fontSize:17, lineHeight:1.55, maxWidth:520, margin:0}}>
-            Lagos, Enugu, Abuja, Ibadan, Kano, Kaduna, Onitsha, Accra, Kumasi. Every Saturday, a few hundred teenagers convene in person. Here is what the room looks like.
+            CACENTRE Egbeda and CACENTRE Ayobo — both in Alimosho, Lagos. Every Saturday, teenagers from across the LGA convene in person. Here is what the room looks like.
           </p>
         </div>
 

@@ -278,7 +278,7 @@ function VolunteersPage({ setPage }) {
 /* =================== JOIN / APPLICATION =================== */
 function JoinPage({ setPage }) {
   const [step, setStep] = useState(0);
-  const [data, setData] = useState({ name: "", age: 14, city: "Lagos", track: "Music", why: "", parentEmail: "" });
+  const [data, setData] = useState({ name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "" });
   const steps = ["Identity", "Track", "Story", "Parent"];
 
   function next() { setStep(Math.min(steps.length, step + 1)); }
@@ -338,10 +338,11 @@ function JoinPage({ setPage }) {
                     <input type="number" min="10" max="17" value={data.age} onChange={e => setData({...data, age: e.target.value})}/>
                   </div>
                   <div className="field">
-                    <label>Home city</label>
+                    <label>Which centre is closest to you?</label>
                     <select value={data.city} onChange={e => setData({...data, city: e.target.value})}>
-                      <option>Lagos</option><option>Enugu</option><option>Abuja</option><option>Ibadan</option>
-                      <option>Kano</option><option>Kaduna</option><option>Onitsha</option><option>Accra</option><option>Kumasi</option>
+                      <option value="Egbeda">CACENTRE Egbeda</option>
+                      <option value="Ayobo">CACENTRE Ayobo</option>
+                      <option value="Other">Neither — I'll travel</option>
                     </select>
                   </div>
                 </div>
