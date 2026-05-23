@@ -137,6 +137,86 @@ function Progress({ value, label, variant = "" }) {
   );
 }
 
+/* ---- Mobile drawer auth block ---- */
+function DrawerAuthBlock({ go, close }) {
+  const { isSignedIn, member, openSignIn, signOut, isAdmin } = useAuth();
+  if (!isSignedIn) {
+    return (
+      <button className="nav-link" onClick={() => { close(); openSignIn(); }}>
+        Sign in →
+      </button>
+    );
+  }
+  return (
+    <React.Fragment>
+      <div className="drawer-auth">
+        <div className="drawer-auth-avatar">{(member.fullName || "M").charAt(0)}</div>
+        <div>
+          <div className="drawer-auth-name">{member.fullName}</div>
+          <div className="mono drawer-auth-id">{member.memberId}</div>
+        </div>
+      </div>
+      <button className="nav-link" onClick={() => go("dashboard")}>Dashboard</button>
+      {isAdmin && <button className="nav-link nav-link-admin" onClick={() => go("admin")}>⚙ Admin console</button>}
+      <button className="nav-link nav-link-danger" onClick={async () => { close(); await signOut(); }}>Sign out</button>
+    </React.Fragment>
+  );
+}
+
+/* ---- Top nav auth slot: shows Sign-in button OR member chip + menu. ---- */
+function NavAuthSlot({ setPage }) {
+  const { isSignedIn, member, loading, openSignIn, signOut, isAdmin } = useAuth();
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const menuRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuOpen]);
+
+  if (loading) {
+    return <div className="nav-auth-loading" aria-hidden="true"/>;
+  }
+  if (!isSignedIn) {
+    return (
+      <button className="btn btn-ghost btn-sm nav-signin" onClick={() => openSignIn()}>
+        Sign in
+      </button>
+    );
+  }
+  const first = String(member.fullName || member.memberId || "M").split(" ")[0];
+  const initial = first.charAt(0).toUpperCase();
+  return (
+    <div className="nav-auth" ref={menuRef}>
+      <button className="nav-auth-trigger" onClick={() => setMenuOpen(v => !v)} aria-expanded={menuOpen}>
+        <span className="nav-auth-avatar">{initial}</span>
+        <span className="nav-auth-name">{first}</span>
+        <span className="nav-auth-chevron" aria-hidden="true">▾</span>
+      </button>
+      {menuOpen && (
+        <div className="nav-auth-menu" role="menu">
+          <div className="nav-auth-menu-head">
+            <div className="nav-auth-menu-name">{member.fullName}</div>
+            <div className="mono nav-auth-menu-id">{member.memberId}</div>
+          </div>
+          <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("dashboard"); }}>Dashboard</button>
+          <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("anchor"); }}>Anchor 12</button>
+          <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("book"); }}>The Anchor book</button>
+          {isAdmin && (
+            <button className="nav-auth-menu-item nav-auth-menu-admin" onClick={() => { setMenuOpen(false); setPage("admin"); }}>
+              <span>⚙</span> Admin console
+            </button>
+          )}
+          <div className="nav-auth-menu-divider"/>
+          <button className="nav-auth-menu-item nav-auth-menu-danger" onClick={async () => { setMenuOpen(false); await signOut(); }}>Sign out</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---- Top nav ---- */
 function TopNav({ page, setPage }) {
   const links = [
@@ -189,10 +269,8 @@ function TopNav({ page, setPage }) {
             ))}
           </nav>
           <div className="nav-right">
-            <span className="chip" style={{background:"rgba(208,255,58,0.3)", color:"#2e4400"}}>
-              <span className="live-dot" style={{background:"#3fa01a"}}/> 12 live now
-            </span>
-            <button className="btn btn-primary btn-sm" onClick={() => setPage("join")}>Apply</button>
+            <NavAuthSlot setPage={setPage}/>
+            <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("join")}>Apply</button>
             <button
               className={"nav-burger" + (open ? " is-open" : "")}
               onClick={() => setOpen(v => !v)}
@@ -231,11 +309,9 @@ function TopNav({ page, setPage }) {
             className={"nav-link" + (page === "volunteers" ? " active" : "")}
             onClick={() => go("volunteers")}
           >Volunteers</button>
+          <DrawerAuthBlock go={go} close={() => setOpen(false)}/>
           <div className="mobile-drawer-cta">
-            <span className="chip" style={{background:"rgba(208,255,58,0.3)", color:"#2e4400", alignSelf:"flex-start"}}>
-              <span className="live-dot" style={{background:"#3fa01a"}}/> 12 live now
-            </span>
-            <button className="btn btn-primary" onClick={() => go("join")}>Apply for Summer 2026 →</button>
+            <button className="btn btn-primary" onClick={() => go("join")}>Apply for a session →</button>
           </div>
         </div>
       </div>

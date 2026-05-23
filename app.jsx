@@ -7,6 +7,8 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
+const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","join","blog","admin"];
+
 /* ---- Scroll progress bar (top of page) ---- */
 function ScrollProgress() {
   const ref = React.useRef(null);
@@ -82,11 +84,31 @@ function useScrollReveal(page) {
 }
 
 function App() {
-  const [page, setPage] = React.useState("home");
+  const [page, setPage] = React.useState(() => {
+    // Allow deep-linking via hash, e.g. /#admin or /#dashboard
+    const h = (window.location.hash || "").replace(/^#/, "");
+    return h && PAGE_IDS.includes(h) ? h : "home";
+  });
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
+    // Reflect current page in URL hash so refresh + share works.
+    if (page === "home") history.replaceState(null, "", window.location.pathname + window.location.search);
+    else history.replaceState(null, "", "#" + page);
+    // Expose for the sign-in modal / magic link consumer.
+    window.__navigate = setPage;
+  }, [page]);
+
+  // React to back/forward.
+  React.useEffect(() => {
+    const onHash = () => {
+      const h = (window.location.hash || "").replace(/^#/, "");
+      if (h && PAGE_IDS.includes(h) && h !== page) setPage(h);
+      else if (!h && page !== "home") setPage("home");
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, [page]);
 
   // Apply accent override
@@ -95,26 +117,41 @@ function App() {
   }, [t.accent]);
 
   useScrollReveal(page);
+  useReveal([page]);
 
   const pages = {
-    home:    <HomePage   setPage={setPage}/>,
-    summer:  <SummerPage setPage={setPage}/>,
-    club:    <ClubPage   setPage={setPage}/>,
-    anchor:  <AnchorPage setPage={setPage}/>,
-    profile: <ProfilePage setPage={setPage}/>,
-    media:   <MediaPage  setPage={setPage}/>,
-    parents: <ParentsPage setPage={setPage}/>,
-    volunteers: <VolunteersPage setPage={setPage}/>,
-    join:    <JoinPage   setPage={setPage}/>,
-    blog:    <BlogPage   setPage={setPage}/>,
+    home:      <HomePage      setPage={setPage}/>,
+    summer:    <SummerPage    setPage={setPage}/>,
+    club:      <ClubPage      setPage={setPage}/>,
+    anchor:    <AnchorPage    setPage={setPage}/>,
+    profile:   <DashboardPage setPage={setPage}/>,
+    dashboard: <DashboardPage setPage={setPage}/>,
+    book:      <BookPage      setPage={setPage}/>,
+    media:     <MediaPage     setPage={setPage}/>,
+    parents:   <ParentsPage   setPage={setPage}/>,
+    volunteers:<VolunteersPage setPage={setPage}/>,
+    join:      <JoinPage      setPage={setPage}/>,
+    blog:      <BlogPage      setPage={setPage}/>,
+    admin:     <AdminPage     setPage={setPage}/>,
   };
+
+  // Admin uses its own chrome — no public topnav/footer.
+  if (page === "admin") {
+    return (
+      <div className="app-shell app-shell-admin">
+        {pages.admin}
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
       <ScrollProgress/>
       <TopNav page={page} setPage={setPage}/>
       <main style={{flex:1}}>
-        {pages[page] || pages.home}
+        <PageTransition pageKey={page}>
+          {pages[page] || pages.home}
+        </PageTransition>
       </main>
       <Footer setPage={setPage}/>
       <BackToTop/>
@@ -154,4 +191,8 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <AuthProvider>
+    <App/>
+  </AuthProvider>
+);
