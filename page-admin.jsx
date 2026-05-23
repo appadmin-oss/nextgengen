@@ -9,6 +9,9 @@ function AdminPage({ setPage }) {
   const [section, setSection] = React.useState("home");
   const [setupView, setSetupView] = React.useState(false);
 
+  // Expose for the command palette (Cmd-K deep-link to admin sub-section).
+  React.useEffect(() => { window.__adminSection = setSection; return () => { window.__adminSection = null; }; }, []);
+
   if (loading) return <div className="page admin"><div className="container" style={{padding:"120px 0"}}><div className="dash-spinner"/></div></div>;
   if (!isAdmin) {
     return <div className="page admin">

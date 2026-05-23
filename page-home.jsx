@@ -127,7 +127,7 @@ function StatBar() {
       <div className="container" style={{padding:"64px 28px"}}>
         <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:0}}>
           {STATS.map((s, i) => (
-            <div key={s.label} style={{padding:"8px 28px", borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.08)"}}>
+            <div key={s.label} className="reveal" data-reveal style={{padding:"8px 28px", borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.08)", "--reveal-delay": (i * 120) + "ms"}}>
               <div className="display" style={{fontSize:96, lineHeight:1, color: i === 3 ? "var(--gold-500)" : "white"}}>
                 <CountUp to={s.num}/>{i < 3 && <span style={{color:"var(--gold-500)"}}>+</span>}
               </div>
@@ -364,14 +364,18 @@ function TracksRibbon({ setPage }) {
           {TRACKS.map((t, i) => {
             const c = trackColors[t.id];
             return (
-              <div key={t.id} className="track-card" style={{background:c.bg, color:c.fg}}>
-                <div className="icon" style={{background:"rgba(255,255,255,0.2)", color:"inherit"}}>{t.icon}</div>
-                <div style={{fontFamily:"var(--font-display)", fontSize:28, fontWeight:800, letterSpacing:"-0.02em", lineHeight:1}}>{t.name}</div>
-                <p style={{fontSize:13, lineHeight:1.4, opacity:0.85, margin:0}}>{t.desc}</p>
-                <div className="num-bg">0{i+1}</div>
-                <div style={{display:"flex", alignItems:"center", gap:6, marginTop:"auto", fontSize:11, fontFamily:"var(--font-mono)", textTransform:"uppercase", letterSpacing:"0.12em", opacity:0.85}}>
-                  Explore →
-                </div>
+              <div key={t.id} className="reveal" data-reveal style={{"--reveal-delay": (i * 80) + "ms"}}>
+                <Tilt strength={6}>
+                  <div className="track-card" style={{background:c.bg, color:c.fg}}>
+                    <div className="icon" style={{background:"rgba(255,255,255,0.2)", color:"inherit"}}>{t.icon}</div>
+                    <div style={{fontFamily:"var(--font-display)", fontSize:28, fontWeight:800, letterSpacing:"-0.02em", lineHeight:1}}>{t.name}</div>
+                    <p style={{fontSize:13, lineHeight:1.4, opacity:0.85, margin:0}}>{t.desc}</p>
+                    <div className="num-bg">0{i+1}</div>
+                    <div style={{display:"flex", alignItems:"center", gap:6, marginTop:"auto", fontSize:11, fontFamily:"var(--font-mono)", textTransform:"uppercase", letterSpacing:"0.12em", opacity:0.85}}>
+                      Explore →
+                    </div>
+                  </div>
+                </Tilt>
               </div>
             );
           })}

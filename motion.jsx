@@ -185,3 +185,142 @@ window.Magnetic = Magnetic;
 window.useParallax = useParallax;
 window.PageTransition = PageTransition;
 window.Counter = Counter;
+
+// ----------------------------------------------------------------------------
+// Tilt — pointer-tracked 3D rotation. Used on feature cards.
+// Wrap the element with <Tilt strength={8}><div>…</div></Tilt>.
+// ----------------------------------------------------------------------------
+
+function Tilt({ children, strength = 8, glare = true }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (reducedMotion()) return;
+    const el = ref.current;
+    if (!el) return;
+    let rect = null;
+    let raf = 0;
+    const onMove = (e) => {
+      if (!rect) rect = el.getBoundingClientRect();
+      const x = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
+      const y = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
+      if (!raf) raf = requestAnimationFrame(() => {
+        el.style.transform =
+          `perspective(900px) rotateX(${(-y * strength).toFixed(2)}deg) rotateY(${(x * strength).toFixed(2)}deg)`;
+        if (glare) {
+          el.style.setProperty('--tilt-gx', ((x + 1) * 50).toFixed(1) + '%');
+          el.style.setProperty('--tilt-gy', ((y + 1) * 50).toFixed(1) + '%');
+          el.style.setProperty('--tilt-glare', '0.18');
+        }
+        raf = 0;
+      });
+    };
+    const onLeave = () => {
+      rect = null;
+      el.style.transform = '';
+      if (glare) el.style.setProperty('--tilt-glare', '0');
+    };
+    el.addEventListener('mouseenter', () => { rect = el.getBoundingClientRect(); });
+    el.addEventListener('mousemove', onMove);
+    el.addEventListener('mouseleave', onLeave);
+    return () => {
+      el.removeEventListener('mousemove', onMove);
+      el.removeEventListener('mouseleave', onLeave);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [strength, glare]);
+  return <span ref={ref} className={"tilt" + (glare ? " has-glare" : "")}>{children}</span>;
+}
+
+// ----------------------------------------------------------------------------
+// ScrollSection — pin a heading on the left while content scrolls past on the
+// right. Great for editorial spreads.
+// ----------------------------------------------------------------------------
+
+function ScrollSection({ heading, children, className = "" }) {
+  return (
+    <section className={"scroll-section " + className}>
+      <div className="container">
+        <div className="scroll-section-grid">
+          <div className="scroll-section-aside">{heading}</div>
+          <div className="scroll-section-body">{children}</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// BlurImage — fade-in + blur-up image loader. Uses native loading="lazy",
+// transitions blur+opacity when the image actually decodes.
+// ----------------------------------------------------------------------------
+
+function BlurImage({ src, alt = "", ratio = "1/1", style = {}, className = "", eager = false }) {
+  const [loaded, setLoaded] = React.useState(false);
+  const onLoad = () => setLoaded(true);
+  return (
+    <div
+      className={"blur-image " + (loaded ? "is-loaded " : "") + className}
+      style={Object.assign({ aspectRatio: ratio }, style)}
+    >
+      {src && (
+        <img
+          src={src}
+          alt={alt}
+          loading={eager ? "eager" : "lazy"}
+          decoding="async"
+          onLoad={onLoad}
+        />
+      )}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// useCursor — adds a soft follower dot that lerps toward pointer position.
+// Only on devices with a fine pointer (mouse/trackpad).
+// ----------------------------------------------------------------------------
+
+function useCursor() {
+  React.useEffect(() => {
+    if (reducedMotion()) return;
+    if (!window.matchMedia("(pointer: fine)").matches) return;
+    let dot = document.querySelector(".ngg-cursor");
+    if (!dot) {
+      dot = document.createElement("div");
+      dot.className = "ngg-cursor";
+      document.body.appendChild(dot);
+    }
+    let x = window.innerWidth / 2, y = window.innerHeight / 2;
+    let tx = x, ty = y;
+    let raf = 0;
+    const onMove = (e) => { tx = e.clientX; ty = e.clientY; };
+    const tick = () => {
+      x += (tx - x) * 0.18;
+      y += (ty - y) * 0.18;
+      dot.style.transform = `translate(${x}px, ${y}px)`;
+      raf = requestAnimationFrame(tick);
+    };
+    window.addEventListener("mousemove", onMove, { passive: true });
+    const onHoverIn = (e) => {
+      if (e.target.matches && e.target.closest("button, a, [role='button']")) {
+        dot.classList.add("is-active");
+      }
+    };
+    const onHoverOut = () => dot.classList.remove("is-active");
+    document.addEventListener("mouseover", onHoverIn);
+    document.addEventListener("mouseout", onHoverOut);
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseover", onHoverIn);
+      document.removeEventListener("mouseout", onHoverOut);
+      dot.remove();
+    };
+  }, []);
+}
+
+window.Tilt = Tilt;
+window.ScrollSection = ScrollSection;
+window.BlurImage = BlurImage;
+window.useCursor = useCursor;

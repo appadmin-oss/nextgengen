@@ -118,6 +118,7 @@ function App() {
 
   useScrollReveal(page);
   useReveal([page]);
+  useCursor();
 
   const pages = {
     home:      <HomePage      setPage={setPage}/>,
@@ -142,6 +143,7 @@ function App() {
         <SkipLink/>
         {pages.admin}
         <ToastHost/>
+        <CommandPalette/>
       </div>
     );
   }
@@ -159,6 +161,7 @@ function App() {
       <Footer setPage={setPage}/>
       <BackToTop/>
       <ToastHost/>
+      <CommandPalette/>
 
       <TweaksPanel title="Tweaks">
         <TweakSection label="Brand"/>

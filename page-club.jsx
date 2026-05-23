@@ -82,7 +82,7 @@ function SummerPage({ setPage }) {
 
           <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:18}}>
             {filtered.map((m, i) => (
-              <div key={m.id} className="member-card" onClick={() => setPage("profile")}>
+              <div key={m.id} className="member-card reveal" data-reveal style={{"--reveal-delay": (i * 50) + "ms"}} onClick={() => setPage("profile")}>
                 <Photo src={portrait(m.id+10, 600, 600)} ratio="1/1" style={{borderRadius:14}}>
                   <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, rgba(12,20,50,0) 40%, rgba(12,20,50,0.55) 100%)"}}/>
                   <div style={{position:"absolute", top:10, left:10}}>

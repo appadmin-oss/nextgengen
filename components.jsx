@@ -37,10 +37,12 @@ function Avatar({ seed = 0, name = "", size = 44, ring = false, square = false }
 }
 
 /* ---- Photo — cinematic real image with optional caption + gradient ---- */
-function Photo({ src, name, label, ratio = "1/1", style = {}, overlay = false, dark = false, children }) {
+function Photo({ src, name, label, ratio = "1/1", style = {}, overlay = false, dark = false, children, eager = false }) {
   const url = src || (name ? scene(name, 1200) : null);
+  const [loaded, setLoaded] = React.useState(false);
   return (
     <div
+      className={"photo-frame " + (loaded ? "is-loaded " : "")}
       style={{
         position: "relative",
         aspectRatio: ratio,
@@ -55,7 +57,11 @@ function Photo({ src, name, label, ratio = "1/1", style = {}, overlay = false, d
         <img
           src={url}
           alt={label || name || ""}
-          loading="lazy"
+          loading={eager ? "eager" : "lazy"}
+          decoding="async"
+          fetchpriority={eager ? "high" : "auto"}
+          onLoad={() => setLoaded(true)}
+          onError={() => setLoaded(true) /* still fade away the shimmer */}
           style={{
             width: "100%",
             height: "100%",
@@ -114,11 +120,12 @@ function Tag({ children, variant = "" }) { return <span className={"chip " + var
 
 /* ---- Section header ---- */
 function SectionHead({ eyebrow, title, sub, align = "left" }) {
+  const baseStyle = align === "center" ? { margin: "0 auto 48px", textAlign: "center", alignItems: "center" } : {};
   return (
-    <div className="section-h" style={align === "center" ? { margin: "0 auto 48px", textAlign: "center", alignItems: "center" } : {}}>
-      {eyebrow && <span className="eyebrow" style={{ color: "var(--gold-500)" }}>{eyebrow}</span>}
-      <h2>{title}</h2>
-      {sub && <p style={{ fontSize: 17, color: "var(--ink-500)", margin: 0, lineHeight: 1.5, maxWidth: 640 }}>{sub}</p>}
+    <div className="section-h reveal" data-reveal style={baseStyle}>
+      {eyebrow && <span className="eyebrow reveal" data-reveal style={{ color: "var(--gold-500)", "--reveal-delay": "0ms" }}>{eyebrow}</span>}
+      <h2 className="reveal" data-reveal style={{ "--reveal-delay": "120ms" }}>{title}</h2>
+      {sub && <p className="reveal" data-reveal style={{ fontSize: 17, color: "var(--ink-500)", margin: 0, lineHeight: 1.5, maxWidth: 640, "--reveal-delay": "240ms" }}>{sub}</p>}
     </div>
   );
 }

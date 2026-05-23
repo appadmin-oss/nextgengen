@@ -8,6 +8,339 @@
 }
 
 /* ============================================================
+   1b. GLOBAL MICRO-INTERACTIONS
+   Subtle hover lift + active press on every card/CTA the site
+   already classes. Respects reduced-motion automatically.
+   ============================================================ */
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  .btn,
+  .nav-auth-trigger,
+  .footer-status-pill,
+  .dash-shortcut,
+  .admin-tile,
+  .admin-quick-btn,
+  .admin-card {
+    transition: transform 0.18s cubic-bezier(0.2, 0.7, 0.2, 1),
+                box-shadow 0.18s ease,
+                background 0.18s ease,
+                color 0.18s ease,
+                border-color 0.18s ease;
+  }
+  .btn:hover {
+    transform: translateY(-1px);
+  }
+  .btn:active {
+    transform: translateY(1px);
+    transition-duration: 0.05s;
+  }
+  /* Underline on every text link in cards on hover */
+  .footer-link::after,
+  .legal::after {
+    content: "";
+    display: block;
+    height: 1px;
+    background: currentColor;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+    margin-top: 1px;
+  }
+  .footer-link:hover::after,
+  .legal:hover::after {
+    transform: scaleX(1);
+  }
+  /* Chip pulse on hover */
+  .chip {
+    transition: transform 0.18s ease;
+  }
+  .chip:hover { transform: translateY(-1px); }
+}
+
+/* Smooth scroll for in-page anchors (already on html but reinforce) */
+html { scroll-behavior: smooth; }
+
+/* ============================================================
+   1c. TILT — pointer-tracked 3D card rotation
+   ============================================================ */
+.tilt {
+  display: block;
+  transform-style: preserve-3d;
+  transition: transform 0.32s cubic-bezier(0.2, 0.7, 0.2, 1);
+  will-change: transform;
+  position: relative;
+  isolation: isolate;
+}
+.tilt > * { transform-style: preserve-3d; }
+.tilt.has-glare::after {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--tilt-gx, 50%) var(--tilt-gy, 50%),
+                              rgba(255, 255, 255, var(--tilt-glare, 0)) 0%, transparent 60%);
+  border-radius: inherit;
+  z-index: 2;
+  transition: background 0.18s ease;
+  mix-blend-mode: overlay;
+}
+@media (hover: none), (prefers-reduced-motion: reduce) {
+  .tilt { transform: none !important; }
+  .tilt.has-glare::after { display: none; }
+}
+
+/* ============================================================
+   1d. PHOTO FRAME — shimmer + blur-up for site-wide Photo
+   ============================================================ */
+.photo-frame {
+  /* Shimmer placeholder until image loads. */
+  background-image: linear-gradient(
+    90deg,
+    var(--cream-100) 0%,
+    var(--cream-200) 50%,
+    var(--cream-100) 100%
+  );
+  background-size: 200% 100%;
+  animation: photo-shimmer 1.6s linear infinite;
+}
+.photo-frame.is-loaded {
+  animation: none;
+}
+.photo-frame img {
+  opacity: 0;
+  filter: blur(8px) saturate(1.1);
+  transform: scale(1.04);
+  transition: opacity 0.55s ease, filter 0.55s ease, transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.photo-frame.is-loaded img {
+  opacity: 1;
+  filter: none;
+  transform: none;
+}
+@keyframes photo-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .photo-frame { animation: none; }
+  .photo-frame img { opacity: 1; filter: none; transform: none; transition: none; }
+}
+
+/* ============================================================
+   1d2. BLUR-IMAGE — fade-in image loader (standalone)
+   ============================================================ */
+.blur-image {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #efe8d5 0%, #ddd3b9 100%);
+}
+.blur-image img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0;
+  filter: blur(10px) saturate(1.1);
+  transform: scale(1.06);
+  transition: opacity 0.6s ease, filter 0.6s ease, transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.blur-image.is-loaded img {
+  opacity: 1;
+  filter: none;
+  transform: none;
+}
+
+/* ============================================================
+   1e. CURSOR FOLLOWER — desktop pointer
+   ============================================================ */
+.ngg-cursor {
+  position: fixed;
+  top: 0; left: 0;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--gold-500);
+  pointer-events: none;
+  z-index: 9998;
+  transform: translate(-50%, -50%);
+  mix-blend-mode: difference;
+  transition: width 0.22s ease, height 0.22s ease, background 0.22s ease, border-color 0.22s ease;
+  margin-left: -7px;
+  margin-top: -7px;
+}
+.ngg-cursor.is-active {
+  width: 38px; height: 38px;
+  margin-left: -19px;
+  margin-top: -19px;
+  background: rgba(245, 176, 38, 0.18);
+  border-color: var(--gold-400);
+}
+@media (hover: none), (prefers-reduced-motion: reduce) {
+  .ngg-cursor { display: none; }
+}
+
+/* ============================================================
+   1f. COMMAND PALETTE
+   ============================================================ */
+.cmdk-scrim {
+  position: fixed; inset: 0;
+  background: rgba(10, 17, 48, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  z-index: 240;
+  display: grid;
+  place-items: start center;
+  padding: 96px 20px 32px;
+  animation: signin-scrim-in 0.18s ease;
+}
+.cmdk {
+  width: 100%; max-width: 600px;
+  background: var(--paper);
+  border-radius: 18px;
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: cmdk-in 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes cmdk-in {
+  from { opacity: 0; transform: translateY(-16px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+.cmdk-input-wrap {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(12, 20, 50, 0.06);
+}
+.cmdk-icon { font-size: 18px; color: var(--ink-500); }
+.cmdk-input {
+  border: none; outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 17px;
+  color: var(--ink-900);
+  width: 100%;
+}
+.cmdk-input::placeholder { color: var(--ink-500); }
+.cmdk-esc {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  background: rgba(12, 20, 50, 0.06);
+  padding: 4px 8px;
+  border-radius: 5px;
+  color: var(--ink-500);
+}
+
+.cmdk-list { max-height: 50vh; overflow-y: auto; padding: 6px 6px; }
+.cmdk-group { padding: 6px 0; }
+.cmdk-group + .cmdk-group { border-top: 1px solid rgba(12, 20, 50, 0.04); }
+.cmdk-group-h {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+  padding: 8px 16px 4px;
+}
+.cmdk-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink-900);
+  transition: background 0.12s ease;
+}
+.cmdk-item:hover, .cmdk-item.is-active {
+  background: rgba(245, 176, 38, 0.1);
+}
+.cmdk-item.is-active { box-shadow: inset 0 0 0 1px rgba(245, 176, 38, 0.35); }
+.cmdk-item-icon {
+  font-size: 16px;
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: white;
+  display: grid; place-items: center;
+  border: 1px solid rgba(12, 20, 50, 0.06);
+  color: var(--ink-700);
+}
+.cmdk-item-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cmdk-item-label { font-weight: 600; font-size: 14px; }
+.cmdk-item-hint { font-size: 12px; color: var(--ink-500); }
+.cmdk-item kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: white;
+  border: 1px solid rgba(12,20,50,0.08);
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: var(--ink-500);
+  letter-spacing: 0.1em;
+}
+.cmdk-empty {
+  padding: 32px 18px;
+  text-align: center;
+  color: var(--ink-500);
+}
+.cmdk-empty-h { font-weight: 700; }
+.cmdk-empty-sub { font-size: 13px; margin-top: 4px; }
+.cmdk-foot {
+  display: flex; gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(12, 20, 50, 0.06);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--ink-500);
+}
+.cmdk-foot kbd {
+  background: rgba(12,20,50,0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  margin-right: 4px;
+}
+
+/* Floating hint */
+.cmdk-hint {
+  position: fixed;
+  left: 20px; bottom: 20px;
+  z-index: 90;
+  background: white;
+  border: 1px solid rgba(12, 20, 50, 0.08);
+  border-radius: 999px;
+  padding: 6px 10px 6px 8px;
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--ink-700);
+  box-shadow: 0 12px 30px -10px rgba(12, 20, 50, 0.18);
+  cursor: pointer;
+  opacity: 0.92;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.cmdk-hint:hover { opacity: 1; transform: translateY(-1px); }
+.cmdk-hint kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: rgba(12, 20, 50, 0.06);
+  border-radius: 4px;
+  padding: 2px 5px;
+  margin-right: 2px;
+  letter-spacing: 0.06em;
+}
+.cmdk-hint-text { color: var(--ink-500); }
+.cmdk-hint-x { color: var(--ink-500); opacity: 0.55; padding: 0 4px; cursor: pointer; }
+.cmdk-hint-x:hover { opacity: 1; }
+@media (hover: none) { .cmdk-hint { display: none; } }
+
+/* ============================================================
    1. MOTION PRIMITIVES — used by motion.jsx
    ============================================================ */
 
