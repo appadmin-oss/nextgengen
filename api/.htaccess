@@ -4,22 +4,36 @@ RewriteRule ^_lib/        - [F,L]
 RewriteRule ^_cache/      - [F,L]
 RewriteRule ^config\.php$ - [F,L]
 
-# Disable directory listings.
-Options -Indexes
+# Block any direct hit on .php files except the ones explicitly under
+# /api/{auth,member,public,admin}. Prevents accidental exposure if a stray
+# .php file lands inside /api by mistake.
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteCond %{REQUEST_URI} !^/api/(auth|member|public|admin)/[a-z0-9-]+\.php$ [NC]
+RewriteRule \.php$ - [F,L]
 
-# CORS (same-origin by default; loosen here if the API is on a separate
-# subdomain from the frontend).
+# Disable directory listings + CGI.
+Options -Indexes -ExecCGI
+
+# Block dotfiles entirely.
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+# CORS — same-origin by default. If frontend is on a different host, add
+# Access-Control-Allow-Origin here AND echo your CSRF cookie via Set-Cookie
+# with SameSite=None; Secure.
 <IfModule mod_headers.c>
   Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
   Header always set Referrer-Policy "same-origin"
+  Header always set Permissions-Policy "interest-cohort=()"
 </IfModule>
 
 # Force HTTPS (uncomment after SSL is verified).
 # RewriteCond %{HTTPS} !=on
 # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-# Prevent caching of API responses by default — endpoints opt in with
-# their own headers if they want it.
+# Never cache API responses; endpoints opt in with their own headers.
 <IfModule mod_headers.c>
   Header always set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
   Header always set Pragma "no-cache"

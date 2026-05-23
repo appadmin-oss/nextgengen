@@ -28,6 +28,12 @@ require_once __DIR__ . '/response.php';
 require_once __DIR__ . '/sheets.php';
 require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/rate-limit.php';
+require_once __DIR__ . '/csrf.php';
+require_once __DIR__ . '/validate.php';
+
+// CSRF check happens once per request, for every write method. The
+// individual endpoint then validates further (session, role, input).
+csrf_require();
 
 function client_ip(): string {
     foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $h) {

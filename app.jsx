@@ -139,22 +139,26 @@ function App() {
   if (page === "admin") {
     return (
       <div className="app-shell app-shell-admin">
+        <SkipLink/>
         {pages.admin}
+        <ToastHost/>
       </div>
     );
   }
 
   return (
     <div className="app-shell">
+      <SkipLink/>
       <ScrollProgress/>
       <TopNav page={page} setPage={setPage}/>
-      <main style={{flex:1}}>
+      <main id="main" style={{flex:1}}>
         <PageTransition pageKey={page}>
           {pages[page] || pages.home}
         </PageTransition>
       </main>
       <Footer setPage={setPage}/>
       <BackToTop/>
+      <ToastHost/>
 
       <TweaksPanel title="Tweaks">
         <TweakSection label="Brand"/>
@@ -192,7 +196,9 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <AuthProvider>
-    <App/>
-  </AuthProvider>
+  <ErrorBoundary>
+    <AuthProvider>
+      <App/>
+    </AuthProvider>
+  </ErrorBoundary>
 );

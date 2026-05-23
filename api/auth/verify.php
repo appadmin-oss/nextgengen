@@ -4,11 +4,28 @@ require_method('POST');
 rate_limit_check('auth.verify');
 
 $body = read_json_body();
+$token = trim((string)($body['token'] ?? ''));
+$memberId = trim((string)($body['memberId'] ?? ''));
+$otp = trim((string)($body['otp'] ?? ''));
+
+// Either a token (magic link) or memberId+otp must be present.
+if ($token === '' && ($memberId === '' || $otp === '')) {
+    json_error('missing_credentials', 422);
+}
+if ($token !== '' && !preg_match('/^[a-f0-9]{32,128}$/i', $token)) {
+    json_error('bad_token_format', 422);
+}
+if ($otp !== '' && !preg_match('/^\d{6}$/', preg_replace('/\s+/', '', $otp))) {
+    json_error('bad_otp_format', 422);
+}
+if ($memberId !== '' && !preg_match('/^[A-Z]{2,6}-\d{4}-\d{3,5}$/i', $memberId)) {
+    json_error('bad_member_id', 422);
+}
 
 $res = gs_call('auth.verify', [
-    'token'    => $body['token']    ?? '',
-    'memberId' => $body['memberId'] ?? '',
-    'otp'      => $body['otp']      ?? '',
+    'token'    => $token,
+    'memberId' => $memberId,
+    'otp'      => preg_replace('/\s+/', '', $otp),
     'ip'       => client_ip(),
 ]);
 if (empty($res['ok'])) {
@@ -18,5 +35,6 @@ if (empty($res['ok'])) {
 
 $member = $res['member'] ?? [];
 session_issue($member, false);
+$csrf = csrf_issue();
 
-json_ok(['member' => $member]);
+json_ok(['member' => $member, 'csrf' => $csrf]);

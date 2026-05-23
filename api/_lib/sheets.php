@@ -21,32 +21,48 @@ function gs_call(string $op, array $args = [], bool $useCache = false): array {
     $sig = hash_hmac('sha256', $body, $CONFIG['shared_secret']);
     $url = $CONFIG['apps_script_url'] . '?sig=' . $sig;
 
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $body,
-        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_CONNECTTIMEOUT => 8,
-        CURLOPT_TIMEOUT        => 25,
-        CURLOPT_SSL_VERIFYPEER => true,
-    ]);
-    $res = curl_exec($ch);
-    $err = curl_error($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    // Retry strategy: one fast retry on connection failure (Apps Script
+    // sometimes drops the first packet during cold-start), then give up.
+    $res = null; $err = null; $code = 0;
+    for ($attempt = 1; $attempt <= 2; $attempt++) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST            => true,
+            CURLOPT_POSTFIELDS      => $body,
+            CURLOPT_HTTPHEADER      => [
+                'Content-Type: application/json',
+                'User-Agent: NGG-PHP/1.0',
+            ],
+            CURLOPT_RETURNTRANSFER  => true,
+            CURLOPT_FOLLOWLOCATION  => true,
+            CURLOPT_MAXREDIRS       => 4,
+            CURLOPT_CONNECTTIMEOUT  => 8,
+            CURLOPT_TIMEOUT         => 25,
+            CURLOPT_SSL_VERIFYPEER  => true,
+            CURLOPT_SSL_VERIFYHOST  => 2,
+            CURLOPT_ENCODING        => '',     // accept gzip
+        ]);
+        $res = curl_exec($ch);
+        $err = curl_error($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        // Transient errors only — retry once. Otherwise break and report.
+        if ($res !== false && $code >= 200 && $code < 500) break;
+        if ($attempt === 1) usleep(250000); // 250ms back-off
+    }
 
     if ($err) {
-        error_log("[gs_call] curl error on op=$op: $err");
+        error_log(sprintf('[gs_call] curl error op=%s code=%d err=%s', $op, $code, $err));
         json_error('upstream_unreachable', 502, $CONFIG['debug'] ? $err : null);
     }
     if (!is_string($res) || $res === '') {
+        error_log(sprintf('[gs_call] empty response op=%s code=%d', $op, $code));
         json_error('upstream_empty', 502);
     }
     $data = json_decode($res, true);
     if (!is_array($data)) {
-        error_log("[gs_call] non-json on op=$op: " . substr($res, 0, 200));
+        error_log(sprintf('[gs_call] non-json op=%s code=%d body=%s', $op, $code, substr($res, 0, 200)));
         json_error('upstream_bad_json', 502);
     }
 

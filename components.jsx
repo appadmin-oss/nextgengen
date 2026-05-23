@@ -394,128 +394,204 @@ function NewsletterForm() {
 /* ---- Footer ---- */
 function Footer({ setPage }) {
   const go = (id) => () => setPage(id);
+  const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false, member: null };
+  const [session, setSession] = React.useState(null);
 
-  // Two physical centres in Alimosho, Lagos. The strip in the footer renders
-  // them as live centres; we leave the "coming soon" slot empty for now.
-  const CHAPTERS_LIVE = ["CACENTRE Egbeda", "CACENTRE Ayobo"];
-  const CHAPTERS_COMING = [];
+  // Public, cached — loaded once per visit.
+  React.useEffect(() => {
+    if (typeof NGGApi === "undefined") return;
+    NGGApi.public.session()
+      .then(r => setSession(r.current || r.next || null))
+      .catch(() => {});
+  }, []);
+
+  const CENTRES = [
+    { id: "egbeda", name: "CACENTRE Egbeda", lga: "Alimosho · Lagos", line: "Saturdays · 09:00 – 13:00", note: "Main hub" },
+    { id: "ayobo",  name: "CACENTRE Ayobo",  lga: "Alimosho · Lagos", line: "Saturdays · 09:00 – 13:00", note: "Sister centre" },
+  ];
 
   const columns = [
     {
       h: "Programs",
       links: [
         { label: "Summer Students", page: "summer" },
-        { label: "Next Generation Genius Club", page: "club" },
-        { label: "Anchor 12", page: "anchor", badge: "NEW" },
-        { label: "Vanguard", page: "anchor" },
+        { label: "NGGC · Identity society", page: "club" },
+        { label: "Anchor 12", page: "anchor", badge: "LIVE" },
+        { label: "Vanguard track", page: "anchor" },
       ],
     },
     {
-      h: "Movement",
+      h: "Stay in motion",
       links: [
+        { label: "The Anchor book", page: "book" },
         { label: "The Journal", page: "blog" },
         { label: "Media room", page: "media" },
-        { label: "Become a mentor", page: "volunteers" },
-        { label: "Member profile", page: "profile" },
+        { label: "Member dashboard", page: "dashboard", needsAuth: true },
       ],
     },
     {
-      h: "Trust & contact",
+      h: "Get involved",
       links: [
+        { label: "Apply for a session", page: "join" },
+        { label: "Become a mentor", page: "volunteers" },
         { label: "For parents", page: "parents" },
         { label: "Safeguarding", page: "parents" },
-        { label: "FAQ", page: "parents" },
-        { label: "Apply now", page: "join" },
       ],
     },
   ];
 
+  const sessionLabel = session
+    ? (session.code + " · " + session.year + " — " + (session.isActive ? "live" : "upcoming"))
+    : "Session info loading…";
+
   return (
-    <footer className="footer">
-      <div className="container">
-        {/* ---- Newsletter band ---- */}
-        <div className="footer-newsletter">
-          <div>
-            <span className="eyebrow" style={{color:"var(--gold-400)"}}>STAY CLOSE · THE DIGEST</span>
-            <h3>One letter a month.<br/>No noise.</h3>
-            <p>
-              Cohort stories, mentor essays, missions we're shipping next.
-              Written by the team, sent to your inbox the first Sunday of every month.
+    <React.Fragment>
+      {/* Pre-footer call band — final cinematic push before the footer proper. */}
+      <section className="prefooter" aria-label="Join the movement">
+        <div className="container prefooter-inner">
+          <div className="prefooter-copy">
+            <div className="mono prefooter-eyebrow">JOIN THE MOVEMENT</div>
+            <h2 className="display prefooter-h">
+              The room is open.<br/>
+              <span className="prefooter-h-em">Are you in?</span>
+            </h2>
+            <p className="prefooter-p">
+              Two centres. Four sessions a year. One generation showing up.
+              Apply now or send a mentor — both move the needle.
             </p>
           </div>
-          <NewsletterForm/>
+          <div className="prefooter-actions">
+            <Magnetic strength={12}>
+              <button className="btn btn-gold btn-lg" onClick={go("join")}>Apply for a session →</button>
+            </Magnetic>
+            <button className="btn btn-on-dark-ghost btn-lg" onClick={go("volunteers")}>Become a mentor</button>
+          </div>
         </div>
+      </section>
 
-        {/* ---- Main grid ---- */}
-        <div className="footer-main">
-          <div className="footer-brand">
-            <div style={{display:"flex", alignItems:"center", gap:14, marginBottom:6}}>
-              <BrandLogo size={52}/>
-              <div>
-                <div className="footer-brand-line">Next Generation Genius</div>
-                <div className="footer-brand-tag">An Afrovanguard movement · est. 2024</div>
+      <footer className="footer" role="contentinfo">
+        <div className="container">
+          {/* ---- Live status strip ---- */}
+          <div className="footer-status" aria-live="polite">
+            <div className="footer-status-left">
+              <span className="footer-status-dot" aria-hidden="true"/>
+              <span className="mono footer-status-label">{sessionLabel}</span>
+            </div>
+            <div className="footer-status-right">
+              {auth.isSignedIn && auth.member ? (
+                <button className="footer-status-pill" onClick={go("dashboard")}>
+                  <span className="footer-status-avatar">{(auth.member.fullName || "M").charAt(0)}</span>
+                  <span>Open my dashboard →</span>
+                </button>
+              ) : (
+                <button className="footer-status-pill" onClick={() => auth.openSignIn && auth.openSignIn()}>
+                  <span>Members — sign in →</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* ---- Newsletter band ---- */}
+          <div className="footer-newsletter">
+            <div>
+              <span className="eyebrow" style={{color:"var(--gold-400)"}}>STAY CLOSE · THE DIGEST</span>
+              <h3>One letter a month.<br/>No noise.</h3>
+              <p>
+                Cohort stories, mentor essays, missions we're shipping next.
+                Written by the team, sent to your inbox the first Sunday of every month.
+              </p>
+            </div>
+            <NewsletterForm/>
+          </div>
+
+          {/* ---- Main grid ---- */}
+          <div className="footer-main">
+            <div className="footer-brand">
+              <div className="footer-brand-head">
+                <BrandLogo size={52}/>
+                <div>
+                  <div className="footer-brand-line">Next Generation Genius</div>
+                  <div className="footer-brand-tag">An Afrovanguard movement · est. 2024</div>
+                </div>
+              </div>
+              <p>
+                Not a school. Not a club. The structured runway from teenage potential to African leadership — built mission by mission, week by week.
+              </p>
+              <div className="footer-socials" aria-label="Social channels">
+                <SocialLink label="Instagram" href="https://instagram.com/" icon={SOCIAL_ICONS.instagram}/>
+                <SocialLink label="X / Twitter" href="https://x.com/" icon={SOCIAL_ICONS.x}/>
+                <SocialLink label="YouTube" href="https://youtube.com/" icon={SOCIAL_ICONS.youtube}/>
+                <SocialLink label="TikTok" href="https://tiktok.com/" icon={SOCIAL_ICONS.tiktok}/>
+                <SocialLink label="LinkedIn" href="https://linkedin.com/" icon={SOCIAL_ICONS.linkedin}/>
+              </div>
+              <div className="footer-contact" aria-label="Direct contact">
+                <a className="footer-contact-line" href="mailto:hello@ngg.example">
+                  <span className="footer-contact-icon" aria-hidden="true">✉</span>
+                  hello@ngg.example
+                </a>
+                <a className="footer-contact-line" href="tel:+2348000000000">
+                  <span className="footer-contact-icon" aria-hidden="true">☎</span>
+                  +234 800 000 0000
+                </a>
               </div>
             </div>
-            <p>
-              We are not a school. We are not a club. We are the structured runway from teenage potential to African leadership — built mission by mission, week by week.
-            </p>
-            <div className="footer-socials" aria-label="Social channels">
-              <SocialLink label="Instagram" icon={SOCIAL_ICONS.instagram}/>
-              <SocialLink label="X / Twitter" icon={SOCIAL_ICONS.x}/>
-              <SocialLink label="YouTube" icon={SOCIAL_ICONS.youtube}/>
-              <SocialLink label="TikTok" icon={SOCIAL_ICONS.tiktok}/>
-              <SocialLink label="LinkedIn" icon={SOCIAL_ICONS.linkedin}/>
-            </div>
-          </div>
 
-          {columns.map(col => (
-            <div key={col.h} className="footer-col">
-              <h4>{col.h}</h4>
-              <ul>
-                {col.links.map(l => (
-                  <li key={l.label}>
-                    <button className="footer-link" onClick={go(l.page)}>
-                      {l.label}
-                      {l.badge && <span className="badge-new">{l.badge}</span>}
-                    </button>
+            {columns.map(col => (
+              <div key={col.h} className="footer-col">
+                <h4>{col.h}</h4>
+                <ul>
+                  {col.links.map(l => (
+                    <li key={l.label}>
+                      <button
+                        className="footer-link"
+                        onClick={() => {
+                          if (l.needsAuth && !auth.isSignedIn) { auth.openSignIn && auth.openSignIn(); return; }
+                          setPage(l.page);
+                        }}
+                      >
+                        {l.label}
+                        {l.badge && <span className="badge-new">{l.badge}</span>}
+                        {l.needsAuth && !auth.isSignedIn && <span className="footer-link-lock" aria-hidden="true">·</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+
+            <div className="footer-col footer-col-centres">
+              <h4>Find us</h4>
+              <ul className="footer-centres">
+                {CENTRES.map(c => (
+                  <li key={c.id} className="footer-centre">
+                    <div className="footer-centre-head">
+                      <span className="footer-centre-dot"/>
+                      <span className="footer-centre-name">{c.name}</span>
+                    </div>
+                    <div className="footer-centre-meta">{c.lga}</div>
+                    <div className="mono footer-centre-line">{c.line}</div>
                   </li>
                 ))}
               </ul>
             </div>
-          ))}
-        </div>
+          </div>
 
-        {/* ---- Chapters strip ---- */}
-        <div className="footer-chapters">
-          <span className="footer-chapters-label">{String(CHAPTERS_LIVE.length).padStart(2, "0")} centres · Alimosho, Lagos</span>
-          <div className="footer-chapters-list">
-            {CHAPTERS_LIVE.map(c => (
-              <span key={c} className="chapter-pill">
-                <span className="city-dot"/>{c}
-              </span>
-            ))}
-            {CHAPTERS_COMING.map(c => (
-              <span key={c} className="chapter-pill coming" title="Opening soon">
-                <span className="city-dot"/>{c} · soon
-              </span>
-            ))}
+          {/* ---- Bottom row ---- */}
+          <div className="footer-bottom">
+            <span className="copy">© {new Date().getFullYear()} AFROVANGUARD · ALL RIGHTS RESERVED</span>
+            <div className="legal-links">
+              <button className="legal" onClick={go("parents")}>Privacy</button>
+              <button className="legal" onClick={go("parents")}>Safeguarding</button>
+              <button className="legal" onClick={go("parents")}>Code of conduct</button>
+              <button className="legal" onClick={go("parents")}>Press kit</button>
+            </div>
+            <span className="made">
+              Made with <span className="heart" aria-hidden="true">♥</span> in Lagos
+            </span>
           </div>
         </div>
-
-        {/* ---- Bottom row ---- */}
-        <div className="footer-bottom">
-          <span className="copy">© 2026 AFROVANGUARD · ALL RIGHTS RESERVED</span>
-          <div className="legal-links">
-            <button className="legal" onClick={go("parents")}>Privacy</button>
-            <button className="legal" onClick={go("parents")}>Safeguarding</button>
-            <button className="legal" onClick={go("parents")}>Press kit</button>
-          </div>
-          <span className="made">
-            Made with <span className="heart" aria-hidden="true">♥</span> in Lagos
-          </span>
-        </div>
-      </div>
-    </footer>
+      </footer>
+    </React.Fragment>
   );
 }
 

@@ -6,16 +6,28 @@
 (function (global) {
   const BASE = '/api';
 
+  function getCookie(name) {
+    const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
   async function request(path, opts) {
     opts = opts || {};
+    const method = opts.method || (opts.body ? 'POST' : 'GET');
     const headers = Object.assign({ 'Accept': 'application/json' }, opts.headers || {});
+    // Echo the CSRF cookie back as a header on every write — required by
+    // the PHP `csrf_require()` middleware. GETs are exempt.
+    if (method !== 'GET' && method !== 'HEAD') {
+      const csrf = getCookie('ngg_csrf');
+      if (csrf) headers['X-NGG-CSRF'] = csrf;
+    }
     let body = opts.body;
     if (body && typeof body === 'object' && !(body instanceof FormData)) {
       headers['Content-Type'] = 'application/json';
       body = JSON.stringify(body);
     }
     const res = await fetch(BASE + path, {
-      method: opts.method || (body ? 'POST' : 'GET'),
+      method: method,
       credentials: 'include',
       headers: headers,
       body: body,

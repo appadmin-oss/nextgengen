@@ -41,6 +41,7 @@ const CONFIG = {
 
 function doPost(e) {
   const startedAt = Date.now();
+  let lock = null;
   try {
     const raw = (e && e.postData && e.postData.contents) || '{}';
     const sigHeader = (e && e.parameter && e.parameter.sig) || '';
@@ -54,13 +55,47 @@ function doPost(e) {
     const handler = DISPATCH[op];
     if (!handler) return jsonOut_({ ok: false, error: 'unknown_op:' + op }, 400);
 
+    // Writes that mutate shared sheets need a script-level lock to avoid
+    // racing concurrent invocations (Apps Script allows ~30 concurrent
+    // executions). Reads are lock-free.
+    if (OP_NEEDS_LOCK[op]) {
+      lock = LockService.getScriptLock();
+      const got = lock.tryLock(8000);
+      if (!got) return jsonOut_({ ok: false, error: 'busy', detail: 'Try again in a moment.' }, 503);
+    }
+
     const result = handler(payload, e);
     result.tookMs = Date.now() - startedAt;
     return jsonOut_(result, 200);
   } catch (err) {
+    console.error('[doPost]', err && err.stack || err);
     return jsonOut_({ ok: false, error: 'internal', detail: String(err && err.message || err) }, 500);
+  } finally {
+    if (lock) try { lock.releaseLock(); } catch (_) {}
   }
 }
+
+// Ops that mutate sheets — guarded by ScriptLock.
+const OP_NEEDS_LOCK = {
+  'auth.request': true,
+  'auth.verify': true,
+  'auth.totpSetup': true,
+  'member.update': true,
+  'member.notificationRead': true,
+  'anchor.mission.submit': true,
+  'anchor.mission.verify': true,
+  'anchor.journal.create': true,
+  'event.rsvp': true,
+  'session.ensureYear': true,
+  'admin.members.upsert': true,
+  'admin.mentors.upsert': true,
+  'admin.sessions.upsert': true,
+  'admin.missions.upsert': true,
+  'admin.events.upsert': true,
+  'admin.posts.upsert': true,
+  'admin.promotions.set': true,
+  'admin.broadcast': true,
+};
 
 function doGet(e) {
   // Health check only — never returns data.

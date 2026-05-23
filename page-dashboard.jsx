@@ -234,16 +234,18 @@ function DashboardToday({ today, member, onMutate, session }) {
       // Otherwise open a proof modal.
       if (m.proof === "none") {
         await NGGApi.member.submitMission({ missionId: m.missionId });
+        toast.success("+" + m.xp + " XP locked in", m.title);
         onMutate();
       } else {
         const proof = window.prompt(`Paste a link or short note for "${m.title}":`);
         if (proof !== null) {
           await NGGApi.member.submitMission({ missionId: m.missionId, proofUrl: proof });
+          toast.success("Sent to mentor for review", m.title);
           onMutate();
         }
       }
     } catch (e) {
-      window.alert("Couldn't submit: " + (e.code || e.message));
+      toast.error("Couldn't submit: " + humanError(e), "Try again");
     } finally {
       setBusy(b => Object.assign({}, b, { [m.missionId]: false }));
     }
@@ -517,7 +519,7 @@ function DashboardJournal({ onMutate }) {
       setTimeout(() => setSaved(false), 2400);
       onMutate();
     } catch (e) {
-      window.alert("Couldn't save: " + (e.code || e.message));
+      toast.error("Couldn't save: " + humanError(e));
     } finally {
       setBusy(false);
     }
@@ -556,6 +558,19 @@ function DashboardJournal({ onMutate }) {
 // ----------------------------------------------------------------------------
 // helpers
 // ----------------------------------------------------------------------------
+
+function humanError(e) {
+  if (!e) return "Unknown error.";
+  const code = e.code || e.message || "";
+  const map = {
+    rate_limited: "Too many tries — wait a minute.",
+    unauthorized: "Please sign in again.",
+    upstream_unreachable: "Backend is offline.",
+    upstream_empty: "Backend returned nothing.",
+    upstream_bad_json: "Backend response was unreadable.",
+  };
+  return map[code] || code || "Something went wrong.";
+}
 
 function hourGreeting() {
   const h = new Date().getHours();

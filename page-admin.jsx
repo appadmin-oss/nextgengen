@@ -300,7 +300,7 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
     try {
       await NGGApi.admin.members.upsert(d);
       onSaved();
-    } catch (e) { window.alert(e.code || e.message); }
+    } catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
   };
   return (
@@ -376,7 +376,7 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
   const save = async (e) => {
     e.preventDefault(); setBusy(true);
     try { await NGGApi.admin.mentors.upsert(d); onSaved(); }
-    catch (e) { window.alert(e.code || e.message); }
+    catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
   };
   return (
@@ -450,7 +450,7 @@ function AdminSessionEditor({ data, onClose, onSaved }) {
   const save = async (e) => {
     e.preventDefault(); setBusy(true);
     try { await NGGApi.admin.sessions.upsert(d); onSaved(); }
-    catch (e) { window.alert(e.code || e.message); }
+    catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
   };
   return (
@@ -531,7 +531,7 @@ function AdminMissionEditor({ data, onClose, onSaved }) {
   const save = async (e) => {
     e.preventDefault(); setBusy(true);
     try { await NGGApi.admin.missions.upsert(d); onSaved(); }
-    catch (e) { window.alert(e.code || e.message); }
+    catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
   };
   return (
@@ -610,7 +610,7 @@ function AdminEventEditor({ data, onClose, onSaved }) {
   const save = async (e) => {
     e.preventDefault(); setBusy(true);
     try { await NGGApi.admin.events.upsert(d); onSaved(); }
-    catch (e) { window.alert(e.code || e.message); }
+    catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
   };
   return (
@@ -685,7 +685,7 @@ function AdminPostEditor({ data, onClose, onSaved }) {
   const save = async (e) => {
     e.preventDefault(); setBusy(true);
     try { await NGGApi.admin.posts.upsert(d); onSaved(); }
-    catch (e) { window.alert(e.code || e.message); }
+    catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
   };
   return (
@@ -737,7 +737,7 @@ function AdminBroadcast() {
     if (!window.confirm("Send this to every active member?")) return;
     setBusy(true);
     try { await NGGApi.admin.broadcast(d); setSent(true); setD({ title:"", body:"", linkPage:"" }); setTimeout(() => setSent(false), 2400); }
-    catch (e) { window.alert(e.code || e.message); }
+    catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
   };
   return (

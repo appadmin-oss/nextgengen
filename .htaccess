@@ -68,14 +68,41 @@ AddDefaultCharset UTF-8
 # Security headers
 # ---------------------------------------------------------------
 <IfModule mod_headers.c>
-  Header set X-Content-Type-Options "nosniff"
-  Header set Referrer-Policy "strict-origin-when-cross-origin"
-  Header set X-Frame-Options "SAMEORIGIN"
-  Header set Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=(), interest-cohort=()"
+  Header always set X-DNS-Prefetch-Control "on"
+
+  # Strict-Transport-Security — uncomment AFTER HTTPS is verified and you're
+  # sure you'll keep using it. Hard to roll back from preload.
+  # Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+
+  # Content-Security-Policy — loose because we run in-browser Babel + Google
+  # Fonts. When you switch to a precompiled bundle, remove 'unsafe-inline'
+  # and 'unsafe-eval' from script-src.
+  Header always set Content-Security-Policy "default-src 'self'; \
+script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
+style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
+img-src 'self' data: https: blob:; \
+font-src 'self' https://fonts.gstatic.com data:; \
+connect-src 'self' https://script.google.com https://script.googleusercontent.com; \
+frame-ancestors 'self'; \
+base-uri 'self'; \
+form-action 'self'; \
+object-src 'none'"
 
   # JSX files: we still want them treated as scripts (text/babel)
   <FilesMatch "\.jsx$">
-    Header set Cache-Control "public, max-age=604800"
+    Header set Cache-Control "public, max-age=604800, must-revalidate"
+  </FilesMatch>
+  # JS and CSS — must-revalidate so fixes ship without waiting for cache.
+  <FilesMatch "\.(js|css)$">
+    Header set Cache-Control "public, max-age=604800, must-revalidate"
+  </FilesMatch>
+  # Long-lived assets — immutable cache.
+  <FilesMatch "\.(png|jpe?g|webp|avif|svg|ico|woff2?|ttf)$">
+    Header set Cache-Control "public, max-age=2592000, immutable"
   </FilesMatch>
 </IfModule>
 
@@ -85,7 +112,11 @@ AddDefaultCharset UTF-8
 <FilesMatch "^\.">
   Require all denied
 </FilesMatch>
-<FilesMatch "\.(md|log|sh|zip|gz|sql|bak|swp)$">
+<FilesMatch "\.(md|log|sh|zip|gz|sql|bak|swp|inc|tpl|env)$">
+  Require all denied
+</FilesMatch>
+# Block any accidental upload of config.php at the document root.
+<FilesMatch "^config\.php$">
   Require all denied
 </FilesMatch>
 
@@ -102,10 +133,10 @@ AddDefaultCharset UTF-8
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # Don't rewrite known asset paths
-  RewriteRule ^(assets|uploads)/ - [L]
+  # Don't rewrite known asset paths or the API tree (its own .htaccess wins)
+  RewriteRule ^(assets|uploads|api|vendor|apps-script|docs)/ - [L]
 
-  # Everything else → index.html
+  # Everything else → index.html (SPA fallback)
   RewriteRule ^ index.html [L]
 </IfModule>
 
