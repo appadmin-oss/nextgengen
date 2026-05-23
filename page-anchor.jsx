@@ -2,215 +2,438 @@
    NGG — Anchor 12 dashboard + Member Profile
    ================================================================ */
 
-/* =================== ANCHOR 12 =================== */
+/* =================== ANCHOR 12 — cinematic rebuild =================== */
 function AnchorPage({ setPage }) {
   const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false };
-  const [live, setLive] = useState(null);
+  const [live, setLive] = React.useState(null);
 
-  // Pull the member's live week + session if signed in.
-  useEffect(() => {
+  React.useEffect(() => {
     if (!auth.isSignedIn) return;
     NGGApi.member.dashboard()
-      .then(d => setLive({ week: (d.session && d.session.weekOf) || 1, session: d.session, name: d.member.fullName, totalWeeks: (d.session && d.session.totalWeeks) || 12, xp: d.stats.xp, completed: d.stats.completedThisSession }))
+      .then(d => setLive({
+        week: (d.session && d.session.weekOf) || 1,
+        session: d.session,
+        name: d.member.fullName,
+        totalWeeks: (d.session && d.session.totalWeeks) || 12,
+        xp: d.stats.xp,
+        completed: d.stats.completedThisSession,
+      }))
       .catch(() => {});
   }, [auth.isSignedIn]);
 
-  const currentWeek = live ? Math.min(12, live.week) : 7;
-  const [activeWeek, setActiveWeek] = useState(currentWeek);
-  React.useEffect(() => { setActiveWeek(currentWeek); }, [currentWeek]);
-  const w = WEEKS[Math.max(0, Math.min(11, activeWeek - 1))];
-
   return (
-    <div className="page" data-screen-label="04 Anchor 12">
+    <div className="page anchor-v2" data-screen-label="04 Anchor 12">
       <AnchorMemberBanner auth={auth} live={live} setPage={setPage}/>
-      {/* Header */}
-      <section style={{background:"var(--navy-900)", color:"white", padding:"56px 0 32px", position:"relative", overflow:"hidden"}}>
-        <div style={{position:"absolute", inset:0, backgroundImage:"radial-gradient(60% 50% at 70% 30%, rgba(208,255,58,0.14), transparent 70%)"}}/>
-        <div className="container" style={{position:"relative"}}>
-          <div style={{display:"flex", justifyContent:"space-between", alignItems:"end", gap:32, flexWrap:"wrap"}}>
-            <div>
-              <span className="chip chip-on-dark"><span className="deco-star"/> THE FLAGSHIP EXPERIENCE</span>
-              <h1 className="display" style={{fontSize:"clamp(72px, 11vw, 184px)", margin:"14px 0 0", color:"white", lineHeight:0.86}}>
-                Anchor<span style={{color:"var(--lime)"}}>.12</span>
-              </h1>
-              <p style={{fontSize:19, lineHeight:1.5, color:"rgba(255,255,255,0.78)", maxWidth:600, marginTop:18}}>
-                12 weeks to build identity, discipline and influence. The dashboard below is what every NGGC member sees on Monday morning — your week, your missions, your mentor, your streak.
-              </p>
-            </div>
-            <div style={{display:"flex", gap:14, alignItems:"center"}}>
-              <div style={{textAlign:"right"}}>
-                <div className="mono" style={{fontSize:11, letterSpacing:"0.15em", textTransform:"uppercase", color:"rgba(255,255,255,0.5)"}}>YOUR PROGRESS</div>
-                <div className="display" style={{fontSize:56, color:"var(--lime)", lineHeight:1}}>
-                  {Math.floor((currentWeek-1)/12*100)}<span style={{color:"rgba(255,255,255,0.4)", fontSize:32}}>%</span>
-                </div>
-              </div>
-              <Avatar seed={2} name="Tunde" size={72} ring/>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Week strip */}
-      <section style={{background:"var(--paper)", padding:"32px 0", borderBottom:"1px solid rgba(12,20,50,0.07)", position:"sticky", top:71, zIndex:10, backdropFilter:"blur(12px)"}}>
-        <div className="container">
-          <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18}}>
-            <div style={{display:"flex", alignItems:"center", gap:14}}>
-              <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22}}>The 12-week map</div>
-              <span className="chip chip-gold">Week {currentWeek} of 12</span>
-            </div>
-            <div style={{display:"flex", alignItems:"center", gap:14, fontSize:12, color:"var(--ink-500)"}}>
-              <span><span className="pip" style={{background:"var(--navy-900)"}}/> Done</span>
-              <span><span className="pip" style={{background:"var(--lime)"}}/> Current</span>
-              <span><span className="pip" style={{background:"var(--cream-200)"}}/> Locked</span>
-            </div>
-          </div>
-          <div className="scroll-x">
-            {WEEKS.map(week => {
-              const cls = week.n < currentWeek ? "done" : week.n === currentWeek ? "current" : "locked";
-              const isActive = week.n === activeWeek;
-              return (
-                <button key={week.n} className={"week-pill " + cls} onClick={() => setActiveWeek(week.n)} style={{flexShrink:0, outline: isActive ? "2px solid var(--navy-900)" : "none", outlineOffset:2}}>
-                  <div className="mono" style={{fontSize:10, letterSpacing:"0.15em", opacity:0.7}}>WK {String(week.n).padStart(2,"0")}</div>
-                  <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:16, marginTop:6, letterSpacing:"-0.01em", lineHeight:1.05}}>{week.theme}</div>
-                  <div style={{fontSize:11, marginTop:8, opacity:0.7}}>{week.missions} missions</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Active week dashboard */}
-      <section className="section">
-        <div className="container">
-          <div style={{display:"grid", gridTemplateColumns:"2fr 1fr", gap:32}}>
-            {/* Left main */}
-            <div style={{display:"flex", flexDirection:"column", gap:24}}>
-              {/* Theme card */}
-              <div style={{background:"var(--lime)", color:"var(--navy-900)", padding:"36px 40px", borderRadius:22, position:"relative", overflow:"hidden"}}>
-                <div style={{position:"absolute", bottom:-50, right:-30, fontFamily:"var(--font-display)", fontSize:280, fontWeight:800, color:"rgba(12,20,50,0.06)", lineHeight:1, letterSpacing:"-0.06em"}}>
-                  {String(w.n).padStart(2,"0")}
-                </div>
-                <div className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase"}}>WEEK {String(w.n).padStart(2,"0")} · THEME</div>
-                <h2 className="display" style={{fontSize:80, margin:"10px 0 14px", lineHeight:0.9}}>{w.theme}.</h2>
-                <p style={{fontSize:18, lineHeight:1.4, maxWidth:540, margin:0, fontStyle:"italic"}}>
-                  "{w.verb}"
-                </p>
-                <div style={{display:"flex", gap:24, marginTop:28}}>
-                  <Stat label="MISSIONS" value={`${w.missions}`}/>
-                  <Stat label="XP UP FOR GRABS" value="510"/>
-                  <Stat label="DUE BY" value="SUN"/>
-                </div>
-              </div>
-
-              {/* Missions list */}
-              <div className="card" style={{padding:28}}>
-                <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18}}>
-                  <div>
-                    <div className="eyebrow" style={{color:"var(--gold-500)"}}>THIS WEEK · MISSIONS</div>
-                    <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, marginTop:4}}>{MISSIONS_THIS_WEEK.length} missions · {MISSIONS_THIS_WEEK.filter(m => m.done).length} done</div>
-                  </div>
-                  <span className="chip chip-gold">+510 XP available</span>
-                </div>
-                <div style={{display:"flex", flexDirection:"column", gap:8}}>
-                  {MISSIONS_THIS_WEEK.map(m => <MissionRow key={m.id} m={m}/>)}
-                </div>
-              </div>
-
-              {/* Habits / streaks */}
-              <div style={{display:"grid", gridTemplateColumns:"1.4fr 1fr", gap:18}}>
-                <div className="card" style={{padding:24}}>
-                  <div className="eyebrow" style={{color:"var(--ink-500)"}}>DAILY HABITS · STREAK</div>
-                  <div style={{display:"flex", alignItems:"end", gap:12, marginTop:14}}>
-                    <div className="display" style={{fontSize:88, lineHeight:1, color:"var(--coral)"}}>21</div>
-                    <div style={{paddingBottom:14}}>
-                      <div style={{fontWeight:600}}>days in a row</div>
-                      <div className="mono" style={{fontSize:11, color:"var(--ink-500)", marginTop:4}}>Read · Reflect · Move · Mentor-check</div>
-                    </div>
-                  </div>
-                  <HabitGrid />
-                </div>
-                <div className="card" style={{padding:24, background:"var(--navy-900)", color:"white"}}>
-                  <div className="eyebrow" style={{color:"var(--gold-400)"}}>MENTOR CHECK-IN</div>
-                  <div style={{display:"flex", alignItems:"center", gap:12, marginTop:14}}>
-                    <Avatar seed={11} name="Dr. Ade" size={48}/>
-                    <div>
-                      <div style={{fontWeight:700}}>Dr. Ade</div>
-                      <div className="mono" style={{fontSize:10, color:"rgba(255,255,255,0.55)", marginTop:2}}>YOUR ANCHOR MENTOR · 4 YRS</div>
-                    </div>
-                  </div>
-                  <p style={{fontSize:14, lineHeight:1.5, marginTop:14, color:"rgba(255,255,255,0.85)"}}>
-                    "Tunde — your Week 6 reflection was sharp. This week I want you to lead, not just contribute. Pick one moment to step in front. We'll talk Friday."
-                  </p>
-                  <button className="btn btn-gold btn-sm mt-16">Reply →</button>
-                </div>
-              </div>
-            </div>
-
-            {/* Right sidebar */}
-            <div style={{display:"flex", flexDirection:"column", gap:18}}>
-              <div className="card" style={{padding:22, background:"var(--gold-500)", color:"var(--navy-900)"}}>
-                <div className="eyebrow">WEEKLY XP</div>
-                <div className="display" style={{fontSize:72, lineHeight:1, marginTop:6}}>+340</div>
-                <div className="mono" style={{fontSize:11, marginTop:6}}>OF 510 POSSIBLE</div>
-                <Sparkline data={[120, 80, 240, 180, 340, 410, 340]} color="var(--navy-900)" w={240} h={48}/>
-              </div>
-
-              <div className="card" style={{padding:22}}>
-                <div className="eyebrow" style={{color:"var(--ink-500)"}}>CHALLENGE OF THE WEEK</div>
-                <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:20, marginTop:8, lineHeight:1.1}}>
-                  Lead a session you would normally just attend.
-                </div>
-                <p style={{fontSize:13, color:"var(--ink-500)", lineHeight:1.5, marginTop:10}}>
-                  Stand up. Run the warm-up. Frame the question. Get out of the way. Upload a 60-second reflection by Sunday.
-                </p>
-                <button className="btn btn-primary btn-sm mt-16">Submit challenge →</button>
-              </div>
-
-              <div className="card" style={{padding:22}}>
-                <div className="eyebrow" style={{color:"var(--ink-500)"}}>WEEK 07 · UNLOCKS</div>
-                <div style={{display:"flex", gap:10, marginTop:14, alignItems:"center"}}>
-                  <div className="badge-pin unlocked" style={{width:48, height:48, fontSize:14}}>★</div>
-                  <div>
-                    <div style={{fontWeight:700, fontSize:14}}>Team Builder badge</div>
-                    <div style={{fontSize:11, color:"var(--ink-500)"}}>Complete 4 of 4 missions</div>
-                  </div>
-                </div>
-                <div style={{display:"flex", gap:10, marginTop:12, alignItems:"center"}}>
-                  <div className="badge-pin lime" style={{width:48, height:48, fontSize:14}}>+</div>
-                  <div>
-                    <div style={{fontWeight:700, fontSize:14}}>Level-up to LVL 09</div>
-                    <div style={{fontSize:11, color:"var(--ink-500)"}}>Reach 3,200 XP</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="card" style={{padding:22}}>
-                <div className="eyebrow" style={{color:"var(--ink-500)"}}>COHORT FEED</div>
-                <div style={{display:"flex", flexDirection:"column", gap:10, marginTop:12}}>
-                  {[
-                    { who: "Adaeze", what: "completed 'Field interview'", time: "12m" },
-                    { who: "Zara",   what: "started a new mission",         time: "1h" },
-                    { who: "Kwame",  what: "earned 'Discipline' badge",     time: "3h" },
-                    { who: "Ife",    what: "uploaded a showcase piece",     time: "5h" },
-                  ].map((x, i) => (
-                    <div key={i} style={{display:"flex", alignItems:"center", gap:10, fontSize:13}}>
-                      <Avatar seed={i*2+5} name={x.who} size={28}/>
-                      <div style={{flex:1, lineHeight:1.3}}>
-                        <b>{x.who}</b> <span style={{color:"var(--ink-500)"}}>{x.what}</span>
-                      </div>
-                      <span className="mono" style={{fontSize:10, color:"var(--ink-400)"}}>{x.time}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <AnchorHero setPage={setPage}/>
+      <AnchorManifesto/>
+      <AnchorBookSpread setPage={setPage}/>
+      <AnchorWeeksMap live={live}/>
+      <AnchorWeekDeepDive/>
+      <AnchorStories/>
+      <AnchorProof/>
+      <AnchorCta setPage={setPage} auth={auth}/>
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// IMAGE PLACEHOLDER — drop a real <img> in here when book photos arrive.
+// All `<BookImage slot="..."/>` are search-replaceable.
+// ─────────────────────────────────────────────────────────────────────────
+
+function BookImage({ slot, ratio = "4/5", label, dark = false, src, alt }) {
+  if (src) {
+    return (
+      <div className="anch-img" style={{aspectRatio: ratio}}>
+        <img src={src} alt={alt || label || slot} loading="lazy" decoding="async"/>
+      </div>
+    );
+  }
+  return (
+    <div className={"anch-img anch-img-placeholder" + (dark ? " is-dark" : "")} style={{aspectRatio: ratio}}>
+      <div className="anch-img-grid" aria-hidden="true"/>
+      <div className="anch-img-meta">
+        <div className="mono anch-img-slot">{slot}</div>
+        <div className="anch-img-label">{label || "Book photo"}</div>
+      </div>
+      <div className="anch-img-cross" aria-hidden="true">
+        <span/><span/>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 1 · HERO — cinematic opening with the book as co-star
+// ─────────────────────────────────────────────────────────────────────────
+
+function AnchorHero({ setPage }) {
+  return (
+    <section className="anch-hero">
+      <div className="anch-hero-bg" aria-hidden="true">
+        <div className="anch-hero-bg-grad"/>
+        <div className="anch-hero-bg-glow"/>
+      </div>
+      <div className="container anch-hero-inner">
+        <div className="anch-hero-text">
+          <div className="mono anch-hero-eyebrow reveal" data-reveal>THE FLAGSHIP EXPERIENCE · A 12-WEEK BUILD</div>
+          <h1 className="anch-hero-h1">
+            <Kinetic as="span" text="Twelve weeks." by="word"/><br/>
+            <span className="anch-hero-h1-em">
+              <Kinetic as="span" text="One Anchor." by="word" delay={280}/>
+            </span><br/>
+            <Kinetic as="span" text="A generation" by="word" delay={520}/><br/>
+            <Kinetic as="span" text="built on purpose." by="word" delay={760}/>
+          </h1>
+          <p className="anch-hero-p reveal" data-reveal style={{"--reveal-delay":"600ms"}}>
+            Anchor 12 is the heart of NGG. Every member walks the same twelve weeks —
+            structured missions from <em>The Anchor</em>, weekly mentor sessions at
+            Egbeda or Ayobo, and a record of every promise kept.
+          </p>
+          <div className="anch-hero-ctas reveal" data-reveal style={{"--reveal-delay":"800ms"}}>
+            <Magnetic strength={10}>
+              <button className="btn btn-gold btn-lg" onClick={() => setPage("book")}>
+                Read the Anchor book →
+              </button>
+            </Magnetic>
+            <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("join")}>
+              Apply for the next session
+            </button>
+          </div>
+          <div className="anch-hero-meta reveal" data-reveal style={{"--reveal-delay":"1000ms"}}>
+            <div>
+              <div className="mono anch-hero-meta-l">PUBLISHED IN</div>
+              <div className="anch-hero-meta-v">Lagos · 2024</div>
+            </div>
+            <div>
+              <div className="mono anch-hero-meta-l">CHAPTERS</div>
+              <div className="anch-hero-meta-v">12</div>
+            </div>
+            <div>
+              <div className="mono anch-hero-meta-l">FOR AGES</div>
+              <div className="anch-hero-meta-v">10 – 17</div>
+            </div>
+          </div>
+        </div>
+        <div className="anch-hero-art">
+          <BookImage slot="HERO-01" ratio="3/4" label="The Anchor — front cover" dark/>
+          <div className="anch-hero-art-shadow" aria-hidden="true"/>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 2 · MANIFESTO — three pillars, restrained, editorial
+// ─────────────────────────────────────────────────────────────────────────
+
+const PILLARS = [
+  { n: "01", verb: "Identity",   line: "Define who you are before others define you.",      detail: "Weeks 1 – 4. You will write the line you stand on. You will rehearse it until it stops sounding strange in your own mouth." },
+  { n: "02", verb: "Discipline", line: "The promises you keep when nobody is watching.",    detail: "Weeks 5 – 8. Daily structure. Reading, reflection, movement, mentor check-in. The streak is the point." },
+  { n: "03", verb: "Influence",  line: "Build a room. Bring people who weren't invited.",   detail: "Weeks 9 – 12. Public work, in front of real audiences. Showcase your craft. Earn a Vanguard pin." },
+];
+
+function AnchorManifesto() {
+  return (
+    <section className="anch-section anch-manifesto">
+      <div className="container">
+        <div className="anch-section-head reveal" data-reveal>
+          <div className="mono anch-section-eyebrow">THE ARC</div>
+          <h2 className="anch-section-h">Three movements,<br/>twelve weeks, one runway.</h2>
+        </div>
+        <ol className="anch-pillars">
+          {PILLARS.map((p, i) => (
+            <li key={p.n} className="anch-pillar reveal" data-reveal style={{"--reveal-delay": (i * 120) + "ms"}}>
+              <span className="anch-pillar-n">{p.n}</span>
+              <div className="anch-pillar-body">
+                <h3 className="anch-pillar-verb">{p.verb}.</h3>
+                <p className="anch-pillar-line">{p.line}</p>
+                <p className="anch-pillar-detail">{p.detail}</p>
+              </div>
+              <span className="anch-pillar-tick" aria-hidden="true"/>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 3 · THE BOOK — editorial spread, multiple image slots
+// ─────────────────────────────────────────────────────────────────────────
+
+function AnchorBookSpread({ setPage }) {
+  return (
+    <section className="anch-section anch-book">
+      <div className="container">
+        <div className="anch-book-grid">
+          <div className="anch-book-art reveal" data-reveal>
+            <BookImage slot="BOOK-01" ratio="3/4" label="The Anchor — front cover"/>
+            <div className="anch-book-art-stack">
+              <BookImage slot="BOOK-02" ratio="3/4" label="Stacked spines"/>
+            </div>
+          </div>
+          <div className="anch-book-copy reveal" data-reveal style={{"--reveal-delay":"160ms"}}>
+            <div className="mono anch-section-eyebrow">THE FIELD MANUAL</div>
+            <h2 className="anch-section-h">Every mission lives <em>inside the book.</em></h2>
+            <p className="anch-book-lede">
+              The Anchor is the printed companion to the program. Twelve chapters,
+              one per week. Read the chapter, then run the missions in your
+              dashboard. The work is the point.
+            </p>
+            <ul className="anch-book-list">
+              <li><span/>Read the chapter on Saturday at your centre.</li>
+              <li><span/>Run the missions Monday – Friday.</li>
+              <li><span/>Verify with your mentor on Saturday.</li>
+              <li><span/>Reflect — privately or with the cohort.</li>
+            </ul>
+            <div className="anch-book-ctas">
+              <button className="btn btn-primary btn-lg" onClick={() => setPage("book")}>Open the book page →</button>
+              <button className="btn btn-ghost btn-lg" onClick={() => setPage("join")}>Apply for a session</button>
+            </div>
+          </div>
+        </div>
+        <div className="anch-book-strip">
+          <BookImage slot="BOOK-03" ratio="3/4" label="Sample chapter"/>
+          <BookImage slot="BOOK-04" ratio="3/4" label="Mission prompt"/>
+          <BookImage slot="BOOK-05" ratio="3/4" label="Reflection page"/>
+          <BookImage slot="BOOK-06" ratio="3/4" label="End of week"/>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 4 · THE 12 WEEKS — clean two-column map
+// ─────────────────────────────────────────────────────────────────────────
+
+function AnchorWeeksMap({ live }) {
+  const currentWeek = live ? Math.min(12, live.week) : 0;
+  const items = WEEKS.map(w => ({
+    n: w.n,
+    theme: w.theme,
+    verb: w.verb,
+    missions: w.missions,
+    status: currentWeek === 0
+      ? "future"
+      : (w.n < currentWeek ? "done" : w.n === currentWeek ? "current" : "future"),
+  }));
+  const colA = items.slice(0, 6);
+  const colB = items.slice(6, 12);
+  return (
+    <section className="anch-section anch-weeks">
+      <div className="container">
+        <div className="anch-section-head reveal" data-reveal>
+          <div className="mono anch-section-eyebrow">THE 12-WEEK MAP</div>
+          <h2 className="anch-section-h">{currentWeek ? <>You are on <span className="anch-current-mark">Week {currentWeek}</span>. Here's where you've been, and where you're going.</> : <>Every week has a theme.<br/>Every theme is a building block.</>}</h2>
+        </div>
+        <div className="anch-weeks-grid">
+          <ul className="anch-weeks-col">
+            {colA.map((w, i) => <AnchorWeekRow key={w.n} w={w} idx={i}/>)}
+          </ul>
+          <ul className="anch-weeks-col">
+            {colB.map((w, i) => <AnchorWeekRow key={w.n} w={w} idx={i + 6}/>)}
+          </ul>
+        </div>
+        <div className="anch-weeks-legend reveal" data-reveal>
+          <span><span className="anch-pip done"/> Completed</span>
+          <span><span className="anch-pip current"/> Active week</span>
+          <span><span className="anch-pip future"/> Ahead</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AnchorWeekRow({ w, idx }) {
+  return (
+    <li className={"anch-week-row is-" + w.status + " reveal"} data-reveal style={{"--reveal-delay": (idx * 40) + "ms"}}>
+      <div className="anch-week-n">{String(w.n).padStart(2, "0")}</div>
+      <div className="anch-week-body">
+        <div className="anch-week-theme">{w.theme}</div>
+        <div className="anch-week-verb">{w.verb}</div>
+      </div>
+      <div className="anch-week-side">
+        <span className="anch-week-missions">{w.missions} missions</span>
+        <span className={"anch-pip " + w.status}/>
+      </div>
+    </li>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 5 · A WEEK INSIDE — editorial deep-dive on one week
+// ─────────────────────────────────────────────────────────────────────────
+
+const SAMPLE_WEEK = {
+  n: 3,
+  theme: "Communication",
+  verb: "Be understood. Then be remembered.",
+  missions: [
+    { id: 1, t: "Record a 90-second voice note that argues a single idea.", type: "Speak", min: 15 },
+    { id: 2, t: "Read aloud, in front of someone older, for ten minutes.",  type: "Read",  min: 10 },
+    { id: 3, t: "Lead one conversation this week. Don't interrupt once.",   type: "Practice", min: 0 },
+    { id: 4, t: "Write the email you've been avoiding. Send it Friday.",    type: "Make", min: 20 },
+  ],
+  reflection: "Where did your voice carry, and where did it disappear?",
+};
+
+function AnchorWeekDeepDive() {
+  return (
+    <section className="anch-section anch-deep">
+      <div className="container">
+        <div className="anch-section-head reveal" data-reveal>
+          <div className="mono anch-section-eyebrow">A WEEK INSIDE · WK 03</div>
+          <h2 className="anch-section-h">What a Monday-to-Saturday looks like.</h2>
+        </div>
+        <div className="anch-deep-grid">
+          <div className="anch-deep-theme reveal" data-reveal>
+            <div className="mono anch-deep-week">WEEK 03</div>
+            <h3 className="anch-deep-h">{SAMPLE_WEEK.theme}.</h3>
+            <p className="anch-deep-verb">"{SAMPLE_WEEK.verb}"</p>
+            <div className="anch-deep-stats">
+              <div><div className="anch-deep-n">{SAMPLE_WEEK.missions.length}</div><div className="mono anch-deep-l">MISSIONS</div></div>
+              <div><div className="anch-deep-n">~3h</div><div className="mono anch-deep-l">YOUR TIME</div></div>
+              <div><div className="anch-deep-n">+340</div><div className="mono anch-deep-l">XP MAX</div></div>
+            </div>
+          </div>
+          <ol className="anch-deep-missions">
+            {SAMPLE_WEEK.missions.map((m, i) => (
+              <li key={m.id} className="anch-deep-mission reveal" data-reveal style={{"--reveal-delay": (i * 80) + "ms"}}>
+                <div className="anch-deep-mission-n">M{String(i + 1).padStart(2, "0")}</div>
+                <div className="anch-deep-mission-body">
+                  <div className="anch-deep-mission-t">{m.t}</div>
+                  <div className="mono anch-deep-mission-meta">{m.type.toUpperCase()}{m.min ? " · " + m.min + " MIN" : ""}</div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+        <div className="anch-deep-reflect reveal" data-reveal>
+          <div className="mono anch-deep-reflect-l">SATURDAY REFLECTION PROMPT</div>
+          <p className="anch-deep-reflect-q">"{SAMPLE_WEEK.reflection}"</p>
+        </div>
+        <div className="anch-deep-photos">
+          <BookImage slot="WEEK-01" ratio="3/2" label="Saturday session — Egbeda"/>
+          <BookImage slot="WEEK-02" ratio="3/2" label="Mission in the field"/>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 6 · STORIES — three portrait cards
+// ─────────────────────────────────────────────────────────────────────────
+
+const STORIES = [
+  { id: 1, name: "Adaeze, 15", centre: "Egbeda", track: "Music",          quote: "Week three was the one. I argued one idea in 90 seconds. People stopped scrolling.", badge: "Identity" },
+  { id: 2, name: "Tunde, 16",  centre: "Ayobo",  track: "Tech",           quote: "Mentor said: 'submit it Friday'. I sent it. The CTO replied on Monday. NGG made me unembarrassed.", badge: "Influence" },
+  { id: 3, name: "Zara, 14",   centre: "Egbeda", track: "Public Speaking", quote: "I read aloud to my grandmother for ten minutes every night. My voice changed.", badge: "Discipline" },
+];
+
+function AnchorStories() {
+  return (
+    <section className="anch-section anch-stories">
+      <div className="container">
+        <div className="anch-section-head reveal" data-reveal>
+          <div className="mono anch-section-eyebrow">FROM THE COHORT</div>
+          <h2 className="anch-section-h">Three teenagers.<br/>One Anchor.</h2>
+        </div>
+        <div className="anch-stories-grid">
+          {STORIES.map((s, i) => (
+            <article key={s.id} className="anch-story reveal" data-reveal style={{"--reveal-delay": (i * 140) + "ms"}}>
+              <BookImage slot={"STORY-0" + (i + 1)} ratio="4/5" label={s.name + " portrait"}/>
+              <div className="anch-story-body">
+                <div className="anch-story-head">
+                  <div className="anch-story-name">{s.name}</div>
+                  <div className="mono anch-story-meta">{s.track.toUpperCase()} · {s.centre.toUpperCase()}</div>
+                </div>
+                <p className="anch-story-q">"{s.quote}"</p>
+                <div className="anch-story-badge">
+                  <span className="anch-story-badge-dot"/>
+                  <span className="mono">{s.badge.toUpperCase()} CHAPTER</span>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 7 · PROOF — numbers in a wide cinematic band
+// ─────────────────────────────────────────────────────────────────────────
+
+const PROOF = [
+  { n: "94%",   l: "Cohort completion rate" },
+  { n: "12,400+", l: "Missions verified in 2025" },
+  { n: "164",   l: "Active NGG members" },
+  { n: "02",    l: "Centres · Alimosho, Lagos" },
+];
+
+function AnchorProof() {
+  return (
+    <section className="anch-proof">
+      <div className="container">
+        <div className="anch-proof-grid">
+          {PROOF.map((p, i) => (
+            <div key={i} className="anch-proof-cell reveal" data-reveal style={{"--reveal-delay": (i * 100) + "ms"}}>
+              <div className="anch-proof-n">{p.n}</div>
+              <div className="mono anch-proof-l">{p.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 8 · CTA — final cinematic push
+// ─────────────────────────────────────────────────────────────────────────
+
+function AnchorCta({ setPage, auth }) {
+  return (
+    <section className="anch-cta">
+      <div className="container anch-cta-inner">
+        <div className="mono anch-cta-eyebrow">YOUR MOVE</div>
+        <h2 className="anch-cta-h">
+          <Kinetic as="span" text="Twelve weeks" by="word"/><br/>
+          <span className="anch-cta-h-em">
+            <Kinetic as="span" text="from today." by="word" delay={260}/>
+          </span>
+        </h2>
+        <p className="anch-cta-p">
+          Applications close two weeks before each session begins.
+          Two centres, four sessions a year, one cohort at a time.
+        </p>
+        <div className="anch-cta-actions">
+          <Magnetic strength={14}>
+            <button className="btn btn-gold btn-lg" onClick={() => setPage("join")}>Apply now →</button>
+          </Magnetic>
+          {auth && auth.isSignedIn ? (
+            <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("dashboard")}>Open my dashboard</button>
+          ) : (
+            <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("book")}>Read the book first</button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// LEGACY — the old in-line dashboard sections below are no longer used by
+// the rebuilt AnchorPage above, but the helper components (Stat, MissionRow,
+// HabitGrid, ProfilePage) are still referenced elsewhere so they remain.
+// ─────────────────────────────────────────────────────────────────────────
+
 
 function Stat({ label, value }) {
   return (
