@@ -33,27 +33,33 @@ function Hero({ setPage }) {
       <div className="container" style={{padding:"112px 28px 96px"}}>
         <div style={{display:"grid", gridTemplateColumns:"1.45fr 1fr", gap:64, alignItems:"center", minHeight:560}}>
           <div>
-            <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:32, flexWrap:"wrap"}}>
+            <div data-reveal className="reveal" style={{display:"flex", alignItems:"center", gap:10, marginBottom:32, flexWrap:"wrap"}}>
               <span className="live-dot"/>
               <span className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.7)"}}>
-                Summer 2026 · applications open
+                Applications open · current session
               </span>
               <span style={{opacity:0.4, color:"white"}}>·</span>
               <span className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.6)"}}>
-                09 cities
+                02 centres · Alimosho
               </span>
             </div>
             <h1 className="display" style={{fontSize:"clamp(52px, 6.4vw, 108px)", margin:0, color:"white", lineHeight:0.94}}>
-              Africa's next geniuses<br/>
-              are <em className="shimmer-gold" style={{fontStyle:"normal"}}>not waiting</em>.
+              <Kinetic as="span" text="Africa's next geniuses" by="word"/><br/>
+              <Kinetic as="span" text="are " by="word" delay={300}/>
+              <em className="shimmer-gold" style={{fontStyle:"normal"}}>
+                <Kinetic as="span" text="not waiting" by="word" delay={420}/>
+              </em>
+              <Kinetic as="span" text="." by="word" delay={620}/>
             </h1>
-            <p style={{fontSize:19, lineHeight:1.55, color:"rgba(255,255,255,0.82)", maxWidth:560, marginTop:28}}>
+            <p data-reveal className="reveal" style={{fontSize:19, lineHeight:1.55, color:"rgba(255,255,255,0.82)", maxWidth:560, marginTop:28, "--reveal-delay":"500ms"}}>
               A twelve-week growth journey for teenagers, 10–17. From summer student to vanguard leader — by mission, mentorship and the discipline of public work.
             </p>
-            <div style={{display:"flex", gap:12, marginTop:40, flexWrap:"wrap"}}>
-              <button className="btn btn-gold btn-lg" onClick={() => setPage("summer")}>
-                Join the Summer Program →
-              </button>
+            <div data-reveal className="reveal" style={{display:"flex", gap:12, marginTop:40, flexWrap:"wrap", "--reveal-delay":"650ms"}}>
+              <Magnetic>
+                <button className="btn btn-gold btn-lg" onClick={() => setPage("summer")}>
+                  Join the Summer Program →
+                </button>
+              </Magnetic>
               <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("anchor")}>
                 Explore Anchor 12
               </button>

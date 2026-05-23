@@ -4,12 +4,25 @@
 
 /* =================== ANCHOR 12 =================== */
 function AnchorPage({ setPage }) {
-  const [activeWeek, setActiveWeek] = useState(7);
-  const currentWeek = 7;
-  const w = WEEKS[activeWeek - 1];
+  const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false };
+  const [live, setLive] = useState(null);
+
+  // Pull the member's live week + session if signed in.
+  useEffect(() => {
+    if (!auth.isSignedIn) return;
+    NGGApi.member.dashboard()
+      .then(d => setLive({ week: (d.session && d.session.weekOf) || 1, session: d.session, name: d.member.fullName, totalWeeks: (d.session && d.session.totalWeeks) || 12, xp: d.stats.xp, completed: d.stats.completedThisSession }))
+      .catch(() => {});
+  }, [auth.isSignedIn]);
+
+  const currentWeek = live ? Math.min(12, live.week) : 7;
+  const [activeWeek, setActiveWeek] = useState(currentWeek);
+  React.useEffect(() => { setActiveWeek(currentWeek); }, [currentWeek]);
+  const w = WEEKS[Math.max(0, Math.min(11, activeWeek - 1))];
 
   return (
     <div className="page" data-screen-label="04 Anchor 12">
+      <AnchorMemberBanner auth={auth} live={live} setPage={setPage}/>
       {/* Header */}
       <section style={{background:"var(--navy-900)", color:"white", padding:"56px 0 32px", position:"relative", overflow:"hidden"}}>
         <div style={{position:"absolute", inset:0, backgroundImage:"radial-gradient(60% 50% at 70% 30%, rgba(208,255,58,0.14), transparent 70%)"}}/>
@@ -404,6 +417,54 @@ function ProfilePage({ setPage }) {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Member-aware banner: shows live progress for signed-in members,
+// invites sign-in for everyone else.
+// ----------------------------------------------------------------------------
+function AnchorMemberBanner({ auth, live, setPage }) {
+  if (auth.loading) return null;
+  if (!auth.isSignedIn) {
+    return (
+      <div className="anchor-banner anchor-banner-cta">
+        <div className="container anchor-banner-row">
+          <div>
+            <span className="mono anchor-banner-eyebrow">PREVIEW · NOT YOUR DATA</span>
+            <span className="anchor-banner-text">You're viewing a demo. Sign in to track your real Anchor 12 progress.</span>
+          </div>
+          <div className="anchor-banner-actions">
+            <button className="btn btn-primary btn-sm" onClick={() => auth.openSignIn && auth.openSignIn()}>Sign in →</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (!live) {
+    return (
+      <div className="anchor-banner">
+        <div className="container anchor-banner-row">
+          <span className="mono">LOADING YOUR PROGRESS…</span>
+        </div>
+      </div>
+    );
+  }
+  const sessionLabel = live.session ? (live.session.code + " · " + live.session.year) : "OFF-SESSION";
+  return (
+    <div className="anchor-banner anchor-banner-live">
+      <div className="container anchor-banner-row">
+        <div>
+          <span className="mono anchor-banner-eyebrow">LIVE · {sessionLabel}</span>
+          <span className="anchor-banner-text">
+            {(live.name || "Member").split(" ")[0]} — you're on Week {live.week} of {live.totalWeeks || 12}. {live.completed} missions verified this session · {live.xp} XP.
+          </span>
+        </div>
+        <div className="anchor-banner-actions">
+          <button className="btn btn-gold btn-sm" onClick={() => setPage("dashboard")}>Open dashboard →</button>
+        </div>
+      </div>
     </div>
   );
 }

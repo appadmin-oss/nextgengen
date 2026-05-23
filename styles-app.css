@@ -1190,7 +1190,34 @@
 }
 
 /* ============================================================
-   8. RESPONSIVE — final pass for new components
+   8. ANCHOR BANNER (member-aware top strip)
+   ============================================================ */
+.anchor-banner {
+  background: var(--cream-100);
+  border-bottom: 1px solid rgba(12, 20, 50, 0.08);
+  padding: 14px 0;
+  font-size: 14px;
+}
+.anchor-banner-cta { background: rgba(245, 176, 38, 0.14); }
+.anchor-banner-live { background: rgba(208, 255, 58, 0.15); }
+.anchor-banner-row {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 16px; flex-wrap: wrap;
+}
+.anchor-banner-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--ink-500);
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.6);
+  border-radius: 999px;
+  margin-right: 12px;
+}
+.anchor-banner-text { color: var(--ink-900); }
+.anchor-banner-actions { display: flex; gap: 8px; }
+
+/* ============================================================
+   9. RESPONSIVE — final pass for new components
    ============================================================ */
 
 @media (max-width: 820px) {
