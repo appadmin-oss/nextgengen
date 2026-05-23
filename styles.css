@@ -48,6 +48,10 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
+/* Prevent any off-screen element (drawer, decorative blobs, etc.) from
+   widening the layout viewport on mobile — without `clip` mobile browsers
+   auto-zoom to fit overflow, which makes everything look shrunk. */
+html, body { overflow-x: clip; max-width: 100vw; }
 body {
   font-family: var(--font-body);
   background: var(--paper);
@@ -1167,6 +1171,9 @@ body::before {
   z-index: 99;
   pointer-events: none;
   visibility: hidden;
+  /* Clip the translated panel so it never widens the layout viewport. */
+  overflow: hidden;
+  contain: layout paint;
 }
 .mobile-drawer.is-open { pointer-events: auto; visibility: visible; }
 .mobile-drawer-scrim {
@@ -1358,9 +1365,13 @@ body.no-scroll { overflow: hidden; }
   [style*="grid-template-columns: 2fr 1fr 1fr"],
   [style*="grid-template-columns: 2fr 1fr 1.4fr"],
   [style*="grid-template-columns: 140px 1fr"] {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: minmax(0, 1fr) !important;
     grid-template-rows: auto !important;
   }
+  /* Prevent any grid child from forcing its track wider than the viewport.
+     Without this, a single long string or big number element blows the
+     column out (a classic CSS Grid `min-content` issue). */
+  [style*="display: grid"] > * { min-width: 0; }
 
   /* Allow the special 14-col anchor track to scroll horizontally rather than crush */
   [style*="grid-template-columns: repeat(14, 1fr)"] {
@@ -1381,6 +1392,21 @@ body.no-scroll { overflow: hidden; }
   /* Stat tile — shrink huge numbers */
   .stat-tile .num { font-size: 44px !important; }
   .big-num { font-size: clamp(56px, 14vw, 96px) !important; }
+
+  /* Cap any oversized display heading so it always fits the viewport.
+     Inline styles use clamp() with min values up to 72-80px which still
+     overflow on a 390px screen. */
+  .display,
+  h1.display,
+  h2.display,
+  h3.display {
+    font-size: clamp(40px, 11vw, 56px) !important;
+    line-height: 0.95 !important;
+  }
+  /* Slightly larger for true hero h1s with `clamp(72px, 11vw, 184px)` etc. */
+  h1.display[style*="clamp(72px"] {
+    font-size: clamp(48px, 13vw, 64px) !important;
+  }
 
   /* Hero specific shrink */
   .hero { min-height: auto !important; padding-bottom: 40px !important; }
@@ -1415,6 +1441,24 @@ body.no-scroll { overflow: hidden; }
 
   /* Reset any forced minHeight on hero columns */
   [style*="min-height: 560"] { min-height: 0 !important; }
+
+  /* Featured photos shrink on small screens (let aspect-ratio drive size). */
+  [style*="height: 520"],
+  [style*="height: 480"],
+  [style*="height: 460"],
+  [style*="height: 440"],
+  [style*="height: 420"],
+  [style*="height: 400"],
+  [style*="height: 380"],
+  [style*="height: 360"],
+  [style*="height: 340"],
+  [style*="height: 320"],
+  [style*="height: 300"],
+  [style*="height: 280"] {
+    height: auto !important;
+  }
+  /* All images stay inside their column. */
+  img { max-width: 100%; }
 
   /* The hero right-column collage: normalize so its absolute-positioned
      children stack predictably on small screens. */

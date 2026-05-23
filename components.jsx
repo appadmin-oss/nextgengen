@@ -48,6 +48,7 @@ function Photo({ src, name, label, ratio = "1/1", style = {}, overlay = false, d
         borderRadius: 18,
         background: dark ? "var(--navy-800)" : "var(--cream-100)",
         ...style,
+        maxWidth: "100%",
       }}
     >
       {url ? (
