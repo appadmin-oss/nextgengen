@@ -370,19 +370,41 @@ function AnchorStories() {
 // 7 · PROOF — numbers in a wide cinematic band
 // ─────────────────────────────────────────────────────────────────────────
 
-const PROOF = [
-  { n: "94%",   l: "Cohort completion rate" },
-  { n: "12,400+", l: "Missions verified in 2025" },
-  { n: "164",   l: "Active NGG members" },
-  { n: "02",    l: "Centres · Alimosho, Lagos" },
-];
-
 function AnchorProof() {
+  const [stats, setStats] = React.useState(null);
+  const [err, setErr] = React.useState(false);
+
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.public.stats()
+      .then(r => { if (alive) setStats(r.stats || {}); })
+      .catch(() => { if (alive) setErr(true); });
+    return () => { alive = false; };
+  }, []);
+
+  // While loading we render the cells with em-dashes so the layout doesn't
+  // jump when real numbers arrive. If the upstream is unreachable we hide
+  // the section entirely rather than show fake numbers.
+  if (err) return null;
+
+  const fmt = (n) => (n === undefined || n === null) ? "—" : new Intl.NumberFormat("en").format(n);
+  const cells = stats ? [
+    { n: stats.completionRate ? stats.completionRate + "%" : "—", l: "Cohort completion rate" },
+    { n: fmt(stats.missionsVerified),                              l: "Anchor missions verified" },
+    { n: fmt(stats.activeMembers),                                 l: "Active members today" },
+    { n: String(stats.centres || 0).padStart(2, "0"),              l: "Centres · Alimosho, Lagos" },
+  ] : [
+    { n: "—", l: "Cohort completion rate" },
+    { n: "—", l: "Anchor missions verified" },
+    { n: "—", l: "Active members today" },
+    { n: "—", l: "Centres · Alimosho, Lagos" },
+  ];
+
   return (
     <section className="anch-proof">
       <div className="container">
-        <div className="anch-proof-grid">
-          {PROOF.map((p, i) => (
+        <div className="anch-proof-grid" aria-busy={!stats}>
+          {cells.map((p, i) => (
             <div key={i} className="anch-proof-cell reveal" data-reveal style={{"--reveal-delay": (i * 100) + "ms"}}>
               <div className="anch-proof-n">{p.n}</div>
               <div className="mono anch-proof-l">{p.l}</div>

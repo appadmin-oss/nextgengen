@@ -34,10 +34,14 @@ function csrf_require(): void {
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     if ($method !== 'POST' && $method !== 'PUT' && $method !== 'DELETE' && $method !== 'PATCH') return;
 
-    // Auth endpoints (request + verify) are CSRF-exempt because the user
-    // isn't logged in yet and the OTP itself acts as the proof-of-control.
+    // A small set of write endpoints are CSRF-exempt because they happen
+    // before any session/cookie state is established:
+    //   - auth/request  → user has no session yet; the OTP IS the proof
+    //   - auth/verify   → same
+    //   - public/newsletter → fully public, IP rate-limited at the server
     $path = $_SERVER['SCRIPT_NAME'] ?? '';
     if (preg_match('#/api/auth/(request|verify)\\.php$#', $path)) return;
+    if (preg_match('#/api/public/newsletter\\.php$#', $path))     return;
 
     $cookie = $_COOKIE[csrf_cookie_name()] ?? '';
     $header = $_SERVER['HTTP_X_NGG_CSRF'] ?? '';

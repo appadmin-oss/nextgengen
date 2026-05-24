@@ -120,19 +120,40 @@ function Hero({ setPage }) {
   );
 }
 
-/* =========== Stat bar =========== */
+/* =========== Stat bar — driven by /api/public/stats.php =========== */
 function StatBar() {
+  const [stats, setStats] = React.useState(null);
+  const [err, setErr]     = React.useState(false);
+
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.public.stats()
+      .then(r => { if (alive) setStats(r.stats || {}); })
+      .catch(() => { if (alive) setErr(true); });
+    return () => { alive = false; };
+  }, []);
+
+  if (err) return null;
+
+  const cells = [
+    { num: stats ? stats.activeMembers    : null, suffix: "+", label: "Teen creators in motion" },
+    { num: stats ? stats.missionsVerified : null, suffix: "+", label: "Anchor missions verified" },
+    { num: stats ? stats.mentors          : null, suffix: "+", label: "Volunteer mentors" },
+    { num: stats ? stats.centres          : null, suffix: "",  label: "Centres · Alimosho, Lagos", goldNum: true },
+  ];
+
   return (
     <section style={{background:"var(--navy-900)", color:"white"}}>
       <div className="container" style={{padding:"64px 28px"}}>
-        <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:0}}>
-          {STATS.map((s, i) => (
-            <div key={s.label} className="reveal" data-reveal style={{padding:"8px 28px", borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.08)", "--reveal-delay": (i * 120) + "ms"}}>
-              <div className="display" style={{fontSize:96, lineHeight:1, color: i === 3 ? "var(--gold-500)" : "white"}}>
-                <CountUp to={s.num}/>{i < 3 && <span style={{color:"var(--gold-500)"}}>+</span>}
+        <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:0}} aria-busy={!stats}>
+          {cells.map((c, i) => (
+            <div key={c.label} className="reveal" data-reveal style={{padding:"8px 28px", borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.08)", "--reveal-delay": (i * 120) + "ms"}}>
+              <div className="display" style={{fontSize:96, lineHeight:1, color: c.goldNum ? "var(--gold-500)" : "white"}}>
+                {c.num === null ? <span style={{opacity:0.3}}>—</span> : <CountUp to={String(c.num)}/>}
+                {c.suffix && c.num !== null && <span style={{color:"var(--gold-500)"}}>{c.suffix}</span>}
               </div>
               <div className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.6)", marginTop:14}}>
-                {s.label}
+                {c.label}
               </div>
             </div>
           ))}

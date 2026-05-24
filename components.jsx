@@ -489,33 +489,64 @@ function SocialLink({ name, href = "#", icon, label }) {
 }
 
 /* ---- Newsletter form ---- */
-function NewsletterForm() {
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
-  const onSubmit = (e) => {
+function NewsletterForm({ source = "footer" }) {
+  const [email, setEmail] = React.useState("");
+  const [state, setState] = React.useState("idle"); // idle | busy | sent | error
+  const [err, setErr]     = React.useState("");
+
+  const onSubmit = async (e) => {
     e.preventDefault();
-    if (!email || !email.includes("@")) return;
-    setSent(true);
-    setTimeout(() => { setSent(false); setEmail(""); }, 3200);
+    const v = email.trim();
+    if (!v) return;
+    setState("busy"); setErr("");
+    try {
+      await NGGApi.public.newsletter(v, source);
+      setState("sent");
+      if (typeof toast !== "undefined") toast.success("You're in. Watch your inbox.", "Newsletter");
+      setTimeout(() => { setState("idle"); setEmail(""); }, 4200);
+    } catch (e) {
+      setState("error");
+      const code = e.code || e.message;
+      const map = {
+        rate_limited:        "Too many tries — wait a few minutes.",
+        bad_email:           "That email doesn't look right.",
+        missing_field_email: "Enter your email first.",
+        upstream_unreachable:"We can't reach the server right now.",
+      };
+      setErr(map[code] || "Couldn't subscribe. Try again.");
+      if (typeof toast !== "undefined") toast.error(map[code] || "Couldn't subscribe.", "Newsletter");
+    }
   };
+
+  const sent = state === "sent";
+  const busy = state === "busy";
+
   return (
     <div>
-      <form className={"newsletter-form" + (sent ? " is-sent" : "")} onSubmit={onSubmit}>
+      <form className={"newsletter-form" + (sent ? " is-sent" : "")} onSubmit={onSubmit} noValidate>
         <input
           type="email"
           required
           placeholder={sent ? "You're in. Watch your inbox." : "your@email.com"}
           value={sent ? "" : email}
-          onChange={e => setEmail(e.target.value)}
+          onChange={e => { setEmail(e.target.value); if (state === "error") setState("idle"); }}
           aria-label="Email address"
-          disabled={sent}
+          aria-invalid={state === "error"}
+          disabled={sent || busy}
+          autoComplete="email"
         />
-        <button type="submit">{sent ? "Sent ✓" : "Subscribe →"}</button>
+        <button type="submit" disabled={busy || !email.trim()}>
+          {sent ? "Sent ✓" : busy ? "Sending…" : "Subscribe →"}
+        </button>
       </form>
       <div className="newsletter-meta">
-        <span>MONTHLY · NO SPAM</span>
-        <span style={{opacity:0.4}}>·</span>
-        <span>UNSUBSCRIBE ANYTIME</span>
+        {state === "error"
+          ? <span style={{color:"var(--coral)"}}>{err}</span>
+          : <>
+              <span>MONTHLY · NO SPAM</span>
+              <span style={{opacity:0.4}}>·</span>
+              <span>UNSUBSCRIBE ANYTIME</span>
+            </>}
       </div>
     </div>
   );

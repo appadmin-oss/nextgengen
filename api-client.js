@@ -65,11 +65,12 @@
       updateProfile: (data) => request('/member/profile.php', { body: data }),
     },
     public: {
-      stats:   () => request('/public/stats.php'),
-      events:  () => request('/public/events.php'),
-      posts:   (kind, tag) => request('/public/posts.php' + qs({ kind, tag })),
-      post:    (slug) => request('/public/post.php' + qs({ slug })),
-      session: () => request('/public/session.php'),
+      stats:      () => request('/public/stats.php'),
+      events:     () => request('/public/events.php'),
+      posts:      (kind, tag) => request('/public/posts.php' + qs({ kind, tag })),
+      post:       (slug) => request('/public/post.php' + qs({ slug })),
+      session:    () => request('/public/session.php'),
+      newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
     },
     admin: {
       members: {

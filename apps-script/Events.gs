@@ -139,20 +139,106 @@ function publicPost_(p, includeBody) {
 // ============================================================================
 
 function Public_stats(p, e) {
-  const members = filterRows_('Members', r => String(r.status) === 'active');
-  const summer = members.filter(m => String(m.type) === 'Summer').length;
-  const ngg = members.filter(m => String(m.type) === 'NGG').length;
-  const graduates = filterRows_('Members', r =>
+  // Members — split by type + grad status.
+  const allMembers = readSheet_('Members').rows;
+  const active = allMembers.filter(r => String(r.status) === 'active');
+  const summer = active.filter(m => String(m.type) === 'Summer').length;
+  const ngg    = active.filter(m => String(m.type) === 'NGG').length;
+  const graduates = allMembers.filter(r =>
     String(r.status) === 'graduated-ngg' || String(r.status) === 'graduated-vanguard').length;
+
+  // Mentors — count active mentors. Mentor sheet may not exist on a
+  // brand-new install; guard against that.
+  let mentors = 0;
+  try {
+    mentors = filterRows_('Mentors', r => String(r.status) === 'active').length;
+  } catch (_) { mentors = 0; }
+
+  // Anchor progress — total verified + completion rate.
+  let missionsVerified = 0;
+  let totalSubmitted = 0;
+  try {
+    const prog = readSheet_('MemberProgress').rows;
+    for (const r of prog) {
+      const st = String(r.status);
+      if (st === 'submitted' || st === 'verified' || st === 'rejected') totalSubmitted++;
+      if (st === 'verified') missionsVerified++;
+    }
+  } catch (_) { /* sheet missing */ }
+  const completionRate = totalSubmitted > 0
+    ? Math.round((missionsVerified / totalSubmitted) * 100)
+    : 0;
+
+  // Distinct centres in use among active members.
+  const centreSet = {};
+  for (const m of active) {
+    const c = String(m.centre || '').trim();
+    if (c) centreSet[c] = true;
+  }
+  const centres = Object.keys(centreSet).length || 0;
 
   return {
     ok: true,
     stats: {
-      activeMembers: members.length,
-      summer: summer,
-      ngg: ngg,
-      graduates: graduates,
-      centres: 2,
+      activeMembers:    active.length,
+      summer:           summer,
+      ngg:              ngg,
+      graduates:        graduates,
+      mentors:          mentors,
+      missionsVerified: missionsVerified,
+      missionsSubmitted:totalSubmitted,
+      completionRate:   completionRate,
+      centres:          centres,
     },
   };
+}
+
+// ============================================================================
+// Newsletter — public subscribe (no auth). Idempotent by email.
+// ============================================================================
+
+function Public_newsletter(p, e) {
+  const ip = String(p.ip || '');
+  // Per-IP rate limit: 5 attempts per 5 minutes.
+  if (!rateLimit_('rl:newsletter:' + ip, 5, 300)) {
+    return { ok: false, error: 'rate_limited' };
+  }
+  const email = String(p.email || '').trim().toLowerCase();
+  // RFC-tolerant minimal email check; the PHP layer does FILTER_VALIDATE_EMAIL too.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, error: 'bad_email' };
+  }
+  if (email.length > 200) return { ok: false, error: 'email_too_long' };
+
+  // Ensure sheet exists. We create it lazily so a fresh install doesn't
+  // need an extra Setup step.
+  let sh = ss_().getSheetByName('Newsletter');
+  if (!sh) {
+    sh = ss_().insertSheet('Newsletter');
+    sh.getRange(1, 1, 1, 6).setValues([['email', 'source', 'status', 'createdAt', 'updatedAt', 'ip']]);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, 1, 6).setBackground('#0c1432').setFontColor('#f5b026').setFontWeight('bold');
+    invalidate_('Newsletter');
+  }
+
+  // Idempotent upsert.
+  const existing = findRow_('Newsletter', r => String(r.email || '').toLowerCase() === email);
+  if (existing) {
+    // Re-subscribing — flip status to active and bump updatedAt.
+    patchRow_('Newsletter', existing.__rowNumber, {
+      status: 'subscribed',
+      updatedAt: nowIso_(),
+    });
+  } else {
+    appendRow_('Newsletter', {
+      email: email,
+      source: String(p.source || 'site'),
+      status: 'subscribed',
+      createdAt: nowIso_(),
+      updatedAt: nowIso_(),
+      ip: ip,
+    });
+  }
+  audit_('newsletter.subscribe', null, email, { source: p.source || 'site' }, ip);
+  return { ok: true };
 }

@@ -95,6 +95,7 @@ const OP_NEEDS_LOCK = {
   'admin.posts.upsert': true,
   'admin.promotions.set': true,
   'admin.broadcast': true,
+  'public.newsletter': true,
 };
 
 function doGet(e) {
@@ -160,6 +161,7 @@ const DISPATCH = {
   'public.events':          Public_events,
   'public.posts':           Public_posts,
   'public.session':         Public_session,
+  'public.newsletter':      Public_newsletter,
 };
 
 // ============================================================================

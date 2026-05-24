@@ -311,6 +311,22 @@ Rolling log, capped to last ~5000 rows by Apps Script (oldest deleted).
 
 ---
 
+## Tab: `Newsletter`
+
+Auto-created the first time someone subscribes. One row per unique email
+(idempotent upsert).
+
+| Column      | Notes                                          |
+|-------------|------------------------------------------------|
+| `email`     | lowercased                                     |
+| `source`    | where they subscribed — `footer`, `blog`, etc. |
+| `status`    | `subscribed` \| `unsubscribed`                 |
+| `createdAt` | first subscribe time                            |
+| `updatedAt` | last touch                                      |
+| `ip`        | snapshot at subscribe (abuse signals)           |
+
+---
+
 ## Tab: `Settings`
 
 Singleton key-value store for site-wide config admin can tweak without a deploy.
