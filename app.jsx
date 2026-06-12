@@ -119,13 +119,18 @@ function useScrollReveal(page) {
   }, [page]);
 }
 
+// In-page anchors that must never be treated as routes (skip link target,
+// scroll targets). Anything here — or any hash matching a rendered element
+// id — is left alone instead of routing to the 404.
+const ANCHOR_IDS = ["main", "mentor-apply"];
+
 function App() {
   const [page, setPage] = React.useState(() => {
     // Allow deep-linking via hash, e.g. /#admin or /#dashboard. Unknown
     // hashes route to a friendly 404 so shared bad links don't silently
     // dump users at /home as if nothing happened.
     const h = (window.location.hash || "").replace(/^#/, "");
-    if (!h) return "home";
+    if (!h || ANCHOR_IDS.includes(h)) return "home";
     return PAGE_IDS.includes(h) ? h : "_notfound";
   });
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
@@ -158,8 +163,11 @@ function App() {
     const onHash = () => {
       const h = (window.location.hash || "").replace(/^#/, "");
       if (!h) { if (page !== "home") setPage("home"); return; }
-      if (PAGE_IDS.includes(h)) { if (h !== page) setPage(h); }
-      else if (page !== "_notfound") setPage("_notfound");
+      if (PAGE_IDS.includes(h)) { if (h !== page) setPage(h); return; }
+      // In-page anchor (skip link, scroll target) — let the browser scroll,
+      // don't route. Covers both the known list and any rendered element id.
+      if (ANCHOR_IDS.includes(h) || document.getElementById(h)) return;
+      if (page !== "_notfound") setPage("_notfound");
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);

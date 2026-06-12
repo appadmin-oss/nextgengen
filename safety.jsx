@@ -117,8 +117,18 @@ function ToastHost() {
 }
 
 // Skip-to-content link — sits hidden until focused, helps keyboard users.
+// Focuses #main programmatically instead of navigating to #main, because
+// the hash router would treat "main" as an unknown page and show the 404.
 function SkipLink() {
-  return <a className="skip-link" href="#main">Skip to content</a>;
+  const onSkip = (e) => {
+    e.preventDefault();
+    const main = document.getElementById("main");
+    if (!main) return;
+    main.setAttribute("tabindex", "-1");
+    main.focus({ preventScroll: false });
+    main.scrollIntoView();
+  };
+  return <a className="skip-link" href="#main" onClick={onSkip}>Skip to content</a>;
 }
 
 // ============================================================================

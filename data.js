@@ -163,8 +163,25 @@ const VOLUNTEER_ROLES = [
   { name: "Admin / Ops",       commit: "Flexible",      ideal: "People who turn chaos into a checklist." },
 ];
 
+// Organisation contact + social handles — the single place to update them.
+// The footer (and anything else) reads from here. Replace the social URLs
+// with the real account links when the handles are confirmed.
+const CONTACT = {
+  email: "cacentre@afrovanguard.org.ng",
+  phone: "+2348000000000",          // TODO: real public line
+  phoneDisplay: "+234 800 000 0000",
+  socials: {
+    instagram: "https://instagram.com/",   // TODO: real handle
+    x:         "https://x.com/",           // TODO: real handle
+    youtube:   "https://youtube.com/",     // TODO: real handle
+    tiktok:    "https://tiktok.com/",      // TODO: real handle
+    linkedin:  "https://linkedin.com/",    // TODO: real handle
+  },
+};
+
 Object.assign(window, {
   AVATAR_PALETTES, avatarBg,
   STATS, STAGES, TRACKS, MEMBERS, WEEKS, BADGES,
   MISSIONS_THIS_WEEK, TESTIMONIALS, MEDIA_ITEMS, FAQ, VOLUNTEER_ROLES,
+  CONTACT,
 });

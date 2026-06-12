@@ -572,6 +572,13 @@ function NewsletterForm({ source = "footer" }) {
     e.preventDefault();
     const v = email.trim();
     if (!v) return;
+    // Instant client-side check — saves the round-trip and gives specific
+    // feedback instead of a generic network error when the API is slow.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+      setState("error");
+      setErr("That email doesn't look right.");
+      return;
+    }
     setState("busy"); setErr("");
     try {
       await NGGApi.public.newsletter(v, source);
@@ -745,20 +752,20 @@ function Footer({ setPage }) {
                 Not a school. Not a club. The structured runway from teenage potential to African leadership — built mission by mission, week by week.
               </p>
               <div className="footer-socials" aria-label="Social channels">
-                <SocialLink label="Instagram" href="https://instagram.com/" icon={SOCIAL_ICONS.instagram}/>
-                <SocialLink label="X / Twitter" href="https://x.com/" icon={SOCIAL_ICONS.x}/>
-                <SocialLink label="YouTube" href="https://youtube.com/" icon={SOCIAL_ICONS.youtube}/>
-                <SocialLink label="TikTok" href="https://tiktok.com/" icon={SOCIAL_ICONS.tiktok}/>
-                <SocialLink label="LinkedIn" href="https://linkedin.com/" icon={SOCIAL_ICONS.linkedin}/>
+                <SocialLink label="Instagram" href={CONTACT.socials.instagram} icon={SOCIAL_ICONS.instagram}/>
+                <SocialLink label="X / Twitter" href={CONTACT.socials.x} icon={SOCIAL_ICONS.x}/>
+                <SocialLink label="YouTube" href={CONTACT.socials.youtube} icon={SOCIAL_ICONS.youtube}/>
+                <SocialLink label="TikTok" href={CONTACT.socials.tiktok} icon={SOCIAL_ICONS.tiktok}/>
+                <SocialLink label="LinkedIn" href={CONTACT.socials.linkedin} icon={SOCIAL_ICONS.linkedin}/>
               </div>
               <div className="footer-contact" aria-label="Direct contact">
-                <a className="footer-contact-line" href="mailto:hello@ngg.example">
+                <a className="footer-contact-line" href={"mailto:" + CONTACT.email}>
                   <span className="footer-contact-icon" aria-hidden="true">✉</span>
-                  hello@ngg.example
+                  {CONTACT.email}
                 </a>
-                <a className="footer-contact-line" href="tel:+2348000000000">
+                <a className="footer-contact-line" href={"tel:" + CONTACT.phone}>
                   <span className="footer-contact-icon" aria-hidden="true">☎</span>
-                  +234 800 000 0000
+                  {CONTACT.phoneDisplay}
                 </a>
               </div>
             </div>
