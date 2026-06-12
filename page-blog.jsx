@@ -15,7 +15,7 @@ function BlogPage({ setPage }) {
   return (
     <div className="page" data-screen-label="Blog">
       {/* Header */}
-      <section style={{background:"var(--paper)", padding:"64px 0 0"}}>
+      <section className="page-hero page-hero-light" style={{background:"var(--paper)", padding:"64px 0 0"}}>
         <div className="container">
           <div style={{display:"grid", gridTemplateColumns:"1.2fr 1fr", gap:48, alignItems:"end"}}>
             <div>

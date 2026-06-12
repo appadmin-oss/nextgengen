@@ -13,7 +13,7 @@ function SummerPage({ setPage }) {
   return (
     <div className="page" data-screen-label="02 Summer Students">
       {/* Header band */}
-      <section style={{background:"var(--cream-100)", padding:"72px 0 56px"}}>
+      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"72px 0 56px"}}>
         <div className="container">
           <div style={{display:"grid", gridTemplateColumns:"1.4fr 1fr", gap:48, alignItems:"end"}}>
             <div>
@@ -162,7 +162,7 @@ function ClubPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="03 NGGC Members">
-      <section style={{background:"var(--navy-900)", color:"white", padding:"64px 0", position:"relative", overflow:"hidden"}}>
+      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"64px 0", position:"relative", overflow:"hidden"}}>
         <div style={{position:"absolute", inset:0, backgroundImage:"radial-gradient(circle at 80% 20%, rgba(245,176,38,0.16), transparent 60%)"}}/>
         <div className="container" style={{position:"relative"}}>
           <div style={{display:"grid", gridTemplateColumns:"1.2fr 1fr", gap:48, alignItems:"end"}}>

@@ -1505,12 +1505,16 @@ body.no-scroll { overflow: hidden; }
   .track-card { min-height: 180px; padding: 22px; }
   .track-card .num-bg { font-size: 140px !important; }
 
-  /* Trim oversized fixed heights on inline Photos */
+  /* Trim oversized fixed heights on inline Photos.
+     IMPORTANT: every selector must exclude [style*="min-height"], or it
+     substring-matches elements whose inline style says `min-height: 380px`
+     and locks them to a fixed 280px height — which made the Join form
+     overflow its card and collide with the Continue button on mobile. */
   [style*="height: 560"]:not(.fab-top):not([style*="min-height"]) { height: 380px !important; }
-  [style*="height: 520"] { height: 360px !important; }
-  [style*="height: 480"] { height: 340px !important; }
-  [style*="height: 420"] { height: 320px !important; }
-  [style*="height: 380"] { height: 280px !important; }
+  [style*="height: 520"]:not([style*="min-height"]) { height: 360px !important; }
+  [style*="height: 480"]:not([style*="min-height"]) { height: 340px !important; }
+  [style*="height: 420"]:not([style*="min-height"]) { height: 320px !important; }
+  [style*="height: 380"]:not([style*="min-height"]) { height: 280px !important; }
 
   /* card padding tightening for big inline padding */
   [style*="padding: 48"]:not(.btn) { padding: 24px !important; }

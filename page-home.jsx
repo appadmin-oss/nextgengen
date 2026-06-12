@@ -21,6 +21,20 @@ function HomePage({ setPage }) {
 
 /* =========== Hero — full-bleed cinematic =========== */
 function Hero({ setPage }) {
+  const session = useSession();
+  const stats = useStats();
+  // Live badge copy: when we know the session, name it; when it hasn't
+  // started yet, show the countdown. Falls back to evergreen copy.
+  const daysToStart = sessionDaysToStart(session);
+  const badge = !session
+    ? "Applications open · current session"
+    : session.isActive
+      ? "Live now · " + sessionLabel(session, "current session")
+      : daysToStart > 0
+        ? sessionLabel(session, "Next cohort") + " · starts in " + daysToStart + (daysToStart === 1 ? " day" : " days")
+        : "Applications open · " + sessionLabel(session, "next cohort");
+  const memberCount = stats && stats.activeMembers > 0 ? stats.activeMembers + "+" : "500+";
+
   return (
     <section className="hero" style={{minHeight:720, paddingBottom:80}}>
       <div className="hero-grid" />
@@ -35,11 +49,11 @@ function Hero({ setPage }) {
           <div>
             <div data-reveal className="reveal" style={{display:"flex", alignItems:"center", gap:10, marginBottom:32, flexWrap:"wrap"}}>
               <span className="live-dot"/>
-              <span className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.7)"}}>
-                Applications open · current session
+              <span className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.78)"}}>
+                {badge}
               </span>
               <span style={{opacity:0.4, color:"white"}}>·</span>
-              <span className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.6)"}}>
+              <span className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.66)"}}>
                 02 centres · Alimosho
               </span>
             </div>
@@ -74,8 +88,10 @@ function Hero({ setPage }) {
                 ))}
               </div>
               <div>
-                <div style={{color:"white", fontWeight:600, fontSize:14}}>517+ teen creators in motion</div>
-                <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.55)", marginTop:2}}>UPDATED LIVE · Alimosho, Lagos</div>
+                <div style={{color:"white", fontWeight:600, fontSize:14}}>{memberCount} teen creators in motion</div>
+                <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.66)", marginTop:2}}>
+                  {stats ? "UPDATED LIVE" : "TWO CENTRES"} · Alimosho, Lagos
+                </div>
               </div>
             </div>
           </div>
@@ -292,15 +308,7 @@ function ProgressionSystem({ setPage }) {
 
 /* =========== Flagship Anchor callout =========== */
 function FlagshipCallout({ setPage }) {
-  const [session, setSession] = React.useState(null);
-  React.useEffect(() => {
-    let alive = true;
-    if (typeof NGGApi === "undefined") return;
-    NGGApi.public.session()
-      .then(r => { if (alive) setSession(r.current || r.next || null); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, []);
+  const session = useSession();
   // When a session is live, paint the calendar against its real week.
   // No live data? Fall back to a sensible mid-cohort default.
   const totalWeeks = Math.max(1, Math.min(12, (session && session.totalWeeks) || 12));
@@ -574,6 +582,13 @@ function BlogPreview({ setPage }) {
 
 /* =========== Closing CTA =========== */
 function ClosingCTA({ setPage }) {
+  const session = useSession();
+  const cohortLine = session
+    ? (session.isActive ? "CURRENT SESSION · " : "NEXT COHORT · ") + sessionLabel(session, "").toUpperCase()
+    : "NEXT COHORT · COMING SOON";
+  const applyLabel = session && !session.isActive
+    ? "Apply for " + sessionLabel(session, "the next session") + " →"
+    : "Apply for the next session →";
   return (
     <section style={{background:"var(--gold-500)", color:"var(--navy-900)", padding:"112px 0", position:"relative", overflow:"hidden"}}>
       {/* Decorative photo strip */}
@@ -581,7 +596,7 @@ function ClosingCTA({ setPage }) {
         <img src={scene("showcase", 2000)} alt="" style={{width:"100%", height:"100%", objectFit:"cover"}}/>
       </div>
       <div className="container" style={{textAlign:"center", position:"relative"}}>
-        <span className="mono" style={{fontSize:11, letterSpacing:"0.22em", textTransform:"uppercase"}}>NEXT COHORT · SUMMER 2026</span>
+        <span className="mono" style={{fontSize:11, letterSpacing:"0.22em", textTransform:"uppercase"}}>{cohortLine}</span>
         <h2 className="display" style={{fontSize:"clamp(60px, 9vw, 152px)", margin:"24px auto", maxWidth:1100, lineHeight:0.88}}>
           Not everybody is<br/>
           ready to lead the future.
@@ -590,7 +605,7 @@ function ClosingCTA({ setPage }) {
           But somebody is. Maybe it is the teenager in your house. Maybe it is you.
         </p>
         <div style={{display:"flex", gap:12, justifyContent:"center", marginTop:40, flexWrap:"wrap"}}>
-          <button className="btn btn-primary btn-lg" onClick={() => setPage("join")}>Apply for Summer 2026 →</button>
+          <button className="btn btn-primary btn-lg" onClick={() => setPage("join")}>{applyLabel}</button>
           <button className="btn btn-ghost btn-lg" style={{borderColor:"var(--navy-900)"}} onClick={() => setPage("parents")}>For parents</button>
         </div>
       </div>

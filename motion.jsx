@@ -20,7 +20,6 @@ function useReveal(deps) {
       document.querySelectorAll("[data-reveal]").forEach(el => el.classList.add("is-visible"));
       return;
     }
-    const els = document.querySelectorAll("[data-reveal]:not(.is-visible)");
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
         if (e.isIntersecting) {
@@ -29,8 +28,24 @@ function useReveal(deps) {
         }
       }
     }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
-    els.forEach(el => io.observe(el));
-    return () => io.disconnect();
+
+    // PageTransition swaps the route's DOM in ~180ms after `page` changes,
+    // so a single immediate query would only see the *previous* page's
+    // elements — leaving the new page's reveal content invisible forever.
+    // Re-arm a few times to catch late-mounted (and API-driven) nodes.
+    const arm = () =>
+      document.querySelectorAll("[data-reveal]:not(.is-visible)").forEach(el => io.observe(el));
+    arm();
+    const t1 = setTimeout(arm, 260);
+    const t2 = setTimeout(arm, 900);
+    // Safety net: nothing is allowed to stay invisible. If the observer
+    // never fired for an element (clipped, zero-size, browser quirk),
+    // force it visible after 2.5s.
+    const t3 = setTimeout(() => {
+      document.querySelectorAll("[data-reveal]:not(.is-visible)").forEach(el => el.classList.add("is-visible"));
+    }, 2500);
+
+    return () => { io.disconnect(); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, deps || []);
 }
 

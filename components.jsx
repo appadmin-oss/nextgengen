@@ -4,6 +4,54 @@
    ================================================================ */
 const { useState, useEffect, useRef, useMemo } = React;
 
+/* ---- Shared public-data hooks ----
+   One fetch per visit, shared by every component that asks (hero badges,
+   flagship calendar, footer status, join page). Cache lives at module
+   scope so route changes don't refetch. */
+const _pubCache = {};
+const _pubInflight = {};
+function usePublicData(key, fetcher) {
+  const [data, setData] = React.useState(_pubCache[key] !== undefined ? _pubCache[key] : null);
+  React.useEffect(() => {
+    if (_pubCache[key] !== undefined) return;
+    let alive = true;
+    if (!_pubInflight[key]) {
+      _pubInflight[key] = fetcher()
+        .then(d => { _pubCache[key] = d; return d; })
+        .catch(() => { _pubCache[key] = null; return null; });
+    }
+    _pubInflight[key].then(d => { if (alive) setData(d); });
+    return () => { alive = false; };
+  }, [key]);
+  return data;
+}
+
+/* Current (or next) session — { code, year, name, startDate, endDate,
+   isActive, weekOf, totalWeeks } or null. */
+function useSession() {
+  return usePublicData("session", () =>
+    NGGApi.public.session().then(r => r.current || r.next || null));
+}
+
+/* Public stats — { activeMembers, missionsVerified, mentors, centres … } or null. */
+function useStats() {
+  return usePublicData("stats", () =>
+    NGGApi.public.stats().then(r => r.stats || null));
+}
+
+/* Human session label, e.g. "SUM · 2026" → falls back to given text. */
+function sessionLabel(session, fallback) {
+  if (!session) return fallback;
+  return (session.name || session.code) + " " + session.year;
+}
+
+/* Days until the session starts (0 when live or past). */
+function sessionDaysToStart(session) {
+  if (!session || !session.startDate) return 0;
+  const d = Math.ceil((new Date(session.startDate) - new Date()) / 86400000);
+  return Math.max(0, d);
+}
+
 /* ---- Brand mark — uses actual logo PNG ---- */
 function BrandLogo({ size = 36, style = {} }) {
   return (
@@ -582,15 +630,7 @@ function NewsletterForm({ source = "footer" }) {
 function Footer({ setPage }) {
   const go = (id) => () => setPage(id);
   const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false, member: null };
-  const [session, setSession] = React.useState(null);
-
-  // Public, cached — loaded once per visit.
-  React.useEffect(() => {
-    if (typeof NGGApi === "undefined") return;
-    NGGApi.public.session()
-      .then(r => setSession(r.current || r.next || null))
-      .catch(() => {});
-  }, []);
+  const session = useSession();
 
   const CENTRES = [
     { id: "egbeda", name: "CACENTRE Egbeda", lga: "Alimosho · Lagos", line: "Saturdays · 09:00 – 13:00", note: "Main hub" },
@@ -803,4 +843,5 @@ function Sparkline({ data, color = "var(--gold-500)", w = 120, h = 36, fill = fa
 Object.assign(window, {
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
+  usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart,
 });

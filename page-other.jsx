@@ -20,7 +20,7 @@ function MediaPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="06 Media">
-      <section style={{background:"var(--navy-900)", color:"white", padding:"64px 0 32px"}}>
+      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"64px 0 32px"}}>
         <div className="container">
           <span className="chip chip-on-dark">THE MOVEMENT, ON CAMERA</span>
           <h1 className="display" style={{fontSize:"clamp(64px, 9vw, 132px)", margin:"16px 0", color:"white", lineHeight:0.9}}>
@@ -172,7 +172,7 @@ function MediaModal({ item, onClose }) {
 function ParentsPage({ setPage }) {
   return (
     <div className="page" data-screen-label="07 Parents">
-      <section style={{background:"var(--cream-100)", padding:"72px 0"}}>
+      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"72px 0"}}>
         <div className="container">
           <div style={{display:"grid", gridTemplateColumns:"1.3fr 1fr", gap:48, alignItems:"end"}}>
             <div>
@@ -283,7 +283,7 @@ function FAQList({ items }) {
 function VolunteersPage({ setPage }) {
   return (
     <div className="page" data-screen-label="08 Volunteers">
-      <section style={{background:"var(--navy-900)", color:"white", padding:"72px 0", position:"relative", overflow:"hidden"}}>
+      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"72px 0", position:"relative", overflow:"hidden"}}>
         <div style={{position:"absolute", inset:0, backgroundImage:"radial-gradient(circle at 80% 50%, rgba(208,255,58,0.14), transparent 60%)"}}/>
         <div className="container" style={{position:"relative", display:"grid", gridTemplateColumns:"1.3fr 1fr", gap:48, alignItems:"center"}}>
           <div>
@@ -459,6 +459,10 @@ function JoinPage({ setPage }) {
   const [busy, setBusy] = useState(false);
   const [fieldErr, setFieldErr] = useState("");
   const steps = ["Identity", "Track", "Story", "Parent"];
+  const session = useSession();
+  const applyEyebrow = session
+    ? "APPLY · " + sessionLabel(session, "NEXT SESSION").toUpperCase()
+    : "APPLY · NEXT SESSION";
 
   // Persist draft on every change (cleared on successful submit).
   React.useEffect(() => {
@@ -523,10 +527,10 @@ function JoinPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="09 Join">
-      <section style={{background:"var(--paper)", padding:"56px 0 88px", minHeight:"calc(100vh - 71px)"}}>
+      <section className="page-hero page-hero-light" style={{background:"var(--paper)", padding:"56px 0 88px", minHeight:"calc(100vh - 71px)"}}>
         <div className="container" style={{maxWidth:980}}>
           <div style={{textAlign:"center", marginBottom:40}}>
-            <span className="eyebrow" style={{color:"var(--gold-500)"}}>APPLY · SUMMER 2026</span>
+            <span className="eyebrow" style={{color:"var(--gold-500)"}}>{applyEyebrow}</span>
             <h1 className="display" style={{fontSize:"clamp(48px, 6vw, 88px)", margin:"10px 0 0"}}>
               Start your <em style={{fontStyle:"normal", color:"var(--coral)"}}>journey.</em>
             </h1>
