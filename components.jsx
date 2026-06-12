@@ -40,20 +40,35 @@ function Avatar({ seed = 0, name = "", size = 44, ring = false, square = false }
 function Photo({ src, name, label, ratio = "1/1", style = {}, overlay = false, dark = false, children, eager = false }) {
   const url = src || (name ? scene(name, 1200) : null);
   const [loaded, setLoaded] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
+  // Stable accent stripe based on the source — gives broken/loading images
+  // a recognizable identity instead of a flat block.
+  const tint = React.useMemo(() => {
+    const s = String(url || name || label || "");
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    const palette = dark
+      ? ["#1c2a5e", "#2a3a7a", "#131e48", "#1a2454"]
+      : ["#f3ecdb", "#e8dec6", "#fbf7ed", "#f5e9c8"];
+    return palette[Math.abs(h) % palette.length];
+  }, [url, name, label, dark]);
+
   return (
     <div
-      className={"photo-frame " + (loaded ? "is-loaded " : "")}
+      className={"photo-frame " + (loaded ? "is-loaded " : "") + (failed ? "is-failed " : "")}
+      role={label ? "img" : undefined}
+      aria-label={label || undefined}
       style={{
         position: "relative",
         aspectRatio: ratio,
         overflow: "hidden",
         borderRadius: 18,
-        background: dark ? "var(--navy-800)" : "var(--cream-100)",
+        background: tint,
         ...style,
         maxWidth: "100%",
       }}
     >
-      {url ? (
+      {url && !failed ? (
         <img
           src={url}
           alt={label || name || ""}
@@ -61,7 +76,7 @@ function Photo({ src, name, label, ratio = "1/1", style = {}, overlay = false, d
           decoding="async"
           fetchpriority={eager ? "high" : "auto"}
           onLoad={() => setLoaded(true)}
-          onError={() => setLoaded(true) /* still fade away the shimmer */}
+          onError={() => { setLoaded(true); setFailed(true); }}
           style={{
             width: "100%",
             height: "100%",
@@ -71,6 +86,17 @@ function Photo({ src, name, label, ratio = "1/1", style = {}, overlay = false, d
           }}
         />
       ) : null}
+      {/* Skeleton shimmer while the photo is in flight */}
+      {!loaded && url && (
+        <div className="photo-skel" aria-hidden="true"/>
+      )}
+      {/* Graceful fallback when the host blocks the image — keeps the
+          composition (chip / overlay copy) readable instead of a broken icon. */}
+      {failed && (
+        <div className="photo-fallback" aria-hidden="true">
+          <span className="photo-fallback-mark">◈</span>
+        </div>
+      )}
       {overlay && (
         <div style={{
           position: "absolute", inset: 0,

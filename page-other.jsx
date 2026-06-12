@@ -5,8 +5,18 @@
 /* =================== MEDIA =================== */
 function MediaPage({ setPage }) {
   const [filter, setFilter] = useState("All");
-  const kinds = ["All", "Reel", "Documentary", "Performance", "Podcast", "Before/After", "Day in life"];
+  const [open, setOpen] = useState(null);
+  const kinds = ["All", ...Array.from(new Set(MEDIA_ITEMS.map(m => m.kind)))];
   const items = filter === "All" ? MEDIA_ITEMS : MEDIA_ITEMS.filter(i => i.kind === filter);
+  const [featuredA, featuredB, ...rest] = items.length ? items : MEDIA_ITEMS;
+
+  const handlePlay = (item) => {
+    if (item && item.url) {
+      window.open(item.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setOpen(item);
+  };
 
   return (
     <div className="page" data-screen-label="06 Media">
@@ -22,35 +32,47 @@ function MediaPage({ setPage }) {
         </div>
       </section>
 
-      <section style={{padding:"28px 0", background:"var(--paper)", borderBottom:"1px solid rgba(12,20,50,0.07)"}}>
+      <section style={{padding:"28px 0", background:"var(--paper)", borderBottom:"1px solid rgba(12,20,50,0.07)", position:"sticky", top:"60px", zIndex:5, backdropFilter:"saturate(1.2) blur(8px)"}}>
         <div className="container">
-          <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
+          <div role="tablist" aria-label="Media filter" style={{display:"flex", gap:8, flexWrap:"wrap"}}>
             {kinds.map(k => (
-              <button key={k} onClick={() => setFilter(k)} className={"chip " + (filter === k ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>
+              <button key={k} role="tab" aria-selected={filter === k} onClick={() => setFilter(k)} className={"chip " + (filter === k ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>
                 {k}
               </button>
             ))}
+            <span className="mono" style={{marginLeft:"auto", alignSelf:"center", fontSize:11, color:"var(--ink-700)", letterSpacing:"0.14em"}}>{items.length} ITEMS</span>
           </div>
         </div>
       </section>
 
       <section className="section">
         <div className="container">
-          {/* Featured */}
-          <div style={{display:"grid", gridTemplateColumns:"2fr 1fr", gap:18, marginBottom:32}}>
-            <FeatureCard
-              big
-              item={{ kind: "Reel", label: "Anchor 12 — The trailer", meta: "0:47 · 12.4k views" }}
-            />
-            <FeatureCard item={{ kind: "Documentary", label: "From Onitsha, with code.", meta: "12:04 · Mini-doc" }}/>
-          </div>
-
-          {/* Grid */}
-          <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:18}}>
-            {items.map((m, i) => <FeatureCard key={i} item={m}/>)}
-          </div>
+          {items.length === 0 ? (
+            <div style={{textAlign:"center", padding:"48px 0", color:"var(--ink-700)"}}>
+              No media in this category yet.
+              <div style={{marginTop:14}}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setFilter("All")}>Show everything</button>
+              </div>
+            </div>
+          ) : (
+            <React.Fragment>
+              {/* Featured pair */}
+              {featuredA && (
+                <div style={{display:"grid", gridTemplateColumns: featuredB ? "2fr 1fr" : "1fr", gap:18, marginBottom:32}}>
+                  <FeatureCard big item={featuredA} onPlay={() => handlePlay(featuredA)}/>
+                  {featuredB && <FeatureCard item={featuredB} onPlay={() => handlePlay(featuredB)}/>}
+                </div>
+              )}
+              {/* Grid */}
+              <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:18}}>
+                {rest.map((m, i) => <FeatureCard key={m.label + i} item={m} onPlay={() => handlePlay(m)}/>)}
+              </div>
+            </React.Fragment>
+          )}
         </div>
       </section>
+
+      {open && <MediaModal item={open} onClose={() => setOpen(null)}/>}
 
       {/* Press / mentions */}
       <section className="section" style={{background:"var(--cream-50)"}}>
@@ -70,7 +92,7 @@ function MediaPage({ setPage }) {
   );
 }
 
-function FeatureCard({ item, big = false }) {
+function FeatureCard({ item, big = false, onPlay }) {
   const kindColor = {
     "Reel": "chip-coral",
     "Documentary": "chip-navy",
@@ -88,21 +110,58 @@ function FeatureCard({ item, big = false }) {
     "Day in life": "community",
   }[item.kind] || "heroMain";
   return (
-    <div style={{display:"flex", flexDirection:"column", gap:10}}>
+    <button
+      type="button"
+      onClick={onPlay}
+      className="media-card"
+      aria-label={"Play " + item.label}
+      style={{display:"flex", flexDirection:"column", gap:10, background:"none", border:"none", padding:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", width:"100%"}}
+    >
       <div style={{position:"relative", borderRadius:18, overflow:"hidden", aspectRatio: big ? "16/9" : "4/3"}}>
         <Photo name={kindImg} ratio="auto" style={{height:"100%", borderRadius:0}}/>
         <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, transparent 30%, rgba(12,20,50,0.78) 100%)"}}/>
         <div style={{position:"absolute", top:14, left:14}}>
           <span className={"chip " + kindColor}>{item.kind}</span>
         </div>
-        <div style={{position:"absolute", inset:0, display:"grid", placeItems:"center"}}>
+        <div className="media-card-play" style={{position:"absolute", inset:0, display:"grid", placeItems:"center"}}>
           <div style={{width: big ? 84 : 64, height: big ? 84 : 64, borderRadius:"50%", background:"rgba(255,255,255,0.92)", display:"grid", placeItems:"center", color:"var(--navy-900)"}}>
             <div style={{width:0, height:0, borderTop:`${big ? 16 : 12}px solid transparent`, borderBottom:`${big ? 16 : 12}px solid transparent`, borderLeft:`${big ? 24 : 18}px solid var(--navy-900)`, marginLeft:6}}/>
           </div>
         </div>
         <div style={{position:"absolute", bottom:14, left:14, right:14, color:"white"}}>
           <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize: big ? 28 : 18, lineHeight:1.1, letterSpacing:"-0.02em"}}>{item.label}</div>
-          <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.8)", marginTop:6}}>{item.meta}</div>
+          <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.85)", marginTop:6}}>{item.meta}</div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function MediaModal({ item, onClose }) {
+  React.useEffect(() => {
+    document.body.classList.add("no-scroll");
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.classList.remove("no-scroll"); window.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+  return (
+    <div className="media-modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true" aria-label={item.label}>
+      <div className="media-modal-card">
+        <button className="media-modal-close" onClick={onClose} aria-label="Close">✕</button>
+        <div className="media-modal-stage">
+          <div className="media-modal-stage-inner">
+            <div className="media-modal-mark" aria-hidden="true">▶</div>
+            <div className="mono" style={{fontSize:11, letterSpacing:"0.18em", color:"rgba(255,255,255,0.75)", marginTop:14}}>
+              {item.kind.toUpperCase()} · {item.meta}
+            </div>
+            <div style={{fontFamily:"var(--font-display)", fontSize:28, fontWeight:700, lineHeight:1.15, marginTop:10, maxWidth:520}}>{item.label}</div>
+            <p style={{color:"rgba(255,255,255,0.7)", marginTop:14, fontSize:14, maxWidth:480, lineHeight:1.5}}>
+              The full media player is coming soon — for now, this piece is screened live at our Saturday sessions. Drop your email below and we'll send you the link when it goes online.
+            </p>
+            <div style={{maxWidth:480, marginTop:18}}>
+              <NewsletterForm source={"media:" + item.kind}/>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -176,31 +235,46 @@ function ParentsPage({ setPage }) {
 function FAQList({ items }) {
   const [open, setOpen] = useState(0);
   return (
-    <div className="card" style={{padding:0, overflow:"hidden"}}>
-      {items.map((f, i) => (
-        <div key={i} style={{borderTop: i === 0 ? "none" : "1px solid rgba(12,20,50,0.07)"}}>
-          <button onClick={() => setOpen(open === i ? -1 : i)} style={{
-            width:"100%", background:"none", border:"none", padding:"24px 28px",
-            display:"flex", justifyContent:"space-between", alignItems:"center",
-            cursor:"pointer", textAlign:"left", fontFamily:"inherit",
-          }}>
-            <span style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, letterSpacing:"-0.02em"}}>{f.q}</span>
-            <span style={{
-              width:32, height:32, borderRadius:"50%",
-              background: open === i ? "var(--navy-900)" : "var(--cream-100)",
-              color: open === i ? "white" : "var(--navy-900)",
-              display:"grid", placeItems:"center", fontSize:18, fontWeight:700,
-              transition:"all 0.2s ease",
-              transform: open === i ? "rotate(45deg)" : "rotate(0)",
-            }}>+</span>
-          </button>
-          {open === i && (
-            <div style={{padding:"0 28px 24px", fontSize:16, lineHeight:1.55, color:"var(--ink-500)", maxWidth:760}}>
+    <div className="card faq-list" style={{padding:0, overflow:"hidden"}}>
+      {items.map((f, i) => {
+        const isOpen = open === i;
+        const panelId = "faq-panel-" + i;
+        const btnId = "faq-btn-" + i;
+        return (
+          <div key={i} style={{borderTop: i === 0 ? "none" : "1px solid rgba(12,20,50,0.07)"}}>
+            <button
+              id={btnId}
+              aria-expanded={isOpen}
+              aria-controls={panelId}
+              onClick={() => setOpen(isOpen ? -1 : i)}
+              style={{
+                width:"100%", background:"none", border:"none", padding:"24px 28px",
+                display:"flex", justifyContent:"space-between", alignItems:"center", gap:18,
+                cursor:"pointer", textAlign:"left", fontFamily:"inherit",
+              }}
+            >
+              <span style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, letterSpacing:"-0.02em", color:"var(--ink-900)"}}>{f.q}</span>
+              <span aria-hidden="true" style={{
+                width:32, height:32, borderRadius:"50%", flexShrink:0,
+                background: isOpen ? "var(--navy-900)" : "var(--cream-100)",
+                color: isOpen ? "white" : "var(--navy-900)",
+                display:"grid", placeItems:"center", fontSize:18, fontWeight:700,
+                transition:"transform 0.25s cubic-bezier(0.2,0.7,0.2,1), background 0.2s ease, color 0.2s ease",
+                transform: isOpen ? "rotate(45deg)" : "rotate(0)",
+              }}>+</span>
+            </button>
+            <div
+              id={panelId}
+              role="region"
+              aria-labelledby={btnId}
+              hidden={!isOpen}
+              style={{padding: isOpen ? "0 28px 24px" : "0 28px", fontSize:16, lineHeight:1.55, color:"var(--ink-700)", maxWidth:760}}
+            >
               {f.a}
             </div>
-          )}
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -599,4 +673,4 @@ function JoinPage({ setPage }) {
   );
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, FAQList, MentorApplySection });
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, FAQList, MentorApplySection, MediaModal });

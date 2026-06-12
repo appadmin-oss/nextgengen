@@ -133,7 +133,13 @@ function StatBar() {
     return () => { alive = false; };
   }, []);
 
+  // Hide the whole strip when the endpoint is gone or returned no usable
+  // data — better than showing four "0+" tiles, which reads as "this
+  // movement has zero people in it" to a first-time visitor.
   if (err) return null;
+  if (stats && !stats.activeMembers && !stats.missionsVerified && !stats.mentors && !stats.centres) {
+    return null;
+  }
 
   const cells = [
     { num: stats ? stats.activeMembers    : null, suffix: "+", label: "Teen creators in motion" },
@@ -146,17 +152,20 @@ function StatBar() {
     <section style={{background:"var(--navy-900)", color:"white"}}>
       <div className="container" style={{padding:"64px 28px"}}>
         <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:0}} aria-busy={!stats}>
-          {cells.map((c, i) => (
+          {cells.map((c, i) => {
+            const hasNum = typeof c.num === "number" && c.num > 0;
+            return (
             <div key={c.label} className="reveal" data-reveal style={{padding:"8px 28px", borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.08)", "--reveal-delay": (i * 120) + "ms"}}>
               <div className="display" style={{fontSize:96, lineHeight:1, color: c.goldNum ? "var(--gold-500)" : "white"}}>
-                {c.num === null ? <span style={{opacity:0.3}}>—</span> : <CountUp to={String(c.num)}/>}
-                {c.suffix && c.num !== null && <span style={{color:"var(--gold-500)"}}>{c.suffix}</span>}
+                {hasNum ? <CountUp to={String(c.num)}/> : <span style={{opacity:0.3}}>—</span>}
+                {c.suffix && hasNum && <span style={{color:"var(--gold-500)"}}>{c.suffix}</span>}
               </div>
-              <div className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.6)", marginTop:14}}>
+              <div className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.72)", marginTop:14}}>
                 {c.label}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
@@ -283,6 +292,21 @@ function ProgressionSystem({ setPage }) {
 
 /* =========== Flagship Anchor callout =========== */
 function FlagshipCallout({ setPage }) {
+  const [session, setSession] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    if (typeof NGGApi === "undefined") return;
+    NGGApi.public.session()
+      .then(r => { if (alive) setSession(r.current || r.next || null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  // When a session is live, paint the calendar against its real week.
+  // No live data? Fall back to a sensible mid-cohort default.
+  const totalWeeks = Math.max(1, Math.min(12, (session && session.totalWeeks) || 12));
+  const weekOf = Math.max(1, Math.min(totalWeeks, (session && session.weekOf) || 7));
+  const pct = Math.round((weekOf / totalWeeks) * 100);
+
   return (
     <section style={{background:"var(--navy-900)", color:"white", padding:"104px 0", position:"relative", overflow:"hidden"}}>
       {/* Atmospheric background */}
@@ -310,7 +334,8 @@ function FlagshipCallout({ setPage }) {
           <div>
             <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:8}}>
               {WEEKS.map((w, i) => {
-                const status = i < 6 ? "done" : i === 6 ? "current" : "locked";
+                const idx = i + 1;
+                const status = idx < weekOf ? "done" : idx === weekOf ? "current" : "locked";
                 return (
                   <div key={w.n} style={{
                     padding:"16px 14px",
@@ -328,10 +353,10 @@ function FlagshipCallout({ setPage }) {
               })}
             </div>
             <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:20}}>
-              <span className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.5)"}}>
-                Cohort progress
+              <span className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.65)"}}>
+                {session ? `Week ${weekOf} of ${totalWeeks}` : "Cohort progress"}
               </span>
-              <span className="display" style={{fontSize:28, color:"var(--lime)"}}>54%</span>
+              <span className="display" style={{fontSize:28, color:"var(--lime)"}}>{pct}%</span>
             </div>
           </div>
         </div>

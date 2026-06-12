@@ -492,21 +492,25 @@ function MissionRow({ m }) {
 }
 
 function HabitGrid() {
-  // 7x4 grid (4 weeks), most filled
-  const days = Array.from({length: 28}, (_, i) => i);
+  // 8 weeks × 7 days = 56 cells. Deterministic so the grid doesn't re-shuffle
+  // on every re-render (which used to flash a different "history" each time).
+  // A simple LCG seeded from the cell index gives us a stable mock pattern.
+  const cells = React.useMemo(() => {
+    return Array.from({length: 56}, (_, i) => {
+      const r = ((i * 9301 + 49297) % 233280) / 233280;
+      const filled = i > 14 && (i % 7 !== 0 || r > 0.3);
+      return filled ? (i > 35 ? 1 : 0.55) : 0;
+    });
+  }, []);
   return (
-    <div style={{display:"grid", gridTemplateColumns:"repeat(14, 1fr)", gap:4, marginTop:16}}>
-      {Array.from({length: 56}, (_, i) => {
-        const filled = i > 14 && (i % 7 !== 0 || Math.random() > 0.3);
-        const intensity = filled ? (i > 35 ? 1 : 0.55) : 0;
-        return (
-          <div key={i} style={{
-            aspectRatio:"1/1",
-            borderRadius:3,
-            background: intensity > 0.7 ? "var(--coral)" : intensity > 0 ? "rgba(255,90,60,0.4)" : "rgba(12,20,50,0.06)"
-          }}/>
-        );
-      })}
+    <div style={{display:"grid", gridTemplateColumns:"repeat(14, 1fr)", gap:4, marginTop:16}} aria-hidden="true">
+      {cells.map((intensity, i) => (
+        <div key={i} style={{
+          aspectRatio:"1/1",
+          borderRadius:3,
+          background: intensity > 0.7 ? "var(--coral)" : intensity > 0 ? "rgba(255,90,60,0.4)" : "rgba(12,20,50,0.06)"
+        }}/>
+      ))}
     </div>
   );
 }

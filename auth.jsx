@@ -100,9 +100,15 @@ function SignInModal({ seed, onClose, onVerified }) {
   const inputRef = React.useRef(null);
 
   React.useEffect(() => {
-    setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
+    const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
     document.body.classList.add("no-scroll");
-    return () => document.body.classList.remove("no-scroll");
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.classList.remove("no-scroll");
+      window.removeEventListener("keydown", onKey);
+      clearTimeout(t);
+    };
   }, [stage]);
 
   const requestLink = async (e) => {
@@ -132,9 +138,18 @@ function SignInModal({ seed, onClose, onVerified }) {
     }
   };
 
+  // Only dismiss when the click *starts* on the scrim — protects against a
+  // drag-select that began on the card and ended on the scrim accidentally
+  // closing the modal mid-input.
+  const scrimMouseDown = React.useRef(false);
+
   return (
-    <div className="signin-scrim" onClick={onClose}>
-      <div className="signin-card" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="signin-h">
+    <div
+      className="signin-scrim"
+      onMouseDown={(e) => { scrimMouseDown.current = e.target === e.currentTarget; }}
+      onMouseUp={(e) => { if (scrimMouseDown.current && e.target === e.currentTarget) onClose(); scrimMouseDown.current = false; }}
+    >
+      <div className="signin-card" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="signin-h">
         <button className="signin-close" onClick={onClose} aria-label="Close">✕</button>
 
         <div className="signin-brand">

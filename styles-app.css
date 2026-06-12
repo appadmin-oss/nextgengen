@@ -3351,6 +3351,240 @@ button:focus-visible, .nav-link:focus-visible, .btn:focus-visible {
   .dash-shortcut { padding: 14px 16px; }
 }
 
+/* ============================================================
+   11. PRODUCTION-READINESS — accessibility, route changes,
+   photo loading states, 404, media modal, sticky-safe headers.
+   ============================================================ */
+
+/* Visually hidden but available to screen readers — used by the
+   route announcer live region and other a11y-only labels. */
+.sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Photo skeleton shimmer — replaces the flat cream blocks shown while
+   real photos are in flight (or when an upstream image host blocks). */
+.photo-skel {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg,
+    rgba(255, 255, 255, 0)   30%,
+    rgba(255, 255, 255, 0.35) 50%,
+    rgba(255, 255, 255, 0)   70%);
+  background-size: 220% 100%;
+  animation: photo-shimmer 2.2s linear infinite;
+  mix-blend-mode: overlay;
+}
+@keyframes photo-shimmer {
+  from { background-position: 100% 0; }
+  to   { background-position: -100% 0; }
+}
+.photo-frame.is-loaded .photo-skel { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .photo-skel { animation: none; opacity: 0.5; }
+}
+
+/* Photo fallback — dignified mark instead of a broken-image icon when
+   the upstream blocks (e.g. in privacy environments). */
+.photo-fallback {
+  position: absolute; inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(12, 20, 50, 0.18);
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(12, 20, 50, 0.04) 0,
+      rgba(12, 20, 50, 0.04) 1px,
+      transparent 1px,
+      transparent 10px);
+}
+.photo-frame[style*="navy"] .photo-fallback,
+.photo-frame[style*="rgb(20"] .photo-fallback {
+  color: rgba(255, 255, 255, 0.18);
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(255, 255, 255, 0.05) 0,
+      rgba(255, 255, 255, 0.05) 1px,
+      transparent 1px,
+      transparent 10px);
+}
+.photo-fallback-mark {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 7vw, 72px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+/* 404 / Not Found */
+.not-found {
+  padding: clamp(80px, 14vw, 160px) 0;
+  text-align: center;
+}
+.not-found-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--coral);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.not-found-h {
+  font-size: clamp(40px, 6vw, 80px) !important;
+  margin: 18px auto 18px;
+  max-width: 720px;
+  line-height: 1;
+  letter-spacing: -0.025em;
+}
+.not-found-p {
+  font-size: 17px;
+  color: var(--ink-700);
+  max-width: 480px;
+  margin: 0 auto;
+  line-height: 1.55;
+}
+.not-found-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 32px;
+}
+
+/* Media card — clickable, real button. */
+.media-card { transition: transform 0.2s cubic-bezier(0.2,0.7,0.2,1); }
+.media-card:hover { transform: translateY(-3px); }
+.media-card:active { transform: translateY(0); }
+.media-card .media-card-play > div { transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.media-card:hover .media-card-play > div { transform: scale(1.08); }
+.media-card:focus-visible {
+  outline: 3px solid rgba(245, 176, 38, 0.6);
+  outline-offset: 4px;
+  border-radius: 18px;
+}
+
+/* Media modal — when there's no real video to play yet, we offer a
+   subscribe-for-release sheet that wraps the existing newsletter form. */
+.media-modal-scrim {
+  position: fixed; inset: 0;
+  background: rgba(8, 12, 32, 0.72);
+  backdrop-filter: blur(8px) saturate(1.2);
+  -webkit-backdrop-filter: blur(8px) saturate(1.2);
+  z-index: 320;
+  display: grid; place-items: center;
+  padding: 18px;
+  animation: dlgFadeIn 0.18s ease;
+}
+.media-modal-card {
+  width: 100%;
+  max-width: 720px;
+  background: var(--navy-900);
+  color: white;
+  border-radius: 20px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 40px 100px -30px rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: dlgPopIn 0.24s cubic-bezier(0.2,0.7,0.2,1);
+}
+.media-modal-close {
+  position: absolute; top: 14px; right: 14px;
+  z-index: 2;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.media-modal-close:hover { background: rgba(255, 255, 255, 0.16); transform: scale(1.05); }
+.media-modal-stage {
+  padding: 56px 40px;
+  background:
+    radial-gradient(60% 80% at 20% 0%, rgba(245, 176, 38, 0.16), transparent 60%),
+    radial-gradient(60% 60% at 90% 100%, rgba(208, 255, 58, 0.10), transparent 60%);
+}
+.media-modal-stage-inner {
+  display: flex; flex-direction: column; align-items: flex-start;
+}
+.media-modal-mark {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  background: var(--gold-500);
+  color: var(--navy-900);
+  display: grid; place-items: center;
+  font-size: 30px;
+  box-shadow: 0 12px 30px -10px rgba(245, 176, 38, 0.6);
+}
+@media (max-width: 600px) {
+  .media-modal-stage { padding: 36px 22px; }
+}
+
+/* Sticky media filter — make sure it doesn't sit over the nav */
+section[style*="position: sticky"][style*="top:"] { z-index: 10; }
+
+/* When the topnav is scrolled, the media filter bar's blur backdrop
+   should still pop on top of section backgrounds. */
+.topnav { z-index: 50; }
+.topnav.has-mega { z-index: 60; }
+
+/* --- Topnav apply button: hide if already on join --- */
+body[data-page="join"] .nav-apply { display: none; }
+
+/* --- Footer chapter pills hover focus polish --- */
+.chapter-pill:focus-visible {
+  outline: 2px solid var(--gold-500);
+  outline-offset: 3px;
+}
+
+/* --- Anchor profile stats overlap: keep cards out of the hero bleed
+   on narrow screens (the negative margin overlaps badly under 1100px) --- */
+@media (max-width: 1100px) {
+  .page [style*="margin-top: -50"] { margin-top: 16px !important; }
+}
+
+/* --- Cohort progress bar % readability — bump on gold tile --- */
+.progress.gold > i { background: linear-gradient(90deg, #b88112, var(--gold-500)); }
+
+/* --- Form field focus ring tweak so it doesn't clip in tight cards --- */
+.field input, .field select, .field textarea { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.field input:focus, .field select:focus, .field textarea:focus {
+  box-shadow: 0 0 0 3px rgba(245, 176, 38, 0.25);
+}
+
+/* --- Print stylesheet — minimal but production-ready --- */
+@media print {
+  .topnav, .footer, .prefooter, .fab-top, .scroll-progress,
+  .twk-panel, .mobile-drawer, .cmdk-scrim, .toast-host, .dialog-scrim,
+  .media-modal-scrim, .signin-scrim,
+  [aria-hidden="true"][class*="boot"] { display: none !important; }
+  body { background: white; color: black; }
+  .container { max-width: 100%; padding: 0 12mm; }
+  .hero, .footer, .dark-surface, [style*="var(--navy-900)"] {
+    background: white !important; color: black !important;
+  }
+  .hero *, .dark-surface *, [style*="var(--navy-900)"] * {
+    color: black !important; text-shadow: none !important;
+  }
+  a[href]::after { content: " (" attr(href) ")"; font-size: 80%; color: #444; }
+  .photo-frame { break-inside: avoid; }
+  .card, .card-dark { break-inside: avoid; box-shadow: none !important; border: 1px solid #ccc !important; }
+}
+
+/* --- High-contrast / Windows forced-colors compatibility --- */
+@media (forced-colors: active) {
+  .btn, .nav-link, .chip { forced-color-adjust: none; }
+  .btn-primary { background: ButtonText; color: ButtonFace; }
+  .photo-skel, .photo-fallback { display: none; }
+}
+
 /* --- Hero / dark-section inline contrast nudge ---
    The home hero uses inline styles like rgba(255,255,255,0.55-0.65) on
    dark navy. They render as 3.0-3.7:1 which is below WCAG AA 4.5:1 for
