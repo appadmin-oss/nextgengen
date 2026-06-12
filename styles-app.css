@@ -3389,3 +3389,21 @@ section .section-h p[style*="var(--ink-500)"],
 section p[style*="var(--ink-500)"] {
   color: var(--ink-700) !important;
 }
+
+/* --- Shimmer text inside Kinetic spans ---
+   background-clip:text on a wrapper cannot reach glyphs inside transformed
+   descendants (the animated .kinetic-part spans get their own paint layer),
+   which left the hero's "not waiting." fully invisible. Clip the gradient on
+   the spans themselves; the wrapper's transparent text-fill is inherited. */
+.shimmer-gold .kinetic-part {
+  background: linear-gradient(90deg, #f5b026 0%, #ffd680 50%, #f5b026 100%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: ki-in 0.7s cubic-bezier(0.22, 0.61, 0.36, 1) forwards,
+             goldShimmer 4s ease-in-out infinite;
+  animation-delay: calc(var(--ki-i) * 35ms + var(--ki-d) * 1ms), 0ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-gold .kinetic-part { animation: none; }
+}

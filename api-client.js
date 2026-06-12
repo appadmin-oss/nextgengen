@@ -71,6 +71,7 @@
       post:       (slug) => request('/public/post.php' + qs({ slug })),
       session:    () => request('/public/session.php'),
       newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
+      apply:      (data) => request('/public/apply.php', { body: data }),
     },
     admin: {
       members: {

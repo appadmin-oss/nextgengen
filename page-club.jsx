@@ -5,7 +5,10 @@
 /* =================== SUMMER STUDENTS =================== */
 function SummerPage({ setPage }) {
   const [track, setTrack] = useState("all");
-  const filtered = track === "all" ? MEMBERS.slice(0, 8) : MEMBERS.filter(m => m.track === track);
+  const [showAll, setShowAll] = useState(false);
+  const pool = track === "all" ? MEMBERS : MEMBERS.filter(m => m.track === track);
+  const filtered = (track === "all" && !showAll) ? pool.slice(0, 8) : pool;
+  const hiddenCount = pool.length - filtered.length;
 
   return (
     <div className="page" data-screen-label="02 Summer Students">
@@ -24,7 +27,7 @@ function SummerPage({ setPage }) {
               </p>
               <div style={{display:"flex", gap:12, marginTop:32, flexWrap:"wrap"}}>
                 <button className="btn btn-primary btn-lg" onClick={() => setPage("join")}>Start application →</button>
-                <button className="btn btn-ghost btn-lg">Download brochure</button>
+                <button className="btn btn-ghost btn-lg" onClick={() => setPage("parents")}>For parents & guardians</button>
               </div>
             </div>
             <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
@@ -71,8 +74,8 @@ function SummerPage({ setPage }) {
               <h2 className="display" style={{fontSize:"clamp(36px, 4.5vw, 60px)", margin:"6px 0 0"}}>Meet the summer class.</h2>
             </div>
             <div style={{display:"flex", flexWrap:"wrap", gap:8}}>
-              <button onClick={() => setTrack("all")} className={"chip " + (track === "all" ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>All tracks · 8</button>
-              {TRACKS.slice(0,4).map(t => (
+              <button onClick={() => setTrack("all")} className={"chip " + (track === "all" ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>All tracks · {MEMBERS.length}</button>
+              {TRACKS.filter(t => MEMBERS.some(m => m.track === t.name)).slice(0, 5).map(t => (
                 <button key={t.id} onClick={() => setTrack(t.name)} className={"chip " + (track === t.name ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>
                   {t.icon} {t.name}
                 </button>
@@ -80,6 +83,14 @@ function SummerPage({ setPage }) {
             </div>
           </div>
 
+          {filtered.length === 0 && (
+            <div style={{textAlign:"center", padding:"48px 0", color:"var(--ink-700)"}}>
+              No students on this track yet this cohort.
+              <div style={{marginTop:14}}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setTrack("all")}>Show all tracks</button>
+              </div>
+            </div>
+          )}
           <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:18}}>
             {filtered.map((m, i) => (
               <div key={m.id} className="member-card reveal" data-reveal style={{"--reveal-delay": (i * 50) + "ms"}} onClick={() => setPage("profile")}>
@@ -104,9 +115,18 @@ function SummerPage({ setPage }) {
               </div>
             ))}
           </div>
-          <div style={{textAlign:"center", marginTop:32}}>
-            <button className="btn btn-ghost">Load all 318 summer students →</button>
-          </div>
+          {hiddenCount > 0 && (
+            <div style={{textAlign:"center", marginTop:32}}>
+              <button className="btn btn-ghost" onClick={() => setShowAll(true)}>
+                Show {hiddenCount} more student{hiddenCount === 1 ? "" : "s"} →
+              </button>
+            </div>
+          )}
+          {showAll && track === "all" && (
+            <div style={{textAlign:"center", marginTop:32}}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowAll(false)}>Show fewer</button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -135,7 +155,9 @@ function SummerPage({ setPage }) {
 
 /* =================== NGGC MEMBERS =================== */
 function ClubPage({ setPage }) {
+  const [sortBy, setSortBy] = useState("rank"); // "rank" (by XP) | "name"
   const top = [...MEMBERS].sort((a,b) => b.xp - a.xp);
+  const directory = sortBy === "rank" ? top : [...MEMBERS].sort((a,b) => a.first.localeCompare(b.first));
   const featured = top[0];
 
   return (
@@ -186,18 +208,26 @@ function ClubPage({ setPage }) {
                   <h2 className="display" style={{fontSize:48, margin:"4px 0 0"}}>The cohort, in motion.</h2>
                 </div>
                 <div style={{display:"flex", gap:8}}>
-                  <button className="btn btn-ghost btn-sm">Grid</button>
-                  <button className="btn btn-primary btn-sm">By rank</button>
+                  <button
+                    className={"btn btn-sm " + (sortBy === "name" ? "btn-primary" : "btn-ghost")}
+                    onClick={() => setSortBy("name")}
+                    aria-pressed={sortBy === "name"}
+                  >A–Z</button>
+                  <button
+                    className={"btn btn-sm " + (sortBy === "rank" ? "btn-primary" : "btn-ghost")}
+                    onClick={() => setSortBy("rank")}
+                    aria-pressed={sortBy === "rank"}
+                  >By rank</button>
                 </div>
               </div>
               <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:14}}>
-                {top.slice(0, 9).map((m, i) => (
+                {directory.slice(0, 9).map((m) => (
                   <div key={m.id} className="member-card" onClick={() => setPage("profile")} style={{padding:14}}>
                     <div style={{display:"flex", alignItems:"center", gap:12}}>
                       <div style={{position:"relative"}}>
                         <Avatar seed={m.id} name={m.first} size={52}/>
                         <div style={{position:"absolute", bottom:-4, right:-4, background:"var(--gold-500)", color:"var(--navy-900)", borderRadius:"50%", width:22, height:22, display:"grid", placeItems:"center", fontSize:10, fontWeight:800, border:"2px solid white"}}>
-                          {i+1}
+                          {top.findIndex(t => t.id === m.id) + 1}
                         </div>
                       </div>
                       <div style={{flex:1, minWidth:0}}>
@@ -270,7 +300,7 @@ function ClubPage({ setPage }) {
                 <BadgePin badge={b}/>
                 <div style={{fontWeight:700, fontSize:14}}>{b.name}</div>
                 <div className="mono" style={{fontSize:10, color:"var(--ink-500)", letterSpacing:"0.12em", textTransform:"uppercase"}}>
-                  {b.locked ? "LOCKED" : `Earned by ${Math.floor(Math.random() * 80 + 20)}%`}
+                  {b.locked ? "LOCKED" : `Earned by ${badgeEarnRate(b.id)}%`}
                 </div>
               </div>
             ))}
@@ -279,6 +309,14 @@ function ClubPage({ setPage }) {
       </section>
     </div>
   );
+}
+
+// Stable per-badge earn rate — previously Math.random() in render, which
+// re-rolled a different number on every re-render.
+function badgeEarnRate(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 997;
+  return 20 + (h % 61); // 20–80%
 }
 
 function BadgePin({ badge }) {

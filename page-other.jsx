@@ -88,7 +88,7 @@ function FeatureCard({ item, big = false }) {
     "Day in life": "community",
   }[item.kind] || "heroMain";
   return (
-    <div style={{display:"flex", flexDirection:"column", gap:10, cursor:"pointer"}}>
+    <div style={{display:"flex", flexDirection:"column", gap:10}}>
       <div style={{position:"relative", borderRadius:18, overflow:"hidden", aspectRatio: big ? "16/9" : "4/3"}}>
         <Photo name={kindImg} ratio="auto" style={{height:"100%", borderRadius:0}}/>
         <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, transparent 30%, rgba(12,20,50,0.78) 100%)"}}/>
@@ -220,7 +220,13 @@ function VolunteersPage({ setPage }) {
             <p style={{fontSize:19, lineHeight:1.5, color:"rgba(255,255,255,0.78)", maxWidth:560, margin:0}}>
               We do not need experts. We need adults who can listen first, model their craft on camera, and stay present for twelve weeks. If that is you, we have a role.
             </p>
-            <button className="btn btn-lime btn-lg mt-32">Apply to mentor →</button>
+            <button
+              className="btn btn-lime btn-lg mt-32"
+              onClick={() => {
+                const el = document.getElementById("mentor-apply");
+                if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+            >Apply to mentor →</button>
           </div>
           <Photo name="mentor" style={{height:420}} overlay>
             <div style={{position:"absolute", bottom:20, left:20, right:20, color:"white"}}>
@@ -271,18 +277,175 @@ function VolunteersPage({ setPage }) {
           </div>
         </div>
       </section>
+
+      {/* Mentor application */}
+      <MentorApplySection/>
     </div>
   );
 }
 
+function MentorApplySection() {
+  const [d, setD] = useState({ name: "", email: "", role: VOLUNTEER_ROLES[0] ? VOLUNTEER_ROLES[0].name : "Mentor", why: "" });
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setErr("");
+    if (d.name.trim().length < 2) { setErr("Enter your name."); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) { setErr("Enter a valid email."); return; }
+    setBusy(true);
+    try {
+      await NGGApi.public.apply({
+        kind: "mentor",
+        name: d.name.trim(),
+        email: d.email.trim(),
+        role: d.role,
+        why: d.why.trim(),
+      });
+      setSent(true);
+      if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Application received");
+    } catch (e2) {
+      const code = e2.code || e2.message;
+      setErr(code === "rate_limited"
+        ? "Too many submissions — wait a few minutes."
+        : "Couldn't submit right now. Try again in a moment.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section id="mentor-apply" className="section" style={{background:"var(--navy-900)", color:"white"}}>
+      <div className="container" style={{maxWidth:760}}>
+        <div style={{textAlign:"center", marginBottom:36}}>
+          <span className="eyebrow" style={{color:"var(--lime)"}}>APPLY · VOLUNTEER TEAM</span>
+          <h2 className="display" style={{fontSize:"clamp(40px, 5vw, 64px)", margin:"10px 0 0", color:"white"}}>Put your hand up.</h2>
+          <p style={{fontSize:16, color:"rgba(255,255,255,0.78)", maxWidth:480, margin:"14px auto 0", lineHeight:1.5}}>
+            Two minutes. We read every application and reply within a week — yes or no, in writing.
+          </p>
+        </div>
+        {sent ? (
+          <div className="card" style={{padding:40, textAlign:"center", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(208,255,58,0.35)", color:"white"}}>
+            <div className="badge-pin lime" style={{width:72, height:72, fontSize:32, margin:"0 auto 18px"}}>✓</div>
+            <h3 style={{fontFamily:"var(--font-display)", fontSize:28, margin:"0 0 10px"}}>Application received.</h3>
+            <p style={{color:"rgba(255,255,255,0.78)", margin:0, lineHeight:1.5}}>
+              Watch your inbox — we reply within a week. Thank you for offering your Saturdays.
+            </p>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="card" style={{padding:32, display:"flex", flexDirection:"column", gap:16, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)"}}>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Your name</label>
+                <input value={d.name} onChange={e => setD({...d, name: e.target.value})} placeholder="Full name" autoComplete="name"/>
+              </div>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Email</label>
+                <input type="email" value={d.email} onChange={e => setD({...d, email: e.target.value})} placeholder="you@email.com" autoComplete="email"/>
+              </div>
+            </div>
+            <div className="field">
+              <label style={{color:"rgba(255,255,255,0.8)"}}>Which role fits your time?</label>
+              <select value={d.role} onChange={e => setD({...d, role: e.target.value})}>
+                {VOLUNTEER_ROLES.map(r => <option key={r.name} value={r.name}>{r.name} — {r.commit}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label style={{color:"rgba(255,255,255,0.8)"}}>One line on why (optional)</label>
+              <textarea rows={3} value={d.why} onChange={e => setD({...d, why: e.target.value})} placeholder="What craft would you model? What pulls you to this?"/>
+            </div>
+            {err && <div role="alert" style={{color:"var(--coral)", fontSize:14, fontWeight:500}}>{err}</div>}
+            <button className="btn btn-lime btn-lg" type="submit" disabled={busy} style={{justifyContent:"center"}}>
+              {busy ? "Submitting…" : "Submit application →"}
+            </button>
+          </form>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /* =================== JOIN / APPLICATION =================== */
+const JOIN_DRAFT_KEY = "ngg.join.draft";
+
 function JoinPage({ setPage }) {
+  // Restore a saved draft so "we save as you go" is true.
   const [step, setStep] = useState(0);
-  const [data, setData] = useState({ name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "" });
+  const [data, setData] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
+      if (saved && typeof saved === "object") {
+        return Object.assign({ name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "" }, saved);
+      }
+    } catch (_) {}
+    return { name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "" };
+  });
+  const [busy, setBusy] = useState(false);
+  const [fieldErr, setFieldErr] = useState("");
   const steps = ["Identity", "Track", "Story", "Parent"];
 
-  function next() { setStep(Math.min(steps.length, step + 1)); }
-  function back() { setStep(Math.max(0, step - 1)); }
+  // Persist draft on every change (cleared on successful submit).
+  React.useEffect(() => {
+    try { localStorage.setItem(JOIN_DRAFT_KEY, JSON.stringify(data)); } catch (_) {}
+  }, [data]);
+
+  const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
+
+  function validate(s) {
+    if (s === 0) {
+      if (data.name.trim().length < 2) return "Enter the applicant's first name.";
+      const age = parseInt(data.age, 10);
+      if (!age || age < 10 || age > 17) return "Age must be between 10 and 17.";
+    }
+    if (s === 2 && data.why.trim().length < 20) {
+      return "Give us at least a sentence or two — 20 characters minimum.";
+    }
+    if (s === 3 && !emailOk(data.parentEmail)) {
+      return "Enter a valid parent or guardian email.";
+    }
+    return "";
+  }
+
+  async function next() {
+    const msg = validate(step);
+    if (msg) { setFieldErr(msg); return; }
+    setFieldErr("");
+
+    if (step < 3) { setStep(step + 1); return; }
+
+    // Final step — actually submit the application.
+    setBusy(true);
+    try {
+      await NGGApi.public.apply({
+        kind: "teen",
+        name: data.name.trim(),
+        age: parseInt(data.age, 10),
+        centre: data.city,
+        track: data.track,
+        why: data.why.trim(),
+        email: data.parentEmail.trim(),
+      });
+      try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {}
+      setStep(4);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (e) {
+      const code = e.code || e.message;
+      const map = {
+        rate_limited: "Too many submissions from this connection — wait a few minutes and try again.",
+        bad_email: "That parent email doesn't look right.",
+        bad_age: "Age must be between 10 and 17.",
+        upstream_unreachable: "We couldn't reach the server. Your draft is saved — try again in a moment.",
+      };
+      const text = map[code] || "Couldn't submit your application. Your draft is saved — try again.";
+      setFieldErr(text);
+      if (typeof toast !== "undefined") toast.error(text, "Application");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function back() { setFieldErr(""); setStep(Math.max(0, step - 1)); }
 
   return (
     <div className="page" data-screen-label="09 Join">
@@ -393,7 +556,7 @@ function JoinPage({ setPage }) {
                   <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:14, marginTop:12, fontSize:14}}>
                     <div><b>Name</b><br/>{data.name || "—"}</div>
                     <div><b>Age</b><br/>{data.age}</div>
-                    <div><b>City</b><br/>{data.city}</div>
+                    <div><b>Centre</b><br/>{data.city}</div>
                     <div><b>Track</b><br/>{data.track}</div>
                   </div>
                 </div>
@@ -412,12 +575,23 @@ function JoinPage({ setPage }) {
           </div>
 
           {step < 4 && (
-            <div style={{display:"flex", justifyContent:"space-between", marginTop:24}}>
-              <button className="btn btn-ghost" onClick={back} disabled={step === 0} style={{visibility: step === 0 ? "hidden" : "visible"}}>← Back</button>
-              <button className="btn btn-primary btn-lg" onClick={next}>
-                {step === 3 ? "Submit application →" : "Continue →"}
-              </button>
-            </div>
+            <React.Fragment>
+              {fieldErr && (
+                <div role="alert" style={{
+                  marginTop:18, padding:"12px 16px", borderRadius:12,
+                  background:"rgba(255,90,60,0.1)", border:"1px solid rgba(255,90,60,0.3)",
+                  color:"#a3331c", fontSize:14, fontWeight:500,
+                }}>
+                  {fieldErr}
+                </div>
+              )}
+              <div style={{display:"flex", justifyContent:"space-between", marginTop:24}}>
+                <button className="btn btn-ghost" onClick={back} disabled={step === 0 || busy} style={{visibility: step === 0 ? "hidden" : "visible"}}>← Back</button>
+                <button className="btn btn-primary btn-lg" onClick={next} disabled={busy}>
+                  {busy ? "Submitting…" : step === 3 ? "Submit application →" : "Continue →"}
+                </button>
+              </div>
+            </React.Fragment>
           )}
         </div>
       </section>
@@ -425,4 +599,4 @@ function JoinPage({ setPage }) {
   );
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, FAQList });
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, FAQList, MentorApplySection });

@@ -387,7 +387,15 @@ function TracksRibbon({ setPage }) {
             return (
               <div key={t.id} className="reveal" data-reveal style={{"--reveal-delay": (i * 80) + "ms"}}>
                 <Tilt strength={6}>
-                  <div className="track-card" style={{background:c.bg, color:c.fg}}>
+                  <div
+                    className="track-card"
+                    style={{background:c.bg, color:c.fg}}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={"Explore the " + t.name + " track"}
+                    onClick={() => setPage("summer")}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPage("summer"); } }}
+                  >
                     <div className="icon" style={{background:"rgba(255,255,255,0.2)", color:"inherit"}}>{t.icon}</div>
                     <div style={{fontFamily:"var(--font-display)", fontSize:28, fontWeight:800, letterSpacing:"-0.02em", lineHeight:1}}>{t.name}</div>
                     <p style={{fontSize:13, lineHeight:1.4, opacity:0.85, margin:0}}>{t.desc}</p>

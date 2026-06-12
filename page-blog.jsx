@@ -8,7 +8,7 @@ function BlogPage({ setPage }) {
   const categories = ["All", ...Array.from(new Set(BLOG_POSTS.map(p => p.category)))];
   const filtered = filter === "All" ? BLOG_POSTS : BLOG_POSTS.filter(p => p.category === filter);
 
-  if (reading) return <BlogArticle post={reading} setPage={setPage} onBack={() => setReading(null)}/>;
+  if (reading) return <BlogArticle post={reading} setPage={setPage} onBack={() => setReading(null)} onOpen={(p) => setReading(p)}/>;
 
   const [feat, ...rest] = BLOG_POSTS;
 
@@ -108,10 +108,7 @@ function BlogPage({ setPage }) {
                 A single dispatch — the week's mission, the genius of the week, the article we wrote. No marketing, no ads. Ten minutes to read, with your tea.
               </p>
             </div>
-            <div style={{display:"flex", gap:8, padding:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:14}}>
-              <input placeholder="you@email.com" style={{flex:1, background:"transparent", border:"none", color:"white", fontSize:15, padding:"12px 14px", fontFamily:"inherit", outline:"none"}}/>
-              <button className="btn btn-gold">Subscribe</button>
-            </div>
+            <NewsletterForm source="blog"/>
           </div>
         </div>
       </section>
@@ -120,8 +117,8 @@ function BlogPage({ setPage }) {
 }
 
 /* =================== Single article view =================== */
-function BlogArticle({ post, setPage, onBack }) {
-  useEffect(() => { window.scrollTo({top:0, behavior:"instant"}); }, []);
+function BlogArticle({ post, setPage, onBack, onOpen }) {
+  useEffect(() => { window.scrollTo({top:0, behavior:"instant"}); }, [post]);
   // Build a related list
   const related = BLOG_POSTS.filter(p => p.id !== post.id).slice(0, 3);
 
@@ -203,7 +200,6 @@ function BlogArticle({ post, setPage, onBack }) {
               <div style={{fontFamily:"var(--font-display)", fontSize:22, fontWeight:700, marginTop:4}}>{post.author.name}</div>
               <div style={{fontSize:13, color:"var(--ink-500)", marginTop:4}}>{post.author.role} · Writing about youth movements, African excellence, and the small daily work of becoming.</div>
             </div>
-            <button className="btn btn-ghost btn-sm">Follow</button>
           </div>
         </div>
       </section>
@@ -214,7 +210,7 @@ function BlogArticle({ post, setPage, onBack }) {
           <SectionHead eyebrow="KEEP READING" title="More from the journal."/>
           <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:24}}>
             {related.map(p => (
-              <article key={p.id} style={{display:"flex", flexDirection:"column", gap:14, cursor:"pointer"}}>
+              <article key={p.id} style={{display:"flex", flexDirection:"column", gap:14, cursor:"pointer"}} onClick={() => onOpen && onOpen(p)}>
                 <Photo src={blogCover(p.cover, 800, 500)} ratio="3/2"/>
                 <div>
                   <span className="chip" style={{fontSize:11, padding:"3px 10px"}}>{p.category}</span>

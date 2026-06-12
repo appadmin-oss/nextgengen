@@ -242,3 +242,76 @@ function Public_newsletter(p, e) {
   audit_('newsletter.subscribe', null, email, { source: p.source || 'site' }, ip);
   return { ok: true };
 }
+
+// ============================================================================
+// Applications — public submit (no auth). Teen program + mentor applications.
+// ============================================================================
+
+function Public_apply(p, e) {
+  const ip = String(p.ip || '');
+  // Per-IP rate limit: 3 applications per 10 minutes.
+  if (!rateLimit_('rl:apply:' + ip, 3, 600)) {
+    return { ok: false, error: 'rate_limited' };
+  }
+
+  const kind = String(p.kind || 'teen');
+  if (kind !== 'teen' && kind !== 'mentor') return { ok: false, error: 'bad_kind' };
+
+  const name = String(p.name || '').trim();
+  if (name.length < 2 || name.length > 120) return { ok: false, error: 'bad_name' };
+
+  const email = String(p.email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: 'bad_email' };
+  if (email.length > 200) return { ok: false, error: 'email_too_long' };
+
+  const why = String(p.why || '').trim();
+  if (why.length > 2000) return { ok: false, error: 'why_too_long' };
+
+  let age = 0, track = '', centre = '', role = '';
+  if (kind === 'teen') {
+    age = parseInt(p.age, 10) || 0;
+    if (age < 10 || age > 17) return { ok: false, error: 'bad_age' };
+    track  = String(p.track  || '').trim().slice(0, 60);
+    centre = String(p.centre || '').trim().slice(0, 60);
+  } else {
+    role = String(p.role || '').trim().slice(0, 60);
+  }
+
+  // Lazily create the sheet so a fresh install needs no extra Setup step.
+  let sh = ss_().getSheetByName('Applications');
+  if (!sh) {
+    sh = ss_().insertSheet('Applications');
+    sh.getRange(1, 1, 1, 11).setValues([[
+      'kind', 'name', 'age', 'centre', 'track', 'role', 'why', 'email', 'status', 'createdAt', 'ip',
+    ]]);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, 1, 11).setBackground('#0c1432').setFontColor('#f5b026').setFontWeight('bold');
+    invalidate_('Applications');
+  }
+
+  // Duplicate guard: same email + kind within 24h is treated as already
+  // received (idempotent — the applicant just gets the same success).
+  const cutoff = Date.now() - 24 * 3600 * 1000;
+  const dupe = findRow_('Applications', r =>
+    String(r.email || '').toLowerCase() === email &&
+    String(r.kind || '') === kind &&
+    new Date(r.createdAt || 0).getTime() > cutoff
+  );
+  if (!dupe) {
+    appendRow_('Applications', {
+      kind: kind,
+      name: name,
+      age: age || '',
+      centre: centre,
+      track: track,
+      role: role,
+      why: why,
+      email: email,
+      status: 'new',
+      createdAt: nowIso_(),
+      ip: ip,
+    });
+  }
+  audit_('apply.' + kind, null, email, { name: name, track: track || role }, ip);
+  return { ok: true, duplicate: !!dupe };
+}

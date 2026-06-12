@@ -4,6 +4,31 @@
    Anchor 12 missions derived from each chapter.
    ================================================================ */
 
+// Preorder → waitlist. There's no payment flow yet, so the honest version
+// captures an email against the 'book-waitlist' source and confirms.
+async function joinBookWaitlist() {
+  const email = await dialog.prompt({
+    title: "Join the preorder list",
+    body: "The Anchor ships from Lagos later this year. Leave your email and you'll be first to know when preorders open — print and digital.",
+    label: "Email",
+    placeholder: "you@email.com",
+    inputType: "email",
+    cta: "Join the list",
+  });
+  if (!email) return;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    toast.error("That email doesn't look right.", "Preorder list");
+    return;
+  }
+  try {
+    await NGGApi.public.newsletter(email, "book-waitlist");
+    toast.success("You're on the list. We'll email you when preorders open.", "The Anchor");
+  } catch (e) {
+    const code = e.code || e.message;
+    toast.error(code === "rate_limited" ? "Too many tries — wait a few minutes." : "Couldn't save your email. Try again.", "Preorder list");
+  }
+}
+
 function BookPage({ setPage }) {
   // Until the actual PDF + chapter outline is loaded, this renders a
   // structured placeholder admin can fill in via the Settings sheet
@@ -46,7 +71,7 @@ function BookHero({ setPage }) {
               public work. Twelve chapters, dozens of missions, a single direction.
             </p>
             <div className="book-hero-cta">
-              <button className="btn btn-primary btn-lg">Preorder the book →</button>
+              <button className="btn btn-primary btn-lg" onClick={joinBookWaitlist}>Preorder the book →</button>
               <button className="btn btn-ghost btn-lg" onClick={() => setPage("anchor")}>
                 See the missions
               </button>
@@ -177,7 +202,7 @@ function BookCta({ setPage }) {
         <h2 className="display book-cta-h">Anchor yourself.</h2>
         <p className="book-cta-p">Read the chapters. Show up for the work. Become the room you wanted.</p>
         <div className="book-cta-row">
-          <button className="btn btn-gold btn-lg">Preorder the book →</button>
+          <button className="btn btn-gold btn-lg" onClick={joinBookWaitlist}>Preorder the book →</button>
           <button className="btn btn-ghost btn-lg" onClick={() => setPage("anchor")}>Go to Anchor 12 →</button>
         </div>
         <div className="mono book-cta-note">PRINT SHIPS FROM LAGOS · DIGITAL UNLOCKS ON SIGN-IN</div>

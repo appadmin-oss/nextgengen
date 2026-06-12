@@ -596,7 +596,6 @@ function ProfilePage({ setPage }) {
                     <div className="eyebrow" style={{color:"var(--ink-500)"}}>PUBLIC PROJECTS · 07</div>
                     <h3 style={{fontFamily:"var(--font-display)", fontSize:24, margin:"4px 0 0"}}>What I've put into the world.</h3>
                   </div>
-                  <button className="btn btn-ghost btn-sm">View all →</button>
                 </div>
                 <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:14}}>
                   {[
