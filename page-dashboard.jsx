@@ -237,8 +237,18 @@ function DashboardToday({ today, member, onMutate, session }) {
         toast.success("+" + m.xp + " XP locked in", m.title);
         onMutate();
       } else {
-        const proof = window.prompt(`Paste a link or short note for "${m.title}":`);
-        if (proof !== null) {
+        const proof = await dialog.prompt({
+          title: m.title,
+          body: m.proof === "link"
+            ? "Paste a link to your proof (URL, doc, post, video…)."
+            : "Add a short note describing what you did.",
+          label: m.proof === "link" ? "Proof link or note" : "What you did",
+          placeholder: m.proof === "link" ? "https://… or a short note" : "I shipped…",
+          multiline: m.proof !== "link",
+          cta: "Submit for review",
+          required: true,
+        });
+        if (proof) {
           await NGGApi.member.submitMission({ missionId: m.missionId, proofUrl: proof });
           toast.success("Sent to mentor for review", m.title);
           onMutate();

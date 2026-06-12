@@ -3069,3 +3069,323 @@ button:focus-visible, .nav-link:focus-visible, .btn:focus-visible {
   .admin-section { padding: 18px; }
   .admin-topbar { padding: 12px 16px; }
 }
+
+/* ============================================================
+   10. PRODUCTION POLISH LAYER
+   Contrast lifts, dialog system, focus rings, table scrolling,
+   admin layout fixes, dashboard density. Loaded last so it
+   overrides anything above when needed.
+   ============================================================ */
+
+/* --- Dialog (replaces window.confirm / window.prompt) --- */
+.dialog-scrim {
+  position: fixed; inset: 0;
+  background: rgba(8, 12, 32, 0.62);
+  backdrop-filter: blur(6px) saturate(1.2);
+  -webkit-backdrop-filter: blur(6px) saturate(1.2);
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  animation: dlgFadeIn 0.18s ease;
+}
+@keyframes dlgFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.dialog-card {
+  background: white;
+  width: 100%;
+  max-width: 460px;
+  border-radius: 18px;
+  padding: 26px 26px 22px;
+  box-shadow: 0 30px 80px -20px rgba(8,12,32,0.55), 0 1px 0 rgba(255,255,255,0.6) inset;
+  border: 1px solid rgba(12,20,50,0.08);
+  animation: dlgPopIn 0.22s cubic-bezier(0.2,0.7,0.2,1);
+  display: flex; flex-direction: column; gap: 12px;
+}
+@keyframes dlgPopIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+.dialog-h {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: -0.015em;
+  margin: 0;
+  font-weight: 700;
+  color: var(--ink-900);
+  line-height: 1.2;
+}
+.dialog-p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-700);
+}
+.dialog-field { display: flex; flex-direction: column; gap: 6px; }
+.dialog-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-700);
+  font-weight: 600;
+}
+.dialog-input {
+  font-family: inherit;
+  font-size: 15px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(12,20,50,0.18);
+  background: var(--paper);
+  color: var(--ink-900);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  resize: vertical;
+  min-height: 44px;
+}
+.dialog-input:focus {
+  border-color: var(--navy-900);
+  background: white;
+  box-shadow: 0 0 0 3px rgba(245,176,38,0.25);
+}
+.dialog-actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.dialog-actions .btn { min-width: 96px; justify-content: center; }
+.btn-danger {
+  background: var(--coral); color: white;
+  box-shadow: 0 3px 0 #a32f1a;
+  font-weight: 600;
+}
+.btn-danger:hover { background: #ff7158; transform: translateY(-1px); box-shadow: 0 4px 0 #a32f1a; }
+.btn-danger:active { transform: translateY(2px); box-shadow: 0 1px 0 #a32f1a; }
+@media (max-width: 480px) {
+  .dialog-card { padding: 22px 20px 18px; border-radius: 16px; }
+  .dialog-h { font-size: 20px; }
+  .dialog-actions { flex-direction: column-reverse; }
+  .dialog-actions .btn { width: 100%; }
+}
+
+/* --- Global focus-visible polish — keyboard-only ring --- */
+:focus-visible {
+  outline: 3px solid rgba(245,176,38,0.55);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.btn:focus-visible {
+  outline: 3px solid rgba(245,176,38,0.6);
+  outline-offset: 3px;
+}
+
+/* --- Contrast lifts on dark surfaces ---
+   The site uses rgba(255,255,255,0.4-0.5) for fine meta copy on navy.
+   That's 3.0-3.7:1 vs navy-900 — below WCAG AA for body. Lift floor to 0.62. */
+.book-cta-p { color: rgba(255,255,255,0.78); }
+.book-cta-note { color: rgba(255,255,255,0.6); }
+.book-flex-l { color: rgba(255,255,255,0.66); }
+.anch-hero-meta-l { color: rgba(255,255,255,0.62); }
+.dash-session-badge .mono[style*="rgba(255,255,255,0.55)"] { color: rgba(255,255,255,0.72) !important; }
+.admin-topbar .mono { color: rgba(255,255,255,0.72) !important; }
+
+/* --- Footer meta lifts --- */
+.footer-newsletter p { color: rgba(255,255,255,0.78); }
+.footer-brand p { color: rgba(255,255,255,0.75); }
+.footer-bottom .copy,
+.footer-bottom .made,
+.footer-bottom button.legal { color: rgba(255,255,255,0.62); }
+.footer-bottom button.legal:hover { color: var(--gold-400); }
+.newsletter-form input::placeholder { color: rgba(255,255,255,0.55); }
+.newsletter-meta { color: rgba(255,255,255,0.6); }
+.footer-chapters-label { color: rgba(255,255,255,0.66); }
+.footer-status-label { color: rgba(255,255,255,0.78); }
+
+/* --- Week-pill "locked" was ink-400 on cream-100 (~2.7:1). Lift to ink-700. --- */
+.week-pill.locked {
+  color: var(--ink-700);
+  opacity: 0.7;
+}
+.week-pill.locked .mono { opacity: 0.85; }
+
+/* --- Tiny labels were 9px — bump to legible 10.5px and tighten letterspace --- */
+.dash-stat-l { font-size: 10.5px; letter-spacing: 0.18em; font-weight: 600; color: var(--ink-700); }
+.dash-event-mm { font-size: 10px; letter-spacing: 0.18em; font-weight: 600; }
+.dash-note-time { font-size: 10px; letter-spacing: 0.14em; color: var(--ink-700); }
+.dash-stat-u { color: var(--ink-700); }
+.dash-mission-meta { color: var(--ink-700); }
+.dash-mission-prompt { color: var(--ink-700); }
+.dash-mentor-meta { color: var(--ink-700); }
+.dash-event-meta { color: var(--ink-700); }
+.dash-feed-meta { color: var(--ink-700); }
+
+/* --- Mission-row min-width fix so prompt text wraps instead of pushing CTA --- */
+.dash-mission { align-items: start; }
+.dash-mission-body { min-width: 0; }
+.dash-mission-cta { align-self: center; }
+
+/* --- Admin polish --- */
+.admin-table-wrap {
+  border-radius: 12px;
+  border: 1px solid rgba(12,20,50,0.06);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.admin-table { min-width: 720px; }
+.admin-table tr:hover td { background: rgba(245,176,38,0.05); }
+.admin-table td { color: var(--ink-900); }
+.admin-table th { background: var(--cream-50); position: sticky; top: 0; z-index: 1; }
+
+.admin-tile {
+  cursor: pointer;
+  border: 1px solid rgba(12,20,50,0.06);
+}
+.admin-tile:focus-visible {
+  outline: 3px solid rgba(245,176,38,0.55);
+  outline-offset: 3px;
+}
+.admin-tile-n { color: var(--navy-900); }
+.admin-tile-l { color: var(--ink-700); font-weight: 600; }
+
+.admin-nav-item:focus-visible {
+  outline: 2px solid var(--gold-500);
+  outline-offset: -2px;
+}
+
+/* --- Dashboard hero chip spacing on mobile --- */
+.dash-hero-sub {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+}
+
+/* --- Admin nav active state high-contrast (gold accent on the bar) --- */
+.admin-nav-item.is-active {
+  position: relative;
+}
+.admin-nav-item.is-active::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--gold-500);
+}
+@media (max-width: 820px) {
+  .admin-nav-item.is-active::before { display: none; }
+  .admin-nav { border-bottom: 1px solid rgba(12,20,50,0.08); }
+}
+
+/* --- Skeleton: signed-out preview shimmer for polish --- */
+.signed-out-card-bar,
+.signed-out-card-grid > div {
+  background: linear-gradient(90deg,
+    rgba(12,20,50,0.06) 0%,
+    rgba(12,20,50,0.12) 50%,
+    rgba(12,20,50,0.06) 100%);
+  background-size: 200% 100%;
+  animation: skelShine 1.8s ease-in-out infinite;
+  border-radius: 8px;
+}
+@keyframes skelShine {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .signed-out-card-bar,
+  .signed-out-card-grid > div { animation: none; }
+}
+
+/* --- Better empty states — softer dashed card --- */
+.dash-empty {
+  padding: 22px 18px !important;
+  border: 1.5px dashed rgba(12,20,50,0.14);
+  border-radius: 12px;
+  background: var(--cream-50);
+  margin-top: 12px;
+}
+.dash-empty-text { color: var(--ink-700); }
+
+/* --- Nav burger tap target larger --- */
+.nav-burger { min-width: 44px; min-height: 44px; }
+
+/* --- Hide animation that wobbles big numbers (causes blurring) on long pages --- */
+.kpi-num { animation: none; }
+
+/* --- Improved disabled state visibility --- */
+.btn:disabled, .btn[disabled] {
+  opacity: 0.55;
+  filter: grayscale(0.2);
+}
+
+/* --- Form input focus on dark backgrounds (auth modal etc) --- */
+.signin-input:focus,
+.admin-input:focus,
+.admin-select:focus,
+.field input:focus, .field select:focus, .field textarea:focus {
+  box-shadow: 0 0 0 3px rgba(245,176,38,0.22);
+  outline: none;
+}
+
+/* --- Sticky topnav: lock z-index above scroll progress --- */
+.topnav { z-index: 50; }
+.scroll-progress { z-index: 40; }
+.nav-mega { z-index: 55; }
+
+/* --- Truncate long names cleanly in user/menu pills --- */
+.nav-auth-name {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+/* --- Newsletter form: better feedback when busy --- */
+.newsletter-form button:disabled {
+  opacity: 0.55;
+  cursor: progress;
+  transform: none !important;
+}
+
+/* --- Tap-friendly: enlarge small chips on touch --- */
+@media (pointer: coarse) {
+  .chip { padding: 6px 12px; font-size: 12px; }
+  .dash-shortcut { padding: 14px 16px; }
+}
+
+/* --- Hero / dark-section inline contrast nudge ---
+   The home hero uses inline styles like rgba(255,255,255,0.55-0.65) on
+   dark navy. They render as 3.0-3.7:1 which is below WCAG AA 4.5:1 for
+   body text. Override the common inline patterns. */
+.hero [style*="rgba(255,255,255,0.55)"],
+section[style*="var(--navy-900)"] [style*="rgba(255,255,255,0.55)"] {
+  color: rgba(255,255,255,0.72) !important;
+}
+.hero [style*="rgba(255,255,255,0.6)"],
+section[style*="var(--navy-900)"] [style*="rgba(255,255,255,0.6)"] {
+  color: rgba(255,255,255,0.74) !important;
+}
+.hero [style*="rgba(255,255,255,0.65)"],
+section[style*="var(--navy-900)"] [style*="rgba(255,255,255,0.65)"] {
+  color: rgba(255,255,255,0.78) !important;
+}
+.hero [style*="rgba(255,255,255,0.7)"],
+section[style*="var(--navy-900)"] [style*="rgba(255,255,255,0.7)"] {
+  color: rgba(255,255,255,0.82) !important;
+}
+.hero [style*="rgba(255,255,255,0.4)"],
+section[style*="var(--navy-900)"] [style*="rgba(255,255,255,0.4)"] {
+  color: rgba(255,255,255,0.66) !important;
+}
+.hero [style*="rgba(255,255,255,0.45)"],
+section[style*="var(--navy-900)"] [style*="rgba(255,255,255,0.45)"] {
+  color: rgba(255,255,255,0.66) !important;
+}
+.hero [style*="rgba(255,255,255,0.5)"],
+section[style*="var(--navy-900)"] [style*="rgba(255,255,255,0.5)"] {
+  color: rgba(255,255,255,0.7) !important;
+}
+
+/* --- Inline ink-500 on cream is borderline AA at small sizes. Promote to ink-700. --- */
+section .section-h p[style*="var(--ink-500)"],
+section p[style*="var(--ink-500)"] {
+  color: var(--ink-700) !important;
+}

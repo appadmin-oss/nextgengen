@@ -737,7 +737,13 @@ function AdminBroadcast() {
   const [sent, setSent] = React.useState(false);
   const send = async (e) => {
     e.preventDefault();
-    if (!window.confirm("Send this to every active member?")) return;
+    const ok = await dialog.confirm({
+      title: "Broadcast to every active member?",
+      body: "This sends a push notification to every active member across both centres. There's no undo.",
+      cta: "Send broadcast",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try { await NGGApi.admin.broadcast(d); setSent(true); setD({ title:"", body:"", linkPage:"" }); setTimeout(() => setSent(false), 2400); }
     catch (e) { toast.error(e.code || e.message); }

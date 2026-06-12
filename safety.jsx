@@ -121,7 +121,149 @@ function SkipLink() {
   return <a className="skip-link" href="#main">Skip to content</a>;
 }
 
+// ============================================================================
+// Dialog system — promise-based replacement for window.confirm / window.prompt.
+// Use:   await dialog.confirm({ title, body, cta, cancel, danger });   // → bool
+//        await dialog.prompt({ title, label, placeholder, multiline }); // → string|null
+// A single host is mounted by App; calls open it from anywhere.
+// ============================================================================
+
+const _dialogListeners = new Set();
+let _dialogSeq = 0;
+
+const dialog = {
+  _open(opts) {
+    return new Promise((resolve) => {
+      const id = ++_dialogSeq;
+      const payload = Object.assign({ id, resolve }, opts);
+      _dialogListeners.forEach(fn => fn(payload));
+    });
+  },
+  confirm(opts) {
+    const o = typeof opts === "string" ? { body: opts } : (opts || {});
+    return this._open({
+      kind: "confirm",
+      title: o.title || "Are you sure?",
+      body: o.body || "",
+      cta: o.cta || "Confirm",
+      cancel: o.cancel || "Cancel",
+      danger: !!o.danger,
+    });
+  },
+  prompt(opts) {
+    const o = typeof opts === "string" ? { title: opts } : (opts || {});
+    return this._open({
+      kind: "prompt",
+      title: o.title || "Enter a value",
+      body: o.body || "",
+      label: o.label || "",
+      placeholder: o.placeholder || "",
+      defaultValue: o.defaultValue || "",
+      multiline: !!o.multiline,
+      required: o.required !== false,
+      cta: o.cta || "Submit",
+      cancel: o.cancel || "Cancel",
+      inputType: o.inputType || "text",
+    });
+  },
+};
+
+function DialogHost() {
+  const [current, setCurrent] = React.useState(null);
+  const [value, setValue] = React.useState("");
+  const inputRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const fn = (d) => {
+      setValue(d.defaultValue || "");
+      setCurrent(d);
+    };
+    _dialogListeners.add(fn);
+    return () => _dialogListeners.delete(fn);
+  }, []);
+
+  React.useEffect(() => {
+    if (!current) return;
+    document.body.classList.add("no-scroll");
+    const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 60);
+    const onKey = (e) => {
+      if (e.key === "Escape") close(null);
+      if (e.key === "Enter" && current.kind === "confirm") { e.preventDefault(); close(true); }
+      if (e.key === "Enter" && current.kind === "prompt" && !current.multiline && !e.shiftKey) {
+        e.preventDefault(); submit();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.classList.remove("no-scroll");
+      window.removeEventListener("keydown", onKey);
+      clearTimeout(t);
+    };
+  }, [current]);
+
+  if (!current) return null;
+
+  function close(result) {
+    current.resolve(result);
+    setCurrent(null);
+  }
+  function submit() {
+    if (current.kind === "confirm") return close(true);
+    const v = (value || "").trim();
+    if (current.required && !v) return;
+    close(v);
+  }
+
+  return (
+    <div className="dialog-scrim" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) close(current.kind === "confirm" ? false : null); }}>
+      <div className={"dialog-card dialog-" + current.kind} role="dialog" aria-modal="true" aria-labelledby={"dlg-h-" + current.id}>
+        <h3 id={"dlg-h-" + current.id} className="dialog-h">{current.title}</h3>
+        {current.body && <p className="dialog-p">{current.body}</p>}
+        {current.kind === "prompt" && (
+          <label className="dialog-field">
+            {current.label && <span className="dialog-label">{current.label}</span>}
+            {current.multiline ? (
+              <textarea
+                ref={inputRef}
+                className="dialog-input"
+                rows={4}
+                placeholder={current.placeholder}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+              />
+            ) : (
+              <input
+                ref={inputRef}
+                type={current.inputType}
+                className="dialog-input"
+                placeholder={current.placeholder}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+              />
+            )}
+          </label>
+        )}
+        <div className="dialog-actions">
+          <button type="button" className="btn btn-ghost" onClick={() => close(current.kind === "confirm" ? false : null)}>
+            {current.cancel}
+          </button>
+          <button
+            type="button"
+            className={"btn " + (current.danger ? "btn-danger" : "btn-primary")}
+            onClick={submit}
+            disabled={current.kind === "prompt" && current.required && !value.trim()}
+          >
+            {current.cta}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 window.ErrorBoundary = ErrorBoundary;
 window.ToastHost = ToastHost;
 window.SkipLink = SkipLink;
 window.toast = toast;
+window.dialog = dialog;
+window.DialogHost = DialogHost;

@@ -143,6 +143,7 @@ function App() {
         <SkipLink/>
         {pages.admin}
         <ToastHost/>
+        <DialogHost/>
         <CommandPalette/>
       </div>
     );
@@ -161,6 +162,7 @@ function App() {
       <Footer setPage={setPage}/>
       <BackToTop/>
       <ToastHost/>
+      <DialogHost/>
       <CommandPalette/>
 
       <TweaksPanel title="Tweaks">
