@@ -18,11 +18,23 @@ function DashboardPage({ setPage }) {
     return () => { alive = false; };
   }, [isSignedIn, reload]);
 
-  // Poll every 60s to keep stats and notifications fresh.
+  // Poll every 60s to keep stats and notifications fresh — but only when
+  // the tab is visible. Background tabs drained battery + burned API
+  // calls (members reported the dashboard chewing data on phones left
+  // in their pocket). We also refresh immediately on becoming-visible
+  // so the dashboard is current the moment they look at it.
   React.useEffect(() => {
     if (!isSignedIn) return;
-    const id = setInterval(() => setReload(r => r + 1), 60000);
-    return () => clearInterval(id);
+    let id = null;
+    const start = () => { if (!id) id = setInterval(() => setReload(r => r + 1), 60000); };
+    const stop  = () => { if (id) { clearInterval(id); id = null; } };
+    const onVis = () => {
+      if (document.hidden) stop();
+      else { setReload(r => r + 1); start(); }
+    };
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
   }, [isSignedIn]);
 
   if (loading) {
