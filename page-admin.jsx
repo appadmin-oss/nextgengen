@@ -573,41 +573,45 @@ function AdminMissionEditor({ data, onClose, onSaved }) {
 
 function AdminEvents() {
   const [editing, setEditing] = React.useState(null);
-  const [refresh, setRefresh] = React.useState(0);
   const [list, setList] = React.useState(null);
-  React.useEffect(() => {
-    NGGApi.public.events().then(r => setList(r.events || []));
-  }, [refresh]);
+  const [err, setErr] = React.useState("");
+  // Admin list = ALL events (drafts, internal, past), not the public feed.
+  const load = () => NGGApi.admin.events.list()
+    .then(r => { setList(r.events || []); setErr(""); })
+    .catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
   return (
     <div className="admin-section">
       <div className="admin-section-head">
         <h2 className="admin-h2">Events</h2>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New event</button>
       </div>
-      {list === null ? <div className="dash-spinner"/> :
+      {err ? <div className="admin-empty">Couldn't load events: {err}</div> :
+        list === null ? <div className="dash-spinner"/> :
         list.length === 0 ? <div className="admin-empty">No events yet.</div> :
         <div className="admin-event-list">
           {list.map(ev => (
             <button key={ev.eventId} className="admin-event-row" onClick={() => setEditing(ev)}>
               <div className="admin-event-date-block">
-                <div>{new Date(ev.startAt).getDate()}</div>
-                <div className="mono">{new Date(ev.startAt).toLocaleString("en", { month: "short" })}</div>
+                <div>{ev.startAt ? new Date(ev.startAt).getDate() : "—"}</div>
+                <div className="mono">{ev.startAt ? new Date(ev.startAt).toLocaleString("en", { month: "short" }) : ""}</div>
               </div>
               <div>
                 <div className="admin-event-title">{ev.title}</div>
                 <div className="mono admin-event-meta">{ev.kind} · CACENTRE {ev.centre} · {ev.location || ""}</div>
               </div>
+              <span className={"chip status-" + (ev.status || "draft")} style={{marginLeft:"auto"}}>{ev.status || "draft"}{ev.isPublic ? "" : " · internal"}</span>
             </button>
           ))}
         </div>
       }
-      {editing && <AdminEventEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); setRefresh(r => r + 1); }}/>}
+      {editing && <AdminEventEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
     </div>
   );
 }
 
 function AdminEventEditor({ data, onClose, onSaved }) {
-  const [d, setD] = React.useState(Object.assign({ status:"published", kind:"session", centre:"Egbeda", isPublic: false }, data));
+  const [d, setD] = React.useState(Object.assign({ status:"draft", kind:"session", centre:"Egbeda", isPublic: false }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
   const save = async (e) => {
@@ -654,29 +658,42 @@ function AdminEventEditor({ data, onClose, onSaved }) {
 function AdminPosts() {
   const [list, setList] = React.useState(null);
   const [editing, setEditing] = React.useState(null);
-  const [refresh, setRefresh] = React.useState(0);
-  React.useEffect(() => { NGGApi.public.posts().then(r => setList(r.posts || [])); }, [refresh]);
+  const [err, setErr] = React.useState("");
+  // Admin list = ALL posts (drafts/archived too), via the admin endpoint.
+  // The public feed only returns published, which hid every draft.
+  const load = () => NGGApi.admin.posts.list()
+    .then(r => { setList(r.posts || []); setErr(""); })
+    .catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  // Open the full record (any status, incl. body) for editing.
+  const open = (postId) => NGGApi.admin.posts.get(postId)
+    .then(r => setEditing(r.post))
+    .catch(e => toast.error(e.code || e.message));
   return (
     <div className="admin-section">
       <div className="admin-section-head">
         <h2 className="admin-h2">Posts · blog · news · updates · promos</h2>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New post</button>
       </div>
-      {list === null ? <div className="dash-spinner"/> :
+      {err ? <div className="admin-empty">Couldn't load posts: {err}</div> :
+        list === null ? <div className="dash-spinner"/> :
         list.length === 0 ? <div className="admin-empty">No posts yet.</div> :
         <ul className="admin-post-list">
           {list.map(p => (
-            <li key={p.postId} className="admin-post-row" onClick={() => NGGApi.public.post(p.slug).then(r => setEditing(r.post))}>
+            <li key={p.postId} className="admin-post-row" onClick={() => open(p.postId)}>
               <div>
                 <div className="admin-post-title">{p.title}</div>
                 <div className="mono admin-post-meta">{p.kind} · {p.category || ""} · {fmtDate(p.publishAt)}</div>
               </div>
-              <span className={"chip post-kind-" + p.kind}>{p.kind}</span>
+              <div style={{display:"flex", gap:6, alignItems:"center"}}>
+                <span className={"chip status-" + (p.status || "draft")}>{p.status || "draft"}</span>
+                <span className={"chip post-kind-" + p.kind}>{p.kind}</span>
+              </div>
             </li>
           ))}
         </ul>
       }
-      {editing && <AdminPostEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); setRefresh(r => r + 1); }}/>}
+      {editing && <AdminPostEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
     </div>
   );
 }

@@ -91,9 +91,12 @@
         upsert: (data) => request('/admin/missions.php', { body: data }),
       },
       events: {
+        list:   () => request('/admin/events.php'),
         upsert: (data) => request('/admin/events.php', { body: data }),
       },
       posts: {
+        list:   () => request('/admin/posts.php'),
+        get:    (postId) => request('/admin/posts.php' + qs({ postId })),
         upsert: (data) => request('/admin/posts.php', { body: data }),
       },
       promotions: {

@@ -177,6 +177,36 @@ function Admin_eventsUpsert(p, e) {
   return { ok: true, eventId: newId };
 }
 
+// Admin event list — ALL events regardless of status/visibility/date, so
+// drafts, internal (non-public) and past events are all manageable. The
+// public events endpoint filters to published+public+future, which is
+// wrong for an editing surface. Newest first.
+function Admin_eventsList(p, e) {
+  const gate = requireAdmin_(p); if (!gate.ok) return gate;
+  const rows = readSheet_('Events').rows.slice()
+    .sort((a, b) => new Date(b.startAt || b.createdAt || 0) - new Date(a.startAt || a.createdAt || 0));
+  return { ok: true, total: rows.length, events: rows.map(adminEvent_) };
+}
+
+// Full editable event record — includes status (which publicEvent_ drops,
+// causing every edit to silently force-publish).
+function adminEvent_(e) {
+  return {
+    eventId: e.eventId,
+    title: e.title,
+    kind: e.kind,
+    status: e.status || 'draft',
+    startAt: e.startAt,
+    endAt: e.endAt,
+    centre: e.centre,
+    location: e.location,
+    coverUrl: e.coverUrl || '',
+    body: e.body || '',
+    capacity: Number(e.capacity || 0),
+    isPublic: Boolean(e.isPublic),
+  };
+}
+
 // ---------- Posts ----------
 
 function Admin_postsUpsert(p, e) {
@@ -199,6 +229,54 @@ function Admin_postsUpsert(p, e) {
   appendRow_('Posts', patch);
   audit_('admin.post.create', gate.requester.memberId, newId, {}, String(p.ip || ''));
   return { ok: true, postId: newId, slug: patch.slug };
+}
+
+// Admin post list — ALL posts regardless of status (drafts/archived too),
+// newest first. Body omitted to keep the list light; the editor fetches
+// the full record via admin.posts.get. The public posts endpoint only
+// returns published, which hid every draft an admin created.
+function Admin_postsList(p, e) {
+  const gate = requireAdmin_(p); if (!gate.ok) return gate;
+  const rows = readSheet_('Posts').rows.slice()
+    .sort((a, b) => new Date(b.publishAt || b.createdAt || 0) - new Date(a.publishAt || a.createdAt || 0));
+  return { ok: true, total: rows.length, posts: rows.map(function (r) { return adminPost_(r, false); }) };
+}
+
+// Admin post fetch by id — any status, includes body. Lets admins open a
+// draft to edit/publish; Post_get requires published and 404s on drafts.
+function Admin_postsGet(p, e) {
+  const gate = requireAdmin_(p); if (!gate.ok) return gate;
+  const id = String(p.postId || '').trim();
+  const row = findRow_('Posts', r => String(r.postId) === id);
+  if (!row) return { ok: false, error: 'not_found' };
+  return { ok: true, post: adminPost_(row, true) };
+}
+
+// Full editable post record — raw stored values (not display-normalized),
+// tags as the raw comma string the editor expects, and crucially `status`
+// (which publicPost_ drops, so edits re-seeded status to "draft" and
+// silently unpublished live posts).
+function adminPost_(p, includeBody) {
+  const out = {
+    postId: p.postId,
+    slug: p.slug,
+    kind: p.kind,
+    status: p.status || 'draft',
+    title: p.title,
+    excerpt: p.excerpt || '',
+    coverUrl: p.coverUrl || '',
+    category: p.category || '',
+    tags: String(p.tags || ''),
+    featured: Boolean(p.featured),
+    authorId: p.authorId || '',
+    publishAt: p.publishAt || '',
+    createdAt: p.createdAt || '',
+    promoCta: p.promoCta || '',
+    promoUrl: p.promoUrl || '',
+    promoExpires: p.promoExpires || '',
+  };
+  if (includeBody) out.body = p.body || '';
+  return out;
 }
 
 function Admin_promotionsSet(p, e) {
