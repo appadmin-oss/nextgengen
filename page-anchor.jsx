@@ -6,24 +6,30 @@
 function AnchorPage({ setPage }) {
   const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false };
   const [live, setLive] = React.useState(null);
+  const [liveErr, setLiveErr] = React.useState(false);
 
   React.useEffect(() => {
-    if (!auth.isSignedIn) return;
+    if (!auth.isSignedIn) { setLive(null); setLiveErr(false); return; }
+    let alive = true;
+    setLiveErr(false);
     NGGApi.member.dashboard()
-      .then(d => setLive({
+      .then(d => { if (alive) setLive({
         week: (d.session && d.session.weekOf) || 1,
         session: d.session,
         name: d.member.fullName,
         totalWeeks: (d.session && d.session.totalWeeks) || 12,
         xp: d.stats.xp,
         completed: d.stats.completedThisSession,
-      }))
-      .catch(() => {});
+      }); })
+      // Don't strand the banner on "LOADING…" forever — record the failure
+      // so it can degrade to an actionable state.
+      .catch(() => { if (alive) setLiveErr(true); });
+    return () => { alive = false; };
   }, [auth.isSignedIn]);
 
   return (
     <div className="page anchor-v2" data-screen-label="04 Anchor 12">
-      <AnchorMemberBanner auth={auth} live={live} setPage={setPage}/>
+      <AnchorMemberBanner auth={auth} live={live} liveErr={liveErr} setPage={setPage}/>
       <AnchorHero setPage={setPage}/>
       <AnchorManifesto/>
       <AnchorBookSpread setPage={setPage}/>
@@ -673,7 +679,7 @@ function ProfilePage({ setPage }) {
 // Member-aware banner: shows live progress for signed-in members,
 // invites sign-in for everyone else.
 // ----------------------------------------------------------------------------
-function AnchorMemberBanner({ auth, live, setPage }) {
+function AnchorMemberBanner({ auth, live, liveErr, setPage }) {
   if (auth.loading) return null;
   if (!auth.isSignedIn) {
     return (
@@ -685,6 +691,23 @@ function AnchorMemberBanner({ auth, live, setPage }) {
           </div>
           <div className="anchor-banner-actions">
             <button className="btn btn-primary btn-sm" onClick={() => auth.openSignIn && auth.openSignIn()}>Sign in →</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // Signed in but the live fetch failed — degrade to an actionable banner
+  // instead of an endless "LOADING…" that never resolves.
+  if (liveErr && !live) {
+    return (
+      <div className="anchor-banner anchor-banner-cta">
+        <div className="container anchor-banner-row">
+          <div>
+            <span className="mono anchor-banner-eyebrow">SIGNED IN</span>
+            <span className="anchor-banner-text">We couldn't load your live progress right now. Your dashboard has the latest.</span>
+          </div>
+          <div className="anchor-banner-actions">
+            <button className="btn btn-gold btn-sm" onClick={() => setPage("dashboard")}>Open dashboard →</button>
           </div>
         </div>
       </div>
