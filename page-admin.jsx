@@ -185,17 +185,18 @@ function titleFor(s) {
 
 function AdminHome({ setSection }) {
   const [stats, setStats] = React.useState(null);
+  const fmt = (n) => (n === undefined || n === null) ? "0" : new Intl.NumberFormat("en").format(n);
   React.useEffect(() => {
-    NGGApi.public.stats().then(r => setStats(r.stats)).catch(() => setStats({}));
+    NGGApi.public.stats().then(r => setStats(r.stats || {})).catch(() => setStats({}));
   }, []);
 
   return (
     <div className="admin-home">
       <div className="admin-tiles">
-        <AdminTile n={stats ? stats.activeMembers : "·"} l="Active members"   onClick={() => setSection("members")}/>
-        <AdminTile n={stats ? stats.ngg            : "·"} l="NGG members"      onClick={() => setSection("members")}/>
-        <AdminTile n={stats ? stats.summer         : "·"} l="Summer students"  onClick={() => setSection("members")}/>
-        <AdminTile n={stats ? stats.graduates      : "·"} l="Graduates"        onClick={() => setSection("members")}/>
+        <AdminTile loading={!stats} n={stats ? fmt(stats.activeMembers) : ""} l="Active members"   onClick={() => setSection("members")}/>
+        <AdminTile loading={!stats} n={stats ? fmt(stats.ngg)           : ""} l="NGG members"      onClick={() => setSection("members")}/>
+        <AdminTile loading={!stats} n={stats ? fmt(stats.summer)        : ""} l="Summer students"  onClick={() => setSection("members")}/>
+        <AdminTile loading={!stats} n={stats ? fmt(stats.graduates)     : ""} l="Graduates"        onClick={() => setSection("members")}/>
       </div>
       <div className="admin-quick">
         <h3 className="admin-h3">Quick actions</h3>
@@ -212,10 +213,10 @@ function AdminHome({ setSection }) {
   );
 }
 
-function AdminTile({ n, l, onClick }) {
+function AdminTile({ n, l, onClick, loading }) {
   return (
     <button className="admin-tile" onClick={onClick}>
-      <div className="admin-tile-n">{n}</div>
+      <div className="admin-tile-n">{loading ? <span className="dash-skel" style={{display:"inline-block", width:64, height:34, borderRadius:8}}/> : n}</div>
       <div className="mono admin-tile-l">{l}</div>
     </button>
   );

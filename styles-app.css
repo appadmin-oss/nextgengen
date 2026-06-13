@@ -846,6 +846,51 @@ html { scroll-behavior: smooth; }
 }
 @keyframes dash-spin { to { transform: rotate(360deg); } }
 
+/* Skeleton placeholders — shimmer in the dashboard's real layout while
+   the first payload loads, so content fills in place (no spinner→grid jump). */
+.dash-skel {
+  background: linear-gradient(90deg,
+    rgba(12,20,50,0.06) 25%,
+    rgba(12,20,50,0.12) 50%,
+    rgba(12,20,50,0.06) 75%);
+  background-size: 200% 100%;
+  animation: dash-skel-shine 1.4s ease-in-out infinite;
+  border-radius: 8px;
+}
+.dash-hero .dash-skel {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.08) 25%,
+    rgba(255,255,255,0.18) 50%,
+    rgba(255,255,255,0.08) 75%);
+  background-size: 200% 100%;
+}
+.dash-skel-avatar { width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0; }
+.dash-skel-line { border-radius: 6px; }
+.dash-skel-chip { width: 84px; height: 24px; border-radius: 999px; }
+.dash-skel-card { min-height: 120px; }
+@keyframes dash-skel-shine {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-skel { animation: none; }
+}
+
+/* Tiny "refreshing" pip next to the greeting during a background poll. */
+.dash-refreshing {
+  display: inline-block;
+  width: 9px; height: 9px;
+  margin-left: 8px;
+  border: 1.5px solid rgba(255,255,255,0.35);
+  border-top-color: var(--gold-400);
+  border-radius: 50%;
+  vertical-align: middle;
+  animation: dash-spin 0.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-refreshing { animation: none; opacity: 0.5; }
+}
+
 .dash-hero {
   background: linear-gradient(135deg, var(--navy-900) 0%, var(--navy-700) 100%);
   color: white;

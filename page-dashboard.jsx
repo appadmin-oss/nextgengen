@@ -7,15 +7,31 @@ function DashboardPage({ setPage }) {
   const { member, isSignedIn, loading, openSignIn, signOut } = useAuth();
   const [data, setData] = React.useState(null);
   const [reload, setReload] = React.useState(0);
+  const [mutateSeq, setMutateSeq] = React.useState(0);
   const [err, setErr] = React.useState("");
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  // A real user mutation (mission submit, journal, RSVP) bumps both the
+  // dashboard reload and a mutation sequence the activity feed listens to —
+  // separating it from the silent 60s poll so the feed isn't double-fetched.
+  const onMutate = React.useCallback(() => {
+    setReload(r => r + 1);
+    setMutateSeq(s => s + 1);
+  }, []);
 
   React.useEffect(() => {
     if (!isSignedIn) return;
     let alive = true;
+    if (reload > 0) setRefreshing(true);
     NGGApi.member.dashboard()
-      .then(d => { if (alive) setData(d); })
-      .catch(e => { if (alive) setErr(e.code || e.message); });
+      .then(d => { if (alive) { setData(d); setErr(""); } })
+      // Only surface the full error screen on the FIRST load. A transient
+      // poll failure must not wipe an already-loaded dashboard to "off-line"
+      // — keep showing the last good data (stale-while-revalidate).
+      .catch(e => { if (alive) setErr(prev => data ? prev : (e.code || e.message)); })
+      .finally(() => { if (alive) setRefreshing(false); });
     return () => { alive = false; };
+    // eslint-disable-next-line
   }, [isSignedIn, reload]);
 
   // Poll every 60s to keep stats and notifications fresh — but only when
@@ -38,16 +54,17 @@ function DashboardPage({ setPage }) {
   }, [isSignedIn]);
 
   if (loading) {
-    return <DashboardShell><DashboardLoading/></DashboardShell>;
+    return <DashboardShell><DashboardSkeleton/></DashboardShell>;
   }
   if (!isSignedIn) {
     return <DashboardShell><DashboardSignedOut openSignIn={openSignIn} setPage={setPage}/></DashboardShell>;
   }
-  if (err) {
+  // Full error screen only when we have nothing to show.
+  if (err && !data) {
     return <DashboardShell><DashboardError code={err} onRetry={() => setReload(r => r + 1)}/></DashboardShell>;
   }
   if (!data) {
-    return <DashboardShell><DashboardLoading/></DashboardShell>;
+    return <DashboardShell><DashboardSkeleton/></DashboardShell>;
   }
 
   return (
@@ -55,7 +72,9 @@ function DashboardPage({ setPage }) {
       <DashboardLive
         data={data}
         setPage={setPage}
-        onMutate={() => setReload(r => r + 1)}
+        refreshing={refreshing}
+        mutateSeq={mutateSeq}
+        onMutate={onMutate}
         onSignOut={signOut}
       />
     </DashboardShell>
@@ -119,12 +138,45 @@ function DashboardSignedOut({ openSignIn, setPage }) {
   );
 }
 
-function DashboardLoading() {
+// Skeleton that mirrors the real dashboard layout, so the page doesn't
+// jump from a centered spinner to a full grid — it fills in place.
+function DashboardSkeleton() {
   return (
-    <section style={{padding: "120px 0", textAlign:"center"}}>
-      <div className="dash-spinner" aria-label="Loading"/>
-      <div className="mono" style={{marginTop:18, color:"var(--ink-500)"}}>LOADING YOUR ROOM…</div>
-    </section>
+    <React.Fragment>
+      <section className="dash-hero" aria-hidden="true">
+        <div className="container">
+          <div className="dash-hero-row">
+            <div className="dash-hero-id">
+              <div className="dash-skel dash-skel-avatar"/>
+              <div>
+                <div className="dash-skel dash-skel-line" style={{width:120, height:11, marginBottom:10}}/>
+                <div className="dash-skel dash-skel-line" style={{width:180, height:34, marginBottom:12}}/>
+                <div style={{display:"flex", gap:6}}>
+                  <div className="dash-skel dash-skel-chip"/>
+                  <div className="dash-skel dash-skel-chip"/>
+                </div>
+              </div>
+            </div>
+            <div className="dash-skel dash-skel-line" style={{width:140, height:64}}/>
+          </div>
+        </div>
+      </section>
+      <section className="dash-section">
+        <div className="container">
+          <div className="dash-grid">
+            <div className="dash-main">
+              <div className="dash-card dash-skel-card"><div className="dash-skel dash-skel-line" style={{width:"40%", height:24}}/><div className="dash-skel dash-skel-line" style={{width:"100%", height:60, marginTop:16}}/><div className="dash-skel dash-skel-line" style={{width:"100%", height:60, marginTop:10}}/></div>
+              <div className="dash-card dash-skel-card"><div className="dash-skel dash-skel-line" style={{width:"30%", height:20}}/><div className="dash-skel dash-skel-line" style={{width:"100%", height:48, marginTop:14}}/></div>
+            </div>
+            <div className="dash-rail">
+              <div className="dash-card dash-skel-card"><div className="dash-skel dash-skel-line" style={{width:"50%", height:18}}/><div className="dash-skel dash-skel-line" style={{width:"100%", height:72, marginTop:14}}/></div>
+              <div className="dash-card dash-skel-card"><div className="dash-skel dash-skel-line" style={{width:"60%", height:18}}/><div className="dash-skel dash-skel-line" style={{width:"100%", height:40, marginTop:14}}/></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <span className="sr-only" role="status">Loading your dashboard…</span>
+    </React.Fragment>
   );
 }
 
@@ -142,28 +194,51 @@ function DashboardError({ code, onRetry }) {
 // LIVE dashboard
 // ============================================================================
 
-function DashboardLive({ data, setPage, onMutate, onSignOut }) {
+function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignOut }) {
   const m = data.member;
   const s = data.stats;
   const session = data.session;
   const today = data.today || [];
-  const events = data.events || [];
-  const notes = data.notifications || [];
   const mentor = data.mentor;
+
+  // Events + notifications are held locally so RSVP and mark-as-read feel
+  // instant (optimistic), then reconcile with the next server payload.
+  const [events, setEvents] = React.useState(data.events || []);
+  const [notes, setNotes] = React.useState(data.notifications || []);
+  React.useEffect(() => { setEvents(data.events || []); }, [data.events]);
+  React.useEffect(() => { setNotes(data.notifications || []); }, [data.notifications]);
 
   const xpToNext = (Math.floor(s.xp / 250) + 1) * 250;
   const xpPct = Math.min(100, Math.round((s.xp % 250) / 250 * 100));
 
+  // Optimistic RSVP: flip local state now (authoritative once the request
+  // succeeds), roll back + toast on failure. We deliberately do NOT trigger
+  // a full dashboard refetch — RSVP doesn't change stats/missions, and a
+  // refetch would clobber the optimistic flip with a momentarily-stale
+  // payload. The 60s poll reconciles in the background.
+  const onRsvp = (eventId, status) => {
+    const prev = events;
+    setEvents(evs => evs.map(e => e.eventId === eventId ? { ...e, myRsvp: status === "going" ? "going" : null } : e));
+    NGGApi.member.rsvp({ eventId, status })
+      .catch(e => { setEvents(prev); toast.error("Couldn't update RSVP: " + humanError(e)); });
+  };
+
+  // Mark-as-read is fire-and-forget and doesn't affect stats either.
+  const onRead = (id) => {
+    setNotes(ns => ns.map(n => n.notifId === id ? { ...n, readAt: n.readAt || new Date().toISOString() } : n));
+    NGGApi.member.markRead(id).catch(() => {/* non-critical */});
+  };
+
   return (
     <React.Fragment>
-      <DashboardHero m={m} session={session} onSignOut={onSignOut}/>
+      <DashboardHero m={m} session={session} refreshing={refreshing} onSignOut={onSignOut}/>
       <section className="dash-section">
         <div className="container">
           <div className="dash-grid">
             {/* LEFT MAIN COLUMN */}
             <div className="dash-main">
               <DashboardToday today={today} member={m} onMutate={onMutate} session={session}/>
-              <DashboardActivityFeed memberId={m.memberId} session={session}/>
+              <DashboardActivityFeed memberId={m.memberId} session={session} reloadKey={mutateSeq}/>
               <DashboardJournal onMutate={onMutate}/>
             </div>
 
@@ -171,8 +246,8 @@ function DashboardLive({ data, setPage, onMutate, onSignOut }) {
             <div className="dash-rail">
               <DashboardStats stats={s} xpToNext={xpToNext} xpPct={xpPct}/>
               {mentor && <DashboardMentor mentor={mentor}/>}
-              <DashboardEvents events={events} onRsvp={(eventId, status) => NGGApi.member.rsvp({ eventId, status }).then(onMutate)}/>
-              <DashboardNotifications notes={notes} onRead={(id) => NGGApi.member.markRead(id).then(onMutate)}/>
+              <DashboardEvents events={events} onRsvp={onRsvp}/>
+              <DashboardNotifications notes={notes} onRead={onRead}/>
               <DashboardShortcuts setPage={setPage}/>
             </div>
           </div>
@@ -184,7 +259,7 @@ function DashboardLive({ data, setPage, onMutate, onSignOut }) {
 
 // ----------------------------------------------------------------------------
 
-function DashboardHero({ m, session, onSignOut }) {
+function DashboardHero({ m, session, refreshing, onSignOut }) {
   const first = String(m.fullName || "").split(" ")[0] || "Member";
   const greeting = hourGreeting();
   return (
@@ -194,7 +269,10 @@ function DashboardHero({ m, session, onSignOut }) {
           <div className="dash-hero-id">
             <Avatar seed={m.memberId.charCodeAt(m.memberId.length - 1) % 20 + 1} size={64} ring/>
             <div>
-              <div className="mono dash-hero-meta">{greeting.toUpperCase()} · {m.memberId}</div>
+              <div className="mono dash-hero-meta">
+                {greeting.toUpperCase()} · {m.memberId}
+                {refreshing && <span className="dash-refreshing" aria-hidden="true" title="Refreshing…"/>}
+              </div>
               <h1 className="dash-hero-name">{first}.</h1>
               <div className="dash-hero-sub">
                 <span className="chip chip-on-dark">{m.type === "Summer" ? "Summer Student" : m.role === "super_admin" || m.role === "admin" ? "Admin · " + (m.role) : "Genius"}</span>
@@ -483,8 +561,10 @@ function DashboardShortcuts({ setPage }) {
 // derive from the dashboard's "today" history.)
 // ----------------------------------------------------------------------------
 
-function DashboardActivityFeed({ memberId, session }) {
-  // Lightweight feed: shows last 5 verified missions from the anchor endpoint.
+function DashboardActivityFeed({ memberId, session, reloadKey }) {
+  // Lightweight feed: shows last 6 verified/submitted missions from the
+  // anchor endpoint. Refetches on mount and on real mutations (reloadKey),
+  // but NOT on the 60s poll — that would double the anchor() traffic.
   const [items, setItems] = React.useState(null);
   React.useEffect(() => {
     let alive = true;
@@ -499,7 +579,7 @@ function DashboardActivityFeed({ memberId, session }) {
       setItems(flat.slice(-6).reverse());
     }).catch(() => setItems([]));
     return () => { alive = false; };
-  }, [memberId]);
+  }, [memberId, reloadKey]);
 
   if (!items || items.length === 0) return null;
 
