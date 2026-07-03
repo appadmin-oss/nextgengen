@@ -238,6 +238,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
             {/* LEFT MAIN COLUMN */}
             <div className="dash-main">
               <DashboardToday today={today} member={m} onMutate={onMutate} session={session}/>
+              <DashboardAssignments assignments={data.assignments || []} onMutate={onMutate}/>
               <DashboardActivityFeed memberId={m.memberId} session={session} reloadKey={mutateSeq}/>
               <DashboardJournal onMutate={onMutate}/>
             </div>
@@ -426,6 +427,88 @@ function DashboardMissionRow({ m, onSubmit, busy, done, disabled }) {
     </div>
   );
 }
+
+// ----------------------------------------------------------------------------
+
+function DashboardAssignments({ assignments, onMutate }) {
+  if (!assignments || assignments.length === 0) return null;
+  const open = assignments.filter(a => !a.submission || a.submission.status === "submitted");
+  const graded = assignments.filter(a => a.submission && a.submission.status === "graded");
+  return (
+    <div className="dash-card dash-assign">
+      <div className="dash-card-head">
+        <div>
+          <div className="eyebrow" style={{color:"var(--gold-500)"}}>ASSIGNMENTS</div>
+          <h2 className="dash-card-h">Set work.</h2>
+        </div>
+        <div className="dash-today-tally"><span className="dash-today-tally-n">{graded.length}</span><span className="dash-today-tally-d">/ {assignments.length} graded</span></div>
+      </div>
+      {open.map(a => <AssignmentCard key={a.assignmentId} a={a} onMutate={onMutate}/>)}
+      {graded.length > 0 && (
+        <div className="dash-mission-group">
+          <div className="mono dash-mission-group-h" style={{color:"var(--lime-ink)", opacity:0.7}}>GRADED · {graded.length}</div>
+          {graded.map(a => <AssignmentCard key={a.assignmentId} a={a} onMutate={onMutate}/>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssignmentCard({ a, onMutate }) {
+  const sub = a.submission;
+  const graded = sub && sub.status === "graded";
+  const [open, setOpen] = React.useState(false);
+  const [text, setText] = React.useState(sub ? sub.text : "");
+  const [fileUrl, setFileUrl] = React.useState(sub ? sub.fileUrl : "");
+  const [busy, setBusy] = React.useState(false);
+  const overdue = a.dueAt && !graded && new Date(a.dueAt) < new Date();
+
+  const submit = async () => {
+    if (!text.trim() && !fileUrl) { toast.error("Add a response or upload a file first"); return; }
+    setBusy(true);
+    try {
+      await NGGApi.member.submitAssignment({ assignmentId: a.assignmentId, text: text.trim(), fileUrl });
+      toast.success(sub ? "Submission updated" : "Submitted", a.title);
+      setOpen(false); onMutate && onMutate();
+    } catch (e) { toast.error("Couldn't submit: " + humanError(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className={"dash-assign-card" + (graded ? " is-graded" : "")}>
+      <div className="dash-assign-top" onClick={() => !graded && setOpen(o => !o)}>
+        <div>
+          <div className="dash-assign-title">{a.title}</div>
+          <div className="dash-assign-meta">
+            {a.points} pts
+            {a.dueAt && <> · <span className={overdue ? "is-overdue" : ""}>due {fmtShortDate(a.dueAt)}</span></>}
+            {a.track && <> · {a.track}</>}
+          </div>
+        </div>
+        {graded
+          ? <div className="dash-assign-grade">{sub.grade}<span>/{a.points}</span></div>
+          : <span className={"chip status-" + (sub ? "published" : "draft")}>{sub ? "submitted" : "to do"}</span>}
+      </div>
+      {a.instructions && <div className="dash-assign-instructions">{a.instructions}</div>}
+      {graded && sub.feedback && <div className="dash-assign-feedback"><span className="mono">MENTOR FEEDBACK</span>{sub.feedback}</div>}
+      {!graded && (open || sub) && (
+        <div className="dash-assign-form">
+          <textarea className="dash-assign-input" rows={3} placeholder="Your response…" value={text} onChange={e => setText(e.target.value)}/>
+          <div className="dash-assign-actions">
+            <Uploader kind="submission" accept="*/*" onUploaded={(url) => setFileUrl(url)} compact/>
+            {fileUrl && <a className="dash-assign-filelink" href={fileUrl} target="_blank" rel="noopener noreferrer">✓ file attached</a>}
+            <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy}>{busy ? "…" : (sub ? "Update" : "Submit")}</button>
+          </div>
+        </div>
+      )}
+      {!graded && !open && !sub && (
+        <button className="dash-assign-start btn btn-ghost btn-sm" onClick={() => setOpen(true)}>Start →</button>
+      )}
+    </div>
+  );
+}
+
+function fmtShortDate(d) { if (!d) return ""; const x = new Date(d); return isNaN(x) ? "" : x.toLocaleDateString("en-GB", { day:"numeric", month:"short" }); }
 
 // ----------------------------------------------------------------------------
 

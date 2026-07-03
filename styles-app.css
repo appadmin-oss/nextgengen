@@ -3776,3 +3776,67 @@ section p[style*="var(--ink-500)"] {
 @media (prefers-reduced-motion: reduce) {
   .shimmer-gold .kinetic-part { animation: none; }
 }
+
+/* ============================================================================
+   NGG additions — uploads, assignments, submissions (backend-features branch)
+   ============================================================================ */
+
+/* Status chips not previously defined */
+.chip.status-archived { background: rgba(90, 100, 136, 0.16); color: var(--ink-500); }
+.chip.status-cancelled { background: rgba(255, 90, 60, 0.16); color: var(--coral); }
+
+/* Cloudinary uploader */
+.uploader { display: inline-flex; align-items: center; gap: 8px; }
+.uploader-btn { white-space: nowrap; }
+.uploader-bar { position: relative; width: 64px; height: 4px; border-radius: 4px; background: rgba(10,17,48,0.1); overflow: hidden; }
+.uploader-bar-fill { position: absolute; inset: 0 auto 0 0; background: var(--gold-500); transition: width 0.15s ease; }
+
+/* Admin: URL field + inline upload + preview */
+.admin-upload-row { display: flex; gap: 8px; align-items: center; }
+.admin-upload-row .admin-input { flex: 1; }
+.admin-upload-preview { display: inline-block; margin-top: 8px; }
+.admin-upload-preview img { max-height: 72px; max-width: 160px; border-radius: 8px; border: 1px solid var(--line, #e6e2d6); object-fit: cover; }
+.admin-hint { color: var(--ink-500); font-size: 13px; line-height: 1.5; margin: -4px 0 18px; max-width: 60ch; }
+
+/* Admin: assignments list */
+.admin-assign-list { display: flex; flex-direction: column; gap: 10px; }
+.admin-assign-row { display: flex; align-items: center; gap: 12px; background: white; border: 1px solid var(--line, #e6e2d6); border-radius: 14px; padding: 14px 16px; transition: box-shadow 0.15s ease, transform 0.15s ease; }
+.admin-assign-row:hover { box-shadow: 0 6px 22px rgba(12,20,50,0.08); transform: translateY(-1px); }
+.admin-assign-main { flex: 1; text-align: left; background: none; border: none; cursor: pointer; padding: 0; font: inherit; }
+.admin-assign-title { font-weight: 700; font-size: 15px; color: var(--ink-900); }
+.admin-assign-meta { margin-top: 4px; font-size: 10px; letter-spacing: 0.12em; color: var(--ink-500); }
+.admin-assign-side { display: flex; align-items: center; gap: 10px; }
+
+/* Admin: submissions + grading */
+.admin-sub-list { display: flex; flex-direction: column; gap: 12px; }
+.admin-sub-row { background: var(--paper); border: 1px solid var(--line, #e6e2d6); border-radius: 14px; padding: 14px 16px; }
+.admin-sub-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.admin-sub-name { font-weight: 700; color: var(--ink-900); }
+.admin-sub-id { font-size: 10px; color: var(--ink-400); margin-left: 6px; }
+.admin-sub-meta { font-size: 10px; letter-spacing: 0.12em; color: var(--ink-500); margin-top: 2px; }
+.admin-sub-text { margin: 10px 0; padding: 10px 12px; background: white; border-radius: 10px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; color: var(--ink-700); }
+.admin-sub-file { display: inline-block; margin: 4px 0 10px; font-size: 13px; font-weight: 600; color: var(--navy-700); }
+.admin-sub-grade { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.admin-sub-grade-num { width: 96px; }
+.admin-sub-grade-fb { flex: 1; min-width: 180px; }
+.admin-sub-email { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-500); white-space: nowrap; }
+
+/* Member dashboard: assignments */
+.dash-assign-card { background: var(--paper); border: 1px solid var(--line, #e6e2d6); border-radius: 16px; padding: 16px; margin-top: 12px; }
+.dash-assign-card.is-graded { background: rgba(208, 255, 58, 0.06); border-color: rgba(208, 255, 58, 0.4); }
+.dash-assign-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; cursor: pointer; }
+.dash-assign-title { font-weight: 700; font-size: 16px; color: var(--ink-900); }
+.dash-assign-meta { margin-top: 4px; font-size: 12px; color: var(--ink-500); }
+.dash-assign-meta .is-overdue { color: var(--coral); font-weight: 600; }
+.dash-assign-grade { font-family: var(--font-display); font-size: 26px; font-weight: 800; color: var(--lime-ink); line-height: 1; white-space: nowrap; }
+.dash-assign-grade span { font-size: 14px; color: var(--ink-400); }
+.dash-assign-instructions { margin-top: 10px; font-size: 14px; line-height: 1.55; color: var(--ink-700); }
+.dash-assign-feedback { margin-top: 12px; padding: 12px 14px; background: white; border-radius: 12px; font-size: 14px; line-height: 1.5; color: var(--ink-700); }
+.dash-assign-feedback .mono { display: block; font-size: 10px; letter-spacing: 0.18em; color: var(--gold-500); margin-bottom: 6px; }
+.dash-assign-form { margin-top: 12px; }
+.dash-assign-input { width: 100%; border: 1px solid var(--line, #e6e2d6); border-radius: 12px; padding: 12px 14px; font: inherit; font-size: 14px; resize: vertical; background: white; }
+.dash-assign-input:focus { outline: none; border-color: var(--navy-700); }
+.dash-assign-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.dash-assign-actions .btn-primary { margin-left: auto; }
+.dash-assign-filelink { font-size: 13px; font-weight: 600; color: var(--lime-ink); }
+.dash-assign-start { margin-top: 12px; }

@@ -1,12 +1,18 @@
-# Google Sheets — schema (single source of truth)
+# NGG — data schema
 
-This document is the contract between Apps Script and PHP. **Every column
-name here must exist on the Sheet with the exact header text shown.** Apps
-Script reads/writes by header — column reordering is safe, header renames
-are not.
-
-Create one Google Sheet called e.g. `NGG Platform`. Add the tabs below.
-Header row is row 1, freeze it.
+> **Architecture note (updated):** the backend now runs on **PHP + a database**
+> (SQLite by default, MySQL in prod) on the shared host — that is the source of
+> truth. The canonical schema lives in code: `api/_lib/db.php` (SQLite
+> migrations) mirrored by `db/schema-mysql.sql`. DB **column names are the same
+> camelCase field names** documented below, so rows map straight to API
+> payloads. A few SQL-reserved words are stored under a safe alias and mapped
+> back in their handler: `order`→`orderIndex`, `key`→`settingKey`,
+> `value`→`settingValue`, `private`→`isPrivate`, assignment `text`→`answerText`.
+>
+> The tables below double as the layout of the **optional** read-only Google
+> Sheets mirror (`api/tools/export-sheets.php` → `apps-script/`). Nothing reads
+> from the Sheet; it exists only for admins who want a spreadsheet view. If you
+> keep the mirror, header row is row 1 — freeze it.
 
 ---
 
@@ -354,3 +360,51 @@ member write):
 - `IDX_EMAIL_TO_MEMBER` — sheet with two columns: email, memberId. Used for
   O(1) lookups during sign-in.
 - `IDX_SLUG_TO_POST` — published-post-only index for the public blog feed.
+
+---
+
+## Tab: `Assignments`
+
+Mentor/admin-set work with per-member submissions + grading. Distinct from
+Anchor missions (which are the fixed XP curriculum).
+
+| Column          | Type      | Notes                                                       |
+|-----------------|-----------|-------------------------------------------------------------|
+| `assignmentId`  | text      | `ASG-2026-0001`                                             |
+| `title`         | text      |                                                             |
+| `instructions`  | text      | What the member must do (markdown ok)                       |
+| `track`         | text      | Blank/`All` = every track                                   |
+| `centre`        | enum      | Blank/`All`/`Both` \| `Egbeda` \| `Ayobo`                   |
+| `sessionId`     | text      | Optional FK — scopes to a session                           |
+| `week`          | int       | Optional week label                                         |
+| `dueAt`         | timestamp |                                                             |
+| `points`        | int       | Max grade                                                   |
+| `attachmentUrl` | url       | Brief / resource (Cloudinary or any URL)                    |
+| `proof`         | enum      | `text` \| `link` \| `photo` \| `audio` \| `video` \| `file` |
+| `status`        | enum      | `draft` \| `published` \| `archived`                        |
+| `createdBy`     | text      | admin memberId                                              |
+| `createdAt`     | timestamp | auto                                                        |
+| `updatedAt`     | timestamp | auto                                                        |
+
+---
+
+## Tab: `AssignmentSubmissions`
+
+One row per (assignment × member). DB column `answerText` is surfaced to the
+client as `text`.
+
+| Column         | Type      | Notes                                          |
+|----------------|-----------|------------------------------------------------|
+| `submissionId` | text      | `SUB-2026-0001`                                |
+| `assignmentId` | text      | FK                                             |
+| `memberId`     | text      | FK                                             |
+| `sessionId`    | text      | FK snapshot                                    |
+| `answerText`   | text      | Member's written response (API field: `text`)  |
+| `fileUrl`      | url       | Uploaded file (Cloudinary)                     |
+| `status`       | enum      | `submitted` \| `graded`                        |
+| `grade`        | int       | 0..points                                      |
+| `feedback`     | text      | Mentor/admin feedback                          |
+| `gradedBy`     | text      | admin memberId                                 |
+| `gradedAt`     | timestamp |                                                |
+| `submittedAt`  | timestamp |                                                |
+| `createdAt`    | timestamp | auto                                           |

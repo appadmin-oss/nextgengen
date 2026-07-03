@@ -44,7 +44,46 @@
     return data;
   }
 
+  // ---- Cloudinary direct upload -------------------------------------------
+  // Ask the PHP proxy for a short-lived signature, then POST the file straight
+  // to Cloudinary. The api_secret never touches the browser.
+  let _configCache = null;
+  async function getConfig() {
+    if (_configCache) return _configCache;
+    try { _configCache = await request('/public/config.php'); }
+    catch (_) { _configCache = { uploads: { enabled: false } }; }
+    return _configCache;
+  }
+
+  async function uploadFile(file, kind, onProgress) {
+    kind = kind || 'proof';
+    const sig = await request('/member/upload-sign.php', { body: { kind } });
+    return await new Promise((resolve, reject) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('api_key', sig.apiKey);
+      fd.append('timestamp', sig.timestamp);
+      fd.append('signature', sig.signature);
+      fd.append('folder', sig.folder);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', sig.uploadUrl);
+      if (onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+      xhr.onload = () => {
+        let d = {}; try { d = JSON.parse(xhr.responseText); } catch (_) {}
+        if (xhr.status >= 200 && xhr.status < 300 && d.secure_url) {
+          resolve({ url: d.secure_url, publicId: d.public_id, resourceType: d.resource_type, format: d.format, bytes: d.bytes });
+        } else {
+          reject(new Error((d.error && d.error.message) || ('upload_failed_' + xhr.status)));
+        }
+      };
+      xhr.onerror = () => reject(new Error('upload_network_error'));
+      xhr.send(fd);
+    });
+  }
+
   const API = {
+    config: getConfig,
+    uploadFile: uploadFile,
     auth: {
       request: (identifier) => request('/auth/request.php', { body: { identifier } }),
       verify:  (creds) => request('/auth/verify.php', { body: creds }),
@@ -63,6 +102,8 @@
       notifications: () => request('/member/notifications.php'),
       markRead:      (notifId) => request('/member/notifications.php', { body: { notifId } }),
       updateProfile: (data) => request('/member/profile.php', { body: data }),
+      assignments:      () => request('/member/assignments.php'),
+      submitAssignment: (data) => request('/member/assignments.php', { body: data }),
     },
     public: {
       stats:      () => request('/public/stats.php'),
@@ -101,6 +142,12 @@
       },
       promotions: {
         set: (promo) => request('/admin/promotions.php', { body: { promo } }),
+      },
+      assignments: {
+        list:        () => request('/admin/assignments.php'),
+        submissions: (assignmentId) => request('/admin/assignments.php' + qs({ assignmentId })),
+        upsert:      (data) => request('/admin/assignments.php', { body: data }),
+        grade:       (data) => request('/admin/assignments.php', { body: data }),
       },
       broadcast: (data) => request('/admin/broadcast.php', { body: data }),
       audit:     (limit) => request('/admin/audit.php' + qs({ limit })),

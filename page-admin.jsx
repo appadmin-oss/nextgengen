@@ -41,6 +41,7 @@ function AdminPage({ setPage }) {
           {section === "mentors" && <AdminMentors/>}
           {section === "sessions" && <AdminSessions/>}
           {section === "missions" && <AdminMissions/>}
+          {section === "assignments" && <AdminAssignments/>}
           {section === "events" && <AdminEvents/>}
           {section === "posts" && <AdminPosts/>}
           {section === "broadcast" && <AdminBroadcast/>}
@@ -151,6 +152,7 @@ function AdminNav({ section, setSection }) {
     { id: "mentors",   label: "Mentors",    icon: "◐" },
     { id: "sessions",  label: "Sessions",   icon: "▢" },
     { id: "missions",  label: "Missions",   icon: "✦" },
+    { id: "assignments", label: "Assignments", icon: "❏" },
     { id: "events",    label: "Events",     icon: "▶" },
     { id: "posts",     label: "Posts",      icon: "✎" },
     { id: "broadcast", label: "Broadcast",  icon: "✉" },
@@ -175,7 +177,7 @@ function AdminNav({ section, setSection }) {
 function titleFor(s) {
   return {
     home: "Overview", members: "Members", mentors: "Mentors", sessions: "Sessions",
-    missions: "Anchor missions", events: "Events", posts: "Posts", broadcast: "Broadcast", audit: "Audit log",
+    missions: "Anchor missions", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
   }[s] || "";
 }
 
@@ -204,7 +206,8 @@ function AdminHome({ setSection }) {
           <button className="admin-quick-btn" onClick={() => setSection("posts")}>✎ New post</button>
           <button className="admin-quick-btn" onClick={() => setSection("events")}>▶ New event</button>
           <button className="admin-quick-btn" onClick={() => setSection("missions")}>✦ Add mission</button>
-          <button className="admin-quick-btn" onClick={() => setSection("broadcast")}>✉ Broadcast</button>
+          <button className="admin-quick-btn" onClick={() => setSection("assignments")}>❏ New assignment</button>
+          <button className="admin-quick-btn" onClick={() => setSection("broadcast")}>✉ Announce</button>
           <button className="admin-quick-btn" onClick={() => setSection("members")}>◯ Add member</button>
           <button className="admin-quick-btn" onClick={() => setSection("mentors")}>◐ Add mentor</button>
         </div>
@@ -562,6 +565,7 @@ function AdminMissionEditor({ data, onClose, onSaved }) {
             <Field label="Time (min)" value={d.estimatedMin||"15"} onChange={v => set("estimatedMin", Number(v))} type="number"/>
             <Field label="Book page" value={d.bookPage||""} onChange={v => set("bookPage", Number(v) || "")} type="number"/>
           </div>
+          <FieldCheckbox label="Active — assignable to members now" value={d.missionId ? (d.isActive !== false) : (d.isActive === undefined ? true : d.isActive)} onChange={v => set("isActive", v)}/>
         </div>
         <div className="admin-drawer-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -639,7 +643,7 @@ function AdminEventEditor({ data, onClose, onSaved }) {
             <Field label="End"   value={d.endAt||""}   onChange={v => set("endAt", v)}   type="datetime-local"/>
           </div>
           <Field label="Location" value={d.location||""} onChange={v => set("location", v)} placeholder="Room 3, Egbeda Annex"/>
-          <Field label="Cover URL" value={d.coverUrl||""} onChange={v => set("coverUrl", v)}/>
+          <FieldUpload label="Cover image" value={d.coverUrl||""} onChange={v => set("coverUrl", v)} kind="cover"/>
           <FieldTextarea label="Description (markdown ok)" value={d.body||""} onChange={v => set("body", v)} rows={6}/>
           <div className="admin-fields-row">
             <Field label="Capacity (0 = open)" value={d.capacity||"0"} onChange={v => set("capacity", Number(v))} type="number"/>
@@ -726,7 +730,7 @@ function AdminPostEditor({ data, onClose, onSaved }) {
           <Field label="Slug (auto from title if blank)" value={d.slug||""} onChange={v => set("slug", v)}/>
           <Field label="Category" value={d.category||""} onChange={v => set("category", v)}/>
           <Field label="Tags (comma)" value={d.tags||""} onChange={v => set("tags", v)}/>
-          <Field label="Cover URL" value={d.coverUrl||""} onChange={v => set("coverUrl", v)}/>
+          <FieldUpload label="Cover image" value={d.coverUrl||""} onChange={v => set("coverUrl", v)} kind="cover"/>
           <FieldTextarea label="Excerpt" value={d.excerpt||""} onChange={v => set("excerpt", v)} rows={2}/>
           <FieldTextarea label="Body (markdown)" value={d.body||""} onChange={v => set("body", v)} rows={12}/>
           {d.kind === "promo" && (
@@ -750,33 +754,47 @@ function AdminPostEditor({ data, onClose, onSaved }) {
 }
 
 function AdminBroadcast() {
-  const [d, setD] = React.useState({ title:"", body:"", linkPage:"" });
+  const [d, setD] = React.useState({ title:"", body:"", linkPage:"", audience:"all", email:false });
   const [busy, setBusy] = React.useState(false);
-  const [sent, setSent] = React.useState(false);
+  const [sent, setSent] = React.useState("");
+  const audienceLabel = {
+    all: "every active member", Egbeda: "members at Egbeda", Ayobo: "members at Ayobo",
+    Summer: "Summer students", NGG: "NGG members",
+  }[d.audience] || "every active member";
   const send = async (e) => {
     e.preventDefault();
     const ok = await dialog.confirm({
-      title: "Broadcast to every active member?",
-      body: "This sends a push notification to every active member across both centres. There's no undo.",
-      cta: "Send broadcast",
+      title: "Send this announcement?",
+      body: "This posts an in-app announcement to " + audienceLabel + (d.email ? " and emails them too." : ".") + " There's no undo.",
+      cta: "Send announcement",
       danger: true,
     });
     if (!ok) return;
     setBusy(true);
-    try { await NGGApi.admin.broadcast(d); setSent(true); setD({ title:"", body:"", linkPage:"" }); setTimeout(() => setSent(false), 2400); }
+    try {
+      const r = await NGGApi.admin.broadcast(d);
+      setSent(d.email ? ("SENT ✓ · emailed " + (r.emailed || 0)) : "SENT ✓");
+      setD({ title:"", body:"", linkPage:"", audience:"all", email:false });
+      setTimeout(() => setSent(""), 3200);
+    }
     catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
   };
   return (
     <div className="admin-section">
-      <div className="admin-section-head"><h2 className="admin-h2">Broadcast a notification</h2></div>
+      <div className="admin-section-head"><h2 className="admin-h2">Announcements</h2></div>
+      <p className="admin-hint">Post an in-app announcement to members' notification feeds, optionally emailing them as well. Great for deadlines, showcases and program news.</p>
       <form onSubmit={send} className="admin-broadcast">
         <Field label="Title" value={d.title} onChange={v => setD(o => ({...o, title: v}))} required/>
         <FieldTextarea label="Body" value={d.body} onChange={v => setD(o => ({...o, body: v}))} rows={4}/>
-        <Field label="Deep-link to page (optional)" value={d.linkPage} onChange={v => setD(o => ({...o, linkPage: v}))} placeholder="anchor, profile, blog…"/>
+        <div className="admin-fields-row">
+          <FieldSelect label="Audience" value={d.audience} onChange={v => setD(o => ({...o, audience: v}))} options={["all","Egbeda","Ayobo","Summer","NGG"]}/>
+          <Field label="Deep-link to page (optional)" value={d.linkPage} onChange={v => setD(o => ({...o, linkPage: v}))} placeholder="anchor, dashboard, blog…"/>
+        </div>
+        <FieldCheckbox label="Also send as email (quota-aware, up to 300)" value={d.email} onChange={v => setD(o => ({...o, email: v}))}/>
         <div className="admin-drawer-foot">
-          <span className="mono" style={{color:sent ? "var(--lime-ink)" : "var(--ink-500)"}}>{sent ? "SENT ✓" : busy ? "SENDING…" : ""}</span>
-          <button className="btn btn-primary" disabled={busy || !d.title}>Broadcast</button>
+          <span className="mono" style={{color:sent ? "var(--lime-ink)" : "var(--ink-500)"}}>{sent || (busy ? "SENDING…" : "")}</span>
+          <button className="btn btn-primary" disabled={busy || !d.title}>Send to {audienceLabel}</button>
         </div>
       </form>
     </div>
@@ -805,6 +823,163 @@ function AdminAudit() {
           </tbody>
         </table>
       }
+    </div>
+  );
+}
+
+// ============================================================================
+// Assignments — publish work, collect submissions, grade with feedback.
+// ============================================================================
+
+function AdminAssignments() {
+  const [list, setList] = React.useState(null);
+  const [editing, setEditing] = React.useState(null);
+  const [grading, setGrading] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.assignments.list()
+    .then(r => { setList(r.assignments || []); setErr(""); })
+    .catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Assignments</h2>
+        <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New assignment</button>
+      </div>
+      {err ? <div className="admin-empty">Couldn't load assignments: {err}</div> :
+        list === null ? <div className="dash-spinner"/> :
+        list.length === 0 ? <div className="admin-empty">No assignments yet. Publish one to send it to members.</div> :
+        <div className="admin-assign-list">
+          {list.map(a => (
+            <div key={a.assignmentId} className="admin-assign-row">
+              <button className="admin-assign-main" onClick={() => setEditing(a)}>
+                <div className="admin-assign-title">{a.title}</div>
+                <div className="mono admin-assign-meta">
+                  {(a.track || "All tracks")} · {(a.centre || "All centres")}
+                  {a.dueAt ? " · due " + fmtDate(a.dueAt) : ""} · {a.points} pts
+                </div>
+              </button>
+              <div className="admin-assign-side">
+                <span className={"chip status-" + (a.status || "draft")}>{a.status || "draft"}</span>
+                <button className="btn btn-ghost btn-sm" onClick={() => setGrading(a)}>
+                  {a.submissionCount} submitted{a.submissionCount ? " · " + a.gradedCount + " graded" : ""} →
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      }
+      {editing && <AdminAssignmentEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
+      {grading && <AdminSubmissions assignment={grading} onClose={() => { setGrading(null); load(); }}/>}
+    </div>
+  );
+}
+
+function AdminAssignmentEditor({ data, onClose, onSaved }) {
+  const [d, setD] = React.useState(Object.assign({ status:"draft", proof:"text", points:10, centre:"", track:"" }, data));
+  const [busy, setBusy] = React.useState(false);
+  const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
+  const save = async (e) => {
+    e.preventDefault(); setBusy(true);
+    try { await NGGApi.admin.assignments.upsert(d); onSaved(); }
+    catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="admin-drawer" onClick={onClose}>
+      <form className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()} onSubmit={save}>
+        <div className="admin-drawer-head">
+          <h3>{d.assignmentId ? "Edit assignment" : "New assignment"}</h3>
+          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="admin-fields">
+          <Field label="Title" value={d.title||""} onChange={v => set("title", v)} required/>
+          <FieldTextarea label="Instructions" value={d.instructions||""} onChange={v => set("instructions", v)} rows={6}/>
+          <div className="admin-fields-row">
+            <FieldSelect label="Centre" value={d.centre||""} onChange={v => set("centre", v)} options={["","Egbeda","Ayobo","Both"]}/>
+            <Field label="Track (blank = all)" value={d.track||""} onChange={v => set("track", v)} placeholder="Tech, Music…"/>
+            <Field label="Week" value={d.week||""} onChange={v => set("week", Number(v) || "")} type="number"/>
+          </div>
+          <div className="admin-fields-row">
+            <Field label="Due" value={d.dueAt||""} onChange={v => set("dueAt", v)} type="datetime-local"/>
+            <Field label="Points" value={d.points||"10"} onChange={v => set("points", Number(v))} type="number"/>
+            <FieldSelect label="Submission type" value={d.proof||"text"} onChange={v => set("proof", v)} options={["text","link","photo","audio","video","file"]}/>
+          </div>
+          <FieldUpload label="Attachment / brief (optional)" value={d.attachmentUrl||""} onChange={v => set("attachmentUrl", v)} kind="cover" accept="*/*" placeholder="Paste a URL or upload a brief →"/>
+          <div className="admin-fields-row">
+            <FieldSelect label="Status" value={d.status} onChange={v => set("status", v)} options={["draft","published","archived"]}/>
+            {d.status === "published" && !d.assignmentId && <FieldCheckbox label="Email members on publish" value={d.notify} onChange={v => set("notify", v)}/>}
+          </div>
+        </div>
+        <div className="admin-drawer-foot">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || !d.title}>{busy ? "Saving…" : "Save"}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function AdminSubmissions({ assignment, onClose }) {
+  const [data, setData] = React.useState(null);
+  const load = () => NGGApi.admin.assignments.submissions(assignment.assignmentId)
+    .then(setData).catch(e => toast.error(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  return (
+    <div className="admin-drawer" onClick={onClose}>
+      <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3>Submissions · {assignment.title}</h3>
+          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+        </div>
+        {!data ? <div className="dash-spinner"/> :
+          data.submissions.length === 0 ? <div className="admin-empty">No submissions yet.</div> :
+          <div className="admin-sub-list">
+            {data.submissions.map(s => (
+              <SubmissionRow key={s.submissionId} s={s} maxPoints={data.assignment.points} onGraded={load}/>
+            ))}
+          </div>
+        }
+      </div>
+    </div>
+  );
+}
+
+function SubmissionRow({ s, maxPoints, onGraded }) {
+  const [grade, setGrade] = React.useState(s.grade == null ? "" : String(s.grade));
+  const [feedback, setFeedback] = React.useState(s.feedback || "");
+  const [email, setEmail] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await NGGApi.admin.assignments.grade({ submissionId: s.submissionId, grade: Number(grade) || 0, feedback, email });
+      toast.success("Graded", s.memberName);
+      onGraded();
+    } catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="admin-sub-row">
+      <div className="admin-sub-head">
+        <div>
+          <div className="admin-sub-name">{s.memberName} <span className="mono admin-sub-id">{s.memberId}</span></div>
+          <div className="mono admin-sub-meta">{s.centre || ""} · submitted {fmtDate(s.submittedAt)}</div>
+        </div>
+        <span className={"chip status-" + (s.status === "graded" ? "published" : "draft")}>{s.status}</span>
+      </div>
+      {s.text && <div className="admin-sub-text">{s.text}</div>}
+      {s.fileUrl && <a className="admin-sub-file" href={s.fileUrl} target="_blank" rel="noopener noreferrer">↗ Open attachment</a>}
+      <div className="admin-sub-grade">
+        <label className="admin-field admin-sub-grade-num"><span>Grade{maxPoints ? " / " + maxPoints : ""}</span>
+          <input type="number" className="admin-input" value={grade} onChange={e => setGrade(e.target.value)} max={maxPoints || undefined} min={0}/>
+        </label>
+        <label className="admin-field admin-sub-grade-fb"><span>Feedback</span>
+          <input type="text" className="admin-input" value={feedback} onChange={e => setFeedback(e.target.value)} placeholder="What was strong, what to improve…"/>
+        </label>
+        <label className="admin-sub-email"><input type="checkbox" checked={email} onChange={e => setEmail(e.target.checked)}/> email</label>
+        <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy || grade === ""}>{busy ? "…" : "Grade"}</button>
+      </div>
     </div>
   );
 }
@@ -844,6 +1019,23 @@ function FieldCheckbox({ label, value, onChange }) {
     <label className="admin-field admin-field-check">
       <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)}/>
       <span>{label}</span>
+    </label>
+  );
+}
+// A URL field with an inline Cloudinary upload button + thumbnail preview.
+// The Uploader renders nothing if the server has no Cloudinary configured, so
+// this degrades gracefully to a plain paste-a-URL field.
+function FieldUpload({ label, value, onChange, kind, accept, placeholder }) {
+  return (
+    <label className="admin-field">
+      <span>{label}</span>
+      <div className="admin-upload-row">
+        <input type="text" className="admin-input" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={placeholder || "Paste a URL or upload →"}/>
+        <Uploader kind={kind || "cover"} accept={accept || "image/*"} onUploaded={(url) => onChange(url)} compact/>
+      </div>
+      {value && /^https?:\/\//.test(value) && (
+        <span className="admin-upload-preview"><img src={value} alt="" onError={(e) => { e.target.style.display = "none"; }}/></span>
+      )}
     </label>
   );
 }

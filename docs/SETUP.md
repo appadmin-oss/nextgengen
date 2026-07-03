@@ -1,145 +1,145 @@
 # NGG Platform — production setup
 
-This walks you through a clean deploy from scratch. **~30 minutes** if you've
-done it before, ~90 minutes the first time. Order matters — don't skip.
+A clean deploy from scratch. **~20 minutes.** The whole backend now runs on the
+shared host — there is no external service on the request path.
 
 ## Architecture in one diagram
 
 ```
 [Phone / Browser]
-      │  HTTPS, cookies
+      │  HTTPS, signed cookies
       ▼
-┌──────────────────────┐    HMAC-signed JSON
-│  Shared host (PHP)   │ ──────────────────────►  Google Apps Script
-│  /api/*  /admin/*    │      over HTTPS              (Web App URL)
-│  /index.html (SPA)   │ ◄──────────────────────         │
-└──────────────────────┘     JSON response               │ reads/writes
-                                                         ▼
-                                                  ┌──────────────┐
-                                                  │ Google Sheet │
-                                                  │ NGG Platform │
-                                                  └──────────────┘
+┌───────────────────────────────────┐
+│  Shared host (PHP 8.1+)           │
+│  /index.html (static SPA bundle)  │
+│  /api/*  → PHP routes → domain     │
+│           layer → PDO             │
+│  ┌─────────────────────────────┐  │
+│  │ Database (source of truth)  │  │
+│  │  SQLite (default) or MySQL  │  │
+│  └─────────────────────────────┘  │
+└───────────────────────────────────┘
+        │  (optional, cron, one-way)
+        ▼
+   Google Sheets  ← read-only admin mirror
 ```
 
-- **Browser** only ever talks to the PHP layer (same origin, signed cookies).
-- **PHP proxy** is the only thing with the Apps Script URL + shared secret.
-- **Apps Script** is the only thing with the spreadsheet ID.
-- **The Sheet** is the database. Admin can also touch rows by hand if they
-  ever need to — the system reads live.
+- The **database is the single source of truth**. SQLite by default (a file on
+  the host, auto-migrating); MySQL/MariaDB for higher traffic.
+- **No Google round-trip on any request.** The old Apps Script backend is gone;
+  an optional cron pushes a read-only snapshot to a Sheet for admins who like a
+  spreadsheet view (see `apps-script/README.md`). Skip it entirely if you don't.
+- Email goes out via SMTP (recommended) or PHP `mail()`.
+- Media uploads go **straight from the browser to Cloudinary**, authorized by a
+  short-lived signature the PHP layer mints (the api_secret never ships to the
+  client).
 
 ## Prerequisites
 
-- Domain pointing at your PHP host (Namecheap, BlueHost, A2, etc.).
-- PHP 8.1+ with cURL + OpenSSL extensions (default on every shared host).
-- Apache with `mod_rewrite` + `mod_headers` (default on cPanel hosts).
-- A Google account (Workspace ideal — 1500 mail/day; personal works at 100/day).
+- PHP **8.1+** with `pdo_sqlite` (default) or `pdo_mysql`, plus `curl` +
+  `openssl` (standard on every shared host).
+- Apache with `mod_rewrite` + `mod_headers` (default on cPanel).
+- Node 18+ **on your laptop** to build the frontend bundle (not needed on the host).
 
-## Step 1 — Google Sheet + Apps Script
+## Step 1 — Build the frontend
 
-Follow `apps-script/README.md` in full. By the end you have:
-- A spreadsheet ID
-- A deployed Web App URL
-- A `SHARED_SECRET` set in Script Properties
-- 15 tabs with correct headers
-- (Optional) demo members seeded
+On your machine, from the repo root:
 
-## Step 2 — PHP backend
+```bash
+npm install      # one-time: fetches esbuild
+npm run build    # → writes dist/ (minified bundle + copied static assets + api/)
+```
 
-1. Upload the entire repo to `public_html/` on your host (or a subfolder you'll
-   map a domain to).
-2. Copy `api/config.example.php` to `api/config.php`. Open it and fill in:
-   - `apps_script_url` — the URL from Apps Script step 8
-   - `shared_secret` — same value as the SHARED_SECRET in Script Properties
-   - `cookie_secret` — a **different** random hex string (`openssl rand -hex 64`)
-   - `app_origin` — your final HTTPS URL
-3. Verify file permissions:
-   - `api/` → 755
-   - `api/config.php` → 600 (read by web user only)
-   - `api/_cache/` → 755 (writable by web user)
-4. Verify the deny rule is working — visit
-   `https://yourdomain.com/api/config.php` in a browser. You should get
-   **403 Forbidden** or **404**. **NEVER** see PHP source or your config.
-5. Smoke test the public endpoints:
-   ```
-   curl https://yourdomain.com/api/public/stats.php
-   ```
-   You should see JSON with stats.
+`dist/` is a self-contained deploy target. It contains the compiled SPA, the CSS,
+the `api/` tree, and everything the app references.
 
-## Step 3 — Verify the auth flow
+## Step 2 — Upload
 
-1. Open `https://yourdomain.com/`.
-2. Click **Sign in**.
-3. Enter the email or memberId of a seeded test member.
-4. Check the inbox — you should see a magic-link email + 6-digit OTP within
-   ~5 seconds.
-5. Click the link OR paste the OTP into the form. You should land on the
-   dashboard with the member's name.
-6. Log out, sign in as `admin@example.com` (the seeded super_admin). You'll
-   be sent to a TOTP setup page. Scan the QR with Google Authenticator /
-   1Password / Authy and enter a code. Then `/admin` opens.
+Upload the **contents of `dist/`** to `public_html/` (or the subfolder your domain
+maps to). `dist/` deliberately excludes `api/config.php` and the local SQLite file
+— you create those on the host in the next step.
 
-## Step 4 — Set up scheduled triggers
+## Step 3 — Configure
 
-Already done if you ran `Triggers_install` in the Apps Script editor. Verify
-in Apps Script → Triggers (clock icon left rail) — you should see:
-- `Trigger_hourly` — once an hour
-- `Trigger_dailyMaintenance` — once a day at 02:00
+1. Copy `api/config.example.php` to `api/config.php` (git-ignored). Fill in:
+   - `cookie_secret` — `openssl rand -hex 64`.
+   - `app_origin` — your final HTTPS URL (no trailing slash).
+   - `db` — leave `dsn` empty for SQLite (simplest), or point it at MySQL.
+   - `mail` — SMTP host/user/pass for reliable delivery (or leave blank to use
+     PHP `mail()`).
+   - `cloudinary` — cloud name + key + secret if you want direct uploads
+     (leave `cloud_name` blank to disable; the UI falls back to pasting URLs).
+2. Permissions:
+   - `api/config.php` → `600` (web user reads it, nobody else).
+   - `api/storage/` → writable by the web user (holds the SQLite DB + WAL).
+   - `api/_cache/` → writable (public-read cache + rate-limit state).
+3. Confirm the deny rules work — visit `https://yourdomain.com/api/config.php`.
+   You must get **403/404**, never PHP source.
 
-## Step 5 — Anchor missions content
+### SQLite vs MySQL
 
-Until the Anchor book PDF is loaded, the AnchorMissions sheet is empty and
-members will see "No missions yet." Add rows manually or use the admin UI
-once Phase 3 is deployed.
+- **SQLite (default):** nothing to do. The schema auto-migrates on the first
+  request; the DB lives at `api/storage/ngg.db`. Great for a single site.
+- **MySQL/MariaDB:** create a database + user, set `db.dsn` (e.g.
+  `mysql:host=localhost;dbname=ngg;charset=utf8mb4`) + username/password, then
+  apply `db/schema-mysql.sql` once via phpMyAdmin or the CLI.
 
-## Step 6 — First real users
+## Step 4 — Smoke test
 
-1. Open the Google Sheet → `Members` tab.
-2. Add real rows (or use Admin UI → Members → New).
-3. Tell each member their `memberId` (or just their email — both work for
-   sign-in).
-4. They sign in at `https://yourdomain.com/` with that ID.
+```bash
+curl https://yourdomain.com/api/public/stats.php     # → JSON stats (zeros on a fresh DB)
+curl https://yourdomain.com/api/public/config.php    # → { uploads: {...} }
+```
 
-## Operations playbook
+Then open `https://yourdomain.com/` and create your first admin:
 
-### Rotating SHARED_SECRET
-1. Generate new: `openssl rand -hex 64`
-2. Update Apps Script Script Properties → save
-3. Update `api/config.php` → save
-4. No deploy needed; both sides pick it up on next request.
+```bash
+php api/tools/create-admin.php "Ada Admin" admin@yourdomain.com   # from the host shell if available
+```
 
-### Rolling back Apps Script
-- Deploy → Manage deployments → ✏️ Edit → Version dropdown → pick previous
-  version → Save. The URL stays the same.
+(No shell? Insert a row into `members` with `role = super_admin` via phpMyAdmin,
+or use the SQLite CLI on `api/storage/ngg.db`.)
 
-### Reading the audit log
-- `https://yourdomain.com/api/admin/audit.php?limit=200` (signed-in admin
-  cookie required), or open the `AuditLog` tab directly.
+## Step 5 — Sign-in flow
 
-### When email volume gets high
-- Switch the Google account to Workspace (1500/day), or
-- Plug an SMTP provider (Mailgun/Postmark) directly into `Util.gs` —
-  search for `MailApp.sendEmail`, replace with a `UrlFetchApp.fetch` to
-  the provider.
+1. Click **Sign in**, enter the admin email.
+2. Check the inbox for the magic link + 6-digit OTP (within a few seconds if
+   SMTP is configured).
+3. Click the link or paste the OTP → dashboard.
+4. Admins are sent to TOTP setup on first `/admin` visit — scan the QR with any
+   authenticator app, then enter a code to unlock the control room.
 
-### Backup
-- Google Sheets has version history (File → Version history). Snapshots
-  are kept indefinitely for free.
-- Weekly: File → Download → `.xlsx` to your laptop for cold backup.
+## Step 6 — Cron jobs
 
-## Things that intentionally aren't here
+Add two cron entries (cPanel → Cron Jobs):
 
-- **Real-time updates** — we poll. The dashboard refreshes every 30s. If you
-  ever need true real-time, swap `setInterval` for a Server-Sent Events
-  endpoint that streams from Apps Script's `LockService`.
-- **File uploads** — proof submissions are URLs, not direct uploads. Members
-  paste a Drive / Cloudinary link. To accept direct uploads, add a Cloudinary
-  unsigned upload preset and call it from the frontend; store the returned URL.
-- **SMS OTP** — phone column exists in the schema, but only email OTP is
-  wired. Add Twilio later via `Util.gs`.
+```
+# Daily maintenance (publish scheduled posts, expire promos, GC auth, trim audit,
+# and push the Sheets mirror if configured):
+0 2 * * *   php /home/USER/public_html/api/tools/run-jobs.php >/dev/null 2>&1
 
-## Health checks for monitoring
+# (Optional) refresh the Google Sheets mirror more often:
+30 * * * *  php /home/USER/public_html/api/tools/export-sheets.php >/dev/null 2>&1
+```
 
-- `GET /api/public/stats.php` should return 200 in <500ms.
-- `GET <apps_script_url>` (no `?op=`) returns `{"ok":true,"service":"ngg-apps-script"}`.
-- Watch for 5xx in your host's access log — these are the only things that
-  should page anyone.
+## Step 7 — Google Sheets mirror (optional)
+
+Only if admins want a spreadsheet view. Follow `apps-script/README.md`: deploy the
+tiny export sink, set `apps_script_url` + `shared_secret` in `api/config.php`, done.
+Nothing reads from the Sheet — it's a one-way mirror.
+
+## Operations
+
+- **Backups:** copy `api/storage/ngg.db` (SQLite) or `mysqldump` (MySQL). Do it
+  on a schedule; that file *is* your data now.
+- **Uploads:** managed in the Cloudinary dashboard; the DB stores only URLs.
+- **Rotate secrets:** change `cookie_secret` (logs everyone out) or
+  `shared_secret` (update the Apps Script Script Property to match).
+- **Tests:** `php api/tests/run.php` boots a throwaway SQLite DB and runs the
+  full backend suite. Keep it green.
+
+## What intentionally isn't here
+
+- **Real-time updates** — the dashboard polls every 60s (visible tabs only).
+- **Direct file storage on the host** — media lives in Cloudinary; the DB holds URLs.
+- **SMS OTP** — a `phone` column exists; only email OTP is wired.

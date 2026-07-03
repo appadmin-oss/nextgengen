@@ -847,8 +847,53 @@ function Sparkline({ data, color = "var(--gold-500)", w = 120, h = 36, fill = fa
   );
 }
 
+/* ---- Uploader — direct-to-Cloudinary media upload with URL fallback ----
+   Renders an "Upload" button when the server has Cloudinary configured
+   (GET /api/public/config.php → uploads.enabled). On success calls
+   onUploaded(secureUrl, meta). Renders nothing when uploads are disabled,
+   so callers can still show a paste-a-URL field alongside. */
+function Uploader({ kind = "proof", accept, onUploaded, compact }) {
+  const [enabled, setEnabled] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [pct, setPct] = useState(0);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    let alive = true;
+    NGGApi.config().then(c => { if (alive) setEnabled(!!(c.uploads && c.uploads.enabled)); }).catch(() => alive && setEnabled(false));
+    return () => { alive = false; };
+  }, []);
+
+  if (enabled === false) return null;
+
+  const pick = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (inputRef.current) inputRef.current.value = "";
+    if (!file) return;
+    setBusy(true); setPct(0);
+    try {
+      const r = await NGGApi.uploadFile(file, kind, setPct);
+      onUploaded && onUploaded(r.url, r);
+      if (window.toast) toast.success("Uploaded", file.name);
+    } catch (err) {
+      if (window.toast) toast.error("Upload failed", err.message || String(err));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <span className={"uploader" + (compact ? " uploader-compact" : "")}>
+      <input ref={inputRef} type="file" accept={accept} style={{ display: "none" }} onChange={pick} disabled={busy || enabled === null}/>
+      <button type="button" className="btn btn-ghost btn-sm uploader-btn" disabled={busy || enabled === null} onClick={() => inputRef.current && inputRef.current.click()}>
+        {busy ? ("Uploading " + pct + "%") : (enabled === null ? "…" : "↑ Upload")}
+      </button>
+      {busy && <span className="uploader-bar" aria-hidden="true"><span className="uploader-bar-fill" style={{ width: pct + "%" }}/></span>}
+    </span>
+  );
+}
+
 Object.assign(window, {
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart,
+  Uploader,
 });
