@@ -8,6 +8,9 @@ declare(strict_types=1);
 // Fail-loud in dev, fail-quiet in prod (config can override).
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
+// DB timestamps are written in UTC (gmdate). Keep the whole request in UTC so
+// strtotime() on due/expiry values isn't skewed by the host's php.ini tz.
+date_default_timezone_set('UTC');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
 header('Content-Type: application/json; charset=utf-8');
@@ -25,6 +28,13 @@ if ($CONFIG['debug']) {
 }
 
 require_once __DIR__ . '/response.php';
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/util.php';
+require_once __DIR__ . '/mailer.php';
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin'] as $__d) {
+    require_once __DIR__ . '/domain/' . $__d . '.php';
+}
+require_once __DIR__ . '/backend.php';
 require_once __DIR__ . '/sheets.php';
 require_once __DIR__ . '/session.php';
 require_once __DIR__ . '/rate-limit.php';

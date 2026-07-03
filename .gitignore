@@ -21,3 +21,8 @@ Thumbs.db
 dist/
 node_modules/
 package-lock.json
+
+# Local database + storage (SQLite dev DB, generated)
+api/storage/*
+!api/storage/.htaccess
+!api/storage/.gitkeep

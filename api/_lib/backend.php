@@ -1,0 +1,95 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * NGG — local backend dispatcher.
+ *
+ * Replaces the old Google Apps Script hop. Every `gs_call($op, $args)` now
+ * resolves to a PHP handler running against the local database in-process
+ * (10–50ms instead of a 500–2000ms round-trip to Google). The op → handler
+ * map below is the single registry; add a row here + a function in the
+ * matching _lib/domain/*.php file to expose a new endpoint.
+ *
+ * A read-only mirror of key tables is exported to Google Sheets on a cron
+ * (see api/tools/export-sheets.php) so admins keep a familiar spreadsheet
+ * view — but the database here is the source of truth.
+ */
+
+function backend_dispatch(string $op, array $args = []): array {
+    static $map = null;
+    if ($map === null) {
+        $map = [
+            // Auth
+            'auth.request'            => 'auth_request',
+            'auth.verify'             => 'auth_verify',
+            'auth.me'                 => 'auth_me',
+            'auth.logout'             => 'auth_logout',
+            'auth.totpSetup'          => 'auth_totp_setup',
+            'auth.totpVerify'         => 'auth_totp_verify',
+            // Members
+            'member.dashboard'        => 'member_dashboard',
+            'member.update'           => 'member_update',
+            'member.notifications'    => 'member_notifications',
+            'member.notificationRead' => 'member_notification_read',
+            // Anchor
+            'anchor.weeks'            => 'anchor_weeks',
+            'anchor.mission.submit'   => 'anchor_mission_submit',
+            'anchor.mission.verify'   => 'anchor_mission_verify',
+            'anchor.journal.create'   => 'anchor_journal_create',
+            'anchor.journal.list'     => 'anchor_journal_list',
+            // Assignments
+            'assignment.list'         => 'assignment_list_for_member',
+            'assignment.submit'       => 'assignment_submit',
+            // Events / posts / sessions
+            'event.list'              => 'event_list',
+            'event.rsvp'              => 'event_rsvp',
+            'post.list'               => 'post_list',
+            'post.get'                => 'post_get',
+            'session.current'         => 'op_session_current',
+            'session.list'            => 'session_list',
+            'session.ensureYear'      => 'session_ensure_year',
+            // Admin
+            'admin.members.list'      => 'admin_members_list',
+            'admin.members.upsert'    => 'admin_members_upsert',
+            'admin.mentors.list'      => 'admin_mentors_list',
+            'admin.mentors.upsert'    => 'admin_mentors_upsert',
+            'admin.sessions.upsert'   => 'admin_sessions_upsert',
+            'admin.missions.list'     => 'admin_missions_list',
+            'admin.missions.upsert'   => 'admin_missions_upsert',
+            'admin.events.list'       => 'admin_events_list',
+            'admin.events.upsert'     => 'admin_events_upsert',
+            'admin.posts.list'        => 'admin_posts_list',
+            'admin.posts.get'         => 'admin_posts_get',
+            'admin.posts.upsert'      => 'admin_posts_upsert',
+            'admin.promotions.set'    => 'admin_promotions_set',
+            'admin.audit.tail'        => 'admin_audit_tail',
+            'admin.broadcast'         => 'admin_broadcast',
+            'admin.assignments.list'        => 'admin_assignments_list',
+            'admin.assignments.upsert'      => 'admin_assignments_upsert',
+            'admin.assignments.submissions' => 'admin_assignment_submissions',
+            'admin.assignment.grade'        => 'assignment_grade',
+            // Public (cached by PHP)
+            'public.stats'            => 'public_stats',
+            'public.events'           => 'public_events',
+            'public.posts'            => 'public_posts',
+            'public.session'          => 'op_public_session',
+            'public.newsletter'       => 'public_newsletter',
+            'public.apply'            => 'public_apply',
+        ];
+    }
+
+    if (!isset($map[$op])) {
+        return ['ok' => false, 'error' => 'unknown_op', 'detail' => $op];
+    }
+    $fn = $map[$op];
+    try {
+        $res = $fn($args);
+        if (!is_array($res)) return ['ok' => false, 'error' => 'bad_handler'];
+        if (!isset($res['ok'])) $res['ok'] = true;
+        return $res;
+    } catch (Throwable $e) {
+        global $CONFIG;
+        error_log('[backend_dispatch] op=' . $op . ' err=' . $e->getMessage() . ' @' . $e->getFile() . ':' . $e->getLine());
+        return ['ok' => false, 'error' => 'internal', 'detail' => !empty($CONFIG['debug']) ? $e->getMessage() : null];
+    }
+}
