@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#0c1432"/>
+<meta name="color-scheme" content="light"/>
+<meta name="format-detection" content="telephone=no"/>
+
+<title>Next Generation Genius · Afrovanguard</title>
+<meta name="description" content="A twelve-week growth journey for African teenagers, 10–17. From summer student to vanguard leader — by mission, mentorship and the discipline of public work."/>
+<meta name="keywords" content="African youth, teen mentorship, leadership, Lagos, Anchor 12, NGGC, Afrovanguard, Nigerian education, summer program"/>
+<meta name="author" content="Afrovanguard"/>
+<meta name="robots" content="index, follow, max-image-preview:large"/>
+<link rel="canonical" href="https://ngg.afrovanguard.org/"/>
+
+<!-- Open Graph / Social -->
+<meta property="og:type" content="website"/>
+<meta property="og:site_name" content="Next Generation Genius"/>
+<meta property="og:title" content="Next Generation Genius · Afrovanguard"/>
+<meta property="og:description" content="Africa's next geniuses are not waiting. A structured runway from teenage potential to African leadership."/>
+<meta property="og:image" content="assets/logo.png"/>
+<meta property="og:image:alt" content="The Next Generation Genius mark — a yellow Y on deep navy."/>
+<meta property="og:locale" content="en_NG"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Next Generation Genius · Afrovanguard"/>
+<meta name="twitter:description" content="Africa's next geniuses are not waiting."/>
+<meta name="twitter:image" content="assets/logo.png"/>
+
+<!-- Structured data — helps Google understand the organization and program -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Next Generation Genius",
+  "alternateName": "NGG",
+  "url": "https://ngg.afrovanguard.org/",
+  "logo": "https://ngg.afrovanguard.org/assets/logo.png",
+  "description": "A twelve-week growth journey for African teenagers, 10–17.",
+  "foundingDate": "2024",
+  "parentOrganization": { "@type": "Organization", "name": "Afrovanguard" },
+  "areaServed": { "@type": "City", "name": "Lagos" },
+  "sameAs": [
+    "https://instagram.com/",
+    "https://x.com/",
+    "https://youtube.com/",
+    "https://linkedin.com/"
+  ]
+}
+</script>
+
+<link rel="icon" href="assets/logo.png" type="image/png"/>
+<link rel="apple-touch-icon" href="assets/logo.png"/>
+<link rel="manifest" href="manifest.webmanifest"/>
+
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="preconnect" href="https://images.unsplash.com" crossorigin/>
+<link rel="preconnect" href="https://api.dicebear.com"/>
+<!-- Preload the heaviest above-the-fold font subset; display=swap means the
+     boot screen and first-paint text still render with the system fallback
+     while the brand fonts decode in parallel. -->
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Inter:wght@400;600&display=swap"/>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+
+<!-- Preload the logo + main stylesheet so they don't wait on JSX evaluation. -->
+<link rel="preload" as="image" href="assets/logo.png"/>
+
+<link rel="stylesheet" href="styles.css"/>
+<link rel="stylesheet" href="styles-app.css"/>
+
+<style>
+  /* Pre-React loading shim — avoids blank-flash on first paint over slow shared hosting */
+  .ngg-boot {
+    position: fixed; inset: 0;
+    display: grid; place-items: center;
+    background: #0c1432;
+    color: #f5b026;
+    font-family: "Bricolage Grotesque", system-ui, sans-serif;
+    z-index: 9999;
+    transition: opacity 0.5s ease;
+  }
+  .ngg-boot img { width: 64px; height: 64px; border-radius: 50%; animation: ngg-pulse 1.6s ease-in-out infinite; }
+  .ngg-boot small { display:block; margin-top:18px; font-family:"JetBrains Mono", monospace; font-size:10px; letter-spacing:0.25em; opacity:0.55; text-transform:uppercase; }
+  @keyframes ngg-pulse {
+    0%, 100% { transform: scale(1); opacity: 0.9; }
+    50%      { transform: scale(1.08); opacity: 1; }
+  }
+  .ngg-boot.gone { opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="ngg-boot" id="ngg-boot">
+  <div style="text-align:center">
+    <img src="assets/logo.png" alt="Next Generation Genius"/>
+    <small>Booting · Afrovanguard</small>
+  </div>
+</div>
+<div id="root"></div>
+
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script src="vendor/babel.min.js"></script>
+
+<script src="data.js"></script>
+<script src="photos.js"></script>
+<script src="api-client.js"></script>
+
+<script type="text/babel" src="motion.jsx"></script>
+<script type="text/babel" src="safety.jsx"></script>
+<script type="text/babel" src="auth.jsx"></script>
+<script type="text/babel" src="command.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="components.jsx"></script>
+<script type="text/babel" src="page-home.jsx"></script>
+<script type="text/babel" src="page-club.jsx"></script>
+<script type="text/babel" src="page-anchor.jsx"></script>
+<script type="text/babel" src="page-other.jsx"></script>
+<script type="text/babel" src="page-blog.jsx"></script>
+<script type="text/babel" src="page-dashboard.jsx"></script>
+<script type="text/babel" src="page-book.jsx"></script>
+<script type="text/babel" src="page-admin.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+
+<script>
+  // Fade out boot screen after React mounts
+  (function(){
+    var tries = 0;
+    function check(){
+      var root = document.getElementById("root");
+      if (root && root.children.length > 0) {
+        var b = document.getElementById("ngg-boot");
+        if (b) { b.classList.add("gone"); setTimeout(function(){ b.remove(); }, 600); }
+      } else if (tries++ < 200) {
+        setTimeout(check, 80);
+      }
+    }
+    check();
+  })();
+
+  // Register service worker for instant repeat visits + offline.
+  // Disabled on localhost so dev edits aren't cached aggressively.
+  if ('serviceWorker' in navigator
+      && location.hostname !== 'localhost'
+      && location.hostname !== '127.0.0.1') {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/service-worker.js')
+        .catch(function () { /* ignore registration failures */ });
+    });
+  }
+</script>
+
+</body>
+</html>

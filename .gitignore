@@ -1,0 +1,28 @@
+# Secrets — never commit
+api/config.php
+
+# Filesystem cache + rate-limit state
+api/_cache/*
+!api/_cache/.htaccess
+!api/_cache/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Build output + dependencies (generated; not committed)
+dist/
+node_modules/
+package-lock.json
+
+# Local database + storage (SQLite dev DB, generated)
+api/storage/*
+!api/storage/.htaccess
+!api/storage/.gitkeep

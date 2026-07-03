@@ -1,0 +1,144 @@
+# ===============================================================
+# Next Generation Genius — shared hosting config (Apache)
+# ===============================================================
+
+# Default index
+DirectoryIndex index.html
+
+# Disable directory listing
+Options -Indexes
+
+# UTF-8 default
+AddDefaultCharset UTF-8
+
+# ---------------------------------------------------------------
+# MIME types (for hosts that don't ship them by default)
+# ---------------------------------------------------------------
+<IfModule mod_mime.c>
+  AddType image/svg+xml             .svg
+  AddType image/webp                .webp
+  AddType image/avif                .avif
+  AddType application/javascript    .js .mjs
+  AddType text/jsx                  .jsx
+  AddType font/woff                 .woff
+  AddType font/woff2                .woff2
+  AddType application/manifest+json .webmanifest
+</IfModule>
+
+# ---------------------------------------------------------------
+# Gzip / Deflate compression
+# ---------------------------------------------------------------
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
+  AddOutputFilterByType DEFLATE application/javascript application/x-javascript text/javascript
+  AddOutputFilterByType DEFLATE application/json application/xml application/rss+xml
+  AddOutputFilterByType DEFLATE image/svg+xml font/woff font/woff2
+</IfModule>
+
+# ---------------------------------------------------------------
+# Long-lived static caching
+# ---------------------------------------------------------------
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresDefault                              "access plus 1 hour"
+
+  # HTML — short cache so updates ship fast
+  ExpiresByType text/html                     "access plus 5 minutes"
+
+  # JS / CSS / JSX
+  ExpiresByType text/css                      "access plus 7 days"
+  ExpiresByType application/javascript        "access plus 7 days"
+  ExpiresByType text/jsx                      "access plus 7 days"
+
+  # Images & fonts — long cache
+  ExpiresByType image/png                     "access plus 30 days"
+  ExpiresByType image/jpeg                    "access plus 30 days"
+  ExpiresByType image/webp                    "access plus 30 days"
+  ExpiresByType image/avif                    "access plus 30 days"
+  ExpiresByType image/svg+xml                 "access plus 30 days"
+  ExpiresByType image/x-icon                  "access plus 30 days"
+  ExpiresByType font/woff                     "access plus 90 days"
+  ExpiresByType font/woff2                    "access plus 90 days"
+
+  # Manifest
+  ExpiresByType application/manifest+json     "access plus 1 day"
+</IfModule>
+
+# ---------------------------------------------------------------
+# Security headers
+# ---------------------------------------------------------------
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=(), interest-cohort=()"
+  Header always set X-DNS-Prefetch-Control "on"
+
+  # Strict-Transport-Security — uncomment AFTER HTTPS is verified and you're
+  # sure you'll keep using it. Hard to roll back from preload.
+  # Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+
+  # Content-Security-Policy — loose because we run in-browser Babel + Google
+  # Fonts. When you switch to a precompiled bundle, remove 'unsafe-inline'
+  # and 'unsafe-eval' from script-src.
+  Header always set Content-Security-Policy "default-src 'self'; \
+script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
+style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
+img-src 'self' data: https: blob:; \
+font-src 'self' https://fonts.gstatic.com data:; \
+connect-src 'self' https://script.google.com https://script.googleusercontent.com; \
+frame-ancestors 'self'; \
+base-uri 'self'; \
+form-action 'self'; \
+object-src 'none'"
+
+  # JSX files: we still want them treated as scripts (text/babel)
+  <FilesMatch "\.jsx$">
+    Header set Cache-Control "public, max-age=604800, must-revalidate"
+  </FilesMatch>
+  # JS and CSS — must-revalidate so fixes ship without waiting for cache.
+  <FilesMatch "\.(js|css)$">
+    Header set Cache-Control "public, max-age=604800, must-revalidate"
+  </FilesMatch>
+  # Long-lived assets — immutable cache.
+  <FilesMatch "\.(png|jpe?g|webp|avif|svg|ico|woff2?|ttf)$">
+    Header set Cache-Control "public, max-age=2592000, immutable"
+  </FilesMatch>
+</IfModule>
+
+# ---------------------------------------------------------------
+# Block hidden files & sources
+# ---------------------------------------------------------------
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+<FilesMatch "\.(md|log|sh|zip|gz|sql|bak|swp|inc|tpl|env)$">
+  Require all denied
+</FilesMatch>
+# Block any accidental upload of config.php at the document root.
+<FilesMatch "^config\.php$">
+  Require all denied
+</FilesMatch>
+
+# ---------------------------------------------------------------
+# SPA-friendly fallback — keeps deep links pointing to index.html.
+# The app handles routing client-side via React state.
+# ---------------------------------------------------------------
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Don't rewrite real files / directories
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Don't rewrite known asset paths or the API tree (its own .htaccess wins)
+  RewriteRule ^(assets|uploads|api|vendor|apps-script|docs)/ - [L]
+
+  # Everything else → index.html (SPA fallback)
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# ErrorDocument fallbacks point back at the SPA
+ErrorDocument 404 /index.html

@@ -1,0 +1,680 @@
+/* ================================================================
+   NGG — Media + Parents + Volunteers + Join
+   ================================================================ */
+
+/* =================== MEDIA =================== */
+function MediaPage({ setPage }) {
+  const [filter, setFilter] = useState("All");
+  const [open, setOpen] = useState(null);
+  const kinds = ["All", ...Array.from(new Set(MEDIA_ITEMS.map(m => m.kind)))];
+  const items = filter === "All" ? MEDIA_ITEMS : MEDIA_ITEMS.filter(i => i.kind === filter);
+  const [featuredA, featuredB, ...rest] = items.length ? items : MEDIA_ITEMS;
+
+  const handlePlay = (item) => {
+    if (item && item.url) {
+      window.open(item.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setOpen(item);
+  };
+
+  return (
+    <div className="page" data-screen-label="06 Media">
+      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"64px 0 32px"}}>
+        <div className="container">
+          <span className="chip chip-on-dark">THE MOVEMENT, ON CAMERA</span>
+          <h1 className="display" style={{fontSize:"clamp(64px, 9vw, 132px)", margin:"16px 0", color:"white", lineHeight:0.9}}>
+            Media<span style={{color:"var(--gold-500)"}}>.room</span>
+          </h1>
+          <p style={{fontSize:19, color:"rgba(255,255,255,0.75)", maxWidth:660, lineHeight:1.5}}>
+            Reels, docs, performances, podcasts. Every cohort produces. Every member features. This is what teenage Africa looks like when it is given a camera and a deadline.
+          </p>
+        </div>
+      </section>
+
+      <section style={{padding:"28px 0", background:"var(--paper)", borderBottom:"1px solid rgba(12,20,50,0.07)", position:"sticky", top:"60px", zIndex:5, backdropFilter:"saturate(1.2) blur(8px)"}}>
+        <div className="container">
+          <div role="tablist" aria-label="Media filter" style={{display:"flex", gap:8, flexWrap:"wrap"}}>
+            {kinds.map(k => (
+              <button key={k} role="tab" aria-selected={filter === k} onClick={() => setFilter(k)} className={"chip " + (filter === k ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>
+                {k}
+              </button>
+            ))}
+            <span className="mono" style={{marginLeft:"auto", alignSelf:"center", fontSize:11, color:"var(--ink-700)", letterSpacing:"0.14em"}}>{items.length} ITEMS</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="container">
+          {items.length === 0 ? (
+            <div style={{textAlign:"center", padding:"48px 0", color:"var(--ink-700)"}}>
+              No media in this category yet.
+              <div style={{marginTop:14}}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setFilter("All")}>Show everything</button>
+              </div>
+            </div>
+          ) : (
+            <React.Fragment>
+              {/* Featured pair */}
+              {featuredA && (
+                <div style={{display:"grid", gridTemplateColumns: featuredB ? "2fr 1fr" : "1fr", gap:18, marginBottom:32}}>
+                  <FeatureCard big item={featuredA} onPlay={() => handlePlay(featuredA)}/>
+                  {featuredB && <FeatureCard item={featuredB} onPlay={() => handlePlay(featuredB)}/>}
+                </div>
+              )}
+              {/* Grid */}
+              <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:18}}>
+                {rest.map((m, i) => <FeatureCard key={m.label + i} item={m} onPlay={() => handlePlay(m)}/>)}
+              </div>
+            </React.Fragment>
+          )}
+        </div>
+      </section>
+
+      {open && <MediaModal item={open} onClose={() => setOpen(null)}/>}
+
+      {/* Press / mentions */}
+      <section className="section" style={{background:"var(--cream-50)"}}>
+        <div className="container">
+          <SectionHead eyebrow="THE MOVEMENT IN THE WORLD" title="Press, partnerships, signal." />
+          <div style={{display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:12}}>
+            {["BellaNaija","TechCabal","Pulse","Channels TV","The Continent"].map((p, i) => (
+              <div key={p} className="card" style={{padding:24, textAlign:"center"}}>
+                <div className="display" style={{fontSize:24, color:"var(--navy-900)"}}>{p}</div>
+                <div className="mono" style={{fontSize:10, letterSpacing:"0.15em", color:"var(--ink-500)", marginTop:8}}>FEATURED · {2025 - i}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function FeatureCard({ item, big = false, onPlay }) {
+  const kindColor = {
+    "Reel": "chip-coral",
+    "Documentary": "chip-navy",
+    "Performance": "chip-gold",
+    "Podcast": "chip-plum",
+    "Before/After": "chip-lime",
+    "Day in life": "chip-cream",
+  }[item.kind] || "";
+  const kindImg = {
+    "Reel": "teenSpeaking",
+    "Documentary": "techLab",
+    "Performance": "dance",
+    "Podcast": "podcast",
+    "Before/After": "showcase",
+    "Day in life": "community",
+  }[item.kind] || "heroMain";
+  return (
+    <button
+      type="button"
+      onClick={onPlay}
+      className="media-card"
+      aria-label={"Play " + item.label}
+      style={{display:"flex", flexDirection:"column", gap:10, background:"none", border:"none", padding:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", width:"100%"}}
+    >
+      <div style={{position:"relative", borderRadius:18, overflow:"hidden", aspectRatio: big ? "16/9" : "4/3"}}>
+        <Photo name={kindImg} ratio="auto" style={{height:"100%", borderRadius:0}}/>
+        <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, transparent 30%, rgba(12,20,50,0.78) 100%)"}}/>
+        <div style={{position:"absolute", top:14, left:14}}>
+          <span className={"chip " + kindColor}>{item.kind}</span>
+        </div>
+        <div className="media-card-play" style={{position:"absolute", inset:0, display:"grid", placeItems:"center"}}>
+          <div style={{width: big ? 84 : 64, height: big ? 84 : 64, borderRadius:"50%", background:"rgba(255,255,255,0.92)", display:"grid", placeItems:"center", color:"var(--navy-900)"}}>
+            <div style={{width:0, height:0, borderTop:`${big ? 16 : 12}px solid transparent`, borderBottom:`${big ? 16 : 12}px solid transparent`, borderLeft:`${big ? 24 : 18}px solid var(--navy-900)`, marginLeft:6}}/>
+          </div>
+        </div>
+        <div style={{position:"absolute", bottom:14, left:14, right:14, color:"white"}}>
+          <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize: big ? 28 : 18, lineHeight:1.1, letterSpacing:"-0.02em"}}>{item.label}</div>
+          <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.85)", marginTop:6}}>{item.meta}</div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function MediaModal({ item, onClose }) {
+  React.useEffect(() => {
+    document.body.classList.add("no-scroll");
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.classList.remove("no-scroll"); window.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+  return (
+    <div className="media-modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true" aria-label={item.label}>
+      <div className="media-modal-card">
+        <button className="media-modal-close" onClick={onClose} aria-label="Close">✕</button>
+        <div className="media-modal-stage">
+          <div className="media-modal-stage-inner">
+            <div className="media-modal-mark" aria-hidden="true">▶</div>
+            <div className="mono" style={{fontSize:11, letterSpacing:"0.18em", color:"rgba(255,255,255,0.75)", marginTop:14}}>
+              {item.kind.toUpperCase()} · {item.meta}
+            </div>
+            <div style={{fontFamily:"var(--font-display)", fontSize:28, fontWeight:700, lineHeight:1.15, marginTop:10, maxWidth:520}}>{item.label}</div>
+            <p style={{color:"rgba(255,255,255,0.7)", marginTop:14, fontSize:14, maxWidth:480, lineHeight:1.5}}>
+              The full media player is coming soon — for now, this piece is screened live at our Saturday sessions. Drop your email below and we'll send you the link when it goes online.
+            </p>
+            <div style={{maxWidth:480, marginTop:18}}>
+              <NewsletterForm source={"media:" + item.kind}/>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =================== PARENTS =================== */
+function ParentsPage({ setPage }) {
+  return (
+    <div className="page" data-screen-label="07 Parents">
+      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"72px 0"}}>
+        <div className="container">
+          <div style={{display:"grid", gridTemplateColumns:"1.3fr 1fr", gap:48, alignItems:"end"}}>
+            <div>
+              <span className="chip chip-navy"><span className="dot dot-gold"/> FOR PARENTS & GUARDIANS</span>
+              <h1 className="display" style={{fontSize:"clamp(56px, 7vw, 108px)", margin:"18px 0 16px"}}>
+                A safe room<br/>with <em style={{fontStyle:"normal", color:"var(--coral)"}}>high ceilings.</em>
+              </h1>
+              <p style={{fontSize:19, lineHeight:1.5, color:"var(--ink-700)", maxWidth:560, margin:0}}>
+                You are not handing your teenager to a workshop. You are introducing them to a movement that asks more of them, and protects them while it does.
+              </p>
+            </div>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
+              {[
+                { num: "100%", label: "Mentors background-checked" },
+                { num: "2-mentor", label: "Minimum at every session" },
+                { num: "Weekly", label: "Digest sent to parents" },
+                { num: "0 fee", label: "For accepted summer scholars" },
+              ].map(s => (
+                <div key={s.label} className="card" style={{padding:18}}>
+                  <div className="display" style={{fontSize:36, color:"var(--navy-900)"}}>{s.num}</div>
+                  <div className="mono" style={{fontSize:11, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--ink-500)", marginTop:6}}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Mentorship philosophy */}
+      <section className="section">
+        <div className="container">
+          <SectionHead eyebrow="OUR PHILOSOPHY" title="We train character through public work." sub="A teenager learns who they are by attempting things in front of people who care. Our job is to design the attempts and curate the people." />
+          <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:20}}>
+            {[
+              { h: "Safety is a system, not a slogan.",         d: "Background checks, two-mentor minimum, code-of-conduct training, anonymous reporting, parent digest, monitored channels." },
+              { h: "Discipline before charisma.",                d: "We do not chase prodigies. We build habit, attention and follow-through. Talent is downstream of these." },
+              { h: "African intelligence is the spine.",         d: "We do not import a foreign curriculum and translate. The lens is ours. The languages we learn serve it." },
+            ].map((c, i) => (
+              <div key={c.h} className="card" style={{padding:28, minHeight:240}}>
+                <div className="display" style={{fontSize:48, color:"var(--gold-500)"}}>0{i+1}</div>
+                <h3 style={{fontFamily:"var(--font-display)", fontSize:22, margin:"12px 0", letterSpacing:"-0.02em"}}>{c.h}</h3>
+                <p style={{fontSize:14, color:"var(--ink-500)", lineHeight:1.5, margin:0}}>{c.d}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="section" style={{background:"var(--cream-50)"}}>
+        <div className="container">
+          <SectionHead eyebrow="QUESTIONS YOU PROBABLY HAVE" title="Asked, answered, in writing." />
+          <FAQList items={FAQ}/>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function FAQList({ items }) {
+  const [open, setOpen] = useState(0);
+  return (
+    <div className="card faq-list" style={{padding:0, overflow:"hidden"}}>
+      {items.map((f, i) => {
+        const isOpen = open === i;
+        const panelId = "faq-panel-" + i;
+        const btnId = "faq-btn-" + i;
+        return (
+          <div key={i} style={{borderTop: i === 0 ? "none" : "1px solid rgba(12,20,50,0.07)"}}>
+            <button
+              id={btnId}
+              aria-expanded={isOpen}
+              aria-controls={panelId}
+              onClick={() => setOpen(isOpen ? -1 : i)}
+              style={{
+                width:"100%", background:"none", border:"none", padding:"24px 28px",
+                display:"flex", justifyContent:"space-between", alignItems:"center", gap:18,
+                cursor:"pointer", textAlign:"left", fontFamily:"inherit",
+              }}
+            >
+              <span style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, letterSpacing:"-0.02em", color:"var(--ink-900)"}}>{f.q}</span>
+              <span aria-hidden="true" style={{
+                width:32, height:32, borderRadius:"50%", flexShrink:0,
+                background: isOpen ? "var(--navy-900)" : "var(--cream-100)",
+                color: isOpen ? "white" : "var(--navy-900)",
+                display:"grid", placeItems:"center", fontSize:18, fontWeight:700,
+                transition:"transform 0.25s cubic-bezier(0.2,0.7,0.2,1), background 0.2s ease, color 0.2s ease",
+                transform: isOpen ? "rotate(45deg)" : "rotate(0)",
+              }}>+</span>
+            </button>
+            <div
+              id={panelId}
+              role="region"
+              aria-labelledby={btnId}
+              hidden={!isOpen}
+              style={{padding: isOpen ? "0 28px 24px" : "0 28px", fontSize:16, lineHeight:1.55, color:"var(--ink-700)", maxWidth:760}}
+            >
+              {f.a}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* =================== VOLUNTEERS =================== */
+function VolunteersPage({ setPage }) {
+  return (
+    <div className="page" data-screen-label="08 Volunteers">
+      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"72px 0", position:"relative", overflow:"hidden"}}>
+        <div style={{position:"absolute", inset:0, backgroundImage:"radial-gradient(circle at 80% 50%, rgba(208,255,58,0.14), transparent 60%)"}}/>
+        <div className="container" style={{position:"relative", display:"grid", gridTemplateColumns:"1.3fr 1fr", gap:48, alignItems:"center"}}>
+          <div>
+            <span className="chip chip-on-dark"><span className="dot dot-lime"/> MENTORS · INSTRUCTORS · CREATIVES · OPS</span>
+            <h1 className="display" style={{fontSize:"clamp(56px, 8vw, 124px)", margin:"18px 0 16px", color:"white", lineHeight:0.9}}>
+              Join the rebuilding<br/>of <span style={{color:"var(--lime)"}}>the next generation.</span>
+            </h1>
+            <p style={{fontSize:19, lineHeight:1.5, color:"rgba(255,255,255,0.78)", maxWidth:560, margin:0}}>
+              We do not need experts. We need adults who can listen first, model their craft on camera, and stay present for twelve weeks. If that is you, we have a role.
+            </p>
+            <button
+              className="btn btn-lime btn-lg mt-32"
+              onClick={() => {
+                const el = document.getElementById("mentor-apply");
+                if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+            >Apply to mentor →</button>
+          </div>
+          <Photo name="mentor" style={{height:420}} overlay>
+            <div style={{position:"absolute", bottom:20, left:20, right:20, color:"white"}}>
+              <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", color:"var(--gold-400)"}}>MENTOR CIRCLE · LAGOS</div>
+              <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:24, marginTop:4, lineHeight:1.05}}>The Saturday session.</div>
+            </div>
+          </Photo>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="container">
+          <SectionHead eyebrow="FIVE WAYS TO BE USEFUL" title="Pick the shape of your time." />
+          <div style={{display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:14}}>
+            {VOLUNTEER_ROLES.map((r, i) => (
+              <div key={r.name} className="card" style={{padding:24, minHeight:240, display:"flex", flexDirection:"column", justifyContent:"space-between"}}>
+                <div>
+                  <div className="display" style={{fontSize:36, color:"var(--gold-500)"}}>0{i+1}</div>
+                  <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, marginTop:8, lineHeight:1.1}}>{r.name}</div>
+                  <div className="mono" style={{fontSize:11, color:"var(--coral)", marginTop:8, letterSpacing:"0.12em"}}>{r.commit.toUpperCase()}</div>
+                </div>
+                <div style={{fontSize:13, color:"var(--ink-500)", lineHeight:1.4}}>{r.ideal}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Mentor spotlight */}
+      <section className="section" style={{background:"var(--cream-50)"}}>
+        <div className="container">
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:48, alignItems:"center"}}>
+            <Photo src={portrait(8, 800, 1000)} ratio="4/5" style={{height:520}}/>
+            <div>
+              <span className="eyebrow" style={{color:"var(--gold-500)"}}>MENTOR SPOTLIGHT</span>
+              <h2 className="display" style={{fontSize:"clamp(40px, 5vw, 72px)", margin:"8px 0 18px", lineHeight:0.95}}>
+                "These teenagers do not need rescuing.<br/>They need a room with high ceilings."
+              </h2>
+              <p style={{fontSize:16, color:"var(--ink-500)", lineHeight:1.55, maxWidth:520}}>
+                Dr. Ade has mentored four cohorts. Six of his students are now in Vanguard. One is running a community library. He says the trick is to listen first, twice as long as you think is reasonable, then ask one hard question.
+              </p>
+              <div style={{display:"flex", gap:12, marginTop:24}}>
+                <span className="chip chip-gold">4 cohorts</span>
+                <span className="chip chip-lime">23 mentees</span>
+                <span className="chip">★ 4.9 rating</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Mentor application */}
+      <MentorApplySection/>
+    </div>
+  );
+}
+
+function MentorApplySection() {
+  const [d, setD] = useState({ name: "", email: "", role: VOLUNTEER_ROLES[0] ? VOLUNTEER_ROLES[0].name : "Mentor", why: "" });
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setErr("");
+    if (d.name.trim().length < 2) { setErr("Enter your name."); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) { setErr("Enter a valid email."); return; }
+    setBusy(true);
+    try {
+      await NGGApi.public.apply({
+        kind: "mentor",
+        name: d.name.trim(),
+        email: d.email.trim(),
+        role: d.role,
+        why: d.why.trim(),
+      });
+      setSent(true);
+      if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Application received");
+    } catch (e2) {
+      const code = e2.code || e2.message;
+      setErr(code === "rate_limited"
+        ? "Too many submissions — wait a few minutes."
+        : "Couldn't submit right now. Try again in a moment.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section id="mentor-apply" className="section" style={{background:"var(--navy-900)", color:"white"}}>
+      <div className="container" style={{maxWidth:760}}>
+        <div style={{textAlign:"center", marginBottom:36}}>
+          <span className="eyebrow" style={{color:"var(--lime)"}}>APPLY · VOLUNTEER TEAM</span>
+          <h2 className="display" style={{fontSize:"clamp(40px, 5vw, 64px)", margin:"10px 0 0", color:"white"}}>Put your hand up.</h2>
+          <p style={{fontSize:16, color:"rgba(255,255,255,0.78)", maxWidth:480, margin:"14px auto 0", lineHeight:1.5}}>
+            Two minutes. We read every application and reply within a week — yes or no, in writing.
+          </p>
+        </div>
+        {sent ? (
+          <div className="card" style={{padding:40, textAlign:"center", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(208,255,58,0.35)", color:"white"}}>
+            <div className="badge-pin lime" style={{width:72, height:72, fontSize:32, margin:"0 auto 18px"}}>✓</div>
+            <h3 style={{fontFamily:"var(--font-display)", fontSize:28, margin:"0 0 10px"}}>Application received.</h3>
+            <p style={{color:"rgba(255,255,255,0.78)", margin:0, lineHeight:1.5}}>
+              Watch your inbox — we reply within a week. Thank you for offering your Saturdays.
+            </p>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="card" style={{padding:32, display:"flex", flexDirection:"column", gap:16, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)"}}>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Your name</label>
+                <input value={d.name} onChange={e => setD({...d, name: e.target.value})} placeholder="Full name" autoComplete="name"/>
+              </div>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Email</label>
+                <input type="email" value={d.email} onChange={e => setD({...d, email: e.target.value})} placeholder="you@email.com" autoComplete="email"/>
+              </div>
+            </div>
+            <div className="field">
+              <label style={{color:"rgba(255,255,255,0.8)"}}>Which role fits your time?</label>
+              <select value={d.role} onChange={e => setD({...d, role: e.target.value})}>
+                {VOLUNTEER_ROLES.map(r => <option key={r.name} value={r.name}>{r.name} — {r.commit}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label style={{color:"rgba(255,255,255,0.8)"}}>One line on why (optional)</label>
+              <textarea rows={3} value={d.why} onChange={e => setD({...d, why: e.target.value})} placeholder="What craft would you model? What pulls you to this?"/>
+            </div>
+            {err && <div role="alert" style={{color:"var(--coral)", fontSize:14, fontWeight:500}}>{err}</div>}
+            <button className="btn btn-lime btn-lg" type="submit" disabled={busy} style={{justifyContent:"center"}}>
+              {busy ? "Submitting…" : "Submit application →"}
+            </button>
+          </form>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* =================== JOIN / APPLICATION =================== */
+const JOIN_DRAFT_KEY = "ngg.join.draft";
+
+function JoinPage({ setPage }) {
+  // Restore a saved draft so "we save as you go" is true.
+  const [step, setStep] = useState(0);
+  const [data, setData] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
+      if (saved && typeof saved === "object") {
+        return Object.assign({ name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "" }, saved);
+      }
+    } catch (_) {}
+    return { name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "" };
+  });
+  const [busy, setBusy] = useState(false);
+  const [fieldErr, setFieldErr] = useState("");
+  const steps = ["Identity", "Track", "Story", "Parent"];
+  const session = useSession();
+  const applyEyebrow = session
+    ? "APPLY · " + sessionLabel(session, "NEXT SESSION").toUpperCase()
+    : "APPLY · NEXT SESSION";
+
+  // Persist draft on every change (cleared on successful submit).
+  React.useEffect(() => {
+    try { localStorage.setItem(JOIN_DRAFT_KEY, JSON.stringify(data)); } catch (_) {}
+  }, [data]);
+
+  const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
+
+  function validate(s) {
+    if (s === 0) {
+      if (data.name.trim().length < 2) return "Enter the applicant's first name.";
+      const age = parseInt(data.age, 10);
+      if (!age || age < 10 || age > 17) return "Age must be between 10 and 17.";
+    }
+    if (s === 2 && data.why.trim().length < 20) {
+      return "Give us at least a sentence or two — 20 characters minimum.";
+    }
+    if (s === 3 && !emailOk(data.parentEmail)) {
+      return "Enter a valid parent or guardian email.";
+    }
+    return "";
+  }
+
+  async function next() {
+    const msg = validate(step);
+    if (msg) { setFieldErr(msg); return; }
+    setFieldErr("");
+
+    if (step < 3) { setStep(step + 1); return; }
+
+    // Final step — actually submit the application.
+    setBusy(true);
+    try {
+      await NGGApi.public.apply({
+        kind: "teen",
+        name: data.name.trim(),
+        age: parseInt(data.age, 10),
+        centre: data.city,
+        track: data.track,
+        why: data.why.trim(),
+        email: data.parentEmail.trim(),
+      });
+      try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {}
+      setStep(4);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (e) {
+      const code = e.code || e.message;
+      const map = {
+        rate_limited: "Too many submissions from this connection — wait a few minutes and try again.",
+        bad_email: "That parent email doesn't look right.",
+        bad_age: "Age must be between 10 and 17.",
+        upstream_unreachable: "We couldn't reach the server. Your draft is saved — try again in a moment.",
+      };
+      const text = map[code] || "Couldn't submit your application. Your draft is saved — try again.";
+      setFieldErr(text);
+      if (typeof toast !== "undefined") toast.error(text, "Application");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function back() { setFieldErr(""); setStep(Math.max(0, step - 1)); }
+
+  return (
+    <div className="page" data-screen-label="09 Join">
+      <section className="page-hero page-hero-light" style={{background:"var(--paper)", padding:"56px 0 88px", minHeight:"calc(100vh - 71px)"}}>
+        <div className="container" style={{maxWidth:980}}>
+          <div style={{textAlign:"center", marginBottom:40}}>
+            <span className="eyebrow" style={{color:"var(--gold-500)"}}>{applyEyebrow}</span>
+            <h1 className="display" style={{fontSize:"clamp(48px, 6vw, 88px)", margin:"10px 0 0"}}>
+              Start your <em style={{fontStyle:"normal", color:"var(--coral)"}}>journey.</em>
+            </h1>
+            <p style={{fontSize:17, color:"var(--ink-500)", maxWidth:520, margin:"16px auto 0", lineHeight:1.5}}>
+              Four short steps. Should take six minutes. You can pause and come back — we save as you go.
+            </p>
+          </div>
+
+          {/* Stepper */}
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:32, padding:"0 12px"}}>
+            {steps.map((s, i) => (
+              <React.Fragment key={s}>
+                <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:8, flex:"0 0 auto"}}>
+                  <div style={{
+                    width:42, height:42, borderRadius:"50%",
+                    background: i < step ? "var(--navy-900)" : i === step ? "var(--gold-500)" : "var(--cream-100)",
+                    color: i <= step ? (i === step ? "var(--navy-900)" : "white") : "var(--ink-400)",
+                    display:"grid", placeItems:"center", fontWeight:700, fontFamily:"var(--font-display)", fontSize:18,
+                    border: i === step ? "2px solid var(--navy-900)" : "none",
+                  }}>
+                    {i < step ? "✓" : i + 1}
+                  </div>
+                  <div className="mono" style={{fontSize:10, letterSpacing:"0.15em", textTransform:"uppercase", fontWeight: i === step ? 700 : 400, color: i === step ? "var(--navy-900)" : "var(--ink-500)"}}>
+                    {s}
+                  </div>
+                </div>
+                {i < steps.length - 1 && (
+                  <div style={{flex:1, height:2, background: i < step ? "var(--navy-900)" : "var(--cream-200)", margin:"-22px 12px 0"}}/>
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+
+          <div className="card" style={{padding:48, minHeight:380}}>
+            {step === 0 && (
+              <div style={{display:"flex", flexDirection:"column", gap:18}}>
+                <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:0, letterSpacing:"-0.02em"}}>Who is applying?</h2>
+                <p style={{color:"var(--ink-500)", margin:0}}>Use the name you'd want printed on a Genius ID card. You can change it later.</p>
+                <div style={{display:"grid", gridTemplateColumns:"2fr 1fr 1.4fr", gap:14, marginTop:14}}>
+                  <div className="field">
+                    <label>Your first name</label>
+                    <input value={data.name} onChange={e => setData({...data, name: e.target.value})} placeholder="e.g. Adaeze"/>
+                  </div>
+                  <div className="field">
+                    <label>Age</label>
+                    <input type="number" min="10" max="17" value={data.age} onChange={e => setData({...data, age: e.target.value})}/>
+                  </div>
+                  <div className="field">
+                    <label>Which centre is closest to you?</label>
+                    <select value={data.city} onChange={e => setData({...data, city: e.target.value})}>
+                      <option value="Egbeda">CACENTRE Egbeda</option>
+                      <option value="Ayobo">CACENTRE Ayobo</option>
+                      <option value="Other">Neither — I'll travel</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+            {step === 1 && (
+              <div>
+                <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:"0 0 8px", letterSpacing:"-0.02em"}}>Pick a starting track.</h2>
+                <p style={{color:"var(--ink-500)", margin:"0 0 24px"}}>You can switch tracks any time in your first four weeks.</p>
+                <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:12}}>
+                  {TRACKS.map(t => (
+                    <button key={t.id} onClick={() => setData({...data, track: t.name})} style={{
+                      padding:18, borderRadius:14, textAlign:"left",
+                      background: data.track === t.name ? "var(--navy-900)" : "white",
+                      color: data.track === t.name ? "white" : "var(--ink-900)",
+                      border: data.track === t.name ? "2px solid var(--gold-500)" : "1px solid rgba(12,20,50,0.12)",
+                      cursor:"pointer", fontFamily:"inherit",
+                    }}>
+                      <div style={{fontSize:28, marginBottom:8}}>{t.icon}</div>
+                      <div style={{fontWeight:700}}>{t.name}</div>
+                      <div style={{fontSize:11, opacity:0.7, marginTop:4, lineHeight:1.3}}>{t.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {step === 2 && (
+              <div style={{display:"flex", flexDirection:"column", gap:18}}>
+                <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:0, letterSpacing:"-0.02em"}}>Tell us one thing.</h2>
+                <p style={{color:"var(--ink-500)", margin:0}}>In 3 sentences: what would you build with twelve uninterrupted weeks?</p>
+                <div className="field">
+                  <label>Your answer</label>
+                  <textarea rows={6} value={data.why} onChange={e => setData({...data, why: e.target.value})} placeholder="A short answer is fine. Be honest, not impressive."/>
+                </div>
+                <div className="mono" style={{fontSize:11, color:"var(--ink-500)"}}>{data.why.length} CHARACTERS · APPLICATIONS ARE READ BY HUMANS, NOT FILTERS.</div>
+              </div>
+            )}
+            {step === 3 && (
+              <div style={{display:"flex", flexDirection:"column", gap:18}}>
+                <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:0, letterSpacing:"-0.02em"}}>Parent or guardian.</h2>
+                <p style={{color:"var(--ink-500)", margin:0}}>We will email them a one-pager explaining the program and asking for consent. We will not contact them again without your knowledge.</p>
+                <div className="field">
+                  <label>Parent / guardian email</label>
+                  <input value={data.parentEmail} onChange={e => setData({...data, parentEmail: e.target.value})} placeholder="parent@example.com"/>
+                </div>
+                <div className="card" style={{padding:18, background:"var(--cream-50)", border:"1px solid var(--cream-200)"}}>
+                  <div className="eyebrow" style={{color:"var(--ink-500)"}}>APPLICATION SUMMARY</div>
+                  <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:14, marginTop:12, fontSize:14}}>
+                    <div><b>Name</b><br/>{data.name || "—"}</div>
+                    <div><b>Age</b><br/>{data.age}</div>
+                    <div><b>Centre</b><br/>{data.city}</div>
+                    <div><b>Track</b><br/>{data.track}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {step === 4 && (
+              <div style={{textAlign:"center", padding:"32px 0"}}>
+                <div className="badge-pin unlocked" style={{width:96, height:96, fontSize:48, margin:"0 auto"}}>✓</div>
+                <h2 className="display" style={{fontSize:56, margin:"24px 0 12px"}}>Application received.</h2>
+                <p style={{fontSize:17, color:"var(--ink-500)", maxWidth:480, margin:"0 auto", lineHeight:1.5}}>
+                  We will write back within 5 working days. In the meantime — follow Genius FM and start your streak.
+                </p>
+                <button className="btn btn-primary btn-lg mt-32" onClick={() => setPage("home")}>Back to home</button>
+              </div>
+            )}
+          </div>
+
+          {step < 4 && (
+            <React.Fragment>
+              {fieldErr && (
+                <div role="alert" style={{
+                  marginTop:18, padding:"12px 16px", borderRadius:12,
+                  background:"rgba(255,90,60,0.1)", border:"1px solid rgba(255,90,60,0.3)",
+                  color:"#a3331c", fontSize:14, fontWeight:500,
+                }}>
+                  {fieldErr}
+                </div>
+              )}
+              <div style={{display:"flex", justifyContent:"space-between", marginTop:24}}>
+                <button className="btn btn-ghost" onClick={back} disabled={step === 0 || busy} style={{visibility: step === 0 ? "hidden" : "visible"}}>← Back</button>
+                <button className="btn btn-primary btn-lg" onClick={next} disabled={busy}>
+                  {busy ? "Submitting…" : step === 3 ? "Submit application →" : "Continue →"}
+                </button>
+              </div>
+            </React.Fragment>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, FAQList, MentorApplySection, MediaModal });

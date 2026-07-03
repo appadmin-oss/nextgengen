@@ -1,0 +1,14 @@
+{
+  "name": "Next Generation Genius",
+  "short_name": "NGG",
+  "description": "A twelve-week growth journey for African teenagers, 10–17.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0c1432",
+  "theme_color": "#0c1432",
+  "icons": [
+    { "src": "assets/logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
