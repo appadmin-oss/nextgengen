@@ -1,0 +1,22 @@
+{
+  "name": "NGG Anchor Journal",
+  "short_name": "Anchor",
+  "description": "Your Anchor 12 companion — daily reflection, streaks, missions and progress.",
+  "id": "/journal/",
+  "start_url": "/journal/",
+  "scope": "/journal/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#0a1130",
+  "theme_color": "#0c1432",
+  "categories": ["education", "productivity", "lifestyle"],
+  "icons": [
+    { "src": "/assets/logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Write today's entry", "short_name": "Today", "url": "/journal/?tab=today" },
+    { "name": "My journal", "short_name": "Journal", "url": "/journal/?tab=entries" }
+  ]
+}

@@ -3840,3 +3840,14 @@ section p[style*="var(--ink-500)"] {
 .dash-assign-actions .btn-primary { margin-left: auto; }
 .dash-assign-filelink { font-size: 13px; font-weight: 600; color: var(--lime-ink); }
 .dash-assign-start { margin-top: 12px; }
+
+/* Anchor Journal app entry point on the member dashboard */
+.dash-journal-cta { display:flex; align-items:center; gap:12px; text-decoration:none; color:inherit;
+  padding:14px 16px; margin:4px 0 14px; border-radius:16px;
+  background:linear-gradient(135deg, rgba(176,124,255,0.18), rgba(245,176,38,0.16));
+  border:1px solid rgba(176,124,255,0.35); transition:transform .15s ease, box-shadow .15s ease; }
+.dash-journal-cta:hover { transform:translateY(-1px); box-shadow:0 8px 24px rgba(12,20,50,0.12); }
+.dash-journal-cta-ico { width:38px; height:38px; border-radius:11px; display:grid; place-items:center;
+  background:linear-gradient(135deg,#0c1432,#4b2f8f); color:var(--gold-400); font-size:18px; flex-shrink:0; }
+.dash-journal-cta-txt { flex:1; display:flex; flex-direction:column; line-height:1.2; }
+.dash-journal-cta-txt small { color:var(--ink-500); font-size:12px; margin-top:2px; }
