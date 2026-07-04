@@ -248,6 +248,23 @@ function admin_promotions_set(array $p): array {
     return ['ok' => true];
 }
 
+function admin_anchor_get(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    return ['ok' => true, 'content' => anchor_content()];
+}
+
+function admin_anchor_set(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $data = $p['data'] ?? [];
+    if (!is_array($data)) return ['ok' => false, 'error' => 'bad_data'];
+    // Keep only the known top-level keys; merge over defaults for safety.
+    $clean = [];
+    foreach (['weeks', 'quotes', 'systems', 'tilt'] as $k) if (array_key_exists($k, $data)) $clean[$k] = $data[$k];
+    setting_set('anchor_content', json_encode($clean, JSON_UNESCAPED_SLASHES), $g['requester']['memberId']);
+    audit('admin.anchor.set', $g['requester']['memberId'], '', ['keys' => array_keys($clean)], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
 function admin_audit_tail(array $p): array {
     $g = admin_gate($p); if (!$g['ok']) return $g;
     $limit = min(500, max(1, (int)($p['limit'] ?? 100)));

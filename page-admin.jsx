@@ -41,6 +41,7 @@ function AdminPage({ setPage }) {
           {section === "mentors" && <AdminMentors/>}
           {section === "sessions" && <AdminSessions/>}
           {section === "missions" && <AdminMissions/>}
+          {section === "anchor" && <AdminAnchor/>}
           {section === "assignments" && <AdminAssignments/>}
           {section === "events" && <AdminEvents/>}
           {section === "posts" && <AdminPosts/>}
@@ -152,6 +153,7 @@ function AdminNav({ section, setSection }) {
     { id: "mentors",   label: "Mentors",    icon: "◐" },
     { id: "sessions",  label: "Sessions",   icon: "▢" },
     { id: "missions",  label: "Missions",   icon: "✦" },
+    { id: "anchor",    label: "Anchor app", icon: "⚓" },
     { id: "assignments", label: "Assignments", icon: "❏" },
     { id: "events",    label: "Events",     icon: "▶" },
     { id: "posts",     label: "Posts",      icon: "✎" },
@@ -177,7 +179,7 @@ function AdminNav({ section, setSection }) {
 function titleFor(s) {
   return {
     home: "Overview", members: "Members", mentors: "Mentors", sessions: "Sessions",
-    missions: "Anchor missions", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
+    missions: "Anchor missions", anchor: "Anchor Journal app", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
   }[s] || "";
 }
 
@@ -823,6 +825,107 @@ function AdminAudit() {
           </tbody>
         </table>
       }
+    </div>
+  );
+}
+
+// ============================================================================
+// Anchor Journal app — manage the content the member PWA renders:
+// the 12 weekly build-sheets, the quote library, the daily systems, and the
+// 3D tilt toggle. Saved to settings; the app reads it live.
+// ============================================================================
+
+function AdminAnchor() {
+  const [c, setC] = React.useState(null);
+  const [tab, setTab] = React.useState("weeks");
+  const [busy, setBusy] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+  React.useEffect(() => { NGGApi.admin.anchor.get().then(r => setC(r.content || {})).catch(e => toast.error(e.code || e.message)); }, []);
+  const save = async () => {
+    setBusy(true);
+    try { await NGGApi.admin.anchor.set(c); setSaved(true); setTimeout(() => setSaved(false), 2400); }
+    catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(false); }
+  };
+  if (!c) return <div className="admin-section"><div className="dash-spinner"/></div>;
+
+  const weeks = c.weeks || [], quotes = c.quotes || [], systems = c.systems || [];
+  const setWeek = (i, k, v) => setC(o => ({ ...o, weeks: o.weeks.map((w, idx) => idx === i ? { ...w, [k]: v } : w) }));
+  const setQuote = (i, v) => setC(o => ({ ...o, quotes: o.quotes.map((q, idx) => idx === i ? v : q) }));
+  const addQuote = () => setC(o => ({ ...o, quotes: [...(o.quotes || []), ""] }));
+  const rmQuote = (i) => setC(o => ({ ...o, quotes: o.quotes.filter((_, idx) => idx !== i) }));
+  const setSys = (i, k, v) => setC(o => ({ ...o, systems: o.systems.map((s, idx) => idx === i ? { ...s, [k]: v } : s) }));
+  const addSys = () => setC(o => ({ ...o, systems: [...(o.systems || []), { key: "sys" + Date.now(), label: "", icon: "ph-check-circle" }] }));
+  const rmSys = (i) => setC(o => ({ ...o, systems: o.systems.filter((_, idx) => idx !== i) }));
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Anchor Journal app</h2>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <span className="mono" style={{ color: saved ? "var(--lime-ink)" : "var(--ink-500)" }}>{saved ? "SAVED ✓" : busy ? "SAVING…" : ""}</span>
+          <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>Save & publish</button>
+        </div>
+      </div>
+      <p className="admin-hint">Everything here renders live in the members' Anchor Journal PWA. Edit the twelve weekly build-sheets, the morning-quote library and the daily systems checklist, then publish.</p>
+
+      <div className="admin-anchor-tabs">
+        {[["weeks", "12 weeks"], ["quotes", "Quotes (" + quotes.length + ")"], ["systems", "Daily systems (" + systems.length + ")"], ["settings", "Settings"]].map(([id, lbl]) => (
+          <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
+        ))}
+      </div>
+
+      {tab === "weeks" && (
+        <div className="admin-anchor-weeks">
+          {weeks.map((w, i) => (
+            <details key={i} className="admin-anchor-week">
+              <summary><span className="mono">WK {String(i + 1).padStart(2, "0")}</span> {w.title || "Untitled"}</summary>
+              <div className="admin-fields">
+                <Field label="Week title" value={w.title || ""} onChange={v => setWeek(i, "title", v)}/>
+                <Field label="System being built" value={w.system || ""} onChange={v => setWeek(i, "system", v)}/>
+                <Field label="Personal focus" value={w.focus || ""} onChange={v => setWeek(i, "focus", v)}/>
+                <Field label="Home actions" value={w.home || ""} onChange={v => setWeek(i, "home", v)}/>
+                <Field label="School actions" value={w.school || ""} onChange={v => setWeek(i, "school", v)}/>
+                <Field label="Peer modeling" value={w.peer || ""} onChange={v => setWeek(i, "peer", v)}/>
+                <FieldTextarea label="Journal prompt" value={w.journal || ""} onChange={v => setWeek(i, "journal", v)} rows={2}/>
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+
+      {tab === "quotes" && (
+        <div className="admin-anchor-list">
+          {quotes.map((q, i) => (
+            <div className="admin-anchor-row" key={i}>
+              <span className="mono admin-anchor-n">{String(i + 1).padStart(2, "0")}</span>
+              <textarea className="admin-input" rows={2} value={q} onChange={e => setQuote(i, e.target.value)}/>
+              <button className="admin-anchor-rm" onClick={() => rmQuote(i)} aria-label="Remove">✕</button>
+            </div>
+          ))}
+          <button className="btn btn-ghost btn-sm" onClick={addQuote}>+ Add quote</button>
+        </div>
+      )}
+
+      {tab === "systems" && (
+        <div className="admin-anchor-list">
+          {systems.map((s, i) => (
+            <div className="admin-anchor-row" key={i}>
+              <input className="admin-input" style={{ flex: 2 }} placeholder="Label (e.g. Woke up on time)" value={s.label || ""} onChange={e => setSys(i, "label", e.target.value)}/>
+              <input className="admin-input" style={{ flex: 1 }} placeholder="ph-icon" value={s.icon || ""} onChange={e => setSys(i, "icon", e.target.value)}/>
+              <button className="admin-anchor-rm" onClick={() => rmSys(i)} aria-label="Remove">✕</button>
+            </div>
+          ))}
+          <button className="btn btn-ghost btn-sm" onClick={addSys}>+ Add system</button>
+          <p className="admin-hint" style={{ marginTop: 10 }}>Icons use Phosphor names (e.g. <code>ph-sun-horizon</code>, <code>ph-book-open-text</code>). See phosphoricons.com.</p>
+        </div>
+      )}
+
+      {tab === "settings" && (
+        <div className="admin-fields" style={{ maxWidth: 420 }}>
+          <FieldCheckbox label="3D tilt effect on cards" value={c.tilt !== false} onChange={v => setC(o => ({ ...o, tilt: v }))}/>
+        </div>
+      )}
     </div>
   );
 }
