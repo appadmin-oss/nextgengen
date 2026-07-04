@@ -1,538 +1,899 @@
 /* ============================================================================
-   NGG Anchor Journal — installable, offline-first PWA.
+   NGG Anchor Journal — installable, offline-first PWA.  Design-matched build.
+   "A daily discipline for an incorruptible generation. Twelve weeks. One
+   reflection at a time."
 
-   A member's daily companion for the Anchor 12 journey: mood + guided
-   reflection, streaks, entry history, this-week's missions and progress.
+   Screens: onboarding · journey (path) · reflect editor (morning quote +
+   read-aloud, musing, 3-sentence night reflection) · daily systems · growth
+   (rank ring, streak/diamonds, week dots, rank ladder, self-score, habit
+   focus, 12-week map) · prompt library · peers · weekly review · you.
 
-   - Reuses window.NGGApi (loaded first) → shares the site's HttpOnly session
-     cookie, so a member already signed in on the main site is signed in here
-     automatically (SSO). Otherwise a sign-in gate mirrors the main flow.
-   - Offline-first: entries render from a local cache instantly and new
-     reflections are queued in localStorage and synced when back online.
-   - Mounts to #aj-root. No dependency on the marketing bundle.
+   Reuses window.NGGApi (shared cookie → SSO). Progression (XP/diamonds/streak/
+   rank) is derived from server-persisted journal entries. Daily systems, weekly
+   self-score and peers persist via the member_state KV endpoint (offline-first,
+   fire-and-forget sync). Membership tiering gates NGG-only community features.
    ============================================================================ */
 
 const { useState, useEffect, useRef, useCallback } = React;
 
+/* ---- Static content (from the Anchor design) ---------------------------- */
+const QUOTES = [
+  "The purpose of life is not to be happy — it is to be useful, honorable and compassionate.",
+  "To live is the rarest thing in the world. Most people exist, that is all.",
+  "Our most authentic capacity is to overcome, endure, transform and love.",
+  "No matter how strong you are, if your steps are not arranged you will stumble before your destiny.",
+  "The plans of the diligent lead surely to abundance.",
+  "Lack of order destroys strength.",
+  "Live out of your imagination, not your history.",
+  "I can be changed by what happens to me, but I refuse to be reduced by it.",
+  "The value of life is measured by how much of it was given away.",
+  "I have more understanding than all my teachers, for Your testimonies are my meditation.",
+  "Stand firm and disciplined in ranks, as a solid structure.",
+  "Persevere, endure and remain stationed — that you may succeed.",
+];
+const WEEK_TITLES = [
+  "Identity · Awareness & Reset", "Study Time System", "Personal Hygiene", "Device Control",
+  "Note-Taking", "Respect System", "Time Consciousness", "Self-Control",
+  "Integrity", "Responsibility", "Independent Integrity", "Review & Leadership",
+];
+const SYSTEMS = [
+  { key: "woke", label: "Woke up on time", icon: "ph-sun-horizon" },
+  { key: "study", label: "Studied at my fixed time", icon: "ph-book-open-text" },
+  { key: "clean", label: "Kept myself clean", icon: "ph-drop" },
+  { key: "phone", label: "Controlled my phone", icon: "ph-device-mobile" },
+  { key: "respect", label: "Respected authority", icon: "ph-handshake" },
+  { key: "time", label: "Was time-conscious", icon: "ph-clock" },
+];
 const MOODS = [
-  { key: "🔥", label: "On fire" },
-  { key: "🙂", label: "Good" },
-  { key: "😐", label: "Flat" },
-  { key: "😔", label: "Low" },
-  { key: "😴", label: "Drained" },
+  { key: "great", label: "Great", icon: "ph-smiley" },
+  { key: "good", label: "Good", icon: "ph-smiley-wink" },
+  { key: "okay", label: "Okay", icon: "ph-smiley-blank" },
+  { key: "low", label: "Low", icon: "ph-smiley-meh" },
+  { key: "rough", label: "Rough", icon: "ph-smiley-sad" },
+];
+const MOOD_ICON = { great: "ph-smiley", good: "ph-smiley-wink", okay: "ph-smiley-blank", low: "ph-smiley-meh", rough: "ph-smiley-sad" };
+const SCORE_DIMS = [
+  { key: "journal", label: "Journal Consistency" },
+  { key: "home", label: "Home Discipline" },
+  { key: "school", label: "School Conduct" },
+  { key: "habit", label: "Habit Practice" },
+  { key: "peer", label: "Peer Influence" },
+];
+const RANKS = [
+  { name: "Seedling", xp: 0, icon: "ph-plant", L: 1 },
+  { name: "Sprout", xp: 250, icon: "ph-leaf", L: 2 },
+  { name: "Sapling", xp: 750, icon: "ph-tree", L: 3 },
+  { name: "Rooted", xp: 1500, icon: "ph-tree-evergreen", L: 4 },
+  { name: "Vanguard", xp: 3000, icon: "ph-crown-simple", L: 5 },
+];
+// Per-week build sheet (the physical Anchor journal's weekly structure).
+const WEEK_DATA = [
+  { system: "Self-awareness & reset", focus: "Name who you are becoming.", home: "Make your bed; greet your family each morning.", school: "Arrive settled, not rushed.", peer: "Notice who you follow — and why.", journal: "Who am I when no one is watching?" },
+  { system: "A fixed study time", focus: "Same time, same place, every day.", home: "Study before screens.", school: "Review each day's notes within 24 hours.", peer: "Invite a friend to study with you.", journal: "When do I focus best — and why?" },
+  { system: "Daily hygiene", focus: "Clean body, clear mind.", home: "Bath, brush, tidy your space.", school: "Neat uniform and materials.", peer: "Model care, not vanity.", journal: "What does self-respect look like today?" },
+  { system: "Device boundaries", focus: "Own the phone — don't be owned.", home: "Phone in a drawer while studying.", school: "No phone in class.", peer: "Lead a screen-free hangout.", journal: "What did my phone cost me today?" },
+  { system: "A note-taking system", focus: "Capture — don't just consume.", home: "Summarize your day in three lines.", school: "One-page notes per subject.", peer: "Share a useful note with a friend.", journal: "What idea deserved a note today?" },
+  { system: "Respect for authority", focus: "Honor those who lead you.", home: "Speak kindly to your family.", school: "Respect teachers, even when it's hard.", peer: "Defend someone being mocked.", journal: "Where was my respect tested today?" },
+  { system: "Time consciousness", focus: "On time is early.", home: "Sleep and wake on schedule.", school: "Beat the bell.", peer: "Keep a promise on time.", journal: "Where did I waste time today?" },
+  { system: "Self-control", focus: "Master the impulse.", home: "Pause before reacting at home.", school: "No cheating, no shortcuts.", peer: "Walk away from trouble.", journal: "What did I resist today?" },
+  { system: "Integrity", focus: "Do right when unseen.", home: "Return what isn't yours.", school: "Honest marks only.", peer: "Tell a hard truth, kindly.", journal: "Where was I fully honest today?" },
+  { system: "Responsibility", focus: "Own the outcome.", home: "Take a chore without being asked.", school: "Own a mistake at school.", peer: "Carry a friend's load.", journal: "What did I take responsibility for?" },
+  { system: "Independent integrity", focus: "Discipline without supervision.", home: "Do right with no one home.", school: "Study without being told.", peer: "Set the standard for your peers.", journal: "Who am I without an audience?" },
+  { system: "Review & leadership", focus: "Lead by example.", home: "Serve your household.", school: "Help a struggling classmate.", peer: "Bring two friends to NGG.", journal: "Who have I become in twelve weeks?" },
 ];
 
-const PROMPTS = [
-  "What did you make, build or ship today — however small?",
-  "Who did you help, and what did it cost you?",
-  "What scared you a little today? Did you do it anyway?",
-  "Name one thing you learned that you didn't know this morning.",
-  "Where did you show discipline when no one was watching?",
-  "What would the leader you're becoming have done differently today?",
-  "What's one skill you moved forward, even by an inch?",
-  "Who in your circle did you lift up today?",
-  "What did you finish that you'd been avoiding?",
-  "What's the bravest sentence you could write right now?",
-  "Describe a moment today you felt fully yourself.",
-  "What did failure teach you this week?",
-  "What are you grateful for that money can't buy?",
-  "What's the next small step on the thing that matters most?",
-  "How did you use your voice today?",
-  "What did you notice about your community that others missed?",
-  "What would you tell your younger self about today?",
-  "Where did you choose the hard right over the easy wrong?",
-  "What are you building toward — and did you touch it today?",
-  "What's one habit that's quietly shaping who you become?",
-];
-
-const TABS = [
-  { id: "today",    label: "Today",   ico: "✦" },
-  { id: "entries",  label: "Journal", ico: "❏" },
-  { id: "missions", label: "Missions",ico: "◎" },
-  { id: "progress", label: "Progress",ico: "▲" },
-];
-
-/* ---- Local persistence (offline-first) ---------------------------------- */
-const CACHE_KEY = "ngg_aj_cache_v1";
-const QUEUE_KEY = "ngg_aj_queue_v1";
+/* ---- Local persistence -------------------------------------------------- */
+const CK = "ngg_aj_c_v3", QK = "ngg_aj_q_v3";
 const store = {
-  cache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY)) || {}; } catch { return {}; } },
-  setCache(v) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(v)); } catch {} },
-  queue() { try { return JSON.parse(localStorage.getItem(QUEUE_KEY)) || []; } catch { return []; } },
-  setQueue(q) { try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch {} },
-  enqueue(item) { const q = store.queue(); q.push(item); store.setQueue(q); },
-  dequeue(tempId) { store.setQueue(store.queue().filter(i => i.tempId !== tempId)); },
+  cache() { try { return JSON.parse(localStorage.getItem(CK)) || {}; } catch { return {}; } },
+  patch(p) { try { localStorage.setItem(CK, JSON.stringify(Object.assign({}, store.cache(), p))); } catch {} },
+  queue() { try { return JSON.parse(localStorage.getItem(QK)) || []; } catch { return []; } },
+  setQueue(q) { try { localStorage.setItem(QK, JSON.stringify(q)); } catch {} },
 };
 
 /* ---- Toasts ------------------------------------------------------------- */
-let _pushToast = () => {};
-const toast = {
-  ok: (m) => _pushToast(m, "ok"),
-  err: (m) => _pushToast(m, "err"),
-  info: (m) => _pushToast(m, ""),
-};
+let _push = () => {};
+const toast = { ok: m => _push(m, "ok"), err: m => _push(m, "err"), info: m => _push(m, "") };
 function Toasts() {
   const [items, setItems] = useState([]);
-  useEffect(() => {
-    _pushToast = (msg, kind) => {
-      const id = Math.random().toString(36).slice(2);
-      setItems(x => [...x, { id, msg, kind }]);
-      setTimeout(() => setItems(x => x.filter(i => i.id !== id)), 3200);
-    };
-    return () => { _pushToast = () => {}; };
-  }, []);
-  return (
-    <div className="aj-toasts" role="status" aria-live="polite">
-      {items.map(i => <div key={i.id} className={"aj-toast " + i.kind}>{i.msg}</div>)}
-    </div>
-  );
+  useEffect(() => { _push = (msg, k) => { const id = Math.random().toString(36).slice(2); setItems(x => [...x, { id, msg, k }]); setTimeout(() => setItems(x => x.filter(i => i.id !== id)), 3000); }; return () => { _push = () => {}; }; }, []);
+  return <div className="aj-toasts" role="status" aria-live="polite">{items.map(i => <div key={i.id} className={"aj-toast " + i.k}>{i.msg}</div>)}</div>;
 }
 
 /* ---- Helpers ------------------------------------------------------------ */
-function humanErr(e) {
-  const c = (e && (e.code || e.message)) || "";
-  if (/network|fetch|Failed/i.test(c)) return "You're offline — saved on this device.";
-  return c || "Something went wrong.";
-}
-function isOffline(e) { return e && /network|fetch|Failed to fetch|offline/i.test(e.message || e.code || ""); }
-function fmtDay(d) { const x = new Date(d); return isNaN(x) ? "" : x.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }); }
-function fmtShort(d) { const x = new Date(d); return isNaN(x) ? "" : x.toLocaleDateString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
-function greeting() { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; }
-function promptOfDay(offset) { const seed = Math.floor(Date.now() / 86400000) + (offset || 0); return PROMPTS[((seed % PROMPTS.length) + PROMPTS.length) % PROMPTS.length]; }
+const isOffline = e => e && /network|fetch|Failed to fetch|offline/i.test(e.message || e.code || "");
+const dayKey = d => new Date(d).toISOString().slice(0, 10);
+const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
+function mondayOf(d) { const x = new Date(d); const day = (x.getUTCDay() + 6) % 7; x.setUTCDate(x.getUTCDate() - day); return x; }
+function speak(t) { try { window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.rate = 0.92; window.speechSynthesis.speak(u); } catch {} }
+function computeStreak(dates) { let n = 0; const d = new Date(); if (!dates.has(dayKey(d))) { d.setDate(d.getDate() - 1); if (!dates.has(dayKey(d))) return 0; } while (dates.has(dayKey(d))) { n++; d.setDate(d.getDate() - 1); } return n; }
+function rankFor(xp) { let cur = RANKS[0], next = null; for (let i = 0; i < RANKS.length; i++) { if (xp >= RANKS[i].xp) { cur = RANKS[i]; next = RANKS[i + 1] || null; } } return { cur, next }; }
 
 /* ========================================================================== */
 function App() {
   const [booting, setBooting] = useState(true);
   const [member, setMember] = useState(null);
-  const [tab, setTab] = useState("today");
+  const [view, setView] = useState("home");
+  const prev = useRef("home");
   const [online, setOnline] = useState(navigator.onLine);
-  const [syncing, setSyncing] = useState(false);
 
-  const [entries, setEntries] = useState(() => store.cache().entries || null); // server entries
-  const [pending, setPending] = useState(() => store.queue());
-  const [stats, setStats] = useState(() => store.cache().stats || null);
-  const [session, setSession] = useState(() => store.cache().session || null);
-  const [today, setToday] = useState(() => store.cache().today || null);
+  const c0 = store.cache();
+  const [entries, setEntries] = useState(c0.entries || null);
+  const [weeks, setWeeks] = useState(c0.weeks || null);
+  const [session, setSession] = useState(c0.session || null);
+  const [mentor, setMentor] = useState(c0.mentor || null);
+  const [pstate, setPstate] = useState(c0.pstate || {});   // member_state map
+  const [pending, setPending] = useState(store.queue());
+  const [celebrate, setCelebrate] = useState(null);
+  const [onboard, setOnboard] = useState(false);
+  const [selWeek, setSelWeek] = useState(1);
 
-  /* Boot: who am I? (shared cookie → SSO). */
+  const go = (v) => { prev.current = view; setView(v); };
+  const back = () => setView(prev.current || "home");
+
   useEffect(() => {
     let alive = true;
-    NGGApi.auth.me()
-      .then(r => { if (!alive) return; setMember(r.member || null); })
-      .catch(() => {})
-      .finally(() => { if (alive) setBooting(false); });
+    NGGApi.auth.me().then(r => {
+      if (!alive) return;
+      setMember(r.member || null);
+      if (r.member && localStorage.getItem("ngg_aj_onb") !== "1") setOnboard(true);
+    }).catch(() => {}).finally(() => { if (alive) setBooting(false); });
     return () => { alive = false; };
   }, []);
 
-  /* Online/offline wiring. */
-  useEffect(() => {
-    const on = () => { setOnline(true); syncPending(); refresh(); };
-    const off = () => setOnline(false);
-    window.addEventListener("online", on);
-    window.addEventListener("offline", off);
-    const onVis = () => { if (!document.hidden && navigator.onLine) { syncPending(); refresh(); } };
-    document.addEventListener("visibilitychange", onVis);
-    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); document.removeEventListener("visibilitychange", onVis); };
-    // eslint-disable-next-line
-  }, [member]);
-
-  const persist = useCallback((patch) => {
-    const next = Object.assign({}, store.cache(), patch, { savedAt: Date.now() });
-    store.setCache(next);
-  }, []);
-
-  /* Fetch fresh data (stale-while-revalidate). */
   const refresh = useCallback(async () => {
     if (!navigator.onLine) return;
     try {
-      const [dash, jrnl] = await Promise.all([
+      const [dash, jrnl, anc, st] = await Promise.all([
         NGGApi.member.dashboard().catch(() => null),
         NGGApi.member.journal().catch(() => null),
+        NGGApi.member.anchor().catch(() => null),
+        NGGApi.member.stateGet(["peers", "prefs", "systems:" + dayKey(Date.now()), "selfscore:" + dayKey(mondayOf(Date.now()))]).catch(() => null),
       ]);
-      if (dash) { setStats(dash.stats || null); setSession(dash.session || null); setToday(dash.today || null); persist({ stats: dash.stats, session: dash.session, today: dash.today }); }
-      if (jrnl) { setEntries(jrnl.entries || []); persist({ entries: jrnl.entries || [] }); }
-    } catch (_) {/* keep cache */}
-  }, [persist]);
-
+      if (dash) { setSession(dash.session || null); setMentor(dash.mentor || null); store.patch({ session: dash.session, mentor: dash.mentor }); }
+      if (jrnl) { setEntries(jrnl.entries || []); store.patch({ entries: jrnl.entries || [] }); }
+      if (anc) { setWeeks(anc.weeks || []); store.patch({ weeks: anc.weeks || [] }); }
+      if (st && st.state) { setPstate(s => { const merged = Object.assign({}, s, st.state); store.patch({ pstate: merged }); return merged; }); }
+    } catch {}
+  }, []);
   useEffect(() => { if (member) refresh(); }, [member, refresh]);
 
-  /* Sync any queued (offline) entries. */
   const syncPending = useCallback(async () => {
-    const q = store.queue();
-    if (!q.length || !navigator.onLine) return;
-    setSyncing(true);
-    for (const item of q) {
-      try {
-        await NGGApi.member.journalCreate({ mood: item.mood, body: item.body, private: true });
-        store.dequeue(item.tempId);
-      } catch (e) { if (isOffline(e)) break; else store.dequeue(item.tempId); }
-    }
-    setPending(store.queue());
-    setSyncing(false);
-    await refresh();
+    const q = store.queue(); if (!q.length || !navigator.onLine) return;
+    for (const it of q) { try { await NGGApi.member.journalCreate({ mood: it.mood, body: it.body, private: true }); store.setQueue(store.queue().filter(x => x.tempId !== it.tempId)); } catch (e) { if (isOffline(e)) break; else store.setQueue(store.queue().filter(x => x.tempId !== it.tempId)); } }
+    setPending(store.queue()); await refresh();
   }, [refresh]);
-
   useEffect(() => {
-    if (!member) return;
-    syncPending();
+    const on = () => { setOnline(true); syncPending(); };
+    const off = () => setOnline(false);
+    const vis = () => { if (!document.hidden && navigator.onLine) { syncPending(); refresh(); } };
+    window.addEventListener("online", on); window.addEventListener("offline", off); document.addEventListener("visibilitychange", vis);
     const id = setInterval(() => { if (navigator.onLine) syncPending(); }, 20000);
-    return () => clearInterval(id);
-  }, [member, syncPending]);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); document.removeEventListener("visibilitychange", vis); clearInterval(id); };
+  }, [syncPending, refresh]);
 
-  /* Create an entry — optimistic + offline queue. */
-  const saveEntry = useCallback(async (mood, body) => {
-    const week = (session && session.weekOf) || (stats && stats.currentWeek) || 1;
+  /* persist a member_state key (optimistic + fire-and-forget) */
+  const setState = useCallback((key, value) => {
+    setPstate(s => { const merged = Object.assign({}, s, { [key]: value }); store.patch({ pstate: merged }); return merged; });
+    NGGApi.member.stateSet(key, value).catch(() => {});
+  }, []);
+
+  /* save a reflection (Anchor it) */
+  const anchorReflection = useCallback(async ({ mood, musing, s1, s2, s3, school, home, peer }) => {
+    const parts = [];
+    if (musing) parts.push(musing.trim());
+    if (school) parts.push("School: " + school.trim());
+    if (home) parts.push("Home: " + home.trim());
+    if (peer) parts.push("Peer: " + peer.trim());
+    if (s1) parts.push("Did well by " + s1.trim());
+    if (s2) parts.push("Difficult because " + s2.trim());
+    if (s3) parts.push("Tomorrow I improve by " + s3.trim());
+    const body = parts.join("\n");
+    const already = (entries || []).some(e => dayKey(e.createdAt) === dayKey(Date.now()));
     const tempId = "t-" + Date.now();
-    const item = { tempId, mood, body, week, createdAt: new Date().toISOString() };
-    store.enqueue(item);
-    setPending(store.queue());
-    try {
-      await NGGApi.member.journalCreate({ mood, body, private: true });
-      store.dequeue(tempId);
-      setPending(store.queue());
-      toast.ok("Entry saved ✓");
-      await refresh();
-    } catch (e) {
-      if (isOffline(e)) toast.info("Saved offline — will sync when you're back online.");
-      else { store.dequeue(tempId); setPending(store.queue()); toast.err(humanErr(e)); throw e; }
-    }
-  }, [session, stats, refresh]);
+    const optimistic = { entryId: tempId, mood: mood || "good", body, week: (session && session.weekOf) || 1, createdAt: new Date().toISOString(), _pending: true };
+    setEntries(e => [optimistic, ...(e || [])]);
+    const q = store.queue(); q.push({ tempId, mood: mood || "good", body }); store.setQueue(q); setPending(q);
+    setCelebrate({ already });
+    setView("home");
+    try { await NGGApi.member.journalCreate({ mood: mood || "good", body, private: true }); store.setQueue(store.queue().filter(x => x.tempId !== tempId)); setPending(store.queue()); await refresh(); }
+    catch (e) { if (!isOffline(e)) toast.err("Couldn't save — kept on this device."); }
+    setTimeout(() => setCelebrate(null), 2800);
+  }, [entries, session, refresh]);
 
-  if (booting) return <BootSplash/>;
-  if (!member) return <SignInGate onIn={(m) => { setMember(m); }}/>;
+  if (booting) return <Boot/>;
+  if (!member) return <SignInGate onIn={m => { setMember(m); if (localStorage.getItem("ngg_aj_onb") !== "1") setOnboard(true); }}/>;
 
-  const streak = (stats && stats.streak) || 0;
-  const week = (session && session.weekOf) || (stats && stats.currentWeek) || 0;
-  const totalWeeks = (session && session.totalWeeks) || 12;
+  // Derived progression
+  const dates = new Set((entries || []).map(e => dayKey(e.createdAt)));
+  const reflections = (entries || []).length;
+  const xp = Math.min(RANKS[RANKS.length - 1].xp, reflections * 60);
+  const diamonds = reflections * 5;
+  const streak = computeStreak(dates);
+  const { cur, next } = rankFor(xp);
+  const bandBase = cur.xp, bandNext = next ? next.xp : cur.xp;
+  const xpInBand = xp - bandBase, xpBand = Math.max(1, bandNext - bandBase);
+  const xpPct = next ? Math.min(100, Math.round(xpInBand / xpBand * 100)) : 100;
+  const reflectedToday = dates.has(dayKey(Date.now()));
+  const currentWeek = (session && session.weekOf) || 1;
+  const isNGG = String(member.type || "").toUpperCase() === "NGG";
+
+  const openWeek = (n) => { setSelWeek(n); go("weekdetail"); };
+  const ctx = { member, entries, weeks, session, mentor, pstate, setState, go, back, xp, diamonds, streak, cur, next, xpPct, reflectedToday, currentWeek, isNGG, anchorReflection, online, selWeek, openWeek };
 
   return (
     <div className="aj-app">
-      <TopBar member={member} streak={streak} online={online} syncing={syncing}/>
-      <main className="aj-main" id="aj-main">
-        {!online && <div className="aj-offline">⚠︎ Offline — your reflections are saved on this device and sync automatically.</div>}
-        {tab === "today" && <TodayView member={member} week={week} totalWeeks={totalWeeks} session={session} today={today} onSave={saveEntry}/>}
-        {tab === "entries" && <EntriesView entries={entries} pending={pending}/>}
-        {tab === "missions" && <MissionsView/>}
-        {tab === "progress" && <ProgressView stats={stats} entries={entries} week={week} totalWeeks={totalWeeks}/>}
-      </main>
-      <TabBar tab={tab} setTab={setTab}/>
+      <div className="aj-bg" aria-hidden="true"/><div className="aj-blob b1" aria-hidden="true"/><div className="aj-blob b2" aria-hidden="true"/><div className="aj-blob b3" aria-hidden="true"/><div className="aj-veil" aria-hidden="true"/>
+      {view === "home" && <Journey ctx={ctx}/>}
+      {view === "reflect" && <Reflect ctx={ctx}/>}
+      {view === "systems" && <Systems ctx={ctx}/>}
+      {view === "timeline" && <Timeline ctx={ctx}/>}
+      {view === "calendar" && <Calendar ctx={ctx}/>}
+      {view === "charge" && <Charge ctx={ctx}/>}
+      {view === "weekdetail" && <WeekDetail ctx={ctx}/>}
+      {view === "growth" && <Growth ctx={ctx}/>}
+      {view === "library" && <Library ctx={ctx}/>}
+      {view === "peers" && <Peers ctx={ctx}/>}
+      {view === "review" && <Review ctx={ctx}/>}
+      {view === "you" && <You ctx={ctx}/>}
+      {view !== "reflect" && <BottomNav view={view} go={go}/>}
+      {celebrate && <Celebrate/>}
+      {onboard && <Onboarding name={member.fullName} onDone={() => { localStorage.setItem("ngg_aj_onb", "1"); setOnboard(false); }}/>}
       <InstallPrompt/>
       <Toasts/>
     </div>
   );
 }
 
-/* ---- Chrome ------------------------------------------------------------- */
-function TopBar({ member, streak, online, syncing }) {
-  const first = String(member.fullName || "Member").split(" ")[0];
-  return (
-    <header className="aj-topbar">
-      <div className="aj-topbar-brand">
-        <img className="aj-topbar-logo" src="/assets/logo.png" alt=""/>
-        <div>
-          <div className="aj-topbar-title">Anchor Journal</div>
-          <div className="aj-topbar-sub">{first}</div>
-        </div>
-      </div>
-      <div className="aj-topbar-spacer"/>
-      <div className={"aj-sync" + (!online ? " is-off" : syncing ? " is-syncing" : "")} title={online ? (syncing ? "Syncing" : "Online") : "Offline"}>
-        <span className="aj-sync-dot"/>{online ? (syncing ? "Sync" : "Live") : "Offline"}
-      </div>
-      <div className="aj-streak" title="Day streak"><span>🔥</span>{streak}</div>
-    </header>
-  );
-}
-
-function TabBar({ tab, setTab }) {
-  return (
-    <nav className="aj-tabbar" role="tablist" aria-label="Journal sections">
-      {TABS.map(t => (
-        <button key={t.id} role="tab" aria-selected={tab === t.id} aria-label={t.label}
-          className={"aj-tab" + (tab === t.id ? " is-active" : "")} onClick={() => setTab(t.id)} style={{ position: "relative" }}>
-          <span className="aj-tab-ico" aria-hidden="true">{t.ico}</span>
-          {t.label}
-        </button>
-      ))}
-    </nav>
-  );
-}
-
-/* ---- Today -------------------------------------------------------------- */
-function TodayView({ member, week, totalWeeks, session, today, onSave }) {
-  const [mood, setMood] = useState("");
-  const [body, setBody] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [promptOffset, setPromptOffset] = useState(0);
-  const prompt = promptOfDay(promptOffset);
+/* ---- Journey (path) ----------------------------------------------------- */
+function Journey({ ctx }) {
+  const { member, weeks, currentWeek, streak, diamonds, xp, cur, next, xpPct, reflectedToday, go } = ctx;
   const first = String(member.fullName || "there").split(" ")[0];
-
-  const submit = async () => {
-    if (!body.trim()) { toast.err("Write a line first."); return; }
-    setBusy(true);
-    try { await onSave(mood || "🙂", body.trim()); setBody(""); setMood(""); }
-    catch (_) {} finally { setBusy(false); }
-  };
-
-  const openMissions = (today || []).filter(m => m.status === "todo" || m.status === "rejected");
+  const wk = (weeks || []).find(w => w.week === currentWeek) || (weeks || [])[0];
+  const firstMission = wk && wk.missions && wk.missions[0];
+  const done = firstMission && (firstMission.status === "verified" || firstMission.status === "submitted");
 
   return (
-    <React.Fragment>
+    <div className="aj-view">
+      <div className="aj-top">
+        <div className="aj-top-metrics">
+          <span className="aj-metric flame"><i className="ph-fill ph-fire"/>{streak}</span>
+          <span className="aj-metric dia"><i className="ph-fill ph-diamond"/>{diamonds}</span>
+        </div>
+        <div className="aj-top-actions">
+          <button className="icon-btn" aria-label="Calendar" onClick={() => go("calendar")}><i className="ph-bold ph-calendar-dots"/></button>
+          <button className="aj-star" aria-label="You" onClick={() => go("you")}><i className="ph-fill ph-star"/></button>
+        </div>
+      </div>
+
       <div className="aj-hero">
-        <div className="aj-hero-date">{greeting()} · {fmtDay(new Date())}</div>
-        <h1 className="aj-h aj-h-xl">{first}.</h1>
-        {week > 0 && <div className="aj-hero-week"><span className="aj-chip">WEEK {week} / {totalWeeks}</span>{session && session.theme ? <span>· {session.theme}</span> : null}</div>}
+        <div className="aj-hero-rank">· {cur.name.toUpperCase()} · LEVEL {cur.L}</div>
+        <h1 className="aj-hero-h">{greeting()},<br/>{first}.</h1>
+        <p className="aj-hero-sub">{reflectedToday ? "You showed up today. Keep the chain alive." : "One reflection keeps your streak alive."}</p>
       </div>
-
-      <div className="aj-card">
-        <div className="aj-eyebrow">TODAY'S REFLECTION</div>
-        <h2 className="aj-h aj-h-lg">How's your day?</h2>
-        <div className="aj-moods" role="radiogroup" aria-label="Mood">
-          {MOODS.map(m => (
-            <button key={m.key} className={"aj-mood" + (mood === m.key ? " is-sel" : "")} role="radio" aria-checked={mood === m.key} aria-label={m.label} onClick={() => setMood(m.key)}>{m.key}</button>
-          ))}
-        </div>
-        <div className="aj-prompt">
-          <span className="aj-prompt-label">Prompt</span>
-          {prompt}
-          <div><button className="aj-prompt-shuffle" onClick={() => setPromptOffset(o => o + 1)}>↻ New prompt</button></div>
-        </div>
-        <textarea className="aj-textarea" placeholder="Write freely. Nobody sees this but you." value={body} maxLength={4000} onChange={e => setBody(e.target.value)} aria-label="Reflection"/>
-        <div className="aj-count">{body.length} / 4000</div>
-        <button className="aj-btn aj-btn-primary" onClick={submit} disabled={busy}>{busy ? "Saving…" : "Save today's entry"}</button>
+      <div className="aj-xp">
+        <div className="aj-xp-track"><div className="aj-xp-fill" style={{ width: xpPct + "%" }}/></div>
+        <div className="aj-xp-meta"><span>{xp} XP</span><span>{next ? "LEVEL " + next.L : "MAX"}</span></div>
       </div>
+      <div className="aj-wkchip"><span><b>WK {String(currentWeek).padStart(2, "0")}</b><em>{(WEEK_TITLES[currentWeek - 1] || "").split(" · ")[0].toUpperCase()}</em></span></div>
 
-      {openMissions.length > 0 && (
-        <div className="aj-card">
-          <div className="aj-eyebrow">THIS WEEK'S MISSIONS</div>
-          <h2 className="aj-h aj-h-lg" style={{ marginBottom: 10 }}>{openMissions.length} to do</h2>
-          {openMissions.slice(0, 4).map(m => (
-            <div className="aj-mission" key={m.missionId}>
-              <div className="aj-mission-icon" aria-hidden="true">{m.type === "Make" ? "✦" : m.type === "Read" ? "✺" : m.type === "Speak" ? "▶" : "◎"}</div>
-              <div><div className="aj-mission-t">{m.title}</div><div className="aj-mission-m">{m.type} · +{m.xp} XP</div></div>
-              <span className="aj-mission-st st-todo">to do</span>
-            </div>
-          ))}
+      <div className="aj-path">
+        <svg viewBox="0 0 402 700" preserveAspectRatio="none" aria-hidden="true"><polyline points="201,60 118,196 284,332 148,468 262,604" fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="4" strokeDasharray="1 15" strokeLinecap="round"/></svg>
+
+        <button className="aj-pnode" style={{ left: "50%", top: 14 }} onClick={() => go("reflect")}>
+          {!reflectedToday && <span className="aj-start">START</span>}
+          <span className={"aj-pcirc reflect"} aria-hidden="true"><i className={"ph-fill " + (reflectedToday ? "ph-check" : "ph-feather")}/></span>
+          <div className="aj-plabel">Today's reflection</div>
+        </button>
+
+        <button className="aj-pnode" style={{ left: "29%", top: 150 }} onClick={() => go("reflect")}>
+          <span className={"aj-pcirc " + (done ? "done" : "lime")} aria-hidden="true"><i className={"ph-fill " + (done ? "ph-check" : "ph-target")}/></span>
+          <div className="aj-plabel">{firstMission ? firstMission.title : "Name yourself"}</div>
+        </button>
+
+        <button className="aj-pnode" style={{ left: "71%", top: 286 }} onClick={() => go("systems")}>
+          <span className="aj-pcirc glass" aria-hidden="true"><i className="ph-fill ph-check-square-offset"/></span>
+          <div className="aj-plabel">Daily systems</div>
+        </button>
+
+        <div className="aj-pnode dim" style={{ left: "37%", top: 422 }}>
+          <span className="aj-pcirc locked" aria-hidden="true"><i className="ph-fill ph-lock-simple"/></span>
+          <div className="aj-plabel">Morning quote</div>
         </div>
-      )}
-    </React.Fragment>
-  );
-}
-
-/* ---- Entries ------------------------------------------------------------ */
-function EntriesView({ entries, pending }) {
-  const [q, setQ] = useState("");
-  const [moodFilter, setMoodFilter] = useState("");
-  const pend = (pending || []).map(p => ({ entryId: p.tempId, mood: p.mood, body: p.body, week: p.week, createdAt: p.createdAt, _pending: true }));
-  const all = [...pend, ...(entries || [])];
-  const filtered = all.filter(e =>
-    (!moodFilter || e.mood === moodFilter) &&
-    (!q || (e.body || "").toLowerCase().includes(q.toLowerCase()))
-  );
-
-  if (entries === null) return <ListSkeleton/>;
-
-  return (
-    <React.Fragment>
-      <div className="aj-hero"><div className="aj-eyebrow">YOUR JOURNAL</div><h1 className="aj-h aj-h-lg">{all.length} {all.length === 1 ? "entry" : "entries"}</h1></div>
-      <input className="aj-search" placeholder="Search your reflections…" value={q} onChange={e => setQ(e.target.value)} aria-label="Search entries"/>
-      <div className="aj-filter">
-        <button className={"aj-filter-chip" + (!moodFilter ? " is-sel" : "")} onClick={() => setMoodFilter("")} aria-label="All moods">All</button>
-        {MOODS.map(m => <button key={m.key} className={"aj-filter-chip" + (moodFilter === m.key ? " is-sel" : "")} onClick={() => setMoodFilter(moodFilter === m.key ? "" : m.key)} aria-label={m.label}>{m.key}</button>)}
-      </div>
-      {filtered.length === 0
-        ? <div className="aj-empty"><div className="aj-empty-ico">✎</div><p>{all.length === 0 ? "No entries yet. Your first reflection starts on Today." : "Nothing matches that search."}</p></div>
-        : filtered.map(e => (
-          <div className="aj-entry" key={e.entryId}>
-            <div className="aj-entry-head">
-              <span className="aj-entry-mood">{e.mood || "•"}</span>
-              <span className="aj-entry-date">{fmtShort(e.createdAt)}</span>
-              {e.week ? <span className="aj-entry-week">WK {e.week}</span> : null}
-            </div>
-            <div className="aj-entry-body">{e.body}</div>
-            {e._pending && <span className="aj-entry-pending">◷ pending sync</span>}
-          </div>
-        ))}
-    </React.Fragment>
-  );
-}
-
-/* ---- Missions ----------------------------------------------------------- */
-function MissionsView() {
-  const [data, setData] = useState(store.cache().anchor || null);
-  const [err, setErr] = useState("");
-  useEffect(() => {
-    NGGApi.member.anchor()
-      .then(r => { setData(r); const c = store.cache(); c.anchor = r; store.setCache(c); })
-      .catch(e => { if (!store.cache().anchor) setErr(humanErr(e)); });
-  }, []);
-  if (err && !data) return <div className="aj-empty"><div className="aj-empty-ico">◎</div><p>{err}</p></div>;
-  if (!data) return <ListSkeleton/>;
-  const weeks = data.weeks || [];
-  return (
-    <React.Fragment>
-      <div className="aj-hero"><div className="aj-eyebrow">ANCHOR 12</div><h1 className="aj-h aj-h-lg">The missions</h1></div>
-      {weeks.length === 0 && <div className="aj-empty"><div className="aj-empty-ico">◎</div><p>Missions publish as your session runs.</p></div>}
-      {weeks.map(w => (
-        <div className="aj-week" key={w.week}>
-          <div className="aj-week-h"><b>WK {String(w.week).padStart(2, "0")}</b> {w.theme || ""}</div>
-          {w.missions.map(m => (
-            <div className="aj-mission" key={m.missionId}>
-              <div className="aj-mission-icon" aria-hidden="true">{m.type === "Make" ? "✦" : m.type === "Read" ? "✺" : m.type === "Speak" ? "▶" : "◎"}</div>
-              <div><div className="aj-mission-t">{m.title}</div><div className="aj-mission-m">{m.type} · +{m.xp} XP</div></div>
-              <span className={"aj-mission-st st-" + (m.status === "verified" ? "verified" : m.status === "submitted" ? "submitted" : "todo")}>{m.status === "verified" ? "done" : m.status === "submitted" ? "in review" : "to do"}</span>
-            </div>
-          ))}
+        <div className="aj-pnode dim" style={{ left: "65%", top: 558 }}>
+          <span className="aj-pcirc locked" aria-hidden="true"><i className="ph-fill ph-moon-stars"/></span>
+          <div className="aj-plabel">Night reflection</div>
         </div>
-      ))}
-    </React.Fragment>
-  );
-}
-
-/* ---- Progress ----------------------------------------------------------- */
-function ProgressView({ stats, entries, week, totalWeeks }) {
-  if (!stats) return <ListSkeleton/>;
-  // 28-day activity heatmap from entry dates.
-  const days = {};
-  (entries || []).forEach(e => { const k = String(e.createdAt).slice(0, 10); days[k] = (days[k] || 0) + 1; });
-  const cells = [];
-  for (let i = 27; i >= 0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10); const n = days[d] || 0; cells.push(n === 0 ? 0 : n === 1 ? 1 : n === 2 ? 2 : 3); }
-  const badges = stats.badges || [];
-  return (
-    <React.Fragment>
-      <div className="aj-hero"><div className="aj-eyebrow">YOUR PROGRESS</div><h1 className="aj-h aj-h-lg">The climb.</h1></div>
-      <div className="aj-stats">
-        <div className="aj-stat"><div className="aj-stat-n">{String(stats.level || 1).padStart(2, "0")}</div><div className="aj-stat-l">Level</div></div>
-        <div className="aj-stat"><div className="aj-stat-n">{stats.streak || 0}<span style={{ fontSize: 16 }}>d</span></div><div className="aj-stat-l">Streak</div></div>
-        <div className="aj-stat"><div className="aj-stat-n">{stats.xp || 0}</div><div className="aj-stat-l">XP</div></div>
-        <div className="aj-stat"><div className="aj-stat-n">{(entries || []).length}</div><div className="aj-stat-l">Entries</div></div>
-      </div>
-      <div className="aj-card">
-        <div className="aj-eyebrow">LAST 28 DAYS</div>
-        <div className="aj-heat">{cells.map((c, i) => <div key={i} className={"aj-heat-cell" + (c ? " on-" + c : "")}/>)}</div>
-      </div>
-      {badges.length > 0 && (
-        <div className="aj-card">
-          <div className="aj-eyebrow">BADGES</div>
-          <div className="aj-badges">{badges.map(b => <span className="aj-badge" key={b}>{b.replace(/-/g, " ")}</span>)}</div>
-        </div>
-      )}
-      {week > 0 && (
-        <div className="aj-card">
-          <div className="aj-eyebrow">SESSION</div>
-          <h2 className="aj-h aj-h-lg">Week {week} of {totalWeeks}</h2>
-          <div style={{ height: 8, borderRadius: 8, background: "rgba(255,255,255,0.1)", marginTop: 12, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: Math.min(100, Math.round(week / totalWeeks * 100)) + "%", background: "linear-gradient(90deg,#f5b026,#d0ff3a)" }}/>
-          </div>
-        </div>
-      )}
-    </React.Fragment>
-  );
-}
-
-/* ---- Sign-in gate (mirrors the main site's magic-link + OTP flow) ------- */
-function SignInGate({ onIn }) {
-  const [stage, setStage] = useState("id"); // id | otp
-  const [id, setId] = useState("");
-  const [otp, setOtp] = useState("");
-  const [masked, setMasked] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  // Consume a magic-link token if present (?signin=…).
-  useEffect(() => {
-    const t = new URLSearchParams(location.search).get("signin");
-    if (!t) return;
-    setBusy(true);
-    NGGApi.auth.verify({ token: t }).then(r => onIn(r.member)).catch(e => setErr(e.code || e.message)).finally(() => setBusy(false));
-  }, []);
-
-  const request = async (e) => {
-    e.preventDefault(); setBusy(true); setErr("");
-    try { const r = await NGGApi.auth.request(id.trim()); setMasked(r.masked || ""); setStage("otp"); }
-    catch (e) { setErr(e.code === "rate_limited" ? "Too many tries — wait a minute." : (e.code || e.message)); }
-    finally { setBusy(false); }
-  };
-  const verify = async (e) => {
-    e.preventDefault(); setBusy(true); setErr("");
-    try { const r = await NGGApi.auth.verify({ memberId: id.trim(), otp: otp.replace(/\s/g, "") }); onIn(r.member); }
-    catch (e) { setErr("That code didn't work. Check the latest one, or use the magic link in your email."); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="aj-gate">
-      <div className="aj-gate-card">
-        <img src="/assets/logo.png" alt="" style={{ width: 56, height: 56, borderRadius: 14, marginBottom: 14 }}/>
-        <div className="aj-eyebrow" style={{ color: "var(--aj-gold)" }}>ANCHOR JOURNAL</div>
-        <h1 className="aj-h aj-h-xl" style={{ marginBottom: 8 }}>Sign in.</h1>
-        {stage === "id" ? (
-          <form onSubmit={request}>
-            <p className="aj-muted" style={{ fontSize: 14 }}>Enter your Member ID or email. We'll send a magic link and a 6-digit code.</p>
-            <input className="aj-input" placeholder="NGG-2025-0001 or you@email.com" value={id} onChange={e => setId(e.target.value)} autoFocus/>
-            <div className="aj-gate-err">{err}</div>
-            <button className="aj-btn aj-btn-primary" disabled={busy || id.trim().length < 3}>{busy ? "Sending…" : "Send my code →"}</button>
-            <button type="button" className="aj-prompt-shuffle" style={{ marginTop: 12 }} onClick={() => setStage("otp")}>I already have a code</button>
-          </form>
-        ) : (
-          <form onSubmit={verify}>
-            <p className="aj-muted" style={{ fontSize: 14 }}>{masked ? <>Code sent to <b>{masked}</b>.</> : "Enter your Member ID and the 6-digit code."}</p>
-            {!masked && <input className="aj-input" placeholder="Member ID (NGG-2025-0001)" value={id} onChange={e => setId(e.target.value)}/>}
-            <input className="aj-input aj-otp" inputMode="numeric" maxLength={7} placeholder="••••••" value={otp} onChange={e => setOtp(e.target.value.replace(/[^\d ]/g, ""))} autoFocus/>
-            <div className="aj-gate-err">{err}</div>
-            <button className="aj-btn aj-btn-primary" disabled={busy || otp.replace(/\s/g, "").length !== 6}>{busy ? "Verifying…" : "Enter journal →"}</button>
-            <button type="button" className="aj-prompt-shuffle" style={{ marginTop: 12 }} onClick={() => { setStage("id"); setErr(""); }}>← Start over</button>
-          </form>
-        )}
       </div>
     </div>
   );
 }
 
-/* ---- Install prompt ----------------------------------------------------- */
+/* ---- Reflect editor ----------------------------------------------------- */
+function Reflect({ ctx }) {
+  const { currentWeek, back, anchorReflection, pstate, setState } = ctx;
+  const [musing, setMusing] = useState("");
+  const [s1, setS1] = useState(""); const [s2, setS2] = useState(""); const [s3, setS3] = useState("");
+  const [school, setSchool] = useState(""); const [home, setHome] = useState(""); const [peer, setPeer] = useState("");
+  const [mood, setMood] = useState("good");
+  const [busy, setBusy] = useState(false);
+  const quote = QUOTES[(Math.floor(Date.now() / 864e5)) % QUOTES.length];
+  const theme = (WEEK_TITLES[currentWeek - 1] || "Identity").split(" · ")[0];
+  const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }).toUpperCase();
+
+  const sysKey = "systems:" + dayKey(Date.now());
+  const sys = pstate[sysKey] || {};
+  const [sysLocal, setSysLocal] = useState(sys);
+  useEffect(() => { setSysLocal(pstate[sysKey] || {}); }, [pstate[sysKey]]);
+  const toggleSys = (k) => { const next = Object.assign({}, sysLocal, { [k]: !sysLocal[k] }); setSysLocal(next); setState(sysKey, next); };
+  const doneCount = SYSTEMS.filter(s => sysLocal[s.key]).length;
+
+  const sec = (n, label, children) => (
+    <div className="pad" style={{ marginTop: 24 }}><div className="eyebrow" style={{ marginBottom: 12 }}>SECTION {n} · {label}</div>{children}</div>
+  );
+
+  const submit = async () => {
+    if (!musing.trim() && !s1.trim() && !s2.trim() && !s3.trim() && !school.trim() && !home.trim() && !peer.trim()) { toast.err("Write at least one line."); return; }
+    setBusy(true);
+    try { await anchorReflection({ mood, musing, s1, s2, s3, school, home, peer }); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="aj-view noNav">
+      <div className="aj-head" style={{ justifyContent: "space-between" }}>
+        <button className="icon-btn" aria-label="Back" onClick={back}><i className="ph-bold ph-arrow-left"/></button>
+        <div className="aj-head-center">WK {String(currentWeek).padStart(2, "0")} · {theme.toUpperCase()}</div>
+        <div style={{ width: 42 }}/>
+      </div>
+      <div className="pad" style={{ marginTop: 16 }}>
+        <div className="eyebrow">{dateStr}</div>
+        <h2 className="disp" style={{ fontSize: 27, margin: "8px 0 0" }}>Today's reflection</h2>
+      </div>
+
+      <div className="pad" style={{ marginTop: 20 }}><div className="card-grad aj-quote">
+        <div className="aj-quote-top">
+          <span className="aj-quote-lbl">MORNING QUOTE</span>
+          <button className="aj-read" onClick={() => speak(quote)}><i className="ph-fill ph-speaker-high"/>Read aloud</button>
+        </div>
+        <p className="aj-quote-q">“{quote}”</p>
+      </div></div>
+
+      {sec("1", "TODAY'S MUSING", <textarea className="aj-musing" placeholder="What's on your mind this morning?" value={musing} maxLength={2000} onChange={e => setMusing(e.target.value)}/>)}
+
+      {sec("2", "DAILY SYSTEM CHECK · " + doneCount + "/6", (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {SYSTEMS.map(s => <button key={s.key} className={"aj-syschip" + (sysLocal[s.key] ? " on" : "")} onClick={() => toggleSys(s.key)}><i className={"ph-fill " + (sysLocal[s.key] ? "ph-check-circle" : s.icon)}/>{s.label}</button>)}
+        </div>
+      ))}
+
+      {sec("3", "SCHOOL EXECUTION LOG", <input className="aj-logline" placeholder="One line: how did school go?" value={school} maxLength={200} onChange={e => setSchool(e.target.value)}/>)}
+      {sec("4", "HOME EXECUTION LOG", <input className="aj-logline" placeholder="One line: how did home go?" value={home} maxLength={200} onChange={e => setHome(e.target.value)}/>)}
+      {sec("5", "PEER MODELING LOG", <input className="aj-logline" placeholder="One line: who did you influence?" value={peer} maxLength={200} onChange={e => setPeer(e.target.value)}/>)}
+
+      <div className="pad" style={{ marginTop: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}><i className="ph-fill ph-moon-stars" style={{ fontSize: 17, color: "var(--violet-l)" }}/><span className="eyebrow" style={{ letterSpacing: ".14em" }}>SECTION 6 · NIGHT REFLECTION · 3 SENTENCES</span></div>
+        {[["Today I did well by…", s1, setS1], ["Today was difficult because…", s2, setS2], ["Tomorrow I will improve by…", s3, setS3]].map(([lbl, val, set], i) => (
+          <div className="aj-sent" key={i}>
+            <div className="aj-sent-n">{i + 1}</div>
+            <div style={{ flex: 1 }}><div className="aj-sent-lbl">{lbl}</div><input className="aj-sent-in" placeholder="write one line" value={val} maxLength={200} onChange={e => set(e.target.value)}/></div>
+          </div>
+        ))}
+      </div>
+
+      <div className="pad" style={{ marginTop: 24 }}>
+        <div className="eyebrow" style={{ marginBottom: 12 }}>HOW DID TODAY FEEL?</div>
+        <div className="aj-moods">
+          {MOODS.map(m => <button key={m.key} className={"aj-mood" + (mood === m.key ? " on" : "")} onClick={() => setMood(m.key)} aria-label={m.label}><span className="aj-mood-c"><i className={"ph-fill " + m.icon}/></span><span>{m.label}</span></button>)}
+        </div>
+      </div>
+
+      <div className="pad" style={{ marginTop: 28 }}>
+        <button className="btn-a" disabled={busy} onClick={submit}>Anchor it <i className="ph-fill ph-anchor"/></button>
+        <p className="center muted" style={{ fontSize: 12, margin: "14px 0 0" }}>Earn +60 XP · keep your streak alive</p>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Daily systems ------------------------------------------------------ */
+function Systems({ ctx }) {
+  const { pstate, setState, go } = ctx;
+  const key = "systems:" + dayKey(Date.now());
+  const data = pstate[key] || {};
+  const [local, setLocal] = useState(data);
+  useEffect(() => { setLocal(pstate[key] || {}); }, [pstate[key]]);
+  const doneCount = SYSTEMS.filter(s => local[s.key]).length;
+  const toggle = (k) => { const next = Object.assign({}, local, { [k]: !local[k] }); setLocal(next); setState(key, next); };
+  const setMood = (m) => { const next = Object.assign({}, local, { mood: m }); setLocal(next); setState(key, next); };
+  const days = ["MON", "TUE", "WED", "THR", "FRI", "SAT", "SUN"];
+  const todayIdx = (new Date().getUTCDay() + 6) % 7;
+
+  return (
+    <div className="aj-view">
+      <div className="aj-head">
+        <button className="icon-btn" aria-label="Back" onClick={() => go("home")}><i className="ph-bold ph-arrow-left"/></button>
+        <div><h2>Daily systems</h2><div className="sub">Was order maintained today?</div></div>
+      </div>
+      <div className="aj-sys-top">
+        <div><div className="aj-sys-cnt">{doneCount}/6</div><div className="muted" style={{ fontSize: 12 }}>systems held today</div></div>
+        <div className="aj-sys-days">{days.map((d, i) => <React.Fragment key={d}>{i === 4 ? <br/> : null}{i === todayIdx ? <b>{d}</b> : d}{i < 6 && i !== 3 ? " · " : ""}{i === 3 ? " · " : ""}</React.Fragment>)}</div>
+      </div>
+      <div className="pad" style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 11 }}>
+        {SYSTEMS.map(s => (
+          <button key={s.key} className="aj-sys-row" onClick={() => toggle(s.key)} aria-pressed={!!local[s.key]}>
+            <span className="aj-sys-ic"><i className={"ph-fill " + s.icon}/></span>
+            <span className="aj-sys-lbl">{s.label}</span>
+            <span className={"aj-sys-check" + (local[s.key] ? " on" : "")}>{local[s.key] ? <i className="ph-bold ph-check"/> : null}</span>
+          </button>
+        ))}
+      </div>
+      <div className="pad" style={{ marginTop: 26 }}>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>HOW DID TODAY FEEL?</div>
+        <div className="aj-moods">{MOODS.map(m => <button key={m.key} className={"aj-mood" + (local.mood === m.key ? " on" : "")} onClick={() => setMood(m.key)} aria-label={m.label}><span className="aj-mood-c"><i className={"ph-fill " + m.icon}/></span><span>{m.label}</span></button>)}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Timeline / journal ------------------------------------------------- */
+function Timeline({ ctx }) {
+  const { entries, currentWeek, go } = ctx;
+  const list = entries || [];
+  return (
+    <div className="aj-view">
+      <div className="aj-head">
+        <button className="icon-btn" aria-label="Back" onClick={() => go("home")}><i className="ph-bold ph-arrow-left"/></button>
+        <h2>Your journal</h2>
+      </div>
+      <div className="pad" style={{ marginTop: 20 }}>
+        <div className="eyebrow" style={{ color: "var(--gold)", marginBottom: 14 }}>WEEK {String(currentWeek).padStart(2, "0")} · {(WEEK_TITLES[currentWeek - 1] || "").split(" · ")[0].toUpperCase()}</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+          {list.map(e => {
+            const d = new Date(e.createdAt);
+            return (
+              <div className={"aj-entry" + (e._pending ? " fresh" : "")} key={e.entryId}>
+                <div className="aj-entry-top">
+                  <div className="aj-entry-l">
+                    <div className="aj-entry-ic"><i className={"ph-fill " + (MOOD_ICON[e.mood] || "ph-feather")}/></div>
+                    <div><div className="aj-entry-day">{d.toLocaleDateString(undefined, { weekday: "long" })}</div><div className="aj-entry-date mono">{d.toLocaleDateString(undefined, { month: "short", day: "numeric" }).toUpperCase()}</div></div>
+                  </div>
+                  {e._pending && <span className="aj-entry-sys"><i className="ph-fill ph-cloud-arrow-up"/>SYNC</span>}
+                </div>
+                <p className="aj-entry-body">{(e.body || "").split("\n")[0]}</p>
+              </div>
+            );
+          })}
+          <div className="aj-entry-add" onClick={() => go("reflect")}><i className="ph-fill ph-plus-circle"/><span>Today's entry is waiting…</span></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Calendar ----------------------------------------------------------- */
+function Calendar({ ctx }) {
+  const { entries, streak, pstate, go } = ctx;
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const monthLabel = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const first = new Date(y, m, 1).getDay();               // 0 = Sunday
+  const daysIn = new Date(y, m + 1, 0).getDate();
+  const todayD = now.getDate();
+  const byDay = {}; (entries || []).forEach(e => { const d = new Date(e.createdAt); if (d.getFullYear() === y && d.getMonth() === m) byDay[d.getDate()] = e; });
+  const [sel, setSel] = useState(todayD);
+
+  // avg systems held (from any persisted systems:* states this month)
+  let sums = 0, cnt = 0;
+  Object.keys(pstate || {}).forEach(k => { if (k.indexOf("systems:" + y + "-" + String(m + 1).padStart(2, "0")) === 0) { const v = pstate[k] || {}; sums += SYSTEMS.filter(s => v[s.key]).length; cnt++; } });
+  const monthAvg = cnt ? (sums / cnt).toFixed(1) : "—";
+  const journaled = Object.keys(byDay).length;
+
+  const cells = [];
+  for (let i = 0; i < first; i++) cells.push(null);
+  for (let d = 1; d <= daysIn; d++) {
+    const has = !!byDay[d];
+    const isToday = d === todayD;
+    const isPast = d < todayD;
+    let cls = "up"; if (isToday) cls = "today"; else if (has) cls = "done"; else if (isPast) cls = "missed";
+    cells.push({ d, cls });
+  }
+  const selEntry = byDay[sel];
+  const selKey = "systems:" + y + "-" + String(m + 1).padStart(2, "0") + "-" + String(sel).padStart(2, "0");
+  const selSys = pstate[selKey] ? SYSTEMS.filter(s => pstate[selKey][s.key]).length + "/6" : "—";
+
+  return (
+    <div className="aj-view">
+      <div className="aj-head" style={{ justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}><button className="icon-btn" aria-label="Back" onClick={() => go("home")}><i className="ph-bold ph-arrow-left"/></button><h2>{monthLabel}</h2></div>
+        <button className="icon-btn" aria-label="List view" onClick={() => go("timeline")}><i className="ph-bold ph-list-bullets"/></button>
+      </div>
+      <div className="pad" style={{ marginTop: 18, display: "flex", gap: 10 }}>
+        <div className="aj-calstat"><b>{journaled}</b><small>journaled</small></div>
+        <div className="aj-calstat"><b style={{ color: "var(--flame)" }}>{streak}</b><small>day streak</small></div>
+        <div className="aj-calstat"><b style={{ color: "var(--a)" }}>{monthAvg}</b><small>avg systems</small></div>
+      </div>
+      <div className="pad aj-calgrid" style={{ marginTop: 20 }}>{["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <div key={i} className="aj-calwd">{d}</div>)}</div>
+      <div className="pad aj-calgrid">{cells.map((c, i) => c ? <button key={i} className={"aj-calday " + c.cls} onClick={() => setSel(c.d)}>{c.d}</button> : <div key={i}/>)}</div>
+      <div className="pad aj-callegend"><span><i className="dot done"/>Done</span><span><i className="dot missed"/>Missed</span><span><i className="dot up"/>Upcoming</span></div>
+      <div className="pad" style={{ marginTop: 18 }}><div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div className="mono" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700 }}>{new Date(y, m, sel).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }).toUpperCase()}</div><span className="aj-entry-sys"><i className="ph-fill ph-check-circle"/>{selSys}</span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14 }}><i className={"ph-fill " + (selEntry ? (MOOD_ICON[selEntry.mood] || "ph-feather") : "ph-moon-stars")} style={{ fontSize: 28, color: "var(--violet-l)" }}/><p style={{ flex: 1, fontSize: 14, lineHeight: 1.45, color: "var(--tx-70)", margin: 0 }}>{selEntry ? (selEntry.body || "").split("\n")[0] : "No reflection logged this day."}</p></div>
+      </div></div>
+    </div>
+  );
+}
+
+/* ---- The Charge (Chief Servant's letter) -------------------------------- */
+function Charge({ ctx }) {
+  const { go } = ctx;
+  return (
+    <div className="aj-view">
+      <div className="aj-head"><button className="icon-btn" aria-label="Back" onClick={() => go("you")}><i className="ph-bold ph-arrow-left"/></button><h2>The Charge</h2></div>
+      <div className="pad" style={{ marginTop: 20 }}>
+        <div className="mono" style={{ fontSize: 11, letterSpacing: ".18em", color: "var(--gold)", fontWeight: 700 }}>CHIEF SERVANT · VAN. BABATUNDE ADEOLA</div>
+        <p style={{ fontSize: 15, lineHeight: 1.6, color: "var(--tx-70)", margin: "16px 0 0" }}>To parents, teachers, and all who claim to care about the next generation — spoken plainly, without diplomacy.</p>
+        <p className="disp" style={{ fontSize: 24, lineHeight: 1.3, margin: "22px 0 0" }}>“Values are not inherited. They are installed.”</p>
+        <p style={{ fontSize: 15, lineHeight: 1.6, color: "var(--tx-70)", margin: "14px 0 0" }}>And installation requires three things, every single day:</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+          <div className="aj-focus start"><i className="ph-fill ph-calendar-check"/><span className="t">Daily structure</span></div>
+          <div className="aj-focus auto"><i className="ph-fill ph-users-three"/><span className="t">Unified authority</span></div>
+          <div className="aj-charge-rep"><i className="ph-fill ph-repeat"/><span className="t">Repetition without negotiation</span></div>
+        </div>
+        <p className="disp" style={{ fontSize: 22, lineHeight: 1.35, margin: "26px 0 0" }}>“We do not need more emotional children. We need governed humans.”</p>
+        <p style={{ fontSize: 15, lineHeight: 1.6, color: "var(--tx-70)", margin: "14px 0 0" }}>Not louder motivation — quieter consistency. Not perfect children — incorruptible ones: those who do the right thing even when no one is watching.</p>
+        <p style={{ fontSize: 15, lineHeight: 1.6, color: "var(--tx-70)", margin: "14px 0 0" }}>ANCHOR is the shared language between the Home, the School, and your Afrovanguard Mentor. It removes guesswork. It removes selective discipline.</p>
+        <p style={{ fontWeight: 700, fontSize: 14, color: "var(--gold)", margin: "26px 0 0" }}>— Chief Servant</p>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Week detail (build sheet) ------------------------------------------ */
+function WeekDetail({ ctx }) {
+  const { selWeek, go } = ctx;
+  const n = selWeek || 1;
+  const d = WEEK_DATA[n - 1] || WEEK_DATA[0];
+  const title = (WEEK_TITLES[n - 1] || "").split(" · ")[0];
+  const rows = [
+    { lbl: "PERSONAL FOCUS", icon: "ph-target", c: "var(--a)", v: d.focus },
+    { lbl: "HOME ACTIONS", icon: "ph-house", c: "var(--violet-l)", v: d.home },
+    { lbl: "SCHOOL ACTIONS", icon: "ph-chalkboard-teacher", c: "var(--violet-l)", v: d.school },
+    { lbl: "PEER MODELING", icon: "ph-users-three", c: "var(--magenta-l)", v: d.peer },
+  ];
+  return (
+    <div className="aj-view">
+      <div className="aj-head"><button className="icon-btn" aria-label="Back" onClick={() => go("library")}><i className="ph-bold ph-arrow-left"/></button><div><div className="mono" style={{ fontSize: 11, letterSpacing: ".2em", color: "var(--gold)", fontWeight: 700 }}>WEEK {String(n).padStart(2, "0")}</div><h2 style={{ fontSize: 22 }}>{title}</h2></div></div>
+      <div className="pad" style={{ marginTop: 20 }}><div className="card-grad" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div><div className="mono" style={{ fontSize: 11, letterSpacing: ".12em", color: "var(--tx-55)" }}>SYSTEM BEING BUILT</div><div className="disp" style={{ fontSize: 22, marginTop: 4 }}>{d.system}</div></div>
+        <i className="ph-fill ph-shield-check" style={{ fontSize: 38, color: "var(--a)" }}/>
+      </div></div>
+      <div className="pad" style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 11 }}>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", gap: 13, alignItems: "flex-start", padding: "15px 16px", borderRadius: 16, background: "var(--card)", border: "1px solid var(--line)" }}>
+            <i className={"ph-fill " + r.icon} style={{ fontSize: 21, color: r.c, marginTop: 1 }}/>
+            <div style={{ flex: 1 }}><div className="eyebrow" style={{ letterSpacing: ".14em" }}>{r.lbl}</div><div style={{ fontWeight: 600, fontSize: 15, marginTop: 4 }}>{r.v}</div></div>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 13, alignItems: "flex-start", padding: "15px 16px", borderRadius: 16, background: "linear-gradient(140deg,rgba(255,206,84,.14),rgba(255,255,255,.04))", border: "1px solid rgba(255,206,84,.24)" }}>
+          <i className="ph-fill ph-notebook" style={{ fontSize: 21, color: "var(--gold)", marginTop: 1 }}/>
+          <div style={{ flex: 1 }}><div className="eyebrow" style={{ letterSpacing: ".14em" }}>JOURNAL PROMPT</div><div className="disp" style={{ fontSize: 15, lineHeight: 1.35, marginTop: 4, fontWeight: 600 }}>{d.journal}</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Growth ------------------------------------------------------------- */
+function Growth({ ctx }) {
+  const { entries, streak, diamonds, xp, cur, xpPct, currentWeek, pstate, setState, go, isNGG } = ctx;
+  const dates = new Set((entries || []).map(e => dayKey(e.createdAt)));
+  const mon = mondayOf(Date.now());
+  const days = ["M", "T", "W", "T", "F", "S", "S"];
+  const weekDots = days.map((d, i) => { const dd = new Date(mon); dd.setUTCDate(dd.getUTCDate() + i); return { d, on: dates.has(dayKey(dd)) }; });
+  const scoreKey = "selfscore:" + dayKey(mon);
+  const scores = pstate[scoreKey] || {};
+  const setScore = (k, v) => setState(scoreKey, Object.assign({}, scores, { [k]: v }));
+
+  return (
+    <div className="aj-view">
+      <div className="pad"><h2 className="disp" style={{ fontSize: 26, margin: 0 }}>Growth</h2><div className="muted" style={{ fontSize: 13 }}>Quiet consistency, made visible.</div></div>
+
+      <div className="pad" style={{ marginTop: 20 }}><div className="card" style={{ display: "flex", alignItems: "center", gap: 20 }}>
+        <div className="aj-ring" style={{ "--deg": (xpPct * 3.6) + "deg" }}><div className="aj-ring-in"><b>L{cur.L}</b><small>{cur.name.toUpperCase()}</small></div></div>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="aj-gstat"><i className="ph-fill ph-fire" style={{ color: "var(--flame)" }}/><div><b>{streak} days</b><small>current streak</small></div></div>
+          <div className="aj-gstat"><i className="ph-fill ph-diamond" style={{ color: "var(--a)" }}/><div><b>{diamonds}</b><small>diamonds earned</small></div></div>
+        </div>
+      </div></div>
+
+      <div className="pad" style={{ marginTop: 22 }}>
+        <div className="eyebrow" style={{ marginBottom: 12 }}>THIS WEEK</div>
+        <div className="aj-week">{weekDots.map((w, i) => <div className="aj-week-d" key={i}><div className={"aj-week-c" + (w.on ? " on" : "")}>{w.on ? <i className="ph-bold ph-check"/> : null}</div><span>{w.d}</span></div>)}</div>
+      </div>
+
+      <div style={{ marginTop: 24 }}>
+        <div className="eyebrow pad" style={{ marginBottom: 12 }}>YOUR RANK</div>
+        <div className="aj-ranks">{RANKS.map(r => { const c = r.name === cur.name; return (
+          <div className={"aj-rank" + (c ? " cur" : "")} key={r.name}><div className="aj-rank-ic"><i className={"ph-fill " + r.icon}/></div><div className="aj-rank-nm">{r.name}</div><div className="aj-rank-xp">{c ? "CURRENT" : r.xp + " XP"}</div></div>
+        ); })}</div>
+      </div>
+
+      <div className="pad" style={{ marginTop: 22 }}>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>THIS WEEK · SELF SCORE <span className="muted" style={{ letterSpacing: 0 }}>· tap to rate</span></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+          {SCORE_DIMS.map(dim => { const v = scores[dim.key] || 0; return (
+            <div key={dim.key} onClick={() => setScore(dim.key, v >= 5 ? 1 : v + 1)} style={{ cursor: "pointer" }}>
+              <div className="aj-score-row"><span>{dim.label}</span><span className="v">{v}/5</span></div>
+              <div className="aj-score-track"><div className="aj-score-fill" style={{ width: (v / 5 * 100) + "%" }}/></div>
+            </div>
+          ); })}
+        </div>
+      </div>
+
+      <div className="pad" style={{ marginTop: 24 }}>
+        <div className="eyebrow" style={{ marginBottom: 12 }}>HABIT FOCUS · WEEK {currentWeek}</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="aj-focus stop"><span className="aj-focus-tag">STOP</span><i className="ph-fill ph-hand-palm"/><span className="t">Excess phone use</span></div>
+          <div className="aj-focus start"><span className="aj-focus-tag">START</span><i className="ph-fill ph-play-circle"/><span className="t">A fixed study time</span></div>
+          <div className="aj-focus auto"><span className="aj-focus-tag">AUTOMATE</span><i className="ph-fill ph-arrows-clockwise"/><span className="t">5-minute note review</span></div>
+        </div>
+      </div>
+
+      <div className="pad" style={{ marginTop: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}><div className="eyebrow">12-WEEK JOURNEY</div><span className="mono" style={{ fontSize: 11, color: "var(--a)", fontWeight: 700 }}>{currentWeek} / 12</span></div>
+        <div className="aj-wkgrid">{WEEK_TITLES.map((_, i) => <div className={"aj-wkcell" + (i + 1 === currentWeek ? " cur" : "")} key={i}>{String(i + 1).padStart(2, "0")}</div>)}</div>
+      </div>
+
+      <div className="pad" style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 10 }}>
+        <button className="aj-link" onClick={() => go("library")}><i className="ph-fill ph-books lead" style={{ color: "var(--gold)" }}/><span>Prompt library</span><i className="ph-bold ph-arrow-right chev"/></button>
+        <button className="aj-link" onClick={() => go("peers")}><i className="ph-fill ph-users-three lead" style={{ color: "var(--violet-l)" }}/><span>Peer modeling</span>{isNGG ? <i className="ph-bold ph-arrow-right chev"/> : <span className="aj-lock-note"><i className="ph-fill ph-lock-simple"/>NGG</span>}</button>
+        <button className="aj-link" onClick={() => go("review")}><i className="ph-fill ph-seal-check lead" style={{ color: "var(--a)" }}/><span>Weekly review</span><i className="ph-bold ph-arrow-right chev"/></button>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Library ------------------------------------------------------------ */
+function Library({ ctx }) {
+  const { currentWeek, go } = ctx;
+  return (
+    <div className="aj-view">
+      <div className="aj-head"><button className="icon-btn" aria-label="Back" onClick={() => go("growth")}><i className="ph-bold ph-arrow-left"/></button><h2>Anchor quotes</h2></div>
+      <div className="pad" style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 12 }}>
+        {QUOTES.map((q, i) => <div className="aj-quote-card" key={i}><span className="n">{String(i + 1).padStart(2, "0")}</span><p>“{q}”</p></div>)}
+      </div>
+      <div className="pad" style={{ marginTop: 26 }}>
+        <div className="eyebrow" style={{ marginBottom: 12 }}>THE 12 WEEKS</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {WEEK_TITLES.map((t, i) => { const cur = i + 1 === currentWeek; return (
+            <button className={"aj-wkrow" + (cur ? " cur" : "")} key={i} onClick={() => ctx.openWeek(i + 1)} style={{ cursor: "pointer", width: "100%", textAlign: "left" }}><span className="n">{String(i + 1).padStart(2, "0")}</span><span className="t">{t}</span>{cur ? <span className="aj-now">NOW</span> : <i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)", fontSize: 15 }}/>}</button>
+          ); })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Peers -------------------------------------------------------------- */
+function Peers({ ctx }) {
+  const { pstate, setState, go, isNGG } = ctx;
+  const peers = pstate.peers || [];
+  const [draft, setDraft] = useState("");
+  const attended = peers.filter(p => p.attended).length;
+  const save = (next) => setState("peers", next);
+  const add = () => { const n = draft.trim(); if (!n) return; save([...peers, { name: n, modeled: "", invited: false, attended: false }]); setDraft(""); };
+  const toggle = (i, f) => save(peers.map((p, idx) => idx === i ? Object.assign({}, p, { [f]: !p[f] }) : p));
+
+  if (!isNGG) return (
+    <div className="aj-view">
+      <div className="aj-head"><button className="icon-btn" aria-label="Back" onClick={() => go("growth")}><i className="ph-bold ph-arrow-left"/></button><div><h2>Peer modeling</h2><div className="sub">An NGG member feature.</div></div></div>
+      <div className="pad" style={{ marginTop: 24 }}><div className="card-grad center" style={{ padding: 28 }}>
+        <i className="ph-fill ph-users-three" style={{ fontSize: 48, color: "var(--violet-l)" }}/>
+        <h3 className="disp" style={{ fontSize: 22, margin: "14px 0 8px" }}>Lead by example.</h3>
+        <p className="muted" style={{ fontSize: 14, margin: "0 0 18px" }}>Peer modeling — bringing friends into the movement at an NGG centre — is part of Next Generation Genius membership. Your personal discipline tools stay free forever.</p>
+        <a className="btn-a" href="/#join">Join Next Generation Genius <i className="ph-bold ph-arrow-right"/></a>
+      </div></div>
+    </div>
+  );
+
+  return (
+    <div className="aj-view">
+      <div className="aj-head"><button className="icon-btn" aria-label="Back" onClick={() => go("growth")}><i className="ph-bold ph-arrow-left"/></button><div><h2>Peer modeling</h2><div className="sub">Lead by example — bring 2 friends.</div></div></div>
+      <div className="pad" style={{ marginTop: 20 }}><div className="card-grad" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div><div className="disp" style={{ fontSize: 28 }}>{attended} / 2</div><div className="muted" style={{ fontSize: 12 }}>friends confirmed at NGG</div></div>
+        <i className="ph-fill ph-users-three" style={{ fontSize: 38, color: "var(--violet-l)" }}/>
+      </div></div>
+      <div className="pad" style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 12 }}>
+        {peers.map((p, i) => (
+          <div className="aj-peer" key={i}>
+            <div className="aj-peer-top"><div className="aj-peer-av">{(p.name || "?").charAt(0).toUpperCase()}</div><div style={{ flex: 1 }}><div className="aj-peer-nm">{p.name}</div><div className="aj-peer-m">Modeled · {p.modeled || "Getting started"}</div></div></div>
+            <div className="aj-peer-btns">
+              <button className={"aj-peer-btn" + (p.invited ? " inv-on" : "")} onClick={() => toggle(i, "invited")}><i className={"ph-fill " + (p.invited ? "ph-check-circle" : "ph-circle")}/>Invited</button>
+              <button className={"aj-peer-btn" + (p.attended ? " att-on" : "")} onClick={() => toggle(i, "attended")}><i className={"ph-fill " + (p.attended ? "ph-check-circle" : "ph-circle")}/>Attended</button>
+            </div>
+          </div>
+        ))}
+        <div className="aj-peer-add"><input placeholder="Add a friend's name" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === "Enter" && add()}/><button onClick={add} aria-label="Add"><i className="ph-bold ph-plus"/></button></div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Weekly review ------------------------------------------------------ */
+function Review({ ctx }) {
+  const { currentWeek, mentor, go, isNGG } = ctx;
+  const remarks = [
+    { role: "Home · Parent", icon: "ph-house", tint: "rgba(201,242,78,.14)", ic: "#c9f24e", msg: "Kept his study time two days running. Proud of the change." },
+    { role: "School · Teacher", icon: "ph-chalkboard-teacher", tint: "rgba(139,92,246,.2)", ic: "#c9b0ff", msg: "Awaiting confirmation for this week." },
+    { role: mentor ? mentor.fullName : "Afrovanguard Mentor", icon: "ph-compass", tint: "rgba(217,110,194,.2)", ic: "#f0a6da", msg: "Strong start. Focus next on device control." },
+  ];
+  return (
+    <div className="aj-view">
+      <div className="aj-head"><button className="icon-btn" aria-label="Back" onClick={() => go("growth")}><i className="ph-bold ph-arrow-left"/></button><div><h2>Weekly review</h2><div className="mono" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700 }}>WEEK {String(currentWeek).padStart(2, "0")} · {(WEEK_TITLES[currentWeek - 1] || "").split(" · ")[0].toUpperCase()}</div></div></div>
+      <div className="pad" style={{ marginTop: 20 }}>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>HABIT FOCUS</div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <div className="aj-focus stop" style={{ flex: 1, flexDirection: "column", textAlign: "center", gap: 6 }}><div className="aj-focus-tag" style={{ width: "auto" }}>STOP</div><span className="t" style={{ flex: "none", fontSize: 12 }}>Excess phone</span></div>
+          <div className="aj-focus start" style={{ flex: 1, flexDirection: "column", textAlign: "center", gap: 6 }}><div className="aj-focus-tag" style={{ width: "auto" }}>START</div><span className="t" style={{ flex: "none", fontSize: 12 }}>Fixed study</span></div>
+          <div className="aj-focus auto" style={{ flex: 1, flexDirection: "column", textAlign: "center", gap: 6 }}><div className="aj-focus-tag" style={{ width: "auto" }}>AUTO</div><span className="t" style={{ flex: "none", fontSize: 12 }}>Note review</span></div>
+        </div>
+      </div>
+      <div className="pad" style={{ marginTop: 24 }}>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>REMARKS FROM YOUR CIRCLE</div>
+        {!isNGG && <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>Circle remarks activate when you join an NGG centre.</div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {remarks.map((r, i) => (
+            <div className="aj-remark" key={i}><div className="aj-remark-top"><div className="aj-remark-ic" style={{ background: r.tint }}><i className={"ph-fill " + r.icon} style={{ color: r.ic }}/></div><div className="aj-remark-role">{r.role}</div></div><p>{isNGG ? r.msg : "Linked once you're an NGG member."}</p></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- You ---------------------------------------------------------------- */
+function You({ ctx }) {
+  const { member, cur, mentor, pstate, setState, isNGG } = ctx;
+  const prefs = pstate.prefs || { reminder: true, readAloud: true };
+  const toggle = (k) => setState("prefs", Object.assign({}, prefs, { [k]: !(prefs[k] !== false) }));
+  const on = (k) => prefs[k] !== false;
+  const circle = [
+    { role: "Home · Parent", sub: "Confirms daily order", icon: "ph-house", tint: "rgba(201,242,78,.16)", ic: "#c9f24e", tag: isNGG ? "linked" : "locked" },
+    { role: "School · Teacher", sub: "Verifies school conduct", icon: "ph-chalkboard-teacher", tint: "rgba(139,92,246,.2)", ic: "#c9b0ff", tag: isNGG ? "pending" : "locked" },
+    { role: mentor ? mentor.fullName : "Afrovanguard Mentor", sub: "Weekly discipline & remarks", icon: "ph-compass", tint: "rgba(217,110,194,.2)", ic: "#f0a6da", tag: isNGG ? "linked" : "locked" },
+  ];
+  return (
+    <div className="aj-view">
+      <div className="pad"><h2 className="disp" style={{ fontSize: 26, margin: 0 }}>You</h2></div>
+      <div className="pad" style={{ marginTop: 18 }}><div className="card-grad" style={{ background: "linear-gradient(140deg,rgba(139,92,246,.35),rgba(201,242,78,.12))", display: "flex", alignItems: "center", gap: 16 }}>
+        <div className="aj-profile-av"><i className="ph-fill ph-star"/></div>
+        <div style={{ flex: 1 }}><div className="disp" style={{ fontSize: 22 }}>{member.fullName}</div><div className="mono" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700, marginTop: 2 }}>{cur.name.toUpperCase()} · LEVEL {cur.L}</div></div>
+      </div></div>
+
+      <div className="pad" style={{ marginTop: 22 }}>
+        <button className="aj-link" onClick={() => ctx.go("charge")}><i className="ph-fill ph-scroll lead" style={{ color: "var(--gold)" }}/><span>The Charge — why Anchor exists</span><i className="ph-bold ph-arrow-right chev"/></button>
+      </div>
+
+      <div className="pad" style={{ marginTop: 24 }}>
+        <div className="eyebrow" style={{ marginBottom: 6 }}>YOUR CIRCLE</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>One aligned language across home, school & mentor.</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {circle.map((c, i) => (
+            <div className="aj-circle-row" key={i}><div className="aj-circle-ic" style={{ background: c.tint }}><i className={"ph-fill " + c.icon} style={{ color: c.ic }}/></div><div className="aj-circle-t"><b>{c.role}</b><small>{c.sub}</small></div><span className={"aj-tag " + c.tag}>{c.tag === "locked" ? "NGG" : c.tag.toUpperCase()}</span></div>
+          ))}
+        </div>
+        {!isNGG && <a className="btn-a" href="/#join" style={{ marginTop: 14 }}>Join NGG to activate your circle <i className="ph-bold ph-arrow-right"/></a>}
+      </div>
+
+      <div className="pad" style={{ marginTop: 24 }}>
+        <div className="eyebrow" style={{ marginBottom: 12 }}>SETTINGS</div>
+        <div className="aj-settings">
+          <button className="aj-setrow" onClick={() => toggle("reminder")}><i className="ph-fill ph-bell lead"/><span>Daily reflection reminder</span><span className={"aj-toggle " + (on("reminder") ? "on" : "off")}><span/></span></button>
+          <button className="aj-setrow" onClick={() => toggle("readAloud")}><i className="ph-fill ph-speaker-high lead"/><span>Read quote aloud</span><span className={"aj-toggle " + (on("readAloud") ? "on" : "off")}><span/></span></button>
+          <button className="aj-setrow" onClick={() => { localStorage.removeItem("ngg_aj_onb"); location.reload(); }}><i className="ph-fill ph-arrow-counter-clockwise lead"/><span>Replay intro</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
+          <button className="aj-setrow" onClick={() => { NGGApi.auth.logout().finally(() => location.reload()); }}><i className="ph-fill ph-sign-out lead"/><span>Sign out</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
+        </div>
+      </div>
+      <p className="aj-virtues" style={{ margin: "26px 24px 0" }}>Study harder · think deeper · speak wiser<br/>love purer · live truer</p>
+    </div>
+  );
+}
+
+/* ---- Bottom nav --------------------------------------------------------- */
+function BottomNav({ view, go }) {
+  const growthViews = ["growth", "library", "peers", "review"];
+  const items = [{ id: "home", label: "Journey", icon: "ph-path", on: view === "home" || view === "reflect" || view === "systems" || view === "timeline" }, { id: "growth", label: "Growth", icon: "ph-chart-line-up", on: growthViews.includes(view) }, { id: "you", label: "You", icon: "ph-user-circle", on: view === "you" }];
+  return <nav className="aj-nav" role="tablist">{items.map(it => <button key={it.id} className={"aj-nav-btn" + (it.on ? " on" : "")} role="tab" aria-selected={it.on} onClick={() => go(it.id)}><i className={"ph-fill " + it.icon}/>{it.label}</button>)}</nav>;
+}
+
+/* ---- Celebrate ---------------------------------------------------------- */
+function Celebrate() {
+  return <div className="aj-celebrate"><div className="aj-celebrate-in"><div className="aj-celebrate-badge"><i className="ph-fill ph-anchor"/></div><h2>Anchored!</h2><p>+60 XP · your streak is alive</p></div></div>;
+}
+
+/* ---- Onboarding --------------------------------------------------------- */
+function Onboarding({ name, onDone }) {
+  return (
+    <div className="aj-celebrate" style={{ background: "var(--bg0)", zIndex: 70 }}>
+      <div className="aj-onb" style={{ maxWidth: 440, width: "100%" }}>
+        <div className="aj-onb-top">
+          <div className="aj-onb-badge"><i className="ph-fill ph-anchor"/></div>
+          <h1 className="aj-onb-h">ANCHOR</h1>
+          <div className="aj-onb-sub">JOURNAL</div>
+          <p className="aj-onb-p">A daily discipline for an <b>incorruptible generation.</b> Twelve weeks. One reflection at a time.</p>
+        </div>
+        <div style={{ marginTop: "auto" }}>
+          <button className="btn-a" onClick={onDone}>Begin the journey <i className="ph-bold ph-arrow-right"/></button>
+          <p className="aj-virtues">Study harder · think deeper · speak wiser<br/>love purer · live truer</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Sign-in gate ------------------------------------------------------- */
+function SignInGate({ onIn }) {
+  const [stage, setStage] = useState("id");
+  const [id, setId] = useState(""); const [otp, setOtp] = useState(""); const [masked, setMasked] = useState("");
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  useEffect(() => { const t = new URLSearchParams(location.search).get("signin"); if (!t) return; setBusy(true); NGGApi.auth.verify({ token: t }).then(r => onIn(r.member)).catch(e => setErr(e.code || e.message)).finally(() => setBusy(false)); }, []);
+  const request = async e => { e.preventDefault(); setBusy(true); setErr(""); try { const r = await NGGApi.auth.request(id.trim()); setMasked(r.masked || ""); setStage("otp"); } catch (e) { setErr(e.code === "rate_limited" ? "Too many tries — wait a minute." : (e.code || e.message)); } finally { setBusy(false); } };
+  const verify = async e => { e.preventDefault(); setBusy(true); setErr(""); try { const r = await NGGApi.auth.verify({ memberId: id.trim(), otp: otp.replace(/\s/g, "") }); onIn(r.member); } catch { setErr("That code didn't work. Try the latest one, or the magic link in your email."); } finally { setBusy(false); } };
+  return (
+    <div className="aj-app"><div className="aj-bg" aria-hidden="true"/><div className="aj-blob b1"/><div className="aj-blob b2"/><div className="aj-blob b3"/>
+      <div className="aj-gate"><div className="aj-gate-card">
+        <div className="aj-onb-badge" style={{ width: 84, height: 84, borderRadius: 24, fontSize: 42 }}><i className="ph-fill ph-anchor"/></div>
+        <h1 className="aj-onb-h" style={{ fontSize: 38 }}>ANCHOR</h1>
+        <div className="aj-onb-sub" style={{ marginBottom: 20 }}>JOURNAL</div>
+        {stage === "id" ? (
+          <form onSubmit={request}>
+            <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}>Your Member ID or email. We'll send a magic link + 6-digit code.</p>
+            <input className="aj-input" placeholder="NGG-2025-0001 or you@email.com" value={id} onChange={e => setId(e.target.value)} autoFocus/>
+            <div className="aj-gate-err">{err}</div>
+            <button className="btn-a" disabled={busy || id.trim().length < 3}>{busy ? "Sending…" : "Send my code"} <i className="ph-bold ph-arrow-right"/></button>
+            <button type="button" className="aj-linkbtn" onClick={() => setStage("otp")}>I already have a code</button>
+          </form>
+        ) : (
+          <form onSubmit={verify}>
+            <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}>{masked ? <>Code sent to <b>{masked}</b>.</> : "Enter your Member ID and code."}</p>
+            {!masked && <input className="aj-input" placeholder="Member ID" value={id} onChange={e => setId(e.target.value)}/>}
+            <input className="aj-input aj-otp" inputMode="numeric" maxLength={7} placeholder="••••••" value={otp} onChange={e => setOtp(e.target.value.replace(/[^\d ]/g, ""))} autoFocus/>
+            <div className="aj-gate-err">{err}</div>
+            <button className="btn-a" disabled={busy || otp.replace(/\s/g, "").length !== 6}>{busy ? "Verifying…" : "Enter journal"}</button>
+            <button type="button" className="aj-linkbtn" onClick={() => { setStage("id"); setErr(""); }}>← Start over</button>
+          </form>
+        )}
+      </div></div>
+    </div>
+  );
+}
+
+/* ---- Install ------------------------------------------------------------ */
 function InstallPrompt() {
   const [evt, setEvt] = useState(null);
   const [dismissed, setDismissed] = useState(() => localStorage.getItem("ngg_aj_install_dismissed") === "1");
-  useEffect(() => {
-    const h = (e) => { e.preventDefault(); setEvt(e); };
-    window.addEventListener("beforeinstallprompt", h);
-    return () => window.removeEventListener("beforeinstallprompt", h);
-  }, []);
+  useEffect(() => { const h = e => { e.preventDefault(); setEvt(e); }; window.addEventListener("beforeinstallprompt", h); return () => window.removeEventListener("beforeinstallprompt", h); }, []);
   const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
   if (!evt || dismissed || standalone) return null;
   return (
     <div className="aj-install" role="dialog" aria-label="Install app">
       <img src="/assets/logo.png" alt="" style={{ width: 34, height: 34, borderRadius: 9 }}/>
-      <div className="aj-install-txt"><b>Install the Anchor Journal</b><br/><span className="aj-muted">Add it to your home screen — works offline.</span></div>
-      <button className="aj-btn aj-btn-lime" style={{ padding: "10px 14px" }} onClick={async () => { evt.prompt(); try { await evt.userChoice; } catch {} setEvt(null); }}>Install</button>
+      <div className="aj-install-txt"><b>Install the Anchor Journal</b><br/><small>Add to your home screen — works offline.</small></div>
+      <button className="btn-a" style={{ width: "auto", padding: "10px 14px", fontSize: 13, boxShadow: "none" }} onClick={async () => { evt.prompt(); try { await evt.userChoice; } catch {} setEvt(null); }}>Install</button>
       <button className="aj-install-x" aria-label="Dismiss" onClick={() => { setDismissed(true); localStorage.setItem("ngg_aj_install_dismissed", "1"); }}>✕</button>
     </div>
   );
 }
 
-/* ---- Loading states ----------------------------------------------------- */
-function BootSplash() {
-  return <div className="aj-gate"><div style={{ textAlign: "center" }}><img src="/assets/logo.png" alt="" style={{ width: 64, height: 64, borderRadius: 16 }}/><div className="aj-spinner"/></div></div>;
-}
-function ListSkeleton() {
-  return <React.Fragment><div className="aj-skel" style={{ height: 90, marginBottom: 12 }}/><div className="aj-skel" style={{ height: 120, marginBottom: 12 }}/><div className="aj-skel" style={{ height: 120 }}/></React.Fragment>;
-}
+/* ---- Boot + boundary + mount ------------------------------------------- */
+function Boot() { return <div className="aj-app"><div className="aj-bg"/><div className="aj-gate"><div style={{ textAlign: "center" }}><img src="/assets/logo.png" alt="" style={{ width: 64, height: 64, borderRadius: 16 }}/><div className="aj-spinner"/></div></div></div>; }
 
-/* ---- Error boundary ----------------------------------------------------- */
 class AJErrorBoundary extends React.Component {
   constructor(p) { super(p); this.state = { err: null }; }
   static getDerivedStateFromError(err) { return { err }; }
   componentDidCatch(err) { try { console.error("[AnchorJournal]", err); } catch {} }
-  render() {
-    if (this.state.err) return <div className="aj-gate"><div className="aj-gate-card"><h1 className="aj-h aj-h-lg">Something broke.</h1><p className="aj-muted">Reload the app to continue.</p><button className="aj-btn aj-btn-primary" onClick={() => location.reload()}>Reload</button></div></div>;
-    return this.props.children;
-  }
+  render() { return this.state.err ? <div className="aj-gate"><div className="aj-gate-card"><h1 className="disp" style={{ fontSize: 24 }}>Something broke.</h1><p className="muted">Reload to continue.</p><button className="btn-a" style={{ marginTop: 14 }} onClick={() => location.reload()}>Reload</button></div></div> : this.props.children; }
 }
 
-/* ---- Mount + service worker -------------------------------------------- */
-ReactDOM.createRoot(document.getElementById("aj-root")).render(
-  <AJErrorBoundary><App/></AJErrorBoundary>
-);
-
-if ("serviceWorker" in navigator && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
-  window.addEventListener("load", () => navigator.serviceWorker.register("/journal/sw.js", { scope: "/journal/" }).catch(() => {}));
-}
+ReactDOM.createRoot(document.getElementById("aj-root")).render(<AJErrorBoundary><App/></AJErrorBoundary>);
+if ("serviceWorker" in navigator && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") { window.addEventListener("load", () => navigator.serviceWorker.register("/journal/sw.js", { scope: "/journal/" }).catch(() => {})); }

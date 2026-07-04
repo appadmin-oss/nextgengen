@@ -184,5 +184,14 @@ CREATE TABLE IF NOT EXISTS applications (
   INDEX idx_apps_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS member_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  stateKey VARCHAR(80) NOT NULL,
+  stateValue MEDIUMTEXT,
+  updatedAt VARCHAR(40),
+  UNIQUE KEY idx_member_state (memberId, stateKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (2) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (3) ON DUPLICATE KEY UPDATE version = version;

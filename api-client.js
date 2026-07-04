@@ -104,6 +104,8 @@
       updateProfile: (data) => request('/member/profile.php', { body: data }),
       assignments:      () => request('/member/assignments.php'),
       submitAssignment: (data) => request('/member/assignments.php', { body: data }),
+      stateGet:  (keys) => request('/member/state.php' + qs({ keys: Array.isArray(keys) ? keys.join(',') : keys })),
+      stateSet:  (key, value) => request('/member/state.php', { body: { key, value } }),
     },
     public: {
       stats:      () => request('/public/stats.php'),
