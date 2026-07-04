@@ -628,11 +628,16 @@ function DashboardShortcuts({ setPage }) {
   return (
     <div className="dash-card dash-shortcuts">
       <div className="dash-card-head"><h3 className="dash-card-h-sm">Jump to…</h3></div>
+      <a className="dash-journal-cta" href="/journal/">
+        <span className="dash-journal-cta-ico" aria-hidden="true">✦</span>
+        <span className="dash-journal-cta-txt"><b>Open the Anchor Journal</b><small>Daily reflection · install it as an app</small></span>
+        <span aria-hidden="true">→</span>
+      </a>
       <div className="dash-shortcuts-grid">
         <button className="dash-shortcut" onClick={() => setPage("anchor")}><span>↗</span>Anchor 12</button>
         <button className="dash-shortcut" onClick={() => setPage("book")}><span>📖</span>The book</button>
         <button className="dash-shortcut" onClick={() => setPage("media")}><span>▶</span>Media</button>
-        <button className="dash-shortcut" onClick={() => setPage("blog")}><span>✎</span>Journal</button>
+        <button className="dash-shortcut" onClick={() => setPage("blog")}><span>✎</span>Blog</button>
       </div>
     </div>
   );

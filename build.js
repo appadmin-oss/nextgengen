@@ -151,10 +151,13 @@ async function build() {
   }
   // Mirror the directories that contain bundled-but-not-built things.
   // Skip local-only artifacts (SQLite db, cache, rate-limit state, config).
-  for (const dir of ['vendor', 'assets', 'api']) {
+  for (const dir of ['vendor', 'assets', 'api', 'journal']) {
     const src = path.join(ROOT, dir);
     if (fs.existsSync(src)) copyDir(src, path.join(DIST, dir));
   }
+
+  // Second build target: the Anchor Journal PWA (its own bundle + shell).
+  await buildJournal(buildId);
   for (const junk of ['api/storage/ngg.db', 'api/storage/ngg.db-wal', 'api/storage/ngg.db-shm', 'api/config.php']) {
     const p = path.join(DIST, junk);
     if (fs.existsSync(p)) fs.rmSync(p, { force: true });
@@ -205,6 +208,45 @@ function validateOrderAgainstIndex() {
     console.error('  → Update ORDER in build.js (or the tags in index.html) so they list the same files in the same order.');
     process.exit(1);
   }
+}
+
+// Compile the standalone Anchor Journal PWA: JSX → minified bundle, a
+// Babel-free prod shell, and a build-stamped service worker. Runs as an
+// independent target so the marketing bundle and the app never couple.
+async function buildJournal(buildId) {
+  const srcDir = path.join(ROOT, 'journal');
+  const outDir = path.join(DIST, 'journal');
+  if (!fs.existsSync(path.join(srcDir, 'app.jsx'))) return;
+
+  const src = fs.readFileSync(path.join(srcDir, 'app.jsx'), 'utf8');
+  const jsx = await esbuild.transform(src, {
+    loader: 'jsx', jsx: 'transform', jsxFactory: 'React.createElement', jsxFragment: 'React.Fragment',
+    target: ['chrome90', 'firefox88', 'safari14', 'edge90'], sourcefile: 'journal/app.jsx',
+  });
+  const min = await esbuild.transform(jsx.code, {
+    minify: true, target: ['chrome90', 'firefox88', 'safari14', 'edge90'], legalComments: 'none',
+  });
+  fs.writeFileSync(path.join(outDir, 'app.min.js'), min.code);
+  const gz = zlib.gzipSync(min.code).length;
+
+  // Prod shell: drop Babel + the JSX source tag, load the compiled bundle.
+  let html = fs.readFileSync(path.join(srcDir, 'index.html'), 'utf8');
+  html = html.replace(/<script src="\/vendor\/babel\.min\.js"><\/script>\s*/g, '');
+  html = html.replace(/<script type="text\/babel" src="\/journal\/app\.jsx"><\/script>\s*/g, '');
+  html = html.replace(/(<script src="\/api-client\.js"><\/script>\s*)/, `$1<script defer src="/journal/app.min.js"></script>\n`);
+  html = html.replace(/<head>/, `<head>\n<meta name="ngg-build" content="${buildId}"/>`);
+  fs.writeFileSync(path.join(outDir, 'index.html'), html);
+
+  // Stamp the app service worker's cache version so each deploy refreshes it.
+  const swPath = path.join(outDir, 'sw.js');
+  if (fs.existsSync(swPath)) {
+    let sw = fs.readFileSync(swPath, 'utf8');
+    sw = sw.replace(/const CACHE_VERSION = '[^']*';/, `const CACHE_VERSION = 'aj-${buildId}';`);
+    fs.writeFileSync(swPath, sw);
+  }
+  // The JSX source isn't needed in prod.
+  fs.rmSync(path.join(outDir, 'app.jsx'), { force: true });
+  log(`compiled journal PWA → journal/app.min.js (${(min.code.length / 1024).toFixed(1)} KB, ${(gz / 1024).toFixed(1)} KB gzip)`);
 }
 
 function copyDir(src, dst) {
