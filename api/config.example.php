@@ -85,6 +85,7 @@ return [
         'public.events'    => 120,
         'public.posts'     => 120,
         'public.session'   => 300,
+        'public.anchorContent' => 300,
         'default'          => 0,    // 0 = no cache
     ],
 

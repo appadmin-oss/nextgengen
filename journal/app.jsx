@@ -17,7 +17,7 @@
 const { useState, useEffect, useRef, useCallback } = React;
 
 /* ---- Static content (from the Anchor design) ---------------------------- */
-const QUOTES = [
+let QUOTES = [
   "The purpose of life is not to be happy — it is to be useful, honorable and compassionate.",
   "To live is the rarest thing in the world. Most people exist, that is all.",
   "Our most authentic capacity is to overcome, endure, transform and love.",
@@ -31,12 +31,12 @@ const QUOTES = [
   "Stand firm and disciplined in ranks, as a solid structure.",
   "Persevere, endure and remain stationed — that you may succeed.",
 ];
-const WEEK_TITLES = [
+let WEEK_TITLES = [
   "Identity · Awareness & Reset", "Study Time System", "Personal Hygiene", "Device Control",
   "Note-Taking", "Respect System", "Time Consciousness", "Self-Control",
   "Integrity", "Responsibility", "Independent Integrity", "Review & Leadership",
 ];
-const SYSTEMS = [
+let SYSTEMS = [
   { key: "woke", label: "Woke up on time", icon: "ph-sun-horizon" },
   { key: "study", label: "Studied at my fixed time", icon: "ph-book-open-text" },
   { key: "clean", label: "Kept myself clean", icon: "ph-drop" },
@@ -67,7 +67,7 @@ const RANKS = [
   { name: "Vanguard", xp: 3000, icon: "ph-crown-simple", L: 5 },
 ];
 // Per-week build sheet (the physical Anchor journal's weekly structure).
-const WEEK_DATA = [
+let WEEK_DATA = [
   { system: "Self-awareness & reset", focus: "Name who you are becoming.", home: "Make your bed; greet your family each morning.", school: "Arrive settled, not rushed.", peer: "Notice who you follow — and why.", journal: "Who am I when no one is watching?" },
   { system: "A fixed study time", focus: "Same time, same place, every day.", home: "Study before screens.", school: "Review each day's notes within 24 hours.", peer: "Invite a friend to study with you.", journal: "When do I focus best — and why?" },
   { system: "Daily hygiene", focus: "Clean body, clear mind.", home: "Bath, brush, tidy your space.", school: "Neat uniform and materials.", peer: "Model care, not vanity.", journal: "What does self-respect look like today?" },
@@ -81,6 +81,43 @@ const WEEK_DATA = [
   { system: "Independent integrity", focus: "Discipline without supervision.", home: "Do right with no one home.", school: "Study without being told.", peer: "Set the standard for your peers.", journal: "Who am I without an audience?" },
   { system: "Review & leadership", focus: "Lead by example.", home: "Serve your household.", school: "Help a struggling classmate.", peer: "Bring two friends to NGG.", journal: "Who have I become in twelve weeks?" },
 ];
+
+// Admin-managed content overrides the built-in defaults above (fetched from
+// /api/public/anchor-content.php). Falls back to the defaults if unset/offline.
+let TILT_ON = true;
+function applyContent(c) {
+  if (!c) return;
+  if (Array.isArray(c.quotes) && c.quotes.length) QUOTES = c.quotes;
+  if (Array.isArray(c.systems) && c.systems.length) SYSTEMS = c.systems;
+  if (Array.isArray(c.weeks) && c.weeks.length) { WEEK_TITLES = c.weeks.map(w => w.title); WEEK_DATA = c.weeks; }
+  TILT_ON = c.tilt !== false;
+}
+
+/* ---- 3D Tilt (ported from the marketing site's motion.jsx) --------------- */
+function Tilt({ children, strength = 9, glare = true, className = "" }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!TILT_ON) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || window.matchMedia("(hover: none)").matches) return;
+    const el = ref.current; if (!el) return;
+    let rect = null, raf = 0;
+    const onMove = (e) => {
+      if (!rect) rect = el.getBoundingClientRect();
+      const x = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
+      const y = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
+      if (!raf) raf = requestAnimationFrame(() => {
+        el.style.transform = `perspective(900px) rotateX(${(-y * strength).toFixed(2)}deg) rotateY(${(x * strength).toFixed(2)}deg)`;
+        if (glare) { el.style.setProperty("--tilt-gx", ((x + 1) * 50).toFixed(1) + "%"); el.style.setProperty("--tilt-gy", ((y + 1) * 50).toFixed(1) + "%"); el.style.setProperty("--tilt-glare", "0.16"); }
+        raf = 0;
+      });
+    };
+    const onEnter = () => { rect = el.getBoundingClientRect(); };
+    const onLeave = () => { rect = null; el.style.transform = ""; if (glare) el.style.setProperty("--tilt-glare", "0"); };
+    el.addEventListener("mouseenter", onEnter); el.addEventListener("mousemove", onMove); el.addEventListener("mouseleave", onLeave);
+    return () => { el.removeEventListener("mouseenter", onEnter); el.removeEventListener("mousemove", onMove); el.removeEventListener("mouseleave", onLeave); if (raf) cancelAnimationFrame(raf); };
+  }, [strength, glare]);
+  return <div ref={ref} className={"aj-tilt" + (glare ? " glare" : "") + (className ? " " + className : "")}>{children}</div>;
+}
 
 /* ---- Local persistence -------------------------------------------------- */
 const CK = "ngg_aj_c_v3", QK = "ngg_aj_q_v3";
@@ -127,6 +164,13 @@ function App() {
   const [celebrate, setCelebrate] = useState(null);
   const [onboard, setOnboard] = useState(false);
   const [selWeek, setSelWeek] = useState(1);
+  const [cver, setCver] = useState(0);
+
+  // Admin-managed Anchor content (weeks/quotes/systems/tilt). Cached locally.
+  useEffect(() => {
+    const cached = store.cache().content; if (cached) { applyContent(cached); setCver(v => v + 1); }
+    NGGApi.public.anchorContent().then(r => { if (r && r.content) { applyContent(r.content); store.patch({ content: r.content }); setCver(v => v + 1); } }).catch(() => {});
+  }, []);
 
   const go = (v) => { prev.current = view; setView(v); };
   const back = () => setView(prev.current || "home");
@@ -350,13 +394,13 @@ function Reflect({ ctx }) {
         <h2 className="disp" style={{ fontSize: 27, margin: "8px 0 0" }}>Today's reflection</h2>
       </div>
 
-      <div className="pad" style={{ marginTop: 20 }}><div className="card-grad aj-quote">
+      <div className="pad" style={{ marginTop: 20 }}><Tilt strength={7}><div className="card-grad aj-quote">
         <div className="aj-quote-top">
           <span className="aj-quote-lbl">MORNING QUOTE</span>
           <button className="aj-read" onClick={() => speak(quote)}><i className="ph-fill ph-speaker-high"/>Read aloud</button>
         </div>
         <p className="aj-quote-q">“{quote}”</p>
-      </div></div>
+      </div></Tilt></div>
 
       {sec("1", "TODAY'S MUSING", <textarea className="aj-musing" placeholder="What's on your mind this morning?" value={musing} maxLength={2000} onChange={e => setMusing(e.target.value)}/>)}
 
@@ -563,10 +607,10 @@ function WeekDetail({ ctx }) {
   return (
     <div className="aj-view">
       <div className="aj-head"><button className="icon-btn" aria-label="Back" onClick={() => go("library")}><i className="ph-bold ph-arrow-left"/></button><div><div className="mono" style={{ fontSize: 11, letterSpacing: ".2em", color: "var(--gold)", fontWeight: 700 }}>WEEK {String(n).padStart(2, "0")}</div><h2 style={{ fontSize: 22 }}>{title}</h2></div></div>
-      <div className="pad" style={{ marginTop: 20 }}><div className="card-grad" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className="pad" style={{ marginTop: 20 }}><Tilt strength={7}><div className="card-grad" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div><div className="mono" style={{ fontSize: 11, letterSpacing: ".12em", color: "var(--tx-55)" }}>SYSTEM BEING BUILT</div><div className="disp" style={{ fontSize: 22, marginTop: 4 }}>{d.system}</div></div>
         <i className="ph-fill ph-shield-check" style={{ fontSize: 38, color: "var(--a)" }}/>
-      </div></div>
+      </div></Tilt></div>
       <div className="pad" style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 11 }}>
         {rows.map((r, i) => (
           <div key={i} style={{ display: "flex", gap: 13, alignItems: "flex-start", padding: "15px 16px", borderRadius: 16, background: "var(--card)", border: "1px solid var(--line)" }}>
@@ -598,13 +642,13 @@ function Growth({ ctx }) {
     <div className="aj-view">
       <div className="pad"><h2 className="disp" style={{ fontSize: 26, margin: 0 }}>Growth</h2><div className="muted" style={{ fontSize: 13 }}>Quiet consistency, made visible.</div></div>
 
-      <div className="pad" style={{ marginTop: 20 }}><div className="card" style={{ display: "flex", alignItems: "center", gap: 20 }}>
+      <div className="pad" style={{ marginTop: 20 }}><Tilt><div className="card" style={{ display: "flex", alignItems: "center", gap: 20 }}>
         <div className="aj-ring" style={{ "--deg": (xpPct * 3.6) + "deg" }}><div className="aj-ring-in"><b>L{cur.L}</b><small>{cur.name.toUpperCase()}</small></div></div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="aj-gstat"><i className="ph-fill ph-fire" style={{ color: "var(--flame)" }}/><div><b>{streak} days</b><small>current streak</small></div></div>
           <div className="aj-gstat"><i className="ph-fill ph-diamond" style={{ color: "var(--a)" }}/><div><b>{diamonds}</b><small>diamonds earned</small></div></div>
         </div>
-      </div></div>
+      </div></Tilt></div>
 
       <div className="pad" style={{ marginTop: 22 }}>
         <div className="eyebrow" style={{ marginBottom: 12 }}>THIS WEEK</div>
@@ -765,10 +809,10 @@ function You({ ctx }) {
   return (
     <div className="aj-view">
       <div className="pad"><h2 className="disp" style={{ fontSize: 26, margin: 0 }}>You</h2></div>
-      <div className="pad" style={{ marginTop: 18 }}><div className="card-grad" style={{ background: "linear-gradient(140deg,rgba(139,92,246,.35),rgba(201,242,78,.12))", display: "flex", alignItems: "center", gap: 16 }}>
+      <div className="pad" style={{ marginTop: 18 }}><Tilt strength={7}><div className="card-grad" style={{ background: "linear-gradient(140deg,rgba(139,92,246,.35),rgba(201,242,78,.12))", display: "flex", alignItems: "center", gap: 16 }}>
         <div className="aj-profile-av"><i className="ph-fill ph-star"/></div>
         <div style={{ flex: 1 }}><div className="disp" style={{ fontSize: 22 }}>{member.fullName}</div><div className="mono" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700, marginTop: 2 }}>{cur.name.toUpperCase()} · LEVEL {cur.L}</div></div>
-      </div></div>
+      </div></Tilt></div>
 
       <div className="pad" style={{ marginTop: 22 }}>
         <button className="aj-link" onClick={() => ctx.go("charge")}><i className="ph-fill ph-scroll lead" style={{ color: "var(--gold)" }}/><span>The Charge — why Anchor exists</span><i className="ph-bold ph-arrow-right chev"/></button>

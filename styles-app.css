@@ -3851,3 +3851,20 @@ section p[style*="var(--ink-500)"] {
   background:linear-gradient(135deg,#0c1432,#4b2f8f); color:var(--gold-400); font-size:18px; flex-shrink:0; }
 .dash-journal-cta-txt { flex:1; display:flex; flex-direction:column; line-height:1.2; }
 .dash-journal-cta-txt small { color:var(--ink-500); font-size:12px; margin-top:2px; }
+
+/* Admin → Anchor Journal editor */
+.admin-anchor-tabs { display: flex; gap: 8px; margin: 4px 0 18px; flex-wrap: wrap; }
+.admin-anchor-tab { padding: 8px 14px; border-radius: 999px; background: #f3f3f5; border: 1px solid var(--line, #e6e2d6); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--ink-700); }
+.admin-anchor-tab.is-active { background: var(--navy-900); color: #fff; border-color: var(--navy-900); }
+.admin-anchor-weeks { display: flex; flex-direction: column; gap: 8px; }
+.admin-anchor-week { border: 1px solid var(--line, #e6e2d6); border-radius: 14px; background: #fff; overflow: hidden; }
+.admin-anchor-week > summary { padding: 14px 16px; cursor: pointer; font-weight: 600; list-style: none; display: flex; gap: 10px; align-items: center; }
+.admin-anchor-week > summary::-webkit-details-marker { display: none; }
+.admin-anchor-week > summary .mono { color: var(--gold-500); font-size: 12px; }
+.admin-anchor-week[open] > summary { border-bottom: 1px solid var(--line, #e6e2d6); background: #fafafa; }
+.admin-anchor-week .admin-fields { padding: 16px; }
+.admin-anchor-list { display: flex; flex-direction: column; gap: 10px; }
+.admin-anchor-row { display: flex; gap: 10px; align-items: flex-start; }
+.admin-anchor-n { color: var(--gold-500); font-size: 12px; padding-top: 12px; }
+.admin-anchor-rm { flex: none; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line, #e6e2d6); background: #fff; cursor: pointer; color: var(--coral); font-size: 14px; }
+.admin-anchor-rm:hover { background: rgba(255,90,60,0.08); }

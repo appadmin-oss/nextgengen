@@ -66,6 +66,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.promotions.set'    => 'admin_promotions_set',
             'admin.audit.tail'        => 'admin_audit_tail',
             'admin.broadcast'         => 'admin_broadcast',
+            'admin.anchor.get'        => 'admin_anchor_get',
+            'admin.anchor.set'        => 'admin_anchor_set',
             'admin.assignments.list'        => 'admin_assignments_list',
             'admin.assignments.upsert'      => 'admin_assignments_upsert',
             'admin.assignments.submissions' => 'admin_assignment_submissions',
@@ -75,6 +77,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.events'           => 'public_events',
             'public.posts'            => 'public_posts',
             'public.session'          => 'op_public_session',
+            'public.anchorContent'    => 'public_anchor_content',
             'public.newsletter'       => 'public_newsletter',
             'public.apply'            => 'public_apply',
         ];

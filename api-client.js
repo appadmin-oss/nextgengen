@@ -113,6 +113,7 @@
       posts:      (kind, tag) => request('/public/posts.php' + qs({ kind, tag })),
       post:       (slug) => request('/public/post.php' + qs({ slug })),
       session:    () => request('/public/session.php'),
+      anchorContent: () => request('/public/anchor-content.php'),
       newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
       apply:      (data) => request('/public/apply.php', { body: data }),
     },
@@ -152,6 +153,10 @@
         grade:       (data) => request('/admin/assignments.php', { body: data }),
       },
       broadcast: (data) => request('/admin/broadcast.php', { body: data }),
+      anchor: {
+        get: () => request('/admin/anchor.php'),
+        set: (data) => request('/admin/anchor.php', { body: { data } }),
+      },
       audit:     (limit) => request('/admin/audit.php' + qs({ limit })),
     },
   };

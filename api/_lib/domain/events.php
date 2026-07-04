@@ -100,6 +100,10 @@ function op_public_session(array $p): array {
     return ['ok' => true, 'current' => $sc['current'], 'next' => $sc['next']];
 }
 
+function public_anchor_content(array $p): array {
+    return ['ok' => true, 'content' => anchor_content()];
+}
+
 function public_stats(array $p): array {
     $active = (int)(db_row("SELECT COUNT(*) c FROM members WHERE status='active'")['c'] ?? 0);
     $summer = (int)(db_row("SELECT COUNT(*) c FROM members WHERE status='active' AND type='Summer'")['c'] ?? 0);
