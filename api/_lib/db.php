@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 2;
+const NGG_SCHEMA_TARGET = 3;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -254,6 +254,16 @@ function db_migrate(PDO $db): void {
               createdAt TEXT DEFAULT (datetime('now')), ip TEXT
             );
             CREATE INDEX idx_apps_email ON applications(email);
+        ",
+        3 => "
+            CREATE TABLE member_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              stateKey TEXT NOT NULL,
+              stateValue TEXT,
+              updatedAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_member_state ON member_state(memberId, stateKey);
         ",
     ];
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1"/>
-<meta name="theme-color" content="#0c1432"/>
+<meta name="theme-color" content="#140b2b"/>
 <meta name="color-scheme" content="dark"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="Anchor Journal"/>
 <meta name="robots" content="noindex"/>
 <title>Anchor Journal · NGG</title>
-<meta name="description" content="Your Anchor 12 companion — daily reflection, streaks, missions and progress."/>
+<meta name="description" content="A daily discipline for an incorruptible generation. Twelve weeks. One reflection at a time."/>
 
 <link rel="manifest" href="/journal/manifest.webmanifest"/>
 <link rel="icon" href="/assets/logo.png" type="image/png"/>
@@ -19,18 +19,19 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css"/>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css"/>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css"/>
 <link rel="stylesheet" href="/journal/app.css"/>
 <style>
-  .aj-boot { position: fixed; inset: 0; display: grid; place-items: center; background: #0a1130; z-index: 9999; transition: opacity .4s ease; }
-  .aj-boot img { width: 60px; height: 60px; border-radius: 15px; animation: ajb 1.6s ease-in-out infinite; }
+  .aj-boot { position: fixed; inset: 0; display: grid; place-items: center; background: #140b2b; z-index: 9999; transition: opacity .4s ease; }
+  .aj-boot img { width: 60px; height: 60px; border-radius: 16px; animation: ajb 1.6s ease-in-out infinite; }
   @keyframes ajb { 0%,100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.08); opacity: 1; } }
   .aj-boot.gone { opacity: 0; pointer-events: none; }
 </style>
 </head>
 <body>
-<div class="aj-bg" aria-hidden="true"></div>
-<div class="aj-scrim" aria-hidden="true"></div>
 <div class="aj-boot" id="aj-boot"><img src="/assets/logo.png" alt="Loading Anchor Journal"/></div>
 <div id="aj-root"></div>
 
@@ -41,14 +42,7 @@
 <script type="text/babel" src="/journal/app.jsx"></script>
 
 <script>
-  (function () {
-    var t = 0;
-    (function check() {
-      var r = document.getElementById("aj-root");
-      if (r && r.children.length > 0) { var b = document.getElementById("aj-boot"); if (b) { b.classList.add("gone"); setTimeout(function () { b.remove(); }, 500); } }
-      else if (t++ < 200) setTimeout(check, 80);
-    })();
-  })();
+  (function () { var t = 0; (function check() { var r = document.getElementById("aj-root"); if (r && r.children.length > 0) { var b = document.getElementById("aj-boot"); if (b) { b.classList.add("gone"); setTimeout(function () { b.remove(); }, 500); } } else if (t++ < 200) setTimeout(check, 80); })(); })();
 </script>
 </body>
 </html>

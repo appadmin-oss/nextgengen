@@ -106,6 +106,42 @@ function member_notifications(array $p): array {
     return ['ok' => true, 'notifications' => array_map('public_notification', $rows)];
 }
 
+/**
+ * Per-member key→JSON state store. Backs the Anchor Journal's daily systems,
+ * weekly self-score and peer-modeling data with real cross-device persistence.
+ * Keys are namespaced by the client, e.g. "systems:2026-07-04", "peers",
+ * "selfscore:2026-W27", "prefs". Values are arbitrary JSON (size-bounded).
+ */
+function member_state_get(array $p): array {
+    $memberId = (string)($p['memberId'] ?? '');
+    $keys = $p['keys'] ?? [];
+    if (is_string($keys)) $keys = array_filter(array_map('trim', explode(',', $keys)));
+    $out = [];
+    if (!empty($keys)) {
+        $place = implode(',', array_fill(0, count($keys), '?'));
+        $rows = db_all("SELECT stateKey, stateValue FROM member_state WHERE memberId = ? AND stateKey IN ($place)", array_merge([$memberId], array_values($keys)));
+    } else {
+        $rows = db_all('SELECT stateKey, stateValue FROM member_state WHERE memberId = ?', [$memberId]);
+    }
+    foreach ($rows as $r) $out[$r['stateKey']] = safe_json($r['stateValue']);
+    return ['ok' => true, 'state' => $out];
+}
+
+function member_state_set(array $p): array {
+    $memberId = (string)($p['memberId'] ?? '');
+    $key = trim((string)($p['key'] ?? ''));
+    if ($key === '' || strlen($key) > 80) return ['ok' => false, 'error' => 'bad_key'];
+    $value = $p['value'] ?? null;
+    $json = is_string($value) ? $value : json_encode($value, JSON_UNESCAPED_SLASHES);
+    if (strlen((string)$json) > 20000) return ['ok' => false, 'error' => 'too_large'];
+    db_upsert('member_state',
+        ['memberId' => $memberId, 'stateKey' => $key, 'stateValue' => $json, 'updatedAt' => now_iso()],
+        ['memberId', 'stateKey'],
+        ['stateValue' => $json, 'updatedAt' => now_iso()]
+    );
+    return ['ok' => true];
+}
+
 function member_notification_read(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
     $notifId = (string)($p['notifId'] ?? '');
