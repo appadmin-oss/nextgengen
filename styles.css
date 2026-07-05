@@ -1110,33 +1110,6 @@ body::before {
   width: max-content;
 }
 
-/* ---- Self-contained brand avatar ---- */
-.ngg-avatar {
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14), 0 4px 12px -4px rgba(12,20,50,0.4);
-  transition: transform 0.35s cubic-bezier(0.22,0.61,0.36,1), box-shadow 0.35s ease;
-}
-.ngg-avatar svg { transform-origin: center; }
-.ngg-avatar-blob {
-  transform-origin: center;
-  animation: nggAvatarDrift 7s ease-in-out infinite;
-}
-.ngg-avatar-blob:nth-of-type(2) { animation-duration: 9s; animation-direction: reverse; }
-/* Lift + brighten on hover of any card/button that carries an avatar. */
-.member-card:hover .ngg-avatar,
-.dash-hero-avatar-btn:hover .ngg-avatar,
-.ngg-avatar:hover {
-  transform: translateY(-1px) scale(1.04);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.22), 0 8px 20px -6px rgba(12,20,50,0.5);
-}
-@keyframes nggAvatarDrift {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50%      { transform: translate(3px, -3px) scale(1.08); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ngg-avatar-blob { animation: none; }
-  .ngg-avatar { transition: none; }
-}
-
 /* utility */
 .flex { display: flex; }
 .col { display: flex; flex-direction: column; }
