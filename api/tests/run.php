@@ -32,7 +32,7 @@ require $ROOT . '/_lib/db.php';
 require $ROOT . '/_lib/util.php';
 require $ROOT . '/_lib/mailer.php';
 require $ROOT . '/_lib/anchor-content.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
@@ -129,6 +129,31 @@ chk('member_state set+get roundtrips', (function () {
     $st = backend_dispatch('member.state.get', ['memberId' => 'NGG-2025-0001', 'keys' => 'systems:2026-07-04'])['state'];
     return isset($st['systems:2026-07-04']['woke']) && $st['systems:2026-07-04']['woke'] === true;
 })());
+
+// ── Enterprise admin: overview, applications, mentor assign, settings ──
+chk('overview returns member counts', backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['members']['active'] >= 2);
+chk('overview gated', backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'Applicant One', 'email' => 'app1@example.com', 'age' => 15, 'track' => 'Music', 'centre' => 'Ayobo']);
+$apps = backend_dispatch('admin.applications.list', ['requesterId' => 'NGG-2025-0099', 'kind' => 'teen'])['applications'];
+chk('applications listed', count($apps) >= 1);
+$appId = $apps[0]['id'];
+$conv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $appId]);
+chk('application converts to member', !empty($conv['memberId']));
+chk('converted member exists', db_row('SELECT memberId FROM members WHERE email=?', ['app1@example.com']) !== null);
+chk('application marked accepted', db_row('SELECT status FROM applications WHERE id=?', [$appId])['status'] === 'accepted');
+// mentor assign
+backend_dispatch('admin.mentors.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Mentor Zed', 'email' => 'mz@example.com', 'status' => 'active', 'tracks' => 'Tech', 'centre' => 'Egbeda']]);
+$mz = db_row("SELECT mentorId FROM mentors WHERE email='mz@example.com'")['mentorId'];
+backend_dispatch('admin.mentor.assign', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0001', 'mentorId' => $mz]);
+$det = backend_dispatch('admin.member.detail', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0001']);
+chk('member detail carries mentor', $det['detail']['mentor'] && $det['detail']['mentor']['mentorId'] === $mz);
+chk('member detail has journal + progress', isset($det['detail']['journal']) && isset($det['detail']['progress']));
+// settings roundtrip
+backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['applications_open' => false, 'featured_session_id' => 'SUMMER-' . gmdate('Y')]]);
+$set = backend_dispatch('admin.settings.get', ['requesterId' => 'NGG-2025-0099'])['settings'];
+chk('settings persist (applications closed)', $set['applications_open'] === false);
+chk('apply blocked when closed', backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'X Y', 'email' => 'x@example.com', 'age' => 14])['error'] === 'applications_closed');
+chk('newsletter list works', is_array(backend_dispatch('admin.newsletter.list', ['requesterId' => 'NGG-2025-0099'])['subscribers']));
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

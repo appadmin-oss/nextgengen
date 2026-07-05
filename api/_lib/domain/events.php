@@ -140,6 +140,9 @@ function public_newsletter(array $p): array {
 function public_apply(array $p): array {
     $kind = (string)($p['kind'] ?? 'teen');
     if ($kind !== 'teen' && $kind !== 'mentor') return ['ok' => false, 'error' => 'bad_kind'];
+    // Respect the admin toggles (default open).
+    $openKey = $kind === 'mentor' ? 'mentor_applications_open' : 'applications_open';
+    if (setting_raw($openKey) === '0') return ['ok' => false, 'error' => 'applications_closed'];
     $name = trim((string)($p['name'] ?? ''));
     if (strlen($name) < 2 || strlen($name) > 120) return ['ok' => false, 'error' => 'bad_name'];
     $email = strtolower(trim((string)($p['email'] ?? '')));

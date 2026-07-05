@@ -38,7 +38,10 @@ function AdminPage({ setPage }) {
         <main className="admin-main">
           {section === "home" && <AdminHome setSection={setSection}/>}
           {section === "members" && <AdminMembers/>}
+          {section === "applications" && <AdminApplications/>}
           {section === "mentors" && <AdminMentors/>}
+          {section === "newsletter" && <AdminNewsletter/>}
+          {section === "settings" && <AdminSettings/>}
           {section === "sessions" && <AdminSessions/>}
           {section === "missions" && <AdminMissions/>}
           {section === "anchor" && <AdminAnchor/>}
@@ -148,8 +151,9 @@ function AdminTopbar({ section, setSection, setPage, member }) {
 
 function AdminNav({ section, setSection }) {
   const items = [
-    { id: "home",      label: "Home",       icon: "◎" },
+    { id: "home",      label: "Overview",   icon: "◎" },
     { id: "members",   label: "Members",    icon: "◯" },
+    { id: "applications", label: "Applications", icon: "✉" },
     { id: "mentors",   label: "Mentors",    icon: "◐" },
     { id: "sessions",  label: "Sessions",   icon: "▢" },
     { id: "missions",  label: "Missions",   icon: "✦" },
@@ -157,8 +161,10 @@ function AdminNav({ section, setSection }) {
     { id: "assignments", label: "Assignments", icon: "❏" },
     { id: "events",    label: "Events",     icon: "▶" },
     { id: "posts",     label: "Posts",      icon: "✎" },
-    { id: "broadcast", label: "Broadcast",  icon: "✉" },
+    { id: "broadcast", label: "Announce",   icon: "📣" },
+    { id: "newsletter",label: "Newsletter", icon: "✦" },
     { id: "audit",     label: "Audit log",  icon: "⌗" },
+    { id: "settings",  label: "Settings",   icon: "⚙" },
   ];
   return (
     <aside className="admin-nav">
@@ -180,6 +186,7 @@ function titleFor(s) {
   return {
     home: "Overview", members: "Members", mentors: "Mentors", sessions: "Sessions",
     missions: "Anchor missions", anchor: "Anchor Journal app", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
+    applications: "Applications", newsletter: "Newsletter", settings: "Settings",
   }[s] || "";
 }
 
@@ -188,20 +195,60 @@ function titleFor(s) {
 // ============================================================================
 
 function AdminHome({ setSection }) {
-  const [stats, setStats] = React.useState(null);
-  const fmt = (n) => (n === undefined || n === null) ? "0" : new Intl.NumberFormat("en").format(n);
-  React.useEffect(() => {
-    NGGApi.public.stats().then(r => setStats(r.stats || {})).catch(() => setStats({}));
-  }, []);
+  const [o, setO] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const fmt = (n) => new Intl.NumberFormat("en").format(n || 0);
+  React.useEffect(() => { NGGApi.admin.overview().then(r => setO(r.overview || {})).catch(e => setErr(e.code || e.message)); }, []);
+
+  if (err) return <div className="admin-empty">Couldn't load overview: {err}</div>;
+  if (!o) return <div className="dash-spinner"/>;
+  const m = o.members || {}, ap = o.applications || {}, asg = o.assignments || {}, an = o.anchor || {};
+  const maxCentre = Math.max(1, ...(o.byCentre || []).map(c => c.c));
+  const maxTrack = Math.max(1, ...(o.byTrack || []).map(t => t.c));
 
   return (
     <div className="admin-home">
+      {/* Needs-attention callouts */}
+      {(ap.new > 0 || asg.toGrade > 0) && (
+        <div className="admin-attn">
+          {ap.new > 0 && <button className="admin-attn-card" onClick={() => setSection("applications")}><b>{ap.new}</b><span>application{ap.new === 1 ? "" : "s"} to review</span><i>→</i></button>}
+          {asg.toGrade > 0 && <button className="admin-attn-card" onClick={() => setSection("assignments")}><b>{asg.toGrade}</b><span>submission{asg.toGrade === 1 ? "" : "s"} to grade</span><i>→</i></button>}
+        </div>
+      )}
+
       <div className="admin-tiles">
-        <AdminTile loading={!stats} n={stats ? fmt(stats.activeMembers) : ""} l="Active members"   onClick={() => setSection("members")}/>
-        <AdminTile loading={!stats} n={stats ? fmt(stats.ngg)           : ""} l="NGG members"      onClick={() => setSection("members")}/>
-        <AdminTile loading={!stats} n={stats ? fmt(stats.summer)        : ""} l="Summer students"  onClick={() => setSection("members")}/>
-        <AdminTile loading={!stats} n={stats ? fmt(stats.graduates)     : ""} l="Graduates"        onClick={() => setSection("members")}/>
+        <AdminTile n={fmt(m.active)} l="Active members" onClick={() => setSection("members")}/>
+        <AdminTile n={fmt(m.ngg)} l="NGG members" onClick={() => setSection("members")}/>
+        <AdminTile n={fmt(m.summer)} l="Summer students" onClick={() => setSection("members")}/>
+        <AdminTile n={fmt(m.graduates)} l="Graduates" onClick={() => setSection("members")}/>
+        <AdminTile n={"+" + fmt(m.new30)} l="New · 30 days" onClick={() => setSection("members")}/>
+        <AdminTile n={fmt((o.mentors || {}).active)} l="Active mentors" onClick={() => setSection("mentors")}/>
+        <AdminTile n={fmt(an.journals)} l="Journal entries" onClick={() => setSection("anchor")}/>
+        <AdminTile n={fmt((o.newsletter || {}).subscribers)} l="Subscribers" onClick={() => setSection("newsletter")}/>
       </div>
+
+      <div className="admin-home-grid">
+        <div className="admin-panel">
+          <h3 className="admin-h3">Members by centre</h3>
+          {(o.byCentre || []).length === 0 ? <div className="admin-empty">No data yet.</div> :
+            (o.byCentre || []).map(c => (
+              <div className="admin-bar-row" key={c.centre}><span>{c.centre || "—"}</span><div className="admin-bar"><div className="admin-bar-fill" style={{ width: (c.c / maxCentre * 100) + "%" }}/></div><b>{c.c}</b></div>
+            ))}
+          <h3 className="admin-h3" style={{ marginTop: 22 }}>Members by track</h3>
+          {(o.byTrack || []).slice(0, 8).map(t => (
+            <div className="admin-bar-row" key={t.track}><span>{t.track}</span><div className="admin-bar"><div className="admin-bar-fill alt" style={{ width: (t.c / maxTrack * 100) + "%" }}/></div><b>{t.c}</b></div>
+          ))}
+        </div>
+        <div className="admin-panel">
+          <h3 className="admin-h3">Recent activity</h3>
+          <div className="admin-activity">
+            {(o.recent || []).map((r, i) => (
+              <div className="admin-activity-row" key={i}><span className="mono admin-activity-when">{fmtTime(r.at)}</span><span className="mono admin-activity-ev">{r.event}</span><span className="admin-activity-sub">{r.subject || ""}</span></div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="admin-quick">
         <h3 className="admin-h3">Quick actions</h3>
         <div className="admin-quick-grid">
@@ -209,9 +256,10 @@ function AdminHome({ setSection }) {
           <button className="admin-quick-btn" onClick={() => setSection("events")}>▶ New event</button>
           <button className="admin-quick-btn" onClick={() => setSection("missions")}>✦ Add mission</button>
           <button className="admin-quick-btn" onClick={() => setSection("assignments")}>❏ New assignment</button>
-          <button className="admin-quick-btn" onClick={() => setSection("broadcast")}>✉ Announce</button>
+          <button className="admin-quick-btn" onClick={() => setSection("broadcast")}>📣 Announce</button>
+          <button className="admin-quick-btn" onClick={() => setSection("anchor")}>⚓ Edit Anchor</button>
           <button className="admin-quick-btn" onClick={() => setSection("members")}>◯ Add member</button>
-          <button className="admin-quick-btn" onClick={() => setSection("mentors")}>◐ Add mentor</button>
+          <button className="admin-quick-btn" onClick={() => setSection("settings")}>⚙ Settings</button>
         </div>
       </div>
     </div>
@@ -235,7 +283,9 @@ function AdminMembers() {
   const [list, setList] = React.useState(null);
   const [filters, setFilters] = React.useState({ q: "", centre: "", status: "", type: "" });
   const [editing, setEditing] = React.useState(null);
+  const [viewing, setViewing] = React.useState(null);
 
+  const exportCsv = () => downloadCsv("members", (list || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, track: m.track || "" })));
   const load = () => NGGApi.admin.members.list(filters).then(r => setList(r.members || []));
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type]);
   React.useEffect(() => {
@@ -249,6 +299,7 @@ function AdminMembers() {
       <div className="admin-section-head">
         <h2 className="admin-h2">Members</h2>
         <div className="admin-section-actions">
+          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!list || !list.length}>Export CSV</button>
           <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
         </div>
       </div>
@@ -277,7 +328,7 @@ function AdminMembers() {
             </tr></thead>
             <tbody>
               {list.map(m => (
-                <tr key={m.memberId}>
+                <tr key={m.memberId} className="admin-row-click" onClick={() => setViewing(m.memberId)}>
                   <td>
                     <div className="admin-cell-name">{m.fullName}</div>
                     <div className="mono admin-cell-sub">{m.memberId} · {m.email}</div>
@@ -286,7 +337,7 @@ function AdminMembers() {
                   <td>{m.centre}</td>
                   <td><span className={"chip status-" + m.status}>{m.status}</span></td>
                   <td>{m.track || "—"}</td>
-                  <td><button className="btn btn-ghost btn-sm" onClick={() => setEditing(m)}>Edit</button></td>
+                  <td onClick={(e) => e.stopPropagation()}><button className="btn btn-ghost btn-sm" onClick={() => setEditing(m)}>Edit</button></td>
                 </tr>
               ))}
               {list.length === 0 && <tr><td colSpan="6" className="admin-empty">No members match.</td></tr>}
@@ -295,6 +346,7 @@ function AdminMembers() {
         </div>
       }
       {editing && <AdminMemberEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
+      {viewing && <AdminMemberDetail memberId={viewing} onClose={() => setViewing(null)} onEdit={(m) => { setViewing(null); setEditing(m); }} onChanged={load}/>}
     </div>
   );
 }
@@ -1085,6 +1137,229 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
       </div>
     </div>
   );
+}
+
+// ============================================================================
+// Member 360° detail — profile, mentor, progress, journal, submissions, status
+// ============================================================================
+
+function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
+  const [d, setD] = React.useState(null);
+  const [mentors, setMentors] = React.useState([]);
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.admin.memberDetail(memberId).then(r => setD(r.detail)).catch(e => toast.error(e.code || e.message));
+  React.useEffect(() => { load(); NGGApi.admin.mentors.list().then(r => setMentors(r.mentors || [])).catch(() => {}); /* eslint-disable-next-line */ }, [memberId]);
+  const setStatus = async (status) => { setBusy(true); try { await NGGApi.admin.members.upsert({ memberId, status }); toast.success("Status → " + status); await load(); onChanged && onChanged(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
+  const assign = async (mentorId) => { setBusy(true); try { await NGGApi.admin.assignMentor({ memberId, mentorId }); toast.success(mentorId ? "Mentor assigned" : "Mentor cleared"); await load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
+
+  const m = d && d.member;
+  return (
+    <div className="admin-drawer" onClick={onClose}>
+      <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3>{m ? m.fullName : "Member"}</h3>
+          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+        </div>
+        {!d ? <div className="dash-spinner"/> : (
+          <div className="admin-detail">
+            <div className="admin-detail-top">
+              <div>
+                <div className="mono admin-cell-sub">{m.memberId} · {m.email}{m.phone ? " · " + m.phone : ""}</div>
+                <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                  <span className={"chip status-" + m.status}>{m.status}</span>
+                  <span className="chip">{m.type}</span>
+                  <span className="chip">CACENTRE {m.centre}</span>
+                  {m.track && <span className="chip">{m.track}</span>}
+                  {m.role && m.role !== "member" && <span className="chip chip-gold">{m.role}</span>}
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => onEdit(m)}>Edit profile</button>
+            </div>
+
+            <div className="admin-detail-stats">
+              <div><b>{d.stats.level}</b><span>Level</span></div>
+              <div><b>{d.stats.streak}</b><span>Streak</span></div>
+              <div><b>{d.stats.xp}</b><span>XP</span></div>
+              <div><b>{d.progress.verified}/{d.progress.total}</b><span>Missions</span></div>
+              <div><b>{d.journal.length}</b><span>Journals</span></div>
+            </div>
+
+            <div className="admin-detail-section">
+              <div className="admin-detail-h">Mentor</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <select className="admin-select" value={d.mentor ? d.mentor.mentorId : ""} disabled={busy} onChange={(e) => assign(e.target.value)}>
+                  <option value="">— No mentor —</option>
+                  {mentors.map(mt => <option key={mt.mentorId} value={mt.mentorId}>{mt.fullName}{mt.tracks && mt.tracks.length ? " · " + mt.tracks.join(", ") : ""}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="admin-detail-section">
+              <div className="admin-detail-h">Status</div>
+              <div className="admin-detail-actions">
+                {m.status !== "active" && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setStatus("active")}>Activate</button>}
+                {m.status !== "suspended" && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setStatus("suspended")}>Suspend</button>}
+                <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setStatus("graduated-ngg")}>Graduate NGG</button>
+                <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setStatus("graduated-vanguard")}>Graduate Vanguard</button>
+              </div>
+            </div>
+
+            {(m.parentName || m.parentEmail || m.school) && (
+              <div className="admin-detail-section">
+                <div className="admin-detail-h">Guardian &amp; school</div>
+                <div className="admin-detail-kv">
+                  {m.parentName && <div><span>Parent</span>{m.parentName}</div>}
+                  {m.parentEmail && <div><span>Parent email</span>{m.parentEmail}</div>}
+                  {m.parentPhone && <div><span>Parent phone</span>{m.parentPhone}</div>}
+                  {m.school && <div><span>School</span>{m.school}</div>}
+                </div>
+              </div>
+            )}
+
+            {d.submissions.length > 0 && (
+              <div className="admin-detail-section">
+                <div className="admin-detail-h">Assignment submissions</div>
+                {d.submissions.map((s, i) => (
+                  <div className="admin-detail-row" key={i}><span>{s.title}</span><span className={"chip status-" + (s.status === "graded" ? "published" : "draft")}>{s.status === "graded" ? (s.grade + "/" + s.points) : s.status}</span></div>
+                ))}
+              </div>
+            )}
+
+            <div className="admin-detail-section">
+              <div className="admin-detail-h">Recent journal</div>
+              {d.journal.length === 0 ? <div className="admin-empty" style={{ padding: 14 }}>No entries yet.</div> :
+                d.journal.slice(0, 8).map((j, i) => (
+                  <div className="admin-detail-journal" key={i}><span className="mono admin-detail-jdate">WK{j.week} · {fmtDate(j.createdAt)}</span><p>{(j.body || "").split("\n")[0]}</p></div>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Applications — review teen/mentor applications, convert to members
+// ============================================================================
+
+function AdminApplications() {
+  const [list, setList] = React.useState(null);
+  const [filter, setFilter] = React.useState({ kind: "", status: "" });
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.applications.list(filter).then(r => { setList(r.applications || []); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter.kind, filter.status]);
+  const setStatus = async (id, status) => { try { await NGGApi.admin.applications.status(id, status); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const convert = async (id) => {
+    const ok = await dialog.confirm({ title: "Convert to member?", body: "This creates an active member account from this application.", cta: "Create member" });
+    if (!ok) return;
+    try { const r = await NGGApi.admin.applications.convert(id); toast.success("Member created: " + r.memberId); load(); } catch (e) { toast.error(e.code || e.message); }
+  };
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Applications</h2>
+        <div className="admin-section-actions">
+          <button className="btn btn-ghost btn-sm" disabled={!list || !list.length} onClick={() => downloadCsv("applications", (list || []).map(a => ({ kind: a.kind, name: a.name, email: a.email, age: a.age || "", centre: a.centre || "", track: a.track || "", role: a.role || "", status: a.status, createdAt: a.createdAt })))}>Export CSV</button>
+        </div>
+      </div>
+      <div className="admin-filters">
+        <select className="admin-select" value={filter.kind} onChange={e => setFilter(f => ({ ...f, kind: e.target.value }))}><option value="">All kinds</option><option value="teen">Teen</option><option value="mentor">Mentor</option></select>
+        <select className="admin-select" value={filter.status} onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}><option value="">All statuses</option><option value="new">New</option><option value="reviewing">Reviewing</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="waitlist">Waitlist</option></select>
+      </div>
+      {err ? <div className="admin-empty">Couldn't load: {err}</div> :
+        list === null ? <div className="dash-spinner"/> :
+        list.length === 0 ? <div className="admin-empty">No applications.</div> :
+        <div className="admin-app-list">
+          {list.map(a => (
+            <div className="admin-app" key={a.id}>
+              <div className="admin-app-top">
+                <div>
+                  <div className="admin-cell-name">{a.name} <span className="chip">{a.kind}</span></div>
+                  <div className="mono admin-cell-sub">{a.email}{a.age ? " · age " + a.age : ""}{a.centre ? " · " + a.centre : ""}{a.track ? " · " + a.track : ""}{a.role ? " · " + a.role : ""} · {fmtDate(a.createdAt)}</div>
+                </div>
+                <span className={"chip status-" + (a.status === "accepted" ? "published" : a.status === "rejected" ? "archived" : "draft")}>{a.status}</span>
+              </div>
+              {a.why && <p className="admin-app-why">{a.why}</p>}
+              <div className="admin-app-actions">
+                <select className="admin-select admin-app-status" value={a.status} onChange={e => setStatus(a.id, e.target.value)}>
+                  <option value="new">New</option><option value="reviewing">Reviewing</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="waitlist">Waitlist</option>
+                </select>
+                {a.kind === "teen" && a.status !== "accepted" && <button className="btn btn-primary btn-sm" onClick={() => convert(a.id)}>Convert to member →</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      }
+    </div>
+  );
+}
+
+// ============================================================================
+// Newsletter
+// ============================================================================
+
+function AdminNewsletter() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  React.useEffect(() => { NGGApi.admin.newsletter().then(setD).catch(e => setErr(e.code || e.message)); }, []);
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Newsletter {d ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {d.total}</span> : null}</h2>
+        <button className="btn btn-ghost btn-sm" disabled={!d || !d.subscribers.length} onClick={() => downloadCsv("newsletter", d.subscribers)}>Export CSV</button>
+      </div>
+      {err ? <div className="admin-empty">Couldn't load: {err}</div> :
+        !d ? <div className="dash-spinner"/> :
+        d.subscribers.length === 0 ? <div className="admin-empty">No subscribers yet.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Email</th><th>Source</th><th>Status</th><th>Joined</th></tr></thead>
+          <tbody>{d.subscribers.map((s, i) => <tr key={i}><td>{s.email}</td><td>{s.source}</td><td><span className={"chip status-" + (s.status === "subscribed" ? "published" : "archived")}>{s.status}</span></td><td className="mono">{fmtDate(s.createdAt)}</td></tr>)}</tbody>
+        </table></div>
+      }
+    </div>
+  );
+}
+
+// ============================================================================
+// Settings
+// ============================================================================
+
+function AdminSettings() {
+  const [s, setS] = React.useState(null);
+  const [sessions, setSessions] = React.useState([]);
+  const [busy, setBusy] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+  React.useEffect(() => {
+    NGGApi.admin.settings.get().then(r => setS(r.settings)).catch(e => toast.error(e.code || e.message));
+    NGGApi.admin.sessions.list(new Date().getFullYear()).then(r => setSessions(r.sessions || [])).catch(() => {});
+  }, []);
+  const save = async () => { setBusy(true); try { await NGGApi.admin.settings.set(s); setSaved(true); setTimeout(() => setSaved(false), 2200); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
+  if (!s) return <div className="admin-section"><div className="dash-spinner"/></div>;
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Settings</h2>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}><span className="mono" style={{ color: saved ? "var(--lime-ink)" : "var(--ink-500)" }}>{saved ? "SAVED ✓" : busy ? "SAVING…" : ""}</span><button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>Save</button></div>
+      </div>
+      <div className="admin-fields" style={{ maxWidth: 520 }}>
+        <FieldCheckbox label="Teen applications open" value={s.applications_open} onChange={v => setS(o => ({ ...o, applications_open: v }))}/>
+        <FieldCheckbox label="Mentor applications open" value={s.mentor_applications_open} onChange={v => setS(o => ({ ...o, mentor_applications_open: v }))}/>
+        <FieldSelect label="Featured session (homepage countdown)" value={s.featured_session_id || ""} onChange={v => setS(o => ({ ...o, featured_session_id: v }))} options={[""].concat(sessions.map(x => x.sessionId))}/>
+      </div>
+    </div>
+  );
+}
+
+function downloadCsv(name, rows) {
+  if (!rows || !rows.length) { toast.error("Nothing to export"); return; }
+  const cols = Object.keys(rows[0]);
+  const esc = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+  const csv = [cols.join(",")].concat(rows.map(r => cols.map(c => esc(r[c])).join(","))).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name + "-" + new Date().toISOString().slice(0, 10) + ".csv"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 // ============================================================================
