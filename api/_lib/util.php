@@ -89,9 +89,29 @@ function push_notification(string $memberId, array $n): void {
     ]);
 }
 
+/**
+ * Staff roles, ascending. Each tier is a superset of the one below.
+ *   editor       — content only (posts, events, missions, Anchor Journal, …)
+ *   admin        — content + people (members/mentors/applications) + inbox
+ *   super_admin  — everything, plus site settings and role management (rbac)
+ */
+function admin_role_caps($role): array {
+    switch (strtolower((string)($role ?? ''))) {
+        case 'super_admin': return ['content', 'people', 'inbox', 'settings', 'rbac'];
+        case 'admin':       return ['content', 'people', 'inbox'];
+        case 'editor':      return ['content'];
+        default:            return [];
+    }
+}
+
+/** Does this role hold a given admin capability? */
+function role_has_cap($role, string $cap): bool {
+    return in_array($cap, admin_role_caps($role), true);
+}
+
+/** Any staff role (can reach the admin console; capabilities gate the rest). */
 function is_admin_role($role): bool {
-    $r = strtolower((string)($role ?? ''));
-    return $r === 'admin' || $r === 'super_admin';
+    return admin_role_caps($role) !== [];
 }
 
 function setting_get(string $key) {
@@ -335,6 +355,7 @@ function public_member(array $m): array {
         'joinDate' => $m['joinDate'] ? (string)$m['joinDate'] : '',
         'parentEmail' => $m['parentEmail'] ?? '',
         'hasPassword' => !empty($m['passwordHash']),
+        'caps' => admin_role_caps($m['role'] ?? ''),
         'needsTotp' => is_admin_role($m['role']) && empty($m['totpSecret']),
     ];
 }

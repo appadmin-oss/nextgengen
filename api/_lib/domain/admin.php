@@ -18,6 +18,20 @@ function admin_is_super(array $p): bool {
     return $g['ok'] && strtolower((string)$g['requester']['role']) === 'super_admin';
 }
 
+/**
+ * Admin gate that also requires a specific capability (see admin_role_caps).
+ * Editors get 'content'; admins add 'people' + 'inbox'; super_admins also hold
+ * 'settings' + 'rbac'. Returns the same shape as admin_gate.
+ */
+function admin_cap_gate(array $p, string $cap): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+    if (!role_has_cap($g['requester']['role'], $cap)) {
+        return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:' . $cap];
+    }
+    return $g;
+}
+
 /** Keep only known columns; cast declared booleans to 0/1 and ints. */
 function db_pick(array $data, array $cols, array $bools = [], array $ints = []): array {
     $out = [];
@@ -35,7 +49,7 @@ function db_pick(array $data, array $cols, array $bools = [], array $ints = []):
 // ── Members ──────────────────────────────────────────────────────────────
 
 function admin_members_list(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $where = []; $params = [];
     $q = strtolower((string)($p['q'] ?? ''));
     if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(memberId) LIKE ? OR lower(email) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
@@ -48,10 +62,15 @@ function admin_members_list(array $p): array {
 }
 
 function admin_members_upsert(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $data = $p['data'] ?? [];
     $memberId = trim((string)($data['memberId'] ?? ''));
-    if (isset($data['role']) && !admin_is_super($p)) unset($data['role']);
+    // Only holders of the 'rbac' capability (super_admin) may set/change roles,
+    // and never to a tier above their own.
+    if (isset($data['role'])) {
+        if (!role_has_cap($g['requester']['role'], 'rbac')) unset($data['role']);
+        elseif (!in_array($data['role'], ['member', 'editor', 'admin', 'super_admin'], true)) unset($data['role']);
+    }
 
     $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes'];
     $existing = $memberId ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]) : null;
@@ -79,13 +98,13 @@ function admin_members_upsert(array $p): array {
 // ── Mentors ──────────────────────────────────────────────────────────────
 
 function admin_mentors_list(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $rows = db_all('SELECT * FROM mentors ORDER BY createdAt DESC');
     return ['ok' => true, 'mentors' => array_map('public_mentor', $rows)];
 }
 
 function admin_mentors_upsert(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $data = $p['data'] ?? [];
     $mentorId = trim((string)($data['mentorId'] ?? ''));
     $cols = ['fullName','email','phone','status','tracks','centre','bio','photoUrl','maxMentees','availability','checkedAt','joinedAt'];
@@ -249,24 +268,34 @@ function admin_promotions_set(array $p): array {
 }
 
 function admin_anchor_get(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
-    return ['ok' => true, 'content' => anchor_content()];
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    return ['ok' => true, 'content' => anchor_content(), 'defaults' => anchor_default_content()];
+}
+
+/** Pristine default content — used by the manager's "reset to default" actions. */
+function admin_anchor_defaults(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    return ['ok' => true, 'content' => anchor_default_content()];
 }
 
 function admin_anchor_set(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
     $data = $p['data'] ?? [];
     if (!is_array($data)) return ['ok' => false, 'error' => 'bad_data'];
-    // Keep only the known top-level keys; merge over defaults for safety.
+    // Keep only the known top-level keys; merge over defaults for safety. Bound
+    // list sizes so a bad payload can't bloat the settings row.
     $clean = [];
-    foreach (['weeks', 'quotes', 'systems', 'tilt'] as $k) if (array_key_exists($k, $data)) $clean[$k] = $data[$k];
+    if (isset($data['weeks']) && is_array($data['weeks'])) $clean['weeks'] = array_slice(array_values($data['weeks']), 0, 24);
+    if (isset($data['quotes']) && is_array($data['quotes'])) $clean['quotes'] = array_slice(array_values(array_filter(array_map(fn($q) => is_string($q) ? trim($q) : '', $data['quotes']), fn($q) => $q !== '')), 0, 200);
+    if (isset($data['systems']) && is_array($data['systems'])) $clean['systems'] = array_slice(array_values($data['systems']), 0, 30);
+    if (array_key_exists('tilt', $data)) $clean['tilt'] = (bool)$data['tilt'];
     setting_set('anchor_content', json_encode($clean, JSON_UNESCAPED_SLASHES), $g['requester']['memberId']);
-    audit('admin.anchor.set', $g['requester']['memberId'], '', ['keys' => array_keys($clean)], (string)($p['ip'] ?? ''));
+    audit('admin.anchor.set', $g['requester']['memberId'], '', ['keys' => array_keys($clean), 'weeks' => count($clean['weeks'] ?? []), 'quotes' => count($clean['quotes'] ?? [])], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
 
 function admin_audit_tail(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $limit = min(500, max(1, (int)($p['limit'] ?? 100)));
     $rows = db_all('SELECT at, actorId, event, subject, ip, meta FROM audit_log ORDER BY id DESC LIMIT ?', [$limit]);
     return ['ok' => true, 'audit' => $rows];

@@ -5,8 +5,7 @@ rate_limit_check('auth.verify');
 
 $s = session_read();
 if (!$s) json_error('unauthorized', 401);
-$role = strtolower((string)($s['role'] ?? ''));
-if ($role !== 'admin' && $role !== 'super_admin') json_error('forbidden', 403);
+if (!is_admin_role($s['role'] ?? '')) json_error('forbidden', 403);
 
 $body = read_json_body();
 $code = trim((string)($body['code'] ?? ''));

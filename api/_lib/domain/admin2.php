@@ -52,7 +52,7 @@ function admin_overview(array $p): array {
 
 // ── 360° member detail ──────────────────────────────────────────────────────
 function admin_member_detail(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $id = (string)($p['memberId'] ?? '');
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
@@ -85,7 +85,7 @@ function admin_member_detail(array $p): array {
 
 // ── Mentor assignment ───────────────────────────────────────────────────────
 function admin_assign_mentor(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $memberId = (string)($p['memberId'] ?? '');
     $mentorId = (string)($p['mentorId'] ?? '');
     $sc = session_current();
@@ -105,7 +105,7 @@ function admin_assign_mentor(array $p): array {
 
 // ── Applications review ─────────────────────────────────────────────────────
 function admin_applications_list(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $where = []; $params = [];
     if (!empty($p['kind'])) { $where[] = 'kind = ?'; $params[] = $p['kind']; }
     if (!empty($p['status'])) { $where[] = 'status = ?'; $params[] = $p['status']; }
@@ -114,7 +114,7 @@ function admin_applications_list(array $p): array {
 }
 
 function admin_applications_set_status(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $id = (int)($p['id'] ?? 0);
     $status = (string)($p['status'] ?? '');
     if (!in_array($status, ['new', 'reviewing', 'accepted', 'rejected', 'waitlist'], true)) return ['ok' => false, 'error' => 'bad_status'];
@@ -125,7 +125,7 @@ function admin_applications_set_status(array $p): array {
 }
 
 function admin_application_convert(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $id = (int)($p['id'] ?? 0);
     $a = db_row('SELECT * FROM applications WHERE id = ? LIMIT 1', [$id]);
     if (!$a) return ['ok' => false, 'error' => 'not_found'];
@@ -154,14 +154,14 @@ function admin_application_convert(array $p): array {
 
 // ── Newsletter ──────────────────────────────────────────────────────────────
 function admin_newsletter_list(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'inbox'); if (!$g['ok']) return $g;
     $rows = db_all('SELECT email, source, status, createdAt FROM newsletter ORDER BY id DESC LIMIT 5000');
     return ['ok' => true, 'total' => count($rows), 'subscribers' => $rows];
 }
 
 // ── Contact messages ─────────────────────────────────────────────────────────
 function admin_contact_list(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'inbox'); if (!$g['ok']) return $g;
     $where = []; $params = [];
     if (!empty($p['status'])) { $where[] = 'status = ?'; $params[] = $p['status']; }
     if (!empty($p['purpose'])) { $where[] = 'purpose = ?'; $params[] = $p['purpose']; }
@@ -171,7 +171,7 @@ function admin_contact_list(array $p): array {
 }
 
 function admin_contact_status(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'inbox'); if (!$g['ok']) return $g;
     $id = (int)($p['id'] ?? 0);
     $status = (string)($p['status'] ?? '');
     if (!in_array($status, ['new', 'read', 'replied', 'archived'], true)) return ['ok' => false, 'error' => 'bad_status'];
@@ -183,7 +183,7 @@ function admin_contact_status(array $p): array {
 
 // ── Site settings ───────────────────────────────────────────────────────────
 function admin_settings_get(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     return ['ok' => true, 'settings' => [
         'applications_open'        => (setting_raw('applications_open') ?? '1') !== '0',
         'mentor_applications_open' => (setting_raw('mentor_applications_open') ?? '1') !== '0',
@@ -192,7 +192,7 @@ function admin_settings_get(array $p): array {
 }
 
 function admin_settings_set(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $data = $p['data'] ?? [];
     foreach (['applications_open', 'mentor_applications_open', 'featured_session_id'] as $k) {
         if (array_key_exists($k, $data)) {

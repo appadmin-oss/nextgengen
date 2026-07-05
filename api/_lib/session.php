@@ -73,8 +73,9 @@ function require_session(): array {
 
 function require_admin(): array {
     $s = require_session();
-    $role = strtolower((string)($s['role'] ?? ''));
-    if ($role !== 'admin' && $role !== 'super_admin') json_error('forbidden', 403);
+    // Any staff tier (editor/admin/super_admin) may reach the console; the
+    // domain layer's capability gates enforce what each tier can actually do.
+    if (!is_admin_role($s['role'] ?? '')) json_error('forbidden', 403);
     if (empty($s['adminOk'])) json_error('admin_2fa_required', 403);
     return $s;
 }
