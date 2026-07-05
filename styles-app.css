@@ -2152,12 +2152,13 @@ button:focus-visible, .nav-link:focus-visible, .btn:focus-visible {
 .prefooter::before {
   top: -160px; left: -120px;
   width: 360px; height: 360px;
-  background: radial-gradient(circle, rgba(245, 176, 38, 0.32) 0%, transparent 70%);
+  background: rgba(245, 176, 38, 0.22);
+  opacity: 0.9;
 }
 .prefooter::after {
   bottom: -120px; right: -120px;
   width: 380px; height: 380px;
-  background: radial-gradient(circle, rgba(208, 255, 58, 0.18) 0%, transparent 70%);
+  background: rgba(208, 255, 58, 0.14);
 }
 .prefooter-inner {
   display: grid;
