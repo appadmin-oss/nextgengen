@@ -95,6 +95,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.posts'            => 'public_posts',
             'public.session'          => 'op_public_session',
             'public.anchorContent'    => 'public_anchor_content',
+            'public.mentors'          => 'public_mentors',
             'public.newsletter'       => 'public_newsletter',
             'public.apply'            => 'public_apply',
             'public.contact'          => 'public_contact',

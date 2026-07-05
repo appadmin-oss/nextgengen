@@ -313,6 +313,7 @@ function TopNav({ page, setPage }) {
     { id: "stay", kind: "mega", label: "The room", match: ["blog","media","volunteers","parents"], items: [
       { id: "blog",       label: "The Journal",     desc: "Stories + essays",        icon: "✎" },
       { id: "media",      label: "Media room",      desc: "Films · podcast · reels", icon: "▶" },
+      { id: "mentors",    label: "The mentors",     desc: "Meet the mentor circle",  icon: "◐" },
       { id: "volunteers", label: "Become a mentor", desc: "Volunteer with NGG",      icon: "✚" },
       { id: "parents",    label: "For parents",     desc: "Safeguarding · FAQ",      icon: "♡" },
     ]},
@@ -668,7 +669,7 @@ function Footer({ setPage }) {
       links: [
         { label: "Apply for a session", page: "join" },
         { label: "Become a mentor", page: "volunteers" },
-        { label: "For parents", page: "parents" },
+        { label: "The mentors", page: "mentors" },
         { label: "Contact us", page: "contact" },
       ],
     },

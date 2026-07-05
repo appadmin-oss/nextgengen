@@ -118,17 +118,33 @@ function SignInModal({ seed, onClose, onVerified }) {
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState(seed && seed.error ? humanizeAuthError(seed.error) : "");
   const inputRef = React.useRef(null);
+  const cardRef = React.useRef(null);
 
+  // Mount-only: lock scroll, remember prior focus, trap Tab, restore on close.
   React.useEffect(() => {
-    const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
     document.body.classList.add("no-scroll");
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    const prevFocus = document.activeElement;
+    const onKey = (e) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "Tab" && cardRef.current) {
+        const f = cardRef.current.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
+        if (!f.length) return;
+        const first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => {
       document.body.classList.remove("no-scroll");
       window.removeEventListener("keydown", onKey);
-      clearTimeout(t);
+      if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch (_) {} }
     };
+  }, []);
+  // Autofocus the primary field whenever the stage changes.
+  React.useEffect(() => {
+    const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
+    return () => clearTimeout(t);
   }, [stage]);
 
   const loginPassword = async (e) => {
@@ -189,7 +205,7 @@ function SignInModal({ seed, onClose, onVerified }) {
       onMouseDown={(e) => { scrimMouseDown.current = e.target === e.currentTarget; }}
       onMouseUp={(e) => { if (scrimMouseDown.current && e.target === e.currentTarget) onClose(); scrimMouseDown.current = false; }}
     >
-      <div className="signin-card" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="signin-h">
+      <div ref={cardRef} className="signin-card" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="signin-h">
         <button className="signin-close" onClick={onClose} aria-label="Close">✕</button>
 
         <div className="signin-brand">

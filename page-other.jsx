@@ -904,4 +904,74 @@ function ContactPage({ setPage }) {
   );
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, ContactPage, FAQList, MentorApplySection, MediaModal });
+/* =================== MENTORS DIRECTORY =================== */
+function MentorsPage({ setPage }) {
+  const [mentors, setMentors] = React.useState(null);
+  const [av, setAv] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.public.mentors()
+      .then(r => { if (alive) { setMentors(r.mentors || []); setAv(r.afrovanguard || null); } })
+      .catch(() => { if (alive) setMentors([]); });
+  }, []);
+
+  return (
+    <div className="page" data-screen-label="Mentors">
+      <section className="page-hero page-hero-dark" style={{ background: "var(--navy-900)", color: "white", padding: "72px 0 56px", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 82% 25%, rgba(245,176,38,0.16), transparent 60%)" }}/>
+        <div className="container" style={{ position: "relative" }}>
+          <span className="chip chip-on-dark"><span className="dot dot-gold"/> {av ? av.mentorProgram : "STREET-TO-STARDOM · NEXT GEN"}</span>
+          <h1 className="display" style={{ fontSize: "clamp(52px, 8vw, 116px)", margin: "18px 0 14px", color: "white", lineHeight: 0.92 }}>
+            The <span style={{ color: "var(--gold-500)" }}>mentors.</span>
+          </h1>
+          <p style={{ fontSize: 19, lineHeight: 1.5, color: "rgba(255,255,255,0.78)", maxWidth: 620, margin: 0 }}>
+            The adults who show up every Saturday — drawn from Afrovanguard's Street-To-Stardom volunteer network. Craft, character, and the discipline of staying present for twelve weeks.
+          </p>
+          <div style={{ display: "flex", gap: 12, marginTop: 30, flexWrap: "wrap" }}>
+            <button className="btn btn-gold btn-lg" onClick={() => setPage("volunteers")}>Become a mentor →</button>
+            {av && <a className="btn btn-on-dark-ghost btn-lg" href={av.volunteerUrl} target="_blank" rel="noopener noreferrer">Afrovanguard volunteer hub ↗</a>}
+          </div>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="container">
+          {mentors === null ? <div className="dash-spinner" style={{ margin: "40px auto" }}/> :
+            mentors.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 0" }}>
+                <SectionHead align="center" eyebrow="MENTOR CIRCLE" title="Our mentors are being confirmed." sub="Safeguarding checks are underway. In the meantime, step forward — the circle is always growing." />
+                <button className="btn btn-primary btn-lg" onClick={() => setPage("volunteers")}>Apply to mentor →</button>
+              </div>
+            ) : (
+              <>
+                <SectionHead eyebrow={"MENTOR CIRCLE · " + mentors.length} title="Meet the people in the room." />
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 18 }}>
+                  {mentors.map((m, i) => (
+                    <div key={m.mentorId} className="card reveal" data-reveal style={{ padding: 22, display: "flex", flexDirection: "column", gap: 12, "--reveal-delay": (i * 40) + "ms" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        {m.photoUrl
+                          ? <img src={m.photoUrl} alt="" style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/>
+                          : <Avatar name={m.fullName} seed={m.mentorId} size={56}/>}
+                        <div>
+                          <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18 }}>{m.fullName}</div>
+                          <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{m.centre}{m.source === "afrovanguard" ? " · AFROVANGUARD" : ""}</div>
+                        </div>
+                      </div>
+                      {m.bio && <p style={{ fontSize: 14, color: "var(--ink-700)", lineHeight: 1.5, margin: 0 }}>{m.bio}</p>}
+                      {(m.tracks || []).length > 0 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {m.tracks.map(t => <span key={t} className="chip chip-gold" style={{ fontSize: 11 }}>{t}</span>)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, ContactPage, MentorsPage, FAQList, MentorApplySection, MediaModal });
