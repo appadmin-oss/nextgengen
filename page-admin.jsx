@@ -41,6 +41,7 @@ function AdminPage({ setPage }) {
           {section === "applications" && <AdminApplications/>}
           {section === "mentors" && <AdminMentors/>}
           {section === "newsletter" && <AdminNewsletter/>}
+          {section === "messages" && <AdminContact/>}
           {section === "settings" && <AdminSettings/>}
           {section === "sessions" && <AdminSessions/>}
           {section === "missions" && <AdminMissions/>}
@@ -163,6 +164,7 @@ function AdminNav({ section, setSection }) {
     { id: "posts",     label: "Posts",      icon: "✎" },
     { id: "broadcast", label: "Announce",   icon: "📣" },
     { id: "newsletter",label: "Newsletter", icon: "✦" },
+    { id: "messages",  label: "Messages",   icon: "✉" },
     { id: "audit",     label: "Audit log",  icon: "⌗" },
     { id: "settings",  label: "Settings",   icon: "⚙" },
   ];
@@ -186,7 +188,7 @@ function titleFor(s) {
   return {
     home: "Overview", members: "Members", mentors: "Mentors", sessions: "Sessions",
     missions: "Anchor missions", anchor: "Anchor Journal app", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
-    applications: "Applications", newsletter: "Newsletter", settings: "Settings",
+    applications: "Applications", newsletter: "Newsletter", messages: "Messages", settings: "Settings",
   }[s] || "";
 }
 
@@ -202,17 +204,18 @@ function AdminHome({ setSection }) {
 
   if (err) return <div className="admin-empty">Couldn't load overview: {err}</div>;
   if (!o) return <div className="dash-spinner"/>;
-  const m = o.members || {}, ap = o.applications || {}, asg = o.assignments || {}, an = o.anchor || {};
+  const m = o.members || {}, ap = o.applications || {}, asg = o.assignments || {}, an = o.anchor || {}, msg = o.messages || {};
   const maxCentre = Math.max(1, ...(o.byCentre || []).map(c => c.c));
   const maxTrack = Math.max(1, ...(o.byTrack || []).map(t => t.c));
 
   return (
     <div className="admin-home">
       {/* Needs-attention callouts */}
-      {(ap.new > 0 || asg.toGrade > 0) && (
+      {(ap.new > 0 || asg.toGrade > 0 || msg.unread > 0) && (
         <div className="admin-attn">
           {ap.new > 0 && <button className="admin-attn-card" onClick={() => setSection("applications")}><b>{ap.new}</b><span>application{ap.new === 1 ? "" : "s"} to review</span><i>→</i></button>}
           {asg.toGrade > 0 && <button className="admin-attn-card" onClick={() => setSection("assignments")}><b>{asg.toGrade}</b><span>submission{asg.toGrade === 1 ? "" : "s"} to grade</span><i>→</i></button>}
+          {msg.unread > 0 && <button className="admin-attn-card" onClick={() => setSection("messages")}><b>{msg.unread}</b><span>message{msg.unread === 1 ? "" : "s"} unread</span><i>→</i></button>}
         </div>
       )}
 
@@ -1260,7 +1263,7 @@ function AdminApplications() {
       <div className="admin-section-head">
         <h2 className="admin-h2">Applications</h2>
         <div className="admin-section-actions">
-          <button className="btn btn-ghost btn-sm" disabled={!list || !list.length} onClick={() => downloadCsv("applications", (list || []).map(a => ({ kind: a.kind, name: a.name, email: a.email, age: a.age || "", centre: a.centre || "", track: a.track || "", role: a.role || "", status: a.status, createdAt: a.createdAt })))}>Export CSV</button>
+          <button className="btn btn-ghost btn-sm" disabled={!list || !list.length} onClick={() => downloadCsv("applications", (list || []).map(a => ({ kind: a.kind, program: a.program || "", name: a.name, email: a.email, age: a.age || "", centre: a.centre || "", track: a.track || "", role: a.role || "", status: a.status, createdAt: a.createdAt })))}>Export CSV</button>
         </div>
       </div>
       <div className="admin-filters">
@@ -1274,9 +1277,12 @@ function AdminApplications() {
           {list.map(a => (
             <div className="admin-app" key={a.id}>
               <div className="admin-app-top">
-                <div>
-                  <div className="admin-cell-name">{a.name} <span className="chip">{a.kind}</span></div>
-                  <div className="mono admin-cell-sub">{a.email}{a.age ? " · age " + a.age : ""}{a.centre ? " · " + a.centre : ""}{a.track ? " · " + a.track : ""}{a.role ? " · " + a.role : ""} · {fmtDate(a.createdAt)}</div>
+                <div style={{display:"flex", gap:12, alignItems:"center"}}>
+                  {a.photoUrl && <img src={a.photoUrl} alt="" style={{width:40, height:40, borderRadius:"50%", objectFit:"cover", flex:"0 0 auto"}} onError={e => { e.target.style.display = "none"; }}/>}
+                  <div>
+                    <div className="admin-cell-name">{a.name} <span className="chip">{a.kind}</span>{a.program ? <span className={"chip " + (a.program === "summer" ? "chip-gold" : "chip-navy")}>{a.program}</span> : null}</div>
+                    <div className="mono admin-cell-sub">{a.email}{a.age ? " · age " + a.age : ""}{a.centre ? " · " + a.centre : ""}{a.track ? " · " + a.track : ""}{a.role ? " · " + a.role : ""} · {fmtDate(a.createdAt)}</div>
+                  </div>
                 </div>
                 <span className={"chip status-" + (a.status === "accepted" ? "published" : a.status === "rejected" ? "archived" : "draft")}>{a.status}</span>
               </div>
@@ -1316,6 +1322,57 @@ function AdminNewsletter() {
           <thead><tr><th>Email</th><th>Source</th><th>Status</th><th>Joined</th></tr></thead>
           <tbody>{d.subscribers.map((s, i) => <tr key={i}><td>{s.email}</td><td>{s.source}</td><td><span className={"chip status-" + (s.status === "subscribed" ? "published" : "archived")}>{s.status}</span></td><td className="mono">{fmtDate(s.createdAt)}</td></tr>)}</tbody>
         </table></div>
+      }
+    </div>
+  );
+}
+
+// ============================================================================
+// Messages — contact-form inbox
+// ============================================================================
+
+function AdminContact() {
+  const [d, setD] = React.useState(null);
+  const [filter, setFilter] = React.useState({ status: "", purpose: "" });
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.contact.list(filter).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter.status, filter.purpose]);
+  const setStatus = async (id, status) => { try { await NGGApi.admin.contact.status(id, status); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const msgs = d ? d.messages : null;
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Messages {d ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {d.unread} new</span> : null}</h2>
+        <button className="btn btn-ghost btn-sm" disabled={!msgs || !msgs.length} onClick={() => downloadCsv("messages", (msgs || []).map(m => ({ ref: m.ref, purpose: m.purpose, name: m.name, email: m.email, phone: m.phone || "", subject: m.subject || "", message: m.message, status: m.status, createdAt: m.createdAt })))}>Export CSV</button>
+      </div>
+      <div className="admin-filters">
+        <select className="admin-select" value={filter.status} onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}><option value="">All statuses</option><option value="new">New</option><option value="read">Read</option><option value="replied">Replied</option><option value="archived">Archived</option></select>
+        <select className="admin-select" value={filter.purpose} onChange={e => setFilter(f => ({ ...f, purpose: e.target.value }))}><option value="">All topics</option><option value="general">General</option><option value="apply">Admissions</option><option value="mentor">Mentoring</option><option value="partner">Partnership</option><option value="media">Media</option><option value="support">Support</option></select>
+      </div>
+      {err ? <div className="admin-empty">Couldn't load: {err}</div> :
+        msgs === null ? <div className="dash-spinner"/> :
+        msgs.length === 0 ? <div className="admin-empty">No messages.</div> :
+        <div className="admin-app-list">
+          {msgs.map(m => (
+            <div className="admin-app" key={m.id}>
+              <div className="admin-app-top">
+                <div>
+                  <div className="admin-cell-name">{m.name} <span className="chip chip-navy">{m.purpose}</span></div>
+                  <div className="mono admin-cell-sub">{m.email}{m.phone ? " · " + m.phone : ""} · {fmtDate(m.createdAt)} · {m.ref}</div>
+                </div>
+                <span className={"chip status-" + (m.status === "replied" ? "published" : m.status === "archived" ? "archived" : "draft")}>{m.status}</span>
+              </div>
+              {m.subject && <div style={{ fontWeight: 600, marginTop: 6 }}>{m.subject}</div>}
+              <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{m.message}</p>
+              <div className="admin-app-actions">
+                <select className="admin-select admin-app-status" value={m.status} onChange={e => setStatus(m.id, e.target.value)}>
+                  <option value="new">New</option><option value="read">Read</option><option value="replied">Replied</option><option value="archived">Archived</option>
+                </select>
+                <a className="btn btn-ghost btn-sm" href={"mailto:" + m.email + "?subject=" + encodeURIComponent("Re: " + (m.subject || "Your message") + " (" + m.ref + ")")}>Reply by email →</a>
+              </div>
+            </div>
+          ))}
+        </div>
       }
     </div>
   );

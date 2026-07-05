@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS applications (
   id INT AUTO_INCREMENT PRIMARY KEY,
   kind VARCHAR(16), name VARCHAR(255), age INT, centre VARCHAR(64), track VARCHAR(64),
   role VARCHAR(64), why TEXT, email VARCHAR(200), status VARCHAR(32) DEFAULT 'new',
+  program VARCHAR(16) DEFAULT '', photoUrl VARCHAR(512) DEFAULT '',
   createdAt VARCHAR(40), ip VARCHAR(64),
   INDEX idx_apps_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -193,5 +194,15 @@ CREATE TABLE IF NOT EXISTS member_state (
   UNIQUE KEY idx_member_state (memberId, stateKey)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS contact_messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  ref VARCHAR(48) UNIQUE NOT NULL,
+  purpose VARCHAR(24) DEFAULT 'general',
+  name VARCHAR(255), email VARCHAR(200), phone VARCHAR(40),
+  subject VARCHAR(255), message TEXT, status VARCHAR(24) DEFAULT 'new',
+  createdAt VARCHAR(40), ip VARCHAR(64),
+  INDEX idx_contact_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (3) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (4) ON DUPLICATE KEY UPDATE version = version;

@@ -14,10 +14,21 @@ $uploadsEnabled = !empty($cld['cloud_name']) && !empty($cld['api_key']) && !empt
 // the .htaccess header; we override here intentionally.)
 header('Cache-Control: public, max-age=300');
 
+// Public (unsigned) uploads need a cloud name + an unsigned preset. Used by the
+// application form so a prospective member can attach a headshot before they
+// have an account. The api_secret is never involved in unsigned uploads.
+$publicUpload = !empty($cld['cloud_name']) && !empty($cld['unsigned_preset']);
+
 json_ok([
     'uploads' => [
         'enabled'   => $uploadsEnabled,
         'cloudName' => $uploadsEnabled ? $cld['cloud_name'] : '',
         'maxBytes'  => (int)($cld['max_bytes'] ?? (25 * 1024 * 1024)),
+    ],
+    'publicUpload' => [
+        'enabled'   => $publicUpload,
+        'cloudName' => $publicUpload ? $cld['cloud_name'] : '',
+        'preset'    => $publicUpload ? $cld['unsigned_preset'] : '',
+        'folder'    => $publicUpload ? (string)($cld['unsigned_folder'] ?? 'ngg/apply') : '',
     ],
 ]);

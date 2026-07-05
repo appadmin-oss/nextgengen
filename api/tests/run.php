@@ -155,5 +155,36 @@ chk('settings persist (applications closed)', $set['applications_open'] === fals
 chk('apply blocked when closed', backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'X Y', 'email' => 'x@example.com', 'age' => 14])['error'] === 'applications_closed');
 chk('newsletter list works', is_array(backend_dispatch('admin.newsletter.list', ['requesterId' => 'NGG-2025-0099'])['subscribers']));
 
+// ── Program tagging (Summer vs Anchor) + convert respects program ──
+backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['applications_open' => true]]);
+backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'Summer Kid', 'email' => 'summer1@example.com', 'age' => 12, 'track' => 'Dance', 'centre' => 'Egbeda', 'program' => 'summer']);
+chk('summer application tagged', db_row("SELECT program FROM applications WHERE email='summer1@example.com'")['program'] === 'summer');
+backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'Anchor Kid', 'email' => 'anchor1@example.com', 'age' => 16, 'track' => 'Tech', 'centre' => 'Egbeda', 'program' => 'anchor']);
+$anchorApp = db_row("SELECT id FROM applications WHERE email='anchor1@example.com'")['id'];
+$convA = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $anchorApp]);
+chk('anchor applicant becomes NGG member', db_row('SELECT type FROM members WHERE memberId=?', [$convA['memberId']])['type'] === 'NGG');
+$summerAppId = db_row("SELECT id FROM applications WHERE email='summer1@example.com'")['id'];
+$convS = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $summerAppId]);
+chk('summer applicant becomes Summer member', db_row('SELECT type FROM members WHERE memberId=?', [$convS['memberId']])['type'] === 'Summer');
+chk('invalid program falls back to anchor', (function () {
+    backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'Junk Prog', 'email' => 'junkprog@example.com', 'age' => 14, 'program' => 'bogus']);
+    return db_row("SELECT program FROM applications WHERE email='junkprog@example.com'")['program'] === 'anchor';
+})());
+
+// ── Contact form ──
+chk('contact stores message', !empty(backend_dispatch('public.contact', ['name' => 'Ada Visitor', 'email' => 'ada@example.com', 'message' => 'I would love to learn more about mentoring.', 'purpose' => 'mentor'])['ref']));
+chk('contact honeypot silently drops', (function () {
+    $before = (int)db_row("SELECT COUNT(*) c FROM contact_messages")['c'];
+    backend_dispatch('public.contact', ['name' => 'Spam Bot', 'email' => 'spam@example.com', 'message' => 'buy cheap things now cheap', 'website' => 'http://spam.example']);
+    $after = (int)db_row("SELECT COUNT(*) c FROM contact_messages")['c'];
+    return $before === $after;
+})());
+chk('contact rejects short message', backend_dispatch('public.contact', ['name' => 'Ada', 'email' => 'ada@example.com', 'message' => 'hi'])['error'] === 'message_too_short');
+chk('admin lists contact messages', backend_dispatch('admin.contact.list', ['requesterId' => 'NGG-2025-0099'])['messages'][0]['name'] !== null);
+chk('admin contact list gated', backend_dispatch('admin.contact.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+$firstMsg = backend_dispatch('admin.contact.list', ['requesterId' => 'NGG-2025-0099'])['messages'][0]['id'];
+backend_dispatch('admin.contact.status', ['requesterId' => 'NGG-2025-0099', 'id' => $firstMsg, 'status' => 'replied']);
+chk('admin sets contact status', db_row('SELECT status FROM contact_messages WHERE id=?', [$firstMsg])['status'] === 'replied');
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

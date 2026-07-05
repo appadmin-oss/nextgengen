@@ -26,7 +26,7 @@ function SummerPage({ setPage }) {
                 Six weeks. Eight tracks. One bold move. Our summer program is the front door — built for teenagers 10–17 who suspect they have something but have not yet been asked to show it.
               </p>
               <div style={{display:"flex", gap:12, marginTop:32, flexWrap:"wrap"}}>
-                <button className="btn btn-primary btn-lg" onClick={() => setPage("join")}>Start application →</button>
+                <button className="btn btn-primary btn-lg" onClick={() => { window.__nggProgram = "summer"; setPage("join"); }}>Start application →</button>
                 <button className="btn btn-ghost btn-lg" onClick={() => setPage("parents")}>For parents & guardians</button>
               </div>
             </div>

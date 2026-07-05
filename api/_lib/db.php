@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 3;
+const NGG_SCHEMA_TARGET = 4;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -264,6 +264,20 @@ function db_migrate(PDO $db): void {
               updatedAt TEXT DEFAULT (datetime('now'))
             );
             CREATE UNIQUE INDEX idx_member_state ON member_state(memberId, stateKey);
+        ",
+        4 => "
+            ALTER TABLE applications ADD COLUMN program TEXT DEFAULT '';
+            ALTER TABLE applications ADD COLUMN photoUrl TEXT DEFAULT '';
+
+            CREATE TABLE contact_messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ref TEXT UNIQUE NOT NULL,
+              purpose TEXT DEFAULT 'general',
+              name TEXT, email TEXT, phone TEXT, subject TEXT, message TEXT,
+              status TEXT DEFAULT 'new',
+              createdAt TEXT DEFAULT (datetime('now')), ip TEXT
+            );
+            CREATE INDEX idx_contact_status ON contact_messages(status);
         ",
     ];
 

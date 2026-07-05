@@ -81,9 +81,39 @@
     });
   }
 
+  // ---- Cloudinary unsigned upload (public, no session) --------------------
+  // For prospective applicants who don't have an account yet. Requires an
+  // unsigned upload preset (see api/config.php). Returns {} silently disabled
+  // when the server hasn't configured a public preset.
+  async function uploadPublic(file, onProgress) {
+    const cfg = await getConfig();
+    const pu = (cfg && cfg.publicUpload) || {};
+    if (!pu.enabled) throw new Error('public_upload_disabled');
+    return await new Promise((resolve, reject) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('upload_preset', pu.preset);
+      if (pu.folder) fd.append('folder', pu.folder);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'https://api.cloudinary.com/v1_1/' + pu.cloudName + '/image/upload');
+      if (onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+      xhr.onload = () => {
+        let d = {}; try { d = JSON.parse(xhr.responseText); } catch (_) {}
+        if (xhr.status >= 200 && xhr.status < 300 && d.secure_url) {
+          resolve({ url: d.secure_url, publicId: d.public_id, format: d.format, bytes: d.bytes });
+        } else {
+          reject(new Error((d.error && d.error.message) || ('upload_failed_' + xhr.status)));
+        }
+      };
+      xhr.onerror = () => reject(new Error('upload_network_error'));
+      xhr.send(fd);
+    });
+  }
+
   const API = {
     config: getConfig,
     uploadFile: uploadFile,
+    uploadPublic: uploadPublic,
     auth: {
       request: (identifier) => request('/auth/request.php', { body: { identifier } }),
       verify:  (creds) => request('/auth/verify.php', { body: creds }),
@@ -116,6 +146,7 @@
       anchorContent: () => request('/public/anchor-content.php'),
       newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
       apply:      (data) => request('/public/apply.php', { body: data }),
+      contact:    (data) => request('/public/contact.php', { body: data }),
     },
     admin: {
       members: {
@@ -166,6 +197,10 @@
         convert: (id) => request('/admin/applications.php', { body: { action: 'convert', id } }),
       },
       newsletter:   () => request('/admin/newsletter.php'),
+      contact: {
+        list:   (q) => request('/admin/contact.php' + qs(q || {})),
+        status: (id, status) => request('/admin/contact.php', { body: { id, status } }),
+      },
       settings: {
         get: () => request('/admin/settings.php'),
         set: (data) => request('/admin/settings.php', { body: { data } }),

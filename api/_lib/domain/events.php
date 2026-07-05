@@ -137,6 +137,58 @@ function public_newsletter(array $p): array {
     return ['ok' => true];
 }
 
+/** Contact / enquiry form. Stores the message and notifies the admissions inbox. */
+function public_contact(array $p): array {
+    // Honeypot — a hidden field real users never fill. Pretend success.
+    if (trim((string)($p['website'] ?? '')) !== '') return ['ok' => true];
+
+    $name = trim((string)($p['name'] ?? ''));
+    if (strlen($name) < 2 || strlen($name) > 120) return ['ok' => false, 'error' => 'bad_name'];
+    $email = strtolower(trim((string)($p['email'] ?? '')));
+    if (!preg_match('/^[^\s@]+@[^\s@]+\.[^\s@]+$/', $email)) return ['ok' => false, 'error' => 'bad_email'];
+    if (strlen($email) > 200) return ['ok' => false, 'error' => 'email_too_long'];
+    $message = trim((string)($p['message'] ?? ''));
+    if (strlen($message) < 10) return ['ok' => false, 'error' => 'message_too_short'];
+    if (strlen($message) > 4000) $message = substr($message, 0, 4000);
+
+    $purposes = ['general', 'apply', 'partner', 'mentor', 'media', 'support'];
+    $purpose = in_array((string)($p['purpose'] ?? ''), $purposes, true) ? (string)$p['purpose'] : 'general';
+    $phone = substr(trim((string)($p['phone'] ?? '')), 0, 40);
+    $subject = substr(trim((string)($p['subject'] ?? '')), 0, 200);
+    $ref = 'MSG-' . strtoupper(bin2hex(random_bytes(4)));
+
+    db_insert('contact_messages', [
+        'ref' => $ref, 'purpose' => $purpose, 'name' => $name, 'email' => $email, 'phone' => $phone,
+        'subject' => $subject, 'message' => $message, 'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
+    ]);
+
+    $adminEmail = ($GLOBALS['CONFIG']['admin_email'] ?? '') ?: ($GLOBALS['CONFIG']['mail']['reply_to'] ?? '');
+    if ($adminEmail) {
+        @send_mail((string)$adminEmail, '[Contact · ' . $purpose . '] ' . ($subject ?: $name),
+            email_template([
+                'title' => 'New message',
+                'intro' => $name . ' sent a message via the contact form.',
+                'bodyHtml' => '<b>From:</b> ' . esc_html($name) . ' &lt;' . esc_html($email) . '&gt;'
+                    . ($phone ? '<br><b>Phone:</b> ' . esc_html($phone) : '')
+                    . '<br><b>Topic:</b> ' . esc_html($purpose)
+                    . ($subject ? '<br><b>Subject:</b> ' . esc_html($subject) : '')
+                    . '<br><br>' . nl2br(esc_html($message)),
+                'footNote' => 'Reference ' . $ref . ' — reply from the admin Messages tab.',
+            ]));
+    }
+    // Auto-acknowledge the sender.
+    @send_mail($email, 'We got your message — Next Generation Genius',
+        email_template([
+            'title' => 'Message received',
+            'intro' => 'Thanks for reaching out, ' . explode(' ', $name)[0] . '.',
+            'bodyHtml' => 'A member of our team will reply within 2 working days. Your reference is <b>' . esc_html($ref) . '</b>.',
+            'footNote' => 'You received this because you contacted Next Generation Genius.',
+        ]));
+
+    audit('contact.received', null, $email, ['ref' => $ref, 'purpose' => $purpose], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'ref' => $ref];
+}
+
 function public_apply(array $p): array {
     $kind = (string)($p['kind'] ?? 'teen');
     if ($kind !== 'teen' && $kind !== 'mentor') return ['ok' => false, 'error' => 'bad_kind'];
@@ -151,12 +203,21 @@ function public_apply(array $p): array {
     $why = trim((string)($p['why'] ?? ''));
     if (strlen($why) > 2000) return ['ok' => false, 'error' => 'why_too_long'];
 
-    $age = 0; $track = ''; $centre = ''; $role = '';
+    $age = 0; $track = ''; $centre = ''; $role = ''; $program = '';
+    // A short URL to a headshot uploaded (unsigned) to Cloudinary. Optional —
+    // only trusted if it points at the configured Cloudinary CDN host.
+    $photoUrl = trim((string)($p['photoUrl'] ?? ''));
+    if ($photoUrl !== '' && !preg_match('#^https://res\.cloudinary\.com/[A-Za-z0-9_-]+/#', $photoUrl)) $photoUrl = '';
+    if (strlen($photoUrl) > 512) $photoUrl = '';
     if ($kind === 'teen') {
         $age = (int)($p['age'] ?? 0);
         if ($age < 10 || $age > 17) return ['ok' => false, 'error' => 'bad_age'];
         $track = substr(trim((string)($p['track'] ?? '')), 0, 60);
         $centre = substr(trim((string)($p['centre'] ?? '')), 0, 60);
+        // Which program the teen is applying to. 'summer' = the 6-week Summer
+        // Students on-ramp; 'anchor' = the flagship 12-week NGG. Drives the
+        // member type created on conversion.
+        $program = in_array((string)($p['program'] ?? ''), ['summer', 'anchor'], true) ? (string)$p['program'] : 'anchor';
     } else {
         $role = substr(trim((string)($p['role'] ?? '')), 0, 60);
     }
@@ -166,9 +227,27 @@ function public_apply(array $p): array {
     if (!$dupe) {
         db_insert('applications', [
             'kind' => $kind, 'name' => $name, 'age' => $age ?: null, 'centre' => $centre, 'track' => $track,
-            'role' => $role, 'why' => $why, 'email' => $email, 'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
+            'role' => $role, 'why' => $why, 'email' => $email, 'program' => $program, 'photoUrl' => $photoUrl,
+            'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
         ]);
+        // Notify the admissions inbox so applications don't sit unseen.
+        $adminEmail = ($GLOBALS['CONFIG']['admin_email'] ?? '') ?: ($GLOBALS['CONFIG']['mail']['reply_to'] ?? '');
+        if ($adminEmail) {
+            $label = $kind === 'mentor' ? 'mentor' : ($program === 'summer' ? 'Summer' : 'Anchor 12');
+            @send_mail((string)$adminEmail, "New {$label} application — {$name}",
+                email_template([
+                    'title' => 'New application',
+                    'intro' => "{$name} just applied.",
+                    'bodyHtml' => '<b>Name:</b> ' . esc_html($name) . '<br><b>Email:</b> ' . esc_html($email)
+                        . ($track ? '<br><b>Track:</b> ' . esc_html($track) : '')
+                        . ($role ? '<br><b>Role:</b> ' . esc_html($role) : '')
+                        . ($program ? '<br><b>Program:</b> ' . esc_html($program) : '')
+                        . ($age ? '<br><b>Age:</b> ' . (int)$age : '')
+                        . ($why ? '<br><br>' . nl2br(esc_html(substr($why, 0, 800))) : ''),
+                    'footNote' => 'Review in the admin Applications tab.',
+                ]));
+        }
     }
-    audit('apply.' . $kind, null, $email, ['name' => $name, 'track' => $track ?: $role], (string)($p['ip'] ?? ''));
+    audit('apply.' . $kind, null, $email, ['name' => $name, 'track' => $track ?: $role, 'program' => $program], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'duplicate' => (bool)$dupe];
 }

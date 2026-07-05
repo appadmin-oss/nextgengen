@@ -669,7 +669,7 @@ function Footer({ setPage }) {
         { label: "Apply for a session", page: "join" },
         { label: "Become a mentor", page: "volunteers" },
         { label: "For parents", page: "parents" },
-        { label: "Safeguarding", page: "parents" },
+        { label: "Contact us", page: "contact" },
       ],
     },
   ];
@@ -816,7 +816,7 @@ function Footer({ setPage }) {
             <div className="legal-links">
               <button className="legal" onClick={go("parents")}>Privacy</button>
               <button className="legal" onClick={go("parents")}>Safeguarding</button>
-              <button className="legal" onClick={go("parents")}>Code of conduct</button>
+              <button className="legal" onClick={go("contact")}>Contact</button>
               <button className="legal" onClick={go("parents")}>Press kit</button>
             </div>
             <span className="made">
