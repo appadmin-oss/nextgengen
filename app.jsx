@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","join","blog","contact","admin"];
+const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","mentors","join","blog","contact","admin"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
@@ -22,6 +22,7 @@ const PAGE_META = {
   media:      { title: "Media room · NGG",                            desc: "Reels, documentaries, performances, podcasts. The movement on camera." },
   parents:    { title: "For parents · Safe room with high ceilings",  desc: "Safeguarding, philosophy, FAQ. A program built to protect while it builds." },
   volunteers: { title: "Become a mentor · NGG",                       desc: "Five ways to be useful. Pick the shape of your time." },
+  mentors:    { title: "The mentors · NGG",                           desc: "The Afrovanguard Street-To-Stardom volunteers who show up every Saturday." },
   join:       { title: "Apply · Summer 2026 · NGG",                   desc: "Four short steps. About six minutes. Pause and come back — we save as you go." },
   blog:       { title: "The Journal · NGG",                           desc: "Long-form writing from mentors, members and the editorial team." },
   contact:    { title: "Contact · NGG",                               desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
@@ -200,6 +201,7 @@ function App() {
     media:     <MediaPage     setPage={setPage}/>,
     parents:   <ParentsPage   setPage={setPage}/>,
     volunteers:<VolunteersPage setPage={setPage}/>,
+    mentors:   <MentorsPage    setPage={setPage}/>,
     join:      <JoinPage      setPage={setPage}/>,
     blog:      <BlogPage      setPage={setPage}/>,
     contact:   <ContactPage   setPage={setPage}/>,

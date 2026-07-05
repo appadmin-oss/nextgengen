@@ -241,5 +241,11 @@ chk('mentor upsert stores new fields', (function () {
     return $r['skills'] === 'coding' && $r['program'] === 'STS' && $r['tracks'] === 'Tech, Music';
 })());
 
+chk('public mentors dir carries AV links', !empty(backend_dispatch('public.mentors', [])['afrovanguard']['volunteerUrl']));
+chk('public mentors shows active, hides pending', (function () {
+    $names = array_map(fn($m) => $m['fullName'], backend_dispatch('public.mentors', [])['mentors']);
+    return in_array('Skilled Mentor', $names, true) && !in_array('Mentor Ada', $names, true);
+})());
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

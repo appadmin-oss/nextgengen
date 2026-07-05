@@ -146,6 +146,7 @@
       post:       (slug) => request('/public/post.php' + qs({ slug })),
       session:    () => request('/public/session.php'),
       anchorContent: () => request('/public/anchor-content.php'),
+      mentors:    () => request('/public/mentors.php'),
       newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
       apply:      (data) => request('/public/apply.php', { body: data }),
       contact:    (data) => request('/public/contact.php', { body: data }),
@@ -164,6 +165,7 @@
         roster:   (sessionId) => request('/admin/mentorship.php' + qs({ view: 'roster', sessionId })),
         convertApp: (id) => request('/admin/mentorship.php', { body: { action: 'convert', id } }),
         assign:   (memberId, mentorId, sessionId) => request('/admin/mentorship.php', { body: { action: 'assign', memberId, mentorId, sessionId } }),
+        unassign: (memberId, sessionId) => request('/admin/mentorship.php', { body: { action: 'assign', memberId, mentorId: '', sessionId } }),
       },
       sessions: {
         list:   (year) => request('/admin/sessions.php' + qs({ year })),

@@ -560,6 +560,12 @@ function AdminMentorship() {
     try { await NGGApi.admin.mentorship.assign(memberId, mentorId, sessionId); toast.success("Mentee paired"); load(); }
     catch (e) { toast.error(e.code || e.message); }
   };
+  const unpair = async (memberId, name, sessionId) => {
+    const ok = await dialog.confirm({ title: "Unpair " + (name || "this mentee") + "?", body: "Ends the active mentor pairing for this session.", cta: "Unpair" });
+    if (!ok) return;
+    try { await NGGApi.admin.mentorship.unassign(memberId, sessionId); toast.success("Unpaired"); load(); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
 
   if (err) return <div className="admin-empty">Couldn't load: {err}</div>;
   if (!ov || !roster) return <div className="admin-section"><div className="dash-spinner"/></div>;
@@ -635,7 +641,12 @@ function AdminMentorship() {
             </div>
             {m.mentees.length > 0 && (
               <div className="admin-roster-mentees">
-                {m.mentees.map(x => <span key={x.memberId} className="chip" title={x.centre + " · " + x.track}>{x.fullName}</span>)}
+                {m.mentees.map(x => (
+                  <span key={x.memberId} className="chip admin-mentee-chip" title={x.centre + " · " + x.track}>
+                    {x.fullName}
+                    <button className="admin-mentee-x" onClick={() => unpair(x.memberId, x.fullName, roster.sessionId)} aria-label={"Unpair " + x.fullName}>✕</button>
+                  </span>
+                ))}
               </div>
             )}
             {m.openSeats > 0 && unassigned.length > 0 && (
@@ -1091,6 +1102,7 @@ function AdminAnchor() {
   const [c, setC] = React.useState(null);
   const [defaults, setDefaults] = React.useState(null);
   const [tab, setTab] = React.useState("weeks");
+  const [previewIdx, setPreviewIdx] = React.useState(0);
   const [busy, setBusy] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
@@ -1177,7 +1189,7 @@ function AdminAnchor() {
       )}
 
       <div className="admin-anchor-tabs">
-        {[["weeks", "Weeks (" + weeks.length + ")"], ["quotes", "Quotes (" + quotes.length + ")"], ["systems", "Daily systems (" + systems.length + ")"], ["settings", "Settings"]].map(([id, lbl]) => (
+        {[["weeks", "Weeks (" + weeks.length + ")"], ["quotes", "Quotes (" + quotes.length + ")"], ["systems", "Daily systems (" + systems.length + ")"], ["preview", "Preview"], ["settings", "Settings"]].map(([id, lbl]) => (
           <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
         ))}
       </div>
@@ -1250,6 +1262,44 @@ function AdminAnchor() {
           <p className="admin-hint" style={{ marginTop: 10 }}>Icons use Phosphor names (e.g. <code>ph-sun-horizon</code>, <code>ph-book-open-text</code>). See phosphoricons.com.</p>
         </div>
       )}
+
+      {tab === "preview" && (() => {
+        const i = Math.min(previewIdx, Math.max(0, weeks.length - 1));
+        const w = weeks[i] || {};
+        const q = quotes.length ? quotes[i % quotes.length] : "";
+        return (
+          <div className="admin-anchor-preview">
+            <div className="admin-anchor-preview-bar">
+              <label className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", color: "var(--ink-500)" }}>PREVIEW WEEK</label>
+              <select className="admin-select" value={i} onChange={e => setPreviewIdx(Number(e.target.value))}>
+                {weeks.map((ww, idx) => <option key={idx} value={idx}>WK {String(idx + 1).padStart(2, "0")} · {ww.title || "Untitled"}</option>)}
+              </select>
+              <span style={{ flex: 1 }}/>
+              <span className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>as members see it</span>
+            </div>
+            {/* Journal-themed member view (violet cosmic theme, mirrors the PWA). */}
+            <div className="aj-preview-shell">
+              <div className="aj-preview-quote">"{q || "Add a quote in the Quotes tab."}"</div>
+              <div className="aj-preview-card">
+                <div className="aj-preview-wk">WEEK {String(i + 1).padStart(2, "0")}</div>
+                <div className="aj-preview-title">{w.title || "Untitled week"}</div>
+                {w.system && <div className="aj-preview-system">◇ {w.system}</div>}
+                {w.focus && <p className="aj-preview-focus">{w.focus}</p>}
+                <div className="aj-preview-rows">
+                  {[["Home", w.home], ["School", w.school], ["Peer", w.peer]].map(([k, v]) => v ? (
+                    <div className="aj-preview-row" key={k}><span className="aj-preview-k">{k}</span><span>{v}</span></div>
+                  ) : null)}
+                </div>
+                {w.journal && <div className="aj-preview-journal"><span className="aj-preview-k">Journal prompt</span>{w.journal}</div>}
+              </div>
+              <div className="aj-preview-systems">
+                {systems.map((s, si) => <span key={si} className="aj-preview-sys">{s.label || "—"}</span>)}
+              </div>
+            </div>
+            <p className="admin-hint" style={{ marginTop: 12 }}>Live preview of your unsaved edits. For the full interactive app, use <b>Open preview ↗</b> above (shows the last <em>published</em> version).</p>
+          </div>
+        );
+      })()}
 
       {tab === "settings" && (
         <div className="admin-fields" style={{ maxWidth: 420 }}>

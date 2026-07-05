@@ -3877,6 +3877,21 @@ section p[style*="var(--ink-500)"] {
 .admin-anchor-del { color: var(--coral); }
 .admin-anchor-del:hover:not(:disabled) { background: rgba(255,90,60,0.08); }
 .admin-anchor-weeks-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+/* In-manager live preview (mirrors the Anchor Journal PWA violet theme) */
+.admin-anchor-preview-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.aj-preview-shell { background: #17123a; background-image: radial-gradient(60% 50% at 20% 10%, rgba(139,92,246,0.35), transparent 60%), radial-gradient(50% 40% at 90% 20%, rgba(217,110,194,0.25), transparent 60%); border-radius: 20px; padding: 26px; color: #fff; }
+.aj-preview-quote { font-family: var(--font-display, serif); font-size: 18px; font-style: italic; color: #e9deff; line-height: 1.4; margin-bottom: 18px; }
+.aj-preview-card { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); border-radius: 16px; padding: 20px; backdrop-filter: blur(8px); }
+.aj-preview-wk { font-family: var(--font-mono, monospace); font-size: 10px; letter-spacing: 0.24em; color: #c9f24e; }
+.aj-preview-title { font-family: var(--font-display, sans-serif); font-weight: 800; font-size: 24px; letter-spacing: -0.02em; margin: 6px 0 4px; }
+.aj-preview-system { font-size: 13px; color: #ffce54; margin-bottom: 8px; }
+.aj-preview-focus { font-size: 15px; color: rgba(255,255,255,0.85); margin: 0 0 14px; line-height: 1.45; }
+.aj-preview-rows { display: flex; flex-direction: column; gap: 8px; }
+.aj-preview-row { display: flex; gap: 10px; font-size: 13px; color: rgba(255,255,255,0.82); }
+.aj-preview-k { flex: none; width: 78px; font-family: var(--font-mono, monospace); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #b79cf5; padding-top: 2px; }
+.aj-preview-journal { display: flex; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.12); font-size: 14px; color: #fff; font-style: italic; }
+.aj-preview-systems { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 18px; }
+.aj-preview-sys { font-size: 11px; padding: 5px 10px; border-radius: 999px; background: rgba(201,242,78,0.16); color: #d7f79a; }
 .admin-anchor-warn { margin: 0 0 16px; padding: 10px 14px; border-radius: 12px; background: rgba(245,176,38,0.12); border: 1px solid rgba(245,176,38,0.4); color: #7a5300; font-size: 13px; font-weight: 500; }
 
 /* Admin nav group headings + RBAC role banner */
@@ -3908,6 +3923,9 @@ section p[style*="var(--ink-500)"] {
 .admin-roster-cap { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-500); }
 .admin-roster-mentees { display: flex; flex-wrap: wrap; gap: 6px; }
 .admin-roster-pair { width: 100%; }
+.admin-mentee-chip { display: inline-flex; align-items: center; gap: 6px; }
+.admin-mentee-x { border: none; background: none; cursor: pointer; color: var(--coral); font-size: 11px; line-height: 1; padding: 0; }
+.admin-mentee-x:hover { color: #a3331c; }
 
 /* Admin overview analytics + attention */
 .admin-attn { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }

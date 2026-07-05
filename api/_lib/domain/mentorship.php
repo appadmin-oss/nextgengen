@@ -42,6 +42,19 @@ function mentorship_links(): array {
     ];
 }
 
+// ── Public mentors directory (active mentors only) ──────────────────────────
+function public_mentors(array $p): array {
+    $rows = db_all("SELECT * FROM mentors WHERE status='active' ORDER BY fullName");
+    $out = array_map(function ($m) {
+        $pm = public_mentor($m);
+        $pm['skills'] = array_values(array_filter(array_map('trim', explode(',', (string)($m['skills'] ?? '')))));
+        $pm['program'] = $m['program'] ?? '';
+        $pm['source'] = $m['source'] ?? 'ngg';
+        return $pm;
+    }, $rows);
+    return ['ok' => true, 'mentors' => $out, 'afrovanguard' => mentorship_links()];
+}
+
 // ── Mentorship overview ──────────────────────────────────────────────────────
 function admin_mentorship_overview(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
