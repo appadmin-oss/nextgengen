@@ -6,7 +6,7 @@
 
 // Which capability each admin section needs (null = any staff).
 const SECTION_CAP = {
-  home: null, members: "people", applications: "people", mentors: "people",
+  home: null, members: "people", applications: "people", mentors: "people", mentorship: "people",
   sessions: "content", missions: "content", anchor: "content", assignments: "content",
   events: "content", posts: "content", broadcast: "content",
   newsletter: "inbox", messages: "inbox", audit: "people", settings: "settings",
@@ -52,6 +52,7 @@ function AdminPage({ setPage }) {
           {view === "members" && <AdminMembers/>}
           {view === "applications" && <AdminApplications/>}
           {view === "mentors" && <AdminMentors/>}
+          {view === "mentorship" && <AdminMentorship/>}
           {view === "newsletter" && <AdminNewsletter/>}
           {view === "messages" && <AdminContact/>}
           {view === "settings" && <AdminSettings/>}
@@ -168,7 +169,7 @@ function AdminNav({ section, setSection, hasCap }) {
     { h: "People", items: [
       { id: "members",   label: "Members",    icon: "◯", cap: "people" },
       { id: "applications", label: "Applications", icon: "✉", cap: "people" },
-      { id: "mentors",   label: "Mentors",    icon: "◐", cap: "people" },
+      { id: "mentorship", label: "Mentorship", icon: "◐", cap: "people" },
     ]},
     { h: "Content", items: [
       { id: "sessions",  label: "Sessions",   icon: "▢", cap: "content" },
@@ -216,7 +217,7 @@ function AdminNav({ section, setSection, hasCap }) {
 
 function titleFor(s) {
   return {
-    home: "Overview", members: "Members", mentors: "Mentors", sessions: "Sessions",
+    home: "Overview", members: "Members", mentors: "Mentors", mentorship: "Mentorship", sessions: "Sessions",
     missions: "Anchor missions", anchor: "Anchor Journal app", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
     applications: "Applications", newsletter: "Newsletter", messages: "Messages", settings: "Settings",
   }[s] || "";
@@ -510,14 +511,149 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
           <FieldSelect label="Centre" value={d.centre||"Egbeda"} onChange={v => set("centre", v)} options={["Egbeda","Ayobo","Both"]}/>
           <FieldSelect label="Status" value={d.status||"pending-checks"} onChange={v => set("status", v)} options={["active","pending-checks","on-break","retired"]}/>
           <Field label="Max mentees" value={d.maxMentees||"8"} onChange={v => set("maxMentees", v)} type="number"/>
-          <Field label="Photo URL" value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/>
+          <FieldUpload label="Photo" value={d.photoUrl||""} onChange={v => set("photoUrl", v)} kind="avatar"/>
           <FieldTextarea label="Public bio" value={d.bio||""} onChange={v => set("bio", v)}/>
+          <div className="admin-fields-row">
+            <FieldSelect label="Source" value={d.source||"ngg"} onChange={v => set("source", v)} options={["ngg","afrovanguard"]}/>
+            <Field label="STS program" value={d.program||""} onChange={v => set("program", v)} placeholder="Street-To-Stardom · Next Gen"/>
+          </div>
+          <Field label="Skills / expertise" value={d.skills||""} onChange={v => set("skills", v)} placeholder="Guitar, public speaking, coding…"/>
+          <div className="admin-fields-row">
+            <Field label="LinkedIn" value={d.linkedin||""} onChange={v => set("linkedin", v)}/>
+            <Field label="Afrovanguard ref" value={d.afrovanguardRef||""} onChange={v => set("afrovanguardRef", v)} placeholder="STS volunteer ID / note"/>
+          </div>
         </div>
         <div className="admin-drawer-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : (d.mentorId ? "Save changes" : "Create mentor")}</button>
         </div>
       </form>
+    </div>
+  );
+}
+
+// ============================================================================
+// Mentorship manager — overview, roster + mentee pairing, mentor applications,
+// and the Afrovanguard (Street-To-Stardom) connection.
+// ============================================================================
+
+function AdminMentorship() {
+  const [ov, setOv] = React.useState(null);
+  const [roster, setRoster] = React.useState(null);
+  const [apps, setApps] = React.useState([]);
+  const [editing, setEditing] = React.useState(null);
+  const [err, setErr] = React.useState("");
+
+  const load = () => {
+    NGGApi.admin.mentorship.overview().then(r => setOv(r.overview)).catch(e => setErr(e.code || e.message));
+    NGGApi.admin.mentorship.roster().then(r => setRoster(r)).catch(e => setErr(e.code || e.message));
+    NGGApi.admin.applications.list({ kind: "mentor", status: "new" }).then(r => setApps(r.applications || [])).catch(() => {});
+  };
+  React.useEffect(() => { load(); }, []);
+
+  const convert = async (id) => {
+    try { const r = await NGGApi.admin.mentorship.convertApp(id); toast.success("Mentor created: " + r.mentorId); load(); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
+  const pair = async (mentorId, memberId, sessionId) => {
+    if (!memberId) return;
+    try { await NGGApi.admin.mentorship.assign(memberId, mentorId, sessionId); toast.success("Mentee paired"); load(); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
+
+  if (err) return <div className="admin-empty">Couldn't load: {err}</div>;
+  if (!ov || !roster) return <div className="admin-section"><div className="dash-spinner"/></div>;
+  const av = ov.afrovanguard || {};
+  const unassigned = roster.unassigned || [];
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Mentorship</h2>
+        <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New mentor</button>
+      </div>
+
+      {/* Afrovanguard connection */}
+      <div className="admin-av-panel">
+        <div>
+          <div className="mono admin-av-eyebrow">CONNECTED · AFROVANGUARD MENTORSHIP</div>
+          <div className="admin-av-prog">{av.mentorProgram || "Street-To-Stardom"}</div>
+          <p className="admin-av-note">NGG mentorship runs inside Afrovanguard's Street-To-Stardom. Mentors are drawn from the shared volunteer pool.</p>
+        </div>
+        <div className="admin-av-links">
+          <a className="btn btn-ghost btn-sm" href={av.volunteerUrl} target="_blank" rel="noopener noreferrer">Volunteer hub ↗</a>
+          <a className="btn btn-ghost btn-sm" href={av.stsUrl} target="_blank" rel="noopener noreferrer">STS programs ↗</a>
+        </div>
+      </div>
+
+      {/* Stat tiles */}
+      <div className="admin-tiles" style={{ marginTop: 4 }}>
+        <AdminTile n={ov.active} l="Active mentors"/>
+        <AdminTile n={ov.pending} l="Pending checks"/>
+        <AdminTile n={ov.applications} l="Applications"/>
+        <AdminTile n={ov.openSeats} l="Open seats"/>
+        <AdminTile n={ov.unassignedMembers} l="Unpaired members"/>
+        <AdminTile n={ov.fromAfrovanguard} l="From Afrovanguard"/>
+      </div>
+
+      {/* Pending mentor applications */}
+      {apps.length > 0 && (
+        <div className="admin-panel" style={{ marginTop: 18 }}>
+          <h3 className="admin-h3">Mentor applications · {apps.length}</h3>
+          {apps.map(a => (
+            <div key={a.id} className="admin-mentor-app">
+              <div>
+                <b>{a.name}</b> <span className="mono admin-cell-sub">{a.email}{a.role ? " · " + a.role : ""}{a.centre ? " · " + a.centre : ""}</span>
+                {a.why && <p className="admin-app-why">{a.why}</p>}
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={() => convert(a.id)}>Approve → mentor</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Roster with pairing */}
+      <h3 className="admin-h3" style={{ marginTop: 20 }}>Mentor roster · {roster.mentors.length}</h3>
+      <div className="admin-roster">
+        {roster.mentors.map(m => (
+          <div key={m.mentorId} className="admin-roster-card">
+            <div className="admin-roster-head">
+              {m.photoUrl ? <img src={m.photoUrl} alt="" className="admin-roster-avatar" onError={e => { e.target.style.display = "none"; }}/> : <div className="admin-roster-avatar admin-card-img-fallback">{(m.fullName || "?").charAt(0)}</div>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="admin-roster-name">
+                  {m.fullName}
+                  <span className={"chip " + (m.status === "active" ? "chip-lime" : "chip-gold")} style={{ marginLeft: 8 }}>{m.status}</span>
+                  {m.source === "afrovanguard" && <span className="chip chip-navy" style={{ marginLeft: 6 }}>AV</span>}
+                </div>
+                <div className="mono admin-cell-sub">{m.centre}{(m.tracks || []).length ? " · " + m.tracks.join(", ") : ""}</div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => setEditing(m)}>Edit</button>
+            </div>
+            <div className="admin-roster-cap">
+              <span className="mono">{m.menteeCount} / {m.maxMentees || 0} mentees</span>
+              <span className={"chip " + (m.openSeats > 0 ? "chip-lime" : "chip-coral")}>{m.openSeats > 0 ? m.openSeats + " open" : "full"}</span>
+            </div>
+            {m.mentees.length > 0 && (
+              <div className="admin-roster-mentees">
+                {m.mentees.map(x => <span key={x.memberId} className="chip" title={x.centre + " · " + x.track}>{x.fullName}</span>)}
+              </div>
+            )}
+            {m.openSeats > 0 && unassigned.length > 0 && (
+              <select className="admin-select admin-roster-pair" defaultValue="" onChange={e => { pair(m.mentorId, e.target.value, roster.sessionId); e.target.value = ""; }}>
+                <option value="">+ Pair a mentee…</option>
+                {unassigned.map(u => <option key={u.memberId} value={u.memberId}>{u.fullName} · {u.centre}{u.track ? " · " + u.track : ""}</option>)}
+              </select>
+            )}
+          </div>
+        ))}
+        {roster.mentors.length === 0 && <div className="admin-empty">No mentors yet. Approve an application or add one.</div>}
+      </div>
+
+      {unassigned.length > 0 && (
+        <p className="admin-hint" style={{ marginTop: 14 }}>{unassigned.length} active member{unassigned.length === 1 ? "" : "s"} still need a mentor this session.</p>
+      )}
+
+      {editing && <AdminMentorEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
     </div>
   );
 }
@@ -991,6 +1127,28 @@ function AdminAnchor() {
   const addSys = () => update(o => ({ ...o, systems: [...(o.systems || []), { key: "sys" + Date.now(), label: "", icon: "ph-check-circle" }] }));
   const rmSys = (i) => update(o => ({ ...o, systems: o.systems.filter((_, idx) => idx !== i) }));
   const moveSys = (i, dir) => update(o => ({ ...o, systems: arrMove(o.systems, i, dir) }));
+  const blankWeek = { title: "", system: "", focus: "", home: "", school: "", peer: "", journal: "" };
+  const addWeek = () => update(o => ({ ...o, weeks: [...(o.weeks || []), { ...blankWeek }] }));
+  const dupWeek = (i) => update(o => { const w = o.weeks.slice(); w.splice(i + 1, 0, { ...w[i] }); return { ...o, weeks: w }; });
+  const rmWeek = async (i) => { const ok = await dialog.confirm({ title: "Delete week " + (i + 1) + "?", body: (weeks[i] && weeks[i].title) || "This week", cta: "Delete" }); if (ok) update(o => ({ ...o, weeks: o.weeks.filter((_, idx) => idx !== i) })); };
+
+  // Import / export the whole content bundle as JSON (backup / migrate).
+  const exportJson = () => {
+    const blob = new Blob([JSON.stringify(c, null, 2)], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = "anchor-content-" + new Date().toISOString().slice(0, 10) + ".json"; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  const importJson = async (e) => {
+    const file = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.weeks)) { toast.error("Not a valid Anchor content file"); return; }
+      const ok = await dialog.confirm({ title: "Replace all content?", body: "Import " + parsed.weeks.length + " weeks, " + (parsed.quotes || []).length + " quotes, " + (parsed.systems || []).length + " systems. Nothing publishes until you Save.", cta: "Import" });
+      if (ok) update(() => ({ weeks: parsed.weeks, quotes: parsed.quotes || [], systems: parsed.systems || [], tilt: parsed.tilt !== false }));
+    } catch (_) { toast.error("Couldn't read that file"); }
+  };
 
   const emptyQuotes = quotes.filter(q => !String(q).trim()).length;
   const warnings = [];
@@ -1006,6 +1164,8 @@ function AdminAnchor() {
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <span className="mono" style={{ color: saved ? "var(--lime-ink)" : dirty ? "var(--coral)" : "var(--ink-500)" }}>{saved ? "PUBLISHED ✓" : busy ? "SAVING…" : dirty ? "UNSAVED CHANGES" : ""}</span>
           <a className="btn btn-ghost btn-sm" href="/journal/" target="_blank" rel="noopener noreferrer">Open preview ↗</a>
+          <button className="btn btn-ghost btn-sm" onClick={exportJson}>Export</button>
+          <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer", margin: 0 }}>Import<input type="file" accept="application/json,.json" onChange={importJson} style={{ display: "none" }}/></label>
           <button className="btn btn-ghost btn-sm" onClick={resetAll} disabled={busy}>Reset all</button>
           <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !dirty}>Save &amp; publish</button>
         </div>
@@ -1024,6 +1184,12 @@ function AdminAnchor() {
 
       {tab === "weeks" && (
         <div className="admin-anchor-weeks">
+          <div className="admin-anchor-weeks-bar">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { document.querySelectorAll(".admin-anchor-week").forEach(d => d.open = true); }}>Expand all</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { document.querySelectorAll(".admin-anchor-week").forEach(d => d.open = false); }}>Collapse all</button>
+            <span style={{ flex: 1 }}/>
+            <button type="button" className="btn btn-primary btn-sm" onClick={addWeek}>+ Add week</button>
+          </div>
           {weeks.map((w, i) => (
             <details key={i} className="admin-anchor-week">
               <summary>
@@ -1031,7 +1197,9 @@ function AdminAnchor() {
                 <span className="admin-anchor-wk-tools" onClick={e => e.preventDefault()}>
                   <button type="button" className="admin-anchor-mv" disabled={i === 0} onClick={() => moveWeek(i, -1)} aria-label="Move up">↑</button>
                   <button type="button" className="admin-anchor-mv" disabled={i === weeks.length - 1} onClick={() => moveWeek(i, 1)} aria-label="Move down">↓</button>
+                  <button type="button" className="admin-anchor-mv" onClick={() => dupWeek(i)} title="Duplicate week">⎘</button>
                   {defaults && defaults.weeks && defaults.weeks[i] && <button type="button" className="admin-anchor-mv" onClick={() => resetWeek(i)} title="Reset this week to default">⟲</button>}
+                  <button type="button" className="admin-anchor-mv admin-anchor-del" onClick={() => rmWeek(i)} title="Delete week">✕</button>
                 </span>
               </summary>
               <div className="admin-fields">

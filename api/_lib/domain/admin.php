@@ -100,14 +100,16 @@ function admin_members_upsert(array $p): array {
 function admin_mentors_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $rows = db_all('SELECT * FROM mentors ORDER BY createdAt DESC');
-    return ['ok' => true, 'mentors' => array_map('public_mentor', $rows)];
+    return ['ok' => true, 'mentors' => array_map('mentor_full', $rows)];
 }
 
 function admin_mentors_upsert(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $data = $p['data'] ?? [];
+    // Client may send tracks as an array — flatten to the CSV the column stores.
+    if (isset($data['tracks']) && is_array($data['tracks'])) $data['tracks'] = implode(', ', array_filter(array_map('trim', $data['tracks'])));
     $mentorId = trim((string)($data['mentorId'] ?? ''));
-    $cols = ['fullName','email','phone','status','tracks','centre','bio','photoUrl','maxMentees','availability','checkedAt','joinedAt'];
+    $cols = ['fullName','email','phone','status','tracks','centre','bio','photoUrl','maxMentees','availability','checkedAt','joinedAt','source','program','skills','linkedin','afrovanguardRef'];
     $existing = $mentorId ? db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$mentorId]) : null;
 
     if ($existing) {

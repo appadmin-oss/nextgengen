@@ -366,7 +366,7 @@ function TopNav({ page, setPage }) {
 
   return (
     <React.Fragment>
-      <div ref={navRef} className={"topnav" + (scrolled ? " is-scrolled" : "") + (mega ? " has-mega" : "")}>
+      <div ref={navRef} role="banner" className={"topnav" + (scrolled ? " is-scrolled" : "") + (mega ? " has-mega" : "")}>
         <div className="topnav-inner">
           <a className="brand" onClick={() => go("home")} role="link" tabIndex={0} aria-label="Next Generation Genius — Home">
             <BrandLogo size={42}/>

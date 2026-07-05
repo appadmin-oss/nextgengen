@@ -32,7 +32,7 @@ require $ROOT . '/_lib/db.php';
 require $ROOT . '/_lib/util.php';
 require $ROOT . '/_lib/mailer.php';
 require $ROOT . '/_lib/anchor-content.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
@@ -222,6 +222,23 @@ chk('anchor defaults expose 12 weeks', count(backend_dispatch('admin.anchor.defa
 chk('anchor set drops empty quotes', (function () {
     backend_dispatch('admin.anchor.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['quotes' => ['Keep this.', '', '   ']]]);
     return backend_dispatch('public.anchorContent', [])['content']['quotes'] === ['Keep this.'];
+})());
+
+// ── Mentorship (Afrovanguard-connected) ──
+$GLOBALS['CONFIG']['afrovanguard'] = ['org_url' => 'https://afrovanguard.org.ng', 'sts_url' => 'https://afrovanguard.org.ng/projects/sts/programs/', 'volunteer_url' => 'https://cacentre.afrovanguard.org.ng/volunteer', 'mentor_program' => 'Street-To-Stardom · Next Gen'];
+backend_dispatch('public.apply', ['kind' => 'mentor', 'name' => 'Mentor Ada', 'email' => 'mentorada@example.com', 'role' => 'Music coach', 'why' => 'I want to help teens find their voice.']);
+$mApp = db_row("SELECT id FROM applications WHERE email='mentorada@example.com' AND kind='mentor'")['id'];
+$mConv = backend_dispatch('admin.mentor.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $mApp]);
+chk('mentor application converts to mentor', !empty($mConv['mentorId']));
+chk('converted mentor tagged source=afrovanguard', db_row('SELECT source FROM mentors WHERE mentorId=?', [$mConv['mentorId']])['source'] === 'afrovanguard');
+chk('mentorship overview carries Afrovanguard links', !empty(backend_dispatch('admin.mentorship.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['afrovanguard']['volunteerUrl']));
+chk('mentorship roster returns mentors', is_array(backend_dispatch('admin.mentorship.roster', ['requesterId' => 'NGG-2025-0099'])['mentors']));
+chk('mentorship gated from non-staff', backend_dispatch('admin.mentorship.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+chk('convert refuses a teen app as mentor', backend_dispatch('admin.mentor.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $anchorApp])['error'] === 'only_mentor_apps');
+chk('mentor upsert stores new fields', (function () {
+    backend_dispatch('admin.mentors.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Skilled Mentor', 'email' => 'skill@example.com', 'status' => 'active', 'tracks' => ['Tech', 'Music'], 'source' => 'afrovanguard', 'program' => 'STS', 'skills' => 'coding', 'maxMentees' => 2]]);
+    $r = db_row("SELECT skills, program, tracks FROM mentors WHERE email='skill@example.com'");
+    return $r['skills'] === 'coding' && $r['program'] === 'STS' && $r['tracks'] === 'Tech, Music';
 })());
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
