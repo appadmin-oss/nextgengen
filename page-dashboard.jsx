@@ -327,6 +327,27 @@ function DashboardProfileModal({ m, onClose, onSaved }) {
     } finally { setBusy(false); }
   };
   const hasPhoto = d.photoUrl && /^https?:\/\//.test(d.photoUrl);
+
+  // Password — opt-in. Members sign in with a code; setting a password here
+  // lets them use the standard email + password login next time.
+  const hasPw = !!m.hasPassword;
+  const [pw, setPw] = React.useState({ current: "", next: "", confirm: "" });
+  const [pwBusy, setPwBusy] = React.useState(false);
+  const [pwDone, setPwDone] = React.useState(false);
+  const setP = (k, v) => setPw(o => Object.assign({}, o, { [k]: v }));
+  const savePassword = async () => {
+    if (pw.next.length < 8) { toast.error("Password must be at least 8 characters"); return; }
+    if (pw.next !== pw.confirm) { toast.error("Passwords don't match"); return; }
+    setPwBusy(true);
+    try {
+      await NGGApi.auth.setPassword(pw.next, pw.current);
+      setPwDone(true);
+      setPw({ current: "", next: "", confirm: "" });
+      toast.success(hasPw ? "Password changed" : "Password set — you can use it to sign in");
+    } catch (e) {
+      toast.error("Couldn't save password: " + humanError(e));
+    } finally { setPwBusy(false); }
+  };
   return (
     <div className="admin-drawer" onClick={onClose}>
       <div className="admin-drawer-panel" onClick={(e) => e.stopPropagation()}>
@@ -350,6 +371,23 @@ function DashboardProfileModal({ m, onClose, onSaved }) {
             <label className="admin-field"><span>School</span><input className="admin-input" value={d.school} onChange={(e) => set("school", e.target.value)} placeholder="Your school"/></label>
           </div>
           <label className="admin-field"><span>Instagram</span><input className="admin-input" value={d.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@handle or link"/></label>
+
+          <div style={{ borderTop: "1px solid rgba(12,20,50,0.08)", margin: "6px 0 2px", paddingTop: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{hasPw ? "Change password" : "Set a password"}</div>
+            <div style={{ fontSize: 13, color: "var(--ink-500)", margin: "4px 0 12px" }}>
+              {hasPw ? "Update the password you use to sign in." : "Optional — set one to sign in with email + password instead of a code each time."}
+            </div>
+            {hasPw && (
+              <label className="admin-field"><span>Current password</span><input className="admin-input" type="password" autoComplete="current-password" value={pw.current} onChange={(e) => setP("current", e.target.value)}/></label>
+            )}
+            <div className="admin-fields-row">
+              <label className="admin-field"><span>New password</span><input className="admin-input" type="password" autoComplete="new-password" value={pw.next} onChange={(e) => setP("next", e.target.value)} placeholder="At least 8 characters"/></label>
+              <label className="admin-field"><span>Confirm</span><input className="admin-input" type="password" autoComplete="new-password" value={pw.confirm} onChange={(e) => setP("confirm", e.target.value)}/></label>
+            </div>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={pwBusy || !pw.next} onClick={savePassword}>
+              {pwBusy ? "Saving…" : pwDone ? "Saved ✓" : (hasPw ? "Change password" : "Set password")}
+            </button>
+          </div>
         </div>
         <div className="admin-drawer-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>

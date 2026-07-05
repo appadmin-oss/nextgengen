@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 4;
+const NGG_SCHEMA_TARGET = 5;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -278,6 +278,9 @@ function db_migrate(PDO $db): void {
               createdAt TEXT DEFAULT (datetime('now')), ip TEXT
             );
             CREATE INDEX idx_contact_status ON contact_messages(status);
+        ",
+        5 => "
+            ALTER TABLE members ADD COLUMN passwordHash TEXT DEFAULT '';
         ",
     ];
 

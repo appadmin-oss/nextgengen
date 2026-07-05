@@ -334,6 +334,7 @@ function public_member(array $m): array {
         'school' => $m['school'] ?? '',
         'joinDate' => $m['joinDate'] ? (string)$m['joinDate'] : '',
         'parentEmail' => $m['parentEmail'] ?? '',
+        'hasPassword' => !empty($m['passwordHash']),
         'needsTotp' => is_admin_role($m['role']) && empty($m['totpSecret']),
     ];
 }

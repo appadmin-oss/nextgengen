@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS members (
   centre VARCHAR(32), photoUrl TEXT, track VARCHAR(64), cohort VARCHAR(64),
   joinDate VARCHAR(40), dob VARCHAR(40),
   parentName VARCHAR(255), parentEmail VARCHAR(200), parentPhone VARCHAR(40), school VARCHAR(255),
-  bio TEXT, socials TEXT, totpSecret VARCHAR(64), notes TEXT,
+  bio TEXT, socials TEXT, totpSecret VARCHAR(64), passwordHash VARCHAR(255) DEFAULT '', notes TEXT,
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
   INDEX idx_members_email (email), INDEX idx_members_centre (centre), INDEX idx_members_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -205,4 +205,4 @@ CREATE TABLE IF NOT EXISTS contact_messages (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (4) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (5) ON DUPLICATE KEY UPDATE version = version;

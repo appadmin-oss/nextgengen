@@ -120,27 +120,35 @@ function useScrollReveal(page) {
   }, [page]);
 }
 
-// In-page anchors that must never be treated as routes (skip link target,
-// scroll targets). Anything here — or any hash matching a rendered element
-// id — is left alone instead of routing to the 404.
+// In-page anchors that are scroll targets, not routes (skip link, section
+// jumps). They live in the URL hash; the browser scrolls to them and the
+// router leaves the current page untouched.
 const ANCHOR_IDS = ["main", "mentor-apply"];
 
+// Standard path-based routing. "/" → home, "/dashboard" → dashboard, etc.
+// The server (.htaccess SPA fallback) serves index.html for every app path,
+// so deep links + refresh work without a hash. Real files and /api, /journal,
+// /assets are excluded server-side.
+function pageFromPath() {
+  const seg = (window.location.pathname || "/").replace(/^\/+|\/+$/g, "").split("/")[0];
+  if (!seg) return "home";
+  return PAGE_IDS.includes(seg) ? seg : "_notfound";
+}
+function pathForPage(page) {
+  return page === "home" ? "/" : "/" + page;
+}
+
 function App() {
-  const [page, setPage] = React.useState(() => {
-    // Allow deep-linking via hash, e.g. /#admin or /#dashboard. Unknown
-    // hashes route to a friendly 404 so shared bad links don't silently
-    // dump users at /home as if nothing happened.
-    const h = (window.location.hash || "").replace(/^#/, "");
-    if (!h || ANCHOR_IDS.includes(h)) return "home";
-    return PAGE_IDS.includes(h) ? h : "_notfound";
-  });
+  const [page, setPage] = React.useState(pageFromPath);
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
-    // Reflect current page in URL hash so refresh + share works.
-    if (page === "home") history.replaceState(null, "", window.location.pathname + window.location.search);
-    else history.replaceState(null, "", "#" + page);
+    // Reflect the current page as a clean path so refresh + share work.
+    // Skip the 404 sentinel so a bad URL stays visible as-typed.
+    if (page !== "_notfound" && window.location.pathname !== pathForPage(page)) {
+      history.pushState({ page }, "", pathForPage(page) + window.location.search);
+    }
     // Expose for the sign-in modal / magic link consumer.
     window.__navigate = setPage;
     // Per-page document title + meta description — actually visible to
@@ -159,19 +167,14 @@ function App() {
     document.body.setAttribute("data-page", page);
   }, [page]);
 
-  // React to back/forward.
+  // React to browser back/forward via the History API.
   React.useEffect(() => {
-    const onHash = () => {
-      const h = (window.location.hash || "").replace(/^#/, "");
-      if (!h) { if (page !== "home") setPage("home"); return; }
-      if (PAGE_IDS.includes(h)) { if (h !== page) setPage(h); return; }
-      // In-page anchor (skip link, scroll target) — let the browser scroll,
-      // don't route. Covers both the known list and any rendered element id.
-      if (ANCHOR_IDS.includes(h) || document.getElementById(h)) return;
-      if (page !== "_notfound") setPage("_notfound");
+    const onPop = () => {
+      const next = pageFromPath();
+      if (next !== page) setPage(next);
     };
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, [page]);
 
   // Apply accent override
