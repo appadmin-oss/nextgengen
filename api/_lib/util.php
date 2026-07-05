@@ -330,6 +330,8 @@ function public_member(array $m): array {
         'cohort' => $m['cohort'],
         'bio' => $m['bio'],
         'socials' => safe_json($m['socials'] ?? null),
+        'phone' => $m['phone'] ?? '',
+        'school' => $m['school'] ?? '',
         'joinDate' => $m['joinDate'] ? (string)$m['joinDate'] : '',
         'parentEmail' => $m['parentEmail'] ?? '',
         'needsTotp' => is_admin_role($m['role']) && empty($m['totpSecret']),

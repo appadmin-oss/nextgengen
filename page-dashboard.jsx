@@ -229,9 +229,12 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
     NGGApi.member.markRead(id).catch(() => {/* non-critical */});
   };
 
+  const [editProfile, setEditProfile] = React.useState(false);
+
   return (
     <React.Fragment>
-      <DashboardHero m={m} session={session} refreshing={refreshing} onSignOut={onSignOut}/>
+      <DashboardHero m={m} session={session} refreshing={refreshing} onSignOut={onSignOut} onEditProfile={() => setEditProfile(true)}/>
+      {editProfile && <DashboardProfileModal m={m} onClose={() => setEditProfile(false)} onSaved={() => { setEditProfile(false); onMutate(); }}/>}
       <section className="dash-section">
         <div className="container">
           <div className="dash-grid">
@@ -260,15 +263,20 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
 // ----------------------------------------------------------------------------
 
-function DashboardHero({ m, session, refreshing, onSignOut }) {
+function DashboardHero({ m, session, refreshing, onSignOut, onEditProfile }) {
   const first = String(m.fullName || "").split(" ")[0] || "Member";
   const greeting = hourGreeting();
+  const hasPhoto = m.photoUrl && /^https?:\/\//.test(m.photoUrl);
   return (
     <section className="dash-hero">
       <div className="container">
         <div className="dash-hero-row">
           <div className="dash-hero-id">
-            <Avatar seed={m.memberId.charCodeAt(m.memberId.length - 1) % 20 + 1} size={64} ring/>
+            <button className="dash-hero-avatar-btn" onClick={onEditProfile} title="Edit your profile" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", borderRadius: "50%", lineHeight: 0 }}>
+              {hasPhoto
+                ? <img src={m.photoUrl} alt="" style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--gold-500)" }} onError={(e) => { e.target.style.display = "none"; }}/>
+                : <Avatar seed={m.memberId.charCodeAt(m.memberId.length - 1) % 20 + 1} size={64} ring/>}
+            </button>
             <div>
               <div className="mono dash-hero-meta">
                 {greeting.toUpperCase()} · {m.memberId}
@@ -284,11 +292,71 @@ function DashboardHero({ m, session, refreshing, onSignOut }) {
           </div>
           <div className="dash-hero-actions">
             <DashboardSessionBadge session={session}/>
+            <button className="btn btn-on-dark-ghost btn-sm" onClick={onEditProfile}>Edit profile</button>
             <button className="btn btn-on-dark-ghost btn-sm" onClick={onSignOut}>Sign out</button>
           </div>
         </div>
       </div>
     </section>
+  );
+}
+
+// Compact member profile editor with a Cloudinary avatar upload.
+function DashboardProfileModal({ m, onClose, onSaved }) {
+  const socials = (m.socials && typeof m.socials === "object") ? m.socials : {};
+  const [d, setD] = React.useState({
+    photoUrl: m.photoUrl || "",
+    bio: m.bio || "",
+    phone: m.phone || "",
+    instagram: socials.instagram || "",
+    school: m.school || "",
+  });
+  const [busy, setBusy] = React.useState(false);
+  const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
+  const save = async () => {
+    setBusy(true);
+    try {
+      await NGGApi.member.updateProfile({
+        photoUrl: d.photoUrl, bio: d.bio, phone: d.phone, school: d.school,
+        socials: { instagram: d.instagram },
+      });
+      toast.success("Profile updated");
+      onSaved();
+    } catch (e) {
+      toast.error("Couldn't save: " + humanError(e));
+    } finally { setBusy(false); }
+  };
+  const hasPhoto = d.photoUrl && /^https?:\/\//.test(d.photoUrl);
+  return (
+    <div className="admin-drawer" onClick={onClose}>
+      <div className="admin-drawer-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3>Edit profile</h3>
+          <button type="button" className="admin-drawer-close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="admin-fields">
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {hasPhoto
+              ? <img src={d.photoUrl} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover" }} onError={(e) => { e.target.style.display = "none"; }}/>
+              : <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--cream-100)", display: "grid", placeItems: "center", fontSize: 28 }}>🙂</div>}
+            <div className="admin-upload-row">
+              <input type="text" className="admin-input" value={d.photoUrl} onChange={(e) => set("photoUrl", e.target.value)} placeholder="Upload → or paste a photo URL"/>
+              <Uploader kind="avatar" accept="image/*" onUploaded={(url) => set("photoUrl", url)} compact/>
+            </div>
+          </div>
+          <label className="admin-field"><span>Short bio</span><textarea className="admin-input" rows={3} value={d.bio} onChange={(e) => set("bio", e.target.value)} placeholder="One or two lines about you."/></label>
+          <div className="admin-fields-row">
+            <label className="admin-field"><span>Phone</span><input className="admin-input" value={d.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+234…"/></label>
+            <label className="admin-field"><span>School</span><input className="admin-input" value={d.school} onChange={(e) => set("school", e.target.value)} placeholder="Your school"/></label>
+          </div>
+          <label className="admin-field"><span>Instagram</span><input className="admin-input" value={d.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@handle or link"/></label>
+        </div>
+        <div className="admin-drawer-foot">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save profile"}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -318,33 +386,34 @@ function DashboardSessionBadge({ session }) {
 
 function DashboardToday({ today, member, onMutate, session }) {
   const [busy, setBusy] = React.useState({});
+  const [proofFor, setProofFor] = React.useState(null); // mission awaiting a proof modal
   const submit = async (m) => {
-    setBusy(b => Object.assign({}, b, { [m.missionId]: true }));
-    try {
-      // For quick-complete missions (proof=none), one tap finishes them.
-      // Otherwise open a proof modal.
-      if (m.proof === "none") {
+    // Quick-complete missions (proof=none) finish in one tap. Everything else
+    // opens the proof modal — which offers a real media upload for
+    // photo/audio/video/file proof, and a link/note field otherwise.
+    if (m.proof === "none") {
+      setBusy(b => Object.assign({}, b, { [m.missionId]: true }));
+      try {
         await NGGApi.member.submitMission({ missionId: m.missionId });
         toast.success("+" + m.xp + " XP locked in", m.title);
         onMutate();
-      } else {
-        const proof = await dialog.prompt({
-          title: m.title,
-          body: m.proof === "link"
-            ? "Paste a link to your proof (URL, doc, post, video…)."
-            : "Add a short note describing what you did.",
-          label: m.proof === "link" ? "Proof link or note" : "What you did",
-          placeholder: m.proof === "link" ? "https://… or a short note" : "I shipped…",
-          multiline: m.proof !== "link",
-          cta: "Submit for review",
-          required: true,
-        });
-        if (proof) {
-          await NGGApi.member.submitMission({ missionId: m.missionId, proofUrl: proof });
-          toast.success("Sent to mentor for review", m.title);
-          onMutate();
-        }
+      } catch (e) {
+        toast.error("Couldn't submit: " + humanError(e), "Try again");
+      } finally {
+        setBusy(b => Object.assign({}, b, { [m.missionId]: false }));
       }
+      return;
+    }
+    setProofFor(m);
+  };
+
+  const sendProof = async (m, proofUrl) => {
+    setBusy(b => Object.assign({}, b, { [m.missionId]: true }));
+    try {
+      await NGGApi.member.submitMission({ missionId: m.missionId, proofUrl });
+      toast.success("Sent to mentor for review", m.title);
+      setProofFor(null);
+      onMutate();
     } catch (e) {
       toast.error("Couldn't submit: " + humanError(e), "Try again");
     } finally {
@@ -398,6 +467,72 @@ function DashboardToday({ today, member, onMutate, session }) {
           ))}
         </div>
       )}
+      {proofFor && (
+        <MissionProofModal
+          m={proofFor}
+          busy={!!busy[proofFor.missionId]}
+          onClose={() => setProofFor(null)}
+          onSubmit={(url) => sendProof(proofFor, url)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Proof capture modal. For photo/audio/video/file proof it shows a real
+// Cloudinary upload (with a URL/note fallback); for link/text it's a field.
+function MissionProofModal({ m, busy, onClose, onSubmit }) {
+  const isMedia = ["photo", "audio", "video", "file"].includes(m.proof);
+  const accept = m.proof === "photo" ? "image/*" : m.proof === "audio" ? "audio/*" : m.proof === "video" ? "video/*" : "*/*";
+  const [note, setNote] = React.useState("");
+  const [fileUrl, setFileUrl] = React.useState("");
+  const value = isMedia ? (fileUrl || note) : note;
+  const canSubmit = !!String(value).trim() && !busy;
+  const label = m.proof === "photo" ? "Upload a photo" : m.proof === "audio" ? "Upload an audio clip"
+    : m.proof === "video" ? "Upload a video" : m.proof === "file" ? "Upload a file"
+    : m.proof === "link" ? "Paste a link" : "Describe what you did";
+  return (
+    <div className="admin-drawer" onClick={onClose}>
+      <div className="admin-drawer-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3>{m.title}</h3>
+          <button type="button" className="admin-drawer-close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="admin-fields">
+          <p style={{ color: "var(--ink-500)", margin: "0 0 4px", fontSize: 14 }}>{m.prompt}</p>
+          {isMedia ? (
+            <React.Fragment>
+              <label className="admin-field">
+                <span>{label}</span>
+                <div className="admin-upload-row">
+                  <input type="text" className="admin-input" value={fileUrl} onChange={(e) => setFileUrl(e.target.value)} placeholder="Upload → or paste a link"/>
+                  <Uploader kind="proof" accept={accept} onUploaded={(url) => setFileUrl(url)} compact/>
+                </div>
+              </label>
+              {fileUrl && /^https?:\/\//.test(fileUrl) && (m.proof === "photo") && (
+                <span className="admin-upload-preview"><img src={fileUrl} alt="" onError={(e) => { e.target.style.display = "none"; }}/></span>
+              )}
+              <label className="admin-field">
+                <span>Add a note (optional)</span>
+                <textarea className="admin-input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything your mentor should know…"/>
+              </label>
+            </React.Fragment>
+          ) : (
+            <label className="admin-field">
+              <span>{label}</span>
+              {m.proof === "link"
+                ? <input type="text" className="admin-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="https://… or a short note"/>
+                : <textarea className="admin-input" rows={4} value={note} onChange={(e) => setNote(e.target.value)} placeholder="I shipped…"/>}
+            </label>
+          )}
+        </div>
+        <div className="admin-drawer-foot">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" disabled={!canSubmit} onClick={() => onSubmit(isMedia && fileUrl ? fileUrl + (note.trim() ? " — " + note.trim() : "") : value)}>
+            {busy ? "Submitting…" : "Submit for review"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
