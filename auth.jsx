@@ -70,7 +70,11 @@ function AuthProvider({ children }) {
     adminOk,
     loading,
     isSignedIn: !!member,
-    isAdmin: !!member && (member.role === "admin" || member.role === "super_admin"),
+    // Any staff tier (editor/admin/super_admin) can open the console; caps
+    // decide what's visible inside.
+    isAdmin: !!member && Array.isArray(member.caps) && member.caps.length > 0,
+    caps: (member && member.caps) || [],
+    hasCap: (cap) => !!member && Array.isArray(member.caps) && member.caps.indexOf(cap) !== -1,
     openSignIn: (seed) => { setSigninSeed(seed || null); setSigninOpen(true); },
     closeSignIn: () => setSigninOpen(false),
     refresh: async () => {

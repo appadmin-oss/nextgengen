@@ -70,6 +70,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.broadcast'         => 'admin_broadcast',
             'admin.anchor.get'        => 'admin_anchor_get',
             'admin.anchor.set'        => 'admin_anchor_set',
+            'admin.anchor.defaults'   => 'admin_anchor_defaults',
             'admin.overview'          => 'admin_overview',
             'admin.member.detail'     => 'admin_member_detail',
             'admin.mentor.assign'     => 'admin_assign_mentor',

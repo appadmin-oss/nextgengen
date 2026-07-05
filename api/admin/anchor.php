@@ -5,7 +5,8 @@ $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
-    $res = gs_call('admin.anchor.get', ['requesterId' => $s['mid']]);
+    $op = (($_GET['defaults'] ?? '') === '1') ? 'admin.anchor.defaults' : 'admin.anchor.get';
+    $res = gs_call($op, ['requesterId' => $s['mid']]);
     if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
     unset($res['ok']);
     json_ok($res);

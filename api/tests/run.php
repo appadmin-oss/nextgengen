@@ -199,5 +199,30 @@ chk('change password needs correct current', backend_dispatch('auth.setPassword'
 chk('change password with current ok', !empty(backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'correcthorse9'])['ok']));
 chk('old password no longer works', backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'correcthorse9'])['error'] === 'invalid_login');
 
+// ── Admin tiers (RBAC) ──
+db_insert('members', ['memberId' => 'NGG-2025-0002', 'fullName' => 'Edith Editor', 'email' => 'editor@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+$paId = db_row("SELECT memberId FROM members WHERE email='pa@example.com'")['memberId'];
+chk('editor caps = content only', backend_dispatch('member.dashboard', ['memberId' => 'NGG-2025-0002'])['member']['caps'] === ['content']);
+chk('editor can manage anchor (content)', !empty(backend_dispatch('admin.anchor.get', ['requesterId' => 'NGG-2025-0002'])['ok']));
+chk('editor blocked from members (people)', backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0002'])['error'] === 'forbidden');
+chk('editor blocked from messages (inbox)', backend_dispatch('admin.contact.list', ['requesterId' => 'NGG-2025-0002'])['error'] === 'forbidden');
+chk('editor blocked from settings', backend_dispatch('admin.settings.get', ['requesterId' => 'NGG-2025-0002'])['error'] === 'forbidden');
+chk('admin can list members (people)', is_array(backend_dispatch('admin.members.list', ['requesterId' => $paId])['members'] ?? null));
+chk('admin blocked from settings', backend_dispatch('admin.settings.get', ['requesterId' => $paId])['error'] === 'forbidden');
+chk('super_admin reads settings', isset(backend_dispatch('admin.settings.get', ['requesterId' => 'NGG-2025-0099'])['settings']));
+chk('admin cannot change roles (no rbac cap)', (function () use ($paId) {
+    backend_dispatch('admin.members.upsert', ['requesterId' => $paId, 'data' => ['memberId' => 'NGG-2025-0002', 'role' => 'admin']]);
+    return db_row("SELECT role FROM members WHERE memberId='NGG-2025-0002'")['role'] === 'editor';
+})());
+chk('super_admin can change roles', (function () {
+    backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['memberId' => 'NGG-2025-0002', 'role' => 'admin']]);
+    return db_row("SELECT role FROM members WHERE memberId='NGG-2025-0002'")['role'] === 'admin';
+})());
+chk('anchor defaults expose 12 weeks', count(backend_dispatch('admin.anchor.defaults', ['requesterId' => 'NGG-2025-0099'])['content']['weeks']) === 12);
+chk('anchor set drops empty quotes', (function () {
+    backend_dispatch('admin.anchor.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['quotes' => ['Keep this.', '', '   ']]]);
+    return backend_dispatch('public.anchorContent', [])['content']['quotes'] === ['Keep this.'];
+})());
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

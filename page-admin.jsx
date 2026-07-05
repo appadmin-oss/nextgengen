@@ -4,10 +4,22 @@
    Posts (blog/news/updates/promos), Audit log.
    ================================================================ */
 
+// Which capability each admin section needs (null = any staff).
+const SECTION_CAP = {
+  home: null, members: "people", applications: "people", mentors: "people",
+  sessions: "content", missions: "content", anchor: "content", assignments: "content",
+  events: "content", posts: "content", broadcast: "content",
+  newsletter: "inbox", messages: "inbox", audit: "people", settings: "settings",
+};
+
 function AdminPage({ setPage }) {
-  const { member, isAdmin, adminOk, loading, openSignIn, setAdminOk } = useAuth();
+  const { member, isAdmin, adminOk, loading, openSignIn, setAdminOk, hasCap } = useAuth();
   const [section, setSection] = React.useState("home");
   const [setupView, setSetupView] = React.useState(false);
+  const allowed = (s) => !SECTION_CAP[s] || hasCap(SECTION_CAP[s]);
+  // Never render a section the current tier can't access (the backend also
+  // enforces this — data calls 403 — but this keeps the UI honest).
+  const view = allowed(section) ? section : "home";
 
   // Expose for the command palette (Cmd-K deep-link to admin sub-section).
   React.useEffect(() => { window.__adminSection = setSection; return () => { window.__adminSection = null; }; }, []);
@@ -34,23 +46,23 @@ function AdminPage({ setPage }) {
     <div className="page admin" data-screen-label="08 Admin">
       <AdminTopbar section={section} setSection={setSection} setPage={setPage} member={member}/>
       <div className="admin-shell">
-        <AdminNav section={section} setSection={setSection}/>
+        <AdminNav section={view} setSection={setSection} hasCap={hasCap}/>
         <main className="admin-main">
-          {section === "home" && <AdminHome setSection={setSection}/>}
-          {section === "members" && <AdminMembers/>}
-          {section === "applications" && <AdminApplications/>}
-          {section === "mentors" && <AdminMentors/>}
-          {section === "newsletter" && <AdminNewsletter/>}
-          {section === "messages" && <AdminContact/>}
-          {section === "settings" && <AdminSettings/>}
-          {section === "sessions" && <AdminSessions/>}
-          {section === "missions" && <AdminMissions/>}
-          {section === "anchor" && <AdminAnchor/>}
-          {section === "assignments" && <AdminAssignments/>}
-          {section === "events" && <AdminEvents/>}
-          {section === "posts" && <AdminPosts/>}
-          {section === "broadcast" && <AdminBroadcast/>}
-          {section === "audit" && <AdminAudit/>}
+          {view === "home" && <AdminHome setSection={setSection} hasCap={hasCap} member={member}/>}
+          {view === "members" && <AdminMembers/>}
+          {view === "applications" && <AdminApplications/>}
+          {view === "mentors" && <AdminMentors/>}
+          {view === "newsletter" && <AdminNewsletter/>}
+          {view === "messages" && <AdminContact/>}
+          {view === "settings" && <AdminSettings/>}
+          {view === "sessions" && <AdminSessions/>}
+          {view === "missions" && <AdminMissions/>}
+          {view === "anchor" && <AdminAnchor/>}
+          {view === "assignments" && <AdminAssignments/>}
+          {view === "events" && <AdminEvents/>}
+          {view === "posts" && <AdminPosts/>}
+          {view === "broadcast" && <AdminBroadcast/>}
+          {view === "audit" && <AdminAudit/>}
         </main>
       </div>
     </div>
@@ -150,36 +162,54 @@ function AdminTopbar({ section, setSection, setPage, member }) {
   );
 }
 
-function AdminNav({ section, setSection }) {
-  const items = [
-    { id: "home",      label: "Overview",   icon: "◎" },
-    { id: "members",   label: "Members",    icon: "◯" },
-    { id: "applications", label: "Applications", icon: "✉" },
-    { id: "mentors",   label: "Mentors",    icon: "◐" },
-    { id: "sessions",  label: "Sessions",   icon: "▢" },
-    { id: "missions",  label: "Missions",   icon: "✦" },
-    { id: "anchor",    label: "Anchor app", icon: "⚓" },
-    { id: "assignments", label: "Assignments", icon: "❏" },
-    { id: "events",    label: "Events",     icon: "▶" },
-    { id: "posts",     label: "Posts",      icon: "✎" },
-    { id: "broadcast", label: "Announce",   icon: "📣" },
-    { id: "newsletter",label: "Newsletter", icon: "✦" },
-    { id: "messages",  label: "Messages",   icon: "✉" },
-    { id: "audit",     label: "Audit log",  icon: "⌗" },
-    { id: "settings",  label: "Settings",   icon: "⚙" },
+function AdminNav({ section, setSection, hasCap }) {
+  const groups = [
+    { h: null, items: [{ id: "home", label: "Overview", icon: "◎" }] },
+    { h: "People", items: [
+      { id: "members",   label: "Members",    icon: "◯", cap: "people" },
+      { id: "applications", label: "Applications", icon: "✉", cap: "people" },
+      { id: "mentors",   label: "Mentors",    icon: "◐", cap: "people" },
+    ]},
+    { h: "Content", items: [
+      { id: "sessions",  label: "Sessions",   icon: "▢", cap: "content" },
+      { id: "missions",  label: "Missions",   icon: "✦", cap: "content" },
+      { id: "anchor",    label: "Anchor app", icon: "⚓", cap: "content" },
+      { id: "assignments", label: "Assignments", icon: "❏", cap: "content" },
+      { id: "events",    label: "Events",     icon: "▶", cap: "content" },
+      { id: "posts",     label: "Posts",      icon: "✎", cap: "content" },
+      { id: "broadcast", label: "Announce",   icon: "📣", cap: "content" },
+    ]},
+    { h: "Inbox", items: [
+      { id: "newsletter",label: "Newsletter", icon: "✦", cap: "inbox" },
+      { id: "messages",  label: "Messages",   icon: "✉", cap: "inbox" },
+    ]},
+    { h: "System", items: [
+      { id: "audit",     label: "Audit log",  icon: "⌗", cap: "people" },
+      { id: "settings",  label: "Settings",   icon: "⚙", cap: "settings" },
+    ]},
   ];
+  const can = (it) => !it.cap || (hasCap ? hasCap(it.cap) : true);
   return (
     <aside className="admin-nav">
-      {items.map(it => (
-        <button
-          key={it.id}
-          className={"admin-nav-item" + (section === it.id ? " is-active" : "")}
-          onClick={() => setSection(it.id)}
-        >
-          <span className="admin-nav-icon" aria-hidden="true">{it.icon}</span>
-          <span className="admin-nav-label">{it.label}</span>
-        </button>
-      ))}
+      {groups.map((grp, gi) => {
+        const items = grp.items.filter(can);
+        if (!items.length) return null;
+        return (
+          <React.Fragment key={gi}>
+            {grp.h && <div className="admin-nav-group">{grp.h}</div>}
+            {items.map(it => (
+              <button
+                key={it.id}
+                className={"admin-nav-item" + (section === it.id ? " is-active" : "")}
+                onClick={() => setSection(it.id)}
+              >
+                <span className="admin-nav-icon" aria-hidden="true">{it.icon}</span>
+                <span className="admin-nav-label">{it.label}</span>
+              </button>
+            ))}
+          </React.Fragment>
+        );
+      })}
     </aside>
   );
 }
@@ -196,10 +226,11 @@ function titleFor(s) {
 // Home
 // ============================================================================
 
-function AdminHome({ setSection }) {
+function AdminHome({ setSection, hasCap, member }) {
   const [o, setO] = React.useState(null);
   const [err, setErr] = React.useState("");
   const fmt = (n) => new Intl.NumberFormat("en").format(n || 0);
+  const can = (c) => hasCap ? hasCap(c) : true;
   React.useEffect(() => { NGGApi.admin.overview().then(r => setO(r.overview || {})).catch(e => setErr(e.code || e.message)); }, []);
 
   if (err) return <div className="admin-empty">Couldn't load overview: {err}</div>;
@@ -207,27 +238,43 @@ function AdminHome({ setSection }) {
   const m = o.members || {}, ap = o.applications || {}, asg = o.assignments || {}, an = o.anchor || {}, msg = o.messages || {};
   const maxCentre = Math.max(1, ...(o.byCentre || []).map(c => c.c));
   const maxTrack = Math.max(1, ...(o.byTrack || []).map(t => t.c));
+  const roleLabels = { super_admin: "Super admin", admin: "Admin", editor: "Editor" };
+  const role = (member && member.role) || "";
+  const caps = (member && member.caps) || [];
 
   return (
     <div className="admin-home">
+      {/* Who you are + what you can do */}
+      <div className="admin-role-banner">
+        <div>
+          <span className="mono admin-role-eyebrow">SIGNED IN AS</span>
+          <div className="admin-role-name">{(member && member.fullName) || "Staff"} <span className={"chip " + (role === "super_admin" ? "chip-gold" : role === "admin" ? "chip-navy" : "chip-lime")}>{roleLabels[role] || role}</span></div>
+        </div>
+        <div className="admin-role-caps">
+          {["content", "people", "inbox", "settings", "rbac"].map(c => (
+            <span key={c} className={"chip admin-cap-chip" + (caps.indexOf(c) !== -1 ? " is-on" : " is-off")}>{c}</span>
+          ))}
+        </div>
+      </div>
+
       {/* Needs-attention callouts */}
-      {(ap.new > 0 || asg.toGrade > 0 || msg.unread > 0) && (
+      {((can("people") && ap.new > 0) || (can("content") && asg.toGrade > 0) || (can("inbox") && msg.unread > 0)) && (
         <div className="admin-attn">
-          {ap.new > 0 && <button className="admin-attn-card" onClick={() => setSection("applications")}><b>{ap.new}</b><span>application{ap.new === 1 ? "" : "s"} to review</span><i>→</i></button>}
-          {asg.toGrade > 0 && <button className="admin-attn-card" onClick={() => setSection("assignments")}><b>{asg.toGrade}</b><span>submission{asg.toGrade === 1 ? "" : "s"} to grade</span><i>→</i></button>}
-          {msg.unread > 0 && <button className="admin-attn-card" onClick={() => setSection("messages")}><b>{msg.unread}</b><span>message{msg.unread === 1 ? "" : "s"} unread</span><i>→</i></button>}
+          {can("people") && ap.new > 0 && <button className="admin-attn-card" onClick={() => setSection("applications")}><b>{ap.new}</b><span>application{ap.new === 1 ? "" : "s"} to review</span><i>→</i></button>}
+          {can("content") && asg.toGrade > 0 && <button className="admin-attn-card" onClick={() => setSection("assignments")}><b>{asg.toGrade}</b><span>submission{asg.toGrade === 1 ? "" : "s"} to grade</span><i>→</i></button>}
+          {can("inbox") && msg.unread > 0 && <button className="admin-attn-card" onClick={() => setSection("messages")}><b>{msg.unread}</b><span>message{msg.unread === 1 ? "" : "s"} unread</span><i>→</i></button>}
         </div>
       )}
 
       <div className="admin-tiles">
-        <AdminTile n={fmt(m.active)} l="Active members" onClick={() => setSection("members")}/>
-        <AdminTile n={fmt(m.ngg)} l="NGG members" onClick={() => setSection("members")}/>
-        <AdminTile n={fmt(m.summer)} l="Summer students" onClick={() => setSection("members")}/>
-        <AdminTile n={fmt(m.graduates)} l="Graduates" onClick={() => setSection("members")}/>
-        <AdminTile n={"+" + fmt(m.new30)} l="New · 30 days" onClick={() => setSection("members")}/>
-        <AdminTile n={fmt((o.mentors || {}).active)} l="Active mentors" onClick={() => setSection("mentors")}/>
-        <AdminTile n={fmt(an.journals)} l="Journal entries" onClick={() => setSection("anchor")}/>
-        <AdminTile n={fmt((o.newsletter || {}).subscribers)} l="Subscribers" onClick={() => setSection("newsletter")}/>
+        {can("people") && <AdminTile n={fmt(m.active)} l="Active members" onClick={() => setSection("members")}/>}
+        {can("people") && <AdminTile n={fmt(m.ngg)} l="NGG members" onClick={() => setSection("members")}/>}
+        {can("people") && <AdminTile n={fmt(m.summer)} l="Summer students" onClick={() => setSection("members")}/>}
+        {can("people") && <AdminTile n={fmt(m.graduates)} l="Graduates" onClick={() => setSection("members")}/>}
+        {can("people") && <AdminTile n={"+" + fmt(m.new30)} l="New · 30 days" onClick={() => setSection("members")}/>}
+        {can("people") && <AdminTile n={fmt((o.mentors || {}).active)} l="Active mentors" onClick={() => setSection("mentors")}/>}
+        {can("content") && <AdminTile n={fmt(an.journals)} l="Journal entries" onClick={() => setSection("anchor")}/>}
+        {can("inbox") && <AdminTile n={fmt((o.newsletter || {}).subscribers)} l="Subscribers" onClick={() => setSection("newsletter")}/>}
       </div>
 
       <div className="admin-home-grid">
@@ -255,14 +302,14 @@ function AdminHome({ setSection }) {
       <div className="admin-quick">
         <h3 className="admin-h3">Quick actions</h3>
         <div className="admin-quick-grid">
-          <button className="admin-quick-btn" onClick={() => setSection("posts")}>✎ New post</button>
-          <button className="admin-quick-btn" onClick={() => setSection("events")}>▶ New event</button>
-          <button className="admin-quick-btn" onClick={() => setSection("missions")}>✦ Add mission</button>
-          <button className="admin-quick-btn" onClick={() => setSection("assignments")}>❏ New assignment</button>
-          <button className="admin-quick-btn" onClick={() => setSection("broadcast")}>📣 Announce</button>
-          <button className="admin-quick-btn" onClick={() => setSection("anchor")}>⚓ Edit Anchor</button>
-          <button className="admin-quick-btn" onClick={() => setSection("members")}>◯ Add member</button>
-          <button className="admin-quick-btn" onClick={() => setSection("settings")}>⚙ Settings</button>
+          {can("content") && <button className="admin-quick-btn" onClick={() => setSection("posts")}>✎ New post</button>}
+          {can("content") && <button className="admin-quick-btn" onClick={() => setSection("events")}>▶ New event</button>}
+          {can("content") && <button className="admin-quick-btn" onClick={() => setSection("missions")}>✦ Add mission</button>}
+          {can("content") && <button className="admin-quick-btn" onClick={() => setSection("assignments")}>❏ New assignment</button>}
+          {can("content") && <button className="admin-quick-btn" onClick={() => setSection("broadcast")}>📣 Announce</button>}
+          {can("content") && <button className="admin-quick-btn" onClick={() => setSection("anchor")}>⚓ Edit Anchor</button>}
+          {can("people") && <button className="admin-quick-btn" onClick={() => setSection("members")}>◯ Add member</button>}
+          {can("settings") && <button className="admin-quick-btn" onClick={() => setSection("settings")}>⚙ Settings</button>}
         </div>
       </div>
     </div>
@@ -355,6 +402,7 @@ function AdminMembers() {
 }
 
 function AdminMemberEditor({ data, onClose, onSaved }) {
+  const { hasCap } = useAuth();
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -389,6 +437,10 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
           <Field label="Photo URL" value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/>
           <Field label="Parent email" value={d.parentEmail||""} onChange={v => set("parentEmail", v)} type="email"/>
           <Field label="School" value={d.school||""} onChange={v => set("school", v)}/>
+          {/* Staff level — only super_admins (the 'rbac' capability) may assign roles. */}
+          {hasCap && hasCap("rbac") && (
+            <FieldSelect label="Staff level (access)" value={d.role||"member"} onChange={v => set("role", v)} options={["member","editor","admin","super_admin"]}/>
+          )}
         </div>
         <div className="admin-drawer-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -890,42 +942,82 @@ function AdminAudit() {
 // 3D tilt toggle. Saved to settings; the app reads it live.
 // ============================================================================
 
+// Move item at index i by `dir` (-1 up, +1 down) within an array (immutable).
+function arrMove(arr, i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= arr.length) return arr;
+  const next = arr.slice();
+  const tmp = next[i]; next[i] = next[j]; next[j] = tmp;
+  return next;
+}
+
 function AdminAnchor() {
   const [c, setC] = React.useState(null);
+  const [defaults, setDefaults] = React.useState(null);
   const [tab, setTab] = React.useState("weeks");
   const [busy, setBusy] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
-  React.useEffect(() => { NGGApi.admin.anchor.get().then(r => setC(r.content || {})).catch(e => toast.error(e.code || e.message)); }, []);
+  const [dirty, setDirty] = React.useState(false);
+  const update = (fn) => { setC(o => fn(o)); setDirty(true); setSaved(false); };
+
+  React.useEffect(() => {
+    NGGApi.admin.anchor.get()
+      .then(r => { setC(r.content || {}); setDefaults(r.defaults || null); })
+      .catch(e => toast.error(e.code || e.message));
+  }, []);
   const save = async () => {
     setBusy(true);
-    try { await NGGApi.admin.anchor.set(c); setSaved(true); setTimeout(() => setSaved(false), 2400); }
+    try { await NGGApi.admin.anchor.set(c); setSaved(true); setDirty(false); setTimeout(() => setSaved(false), 2400); toast.success("Published to the Anchor Journal"); }
     catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
+  };
+  const resetAll = async () => {
+    const ok = await dialog.confirm({ title: "Reset all Anchor content?", body: "Restores the default 12 weeks, quote library and daily systems. Nothing is published until you press Save.", cta: "Reset to defaults" });
+    if (!ok) return;
+    const d = defaults || (await NGGApi.admin.anchor.defaults().then(r => r.content).catch(() => null));
+    if (d) update(() => JSON.parse(JSON.stringify(d)));
   };
   if (!c) return <div className="admin-section"><div className="dash-spinner"/></div>;
 
   const weeks = c.weeks || [], quotes = c.quotes || [], systems = c.systems || [];
-  const setWeek = (i, k, v) => setC(o => ({ ...o, weeks: o.weeks.map((w, idx) => idx === i ? { ...w, [k]: v } : w) }));
-  const setQuote = (i, v) => setC(o => ({ ...o, quotes: o.quotes.map((q, idx) => idx === i ? v : q) }));
-  const addQuote = () => setC(o => ({ ...o, quotes: [...(o.quotes || []), ""] }));
-  const rmQuote = (i) => setC(o => ({ ...o, quotes: o.quotes.filter((_, idx) => idx !== i) }));
-  const setSys = (i, k, v) => setC(o => ({ ...o, systems: o.systems.map((s, idx) => idx === i ? { ...s, [k]: v } : s) }));
-  const addSys = () => setC(o => ({ ...o, systems: [...(o.systems || []), { key: "sys" + Date.now(), label: "", icon: "ph-check-circle" }] }));
-  const rmSys = (i) => setC(o => ({ ...o, systems: o.systems.filter((_, idx) => idx !== i) }));
+  const setWeek = (i, k, v) => update(o => ({ ...o, weeks: o.weeks.map((w, idx) => idx === i ? { ...w, [k]: v } : w) }));
+  const moveWeek = (i, dir) => update(o => ({ ...o, weeks: arrMove(o.weeks, i, dir) }));
+  const resetWeek = (i) => { if (defaults && defaults.weeks && defaults.weeks[i]) update(o => ({ ...o, weeks: o.weeks.map((w, idx) => idx === i ? { ...defaults.weeks[i] } : w) })); };
+  const setQuote = (i, v) => update(o => ({ ...o, quotes: o.quotes.map((q, idx) => idx === i ? v : q) }));
+  const addQuote = () => update(o => ({ ...o, quotes: [...(o.quotes || []), ""] }));
+  const rmQuote = (i) => update(o => ({ ...o, quotes: o.quotes.filter((_, idx) => idx !== i) }));
+  const moveQuote = (i, dir) => update(o => ({ ...o, quotes: arrMove(o.quotes, i, dir) }));
+  const setSys = (i, k, v) => update(o => ({ ...o, systems: o.systems.map((s, idx) => idx === i ? { ...s, [k]: v } : s) }));
+  const addSys = () => update(o => ({ ...o, systems: [...(o.systems || []), { key: "sys" + Date.now(), label: "", icon: "ph-check-circle" }] }));
+  const rmSys = (i) => update(o => ({ ...o, systems: o.systems.filter((_, idx) => idx !== i) }));
+  const moveSys = (i, dir) => update(o => ({ ...o, systems: arrMove(o.systems, i, dir) }));
+
+  const emptyQuotes = quotes.filter(q => !String(q).trim()).length;
+  const warnings = [];
+  if (weeks.length !== 12) warnings.push(weeks.length + " weeks (the journey expects 12)");
+  if (quotes.length === 0) warnings.push("no quotes in the library");
+  if (systems.length === 0) warnings.push("no daily systems");
+  if (emptyQuotes) warnings.push(emptyQuotes + " empty quote" + (emptyQuotes === 1 ? "" : "s") + " (dropped on save)");
 
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Anchor Journal app</h2>
+        <h2 className="admin-h2">Anchor Journal manager</h2>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <span className="mono" style={{ color: saved ? "var(--lime-ink)" : "var(--ink-500)" }}>{saved ? "SAVED ✓" : busy ? "SAVING…" : ""}</span>
-          <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>Save & publish</button>
+          <span className="mono" style={{ color: saved ? "var(--lime-ink)" : dirty ? "var(--coral)" : "var(--ink-500)" }}>{saved ? "PUBLISHED ✓" : busy ? "SAVING…" : dirty ? "UNSAVED CHANGES" : ""}</span>
+          <a className="btn btn-ghost btn-sm" href="/journal/" target="_blank" rel="noopener noreferrer">Open preview ↗</a>
+          <button className="btn btn-ghost btn-sm" onClick={resetAll} disabled={busy}>Reset all</button>
+          <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !dirty}>Save &amp; publish</button>
         </div>
       </div>
-      <p className="admin-hint">Everything here renders live in the members' Anchor Journal PWA. Edit the twelve weekly build-sheets, the morning-quote library and the daily systems checklist, then publish.</p>
+      <p className="admin-hint">Everything here renders live in the members' Anchor Journal PWA. Edit and reorder the weekly build-sheets, the morning-quote library and the daily systems checklist, then publish.</p>
+
+      {warnings.length > 0 && (
+        <div className="admin-anchor-warn">⚠ {warnings.join(" · ")}</div>
+      )}
 
       <div className="admin-anchor-tabs">
-        {[["weeks", "12 weeks"], ["quotes", "Quotes (" + quotes.length + ")"], ["systems", "Daily systems (" + systems.length + ")"], ["settings", "Settings"]].map(([id, lbl]) => (
+        {[["weeks", "Weeks (" + weeks.length + ")"], ["quotes", "Quotes (" + quotes.length + ")"], ["systems", "Daily systems (" + systems.length + ")"], ["settings", "Settings"]].map(([id, lbl]) => (
           <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
         ))}
       </div>
@@ -934,7 +1026,14 @@ function AdminAnchor() {
         <div className="admin-anchor-weeks">
           {weeks.map((w, i) => (
             <details key={i} className="admin-anchor-week">
-              <summary><span className="mono">WK {String(i + 1).padStart(2, "0")}</span> {w.title || "Untitled"}</summary>
+              <summary>
+                <span className="mono">WK {String(i + 1).padStart(2, "0")}</span> {w.title || "Untitled"}
+                <span className="admin-anchor-wk-tools" onClick={e => e.preventDefault()}>
+                  <button type="button" className="admin-anchor-mv" disabled={i === 0} onClick={() => moveWeek(i, -1)} aria-label="Move up">↑</button>
+                  <button type="button" className="admin-anchor-mv" disabled={i === weeks.length - 1} onClick={() => moveWeek(i, 1)} aria-label="Move down">↓</button>
+                  {defaults && defaults.weeks && defaults.weeks[i] && <button type="button" className="admin-anchor-mv" onClick={() => resetWeek(i)} title="Reset this week to default">⟲</button>}
+                </span>
+              </summary>
               <div className="admin-fields">
                 <Field label="Week title" value={w.title || ""} onChange={v => setWeek(i, "title", v)}/>
                 <Field label="System being built" value={w.system || ""} onChange={v => setWeek(i, "system", v)}/>
@@ -955,7 +1054,11 @@ function AdminAnchor() {
             <div className="admin-anchor-row" key={i}>
               <span className="mono admin-anchor-n">{String(i + 1).padStart(2, "0")}</span>
               <textarea className="admin-input" rows={2} value={q} onChange={e => setQuote(i, e.target.value)}/>
-              <button className="admin-anchor-rm" onClick={() => rmQuote(i)} aria-label="Remove">✕</button>
+              <div className="admin-anchor-rowtools">
+                <button className="admin-anchor-mv" disabled={i === 0} onClick={() => moveQuote(i, -1)} aria-label="Move up">↑</button>
+                <button className="admin-anchor-mv" disabled={i === quotes.length - 1} onClick={() => moveQuote(i, 1)} aria-label="Move down">↓</button>
+                <button className="admin-anchor-rm" onClick={() => rmQuote(i)} aria-label="Remove">✕</button>
+              </div>
             </div>
           ))}
           <button className="btn btn-ghost btn-sm" onClick={addQuote}>+ Add quote</button>
@@ -968,7 +1071,11 @@ function AdminAnchor() {
             <div className="admin-anchor-row" key={i}>
               <input className="admin-input" style={{ flex: 2 }} placeholder="Label (e.g. Woke up on time)" value={s.label || ""} onChange={e => setSys(i, "label", e.target.value)}/>
               <input className="admin-input" style={{ flex: 1 }} placeholder="ph-icon" value={s.icon || ""} onChange={e => setSys(i, "icon", e.target.value)}/>
-              <button className="admin-anchor-rm" onClick={() => rmSys(i)} aria-label="Remove">✕</button>
+              <div className="admin-anchor-rowtools">
+                <button className="admin-anchor-mv" disabled={i === 0} onClick={() => moveSys(i, -1)} aria-label="Move up">↑</button>
+                <button className="admin-anchor-mv" disabled={i === systems.length - 1} onClick={() => moveSys(i, 1)} aria-label="Move down">↓</button>
+                <button className="admin-anchor-rm" onClick={() => rmSys(i)} aria-label="Remove">✕</button>
+              </div>
             </div>
           ))}
           <button className="btn btn-ghost btn-sm" onClick={addSys}>+ Add system</button>
@@ -978,7 +1085,8 @@ function AdminAnchor() {
 
       {tab === "settings" && (
         <div className="admin-fields" style={{ maxWidth: 420 }}>
-          <FieldCheckbox label="3D tilt effect on cards" value={c.tilt !== false} onChange={v => setC(o => ({ ...o, tilt: v }))}/>
+          <FieldCheckbox label="3D tilt effect on cards" value={c.tilt !== false} onChange={v => update(o => ({ ...o, tilt: v }))}/>
+          <p className="admin-hint">The tilt effect gives journal cards a subtle 3D response to the pointer. Disable it for lower-powered devices.</p>
         </div>
       )}
     </div>

@@ -187,8 +187,9 @@
       },
       broadcast: (data) => request('/admin/broadcast.php', { body: data }),
       anchor: {
-        get: () => request('/admin/anchor.php'),
-        set: (data) => request('/admin/anchor.php', { body: { data } }),
+        get:      () => request('/admin/anchor.php'),
+        defaults: () => request('/admin/anchor.php?defaults=1'),
+        set:      (data) => request('/admin/anchor.php', { body: { data } }),
       },
       overview:     () => request('/admin/overview.php'),
       memberDetail: (memberId) => request('/admin/member-detail.php' + qs({ memberId })),

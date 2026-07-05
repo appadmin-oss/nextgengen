@@ -3869,6 +3869,23 @@ section p[style*="var(--ink-500)"] {
 .admin-anchor-n { color: var(--gold-500); font-size: 12px; padding-top: 12px; }
 .admin-anchor-rm { flex: none; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line, #e6e2d6); background: #fff; cursor: pointer; color: var(--coral); font-size: 14px; }
 .admin-anchor-rm:hover { background: rgba(255,90,60,0.08); }
+.admin-anchor-rowtools { display: flex; gap: 4px; flex: none; }
+.admin-anchor-mv { width: 34px; height: 38px; border-radius: 10px; border: 1px solid var(--line, #e6e2d6); background: #fff; cursor: pointer; color: var(--ink-700); font-size: 13px; }
+.admin-anchor-mv:hover:not(:disabled) { background: rgba(12,20,50,0.05); }
+.admin-anchor-mv:disabled { opacity: 0.35; cursor: default; }
+.admin-anchor-wk-tools { margin-left: auto; display: inline-flex; gap: 4px; }
+.admin-anchor-warn { margin: 0 0 16px; padding: 10px 14px; border-radius: 12px; background: rgba(245,176,38,0.12); border: 1px solid rgba(245,176,38,0.4); color: #7a5300; font-size: 13px; font-weight: 500; }
+
+/* Admin nav group headings + RBAC role banner */
+.admin-nav-group { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-400); padding: 14px 14px 6px; }
+.admin-nav-group:first-child { padding-top: 4px; }
+.admin-role-banner { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; background: #fff; border: 1px solid var(--line, #e6e2d6); border-radius: 16px; padding: 16px 20px; margin-bottom: 18px; }
+.admin-role-eyebrow { font-size: 10px; letter-spacing: 0.2em; color: var(--ink-400); }
+.admin-role-name { font-family: var(--font-display); font-weight: 800; font-size: 20px; letter-spacing: -0.02em; margin-top: 4px; display: flex; align-items: center; gap: 10px; }
+.admin-role-caps { display: flex; gap: 6px; flex-wrap: wrap; }
+.admin-cap-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+.admin-cap-chip.is-on { background: rgba(208,255,58,0.25); color: #2e4400; }
+.admin-cap-chip.is-off { background: rgba(12,20,50,0.05); color: var(--ink-400); text-decoration: line-through; }
 
 /* Admin overview analytics + attention */
 .admin-attn { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
