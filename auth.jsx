@@ -15,6 +15,12 @@ function useAuth() {
   return React.useContext(AuthCtx);
 }
 
+// Capture the landing path at module load — before the router's mount effect
+// rewrites it — so a visit to /login (or /signin) is still detectable in the
+// async auth boot below.
+const BOOT_PATH = (typeof window !== "undefined" ? (window.location.pathname || "/") : "/");
+const BOOT_WANTS_LOGIN = BOOT_PATH === "/login" || BOOT_PATH === "/signin";
+
 function AuthProvider({ children }) {
   const [member, setMember] = React.useState(null);
   const [adminOk, setAdminOk] = React.useState(false);
@@ -44,6 +50,12 @@ function AuthProvider({ children }) {
           const me = await NGGApi.auth.me();
           setMember(me.member || null);
           setAdminOk(Boolean(me.adminOk));
+          // Conventional /login (or /signin) entry point: open the sign-in
+          // modal for guests, send signed-in members to their dashboard.
+          if (BOOT_WANTS_LOGIN) {
+            if (me.member) { setTimeout(() => window.__navigate && window.__navigate("dashboard"), 0); }
+            else { setSigninOpen(true); }
+          }
         }
       } catch (_) {
         setMember(null);
@@ -70,6 +82,8 @@ function AuthProvider({ children }) {
       try { await NGGApi.auth.logout(); } catch (_) {}
       setMember(null);
       setAdminOk(false);
+      // Leave any members-only page (dashboard/admin) for home on sign-out.
+      if (window.__navigate) window.__navigate("home");
     },
     setAdminOk: setAdminOk,
     onVerified: (m) => { setMember(m); setSigninOpen(false); },
