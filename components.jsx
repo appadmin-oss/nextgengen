@@ -136,67 +136,6 @@ function Avatar({ seed = 0, name = "", size = 44, ring = false, square = false, 
   return ring ? <div className="glow-ring" style={{ display: "inline-block" }}>{node}</div> : node;
 }
 
-/* ---- SceneArt — self-contained branded artwork ----
-   Used as the graceful fallback for any Photo whose real image can't load
-   (offline, CSP-blocked, or a broken URL). Instead of a flat block + glyph,
-   it paints layered brand gradients, drifting aurora blobs, a faint grid and
-   a monogram — so every image slot reads as intentional, on-brand art. */
-const SCENE_PALETTES = {
-  dark: [
-    ["#0c1432", "#1c2a5e", "#b07cff", "#f5b026"],
-    ["#12183a", "#2a1a5e", "#ff5a3c", "#b07cff"],
-    ["#0c1432", "#153b52", "#22c1a6", "#d0ff3a"],
-    ["#1a1030", "#3a1a5e", "#ff8fab", "#f5b026"],
-  ],
-  light: [
-    ["#fbf7ed", "#f3ecdb", "#f5b026", "#ff5a3c"],
-    ["#f6f1ff", "#efe6ff", "#b07cff", "#5b8cff"],
-    ["#eefaf4", "#ddf3e9", "#22c1a6", "#d0ff3a"],
-    ["#fff3ee", "#ffe6dc", "#ff5a3c", "#f5b026"],
-  ],
-};
-function SceneArt({ label = "", seed = "", dark = false }) {
-  const h = avatarHash(seed || label || "ngg");
-  const fam = dark ? SCENE_PALETTES.dark : SCENE_PALETTES.light;
-  const [bg1, bg2, ac1, ac2] = fam[h % fam.length];
-  const uid = "sc" + (h % 100000);
-  const fg = dark ? "rgba(255,255,255,0.9)" : "rgba(12,20,50,0.75)";
-  const grid = dark ? "rgba(255,255,255,0.06)" : "rgba(12,20,50,0.05)";
-  // Blob positions vary by hash so no two slots look identical.
-  const b1x = 24 + (h % 30), b1y = 20 + ((h >> 3) % 24);
-  const b2x = 70 + ((h >> 5) % 24), b2y = 62 + ((h >> 8) % 30);
-  const b3x = 50 + ((h >> 11) % 40), b3y = 40 + ((h >> 13) % 30);
-  return (
-    <svg className="scene-art" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice"
-      width="100%" height="100%" aria-hidden="true" style={{ position: "absolute", inset: 0, display: "block" }}>
-      <defs>
-        <linearGradient id={uid} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor={bg1}/><stop offset="100%" stopColor={bg2}/>
-        </linearGradient>
-        <radialGradient id={uid + "a"} cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor={ac1} stopOpacity="0.9"/><stop offset="100%" stopColor={ac1} stopOpacity="0"/>
-        </radialGradient>
-        <radialGradient id={uid + "b"} cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor={ac2} stopOpacity="0.85"/><stop offset="100%" stopColor={ac2} stopOpacity="0"/>
-        </radialGradient>
-        <pattern id={uid + "grid"} width="8" height="8" patternUnits="userSpaceOnUse">
-          <path d="M8 0H0V8" fill="none" stroke={grid} strokeWidth="0.4"/>
-        </pattern>
-      </defs>
-      <rect width="100" height="100" fill={`url(#${uid})`}/>
-      <rect width="100" height="100" fill={`url(#${uid}grid)`}/>
-      <circle className="scene-art-blob" cx={b1x} cy={b1y} r="34" fill={`url(#${uid}a)`}/>
-      <circle className="scene-art-blob" cx={b2x} cy={b2y} r="30" fill={`url(#${uid}b)`}/>
-      <circle className="scene-art-blob" cx={b3x} cy={b3y} r="22" fill={`url(#${uid}a)`}/>
-      {/* Monogram spark — the NGG mark, faint and centered. */}
-      <g opacity={dark ? 0.9 : 0.8} transform="translate(50 52)" fill="none" stroke={fg} strokeWidth="1.6" strokeLinecap="round">
-        <path d="M-9 8 L-9 -8 L9 8 L9 -8"/>
-      </g>
-      {dark && <rect width="100" height="100" fill="#0c1432" opacity="0.12"/>}
-    </svg>
-  );
-}
-
 /* ---- Photo — cinematic real image with optional caption + gradient ---- */
 function Photo({ src, name, label, ratio = "1/1", style = {}, overlay = false, dark = false, children, eager = false }) {
   const url = src || (name ? scene(name, 1200) : null);
@@ -251,11 +190,12 @@ function Photo({ src, name, label, ratio = "1/1", style = {}, overlay = false, d
       {!loaded && url && (
         <div className="photo-skel" aria-hidden="true"/>
       )}
-      {/* Graceful fallback when the host blocks the image — branded generative
-          art keyed to the source, so the composition (chip / overlay copy)
-          stays readable and the slot reads as intentional, not broken. */}
+      {/* Graceful fallback when the host blocks the image — keeps the
+          composition (chip / overlay copy) readable instead of a broken icon. */}
       {failed && (
-        <SceneArt label={label || name || ""} seed={String(url || name || label || "")} dark={dark} />
+        <div className="photo-fallback" aria-hidden="true">
+          <span className="photo-fallback-mark">◈</span>
+        </div>
       )}
       {overlay && (
         <div style={{
