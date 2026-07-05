@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS mentors (
   fullName VARCHAR(255), email VARCHAR(200), phone VARCHAR(40), status VARCHAR(32),
   tracks VARCHAR(255), centre VARCHAR(32), bio TEXT, photoUrl TEXT,
   maxMentees INT, availability TEXT, checkedAt VARCHAR(40), joinedAt VARCHAR(40),
+  source VARCHAR(24) DEFAULT 'ngg', program VARCHAR(64) DEFAULT '', skills TEXT,
+  linkedin VARCHAR(255) DEFAULT '', afrovanguardRef VARCHAR(255) DEFAULT '',
   createdAt VARCHAR(40), updatedAt VARCHAR(40)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -205,4 +207,4 @@ CREATE TABLE IF NOT EXISTS contact_messages (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (5) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (6) ON DUPLICATE KEY UPDATE version = version;

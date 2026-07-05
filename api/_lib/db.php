@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 5;
+const NGG_SCHEMA_TARGET = 6;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -281,6 +281,13 @@ function db_migrate(PDO $db): void {
         ",
         5 => "
             ALTER TABLE members ADD COLUMN passwordHash TEXT DEFAULT '';
+        ",
+        6 => "
+            ALTER TABLE mentors ADD COLUMN source TEXT DEFAULT 'ngg';
+            ALTER TABLE mentors ADD COLUMN program TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN skills TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN linkedin TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN afrovanguardRef TEXT DEFAULT '';
         ",
     ];
 

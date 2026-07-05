@@ -159,6 +159,12 @@
         list:   () => request('/admin/mentors.php'),
         upsert: (data) => request('/admin/mentors.php', { body: data }),
       },
+      mentorship: {
+        overview: () => request('/admin/mentorship.php?view=overview'),
+        roster:   (sessionId) => request('/admin/mentorship.php' + qs({ view: 'roster', sessionId })),
+        convertApp: (id) => request('/admin/mentorship.php', { body: { action: 'convert', id } }),
+        assign:   (memberId, mentorId, sessionId) => request('/admin/mentorship.php', { body: { action: 'assign', memberId, mentorId, sessionId } }),
+      },
       sessions: {
         list:   (year) => request('/admin/sessions.php' + qs({ year })),
         upsert: (data) => request('/admin/sessions.php', { body: data }),

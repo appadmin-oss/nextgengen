@@ -927,8 +927,35 @@ body::before {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
+  html { scroll-behavior: auto; }
 }
+
+/* ---- Accessibility: keyboard focus ring for every interactive element ----
+   The design gives .btn/.nav-link explicit rings; this is the safety net so
+   icon-only buttons, footer/admin links, summaries and custom controls are
+   never focus-invisible for keyboard + switch users. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+[role="button"]:focus-visible {
+  outline: 3px solid var(--gold-500, #f5b026);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+/* On dark surfaces, use a brighter ring for contrast. */
+.dark-surface a:focus-visible, .footer a:focus-visible, .footer button:focus-visible,
+.prefooter a:focus-visible, .prefooter button:focus-visible,
+.page-hero-dark a:focus-visible, .page-hero-dark button:focus-visible {
+  outline-color: var(--lime, #d0ff3a);
+}
+/* Never suppress the ring when a mouse-focus removes :focus-visible. */
+:focus:not(:focus-visible) { outline: none; }
 
 /* Pulsing live dot */
 .live-dot {

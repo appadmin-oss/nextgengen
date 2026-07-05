@@ -280,6 +280,38 @@ function FAQList({ items }) {
 }
 
 /* =================== VOLUNTEERS =================== */
+// Connects NGG mentorship to Afrovanguard's Street-To-Stardom volunteer pool.
+function AfrovanguardMentorStrip() {
+  const [av, setAv] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.config().then(c => { if (alive) setAv((c && c.afrovanguard) || null); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  if (!av) return null;
+  return (
+    <section className="section-tight" style={{ background: "var(--cream-100)" }}>
+      <div className="container">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
+          <div style={{ maxWidth: 620 }}>
+            <span className="eyebrow" style={{ color: "var(--gold-500)" }}>PART OF AFROVANGUARD · STREET-TO-STARDOM</span>
+            <h3 className="display" style={{ fontSize: "clamp(26px, 3vw, 40px)", margin: "6px 0 8px", lineHeight: 1.05 }}>
+              NGG mentoring runs inside the <em style={{ fontStyle: "normal", color: "var(--coral)" }}>{av.mentorProgram}</em> network.
+            </h3>
+            <p style={{ color: "var(--ink-700)", margin: 0, lineHeight: 1.5, fontSize: 15 }}>
+              Apply below to mentor with NGG directly, or join the wider Afrovanguard volunteer pool — the same people, the same mission across every STS program.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <a className="btn btn-primary" href={av.volunteerUrl} target="_blank" rel="noopener noreferrer">Afrovanguard volunteer hub ↗</a>
+            <a className="btn btn-ghost" href={av.stsUrl} target="_blank" rel="noopener noreferrer">Explore STS programs ↗</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function VolunteersPage({ setPage }) {
   return (
     <div className="page" data-screen-label="08 Volunteers">
@@ -310,6 +342,8 @@ function VolunteersPage({ setPage }) {
           </Photo>
         </div>
       </section>
+
+      <AfrovanguardMentorStrip/>
 
       <section className="section">
         <div className="container">

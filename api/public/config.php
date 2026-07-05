@@ -31,4 +31,10 @@ json_ok([
         'preset'    => $publicUpload ? $cld['unsigned_preset'] : '',
         'folder'    => $publicUpload ? (string)($cld['unsigned_folder'] ?? 'ngg/apply') : '',
     ],
+    'afrovanguard' => [
+        'orgUrl'        => $CONFIG['afrovanguard']['org_url'] ?? 'https://afrovanguard.org.ng',
+        'stsUrl'        => $CONFIG['afrovanguard']['sts_url'] ?? 'https://afrovanguard.org.ng/projects/sts/programs/',
+        'volunteerUrl'  => $CONFIG['afrovanguard']['volunteer_url'] ?? 'https://cacentre.afrovanguard.org.ng/volunteer',
+        'mentorProgram' => $CONFIG['afrovanguard']['mentor_program'] ?? 'Street-To-Stardom · Next Gen',
+    ],
 ]);

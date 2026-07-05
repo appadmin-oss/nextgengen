@@ -69,6 +69,19 @@ return [
     // Public origin (no trailing slash). Used in CORS + redirects.
     'app_origin'      => 'https://yourdomain.com',
 
+    // -----------------------------------------------------------------------
+    // Afrovanguard mentorship connection. NGG ("Next Gen") is a program inside
+    // Afrovanguard's Street-To-Stardom (STS). Mentors are drawn from the same
+    // pool; these links wire the NGG mentorship surface to Afrovanguard's, and
+    // the mentor sign-up funnels into the shared STS volunteer pipeline.
+    // -----------------------------------------------------------------------
+    'afrovanguard' => [
+        'org_url'        => 'https://afrovanguard.org.ng',
+        'sts_url'        => 'https://afrovanguard.org.ng/projects/sts/programs/',
+        'volunteer_url'  => 'https://cacentre.afrovanguard.org.ng/volunteer',
+        'mentor_program' => 'Street-To-Stardom · Next Gen',
+    ],
+
     // Per-IP rate limits — sliding window inside the configured period.
     'rate_limits' => [
         'auth.request' => ['max' => 5,  'window' => 60],
