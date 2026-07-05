@@ -65,75 +65,23 @@ function BrandLogo({ size = 36, style = {} }) {
   );
 }
 
-/* ---- Avatar — self-contained, brand-coloured identicon ----
-   Renders entirely offline (no external service): a diagonal brand gradient,
-   two soft accent blobs for depth, and bold initials. Deterministic per
-   name/seed, so a given member always gets the same face. Lively without a
-   network round-trip — the old DiceBear URLs went blank behind the CSP. */
-const AVATAR_GRADS = [
-  ["#f5b026", "#ff5a3c"], ["#b07cff", "#1c2a5e"], ["#d0ff3a", "#1c2a5e"],
-  ["#ff5a3c", "#b07cff"], ["#22c1a6", "#1c2a5e"], ["#1c2a5e", "#f5b026"],
-  ["#ff8fab", "#b07cff"], ["#d0ff3a", "#22c1a6"], ["#ff5a3c", "#f5b026"],
-  ["#5b8cff", "#b07cff"],
-];
-function avatarHash(s) {
-  s = String(s || "");
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return Math.abs(h);
-}
-function avatarInitials(name, seed) {
-  const clean = String(name || "").trim();
-  if (clean) {
-    const parts = clean.split(/\s+/).filter(Boolean);
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const h = avatarHash(seed);
-  return abc[h % 26] + abc[(h >> 5) % 26];
-}
-function Avatar({ seed = 0, name = "", size = 44, ring = false, square = false, fill = false }) {
-  const key = name || String(seed);
-  const h = avatarHash(key);
-  const [c1, c2] = AVATAR_GRADS[h % AVATAR_GRADS.length];
-  const angle = 90 + (h % 140);
-  const initials = avatarInitials(name, seed);
-  const uid = "av" + (h % 100000);
-  // Two accent blobs positioned by the hash — the source of "liveliness".
-  const bx = 20 + (h % 30), by = 18 + ((h >> 3) % 26);
-  const bx2 = 66 + ((h >> 6) % 22), by2 = 60 + ((h >> 9) % 28);
-  const fontSize = fill ? 30 : (size < 30 ? 40 : 38);
-
+/* ---- Avatar — DiceBear persona illustrated portrait ---- */
+function Avatar({ seed = 0, name = "", size = 44, ring = false, square = false }) {
+  const src = portrait(name || String(seed), Math.max(120, size * 2));
   const node = (
-    <div className={"ngg-avatar" + (ring ? " has-ring" : "")} style={fill ? {
-      width: "100%", height: "100%", borderRadius: "inherit", overflow: "hidden", position: "relative", lineHeight: 0,
-    } : {
-      width: size, height: size, borderRadius: square ? "22%" : "50%",
-      overflow: "hidden", flexShrink: 0, position: "relative", display: "inline-block", lineHeight: 0,
-    }} aria-label={name || undefined} role={name ? "img" : undefined}>
-      <svg viewBox="0 0 100 100" width={fill ? "100%" : size} height={fill ? "100%" : size} preserveAspectRatio="xMidYMid slice" style={{ display: "block" }} aria-hidden="true">
-        <defs>
-          <linearGradient id={uid} x1="0" y1="0" x2="1" y2="1" gradientTransform={`rotate(${angle} 0.5 0.5)`}>
-            <stop offset="0%" stopColor={c1}/>
-            <stop offset="100%" stopColor={c2}/>
-          </linearGradient>
-          <radialGradient id={uid + "g"} cx="50%" cy="30%" r="75%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.35)"/>
-            <stop offset="55%" stopColor="rgba(255,255,255,0)"/>
-          </radialGradient>
-        </defs>
-        <rect width="100" height="100" fill={`url(#${uid})`}/>
-        <circle className="ngg-avatar-blob" cx={bx} cy={by} r={26} fill="rgba(255,255,255,0.18)"/>
-        <circle className="ngg-avatar-blob" cx={bx2} cy={by2} r={20} fill="rgba(0,0,0,0.14)"/>
-        <rect width="100" height="100" fill={`url(#${uid}g)`}/>
-        <text x="50" y="52" textAnchor="middle" dominantBaseline="central"
-          fontFamily="'Bricolage Grotesque', 'Space Grotesk', system-ui, sans-serif"
-          fontSize={fontSize} fontWeight="800" fill="#fff" style={{ letterSpacing: "-1px" }}>{initials}</text>
-      </svg>
+    <div style={{
+      width: size, height: size,
+      borderRadius: square ? 14 : "50%",
+      overflow: "hidden",
+      flexShrink: 0,
+      background: "var(--navy-700)",
+      position: "relative",
+    }}>
+      <img src={src} alt={name} loading="lazy"
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
     </div>
   );
-  return ring ? <div className="glow-ring" style={{ display: "inline-block" }}>{node}</div> : node;
+  return ring ? <div className="glow-ring" style={{display:"inline-block"}}>{node}</div> : node;
 }
 
 /* ---- Photo — cinematic real image with optional caption + gradient ---- */
@@ -261,10 +209,10 @@ function Progress({ value, label, variant = "" }) {
   return (
     <div style={{display:"flex", flexDirection:"column", gap:6, width:"100%"}}>
       {label && <div style={{display:"flex", justifyContent:"space-between", fontSize:12, color:"var(--ink-500)"}}>
-        <span>{label}</span><span className="mono">{Math.round(value)}%</span>
+        <span>{label}</span><span className="mono">{value}%</span>
       </div>}
       <div className={"progress " + variant}>
-        <i style={{ width: `${Math.round(value)}%`, transition: "width 0.8s cubic-bezier(0.2,0.7,0.2,1)" }} />
+        <i style={{ width: `${value}%`, transition: "width 0.8s cubic-bezier(0.2,0.7,0.2,1)" }} />
       </div>
     </div>
   );
