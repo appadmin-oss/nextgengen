@@ -94,7 +94,8 @@ function SummerPage({ setPage }) {
           <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:18}}>
             {filtered.map((m, i) => (
               <div key={m.id} className="member-card reveal" data-reveal style={{"--reveal-delay": (i * 50) + "ms"}} onClick={() => setPage("profile")}>
-                <Photo src={portrait(m.id+10, 600, 600)} ratio="1/1" style={{borderRadius:14}}>
+                <div style={{position:"relative", aspectRatio:"1/1", borderRadius:14, overflow:"hidden"}}>
+                  <Avatar fill name={m.first} seed={m.id}/>
                   <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, rgba(12,20,50,0) 40%, rgba(12,20,50,0.55) 100%)"}}/>
                   <div style={{position:"absolute", top:10, left:10}}>
                     <span className="chip chip-on-dark" style={{background:"rgba(12,20,50,0.55)", color:"white"}}>{m.track}</span>
@@ -102,7 +103,7 @@ function SummerPage({ setPage }) {
                   <div style={{position:"absolute", bottom:10, right:10, fontFamily:"var(--font-mono)", fontSize:10, letterSpacing:"0.15em", color:"rgba(255,255,255,0.95)", background:"rgba(12,20,50,0.6)", padding:"3px 8px", borderRadius:4}}>
                     LVL {String(m.level).padStart(2,"0")}
                   </div>
-                </Photo>
+                </div>
                 <div>
                   <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:20, letterSpacing:"-0.02em"}}>{m.first}</div>
                   <div style={{fontSize:12, color:"var(--coral)", fontWeight:600, marginTop:2}}>{m.title}</div>
