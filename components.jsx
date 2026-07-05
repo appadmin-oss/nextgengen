@@ -704,6 +704,7 @@ function Footer({ setPage }) {
       </section>
 
       <footer className="footer" role="contentinfo">
+        <div className="footer-accent" aria-hidden="true"><i/><i/><i/><i/></div>
         <div className="container">
           {/* ---- Live status strip ---- */}
           <div className="footer-status" aria-live="polite">
