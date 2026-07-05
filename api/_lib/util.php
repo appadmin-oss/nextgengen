@@ -99,6 +99,12 @@ function setting_get(string $key) {
     return $row ? safe_json($row['settingValue']) : null;
 }
 
+/** Raw string setting value (for scalar settings that aren't JSON objects). */
+function setting_raw(string $key): ?string {
+    $row = db_row('SELECT settingValue FROM settings WHERE settingKey = ?', [$key]);
+    return $row ? (string)$row['settingValue'] : null;
+}
+
 function setting_set(string $key, $value, string $by = ''): void {
     db_upsert('settings',
         ['settingKey' => $key, 'settingValue' => $value === null ? '' : (is_array($value) ? json_encode($value, JSON_UNESCAPED_SLASHES) : (string)$value), 'updatedAt' => now_iso(), 'updatedBy' => $by],

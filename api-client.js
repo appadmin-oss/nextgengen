@@ -157,6 +157,19 @@
         get: () => request('/admin/anchor.php'),
         set: (data) => request('/admin/anchor.php', { body: { data } }),
       },
+      overview:     () => request('/admin/overview.php'),
+      memberDetail: (memberId) => request('/admin/member-detail.php' + qs({ memberId })),
+      assignMentor: (data) => request('/admin/assign-mentor.php', { body: data }),
+      applications: {
+        list:    (q) => request('/admin/applications.php' + qs(q || {})),
+        status:  (id, status) => request('/admin/applications.php', { body: { id, status } }),
+        convert: (id) => request('/admin/applications.php', { body: { action: 'convert', id } }),
+      },
+      newsletter:   () => request('/admin/newsletter.php'),
+      settings: {
+        get: () => request('/admin/settings.php'),
+        set: (data) => request('/admin/settings.php', { body: { data } }),
+      },
       audit:     (limit) => request('/admin/audit.php' + qs({ limit })),
     },
   };
