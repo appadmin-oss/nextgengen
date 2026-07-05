@@ -1137,6 +1137,21 @@ body::before {
   .ngg-avatar { transition: none; }
 }
 
+/* ---- Branded generative scene art (Photo fallback) ---- */
+.scene-art-blob {
+  transform-origin: center;
+  animation: sceneArtDrift 14s ease-in-out infinite;
+}
+.scene-art-blob:nth-of-type(2) { animation-duration: 18s; animation-direction: reverse; }
+.scene-art-blob:nth-of-type(3) { animation-duration: 22s; animation-delay: -4s; }
+@keyframes sceneArtDrift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(6px, -5px) scale(1.12); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene-art-blob { animation: none; }
+}
+
 /* utility */
 .flex { display: flex; }
 .col { display: flex; flex-direction: column; }
