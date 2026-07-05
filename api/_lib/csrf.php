@@ -38,9 +38,10 @@ function csrf_require(): void {
     // before any session/cookie state is established:
     //   - auth/request  → user has no session yet; the OTP IS the proof
     //   - auth/verify   → same
+    //   - auth/login    → pre-session; the password IS the proof
     //   - public/newsletter → fully public, IP rate-limited at the server
     $path = $_SERVER['SCRIPT_NAME'] ?? '';
-    if (preg_match('#/api/auth/(request|verify)\\.php$#', $path)) return;
+    if (preg_match('#/api/auth/(request|verify|login)\\.php$#', $path)) return;
     if (preg_match('#/api/public/newsletter\\.php$#', $path))     return;
 
     $cookie = $_COOKIE[csrf_cookie_name()] ?? '';

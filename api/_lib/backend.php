@@ -21,6 +21,8 @@ function backend_dispatch(string $op, array $args = []): array {
         $map = [
             // Auth
             'auth.request'            => 'auth_request',
+            'auth.login'              => 'auth_login',
+            'auth.setPassword'        => 'auth_set_password',
             'auth.verify'             => 'auth_verify',
             'auth.me'                 => 'auth_me',
             'auth.logout'             => 'auth_logout',

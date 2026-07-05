@@ -90,9 +90,11 @@ function AuthProvider({ children }) {
 // ============================================================================
 
 function SignInModal({ seed, onClose, onVerified }) {
-  // Stage: 'enter-id' → 'enter-otp' → 'verifying'
-  const [stage, setStage] = React.useState(seed && seed.token ? "enter-otp" : "enter-id");
+  // Stage: 'password' (default) | 'enter-id' (request a code) | 'enter-otp'
+  const [stage, setStage] = React.useState(seed && seed.token ? "enter-otp" : "password");
   const [identifier, setIdentifier] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [showPw, setShowPw] = React.useState(false);
   const [otp, setOtp] = React.useState("");
   const [masked, setMasked] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -110,6 +112,26 @@ function SignInModal({ seed, onClose, onVerified }) {
       clearTimeout(t);
     };
   }, [stage]);
+
+  const loginPassword = async (e) => {
+    if (e) e.preventDefault();
+    setErr(""); setBusy(true);
+    try {
+      const r = await NGGApi.auth.login(identifier.trim(), password);
+      onVerified(r.member);
+    } catch (e) {
+      const code = e.code || e.message;
+      // No password on this account yet → guide them to the code flow.
+      if (code === "no_password") {
+        setErr("No password set for this account yet. Use a sign-in code instead — you can set a password later from your dashboard.");
+        setStage("enter-id");
+      } else {
+        setErr(humanizeAuthError(code));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const requestLink = async (e) => {
     if (e) e.preventDefault();
@@ -155,15 +177,63 @@ function SignInModal({ seed, onClose, onVerified }) {
         <div className="signin-brand">
           <div className="signin-eyebrow">SIGN IN · MEMBERS ONLY</div>
           <div id="signin-h" className="signin-headline">
-            {stage === "enter-id" ? "Welcome back." : "Check your email."}
+            {stage === "enter-otp" ? "Check your email." : "Welcome back."}
           </div>
           <div className="signin-sub">
-            {stage === "enter-id"
-              ? "Enter your Member ID or the email on your record. We send a link + a 6-digit code."
-              : masked ? <>We sent a magic link and a 6-digit code to <b>{masked}</b>. Either works.</>
-                       : "Paste the 6-digit code from your email."}
+            {stage === "password"
+              ? "Sign in with your email or Member ID and password."
+              : stage === "enter-id"
+                ? "Enter your Member ID or the email on your record. We send a link + a 6-digit code."
+                : masked ? <>We sent a magic link and a 6-digit code to <b>{masked}</b>. Either works.</>
+                         : "Paste the 6-digit code from your email."}
           </div>
         </div>
+
+        {stage === "password" && (
+          <form onSubmit={loginPassword} className="signin-form">
+            <label className="signin-label" htmlFor="signin-idp">Email or Member ID</label>
+            <input
+              id="signin-idp"
+              ref={inputRef}
+              className="signin-input"
+              type="text"
+              autoComplete="username"
+              placeholder="you@email.com  or  NGG-2025-0042"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              required
+              minLength={3}
+            />
+            <label className="signin-label" htmlFor="signin-pw">Password</label>
+            <div className="signin-pw-wrap" style={{ position: "relative" }}>
+              <input
+                id="signin-pw"
+                className="signin-input"
+                type={showPw ? "text" : "password"}
+                autoComplete="current-password"
+                placeholder="Your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                style={{ paddingRight: 64 }}
+              />
+              <button
+                type="button"
+                className="signin-pw-toggle"
+                onClick={() => setShowPw(v => !v)}
+                aria-label={showPw ? "Hide password" : "Show password"}
+                style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink-500)", letterSpacing: "0.06em" }}
+              >{showPw ? "HIDE" : "SHOW"}</button>
+            </div>
+            {err && <div className="signin-err">{err}</div>}
+            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || !identifier.trim() || !password}>
+              {busy ? "Signing in…" : "Sign in →"}
+            </button>
+            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-id"); }}>
+              Email me a sign-in code instead
+            </button>
+          </form>
+        )}
 
         {stage === "enter-id" && (
           <form onSubmit={requestLink} className="signin-form">
@@ -186,6 +256,9 @@ function SignInModal({ seed, onClose, onVerified }) {
             </button>
             <button type="button" className="signin-link" onClick={() => setStage("enter-otp")}>
               I already have a code
+            </button>
+            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("password"); }}>
+              ← Sign in with a password
             </button>
           </form>
         )}
@@ -248,6 +321,11 @@ function humanizeAuthError(code) {
     too_many_attempts: "Too many wrong tries on that code. Request a new one.",
     no_credentials: "Enter your code or click your magic link.",
     no_identifier: "Tell us your Member ID or email.",
+    invalid_login: "That email/ID or password isn't right.",
+    missing_credentials: "Enter your email/ID and password.",
+    no_password: "No password set for this account yet. Use a sign-in code instead.",
+    password_too_short: "Use at least 8 characters.",
+    bad_current_password: "Your current password isn't right.",
     mail_failed: "We couldn't send the email. Check your inbox in a minute or contact admin.",
     member_gone: "We can't find that account. Contact admin.",
     suspended: "This account is suspended. Contact admin.",

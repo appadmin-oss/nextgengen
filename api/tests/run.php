@@ -186,5 +186,18 @@ $firstMsg = backend_dispatch('admin.contact.list', ['requesterId' => 'NGG-2025-0
 backend_dispatch('admin.contact.status', ['requesterId' => 'NGG-2025-0099', 'id' => $firstMsg, 'status' => 'replied']);
 chk('admin sets contact status', db_row('SELECT status FROM contact_messages WHERE id=?', [$firstMsg])['status'] === 'replied');
 
+// ── Standard password login (opt-in) ──
+chk('login without a password → no_password', backend_dispatch('auth.login', ['identifier' => 'tunde@example.com', 'password' => 'anything'])['error'] === 'no_password');
+chk('set password rejects short', backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'short'])['error'] === 'password_too_short');
+chk('set password ok', !empty(backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'correcthorse9'])['ok']));
+chk('member now exposes hasPassword', backend_dispatch('member.dashboard', ['memberId' => 'NGG-2025-0001'])['member']['hasPassword'] === true);
+chk('login with correct password (by email)', !empty(backend_dispatch('auth.login', ['identifier' => 'tunde@example.com', 'password' => 'correcthorse9'])['ok']));
+chk('login with correct password (by memberId)', !empty(backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'correcthorse9'])['ok']));
+chk('login wrong password fails', backend_dispatch('auth.login', ['identifier' => 'tunde@example.com', 'password' => 'nope'])['error'] === 'invalid_login');
+chk('login unknown account fails uniformly', backend_dispatch('auth.login', ['identifier' => 'ghost@example.com', 'password' => 'x'])['error'] === 'invalid_login');
+chk('change password needs correct current', backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'wrong'])['error'] === 'bad_current_password');
+chk('change password with current ok', !empty(backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'correcthorse9'])['ok']));
+chk('old password no longer works', backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'correcthorse9'])['error'] === 'invalid_login');
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

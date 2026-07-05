@@ -56,6 +56,63 @@ function auth_request(array $p): array {
     return ['ok' => true, 'masked' => $masked];
 }
 
+/**
+ * Standard email/ID + password sign-in. Passwords are opt-in — a member who
+ * hasn't set one gets `no_password`, nudging them to the magic-link/OTP flow.
+ * Session issuance + CSRF happen at the route (like auth.verify).
+ */
+function auth_login(array $p): array {
+    $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
+    $password = (string)($p['password'] ?? '');
+    $ip = (string)($p['ip'] ?? '');
+    if ($identifier === '' || $password === '') return ['ok' => false, 'error' => 'missing_credentials'];
+
+    $member = db_row('SELECT * FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
+    // Uniform failure so we never reveal which accounts exist or have passwords.
+    if (!$member || empty($member['passwordHash'])) {
+        // Spend a hash cycle to keep timing roughly constant.
+        password_verify($password, '$2y$10$usesomesillystringforsaltusesomesillystringu');
+        audit('login.pw.fail', $member['memberId'] ?? null, $identifier, ['reason' => $member ? 'no_password' : 'unknown'], $ip);
+        return ['ok' => false, 'error' => $member ? 'no_password' : 'invalid_login'];
+    }
+    if ((string)$member['status'] === 'suspended') {
+        audit('login.pw.suspended', $member['memberId'], (string)$member['memberId'], [], $ip);
+        return ['ok' => false, 'error' => 'suspended'];
+    }
+    if (!password_verify($password, (string)$member['passwordHash'])) {
+        audit('login.pw.fail', $member['memberId'], (string)$member['memberId'], ['reason' => 'bad_password'], $ip);
+        return ['ok' => false, 'error' => 'invalid_login'];
+    }
+    // Rehash-on-login if the cost/algorithm has moved on (standard hygiene).
+    if (password_needs_rehash((string)$member['passwordHash'], PASSWORD_DEFAULT)) {
+        db_update('members', ['passwordHash' => password_hash($password, PASSWORD_DEFAULT), 'updatedAt' => now_iso()], ['id' => $member['id']]);
+    }
+    audit('login.pw.success', $member['memberId'], (string)$member['memberId'], [], $ip);
+    return ['ok' => true, 'member' => public_member($member)];
+}
+
+/**
+ * Set or change the signed-in member's password. If one already exists, the
+ * current password must be supplied (standard change-password guard). Callable
+ * only from an authenticated session (memberId injected by the route).
+ */
+function auth_set_password(array $p): array {
+    $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
+    if (!$member) return ['ok' => false, 'error' => 'not_found'];
+    $new = (string)($p['password'] ?? '');
+    if (strlen($new) < 8) return ['ok' => false, 'error' => 'password_too_short'];
+    if (strlen($new) > 200) return ['ok' => false, 'error' => 'password_too_long'];
+    if (!empty($member['passwordHash'])) {
+        $current = (string)($p['current'] ?? '');
+        if (!password_verify($current, (string)$member['passwordHash'])) {
+            return ['ok' => false, 'error' => 'bad_current_password'];
+        }
+    }
+    db_update('members', ['passwordHash' => password_hash($new, PASSWORD_DEFAULT), 'updatedAt' => now_iso()], ['id' => $member['id']]);
+    audit('member.password.set', $member['memberId'], (string)$member['memberId'], ['changed' => !empty($member['passwordHash'])], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
 function auth_verify(array $p): array {
     $ip = (string)($p['ip'] ?? '');
     $token = trim((string)($p['token'] ?? ''));

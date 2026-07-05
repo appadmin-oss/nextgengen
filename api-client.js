@@ -116,6 +116,8 @@
     uploadPublic: uploadPublic,
     auth: {
       request: (identifier) => request('/auth/request.php', { body: { identifier } }),
+      login:   (identifier, password) => request('/auth/login.php', { body: { identifier, password } }),
+      setPassword: (password, current) => request('/auth/set-password.php', { body: { password, current: current || '' } }),
       verify:  (creds) => request('/auth/verify.php', { body: creds }),
       me:      () => request('/auth/me.php'),
       logout:  () => request('/auth/logout.php', { method: 'POST' }),
