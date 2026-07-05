@@ -132,6 +132,9 @@ const ANCHOR_IDS = ["main", "mentor-apply"];
 function pageFromPath() {
   const seg = (window.location.pathname || "/").replace(/^\/+|\/+$/g, "").split("/")[0];
   if (!seg) return "home";
+  // /login and /signin are conventional entry points — resolve to home; the
+  // auth provider opens the sign-in modal (or redirects signed-in users).
+  if (seg === "login" || seg === "signin") return "home";
   return PAGE_IDS.includes(seg) ? seg : "_notfound";
 }
 function pathForPage(page) {
