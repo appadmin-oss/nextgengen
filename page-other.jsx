@@ -447,22 +447,49 @@ const JOIN_DRAFT_KEY = "ngg.join.draft";
 function JoinPage({ setPage }) {
   // Restore a saved draft so "we save as you go" is true.
   const [step, setStep] = useState(0);
+  // Which program the applicant chose (set by the Summer page before it routes
+  // here). 'summer' = 6-week on-ramp, 'anchor' = flagship 12-week NGG. Captured
+  // once on mount so navigating away and back via the generic Apply link resets.
+  const [program] = useState(() => {
+    const p = (typeof window !== "undefined" && window.__nggProgram === "summer") ? "summer" : "anchor";
+    if (typeof window !== "undefined") window.__nggProgram = null;
+    return p;
+  });
+  const isSummer = program === "summer";
   const [data, setData] = useState(() => {
+    const base = { name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "", photoUrl: "" };
     try {
       const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
-      if (saved && typeof saved === "object") {
-        return Object.assign({ name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "" }, saved);
-      }
+      if (saved && typeof saved === "object") return Object.assign(base, saved);
     } catch (_) {}
-    return { name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "" };
+    return base;
   });
   const [busy, setBusy] = useState(false);
   const [fieldErr, setFieldErr] = useState("");
+  const [photoBusy, setPhotoBusy] = useState(false);
   const steps = ["Identity", "Track", "Story", "Parent"];
   const session = useSession();
-  const applyEyebrow = session
-    ? "APPLY · " + sessionLabel(session, "NEXT SESSION").toUpperCase()
-    : "APPLY · NEXT SESSION";
+  const applyEyebrow = isSummer
+    ? "APPLY · SUMMER STUDENTS"
+    : (session ? "APPLY · " + sessionLabel(session, "NEXT SESSION").toUpperCase() : "APPLY · NEXT SESSION");
+
+  async function pickPhoto(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { setFieldErr("Please choose an image file."); return; }
+    if (file.size > 8 * 1024 * 1024) { setFieldErr("Photo must be under 8 MB."); return; }
+    setPhotoBusy(true); setFieldErr("");
+    try {
+      const r = await NGGApi.uploadPublic(file);
+      setData(d => ({ ...d, photoUrl: r.url }));
+    } catch (err) {
+      const msg = err.message === "public_upload_disabled"
+        ? "Photo upload isn't available right now — you can apply without one."
+        : "Couldn't upload that photo. You can apply without one.";
+      setFieldErr(msg);
+    } finally { setPhotoBusy(false); }
+  }
 
   // Persist draft on every change (cleared on successful submit).
   React.useEffect(() => {
@@ -498,12 +525,14 @@ function JoinPage({ setPage }) {
     try {
       await NGGApi.public.apply({
         kind: "teen",
+        program: program,
         name: data.name.trim(),
         age: parseInt(data.age, 10),
         centre: data.city,
         track: data.track,
         why: data.why.trim(),
         email: data.parentEmail.trim(),
+        photoUrl: data.photoUrl || "",
       });
       try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {}
       setStep(4);
@@ -532,7 +561,7 @@ function JoinPage({ setPage }) {
           <div style={{textAlign:"center", marginBottom:40}}>
             <span className="eyebrow" style={{color:"var(--gold-500)"}}>{applyEyebrow}</span>
             <h1 className="display" style={{fontSize:"clamp(48px, 6vw, 88px)", margin:"10px 0 0"}}>
-              Start your <em style={{fontStyle:"normal", color:"var(--coral)"}}>journey.</em>
+              {isSummer ? <>Summer <em style={{fontStyle:"normal", color:"var(--coral)"}}>starts here.</em></> : <>Start your <em style={{fontStyle:"normal", color:"var(--coral)"}}>journey.</em></>}
             </h1>
             <p style={{fontSize:17, color:"var(--ink-500)", maxWidth:520, margin:"16px auto 0", lineHeight:1.5}}>
               Four short steps. Should take six minutes. You can pause and come back — we save as you go.
@@ -585,6 +614,24 @@ function JoinPage({ setPage }) {
                       <option value="Ayobo">CACENTRE Ayobo</option>
                       <option value="Other">Neither — I'll travel</option>
                     </select>
+                  </div>
+                </div>
+                {/* Optional headshot — unsigned Cloudinary upload, before the
+                    applicant has an account. Silently skipped if not configured. */}
+                <div style={{display:"flex", alignItems:"center", gap:16, marginTop:6}}>
+                  <div style={{
+                    width:64, height:64, borderRadius:"50%", overflow:"hidden", flex:"0 0 auto",
+                    background:"var(--cream-100)", border:"1px solid rgba(12,20,50,0.12)",
+                    display:"grid", placeItems:"center", fontSize:24, color:"var(--ink-400)",
+                  }}>
+                    {data.photoUrl ? <img src={data.photoUrl} alt="" style={{width:"100%", height:"100%", objectFit:"cover"}}/> : "📷"}
+                  </div>
+                  <div>
+                    <label className="btn btn-ghost btn-sm" style={{cursor:"pointer", margin:0}}>
+                      {photoBusy ? "Uploading…" : data.photoUrl ? "Change photo" : "Add a photo (optional)"}
+                      <input type="file" accept="image/*" onChange={pickPhoto} disabled={photoBusy} style={{display:"none"}}/>
+                    </label>
+                    <div className="mono" style={{fontSize:11, color:"var(--ink-500)", marginTop:6}}>A friendly headshot helps us know you. Optional.</div>
                   </div>
                 </div>
               </div>
@@ -677,4 +724,150 @@ function JoinPage({ setPage }) {
   );
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, FAQList, MentorApplySection, MediaModal });
+/* =================== CONTACT =================== */
+const CONTACT_PURPOSES = [
+  { id: "general", label: "General enquiry" },
+  { id: "apply",   label: "Applying / admissions" },
+  { id: "mentor",  label: "Mentoring / volunteering" },
+  { id: "partner", label: "Partnership / sponsorship" },
+  { id: "media",   label: "Press / media" },
+  { id: "support", label: "Support a member / donate" },
+];
+
+function ContactPage({ setPage }) {
+  const [d, setD] = useState({ name: "", email: "", phone: "", purpose: "general", subject: "", message: "", website: "" });
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(null); // null | ref string
+  const [err, setErr] = useState("");
+  const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
+
+  async function submit(e) {
+    e.preventDefault();
+    if (d.name.trim().length < 2) { setErr("Please enter your name."); return; }
+    if (!emailOk(d.email)) { setErr("Please enter a valid email address."); return; }
+    if (d.message.trim().length < 10) { setErr("Please write at least a sentence so we can help."); return; }
+    setErr(""); setBusy(true);
+    try {
+      const r = await NGGApi.public.contact({
+        name: d.name.trim(), email: d.email.trim(), phone: d.phone.trim(),
+        purpose: d.purpose, subject: d.subject.trim(), message: d.message.trim(), website: d.website,
+      });
+      setSent(r.ref || "received");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (ex) {
+      const map = {
+        rate_limited: "Too many messages from this connection — please wait a few minutes.",
+        bad_email: "That email doesn't look right.",
+        message_too_short: "Please write a little more.",
+      };
+      const text = map[ex.code || ex.message] || "Couldn't send your message. Please try again.";
+      setErr(text);
+      if (typeof toast !== "undefined") toast.error(text, "Contact");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="page" data-screen-label="Contact">
+      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"64px 0 40px"}}>
+        <div className="container" style={{maxWidth:980}}>
+          <span className="chip chip-navy"><span className="dot dot-gold"/> WE READ EVERY MESSAGE</span>
+          <h1 className="display" style={{fontSize:"clamp(48px, 6.5vw, 96px)", margin:"18px 0 10px"}}>
+            Say <em style={{fontStyle:"normal", color:"var(--coral)"}}>hello.</em>
+          </h1>
+          <p style={{fontSize:18, lineHeight:1.5, color:"var(--ink-700)", maxWidth:600, margin:0}}>
+            Questions about a session, mentoring, partnerships or press — send a note and a human replies within two working days.
+          </p>
+        </div>
+      </section>
+
+      <section className="section" style={{paddingTop:32}}>
+        <div className="container" style={{maxWidth:980}}>
+          <div style={{display:"grid", gridTemplateColumns:"1.5fr 1fr", gap:32, alignItems:"start"}}>
+            {/* Form */}
+            <div>
+              {sent ? (
+                <div className="card" style={{padding:40, textAlign:"center"}}>
+                  <div className="badge-pin unlocked" style={{width:80, height:80, fontSize:38, margin:"0 auto 18px"}}>✓</div>
+                  <h2 style={{fontFamily:"var(--font-display)", fontSize:30, margin:"0 0 10px"}}>Message sent.</h2>
+                  <p style={{color:"var(--ink-700)", margin:"0 0 8px", lineHeight:1.5}}>
+                    Thank you — we'll reply within two working days.
+                  </p>
+                  {sent !== "received" && (
+                    <div className="mono" style={{fontSize:12, color:"var(--ink-500)"}}>REFERENCE · {sent}</div>
+                  )}
+                  <button className="btn btn-primary mt-24" onClick={() => setPage("home")}>Back to home →</button>
+                </div>
+              ) : (
+                <form onSubmit={submit} className="card" style={{padding:32, display:"flex", flexDirection:"column", gap:16}}>
+                  <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+                    <div className="field">
+                      <label>Your name</label>
+                      <input value={d.name} onChange={e => setD({...d, name: e.target.value})} placeholder="Full name" autoComplete="name"/>
+                    </div>
+                    <div className="field">
+                      <label>Email</label>
+                      <input type="email" value={d.email} onChange={e => setD({...d, email: e.target.value})} placeholder="you@email.com" autoComplete="email"/>
+                    </div>
+                  </div>
+                  <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+                    <div className="field">
+                      <label>Phone (optional)</label>
+                      <input value={d.phone} onChange={e => setD({...d, phone: e.target.value})} placeholder="+234…" autoComplete="tel"/>
+                    </div>
+                    <div className="field">
+                      <label>What's this about?</label>
+                      <select value={d.purpose} onChange={e => setD({...d, purpose: e.target.value})}>
+                        {CONTACT_PURPOSES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>Subject (optional)</label>
+                    <input value={d.subject} onChange={e => setD({...d, subject: e.target.value})} placeholder="A short summary"/>
+                  </div>
+                  <div className="field">
+                    <label>Message</label>
+                    <textarea rows={6} value={d.message} onChange={e => setD({...d, message: e.target.value})} placeholder="Tell us what you need."/>
+                  </div>
+                  {/* Honeypot — hidden from humans, catches bots. */}
+                  <input type="text" value={d.website} onChange={e => setD({...d, website: e.target.value})} tabIndex={-1} autoComplete="off" aria-hidden="true" style={{position:"absolute", left:"-9999px", width:1, height:1, opacity:0}}/>
+                  {err && <div role="alert" style={{color:"var(--coral)", fontSize:14, fontWeight:500}}>{err}</div>}
+                  <button className="btn btn-primary btn-lg" type="submit" disabled={busy} style={{justifyContent:"center"}}>
+                    {busy ? "Sending…" : "Send message →"}
+                  </button>
+                </form>
+              )}
+            </div>
+
+            {/* Direct channels */}
+            <div style={{display:"flex", flexDirection:"column", gap:16}}>
+              <div className="card" style={{padding:24}}>
+                <div className="eyebrow" style={{color:"var(--gold-500)"}}>DIRECT</div>
+                <a href={"mailto:" + CONTACT.email} style={{display:"block", marginTop:12, fontWeight:600, color:"var(--ink-900)", textDecoration:"none"}}>✉ {CONTACT.email}</a>
+                <a href={"tel:" + CONTACT.phone} style={{display:"block", marginTop:8, fontWeight:600, color:"var(--ink-900)", textDecoration:"none"}}>☎ {CONTACT.phoneDisplay}</a>
+              </div>
+              <div className="card" style={{padding:24}}>
+                <div className="eyebrow" style={{color:"var(--gold-500)"}}>FIND US</div>
+                <div style={{marginTop:12, fontSize:14, color:"var(--ink-700)", lineHeight:1.5}}>
+                  <b>CACENTRE Egbeda</b><br/>Alimosho · Lagos<br/>Saturdays · 09:00 – 13:00
+                </div>
+                <div style={{marginTop:14, fontSize:14, color:"var(--ink-700)", lineHeight:1.5}}>
+                  <b>CACENTRE Ayobo</b><br/>Alimosho · Lagos<br/>Saturdays · 09:00 – 13:00
+                </div>
+              </div>
+              <div className="card" style={{padding:24, background:"var(--navy-900)", color:"white"}}>
+                <div className="eyebrow" style={{color:"var(--gold-400)"}}>LOOKING TO APPLY?</div>
+                <p style={{fontSize:14, color:"rgba(255,255,255,0.8)", margin:"12px 0 16px", lineHeight:1.5}}>
+                  You don't need to email — start your application in about six minutes.
+                </p>
+                <button className="btn btn-gold" onClick={() => setPage("join")}>Start application →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, ContactPage, FAQList, MentorApplySection, MediaModal });

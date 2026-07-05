@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","join","blog","admin"];
+const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","join","blog","contact","admin"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
@@ -24,6 +24,7 @@ const PAGE_META = {
   volunteers: { title: "Become a mentor · NGG",                       desc: "Five ways to be useful. Pick the shape of your time." },
   join:       { title: "Apply · Summer 2026 · NGG",                   desc: "Four short steps. About six minutes. Pause and come back — we save as you go." },
   blog:       { title: "The Journal · NGG",                           desc: "Long-form writing from mentors, members and the editorial team." },
+  contact:    { title: "Contact · NGG",                               desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
   admin:      { title: "Admin · Control Room · NGG",                  desc: "" },
 };
 
@@ -195,6 +196,7 @@ function App() {
     volunteers:<VolunteersPage setPage={setPage}/>,
     join:      <JoinPage      setPage={setPage}/>,
     blog:      <BlogPage      setPage={setPage}/>,
+    contact:   <ContactPage   setPage={setPage}/>,
     admin:     <AdminPage     setPage={setPage}/>,
   };
 

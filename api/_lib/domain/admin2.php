@@ -43,6 +43,7 @@ function admin_overview(array $p): array {
         ],
         'events'     => ['upcoming' => $one("SELECT COUNT(*) c FROM events WHERE status='published' AND startAt >= ?", [gmdate('Y-m-d\TH:i:s\Z')])],
         'newsletter' => ['subscribers' => $one("SELECT COUNT(*) c FROM newsletter WHERE status='subscribed'")],
+        'messages'   => ['unread' => $one("SELECT COUNT(*) c FROM contact_messages WHERE status='new'"), 'total' => $one("SELECT COUNT(*) c FROM contact_messages")],
         'byCentre'   => $byCentre,
         'byTrack'    => $byTrack,
         'recent'     => db_all("SELECT at, actorId, event, subject FROM audit_log ORDER BY id DESC LIMIT 12"),
@@ -132,11 +133,22 @@ function admin_application_convert(array $p): array {
     // Don't double-provision.
     $existing = db_row('SELECT memberId FROM members WHERE lower(email) = ? LIMIT 1', [strtolower((string)$a['email'])]);
     if ($existing) { db_update('applications', ['status' => 'accepted'], ['id' => $id]); return ['ok' => true, 'memberId' => $existing['memberId'], 'existed' => true]; }
-    $type = 'Summer';
+    // Summer applicants become Summer Students; Anchor/NGG applicants become
+    // full NGG members. Falls back to Summer for legacy rows with no program.
+    $type = ((string)($a['program'] ?? '') === 'anchor') ? 'NGG' : 'Summer';
     $newId = new_id($type === 'Summer' ? 'SUM' : 'NGG');
-    db_insert('members', ['memberId' => $newId, 'fullName' => $a['name'], 'email' => $a['email'], 'type' => $type, 'status' => 'active', 'role' => 'member', 'centre' => $a['centre'] ?: 'Egbeda', 'track' => $a['track'] ?: '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => $newId, 'fullName' => $a['name'], 'email' => $a['email'], 'type' => $type, 'status' => 'active', 'role' => 'member', 'centre' => $a['centre'] ?: 'Egbeda', 'track' => $a['track'] ?: '', 'photoUrl' => (string)($a['photoUrl'] ?? ''), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);
-    audit('admin.application.convert', $g['requester']['memberId'], $newId, ['applicationId' => $id], (string)($p['ip'] ?? ''));
+    // Welcome the new member so conversion is a visible action, not a silent DB write.
+    @send_mail((string)$a['email'], 'Welcome to Next Generation Genius',
+        email_template([
+            'title' => 'You\'re in, ' . explode(' ', (string)$a['name'])[0] . '.',
+            'intro' => $type === 'Summer' ? 'Your place in Summer Students is confirmed.' : 'Your place in the NGG cohort is confirmed.',
+            'bodyHtml' => 'We\'ll be in touch shortly with your start details. Your member ID is <b>' . esc_html($newId) . '</b>.',
+            'ctaLabel' => 'Open the member portal', 'ctaUrl' => ($GLOBALS['CONFIG']['app_origin'] ?? '') . '/#dashboard',
+            'footNote' => 'Welcome to the movement.',
+        ]));
+    audit('admin.application.convert', $g['requester']['memberId'], $newId, ['applicationId' => $id, 'type' => $type], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'memberId' => $newId];
 }
 
@@ -145,6 +157,28 @@ function admin_newsletter_list(array $p): array {
     $g = admin_gate($p); if (!$g['ok']) return $g;
     $rows = db_all('SELECT email, source, status, createdAt FROM newsletter ORDER BY id DESC LIMIT 5000');
     return ['ok' => true, 'total' => count($rows), 'subscribers' => $rows];
+}
+
+// ── Contact messages ─────────────────────────────────────────────────────────
+function admin_contact_list(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $where = []; $params = [];
+    if (!empty($p['status'])) { $where[] = 'status = ?'; $params[] = $p['status']; }
+    if (!empty($p['purpose'])) { $where[] = 'purpose = ?'; $params[] = $p['purpose']; }
+    $sql = 'SELECT * FROM contact_messages' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY id DESC LIMIT 500';
+    $unread = (int)(db_row("SELECT COUNT(*) c FROM contact_messages WHERE status='new'")['c'] ?? 0);
+    return ['ok' => true, 'messages' => db_all($sql, $params), 'unread' => $unread];
+}
+
+function admin_contact_status(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $id = (int)($p['id'] ?? 0);
+    $status = (string)($p['status'] ?? '');
+    if (!in_array($status, ['new', 'read', 'replied', 'archived'], true)) return ['ok' => false, 'error' => 'bad_status'];
+    $n = db_update('contact_messages', ['status' => $status], ['id' => $id]);
+    if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    audit('admin.contact.status', $g['requester']['memberId'], (string)$id, ['status' => $status], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
 }
 
 // ── Site settings ───────────────────────────────────────────────────────────

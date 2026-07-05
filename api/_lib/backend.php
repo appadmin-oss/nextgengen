@@ -75,6 +75,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.applications.status' => 'admin_applications_set_status',
             'admin.application.convert' => 'admin_application_convert',
             'admin.newsletter.list'   => 'admin_newsletter_list',
+            'admin.contact.list'      => 'admin_contact_list',
+            'admin.contact.status'    => 'admin_contact_status',
             'admin.settings.get'      => 'admin_settings_get',
             'admin.settings.set'      => 'admin_settings_set',
             'admin.assignments.list'        => 'admin_assignments_list',
@@ -89,6 +91,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.anchorContent'    => 'public_anchor_content',
             'public.newsletter'       => 'public_newsletter',
             'public.apply'            => 'public_apply',
+            'public.contact'          => 'public_contact',
         ];
     }
 

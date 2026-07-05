@@ -13,6 +13,7 @@ function HomePage({ setPage }) {
       <TracksRibbon setPage={setPage} />
       <CommunityCollage />
       <Testimonials />
+      <EventsBand setPage={setPage}/>
       <BlogPreview setPage={setPage}/>
       <ClosingCTA setPage={setPage} />
     </div>
@@ -613,4 +614,49 @@ function ClosingCTA({ setPage }) {
   );
 }
 
-Object.assign(window, { HomePage });
+/* =========== Upcoming events — driven by /api/public/events.php ===========
+   Renders nothing until at least one published, public, upcoming event exists,
+   so the marketing page never shows an empty shell. */
+function EventsBand({ setPage }) {
+  const [events, setEvents] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.public.events()
+      .then(r => { if (alive) setEvents((r.events || []).slice(0, 3)); })
+      .catch(() => { if (alive) setEvents([]); });
+    return () => { alive = false; };
+  }, []);
+
+  if (!events || events.length === 0) return null;
+
+  const fmt = (iso) => {
+    if (!iso) return "";
+    try { return new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
+    catch (_) { return iso; }
+  };
+
+  return (
+    <section className="section" style={{ background: "var(--cream-50)" }}>
+      <div className="container">
+        <SectionHead eyebrow="WHAT'S COMING UP" title="Events & open days." sub="Showcases, open days and community sessions. Everyone's welcome — come see the work in the room." />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
+          {events.map((e, i) => (
+            <div key={e.eventId} className="card reveal" data-reveal style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", "--reveal-delay": (i * 60) + "ms" }}>
+              {e.coverUrl
+                ? <Photo src={e.coverUrl} ratio="16/9" style={{ borderRadius: 0 }}/>
+                : <div style={{ aspectRatio: "16/9", background: "linear-gradient(135deg, var(--navy-900), #1b2a63)" }}/>}
+              <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
+                <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", color: "var(--coral)", textTransform: "uppercase" }}>{fmt(e.startAt)}</div>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 22, lineHeight: 1.1 }}>{e.title}</div>
+                {e.location && <div style={{ fontSize: 13, color: "var(--ink-500)" }}>📍 {e.location}{e.centre && e.centre !== "Both" ? " · " + e.centre : ""}</div>}
+                {e.body && <p style={{ fontSize: 14, color: "var(--ink-700)", lineHeight: 1.5, margin: 0 }}>{String(e.body).slice(0, 140)}{String(e.body).length > 140 ? "…" : ""}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+Object.assign(window, { HomePage, EventsBand });
