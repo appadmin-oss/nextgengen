@@ -158,7 +158,7 @@ function admin_summer_enroll(array $p): array {
 function admin_summer_students_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
-    $cohortId = (string)($p['cohortId'] ?? $c['cohortId']);
+    $cohortId = trim((string)($p['cohortId'] ?? '')) ?: $c['cohortId'];
     $where = ['cohortId = ?']; $params = [$cohortId];
     $q = strtolower((string)($p['q'] ?? ''));
     if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(handle) LIKE ? OR lower(studentId) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
@@ -193,6 +193,53 @@ function summer_checkin(array $p): array {
         audit('summer.checkin', $g['requester']['memberId'], $s['studentId'], ['date' => $today], (string)($p['ip'] ?? ''));
     }
     return ['ok' => true, 'already' => $already, 'student' => summer_student_public($s)];
+}
+
+// ── Attendance analytics (Phase 2 dashboard) ────────────────────────────────
+function admin_summer_attendance(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $c = summer_ensure_cohort();
+    $cid = trim((string)($p['cohortId'] ?? '')) ?: $c['cohortId'];
+    $today = gmdate('Y-m-d');
+    $one = fn($sql, $a = []) => (int)(db_row($sql, $a)['c'] ?? 0);
+
+    // Distinct days attendance was taken so far — the denominator for a rate.
+    $sessionDays = $one("SELECT COUNT(DISTINCT date) c FROM attendance WHERE cohortId = ?", [$cid]);
+    $activeStudents = $one("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND status = 'active'", [$cid]);
+    $presentToday = $one("SELECT COUNT(*) c FROM attendance WHERE cohortId = ? AND date = ?", [$cid, $today]);
+
+    // Last 14 calendar days as a series (present count per day).
+    $days = [];
+    for ($i = 13; $i >= 0; $i--) {
+        $d = gmdate('Y-m-d', time() - $i * 86400);
+        $days[] = ['date' => $d, 'present' => $one("SELECT COUNT(*) c FROM attendance WHERE cohortId = ? AND date = ?", [$cid, $d])];
+    }
+
+    // Per-student rollup: total present, last seen, attendance rate.
+    $students = db_all("SELECT studentId, fullName, handle, track, centre FROM summer_students WHERE cohortId = ? AND status = 'active' ORDER BY fullName", [$cid]);
+    $roster = [];
+    foreach ($students as $s) {
+        $cnt = $one("SELECT COUNT(*) c FROM attendance WHERE studentId = ?", [$s['studentId']]);
+        $last = db_row("SELECT date FROM attendance WHERE studentId = ? ORDER BY date DESC LIMIT 1", [$s['studentId']]);
+        $roster[] = [
+            'studentId' => $s['studentId'], 'fullName' => $s['fullName'], 'handle' => $s['handle'],
+            'track' => $s['track'], 'centre' => $s['centre'], 'present' => $cnt,
+            'lastSeen' => $last['date'] ?? '', 'presentToday' => (bool)$one("SELECT COUNT(*) c FROM attendance WHERE studentId = ? AND date = ?", [$s['studentId'], $today]),
+            'rate' => $sessionDays ? (int)round($cnt / $sessionDays * 100) : 0,
+        ];
+    }
+    // Lowest attendance first, so at-risk students surface immediately.
+    usort($roster, fn($a, $b) => $a['rate'] <=> $b['rate']);
+    // At-risk: only meaningful once a few sessions have run.
+    $atRisk = $sessionDays >= 3 ? array_values(array_filter($roster, fn($r) => $r['rate'] < 50)) : [];
+
+    $recent = db_all("SELECT a.studentId, a.date, a.checkInAt, a.method, s.fullName FROM attendance a LEFT JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ? ORDER BY a.checkInAt DESC LIMIT 25", [$cid]);
+
+    return ['ok' => true, 'attendance' => [
+        'cohort' => $c, 'today' => $presentToday, 'sessionDays' => $sessionDays,
+        'activeStudents' => $activeStudents, 'absentToday' => max(0, $activeStudents - $presentToday),
+        'days' => $days, 'roster' => $roster, 'atRisk' => $atRisk, 'recent' => $recent,
+    ]];
 }
 
 // ── Public profile (by QR token or handle) ──────────────────────────────────
