@@ -101,3 +101,35 @@ function ai_complete(string $system, string $user, int $maxTokens = 400): array 
     $text = $j['candidates'][0]['content']['parts'][0]['text'] ?? '';
     return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'gemini'] : ['ok' => false, 'error' => 'ai_empty'];
 }
+
+/**
+ * Multi-turn chat. $turns is [{role:'me'|'coach', text}, …] in order. Same
+ * shape/return as ai_complete; used by the Reflection Coach.
+ */
+function ai_chat(string $system, array $turns, int $maxTokens = 220): array {
+    $c = ai_config();
+    $prov = ai_provider();
+    if ($prov === '') return ['ok' => false, 'error' => 'ai_disabled'];
+
+    if ($prov === 'groq') {
+        $msgs = [['role' => 'system', 'content' => $system]];
+        foreach ($turns as $t) $msgs[] = ['role' => (($t['role'] ?? '') === 'coach' ? 'assistant' : 'user'), 'content' => (string)($t['text'] ?? '')];
+        $body = json_encode(['model' => (string)($c['groq_model'] ?? 'llama-3.1-8b-instant'), 'max_tokens' => $maxTokens, 'temperature' => 0.6, 'messages' => $msgs], JSON_UNESCAPED_SLASHES);
+        $r = ai_http_post('https://api.groq.com/openai/v1/chat/completions', $body, ['Authorization: Bearer ' . $c['groq_api_key'], 'Content-Type: application/json']);
+        if (!$r['ok']) return $r;
+        $j = json_decode($r['body'], true);
+        $text = $j['choices'][0]['message']['content'] ?? '';
+        return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'groq'] : ['ok' => false, 'error' => 'ai_empty'];
+    }
+
+    $contents = [];
+    foreach ($turns as $t) $contents[] = ['role' => (($t['role'] ?? '') === 'coach' ? 'model' : 'user'), 'parts' => [['text' => (string)($t['text'] ?? '')]]];
+    $model = (string)($c['gemini_model'] ?? 'gemini-1.5-flash');
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent?key=' . urlencode((string)$c['gemini_api_key']);
+    $body = json_encode(['systemInstruction' => ['parts' => [['text' => $system]]], 'contents' => $contents, 'generationConfig' => ['maxOutputTokens' => $maxTokens, 'temperature' => 0.6]], JSON_UNESCAPED_SLASHES);
+    $r = ai_http_post($url, $body, ['Content-Type: application/json']);
+    if (!$r['ok']) return $r;
+    $j = json_decode($r['body'], true);
+    $text = $j['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'gemini'] : ['ok' => false, 'error' => 'ai_empty'];
+}
