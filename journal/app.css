@@ -151,6 +151,12 @@ i[class^="ph"] { line-height: 1; }
 .aj-quote-q { font-family: var(--disp); font-weight: 600; font-size: 20px; line-height: 1.35; margin: 14px 0 0; }
 .aj-musing { width: 100%; min-height: 96px; resize: none; background: var(--card); border: 1px solid var(--line); border-radius: 18px; color: #fff; font-size: 15px; line-height: 1.5; padding: 15px 16px; outline: none; }
 .aj-musing:focus { border-color: var(--violet); }
+.aj-prompt-hint { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 11px; padding: 11px 13px; border-radius: 13px; background: rgba(255,206,84,.1); border: 1px solid rgba(255,206,84,.24); font-size: 13px; line-height: 1.4; color: var(--tx-70); }
+.aj-prompt-hint i { color: var(--gold); font-size: 16px; margin-top: 1px; flex: none; }
+.aj-prompt-hint b { color: #fff; font-weight: 600; }
+.aj-entry-mood { display: inline-flex; align-items: center; gap: 9px; padding: 8px 14px 8px 8px; border-radius: 99px; background: var(--card); border: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--tx-70); }
+.aj-entry-mood .aj-mood-c { width: 30px; height: 30px; border-radius: 50%; background: rgba(139,92,246,.2); display: grid; place-items: center; }
+.aj-entry-mood .aj-mood-c i { color: var(--violet-l); font-size: 17px; }
 .aj-sent { display: flex; gap: 13px; align-items: flex-start; margin-top: 16px; }
 .aj-sent-n { flex: none; width: 27px; height: 27px; border-radius: 50%; background: rgba(255,255,255,.1); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--a); }
 .aj-sent-lbl { font-size: 13px; color: var(--tx-55); }
