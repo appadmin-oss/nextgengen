@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 8;
+const NGG_SCHEMA_TARGET = 9;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -342,6 +342,40 @@ function db_migrate(PDO $db): void {
             ALTER TABLE summer_students ADD COLUMN firstSeen TEXT;
             ALTER TABLE summer_students ADD COLUMN lastSeen TEXT;
             ALTER TABLE summer_students ADD COLUMN archivedAt TEXT;
+        ",
+        // Anchor Circle — the consent-based, read-only link between a member and
+        // their parent / teacher / mentor. anchorCode is the 6-digit invite the
+        // member reads out; links carry a signed portal token's identity.
+        9 => "
+            ALTER TABLE members ADD COLUMN anchorCode TEXT;
+            CREATE UNIQUE INDEX idx_members_anchorcode ON members(anchorCode);
+
+            CREATE TABLE circle_links (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              linkId TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL,
+              role TEXT NOT NULL,
+              guardianName TEXT,
+              status TEXT DEFAULT 'active',
+              createdAt TEXT DEFAULT (datetime('now')),
+              lastSeenAt TEXT, revokedAt TEXT
+            );
+            CREATE INDEX idx_circle_member ON circle_links(memberId);
+
+            CREATE TABLE circle_confirmations (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              linkId TEXT NOT NULL, memberId TEXT NOT NULL, role TEXT,
+              date TEXT NOT NULL, createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_circle_conf_unique ON circle_confirmations(linkId, date);
+            CREATE INDEX idx_circle_conf_member ON circle_confirmations(memberId, date);
+
+            CREATE TABLE circle_remarks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              linkId TEXT NOT NULL, memberId TEXT NOT NULL, role TEXT,
+              weekStart TEXT, text TEXT, createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_circle_remark_member ON circle_remarks(memberId);
         ",
     ];
 

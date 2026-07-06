@@ -22,8 +22,10 @@ CREATE TABLE IF NOT EXISTS members (
   joinDate VARCHAR(40), dob VARCHAR(40),
   parentName VARCHAR(255), parentEmail VARCHAR(200), parentPhone VARCHAR(40), school VARCHAR(255),
   bio TEXT, socials TEXT, totpSecret VARCHAR(64), passwordHash VARCHAR(255) DEFAULT '', notes TEXT,
+  anchorCode VARCHAR(12),
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
-  INDEX idx_members_email (email), INDEX idx_members_centre (centre), INDEX idx_members_status (status)
+  INDEX idx_members_email (email), INDEX idx_members_centre (centre), INDEX idx_members_status (status),
+  UNIQUE KEY idx_members_anchorcode (anchorCode)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS mentors (
@@ -243,5 +245,31 @@ CREATE TABLE IF NOT EXISTS attendance (
   UNIQUE KEY idx_attend_unique (studentId, date), INDEX idx_attend_cohort_date (cohortId, date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Anchor Circle — consent-based read-only guardian/mentor links.
+CREATE TABLE IF NOT EXISTS circle_links (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  linkId VARCHAR(48) UNIQUE NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  role VARCHAR(24) NOT NULL,
+  guardianName VARCHAR(255),
+  status VARCHAR(16) DEFAULT 'active',
+  createdAt VARCHAR(40), lastSeenAt VARCHAR(40), revokedAt VARCHAR(40),
+  INDEX idx_circle_member (memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS circle_confirmations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  linkId VARCHAR(48) NOT NULL, memberId VARCHAR(64) NOT NULL, role VARCHAR(24),
+  date VARCHAR(12) NOT NULL, createdAt VARCHAR(40),
+  UNIQUE KEY idx_circle_conf_unique (linkId, date), INDEX idx_circle_conf_member (memberId, date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS circle_remarks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  linkId VARCHAR(48) NOT NULL, memberId VARCHAR(64) NOT NULL, role VARCHAR(24),
+  weekStart VARCHAR(12), text TEXT, createdAt VARCHAR(40),
+  INDEX idx_circle_remark_member (memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (8) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (9) ON DUPLICATE KEY UPDATE version = version;

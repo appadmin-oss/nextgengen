@@ -452,3 +452,13 @@ function admin_post(array $p, bool $includeBody = false): array {
 function flip_scheduled_posts(): void {
     db_exec("UPDATE posts SET status='published' WHERE status='draft' AND publishAt != '' AND publishAt IS NOT NULL AND publishAt <= ?", [now_iso()]);
 }
+
+// ── base64url (shared by session cookies + Anchor Circle tokens) ────────────
+function b64url(string $bin): string {
+    return rtrim(strtr(base64_encode($bin), '+/', '-_'), '=');
+}
+function b64url_decode(string $s): string {
+    $pad = strlen($s) % 4;
+    if ($pad) $s .= str_repeat('=', 4 - $pad);
+    return (string)base64_decode(strtr($s, '-_', '+/'));
+}
