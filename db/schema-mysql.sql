@@ -206,5 +206,41 @@ CREATE TABLE IF NOT EXISTS contact_messages (
   INDEX idx_contact_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS summer_cohorts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  cohortId VARCHAR(48) UNIQUE NOT NULL,
+  year INT, name VARCHAR(120), startDate VARCHAR(40), endDate VARCHAR(40),
+  status VARCHAR(24) DEFAULT 'active', createdAt VARCHAR(40)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS qr_codes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  token VARCHAR(48) UNIQUE NOT NULL,
+  batch VARCHAR(48), cohortId VARCHAR(48),
+  status VARCHAR(24) DEFAULT 'blank',
+  studentId VARCHAR(48), assignedName VARCHAR(255),
+  createdAt VARCHAR(40), assignedAt VARCHAR(40),
+  INDEX idx_qr_status (status), INDEX idx_qr_cohort (cohortId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS summer_students (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  studentId VARCHAR(48) UNIQUE NOT NULL,
+  cohortId VARCHAR(48), token VARCHAR(48), handle VARCHAR(80),
+  fullName VARCHAR(255), age INT, centre VARCHAR(48), track VARCHAR(64), photoUrl VARCHAR(512),
+  guardianName VARCHAR(255), guardianPhone VARCHAR(48),
+  status VARCHAR(24) DEFAULT 'active', notes TEXT,
+  enrolledAt VARCHAR(40), updatedAt VARCHAR(40),
+  INDEX idx_sstu_cohort (cohortId), INDEX idx_sstu_handle (handle), INDEX idx_sstu_token (token)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS attendance (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  cohortId VARCHAR(48), studentId VARCHAR(48), token VARCHAR(48),
+  date VARCHAR(12), checkInAt VARCHAR(40), method VARCHAR(16) DEFAULT 'qr',
+  byId VARCHAR(48), device VARCHAR(64), createdAt VARCHAR(40),
+  UNIQUE KEY idx_attend_unique (studentId, date), INDEX idx_attend_cohort_date (cohortId, date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (6) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (7) ON DUPLICATE KEY UPDATE version = version;

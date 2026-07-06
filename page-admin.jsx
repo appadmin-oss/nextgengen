@@ -7,6 +7,7 @@
 // Which capability each admin section needs (null = any staff).
 const SECTION_CAP = {
   home: null, members: "people", applications: "people", mentors: "people", mentorship: "people",
+  summer: "summer",
   sessions: "content", missions: "content", anchor: "content", assignments: "content",
   events: "content", posts: "content", broadcast: "content",
   newsletter: "inbox", messages: "inbox", audit: "rbac", settings: "settings",
@@ -53,6 +54,7 @@ function AdminPage({ setPage }) {
           {view === "applications" && <AdminApplications/>}
           {view === "mentors" && <AdminMentors/>}
           {view === "mentorship" && <AdminMentorship/>}
+          {view === "summer" && <AdminSummer/>}
           {view === "newsletter" && <AdminNewsletter/>}
           {view === "messages" && <AdminContact/>}
           {view === "settings" && <AdminSettings/>}
@@ -171,6 +173,9 @@ function AdminNav({ section, setSection, hasCap }) {
       { id: "applications", label: "Applications", icon: "✉", cap: "people" },
       { id: "mentorship", label: "Mentorship", icon: "◐", cap: "people" },
     ]},
+    { h: "Summer School", items: [
+      { id: "summer",    label: "Summer School", icon: "☀", cap: "summer" },
+    ]},
     { h: "Content", items: [
       { id: "sessions",  label: "Sessions",   icon: "▢", cap: "content" },
       { id: "missions",  label: "Missions",   icon: "✦", cap: "content" },
@@ -219,7 +224,7 @@ function titleFor(s) {
   return {
     home: "Overview", members: "Members", mentors: "Mentors", mentorship: "Mentorship", sessions: "Sessions",
     missions: "Anchor missions", anchor: "Anchor Journal app", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
-    applications: "Applications", newsletter: "Newsletter", messages: "Messages", settings: "Settings",
+    applications: "Applications", newsletter: "Newsletter", messages: "Messages", settings: "Settings", summer: "Summer School",
   }[s] || "";
 }
 
@@ -440,7 +445,7 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
           <Field label="School" value={d.school||""} onChange={v => set("school", v)}/>
           {/* Staff level — only super_admins (the 'rbac' capability) may assign roles. */}
           {hasCap && hasCap("rbac") && (
-            <FieldSelect label="Staff level (access)" value={d.role||"member"} onChange={v => set("role", v)} options={["member","editor","admin","super_admin"]}/>
+            <FieldSelect label="Staff level (access)" value={d.role||"member"} onChange={v => set("role", v)} options={["member","editor","summer_admin","club_admin","admin","super_admin"]}/>
           )}
         </div>
         <div className="admin-drawer-foot">
@@ -665,6 +670,170 @@ function AdminMentorship() {
       )}
 
       {editing && <AdminMentorEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
+    </div>
+  );
+}
+
+// ============================================================================
+// Summer School — QR-driven attendance & enrollment (Phase 1)
+// ============================================================================
+
+function AdminSummer() {
+  const [tab, setTab] = React.useState("overview");
+  const [ov, setOv] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.summer.overview().then(setOv).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  if (err) return <div className="admin-empty">Couldn't load: {err}</div>;
+  if (!ov) return <div className="admin-section"><div className="dash-spinner"/></div>;
+  const o = ov.overview, cohort = o.cohort || {};
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Summer School <span className="chip chip-gold" style={{ fontSize: 11 }}>{cohort.name || cohort.cohortId}</span></h2>
+      </div>
+      <p className="admin-hint">Pre-print QR cards, enrol students against them, and track attendance. Everything mirrors to Google Sheets.</p>
+
+      <div className="admin-tiles" style={{ marginBottom: 8 }}>
+        <AdminTile n={o.students} l="Enrolled students"/>
+        <AdminTile n={o.presentToday} l="Present today"/>
+        <AdminTile n={o.qrBlank} l="Blank QR cards"/>
+        <AdminTile n={o.qrAssigned} l="Assigned cards"/>
+      </div>
+
+      <div className="admin-anchor-tabs">
+        {[["overview", "Enrol"], ["qr", "QR cards"], ["students", "Roster (" + o.students + ")"]].map(([id, lbl]) => (
+          <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
+        ))}
+      </div>
+
+      {tab === "overview" && <SummerEnroll cohort={cohort} blank={o.qrBlank} onDone={load}/>}
+      {tab === "qr" && <SummerQR onChange={load}/>}
+      {tab === "students" && <SummerRoster cohortId={cohort.cohortId}/>}
+    </div>
+  );
+}
+
+function SummerEnroll({ cohort, blank, onDone }) {
+  const [d, setD] = React.useState({ fullName: "", age: 12, centre: "Egbeda", track: "", guardianName: "", guardianPhone: "", token: "", photoUrl: "" });
+  const [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState(null);
+  const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
+  const submit = async (e) => {
+    e.preventDefault(); setBusy(true);
+    try {
+      const r = await NGGApi.admin.summer.enroll(d);
+      setDone(r); setD({ fullName: "", age: 12, centre: "Egbeda", track: "", guardianName: "", guardianPhone: "", token: "", photoUrl: "" });
+      toast.success("Enrolled " + r.studentId); onDone();
+    } catch (e) {
+      const map = { no_qr_available: "No blank QR cards left — mint a batch in the QR cards tab first.", qr_already_used: "That QR card is already assigned.", qr_not_found: "QR token not found." };
+      toast.error(map[e.code] || e.code || e.message);
+    } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ maxWidth: 620 }}>
+      {done && (
+        <div className="admin-anchor-restore" style={{ background: "rgba(208,255,58,0.16)", borderColor: "rgba(110,156,29,0.4)", color: "#2e4400" }}>
+          ✓ Enrolled <b style={{ margin: "0 4px" }}>{done.studentId}</b> · card {done.token} · profile <a href={"/q/" + done.token} target="_blank" rel="noopener noreferrer">/q/{done.token}</a>
+        </div>
+      )}
+      {blank === 0 && <div className="admin-anchor-warn">⚠ No blank QR cards. Mint a batch in the “QR cards” tab before enrolling.</div>}
+      <form onSubmit={submit} className="admin-fields">
+        <Field label="Full name" value={d.fullName} onChange={v => set("fullName", v)} required/>
+        <div className="admin-fields-row">
+          <Field label="Age" value={d.age} onChange={v => set("age", v)} type="number"/>
+          <FieldSelect label="Centre" value={d.centre} onChange={v => set("centre", v)} options={["Egbeda", "Ayobo"]}/>
+          <Field label="Track" value={d.track} onChange={v => set("track", v)} placeholder="Music, Tech…"/>
+        </div>
+        <div className="admin-fields-row">
+          <Field label="Guardian name" value={d.guardianName} onChange={v => set("guardianName", v)}/>
+          <Field label="Guardian phone" value={d.guardianPhone} onChange={v => set("guardianPhone", v)}/>
+        </div>
+        <FieldUpload label="Photo" value={d.photoUrl} onChange={v => set("photoUrl", v)} kind="avatar"/>
+        <Field label="QR card token (optional — auto-picks a blank card if empty)" value={d.token} onChange={v => set("token", v)} placeholder="SUMQR-XXXXXXXX"/>
+        <button className="btn btn-primary" disabled={busy || blank === 0}>{busy ? "Enrolling…" : "Enrol student →"}</button>
+      </form>
+    </div>
+  );
+}
+
+function SummerQR({ onChange }) {
+  const [codes, setCodes] = React.useState(null);
+  const [count, setCount] = React.useState(30);
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.admin.summer.qrList().then(r => setCodes(r.codes || [])).catch(() => setCodes([]));
+  React.useEffect(() => { load(); }, []);
+  const mint = async () => {
+    setBusy(true);
+    try { const r = await NGGApi.admin.summer.mint(Number(count)); toast.success("Minted " + r.count + " cards (" + r.batch + ")"); load(); onChange && onChange(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  const printCards = () => {
+    const blanks = (codes || []).filter(c => c.status === "blank");
+    const rows = (blanks.length ? blanks : (codes || [])).map(c =>
+      `<div class="card"><div class="tok">${c.token}</div><div class="url">${location.origin}/q/${c.token}</div><div class="nm">${c.assignedName || "________________"}</div></div>`).join("");
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(`<html><head><title>Summer QR cards</title><style>
+      body{font-family:monospace;margin:0;padding:16px}
+      .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+      .card{border:1.5px dashed #333;border-radius:10px;padding:16px;text-align:center;page-break-inside:avoid}
+      .tok{font-size:20px;font-weight:800;letter-spacing:2px}.url{font-size:10px;color:#555;margin-top:6px;word-break:break-all}.nm{margin-top:14px;font-size:11px;color:#888}
+      @media print{@page{margin:12mm}}
+    </style></head><body><h3>Summer QR cards — scan the token or the URL</h3><div class="grid">${rows}</div><script>print()</script></body></html>`);
+    w.document.close();
+  };
+  return (
+    <div>
+      <div className="admin-filters" style={{ alignItems: "center" }}>
+        <input className="admin-input" type="number" min="1" max="500" style={{ maxWidth: 120 }} value={count} onChange={e => setCount(e.target.value)}/>
+        <button className="btn btn-primary btn-sm" onClick={mint} disabled={busy}>{busy ? "Minting…" : "Mint blank cards"}</button>
+        <button className="btn btn-ghost btn-sm" disabled={!codes || !codes.length} onClick={printCards}>Print cards ↗</button>
+      </div>
+      <p className="admin-hint">Cards are printed <b>before</b> enrollment. A handheld scanner reads the token straight into the enrol/check-in field; scannable QR images arrive with the check-in kiosk (Phase 2).</p>
+      {codes === null ? <div className="dash-spinner"/> :
+        codes.length === 0 ? <div className="admin-empty">No cards minted yet.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Token</th><th>Batch</th><th>Status</th><th>Assigned to</th></tr></thead>
+          <tbody>{codes.slice(0, 300).map(c => (
+            <tr key={c.token}><td className="mono">{c.token}</td><td className="mono">{c.batch}</td><td><span className={"chip status-" + (c.status === "assigned" ? "published" : "draft")}>{c.status}</span></td><td>{c.assignedName || "—"}</td></tr>
+          ))}</tbody>
+        </table></div>
+      }
+    </div>
+  );
+}
+
+function SummerRoster({ cohortId }) {
+  const [list, setList] = React.useState(null);
+  const [q, setQ] = React.useState("");
+  const load = () => NGGApi.admin.summer.students(q, cohortId).then(r => setList(r.students || [])).catch(() => setList([]));
+  React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q]);
+  const setStatus = async (studentId, status) => { try { await NGGApi.admin.summer.studentStatus(studentId, status); load(); } catch (e) { toast.error(e.code || e.message); } };
+  return (
+    <div>
+      <div className="admin-filters">
+        <input className="admin-input" placeholder="Search name / handle / ID" value={q} onChange={e => setQ(e.target.value)} style={{ maxWidth: 280 }}/>
+        <button className="btn btn-ghost btn-sm" disabled={!list || !list.length} onClick={() => downloadCsv("summer-students", (list || []).map(s => ({ studentId: s.studentId, fullName: s.fullName, handle: s.handle, centre: s.centre, track: s.track, status: s.status, attendance: s.attendanceCount })))}>Export CSV</button>
+      </div>
+      {list === null ? <div className="dash-spinner"/> :
+        list.length === 0 ? <div className="admin-empty">No students enrolled yet.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>ID</th><th>Name</th><th>Handle</th><th>Centre</th><th>Track</th><th>Present</th><th>Status</th><th>Profile</th></tr></thead>
+          <tbody>{list.map(s => (
+            <tr key={s.studentId}>
+              <td className="mono">{s.studentId}</td>
+              <td>{s.fullName}</td>
+              <td className="mono">{s.handle}</td>
+              <td>{s.centre}</td><td>{s.track}</td>
+              <td className="mono">{s.attendanceCount}</td>
+              <td><select className="admin-select" value={s.status} onChange={e => setStatus(s.studentId, e.target.value)}><option value="active">active</option><option value="withdrawn">withdrawn</option><option value="graduated">graduated</option><option value="promoted">promoted</option></select></td>
+              <td><a className="mono" href={"/s/" + s.handle} target="_blank" rel="noopener noreferrer">/s/{s.handle}</a></td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+      }
     </div>
   );
 }
