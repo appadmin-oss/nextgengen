@@ -3887,6 +3887,7 @@ section p[style*="var(--ink-500)"] {
 .admin-anchor-week > summary .mono { color: var(--gold-500); font-size: 12px; }
 .admin-anchor-week[open] > summary { border-bottom: 1px solid var(--line, #e6e2d6); background: #fafafa; }
 .admin-anchor-week .admin-fields { padding: 16px; }
+.admin-anchor-habit-lbl { margin: 6px 0 -2px; font-size: 10px; letter-spacing: 0.12em; color: var(--gold-500); text-transform: uppercase; }
 .admin-anchor-list { display: flex; flex-direction: column; gap: 10px; }
 .admin-anchor-row { display: flex; gap: 10px; align-items: flex-start; }
 .admin-anchor-n { color: var(--gold-500); font-size: 12px; padding-top: 12px; }
