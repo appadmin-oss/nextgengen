@@ -7,9 +7,10 @@ $mid = $s['mid'];
 
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'overview');
-    if ($view === 'students')   $res = gs_call('admin.summer.students.list', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '', 'cohortId' => $_GET['cohortId'] ?? '']);
-    elseif ($view === 'qr')     $res = gs_call('admin.summer.qr.list', ['requesterId' => $mid, 'status' => $_GET['status'] ?? '', 'batch' => $_GET['batch'] ?? '']);
-    else                        $res = gs_call('admin.summer.overview', ['requesterId' => $mid]);
+    if ($view === 'students')     $res = gs_call('admin.summer.students.list', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '', 'cohortId' => $_GET['cohortId'] ?? '']);
+    elseif ($view === 'qr')       $res = gs_call('admin.summer.qr.list', ['requesterId' => $mid, 'status' => $_GET['status'] ?? '', 'batch' => $_GET['batch'] ?? '']);
+    elseif ($view === 'attendance') $res = gs_call('admin.summer.attendance', ['requesterId' => $mid, 'cohortId' => $_GET['cohortId'] ?? '']);
+    else                          $res = gs_call('admin.summer.overview', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');

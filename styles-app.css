@@ -3888,6 +3888,48 @@ section p[style*="var(--ink-500)"] {
 .admin-anchor-week[open] > summary { border-bottom: 1px solid var(--line, #e6e2d6); background: #fafafa; }
 .admin-anchor-week .admin-fields { padding: 16px; }
 .admin-anchor-habit-lbl { margin: 6px 0 -2px; font-size: 10px; letter-spacing: 0.12em; color: var(--gold-500); text-transform: uppercase; }
+
+/* ── Summer School check-in kiosk + attendance dashboard (Phase 2) ── */
+.summer-kiosk-modes { display: flex; gap: 8px; }
+.summer-kiosk-status { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-500); }
+.summer-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.summer-dot.on { background: #3fbf6f; } .summer-dot.off { background: #d0663c; }
+.summer-kiosk-pending { padding: 3px 9px; border-radius: 99px; background: rgba(255,206,84,0.2); color: #7a5600; font-weight: 600; }
+.summer-kiosk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; }
+@media (max-width: 720px) { .summer-kiosk-grid { grid-template-columns: 1fr; } }
+.summer-cam { position: relative; aspect-ratio: 4/3; background: #0c1432; border-radius: 16px; overflow: hidden; }
+.summer-cam video { width: 100%; height: 100%; object-fit: cover; }
+.summer-cam-reticle { position: absolute; inset: 18% 22%; border: 3px solid rgba(255,255,255,0.85); border-radius: 16px; box-shadow: 0 0 0 100vmax rgba(6,10,26,0.35); }
+.summer-cam-err { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: #fff; font-size: 14px; background: rgba(12,20,50,0.7); }
+.summer-scan-form { display: flex; flex-direction: column; gap: 12px; justify-content: center; height: 100%; min-height: 220px; padding: 20px; border: 1.5px dashed var(--line, #e6e2d6); border-radius: 16px; }
+.summer-scan-hint { font-size: 13px; color: var(--ink-500); }
+.summer-scan-input { font-family: var(--font-mono); font-size: 20px; letter-spacing: 2px; text-align: center; text-transform: uppercase; padding: 16px; }
+.summer-kiosk-result { display: grid; place-items: center; min-height: 220px; border-radius: 16px; background: #fff; border: 1px solid var(--line, #e6e2d6); padding: 22px; text-align: center; }
+.summer-result { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.summer-result.idle { color: var(--ink-500); } .summer-result.idle i { font-size: 34px; font-style: normal; }
+.summer-result-av { width: 76px; height: 76px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; font-size: 30px; font-weight: 800; color: #fff; background: var(--navy-900, #0c1432); margin-bottom: 6px; }
+.summer-result-av img { width: 100%; height: 100%; object-fit: cover; }
+.summer-result-nm { font-size: 22px; font-weight: 800; }
+.summer-result-msg { font-size: 14px; font-weight: 600; }
+.summer-result-id { font-size: 12px; color: var(--ink-500); }
+.summer-result.ok .summer-result-msg { color: #2e7d46; } .summer-result.ok .summer-result-av { background: #2e7d46; }
+.summer-result.dupe .summer-result-msg { color: #7a5600; } .summer-result.dupe .summer-result-av { background: #b58900; }
+.summer-result.queued .summer-result-nm, .summer-result.err .summer-result-nm { font-size: 18px; }
+.summer-result.err .summer-result-msg { color: var(--coral, #d0663c); }
+.summer-kiosk-recent { display: flex; flex-direction: column; gap: 1px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line, #e6e2d6); }
+.summer-recent-row { display: flex; justify-content: space-between; padding: 9px 14px; background: #fff; font-size: 14px; }
+.summer-recent-row:nth-child(even) { background: #faf9f6; }
+.summer-fresh { color: #2e7d46; } .summer-dupe { color: #7a5600; }
+.summer-attbar { display: flex; gap: 6px; align-items: flex-end; height: 120px; }
+.summer-attbar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.summer-attbar-track { width: 100%; max-width: 26px; height: 92px; background: rgba(12,20,50,0.06); border-radius: 6px; display: flex; align-items: flex-end; overflow: hidden; }
+.summer-attbar-fill { width: 100%; background: var(--navy-900, #0c1432); border-radius: 6px; transition: height .25s ease; }
+.summer-attbar-lbl { font-family: var(--font-mono); font-size: 10px; color: var(--ink-500); }
+.summer-atrisk { display: flex; flex-wrap: wrap; gap: 8px; }
+.summer-atrisk-chip { padding: 5px 11px; border-radius: 99px; background: rgba(208,102,60,0.12); color: #a23d1a; font-size: 13px; }
+.summer-rate { display: flex; align-items: center; gap: 8px; }
+.summer-rate-bar { flex: 1; height: 7px; border-radius: 99px; background: rgba(12,20,50,0.08); overflow: hidden; }
+.summer-rate-fill { height: 100%; border-radius: 99px; }
 .admin-anchor-list { display: flex; flex-direction: column; gap: 10px; }
 .admin-anchor-row { display: flex; gap: 10px; align-items: flex-start; }
 .admin-anchor-n { color: var(--gold-500); font-size: 12px; padding-top: 12px; }

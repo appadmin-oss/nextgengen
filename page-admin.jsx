@@ -689,8 +689,42 @@ function AdminMentorship() {
 }
 
 // ============================================================================
-// Summer School — QR-driven attendance & enrollment (Phase 1)
+// Summer School — QR-driven attendance & enrollment (Phase 1 + 2 kiosk)
 // ============================================================================
+
+// Lazy-load a vendored script once; resolves when its global is ready. Keeps
+// the ~130KB QR decoder and the encoder off every other page.
+const _scriptPromises = {};
+function loadVendorScript(src) {
+  if (_scriptPromises[src]) return _scriptPromises[src];
+  _scriptPromises[src] = new Promise((resolve, reject) => {
+    const el = document.createElement("script");
+    el.src = src; el.async = true;
+    el.onload = () => resolve(true);
+    el.onerror = () => { delete _scriptPromises[src]; reject(new Error("load_failed:" + src)); };
+    document.head.appendChild(el);
+  });
+  return _scriptPromises[src];
+}
+const ensureQREncoder = () => loadVendorScript("/vendor/qrcode.min.js").then(() => window.qrcode);
+const ensureQRDecoder = () => loadVendorScript("/vendor/jsQR.min.js").then(() => window.jsQR);
+
+// Build a crisp SVG QR for a string using the vendored encoder.
+function qrSvg(text, cellSize = 4, margin = 2) {
+  if (!window.qrcode) return "";
+  try { const q = window.qrcode(0, "M"); q.addData(String(text)); q.make(); return q.createSvgTag({ cellSize, margin, scalable: true }); }
+  catch (_) { return ""; }
+}
+
+// Pull a SUMQR token out of whatever a scanner/camera yields (raw token, a
+// /q/<token> URL, or a full profile URL).
+function extractToken(raw) {
+  const s = String(raw || "").trim();
+  const m = s.match(/SUMQR-[A-Z0-9]+/i);
+  if (m) return m[0].toUpperCase();
+  const parts = s.replace(/[?#].*$/, "").split("/").filter(Boolean);
+  return (parts[parts.length - 1] || s).toUpperCase();
+}
 
 function AdminSummer() {
   const [tab, setTab] = React.useState("overview");
@@ -717,12 +751,14 @@ function AdminSummer() {
       </div>
 
       <div className="admin-anchor-tabs">
-        {[["overview", "Enrol"], ["qr", "QR cards"], ["students", "Roster (" + o.students + ")"]].map(([id, lbl]) => (
+        {[["overview", "Enrol"], ["kiosk", "Check-in kiosk"], ["attendance", "Attendance"], ["qr", "QR cards"], ["students", "Roster (" + o.students + ")"]].map(([id, lbl]) => (
           <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
         ))}
       </div>
 
       {tab === "overview" && <SummerEnroll cohort={cohort} blank={o.qrBlank} onDone={load}/>}
+      {tab === "kiosk" && <SummerKiosk onCheckin={load}/>}
+      {tab === "attendance" && <SummerAttendance/>}
       {tab === "qr" && <SummerQR onChange={load}/>}
       {tab === "students" && <SummerRoster cohortId={cohort.cohortId}/>}
     </div>
@@ -783,29 +819,40 @@ function SummerQR({ onChange }) {
     try { const r = await NGGApi.admin.summer.mint(Number(count)); toast.success("Minted " + r.count + " cards (" + r.batch + ")"); load(); onChange && onChange(); }
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
-  const printCards = () => {
+  const [printing, setPrinting] = React.useState(false);
+  const printCards = async () => {
+    setPrinting(true);
+    try { await ensureQREncoder(); } catch (_) { toast.error("Couldn't load the QR generator."); setPrinting(false); return; }
     const blanks = (codes || []).filter(c => c.status === "blank");
-    const rows = (blanks.length ? blanks : (codes || [])).map(c =>
-      `<div class="card"><div class="tok">${c.token}</div><div class="url">${location.origin}/q/${c.token}</div><div class="nm">${c.assignedName || "________________"}</div></div>`).join("");
+    const list = blanks.length ? blanks : (codes || []);
+    const rows = list.map(c => {
+      const url = location.origin + "/q/" + c.token;
+      return `<div class="card"><div class="qr">${qrSvg(url, 4, 1)}</div><div class="tok">${c.token}</div><div class="url">${url}</div><div class="nm">${c.assignedName || "________________"}</div></div>`;
+    }).join("");
     const w = window.open("", "_blank");
-    if (!w) return;
+    if (!w) { setPrinting(false); return; }
     w.document.write(`<html><head><title>Summer QR cards</title><style>
-      body{font-family:monospace;margin:0;padding:16px}
+      body{font-family:system-ui,-apple-system,monospace;margin:0;padding:16px;color:#111}
+      h3{font-family:system-ui}
       .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-      .card{border:1.5px dashed #333;border-radius:10px;padding:16px;text-align:center;page-break-inside:avoid}
-      .tok{font-size:20px;font-weight:800;letter-spacing:2px}.url{font-size:10px;color:#555;margin-top:6px;word-break:break-all}.nm{margin-top:14px;font-size:11px;color:#888}
+      .card{border:1.5px dashed #333;border-radius:12px;padding:14px 12px;text-align:center;page-break-inside:avoid}
+      .qr{width:118px;height:118px;margin:0 auto 8px}.qr svg{width:100%;height:100%}
+      .tok{font-family:monospace;font-size:15px;font-weight:800;letter-spacing:1.5px}
+      .url{font-size:9px;color:#666;margin-top:4px;word-break:break-all}
+      .nm{margin-top:10px;font-size:11px;color:#888;border-top:1px dotted #ccc;padding-top:8px}
       @media print{@page{margin:12mm}}
-    </style></head><body><h3>Summer QR cards — scan the token or the URL</h3><div class="grid">${rows}</div><script>print()</script></body></html>`);
+    </style></head><body><h3>Summer QR cards — scan with the check-in kiosk or any phone camera</h3><div class="grid">${rows}</div><script>window.onload=function(){print()}</script></body></html>`);
     w.document.close();
+    setPrinting(false);
   };
   return (
     <div>
       <div className="admin-filters" style={{ alignItems: "center" }}>
         <input className="admin-input" type="number" min="1" max="500" style={{ maxWidth: 120 }} value={count} onChange={e => setCount(e.target.value)}/>
         <button className="btn btn-primary btn-sm" onClick={mint} disabled={busy}>{busy ? "Minting…" : "Mint blank cards"}</button>
-        <button className="btn btn-ghost btn-sm" disabled={!codes || !codes.length} onClick={printCards}>Print cards ↗</button>
+        <button className="btn btn-ghost btn-sm" disabled={!codes || !codes.length || printing} onClick={printCards}>{printing ? "Preparing…" : "Print cards ↗"}</button>
       </div>
-      <p className="admin-hint">Cards are printed <b>before</b> enrollment. A handheld scanner reads the token straight into the enrol/check-in field; scannable QR images arrive with the check-in kiosk (Phase 2).</p>
+      <p className="admin-hint">Cards are printed <b>before</b> enrollment, each with a real scannable QR (encodes the student's <span className="mono">/q/&lt;token&gt;</span> profile URL). The check-in kiosk reads them by camera, a handheld/USB scanner reads the token straight into the kiosk field, and any phone camera opens the profile.</p>
       {codes === null ? <div className="dash-spinner"/> :
         codes.length === 0 ? <div className="admin-empty">No cards minted yet.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
@@ -2055,6 +2102,223 @@ function FieldUpload({ label, value, onChange, kind, accept, placeholder }) {
 
 function fmtDate(d) { if (!d) return ""; const x = new Date(d); return x.toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" }); }
 function fmtTime(d) { if (!d) return ""; const x = new Date(d); return x.toLocaleString("en-GB"); }
+
+// ── Check-in kiosk (Phase 2): camera + handheld/USB scanner + offline queue ──
+const KIOSK_Q = "ngg_summer_kiosk_q";
+const kioskQueue = () => { try { return JSON.parse(localStorage.getItem(KIOSK_Q)) || []; } catch (_) { return []; } };
+const kioskSetQueue = (q) => { try { localStorage.setItem(KIOSK_Q, JSON.stringify(q)); } catch (_) {} };
+
+function SummerKiosk({ onCheckin }) {
+  const [mode, setMode] = React.useState("scanner"); // scanner | camera
+  const [result, setResult] = React.useState(null);
+  const [recent, setRecent] = React.useState([]);
+  const [pending, setPending] = React.useState(kioskQueue().length);
+  const [camErr, setCamErr] = React.useState("");
+  const [manual, setManual] = React.useState("");
+  const [online, setOnline] = React.useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  const last = React.useRef({ token: "", at: 0 });
+  const videoRef = React.useRef(null), canvasRef = React.useRef(null), inputRef = React.useRef(null);
+  const device = ((typeof navigator !== "undefined" && navigator.platform) || "kiosk").slice(0, 40);
+
+  const buzz = (bad) => { try { navigator.vibrate && navigator.vibrate(bad ? 80 : [25, 35, 25]); } catch (_) {} };
+
+  const doCheckin = React.useCallback(async (raw, method) => {
+    const token = extractToken(raw);
+    if (!token || token.length < 4) return;
+    const now = Date.now();
+    if (last.current.token === token && now - last.current.at < 3500) return; // debounce repeat scans
+    last.current = { token, at: now };
+    try {
+      const r = await NGGApi.admin.summer.checkin(token, method, device);
+      setResult({ student: r.student, already: r.already }); buzz(false);
+      setRecent(x => [{ name: r.student.fullName, at: now, already: r.already }, ...x].slice(0, 8));
+      onCheckin && onCheckin();
+    } catch (e) {
+      const code = e.code || e.message || "";
+      if (!navigator.onLine || /network|fetch|offline|http_0/i.test(code)) {
+        const q = kioskQueue(); q.push({ token, method, at: now }); kioskSetQueue(q); setPending(q.length);
+        setResult({ queued: true, token }); buzz(false);
+      } else {
+        const map = { qr_unassigned: "That card isn't linked to a student yet.", student_not_found: "Student not found.", forbidden: "Your session expired — sign in again." };
+        setResult({ error: map[code] || code }); buzz(true);
+      }
+    }
+  }, [device, onCheckin]);
+
+  // Flush the offline queue when back online / periodically.
+  const flush = React.useCallback(async () => {
+    let q = kioskQueue(); if (!q.length || !navigator.onLine) return;
+    for (const it of [...q]) {
+      try { await NGGApi.admin.summer.checkin(it.token, it.method, device); q = q.filter(x => x !== it); kioskSetQueue(q); }
+      catch (e) { if (!navigator.onLine) break; q = q.filter(x => x !== it); kioskSetQueue(q); }
+    }
+    setPending(kioskQueue().length); onCheckin && onCheckin();
+  }, [device, onCheckin]);
+  React.useEffect(() => {
+    const on = () => { setOnline(true); flush(); };
+    const off = () => setOnline(false);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    const id = setInterval(() => { if (navigator.onLine && kioskQueue().length) flush(); }, 15000);
+    flush();
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); clearInterval(id); };
+  }, [flush]);
+
+  React.useEffect(() => { if (mode === "scanner" && inputRef.current) inputRef.current.focus(); }, [mode]);
+
+  // Camera scanning via jsQR on video frames.
+  React.useEffect(() => {
+    if (mode !== "camera") return;
+    let stream = null, raf = 0, stop = false;
+    setCamErr("");
+    (async () => {
+      try {
+        await ensureQRDecoder();
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        const v = videoRef.current; if (!v) return;
+        v.setAttribute("playsinline", "true"); v.srcObject = stream; await v.play();
+        const cvs = canvasRef.current, ctx = cvs.getContext("2d", { willReadFrequently: true });
+        const tick = () => {
+          if (stop) return;
+          if (v.readyState >= 2 && v.videoWidth) {
+            cvs.width = v.videoWidth; cvs.height = v.videoHeight;
+            ctx.drawImage(v, 0, 0, cvs.width, cvs.height);
+            try { const img = ctx.getImageData(0, 0, cvs.width, cvs.height); const code = window.jsQR(img.data, cvs.width, cvs.height, { inversionAttempts: "dontInvert" }); if (code && code.data) doCheckin(code.data, "qr"); } catch (_) {}
+          }
+          raf = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch (e) { setCamErr((e && e.name === "NotAllowedError") ? "Camera permission denied — use a handheld scanner or type the token." : "No camera available — use a handheld scanner or type the token."); }
+    })();
+    return () => { stop = true; if (raf) cancelAnimationFrame(raf); if (stream) stream.getTracks().forEach(t => t.stop()); };
+  }, [mode, doCheckin]);
+
+  const submitManual = (e) => { e.preventDefault(); if (manual.trim()) { doCheckin(manual, mode === "camera" ? "manual" : "scan"); setManual(""); } };
+
+  return (
+    <div className="summer-kiosk">
+      <div className="admin-filters" style={{ alignItems: "center", justifyContent: "space-between" }}>
+        <div className="summer-kiosk-modes">
+          <button className={"btn btn-sm " + (mode === "scanner" ? "btn-primary" : "btn-ghost")} onClick={() => setMode("scanner")}>⌨ Scanner / manual</button>
+          <button className={"btn btn-sm " + (mode === "camera" ? "btn-primary" : "btn-ghost")} onClick={() => setMode("camera")}>📷 Camera</button>
+        </div>
+        <div className="summer-kiosk-status">
+          <span className={"summer-dot " + (online ? "on" : "off")}/>{online ? "Online" : "Offline"}
+          {pending > 0 && <span className="summer-kiosk-pending">⏳ {pending} queued</span>}
+        </div>
+      </div>
+
+      <div className="summer-kiosk-grid">
+        <div className="summer-kiosk-scan">
+          {mode === "camera" ? (
+            <div className="summer-cam">
+              <video ref={videoRef} muted playsInline/>
+              <canvas ref={canvasRef} style={{ display: "none" }}/>
+              <div className="summer-cam-reticle" aria-hidden="true"/>
+              {camErr && <div className="summer-cam-err">{camErr}</div>}
+            </div>
+          ) : (
+            <form onSubmit={submitManual} className="summer-scan-form">
+              <div className="summer-scan-hint">Scan a card with a handheld/USB reader, or type the token and press Enter.</div>
+              <input ref={inputRef} className="admin-input summer-scan-input" placeholder="SUMQR-XXXXXXXX" value={manual}
+                onChange={e => setManual(e.target.value)} autoComplete="off" autoCapitalize="characters" spellCheck={false}/>
+              <button className="btn btn-primary" type="submit" disabled={!manual.trim()}>Check in →</button>
+            </form>
+          )}
+        </div>
+
+        <div className="summer-kiosk-result">
+          {!result && <div className="summer-result idle"><i className="ph" aria-hidden="true">◎</i><div>Ready — scan a card.</div></div>}
+          {result && result.student && (
+            <div className={"summer-result " + (result.already ? "dupe" : "ok")}>
+              <div className="summer-result-av">{result.student.photoUrl ? <img src={result.student.photoUrl} alt=""/> : (result.student.fullName || "?").charAt(0)}</div>
+              <div className="summer-result-nm">{result.student.fullName}</div>
+              <div className="summer-result-msg">{result.already ? "Already checked in today" : "Checked in ✓"}</div>
+              <div className="mono summer-result-id">{result.student.studentId}{result.student.track ? " · " + result.student.track : ""}</div>
+            </div>
+          )}
+          {result && result.queued && <div className="summer-result queued"><div className="summer-result-nm">Saved offline</div><div className="summer-result-msg">{result.token} — syncs when back online</div></div>}
+          {result && result.error && <div className="summer-result err"><div className="summer-result-nm">Couldn't check in</div><div className="summer-result-msg">{result.error}</div></div>}
+        </div>
+      </div>
+
+      {recent.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>THIS SESSION</div>
+          <div className="summer-kiosk-recent">
+            {recent.map((r, i) => <div key={i} className="summer-recent-row"><span>{r.name}</span><span className={"mono " + (r.already ? "summer-dupe" : "summer-fresh")}>{r.already ? "already" : "checked in"}</span></div>)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Attendance analytics dashboard (Phase 2) ────────────────────────────────
+function SummerAttendance() {
+  const [a, setA] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  React.useEffect(() => { NGGApi.admin.summer.attendance().then(r => setA(r.attendance)).catch(e => setErr(e.code || e.message)); }, []);
+  if (err) return <div className="admin-empty">Couldn't load: {err}</div>;
+  if (!a) return <div className="dash-spinner"/>;
+  const maxDay = Math.max(1, ...a.days.map(d => d.present));
+  return (
+    <div>
+      <div className="admin-tiles" style={{ marginBottom: 14 }}>
+        <AdminTile n={a.today} l="Present today"/>
+        <AdminTile n={a.absentToday} l="Absent today"/>
+        <AdminTile n={a.activeStudents} l="Active students"/>
+        <AdminTile n={a.sessionDays} l="Session days"/>
+      </div>
+
+      <div className="eyebrow" style={{ margin: "4px 0 10px" }}>LAST 14 DAYS</div>
+      <div className="summer-attbar">
+        {a.days.map((d, i) => (
+          <div key={i} className="summer-attbar-col" title={d.date + " · " + d.present + " present"}>
+            <div className="summer-attbar-track"><div className="summer-attbar-fill" style={{ height: (d.present / maxDay * 100) + "%" }}/></div>
+            <span className="summer-attbar-lbl">{d.date.slice(8)}</span>
+          </div>
+        ))}
+      </div>
+
+      {a.atRisk.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <div className="eyebrow" style={{ marginBottom: 8, color: "var(--coral)" }}>AT RISK · under 50% attendance</div>
+          <div className="summer-atrisk">
+            {a.atRisk.slice(0, 12).map(r => <span key={r.studentId} className="summer-atrisk-chip">{r.fullName} <b>{r.rate}%</b></span>)}
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="eyebrow">ATTENDANCE BY STUDENT</div>
+        <span style={{ flex: 1 }}/>
+        <button className="btn btn-ghost btn-sm" disabled={!a.roster.length} onClick={() => downloadCsv("summer-attendance", a.roster.map(r => ({ studentId: r.studentId, fullName: r.fullName, track: r.track, present: r.present, rate: r.rate + "%", lastSeen: r.lastSeen, presentToday: r.presentToday ? "yes" : "no" })))}>Export CSV</button>
+      </div>
+      <div className="admin-table-wrap" style={{ marginTop: 8 }}><table className="admin-table">
+        <thead><tr><th>Student</th><th>Track</th><th>Present</th><th>Rate</th><th>Last seen</th><th>Today</th></tr></thead>
+        <tbody>{a.roster.map(r => (
+          <tr key={r.studentId}>
+            <td>{r.fullName}<div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{r.studentId}</div></td>
+            <td>{r.track || "—"}</td>
+            <td className="mono">{r.present}/{a.sessionDays}</td>
+            <td style={{ minWidth: 120 }}><div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: r.rate + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono">{r.rate}%</span></div></td>
+            <td className="mono">{r.lastSeen || "—"}</td>
+            <td>{r.presentToday ? <span className="chip status-published">✓</span> : <span className="chip status-draft">—</span>}</td>
+          </tr>
+        ))}</tbody>
+      </table></div>
+
+      {a.recent.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>RECENT CHECK-INS</div>
+          <div className="summer-kiosk-recent">
+            {a.recent.slice(0, 12).map((r, i) => <div key={i} className="summer-recent-row"><span>{r.fullName || r.studentId}</span><span className="mono" style={{ color: "var(--ink-500)" }}>{r.date} · {r.method}</span></div>)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ============================================================================
 // NGG Club manager (coordinator portal) — Summer→Club promotion + roster

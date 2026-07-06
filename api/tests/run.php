@@ -282,6 +282,19 @@ chk('public profile by handle + attendance', backend_dispatch('public.summerProf
 chk('summer gated from non-staff', backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 chk('enroll rejects an already-used QR', backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Dupe Kid', 'age' => 12, 'token' => $enr['token']]])['error'] === 'qr_already_used');
 
+// Attendance analytics (Phase 2 dashboard) — Kofi is enrolled + checked in above.
+$att = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099'])['attendance'];
+chk('attendance analytics returns a 14-day series', count($att['days']) === 14);
+chk('attendance counts someone present today', $att['today'] >= 1 && $att['days'][13]['present'] >= 1);
+chk('attendance roster carries a present count + rate', (function () use ($att) {
+    foreach ($att['roster'] as $r) if ($r['studentId'] === $GLOBALS['enr']['studentId']) return $r['present'] >= 1 && isset($r['rate']);
+    return false;
+})());
+chk('attendance analytics gated from non-staff', backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+// Empty cohortId (as the HTTP route passes it) must fall back to the active cohort.
+chk('attendance falls back to active cohort on empty cohortId', backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099', 'cohortId' => ''])['attendance']['sessionDays'] >= 1);
+chk('roster falls back to active cohort on empty cohortId', count(backend_dispatch('admin.summer.students.list', ['requesterId' => 'NGG-2025-0099', 'cohortId' => ''])['students']) >= 1);
+
 // ── Stand-alone coordinator portals (Summer School + NGG Club are separate) ──
 chk('admin role caps = console only (no summer/club)', admin_role_caps('admin') === ['content', 'people', 'inbox']);
 chk('club_admin role caps = club only', admin_role_caps('club_admin') === ['club']);

@@ -218,6 +218,7 @@
         cohort:       (data) => request('/admin/summer.php', { body: { action: 'cohort', data } }),
         studentStatus:(studentId, status) => request('/admin/summer.php', { body: { action: 'studentStatus', studentId, status } }),
         checkin:      (token, method, device) => request('/admin/summer.php', { body: { action: 'checkin', token, method, device } }),
+        attendance:   (cohortId) => request('/admin/summer.php' + qs({ view: 'attendance', cohortId })),
       },
       club: {
         overview:   () => request('/admin/club.php?view=overview'),
