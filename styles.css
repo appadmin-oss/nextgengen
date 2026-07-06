@@ -957,6 +957,83 @@ summary:focus-visible,
 /* Never suppress the ring when a mouse-focus removes :focus-visible. */
 :focus:not(:focus-visible) { outline: none; }
 
+/* ================= Accessibility widget + user preference modes ============ */
+/* Magnify — behaves like browser zoom, scales layout + text together. */
+body { zoom: var(--a11y-zoom, 1); }
+
+/* Forced reduce-motion (widget toggle, on top of the OS-level media query). */
+:root[data-motion="reduce"] *, :root[data-motion="reduce"] ::before, :root[data-motion="reduce"] ::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* High-contrast mode — darken muted greys, strengthen borders, underline nav. */
+:root[data-contrast="high"] {
+  --ink-700: #0c1220; --ink-500: #232a3f; --ink-400: #333a52;
+  --line: #7c86a5;
+}
+:root[data-contrast="high"] .card,
+:root[data-contrast="high"] .admin-card,
+:root[data-contrast="high"] .newsletter-form,
+:root[data-contrast="high"] .chip { border: 1.5px solid rgba(12,20,50,0.55) !important; }
+:root[data-contrast="high"] .muted, :root[data-contrast="high"] .footer-link,
+:root[data-contrast="high"] .footer-bottom .copy { color: inherit !important; opacity: 1 !important; }
+:root[data-contrast="high"] .dark-surface, :root[data-contrast="high"] .footer,
+:root[data-contrast="high"] .prefooter, :root[data-contrast="high"] .page-hero-dark { color: #fff; }
+:root[data-contrast="high"] a { text-decoration: underline; }
+:root[data-contrast="high"] :focus-visible { outline-width: 4px !important; }
+
+/* High-legibility font + generous spacing (dyslexia / low-vision friendly). */
+:root[data-font="readable"] body,
+:root[data-font="readable"] .display,
+:root[data-font="readable"] h1, :root[data-font="readable"] h2, :root[data-font="readable"] h3 {
+  font-family: "Atkinson Hyperlegible", "Verdana", system-ui, -apple-system, sans-serif !important;
+  letter-spacing: 0.01em;
+}
+:root[data-font="readable"] body { line-height: 1.75; word-spacing: 0.04em; }
+:root[data-font="readable"] p { line-height: 1.8; }
+
+/* Underline every link. */
+:root[data-links="underline"] a:not(.btn) { text-decoration: underline !important; }
+
+/* Floating launcher (bottom-left; mirrors the back-to-top FAB on the right). */
+.a11y-fab {
+  position: fixed; left: 20px; bottom: 20px; z-index: 60;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: var(--navy-900); color: #fff; border: 2px solid var(--gold-500);
+  font-size: 24px; cursor: pointer; display: grid; place-items: center;
+  box-shadow: 0 8px 24px -8px rgba(12,20,50,0.6);
+}
+.a11y-fab:hover { transform: translateY(-2px); }
+.a11y-fab-dot { position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--lime); border: 2px solid var(--navy-900); }
+.a11y-panel {
+  position: fixed; left: 20px; bottom: 84px; z-index: 61;
+  width: 300px; max-width: calc(100vw - 40px);
+  background: #fff; color: var(--ink-900); border: 1px solid rgba(12,20,50,0.14);
+  border-radius: 18px; padding: 18px; box-shadow: 0 24px 60px -18px rgba(12,20,50,0.5);
+}
+.a11y-panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.a11y-panel-title { font-family: var(--font-display); font-weight: 800; font-size: 19px; margin: 0; }
+.a11y-panel-close { background: none; border: none; font-size: 16px; cursor: pointer; color: var(--ink-500); width: 32px; height: 32px; border-radius: 8px; }
+.a11y-panel-close:hover { background: rgba(12,20,50,0.06); }
+.a11y-group { padding: 12px 0; border-top: 1px solid rgba(12,20,50,0.08); }
+.a11y-label { font-weight: 600; font-size: 14px; display: block; }
+.a11y-desc { font-size: 12px; color: var(--ink-500); display: block; margin-top: 2px; }
+.a11y-seg { display: flex; gap: 6px; margin-top: 8px; }
+.a11y-seg-btn { flex: 1; padding: 8px; border-radius: 10px; border: 1px solid rgba(12,20,50,0.16); background: #fff; cursor: pointer; font-weight: 700; font-family: var(--font-display); }
+.a11y-seg-btn:nth-child(2) { font-size: 17px; } .a11y-seg-btn:nth-child(3) { font-size: 20px; }
+.a11y-seg-btn.is-on { background: var(--navy-900); color: #fff; border-color: var(--navy-900); }
+.a11y-toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid rgba(12,20,50,0.08); }
+.a11y-switch { flex: none; width: 46px; height: 28px; border-radius: 999px; border: none; background: rgba(12,20,50,0.2); cursor: pointer; position: relative; transition: background 0.18s ease; }
+.a11y-switch.is-on { background: var(--lime); }
+.a11y-switch-knob { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform 0.18s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+.a11y-switch.is-on .a11y-switch-knob { transform: translateX(18px); }
+.a11y-reset { margin-top: 14px; width: 100%; padding: 10px; border-radius: 10px; border: 1px solid rgba(12,20,50,0.16); background: #fff; cursor: pointer; font-weight: 600; }
+.a11y-reset:disabled { opacity: 0.5; cursor: default; }
+@media (max-width: 640px) { .a11y-fab { left: 14px; bottom: 14px; width: 46px; height: 46px; font-size: 21px; } }
+
 /* Pulsing live dot */
 .live-dot {
   position: relative;

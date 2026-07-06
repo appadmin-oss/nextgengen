@@ -296,11 +296,33 @@ function admin_anchor_set(array $p): array {
     return ['ok' => true];
 }
 
+/**
+ * Superadmin audit trail. Resolves each actor to a member name + role, supports
+ * filtering by actor / event / staff-only, and returns the distinct staff who
+ * have appeared in the log (for the filter dropdown). Gated to 'rbac'
+ * (super_admin) — it's the accountability record for every admin and manager.
+ */
 function admin_audit_tail(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-    $limit = min(500, max(1, (int)($p['limit'] ?? 100)));
-    $rows = db_all('SELECT at, actorId, event, subject, ip, meta FROM audit_log ORDER BY id DESC LIMIT ?', [$limit]);
-    return ['ok' => true, 'audit' => $rows];
+    $g = admin_cap_gate($p, 'rbac'); if (!$g['ok']) return $g;
+    $limit = min(2000, max(1, (int)($p['limit'] ?? 300)));
+    $where = []; $params = [];
+    if (!empty($p['actor']))  { $where[] = 'a.actorId = ?'; $params[] = (string)$p['actor']; }
+    if (!empty($p['event']))  { $where[] = 'a.event LIKE ?'; $params[] = '%' . (string)$p['event'] . '%'; }
+    if (!empty($p['staffOnly'])) { $where[] = "m.role IN ('editor','admin','super_admin')"; }
+    $sql = "SELECT a.at, a.actorId, a.event, a.subject, a.ip, a.meta, m.fullName actorName, m.role actorRole
+            FROM audit_log a LEFT JOIN members m ON m.memberId = a.actorId"
+        . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
+        . ' ORDER BY a.id DESC LIMIT ?';
+    $params[] = $limit;
+    $rows = db_all($sql, $params);
+
+    // Distinct staff actors seen in the log — powers the actor filter.
+    $actors = db_all(
+        "SELECT DISTINCT a.actorId, m.fullName, m.role FROM audit_log a
+         JOIN members m ON m.memberId = a.actorId
+         WHERE m.role IN ('editor','admin','super_admin') ORDER BY m.fullName"
+    );
+    return ['ok' => true, 'audit' => $rows, 'actors' => $actors];
 }
 
 // ── Announcements / broadcast ────────────────────────────────────────────

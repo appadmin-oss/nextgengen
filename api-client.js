@@ -216,7 +216,7 @@
         get: () => request('/admin/settings.php'),
         set: (data) => request('/admin/settings.php', { body: { data } }),
       },
-      audit:     (limit) => request('/admin/audit.php' + qs({ limit })),
+      audit:     (q) => request('/admin/audit.php' + qs(typeof q === 'object' && q ? q : { limit: q })),
     },
   };
 

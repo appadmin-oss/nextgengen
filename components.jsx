@@ -893,9 +893,123 @@ function Uploader({ kind = "proof", accept, onUploaded, compact }) {
   );
 }
 
+/* ---- Accessibility widget ----------------------------------------------
+   A persistent, keyboard-operable control panel that lets any visitor tune the
+   site to their needs: magnify text, force high contrast, stop motion, switch
+   to a high-legibility font, and underline every link. Preferences persist in
+   localStorage and are applied to <html> via data attributes (see styles.css).
+   An inline bootstrap in index.html applies them before first paint. */
+const A11Y_KEY = "ngg.a11y";
+const A11Y_DEFAULTS = { scale: 100, contrast: false, motion: false, readable: false, underline: false };
+
+function applyA11y(s) {
+  const root = document.documentElement;
+  root.style.setProperty("--a11y-zoom", (s.scale / 100).toString());
+  root.setAttribute("data-a11y-scale", String(s.scale));
+  root.setAttribute("data-contrast", s.contrast ? "high" : "normal");
+  root.setAttribute("data-motion", s.motion ? "reduce" : "auto");
+  root.setAttribute("data-font", s.readable ? "readable" : "default");
+  root.setAttribute("data-links", s.underline ? "underline" : "default");
+}
+
+function AccessibilityWidget() {
+  const [open, setOpen] = React.useState(false);
+  const [s, setS] = React.useState(() => {
+    try { return Object.assign({}, A11Y_DEFAULTS, JSON.parse(localStorage.getItem(A11Y_KEY) || "{}")); }
+    catch (_) { return { ...A11Y_DEFAULTS }; }
+  });
+  const panelRef = React.useRef(null);
+  const btnRef = React.useRef(null);
+
+  React.useEffect(() => {
+    applyA11y(s);
+    try { localStorage.setItem(A11Y_KEY, JSON.stringify(s)); } catch (_) {}
+    const live = document.getElementById("ngg-a11y-live");
+    if (live) live.textContent = "Accessibility settings updated";
+  }, [s]);
+
+  // Focus trap + Escape + focus restore while the panel is open.
+  React.useEffect(() => {
+    if (!open) return;
+    const prev = document.activeElement;
+    const first = panelRef.current && panelRef.current.querySelector("button,input");
+    if (first) first.focus();
+    const onKey = (e) => {
+      if (e.key === "Escape") { setOpen(false); return; }
+      if (e.key === "Tab" && panelRef.current) {
+        const f = panelRef.current.querySelectorAll('button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])');
+        if (!f.length) return;
+        const a = f[0], b = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === a) { e.preventDefault(); b.focus(); }
+        else if (!e.shiftKey && document.activeElement === b) { e.preventDefault(); a.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); if (prev && prev.focus) { try { prev.focus(); } catch (_) {} } };
+  }, [open]);
+
+  const set = (k, v) => setS(o => Object.assign({}, o, { [k]: v }));
+  const reset = () => setS({ ...A11Y_DEFAULTS });
+  const anyOn = s.scale !== 100 || s.contrast || s.motion || s.readable || s.underline;
+
+  return (
+    <React.Fragment>
+      <button
+        ref={btnRef}
+        className="a11y-fab"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label="Accessibility options"
+        onClick={() => setOpen(v => !v)}
+      >
+        <span aria-hidden="true">♿</span>
+        {anyOn && <span className="a11y-fab-dot" aria-hidden="true"/>}
+      </button>
+      {open && (
+        <div className="a11y-panel" role="dialog" aria-modal="false" aria-label="Accessibility options" ref={panelRef}>
+          <div className="a11y-panel-head">
+            <h2 className="a11y-panel-title">Accessibility</h2>
+            <button className="a11y-panel-close" onClick={() => setOpen(false)} aria-label="Close accessibility options">✕</button>
+          </div>
+
+          <div className="a11y-group" role="group" aria-label="Text size">
+            <span className="a11y-label">Text size</span>
+            <div className="a11y-seg">
+              {[[100, "A", "Default text size"], [112, "A+", "Larger text"], [125, "A++", "Largest text"]].map(([v, lbl, title]) => (
+                <button key={v} title={title} aria-pressed={s.scale === v} className={"a11y-seg-btn" + (s.scale === v ? " is-on" : "")} onClick={() => set("scale", v)}>{lbl}</button>
+              ))}
+            </div>
+          </div>
+
+          <A11yToggle label="High contrast" desc="Stronger colours + borders" on={s.contrast} onChange={v => set("contrast", v)}/>
+          <A11yToggle label="Reduce motion" desc="Stop animations + transitions" on={s.motion} onChange={v => set("motion", v)}/>
+          <A11yToggle label="Readable font" desc="High-legibility, spaced type" on={s.readable} onChange={v => set("readable", v)}/>
+          <A11yToggle label="Underline links" desc="Underline every link" on={s.underline} onChange={v => set("underline", v)}/>
+
+          <button className="a11y-reset" onClick={reset} disabled={!anyOn}>Reset to defaults</button>
+        </div>
+      )}
+    </React.Fragment>
+  );
+}
+
+function A11yToggle({ label, desc, on, onChange }) {
+  return (
+    <label className="a11y-toggle">
+      <span>
+        <span className="a11y-label">{label}</span>
+        <span className="a11y-desc">{desc}</span>
+      </span>
+      <button type="button" role="switch" aria-checked={on} aria-label={label} className={"a11y-switch" + (on ? " is-on" : "")} onClick={() => onChange(!on)}>
+        <span className="a11y-switch-knob"/>
+      </button>
+    </label>
+  );
+}
+
 Object.assign(window, {
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart,
-  Uploader,
+  Uploader, AccessibilityWidget,
 });
