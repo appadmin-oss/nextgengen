@@ -138,6 +138,7 @@
       submitAssignment: (data) => request('/member/assignments.php', { body: data }),
       stateGet:  (keys) => request('/member/state.php' + qs({ keys: Array.isArray(keys) ? keys.join(',') : keys })),
       stateSet:  (key, value) => request('/member/state.php', { body: { key, value } }),
+      momentum:     () => request('/member/momentum.php'),
       circle:       () => request('/member/circle.php'),
       circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
       circleRevoke: (linkId) => request('/member/circle.php', { body: { action: 'revoke', linkId } }),
