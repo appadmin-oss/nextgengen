@@ -249,6 +249,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
             {/* RIGHT RAIL */}
             <div className="dash-rail">
               <DashboardStats stats={s} xpToNext={xpToNext} xpPct={xpPct}/>
+              <DashboardMomentum setPage={setPage}/>
               {mentor && <DashboardMentor mentor={mentor}/>}
               <DashboardEvents events={events} onRsvp={onRsvp}/>
               <DashboardNotifications notes={notes} onRead={onRead}/>
@@ -733,6 +734,45 @@ function DashboardStats({ stats, xpToNext, xpPct }) {
         <span>{(stats.xp || 0).toLocaleString()} XP</span>
         <span>{rank.next ? "→ " + rank.next.name + " at " + rank.next.at.toLocaleString() : "Top rank reached ★"}</span>
       </div>
+    </div>
+  );
+}
+
+// Behavioral momentum — surfaces the psychological engine (member.momentum):
+// the single most-relevant nudge + the signals behind it. Non-critical: hides
+// itself on error so it never blocks the dashboard.
+const MOMENTUM_TONE = {
+  urgent: { bg: "rgba(208,102,60,0.12)", bd: "rgba(208,102,60,0.3)", fg: "#a23d1a" },
+  motivating: { bg: "rgba(110,156,29,0.12)", bd: "rgba(110,156,29,0.3)", fg: "#3f5a0f" },
+  affirming: { bg: "rgba(46,125,70,0.12)", bd: "rgba(46,125,70,0.3)", fg: "#1f6b3a" },
+  inviting: { bg: "rgba(139,92,246,0.12)", bd: "rgba(139,92,246,0.3)", fg: "#5b3aa8" },
+  practical: { bg: "rgba(47,111,208,0.12)", bd: "rgba(47,111,208,0.3)", fg: "#1f4f9c" },
+  gentle: { bg: "rgba(12,20,50,0.06)", bd: "rgba(12,20,50,0.14)", fg: "var(--ink-600,#4a536b)" },
+};
+function DashboardMomentum({ setPage }) {
+  const [m, setM] = React.useState(null);
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => { NGGApi.member.momentum().then(r => setM(r.momentum)).catch(() => setFailed(true)); }, []);
+  if (failed || !m) return null;
+  const nudge = (m.nudges || [])[0];
+  const tone = (nudge && MOMENTUM_TONE[nudge.tone]) || MOMENTUM_TONE.gentle;
+  return (
+    <div className="dash-card dash-momentum">
+      <div className="dash-card-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 className="dash-card-h-sm">Momentum.</h3>
+        <span className="chip chip-gold" title="Character level">L{m.level} · {m.levelName}</span>
+      </div>
+      {nudge && (
+        <div className="dash-nudge" style={{ background: tone.bg, border: "1px solid " + tone.bd, borderRadius: 14, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.5, fontWeight: 600, color: tone.fg }}>
+          {nudge.text}
+        </div>
+      )}
+      <div className="dash-momentum-row">
+        <div className="dash-momentum-cell"><b>{m.streak}</b><small>day streak</small></div>
+        <div className="dash-momentum-cell"><b>{m.consistency}%</b><small>30-day</small></div>
+        <div className="dash-momentum-cell"><b>{m.longestStreak}</b><small>best ever</small></div>
+      </div>
+      <button className="btn btn-ghost btn-sm" style={{ width: "100%", marginTop: 12 }} onClick={() => { window.location.href = "/journal/"; }}>Open the Anchor Journal →</button>
     </div>
   );
 }
