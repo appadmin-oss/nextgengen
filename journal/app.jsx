@@ -511,11 +511,20 @@ function Systems({ ctx }) {
   const data = pstate[key] || {};
   const [local, setLocal] = useState(data);
   useEffect(() => { setLocal(pstate[key] || {}); }, [pstate[key]]);
+  const total = SYSTEMS.length || 6;
   const doneCount = SYSTEMS.filter(s => local[s.key]).length;
   const toggle = (k) => { const next = Object.assign({}, local, { [k]: !local[k] }); setLocal(next); setState(key, next); };
   const setMood = (m) => { const next = Object.assign({}, local, { mood: m }); setLocal(next); setState(key, next); };
-  const days = ["MON", "TUE", "WED", "THR", "FRI", "SAT", "SUN"];
-  const todayIdx = (new Date().getUTCDay() + 6) % 7;
+  // Real weekly history — systems held each day this week, from persisted state.
+  const mon = mondayOf(Date.now());
+  const todayK = dayKey(Date.now());
+  const week = ["M", "T", "W", "T", "F", "S", "S"].map((lbl, i) => {
+    const dd = new Date(mon); dd.setUTCDate(dd.getUTCDate() + i);
+    const k = dayKey(dd);
+    const v = k === todayK ? local : (pstate["systems:" + k] || {});
+    return { lbl, cnt: SYSTEMS.filter(s => v[s.key]).length, today: k === todayK, future: k > todayK };
+  });
+  const weekHeld = week.reduce((a, w) => a + w.cnt, 0);
 
   return (
     <div className="aj-view">
@@ -524,8 +533,15 @@ function Systems({ ctx }) {
         <div><h2>Daily systems</h2><div className="sub">Was order maintained today?</div></div>
       </div>
       <div className="aj-sys-top">
-        <div><div className="aj-sys-cnt">{doneCount}/6</div><div className="muted" style={{ fontSize: 12 }}>systems held today</div></div>
-        <div className="aj-sys-days">{days.map((d, i) => <React.Fragment key={d}>{i === 4 ? <br/> : null}{i === todayIdx ? <b>{d}</b> : d}{i < 6 && i !== 3 ? " · " : ""}{i === 3 ? " · " : ""}</React.Fragment>)}</div>
+        <div><div className="aj-sys-cnt">{doneCount}/{total}</div><div className="muted" style={{ fontSize: 12 }}>systems held today</div></div>
+        <div className="aj-sys-week" role="img" aria-label={weekHeld + " systems held this week"}>
+          {week.map((w, i) => (
+            <div className={"aj-sys-wk-col" + (w.today ? " today" : "") + (w.future ? " future" : "")} key={i}>
+              <div className="aj-sys-wk-bar"><div className="aj-sys-wk-fill" style={{ height: (w.cnt / total * 100) + "%" }}/></div>
+              <span className="aj-sys-wk-lbl">{w.lbl}</span>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="pad" style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 11 }}>
         {SYSTEMS.map(s => (
@@ -949,7 +965,28 @@ function Review({ ctx }) {
 
 /* ---- You ---------------------------------------------------------------- */
 function You({ ctx }) {
-  const { member, cur, mentor, pstate, setState, isNGG } = ctx;
+  const { member, cur, mentor, pstate, setState, isNGG, entries } = ctx;
+  // Export the member's whole journal as a Markdown file — fully client-side,
+  // works offline from the cached entries.
+  const exportJournal = () => {
+    const list = entries || [];
+    if (!list.length) { toast.info("No reflections to export yet."); return; }
+    const out = ["# " + (member.fullName || "My") + " — Anchor Journal", "", "Exported " + new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) + " · " + list.length + " reflections", ""];
+    [...list].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).forEach(e => {
+      const d = new Date(e.createdAt); const p = parseEntry(e.body);
+      out.push("## " + d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + (e.week ? "  ·  Week " + String(e.week).padStart(2, "0") : ""));
+      const mood = MOODS.find(m => m.key === e.mood); if (mood) out.push("_Felt " + mood.label.toLowerCase() + "._");
+      if (p.musing) out.push("", p.musing);
+      if (p.school || p.home || p.peer) { out.push(""); if (p.school) out.push("- **School:** " + p.school); if (p.home) out.push("- **Home:** " + p.home); if (p.peer) out.push("- **Peers:** " + p.peer); }
+      if (p.did || p.hard || p.tomorrow) { out.push("", "**Night reflection**"); if (p.did) out.push("- Did well by " + p.did); if (p.hard) out.push("- Difficult because " + p.hard); if (p.tomorrow) out.push("- Tomorrow I improve by " + p.tomorrow); }
+      out.push("", "---", "");
+    });
+    const blob = new Blob([out.join("\n")], { type: "text/markdown" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = "anchor-journal-" + dayKey(Date.now()) + ".md"; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast.ok("Exported " + list.length + " reflection" + (list.length === 1 ? "" : "s"));
+  };
   const prefs = pstate.prefs || { reminder: true, readAloud: true };
   const toggle = (k) => setState("prefs", Object.assign({}, prefs, { [k]: !(prefs[k] !== false) }));
   const on = (k) => prefs[k] !== false;
@@ -986,6 +1023,7 @@ function You({ ctx }) {
         <div className="aj-settings">
           <button className="aj-setrow" onClick={() => { if (!on("reminder") && "Notification" in window && Notification.permission === "default") { try { Notification.requestPermission(); } catch {} } toggle("reminder"); }}><i className="ph-fill ph-bell lead"/><span>Daily reflection reminder</span><span className={"aj-toggle " + (on("reminder") ? "on" : "off")}><span/></span></button>
           <button className="aj-setrow" onClick={() => toggle("readAloud")}><i className="ph-fill ph-speaker-high lead"/><span>Read quote aloud</span><span className={"aj-toggle " + (on("readAloud") ? "on" : "off")}><span/></span></button>
+          <button className="aj-setrow" onClick={exportJournal}><i className="ph-fill ph-download-simple lead"/><span>Export my journal</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
           <button className="aj-setrow" onClick={() => { localStorage.removeItem("ngg_aj_onb"); location.reload(); }}><i className="ph-fill ph-arrow-counter-clockwise lead"/><span>Replay intro</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
           <button className="aj-setrow" onClick={() => { NGGApi.auth.logout().finally(() => location.reload()); }}><i className="ph-fill ph-sign-out lead"/><span>Sign out</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
         </div>
