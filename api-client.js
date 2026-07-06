@@ -155,6 +155,14 @@
       newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
       apply:      (data) => request('/public/apply.php', { body: data }),
       contact:    (data) => request('/public/contact.php', { body: data }),
+      circle: {
+        lookup:    (code) => request('/public/circle.php' + qs({ view: 'lookup', code })),
+        connect:   (data) => request('/public/circle.php', { body: Object.assign({ action: 'connect' }, data) }),
+        dashboard: (token) => request('/public/circle.php' + qs({ view: 'dashboard', token })),
+        report:    (token) => request('/public/circle.php' + qs({ view: 'report', token })),
+        confirm:   (token, date, on) => request('/public/circle.php', { body: { action: 'confirm', token, date, on } }),
+        remark:    (token, text) => request('/public/circle.php', { body: { action: 'remark', token, text } }),
+      },
     },
     admin: {
       members: {
