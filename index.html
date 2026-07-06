@@ -88,6 +88,18 @@
   }
   .ngg-boot.gone { opacity: 0; pointer-events: none; }
 </style>
+<script>
+  /* Apply saved accessibility preferences before first paint (no flash). */
+  try {
+    var a = JSON.parse(localStorage.getItem("ngg.a11y") || "{}"), r = document.documentElement;
+    r.style.setProperty("--a11y-zoom", ((a.scale || 100) / 100).toString());
+    r.setAttribute("data-a11y-scale", String(a.scale || 100));
+    r.setAttribute("data-contrast", a.contrast ? "high" : "normal");
+    r.setAttribute("data-motion", a.motion ? "reduce" : "auto");
+    r.setAttribute("data-font", a.readable ? "readable" : "default");
+    r.setAttribute("data-links", a.underline ? "underline" : "default");
+  } catch (e) {}
+</script>
 </head>
 <body>
 <div class="ngg-boot" id="ngg-boot">

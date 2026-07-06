@@ -3877,6 +3877,10 @@ section p[style*="var(--ink-500)"] {
 .admin-anchor-del { color: var(--coral); }
 .admin-anchor-del:hover:not(:disabled) { background: rgba(255,90,60,0.08); }
 .admin-anchor-weeks-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.admin-anchor-restore { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.35); color: #4c1f9c; font-size: 13px; font-weight: 500; }
+.admin-anchor-complete { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; font-size: 12px; color: var(--ink-500); }
+.admin-anchor-wk-pct { font-family: var(--font-mono); font-size: 10px; padding: 2px 7px; border-radius: 999px; background: rgba(12,20,50,0.06); color: var(--ink-500); margin-left: 8px; }
+.admin-anchor-wk-pct.is-full { background: rgba(208,255,58,0.25); color: #2e4400; }
 /* In-manager live preview (mirrors the Anchor Journal PWA violet theme) */
 .admin-anchor-preview-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .aj-preview-shell { background: #17123a; background-image: radial-gradient(60% 50% at 20% 10%, rgba(139,92,246,0.35), transparent 60%), radial-gradient(50% 40% at 90% 20%, rgba(217,110,194,0.25), transparent 60%); border-radius: 20px; padding: 26px; color: #fff; }

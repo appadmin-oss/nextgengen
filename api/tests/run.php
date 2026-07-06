@@ -247,5 +247,21 @@ chk('public mentors shows active, hides pending', (function () {
     return in_array('Skilled Mentor', $names, true) && !in_array('Mentor Ada', $names, true);
 })());
 
+// ── Superadmin audit trail ──
+chk('admin (non-super) blocked from audit trail', backend_dispatch('admin.audit.tail', ['requesterId' => $paId])['error'] === 'forbidden');
+$aud = backend_dispatch('admin.audit.tail', ['requesterId' => 'NGG-2025-0099']);
+chk('super reads audit trail + actor list', is_array($aud['audit'] ?? null) && isset($aud['actors']));
+chk('audit resolves a staff actor role', (function () {
+    foreach (backend_dispatch('admin.audit.tail', ['requesterId' => 'NGG-2025-0099', 'staffOnly' => true])['audit'] as $r) {
+        if (($r['actorRole'] ?? '') === 'super_admin') return true;
+    }
+    return false;
+})());
+chk('audit event filter narrows results', (function () {
+    $r = backend_dispatch('admin.audit.tail', ['requesterId' => 'NGG-2025-0099', 'event' => 'mentor']);
+    foreach ($r['audit'] as $row) { if (strpos((string)$row['event'], 'mentor') === false) return false; }
+    return true;
+})());
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

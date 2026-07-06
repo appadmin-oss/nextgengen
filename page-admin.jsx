@@ -9,7 +9,7 @@ const SECTION_CAP = {
   home: null, members: "people", applications: "people", mentors: "people", mentorship: "people",
   sessions: "content", missions: "content", anchor: "content", assignments: "content",
   events: "content", posts: "content", broadcast: "content",
-  newsletter: "inbox", messages: "inbox", audit: "people", settings: "settings",
+  newsletter: "inbox", messages: "inbox", audit: "rbac", settings: "settings",
 };
 
 function AdminPage({ setPage }) {
@@ -185,7 +185,7 @@ function AdminNav({ section, setSection, hasCap }) {
       { id: "messages",  label: "Messages",   icon: "✉", cap: "inbox" },
     ]},
     { h: "System", items: [
-      { id: "audit",     label: "Audit log",  icon: "⌗", cap: "people" },
+      { id: "audit",     label: "Audit trail", icon: "⌗", cap: "rbac" },
       { id: "settings",  label: "Settings",   icon: "⚙", cap: "settings" },
     ]},
   ];
@@ -1058,26 +1058,53 @@ function AdminBroadcast() {
 }
 
 function AdminAudit() {
-  const [list, setList] = React.useState(null);
-  React.useEffect(() => { NGGApi.admin.audit(200).then(r => setList(r.audit || [])); }, []);
+  const [data, setData] = React.useState(null);
+  const [f, setF] = React.useState({ actor: "", event: "", staffOnly: false });
+  const [err, setErr] = React.useState("");
+  const roleChip = (role) => role === "super_admin" ? "chip-gold" : role === "admin" ? "chip-navy" : role === "editor" ? "chip-lime" : "";
+  const load = () => NGGApi.admin.audit({ limit: 500, actor: f.actor, event: f.event, staffOnly: f.staffOnly ? 1 : "" })
+    .then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [f.actor, f.event, f.staffOnly]);
+  const rows = data ? data.audit : null;
+  const actors = (data && data.actors) || [];
+  const exportCsv = () => downloadCsv("audit-trail", (rows || []).map(r => ({ at: r.at, actor: r.actorName || r.actorId || "system", role: r.actorRole || "", event: r.event, subject: r.subject || "", ip: r.ip || "" })));
+
   return (
     <div className="admin-section">
-      <div className="admin-section-head"><h2 className="admin-h2">Audit log</h2></div>
-      {list === null ? <div className="dash-spinner"/> :
-        <table className="admin-table">
-          <thead><tr><th>When</th><th>Who</th><th>Event</th><th>Subject</th><th>IP</th></tr></thead>
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Audit trail <span className="chip chip-gold" style={{ fontSize: 11, verticalAlign: "middle" }}>super admin</span></h2>
+        <button className="btn btn-ghost btn-sm" disabled={!rows || !rows.length} onClick={exportCsv}>Export CSV</button>
+      </div>
+      <p className="admin-hint">Every action taken by admins and managers, most recent first. This accountability record is visible to super admins only.</p>
+      <div className="admin-filters">
+        <select className="admin-select" value={f.actor} onChange={e => setF(o => ({ ...o, actor: e.target.value }))}>
+          <option value="">All actors</option>
+          {actors.map(a => <option key={a.actorId} value={a.actorId}>{a.fullName || a.actorId} · {a.role}</option>)}
+        </select>
+        <input className="admin-input" style={{ maxWidth: 220 }} placeholder="Filter by event (e.g. member, anchor)" value={f.event} onChange={e => setF(o => ({ ...o, event: e.target.value }))}/>
+        <label className="admin-field admin-field-check" style={{ margin: 0 }}>
+          <input type="checkbox" checked={f.staffOnly} onChange={e => setF(o => ({ ...o, staffOnly: e.target.checked }))}/>
+          <span>Staff actions only</span>
+        </label>
+      </div>
+      {err ? <div className="admin-empty">Couldn't load: {err}</div> :
+        rows === null ? <div className="dash-spinner"/> :
+        rows.length === 0 ? <div className="admin-empty">No matching activity.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>When</th><th>Who</th><th>Role</th><th>Event</th><th>Subject</th><th>IP</th></tr></thead>
           <tbody>
-            {list.map((r, i) => (
+            {rows.map((r, i) => (
               <tr key={i}>
                 <td className="mono">{fmtTime(r.at)}</td>
-                <td>{r.actorId || "system"}</td>
+                <td>{r.actorName || r.actorId || "system"}</td>
+                <td>{r.actorRole ? <span className={"chip " + roleChip(r.actorRole)} style={{ fontSize: 10 }}>{r.actorRole}</span> : <span className="mono" style={{ color: "var(--ink-400)" }}>—</span>}</td>
                 <td className="mono">{r.event}</td>
                 <td className="mono">{r.subject || "—"}</td>
                 <td className="mono">{r.ip || "—"}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       }
     </div>
   );
@@ -1106,16 +1133,34 @@ function AdminAnchor() {
   const [busy, setBusy] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
+  const [draft, setDraft] = React.useState(null); // recovered unsaved draft
+  const DRAFT_KEY = "ngg.anchorDraft";
   const update = (fn) => { setC(o => fn(o)); setDirty(true); setSaved(false); };
 
   React.useEffect(() => {
     NGGApi.admin.anchor.get()
-      .then(r => { setC(r.content || {}); setDefaults(r.defaults || null); })
+      .then(r => {
+        setC(r.content || {}); setDefaults(r.defaults || null);
+        try { const raw = localStorage.getItem(DRAFT_KEY); if (raw) { const d = JSON.parse(raw); if (d && d.savedAt) setDraft(d); } } catch (_) {}
+      })
       .catch(e => toast.error(e.code || e.message));
   }, []);
+  // Autosave every edit to localStorage so a refresh / crash never loses work.
+  React.useEffect(() => {
+    if (dirty && c) { try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...c, savedAt: new Date().toISOString() })); } catch (_) {} }
+  }, [c, dirty]);
+  // Warn before leaving with unsaved changes.
+  React.useEffect(() => {
+    if (!dirty) return;
+    const h = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [dirty]);
+  const clearDraft = () => { try { localStorage.removeItem(DRAFT_KEY); } catch (_) {} setDraft(null); };
+  const restoreDraft = () => { if (draft) { const d = { ...draft }; delete d.savedAt; update(() => d); } setDraft(null); };
   const save = async () => {
     setBusy(true);
-    try { await NGGApi.admin.anchor.set(c); setSaved(true); setDirty(false); setTimeout(() => setSaved(false), 2400); toast.success("Published to the Anchor Journal"); }
+    try { await NGGApi.admin.anchor.set(c); setSaved(true); setDirty(false); clearDraft(); setTimeout(() => setSaved(false), 2400); toast.success("Published to the Anchor Journal"); }
     catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
   };
@@ -1162,6 +1207,11 @@ function AdminAnchor() {
     } catch (_) { toast.error("Couldn't read that file"); }
   };
 
+  // Completeness — how much of each week is filled in.
+  const WEEK_FIELDS = ["title", "system", "focus", "home", "school", "peer", "journal"];
+  const weekFilled = (w) => WEEK_FIELDS.filter(k => String((w || {})[k] || "").trim()).length;
+  const weeksComplete = weeks.filter(w => weekFilled(w) === WEEK_FIELDS.length).length;
+
   const emptyQuotes = quotes.filter(q => !String(q).trim()).length;
   const warnings = [];
   if (weeks.length !== 12) warnings.push(weeks.length + " weeks (the journey expects 12)");
@@ -1184,9 +1234,23 @@ function AdminAnchor() {
       </div>
       <p className="admin-hint">Everything here renders live in the members' Anchor Journal PWA. Edit and reorder the weekly build-sheets, the morning-quote library and the daily systems checklist, then publish.</p>
 
+      {draft && !dirty && (
+        <div className="admin-anchor-restore">
+          <span>↩ You have an unsaved draft{draft.savedAt ? " from " + fmtTime(draft.savedAt) : ""}.</span>
+          <span style={{ flex: 1 }}/>
+          <button className="btn btn-primary btn-sm" onClick={restoreDraft}>Restore draft</button>
+          <button className="btn btn-ghost btn-sm" onClick={clearDraft}>Discard</button>
+        </div>
+      )}
+
       {warnings.length > 0 && (
         <div className="admin-anchor-warn">⚠ {warnings.join(" · ")}</div>
       )}
+
+      <div className="admin-anchor-complete">
+        <span className="mono">{weeksComplete} / {weeks.length} weeks complete</span>
+        <div className="admin-bar" style={{ maxWidth: 260 }}><div className="admin-bar-fill" style={{ width: (weeks.length ? weeksComplete / weeks.length * 100 : 0) + "%" }}/></div>
+      </div>
 
       <div className="admin-anchor-tabs">
         {[["weeks", "Weeks (" + weeks.length + ")"], ["quotes", "Quotes (" + quotes.length + ")"], ["systems", "Daily systems (" + systems.length + ")"], ["preview", "Preview"], ["settings", "Settings"]].map(([id, lbl]) => (
@@ -1206,6 +1270,7 @@ function AdminAnchor() {
             <details key={i} className="admin-anchor-week">
               <summary>
                 <span className="mono">WK {String(i + 1).padStart(2, "0")}</span> {w.title || "Untitled"}
+                <span className={"admin-anchor-wk-pct" + (weekFilled(w) === WEEK_FIELDS.length ? " is-full" : "")}>{weekFilled(w)}/{WEEK_FIELDS.length}</span>
                 <span className="admin-anchor-wk-tools" onClick={e => e.preventDefault()}>
                   <button type="button" className="admin-anchor-mv" disabled={i === 0} onClick={() => moveWeek(i, -1)} aria-label="Move up">↑</button>
                   <button type="button" className="admin-anchor-mv" disabled={i === weeks.length - 1} onClick={() => moveWeek(i, 1)} aria-label="Move down">↓</button>
