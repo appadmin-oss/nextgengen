@@ -86,11 +86,5 @@ function require_super_admin(): array {
     return $s;
 }
 
-function b64url(string $bin): string {
-    return rtrim(strtr(base64_encode($bin), '+/', '-_'), '=');
-}
-function b64url_decode(string $s): string {
-    $pad = strlen($s) % 4;
-    if ($pad) $s .= str_repeat('=', 4 - $pad);
-    return (string)base64_decode(strtr($s, '-_', '+/'));
-}
+// b64url() / b64url_decode() moved to util.php so both prod and the test
+// harness (which loads util.php but not session.php) share them.
