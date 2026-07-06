@@ -142,12 +142,13 @@ function pageFromPath() {
   if (seg === "login" || seg === "signin") return "home";
   // Summer student profiles: /q/<qr-token> or /s/<handle>.
   if (seg === "q" || seg === "s") return "summerprofile";
-  // The staff Control Room lives at /hq; /admin is kept as a legacy alias.
-  if (seg === "hq" || seg === "admin") return "admin";
+  // The staff Control Room lives at /nextadmin; /hq and /admin are kept as
+  // legacy aliases so old links keep working.
+  if (seg === "nextadmin" || seg === "hq" || seg === "admin") return "admin";
   return PAGE_IDS.includes(seg) ? seg : "_notfound";
 }
 function pathForPage(page) {
-  if (page === "admin") return "/hq";
+  if (page === "admin") return "/nextadmin";
   return page === "home" ? "/" : "/" + page;
 }
 

@@ -311,6 +311,9 @@ i[class^="ph"] { line-height: 1; }
 .aj-calday.missed { background: rgba(255,90,90,.4); color: #fff; }
 .aj-calday.up { background: rgba(255,255,255,.08); color: var(--tx-45); }
 .aj-calday.today { background: rgba(255,255,255,.08); color: #fff; border-color: var(--a); }
+.aj-calday { position: relative; }
+.aj-calday.sel { box-shadow: 0 0 0 2px var(--violet-l), 0 0 0 4px rgba(139,92,246,.35); }
+.aj-calday-sys { position: absolute; bottom: 2px; right: 3px; font-size: 8px; font-weight: 700; opacity: .7; }
 .aj-callegend { display: flex; align-items: center; gap: 16px; margin-top: 16px; font-family: var(--mono); font-weight: 600; font-size: 10px; color: var(--tx-45); }
 .aj-callegend span { display: inline-flex; align-items: center; gap: 6px; text-transform: uppercase; }
 .aj-callegend .dot { width: 12px; height: 12px; border-radius: 4px; }
