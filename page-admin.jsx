@@ -1367,7 +1367,7 @@ function AdminAnchor() {
   const addSys = () => update(o => ({ ...o, systems: [...(o.systems || []), { key: "sys" + Date.now(), label: "", icon: "ph-check-circle" }] }));
   const rmSys = (i) => update(o => ({ ...o, systems: o.systems.filter((_, idx) => idx !== i) }));
   const moveSys = (i, dir) => update(o => ({ ...o, systems: arrMove(o.systems, i, dir) }));
-  const blankWeek = { title: "", system: "", focus: "", home: "", school: "", peer: "", journal: "" };
+  const blankWeek = { title: "", system: "", focus: "", home: "", school: "", peer: "", journal: "", stop: "", start: "", automate: "" };
   const addWeek = () => update(o => ({ ...o, weeks: [...(o.weeks || []), { ...blankWeek }] }));
   const dupWeek = (i) => update(o => { const w = o.weeks.slice(); w.splice(i + 1, 0, { ...w[i] }); return { ...o, weeks: w }; });
   const rmWeek = async (i) => { const ok = await dialog.confirm({ title: "Delete week " + (i + 1) + "?", body: (weeks[i] && weeks[i].title) || "This week", cta: "Delete" }); if (ok) update(o => ({ ...o, weeks: o.weeks.filter((_, idx) => idx !== i) })); };
@@ -1470,6 +1470,10 @@ function AdminAnchor() {
                 <Field label="School actions" value={w.school || ""} onChange={v => setWeek(i, "school", v)}/>
                 <Field label="Peer modeling" value={w.peer || ""} onChange={v => setWeek(i, "peer", v)}/>
                 <FieldTextarea label="Journal prompt" value={w.journal || ""} onChange={v => setWeek(i, "journal", v)} rows={2}/>
+                <div className="admin-anchor-habit-lbl mono">HABIT FOCUS · shown on the Growth &amp; Weekly Review screens</div>
+                <Field label="Stop" value={w.stop || ""} onChange={v => setWeek(i, "stop", v)}/>
+                <Field label="Start" value={w.start || ""} onChange={v => setWeek(i, "start", v)}/>
+                <Field label="Automate" value={w.automate || ""} onChange={v => setWeek(i, "automate", v)}/>
               </div>
             </details>
           ))}

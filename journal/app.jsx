@@ -68,19 +68,43 @@ const RANKS = [
 ];
 // Per-week build sheet (the physical Anchor journal's weekly structure).
 let WEEK_DATA = [
-  { system: "Self-awareness & reset", focus: "Name who you are becoming.", home: "Make your bed; greet your family each morning.", school: "Arrive settled, not rushed.", peer: "Notice who you follow — and why.", journal: "Who am I when no one is watching?" },
-  { system: "A fixed study time", focus: "Same time, same place, every day.", home: "Study before screens.", school: "Review each day's notes within 24 hours.", peer: "Invite a friend to study with you.", journal: "When do I focus best — and why?" },
-  { system: "Daily hygiene", focus: "Clean body, clear mind.", home: "Bath, brush, tidy your space.", school: "Neat uniform and materials.", peer: "Model care, not vanity.", journal: "What does self-respect look like today?" },
-  { system: "Device boundaries", focus: "Own the phone — don't be owned.", home: "Phone in a drawer while studying.", school: "No phone in class.", peer: "Lead a screen-free hangout.", journal: "What did my phone cost me today?" },
-  { system: "A note-taking system", focus: "Capture — don't just consume.", home: "Summarize your day in three lines.", school: "One-page notes per subject.", peer: "Share a useful note with a friend.", journal: "What idea deserved a note today?" },
-  { system: "Respect for authority", focus: "Honor those who lead you.", home: "Speak kindly to your family.", school: "Respect teachers, even when it's hard.", peer: "Defend someone being mocked.", journal: "Where was my respect tested today?" },
-  { system: "Time consciousness", focus: "On time is early.", home: "Sleep and wake on schedule.", school: "Beat the bell.", peer: "Keep a promise on time.", journal: "Where did I waste time today?" },
-  { system: "Self-control", focus: "Master the impulse.", home: "Pause before reacting at home.", school: "No cheating, no shortcuts.", peer: "Walk away from trouble.", journal: "What did I resist today?" },
-  { system: "Integrity", focus: "Do right when unseen.", home: "Return what isn't yours.", school: "Honest marks only.", peer: "Tell a hard truth, kindly.", journal: "Where was I fully honest today?" },
-  { system: "Responsibility", focus: "Own the outcome.", home: "Take a chore without being asked.", school: "Own a mistake at school.", peer: "Carry a friend's load.", journal: "What did I take responsibility for?" },
-  { system: "Independent integrity", focus: "Discipline without supervision.", home: "Do right with no one home.", school: "Study without being told.", peer: "Set the standard for your peers.", journal: "Who am I without an audience?" },
-  { system: "Review & leadership", focus: "Lead by example.", home: "Serve your household.", school: "Help a struggling classmate.", peer: "Bring two friends to NGG.", journal: "Who have I become in twelve weeks?" },
+  { system: "Self-awareness & reset", focus: "Name who you are becoming.", home: "Make your bed; greet your family each morning.", school: "Arrive settled, not rushed.", peer: "Notice who you follow — and why.", journal: "Who am I when no one is watching?", stop: "Comparing yourself to others", start: "A morning reset ritual", automate: "Making your bed on waking" },
+  { system: "A fixed study time", focus: "Same time, same place, every day.", home: "Study before screens.", school: "Review each day's notes within 24 hours.", peer: "Invite a friend to study with you.", journal: "When do I focus best — and why?", stop: "Studying at random times", start: "A fixed daily study slot", automate: "Reviewing notes before screens" },
+  { system: "Daily hygiene", focus: "Clean body, clear mind.", home: "Bath, brush, tidy your space.", school: "Neat uniform and materials.", peer: "Model care, not vanity.", journal: "What does self-respect look like today?", stop: "Skipping your routine when tired", start: "A morning & night wash routine", automate: "Laying out clothes the night before" },
+  { system: "Device boundaries", focus: "Own the phone — don't be owned.", home: "Phone in a drawer while studying.", school: "No phone in class.", peer: "Lead a screen-free hangout.", journal: "What did my phone cost me today?", stop: "Excess phone use", start: "Phone-free study blocks", automate: "Charging your phone outside your room" },
+  { system: "A note-taking system", focus: "Capture — don't just consume.", home: "Summarize your day in three lines.", school: "One-page notes per subject.", peer: "Share a useful note with a friend.", journal: "What idea deserved a note today?", stop: "Passive consuming", start: "One-page notes per subject", automate: "A 5-minute note review" },
+  { system: "Respect for authority", focus: "Honor those who lead you.", home: "Speak kindly to your family.", school: "Respect teachers, even when it's hard.", peer: "Defend someone being mocked.", journal: "Where was my respect tested today?", stop: "Talking back in the moment", start: "Greeting elders first", automate: "Pausing before you reply" },
+  { system: "Time consciousness", focus: "On time is early.", home: "Sleep and wake on schedule.", school: "Beat the bell.", peer: "Keep a promise on time.", journal: "Where did I waste time today?", stop: "Running late", start: "Arriving five minutes early", automate: "A fixed sleep & wake time" },
+  { system: "Self-control", focus: "Master the impulse.", home: "Pause before reacting at home.", school: "No cheating, no shortcuts.", peer: "Walk away from trouble.", journal: "What did I resist today?", stop: "Reacting on impulse", start: "A ten-second pause", automate: "Walking away from trouble" },
+  { system: "Integrity", focus: "Do right when unseen.", home: "Return what isn't yours.", school: "Honest marks only.", peer: "Tell a hard truth, kindly.", journal: "Where was I fully honest today?", stop: "Small dishonesties", start: "Telling the hard truth kindly", automate: "Returning what isn't yours" },
+  { system: "Responsibility", focus: "Own the outcome.", home: "Take a chore without being asked.", school: "Own a mistake at school.", peer: "Carry a friend's load.", journal: "What did I take responsibility for?", stop: "Blaming others", start: "Owning your outcomes", automate: "One chore without being asked" },
+  { system: "Independent integrity", focus: "Discipline without supervision.", home: "Do right with no one home.", school: "Study without being told.", peer: "Set the standard for your peers.", journal: "Who am I without an audience?", stop: "Needing to be watched", start: "Doing right when alone", automate: "Studying without being told" },
+  { system: "Review & leadership", focus: "Lead by example.", home: "Serve your household.", school: "Help a struggling classmate.", peer: "Bring two friends to NGG.", journal: "Who have I become in twelve weeks?", stop: "Keeping growth to yourself", start: "Serving your household", automate: "Helping one peer each week" },
 ];
+// Habit focus (STOP/START/AUTOMATE) for a given 1-based week, with a safe
+// fallback so the screen is never blank if a week omits them.
+function habitFocus(week) {
+  const d = WEEK_DATA[(week || 1) - 1] || WEEK_DATA[0] || {};
+  return {
+    stop: d.stop || "One thing to give up",
+    start: d.start || "One habit to begin",
+    automate: d.automate || "One habit to make automatic",
+  };
+}
+// Pull the member's own execution logs (School/Home/Peer lines) for a given
+// week from their real journal entries — used by the Weekly Review.
+function weekLogs(entries, week) {
+  const mon = mondayOf(Date.now()); const end = new Date(mon); end.setUTCDate(end.getUTCDate() + 7);
+  const inWeek = (entries || []).filter(e => { const t = new Date(e.createdAt); return t >= mon && t < end; });
+  const pick = (prefix) => {
+    for (const e of inWeek) {
+      const line = (e.body || "").split("\n").find(l => l.toLowerCase().indexOf(prefix + ":") === 0);
+      if (line) return line.slice(prefix.length + 1).trim();
+    }
+    return "";
+  };
+  return { school: pick("school"), home: pick("home"), peer: pick("peer"), count: inWeek.length };
+}
 
 // Admin-managed content overrides the built-in defaults above (fetched from
 // /api/public/anchor-content.php). Falls back to the defaults if unset/offline.
@@ -201,6 +225,18 @@ function App() {
     } catch {}
   }, []);
   useEffect(() => { if (member) refresh(); }, [member, refresh]);
+
+  // Daily reflection reminder (opt-in pref + granted permission). Fires at most
+  // once per day when today's reflection is still missing.
+  useEffect(() => {
+    if (!member) return;
+    if (((pstate && pstate.prefs) || {}).reminder === false) return;
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const today = dayKey(Date.now());
+    if ((entries || []).some(e => dayKey(e.createdAt) === today)) return;
+    if (localStorage.getItem("ngg_aj_reminded") === today) return;
+    try { new Notification("Anchor Journal", { body: "One reflection keeps your streak alive." }); localStorage.setItem("ngg_aj_reminded", today); } catch {}
+  }, [member, entries, pstate]);
 
   const syncPending = useCallback(async () => {
     const q = store.queue(); if (!q.length || !navigator.onLine) return;
@@ -340,14 +376,14 @@ function Journey({ ctx }) {
           <div className="aj-plabel">Daily systems</div>
         </button>
 
-        <div className="aj-pnode dim" style={{ left: "37%", top: 422 }}>
-          <span className="aj-pcirc locked" aria-hidden="true"><i className="ph-fill ph-lock-simple"/></span>
+        <button className="aj-pnode" style={{ left: "37%", top: 422 }} onClick={() => go("reflect")}>
+          <span className="aj-pcirc glass" aria-hidden="true"><i className="ph-fill ph-sun"/></span>
           <div className="aj-plabel">Morning quote</div>
-        </div>
-        <div className="aj-pnode dim" style={{ left: "65%", top: 558 }}>
-          <span className="aj-pcirc locked" aria-hidden="true"><i className="ph-fill ph-moon-stars"/></span>
+        </button>
+        <button className="aj-pnode" style={{ left: "65%", top: 558 }} onClick={() => go("reflect")}>
+          <span className="aj-pcirc glass" aria-hidden="true"><i className="ph-fill ph-moon-stars"/></span>
           <div className="aj-plabel">Night reflection</div>
-        </div>
+        </button>
       </div>
     </div>
   );
@@ -397,7 +433,7 @@ function Reflect({ ctx }) {
       <div className="pad" style={{ marginTop: 20 }}><Tilt strength={7}><div className="card-grad aj-quote">
         <div className="aj-quote-top">
           <span className="aj-quote-lbl">MORNING QUOTE</span>
-          <button className="aj-read" onClick={() => speak(quote)}><i className="ph-fill ph-speaker-high"/>Read aloud</button>
+          {(pstate.prefs || {}).readAloud !== false && <button className="aj-read" onClick={() => speak(quote)}><i className="ph-fill ph-speaker-high"/>Read aloud</button>}
         </div>
         <p className="aj-quote-q">“{quote}”</p>
       </div></Tilt></div>
@@ -676,11 +712,13 @@ function Growth({ ctx }) {
 
       <div className="pad" style={{ marginTop: 24 }}>
         <div className="eyebrow" style={{ marginBottom: 12 }}>HABIT FOCUS · WEEK {currentWeek}</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div className="aj-focus stop"><span className="aj-focus-tag">STOP</span><i className="ph-fill ph-hand-palm"/><span className="t">Excess phone use</span></div>
-          <div className="aj-focus start"><span className="aj-focus-tag">START</span><i className="ph-fill ph-play-circle"/><span className="t">A fixed study time</span></div>
-          <div className="aj-focus auto"><span className="aj-focus-tag">AUTOMATE</span><i className="ph-fill ph-arrows-clockwise"/><span className="t">5-minute note review</span></div>
-        </div>
+        {(() => { const h = habitFocus(currentWeek); return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="aj-focus stop"><span className="aj-focus-tag">STOP</span><i className="ph-fill ph-hand-palm"/><span className="t">{h.stop}</span></div>
+            <div className="aj-focus start"><span className="aj-focus-tag">START</span><i className="ph-fill ph-play-circle"/><span className="t">{h.start}</span></div>
+            <div className="aj-focus auto"><span className="aj-focus-tag">AUTOMATE</span><i className="ph-fill ph-arrows-clockwise"/><span className="t">{h.automate}</span></div>
+          </div>
+        ); })()}
       </div>
 
       <div className="pad" style={{ marginTop: 24 }}>
@@ -765,11 +803,15 @@ function Peers({ ctx }) {
 
 /* ---- Weekly review ------------------------------------------------------ */
 function Review({ ctx }) {
-  const { currentWeek, mentor, go, isNGG } = ctx;
-  const remarks = [
-    { role: "Home · Parent", icon: "ph-house", tint: "rgba(201,242,78,.14)", ic: "#c9f24e", msg: "Kept his study time two days running. Proud of the change." },
-    { role: "School · Teacher", icon: "ph-chalkboard-teacher", tint: "rgba(139,92,246,.2)", ic: "#c9b0ff", msg: "Awaiting confirmation for this week." },
-    { role: mentor ? mentor.fullName : "Afrovanguard Mentor", icon: "ph-compass", tint: "rgba(217,110,194,.2)", ic: "#f0a6da", msg: "Strong start. Focus next on device control." },
+  const { currentWeek, mentor, entries, go, isNGG } = ctx;
+  const h = habitFocus(currentWeek);
+  const logs = weekLogs(entries, currentWeek);
+  // The member's own execution logs this week — real data captured in their
+  // reflections. Empty states are honest, never fabricated.
+  const myLogs = [
+    { role: "Home", icon: "ph-house", tint: "rgba(201,242,78,.14)", ic: "#c9f24e", msg: logs.home },
+    { role: "School", icon: "ph-chalkboard-teacher", tint: "rgba(139,92,246,.2)", ic: "#c9b0ff", msg: logs.school },
+    { role: "Peers", icon: "ph-users-three", tint: "rgba(217,110,194,.2)", ic: "#f0a6da", msg: logs.peer },
   ];
   return (
     <div className="aj-view">
@@ -777,19 +819,27 @@ function Review({ ctx }) {
       <div className="pad" style={{ marginTop: 20 }}>
         <div className="eyebrow" style={{ marginBottom: 14 }}>HABIT FOCUS</div>
         <div style={{ display: "flex", gap: 10 }}>
-          <div className="aj-focus stop" style={{ flex: 1, flexDirection: "column", textAlign: "center", gap: 6 }}><div className="aj-focus-tag" style={{ width: "auto" }}>STOP</div><span className="t" style={{ flex: "none", fontSize: 12 }}>Excess phone</span></div>
-          <div className="aj-focus start" style={{ flex: 1, flexDirection: "column", textAlign: "center", gap: 6 }}><div className="aj-focus-tag" style={{ width: "auto" }}>START</div><span className="t" style={{ flex: "none", fontSize: 12 }}>Fixed study</span></div>
-          <div className="aj-focus auto" style={{ flex: 1, flexDirection: "column", textAlign: "center", gap: 6 }}><div className="aj-focus-tag" style={{ width: "auto" }}>AUTO</div><span className="t" style={{ flex: "none", fontSize: 12 }}>Note review</span></div>
+          <div className="aj-focus stop" style={{ flex: 1, flexDirection: "column", textAlign: "center", gap: 6 }}><div className="aj-focus-tag" style={{ width: "auto" }}>STOP</div><span className="t" style={{ flex: "none", fontSize: 12 }}>{h.stop}</span></div>
+          <div className="aj-focus start" style={{ flex: 1, flexDirection: "column", textAlign: "center", gap: 6 }}><div className="aj-focus-tag" style={{ width: "auto" }}>START</div><span className="t" style={{ flex: "none", fontSize: 12 }}>{h.start}</span></div>
+          <div className="aj-focus auto" style={{ flex: 1, flexDirection: "column", textAlign: "center", gap: 6 }}><div className="aj-focus-tag" style={{ width: "auto" }}>AUTO</div><span className="t" style={{ flex: "none", fontSize: 12 }}>{h.automate}</span></div>
         </div>
       </div>
       <div className="pad" style={{ marginTop: 24 }}>
-        <div className="eyebrow" style={{ marginBottom: 14 }}>REMARKS FROM YOUR CIRCLE</div>
-        {!isNGG && <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>Circle remarks activate when you join an NGG centre.</div>}
+        <div className="eyebrow" style={{ marginBottom: 6 }}>YOUR EXECUTION THIS WEEK</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>{logs.count ? logs.count + " reflection" + (logs.count === 1 ? "" : "s") + " logged this week." : "No reflections logged yet this week."}</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {remarks.map((r, i) => (
-            <div className="aj-remark" key={i}><div className="aj-remark-top"><div className="aj-remark-ic" style={{ background: r.tint }}><i className={"ph-fill " + r.icon} style={{ color: r.ic }}/></div><div className="aj-remark-role">{r.role}</div></div><p>{isNGG ? r.msg : "Linked once you're an NGG member."}</p></div>
+          {myLogs.map((r, i) => (
+            <div className="aj-remark" key={i}><div className="aj-remark-top"><div className="aj-remark-ic" style={{ background: r.tint }}><i className={"ph-fill " + r.icon} style={{ color: r.ic }}/></div><div className="aj-remark-role">{r.role}</div></div><p style={r.msg ? null : { color: "var(--tx-40)", fontStyle: "italic" }}>{r.msg || "No log yet — add it in today's reflection."}</p></div>
           ))}
         </div>
+      </div>
+      <div className="pad" style={{ marginTop: 24 }}>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>YOUR MENTOR</div>
+        {mentor ? (
+          <div className="aj-remark"><div className="aj-remark-top"><div className="aj-remark-ic" style={{ background: "rgba(217,110,194,.2)" }}><i className="ph-fill ph-compass" style={{ color: "#f0a6da" }}/></div><div className="aj-remark-role">{mentor.fullName}{mentor.centre ? " · " + mentor.centre : ""}</div></div><p>Your Afrovanguard mentor is linked. Their weekly remarks appear here after your check-in.</p></div>
+        ) : (
+          <div className="aj-remark"><div className="aj-remark-top"><div className="aj-remark-ic" style={{ background: "rgba(217,110,194,.2)" }}><i className="ph-fill ph-compass" style={{ color: "#f0a6da" }}/></div><div className="aj-remark-role">Afrovanguard Mentor</div></div><p style={{ color: "var(--tx-40)", fontStyle: "italic" }}>{isNGG ? "No mentor assigned yet — your centre will pair you soon." : "Mentor pairing is part of NGG membership."}</p></div>
+        )}
       </div>
     </div>
   );
@@ -802,9 +852,9 @@ function You({ ctx }) {
   const toggle = (k) => setState("prefs", Object.assign({}, prefs, { [k]: !(prefs[k] !== false) }));
   const on = (k) => prefs[k] !== false;
   const circle = [
-    { role: "Home · Parent", sub: "Confirms daily order", icon: "ph-house", tint: "rgba(201,242,78,.16)", ic: "#c9f24e", tag: isNGG ? "linked" : "locked" },
+    { role: "Home · Parent", sub: "Confirms daily order", icon: "ph-house", tint: "rgba(201,242,78,.16)", ic: "#c9f24e", tag: isNGG ? "pending" : "locked" },
     { role: "School · Teacher", sub: "Verifies school conduct", icon: "ph-chalkboard-teacher", tint: "rgba(139,92,246,.2)", ic: "#c9b0ff", tag: isNGG ? "pending" : "locked" },
-    { role: mentor ? mentor.fullName : "Afrovanguard Mentor", sub: "Weekly discipline & remarks", icon: "ph-compass", tint: "rgba(217,110,194,.2)", ic: "#f0a6da", tag: isNGG ? "linked" : "locked" },
+    { role: mentor ? mentor.fullName : "Afrovanguard Mentor", sub: "Weekly discipline & remarks", icon: "ph-compass", tint: "rgba(217,110,194,.2)", ic: "#f0a6da", tag: mentor ? "linked" : (isNGG ? "pending" : "locked") },
   ];
   return (
     <div className="aj-view">
@@ -832,7 +882,7 @@ function You({ ctx }) {
       <div className="pad" style={{ marginTop: 24 }}>
         <div className="eyebrow" style={{ marginBottom: 12 }}>SETTINGS</div>
         <div className="aj-settings">
-          <button className="aj-setrow" onClick={() => toggle("reminder")}><i className="ph-fill ph-bell lead"/><span>Daily reflection reminder</span><span className={"aj-toggle " + (on("reminder") ? "on" : "off")}><span/></span></button>
+          <button className="aj-setrow" onClick={() => { if (!on("reminder") && "Notification" in window && Notification.permission === "default") { try { Notification.requestPermission(); } catch {} } toggle("reminder"); }}><i className="ph-fill ph-bell lead"/><span>Daily reflection reminder</span><span className={"aj-toggle " + (on("reminder") ? "on" : "off")}><span/></span></button>
           <button className="aj-setrow" onClick={() => toggle("readAloud")}><i className="ph-fill ph-speaker-high lead"/><span>Read quote aloud</span><span className={"aj-toggle " + (on("readAloud") ? "on" : "off")}><span/></span></button>
           <button className="aj-setrow" onClick={() => { localStorage.removeItem("ngg_aj_onb"); location.reload(); }}><i className="ph-fill ph-arrow-counter-clockwise lead"/><span>Replay intro</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
           <button className="aj-setrow" onClick={() => { NGGApi.auth.logout().finally(() => location.reload()); }}><i className="ph-fill ph-sign-out lead"/><span>Sign out</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
