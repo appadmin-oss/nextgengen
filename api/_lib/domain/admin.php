@@ -69,7 +69,7 @@ function admin_members_upsert(array $p): array {
     // and never to a tier above their own.
     if (isset($data['role'])) {
         if (!role_has_cap($g['requester']['role'], 'rbac')) unset($data['role']);
-        elseif (!in_array($data['role'], ['member', 'editor', 'admin', 'super_admin'], true)) unset($data['role']);
+        elseif (!in_array($data['role'], ['member', 'editor', 'summer_admin', 'club_admin', 'admin', 'super_admin'], true)) unset($data['role']);
     }
 
     $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes'];

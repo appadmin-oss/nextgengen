@@ -32,7 +32,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/util.php';
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/anchor-content.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship'] as $__d) {
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer'] as $__d) {
     require_once __DIR__ . '/domain/' . $__d . '.php';
 }
 require_once __DIR__ . '/backend.php';

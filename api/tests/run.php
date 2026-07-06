@@ -32,7 +32,7 @@ require $ROOT . '/_lib/db.php';
 require $ROOT . '/_lib/util.php';
 require $ROOT . '/_lib/mailer.php';
 require $ROOT . '/_lib/anchor-content.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
@@ -262,6 +262,25 @@ chk('audit event filter narrows results', (function () {
     foreach ($r['audit'] as $row) { if (strpos((string)$row['event'], 'mentor') === false) return false; }
     return true;
 })());
+
+// ── Summer School (QR attendance + enrollment) ──
+chk('summer_admin role caps = summer only', admin_role_caps('summer_admin') === ['summer']);
+$mint = backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 5]);
+chk('summer mint creates blank QR cards', count($mint['tokens']) === 5);
+$enr = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Kofi Junior', 'age' => 11, 'centre' => 'Egbeda', 'track' => 'Music']]);
+chk('summer enroll binds a QR + handle', !empty($enr['studentId']) && !empty($enr['token']) && !empty($enr['handle']));
+chk('bound QR flips to assigned', db_row('SELECT status FROM qr_codes WHERE token=?', [$enr['token']])['status'] === 'assigned');
+chk('enrolled student in roster', (function () {
+    foreach (backend_dispatch('admin.summer.students.list', ['requesterId' => 'NGG-2025-0099'])['students'] as $s) if ($s['fullName'] === 'Kofi Junior') return true;
+    return false;
+})());
+$ci1 = backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-2025-0099', 'token' => $enr['token']]);
+chk('checkin records attendance', !empty($ci1['ok']) && $ci1['already'] === false);
+chk('duplicate same-day checkin flagged', backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-2025-0099', 'token' => $enr['token']])['already'] === true);
+chk('public profile by QR token', backend_dispatch('public.summerProfile', ['token' => $enr['token']])['profile']['fullName'] === 'Kofi Junior');
+chk('public profile by handle + attendance', backend_dispatch('public.summerProfile', ['handle' => $enr['handle']])['profile']['attendanceCount'] === 1);
+chk('summer gated from non-staff', backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+chk('enroll rejects an already-used QR', backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Dupe Kid', 'age' => 12, 'token' => $enr['token']]])['error'] === 'qr_already_used');
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

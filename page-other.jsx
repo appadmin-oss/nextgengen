@@ -974,4 +974,62 @@ function MentorsPage({ setPage }) {
   );
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, ContactPage, MentorsPage, FAQList, MentorApplySection, MediaModal });
+/* =================== SUMMER STUDENT PROFILE (by QR token or handle) =========== */
+function SummerProfilePage({ setPage }) {
+  const [state, setState] = React.useState({ loading: true, profile: null });
+  React.useEffect(() => {
+    const parts = (window.location.pathname || "").split("/").filter(Boolean);
+    const kind = parts[0], id = decodeURIComponent(parts[1] || "");
+    const req = kind === "s" ? NGGApi.public.summerProfile({ handle: id }) : NGGApi.public.summerProfile({ token: id });
+    req.then(r => setState({ loading: false, profile: r.profile }))
+       .catch(() => setState({ loading: false, profile: null }));
+  }, []);
+
+  if (state.loading) return <div className="page"><div className="container" style={{ padding: "120px 0", textAlign: "center" }}><div className="dash-spinner" style={{ margin: "0 auto" }}/></div></div>;
+  if (!state.profile) return (
+    <div className="page"><section className="section"><div className="container" style={{ textAlign: "center", padding: "80px 0" }}>
+      <div className="mono" style={{ color: "var(--coral)", letterSpacing: "0.14em" }}>PROFILE NOT FOUND</div>
+      <h1 className="display" style={{ fontSize: "clamp(40px,6vw,80px)", margin: "12px 0" }}>No student here.</h1>
+      <p style={{ color: "var(--ink-500)" }}>That QR card isn't assigned yet, or the link is wrong.</p>
+      <button className="btn btn-primary mt-24" onClick={() => setPage("home")}>Back to home →</button>
+    </div></section></div>
+  );
+
+  const m = state.profile;
+  const att = m.attendance || [];
+  return (
+    <div className="page" data-screen-label="Summer profile">
+      <section className="page-hero page-hero-dark" style={{ background: "var(--navy-900)", color: "white", padding: "64px 0 48px" }}>
+        <div className="container" style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
+          {m.photoUrl
+            ? <img src={m.photoUrl} alt="" style={{ width: 96, height: 96, borderRadius: "50%", objectFit: "cover", border: "3px solid var(--gold-500)" }} onError={e => { e.target.style.display = "none"; }}/>
+            : <Avatar name={m.fullName} seed={m.studentId} size={96} ring/>}
+          <div>
+            <span className="chip chip-on-dark"><span className="dot dot-gold"/> SUMMER SCHOOL · {m.cohortId}</span>
+            <h1 className="display" style={{ fontSize: "clamp(40px,6vw,76px)", margin: "12px 0 6px", color: "white", lineHeight: 0.95 }}>{m.fullName}</h1>
+            <div className="mono" style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.1em" }}>
+              {m.studentId}{m.track ? " · " + m.track : ""}{m.centre ? " · CACENTRE " + m.centre : ""} · @{m.handle}
+            </div>
+          </div>
+        </div>
+      </section>
+      <section className="section">
+        <div className="container" style={{ maxWidth: 720 }}>
+          <div className="card" style={{ padding: 28 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <h2 className="display" style={{ fontSize: 28, margin: 0 }}>Attendance</h2>
+              <div><span className="display" style={{ fontSize: 40, color: "var(--gold-500)" }}>{m.attendanceCount || 0}</span> <span className="mono" style={{ color: "var(--ink-500)", fontSize: 12 }}>DAYS PRESENT</span></div>
+            </div>
+            {att.length === 0
+              ? <p style={{ color: "var(--ink-500)", marginTop: 12 }}>No check-ins recorded yet.</p>
+              : <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
+                  {att.map((a, i) => <span key={i} className="chip chip-lime" title={a.checkInAt}>{a.date}</span>)}
+                </div>}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, FAQList, MentorApplySection, MediaModal });

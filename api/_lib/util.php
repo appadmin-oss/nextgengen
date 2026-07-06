@@ -97,10 +97,12 @@ function push_notification(string $memberId, array $n): void {
  */
 function admin_role_caps($role): array {
     switch (strtolower((string)($role ?? ''))) {
-        case 'super_admin': return ['content', 'people', 'inbox', 'settings', 'rbac'];
-        case 'admin':       return ['content', 'people', 'inbox'];
-        case 'editor':      return ['content'];
-        default:            return [];
+        case 'super_admin':  return ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club'];
+        case 'admin':        return ['content', 'people', 'inbox', 'club'];
+        case 'club_admin':   return ['content', 'people', 'inbox', 'club'];   // NGG Club coordinator
+        case 'summer_admin': return ['summer'];                                // Summer School coordinator
+        case 'editor':       return ['content'];
+        default:             return [];
     }
 }
 

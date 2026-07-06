@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 6;
+const NGG_SCHEMA_TARGET = 7;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -288,6 +288,49 @@ function db_migrate(PDO $db): void {
             ALTER TABLE mentors ADD COLUMN skills TEXT DEFAULT '';
             ALTER TABLE mentors ADD COLUMN linkedin TEXT DEFAULT '';
             ALTER TABLE mentors ADD COLUMN afrovanguardRef TEXT DEFAULT '';
+        ",
+        7 => "
+            CREATE TABLE summer_cohorts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              cohortId TEXT UNIQUE NOT NULL,
+              year INTEGER, name TEXT, startDate TEXT, endDate TEXT,
+              status TEXT DEFAULT 'active',
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE qr_codes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              token TEXT UNIQUE NOT NULL,
+              batch TEXT, cohortId TEXT,
+              status TEXT DEFAULT 'blank',
+              studentId TEXT, assignedName TEXT,
+              createdAt TEXT DEFAULT (datetime('now')), assignedAt TEXT
+            );
+            CREATE INDEX idx_qr_status ON qr_codes(status);
+            CREATE INDEX idx_qr_cohort ON qr_codes(cohortId);
+
+            CREATE TABLE summer_students (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              studentId TEXT UNIQUE NOT NULL,
+              cohortId TEXT, token TEXT, handle TEXT,
+              fullName TEXT, age INTEGER, centre TEXT, track TEXT, photoUrl TEXT,
+              guardianName TEXT, guardianPhone TEXT,
+              status TEXT DEFAULT 'active', notes TEXT,
+              enrolledAt TEXT DEFAULT (datetime('now')), updatedAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_sstu_cohort ON summer_students(cohortId);
+            CREATE INDEX idx_sstu_handle ON summer_students(handle);
+            CREATE INDEX idx_sstu_token ON summer_students(token);
+
+            CREATE TABLE attendance (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              cohortId TEXT, studentId TEXT, token TEXT,
+              date TEXT, checkInAt TEXT, method TEXT DEFAULT 'qr',
+              byId TEXT, device TEXT,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_attend_unique ON attendance(studentId, date);
+            CREATE INDEX idx_attend_cohort_date ON attendance(cohortId, date);
         ",
     ];
 

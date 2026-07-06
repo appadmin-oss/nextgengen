@@ -26,6 +26,7 @@ const PAGE_META = {
   join:       { title: "Apply · Summer 2026 · NGG",                   desc: "Four short steps. About six minutes. Pause and come back — we save as you go." },
   blog:       { title: "The Journal · NGG",                           desc: "Long-form writing from mentors, members and the editorial team." },
   contact:    { title: "Contact · NGG",                               desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
+  summerprofile: { title: "Summer student · NGG",                     desc: "A Summer School student's standard profile." },
   admin:      { title: "Admin · Control Room · NGG",                  desc: "" },
 };
 
@@ -136,6 +137,8 @@ function pageFromPath() {
   // /login and /signin are conventional entry points — resolve to home; the
   // auth provider opens the sign-in modal (or redirects signed-in users).
   if (seg === "login" || seg === "signin") return "home";
+  // Summer student profiles: /q/<qr-token> or /s/<handle>.
+  if (seg === "q" || seg === "s") return "summerprofile";
   return PAGE_IDS.includes(seg) ? seg : "_notfound";
 }
 function pathForPage(page) {
@@ -149,8 +152,8 @@ function App() {
   React.useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
     // Reflect the current page as a clean path so refresh + share work.
-    // Skip the 404 sentinel so a bad URL stays visible as-typed.
-    if (page !== "_notfound" && window.location.pathname !== pathForPage(page)) {
+    // Skip the 404 sentinel + deep-linked profile URLs so they stay as-typed.
+    if (page !== "_notfound" && page !== "summerprofile" && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.
@@ -205,6 +208,7 @@ function App() {
     join:      <JoinPage      setPage={setPage}/>,
     blog:      <BlogPage      setPage={setPage}/>,
     contact:   <ContactPage   setPage={setPage}/>,
+    summerprofile: <SummerProfilePage setPage={setPage}/>,
     admin:     <AdminPage     setPage={setPage}/>,
   };
 
