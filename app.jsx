@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","mentors","join","blog","contact","admin","coordinator"];
+const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","mentors","join","blog","contact","admin","summer-admin","club-admin"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
@@ -28,7 +28,8 @@ const PAGE_META = {
   contact:    { title: "Contact · NGG",                               desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
   summerprofile: { title: "Summer student · NGG",                     desc: "A Summer School student's standard profile." },
   admin:      { title: "Admin · Control Room · NGG",                  desc: "" },
-  coordinator:{ title: "Coordinator Portal · NGG",                    desc: "" },
+  "summer-admin": { title: "Summer School · Staff Portal · NGG",      desc: "" },
+  "club-admin":   { title: "NGG Club · Staff Portal · NGG",           desc: "" },
 };
 
 /* ---- 404 fallback — when a hash doesn't match any registered page ---- */
@@ -211,12 +212,13 @@ function App() {
     contact:   <ContactPage   setPage={setPage}/>,
     summerprofile: <SummerProfilePage setPage={setPage}/>,
     admin:     <AdminPage     setPage={setPage}/>,
-    coordinator: <CoordinatorPortal setPage={setPage}/>,
+    "summer-admin": <SummerAdminPortal setPage={setPage}/>,
+    "club-admin":   <ClubAdminPortal   setPage={setPage}/>,
   };
 
-  // The admin console and the coordinator portal use their own chrome —
+  // The admin console and the two staff portals use their own chrome —
   // no public topnav/footer.
-  if (page === "admin" || page === "coordinator") {
+  if (page === "admin" || page === "summer-admin" || page === "club-admin") {
     return (
       <div className="app-shell app-shell-admin">
         <SkipLink/>

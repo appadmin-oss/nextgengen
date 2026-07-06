@@ -40,16 +40,17 @@ function AdminPage({ setPage }) {
       </section>
     </div>;
   }
-  // Coordinator-only accounts (summer/club, no console caps) belong in the
-  // separate Coordinator portal, not the admin console.
+  // Coordinator-only accounts (summer/club, no console caps) belong in their
+  // own stand-alone portal, not the admin console.
   const hasConsole = ["content", "people", "inbox", "settings", "rbac"].some(c => hasCap(c));
-  const hasCoord = hasCap("summer") || hasCap("club");
-  if (!hasConsole && hasCoord) {
+  if (!hasConsole && (hasCap("summer") || hasCap("club"))) {
+    const dest = hasCap("summer") ? "summer-admin" : "club-admin";
+    const label = hasCap("summer") ? "Summer School" : "NGG Club";
     return <div className="page admin"><section style={{ padding: "140px 0", textAlign: "center" }}><div className="container">
       <div className="eyebrow">COORDINATOR</div>
       <h1 className="display" style={{ fontSize: "clamp(40px,7vw,84px)" }}>Your portal is over here.</h1>
-      <p style={{ marginTop: 18, color: "var(--ink-500)", maxWidth: 480, margin: "18px auto 0" }}>This account manages Summer School / the NGG Club — use the coordinator portal, not the admin console.</p>
-      <button className="btn btn-primary btn-lg mt-32" onClick={() => setPage("coordinator")}>Open coordinator portal →</button>
+      <p style={{ marginTop: 18, color: "var(--ink-500)", maxWidth: 480, margin: "18px auto 0" }}>This account manages {label} — use its portal, not the admin console.</p>
+      <button className="btn btn-primary btn-lg mt-32" onClick={() => setPage(dest)}>Open {label} portal →</button>
     </div></section></div>;
   }
   if (!adminOk) return <AdminTotpGate onPass={() => setAdminOk(true)} member={member}/>;
@@ -169,8 +170,11 @@ function AdminTopbar({ section, setSection, setPage, member }) {
       </div>
       <div className="admin-topbar-r">
         <span className="mono" style={{color:"rgba(255,255,255,0.6)"}}>{member.fullName} · {member.role}</span>
-        {Array.isArray(member.caps) && (member.caps.indexOf("summer") !== -1 || member.caps.indexOf("club") !== -1) && (
-          <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("coordinator")}>Coordinator ↗</button>
+        {Array.isArray(member.caps) && member.caps.indexOf("summer") !== -1 && (
+          <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("summer-admin")}>Summer ↗</button>
+        )}
+        {Array.isArray(member.caps) && member.caps.indexOf("club") !== -1 && (
+          <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("club-admin")}>NGG Club ↗</button>
         )}
         <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("home")}>View site →</button>
       </div>
@@ -2130,77 +2134,159 @@ function ClubRoster() {
 }
 
 // ============================================================================
-// Coordinator portal — a separate surface (NOT the admin console) for the
-// Summer School and NGG Club coordinators. Own chrome, own 2FA gate.
+// Stand-alone coordinator portals — the Summer School and NGG Club managers
+// are two SEPARATE surfaces, each with its own URL, its own branded login
+// screen and its own 2FA gate. A summer_admin can only enter the Summer
+// portal; a club_admin only the Club portal; a super_admin bridges both.
+// Config is shared server-side; each portal simply reads what it needs.
 // ============================================================================
 
-function CoordinatorPortal({ setPage }) {
-  const { member, adminOk, loading, openSignIn, setAdminOk, hasCap } = useAuth();
-  const canSummer = !!hasCap && hasCap("summer");
-  const canClub = !!hasCap && hasCap("club");
-  const isCoordinator = canSummer || canClub;
-  const sections = [];
-  if (canSummer) sections.push({ id: "summer", label: "Summer School", icon: "☀" });
-  if (canClub) sections.push({ id: "club", label: "NGG Club", icon: "◈" });
-  const [section, setSection] = React.useState(null);
-  const cur = section || (sections[0] && sections[0].id);
+// A portal's own login screen (deliberately NOT the shared member modal):
+// password first, with an emailed sign-in code as the fallback.
+function PortalLogin({ brand, onVerified }) {
+  const [stage, setStage] = React.useState("password"); // password | enter-id | enter-otp
+  const [identifier, setIdentifier] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [showPw, setShowPw] = React.useState(false);
+  const [otp, setOtp] = React.useState("");
+  const [masked, setMasked] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+
+  const loginPassword = async (e) => {
+    if (e) e.preventDefault();
+    setErr(""); setBusy(true);
+    try { const r = await NGGApi.auth.login(identifier.trim(), password); onVerified(r.member); }
+    catch (e) {
+      const code = e.code || e.message;
+      if (code === "no_password") { setErr("No password on this account yet — use a sign-in code, then set one from your profile."); setStage("enter-id"); }
+      else setErr(humanizeAuthError(code));
+    } finally { setBusy(false); }
+  };
+  const requestCode = async (e) => {
+    if (e) e.preventDefault();
+    setErr(""); setBusy(true);
+    try { const r = await NGGApi.auth.request(identifier.trim()); setMasked(r.masked || ""); setStage("enter-otp"); }
+    catch (e) { setErr(humanizeAuthError(e.code || e.message)); } finally { setBusy(false); }
+  };
+  const verifyOtp = async (e) => {
+    if (e) e.preventDefault();
+    setErr(""); setBusy(true);
+    try { const r = await NGGApi.auth.verify({ memberId: identifier.trim(), otp: otp.replace(/\s+/g, "") }); onVerified(r.member); }
+    catch (e) { setErr(humanizeAuthError(e.code || e.message)); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="page admin" data-portal={brand.key}>
+      <section className="admin-gate">
+        <div className="admin-gate-card portal-login-card">
+          <div className="portal-login-badge" aria-hidden="true">{brand.icon}</div>
+          <div className="eyebrow" style={{ color: "var(--gold-500)" }}>{brand.eyebrow}</div>
+          <h2 className="display admin-gate-h">{brand.label}</h2>
+          <p className="admin-gate-p">
+            {stage === "password" ? "Sign in with your staff email or ID and password."
+              : stage === "enter-id" ? "Enter the email or ID on your staff record — we'll email a 6-digit code."
+              : masked ? <>We sent a code to <b>{masked}</b>.</> : "Enter the 6-digit code from your email."}
+          </p>
+
+          {stage === "password" && (
+            <form onSubmit={loginPassword}>
+              <input className="signin-input" type="text" autoComplete="username" placeholder="you@email.com  or  NGG-2025-0042"
+                value={identifier} onChange={e => setIdentifier(e.target.value)} required minLength={3} autoFocus/>
+              <div style={{ position: "relative" }}>
+                <input className="signin-input" type={showPw ? "text" : "password"} autoComplete="current-password" placeholder="Password"
+                  value={password} onChange={e => setPassword(e.target.value)} required style={{ paddingRight: 64 }}/>
+                <button type="button" onClick={() => setShowPw(v => !v)} aria-label={showPw ? "Hide password" : "Show password"}
+                  style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink-500)", letterSpacing: "0.06em" }}>{showPw ? "HIDE" : "SHOW"}</button>
+              </div>
+              {err && <div className="signin-err">{err}</div>}
+              <button className="btn btn-primary btn-lg" type="submit" disabled={busy || !identifier.trim() || !password}>{busy ? "Signing in…" : "Sign in →"}</button>
+              <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-id"); }}>Email me a sign-in code instead</button>
+            </form>
+          )}
+          {stage === "enter-id" && (
+            <form onSubmit={requestCode}>
+              <input className="signin-input" type="text" autoComplete="username" placeholder="NGG-2025-0042  or  you@email.com"
+                value={identifier} onChange={e => setIdentifier(e.target.value)} required minLength={3} autoFocus/>
+              {err && <div className="signin-err">{err}</div>}
+              <button className="btn btn-primary btn-lg" type="submit" disabled={busy || !identifier.trim()}>{busy ? "Sending…" : "Send me a code →"}</button>
+              <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("password"); }}>← Back to password</button>
+            </form>
+          )}
+          {stage === "enter-otp" && (
+            <form onSubmit={verifyOtp}>
+              <input className="signin-input signin-otp" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={7}
+                pattern="[0-9 ]*" placeholder="••• •••" value={otp} onChange={e => setOtp(e.target.value.replace(/[^\d ]/g, ""))} required autoFocus/>
+              {err && <div className="signin-err">{err}</div>}
+              <button className="btn btn-primary btn-lg" type="submit" disabled={busy || otp.replace(/\s/g, "").length !== 6}>{busy ? "Verifying…" : "Sign in →"}</button>
+              <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-id"); setOtp(""); }}>← Back to send a code</button>
+            </form>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// Wraps a single portal section with its own login → cap-lock → 2FA → chrome.
+function PortalGate({ cap, brand, setPage, children }) {
+  const { member, adminOk, loading, setAdminOk, hasCap, onVerified, signOut } = useAuth();
 
   if (loading) return <div className="page admin"><div className="container" style={{ padding: "120px 0" }}><div className="dash-spinner"/></div></div>;
-  if (!member) {
-    return <div className="page admin"><section style={{ padding: "140px 0", textAlign: "center" }}><div className="container">
-      <div className="eyebrow">COORDINATOR PORTAL</div>
-      <h1 className="display" style={{ fontSize: "clamp(48px,8vw,96px)" }}>Sign in.</h1>
-      <p style={{ marginTop: 18, color: "var(--ink-500)" }}>This portal is for Summer School and NGG Club coordinators.</p>
-      <div style={{ marginTop: 32, display: "flex", gap: 12, justifyContent: "center" }}>
-        <button className="btn btn-primary" onClick={() => openSignIn()}>Sign in</button>
+  if (!member) return <PortalLogin brand={brand} onVerified={onVerified}/>;
+
+  // Signed in, but not to THIS portal. Each coordinator is locked to their own.
+  if (!hasCap(cap)) {
+    return <div className="page admin" data-portal={brand.key}><section className="admin-gate"><div className="admin-gate-card portal-login-card">
+      <div className="portal-login-badge" aria-hidden="true">{brand.icon}</div>
+      <div className="eyebrow" style={{ color: "var(--gold-500)" }}>{brand.eyebrow}</div>
+      <h2 className="display admin-gate-h">Wrong portal.</h2>
+      <p className="admin-gate-p">You're signed in as <b>{member.fullName}</b>, which doesn't have access to the {brand.label} portal. Sign in with the right staff account.</p>
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+        <button className="btn btn-primary" onClick={() => signOut()}>Sign in as someone else</button>
         <button className="btn btn-ghost" onClick={() => setPage("home")}>Back to site</button>
-      </div>
-    </div></section></div>;
-  }
-  if (!isCoordinator) {
-    return <div className="page admin"><section style={{ padding: "140px 0", textAlign: "center" }}><div className="container">
-      <div className="eyebrow">COORDINATOR PORTAL</div>
-      <h1 className="display" style={{ fontSize: "clamp(40px,7vw,84px)" }}>Not a coordinator.</h1>
-      <p style={{ marginTop: 18, color: "var(--ink-500)", maxWidth: 480, margin: "18px auto 0" }}>This account doesn't manage Summer School or the NGG Club. If you're staff, use the admin console.</p>
-      <div style={{ marginTop: 32, display: "flex", gap: 12, justifyContent: "center" }}>
-        <button className="btn btn-primary" onClick={() => setPage("admin")}>Admin console</button>
-        <button className="btn btn-ghost" onClick={() => setPage("dashboard")}>My dashboard</button>
       </div>
     </div></section></div>;
   }
   if (!adminOk) return <AdminTotpGate onPass={() => setAdminOk(true)} member={member}/>;
 
   return (
-    <div className="page admin coord-portal" data-screen-label="Coordinator">
+    <div className="page admin coord-portal" data-portal={brand.key} data-screen-label={brand.label}>
       <div className="admin-topbar">
         <div className="admin-topbar-l">
           <BrandLogo size={28}/>
           <div className="admin-topbar-title">
-            <div className="mono" style={{ fontSize: 10, color: "var(--gold-400)" }}>NGG · COORDINATOR PORTAL</div>
-            <div className="admin-topbar-section">{cur === "club" ? "NGG Club" : "Summer School"}</div>
+            <div className="mono" style={{ fontSize: 10, color: "var(--gold-400)" }}>{brand.eyebrow}</div>
+            <div className="admin-topbar-section">{brand.label}</div>
           </div>
         </div>
         <div className="admin-topbar-r">
           <span className="mono" style={{ color: "rgba(255,255,255,0.6)" }}>{member.fullName} · {member.role}</span>
-          <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("home")}>View site →</button>
+          {/* A super_admin can cross to the other portal; single-cap coordinators can't. */}
+          {cap === "summer" && hasCap("club") && <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("club-admin")}>NGG Club ↗</button>}
+          {cap === "club" && hasCap("summer") && <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("summer-admin")}>Summer ↗</button>}
+          <button className="btn btn-on-dark-ghost btn-sm" onClick={() => signOut()}>Sign out</button>
         </div>
       </div>
       <div className="admin-shell">
-        <aside className="admin-nav">
-          {sections.map(s => (
-            <button key={s.id} className={"admin-nav-item" + (cur === s.id ? " is-active" : "")} onClick={() => setSection(s.id)}>
-              <span className="admin-nav-icon" aria-hidden="true">{s.icon}</span>
-              <span className="admin-nav-label">{s.label}</span>
-            </button>
-          ))}
-        </aside>
-        <main className="admin-main">
-          {cur === "summer" && <AdminSummer/>}
-          {cur === "club" && <ClubManager/>}
-        </main>
+        <main className="admin-main" style={{ marginLeft: 0 }}>{children}</main>
       </div>
     </div>
   );
 }
 
-Object.assign(window, { AdminPage, CoordinatorPortal });
+function SummerAdminPortal({ setPage }) {
+  return <PortalGate cap="summer" setPage={setPage}
+    brand={{ key: "summer", label: "Summer School", eyebrow: "SUMMER SCHOOL · STAFF PORTAL", icon: "☀" }}>
+    <AdminSummer/>
+  </PortalGate>;
+}
+
+function ClubAdminPortal({ setPage }) {
+  return <PortalGate cap="club" setPage={setPage}
+    brand={{ key: "club", label: "NGG Club", eyebrow: "NGG CLUB · STAFF PORTAL", icon: "◈" }}>
+    <ClubManager/>
+  </PortalGate>;
+}
+
+Object.assign(window, { AdminPage, SummerAdminPortal, ClubAdminPortal });

@@ -1729,6 +1729,29 @@ html { scroll-behavior: smooth; }
   word-break: break-all;
 }
 
+/* Stand-alone coordinator portal logins (Summer School / NGG Club) */
+.portal-login-card { max-width: 420px; text-align: center; }
+.portal-login-card form { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; }
+.portal-login-card .signin-input { width: 100%; text-align: left; }
+.portal-login-card .signin-link {
+  background: none; border: none; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600;
+  color: var(--ink-500); padding: 4px; margin-top: 2px;
+}
+.portal-login-card .signin-link:hover { color: var(--navy-900); }
+.portal-login-badge {
+  width: 56px; height: 56px; margin: 0 auto 14px;
+  display: grid; place-items: center;
+  border-radius: 16px; font-size: 26px;
+  background: var(--navy-900); color: var(--gold-400);
+}
+/* Per-portal accent tint on the sign-in badge so the two front doors read
+   as distinct surfaces at a glance. */
+[data-portal="summer"] .portal-login-badge { background: #8a4b12; color: #ffd79a; }
+[data-portal="club"]   .portal-login-badge { background: #1f2a5e; color: #d0ff3a; }
+/* The portal chrome hides the empty admin side-nav rail. */
+.coord-portal .admin-shell { display: block; }
+
 /* ============================================================
    0. TOP NAV — refined nav-bar + mega menu
    Loaded after styles.css so its declarations win on conflict.

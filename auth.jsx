@@ -54,11 +54,14 @@ function AuthProvider({ children }) {
           // modal for guests, send signed-in members to their dashboard.
           if (BOOT_WANTS_LOGIN) {
             if (me.member) {
-              // Coordinator-only accounts land in their portal, not the dashboard.
+              // Coordinator-only accounts land in their own portal, not the
+              // dashboard. summer_admin → Summer portal, club_admin → Club.
               const caps = me.member.caps || [];
-              const coordOnly = (caps.indexOf("summer") !== -1 || caps.indexOf("club") !== -1)
-                && !["content", "people", "inbox", "settings", "rbac"].some(c => caps.indexOf(c) !== -1);
-              setTimeout(() => window.__navigate && window.__navigate(coordOnly ? "coordinator" : "dashboard"), 0);
+              const hasConsole = ["content", "people", "inbox", "settings", "rbac"].some(c => caps.indexOf(c) !== -1);
+              let dest = "dashboard";
+              if (!hasConsole && caps.indexOf("summer") !== -1) dest = "summer-admin";
+              else if (!hasConsole && caps.indexOf("club") !== -1) dest = "club-admin";
+              setTimeout(() => window.__navigate && window.__navigate(dest), 0);
             } else { setSigninOpen(true); }
           }
         }

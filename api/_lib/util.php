@@ -90,17 +90,23 @@ function push_notification(string $memberId, array $n): void {
 }
 
 /**
- * Staff roles, ascending. Each tier is a superset of the one below.
+ * Staff roles. The main console (editor/admin/super_admin) and the two
+ * stand-alone coordinator portals are deliberately separate surfaces:
  *   editor       — content only (posts, events, missions, Anchor Journal, …)
  *   admin        — content + people (members/mentors/applications) + inbox
- *   super_admin  — everything, plus site settings and role management (rbac)
+ *   super_admin  — everything: console + site settings, RBAC, AND both
+ *                  coordinator portals (the only role that bridges all three)
+ *   summer_admin — Summer School staff portal ONLY (locked out of console/club)
+ *   club_admin   — NGG Club staff portal ONLY (locked out of console/summer)
+ * summer_admin/club_admin hold a single portal cap so they can't cross over;
+ * super_admin holds every cap and can enter any portal for oversight.
  */
 function admin_role_caps($role): array {
     switch (strtolower((string)($role ?? ''))) {
         case 'super_admin':  return ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club'];
-        case 'admin':        return ['content', 'people', 'inbox', 'club'];
-        case 'club_admin':   return ['content', 'people', 'inbox', 'club'];   // NGG Club coordinator
-        case 'summer_admin': return ['summer'];                                // Summer School coordinator
+        case 'admin':        return ['content', 'people', 'inbox'];
+        case 'summer_admin': return ['summer'];   // Summer School portal only
+        case 'club_admin':   return ['club'];      // NGG Club portal only
         case 'editor':       return ['content'];
         default:             return [];
     }
