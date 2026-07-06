@@ -41,21 +41,17 @@ function Hero({ setPage }) {
       <div className="hero-grid" />
       {/* Background hero image with deep gradient */}
       <div style={{position:"absolute", inset:0, zIndex:-1}}>
-        <img src={scene("heroMain", 2000)} alt="" style={{width:"100%", height:"100%", objectFit:"cover", opacity:0.42}}/>
-        <div style={{position:"absolute", inset:0, background:"linear-gradient(105deg, rgba(12,20,50,0.92) 0%, rgba(12,20,50,0.78) 45%, rgba(12,20,50,0.55) 75%, rgba(12,20,50,0.85) 100%)"}}/>
+        <img src={scene("heroMain", 2000)} alt="" style={{width:"100%", height:"100%", objectFit:"cover", opacity:0.4}}/>
+        <div style={{position:"absolute", inset:0, background:"rgba(12,20,50,0.82)"}}/>
       </div>
 
       <div className="container" style={{padding:"112px 28px 96px"}}>
         <div style={{display:"grid", gridTemplateColumns:"1.45fr 1fr", gap:64, alignItems:"center", minHeight:560}}>
           <div>
-            <div data-reveal className="reveal" style={{display:"flex", alignItems:"center", gap:10, marginBottom:32, flexWrap:"wrap"}}>
+            <div data-reveal className="reveal" style={{display:"inline-flex", alignItems:"center", gap:10, marginBottom:30, flexWrap:"wrap", padding:"8px 16px", background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.16)", borderRadius:999}}>
               <span className="live-dot"/>
-              <span className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.78)"}}>
+              <span className="mono" style={{fontSize:11, letterSpacing:"0.16em", textTransform:"uppercase", color:"rgba(255,255,255,0.9)"}}>
                 {badge}
-              </span>
-              <span style={{opacity:0.4, color:"white"}}>·</span>
-              <span className="mono" style={{fontSize:11, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.66)"}}>
-                02 centres · Alimosho
               </span>
             </div>
             <h1 className="display" style={{fontSize:"clamp(52px, 6.4vw, 108px)", margin:0, color:"white", lineHeight:0.94}}>
@@ -79,20 +75,35 @@ function Hero({ setPage }) {
                 Explore Anchor 12
               </button>
             </div>
-            <div style={{display:"flex", gap:36, marginTop:56, color:"rgba(255,255,255,0.7)", fontSize:13, alignItems:"center"}}>
-              {/* Avatar cluster */}
-              <div style={{display:"flex"}}>
-                {[1,2,3,4,5].map(i => (
-                  <div key={i} style={{marginLeft: i === 1 ? 0 : -10, border:"2px solid var(--navy-900)", borderRadius:"50%"}}>
-                    <Avatar seed={i+8} size={36}/>
+            <div style={{display:"flex", gap:24, marginTop:52, color:"rgba(255,255,255,0.7)", fontSize:13, alignItems:"center", flexWrap:"wrap"}}>
+              {/* Avatar cluster + social proof */}
+              <div style={{display:"flex", alignItems:"center", gap:14}}>
+                <div style={{display:"flex"}}>
+                  {[1,2,3,4,5].map(i => (
+                    <div key={i} style={{marginLeft: i === 1 ? 0 : -10, border:"2px solid var(--navy-900)", borderRadius:"50%"}}>
+                      <Avatar seed={i+8} size={36}/>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div style={{color:"white", fontWeight:600, fontSize:14}}>{memberCount} teen creators in motion</div>
+                  <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.66)", marginTop:2}}>
+                    {stats ? "UPDATED LIVE" : "TWO CENTRES"} · Alimosho, Lagos
+                  </div>
+                </div>
+              </div>
+              {/* Live KPI strip — data-forward proof, pulled from /public/stats */}
+              <div style={{display:"flex", gap:28, paddingLeft:24, borderLeft:"1px solid rgba(255,255,255,0.16)"}}>
+                {[
+                  [stats ? (stats.missionsVerified || 0).toLocaleString() : "1,200+", "Missions verified"],
+                  [stats ? (stats.graduates || 0).toLocaleString() : "60+", "Graduates"],
+                  [stats && stats.centres ? String(stats.centres).padStart(2, "0") : "02", "Centres"],
+                ].map(([n, l], i) => (
+                  <div key={i}>
+                    <div style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:26, color:"white", lineHeight:1}}>{n}</div>
+                    <div className="mono" style={{fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color:"rgba(255,255,255,0.6)", marginTop:5}}>{l}</div>
                   </div>
                 ))}
-              </div>
-              <div>
-                <div style={{color:"white", fontWeight:600, fontSize:14}}>{memberCount} teen creators in motion</div>
-                <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.66)", marginTop:2}}>
-                  {stats ? "UPDATED LIVE" : "TWO CENTRES"} · Alimosho, Lagos
-                </div>
               </div>
             </div>
           </div>

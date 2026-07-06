@@ -685,10 +685,29 @@ function fmtShortDate(d) { if (!d) return ""; const x = new Date(d); return isNa
 
 // ----------------------------------------------------------------------------
 
+// Character ranks — shared identity with the Anchor Journal.
+const DASH_RANKS = [
+  { name: "Seedling", at: 0 }, { name: "Sprout", at: 250 }, { name: "Sapling", at: 750 },
+  { name: "Rooted", at: 1500 }, { name: "Vanguard", at: 3000 },
+];
+function dashRank(xp) {
+  let cur = DASH_RANKS[0], next = null;
+  for (let i = 0; i < DASH_RANKS.length; i++) {
+    if (xp >= DASH_RANKS[i].at) cur = DASH_RANKS[i];
+    else { next = DASH_RANKS[i]; break; }
+  }
+  const pct = next ? Math.min(100, Math.round((xp - cur.at) / (next.at - cur.at) * 100)) : 100;
+  return { cur, next, pct };
+}
+
 function DashboardStats({ stats, xpToNext, xpPct }) {
+  const rank = dashRank(stats.xp || 0);
   return (
     <div className="dash-card dash-stats">
-      <div className="dash-card-head"><h3 className="dash-card-h-sm">Your tally.</h3></div>
+      <div className="dash-card-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 className="dash-card-h-sm">Your tally.</h3>
+        <span className="chip chip-gold" title="Character rank">{rank.cur.name}</span>
+      </div>
       <div className="dash-stats-grid">
         <div className="dash-stat">
           <div className="mono dash-stat-l">LEVEL</div>
@@ -708,11 +727,11 @@ function DashboardStats({ stats, xpToNext, xpPct }) {
         </div>
       </div>
       <div className="dash-xp-bar">
-        <div className="dash-xp-fill" style={{width: xpPct + "%"}}/>
+        <div className="dash-xp-fill" style={{width: (rank.next ? rank.pct : 100) + "%"}}/>
       </div>
       <div className="dash-xp-meta">
-        <span>{stats.xp} / {xpToNext} XP</span>
-        <span>→ Lv {stats.level + 1}</span>
+        <span>{(stats.xp || 0).toLocaleString()} XP</span>
+        <span>{rank.next ? "→ " + rank.next.name + " at " + rank.next.at.toLocaleString() : "Top rank reached ★"}</span>
       </div>
     </div>
   );

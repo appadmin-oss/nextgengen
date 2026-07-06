@@ -27,7 +27,22 @@
   .aj-boot img { width: 60px; height: 60px; border-radius: 16px; animation: ajb 1.6s ease-in-out infinite; }
   @keyframes ajb { 0%,100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.08); opacity: 1; } }
   .aj-boot.gone { opacity: 0; pointer-events: none; }
+  /* Carry global accessibility prefs into the journal PWA. */
+  body { zoom: var(--a11y-zoom, 1); }
+  :root[data-motion="reduce"] *, :root[data-motion="reduce"] ::before, :root[data-motion="reduce"] ::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important;
+  }
+  :root[data-motion="reduce"] .aj-blob, :root[data-motion="reduce"] .aj-bg { animation: none !important; }
 </style>
+<script>
+  /* Apply saved accessibility preferences before first paint. */
+  try {
+    var a = JSON.parse(localStorage.getItem("ngg.a11y") || "{}"), r = document.documentElement;
+    r.style.setProperty("--a11y-zoom", ((a.scale || 100) / 100).toString());
+    r.setAttribute("data-motion", a.motion ? "reduce" : "auto");
+    r.setAttribute("data-contrast", a.contrast ? "high" : "normal");
+  } catch (e) {}
+</script>
 </head>
 <body>
 <div class="aj-boot" id="aj-boot"><img src="/assets/logo.png" alt="Loading Anchor Journal"/></div>
