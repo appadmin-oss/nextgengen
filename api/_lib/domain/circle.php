@@ -106,11 +106,29 @@ function circle_student_stats(string $memberId): array {
     $reflections = (int)(db_row("SELECT COUNT(DISTINCT substr(createdAt,1,10)) c FROM journal WHERE memberId = ? AND substr(createdAt,1,10) >= ? AND substr(createdAt,1,10) < ?", [$memberId, $mon, $end])['c'] ?? 0);
     // Conduct = share of the 7-day week confirmed by ANY guardian.
     $confirmed = (int)(db_row("SELECT COUNT(DISTINCT date) c FROM circle_confirmations WHERE memberId = ? AND date >= ? AND date < ?", [$memberId, $mon, $end])['c'] ?? 0);
+    // Behavioural read (from the shared momentum engine) so the guardian sees the
+    // same at-risk signal the member does — enabling a timely, gentle intervention.
+    $m = momentum_signals($memberId);
+    $atRisk = $m['streak'] === 0 || $m['consistency'] < 40 || $m['trend'] === 'dipping';
     return [
         'avgSystems' => $ws['avgSystems'], 'weekBars' => $ws['bars'],
-        'reflections' => $reflections, 'streak' => circle_streak($memberId),
+        'reflections' => $reflections, 'streak' => $m['streak'],
         'conduct' => (int)round($confirmed / 7 * 100),
+        'consistency' => $m['consistency'], 'trend' => $m['trend'],
+        'longestStreak' => $m['longestStreak'], 'atRisk' => $atRisk,
     ];
+}
+
+/** A short, role-aware, non-judgmental action the guardian can take now. */
+function circle_suggestion(string $role, array $stats): string {
+    if (!($stats['atRisk'] ?? false)) {
+        return "They're consistent right now — a specific word of praise reinforces it.";
+    }
+    switch ($role) {
+        case 'teacher': return "Attendance to reflection is slipping. A quiet word of encouragement in class can restart it.";
+        case 'mentor':  return "Momentum is dipping — a short check-in call this week can help them begin again.";
+        default:        return "Reflection has slowed. Ask warmly about their study time today, without pressure.";
+    }
 }
 
 // ── Member (student) side ────────────────────────────────────────────────────
@@ -187,7 +205,8 @@ function circle_dashboard(array $p): array {
     $stats = circle_student_stats($mid);
     $mine = db_all("SELECT date FROM circle_confirmations WHERE linkId = ? ORDER BY date DESC LIMIT 60", [$lid]);
     return ['ok' => true, 'role' => $ctx['role'], 'student' => ['name' => $m['fullName']],
-        'stats' => $stats, 'confirmed' => array_map(fn($r) => $r['date'], $mine),
+        'stats' => $stats, 'suggestion' => circle_suggestion($ctx['role'], $stats),
+        'confirmed' => array_map(fn($r) => $r['date'], $mine),
         'weekStart' => circle_monday()];
 }
 
@@ -222,5 +241,5 @@ function circle_report(array $p): array {
     $m = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [$ctx['mid']]);
     $stats = circle_student_stats($ctx['mid']);
     $remarks = db_all("SELECT role, text, createdAt FROM circle_remarks WHERE memberId = ? ORDER BY id DESC LIMIT 10", [$ctx['mid']]);
-    return ['ok' => true, 'report' => ['student' => $m['fullName'] ?? '', 'weekStart' => circle_monday(), 'stats' => $stats, 'remarks' => $remarks, 'role' => $ctx['role']]];
+    return ['ok' => true, 'report' => ['student' => $m['fullName'] ?? '', 'weekStart' => circle_monday(), 'stats' => $stats, 'suggestion' => circle_suggestion($ctx['role'], $stats), 'remarks' => $remarks, 'role' => $ctx['role']]];
 }

@@ -34,7 +34,7 @@ require $ROOT . '/_lib/util.php';
 require $ROOT . '/_lib/mailer.php';
 require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
@@ -357,9 +357,27 @@ chk('guardian remark is stored + visible to the student', (function () use ($cto
     return false;
 })());
 chk('report carries stats + remarks', !empty(backend_dispatch('circle.report', ['token' => $ctok])['report']['stats']));
+chk('dashboard carries behavioral intelligence (trend/at-risk/suggestion)', (function () use ($ctok) {
+    $d = backend_dispatch('circle.dashboard', ['token' => $ctok]);
+    return isset($d['stats']['trend'], $d['stats']['atRisk']) && strlen((string)($d['suggestion'] ?? '')) > 5;
+})());
 $rl = backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['links'][0]['linkId'];
 chk('student can revoke a link', !empty(backend_dispatch('member.circle.revoke', ['requesterId' => 'NGG-2025-0001', 'linkId' => $rl])['ok']));
 chk('revoked token no longer works', backend_dispatch('circle.dashboard', ['token' => $ctok])['error'] === 'link_invalid');
+
+// ── Behavioral Momentum engine + nudges (isolated fresh member) ──
+db_insert('members', ['memberId' => 'NGG-2025-0800', 'fullName' => 'Momo Test', 'email' => 'momo@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('journal', ['entryId' => 'JM-1', 'memberId' => 'NGG-2025-0800', 'week' => 1, 'mood' => 'good', 'body' => 'x', 'createdAt' => gmdate('Y-m-d\TH:i:s', time() - 86400)]);
+db_insert('journal', ['entryId' => 'JM-2', 'memberId' => 'NGG-2025-0800', 'week' => 1, 'mood' => 'good', 'body' => 'x', 'createdAt' => gmdate('Y-m-d\TH:i:s', time() - 2 * 86400)]);
+$mo = backend_dispatch('member.momentum', ['requesterId' => 'NGG-2025-0800'])['momentum'];
+chk('momentum computes a 2-day streak from entries', $mo['streak'] === 2 && $mo['reflectedToday'] === false);
+chk('momentum returns level + progression fields', $mo['level'] >= 1 && $mo['levelName'] !== '' && isset($mo['xpToNext']));
+chk('momentum longest-streak ≥ current', $mo['longestStreak'] >= $mo['streak']);
+chk('momentum fires a loss-aversion nudge for the live streak', (function () use ($mo) {
+    foreach ($mo['nudges'] as $x) if ($x['type'] === 'loss_aversion') return true;
+    return false;
+})());
+chk('momentum gated to a real member', backend_dispatch('member.momentum', ['requesterId' => 'NOPE'])['error'] === 'member_gone');
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
