@@ -29,9 +29,9 @@ function AdminPage({ setPage }) {
     return <div className="page admin">
       <section style={{padding: "140px 0", textAlign: "center"}}>
         <div className="container">
-          <div className="eyebrow">ADMIN · STAFF ONLY</div>
+          <div className="eyebrow">CONTROL ROOM · STAFF ONLY</div>
           <h1 className="display" style={{fontSize: "clamp(48px, 8vw, 96px)"}}>Restricted.</h1>
-          <p style={{marginTop:18, color:"var(--ink-500)", maxWidth:520, margin:"18px auto 0"}}>This area is for NGG staff. Sign in with an admin account, or go back to the public site.</p>
+          <p style={{marginTop:18, color:"var(--ink-500)", maxWidth:520, margin:"18px auto 0"}}>This is the NGG staff Control Room. Sign in with a staff account, or head back to the public site.</p>
           <div style={{marginTop:32, display:"flex", gap:12, justifyContent:"center"}}>
             <button className="btn btn-primary" onClick={() => openSignIn()}>Sign in</button>
             <button className="btn btn-ghost" onClick={() => setPage("home")}>Back to site</button>
@@ -586,7 +586,7 @@ function AdminMentorship() {
     catch (e) { toast.error(e.code || e.message); }
   };
 
-  if (err) return <div className="admin-empty">Couldn't load: {err}</div>;
+  if (err) return <ErrorState title="Couldn't load" code={err} onRetry={load}/>;
   if (!ov || !roster) return <div className="admin-section"><div className="dash-spinner"/></div>;
   const av = ov.afrovanguard || {};
   const unassigned = roster.unassigned || [];
@@ -730,9 +730,9 @@ function AdminSummer() {
   const [tab, setTab] = React.useState("overview");
   const [ov, setOv] = React.useState(null);
   const [err, setErr] = React.useState("");
-  const load = () => NGGApi.admin.summer.overview().then(setOv).catch(e => setErr(e.code || e.message));
+  const load = () => { setErr(""); NGGApi.admin.summer.overview().then(setOv).catch(e => setErr(e.code || e.message)); };
   React.useEffect(() => { load(); }, []);
-  if (err) return <div className="admin-empty">Couldn't load: {err}</div>;
+  if (err) return <div className="admin-section"><ErrorState title="Couldn't load Summer School" code={err} onRetry={load}/></div>;
   if (!ov) return <div className="admin-section"><div className="dash-spinner"/></div>;
   const o = ov.overview, cohort = o.cohort || {};
 
@@ -1317,7 +1317,7 @@ function AdminAudit() {
           <span>Staff actions only</span>
         </label>
       </div>
-      {err ? <div className="admin-empty">Couldn't load: {err}</div> :
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         rows === null ? <div className="dash-spinner"/> :
         rows.length === 0 ? <div className="admin-empty">No matching activity.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
@@ -1895,7 +1895,7 @@ function AdminApplications() {
         <select className="admin-select" value={filter.kind} onChange={e => setFilter(f => ({ ...f, kind: e.target.value }))}><option value="">All kinds</option><option value="teen">Teen</option><option value="mentor">Mentor</option></select>
         <select className="admin-select" value={filter.status} onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}><option value="">All statuses</option><option value="new">New</option><option value="reviewing">Reviewing</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="waitlist">Waitlist</option></select>
       </div>
-      {err ? <div className="admin-empty">Couldn't load: {err}</div> :
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         list === null ? <div className="dash-spinner"/> :
         list.length === 0 ? <div className="admin-empty">No applications.</div> :
         <div className="admin-app-list">
@@ -1933,14 +1933,15 @@ function AdminApplications() {
 function AdminNewsletter() {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
-  React.useEffect(() => { NGGApi.admin.newsletter().then(setD).catch(e => setErr(e.code || e.message)); }, []);
+  const load = () => { setErr(""); NGGApi.admin.newsletter().then(setD).catch(e => setErr(e.code || e.message)); };
+  React.useEffect(() => { load(); }, []);
   return (
     <div className="admin-section">
       <div className="admin-section-head">
         <h2 className="admin-h2">Newsletter {d ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {d.total}</span> : null}</h2>
         <button className="btn btn-ghost btn-sm" disabled={!d || !d.subscribers.length} onClick={() => downloadCsv("newsletter", d.subscribers)}>Export CSV</button>
       </div>
-      {err ? <div className="admin-empty">Couldn't load: {err}</div> :
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         !d ? <div className="dash-spinner"/> :
         d.subscribers.length === 0 ? <div className="admin-empty">No subscribers yet.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
@@ -1974,7 +1975,7 @@ function AdminContact() {
         <select className="admin-select" value={filter.status} onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}><option value="">All statuses</option><option value="new">New</option><option value="read">Read</option><option value="replied">Replied</option><option value="archived">Archived</option></select>
         <select className="admin-select" value={filter.purpose} onChange={e => setFilter(f => ({ ...f, purpose: e.target.value }))}><option value="">All topics</option><option value="general">General</option><option value="apply">Admissions</option><option value="mentor">Mentoring</option><option value="partner">Partnership</option><option value="media">Media</option><option value="support">Support</option></select>
       </div>
-      {err ? <div className="admin-empty">Couldn't load: {err}</div> :
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         msgs === null ? <div className="dash-spinner"/> :
         msgs.length === 0 ? <div className="admin-empty">No messages.</div> :
         <div className="admin-app-list">
@@ -2269,7 +2270,7 @@ function SummerAttendance() {
     try { const r = await NGGApi.admin.summer.archive("", compress); toast.success("Archived " + r.students + " students" + (r.compressed ? " · " + r.purged + " check-ins compressed" : "")); load(); }
     catch (e) { toast.error(e.code || e.message); }
   };
-  if (err) return <div className="admin-empty">Couldn't load: {err}</div>;
+  if (err) return <ErrorState title="Couldn't load" code={err} onRetry={load}/>;
   if (!a) return <div className="dash-spinner"/>;
   const maxDay = Math.max(1, ...a.days.map(d => d.present));
   return (

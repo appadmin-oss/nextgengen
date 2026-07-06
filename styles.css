@@ -1745,3 +1745,29 @@ img { background-color: rgba(12,20,50,0.04); }
   .topnav { border-bottom-width: 0.5px; }
 }
 
+
+/* ===== Shared state UI: offline banner, error/empty states ===== */
+.offline-banner {
+  position: sticky; top: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 8px 16px; font-size: 13px; font-weight: 600;
+  background: #2a1a05; color: #ffd79a; border-bottom: 1px solid rgba(255,206,84,0.3);
+}
+.offline-dot { width: 8px; height: 8px; border-radius: 50%; background: #ffce54; box-shadow: 0 0 0 0 rgba(255,206,84,0.6); animation: offlinePulse 1.8s ease-in-out infinite; }
+@keyframes offlinePulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,206,84,0.5); } 50% { box-shadow: 0 0 0 6px rgba(255,206,84,0); } }
+
+.state-block {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 10px; padding: 44px 24px; max-width: 460px; margin: 12px auto;
+}
+.state-ic {
+  width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center;
+  font-size: 26px; font-weight: 800; font-family: var(--font-mono, monospace);
+}
+.state-ic-error { background: rgba(208,102,60,0.14); color: #c0552e; }
+.state-ic-empty { background: rgba(12,20,50,0.06); color: var(--ink-400, #7a839c); }
+.state-h { font-size: 18px; font-weight: 700; margin: 4px 0 0; }
+.state-p { font-size: 14px; line-height: 1.5; color: var(--ink-500, #6b7385); margin: 0; max-width: 380px; }
+.state-retry, .state-action { margin-top: 6px; }
+/* On the dark journal/portal surfaces, soften the copy colour. */
+.aj-app .state-p, .app-shell-admin .coord-portal .state-p { color: rgba(255,255,255,0.7); }
