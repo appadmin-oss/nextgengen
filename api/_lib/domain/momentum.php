@@ -143,3 +143,42 @@ function member_momentum(array $p): array {
     $s['nudges'] = momentum_nudges($s);
     return ['ok' => true, 'momentum' => $s];
 }
+
+// ── AI Reflection Coach ──────────────────────────────────────────────────────
+// Socratic, warm, and hard-refuses schoolwork. Runs on the ai.php layer when a
+// key is configured; otherwise returns a rotating reflective prompt so the
+// feature works (safely) with no AI at all. Stateless — the client sends the
+// transcript; nothing is stored (coach chats are private).
+const COACH_SYSTEM = "You are the Anchor Reflection Coach for a teenager aged 17 or under in a character-formation program. Your ONLY job is to help them reflect on their own feelings, discipline, habits and growth through short, warm, Socratic follow-up questions. STRICT RULES: (1) NEVER answer academic or homework questions, never solve problems, write essays, define terms for schoolwork, or do anything that could help them cheat or skip learning. If asked, gently refuse and redirect to reflection, e.g. \"I can't do your schoolwork — but I can help you think about how you're facing it. What's making it feel hard?\". (2) Ask ONE thoughtful question at a time. (3) Be encouraging, never judgmental, always age-appropriate and safe. (4) Keep every reply under 45 words.";
+
+function coach_fallback(array $turns): string {
+    $prompts = [
+        "What made you feel that way today?",
+        "That's honest. What would 'doing better' actually look like tomorrow?",
+        "I can't help with schoolwork — but tell me, what part of it feels hardest right now?",
+        "What's one small thing you controlled well today?",
+        "When did you feel most like yourself today?",
+        "What would the person you're becoming do next?",
+    ];
+    return $prompts[count($turns) % count($prompts)];
+}
+
+function member_coach(array $p): array {
+    $mid = (string)($p['requesterId'] ?? '');
+    if (!db_row('SELECT id FROM members WHERE memberId = ?', [$mid])) return ['ok' => false, 'error' => 'member_gone'];
+    $turns = is_array($p['messages'] ?? null) ? $p['messages'] : [];
+    $clean = [];
+    foreach (array_slice($turns, -10) as $t) {
+        $role = (($t['role'] ?? '') === 'coach') ? 'coach' : 'me';
+        $text = trim((string)($t['text'] ?? ''));
+        if ($text === '') continue;
+        $clean[] = ['role' => $role, 'text' => substr($text, 0, 800)];
+    }
+    if (!$clean) return ['ok' => false, 'error' => 'empty'];
+
+    if (ai_enabled()) {
+        $r = ai_chat(COACH_SYSTEM, $clean, 220);
+        if (!empty($r['ok'])) return ['ok' => true, 'reply' => $r['text'], 'source' => 'ai', 'provider' => $r['provider']];
+    }
+    return ['ok' => true, 'reply' => coach_fallback($clean), 'source' => 'fallback', 'aiConfigured' => ai_enabled()];
+}

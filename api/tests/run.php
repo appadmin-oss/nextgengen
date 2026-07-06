@@ -379,5 +379,11 @@ chk('momentum fires a loss-aversion nudge for the live streak', (function () use
 })());
 chk('momentum gated to a real member', backend_dispatch('member.momentum', ['requesterId' => 'NOPE'])['error'] === 'member_gone');
 
+// AI Reflection Coach — fallback path (no AI key configured in tests).
+$co = backend_dispatch('member.coach', ['requesterId' => 'NGG-2025-0800', 'messages' => [['role' => 'me', 'text' => 'I felt distracted today.']]]);
+chk('coach returns a reflective reply (fallback)', !empty($co['ok']) && $co['source'] === 'fallback' && strlen($co['reply']) > 5 && $co['aiConfigured'] === false);
+chk('coach rejects an empty transcript', backend_dispatch('member.coach', ['requesterId' => 'NGG-2025-0800', 'messages' => []])['error'] === 'empty');
+chk('coach gated to a real member', backend_dispatch('member.coach', ['requesterId' => 'NOPE', 'messages' => [['role' => 'me', 'text' => 'hi']]])['error'] === 'member_gone');
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
