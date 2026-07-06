@@ -287,7 +287,7 @@ function NavAuthSlot({ setPage }) {
           <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("book"); }}>The Anchor book</button>
           {isAdmin && (
             <button className="nav-auth-menu-item nav-auth-menu-admin" onClick={() => { setMenuOpen(false); setPage("admin"); }}>
-              <span>⚙</span> Admin console
+              <span>⚙</span> Control Room
             </button>
           )}
           <div className="nav-auth-menu-divider"/>
@@ -820,6 +820,7 @@ function Footer({ setPage }) {
               <button className="legal" onClick={go("parents")}>Safeguarding</button>
               <button className="legal" onClick={go("contact")}>Contact</button>
               <button className="legal" onClick={go("parents")}>Press kit</button>
+              <button className="legal" onClick={go("admin")}>Staff</button>
             </div>
             <span className="made">
               Made with <span className="heart" aria-hidden="true">♥</span> in Lagos
@@ -828,6 +829,62 @@ function Footer({ setPage }) {
         </div>
       </footer>
     </React.Fragment>
+  );
+}
+
+/* ---- Shared state UI: offline / error / empty ---- */
+function humanizeError(message, code) {
+  const c = String(code || message || "");
+  const map = {
+    forbidden: "You don't have permission to view this.",
+    unauthorized: "Please sign in to continue.",
+    admin_2fa_required: "This area needs a 2FA code.",
+    not_found: "We couldn't find that.",
+    rate_limited: "Too many requests — wait a moment and try again.",
+    member_gone: "That account no longer exists.",
+    http_0: "Network trouble — check your connection.",
+    http_500: "The server hit an error. Please try again shortly.",
+    http_503: "The service is busy. Please try again shortly.",
+  };
+  if (map[c]) return map[c];
+  if (/network|fetch|Failed to fetch|offline/i.test(c)) return "Network trouble — check your connection and try again.";
+  return "Something went wrong. Please try again — if it persists, contact support.";
+}
+
+function OfflineBanner() {
+  const [off, setOff] = React.useState(typeof navigator !== "undefined" && navigator.onLine === false);
+  React.useEffect(() => {
+    const up = () => setOff(false), down = () => setOff(true);
+    window.addEventListener("online", up); window.addEventListener("offline", down);
+    return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); };
+  }, []);
+  if (!off) return null;
+  return (
+    <div className="offline-banner" role="status" aria-live="polite">
+      <span className="offline-dot" aria-hidden="true"/> You're offline — showing the latest saved view. Changes sync when you reconnect.
+    </div>
+  );
+}
+
+function ErrorState({ title, message, code, onRetry }) {
+  return (
+    <div className="state-block state-error" role="alert">
+      <div className="state-ic state-ic-error" aria-hidden="true">!</div>
+      <h3 className="state-h">{title || "Something went wrong"}</h3>
+      <p className="state-p">{humanizeError(message, code)}</p>
+      {onRetry && <button className="btn btn-ghost btn-sm state-retry" onClick={onRetry}>Try again</button>}
+    </div>
+  );
+}
+
+function EmptyState({ icon, title, message, action }) {
+  return (
+    <div className="state-block state-empty">
+      <div className="state-ic state-ic-empty" aria-hidden="true">{icon || "◍"}</div>
+      <h3 className="state-h">{title || "Nothing here yet"}</h3>
+      {message && <p className="state-p">{message}</p>}
+      {action && <div className="state-action">{action}</div>}
+    </div>
   );
 }
 

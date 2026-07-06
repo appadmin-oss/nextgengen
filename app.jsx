@@ -27,7 +27,7 @@ const PAGE_META = {
   blog:       { title: "The Journal · NGG",                           desc: "Long-form writing from mentors, members and the editorial team." },
   contact:    { title: "Contact · NGG",                               desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
   summerprofile: { title: "Summer student · NGG",                     desc: "A Summer School student's standard profile." },
-  admin:      { title: "Admin · Control Room · NGG",                  desc: "" },
+  admin:      { title: "Control Room · NGG",                          desc: "" },
   "summer-admin": { title: "Summer School · Staff Portal · NGG",      desc: "" },
   "club-admin":   { title: "NGG Club · Staff Portal · NGG",           desc: "" },
 };
@@ -141,9 +141,12 @@ function pageFromPath() {
   if (seg === "login" || seg === "signin") return "home";
   // Summer student profiles: /q/<qr-token> or /s/<handle>.
   if (seg === "q" || seg === "s") return "summerprofile";
+  // The staff Control Room lives at /hq; /admin is kept as a legacy alias.
+  if (seg === "hq" || seg === "admin") return "admin";
   return PAGE_IDS.includes(seg) ? seg : "_notfound";
 }
 function pathForPage(page) {
+  if (page === "admin") return "/hq";
   return page === "home" ? "/" : "/" + page;
 }
 
@@ -222,6 +225,7 @@ function App() {
     return (
       <div className="app-shell app-shell-admin">
         <SkipLink/>
+        <OfflineBanner/>
         {pages[page]}
         <ToastHost/>
         <DialogHost/>
@@ -235,6 +239,7 @@ function App() {
   return (
     <div className="app-shell">
       <SkipLink/>
+      <OfflineBanner/>
       <ScrollProgress/>
       <TopNav page={page} setPage={setPage}/>
       <div id="ngg-route-live" aria-live="polite" aria-atomic="true" className="sr-only"/>
