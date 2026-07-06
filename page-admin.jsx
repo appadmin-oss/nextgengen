@@ -7,7 +7,6 @@
 // Which capability each admin section needs (null = any staff).
 const SECTION_CAP = {
   home: null, members: "people", applications: "people", mentors: "people", mentorship: "people",
-  summer: "summer",
   sessions: "content", missions: "content", anchor: "content", assignments: "content",
   events: "content", posts: "content", broadcast: "content",
   newsletter: "inbox", messages: "inbox", audit: "rbac", settings: "settings",
@@ -41,6 +40,18 @@ function AdminPage({ setPage }) {
       </section>
     </div>;
   }
+  // Coordinator-only accounts (summer/club, no console caps) belong in the
+  // separate Coordinator portal, not the admin console.
+  const hasConsole = ["content", "people", "inbox", "settings", "rbac"].some(c => hasCap(c));
+  const hasCoord = hasCap("summer") || hasCap("club");
+  if (!hasConsole && hasCoord) {
+    return <div className="page admin"><section style={{ padding: "140px 0", textAlign: "center" }}><div className="container">
+      <div className="eyebrow">COORDINATOR</div>
+      <h1 className="display" style={{ fontSize: "clamp(40px,7vw,84px)" }}>Your portal is over here.</h1>
+      <p style={{ marginTop: 18, color: "var(--ink-500)", maxWidth: 480, margin: "18px auto 0" }}>This account manages Summer School / the NGG Club — use the coordinator portal, not the admin console.</p>
+      <button className="btn btn-primary btn-lg mt-32" onClick={() => setPage("coordinator")}>Open coordinator portal →</button>
+    </div></section></div>;
+  }
   if (!adminOk) return <AdminTotpGate onPass={() => setAdminOk(true)} member={member}/>;
 
   return (
@@ -54,7 +65,6 @@ function AdminPage({ setPage }) {
           {view === "applications" && <AdminApplications/>}
           {view === "mentors" && <AdminMentors/>}
           {view === "mentorship" && <AdminMentorship/>}
-          {view === "summer" && <AdminSummer/>}
           {view === "newsletter" && <AdminNewsletter/>}
           {view === "messages" && <AdminContact/>}
           {view === "settings" && <AdminSettings/>}
@@ -159,6 +169,9 @@ function AdminTopbar({ section, setSection, setPage, member }) {
       </div>
       <div className="admin-topbar-r">
         <span className="mono" style={{color:"rgba(255,255,255,0.6)"}}>{member.fullName} · {member.role}</span>
+        {Array.isArray(member.caps) && (member.caps.indexOf("summer") !== -1 || member.caps.indexOf("club") !== -1) && (
+          <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("coordinator")}>Coordinator ↗</button>
+        )}
         <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("home")}>View site →</button>
       </div>
     </div>
@@ -172,9 +185,6 @@ function AdminNav({ section, setSection, hasCap }) {
       { id: "members",   label: "Members",    icon: "◯", cap: "people" },
       { id: "applications", label: "Applications", icon: "✉", cap: "people" },
       { id: "mentorship", label: "Mentorship", icon: "◐", cap: "people" },
-    ]},
-    { h: "Summer School", items: [
-      { id: "summer",    label: "Summer School", icon: "☀", cap: "summer" },
     ]},
     { h: "Content", items: [
       { id: "sessions",  label: "Sessions",   icon: "▢", cap: "content" },
@@ -2038,4 +2048,159 @@ function FieldUpload({ label, value, onChange, kind, accept, placeholder }) {
 function fmtDate(d) { if (!d) return ""; const x = new Date(d); return x.toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" }); }
 function fmtTime(d) { if (!d) return ""; const x = new Date(d); return x.toLocaleString("en-GB"); }
 
-Object.assign(window, { AdminPage });
+// ============================================================================
+// NGG Club manager (coordinator portal) — Summer→Club promotion + roster
+// ============================================================================
+
+function ClubManager() {
+  const [tab, setTab] = React.useState("promote");
+  const [ov, setOv] = React.useState(null);
+  const load = () => NGGApi.admin.club.overview().then(setOv).catch(() => {});
+  React.useEffect(() => { load(); }, []);
+  const o = (ov && ov.overview) || {};
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head"><h2 className="admin-h2">NGG Club</h2></div>
+      <p className="admin-hint">Enrol Summer School graduates into the Club and manage the member roster.</p>
+      <div className="admin-tiles" style={{ marginBottom: 8 }}>
+        <AdminTile n={o.members ?? "—"} l="Club members"/>
+        <AdminTile n={o.promotable ?? "—"} l="Ready to promote"/>
+        <AdminTile n={o.promoted ?? "—"} l="Promoted"/>
+        <AdminTile n={o.mentors ?? "—"} l="Active mentors"/>
+      </div>
+      <div className="admin-anchor-tabs">
+        {[["promote", "Promote from Summer"], ["members", "Club roster"]].map(([id, lbl]) => (
+          <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
+        ))}
+      </div>
+      {tab === "promote" && <ClubPromote onChange={load}/>}
+      {tab === "members" && <ClubRoster/>}
+    </div>
+  );
+}
+
+function ClubPromote({ onChange }) {
+  const [list, setList] = React.useState(null);
+  const load = () => NGGApi.admin.club.promotable().then(r => setList(r.students || [])).catch(() => setList([]));
+  React.useEffect(() => { load(); }, []);
+  const promote = async (s) => {
+    const ok = await dialog.confirm({ title: "Promote " + s.fullName + " to the Club?", body: "Creates an active NGG member from this Summer student, carrying their track, centre and photo.", cta: "Promote" });
+    if (!ok) return;
+    try { const r = await NGGApi.admin.club.promote(s.studentId); toast.success("Promoted → " + r.memberId); load(); onChange && onChange(); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
+  if (list === null) return <div className="dash-spinner"/>;
+  if (!list.length) return <div className="admin-empty">No Summer students awaiting promotion.</div>;
+  return (
+    <div className="admin-table-wrap"><table className="admin-table">
+      <thead><tr><th>Student</th><th>ID</th><th>Track</th><th>Centre</th><th>Present</th><th/></tr></thead>
+      <tbody>{list.map(s => (
+        <tr key={s.studentId}>
+          <td>{s.fullName}</td>
+          <td className="mono">{s.studentId}</td>
+          <td>{s.track || "—"}</td><td>{s.centre || "—"}</td>
+          <td className="mono">{s.attendanceCount}</td>
+          <td><button className="btn btn-primary btn-sm" onClick={() => promote(s)}>Promote →</button></td>
+        </tr>
+      ))}</tbody>
+    </table></div>
+  );
+}
+
+function ClubRoster() {
+  const [list, setList] = React.useState(null);
+  const [q, setQ] = React.useState("");
+  const load = () => NGGApi.admin.club.members(q).then(r => setList(r.members || [])).catch(() => setList([]));
+  React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q]);
+  return (
+    <div>
+      <div className="admin-filters">
+        <input className="admin-input" placeholder="Search members" value={q} onChange={e => setQ(e.target.value)} style={{ maxWidth: 280 }}/>
+        <button className="btn btn-ghost btn-sm" disabled={!list || !list.length} onClick={() => downloadCsv("club-members", (list || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, centre: m.centre, track: m.track || "" })))}>Export CSV</button>
+      </div>
+      {list === null ? <div className="dash-spinner"/> :
+        list.length === 0 ? <div className="admin-empty">No club members yet.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>ID</th><th>Name</th><th>Centre</th><th>Track</th></tr></thead>
+          <tbody>{list.map(m => <tr key={m.memberId}><td className="mono">{m.memberId}</td><td>{m.fullName}</td><td>{m.centre}</td><td>{m.track || "—"}</td></tr>)}</tbody>
+        </table></div>
+      }
+    </div>
+  );
+}
+
+// ============================================================================
+// Coordinator portal — a separate surface (NOT the admin console) for the
+// Summer School and NGG Club coordinators. Own chrome, own 2FA gate.
+// ============================================================================
+
+function CoordinatorPortal({ setPage }) {
+  const { member, adminOk, loading, openSignIn, setAdminOk, hasCap } = useAuth();
+  const canSummer = !!hasCap && hasCap("summer");
+  const canClub = !!hasCap && hasCap("club");
+  const isCoordinator = canSummer || canClub;
+  const sections = [];
+  if (canSummer) sections.push({ id: "summer", label: "Summer School", icon: "☀" });
+  if (canClub) sections.push({ id: "club", label: "NGG Club", icon: "◈" });
+  const [section, setSection] = React.useState(null);
+  const cur = section || (sections[0] && sections[0].id);
+
+  if (loading) return <div className="page admin"><div className="container" style={{ padding: "120px 0" }}><div className="dash-spinner"/></div></div>;
+  if (!member) {
+    return <div className="page admin"><section style={{ padding: "140px 0", textAlign: "center" }}><div className="container">
+      <div className="eyebrow">COORDINATOR PORTAL</div>
+      <h1 className="display" style={{ fontSize: "clamp(48px,8vw,96px)" }}>Sign in.</h1>
+      <p style={{ marginTop: 18, color: "var(--ink-500)" }}>This portal is for Summer School and NGG Club coordinators.</p>
+      <div style={{ marginTop: 32, display: "flex", gap: 12, justifyContent: "center" }}>
+        <button className="btn btn-primary" onClick={() => openSignIn()}>Sign in</button>
+        <button className="btn btn-ghost" onClick={() => setPage("home")}>Back to site</button>
+      </div>
+    </div></section></div>;
+  }
+  if (!isCoordinator) {
+    return <div className="page admin"><section style={{ padding: "140px 0", textAlign: "center" }}><div className="container">
+      <div className="eyebrow">COORDINATOR PORTAL</div>
+      <h1 className="display" style={{ fontSize: "clamp(40px,7vw,84px)" }}>Not a coordinator.</h1>
+      <p style={{ marginTop: 18, color: "var(--ink-500)", maxWidth: 480, margin: "18px auto 0" }}>This account doesn't manage Summer School or the NGG Club. If you're staff, use the admin console.</p>
+      <div style={{ marginTop: 32, display: "flex", gap: 12, justifyContent: "center" }}>
+        <button className="btn btn-primary" onClick={() => setPage("admin")}>Admin console</button>
+        <button className="btn btn-ghost" onClick={() => setPage("dashboard")}>My dashboard</button>
+      </div>
+    </div></section></div>;
+  }
+  if (!adminOk) return <AdminTotpGate onPass={() => setAdminOk(true)} member={member}/>;
+
+  return (
+    <div className="page admin coord-portal" data-screen-label="Coordinator">
+      <div className="admin-topbar">
+        <div className="admin-topbar-l">
+          <BrandLogo size={28}/>
+          <div className="admin-topbar-title">
+            <div className="mono" style={{ fontSize: 10, color: "var(--gold-400)" }}>NGG · COORDINATOR PORTAL</div>
+            <div className="admin-topbar-section">{cur === "club" ? "NGG Club" : "Summer School"}</div>
+          </div>
+        </div>
+        <div className="admin-topbar-r">
+          <span className="mono" style={{ color: "rgba(255,255,255,0.6)" }}>{member.fullName} · {member.role}</span>
+          <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("home")}>View site →</button>
+        </div>
+      </div>
+      <div className="admin-shell">
+        <aside className="admin-nav">
+          {sections.map(s => (
+            <button key={s.id} className={"admin-nav-item" + (cur === s.id ? " is-active" : "")} onClick={() => setSection(s.id)}>
+              <span className="admin-nav-icon" aria-hidden="true">{s.icon}</span>
+              <span className="admin-nav-label">{s.label}</span>
+            </button>
+          ))}
+        </aside>
+        <main className="admin-main">
+          {cur === "summer" && <AdminSummer/>}
+          {cur === "club" && <ClubManager/>}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { AdminPage, CoordinatorPortal });

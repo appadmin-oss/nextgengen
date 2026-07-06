@@ -69,6 +69,11 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.summer.students.list'  => 'admin_summer_students_list',
             'admin.summer.student.status' => 'admin_summer_student_status',
             'admin.summer.checkin'        => 'summer_checkin',
+            // NGG Club coordinator (Summer → Club bridge)
+            'admin.club.overview'         => 'admin_club_overview',
+            'admin.club.promotable'       => 'admin_club_promotable',
+            'admin.club.promote'          => 'admin_club_promote',
+            'admin.club.members'          => 'admin_club_members',
             'admin.sessions.upsert'   => 'admin_sessions_upsert',
             'admin.missions.list'     => 'admin_missions_list',
             'admin.missions.upsert'   => 'admin_missions_upsert',

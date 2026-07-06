@@ -219,6 +219,12 @@
         studentStatus:(studentId, status) => request('/admin/summer.php', { body: { action: 'studentStatus', studentId, status } }),
         checkin:      (token, method, device) => request('/admin/summer.php', { body: { action: 'checkin', token, method, device } }),
       },
+      club: {
+        overview:   () => request('/admin/club.php?view=overview'),
+        promotable: () => request('/admin/club.php?view=promotable'),
+        members:    (q) => request('/admin/club.php' + qs({ view: 'members', q })),
+        promote:    (studentId) => request('/admin/club.php', { body: { action: 'promote', studentId } }),
+      },
       contact: {
         list:   (q) => request('/admin/contact.php' + qs(q || {})),
         status: (id, status) => request('/admin/contact.php', { body: { id, status } }),

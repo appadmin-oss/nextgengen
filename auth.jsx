@@ -53,8 +53,13 @@ function AuthProvider({ children }) {
           // Conventional /login (or /signin) entry point: open the sign-in
           // modal for guests, send signed-in members to their dashboard.
           if (BOOT_WANTS_LOGIN) {
-            if (me.member) { setTimeout(() => window.__navigate && window.__navigate("dashboard"), 0); }
-            else { setSigninOpen(true); }
+            if (me.member) {
+              // Coordinator-only accounts land in their portal, not the dashboard.
+              const caps = me.member.caps || [];
+              const coordOnly = (caps.indexOf("summer") !== -1 || caps.indexOf("club") !== -1)
+                && !["content", "people", "inbox", "settings", "rbac"].some(c => caps.indexOf(c) !== -1);
+              setTimeout(() => window.__navigate && window.__navigate(coordOnly ? "coordinator" : "dashboard"), 0);
+            } else { setSigninOpen(true); }
           }
         }
       } catch (_) {
