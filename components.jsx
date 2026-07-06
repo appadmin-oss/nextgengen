@@ -900,24 +900,35 @@ function Uploader({ kind = "proof", accept, onUploaded, compact }) {
    localStorage and are applied to <html> via data attributes (see styles.css).
    An inline bootstrap in index.html applies them before first paint. */
 const A11Y_KEY = "ngg.a11y";
-const A11Y_DEFAULTS = { scale: 100, contrast: false, motion: false, readable: false, underline: false };
+const A11Y_DEFAULTS = { contrast: false, motion: false, readable: false, underline: false };
 
 function applyA11y(s) {
   const root = document.documentElement;
-  root.style.setProperty("--a11y-zoom", (s.scale / 100).toString());
-  root.setAttribute("data-a11y-scale", String(s.scale));
   root.setAttribute("data-contrast", s.contrast ? "high" : "normal");
   root.setAttribute("data-motion", s.motion ? "reduce" : "auto");
   root.setAttribute("data-font", s.readable ? "readable" : "default");
   root.setAttribute("data-links", s.underline ? "underline" : "default");
 }
 
+// Read the visitor's OS accessibility preferences so we can honour them by
+// default (smart: no need to toggle what the system already asked for).
+function osA11y() {
+  const mm = (q) => typeof window !== "undefined" && window.matchMedia && window.matchMedia(q).matches;
+  return { motion: mm("(prefers-reduced-motion: reduce)"), contrast: mm("(prefers-contrast: more)") };
+}
+
 function AccessibilityWidget() {
   const [open, setOpen] = React.useState(false);
+  const [autoOs, setAutoOs] = React.useState(false); // seeded from the OS, not chosen
   const [s, setS] = React.useState(() => {
-    try { return Object.assign({}, A11Y_DEFAULTS, JSON.parse(localStorage.getItem(A11Y_KEY) || "{}")); }
-    catch (_) { return { ...A11Y_DEFAULTS }; }
+    try {
+      const saved = localStorage.getItem(A11Y_KEY);
+      if (saved) return Object.assign({}, A11Y_DEFAULTS, JSON.parse(saved));
+    } catch (_) {}
+    // First visit — inherit the operating system's accessibility settings.
+    return Object.assign({}, A11Y_DEFAULTS, osA11y());
   });
+  React.useEffect(() => { try { if (!localStorage.getItem(A11Y_KEY)) { const o = osA11y(); setAutoOs(o.motion || o.contrast); } } catch (_) {} }, []);
   const panelRef = React.useRef(null);
   const btnRef = React.useRef(null);
 
@@ -950,7 +961,7 @@ function AccessibilityWidget() {
 
   const set = (k, v) => setS(o => Object.assign({}, o, { [k]: v }));
   const reset = () => setS({ ...A11Y_DEFAULTS });
-  const anyOn = s.scale !== 100 || s.contrast || s.motion || s.readable || s.underline;
+  const anyOn = s.contrast || s.motion || s.readable || s.underline;
 
   return (
     <React.Fragment>
@@ -972,14 +983,10 @@ function AccessibilityWidget() {
             <button className="a11y-panel-close" onClick={() => setOpen(false)} aria-label="Close accessibility options">✕</button>
           </div>
 
-          <div className="a11y-group" role="group" aria-label="Text size">
-            <span className="a11y-label">Text size</span>
-            <div className="a11y-seg">
-              {[[100, "A", "Default text size"], [112, "A+", "Larger text"], [125, "A++", "Largest text"]].map(([v, lbl, title]) => (
-                <button key={v} title={title} aria-pressed={s.scale === v} className={"a11y-seg-btn" + (s.scale === v ? " is-on" : "")} onClick={() => set("scale", v)}>{lbl}</button>
-              ))}
-            </div>
-          </div>
+          {autoOs && (
+            <p className="a11y-auto">✓ Matched to your device's accessibility settings. Tweak anything below.</p>
+          )}
+          <p className="a11y-tip">Tip: press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> and <kbd>+</kbd> to enlarge the page.</p>
 
           <A11yToggle label="High contrast" desc="Stronger colours + borders" on={s.contrast} onChange={v => set("contrast", v)}/>
           <A11yToggle label="Reduce motion" desc="Stop animations + transitions" on={s.motion} onChange={v => set("motion", v)}/>
