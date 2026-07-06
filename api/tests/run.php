@@ -32,7 +32,7 @@ require $ROOT . '/_lib/db.php';
 require $ROOT . '/_lib/util.php';
 require $ROOT . '/_lib/mailer.php';
 require $ROOT . '/_lib/anchor-content.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
