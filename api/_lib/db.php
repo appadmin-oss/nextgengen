@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 7;
+const NGG_SCHEMA_TARGET = 8;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -331,6 +331,17 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX idx_attend_unique ON attendance(studentId, date);
             CREATE INDEX idx_attend_cohort_date ON attendance(cohortId, date);
+        ",
+        // Archival summary — when a cohort is archived (and its granular
+        // attendance optionally compressed away), the per-student totals are
+        // rolled up onto the student row so the data stays reusable for the
+        // NGG Club without keeping every check-in. Nullable, NULL = not archived.
+        8 => "
+            ALTER TABLE summer_students ADD COLUMN daysPresent INTEGER;
+            ALTER TABLE summer_students ADD COLUMN attendanceRate INTEGER;
+            ALTER TABLE summer_students ADD COLUMN firstSeen TEXT;
+            ALTER TABLE summer_students ADD COLUMN lastSeen TEXT;
+            ALTER TABLE summer_students ADD COLUMN archivedAt TEXT;
         ",
     ];
 

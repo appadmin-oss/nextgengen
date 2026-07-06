@@ -3930,6 +3930,14 @@ section p[style*="var(--ink-500)"] {
 .summer-rate { display: flex; align-items: center; gap: 8px; }
 .summer-rate-bar { flex: 1; height: 7px; border-radius: 99px; background: rgba(12,20,50,0.08); overflow: hidden; }
 .summer-rate-fill { height: 100%; border-radius: 99px; }
+.summer-insight { margin: 4px 0 18px; padding: 16px 18px; border-radius: 16px; background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(208,255,58,0.06)); border: 1px solid var(--line, #e6e2d6); }
+.summer-insight-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.summer-insight-head .eyebrow { display: inline-flex; align-items: center; gap: 6px; }
+.summer-insight-src { font-family: var(--font-mono); font-size: 10px; color: var(--ink-500); padding: 2px 8px; border-radius: 99px; background: rgba(12,20,50,0.06); }
+.summer-insight-head .btn { margin-left: auto; }
+.summer-insight-body { font-size: 14px; line-height: 1.6; white-space: pre-line; color: var(--ink-800, #1a2340); }
+.summer-insight-hint { margin-top: 10px; font-size: 12px; color: var(--ink-500); }
+.summer-archive { margin-top: 26px; padding: 16px 18px; border-radius: 16px; border: 1px dashed var(--line, #e6e2d6); display: flex; align-items: center; gap: 16px; justify-content: space-between; flex-wrap: wrap; }
 .admin-anchor-list { display: flex; flex-direction: column; gap: 10px; }
 .admin-anchor-row { display: flex; gap: 10px; align-items: flex-start; }
 .admin-anchor-n { color: var(--gold-500); font-size: 12px; padding-top: 12px; }

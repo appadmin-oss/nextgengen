@@ -41,6 +41,14 @@ function summer_student_public(array $s, bool $withAttendance = false): array {
         'cohortId' => $s['cohortId'], 'centre' => $s['centre'], 'track' => $s['track'],
         'photoUrl' => normalize_image_url($s['photoUrl'] ?? ''), 'status' => $s['status'] ?? 'active',
     ];
+    // Archival roll-up (present once a cohort has been archived/compressed).
+    if (isset($s['archivedAt']) && $s['archivedAt'] !== null && $s['archivedAt'] !== '') {
+        $out['daysPresent'] = (int)($s['daysPresent'] ?? 0);
+        $out['attendanceRate'] = (int)($s['attendanceRate'] ?? 0);
+        $out['firstSeen'] = $s['firstSeen'] ?? '';
+        $out['lastSeen'] = $s['lastSeen'] ?? '';
+        $out['archivedAt'] = $s['archivedAt'];
+    }
     if ($withAttendance) {
         $rows = db_all('SELECT date, checkInAt, method FROM attendance WHERE studentId = ? ORDER BY date DESC LIMIT 60', [$s['studentId']]);
         $out['attendance'] = $rows;
@@ -240,6 +248,101 @@ function admin_summer_attendance(array $p): array {
         'activeStudents' => $activeStudents, 'absentToday' => max(0, $activeStudents - $presentToday),
         'days' => $days, 'roster' => $roster, 'atRisk' => $atRisk, 'recent' => $recent,
     ]];
+}
+
+// ── Archival + compression (end of summer) ──────────────────────────────────
+/**
+ * Roll each student's attendance up onto their row, mark the cohort archived,
+ * and (optionally) compress by deleting the now-summarized granular check-ins.
+ * The summary keeps the cohort's data reusable for NGG Club enrollment without
+ * retaining every scan.
+ */
+function admin_summer_cohort_archive(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $cohortId = trim((string)($p['cohortId'] ?? '')) ?: summer_ensure_cohort()['cohortId'];
+    $compress = !empty($p['compress']);
+    $c = db_row('SELECT * FROM summer_cohorts WHERE cohortId = ?', [$cohortId]);
+    if (!$c) return ['ok' => false, 'error' => 'not_found'];
+
+    $sessionDays = (int)(db_row("SELECT COUNT(DISTINCT date) c FROM attendance WHERE cohortId = ?", [$cohortId])['c'] ?? 0);
+    $students = db_all("SELECT studentId FROM summer_students WHERE cohortId = ?", [$cohortId]);
+    $now = now_iso();
+    foreach ($students as $s) {
+        $r = db_row("SELECT COUNT(*) c, MIN(date) f, MAX(date) l FROM attendance WHERE studentId = ?", [$s['studentId']]);
+        $cnt = (int)($r['c'] ?? 0);
+        db_update('summer_students', [
+            'daysPresent' => $cnt,
+            'attendanceRate' => $sessionDays ? (int)round($cnt / $sessionDays * 100) : 0,
+            'firstSeen' => (string)($r['f'] ?? ''), 'lastSeen' => (string)($r['l'] ?? ''),
+            'archivedAt' => $now, 'updatedAt' => $now,
+        ], ['studentId' => $s['studentId']]);
+    }
+    db_update('summer_cohorts', ['status' => 'archived'], ['cohortId' => $cohortId]);
+
+    $purged = 0;
+    if ($compress) {
+        $purged = (int)(db_row("SELECT COUNT(*) c FROM attendance WHERE cohortId = ?", [$cohortId])['c'] ?? 0);
+        db_exec("DELETE FROM attendance WHERE cohortId = ?", [$cohortId]);
+    }
+    audit('summer.cohort.archive', $g['requester']['memberId'], $cohortId, ['students' => count($students), 'sessionDays' => $sessionDays, 'compress' => $compress, 'purged' => $purged], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'cohortId' => $cohortId, 'students' => count($students), 'sessionDays' => $sessionDays, 'compressed' => $compress, 'purged' => $purged];
+}
+
+// ── AI insights (optional; deterministic rule-based fallback) ────────────────
+/** A deterministic, always-available summary from the analytics payload. */
+function summer_rule_insights(array $a): string {
+    $lines = [];
+    $lines[] = "· {$a['today']} present today, {$a['absentToday']} absent (of {$a['activeStudents']} active).";
+    if ($a['sessionDays'] > 0) {
+        $avg = 0; $n = count($a['roster']);
+        foreach ($a['roster'] as $r) $avg += (int)$r['rate'];
+        $avg = $n ? (int)round($avg / $n) : 0;
+        $lines[] = "· Average attendance across {$a['sessionDays']} session day(s): {$avg}%.";
+    }
+    $risk = count($a['atRisk']);
+    if ($risk > 0) {
+        $names = array_slice(array_map(fn($r) => $r['fullName'], $a['atRisk']), 0, 3);
+        $lines[] = "· {$risk} student(s) at risk (under 50%) — e.g. " . implode(', ', $names) . ". Consider a check-in call.";
+    } else {
+        $lines[] = "· No students are currently under 50% attendance.";
+    }
+    // Trend across the last available days.
+    $days = $a['days'];
+    if (count($days) >= 4) {
+        $recent = array_slice($days, -3); $prev = array_slice($days, -6, 3);
+        $rs = array_sum(array_column($recent, 'present')); $ps = array_sum(array_column($prev, 'present'));
+        if ($rs > $ps) $lines[] = "· Attendance is trending up over the last few days.";
+        elseif ($rs < $ps) $lines[] = "· Attendance is dipping over the last few days — worth a nudge.";
+    }
+    return implode("\n", $lines);
+}
+
+function summer_insight_prompt(array $a): string {
+    $top = array_slice($a['atRisk'], 0, 8);
+    $riskLines = array_map(fn($r) => "{$r['fullName']} ({$r['rate']}%)", $top);
+    $series = implode(', ', array_map(fn($d) => $d['date'] . '=' . $d['present'], array_slice($a['days'], -10)));
+    return "Cohort {$a['cohort']['cohortId']}. Active students: {$a['activeStudents']}. "
+        . "Present today: {$a['today']}, absent: {$a['absentToday']}. Session days so far: {$a['sessionDays']}. "
+        . "Recent daily present counts: {$series}. "
+        . "At-risk (under 50%): " . (count($riskLines) ? implode('; ', $riskLines) : 'none') . ". "
+        . "Give the coordinator 3-5 short, practical bullet points: what's going well, who to follow up with, and one concrete suggestion.";
+}
+
+function admin_summer_insights(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $res = admin_summer_attendance($p);
+    if (empty($res['ok'])) return $res;
+    $a = $res['attendance'];
+    $out = ['ok' => true, 'aiConfigured' => ai_enabled(), 'provider' => '', 'source' => 'rules', 'insight' => summer_rule_insights($a)];
+    if (ai_enabled()) {
+        $r = ai_complete(
+            "You are an attendance analyst for a youth summer program. Be concise, warm and practical. Reply as 3-5 short bullet points starting with '· '. No preamble.",
+            summer_insight_prompt($a), 400
+        );
+        if (!empty($r['ok'])) { $out['insight'] = $r['text']; $out['provider'] = $r['provider']; $out['source'] = 'ai'; }
+        else { $out['aiError'] = $r['error'] ?? 'ai_failed'; }
+    }
+    return $out;
 }
 
 // ── Public profile (by QR token or handle) ──────────────────────────────────

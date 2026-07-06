@@ -2257,7 +2257,18 @@ function SummerKiosk({ onCheckin }) {
 function SummerAttendance() {
   const [a, setA] = React.useState(null);
   const [err, setErr] = React.useState("");
-  React.useEffect(() => { NGGApi.admin.summer.attendance().then(r => setA(r.attendance)).catch(e => setErr(e.code || e.message)); }, []);
+  const [ins, setIns] = React.useState(null);
+  const [insBusy, setInsBusy] = React.useState(false);
+  const load = () => NGGApi.admin.summer.attendance().then(r => setA(r.attendance)).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  const loadInsights = () => { setInsBusy(true); NGGApi.admin.summer.insights().then(setIns).catch(e => setIns({ insight: "Couldn't generate insights: " + (e.code || e.message), source: "error" })).finally(() => setInsBusy(false)); };
+  React.useEffect(() => { loadInsights(); }, []);
+  const archive = async (compress) => {
+    const ok = await dialog.confirm({ title: compress ? "Archive & compress this cohort?" : "Archive this cohort?", body: compress ? "Rolls each student's attendance up onto their record, marks the cohort archived, then deletes the individual check-ins to save space. Summaries stay available for NGG Club promotion. This can't be undone." : "Marks the cohort archived and rolls up each student's attendance. Individual check-ins are kept.", cta: compress ? "Archive & compress" : "Archive" });
+    if (!ok) return;
+    try { const r = await NGGApi.admin.summer.archive("", compress); toast.success("Archived " + r.students + " students" + (r.compressed ? " · " + r.purged + " check-ins compressed" : "")); load(); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
   if (err) return <div className="admin-empty">Couldn't load: {err}</div>;
   if (!a) return <div className="dash-spinner"/>;
   const maxDay = Math.max(1, ...a.days.map(d => d.present));
@@ -2268,6 +2279,17 @@ function SummerAttendance() {
         <AdminTile n={a.absentToday} l="Absent today"/>
         <AdminTile n={a.activeStudents} l="Active students"/>
         <AdminTile n={a.sessionDays} l="Session days"/>
+      </div>
+
+      <div className="summer-insight">
+        <div className="summer-insight-head">
+          <span className="eyebrow"><i className="ph-fill ph-sparkle" aria-hidden="true"/> COORDINATOR INSIGHTS</span>
+          <span className="summer-insight-src">{ins ? (ins.source === "ai" ? "AI · " + ins.provider : ins.source === "error" ? "error" : "rule-based") : ""}</span>
+          <button className="btn btn-ghost btn-sm" onClick={loadInsights} disabled={insBusy}>{insBusy ? "Thinking…" : "Refresh"}</button>
+        </div>
+        {!ins ? <div className="dash-spinner"/> : <div className="summer-insight-body">{ins.insight}</div>}
+        {ins && ins.aiConfigured === false && <div className="summer-insight-hint">Rule-based summary. Add a free Groq or Gemini API key in <span className="mono">config.php → ai</span> for AI-written narratives.</div>}
+        {ins && ins.aiError && <div className="summer-insight-hint">AI call failed ({ins.aiError}) — showing the rule-based summary.</div>}
       </div>
 
       <div className="eyebrow" style={{ margin: "4px 0 10px" }}>LAST 14 DAYS</div>
@@ -2316,6 +2338,17 @@ function SummerAttendance() {
           </div>
         </div>
       )}
+
+      <div className="summer-archive">
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 4 }}>END OF SUMMER</div>
+          <div className="admin-hint" style={{ margin: 0 }}>Archive the cohort when summer ends. Compressing rolls each student's attendance into a summary (kept for NGG Club promotion) and clears the individual check-ins.</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => archive(false)}>Archive</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => archive(true)}>Archive &amp; compress</button>
+        </div>
+      </div>
     </div>
   );
 }
