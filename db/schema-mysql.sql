@@ -231,6 +231,7 @@ CREATE TABLE IF NOT EXISTS summer_students (
   guardianName VARCHAR(255), guardianPhone VARCHAR(48),
   status VARCHAR(24) DEFAULT 'active', notes TEXT,
   enrolledAt VARCHAR(40), updatedAt VARCHAR(40),
+  daysPresent INT, attendanceRate INT, firstSeen VARCHAR(12), lastSeen VARCHAR(12), archivedAt VARCHAR(40),
   INDEX idx_sstu_cohort (cohortId), INDEX idx_sstu_handle (handle), INDEX idx_sstu_token (token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -243,4 +244,4 @@ CREATE TABLE IF NOT EXISTS attendance (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (7) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (8) ON DUPLICATE KEY UPDATE version = version;

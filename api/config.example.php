@@ -49,6 +49,20 @@ return [
     // -----------------------------------------------------------------------
     'apps_script_url' => '',   // Apps Script Web App URL for the export sink (…/exec)
 
+    // -----------------------------------------------------------------------
+    // AI layer (OPTIONAL) — Summer School coordinator insights. Entirely opt-in:
+    // with no key set the dashboard shows a deterministic rule-based summary and
+    // makes no external call. Add a free-tier key to enable AI narratives.
+    // Get keys: Groq → https://console.groq.com  ·  Gemini → https://aistudio.google.com
+    // -----------------------------------------------------------------------
+    'ai' => [
+        'provider'       => 'groq',                    // preference: 'groq' | 'gemini'
+        'groq_api_key'   => '',                        // leave empty to disable
+        'groq_model'     => 'llama-3.1-8b-instant',
+        'gemini_api_key' => '',                        // leave empty to disable
+        'gemini_model'   => 'gemini-1.5-flash',
+    ],
+
     // Shared HMAC secret for signing export-sink calls. Generate with
     // `openssl rand -hex 64`. Must match SHARED_SECRET in the Apps Script.
     'shared_secret'   => 'REPLACE_ME_64_HEX_BYTES',

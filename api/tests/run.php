@@ -32,6 +32,7 @@ require $ROOT . '/_lib/db.php';
 require $ROOT . '/_lib/util.php';
 require $ROOT . '/_lib/mailer.php';
 require $ROOT . '/_lib/anchor-content.php';
+require $ROOT . '/_lib/ai.php';
 foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
@@ -320,6 +321,18 @@ chk('promoted member appears in the club roster', (function () use ($pr) {
     return false;
 })());
 chk('re-promoting the same student is rejected', backend_dispatch('admin.club.promote', ['requesterId' => 'NGG-2025-0701', 'studentId' => $stuId])['error'] === 'already_promoted');
+
+// ── AI insights (rule-based fallback) + archival/compression (Phase 2 tail) ──
+$ins = backend_dispatch('admin.summer.insights', ['requesterId' => 'NGG-2025-0099']);
+chk('insights returns a rule-based summary when AI is off', !empty($ins['ok']) && $ins['aiConfigured'] === false && $ins['source'] === 'rules' && strlen($ins['insight']) > 10);
+$scoh = db_row("SELECT cohortId FROM summer_students WHERE studentId = ?", [$enr['studentId']])['cohortId'];
+$before = (int)(db_row("SELECT COUNT(*) c FROM attendance WHERE cohortId = ?", [$scoh])['c'] ?? 0);
+$arch = backend_dispatch('admin.summer.cohort.archive', ['requesterId' => 'NGG-2025-0099', 'cohortId' => $scoh, 'compress' => true]);
+chk('archive summarizes + compresses the cohort', !empty($arch['ok']) && $arch['compressed'] === true && $arch['purged'] === $before);
+chk('archived cohort is marked archived', db_row("SELECT status FROM summer_cohorts WHERE cohortId = ?", [$scoh])['status'] === 'archived');
+chk('granular attendance purged after compression', (int)(db_row("SELECT COUNT(*) c FROM attendance WHERE cohortId = ?", [$scoh])['c'] ?? 0) === 0);
+chk('per-student attendance rolled up onto the row', (int)(db_row("SELECT daysPresent FROM summer_students WHERE studentId = ?", [$enr['studentId']])['daysPresent'] ?? 0) >= 1);
+chk('archive gated from non-staff', backend_dispatch('admin.summer.cohort.archive', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

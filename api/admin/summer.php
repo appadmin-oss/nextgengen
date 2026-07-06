@@ -10,6 +10,7 @@ if ($method === 'GET') {
     if ($view === 'students')     $res = gs_call('admin.summer.students.list', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '', 'cohortId' => $_GET['cohortId'] ?? '']);
     elseif ($view === 'qr')       $res = gs_call('admin.summer.qr.list', ['requesterId' => $mid, 'status' => $_GET['status'] ?? '', 'batch' => $_GET['batch'] ?? '']);
     elseif ($view === 'attendance') $res = gs_call('admin.summer.attendance', ['requesterId' => $mid, 'cohortId' => $_GET['cohortId'] ?? '']);
+    elseif ($view === 'insights')   $res = gs_call('admin.summer.insights', ['requesterId' => $mid, 'cohortId' => $_GET['cohortId'] ?? '']);
     else                          $res = gs_call('admin.summer.overview', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -20,6 +21,7 @@ if ($method === 'GET') {
         'cohort'       => 'admin.summer.cohort.upsert',
         'studentStatus'=> 'admin.summer.student.status',
         'checkin'      => 'admin.summer.checkin',
+        'archive'      => 'admin.summer.cohort.archive',
     ];
     if (!isset($map[$action])) json_error('unknown_action', 400);
     $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));

@@ -219,6 +219,8 @@
         studentStatus:(studentId, status) => request('/admin/summer.php', { body: { action: 'studentStatus', studentId, status } }),
         checkin:      (token, method, device) => request('/admin/summer.php', { body: { action: 'checkin', token, method, device } }),
         attendance:   (cohortId) => request('/admin/summer.php' + qs({ view: 'attendance', cohortId })),
+        insights:     (cohortId) => request('/admin/summer.php' + qs({ view: 'insights', cohortId })),
+        archive:      (cohortId, compress) => request('/admin/summer.php', { body: { action: 'archive', cohortId, compress: !!compress } }),
       },
       club: {
         overview:   () => request('/admin/club.php?view=overview'),
