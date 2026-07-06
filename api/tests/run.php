@@ -282,5 +282,31 @@ chk('public profile by handle + attendance', backend_dispatch('public.summerProf
 chk('summer gated from non-staff', backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 chk('enroll rejects an already-used QR', backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Dupe Kid', 'age' => 12, 'token' => $enr['token']]])['error'] === 'qr_already_used');
 
+// ── Stand-alone coordinator portals (Summer School + NGG Club are separate) ──
+chk('admin role caps = console only (no summer/club)', admin_role_caps('admin') === ['content', 'people', 'inbox']);
+chk('club_admin role caps = club only', admin_role_caps('club_admin') === ['club']);
+chk('super_admin bridges both portals', in_array('summer', admin_role_caps('super_admin'), true) && in_array('club', admin_role_caps('super_admin'), true));
+
+// Seed a summer_admin + club_admin to prove the two portals are isolated.
+db_insert('members', ['memberId' => 'NGG-2025-0700', 'fullName' => 'Sunny Summer', 'email' => 'summeradmin@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'summer_admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('members', ['memberId' => 'NGG-2025-0701', 'fullName' => 'Clara Club', 'email' => 'clubadmin@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+chk('summer_admin can read its own overview', !empty(backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0700'])['overview']));
+chk('summer_admin is locked out of the Club portal', backend_dispatch('admin.club.overview', ['requesterId' => 'NGG-2025-0700'])['error'] === 'forbidden');
+chk('club_admin can read its own overview', isset(backend_dispatch('admin.club.overview', ['requesterId' => 'NGG-2025-0701'])['overview']));
+chk('club_admin is locked out of the Summer portal', backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0701'])['error'] === 'forbidden');
+chk('club gated from non-staff', backend_dispatch('admin.club.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+
+// Summer → Club promotion (run by the club_admin, in their own portal).
+$stuId = $enr['studentId'];
+chk('promotable list carries active summer students', count(backend_dispatch('admin.club.promotable', ['requesterId' => 'NGG-2025-0701'])['students']) >= 1);
+$pr = backend_dispatch('admin.club.promote', ['requesterId' => 'NGG-2025-0701', 'studentId' => $stuId]);
+chk('promote mints an NGG member', !empty($pr['memberId']));
+chk('promoted student flips to promoted', db_row('SELECT status FROM summer_students WHERE studentId=?', [$stuId])['status'] === 'promoted');
+chk('promoted member appears in the club roster', (function () use ($pr) {
+    foreach (backend_dispatch('admin.club.members', ['requesterId' => 'NGG-2025-0701'])['members'] as $m) if ($m['memberId'] === $pr['memberId']) return true;
+    return false;
+})());
+chk('re-promoting the same student is rejected', backend_dispatch('admin.club.promote', ['requesterId' => 'NGG-2025-0701', 'studentId' => $stuId])['error'] === 'already_promoted');
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
