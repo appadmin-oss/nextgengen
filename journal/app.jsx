@@ -91,6 +91,28 @@ function habitFocus(week) {
     automate: d.automate || "One habit to make automatic",
   };
 }
+// Parse a saved reflection body back into its authored sections. The Reflect
+// editor joins these with newlines in a fixed order; this is the inverse so
+// the full reflection (not just its first line) can be shown.
+const ENTRY_PARTS = [
+  ["School: ", "school", "School", "ph-chalkboard-teacher"],
+  ["Home: ", "home", "Home", "ph-house"],
+  ["Peer: ", "peer", "Peers", "ph-users-three"],
+  ["Did well by ", "did", "Did well by", "ph-check-circle"],
+  ["Difficult because ", "hard", "Difficult because", "ph-cloud-rain"],
+  ["Tomorrow I improve by ", "tomorrow", "Tomorrow I improve by", "ph-arrow-up-right"],
+];
+function parseEntry(body) {
+  const out = { musing: "", school: "", home: "", peer: "", did: "", hard: "", tomorrow: "" };
+  const musings = [];
+  (body || "").split("\n").forEach(ln => {
+    for (const [pre, key] of ENTRY_PARTS) { if (ln.indexOf(pre) === 0) { out[key] = ln.slice(pre.length).trim(); return; } }
+    if (ln.trim()) musings.push(ln.trim());
+  });
+  out.musing = musings.join("\n");
+  return out;
+}
+
 // Pull the member's own execution logs (School/Home/Peer lines) for a given
 // week from their real journal entries — used by the Weekly Review.
 function weekLogs(entries, week) {
@@ -188,6 +210,7 @@ function App() {
   const [celebrate, setCelebrate] = useState(null);
   const [onboard, setOnboard] = useState(false);
   const [selWeek, setSelWeek] = useState(1);
+  const [selEntry, setSelEntry] = useState(null);
   const [cver, setCver] = useState(0);
 
   // Admin-managed Anchor content (weeks/quotes/systems/tilt). Cached locally.
@@ -299,7 +322,8 @@ function App() {
   const isNGG = String(member.type || "").toUpperCase() === "NGG";
 
   const openWeek = (n) => { setSelWeek(n); go("weekdetail"); };
-  const ctx = { member, entries, weeks, session, mentor, pstate, setState, go, back, xp, diamonds, streak, cur, next, xpPct, reflectedToday, currentWeek, isNGG, anchorReflection, online, selWeek, openWeek };
+  const openEntry = (e) => { setSelEntry(e); go("entry"); };
+  const ctx = { member, entries, weeks, session, mentor, pstate, setState, go, back, xp, diamonds, streak, cur, next, xpPct, reflectedToday, currentWeek, isNGG, anchorReflection, online, selWeek, openWeek, selEntry, openEntry };
 
   return (
     <div className="aj-app">
@@ -308,6 +332,7 @@ function App() {
       {view === "reflect" && <Reflect ctx={ctx}/>}
       {view === "systems" && <Systems ctx={ctx}/>}
       {view === "timeline" && <Timeline ctx={ctx}/>}
+      {view === "entry" && <EntryDetail ctx={ctx}/>}
       {view === "calendar" && <Calendar ctx={ctx}/>}
       {view === "charge" && <Charge ctx={ctx}/>}
       {view === "weekdetail" && <WeekDetail ctx={ctx}/>}
@@ -399,6 +424,7 @@ function Reflect({ ctx }) {
   const [busy, setBusy] = useState(false);
   const quote = QUOTES[(Math.floor(Date.now() / 864e5)) % QUOTES.length];
   const theme = (WEEK_TITLES[currentWeek - 1] || "Identity").split(" · ")[0];
+  const weekPrompt = (WEEK_DATA[currentWeek - 1] || {}).journal || "";
   const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }).toUpperCase();
 
   const sysKey = "systems:" + dayKey(Date.now());
@@ -438,7 +464,10 @@ function Reflect({ ctx }) {
         <p className="aj-quote-q">“{quote}”</p>
       </div></Tilt></div>
 
-      {sec("1", "TODAY'S MUSING", <textarea className="aj-musing" placeholder="What's on your mind this morning?" value={musing} maxLength={2000} onChange={e => setMusing(e.target.value)}/>)}
+      {sec("1", "TODAY'S MUSING", <>
+        {weekPrompt && <div className="aj-prompt-hint"><i className="ph-fill ph-notebook"/><span>This week's prompt · <b>{weekPrompt}</b></span></div>}
+        <textarea className="aj-musing" placeholder="What's on your mind this morning?" value={musing} maxLength={2000} onChange={e => setMusing(e.target.value)}/>
+      </>)}
 
       {sec("2", "DAILY SYSTEM CHECK · " + doneCount + "/6", (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -517,7 +546,7 @@ function Systems({ ctx }) {
 
 /* ---- Timeline / journal ------------------------------------------------- */
 function Timeline({ ctx }) {
-  const { entries, currentWeek, go } = ctx;
+  const { entries, currentWeek, go, openEntry } = ctx;
   const list = entries || [];
   return (
     <div className="aj-view">
@@ -531,16 +560,16 @@ function Timeline({ ctx }) {
           {list.map(e => {
             const d = new Date(e.createdAt);
             return (
-              <div className={"aj-entry" + (e._pending ? " fresh" : "")} key={e.entryId}>
+              <button className={"aj-entry" + (e._pending ? " fresh" : "")} key={e.entryId} onClick={() => openEntry(e)} style={{ textAlign: "left", width: "100%", cursor: "pointer" }}>
                 <div className="aj-entry-top">
                   <div className="aj-entry-l">
                     <div className="aj-entry-ic"><i className={"ph-fill " + (MOOD_ICON[e.mood] || "ph-feather")}/></div>
                     <div><div className="aj-entry-day">{d.toLocaleDateString(undefined, { weekday: "long" })}</div><div className="aj-entry-date mono">{d.toLocaleDateString(undefined, { month: "short", day: "numeric" }).toUpperCase()}</div></div>
                   </div>
-                  {e._pending && <span className="aj-entry-sys"><i className="ph-fill ph-cloud-arrow-up"/>SYNC</span>}
+                  {e._pending ? <span className="aj-entry-sys"><i className="ph-fill ph-cloud-arrow-up"/>SYNC</span> : <i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)", fontSize: 15 }}/>}
                 </div>
                 <p className="aj-entry-body">{(e.body || "").split("\n")[0]}</p>
-              </div>
+              </button>
             );
           })}
           <div className="aj-entry-add" onClick={() => go("reflect")}><i className="ph-fill ph-plus-circle"/><span>Today's entry is waiting…</span></div>
@@ -550,9 +579,82 @@ function Timeline({ ctx }) {
   );
 }
 
+/* ---- Entry detail (the full reflection, not just its first line) -------- */
+function EntryDetail({ ctx }) {
+  const { selEntry, back, go } = ctx;
+  const e = selEntry;
+  if (!e) return (
+    <div className="aj-view"><div className="aj-head"><button className="icon-btn" aria-label="Back" onClick={() => go("timeline")}><i className="ph-bold ph-arrow-left"/></button><h2>Reflection</h2></div><div className="pad" style={{ marginTop: 20 }}><div className="aj-empty muted">That reflection isn't loaded. Open it from your journal.</div></div></div>
+  );
+  const d = new Date(e.createdAt);
+  const p = parseEntry(e.body);
+  const mood = MOODS.find(m => m.key === e.mood);
+  const night = [
+    ["Did well by", p.did, "ph-check-circle", "var(--a)"],
+    ["Difficult because", p.hard, "ph-cloud-rain", "var(--violet-l)"],
+    ["Tomorrow I improve by", p.tomorrow, "ph-arrow-up-right", "var(--gold)"],
+  ].filter(r => r[1]);
+  const logs = [
+    ["School", p.school, "ph-chalkboard-teacher", "var(--violet-l)"],
+    ["Home", p.home, "ph-house", "var(--a)"],
+    ["Peers", p.peer, "ph-users-three", "var(--magenta-l)"],
+  ].filter(r => r[1]);
+  return (
+    <div className="aj-view">
+      <div className="aj-head">
+        <button className="icon-btn" aria-label="Back" onClick={back}><i className="ph-bold ph-arrow-left"/></button>
+        <div>
+          <div className="mono" style={{ fontSize: 11, letterSpacing: ".16em", color: "var(--gold)", fontWeight: 700 }}>WK {String(e.week || 1).padStart(2, "0")}{e._pending ? " · SAVING" : ""}</div>
+          <h2 style={{ fontSize: 22 }}>{d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</h2>
+        </div>
+      </div>
+      {mood && (
+        <div className="pad" style={{ marginTop: 16 }}>
+          <div className="aj-entry-mood"><span className="aj-mood-c"><i className={"ph-fill " + mood.icon}/></span><span>Felt {mood.label.toLowerCase()}</span></div>
+        </div>
+      )}
+      {p.musing && (
+        <div className="pad" style={{ marginTop: 16 }}><Tilt strength={6}><div className="card-grad">
+          <div className="eyebrow" style={{ marginBottom: 8 }}>TODAY'S MUSING</div>
+          <p style={{ fontSize: 15, lineHeight: 1.55, color: "var(--tx-80)", margin: 0, whiteSpace: "pre-wrap" }}>{p.musing}</p>
+        </div></Tilt></div>
+      )}
+      {logs.length > 0 && (
+        <div className="pad" style={{ marginTop: 18 }}>
+          <div className="eyebrow" style={{ marginBottom: 12 }}>EXECUTION LOGS</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+            {logs.map((r, i) => (
+              <div key={i} style={{ display: "flex", gap: 13, alignItems: "flex-start", padding: "14px 16px", borderRadius: 16, background: "var(--card)", border: "1px solid var(--line)" }}>
+                <i className={"ph-fill " + r[2]} style={{ fontSize: 20, color: r[3], marginTop: 1 }}/>
+                <div style={{ flex: 1 }}><div className="eyebrow" style={{ letterSpacing: ".14em" }}>{r[0]}</div><div style={{ fontSize: 15, marginTop: 4, color: "var(--tx-80)" }}>{r[1]}</div></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {night.length > 0 && (
+        <div className="pad" style={{ marginTop: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}><i className="ph-fill ph-moon-stars" style={{ fontSize: 17, color: "var(--violet-l)" }}/><span className="eyebrow" style={{ letterSpacing: ".14em" }}>NIGHT REFLECTION</span></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+            {night.map((r, i) => (
+              <div className="aj-sent" key={i}><div className="aj-sent-n" style={{ background: "transparent" }}><i className={"ph-fill " + r[2]} style={{ color: r[3] }}/></div><div style={{ flex: 1 }}><div className="aj-sent-lbl">{r[0]}…</div><div style={{ fontSize: 15, color: "var(--tx-80)", marginTop: 2 }}>{r[1]}</div></div></div>
+            ))}
+          </div>
+        </div>
+      )}
+      {!p.musing && !logs.length && !night.length && (
+        <div className="pad" style={{ marginTop: 20 }}><p className="muted" style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{e.body || "This reflection is empty."}</p></div>
+      )}
+      <div className="pad" style={{ marginTop: 24 }}>
+        <button className="aj-link" onClick={() => go("timeline")}><i className="ph-fill ph-list-bullets lead" style={{ color: "var(--violet-l)" }}/><span>Back to your journal</span><i className="ph-bold ph-arrow-right chev"/></button>
+      </div>
+    </div>
+  );
+}
+
 /* ---- Calendar ----------------------------------------------------------- */
 function Calendar({ ctx }) {
-  const { entries, streak, pstate, go } = ctx;
+  const { entries, streak, pstate, go, openEntry } = ctx;
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
   const monthLabel = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
@@ -595,10 +697,10 @@ function Calendar({ ctx }) {
       <div className="pad aj-calgrid" style={{ marginTop: 20 }}>{["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <div key={i} className="aj-calwd">{d}</div>)}</div>
       <div className="pad aj-calgrid">{cells.map((c, i) => c ? <button key={i} className={"aj-calday " + c.cls} onClick={() => setSel(c.d)}>{c.d}</button> : <div key={i}/>)}</div>
       <div className="pad aj-callegend"><span><i className="dot done"/>Done</span><span><i className="dot missed"/>Missed</span><span><i className="dot up"/>Upcoming</span></div>
-      <div className="pad" style={{ marginTop: 18 }}><div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div className="mono" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700 }}>{new Date(y, m, sel).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }).toUpperCase()}</div><span className="aj-entry-sys"><i className="ph-fill ph-check-circle"/>{selSys}</span></div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14 }}><i className={"ph-fill " + (selEntry ? (MOOD_ICON[selEntry.mood] || "ph-feather") : "ph-moon-stars")} style={{ fontSize: 28, color: "var(--violet-l)" }}/><p style={{ flex: 1, fontSize: 14, lineHeight: 1.45, color: "var(--tx-70)", margin: 0 }}>{selEntry ? (selEntry.body || "").split("\n")[0] : "No reflection logged this day."}</p></div>
-      </div></div>
+      <div className="pad" style={{ marginTop: 18 }}>{React.createElement(selEntry ? "button" : "div", { className: "card", onClick: selEntry ? (() => openEntry(selEntry)) : undefined, style: selEntry ? { textAlign: "left", width: "100%", cursor: "pointer" } : undefined },
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div className="mono" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700 }}>{new Date(y, m, sel).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }).toUpperCase()}</div><span className="aj-entry-sys"><i className="ph-fill ph-check-circle"/>{selSys}</span></div>,
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14 }}><i className={"ph-fill " + (selEntry ? (MOOD_ICON[selEntry.mood] || "ph-feather") : "ph-moon-stars")} style={{ fontSize: 28, color: "var(--violet-l)" }}/><p style={{ flex: 1, fontSize: 14, lineHeight: 1.45, color: "var(--tx-70)", margin: 0 }}>{selEntry ? (selEntry.body || "").split("\n")[0] : "No reflection logged this day."}</p>{selEntry && <i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)", fontSize: 15 }}/>}</div>
+      )}</div>
     </div>
   );
 }
@@ -836,7 +938,7 @@ function Review({ ctx }) {
       <div className="pad" style={{ marginTop: 24 }}>
         <div className="eyebrow" style={{ marginBottom: 14 }}>YOUR MENTOR</div>
         {mentor ? (
-          <div className="aj-remark"><div className="aj-remark-top"><div className="aj-remark-ic" style={{ background: "rgba(217,110,194,.2)" }}><i className="ph-fill ph-compass" style={{ color: "#f0a6da" }}/></div><div className="aj-remark-role">{mentor.fullName}{mentor.centre ? " · " + mentor.centre : ""}</div></div><p>Your Afrovanguard mentor is linked. Their weekly remarks appear here after your check-in.</p></div>
+          <div className="aj-remark"><div className="aj-remark-top"><div className="aj-remark-ic" style={{ background: "rgba(217,110,194,.2)" }}><i className="ph-fill ph-compass" style={{ color: "#f0a6da" }}/></div><div className="aj-remark-role">{mentor.fullName}{mentor.centre ? " · " + mentor.centre : ""}</div></div>{(mentor.remark || mentor.note) ? <p>{mentor.remark || mentor.note}</p> : <p style={{ color: "var(--tx-40)", fontStyle: "italic" }}>Your Afrovanguard mentor is linked. Their weekly remarks appear here after your check-in.</p>}</div>
         ) : (
           <div className="aj-remark"><div className="aj-remark-top"><div className="aj-remark-ic" style={{ background: "rgba(217,110,194,.2)" }}><i className="ph-fill ph-compass" style={{ color: "#f0a6da" }}/></div><div className="aj-remark-role">Afrovanguard Mentor</div></div><p style={{ color: "var(--tx-40)", fontStyle: "italic" }}>{isNGG ? "No mentor assigned yet — your centre will pair you soon." : "Mentor pairing is part of NGG membership."}</p></div>
         )}
