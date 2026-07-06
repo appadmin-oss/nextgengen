@@ -672,46 +672,70 @@ function EntryDetail({ ctx }) {
 function Calendar({ ctx }) {
   const { entries, streak, pstate, go, openEntry } = ctx;
   const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth();
-  const monthLabel = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-  const first = new Date(y, m, 1).getDay();               // 0 = Sunday
+  const curY = now.getFullYear(), curM = now.getMonth(), todayD = now.getDate();
+  // Navigable month (defaults to the current one). Can page back through
+  // history; can't page past the current month (nothing to see in the future).
+  const [ym, setYm] = useState({ y: curY, m: curM });
+  const { y, m } = ym;
+  const isCurMonth = y === curY && m === curM;
+  const monthLabel = new Date(y, m, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const first = new Date(y, m, 1).getDay();
   const daysIn = new Date(y, m + 1, 0).getDate();
-  const todayD = now.getDate();
-  const byDay = {}; (entries || []).forEach(e => { const d = new Date(e.createdAt); if (d.getFullYear() === y && d.getMonth() === m) byDay[d.getDate()] = e; });
-  const [sel, setSel] = useState(todayD);
+  const [sel, setSel] = useState(isCurMonth ? todayD : 1);
+  const step = (delta) => {
+    const d = new Date(y, m + delta, 1);
+    if (d.getFullYear() > curY || (d.getFullYear() === curY && d.getMonth() > curM)) return; // no future
+    setYm({ y: d.getFullYear(), m: d.getMonth() });
+    setSel(1);
+  };
 
-  // avg systems held (from any persisted systems:* states this month)
+  const byDay = {}; (entries || []).forEach(e => { const d = new Date(e.createdAt); if (d.getFullYear() === y && d.getMonth() === m) byDay[d.getDate()] = e; });
+  const mm = String(m + 1).padStart(2, "0");
+  const sysHeld = (d) => { const k = "systems:" + y + "-" + mm + "-" + String(d).padStart(2, "0"); return pstate[k] ? SYSTEMS.filter(s => pstate[k][s.key]).length : null; };
+
   let sums = 0, cnt = 0;
-  Object.keys(pstate || {}).forEach(k => { if (k.indexOf("systems:" + y + "-" + String(m + 1).padStart(2, "0")) === 0) { const v = pstate[k] || {}; sums += SYSTEMS.filter(s => v[s.key]).length; cnt++; } });
+  Object.keys(pstate || {}).forEach(k => { if (k.indexOf("systems:" + y + "-" + mm) === 0) { const v = pstate[k] || {}; sums += SYSTEMS.filter(s => v[s.key]).length; cnt++; } });
   const monthAvg = cnt ? (sums / cnt).toFixed(1) : "—";
   const journaled = Object.keys(byDay).length;
 
   const cells = [];
   for (let i = 0; i < first; i++) cells.push(null);
+  const todayTs = new Date(curY, curM, todayD).getTime();
   for (let d = 1; d <= daysIn; d++) {
     const has = !!byDay[d];
-    const isToday = d === todayD;
-    const isPast = d < todayD;
-    let cls = "up"; if (isToday) cls = "today"; else if (has) cls = "done"; else if (isPast) cls = "missed";
-    cells.push({ d, cls });
+    const ts = new Date(y, m, d).getTime();
+    const isToday = ts === todayTs;
+    let cls = "up"; if (isToday) cls = "today"; else if (has) cls = "done"; else if (ts < todayTs) cls = "missed";
+    const held = sysHeld(d);
+    cells.push({ d, cls, held });
   }
   const selEntry = byDay[sel];
-  const selKey = "systems:" + y + "-" + String(m + 1).padStart(2, "0") + "-" + String(sel).padStart(2, "0");
-  const selSys = pstate[selKey] ? SYSTEMS.filter(s => pstate[selKey][s.key]).length + "/6" : "—";
+  const selSysN = sysHeld(sel);
+  const selSys = selSysN === null ? "—" : selSysN + "/" + (SYSTEMS.length || 6);
 
   return (
     <div className="aj-view">
       <div className="aj-head" style={{ justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}><button className="icon-btn" aria-label="Back" onClick={() => go("home")}><i className="ph-bold ph-arrow-left"/></button><h2>{monthLabel}</h2></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button className="icon-btn" aria-label="Back" onClick={() => go("home")}><i className="ph-bold ph-arrow-left"/></button>
+          <button className="icon-btn" aria-label="Previous month" onClick={() => step(-1)}><i className="ph-bold ph-caret-left"/></button>
+          <h2 style={{ minWidth: 150, textAlign: "center", margin: 0 }}>{monthLabel}</h2>
+          <button className="icon-btn" aria-label="Next month" onClick={() => step(1)} disabled={isCurMonth} style={{ opacity: isCurMonth ? 0.35 : 1 }}><i className="ph-bold ph-caret-right"/></button>
+        </div>
         <button className="icon-btn" aria-label="List view" onClick={() => go("timeline")}><i className="ph-bold ph-list-bullets"/></button>
       </div>
       <div className="pad" style={{ marginTop: 18, display: "flex", gap: 10 }}>
         <div className="aj-calstat"><b>{journaled}</b><small>journaled</small></div>
-        <div className="aj-calstat"><b style={{ color: "var(--flame)" }}>{streak}</b><small>day streak</small></div>
+        <div className="aj-calstat"><b style={{ color: "var(--flame)" }}>{isCurMonth ? streak : "—"}</b><small>day streak</small></div>
         <div className="aj-calstat"><b style={{ color: "var(--a)" }}>{monthAvg}</b><small>avg systems</small></div>
       </div>
       <div className="pad aj-calgrid" style={{ marginTop: 20 }}>{["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <div key={i} className="aj-calwd">{d}</div>)}</div>
-      <div className="pad aj-calgrid">{cells.map((c, i) => c ? <button key={i} className={"aj-calday " + c.cls} onClick={() => setSel(c.d)}>{c.d}</button> : <div key={i}/>)}</div>
+      <div className="pad aj-calgrid">{cells.map((c, i) => c ? (
+        <button key={i} className={"aj-calday " + c.cls + (c.d === sel ? " sel" : "")} onClick={() => setSel(c.d)}>
+          {c.d}
+          {c.held !== null && <span className="aj-calday-sys" aria-hidden="true">{c.held}</span>}
+        </button>
+      ) : <div key={i}/>)}</div>
       <div className="pad aj-callegend"><span><i className="dot done"/>Done</span><span><i className="dot missed"/>Missed</span><span><i className="dot up"/>Upcoming</span></div>
       <div className="pad" style={{ marginTop: 18 }}>{React.createElement(selEntry ? "button" : "div", { className: "card", onClick: selEntry ? (() => openEntry(selEntry)) : undefined, style: selEntry ? { textAlign: "left", width: "100%", cursor: "pointer" } : undefined },
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div className="mono" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700 }}>{new Date(y, m, sel).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }).toUpperCase()}</div><span className="aj-entry-sys"><i className="ph-fill ph-check-circle"/>{selSys}</span></div>,
