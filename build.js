@@ -151,7 +151,7 @@ async function build() {
   }
   // Mirror the directories that contain bundled-but-not-built things.
   // Skip local-only artifacts (SQLite db, cache, rate-limit state, config).
-  for (const dir of ['vendor', 'assets', 'api', 'journal']) {
+  for (const dir of ['vendor', 'assets', 'api', 'journal', '.well-known']) {
     const src = path.join(ROOT, dir);
     if (fs.existsSync(src)) copyDir(src, path.join(DIST, dir));
   }

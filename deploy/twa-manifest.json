@@ -1,0 +1,28 @@
+{
+  "_comment": "Bubblewrap starter for wrapping the Anchor Journal PWA as a Google Play app (Trusted Web Activity). Replace host/domain + signing key, then run: npx @bubblewrap/cli init --manifest ./deploy/twa-manifest.json && npx @bubblewrap/cli build",
+  "packageId": "org.afrovanguard.ngg.anchor",
+  "host": "REPLACE_WITH_PROD_DOMAIN",
+  "name": "NGG Anchor Journal",
+  "launcherName": "Anchor",
+  "display": "standalone",
+  "orientation": "portrait",
+  "themeColor": "#0c1432",
+  "themeColorDark": "#0c1432",
+  "navigationColor": "#0c1432",
+  "navigationColorDark": "#0c1432",
+  "backgroundColor": "#0c1432",
+  "enableNotifications": true,
+  "startUrl": "/journal/?src=twa",
+  "iconUrl": "https://REPLACE_WITH_PROD_DOMAIN/assets/icons/icon-512.png",
+  "maskableIconUrl": "https://REPLACE_WITH_PROD_DOMAIN/assets/icons/maskable-512.png",
+  "webManifestUrl": "https://REPLACE_WITH_PROD_DOMAIN/journal/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    { "name": "Write today's entry", "shortName": "Reflect", "url": "/journal/?tab=today", "chosenIconUrl": "https://REPLACE_WITH_PROD_DOMAIN/assets/icons/icon-192.png" }
+  ],
+  "signingKey": { "path": "./android.keystore", "alias": "anchor" },
+  "features": {},
+  "minSdkVersion": 21
+}
