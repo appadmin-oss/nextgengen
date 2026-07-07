@@ -35,6 +35,7 @@ const PRECACHE = [
   '/vendor/react-dom.production.min.js',
   '/api-client.js',
   '/assets/logo.png',
+  '/assets/seasonal-icon.js',
 ];
 
 self.addEventListener('install', (e) => {

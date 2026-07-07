@@ -46,6 +46,28 @@ Apple does **not** accept a bare PWA; wrap it with Capacitor:
    our standalone chrome, offline support and native-feel UI cover this.
 4. Add the privacy policy + App Privacy answers; submit via App Store Connect.
 
+## Dynamic season-aware icons (Duolingo-style)
+`assets/seasonal-icon.js` is the single source of truth: a `SEASONS` date-range
+table (New Year, Spring, Summer School, Independence, Halloween, Festive) with an
+`anchor` default. At runtime it repaints the browser **tab / in-app favicon** from
+today's date (navy badge + accent tint + logo + a seasonal glyph) and exposes
+`window.NGGSeason = { key, label, accent, glyph }`. It never overrides
+`theme_color` (a bright status bar over the dark UI reads poorly) and always leaves
+the static `<link rel=icon>` as the offline/no-JS fallback. It's precached by the
+journal service worker, so it works offline too.
+
+The **installed home-screen icon** can't be repainted from JS — it's baked at
+install time. To make *that* seasonal, the native wrapper switches a pre-rendered
+alternate icon on a schedule that mirrors the `SEASONS` table:
+- **iOS (Capacitor):** ship one `CFBundleAlternateIcons` entry per season and call
+  `UIApplication.setAlternateIconName(_:)` (e.g. on launch/foreground). Pre-render
+  each season's 1024² icon from the same logo + glyph used here.
+- **Android (TWA):** declare an `activity-alias` per season (each with its own
+  `<meta-data android:resource>` launcher icon) and enable/disable them with
+  `PackageManager.setComponentEnabledSetting(...)`.
+Mirror the `SEASONS` ranges verbatim in the wrapper so tab and home-screen stay in
+sync; keep `assets/seasonal-icon.js` as the canonical table.
+
 ## Still needs YOU (can't be done from the repo)
 - Google Play + Apple Developer accounts.
 - The production domain (swap every `REPLACE_WITH_PROD_DOMAIN`).
