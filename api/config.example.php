@@ -63,6 +63,20 @@ return [
         'gemini_model'   => 'gemini-1.5-flash',
     ],
 
+    // -----------------------------------------------------------------------
+    // Default Super Admin. Auto-provisioned on first sign-in so a fresh NGG
+    // deploy always has a top-tier staff account (role=super_admin → every
+    // capability). Separate from Afrovanguard's admin — its own account here.
+    // Leave `password` empty to have a strong one generated once; reveal it
+    // with `php api/tools/seed-admin.php`. Sign in with email + password, then
+    // set up the authenticator (TOTP) on the first Control Room visit.
+    // -----------------------------------------------------------------------
+    'super_admin' => [
+        'email'    => 'mamcareer@afrovanguard.org.ng',
+        'name'     => 'Super Admin',
+        'password' => '',   // set an exact password here (recommended), or leave blank
+    ],
+
     // Shared HMAC secret for signing export-sink calls. Generate with
     // `openssl rand -hex 64`. Must match SHARED_SECRET in the Apps Script.
     'shared_secret'   => 'REPLACE_ME_64_HEX_BYTES',

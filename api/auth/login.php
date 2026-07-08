@@ -6,6 +6,8 @@
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 require_method('POST');
+// Guarantee the default Super Admin exists before any sign-in (idempotent).
+ensure_super_admin();
 rate_limit_check('auth.verify');
 
 $body = read_json_body();

@@ -39,6 +39,7 @@ foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2
 require_once __DIR__ . '/backend.php';
 require_once __DIR__ . '/sheets.php';
 require_once __DIR__ . '/session.php';
+require_once __DIR__ . '/superadmin.php';
 require_once __DIR__ . '/rate-limit.php';
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
