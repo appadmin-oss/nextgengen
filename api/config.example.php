@@ -108,6 +108,12 @@ return [
         'sts_url'        => 'https://afrovanguard.org.ng/projects/sts/programs/',
         'volunteer_url'  => 'https://cacentre.afrovanguard.org.ng/volunteer',
         'mentor_program' => 'Street-To-Stardom · Next Gen',
+        // Sync: pull Afrovanguard's approved mentor/volunteer pool into NGG's
+        // mentors table (source='afrovanguard'). Leave `api_token` empty to
+        // disable the sync. Mint the token in Afrovanguard's Studio →
+        // Webhooks → API tokens with the `mentors:read` scope.
+        'api_base'  => 'https://afrovanguard.org.ng/integrations/api.php',
+        'api_token' => '',   // av_int_… (scope: mentors:read)
     ],
 
     // Per-IP rate limits — sliding window inside the configured period.
