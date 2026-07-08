@@ -76,6 +76,28 @@ function admin_members_upsert(array $p): array {
     $existing = $memberId ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]) : null;
 
     if ($existing) {
+        // ── Lockout guards ─────────────────────────────────────────────
+        // Protect against removing the platform's last way in.
+        $isSelf   = strtolower((string)$existing['memberId']) === strtolower((string)$g['requester']['memberId']);
+        $wasSuper = strtolower((string)$existing['role']) === 'super_admin';
+        $newRole  = isset($data['role'])   ? strtolower((string)$data['role'])   : null;
+        $newStat  = isset($data['status']) ? strtolower((string)$data['status']) : null;
+        $losesSuper = $wasSuper && (($newRole !== null && $newRole !== 'super_admin') || ($newStat !== null && $newStat !== 'active'));
+        if ($losesSuper) {
+            $activeSupers = (int) db_row("SELECT COUNT(*) c FROM members WHERE lower(role) = 'super_admin' AND status = 'active'")['c'];
+            if ($activeSupers <= 1) {
+                return ['ok' => false, 'error' => 'last_super_admin',
+                        'detail' => 'This is the last active super admin — promote another super admin first.'];
+            }
+        }
+        // Don't let a super admin lock themselves out by accident.
+        if ($isSelf && $newRole !== null && $newRole !== 'super_admin' && $wasSuper) {
+            return ['ok' => false, 'error' => 'cannot_demote_self', 'detail' => 'Ask another super admin to change your role.'];
+        }
+        if ($isSelf && $newStat !== null && $newStat !== 'active') {
+            return ['ok' => false, 'error' => 'cannot_suspend_self'];
+        }
+
         $patch = db_pick($data, $cols);
         $patch['updatedAt'] = now_iso();
         db_update('members', $patch, ['id' => $existing['id']]);
