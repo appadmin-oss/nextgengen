@@ -419,7 +419,15 @@ function Reflect({ ctx }) {
   const { currentWeek, back, anchorReflection, pstate, setState } = ctx;
   const [musing, setMusing] = useState("");
   const [s1, setS1] = useState(""); const [s2, setS2] = useState(""); const [s3, setS3] = useState("");
-  const [school, setSchool] = useState(""); const [home, setHome] = useState(""); const [peer, setPeer] = useState("");
+  // School / Home / Peer execution logs — structured per the Anchor design.
+  const [learned, setLearned] = useState("");
+  const [notesOk, setNotesOk] = useState(null);   // true | false | null
+  const [teacherOk, setTeacherOk] = useState(null);
+  const [studyOk, setStudyOk] = useState(null);
+  const [obeyOk, setObeyOk] = useState(null);
+  const [phone, setPhone] = useState("");
+  const [influenced, setInfluenced] = useState("");
+  const [noticed, setNoticed] = useState("");
   const [mood, setMood] = useState("good");
   const [busy, setBusy] = useState(false);
   const quote = QUOTES[(Math.floor(Date.now() / 864e5)) % QUOTES.length];
@@ -438,8 +446,30 @@ function Reflect({ ctx }) {
     <div className="pad" style={{ marginTop: 24 }}><div className="eyebrow" style={{ marginBottom: 12 }}>SECTION {n} · {label}</div>{children}</div>
   );
 
+  // A compact Yes/No row (tap the chosen answer again to clear it).
+  const YN = ({ q, v, set }) => (
+    <div className="aj-yn">
+      <span className="aj-yn-q">{q}</span>
+      <span className="aj-yn-btns">
+        <button type="button" className={"aj-yn-b" + (v === true ? " yes" : "")} onClick={() => set(v === true ? null : true)}>Yes</button>
+        <button type="button" className={"aj-yn-b" + (v === false ? " no" : "")} onClick={() => set(v === false ? null : false)}>No</button>
+      </span>
+    </div>
+  );
+
+  // Fold the structured sub-fields into the single labelled lines the entry
+  // body + parser already understand (one line each — no internal newlines).
+  const yn = (v) => v === true ? "Yes" : v === false ? "No" : "";
+  const compose = () => {
+    const school = [learned.trim() && ("Learned " + learned.trim()), notesOk !== null && ("notes " + yn(notesOk)), teacherOk !== null && ("respected teacher " + yn(teacherOk))].filter(Boolean).join(" · ");
+    const home = [studyOk !== null && ("kept study time " + yn(studyOk)), obeyOk !== null && ("obeyed at home " + yn(obeyOk)), phone.trim() && ("phone: " + phone.trim())].filter(Boolean).join(" · ");
+    const peer = [influenced.trim() && ("influenced " + influenced.trim()), noticed.trim() && ("they noticed " + noticed.trim())].filter(Boolean).join(" · ");
+    return { school, home, peer };
+  };
+
   const submit = async () => {
-    if (!musing.trim() && !s1.trim() && !s2.trim() && !s3.trim() && !school.trim() && !home.trim() && !peer.trim()) { toast.err("Write at least one line."); return; }
+    const { school, home, peer } = compose();
+    if (!musing.trim() && !s1.trim() && !s2.trim() && !s3.trim() && !school && !home && !peer) { toast.err("Write at least one line."); return; }
     setBusy(true);
     try { await anchorReflection({ mood, musing, s1, s2, s3, school, home, peer }); } finally { setBusy(false); }
   };
@@ -475,9 +505,20 @@ function Reflect({ ctx }) {
         </div>
       ))}
 
-      {sec("3", "SCHOOL EXECUTION LOG", <input className="aj-logline" placeholder="One line: how did school go?" value={school} maxLength={200} onChange={e => setSchool(e.target.value)}/>)}
-      {sec("4", "HOME EXECUTION LOG", <input className="aj-logline" placeholder="One line: how did home go?" value={home} maxLength={200} onChange={e => setHome(e.target.value)}/>)}
-      {sec("5", "PEER MODELING LOG", <input className="aj-logline" placeholder="One line: who did you influence?" value={peer} maxLength={200} onChange={e => setPeer(e.target.value)}/>)}
+      {sec("3", "SCHOOL EXECUTION LOG", <>
+        <input className="aj-logline" placeholder="What I learned today" value={learned} maxLength={200} onChange={e => setLearned(e.target.value)}/>
+        <YN q="Did I take notes properly?" v={notesOk} set={setNotesOk}/>
+        <YN q="Did I respect my teacher?" v={teacherOk} set={setTeacherOk}/>
+      </>)}
+      {sec("4", "HOME EXECUTION LOG", <>
+        <YN q="Did I follow my study time?" v={studyOk} set={setStudyOk}/>
+        <YN q="Did I obey instructions at home?" v={obeyOk} set={setObeyOk}/>
+        <input className="aj-logline" placeholder="How did I use my phone today?" value={phone} maxLength={200} onChange={e => setPhone(e.target.value)} style={{ marginTop: 10 }}/>
+      </>)}
+      {sec("5", "PEER MODELING LOG", <>
+        <input className="aj-logline" placeholder="Who did I influence or invite today?" value={influenced} maxLength={200} onChange={e => setInfluenced(e.target.value)}/>
+        <input className="aj-logline" placeholder="What behaviour did they notice in me?" value={noticed} maxLength={200} onChange={e => setNoticed(e.target.value)} style={{ marginTop: 10 }}/>
+      </>)}
 
       <div className="pad" style={{ marginTop: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}><i className="ph-fill ph-moon-stars" style={{ fontSize: 17, color: "var(--violet-l)" }}/><span className="eyebrow" style={{ letterSpacing: ".14em" }}>SECTION 6 · NIGHT REFLECTION · 3 SENTENCES</span></div>
