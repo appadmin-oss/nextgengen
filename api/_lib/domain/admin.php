@@ -102,6 +102,7 @@ function admin_members_upsert(array $p): array {
         $patch['updatedAt'] = now_iso();
         db_update('members', $patch, ['id' => $existing['id']]);
         audit('admin.member.update', $g['requester']['memberId'], $memberId, ['keys' => array_keys($patch)], (string)($p['ip'] ?? ''));
+        event_emit('member.updated', ['memberId' => $memberId] + (db_row('SELECT memberId, fullName, email, phone, type, status, role, centre, track, cohort, school, parentName, parentEmail, parentPhone FROM members WHERE memberId = ?', [$memberId]) ?: []));
         return ['ok' => true, 'memberId' => $memberId];
     }
 
@@ -114,6 +115,7 @@ function admin_members_upsert(array $p): array {
     $insert['updatedAt'] = now_iso();
     db_insert('members', $insert);
     audit('admin.member.create', $g['requester']['memberId'], $newId, [], (string)($p['ip'] ?? ''));
+    event_emit('member.created', ['memberId' => $newId, 'fullName' => (string)($insert['fullName'] ?? ''), 'type' => (string)($insert['type'] ?? ''), 'centre' => (string)($insert['centre'] ?? '')]);
     return ['ok' => true, 'memberId' => $newId];
 }
 

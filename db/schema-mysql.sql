@@ -285,5 +285,40 @@ ALTER TABLE members ADD COLUMN failedLogins INT DEFAULT 0;
 ALTER TABLE members ADD COLUMN lockedUntil VARCHAR(40);
 ALTER TABLE members ADD COLUMN lastLoginAt VARCHAR(40);
 
+-- Integration bus: destinations + outbox + deliveries (retry/backoff).
+CREATE TABLE IF NOT EXISTS integrations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  integrationId VARCHAR(48) UNIQUE NOT NULL,
+  kind VARCHAR(24) NOT NULL,
+  name VARCHAR(160),
+  config TEXT,
+  events TEXT,
+  status VARCHAR(16) DEFAULT 'active',
+  createdAt VARCHAR(40), updatedAt VARCHAR(40)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS outbox (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  eventId VARCHAR(48) UNIQUE NOT NULL,
+  kind VARCHAR(64) NOT NULL,
+  payload MEDIUMTEXT,
+  createdAt VARCHAR(40),
+  INDEX idx_outbox_kind (kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS deliveries (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  eventId VARCHAR(48) NOT NULL,
+  integrationId VARCHAR(48) NOT NULL,
+  status VARCHAR(16) DEFAULT 'pending',
+  attempts INT DEFAULT 0,
+  nextAttemptAt VARCHAR(40),
+  lastError TEXT,
+  deliveredAt VARCHAR(40),
+  createdAt VARCHAR(40),
+  INDEX idx_deliveries_due (status, nextAttemptAt),
+  INDEX idx_deliveries_event (eventId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (10) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (11) ON DUPLICATE KEY UPDATE version = version;

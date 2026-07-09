@@ -81,6 +81,17 @@ return [
     ],
 
     // -----------------------------------------------------------------------
+    // SMS — Termii first for Nigerian numbers, Twilio first elsewhere; each
+    // falls through to the other on failure. Leave both empty to disable
+    // (parent verification then goes email-only).
+    // -----------------------------------------------------------------------
+    'sms' => [
+        'default_country' => 'NG',
+        'termii' => ['api_key' => '', 'sender' => 'NGG'],
+        'twilio' => ['sid' => '', 'token' => '', 'from' => ''],
+    ],
+
+    // -----------------------------------------------------------------------
     // Default Super Admin. Auto-provisioned on first sign-in so a fresh NGG
     // deploy always has a top-tier staff account (role=super_admin → every
     // capability). Separate from Afrovanguard's admin — its own account here.

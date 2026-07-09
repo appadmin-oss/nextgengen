@@ -34,7 +34,9 @@ require $ROOT . '/_lib/util.php';
 require $ROOT . '/_lib/mailer.php';
 require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum'] as $d) require $ROOT . "/_lib/domain/$d.php";
+require $ROOT . '/_lib/bus.php';
+require $ROOT . '/_lib/sms.php';
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
@@ -412,6 +414,81 @@ $rl = backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['lin
 chk('student can revoke a link', !empty(backend_dispatch('member.circle.revoke', ['requesterId' => 'NGG-2025-0001', 'linkId' => $rl])['ok']));
 chk('revoked token no longer works', backend_dispatch('circle.dashboard', ['token' => $ctok])['error'] === 'link_invalid');
 chk('revoked token drops out of the cohort', backend_dispatch('circle.cohort', ['tokens' => [$ctok]])['students'] === []);
+
+// ── Integration bus (mocked HTTP — no network) ──
+chk('bus: emit fans out only to subscribed destinations, dispatch delivers signed', (function () {
+    $calls = [];
+    $GLOBALS['__bus_http_mock'] = function ($url, $body, $headers) use (&$calls) {
+        $calls[] = ['url' => $url, 'body' => $body, 'headers' => $headers];
+        return ['ok' => true, 'body' => '{}'];
+    };
+    backend_dispatch('admin.integrations.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'webhook', 'name' => 'Partner', 'url' => 'https://partner.example/hook', 'secret' => 'whsec_test', 'events' => ['attendance.*']]]);
+    backend_dispatch('admin.integrations.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'gchat', 'name' => 'Ops room', 'url' => 'https://chat.googleapis.com/v1/spaces/X/messages?key=k', 'events' => ['*']]]);
+    $ev = event_emit('attendance.marked', ['memberId' => 'NGG-2025-0001', 'date' => '2026-07-09', 'source' => 'qr']);
+    $pending = (int)db_row('SELECT COUNT(*) c FROM deliveries WHERE eventId = ?', [$ev])['c'];
+    if ($pending !== 2) return false;                       // webhook (attendance.*) + gchat (*)
+    $ev2 = event_emit('member.updated', ['memberId' => 'NGG-2025-0001']);
+    if ((int)db_row('SELECT COUNT(*) c FROM deliveries WHERE eventId = ?', [$ev2])['c'] !== 1) return false; // gchat only
+    $r = deliveries_dispatch(20);
+    if ($r['delivered'] !== 3) return false;
+    // Signed webhook call: verify HMAC over "ts.body" with the secret.
+    foreach ($calls as $cl) {
+        if (strpos($cl['url'], 'partner.example') === false) continue;
+        $hdr = []; foreach ($cl['headers'] as $h) { $kv = explode(': ', $h, 2); if (count($kv) === 2) $hdr[$kv[0]] = $kv[1]; }
+        if (($hdr['X-NGG-Event'] ?? '') !== 'attendance.marked') return false;
+        $expect = 'sha256=' . hash_hmac('sha256', $hdr['X-NGG-Timestamp'] . '.' . $cl['body'], 'whsec_test');
+        if (!hash_equals($expect, $hdr['X-NGG-Signature'] ?? '')) return false;
+    }
+    return true;
+})());
+chk('bus: failures back off then die; secrets never listed in full', (function () {
+    $GLOBALS['__bus_http_mock'] = fn($u, $b, $h) => ['ok' => false, 'error' => 'http_500'];
+    $ev = event_emit('attendance.marked', ['x' => 1]);
+    deliveries_dispatch(20);
+    $d = db_row('SELECT * FROM deliveries WHERE eventId = ? LIMIT 1', [$ev]);
+    if ($d['status'] !== 'failed' || (int)$d['attempts'] !== 1 || $d['nextAttemptAt'] <= now_iso()) return false;
+    db_update('deliveries', ['attempts' => 7, 'nextAttemptAt' => now_iso()], ['id' => $d['id']]);
+    deliveries_dispatch(20);
+    if (db_row('SELECT status FROM deliveries WHERE id = ?', [$d['id']])['status'] !== 'dead') return false;
+    $list = backend_dispatch('admin.integrations.list', ['requesterId' => 'NGG-2025-0099']);
+    foreach ($list['integrations'] as $i) { if (!empty($i['secret'])) return false; if (strpos(json_encode($i), 'whsec_test') !== false) return false; }
+    $GLOBALS['__bus_http_mock'] = fn($u, $b, $h) => ['ok' => true, 'body' => '{}'];
+    return true;
+})());
+chk('bus: sheets member snapshot chunks through the bridge', (function () {
+    $seen = 0;
+    $GLOBALS['__bus_http_mock'] = function ($url, $body, $h) use (&$seen) {
+        $j = json_decode($body, true);
+        if (($j['event'] ?? '') === 'members.snapshot' && ($j['secret'] ?? '') !== '' && !empty($j['data']['members'])) $seen++;
+        return ['ok' => true, 'body' => '{}'];
+    };
+    backend_dispatch('admin.integrations.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'sheets', 'name' => 'Mirror', 'url' => 'https://script.google.com/macros/s/XX/exec', 'events' => ['member.*', 'attendance.*', 'registration.*']]]);
+    $r = backend_dispatch('admin.sheets.syncMembers', ['requesterId' => 'NGG-2025-0099']);
+    unset($GLOBALS['__bus_http_mock']);
+    return !empty($r['ok']) && $r['chunksSent'] >= 1 && $seen >= 1;
+})());
+chk('bus: integrations gated to settings cap', backend_dispatch('admin.integrations.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+chk('bus: url allowlists per kind enforced', backend_dispatch('admin.integrations.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'gchat', 'url' => 'https://evil.example/hook']])['error'] === 'bad_gchat_url');
+
+// ── SMS layer (pure normalisation + routing; no network) ──
+chk('sms: NG numbers normalise to +234', sms_normalize('08031234567') === '+2348031234567' && sms_normalize('2348031234567') === '+2348031234567' && sms_normalize('+447911123456') === '+447911123456' && sms_normalize('abc') === '');
+chk('sms: provider order routes NG→termii-first, intl→twilio-first', (function () {
+    $GLOBALS['CONFIG']['sms'] = ['default_country' => 'NG', 'termii' => ['api_key' => 'tk'], 'twilio' => ['sid' => 's', 'token' => 't', 'from' => '+1000']];
+    $ok = sms_provider_order('+2348031234567') === ['termii', 'twilio'] && sms_provider_order('+447911123456') === ['twilio', 'termii'] && sms_enabled();
+    $GLOBALS['CONFIG']['sms'] = null;
+    return $ok && !sms_enabled();
+})());
+chk('sms: falls through to second provider on failure', (function () {
+    $GLOBALS['CONFIG']['sms'] = ['default_country' => 'NG', 'termii' => ['api_key' => 'tk'], 'twilio' => ['sid' => 's', 'token' => 't', 'from' => '+1000']];
+    $tried = [];
+    $GLOBALS['__sms_http_mock'] = function ($url, $opts) use (&$tried) {
+        $tried[] = $url;
+        return strpos($url, 'termii') !== false ? ['ok' => false, 'error' => 'http_500'] : ['ok' => true, 'body' => '{}'];
+    };
+    $r = sms_send('08031234567', 'Test message');
+    unset($GLOBALS['__sms_http_mock']); $GLOBALS['CONFIG']['sms'] = null;
+    return !empty($r['ok']) && $r['provider'] === 'twilio' && count($tried) === 2;
+})());
 
 // ── AI profiles (offline resolution only — no network in tests) ──
 chk('ai disabled with no keys', ai_enabled() === false && ai_enabled('coach') === false && ai_complete('s', 'u')['error'] === 'ai_disabled');

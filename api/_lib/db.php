@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 10;
+const NGG_SCHEMA_TARGET = 11;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -393,6 +393,45 @@ function db_migrate(PDO $db): void {
             ALTER TABLE members ADD COLUMN failedLogins INTEGER DEFAULT 0;
             ALTER TABLE members ADD COLUMN lockedUntil TEXT;
             ALTER TABLE members ADD COLUMN lastLoginAt TEXT;
+        ",
+        // Integration bus: admin-configured destinations (Google Chat, signed
+        // webhooks, Apps Script Sheets bridge), an event outbox and per-
+        // destination deliveries with retry/backoff + a readable log.
+        11 => "
+            CREATE TABLE integrations (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              integrationId TEXT UNIQUE NOT NULL,
+              kind TEXT NOT NULL,
+              name TEXT,
+              config TEXT,
+              events TEXT,
+              status TEXT DEFAULT 'active',
+              createdAt TEXT DEFAULT (datetime('now')),
+              updatedAt TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE outbox (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              eventId TEXT UNIQUE NOT NULL,
+              kind TEXT NOT NULL,
+              payload TEXT,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_outbox_kind ON outbox(kind);
+
+            CREATE TABLE deliveries (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              eventId TEXT NOT NULL,
+              integrationId TEXT NOT NULL,
+              status TEXT DEFAULT 'pending',
+              attempts INTEGER DEFAULT 0,
+              nextAttemptAt TEXT,
+              lastError TEXT,
+              deliveredAt TEXT,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_deliveries_due ON deliveries(status, nextAttemptAt);
+            CREATE INDEX idx_deliveries_event ON deliveries(eventId);
         ",
     ];
 

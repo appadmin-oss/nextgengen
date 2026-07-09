@@ -250,6 +250,14 @@
         list:   (q) => request('/admin/contact.php' + qs(q || {})),
         status: (id, status) => request('/admin/contact.php', { body: { id, status } }),
       },
+      integrations: {
+        list:     () => request('/admin/integrations.php'),
+        upsert:   (data) => request('/admin/integrations.php', { body: { action: 'upsert', data } }),
+        remove:   (integrationId) => request('/admin/integrations.php', { body: { action: 'delete', integrationId } }),
+        test:     (integrationId) => request('/admin/integrations.php', { body: { action: 'test', integrationId } }),
+        dispatch: () => request('/admin/integrations.php', { body: { action: 'dispatch' } }),
+        syncMembers: () => request('/admin/integrations.php', { body: { action: 'sync_members' } }),
+      },
       settings: {
         get: () => request('/admin/settings.php'),
         set: (data) => request('/admin/settings.php', { body: { data } }),

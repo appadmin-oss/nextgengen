@@ -79,6 +79,12 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.club.members'          => 'admin_club_members',
             // Anchor Circle — student side (member) + portal side (guardian)
             'auth.gateway'                => 'auth_gateway',
+            'admin.integrations.list'     => 'admin_integrations_list',
+            'admin.integrations.upsert'   => 'admin_integrations_upsert',
+            'admin.integrations.delete'   => 'admin_integrations_delete',
+            'admin.integrations.test'     => 'admin_integrations_test',
+            'admin.integrations.dispatch' => 'admin_integrations_dispatch',
+            'admin.sheets.syncMembers'    => 'admin_sheets_sync_members',
             'member.security'             => 'member_security',
             'member.sessions.revoke'      => 'member_sessions_revoke',
             'member.momentum'             => 'member_momentum',
