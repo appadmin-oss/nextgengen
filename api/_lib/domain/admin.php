@@ -69,7 +69,7 @@ function admin_members_upsert(array $p): array {
     // and never to a tier above their own.
     if (isset($data['role'])) {
         if (!role_has_cap($g['requester']['role'], 'rbac')) unset($data['role']);
-        elseif (!in_array($data['role'], ['member', 'editor', 'summer_admin', 'club_admin', 'admin', 'super_admin'], true)) unset($data['role']);
+        elseif (!in_array($data['role'], ['member', 'editor', 'summer_admin', 'club_admin', 'audit', 'admin', 'super_admin'], true)) unset($data['role']);
     }
 
     $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes'];
@@ -327,7 +327,10 @@ function admin_anchor_set(array $p): array {
  * (super_admin) — it's the accountability record for every admin and manager.
  */
 function admin_audit_tail(array $p): array {
-    $g = admin_cap_gate($p, 'rbac'); if (!$g['ok']) return $g;
+    // Readable by super_admin (rbac) AND the read-only M&E 'audit' role.
+    $g = admin_cap_gate($p, 'rbac');
+    if (!$g['ok']) $g = admin_cap_gate($p, 'audit');
+    if (!$g['ok']) return $g;
     $limit = min(2000, max(1, (int)($p['limit'] ?? 300)));
     $where = []; $params = [];
     if (!empty($p['actor']))  { $where[] = 'a.actorId = ?'; $params[] = (string)$p['actor']; }

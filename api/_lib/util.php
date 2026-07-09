@@ -103,11 +103,14 @@ function push_notification(string $memberId, array $n): void {
  */
 function admin_role_caps($role): array {
     switch (strtolower((string)($role ?? ''))) {
-        case 'super_admin':  return ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club'];
+        case 'super_admin':  return ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'audit'];
         case 'admin':        return ['content', 'people', 'inbox'];
         case 'summer_admin': return ['summer'];   // Summer School portal only
         case 'club_admin':   return ['club'];      // NGG Club portal only
         case 'editor':       return ['content'];
+        // Monitoring & Evaluation: reads everything the M&E workspace shows,
+        // writes nothing operational — the role simply holds no other cap.
+        case 'audit':        return ['audit'];
         default:             return [];
     }
 }

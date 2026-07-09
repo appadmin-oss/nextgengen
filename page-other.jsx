@@ -1301,4 +1301,398 @@ function CirclePortal({ setPage }) {
   </>);
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, FAQList, MentorApplySection, MediaModal, CirclePortal });
+/* ============================================================================
+   Parent verification — the no-account page a parent reaches from the
+   SMS/email link (?t=…). Calm paper, plain language, one lime button.
+   ============================================================================ */
+function ParentVerifyPage() {
+  const t = new URLSearchParams(window.location.search).get("t") || "";
+  const [state, setState] = React.useState("loading"); // loading|form|done|success|error
+  const [ctx, setCtx] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [consents, setConsents] = React.useState({});
+  const [actorName, setActorName] = React.useState("");
+  const [feedback, setFeedback] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!t) { setState("error"); setErr("This link is incomplete — open it exactly as it was sent to you."); return; }
+    NGGApi.public.verify.context(t)
+      .then(r => { setCtx(r); setActorName(r.guardianName || ""); setState(r.done ? "done" : "form"); })
+      .catch(e => { setState("error"); setErr((e.code === "link_expired") ? "This link has expired. Ask the program team to send a new one." : "This link isn't valid. Check you opened it exactly as sent — or ask the program team for a new one."); });
+  }, []);
+
+  const types = (ctx && ctx.consentTypes) || {};
+  const p0 = Object.keys(types).filter(k => types[k].p === 0);
+  const optional = Object.keys(types).filter(k => types[k].p > 0);
+  const p0Done = p0.every(k => consents[k]);
+  const CONSENT_COPY = {
+    participation: "may attend all program sessions and activities.",
+    medical: "staff may seek medical help for them in an emergency.",
+    data: "we may store the registration details you provided, protected under the NDPR, and use them only to run the program.",
+    media: "may appear in program photos and media (optional).",
+    trips: "may join supervised off-site activities (optional).",
+    comms: "send me program updates by SMS or email (optional).",
+  };
+
+  const submit = async () => {
+    setBusy(true); setErr("");
+    try {
+      await NGGApi.public.verify.submit(t, consents, actorName.trim(), feedback.trim());
+      setState("success");
+    } catch (e) {
+      setErr(e.code === "consent_required" ? "Please tick all three required boxes — the registration can't complete without them." : "Couldn't save just now — check your connection and try again. Nothing you entered was lost.");
+    } finally { setBusy(false); }
+  };
+
+  const shell = (children) => (
+    <div style={{ minHeight: "100vh", background: "#f7f7f4", color: "#171a1f", display: "flex", justifyContent: "center", padding: "34px 18px 70px", fontFamily: "var(--font-body, system-ui, sans-serif)" }}>
+      <div style={{ width: "100%", maxWidth: 460 }}>{children}</div>
+    </div>
+  );
+  const card = { background: "#fff", border: "1px solid #e6e6e0", borderRadius: 18, padding: 20 };
+  const first = ctx && ctx.student ? (ctx.student.name || "").split(" ")[0] : "";
+
+  if (state === "loading") return shell(<div style={{ ...card, textAlign: "center", padding: 48 }}><div className="dash-spinner"/><p style={{ color: "#777" }}>One moment…</p></div>);
+  if (state === "error") return shell(<div style={card}><h1 style={{ fontSize: 22, margin: "0 0 8px" }}>We couldn't open this link</h1><p style={{ color: "#555", lineHeight: 1.55 }}>{err}</p></div>);
+  if (state === "done") return shell(<div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>✅</div><h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Already confirmed</h1><p style={{ color: "#555" }}>You've already given consent for <b>{ctx.student.name}</b>. Nothing more is needed — thank you.</p></div>);
+  if (state === "success") return shell(<div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>🎉</div><h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>{first} is fully registered</h1><p style={{ color: "#555", lineHeight: 1.55 }}>Thank you. Their ID card is being prepared, and the program team has been notified. We'll only contact you about the program.</p></div>);
+
+  return shell(<>
+    <div style={{ fontSize: 11, letterSpacing: ".18em", fontWeight: 700, color: "#8a8a80", textTransform: "uppercase" }}>NGG Summer School</div>
+    <h1 style={{ fontSize: 24, lineHeight: 1.2, margin: "10px 0 14px" }}>Hello{actorName ? " " + actorName.split(" ")[0] : ""} — {first} was registered today.</h1>
+    <div style={{ ...card, background: "#f0f4e4", border: "1px solid #dbe5bd", marginBottom: 14 }}>
+      <b style={{ fontSize: 14 }}>Why you got this link:</b>
+      <p style={{ margin: "6px 0 0", fontSize: 14, color: "#4a4f42", lineHeight: 1.55 }}>We need your consent before {first}'s registration is complete. It takes about a minute — and you can tell us anything we should know.</p>
+    </div>
+    <div style={{ ...card, display: "flex", gap: 14, alignItems: "center", marginBottom: 14 }}>
+      {ctx.student.photoUrl
+        ? <img src={ctx.student.photoUrl} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover" }}/>
+        : <div style={{ width: 56, height: 56, borderRadius: 14, background: "#eef0e6", display: "grid", placeItems: "center", fontSize: 24, fontWeight: 800 }}>{(ctx.student.name || "?").charAt(0)}</div>}
+      <div><div style={{ fontWeight: 800, fontSize: 17 }}>{ctx.student.name}</div><div style={{ fontSize: 13, color: "#777" }}>{ctx.student.course || "Summer program"}</div></div>
+    </div>
+
+    <div style={{ fontSize: 11, letterSpacing: ".14em", fontWeight: 700, color: "#8a8a80", margin: "18px 0 8px", textTransform: "uppercase" }}>Required — please tick all three</div>
+    {p0.map(k => (
+      <label key={k} style={{ ...card, display: "flex", gap: 12, alignItems: "flex-start", padding: 14, marginBottom: 8, cursor: "pointer", borderColor: consents[k] ? "#9fbc3b" : "#e6e6e0" }}>
+        <input type="checkbox" checked={!!consents[k]} onChange={e => setConsents(c => ({ ...c, [k]: e.target.checked }))} style={{ width: 19, height: 19, marginTop: 1, accentColor: "#7a9c1e" }}/>
+        <span style={{ fontSize: 14, lineHeight: 1.5 }}><b>{types[k].label}</b> — {first} {CONSENT_COPY[k] || ""}</span>
+      </label>
+    ))}
+    <div style={{ fontSize: 11, letterSpacing: ".14em", fontWeight: 700, color: "#8a8a80", margin: "18px 0 8px", textTransform: "uppercase" }}>Optional — your choice either way</div>
+    {optional.map(k => (
+      <label key={k} style={{ ...card, display: "flex", gap: 12, alignItems: "flex-start", padding: 14, marginBottom: 8, cursor: "pointer" }}>
+        <input type="checkbox" checked={!!consents[k]} onChange={e => setConsents(c => ({ ...c, [k]: e.target.checked }))} style={{ width: 19, height: 19, marginTop: 1, accentColor: "#7a9c1e" }}/>
+        <span style={{ fontSize: 14, lineHeight: 1.5 }}><b>{types[k].label}</b> — {k === "comms" ? "" : first + " "}{CONSENT_COPY[k] || ""}</span>
+      </label>
+    ))}
+
+    <div style={{ margin: "18px 0 8px", fontSize: 11, letterSpacing: ".14em", fontWeight: 700, color: "#8a8a80", textTransform: "uppercase" }}>You</div>
+    <input value={actorName} onChange={e => setActorName(e.target.value)} placeholder="Your full name" maxLength={120}
+      style={{ width: "100%", padding: "13px 15px", borderRadius: 12, border: "1px solid #dcdcd4", fontSize: 16, background: "#fff" }}/>
+    <textarea value={feedback} onChange={e => setFeedback(e.target.value)} placeholder={"Anything we should know about " + first + "? (allergies, pickup, concerns — optional)"} maxLength={1000}
+      style={{ width: "100%", marginTop: 8, minHeight: 84, padding: "13px 15px", borderRadius: 12, border: "1px solid #dcdcd4", fontSize: 15, background: "#fff", resize: "vertical", fontFamily: "inherit" }}/>
+    {err && <p style={{ color: "#b03535", fontSize: 13.5, margin: "10px 0 0" }}>{err}</p>}
+    <button onClick={submit} disabled={!p0Done || busy || actorName.trim().length < 2}
+      style={{ width: "100%", marginTop: 14, padding: 16, borderRadius: 14, border: "none", cursor: p0Done ? "pointer" : "default", fontWeight: 800, fontSize: 16, background: p0Done ? "#c9f24e" : "#e8e8e0", color: p0Done ? "#243300" : "#9a9a90" }}>
+      {busy ? "Saving…" : "Confirm & consent"}
+    </button>
+    <p style={{ textAlign: "center", fontSize: 12, color: "#9a9a90", lineHeight: 1.5, marginTop: 14 }}>Read-only for us, revocable by you — contact the program team any time to change a choice.</p>
+  </>);
+}
+
+/* ============================================================================
+   The Gate — registration desk + attendance behind a gated link (?g=…).
+   Dark blue + gold. Requires a signed-in staff member; the token scopes
+   the link. Register wizard: Details → Photo → Confirm. Check-in by code.
+   ============================================================================ */
+function GatePage() {
+  const g = new URLSearchParams(window.location.search).get("g") || "";
+  const auth = (window.useAuth || (() => null))();   // stable: set before mount
+  const [ctx, setCtx] = React.useState(null);
+  const [state, setState] = React.useState("loading"); // loading|need-auth|error|ready
+  const [err, setErr] = React.useState("");
+  const [tab, setTab] = React.useState("register");
+  const draftKey = "ngg_gate_draft_" + g;
+
+  const load = React.useCallback(() => {
+    setState("loading");
+    NGGApi.public.gate.context(g)
+      .then(r => { setCtx(r); setState("ready"); })
+      .catch(e => {
+        const c = e.code || e.message;
+        if (c === "unauthorized") setState("need-auth");
+        else { setErr(c === "gate_invalid" ? "This gate link has been closed or revoked. Ask an admin for a fresh one." : c === "forbidden" ? "Your account doesn't have staff access." : "Couldn't load the gate — check your connection.") ; setState("error"); }
+      });
+  }, [g]);
+  React.useEffect(() => { load(); }, [load]);
+  // After the operator signs in through the modal, retry automatically.
+  React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(); }, [auth && auth.isSignedIn]);
+
+  const navy = "#16223e", gold = "#ffce54", goldInk = "#2b2100";
+  const card = { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14 };
+  const inputS = { width: "100%", padding: "12px 14px", borderRadius: 11, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 16, fontFamily: "inherit" };
+  const shell = (children) => (
+    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)" }}>
+      <div style={{ maxWidth: 480, margin: "0 auto", padding: "26px 18px 70px" }}>{children}</div>
+    </div>
+  );
+
+  if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
+  if (state === "need-auth") return shell(<div style={{ ...card, padding: 24, textAlign: "center", marginTop: 60 }}>
+    <div style={{ fontSize: 38 }}>🛡️</div>
+    <h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Staff sign-in required</h1>
+    <p style={{ color: "rgba(230,238,255,.66)", fontSize: 14, lineHeight: 1.55 }}>This gate link is real — but the person operating it must be signed in as staff.</p>
+    <button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Sign in →</button>
+  </div>);
+  if (state === "error") return shell(<div style={{ ...card, padding: 24, marginTop: 60 }}><h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Gate unavailable</h1><p style={{ color: "rgba(230,238,255,.66)", fontSize: 14 }}>{err}</p><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
+
+  return shell(<>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>THE GATE · {String((ctx.gate && ctx.gate.name) || "").toUpperCase()}</div>
+        <h1 style={{ fontSize: 22, margin: "4px 0 0", fontWeight: 800 }}>{(ctx.cohort && ctx.cohort.name) || "Summer School"}</h1>
+      </div>
+      <span style={{ fontSize: 24 }}>⛩️</span>
+    </div>
+    <div style={{ display: "flex", gap: 0, margin: "18px 0" }}>
+      {[["register", "Register"], ["checkin", "Check-in"]].map(([id, label], i) => (
+        <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: "11px 0", fontWeight: 800, fontSize: 14, cursor: "pointer", color: tab === id ? goldInk : "rgba(230,238,255,.6)", background: tab === id ? gold : "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: i === 0 ? "11px 0 0 11px" : "0 11px 11px 0" }}>{label}</button>
+      ))}
+    </div>
+    {tab === "register"
+      ? <GateRegister g={g} ctx={ctx} card={card} inputS={inputS} gold={gold} goldInk={goldInk} draftKey={draftKey}/>
+      : <GateCheckin g={g} card={card} inputS={inputS} gold={gold} goldInk={goldInk}/>}
+  </>);
+}
+
+function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
+  const fields = (ctx.form && ctx.form.fields) || [];
+  const [step, setStep] = React.useState(0);           // 0 details · 1 photo · 2 confirm
+  const [form, setForm] = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey)) || {}; } catch (_) { return {}; } });
+  const [errors, setErrors] = React.useState({});
+  const [photoUrl, setPhotoUrl] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [dupe, setDupe] = React.useState(null);
+  const [done, setDone] = React.useState(null);
+  const set = (k, v) => setForm(f => { const n = { ...f, [k]: v }; try { localStorage.setItem(draftKey, JSON.stringify(n)); } catch (_) {} return n; });
+  const visible = (f) => !f.showIf || String(form[f.showIf.key] || "") === String(f.showIf.value);
+  const mut = { color: "rgba(230,238,255,.62)" };
+
+  const submit = async (force) => {
+    setBusy(true); setErrors({}); setDupe(null);
+    try {
+      const r = await NGGApi.public.gate.register(g, form, photoUrl, !!force);
+      try { localStorage.removeItem(draftKey); } catch (_) {}
+      setDone(r);
+    } catch (e) {
+      if (e.code === "duplicate_suspect" || (e.detail && e.detail.existing)) { setDupe((e.detail && e.detail.existing) || {}); }
+      else if (e.errors || (e.detail && e.detail.errors)) { setErrors(e.errors || e.detail.errors); setStep(0); }
+      else if (e.code === "duplicate_suspect") { setDupe({}); }
+      else setErrors({ _: "Couldn't save — check the connection and try again. The draft is safe on this device." });
+    } finally { setBusy(false); }
+  };
+
+  if (done) return (
+    <div style={{ ...card, padding: 22, textAlign: "center" }}>
+      <div style={{ fontSize: 40 }}>📨</div>
+      <h2 style={{ fontSize: 20, margin: "10px 0 6px" }}>Registered — parent notified</h2>
+      <p style={{ ...mut, fontSize: 14, lineHeight: 1.55 }}>{form.fullName} is in as <b style={{ color: "#fff" }}>{done.studentId}</b>. The registration completes when the parent confirms{done.verificationSent && done.verificationSent.length ? " (sent by " + done.verificationSent.join(" + ") + ")" : ""}. Their ID is issued at that moment.</p>
+      <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+        <button onClick={() => { setDone(null); setForm({}); setPhotoUrl(""); setStep(0); }} style={{ flex: 1, padding: 13, borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>New registration</button>
+        <button onClick={() => { const keep = {}; ["parentName", "parentPhone", "parentEmail"].forEach(k => { if (form[k]) keep[k] = form[k]; }); setDone(null); setForm(keep); setPhotoUrl(""); setStep(0); }} style={{ flex: 1, padding: 13, borderRadius: 11, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Register sibling</button>
+      </div>
+    </div>
+  );
+
+  if (dupe) return (
+    <div style={{ ...card, padding: 20 }}>
+      <h2 style={{ fontSize: 18, margin: "0 0 8px" }}>Possibly already registered</h2>
+      <p style={{ ...mut, fontSize: 14, lineHeight: 1.5 }}>A student with the same name and parent contact already exists{dupe.studentId ? <> — <b style={{ color: "#fff" }}>{dupe.studentId}</b> ({dupe.regStatus})</> : ""}. Registering again creates a second record.</p>
+      <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+        <button onClick={() => setDupe(null)} style={{ flex: 1, padding: 12, borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>It's them — stop</button>
+        <button onClick={() => submit(true)} style={{ flex: 1, padding: 12, borderRadius: 11, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Different child — continue</button>
+      </div>
+    </div>
+  );
+
+  const steps = ["Details", "Photo", "Confirm"];
+  return (<>
+    <div style={{ display: "flex", gap: 5, marginBottom: 14 }}>
+      {steps.map((s, i) => <div key={s} style={{ flex: 1, height: 4, borderRadius: 99, background: i <= step ? gold : "rgba(255,255,255,.14)" }}/>)}
+    </div>
+    <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: gold, marginBottom: 10 }}>STEP {step + 1} OF 3 · {steps[step].toUpperCase()}</div>
+
+    {step === 0 && (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {errors._ && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 13 }}>{errors._}</div>}
+        {fields.filter(visible).map(f => {
+          if (f.type === "section") return <div key={f.key} style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.55)", marginTop: 6 }}>{f.label.toUpperCase()}</div>;
+          if (f.type === "info") return <p key={f.key} style={{ ...mut, fontSize: 13, margin: 0 }}>{f.label}</p>;
+          const errMsg = errors[f.key];
+          return (
+            <label key={f.key} style={{ display: "block" }}>
+              <span style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>{f.label}{f.required && <span style={{ color: gold }}> *</span>}{f.sensitive && " 🔒"}</span>
+              {f.type === "longtext" ? (
+                <textarea style={{ ...inputS, minHeight: 70, resize: "vertical" }} value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder || ""}/>
+              ) : f.type === "choice" ? (
+                <select style={inputS} value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)}>
+                  <option value="">Choose…</option>
+                  {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : f.type === "yesno" ? (
+                <div style={{ display: "flex", gap: 8 }}>
+                  {["Yes", "No"].map(v => <button type="button" key={v} onClick={() => set(f.key, v)} style={{ flex: 1, padding: 11, borderRadius: 10, cursor: "pointer", fontWeight: 700, border: "1px solid " + (form[f.key] === v ? gold : "rgba(255,255,255,.18)"), background: form[f.key] === v ? "rgba(255,206,84,.16)" : "rgba(255,255,255,.06)", color: "#fff" }}>{v}</button>)}
+                </div>
+              ) : (
+                <input style={inputS} type={f.type === "number" ? "number" : f.type === "date" ? "date" : f.type === "email" ? "email" : f.type === "phone" ? "tel" : "text"}
+                  value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder || ""} inputMode={f.type === "phone" ? "tel" : undefined}/>
+              )}
+              {f.help && !errMsg && <span style={{ ...mut, display: "block", fontSize: 11.5, marginTop: 4 }}>{f.help}</span>}
+              {errMsg && <span style={{ display: "block", fontSize: 12, marginTop: 4, color: "#ff9a9a" }}>{errMsg}</span>}
+            </label>
+          );
+        })}
+        <button onClick={() => setStep(1)} disabled={!(form.fullName || "").trim()} style={{ padding: 14, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer", opacity: (form.fullName || "").trim() ? 1 : .5 }}>Continue → Photo</button>
+        <p style={{ ...mut, fontSize: 11.5, textAlign: "center", margin: 0 }}>Every field autosaves on this device — nothing is lost if you're interrupted.</p>
+      </div>
+    )}
+
+    {step === 1 && <GatePhoto photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} onBack={() => setStep(0)} onNext={() => setStep(2)} card={card} gold={gold} goldInk={goldInk} mut={mut}/>}
+
+    {step === 2 && (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ ...card, padding: 16, display: "flex", gap: 13, alignItems: "center" }}>
+          {photoUrl ? <img src={photoUrl} alt="" style={{ width: 54, height: 54, borderRadius: 12, objectFit: "cover" }}/> : <div style={{ width: 54, height: 54, borderRadius: 12, background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center", fontSize: 22, fontWeight: 800 }}>{(form.fullName || "?").charAt(0)}</div>}
+          <div><div style={{ fontWeight: 800, fontSize: 16 }}>{form.fullName}</div><div style={{ ...mut, fontSize: 13 }}>{form.course || ""}{form.age ? " · " + form.age : ""}</div></div>
+        </div>
+        <div style={{ ...card, padding: 14, fontSize: 13.5, lineHeight: 1.6 }}>
+          <b>Parent:</b> {form.parentName || "—"}<br/>
+          <span style={mut}>{[form.parentPhone, form.parentEmail].filter(Boolean).join(" · ") || "no contact — go back and add one"}</span>
+        </div>
+        <p style={{ ...mut, fontSize: 12.5, margin: 0, lineHeight: 1.5 }}>On submit the parent gets the consent link by {[form.parentPhone && "SMS", form.parentEmail && "email"].filter(Boolean).join(" + ") || "—"}. The ID is issued after they confirm.</p>
+        {errors._ && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 13 }}>{errors._}</div>}
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={() => setStep(1)} style={{ padding: "13px 18px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>← Back</button>
+          <button onClick={() => submit(false)} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "Registering…" : "Register & notify parent"}</button>
+        </div>
+      </div>
+    )}
+  </>);
+}
+
+function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk, mut }) {
+  const videoRef = React.useRef(null);
+  const streamRef = React.useRef(null);
+  const fileRef = React.useRef(null);
+  const [camState, setCamState] = React.useState("starting"); // starting|live|denied
+  const [busy, setBusy] = React.useState(false);
+  const [uErr, setUErr] = React.useState("");
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (photoUrl) { setCamState("denied"); return; }
+    navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+      ? navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 720 } }, audio: false })
+          .then(stream => { if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; } streamRef.current = stream; if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); } setCamState("live"); })
+          .catch(() => setCamState("denied"))
+      : setCamState("denied");
+    return () => { cancelled = true; if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
+  }, [photoUrl]);
+
+  const uploadBlob = async (blob) => {
+    setBusy(true); setUErr("");
+    try {
+      const file = new File([blob], "headshot.jpg", { type: "image/jpeg" });
+      const up = await NGGApi.uploadFile(file, "headshot");
+      // Face-centred crop + lighting fix via Cloudinary URL transforms — the
+      // "AI optimisation" step; the editor can re-upload a corrected image later.
+      const optimised = up.url.replace("/upload/", "/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/");
+      setPhotoUrl(optimised);
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    } catch (e) {
+      setUErr((e.message || "").indexOf("upload") !== -1 || e.code ? "Upload isn't configured on this server yet — skip the photo for now; an editor can add it later." : "Couldn't upload — check the connection and try again.");
+    } finally { setBusy(false); }
+  };
+  const capture = () => {
+    const v = videoRef.current; if (!v) return;
+    const c = document.createElement("canvas");
+    c.width = 720; c.height = 900;
+    const scale = Math.max(c.width / v.videoWidth, c.height / v.videoHeight);
+    const dx = (c.width - v.videoWidth * scale) / 2, dy = (c.height - v.videoHeight * scale) / 2;
+    c.getContext("2d").drawImage(v, dx, dy, v.videoWidth * scale, v.videoHeight * scale);
+    c.toBlob(b => b && uploadBlob(b), "image/jpeg", 0.88);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ ...card, overflow: "hidden", position: "relative", height: 300, display: "grid", placeItems: "center" }}>
+        {photoUrl ? (
+          <img src={photoUrl} alt="Captured headshot" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>
+        ) : camState === "live" ? (<>
+          <video ref={videoRef} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
+          <div style={{ position: "absolute", width: 150, height: 190, border: "2.5px dashed rgba(255,206,84,.65)", borderRadius: "50% 50% 46% 46%" }} aria-hidden="true"/>
+        </>) : (
+          <div style={{ textAlign: "center", padding: 20 }}>
+            <div style={{ fontSize: 34 }}>📷</div>
+            <p style={{ ...mut, fontSize: 13, margin: "8px 0 0" }}>{camState === "starting" ? "Starting the camera…" : "Camera unavailable — use a photo from the device instead."}</p>
+          </div>
+        )}
+      </div>
+      <p style={{ ...mut, fontSize: 12.5, textAlign: "center", margin: 0 }}>Center the face — we crop and brighten automatically. Used only for the student ID.</p>
+      {uErr && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,206,84,.12)", border: "1px solid rgba(255,206,84,.4)", fontSize: 13 }}>{uErr}</div>}
+      <input ref={fileRef} type="file" accept="image/*" capture="user" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) uploadBlob(f); }}/>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={onBack} style={{ padding: "13px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>←</button>
+        {photoUrl
+          ? <button onClick={() => setPhotoUrl("")} style={{ flex: 1, padding: 13, borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Retake</button>
+          : camState === "live"
+            ? <button onClick={capture} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>{busy ? "Uploading…" : "Take photo"}</button>
+            : <button onClick={() => fileRef.current && fileRef.current.click()} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>{busy ? "Uploading…" : "Choose photo"}</button>}
+        <button onClick={onNext} style={{ flex: 1, padding: 13, borderRadius: 12, border: photoUrl ? "none" : "1px solid rgba(255,255,255,.25)", background: photoUrl ? gold : "transparent", color: photoUrl ? goldInk : "#fff", fontWeight: 800, cursor: "pointer" }}>{photoUrl ? "Use photo →" : "Skip for now →"}</button>
+      </div>
+    </div>
+  );
+}
+
+function GateCheckin({ g, card, inputS, gold, goldInk }) {
+  const [code, setCode] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [recent, setRecent] = React.useState([]);
+  const [err, setErr] = React.useState("");
+
+  const mark = async (e) => {
+    if (e) e.preventDefault();
+    const token = code.trim(); if (!token || busy) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await NGGApi.public.gate.checkin(g, token);
+      setRecent(list => [{ name: r.student.fullName, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), already: !!r.already }, ...list].slice(0, 12));
+      setCode("");
+    } catch (e2) {
+      const c = e2.code || e2.message;
+      setErr(c === "qr_unassigned" ? "That code isn't assigned to any student yet." : c === "student_not_found" ? "No student found for that code." : "Couldn't check in — try again.");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <form onSubmit={mark} style={{ display: "flex", gap: 8 }}>
+        <input style={{ ...inputS, flex: 1, fontFamily: "var(--font-mono, monospace)", letterSpacing: ".08em" }} placeholder="SUMQR-XXXX from the ID card" value={code} onChange={e => setCode(e.target.value.toUpperCase())} autoFocus/>
+        <button disabled={busy || !code.trim()} style={{ padding: "0 20px", borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "…" : "✓"}</button>
+      </form>
+      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Type the code printed under the QR. Duplicate scans are safe — a day counts once.</p>
+      {err && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 13 }}>{err}</div>}
+      {recent.map((r, i) => (
+        <div key={i} style={{ ...card, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ color: r.already ? "#ffce54" : "#6fdc9d", fontWeight: 800 }}>{r.already ? "↻" : "✓"}</span>
+          <b style={{ flex: 1, fontSize: 14 }}>{r.name}</b>
+          <span style={{ color: "rgba(230,238,255,.6)", fontSize: 12 }}>{r.already ? "already in · " : ""}{r.at}</span>
+        </div>
+      ))}
+      {!recent.length && <p style={{ color: "rgba(230,238,255,.45)", fontSize: 13, textAlign: "center", marginTop: 20 }}>Check-ins appear here as they happen.</p>}
+    </div>
+  );
+}
+
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage });
