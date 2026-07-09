@@ -1345,6 +1345,19 @@ function Review({ ctx }) {
   const { currentWeek, mentor, entries, go, isNGG } = ctx;
   const h = habitFocus(currentWeek);
   const logs = weekLogs(entries, currentWeek);
+  // Real guardian/teacher/mentor remarks left through the Anchor Circle
+  // portal — the "surfaces in the student's Weekly Review" seam.
+  const [remarks, setRemarks] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    if (isNGG && navigator.onLine) NGGApi.member.circle().then(r => { if (alive) setRemarks(r.remarks || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, [isNGG]);
+  const REMARK_META = {
+    parent: { label: "Home", icon: "ph-house", tint: "rgba(var(--a-rgb),.14)", ic: "var(--a)" },
+    teacher: { label: "School", icon: "ph-chalkboard-teacher", tint: "rgba(139,92,246,.2)", ic: "#c9b0ff" },
+    mentor: { label: "Mentor", icon: "ph-compass", tint: "rgba(217,110,194,.2)", ic: "#f0a6da" },
+  };
   // The member's own execution logs this week — real data captured in their
   // reflections. Empty states are honest, never fabricated.
   const myLogs = [
@@ -1372,6 +1385,27 @@ function Review({ ctx }) {
           ))}
         </div>
       </div>
+      {remarks && remarks.length > 0 && (
+        <div className="pad" style={{ marginTop: 24 }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>FROM YOUR CIRCLE</div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Words left for you by the people walking with you.</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {remarks.slice(0, 6).map((r, i) => {
+              const m = REMARK_META[r.role] || REMARK_META.mentor;
+              return (
+                <div className="aj-remark" key={i}>
+                  <div className="aj-remark-top">
+                    <div className="aj-remark-ic" style={{ background: m.tint }}><i className={"ph-fill " + m.icon} style={{ color: m.ic }}/></div>
+                    <div className="aj-remark-role">{m.label}{r.weekStart ? " · wk of " + new Date(r.weekStart + "T00:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""}</div>
+                  </div>
+                  <p>{r.text}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="pad" style={{ marginTop: 24 }}>
         <div className="eyebrow" style={{ marginBottom: 14 }}>YOUR MENTOR</div>
         {mentor ? (
@@ -1387,6 +1421,30 @@ function Review({ ctx }) {
 /* ---- You ---------------------------------------------------------------- */
 function You({ ctx }) {
   const { member, cur, mentor, pstate, setState, isNGG, entries } = ctx;
+  // Real Anchor Circle state — invite code + who's actually linked. Fetched
+  // fresh (revocations must be immediately visible); the rows degrade to
+  // "pending" while loading or offline.
+  const [cd, setCd] = useState(null);
+  const [codeBusy, setCodeBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    if (isNGG && navigator.onLine) NGGApi.member.circle().then(r => { if (alive) setCd(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, [isNGG]);
+  const rotateCode = async () => {
+    if (codeBusy) return;
+    setCodeBusy(true);
+    try { const r = await NGGApi.member.circleRotate(); setCd(c => Object.assign({}, c || {}, { code: r.code })); toast.ok("New code — the old one no longer pairs."); }
+    catch (e) { toast.err(isOffline(e) ? "You're offline — try again later." : "Couldn't refresh the code."); }
+    finally { setCodeBusy(false); }
+  };
+  const copyCode = () => { if (!cd || !cd.code) return; try { navigator.clipboard.writeText(cd.code); toast.ok("Code copied"); } catch { toast.info(cd.code); } };
+  const revokeLink = async (link) => {
+    const who = link.guardianName || link.role || "this person";
+    if (!window.confirm("Unlink " + who + "? They lose access to your progress immediately.")) return;
+    try { await NGGApi.member.circleRevoke(link.linkId); setCd(await NGGApi.member.circle()); toast.ok("Unlinked."); }
+    catch (e) { toast.err(isOffline(e) ? "You're offline — try again later." : "Couldn't unlink — try again."); }
+  };
   // Export the member's whole journal as a Markdown file — fully client-side,
   // works offline from the cached entries.
   const exportJournal = () => {
@@ -1411,11 +1469,16 @@ function You({ ctx }) {
   const prefs = pstate.prefs || { reminder: true, readAloud: true };
   const toggle = (k) => setState("prefs", Object.assign({}, prefs, { [k]: !(prefs[k] !== false) }));
   const on = (k) => prefs[k] !== false;
+  // LINKED comes from real circle_links (or the mentorship engine for the
+  // mentor row); anything not yet linked reads PENDING for NGG members.
+  const linked = (cd && cd.circle) || {};
+  const tag = (isLinked) => !isNGG ? "locked" : isLinked ? "linked" : "pending";
   const circle = [
-    { role: "Home · Parent", sub: "Confirms daily order", icon: "ph-house", tint: "rgba(var(--a-rgb),.16)", ic: "#c9f24e", tag: isNGG ? "pending" : "locked" },
-    { role: "School · Teacher", sub: "Verifies school conduct", icon: "ph-chalkboard-teacher", tint: "rgba(139,92,246,.2)", ic: "#c9b0ff", tag: isNGG ? "pending" : "locked" },
-    { role: mentor ? mentor.fullName : "Afrovanguard Mentor", sub: "Weekly discipline & remarks", icon: "ph-compass", tint: "rgba(217,110,194,.2)", ic: "#f0a6da", tag: mentor ? "linked" : (isNGG ? "pending" : "locked") },
+    { role: "Home · Parent", sub: "Confirms daily order", icon: "ph-house", tint: "rgba(var(--a-rgb),.16)", ic: "var(--a)", tag: tag(linked.parent) },
+    { role: "School · Teacher", sub: "Verifies school conduct", icon: "ph-chalkboard-teacher", tint: "rgba(139,92,246,.2)", ic: "#c9b0ff", tag: tag(linked.teacher) },
+    { role: mentor ? mentor.fullName : "Afrovanguard Mentor", sub: "Weekly discipline & remarks", icon: "ph-compass", tint: "rgba(217,110,194,.2)", ic: "#f0a6da", tag: tag(linked.mentor || mentor) },
   ];
+  const activeLinks = (cd && cd.links) || [];
   return (
     <div className="aj-view">
       <div className="pad"><h2 className="disp" style={{ fontSize: 26, margin: 0 }}>You</h2></div>
@@ -1431,11 +1494,44 @@ function You({ ctx }) {
       <div className="pad" style={{ marginTop: 24 }}>
         <div className="eyebrow" style={{ marginBottom: 6 }}>YOUR CIRCLE</div>
         <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>One aligned language across home, school & mentor.</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+
+        {isNGG && (
+          <div className="aj-code-card">
+            <div className="eyebrow" style={{ color: "var(--a)", letterSpacing: ".18em" }}>ANCHOR LINK CODE</div>
+            <div className="aj-code mono" aria-label={cd && cd.code ? "Your invite code is " + cd.code.split("").join(" ") : "Loading your invite code"}>
+              {cd && cd.code ? cd.code.slice(0, 3) + " " + cd.code.slice(3) : "··· ···"}
+            </div>
+            <p className="muted" style={{ fontSize: 12, lineHeight: 1.5, margin: 0 }}>Read this to a parent, teacher or mentor. They enter it at <b style={{ color: "var(--tx-70)" }}>the Anchor Circle portal</b> (/circle on the NGG site) — read-only, consent-based, and you can unlink anyone at any time.</p>
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <button className="aj-code-btn" onClick={copyCode} disabled={!cd || !cd.code}><i className="ph-bold ph-copy"/> Copy</button>
+              <button className="aj-code-btn" onClick={rotateCode} disabled={codeBusy || !cd}><i className="ph-bold ph-arrows-clockwise"/> {codeBusy ? "…" : "New code"}</button>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: isNGG ? 12 : 0 }}>
           {circle.map((c, i) => (
             <div className="aj-circle-row" key={i}><div className="aj-circle-ic" style={{ background: c.tint }}><i className={"ph-fill " + c.icon} style={{ color: c.ic }}/></div><div className="aj-circle-t"><b>{c.role}</b><small>{c.sub}</small></div><span className={"aj-tag " + c.tag}>{c.tag === "locked" ? "NGG" : c.tag.toUpperCase()}</span></div>
           ))}
         </div>
+
+        {activeLinks.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>LINKED PEOPLE</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {activeLinks.map(l => (
+                <div className="aj-circle-row" key={l.linkId} style={{ padding: "11px 14px" }}>
+                  <div className="aj-circle-t">
+                    <b style={{ fontSize: 14 }}>{l.guardianName || (l.role === "parent" ? "Parent / Guardian" : l.role === "teacher" ? "Teacher" : "Mentor")}</b>
+                    <small>{l.role.toUpperCase()} · since {l.createdAt ? new Date(l.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}</small>
+                  </div>
+                  <button className="aj-code-btn danger" onClick={() => revokeLink(l)}><i className="ph-bold ph-link-break"/> Unlink</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {!isNGG && <a className="btn-a" href="/#join" style={{ marginTop: 14 }}>Join NGG to activate your circle <i className="ph-bold ph-arrow-right"/></a>}
       </div>
 

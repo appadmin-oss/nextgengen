@@ -413,6 +413,13 @@ i[class^="ph"] { line-height: 1; }
 .aj-celebrate h2 { font-family: var(--disp); font-weight: 800; font-size: 32px; margin: 24px 0 0; }
 .aj-celebrate p { font-weight: 600; font-size: 14px; color: var(--tx-70); margin: 8px 0 0; }
 
+/* ---- Anchor Link code card (You → Your Circle) ---- */
+.aj-code-card { padding: 18px; border-radius: 18px; background: linear-gradient(140deg, rgba(var(--a-rgb),.12), rgba(139,92,246,.14)); border: 1px solid rgba(var(--a-rgb),.3); }
+.aj-code { font-size: 38px; font-weight: 700; letter-spacing: .14em; margin: 10px 0 12px; color: #fff; text-shadow: 0 0 24px rgba(var(--a-rgb),.35); }
+.aj-code-btn { display: inline-flex; align-items: center; gap: 7px; padding: 10px 14px; border-radius: 12px; background: rgba(255,255,255,.09); border: 1px solid var(--line); color: #fff; font-weight: 700; font-size: 13px; cursor: pointer; }
+.aj-code-btn:disabled { opacity: .5; cursor: default; }
+.aj-code-btn.danger { color: #ff9a9a; border-color: rgba(255,120,120,.3); background: rgba(255,90,90,.08); }
+
 /* ---- Anchor Shop ---- */
 .aj-shop-item { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); }
 .aj-shop-ic { flex: none; width: 48px; height: 48px; border-radius: 15px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
