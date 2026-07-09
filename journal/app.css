@@ -444,6 +444,12 @@ i[class^="ph"] { line-height: 1; }
 .aj-lvl-badge { width: 128px; height: 128px; margin: 0 auto; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffe9a8, var(--gold) 74%); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 80px rgba(255,206,84,.65); font-size: 58px; color: #4a3400; animation: pop .55s cubic-bezier(.2,1.3,.4,1); }
 .aj-lvl-tag { font-family: var(--mono); font-weight: 700; font-size: 12px; letter-spacing: .34em; color: var(--gold); margin-top: 24px; }
 
+/* ---- Mission sheet ---- */
+.aj-msheet { width: 100%; max-width: 480px; margin: 0 auto; background: var(--bg1); border: 1px solid var(--line); border-bottom: none; border-radius: 26px 26px 0 0; padding: 14px 22px calc(var(--sb) + 26px); animation: sheetUp .3s ease; }
+@keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.aj-msheet-bar { width: 44px; height: 5px; border-radius: 99px; background: rgba(255,255,255,.22); margin: 0 auto 14px; }
+.aj-pxp { display: block; font-family: var(--mono); font-weight: 700; font-size: 9px; letter-spacing: .08em; color: var(--gold); margin-top: 2px; }
+
 /* ---- Onboarding ---- */
 .aj-onb { min-height: 100dvh; display: flex; flex-direction: column; padding: calc(var(--st) + 22px) 30px calc(var(--sb) + 34px); }
 .aj-onb-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }

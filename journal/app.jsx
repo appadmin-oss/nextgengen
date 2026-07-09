@@ -399,7 +399,7 @@ function App() {
 
   const openWeek = (n) => { setSelWeek(n); go("weekdetail"); };
   const openEntry = (e) => { setSelEntry(e); go("entry"); };
-  const ctx = { member, entries, weeks, session, mentor, pstate, setState, go, back, xp, xpInLevel, diamonds, shop, streak, cur, next, xpPct, reflectedToday, currentWeek, isNGG, anchorReflection, online, selWeek, openWeek, selEntry, openEntry };
+  const ctx = { member, entries, weeks, session, mentor, pstate, setState, go, back, xp, xpInLevel, diamonds, shop, streak, cur, next, xpPct, reflectedToday, currentWeek, isNGG, anchorReflection, online, selWeek, openWeek, selEntry, openEntry, refresh };
 
   return (
     <div className="aj-app">
@@ -442,8 +442,24 @@ function Journey({ ctx }) {
   const { member, weeks, currentWeek, streak, diamonds, xp, cur, next, xpPct, reflectedToday, go, pstate } = ctx;
   const first = ((pstate.prefs || {}).name || "").trim() || String(member.fullName || "there").split(" ")[0];
   const wk = (weeks || []).find(w => w.week === currentWeek) || (weeks || [])[0];
-  const firstMission = wk && wk.missions && wk.missions[0];
-  const done = firstMission && (firstMission.status === "verified" || firstMission.status === "submitted");
+  const [mission, setMission] = useState(null);   // open mission sheet
+
+  // The path is the REAL week: today's reflection first, then every admin-
+  // published mission for this week (live status per member), then the
+  // standing daily rituals. Layout generalises to any mission count.
+  const missions = (wk && wk.missions) || [];
+  const mDone = (m) => m.status === "verified" || m.status === "submitted";
+  const nodes = [
+    { key: "reflect", label: "Today's reflection", icon: reflectedToday ? "ph-check" : "ph-feather", cls: "reflect", start: !reflectedToday, tap: () => go("reflect") },
+    ...missions.map(m => ({ key: m.missionId, label: m.title, icon: mDone(m) ? "ph-check" : "ph-target", cls: mDone(m) ? "done" : "lime", tap: () => setMission(m), sub: m.status === "submitted" ? "SENT" : m.status === "verified" ? "+" + m.xp + " XP" : m.xp + " XP" }),
+    ),
+    { key: "systems", label: "Daily systems", icon: "ph-check-square-offset", cls: "glass", tap: () => go("systems") },
+    { key: "night", label: "Night reflection", icon: "ph-moon-stars", cls: "glass", tap: () => go("reflect") },
+  ];
+  const LEFTS = [50, 29, 71, 37, 65];
+  const pos = nodes.map((n, i) => ({ left: LEFTS[i % LEFTS.length], top: 14 + i * 136 }));
+  const pathH = 14 + (nodes.length - 1) * 136 + 140;
+  const points = pos.map(p => (p.left * 4.02).toFixed(0) + "," + (p.top + 46)).join(" ");
 
   return (
     <div className="aj-view">
@@ -483,33 +499,58 @@ function Journey({ ctx }) {
         </div>
       </div>
 
-      <div className="aj-path">
-        <svg viewBox="0 0 402 700" preserveAspectRatio="none" aria-hidden="true"><polyline points="201,60 118,196 284,332 148,468 262,604" fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="4" strokeDasharray="1 15" strokeLinecap="round"/></svg>
+      <div className="aj-path" style={{ height: pathH }}>
+        <svg viewBox={"0 0 402 " + pathH} preserveAspectRatio="none" aria-hidden="true" style={{ height: pathH }}><polyline points={points} fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="4" strokeDasharray="1 15" strokeLinecap="round"/></svg>
+        {nodes.map((n, i) => (
+          <button className="aj-pnode" key={n.key} style={{ left: pos[i].left + "%", top: pos[i].top }} onClick={n.tap}>
+            {n.start && <span className="aj-start">START</span>}
+            <span className={"aj-pcirc " + n.cls} aria-hidden="true"><i className={"ph-fill " + n.icon}/></span>
+            <div className="aj-plabel">{n.label}{n.sub && <span className="aj-pxp">{n.sub}</span>}</div>
+          </button>
+        ))}
+      </div>
+      {mission && <MissionSheet mission={mission} ctx={ctx} onClose={() => setMission(null)}/>}
+    </div>
+  );
+}
 
-        <button className="aj-pnode" style={{ left: "50%", top: 14 }} onClick={() => go("reflect")}>
-          {!reflectedToday && <span className="aj-start">START</span>}
-          <span className={"aj-pcirc reflect"} aria-hidden="true"><i className={"ph-fill " + (reflectedToday ? "ph-check" : "ph-feather")}/></span>
-          <div className="aj-plabel">Today's reflection</div>
-        </button>
-
-        <button className="aj-pnode" style={{ left: "29%", top: 150 }} onClick={() => go("reflect")}>
-          <span className={"aj-pcirc " + (done ? "done" : "lime")} aria-hidden="true"><i className={"ph-fill " + (done ? "ph-check" : "ph-target")}/></span>
-          <div className="aj-plabel">{firstMission ? firstMission.title : "Name yourself"}</div>
-        </button>
-
-        <button className="aj-pnode" style={{ left: "71%", top: 286 }} onClick={() => go("systems")}>
-          <span className="aj-pcirc glass" aria-hidden="true"><i className="ph-fill ph-check-square-offset"/></span>
-          <div className="aj-plabel">Daily systems</div>
-        </button>
-
-        <button className="aj-pnode" style={{ left: "37%", top: 422 }} onClick={() => go("reflect")}>
-          <span className="aj-pcirc glass" aria-hidden="true"><i className="ph-fill ph-sun"/></span>
-          <div className="aj-plabel">Morning quote</div>
-        </button>
-        <button className="aj-pnode" style={{ left: "65%", top: 558 }} onClick={() => go("reflect")}>
-          <span className="aj-pcirc glass" aria-hidden="true"><i className="ph-fill ph-moon-stars"/></span>
-          <div className="aj-plabel">Night reflection</div>
-        </button>
+/* ---- Mission sheet — read, do, submit; XP is awarded server-side --------- */
+function MissionSheet({ mission, ctx, onClose }) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const m = mission;
+  const done = m.status === "verified" || m.status === "submitted";
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.submitMission({ missionId: m.missionId, note: note.trim() });
+      toast.ok(r.status === "verified" ? "Mission complete · +" + m.xp + " XP" : "Sent — your centre will verify it.");
+      if (ctx.refresh) ctx.refresh();
+      onClose();
+    } catch (e) {
+      toast.err(isOffline(e) ? "You're offline — try again when you're back." : e.code === "already_submitted" ? "Already sent for this mission." : "Couldn't submit — try again.");
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="aj-celebrate" style={{ alignItems: "flex-end", padding: 0 }} onClick={onClose}>
+      <div className="aj-msheet" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={m.title}>
+        <div className="aj-msheet-bar" aria-hidden="true"/>
+        <div className="row" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span className="eyebrow" style={{ color: "var(--gold)" }}>{(m.type || "MISSION").toUpperCase()} · +{m.xp} XP{m.estimatedMin ? " · ~" + m.estimatedMin + " MIN" : ""}</span>
+          {done && <span className="aj-tag linked">{m.status.toUpperCase()}</span>}
+        </div>
+        <h3 className="disp" style={{ fontSize: 22, margin: "10px 0 8px" }}>{m.title}</h3>
+        {m.prompt && <p className="muted" style={{ fontSize: 14.5, lineHeight: 1.55, margin: 0 }}>{m.prompt}</p>}
+        {m.bookPage > 0 && <p className="mono" style={{ fontSize: 11, color: "var(--tx-45)", margin: "10px 0 0" }}>BOOK · PAGE {m.bookPage}</p>}
+        {!done && m.proof !== "none" && (
+          <textarea className="aj-musing" style={{ minHeight: 90, marginTop: 14 }} maxLength={1000}
+            placeholder={m.proof === "photo" ? "Describe your proof — attach the photo from your dashboard later." : "Your answer / proof…"}
+            value={note} onChange={e => setNote(e.target.value)}/>
+        )}
+        {done
+          ? <button className="btn-a" style={{ marginTop: 16 }} onClick={onClose}>{m.status === "verified" ? "XP earned — nice." : "Waiting for verification"}</button>
+          : <button className="btn-a" style={{ marginTop: 16 }} disabled={busy || (m.proof === "text" && note.trim().length < 2)} onClick={submit}>{busy ? "Sending…" : m.proof === "none" ? "Mark complete" : "Submit mission"} <i className="ph-bold ph-arrow-right"/></button>}
       </div>
     </div>
   );
@@ -822,7 +863,15 @@ function Focus({ ctx }) {
       <div className="pad" style={{ marginTop: 18 }}>
         <div className="aj-focus-presets">
           {FOCUS_PRESETS.map(p => <button key={p.id} className={"aj-focus-preset" + (preset.id === p.id ? " on" : "")} onClick={() => setPreset(p)}>{p.label}<span>{p.min}m</span></button>)}
+          <button className={"aj-focus-preset" + (preset.id === "custom" ? " on" : "")} onClick={() => setPreset({ id: "custom", label: "Custom", min: Math.max(1, parseInt((pstate.prefs || {}).customFocusMin, 10) || 30) })}>Custom<span>{Math.max(1, parseInt((pstate.prefs || {}).customFocusMin, 10) || 30)}m</span></button>
         </div>
+        {preset.id === "custom" && !running && (
+          <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+            <input className="aj-logline" style={{ flex: 1 }} type="number" inputMode="numeric" min={1} max={180} value={preset.min}
+              onChange={e => { const v = Math.max(1, Math.min(180, parseInt(e.target.value, 10) || 1)); setPreset({ id: "custom", label: "Custom", min: v }); setState("prefs", Object.assign({}, pstate.prefs || {}, { customFocusMin: v })); }}/>
+            <span className="muted" style={{ fontSize: 13 }}>minutes</span>
+          </div>
+        )}
       </div>
       <div className="aj-focus-ring">
         <svg viewBox="0 0 300 300" width="260" height="260">
