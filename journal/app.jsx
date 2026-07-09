@@ -786,7 +786,7 @@ function Focus({ ctx }) {
     tick.current = setInterval(() => setLeft(l => {
       if (l <= 1) {
         clearInterval(tick.current); setRunning(false);
-        try { navigator.vibrate && navigator.vibrate(180); } catch (e) {}
+        if ((pstate.prefs || {}).sound !== false) { try { navigator.vibrate && navigator.vibrate(180); } catch (e) {} }
         if (preset.id === "break") toast.ok("Break's over — back to it.");
         else { toast.ok("Session complete · +5 💎"); setAward(a => a + 1); }
         return 0;
@@ -1540,6 +1540,7 @@ function You({ ctx }) {
         <div className="aj-settings">
           <button className="aj-setrow" onClick={() => { if (!on("reminder") && "Notification" in window && Notification.permission === "default") { try { Notification.requestPermission(); } catch {} } toggle("reminder"); }}><i className="ph-fill ph-bell lead"/><span>Daily reflection reminder</span><span className={"aj-toggle " + (on("reminder") ? "on" : "off")}><span/></span></button>
           <button className="aj-setrow" onClick={() => toggle("readAloud")}><i className="ph-fill ph-speaker-high lead"/><span>Read quote aloud</span><span className={"aj-toggle " + (on("readAloud") ? "on" : "off")}><span/></span></button>
+          <button className="aj-setrow" onClick={() => toggle("sound")}><i className="ph-fill ph-vibrate lead"/><span>Sound & haptics</span><span className={"aj-toggle " + (on("sound") ? "on" : "off")}><span/></span></button>
           <button className="aj-setrow" onClick={exportJournal}><i className="ph-fill ph-download-simple lead"/><span>Export my journal</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
           <button className="aj-setrow" onClick={() => { try { sessionStorage.setItem("ngg_aj_onb_replay", "1"); localStorage.removeItem("ngg_aj_onb"); } catch {} location.reload(); }}><i className="ph-fill ph-arrow-counter-clockwise lead"/><span>Replay intro</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
           <button className="aj-setrow" onClick={() => { NGGApi.auth.logout().finally(() => location.reload()); }}><i className="ph-fill ph-sign-out lead"/><span>Sign out</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>

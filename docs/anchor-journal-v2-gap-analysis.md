@@ -178,8 +178,38 @@ verified with `node build.js`:
   the Coach entry card.
 - ✅ **Phase 4 — Coach UI** wired to the existing `member.coach` backend (chat,
   typing state, offline-aware, privacy note, graceful fallback).
+- ✅ **Phase 1 — Multi-step onboarding.** Welcome → Name → Why (chips) →
+  Study time, progress dots + back. Persists to `member_state.prefs`
+  (name/why/studyTime + `onboardedAt`, so completion follows the account
+  across devices). Replay intro re-enters pre-filled (session-flag one-shot).
+  Journey greeting prefers the chosen name.
+- ✅ **XP reconciliation (§C).** The client now matches `momentum.php`
+  exactly: 60 XP per distinct reflection DAY, flat 250 XP/level, 5 levels
+  (RANKS floors 0/250/500/750/1000). Journey shows `{xp} / 250 XP · NEXT ·
+  LEVEL n` per the design.
+- ✅ **Phase 5 — Shop + economy + level-up.** `member_state.shop`
+  (earned/spent/ownedThemes/accent/freezes/frozenDates). Diamonds:
+  5/reflection-day + 5/focus session − purchases. Streak Freeze (30 💎,
+  max 2) auto-consumes to protect the chain (sync-gated, idempotent).
+  Accent themes (violet/amber/mint, 20 💎) swap `--a/--a-ink/--a-rgb`
+  app-wide. Distinct gold level-up overlay (per-device baseline).
+- ✅ **Phases 6–7 — You → Your Circle.** Real 6-digit Anchor Link code
+  (`member.circle`) with Copy + rotate; LINKED/PENDING rows from actual
+  `circle_links`; LINKED PEOPLE list with revoke. Circle remarks now
+  surface in the Weekly Review ("From your circle") — the remark loop is
+  closed end-to-end.
+- ✅ **Phase 8 — Portal cohort strip.** New `circle.cohort` op (device's
+  token list → per-student read-only summaries + at-risk flags); the
+  /circle portal remembers every pairing, switches students via chips,
+  "+ Add" pairs another, revoked tokens fall over gracefully. The
+  role→code→verify→consent→dashboard flow itself shipped earlier (P8 UI).
+- ✅ **Phase 9 (core) —** printable weekly report already shipped in the
+  portal; remark→Weekly-Review wiring landed with Phases 6–7 above.
 
-Still open (backends for Circle/Momentum already exist — these are front-end +
-economy work): multi-step onboarding (Phase 1), Shop + economy & level-up
-celebration (Phase 5), You → Your Circle invite code + Portal wiring (Phases
-6–9), and reconciling the two XP models (`journal/app.jsx` vs `momentum.php`).
+- ✅ **Phase 10 — self-hosted fonts** (earlier session: assets/fonts +
+  fonts.css, SW-precached; zero external font dependency).
+- ✅ **A10 minor — "Sound & haptics" toggle** in You → Settings
+  (`prefs.sound`); the Focus timer's completion haptic respects it.
+
+Still open: a Playwright smoke pass over the journal PWA (compile-time
+checks only today — `node build.js` won't catch runtime React errors).
