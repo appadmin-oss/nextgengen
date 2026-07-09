@@ -176,6 +176,30 @@ i[class^="ph"] { line-height: 1; }
 .aj-yn-b.yes { background: rgba(201,242,78,.16); border-color: var(--a); color: #fff; }
 .aj-yn-b.no { background: rgba(255,90,90,.16); border-color: #ff8a8a; color: #fff; }
 
+/* Coach — entry card + chat */
+.aj-coach-entry { width: 100%; display: flex; align-items: center; gap: 13px; padding: 15px 16px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); cursor: pointer; color: #fff; text-align: left; }
+.aj-coach-entry-ic { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(139,92,246,.2); color: var(--violet-l); font-size: 20px; flex: none; }
+.aj-coach-entry-tx { display: flex; flex-direction: column; gap: 2px; }
+.aj-coach-entry-tx b { font-size: 14px; }
+.aj-coach-entry-tx span { font-size: 12px; color: var(--tx-55); }
+.aj-coach { display: flex; flex-direction: column; height: 100dvh; min-height: 0; padding-bottom: 0; }
+.aj-coach-note { display: flex; gap: 10px; padding: 12px 14px; border-radius: 14px; background: rgba(94,224,192,.12); border: 1px solid rgba(94,224,192,.3); font-size: 12.5px; color: var(--tx-70); }
+.aj-coach-note i { color: #5ee0c0; font-size: 18px; flex: none; }
+.aj-coach-thread { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 16px 22px 12px; }
+.aj-bubble { max-width: 80%; padding: 11px 14px; border-radius: 16px; font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; }
+.aj-bubble.coach { align-self: flex-start; background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 5px; color: #fff; }
+.aj-bubble.me { align-self: flex-end; background: var(--a); color: #1a2600; font-weight: 600; border-bottom-right-radius: 5px; }
+.aj-typing { display: flex; gap: 5px; align-items: center; }
+.aj-typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--tx-45); animation: ajblink 1.2s infinite; }
+.aj-typing span:nth-child(2) { animation-delay: .2s; }
+.aj-typing span:nth-child(3) { animation-delay: .4s; }
+@keyframes ajblink { 0%,60%,100% { opacity: .3; } 30% { opacity: 1; } }
+.aj-coach-bar { display: flex; gap: 10px; padding: 12px 22px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: rgba(21,12,43,.92); backdrop-filter: blur(10px); }
+.aj-coach-in { flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 99px; color: #fff; font-size: 15px; padding: 12px 18px; outline: none; }
+.aj-coach-in:focus { border-color: var(--violet-l); }
+.aj-coach-send { width: 46px; height: 46px; border-radius: 50%; flex: none; background: var(--a); color: #1a2600; border: none; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.aj-coach-send:disabled { opacity: .5; cursor: default; }
+
 /* ---- Systems ---- */
 .aj-sys-top { margin: 20px 22px 0; padding: 18px 20px; border-radius: 20px; background: var(--card); border: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
 .aj-sys-cnt { font-family: var(--disp); font-weight: 800; font-size: 30px; }

@@ -341,7 +341,8 @@ function App() {
       {view === "peers" && <Peers ctx={ctx}/>}
       {view === "review" && <Review ctx={ctx}/>}
       {view === "you" && <You ctx={ctx}/>}
-      {view !== "reflect" && <BottomNav view={view} go={go}/>}
+      {view === "coach" && <Coach ctx={ctx}/>}
+      {view !== "reflect" && view !== "coach" && <BottomNav view={view} go={go}/>}
       {celebrate && <Celebrate/>}
       {onboard && <Onboarding name={member.fullName} onDone={() => { localStorage.setItem("ngg_aj_onb", "1"); setOnboard(false); }}/>}
       <InstallPrompt/>
@@ -416,7 +417,7 @@ function Journey({ ctx }) {
 
 /* ---- Reflect editor ----------------------------------------------------- */
 function Reflect({ ctx }) {
-  const { currentWeek, back, anchorReflection, pstate, setState } = ctx;
+  const { currentWeek, back, anchorReflection, pstate, setState, go } = ctx;
   const [musing, setMusing] = useState("");
   const [s1, setS1] = useState(""); const [s2, setS2] = useState(""); const [s3, setS3] = useState("");
   // School / Home / Peer execution logs — structured per the Anchor design.
@@ -537,9 +538,60 @@ function Reflect({ ctx }) {
         </div>
       </div>
 
-      <div className="pad" style={{ marginTop: 28 }}>
+      <div className="pad" style={{ marginTop: 24 }}>
+        <button type="button" className="aj-coach-entry" onClick={() => go("coach")}>
+          <span className="aj-coach-entry-ic"><i className="ph-fill ph-chats-circle"/></span>
+          <span className="aj-coach-entry-tx"><b>Talk it through with your Coach</b><span>A calm space to think it out — never for schoolwork.</span></span>
+          <i className="ph-bold ph-arrow-right" style={{ marginLeft: "auto", color: "var(--tx-45)" }}/>
+        </button>
+      </div>
+
+      <div className="pad" style={{ marginTop: 24 }}>
         <button className="btn-a" disabled={busy} onClick={submit}>Anchor it <i className="ph-fill ph-anchor"/></button>
         <p className="center muted" style={{ fontSize: 12, margin: "14px 0 0" }}>Earn +60 XP · keep your streak alive</p>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Coach (AI reflection coach — Socratic, never schoolwork) ----------- */
+function Coach({ ctx }) {
+  const { back } = ctx;
+  const [msgs, setMsgs] = useState([{ role: "coach", text: "I'm your reflection coach. I won't do your schoolwork — but I'll help you think it through. What's on your mind?" }]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const scroller = useRef(null);
+  useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs.length, busy]);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || busy) return;
+    const next = msgs.concat({ role: "me", text });
+    setMsgs(next); setInput(""); setBusy(true);
+    try {
+      const r = await NGGApi.member.coach(next.map(m => ({ role: m.role, text: m.text })));
+      setMsgs(m => m.concat({ role: "coach", text: (r && r.reply) || "Let's sit with that a moment. What feels most true about it?" }));
+    } catch (e) {
+      setMsgs(m => m.concat({ role: "coach", text: isOffline(e) ? "We're offline right now — I'll be here when you're back online." : "I couldn't gather my thoughts just now. Try again in a moment." }));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="aj-view noNav aj-coach">
+      <div className="aj-head" style={{ justifyContent: "space-between" }}>
+        <button className="icon-btn" aria-label="Back" onClick={back}><i className="ph-bold ph-arrow-left"/></button>
+        <div className="aj-head-center">REFLECTION COACH</div>
+        <div style={{ width: 42 }}/>
+      </div>
+      <div className="pad"><div className="aj-coach-note"><i className="ph-fill ph-shield-check"/><span>A calm space to think. Your coach won't do schoolwork or hand out answers — and these chats stay private.</span></div></div>
+      <div className="aj-coach-thread" ref={scroller}>
+        {msgs.map((m, i) => <div key={i} className={"aj-bubble " + (m.role === "me" ? "me" : "coach")}>{m.text}</div>)}
+        {busy && <div className="aj-bubble coach aj-typing"><span/><span/><span/></div>}
+      </div>
+      <div className="aj-coach-bar">
+        <input className="aj-coach-in" placeholder="Type what's on your mind…" value={input} maxLength={800}
+          onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send(); }}/>
+        <button className="aj-coach-send" disabled={busy || !input.trim()} onClick={send} aria-label="Send"><i className="ph-fill ph-paper-plane-right"/></button>
       </div>
     </div>
   );
