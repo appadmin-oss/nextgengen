@@ -211,5 +211,11 @@ verified with `node build.js`:
 - ✅ **A10 minor — "Sound & haptics" toggle** in You → Settings
   (`prefs.sound`); the Focus timer's completion haptic respects it.
 
-Still open: a Playwright smoke pass over the journal PWA (compile-time
-checks only today — `node build.js` won't catch runtime React errors).
+- ✅ **Runtime smoke (Playwright).** `tests/journal-smoke.js` drives the
+  real PWA in Chromium against the real PHP backend (throwaway SQLite):
+  OTP sign-in → all 4 onboarding steps → Journey (name greeting, flat XP)
+  → Shop → Growth → You (live Anchor Link code) → Focus → anchoring a
+  reflection (celebration + XP advance), failing on any uncaught page
+  error. Setup steps are in the file header. Verified PASS (18/18 steps).
+
+**Nothing from the design comps remains open.**
