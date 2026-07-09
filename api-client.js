@@ -160,6 +160,15 @@
       newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
       apply:      (data) => request('/public/apply.php', { body: data }),
       contact:    (data) => request('/public/contact.php', { body: data }),
+      gate: {
+        context:  (g) => request('/public/gate.php' + qs({ g })),
+        register: (gate, data, photoUrl, force) => request('/public/gate.php', { body: { action: 'register', gate, data, photoUrl, force } }),
+        checkin:  (gate, token) => request('/public/gate.php', { body: { action: 'checkin', gate, token } }),
+      },
+      verify: {
+        context: (t) => request('/public/verify.php' + qs({ t })),
+        submit:  (t, consents, actorName, feedback) => request('/public/verify.php', { body: { t, consents, actorName, feedback } }),
+      },
       circle: {
         lookup:    (code) => request('/public/circle.php' + qs({ view: 'lookup', code })),
         connect:   (data) => request('/public/circle.php', { body: Object.assign({ action: 'connect' }, data) }),
@@ -249,6 +258,15 @@
       contact: {
         list:   (q) => request('/admin/contact.php' + qs(q || {})),
         status: (id, status) => request('/admin/contact.php', { body: { id, status } }),
+      },
+      registration: {
+        form:       () => request('/admin/registration.php' + qs({ view: 'form' })),
+        publishForm: (fields, name) => request('/admin/registration.php', { body: { action: 'publish_form', fields, name } }),
+        gates:      () => request('/admin/registration.php' + qs({ view: 'gates' })),
+        gateCreate: (name, expiresAt) => request('/admin/registration.php', { body: { action: 'gate_create', name, expiresAt } }),
+        gateRevoke: (gateId) => request('/admin/registration.php', { body: { action: 'gate_revoke', gateId } }),
+        list:       () => request('/admin/registration.php' + qs({ view: 'registrations' })),
+        remind:     (studentId) => request('/admin/registration.php', { body: { action: 'remind', studentId } }),
       },
       integrations: {
         list:     () => request('/admin/integrations.php'),

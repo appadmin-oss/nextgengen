@@ -36,7 +36,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
@@ -489,6 +489,81 @@ chk('sms: falls through to second provider on failure', (function () {
     unset($GLOBALS['__sms_http_mock']); $GLOBALS['CONFIG']['sms'] = null;
     return !empty($r['ok']) && $r['provider'] === 'twilio' && count($tried) === 2;
 })());
+
+// ── Registration stack: forms → gate → parent verification → QR bound ──
+chk('form: live def seeds with locked system fields', (function () {
+    $f = backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099']);
+    $keys = array_column($f['form']['fields'], 'key');
+    return $f['form']['version'] === 1 && in_array('fullName', $keys, true) && in_array('parentPhone', $keys, true);
+})());
+chk('form: publish is super_admin only; locked fields can\'t be dropped; versions bump', (function () {
+    $pa = db_row("SELECT memberId FROM members WHERE email='pa@example.com'")['memberId'];
+    if (backend_dispatch('admin.forms.publish', ['requesterId' => $pa, 'fields' => form_default_fields()])['error'] !== 'forbidden') return false;
+    $noLocked = array_values(array_filter(form_default_fields(), fn($f) => $f['key'] !== 'fullName'));
+    if (backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'fields' => $noLocked])['error'] !== 'locked_field_missing') return false;
+    $plus = form_default_fields();
+    $plus[] = ['key' => 'hasLaptop', 'label' => 'Has a laptop?', 'type' => 'yesno', 'showIf' => ['key' => 'course', 'value' => 'Coding & Robotics']];
+    $r = backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'fields' => $plus]);
+    return !empty($r['ok']) && $r['version'] === 2 && form_live()['version'] == 2;
+})());
+$GATE = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Front desk']);
+chk('gate: created with URL, context serves live form', (function () use ($GATE) {
+    if (empty($GATE['gateId']) || strpos($GATE['url'], '/gate?g=') === false) return false;
+    $ctx = backend_dispatch('gate.context', ['gate' => $GATE['gateId']]);
+    return !empty($ctx['ok']) && $ctx['form']['version'] === 2 && isset($ctx['consentTypes']['participation']);
+})());
+chk('gate: register validates fields and requires a parent channel', (function () use ($GATE) {
+    $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'K', 'age' => 3, 'course' => 'Nope']]);
+    if (empty($r['errors'])) return false;
+    $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'parentName' => 'Mrs Okafor']]);
+    return !empty($r2['errors']['parentPhone']);
+})());
+$REG = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567', 'parentEmail' => 'okafor@example.com', 'allergies' => 'Peanuts']]);
+chk('gate: registration lands parent_pending with normalised phone + no QR yet', (function () use ($REG) {
+    if (empty($REG['ok']) || $REG['regStatus'] !== 'parent_pending') return false;
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ?', [$REG['studentId']]);
+    return $s['guardianPhone'] === '+2348031234567' && ($s['token'] ?? '') === '' && !empty($s['verifyToken']);
+})());
+chk('gate: duplicate guard flags same child + parent, force overrides', (function () use ($GATE) {
+    $d = ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567'];
+    $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => $d]);
+    if (($r['error'] ?? '') !== 'duplicate_suspect' || empty($r['existing']['studentId'])) return false;
+    $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => $d, 'force' => true]);
+    if (empty($r2['ok'])) return false;
+    db_exec('DELETE FROM summer_students WHERE studentId = ?', [$r2['studentId']]); // tidy the forced dupe
+    return true;
+})());
+chk('parent: context via token; P0 consents enforced; verify binds a QR', (function () use ($REG) {
+    $vt = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$REG['studentId']])['verifyToken'];
+    $ctx = backend_dispatch('parent.verify.context', ['t' => $vt]);
+    if (empty($ctx['ok']) || $ctx['done'] !== false || $ctx['student']['name'] !== 'Chidi Okafor') return false;
+    $bad = backend_dispatch('parent.verify.submit', ['t' => $vt, 'consents' => ['participation' => true, 'medical' => true]]);
+    if (($bad['error'] ?? '') !== 'consent_required') return false;
+    $ok = backend_dispatch('parent.verify.submit', ['t' => $vt, 'consents' => ['participation' => true, 'medical' => true, 'data' => true, 'media' => false], 'actorName' => 'Mrs Okafor', 'feedback' => 'Please watch his peanut allergy.']);
+    if (empty($ok['ok'])) return false;
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ?', [$REG['studentId']]);
+    if ($s['regStatus'] !== 'verified' || empty($s['token'])) return false;
+    $qr = db_row('SELECT status, studentId FROM qr_codes WHERE token = ?', [$s['token']]);
+    $media = db_row("SELECT status FROM consents WHERE studentId = ? AND type = 'media'", [$REG['studentId']]);
+    $p0 = db_row("SELECT status FROM consents WHERE studentId = ? AND type = 'participation'", [$REG['studentId']]);
+    return $qr['status'] === 'assigned' && $qr['studentId'] === $REG['studentId'] && $media['status'] === 'declined' && $p0['status'] === 'granted';
+})());
+chk('parent: verified link answers done, resubmit is already', (function () use ($REG) {
+    $vt = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$REG['studentId']])['verifyToken'];
+    return backend_dispatch('parent.verify.context', ['t' => $vt])['done'] === true
+        && backend_dispatch('parent.verify.submit', ['t' => $vt, 'consents' => []])['already'] === true;
+})());
+chk('registrations list carries consent + pending queue; remind only for pending', (function () use ($REG) {
+    $l = backend_dispatch('admin.registrations.list', ['requesterId' => 'NGG-2025-0099']);
+    $mine = array_values(array_filter($l['registrations'], fn($r) => $r['studentId'] === $REG['studentId']));
+    if (!$mine || !in_array('participation', $mine[0]['consents'], true)) return false;
+    return backend_dispatch('admin.registrations.remind', ['requesterId' => 'NGG-2025-0099', 'studentId' => $REG['studentId']])['error'] === 'not_pending';
+})());
+chk('gate: revoked link stops working', (function () use ($GATE) {
+    backend_dispatch('admin.gates.revoke', ['requesterId' => 'NGG-2025-0099', 'gateId' => $GATE['gateId']]);
+    return backend_dispatch('gate.context', ['gate' => $GATE['gateId']])['error'] === 'gate_invalid';
+})());
+chk('registration events reached the outbox', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind IN ('registration.created','registration.verified')")['c'] >= 2);
 
 // ── AI profiles (offline resolution only — no network in tests) ──
 chk('ai disabled with no keys', ai_enabled() === false && ai_enabled('coach') === false && ai_complete('s', 'u')['error'] === 'ai_disabled');

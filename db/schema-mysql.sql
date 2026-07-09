@@ -320,5 +320,51 @@ CREATE TABLE IF NOT EXISTS deliveries (
   INDEX idx_deliveries_event (eventId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Registration stack: versioned forms, gated links, parent consents.
+CREATE TABLE IF NOT EXISTS form_defs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  formId VARCHAR(48) NOT NULL,
+  version INT NOT NULL,
+  name VARCHAR(160),
+  fields MEDIUMTEXT,
+  status VARCHAR(16) DEFAULT 'live',
+  publishedBy VARCHAR(64),
+  createdAt VARCHAR(40),
+  UNIQUE KEY idx_formdefs_ver (formId, version)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS gate_links (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gateId VARCHAR(48) UNIQUE NOT NULL,
+  name VARCHAR(160),
+  cohortId VARCHAR(48),
+  status VARCHAR(16) DEFAULT 'active',
+  createdBy VARCHAR(64),
+  expiresAt VARCHAR(40),
+  usedCount INT DEFAULT 0,
+  createdAt VARCHAR(40),
+  revokedAt VARCHAR(40)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS consents (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  studentId VARCHAR(64) NOT NULL,
+  type VARCHAR(32) NOT NULL,
+  status VARCHAR(16) NOT NULL,
+  method VARCHAR(24),
+  actorName VARCHAR(160),
+  createdAt VARCHAR(40),
+  INDEX idx_consents_student (studentId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE summer_students ADD COLUMN parentEmail VARCHAR(190);
+ALTER TABLE summer_students ADD COLUMN regStatus VARCHAR(24) DEFAULT 'verified';
+ALTER TABLE summer_students ADD COLUMN verifyToken VARCHAR(64);
+ALTER TABLE summer_students ADD COLUMN verifyExpiresAt VARCHAR(40);
+ALTER TABLE summer_students ADD COLUMN verifiedAt VARCHAR(40);
+ALTER TABLE summer_students ADD COLUMN remindedAt VARCHAR(40);
+ALTER TABLE summer_students ADD COLUMN formVersion INT;
+ALTER TABLE summer_students ADD COLUMN formData MEDIUMTEXT;
+
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (11) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (12) ON DUPLICATE KEY UPDATE version = version;

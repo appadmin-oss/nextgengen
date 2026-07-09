@@ -1,0 +1,31 @@
+<?php
+/** Admin: registration console — form builder, gate links, pending queue. */
+require_once __DIR__ . '/../_lib/bootstrap.php';
+$s = require_admin();
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+if ($method === 'GET') {
+    $view = (string)($_GET['view'] ?? 'registrations');
+    if ($view === 'form')            $res = gs_call('admin.forms.get', ['requesterId' => $s['mid']]);
+    elseif ($view === 'gates')       $res = gs_call('admin.gates.list', ['requesterId' => $s['mid']]);
+    elseif ($view === 'registrations') $res = gs_call('admin.registrations.list', ['requesterId' => $s['mid']]);
+    else json_error('unknown_view', 400);
+} elseif ($method === 'POST') {
+    $b = read_json_body();
+    $action = (string)($b['action'] ?? '');
+    $ip = client_ip();
+    if ($action === 'publish_form')   $res = gs_call('admin.forms.publish', ['requesterId' => $s['mid'], 'fields' => $b['fields'] ?? [], 'name' => $b['name'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'gate_create') $res = gs_call('admin.gates.create', ['requesterId' => $s['mid'], 'name' => $b['name'] ?? '', 'expiresAt' => $b['expiresAt'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'gate_revoke') $res = gs_call('admin.gates.revoke', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'remind')      $res = gs_call('admin.registrations.remind', ['requesterId' => $s['mid'], 'studentId' => $b['studentId'] ?? '', 'ip' => $ip]);
+    else json_error('unknown_action', 400);
+} else {
+    json_error('method_not_allowed', 405);
+}
+if (empty($res['ok'])) {
+    http_response_code(400);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['ok' => false] + array_diff_key($res, ['ok' => 1]), JSON_UNESCAPED_SLASHES);
+    exit;
+}
+unset($res['ok']); json_ok($res);

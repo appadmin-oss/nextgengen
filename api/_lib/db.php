@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 11;
+const NGG_SCHEMA_TARGET = 12;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -432,6 +432,56 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX idx_deliveries_due ON deliveries(status, nextAttemptAt);
             CREATE INDEX idx_deliveries_event ON deliveries(eventId);
+        ",
+        // Registration stack: versioned form definitions (the builder), gated
+        // registration/attendance links, parent verification + typed consents.
+        12 => "
+            CREATE TABLE form_defs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              formId TEXT NOT NULL,
+              version INTEGER NOT NULL,
+              name TEXT,
+              fields TEXT,
+              status TEXT DEFAULT 'live',
+              publishedBy TEXT,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_formdefs_ver ON form_defs(formId, version);
+
+            CREATE TABLE gate_links (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gateId TEXT UNIQUE NOT NULL,
+              name TEXT,
+              cohortId TEXT,
+              status TEXT DEFAULT 'active',
+              createdBy TEXT,
+              expiresAt TEXT,
+              usedCount INTEGER DEFAULT 0,
+              createdAt TEXT DEFAULT (datetime('now')),
+              revokedAt TEXT
+            );
+
+            CREATE TABLE consents (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              studentId TEXT NOT NULL,
+              type TEXT NOT NULL,
+              status TEXT NOT NULL,
+              method TEXT,
+              actorName TEXT,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_consents_student ON consents(studentId);
+
+            ALTER TABLE summer_students ADD COLUMN parentEmail TEXT;
+            ALTER TABLE summer_students ADD COLUMN regStatus TEXT DEFAULT 'verified';
+            ALTER TABLE summer_students ADD COLUMN verifyToken TEXT;
+            ALTER TABLE summer_students ADD COLUMN verifyExpiresAt TEXT;
+            ALTER TABLE summer_students ADD COLUMN verifiedAt TEXT;
+            ALTER TABLE summer_students ADD COLUMN remindedAt TEXT;
+            ALTER TABLE summer_students ADD COLUMN formVersion INTEGER;
+            ALTER TABLE summer_students ADD COLUMN formData TEXT;
+            CREATE INDEX idx_sstu_verify ON summer_students(verifyToken);
+            CREATE INDEX idx_sstu_regstatus ON summer_students(regStatus);
         ",
     ];
 

@@ -43,6 +43,7 @@ function csrf_require(): void {
     //   - public/newsletter → fully public, IP rate-limited at the server
     $path = $_SERVER['SCRIPT_NAME'] ?? '';
     if (preg_match('#/api/auth/(gateway|request|verify|login)\\.php$#', $path)) return;
+    if (preg_match('#/api/public/verify\\.php$#', $path)) return; // parent link: the token IS the proof
     if (preg_match('#/api/public/newsletter\\.php$#', $path))     return;
 
     $cookie = $_COOKIE[csrf_cookie_name()] ?? '';
