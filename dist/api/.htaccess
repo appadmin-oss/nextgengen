@@ -1,0 +1,48 @@
+# =============================================================================
+# /api/.htaccess — PHP endpoint hardening that works on any mount point.
+# =============================================================================
+#
+# We intentionally use ONLY .htaccess-relative paths here (no absolute
+# REQUEST_URI matches) so the rules behave identically whether the site
+# is served from the document root, a subdirectory, or behind a proxy.
+# =============================================================================
+
+RewriteEngine On
+
+# ---- Defense in depth: block library + cache + config ----------------------
+# These rules use paths *relative to this directory*, so they work whether
+# the site is served from / or from /subdir/.
+RewriteRule ^_lib(/.*)?$    - [F,L]
+RewriteRule ^_cache(/.*)?$  - [F,L]
+RewriteRule ^config\.php$   - [F,L]
+
+# Block any stray .php at the root of /api/ (e.g. a debug file someone
+# uploaded). Real endpoints live inside auth/, member/, public/, admin/
+# subdirectories, so a path with no slash should never be a real endpoint.
+RewriteRule ^[^/]+\.php$    - [F,L]
+
+# ---- Directory & dotfile policy --------------------------------------------
+# Do NOT use `-ExecCGI` here: many shared hosts run PHP through a CGI/FCGI
+# handler that requires ExecCGI to be enabled. Disabling it returns 403
+# for every .php under this directory.
+Options -Indexes
+
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+# ---- Security + caching headers --------------------------------------------
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "same-origin"
+  Header always set Permissions-Policy "interest-cohort=()"
+  # API responses are never cached — endpoints can opt in with their own
+  # Cache-Control if they want.
+  Header always set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+  Header always set Pragma "no-cache"
+</IfModule>
+
+# Force HTTPS (uncomment after SSL is verified).
+# RewriteCond %{HTTPS} !=on
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /_check/
+Disallow: /_check2/
+Disallow: /_check3/
+Disallow: /uploads/
+Disallow: /api/
+
+Sitemap: https://ngg.afrovanguard.org/sitemap.xml

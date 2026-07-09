@@ -231,9 +231,9 @@ async function buildJournal(buildId) {
 
   // Prod shell: drop Babel + the JSX source tag, load the compiled bundle.
   let html = fs.readFileSync(path.join(srcDir, 'index.html'), 'utf8');
-  html = html.replace(/<script src="\/vendor\/babel\.min\.js"><\/script>\s*/g, '');
+  html = html.replace(/<script[^>]*src="\/vendor\/babel\.min\.js"[^>]*><\/script>\s*/g, '');
   html = html.replace(/<script type="text\/babel" src="\/journal\/app\.jsx"><\/script>\s*/g, '');
-  html = html.replace(/(<script src="\/api-client\.js"><\/script>\s*)/, `$1<script defer src="/journal/app.min.js"></script>\n`);
+  html = html.replace(/(<script[^>]* src="\/api-client\.js"[^>]*><\/script>\s*)/, `$1<script defer src="/journal/app.min.js"></script>\n`);
   html = html.replace(/<head>/, `<head>\n<meta name="ngg-build" content="${buildId}"/>`);
   fs.writeFileSync(path.join(outDir, 'index.html'), html);
 

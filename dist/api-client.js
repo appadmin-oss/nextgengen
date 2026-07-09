@@ -1,0 +1,303 @@
+/* ================================================================
+   NGG — API client.
+   Thin wrapper around fetch with credentials + JSON handling.
+   ================================================================ */
+
+(function (global) {
+  const BASE = '/api';
+
+  function getCookie(name) {
+    const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  async function request(path, opts) {
+    opts = opts || {};
+    const method = opts.method || (opts.body ? 'POST' : 'GET');
+    const headers = Object.assign({ 'Accept': 'application/json' }, opts.headers || {});
+    // Echo the CSRF cookie back as a header on every write — required by
+    // the PHP `csrf_require()` middleware. GETs are exempt.
+    if (method !== 'GET' && method !== 'HEAD') {
+      const csrf = getCookie('ngg_csrf');
+      if (csrf) headers['X-NGG-CSRF'] = csrf;
+    }
+    let body = opts.body;
+    if (body && typeof body === 'object' && !(body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(body);
+    }
+    const res = await fetch(BASE + path, {
+      method: method,
+      credentials: 'include',
+      headers: headers,
+      body: body,
+    });
+    let data = null;
+    try { data = await res.json(); } catch (_) { data = {}; }
+    if (!res.ok || data.ok === false) {
+      const err = new Error(data.error || ('http_' + res.status));
+      err.status = res.status;
+      err.detail = data.detail;
+      err.code = data.error;
+      throw err;
+    }
+    return data;
+  }
+
+  // ---- Cloudinary direct upload -------------------------------------------
+  // Ask the PHP proxy for a short-lived signature, then POST the file straight
+  // to Cloudinary. The api_secret never touches the browser.
+  let _configCache = null;
+  async function getConfig() {
+    if (_configCache) return _configCache;
+    try { _configCache = await request('/public/config.php'); }
+    catch (_) { _configCache = { uploads: { enabled: false } }; }
+    return _configCache;
+  }
+
+  async function uploadFile(file, kind, onProgress) {
+    kind = kind || 'proof';
+    const sig = await request('/member/upload-sign.php', { body: { kind } });
+    return await new Promise((resolve, reject) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('api_key', sig.apiKey);
+      fd.append('timestamp', sig.timestamp);
+      fd.append('signature', sig.signature);
+      fd.append('folder', sig.folder);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', sig.uploadUrl);
+      if (onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+      xhr.onload = () => {
+        let d = {}; try { d = JSON.parse(xhr.responseText); } catch (_) {}
+        if (xhr.status >= 200 && xhr.status < 300 && d.secure_url) {
+          resolve({ url: d.secure_url, publicId: d.public_id, resourceType: d.resource_type, format: d.format, bytes: d.bytes });
+        } else {
+          reject(new Error((d.error && d.error.message) || ('upload_failed_' + xhr.status)));
+        }
+      };
+      xhr.onerror = () => reject(new Error('upload_network_error'));
+      xhr.send(fd);
+    });
+  }
+
+  // ---- Cloudinary unsigned upload (public, no session) --------------------
+  // For prospective applicants who don't have an account yet. Requires an
+  // unsigned upload preset (see api/config.php). Returns {} silently disabled
+  // when the server hasn't configured a public preset.
+  async function uploadPublic(file, onProgress) {
+    const cfg = await getConfig();
+    const pu = (cfg && cfg.publicUpload) || {};
+    if (!pu.enabled) throw new Error('public_upload_disabled');
+    return await new Promise((resolve, reject) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('upload_preset', pu.preset);
+      if (pu.folder) fd.append('folder', pu.folder);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'https://api.cloudinary.com/v1_1/' + pu.cloudName + '/image/upload');
+      if (onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+      xhr.onload = () => {
+        let d = {}; try { d = JSON.parse(xhr.responseText); } catch (_) {}
+        if (xhr.status >= 200 && xhr.status < 300 && d.secure_url) {
+          resolve({ url: d.secure_url, publicId: d.public_id, format: d.format, bytes: d.bytes });
+        } else {
+          reject(new Error((d.error && d.error.message) || ('upload_failed_' + xhr.status)));
+        }
+      };
+      xhr.onerror = () => reject(new Error('upload_network_error'));
+      xhr.send(fd);
+    });
+  }
+
+  const API = {
+    config: getConfig,
+    uploadFile: uploadFile,
+    uploadPublic: uploadPublic,
+    auth: {
+      gateway: (identifier) => request('/auth/gateway.php', { body: { identifier } }),
+      request: (identifier) => request('/auth/request.php', { body: { identifier } }),
+      login:   (identifier, password) => request('/auth/login.php', { body: { identifier, password } }),
+      setPassword: (password, current) => request('/auth/set-password.php', { body: { password, current: current || '' } }),
+      verify:  (creds) => request('/auth/verify.php', { body: creds }),
+      me:      () => request('/auth/me.php'),
+      logout:  () => request('/auth/logout.php', { method: 'POST' }),
+      adminTotpSetup:  () => request('/auth/admin-totp-setup.php', { method: 'POST' }),
+      adminTotpVerify: (code) => request('/auth/admin-2fa.php', { body: { code } }),
+    },
+    member: {
+      dashboard:     () => request('/member/dashboard.php'),
+      anchor:        () => request('/member/anchor.php'),
+      submitMission: (data) => request('/member/mission.php', { body: data }),
+      journal:       () => request('/member/journal.php'),
+      journalCreate: (data) => request('/member/journal.php', { body: data }),
+      rsvp:          (data) => request('/member/rsvp.php', { body: data }),
+      notifications: () => request('/member/notifications.php'),
+      markRead:      (notifId) => request('/member/notifications.php', { body: { notifId } }),
+      updateProfile: (data) => request('/member/profile.php', { body: data }),
+      assignments:      () => request('/member/assignments.php'),
+      submitAssignment: (data) => request('/member/assignments.php', { body: data }),
+      stateGet:  (keys) => request('/member/state.php' + qs({ keys: Array.isArray(keys) ? keys.join(',') : keys })),
+      stateSet:  (key, value) => request('/member/state.php', { body: { key, value } }),
+      momentum:     () => request('/member/momentum.php'),
+      coach:        (messages) => request('/member/coach.php', { body: { messages } }),
+      circle:       () => request('/member/circle.php'),
+      circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
+      circleRevoke: (linkId) => request('/member/circle.php', { body: { action: 'revoke', linkId } }),
+      security:            () => request('/member/security.php'),
+      securityRevoke:      (sid) => request('/member/security.php', { body: { action: 'revoke', sid } }),
+      securityRevokeOthers: () => request('/member/security.php', { body: { action: 'revoke_others' } }),
+    },
+    public: {
+      stats:      () => request('/public/stats.php'),
+      events:     () => request('/public/events.php'),
+      posts:      (kind, tag) => request('/public/posts.php' + qs({ kind, tag })),
+      post:       (slug) => request('/public/post.php' + qs({ slug })),
+      session:    () => request('/public/session.php'),
+      anchorContent: () => request('/public/anchor-content.php'),
+      mentors:    () => request('/public/mentors.php'),
+      summerProfile: (q) => request('/public/summer-profile.php' + qs(q || {})),
+      newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
+      apply:      (data) => request('/public/apply.php', { body: data }),
+      contact:    (data) => request('/public/contact.php', { body: data }),
+      gate: {
+        context:  (g) => request('/public/gate.php' + qs({ g })),
+        register: (gate, data, photoUrl, force) => request('/public/gate.php', { body: { action: 'register', gate, data, photoUrl, force } }),
+        checkin:  (gate, token) => request('/public/gate.php', { body: { action: 'checkin', gate, token } }),
+      },
+      verify: {
+        context: (t) => request('/public/verify.php' + qs({ t })),
+        submit:  (t, consents, actorName, feedback) => request('/public/verify.php', { body: { t, consents, actorName, feedback } }),
+      },
+      circle: {
+        lookup:    (code) => request('/public/circle.php' + qs({ view: 'lookup', code })),
+        connect:   (data) => request('/public/circle.php', { body: Object.assign({ action: 'connect' }, data) }),
+        dashboard: (token) => request('/public/circle.php' + qs({ view: 'dashboard', token })),
+        report:    (token) => request('/public/circle.php' + qs({ view: 'report', token })),
+        confirm:   (token, date, on) => request('/public/circle.php', { body: { action: 'confirm', token, date, on } }),
+        remark:    (token, text) => request('/public/circle.php', { body: { action: 'remark', token, text } }),
+        cohort:    (tokens) => request('/public/circle.php', { body: { action: 'cohort', tokens } }),
+      },
+    },
+    admin: {
+      members: {
+        list:   (q) => request('/admin/members.php' + qs(q || {})),
+        upsert: (data) => request('/admin/members.php', { body: data }),
+      },
+      mentors: {
+        list:   () => request('/admin/mentors.php'),
+        upsert: (data) => request('/admin/mentors.php', { body: data }),
+      },
+      mentorship: {
+        overview: () => request('/admin/mentorship.php?view=overview'),
+        roster:   (sessionId) => request('/admin/mentorship.php' + qs({ view: 'roster', sessionId })),
+        convertApp: (id) => request('/admin/mentorship.php', { body: { action: 'convert', id } }),
+        assign:   (memberId, mentorId, sessionId) => request('/admin/mentorship.php', { body: { action: 'assign', memberId, mentorId, sessionId } }),
+        unassign: (memberId, sessionId) => request('/admin/mentorship.php', { body: { action: 'assign', memberId, mentorId: '', sessionId } }),
+      },
+      sessions: {
+        list:   (year) => request('/admin/sessions.php' + qs({ year })),
+        upsert: (data) => request('/admin/sessions.php', { body: data }),
+      },
+      missions: {
+        list:   () => request('/admin/missions.php'),
+        upsert: (data) => request('/admin/missions.php', { body: data }),
+      },
+      events: {
+        list:   () => request('/admin/events.php'),
+        upsert: (data) => request('/admin/events.php', { body: data }),
+      },
+      posts: {
+        list:   () => request('/admin/posts.php'),
+        get:    (postId) => request('/admin/posts.php' + qs({ postId })),
+        upsert: (data) => request('/admin/posts.php', { body: data }),
+      },
+      promotions: {
+        set: (promo) => request('/admin/promotions.php', { body: { promo } }),
+      },
+      assignments: {
+        list:        () => request('/admin/assignments.php'),
+        submissions: (assignmentId) => request('/admin/assignments.php' + qs({ assignmentId })),
+        upsert:      (data) => request('/admin/assignments.php', { body: data }),
+        grade:       (data) => request('/admin/assignments.php', { body: data }),
+      },
+      broadcast: (data) => request('/admin/broadcast.php', { body: data }),
+      anchor: {
+        get:      () => request('/admin/anchor.php'),
+        defaults: () => request('/admin/anchor.php?defaults=1'),
+        set:      (data) => request('/admin/anchor.php', { body: { data } }),
+      },
+      overview:     () => request('/admin/overview.php'),
+      memberDetail: (memberId) => request('/admin/member-detail.php' + qs({ memberId })),
+      assignMentor: (data) => request('/admin/assign-mentor.php', { body: data }),
+      applications: {
+        list:    (q) => request('/admin/applications.php' + qs(q || {})),
+        status:  (id, status) => request('/admin/applications.php', { body: { id, status } }),
+        convert: (id) => request('/admin/applications.php', { body: { action: 'convert', id } }),
+      },
+      newsletter:   () => request('/admin/newsletter.php'),
+      summer: {
+        overview:     () => request('/admin/summer.php?view=overview'),
+        students:     (q, cohortId) => request('/admin/summer.php' + qs({ view: 'students', q, cohortId })),
+        qrList:       (status, batch) => request('/admin/summer.php' + qs({ view: 'qr', status, batch })),
+        mint:         (count) => request('/admin/summer.php', { body: { action: 'mint', count } }),
+        enroll:       (data) => request('/admin/summer.php', { body: { action: 'enroll', data } }),
+        cohort:       (data) => request('/admin/summer.php', { body: { action: 'cohort', data } }),
+        studentStatus:(studentId, status) => request('/admin/summer.php', { body: { action: 'studentStatus', studentId, status } }),
+        checkin:      (token, method, device) => request('/admin/summer.php', { body: { action: 'checkin', token, method, device } }),
+        attendance:   (cohortId) => request('/admin/summer.php' + qs({ view: 'attendance', cohortId })),
+        insights:     (cohortId) => request('/admin/summer.php' + qs({ view: 'insights', cohortId })),
+        archive:      (cohortId, compress) => request('/admin/summer.php', { body: { action: 'archive', cohortId, compress: !!compress } }),
+      },
+      club: {
+        overview:   () => request('/admin/club.php?view=overview'),
+        promotable: () => request('/admin/club.php?view=promotable'),
+        members:    (q) => request('/admin/club.php' + qs({ view: 'members', q })),
+        promote:    (studentId) => request('/admin/club.php', { body: { action: 'promote', studentId } }),
+      },
+      contact: {
+        list:   (q) => request('/admin/contact.php' + qs(q || {})),
+        status: (id, status) => request('/admin/contact.php', { body: { id, status } }),
+      },
+      behaviour: {
+        list:   (q) => request('/admin/behaviour.php' + qs(q || {})),
+        log:    (subjectId, note, category, severity) => request('/admin/behaviour.php', { body: { action: 'log', subjectId, note, category, severity } }),
+        review: (logId) => request('/admin/behaviour.php', { body: { action: 'review', logId } }),
+      },
+      registration: {
+        form:       () => request('/admin/registration.php' + qs({ view: 'form' })),
+        publishForm: (fields, name) => request('/admin/registration.php', { body: { action: 'publish_form', fields, name } }),
+        gates:      () => request('/admin/registration.php' + qs({ view: 'gates' })),
+        gateCreate: (name, expiresAt) => request('/admin/registration.php', { body: { action: 'gate_create', name, expiresAt } }),
+        gateRevoke: (gateId) => request('/admin/registration.php', { body: { action: 'gate_revoke', gateId } }),
+        list:       () => request('/admin/registration.php' + qs({ view: 'registrations' })),
+        remind:     (studentId) => request('/admin/registration.php', { body: { action: 'remind', studentId } }),
+      },
+      integrations: {
+        list:     () => request('/admin/integrations.php'),
+        upsert:   (data) => request('/admin/integrations.php', { body: { action: 'upsert', data } }),
+        remove:   (integrationId) => request('/admin/integrations.php', { body: { action: 'delete', integrationId } }),
+        test:     (integrationId) => request('/admin/integrations.php', { body: { action: 'test', integrationId } }),
+        dispatch: () => request('/admin/integrations.php', { body: { action: 'dispatch' } }),
+        syncMembers: () => request('/admin/integrations.php', { body: { action: 'sync_members' } }),
+      },
+      settings: {
+        get: () => request('/admin/settings.php'),
+        set: (data) => request('/admin/settings.php', { body: { data } }),
+      },
+      audit:     (q) => request('/admin/audit.php' + qs(typeof q === 'object' && q ? q : { limit: q })),
+    },
+  };
+
+  function qs(obj) {
+    const parts = [];
+    for (const k in obj) {
+      if (obj[k] === undefined || obj[k] === null || obj[k] === '') continue;
+      parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(obj[k]));
+    }
+    return parts.length ? '?' + parts.join('&') : '';
+  }
+
+  global.NGGApi = API;
+  global.NGGApiBase = BASE;
+})(window);
