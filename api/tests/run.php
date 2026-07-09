@@ -36,7 +36,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
@@ -564,6 +564,30 @@ chk('gate: revoked link stops working', (function () use ($GATE) {
     return backend_dispatch('gate.context', ['gate' => $GATE['gateId']])['error'] === 'gate_invalid';
 })());
 chk('registration events reached the outbox', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind IN ('registration.created','registration.verified')")['c'] >= 2);
+
+// ── Inbound attendance webhook ──
+chk('hook: signature scheme verifies + rejects stale/bad', (function () {
+    $sec = 'hooksecret'; $ts = (string)time(); $body = '{"a":1}';
+    $sig = 'sha256=' . hash_hmac('sha256', $ts . '.' . $body, $sec);
+    if (!hook_verify_signature($sec, $ts, $body, $sig)) return false;
+    if (hook_verify_signature($sec, (string)(time() - 400), $body, $sig)) return false;   // stale
+    if (hook_verify_signature($sec, $ts, $body, 'sha256=deadbeef')) return false;         // wrong
+    if (hook_verify_signature('', $ts, $body, $sig)) return false;                        // disabled
+    return true;
+})());
+chk('hook: batch marks summer student (by QR + ref) and member; idempotent; unknown reported', (function () {
+    $st = db_row("SELECT studentId, token FROM summer_students WHERE regStatus = 'verified' ORDER BY id DESC LIMIT 1");
+    $r = backend_dispatch('hooks.attendance', ['source' => 'unit', 'events' => [
+        ['token' => $st['token']],
+        ['ref' => 'NGG-2025-0001', 'date' => gmdate('Y-m-d')],
+        ['ref' => 'GHOST-404'],
+    ]]);
+    if (empty($r['ok']) || $r['marked'] !== 2 || $r['unknown'] !== 1) return false;
+    $r2 = backend_dispatch('hooks.attendance', ['source' => 'unit', 'events' => [['ref' => $st['studentId']]]]);
+    if ($r2['already'] !== 1 || $r2['marked'] !== 0) return false;
+    return (int)db_row("SELECT COUNT(*) c FROM attendance WHERE method = 'webhook'")['c'] === 2
+        && (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'attendance.marked'")['c'] >= 2;
+})());
 
 // ── AI profiles (offline resolution only — no network in tests) ──
 chk('ai disabled with no keys', ai_enabled() === false && ai_enabled('coach') === false && ai_complete('s', 'u')['error'] === 'ai_disabled');

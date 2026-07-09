@@ -25,7 +25,7 @@ require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
 require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 $reminded = 0; $stalled = 0;

@@ -44,6 +44,7 @@ function csrf_require(): void {
     $path = $_SERVER['SCRIPT_NAME'] ?? '';
     if (preg_match('#/api/auth/(gateway|request|verify|login)\\.php$#', $path)) return;
     if (preg_match('#/api/public/verify\\.php$#', $path)) return; // parent link: the token IS the proof
+    if (preg_match('#/api/hooks/[a-z-]+\\.php$#', $path)) return;  // inbound hooks: the HMAC IS the proof
     if (preg_match('#/api/public/newsletter\\.php$#', $path))     return;
 
     $cookie = $_COOKIE[csrf_cookie_name()] ?? '';

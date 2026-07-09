@@ -92,6 +92,14 @@ return [
     ],
 
     // -----------------------------------------------------------------------
+    // Inbound webhooks. Empty secret = endpoint disabled. The sender signs
+    // every request (see docs/attendance-webhook.md).
+    // -----------------------------------------------------------------------
+    'hooks' => [
+        'attendance_secret' => '',
+    ],
+
+    // -----------------------------------------------------------------------
     // Default Super Admin. Auto-provisioned on first sign-in so a fresh NGG
     // deploy always has a top-tier staff account (role=super_admin → every
     // capability). Separate from Afrovanguard's admin — its own account here.
