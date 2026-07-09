@@ -239,7 +239,7 @@ function App() {
         NGGApi.member.dashboard().catch(() => null),
         NGGApi.member.journal().catch(() => null),
         NGGApi.member.anchor().catch(() => null),
-        NGGApi.member.stateGet(["peers", "prefs", "systems:" + dayKey(Date.now()), "selfscore:" + dayKey(mondayOf(Date.now())), "focusTasks:" + dayKey(Date.now())]).catch(() => null),
+        NGGApi.member.stateGet(["peers", "prefs", "systems:" + dayKey(Date.now()), "selfscore:" + dayKey(mondayOf(Date.now())), "focusTasks:" + dayKey(Date.now()), "notes", "goals"]).catch(() => null),
       ]);
       if (dash) { setSession(dash.session || null); setMentor(dash.mentor || null); store.patch({ session: dash.session, mentor: dash.mentor }); }
       if (jrnl) { setEntries(jrnl.entries || []); store.patch({ entries: jrnl.entries || [] }); }
@@ -342,6 +342,8 @@ function App() {
       {view === "review" && <Review ctx={ctx}/>}
       {view === "you" && <You ctx={ctx}/>}
       {view === "focus" && <Focus ctx={ctx}/>}
+      {view === "notepad" && <Notepad ctx={ctx}/>}
+      {view === "goals" && <Goals ctx={ctx}/>}
       {view === "coach" && <Coach ctx={ctx}/>}
       {view !== "reflect" && view !== "coach" && <BottomNav view={view} go={go}/>}
       {celebrate && <Celebrate/>}
@@ -383,6 +385,20 @@ function Journey({ ctx }) {
         <div className="aj-xp-meta"><span>{xp} XP</span><span>{next ? "LEVEL " + next.L : "MAX"}</span></div>
       </div>
       <div className="aj-wkchip"><span><b>WK {String(currentWeek).padStart(2, "0")}</b><em>{(WEEK_TITLES[currentWeek - 1] || "").split(" · ")[0].toUpperCase()}</em></span></div>
+
+      <div className="pad" style={{ marginTop: 22 }}>
+        <div className="eyebrow" style={{ marginBottom: 12 }}>QUICK TOOLS</div>
+        <div className="aj-tools">
+          {[["focus", "Focus", "ph-timer"], ["notepad", "Notepad", "ph-note-pencil"], ["goals", "Goals", "ph-target"],
+            ["systems", "Systems", "ph-check-square-offset"], ["calendar", "Calendar", "ph-calendar-dots"], ["timeline", "Journal", "ph-book-open-text"]]
+            .map(([id, label, icon]) => (
+              <button key={id} className="aj-tool" onClick={() => go(id)}>
+                <span className="aj-tool-ic"><i className={"ph-fill " + icon}/></span>
+                <span className="aj-tool-lbl">{label}</span>
+              </button>
+            ))}
+        </div>
+      </div>
 
       <div className="aj-path">
         <svg viewBox="0 0 402 700" preserveAspectRatio="none" aria-hidden="true"><polyline points="201,60 118,196 284,332 148,468 262,604" fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="4" strokeDasharray="1 15" strokeLinecap="round"/></svg>
@@ -550,6 +566,119 @@ function Reflect({ ctx }) {
       <div className="pad" style={{ marginTop: 24 }}>
         <button className="btn-a" disabled={busy} onClick={submit}>Anchor it <i className="ph-fill ph-anchor"/></button>
         <p className="center muted" style={{ fontSize: 12, margin: "14px 0 0" }}>Earn +60 XP · keep your streak alive</p>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Notepad (private free-writing) ------------------------------------- */
+function Notepad({ ctx }) {
+  const { pstate, setState, back } = ctx;
+  const notes = pstate.notes || [];
+  const [open, setOpen] = useState(null); // { i, title, body } — i===-1 is a new note
+
+  const save = () => {
+    const t = (open.title || "").trim() || "Untitled";
+    const b = (open.body || "").trim();
+    const now = new Date().toISOString();
+    const next = open.i === -1
+      ? [{ id: "n-" + Date.now(), title: t, body: b, date: now }, ...notes]
+      : notes.map((n, j) => j === open.i ? Object.assign({}, n, { title: t, body: b, date: now }) : n);
+    setState("notes", next); setOpen(null); toast.ok("Note saved");
+  };
+  const del = () => { setState("notes", notes.filter((_, j) => j !== open.i)); setOpen(null); };
+
+  if (open) {
+    return (
+      <div className="aj-view noNav aj-coach">
+        <div className="aj-head" style={{ justifyContent: "space-between" }}>
+          <button className="icon-btn" aria-label="Back" onClick={() => setOpen(null)}><i className="ph-bold ph-arrow-left"/></button>
+          <div className="aj-head-center">NOTE</div>
+          <button className="icon-btn" aria-label="Save" onClick={save}><i className="ph-bold ph-check"/></button>
+        </div>
+        <div className="pad" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+          <input className="aj-note-title" placeholder="Title" value={open.title} maxLength={120} onChange={e => setOpen(o => Object.assign({}, o, { title: e.target.value }))}/>
+          <textarea className="aj-note-body" placeholder="Write freely — this stays private to you." value={open.body} onChange={e => setOpen(o => Object.assign({}, o, { body: e.target.value }))}/>
+          {open.i !== -1 && <button className="aj-note-del" onClick={del}><i className="ph-bold ph-trash"/> Delete note</button>}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="aj-view">
+      <div className="aj-head" style={{ justifyContent: "space-between" }}>
+        <button className="icon-btn" aria-label="Back" onClick={back}><i className="ph-bold ph-arrow-left"/></button>
+        <div className="aj-head-center">NOTEPAD</div>
+        <button className="icon-btn" aria-label="New note" onClick={() => setOpen({ i: -1, title: "", body: "" })}><i className="ph-bold ph-plus"/></button>
+      </div>
+      <div className="pad" style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
+        {notes.length === 0 && <p className="muted" style={{ fontSize: 13 }}>No notes yet. Tap + to write one — private to you.</p>}
+        {notes.map((n, i) => (
+          <button className="aj-note-card" key={n.id || i} onClick={() => setOpen({ i, title: n.title, body: n.body })}>
+            <div className="aj-note-card-t">{n.title || "Untitled"}</div>
+            {n.body ? <div className="aj-note-card-p">{n.body.slice(0, 90)}</div> : null}
+            <div className="aj-note-card-d">{n.date ? new Date(n.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---- Goals (track + steppers + share) ----------------------------------- */
+function Goals({ ctx }) {
+  const { pstate, setState, back } = ctx;
+  const goals = pstate.goals || [];
+  const [title, setTitle] = useState(""); const [target, setTarget] = useState(""); const [unit, setUnit] = useState("");
+
+  const add = () => {
+    const t = title.trim(); const tg = parseInt(target, 10);
+    if (!t || !(tg > 0)) { toast.err("Add a title and a target number."); return; }
+    setState("goals", goals.concat({ id: "g-" + Date.now(), title: t.slice(0, 120), current: 0, target: tg, unit: unit.trim().slice(0, 20) }));
+    setTitle(""); setTarget(""); setUnit("");
+  };
+  const step = (i, d) => setState("goals", goals.map((g, j) => j === i ? Object.assign({}, g, { current: Math.max(0, Math.min(g.target, (g.current || 0) + d)) }) : g));
+  const del = (i) => setState("goals", goals.filter((_, j) => j !== i));
+  const share = (g) => {
+    const txt = ("My goal: " + g.title + " — " + (g.current || 0) + "/" + g.target + " " + (g.unit || "")).trim();
+    if (navigator.share) navigator.share({ text: txt }).catch(() => {});
+    else { try { navigator.clipboard.writeText(txt); toast.ok("Copied to clipboard"); } catch (e) {} }
+  };
+
+  return (
+    <div className="aj-view">
+      <div className="aj-head" style={{ justifyContent: "space-between" }}>
+        <button className="icon-btn" aria-label="Back" onClick={back}><i className="ph-bold ph-arrow-left"/></button>
+        <div className="aj-head-center">GOALS</div>
+        <div style={{ width: 42 }}/>
+      </div>
+      <div className="pad" style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 12 }}>
+        {goals.length === 0 && <p className="muted" style={{ fontSize: 13 }}>Set a goal below and track it step by step.</p>}
+        {goals.map((g, i) => {
+          const pct = g.target ? Math.round(((g.current || 0) / g.target) * 100) : 0;
+          return (
+            <div className="aj-goal" key={g.id || i}>
+              <div className="aj-goal-top"><span className="aj-goal-title">{g.title}</span><button className="aj-task-del" onClick={() => del(i)} aria-label="Remove"><i className="ph-bold ph-x"/></button></div>
+              <div className="aj-goal-track"><div className="aj-goal-fill" style={{ width: pct + "%" }}/></div>
+              <div className="aj-goal-bot">
+                <span className="aj-goal-num">{g.current || 0}/{g.target} {g.unit}</span>
+                <span className="aj-goal-acts">
+                  <button className="aj-step" onClick={() => step(i, -1)} aria-label="Minus"><i className="ph-bold ph-minus"/></button>
+                  <button className="aj-step" onClick={() => step(i, 1)} aria-label="Plus"><i className="ph-bold ph-plus"/></button>
+                  <button className="aj-step" onClick={() => share(g)} aria-label="Share"><i className="ph-fill ph-share-network"/></button>
+                </span>
+              </div>
+            </div>
+          );
+        })}
+        <div className="aj-goal-add">
+          <input className="aj-logline" placeholder="New goal (e.g. Read this term)" value={title} maxLength={120} onChange={e => setTitle(e.target.value)}/>
+          <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+            <input className="aj-logline" style={{ flex: 1 }} type="number" inputMode="numeric" placeholder="Target #" value={target} onChange={e => setTarget(e.target.value)}/>
+            <input className="aj-logline" style={{ flex: 1 }} placeholder="Unit (books)" value={unit} maxLength={20} onChange={e => setUnit(e.target.value)}/>
+          </div>
+          <button className="btn-a" style={{ marginTop: 12 }} onClick={add}>Add goal <i className="ph-bold ph-plus"/></button>
+        </div>
       </div>
     </div>
   );
