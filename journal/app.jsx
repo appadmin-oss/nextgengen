@@ -222,15 +222,29 @@ function App() {
   const go = (v) => { prev.current = view; setView(v); };
   const back = () => setView(prev.current || "home");
 
+  // "Replay intro" sets a one-shot session flag so a completed onboarding
+  // (account-level prefs.onboardedAt) can still be re-entered deliberately.
+  const onbReplay = (() => { try { return sessionStorage.getItem("ngg_aj_onb_replay") === "1"; } catch { return false; } })();
   useEffect(() => {
     let alive = true;
     NGGApi.auth.me().then(r => {
       if (!alive) return;
       setMember(r.member || null);
-      if (r.member && localStorage.getItem("ngg_aj_onb") !== "1") setOnboard(true);
+      if (r.member && (onbReplay || localStorage.getItem("ngg_aj_onb") !== "1")) setOnboard(true);
     }).catch(() => {}).finally(() => { if (alive) setBooting(false); });
     return () => { alive = false; };
   }, []);
+
+  // Onboarding completion follows the ACCOUNT, not the device: once server
+  // prefs arrive with onboardedAt set, dismiss the intro on this device too
+  // (unless the member explicitly asked to replay it).
+  useEffect(() => {
+    if (!onboard || onbReplay) return;
+    if (((pstate && pstate.prefs) || {}).onboardedAt) {
+      try { localStorage.setItem("ngg_aj_onb", "1"); } catch {}
+      setOnboard(false);
+    }
+  }, [onboard, pstate]);
 
   const refresh = useCallback(async () => {
     if (!navigator.onLine) return;
@@ -347,7 +361,11 @@ function App() {
       {view === "coach" && <Coach ctx={ctx}/>}
       {view !== "reflect" && view !== "coach" && <BottomNav view={view} go={go}/>}
       {celebrate && <Celebrate/>}
-      {onboard && <Onboarding name={member.fullName} onDone={() => { localStorage.setItem("ngg_aj_onb", "1"); setOnboard(false); }}/>}
+      {onboard && <Onboarding member={member} prefs={pstate.prefs} onDone={(picked) => {
+        setState("prefs", Object.assign({}, pstate.prefs || {}, picked, { onboardedAt: (pstate.prefs || {}).onboardedAt || new Date().toISOString() }));
+        try { localStorage.setItem("ngg_aj_onb", "1"); sessionStorage.removeItem("ngg_aj_onb_replay"); } catch {}
+        setOnboard(false);
+      }}/>}
       <InstallPrompt/>
       <Toasts/>
     </div>
@@ -356,8 +374,8 @@ function App() {
 
 /* ---- Journey (path) ----------------------------------------------------- */
 function Journey({ ctx }) {
-  const { member, weeks, currentWeek, streak, diamonds, xp, cur, next, xpPct, reflectedToday, go } = ctx;
-  const first = String(member.fullName || "there").split(" ")[0];
+  const { member, weeks, currentWeek, streak, diamonds, xp, cur, next, xpPct, reflectedToday, go, pstate } = ctx;
+  const first = ((pstate.prefs || {}).name || "").trim() || String(member.fullName || "there").split(" ")[0];
   const wk = (weeks || []).find(w => w.week === currentWeek) || (weeks || [])[0];
   const firstMission = wk && wk.missions && wk.missions[0];
   const done = firstMission && (firstMission.status === "verified" || firstMission.status === "submitted");
@@ -1353,7 +1371,7 @@ function You({ ctx }) {
           <button className="aj-setrow" onClick={() => { if (!on("reminder") && "Notification" in window && Notification.permission === "default") { try { Notification.requestPermission(); } catch {} } toggle("reminder"); }}><i className="ph-fill ph-bell lead"/><span>Daily reflection reminder</span><span className={"aj-toggle " + (on("reminder") ? "on" : "off")}><span/></span></button>
           <button className="aj-setrow" onClick={() => toggle("readAloud")}><i className="ph-fill ph-speaker-high lead"/><span>Read quote aloud</span><span className={"aj-toggle " + (on("readAloud") ? "on" : "off")}><span/></span></button>
           <button className="aj-setrow" onClick={exportJournal}><i className="ph-fill ph-download-simple lead"/><span>Export my journal</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
-          <button className="aj-setrow" onClick={() => { localStorage.removeItem("ngg_aj_onb"); location.reload(); }}><i className="ph-fill ph-arrow-counter-clockwise lead"/><span>Replay intro</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
+          <button className="aj-setrow" onClick={() => { try { sessionStorage.setItem("ngg_aj_onb_replay", "1"); localStorage.removeItem("ngg_aj_onb"); } catch {} location.reload(); }}><i className="ph-fill ph-arrow-counter-clockwise lead"/><span>Replay intro</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
           <button className="aj-setrow" onClick={() => { NGGApi.auth.logout().finally(() => location.reload()); }}><i className="ph-fill ph-sign-out lead"/><span>Sign out</span><i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)" }}/></button>
         </div>
       </div>
@@ -1374,19 +1392,113 @@ function Celebrate() {
   return <div className="aj-celebrate"><div className="aj-celebrate-in"><div className="aj-celebrate-badge"><i className="ph-fill ph-anchor"/></div><h2>Anchored!</h2><p>+60 XP · your streak is alive</p></div></div>;
 }
 
-/* ---- Onboarding --------------------------------------------------------- */
-function Onboarding({ name, onDone }) {
+/* ---- Onboarding (4 steps: Welcome → Name → Why → Study time) ------------ */
+// Choices persist to member_state.prefs — the journey's "why" tags it, never
+// gates it. Replaying the intro pre-fills from saved prefs (edit, not reset).
+const ONB_WHYS = [
+  { key: "discipline", label: "Build real discipline", icon: "ph-barbell" },
+  { key: "school", label: "Do better in school", icon: "ph-graduation-cap" },
+  { key: "character", label: "Grow my character", icon: "ph-shield-check" },
+  { key: "focus", label: "Beat distraction", icon: "ph-crosshair" },
+  { key: "family", label: "Make my family proud", icon: "ph-heart" },
+  { key: "leader", label: "Become a leader", icon: "ph-flag" },
+];
+const ONB_TIMES = [
+  { key: "dawn", label: "Early morning", sub: "5:30 – 6:30 AM · before the noise", icon: "ph-sun-horizon" },
+  { key: "afterschool", label: "After school", sub: "4 – 5 PM · while it's fresh", icon: "ph-backpack" },
+  { key: "evening", label: "Early evening", sub: "6 – 7 PM · before dinner", icon: "ph-sun-dim" },
+  { key: "night", label: "Night", sub: "8 – 9 PM · the quiet hours", icon: "ph-moon-stars" },
+  { key: "flexible", label: "It varies", sub: "I'll anchor whenever I can", icon: "ph-shuffle" },
+];
+function Onboarding({ member, prefs, onDone }) {
+  const p = prefs || {};
+  const [step, setStep] = useState(0);
+  const [name, setName] = useState(p.name || String(member.fullName || "").split(" ")[0] || "");
+  const [why, setWhy] = useState(p.why || "");
+  const [studyTime, setStudyTime] = useState(p.studyTime || "");
+  const headRef = useRef(null);
+  useEffect(() => { if (headRef.current) headRef.current.focus(); }, [step]);
+
+  const cleanName = name.replace(/\s+/g, " ").trim().slice(0, 40);
+  const canNext = step === 0 || (step === 1 && cleanName.length >= 2) || (step === 2 && !!why) || (step === 3 && !!studyTime);
+  const next = () => {
+    if (!canNext) return;
+    if (step < 3) { setStep(step + 1); return; }
+    onDone({ name: cleanName, why, studyTime });
+  };
+
+  const dots = (
+    <div className="aj-onb-dots" role="progressbar" aria-valuemin={1} aria-valuemax={4} aria-valuenow={step + 1} aria-label={"Step " + (step + 1) + " of 4"}>
+      {[0, 1, 2, 3].map(i => <span key={i} className={"aj-onb-dot" + (i === step ? " on" : i < step ? " done" : "")}/>)}
+    </div>
+  );
+  const head = (eyebrow, title, sub) => (
+    <div className="aj-onb-step-head">
+      <div className="eyebrow" style={{ color: "var(--a)" }}>{eyebrow}</div>
+      <h2 ref={headRef} tabIndex={-1} className="disp aj-onb-step-h">{title}</h2>
+      {sub && <p className="muted" style={{ fontSize: 14, lineHeight: 1.5, margin: "10px 0 0" }}>{sub}</p>}
+    </div>
+  );
+
   return (
-    <div className="aj-celebrate" style={{ background: "var(--bg0)", zIndex: 70 }}>
+    <div className="aj-celebrate" style={{ background: "var(--bg0)", zIndex: 70 }} role="dialog" aria-modal="true" aria-label="Welcome to the Anchor Journal">
       <div className="aj-onb" style={{ maxWidth: 440, width: "100%" }}>
-        <div className="aj-onb-top">
-          <div className="aj-onb-badge"><i className="ph-fill ph-anchor"/></div>
-          <h1 className="aj-onb-h">ANCHOR</h1>
-          <div className="aj-onb-sub">JOURNAL</div>
-          <p className="aj-onb-p">A daily discipline for an <b>incorruptible generation.</b> Twelve weeks. One reflection at a time.</p>
+        <div className="aj-onb-bar">
+          {step > 0 ? <button className="icon-btn" aria-label="Back" onClick={() => setStep(step - 1)}><i className="ph-bold ph-arrow-left"/></button> : <span style={{ width: 42 }}/>}
+          {dots}
+          <span style={{ width: 42 }}/>
         </div>
+
+        {step === 0 && (
+          <div className="aj-onb-top">
+            <div className="aj-onb-badge"><i className="ph-fill ph-anchor"/></div>
+            <h1 className="aj-onb-h">ANCHOR</h1>
+            <div className="aj-onb-sub">JOURNAL</div>
+            <p className="aj-onb-p">A daily discipline for an <b>incorruptible generation.</b> Twelve weeks. One reflection at a time.</p>
+          </div>
+        )}
+
+        {step === 1 && (
+          <div className="aj-onb-body">
+            {head("STEP 1 · YOUR NAME", "What should we call you?", "Just your first name — how you'd want a friend to greet you.")}
+            <input className="aj-input" style={{ marginTop: 22 }} placeholder="Your name" value={name} maxLength={40} autoFocus
+              onChange={e => setName(e.target.value.replace(/[\n\r]/g, ""))}
+              onKeyDown={e => { if (e.key === "Enter") next(); }} aria-label="Your preferred name"/>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="aj-onb-body">
+            {head("STEP 2 · YOUR WHY", "Why are you here, " + (cleanName || "friend") + "?", "There's no wrong answer — this just tags your journey.")}
+            <div className="aj-onb-chips">
+              {ONB_WHYS.map(w => (
+                <button key={w.key} className={"aj-onb-chip" + (why === w.key ? " on" : "")} aria-pressed={why === w.key} onClick={() => setWhy(w.key)}>
+                  <i className={"ph-fill " + w.icon}/>{w.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="aj-onb-body">
+            {head("STEP 3 · YOUR STUDY TIME", "When will you show up?", "A fixed daily slot is the first system Anchor builds. Pick the one you can defend.")}
+            <div className="aj-onb-times">
+              {ONB_TIMES.map(t => (
+                <button key={t.key} className={"aj-onb-time" + (studyTime === t.key ? " on" : "")} aria-pressed={studyTime === t.key} onClick={() => setStudyTime(t.key)}>
+                  <span className="aj-onb-time-ic"><i className={"ph-fill " + t.icon}/></span>
+                  <span className="aj-onb-time-tx"><b>{t.label}</b><small>{t.sub}</small></span>
+                  <span className={"aj-onb-time-r" + (studyTime === t.key ? " on" : "")}>{studyTime === t.key ? <i className="ph-bold ph-check"/> : null}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div style={{ marginTop: "auto" }}>
-          <button className="btn-a" onClick={onDone}>Begin the journey <i className="ph-bold ph-arrow-right"/></button>
+          <button className="btn-a" disabled={!canNext} onClick={next}>
+            {step === 0 ? "Begin the journey" : step === 3 ? "Anchor me in" : "Continue"} <i className="ph-bold ph-arrow-right"/>
+          </button>
           <p className="aj-virtues">Study harder · think deeper · speak wiser<br/>love purer · live truer</p>
         </div>
       </div>
