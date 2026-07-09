@@ -175,6 +175,19 @@ function App() {
     if (m && meta.desc) m.setAttribute("content", meta.desc);
     const og = document.querySelector('meta[property="og:title"]');
     if (og) og.setAttribute("content", meta.title);
+    const ogd = document.querySelector('meta[property="og:description"]');
+    if (ogd && meta.desc) ogd.setAttribute("content", meta.desc);
+    // Canonical + og:url must follow the route — a canonical pinned to "/"
+    // tells crawlers every deep page is a duplicate of the homepage.
+    const canonicalUrl = "https://ngg.afrovanguard.org" + (page === "home" ? "/" : "/" + page);
+    const can = document.querySelector('link[rel="canonical"]');
+    if (can && PAGE_IDS.includes(page)) can.setAttribute("href", canonicalUrl);
+    const ogu = document.querySelector('meta[property="og:url"]');
+    if (ogu && PAGE_IDS.includes(page)) ogu.setAttribute("content", canonicalUrl);
+    // Deep pages that are personal/operational surfaces stay out of the index.
+    const noindexPages = ["dashboard", "profile", "admin", "summer-admin", "club-admin", "gate", "verify", "circle"];
+    let rob = document.querySelector('meta[name="robots"]');
+    if (rob) rob.setAttribute("content", noindexPages.includes(page) ? "noindex, nofollow" : "index, follow, max-image-preview:large");
     // Announce route change for assistive tech via a polite live region.
     const live = document.getElementById("ngg-route-live");
     if (live) live.textContent = "Navigated to " + meta.title;
