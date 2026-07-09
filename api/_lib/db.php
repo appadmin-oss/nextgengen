@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 12;
+const NGG_SCHEMA_TARGET = 13;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -482,6 +482,29 @@ function db_migrate(PDO $db): void {
             ALTER TABLE summer_students ADD COLUMN formData TEXT;
             CREATE INDEX idx_sstu_verify ON summer_students(verifyToken);
             CREATE INDEX idx_sstu_regstatus ON summer_students(regStatus);
+        ",
+        // Behaviour monitor: staff observations, AI-categorised, with a
+        // review workflow and wellbeing flags.
+        13 => "
+            CREATE TABLE behaviour_logs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              logId TEXT UNIQUE NOT NULL,
+              subjectId TEXT NOT NULL,
+              subjectName TEXT,
+              cohortId TEXT,
+              observerId TEXT, observerName TEXT,
+              note TEXT,
+              category TEXT,
+              severity TEXT,
+              sentiment TEXT,
+              aiSource TEXT,
+              status TEXT DEFAULT 'open',
+              reviewedBy TEXT, reviewedAt TEXT,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_blog_subject ON behaviour_logs(subjectId);
+            CREATE INDEX idx_blog_status ON behaviour_logs(status);
+            CREATE INDEX idx_blog_category ON behaviour_logs(category);
         ",
     ];
 

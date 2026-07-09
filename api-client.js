@@ -259,6 +259,11 @@
         list:   (q) => request('/admin/contact.php' + qs(q || {})),
         status: (id, status) => request('/admin/contact.php', { body: { id, status } }),
       },
+      behaviour: {
+        list:   (q) => request('/admin/behaviour.php' + qs(q || {})),
+        log:    (subjectId, note, category, severity) => request('/admin/behaviour.php', { body: { action: 'log', subjectId, note, category, severity } }),
+        review: (logId) => request('/admin/behaviour.php', { body: { action: 'review', logId } }),
+      },
       registration: {
         form:       () => request('/admin/registration.php' + qs({ view: 'form' })),
         publishForm: (fields, name) => request('/admin/registration.php', { body: { action: 'publish_form', fields, name } }),

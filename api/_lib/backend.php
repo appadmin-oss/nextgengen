@@ -80,6 +80,9 @@ function backend_dispatch(string $op, array $args = []): array {
             // Anchor Circle — student side (member) + portal side (guardian)
             'auth.gateway'                => 'auth_gateway',
             'hooks.attendance'            => 'hooks_attendance',
+            'admin.behaviour.log'         => 'admin_behaviour_log',
+            'admin.behaviour.list'        => 'admin_behaviour_list',
+            'admin.behaviour.review'      => 'admin_behaviour_review',
             'admin.forms.get'             => 'admin_forms_get',
             'admin.forms.publish'         => 'admin_forms_publish',
             'admin.gates.list'            => 'admin_gates_list',

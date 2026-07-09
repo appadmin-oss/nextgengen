@@ -36,7 +36,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
@@ -587,6 +587,25 @@ chk('hook: batch marks summer student (by QR + ref) and member; idempotent; unkn
     if ($r2['already'] !== 1 || $r2['marked'] !== 0) return false;
     return (int)db_row("SELECT COUNT(*) c FROM attendance WHERE method = 'webhook'")['c'] === 2
         && (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'attendance.marked'")['c'] >= 2;
+})());
+
+// ── Behaviour monitor (AI off → deterministic rules) ──
+chk('behaviour: log auto-classifies, wellbeing flags emit, review closes', (function () {
+    $flagsBefore = (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'behaviour.flagged'")['c'];
+    $r1 = backend_dispatch('admin.behaviour.log', ['requesterId' => 'NGG-2025-0099', 'subjectId' => 'NGG-2025-0001', 'note' => 'Helped a younger student pack up — a real leader today.']);
+    if (empty($r1['ok']) || $r1['category'] !== 'commendation' || $r1['severity'] !== 'positive' || $r1['aiSource'] !== 'rules') return false;
+    $r2 = backend_dispatch('admin.behaviour.log', ['requesterId' => 'NGG-2025-0099', 'subjectId' => 'NGG-2025-0001', 'note' => 'Seemed withdrawn and was crying quietly after the session.']);
+    if ($r2['category'] !== 'wellbeing' || $r2['severity'] !== 'urgent') return false;
+    if ((int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'behaviour.flagged'")['c'] !== $flagsBefore + 1) return false;
+    $l = backend_dispatch('admin.behaviour.list', ['requesterId' => 'NGG-2025-0099', 'subjectId' => 'NGG-2025-0001']);
+    if (count($l['logs']) < 2 || $l['openFlags'] < 1 || ($l['trend']['commendation'] ?? 0) < 1) return false;
+    if (empty(backend_dispatch('admin.behaviour.review', ['requesterId' => 'NGG-2025-0099', 'logId' => $r2['logId']])['ok'])) return false;
+    return db_row('SELECT status FROM behaviour_logs WHERE logId = ?', [$r2['logId']])['status'] === 'reviewed';
+})());
+chk('behaviour: manual category wins over classifier', backend_dispatch('admin.behaviour.log', ['requesterId' => 'NGG-2025-0099', 'subjectId' => 'NGG-2025-0001', 'note' => 'Was late to class again', 'category' => 'peer', 'severity' => 'info'])['category'] === 'peer');
+chk('behaviour: unknown subject + plain member both handled, non-staff blocked', (function () {
+    if (backend_dispatch('admin.behaviour.log', ['requesterId' => 'NGG-2025-0099', 'subjectId' => 'NOPE-1', 'note' => 'ghost entry'])['error'] !== 'subject_not_found') return false;
+    return backend_dispatch('admin.behaviour.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden';
 })());
 
 // ── AI profiles (offline resolution only — no network in tests) ──

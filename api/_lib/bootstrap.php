@@ -41,7 +41,7 @@ require_once __DIR__ . '/anchor-content.php';
 require_once __DIR__ . '/ai.php';
 require_once __DIR__ . '/bus.php';
 require_once __DIR__ . '/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks'] as $__d) {
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour'] as $__d) {
     require_once __DIR__ . '/domain/' . $__d . '.php';
 }
 require_once __DIR__ . '/backend.php';

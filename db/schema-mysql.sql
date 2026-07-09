@@ -366,5 +366,26 @@ ALTER TABLE summer_students ADD COLUMN remindedAt VARCHAR(40);
 ALTER TABLE summer_students ADD COLUMN formVersion INT;
 ALTER TABLE summer_students ADD COLUMN formData MEDIUMTEXT;
 
+-- Behaviour monitor: AI-categorised staff observations + review workflow.
+CREATE TABLE IF NOT EXISTS behaviour_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  logId VARCHAR(48) UNIQUE NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectName VARCHAR(190),
+  cohortId VARCHAR(48),
+  observerId VARCHAR(64), observerName VARCHAR(190),
+  note TEXT,
+  category VARCHAR(24),
+  severity VARCHAR(16),
+  sentiment VARCHAR(16),
+  aiSource VARCHAR(16),
+  status VARCHAR(16) DEFAULT 'open',
+  reviewedBy VARCHAR(64), reviewedAt VARCHAR(40),
+  createdAt VARCHAR(40),
+  INDEX idx_blog_subject (subjectId),
+  INDEX idx_blog_status (status),
+  INDEX idx_blog_category (category)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (12) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (13) ON DUPLICATE KEY UPDATE version = version;
