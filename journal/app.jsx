@@ -423,6 +423,7 @@ function App() {
       {view === "coach" && <Coach ctx={ctx}/>}
       {view === "shop" && <Shop ctx={ctx}/>}
       {view !== "reflect" && view !== "coach" && <BottomNav view={view} go={go}/>}
+      <SideRail view={view} go={go} streak={streak} diamonds={diamonds} cur={cur}/>
       {celebrate && <Celebrate/>}
       {levelUp && !celebrate && <LevelUp info={levelUp} onDone={() => setLevelUp(null)}/>}
       {onboard && <Onboarding member={member} prefs={pstate.prefs} onDone={(picked) => {
@@ -1556,6 +1557,36 @@ function BottomNav({ view, go }) {
   const growthViews = ["growth", "library", "peers", "review"];
   const items = [{ id: "home", label: "Journey", icon: "ph-path", on: view === "home" || view === "reflect" || view === "systems" || view === "timeline" }, { id: "focus", label: "Focus", icon: "ph-timer", on: view === "focus" }, { id: "growth", label: "Growth", icon: "ph-chart-line-up", on: growthViews.includes(view) }, { id: "you", label: "You", icon: "ph-user-circle", on: view === "you" }];
   return <nav className="aj-nav" role="tablist">{items.map(it => <button key={it.id} className={"aj-nav-btn" + (it.on ? " on" : "")} role="tab" aria-selected={it.on} onClick={() => go(it.id)}><i className={"ph-fill " + it.icon}/>{it.label}</button>)}</nav>;
+}
+
+/* ---- Side rail (desktop ≥1024px — the phone app becomes a desk app) ------ */
+function SideRail({ view, go, streak, diamonds, cur }) {
+  const growthViews = ["growth", "library", "peers", "review"];
+  const items = [
+    ["home", "Journey", "ph-path", view === "home" || view === "reflect" || view === "systems" || view === "timeline"],
+    ["focus", "Focus", "ph-timer", view === "focus"],
+    ["growth", "Growth", "ph-chart-line-up", growthViews.includes(view)],
+    ["you", "You", "ph-user-circle", view === "you"],
+  ];
+  const tools = [["reflect", "Reflect now", "ph-feather"], ["notepad", "Notepad", "ph-note-pencil"], ["goals", "Goals", "ph-target"], ["calendar", "Calendar", "ph-calendar-dots"], ["shop", "Shop", "ph-storefront"]];
+  return (
+    <aside className="aj-rail" aria-label="Navigation">
+      <div className="aj-rail-brand"><span className="aj-rail-badge"><i className="ph-fill ph-anchor"/></span><div><b>ANCHOR</b><small>L{cur.L} · {cur.name}</small></div></div>
+      <div className="aj-rail-metrics"><span><i className="ph-fill ph-fire"/>{streak}</span><span><i className="ph-fill ph-diamond"/>{diamonds}</span></div>
+      <nav>
+        {items.map(([id, label, icon, on]) => (
+          <button key={id} className={"aj-rail-it" + (on ? " on" : "")} onClick={() => go(id)}><i className={"ph-fill " + icon}/>{label}</button>
+        ))}
+      </nav>
+      <div className="aj-rail-sep">TOOLS</div>
+      <nav>
+        {tools.map(([id, label, icon]) => (
+          <button key={id} className={"aj-rail-it sm" + (view === id ? " on" : "")} onClick={() => go(id)}><i className={"ph-fill " + icon}/>{label}</button>
+        ))}
+      </nav>
+      <p className="aj-rail-foot">Study harder · think deeper</p>
+    </aside>
+  );
 }
 
 /* ---- Celebrate ---------------------------------------------------------- */
