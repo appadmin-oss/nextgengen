@@ -78,6 +78,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.club.promote'          => 'admin_club_promote',
             'admin.club.members'          => 'admin_club_members',
             // Anchor Circle — student side (member) + portal side (guardian)
+            'auth.gateway'                => 'auth_gateway',
+            'member.security'             => 'member_security',
+            'member.sessions.revoke'      => 'member_sessions_revoke',
             'member.momentum'             => 'member_momentum',
             'member.coach'                => 'member_coach',
             'member.circle'               => 'member_circle',

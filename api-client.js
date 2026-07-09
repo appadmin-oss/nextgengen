@@ -115,6 +115,7 @@
     uploadFile: uploadFile,
     uploadPublic: uploadPublic,
     auth: {
+      gateway: (identifier) => request('/auth/gateway.php', { body: { identifier } }),
       request: (identifier) => request('/auth/request.php', { body: { identifier } }),
       login:   (identifier, password) => request('/auth/login.php', { body: { identifier, password } }),
       setPassword: (password, current) => request('/auth/set-password.php', { body: { password, current: current || '' } }),
@@ -143,6 +144,9 @@
       circle:       () => request('/member/circle.php'),
       circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
       circleRevoke: (linkId) => request('/member/circle.php', { body: { action: 'revoke', linkId } }),
+      security:            () => request('/member/security.php'),
+      securityRevoke:      (sid) => request('/member/security.php', { body: { action: 'revoke', sid } }),
+      securityRevokeOthers: () => request('/member/security.php', { body: { action: 'revoke_others' } }),
     },
     public: {
       stats:      () => request('/public/stats.php'),

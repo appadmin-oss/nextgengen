@@ -36,12 +36,13 @@ function csrf_require(): void {
 
     // A small set of write endpoints are CSRF-exempt because they happen
     // before any session/cookie state is established:
+    //   - auth/gateway  → pre-session method discovery; reveals nothing
     //   - auth/request  → user has no session yet; the OTP IS the proof
     //   - auth/verify   → same
     //   - auth/login    → pre-session; the password IS the proof
     //   - public/newsletter → fully public, IP rate-limited at the server
     $path = $_SERVER['SCRIPT_NAME'] ?? '';
-    if (preg_match('#/api/auth/(request|verify|login)\\.php$#', $path)) return;
+    if (preg_match('#/api/auth/(gateway|request|verify|login)\\.php$#', $path)) return;
     if (preg_match('#/api/public/newsletter\\.php$#', $path))     return;
 
     $cookie = $_COOKIE[csrf_cookie_name()] ?? '';

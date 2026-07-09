@@ -1766,11 +1766,31 @@ function Onboarding({ member, prefs, onDone }) {
 
 /* ---- Sign-in gate ------------------------------------------------------- */
 function SignInGate({ onIn }) {
+  // One door: identifier → gateway decides → password stage or emailed code.
   const [stage, setStage] = useState("id");
   const [id, setId] = useState(""); const [otp, setOtp] = useState(""); const [masked, setMasked] = useState("");
+  const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   useEffect(() => { const t = new URLSearchParams(location.search).get("signin"); if (!t) return; setBusy(true); NGGApi.auth.verify({ token: t }).then(r => onIn(r.member)).catch(e => setErr(e.code || e.message)).finally(() => setBusy(false)); }, []);
-  const request = async e => { e.preventDefault(); setBusy(true); setErr(""); try { const r = await NGGApi.auth.request(id.trim()); setMasked(r.masked || ""); setStage("otp"); } catch (e) { setErr(e.code === "rate_limited" ? "Too many tries — wait a minute." : (e.code || e.message)); } finally { setBusy(false); } };
+  const requestCode = async () => { const r = await NGGApi.auth.request(id.trim()); setMasked(r.masked || ""); setStage("otp"); };
+  const request = async e => {
+    if (e) e.preventDefault();
+    setBusy(true); setErr("");
+    try {
+      const g = await NGGApi.auth.gateway(id.trim()).catch(() => null);
+      if (g && (g.methods || []).includes("password")) { setStage("pw"); }
+      else { await requestCode(); }
+    } catch (e) { setErr(e.code === "rate_limited" ? "Too many tries — wait a minute." : (e.code || e.message)); } finally { setBusy(false); }
+  };
+  const loginPw = async e => {
+    e.preventDefault(); setBusy(true); setErr("");
+    try { const r = await NGGApi.auth.login(id.trim(), pw); onIn(r.member); }
+    catch (e) {
+      if ((e.code || e.message) === "no_password") { try { await requestCode(); } catch (e2) { setErr(e2.code || e2.message); } }
+      else setErr((e.code || e.message) === "account_locked" ? "Too many failed tries — paused for 15 minutes." : "That password isn't right.");
+    } finally { setBusy(false); }
+  };
+  const emailCode = async () => { setBusy(true); setErr(""); try { await requestCode(); } catch (e) { setErr(e.code || e.message); } finally { setBusy(false); } };
   const verify = async e => { e.preventDefault(); setBusy(true); setErr(""); try { const r = await NGGApi.auth.verify({ memberId: id.trim(), otp: otp.replace(/\s/g, "") }); onIn(r.member); } catch { setErr("That code didn't work. Try the latest one, or the magic link in your email."); } finally { setBusy(false); } };
   return (
     <div className="aj-app"><div className="aj-bg" aria-hidden="true"/><div className="aj-blob b1"/><div className="aj-blob b2"/><div className="aj-blob b3"/>
@@ -1780,11 +1800,19 @@ function SignInGate({ onIn }) {
         <div className="aj-onb-sub" style={{ marginBottom: 20 }}>JOURNAL</div>
         {stage === "id" ? (
           <form onSubmit={request}>
-            <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}>Your Member ID or email. We'll send a magic link + 6-digit code.</p>
+            <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}>Your Member ID or email — we'll take it from there.</p>
             <input className="aj-input" placeholder="NGG-2025-0001 or you@email.com" value={id} onChange={e => setId(e.target.value)} autoFocus/>
             <div className="aj-gate-err">{err}</div>
-            <button className="btn-a" disabled={busy || id.trim().length < 3}>{busy ? "Sending…" : "Send my code"} <i className="ph-bold ph-arrow-right"/></button>
+            <button className="btn-a" disabled={busy || id.trim().length < 3}>{busy ? "One moment…" : "Continue"} <i className="ph-bold ph-arrow-right"/></button>
             <button type="button" className="aj-linkbtn" onClick={() => setStage("otp")}>I already have a code</button>
+          </form>
+        ) : stage === "pw" ? (
+          <form onSubmit={loginPw}>
+            <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}>Signing in as <b>{id.trim()}</b>. <button type="button" className="aj-linkbtn" style={{ margin: 0 }} onClick={() => { setErr(""); setPw(""); setStage("id"); }}>Change</button></p>
+            <input className="aj-input" type="password" autoComplete="current-password" placeholder="Your password" value={pw} onChange={e => setPw(e.target.value)} autoFocus/>
+            <div className="aj-gate-err">{err}</div>
+            <button className="btn-a" disabled={busy || !pw}>{busy ? "Signing in…" : "Sign in"}</button>
+            <button type="button" className="aj-linkbtn" onClick={emailCode} disabled={busy}>Email me a code instead</button>
           </form>
         ) : (
           <form onSubmit={verify}>

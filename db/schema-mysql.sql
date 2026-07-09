@@ -271,5 +271,19 @@ CREATE TABLE IF NOT EXISTS circle_remarks (
   INDEX idx_circle_remark_member (memberId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Identity & security core: managed device sessions + account lockout.
+CREATE TABLE IF NOT EXISTS device_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sid VARCHAR(64) UNIQUE NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  ip VARCHAR(64), userAgent VARCHAR(256), uaHash VARCHAR(32),
+  createdAt VARCHAR(40), lastSeenAt VARCHAR(40), revokedAt VARCHAR(40),
+  INDEX idx_devsess_member (memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE members ADD COLUMN failedLogins INT DEFAULT 0;
+ALTER TABLE members ADD COLUMN lockedUntil VARCHAR(40);
+ALTER TABLE members ADD COLUMN lastLoginAt VARCHAR(40);
+
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (9) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (10) ON DUPLICATE KEY UPDATE version = version;

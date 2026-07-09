@@ -62,7 +62,7 @@ function ensure_super_admin(): array {
         $password = $envPw;
         $reveal = null;
         if ($password === '') { $password = ngg_superadmin_gen_password(); $reveal = $password; }
-        $hash = password_hash($password, PASSWORD_DEFAULT);
+        $hash = function_exists('password_hash_best') ? password_hash_best($password) : password_hash($password, PASSWORD_DEFAULT);
 
         // Match an existing account by email first, else the stable memberId.
         $existing = db_row(

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 9;
+const NGG_SCHEMA_TARGET = 10;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -376,6 +376,23 @@ function db_migrate(PDO $db): void {
               weekStart TEXT, text TEXT, createdAt TEXT DEFAULT (datetime('now'))
             );
             CREATE INDEX idx_circle_remark_member ON circle_remarks(memberId);
+        ",
+        // Identity & security core: server-side device sessions (list/revoke,
+        // new-device alerts) + account-level lockout counters.
+        10 => "
+            CREATE TABLE device_sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sid TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL,
+              ip TEXT, userAgent TEXT, uaHash TEXT,
+              createdAt TEXT DEFAULT (datetime('now')),
+              lastSeenAt TEXT, revokedAt TEXT
+            );
+            CREATE INDEX idx_devsess_member ON device_sessions(memberId);
+
+            ALTER TABLE members ADD COLUMN failedLogins INTEGER DEFAULT 0;
+            ALTER TABLE members ADD COLUMN lockedUntil TEXT;
+            ALTER TABLE members ADD COLUMN lastLoginAt TEXT;
         ",
     ];
 

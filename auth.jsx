@@ -116,8 +116,9 @@ function AuthProvider({ children }) {
 // ============================================================================
 
 function SignInModal({ seed, onClose, onVerified }) {
-  // Stage: 'password' (default) | 'enter-id' (request a code) | 'enter-otp'
-  const [stage, setStage] = React.useState(seed && seed.token ? "enter-otp" : "password");
+  // One door (W1): 'id' → gateway decides → 'password' | 'enter-otp'.
+  // The gateway never reveals account types — staff look like any member.
+  const [stage, setStage] = React.useState(seed && seed.token ? "enter-otp" : "id");
   const [identifier, setIdentifier] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
@@ -155,6 +156,22 @@ function SignInModal({ seed, onClose, onVerified }) {
     return () => clearTimeout(t);
   }, [stage]);
 
+  // Step 1: ask the server which methods apply to this identifier, then show
+  // exactly one right next step — password if they have one, else send a code.
+  const continueId = async (e) => {
+    if (e) e.preventDefault();
+    setErr(""); setBusy(true);
+    try {
+      const r = await NGGApi.auth.gateway(identifier.trim());
+      if ((r.methods || []).includes("password")) { setStage("password"); }
+      else { await requestLinkInner(); }
+    } catch (e) {
+      setErr(humanizeAuthError(e.code || e.message));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const loginPassword = async (e) => {
     if (e) e.preventDefault();
     setErr(""); setBusy(true);
@@ -163,10 +180,9 @@ function SignInModal({ seed, onClose, onVerified }) {
       onVerified(r.member);
     } catch (e) {
       const code = e.code || e.message;
-      // No password on this account yet → guide them to the code flow.
       if (code === "no_password") {
-        setErr("No password set for this account yet. Use a sign-in code instead — you can set a password later from your dashboard.");
-        setStage("enter-id");
+        // Race: password removed since the gateway answered. Fall back to code.
+        try { await requestLinkInner(); } catch (e2) { setErr(humanizeAuthError(e2.code || e2.message)); }
       } else {
         setErr(humanizeAuthError(code));
       }
@@ -175,18 +191,17 @@ function SignInModal({ seed, onClose, onVerified }) {
     }
   };
 
+  const requestLinkInner = async () => {
+    const r = await NGGApi.auth.request(identifier.trim());
+    setMasked(r.masked || "");
+    setStage("enter-otp");
+  };
   const requestLink = async (e) => {
     if (e) e.preventDefault();
     setErr(""); setBusy(true);
-    try {
-      const r = await NGGApi.auth.request(identifier.trim());
-      setMasked(r.masked || "");
-      setStage("enter-otp");
-    } catch (e) {
-      setErr(humanizeAuthError(e.code || e.message));
-    } finally {
-      setBusy(false);
-    }
+    try { await requestLinkInner(); }
+    catch (e) { setErr(humanizeAuthError(e.code || e.message)); }
+    finally { setBusy(false); }
   };
 
   const verifyOtp = async (e) => {
@@ -222,17 +237,17 @@ function SignInModal({ seed, onClose, onVerified }) {
             {stage === "enter-otp" ? "Check your email." : "Welcome back."}
           </div>
           <div className="signin-sub">
-            {stage === "password"
-              ? "Sign in with your email or Member ID and password."
-              : stage === "enter-id"
-                ? "Enter your Member ID or the email on your record. We send a link + a 6-digit code."
+            {stage === "id"
+              ? "Your Member ID or email — we'll take it from there."
+              : stage === "password"
+                ? "Enter your password, or get a code by email instead."
                 : masked ? <>We sent a magic link and a 6-digit code to <b>{masked}</b>. Either works.</>
                          : "Paste the 6-digit code from your email."}
           </div>
         </div>
 
-        {stage === "password" && (
-          <form onSubmit={loginPassword} className="signin-form">
+        {stage === "id" && (
+          <form onSubmit={continueId} className="signin-form">
             <label className="signin-label" htmlFor="signin-idp">Email or Member ID</label>
             <input
               id="signin-idp"
@@ -246,10 +261,27 @@ function SignInModal({ seed, onClose, onVerified }) {
               required
               minLength={3}
             />
+            {err && <div className="signin-err">{err}</div>}
+            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || identifier.trim().length < 3}>
+              {busy ? "One moment…" : "Continue →"}
+            </button>
+            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-otp"); }}>
+              I already have a code
+            </button>
+          </form>
+        )}
+
+        {stage === "password" && (
+          <form onSubmit={loginPassword} className="signin-form">
+            <div className="signin-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <span>Signing in as <b>{identifier.trim()}</b></span>
+              <button type="button" className="signin-link" style={{ margin: 0 }} onClick={() => { setErr(""); setPassword(""); setStage("id"); }}>Change</button>
+            </div>
             <label className="signin-label" htmlFor="signin-pw">Password</label>
             <div className="signin-pw-wrap" style={{ position: "relative" }}>
               <input
                 id="signin-pw"
+                ref={inputRef}
                 className="signin-input"
                 type={showPw ? "text" : "password"}
                 autoComplete="current-password"
@@ -271,36 +303,8 @@ function SignInModal({ seed, onClose, onVerified }) {
             <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || !identifier.trim() || !password}>
               {busy ? "Signing in…" : "Sign in →"}
             </button>
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-id"); }}>
+            <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>
               Email me a sign-in code instead
-            </button>
-          </form>
-        )}
-
-        {stage === "enter-id" && (
-          <form onSubmit={requestLink} className="signin-form">
-            <label className="signin-label" htmlFor="signin-id">Member ID or email</label>
-            <input
-              id="signin-id"
-              ref={inputRef}
-              className="signin-input"
-              type="text"
-              autoComplete="username"
-              placeholder="NGG-2025-0042  or  you@email.com"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              required
-              minLength={3}
-            />
-            {err && <div className="signin-err">{err}</div>}
-            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || !identifier.trim()}>
-              {busy ? "Sending…" : "Send me a code →"}
-            </button>
-            <button type="button" className="signin-link" onClick={() => setStage("enter-otp")}>
-              I already have a code
-            </button>
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("password"); }}>
-              ← Sign in with a password
             </button>
           </form>
         )}
@@ -340,8 +344,8 @@ function SignInModal({ seed, onClose, onVerified }) {
             <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || otp.replace(/\s/g, "").length !== 6}>
               {busy ? "Verifying…" : "Sign in →"}
             </button>
-            <button type="button" className="signin-link" onClick={() => { setStage("enter-id"); setOtp(""); }}>
-              ← Back to send a code
+            <button type="button" className="signin-link" onClick={() => { setStage("id"); setOtp(""); setErr(""); }}>
+              ← Start over
             </button>
           </form>
         )}
@@ -371,6 +375,9 @@ function humanizeAuthError(code) {
     mail_failed: "We couldn't send the email. Check your inbox in a minute or contact admin.",
     member_gone: "We can't find that account. Contact admin.",
     suspended: "This account is suspended. Contact admin.",
+    account_locked: "Too many failed tries — this account is paused for 15 minutes. Try again then, or use your email link.",
+    identifier_too_short: "Tell us your Member ID or email.",
+    bad_identifier_format: "That doesn't look like a Member ID or email — check it and try again.",
     unauthorized: "Sign in to continue.",
     admin_2fa_required: "Admin area needs a 2FA code.",
   };

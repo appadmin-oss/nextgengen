@@ -201,6 +201,43 @@ chk('change password needs correct current', backend_dispatch('auth.setPassword'
 chk('change password with current ok', !empty(backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'correcthorse9'])['ok']));
 chk('old password no longer works', backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'correcthorse9'])['error'] === 'invalid_login');
 
+// ── Sign-in gateway (one door, no account-type leaks) ──
+chk('gateway: account with password offers both methods', backend_dispatch('auth.gateway', ['identifier' => 'tunde@example.com'])['methods'] === ['code', 'password']);
+chk('gateway: unknown and passwordless answer identically', (function () {
+    $unknown = backend_dispatch('auth.gateway', ['identifier' => 'ghost@example.com'])['methods'];
+    db_insert('members', ['memberId' => 'NGG-2025-0770', 'fullName' => 'No Pass', 'email' => 'nopass@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $passless = backend_dispatch('auth.gateway', ['identifier' => 'nopass@example.com'])['methods'];
+    return $unknown === ['code'] && $passless === ['code'];
+})());
+chk('gateway: staff look like ordinary password accounts', backend_dispatch('auth.gateway', ['identifier' => 'pa@example.com'])['methods'] === (!empty(db_row("SELECT passwordHash FROM members WHERE email='pa@example.com'")['passwordHash']) ? ['code', 'password'] : ['code']));
+
+// ── Account lockout (8 consecutive fails → 15-minute pause) ──
+chk('lockout after repeated wrong passwords', (function () {
+    for ($i = 0; $i < 8; $i++) backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'wrong-' . $i]);
+    $r = backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'brandnewpass9']);
+    return ($r['error'] ?? '') === 'account_locked';
+})());
+chk('lock expiry restores access + resets counters', (function () {
+    db_update('members', ['lockedUntil' => gmdate('Y-m-d\TH:i:s\Z', time() - 60)], ['memberId' => 'NGG-2025-0001']);
+    $r = backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'brandnewpass9']);
+    $m = db_row("SELECT failedLogins, lastLoginAt FROM members WHERE memberId='NGG-2025-0001'");
+    return !empty($r['ok']) && (int)$m['failedLogins'] === 0 && !empty($m['lastLoginAt']);
+})());
+
+// ── Device sessions (list + revoke) ──
+chk('security overview lists sessions, flags current, revokes others', (function () {
+    db_insert('device_sessions', ['sid' => 'sidAAA', 'memberId' => 'NGG-2025-0001', 'ip' => '1.2.3.4', 'userAgent' => 'Phone', 'uaHash' => 'h1', 'createdAt' => now_iso(), 'lastSeenAt' => now_iso()]);
+    db_insert('device_sessions', ['sid' => 'sidBBB', 'memberId' => 'NGG-2025-0001', 'ip' => '5.6.7.8', 'userAgent' => 'Laptop', 'uaHash' => 'h2', 'createdAt' => now_iso(), 'lastSeenAt' => now_iso()]);
+    $sec = backend_dispatch('member.security', ['requesterId' => 'NGG-2025-0001', 'sid' => 'sidAAA']);
+    $cur = array_values(array_filter($sec['sessions'], fn($x) => $x['current']));
+    if (count($sec['sessions']) < 2 || count($cur) !== 1 || $cur[0]['sid'] !== 'sidAAA' || $sec['hasPassword'] !== true) return false;
+    $rv = backend_dispatch('member.sessions.revoke', ['requesterId' => 'NGG-2025-0001', 'sid' => 'sidAAA', 'others' => true]);
+    if (empty($rv['ok'])) return false;
+    return !empty(db_row("SELECT revokedAt FROM device_sessions WHERE sid='sidBBB'")['revokedAt'])
+        && empty(db_row("SELECT revokedAt FROM device_sessions WHERE sid='sidAAA'")['revokedAt']);
+})());
+chk('cannot revoke another member\'s session', backend_dispatch('member.sessions.revoke', ['requesterId' => 'NGG-2025-0770', 'targetSid' => 'sidAAA'])['error'] === 'not_found');
+
 // ── Admin tiers (RBAC) ──
 db_insert('members', ['memberId' => 'NGG-2025-0002', 'fullName' => 'Edith Editor', 'email' => 'editor@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 $paId = db_row("SELECT memberId FROM members WHERE email='pa@example.com'")['memberId'];

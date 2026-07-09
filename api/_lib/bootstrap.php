@@ -13,6 +13,12 @@ error_reporting(E_ALL);
 date_default_timezone_set('UTC');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
+header('X-Frame-Options: DENY');
+header('Cross-Origin-Opener-Policy: same-origin');
+header('Permissions-Policy: camera=(self), microphone=(), geolocation=()');
+if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') {
+    header('Strict-Transport-Security: max-age=31536000');
+}
 header('Content-Type: application/json; charset=utf-8');
 
 if (!file_exists(__DIR__ . '/../config.php')) {

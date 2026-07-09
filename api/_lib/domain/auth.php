@@ -6,6 +6,52 @@ declare(strict_types=1);
  * (Rate limiting is enforced at the route edge via rate_limit_check.)
  */
 
+/* ── Password hashing — Argon2id when the PHP build has it, bcrypt otherwise ── */
+function password_algo_best() {
+    return defined('PASSWORD_ARGON2ID') ? PASSWORD_ARGON2ID : PASSWORD_DEFAULT;
+}
+function password_hash_best(string $pw): string {
+    return password_hash($pw, password_algo_best());
+}
+
+/* ── Account-level lockout (edge rate limits still apply per-IP) ─────────── */
+const AUTH_LOCK_AFTER = 8;        // consecutive failures…
+const AUTH_LOCK_MINUTES = 15;     // …buys this long a lock
+
+function auth_locked(array $m): bool {
+    return !empty($m['lockedUntil']) && strtotime((string)$m['lockedUntil']) > time();
+}
+function auth_fail_bump(array $m, string $ip): void {
+    $n = (int)($m['failedLogins'] ?? 0) + 1;
+    $upd = ['failedLogins' => $n, 'updatedAt' => now_iso()];
+    if ($n >= AUTH_LOCK_AFTER) {
+        $upd['failedLogins'] = 0;
+        $upd['lockedUntil'] = gmdate('Y-m-d\TH:i:s\Z', time() + AUTH_LOCK_MINUTES * 60);
+        audit('login.lockout', $m['memberId'], (string)$m['memberId'], ['minutes' => AUTH_LOCK_MINUTES], $ip);
+    }
+    db_update('members', $upd, ['id' => $m['id']]);
+}
+function auth_fail_reset(array $m): void {
+    db_update('members', ['failedLogins' => 0, 'lockedUntil' => '', 'lastLoginAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => $m['id']]);
+}
+
+/**
+ * Sign-in gateway — given an identifier, say which methods apply so the
+ * client shows ONE right next step. Unknown and passwordless accounts answer
+ * identically (['code']) so nothing about account existence — or staffness —
+ * leaks from this endpoint. Staff simply look like members with a password.
+ */
+function auth_gateway(array $p): array {
+    $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
+    if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
+    $member = db_row('SELECT passwordHash, status FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
+    $methods = ['code'];
+    if ($member && !empty($member['passwordHash']) && (string)$member['status'] !== 'suspended') {
+        $methods[] = 'password';
+    }
+    return ['ok' => true, 'methods' => $methods];
+}
+
 function auth_request(array $p): array {
     $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
     $ip = (string)($p['ip'] ?? '');
@@ -79,14 +125,20 @@ function auth_login(array $p): array {
         audit('login.pw.suspended', $member['memberId'], (string)$member['memberId'], [], $ip);
         return ['ok' => false, 'error' => 'suspended'];
     }
+    if (auth_locked($member)) {
+        audit('login.pw.locked', $member['memberId'], (string)$member['memberId'], [], $ip);
+        return ['ok' => false, 'error' => 'account_locked'];
+    }
     if (!password_verify($password, (string)$member['passwordHash'])) {
+        auth_fail_bump($member, $ip);
         audit('login.pw.fail', $member['memberId'], (string)$member['memberId'], ['reason' => 'bad_password'], $ip);
         return ['ok' => false, 'error' => 'invalid_login'];
     }
     // Rehash-on-login if the cost/algorithm has moved on (standard hygiene).
-    if (password_needs_rehash((string)$member['passwordHash'], PASSWORD_DEFAULT)) {
-        db_update('members', ['passwordHash' => password_hash($password, PASSWORD_DEFAULT), 'updatedAt' => now_iso()], ['id' => $member['id']]);
+    if (password_needs_rehash((string)$member['passwordHash'], password_algo_best())) {
+        db_update('members', ['passwordHash' => password_hash_best($password), 'updatedAt' => now_iso()], ['id' => $member['id']]);
     }
+    auth_fail_reset($member);
     audit('login.pw.success', $member['memberId'], (string)$member['memberId'], [], $ip);
     return ['ok' => true, 'member' => public_member($member)];
 }
@@ -108,7 +160,7 @@ function auth_set_password(array $p): array {
             return ['ok' => false, 'error' => 'bad_current_password'];
         }
     }
-    db_update('members', ['passwordHash' => password_hash($new, PASSWORD_DEFAULT), 'updatedAt' => now_iso()], ['id' => $member['id']]);
+    db_update('members', ['passwordHash' => password_hash_best($new), 'updatedAt' => now_iso()], ['id' => $member['id']]);
     audit('member.password.set', $member['memberId'], (string)$member['memberId'], ['changed' => !empty($member['passwordHash'])], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
@@ -127,7 +179,23 @@ function auth_verify(array $p): array {
         return ['ok' => false, 'error' => 'no_credentials'];
     }
 
-    if (!$ch) { audit('login.fail.bad_token', $memberId ?: null, '', ['ip' => $ip], $ip); return ['ok' => false, 'error' => 'invalid']; }
+    if (!$ch) {
+        // Account-level guard for OTP guessing (the per-challenge attempts cap
+        // can be sidestepped by re-requesting codes; this can't).
+        if ($memberId !== '') {
+            $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+            if ($m) {
+                if (auth_locked($m)) return ['ok' => false, 'error' => 'account_locked'];
+                auth_fail_bump($m, $ip);
+            }
+        }
+        audit('login.fail.bad_token', $memberId ?: null, '', ['ip' => $ip], $ip);
+        return ['ok' => false, 'error' => 'invalid'];
+    }
+    if ($memberId !== '') {
+        $mGuard = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+        if ($mGuard && auth_locked($mGuard)) return ['ok' => false, 'error' => 'account_locked'];
+    }
     if (strtotime((string)$ch['expiresAt']) < time()) { audit('login.fail.expired', $ch['memberId'], '', [], $ip); return ['ok' => false, 'error' => 'expired']; }
     if (!empty($ch['verifiedAt'])) { audit('login.fail.replay', $ch['memberId'], '', [], $ip); return ['ok' => false, 'error' => 'already_used']; }
     if ((int)$ch['attempts'] >= 5) return ['ok' => false, 'error' => 'too_many_attempts'];
@@ -137,8 +205,52 @@ function auth_verify(array $p): array {
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ch['memberId']]);
     if (!$member) return ['ok' => false, 'error' => 'member_gone'];
 
+    auth_fail_reset($member);
     audit('login.success', $member['memberId'], (string)$member['memberId'], [], $ip);
     return ['ok' => true, 'member' => public_member($member)];
+}
+
+/**
+ * Security overview for the signed-in member: password state, last login and
+ * the live device list (feeds "Me → Security" and the W10 first-run screen).
+ */
+function member_security(array $p): array {
+    $mid = (string)($p['requesterId'] ?? '');
+    $m = db_row('SELECT memberId, type, role, passwordHash, lastLoginAt FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $cur = (string)($p['sid'] ?? '');
+    $rows = db_all("SELECT sid, ip, userAgent, createdAt, lastSeenAt FROM device_sessions WHERE memberId = ? AND (revokedAt IS NULL OR revokedAt = '') ORDER BY id DESC LIMIT 20", [$mid]);
+    $sessions = array_map(fn($r) => [
+        'sid' => (string)$r['sid'],
+        'ip' => (string)($r['ip'] ?? ''),
+        'device' => substr((string)($r['userAgent'] ?? ''), 0, 140),
+        'createdAt' => (string)($r['createdAt'] ?? ''),
+        'lastSeenAt' => (string)($r['lastSeenAt'] ?? ''),
+        'current' => $cur !== '' && $r['sid'] === $cur,
+    ], $rows);
+    return ['ok' => true,
+        'hasPassword' => !empty($m['passwordHash']),
+        'lastLoginAt' => (string)($m['lastLoginAt'] ?? ''),
+        'strictMonitoring' => strtoupper((string)$m['type']) === 'NGG' || is_admin_role((string)$m['role']),
+        'sessions' => $sessions];
+}
+
+/** Revoke one device session ({sid}) or every other one ({others:true}). */
+function member_sessions_revoke(array $p): array {
+    $mid = (string)($p['requesterId'] ?? '');
+    $cur = (string)($p['sid'] ?? '');
+    if (!empty($p['others'])) {
+        $rows = db_all("SELECT sid FROM device_sessions WHERE memberId = ? AND (revokedAt IS NULL OR revokedAt = '') AND sid != ?", [$mid, $cur]);
+        foreach ($rows as $r) db_update('device_sessions', ['revokedAt' => now_iso()], ['sid' => $r['sid'], 'memberId' => $mid]);
+        audit('security.sessions.revoke_others', $mid, $mid, ['count' => count($rows)], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'revoked' => count($rows)];
+    }
+    $target = (string)($p['targetSid'] ?? '');
+    if ($target === '') return ['ok' => false, 'error' => 'no_sid'];
+    $n = db_update('device_sessions', ['revokedAt' => now_iso()], ['sid' => $target, 'memberId' => $mid]);
+    if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    audit('security.sessions.revoke', $mid, $target, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'revoked' => 1];
 }
 
 function auth_me(array $p): array {
