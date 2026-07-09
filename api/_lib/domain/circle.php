@@ -235,6 +235,37 @@ function circle_remark(array $p): array {
     return ['ok' => true];
 }
 
+/**
+ * Cohort strip — summarise every student this DEVICE holds a valid portal
+ * token for (mentors/teachers pair with several mentees, one code each).
+ * The tokens themselves are the authority: no account, no extra scope —
+ * each summary is exactly what that token's dashboard already exposes,
+ * minus anything private. Invalid/revoked tokens are silently skipped so
+ * the client can prune them.
+ */
+function circle_cohort(array $p): array {
+    $tokens = is_array($p['tokens'] ?? null) ? array_slice($p['tokens'], 0, 30) : [];
+    $out = []; $seen = [];
+    foreach ($tokens as $t) {
+        if (!is_string($t) || $t === '') continue;
+        $ctx = circle_token_verify($t);
+        if (!$ctx) continue;
+        $mid = (string)$ctx['mid'];
+        if (isset($seen[$mid])) continue;
+        $seen[$mid] = true;
+        $m = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+        if (!$m) continue;
+        $s = momentum_signals($mid);
+        $atRisk = $s['streak'] === 0 || $s['consistency'] < 40 || $s['trend'] === 'dipping';
+        $out[] = [
+            'token' => $t, 'name' => (string)$m['fullName'], 'role' => (string)$ctx['role'],
+            'streak' => $s['streak'], 'trend' => $s['trend'], 'consistency' => $s['consistency'],
+            'reflectedToday' => $s['reflectedToday'], 'atRisk' => $atRisk,
+        ];
+    }
+    return ['ok' => true, 'students' => $out];
+}
+
 function circle_report(array $p): array {
     $ctx = circle_portal_ctx($p);
     if (isset($ctx['ok']) && $ctx['ok'] === false) return $ctx;

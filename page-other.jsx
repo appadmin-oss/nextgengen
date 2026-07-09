@@ -1038,6 +1038,15 @@ function SummerProfilePage({ setPage }) {
    no member session; a signed portal token is kept in localStorage.
    ============================================================================ */
 const CIRCLE_TOKEN_KEY = "ngg_circle_token";
+// Every portal token this device has paired (mentors/teachers hold several —
+// one per student). The active token stays in CIRCLE_TOKEN_KEY.
+const CIRCLE_TOKENS_KEY = "ngg_circle_tokens";
+const circleTokens = {
+  all() { try { return JSON.parse(localStorage.getItem(CIRCLE_TOKENS_KEY)) || []; } catch (_) { return []; } },
+  save(list) { try { localStorage.setItem(CIRCLE_TOKENS_KEY, JSON.stringify(list.slice(0, 30))); } catch (_) {} },
+  add(t) { const l = circleTokens.all(); if (t && l.indexOf(t) === -1) { l.push(t); circleTokens.save(l); } },
+  remove(t) { circleTokens.save(circleTokens.all().filter(x => x !== t)); },
+};
 const CIRCLE_ROLES = [
   { key: "parent", label: "Parent / Guardian", desc: "Confirm home discipline & encourage", icon: "🏠" },
   { key: "teacher", label: "Teacher", desc: "Verify school conduct & effort", icon: "🎓" },
@@ -1061,14 +1070,45 @@ function CirclePortal({ setPage }) {
   const [toast, setToastMsg] = React.useState("");
   const flash = (m) => { setToastMsg(m); setTimeout(() => setToastMsg(""), 2400); };
 
+  const [cohort, setCohort] = React.useState(null);
+
   const loadDash = React.useCallback((tok) => {
     setBusy(true); setErr("");
     return NGGApi.public.circle.dashboard(tok)
       .then(d => { setDash(d); setStep("dashboard"); })
-      .catch(e => { if ((e.code || e.message) === "link_invalid") { try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {} setToken(""); setStep("role"); } else setErr(e.code || e.message); })
+      .catch(e => {
+        if ((e.code || e.message) === "link_invalid") {
+          // This student revoked (or the token expired) — fall over to the
+          // next paired student on this device, or back to the start.
+          circleTokens.remove(tok);
+          const rest = circleTokens.all();
+          if (rest.length) { try { localStorage.setItem(CIRCLE_TOKEN_KEY, rest[0]); } catch (_) {} setToken(rest[0]); return loadDash(rest[0]); }
+          try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {}
+          setToken(""); setDash(null); setStep("role");
+        } else setErr(e.code || e.message);
+      })
       .finally(() => setBusy(false));
   }, []);
   React.useEffect(() => { if (token) loadDash(token); /* eslint-disable-next-line */ }, []);
+
+  // Cohort strip — one summary chip per student this device holds a valid
+  // token for. The server silently skips revoked tokens; we prune to match.
+  const refreshCohort = React.useCallback((activeTok) => {
+    const list = circleTokens.all();
+    if (activeTok && list.indexOf(activeTok) === -1) { list.push(activeTok); circleTokens.save(list); }
+    if (!list.length) { setCohort([]); return; }
+    NGGApi.public.circle.cohort(list)
+      .then(r => { const students = r.students || []; circleTokens.save(students.map(s => s.token)); setCohort(students); })
+      .catch(() => {});
+  }, []);
+  React.useEffect(() => { if (step === "dashboard" && token) refreshCohort(token); }, [step, token, refreshCohort]);
+
+  const switchStudent = (tok) => {
+    if (tok === token) return;
+    try { localStorage.setItem(CIRCLE_TOKEN_KEY, tok); } catch (_) {}
+    setToken(tok); loadDash(tok);
+  };
+  const addStudent = () => { setRole((dash && dash.role) || role || "mentor"); setStudent(null); setCode(""); setErr(""); setStep("code"); };
 
   const roleWord = role === "teacher" ? "student" : (role === "mentor" ? "mentee" : "child");
   const submitCode = async () => {
@@ -1082,10 +1122,11 @@ function CirclePortal({ setPage }) {
     try {
       const r = await NGGApi.public.circle.connect({ code, role, guardianName, consent: true });
       try { localStorage.setItem(CIRCLE_TOKEN_KEY, r.token); } catch (_) {}
+      circleTokens.add(r.token);
       setToken(r.token); await loadDash(r.token); flash("Connected securely ✓");
     } catch (e) { setErr(e.code || e.message); } finally { setBusy(false); }
   };
-  const unlink = () => { try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {} setToken(""); setDash(null); setRole(null); setCode(""); setConsent(false); setStep("role"); flash("Signed out of this device"); };
+  const unlink = () => { try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {} circleTokens.save([]); setCohort(null); setToken(""); setDash(null); setRole(null); setCode(""); setConsent(false); setStep("role"); flash("Signed out of this device"); };
   const weekDates = () => { const out = []; const base = dash && dash.weekStart ? new Date(dash.weekStart + "T00:00:00Z") : new Date(); for (let i = 0; i < 7; i++) { const d = new Date(base); d.setUTCDate(d.getUTCDate() + i); out.push(d.toISOString().slice(0, 10)); } return out; };
   const toggleDay = async (date) => {
     const on = !(dash.confirmed || []).includes(date);
@@ -1195,6 +1236,28 @@ function CirclePortal({ setPage }) {
       <div><div className="mono" style={{ fontSize: 10, letterSpacing: ".18em", color: teal }}>{roleLabel} PORTAL</div><h2 style={{ font: "800 22px var(--font-display,sans-serif)", margin: "3px 0 0" }}>Anchor Circle</h2></div>
       <button className="circle-back" onClick={unlink} aria-label="Sign out">⎋</button>
     </div>
+    {cohort && (cohort.length > 1 || dash.role === "mentor") && (
+      <div style={{ marginTop: 18 }}>
+        <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "rgba(255,255,255,.6)", marginBottom: 8 }}>{dash.role === "mentor" ? "YOUR MENTEES" : "YOUR STUDENTS"}</div>
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }} role="tablist" aria-label="Linked students">
+          {cohort.map(s => {
+            const active = s.token === token;
+            return (
+              <button key={s.token} role="tab" aria-selected={active} onClick={() => switchStudent(s.token)}
+                title={s.atRisk ? "Needs support — " + (s.trend || "") : "On track — " + (s.trend || "")}
+                style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", borderRadius: 99, cursor: "pointer",
+                  background: active ? "rgba(94,224,192,.16)" : "rgba(255,255,255,.06)",
+                  border: "1px solid " + (active ? teal : "rgba(255,255,255,.14)"), color: "#fff" }}>
+                {s.atRisk && <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "#ff8a8a", boxShadow: "0 0 8px rgba(255,120,120,.8)" }}/>}
+                <span style={{ fontWeight: 700, fontSize: 13 }}>{(s.name || "?").split(" ")[0]}</span>
+                <span className="mono" style={{ fontSize: 11, color: "#ffce54" }}>🔥{s.streak}</span>
+              </button>
+            );
+          })}
+          <button onClick={addStudent} style={{ flex: "none", padding: "9px 13px", borderRadius: 99, background: "transparent", border: "1px dashed rgba(255,255,255,.3)", color: "rgba(255,255,255,.75)", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>+ Add</button>
+        </div>
+      </div>
+    )}
     <div style={{ ...card, display: "flex", alignItems: "center", gap: 14, padding: 18, marginTop: 20 }}>
       <div style={{ width: 54, height: 54, borderRadius: 16, background: "radial-gradient(circle at 35% 28%,#7fb0ff,#2f6fd0)", display: "grid", placeItems: "center", font: "800 24px var(--font-display,sans-serif)" }}>{(dash.student.name || "?").charAt(0)}</div>
       <div style={{ flex: 1 }}><div style={{ font: "800 19px var(--font-display,sans-serif)" }}>{dash.student.name}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.68)" }}>Streak {s.streak} · best {s.longestStreak}</div></div>

@@ -361,9 +361,20 @@ chk('dashboard carries behavioral intelligence (trend/at-risk/suggestion)', (fun
     $d = backend_dispatch('circle.dashboard', ['token' => $ctok]);
     return isset($d['stats']['trend'], $d['stats']['atRisk']) && strlen((string)($d['suggestion'] ?? '')) > 5;
 })());
+// Cohort strip — summaries for every token a device holds; dupes collapse,
+// junk is skipped, and only that token's read-only aggregates come back.
+$cohort = backend_dispatch('circle.cohort', ['tokens' => [$ctok, $ctok, 'garbage', 42]]);
+chk('cohort summarises valid tokens once, skips junk', count($cohort['students']) === 1
+    && $cohort['students'][0]['token'] === $ctok
+    && isset($cohort['students'][0]['streak'], $cohort['students'][0]['atRisk'], $cohort['students'][0]['trend'])
+    && !isset($cohort['students'][0]['reflections0'])); // shape sanity
+chk('cohort never exposes private text', !preg_match('/body|musing|note/i', json_encode(array_keys($cohort['students'][0]))));
+chk('cohort with no tokens is empty, not an error', backend_dispatch('circle.cohort', [])['students'] === []);
+
 $rl = backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['links'][0]['linkId'];
 chk('student can revoke a link', !empty(backend_dispatch('member.circle.revoke', ['requesterId' => 'NGG-2025-0001', 'linkId' => $rl])['ok']));
 chk('revoked token no longer works', backend_dispatch('circle.dashboard', ['token' => $ctok])['error'] === 'link_invalid');
+chk('revoked token drops out of the cohort', backend_dispatch('circle.cohort', ['tokens' => [$ctok]])['students'] === []);
 
 // ── Behavioral Momentum engine + nudges (isolated fresh member) ──
 db_insert('members', ['memberId' => 'NGG-2025-0800', 'fullName' => 'Momo Test', 'email' => 'momo@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);

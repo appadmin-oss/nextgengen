@@ -20,6 +20,7 @@ if ($method === 'GET') {
     if ($action === 'connect')      $res = gs_call('circle.connect', array_merge($b, ['ip' => $ip]));
     elseif ($action === 'confirm')  $res = gs_call('circle.confirm', $b);
     elseif ($action === 'remark')   $res = gs_call('circle.remark', array_merge($b, ['ip' => $ip]));
+    elseif ($action === 'cohort')   $res = gs_call('circle.cohort', $b); // POST: token list stays out of URLs/logs
     else                            json_error('unknown_action', 400);
 } else {
     json_error('method_not_allowed', 405);

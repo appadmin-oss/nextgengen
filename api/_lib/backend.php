@@ -89,6 +89,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'circle.confirm'              => 'circle_confirm',
             'circle.remark'               => 'circle_remark',
             'circle.report'               => 'circle_report',
+            'circle.cohort'               => 'circle_cohort',
             'admin.sessions.upsert'   => 'admin_sessions_upsert',
             'admin.missions.list'     => 'admin_missions_list',
             'admin.missions.upsert'   => 'admin_missions_upsert',

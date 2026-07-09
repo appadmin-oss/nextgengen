@@ -163,6 +163,7 @@
         report:    (token) => request('/public/circle.php' + qs({ view: 'report', token })),
         confirm:   (token, date, on) => request('/public/circle.php', { body: { action: 'confirm', token, date, on } }),
         remark:    (token, text) => request('/public/circle.php', { body: { action: 'remark', token, text } }),
+        cohort:    (tokens) => request('/public/circle.php', { body: { action: 'cohort', tokens } }),
       },
     },
     admin: {
