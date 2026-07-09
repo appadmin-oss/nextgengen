@@ -59,13 +59,30 @@ const SCORE_DIMS = [
   { key: "habit", label: "Habit Practice" },
   { key: "peer", label: "Peer Influence" },
 ];
+// Canonical progression — matches the server's momentum engine exactly
+// (momentum.php): 60 XP per distinct reflection DAY, a flat 250 XP per level,
+// 5 levels. Thresholds below are cumulative floors of that flat model.
+const XP_PER_REFLECTION = 60, XP_PER_LEVEL = 250;
 const RANKS = [
   { name: "Seedling", xp: 0, icon: "ph-plant", L: 1 },
   { name: "Sprout", xp: 250, icon: "ph-leaf", L: 2 },
-  { name: "Sapling", xp: 750, icon: "ph-tree", L: 3 },
-  { name: "Rooted", xp: 1500, icon: "ph-tree-evergreen", L: 4 },
-  { name: "Vanguard", xp: 3000, icon: "ph-crown-simple", L: 5 },
+  { name: "Sapling", xp: 500, icon: "ph-tree", L: 3 },
+  { name: "Rooted", xp: 750, icon: "ph-tree-evergreen", L: 4 },
+  { name: "Vanguard", xp: 1000, icon: "ph-crown-simple", L: 5 },
 ];
+
+/* ---- Cosmetic economy (client-authoritative, member_state-backed) -------- */
+// Diamonds/themes/freezes are presentation-only: never gate real value on them.
+const THEMES = [
+  { key: "lime", name: "Anchor Lime", hex: "#c9f24e", ink: "#1a2600", rgb: "201,242,78", free: true },
+  { key: "violet", name: "Deep Violet", hex: "#b794ff", ink: "#241048", rgb: "183,148,255" },
+  { key: "amber", name: "Golden Amber", hex: "#ffce54", ink: "#3a2a00", rgb: "255,206,84" },
+  { key: "mint", name: "Quiet Mint", hex: "#6ef2c4", ink: "#04301f", rgb: "110,242,196" },
+];
+const THEME_COST = 20, FREEZE_COST = 30, FREEZE_MAX = 2;
+function shopOf(pstate) {
+  return Object.assign({ earned: 0, spent: 0, ownedThemes: ["lime"], accent: "lime", freezes: 0, frozenDates: [] }, (pstate || {}).shop || {});
+}
 // Per-week build sheet (the physical Anchor journal's weekly structure).
 let WEEK_DATA = [
   { system: "Self-awareness & reset", focus: "Name who you are becoming.", home: "Make your bed; greet your family each morning.", school: "Arrive settled, not rushed.", peer: "Notice who you follow — and why.", journal: "Who am I when no one is watching?", stop: "Comparing yourself to others", start: "A morning reset ritual", automate: "Making your bed on waking" },
@@ -208,6 +225,8 @@ function App() {
   const [pstate, setPstate] = useState(c0.pstate || {});   // member_state map
   const [pending, setPending] = useState(store.queue());
   const [celebrate, setCelebrate] = useState(null);
+  const [levelUp, setLevelUp] = useState(null);
+  const [synced, setSynced] = useState(false);  // server member_state arrived
   const [onboard, setOnboard] = useState(false);
   const [selWeek, setSelWeek] = useState(1);
   const [selEntry, setSelEntry] = useState(null);
@@ -253,12 +272,12 @@ function App() {
         NGGApi.member.dashboard().catch(() => null),
         NGGApi.member.journal().catch(() => null),
         NGGApi.member.anchor().catch(() => null),
-        NGGApi.member.stateGet(["peers", "prefs", "systems:" + dayKey(Date.now()), "selfscore:" + dayKey(mondayOf(Date.now())), "focusTasks:" + dayKey(Date.now()), "notes", "goals"]).catch(() => null),
+        NGGApi.member.stateGet(["peers", "prefs", "systems:" + dayKey(Date.now()), "selfscore:" + dayKey(mondayOf(Date.now())), "focusTasks:" + dayKey(Date.now()), "notes", "goals", "shop"]).catch(() => null),
       ]);
       if (dash) { setSession(dash.session || null); setMentor(dash.mentor || null); store.patch({ session: dash.session, mentor: dash.mentor }); }
       if (jrnl) { setEntries(jrnl.entries || []); store.patch({ entries: jrnl.entries || [] }); }
       if (anc) { setWeeks(anc.weeks || []); store.patch({ weeks: anc.weeks || [] }); }
-      if (st && st.state) { setPstate(s => { const merged = Object.assign({}, s, st.state); store.patch({ pstate: merged }); return merged; }); }
+      if (st && st.state) { setPstate(s => { const merged = Object.assign({}, s, st.state); store.patch({ pstate: merged }); return merged; }); setSynced(true); }
     } catch {}
   }, []);
   useEffect(() => { if (member) refresh(); }, [member, refresh]);
@@ -295,6 +314,46 @@ function App() {
     NGGApi.member.stateSet(key, value).catch(() => {});
   }, []);
 
+  // Equipped accent theme → CSS custom properties, app-wide.
+  const accentKey = shopOf(pstate).accent;
+  useEffect(() => {
+    const t = THEMES.find(x => x.key === accentKey) || THEMES[0];
+    const r = document.documentElement.style;
+    r.setProperty("--a", t.hex); r.setProperty("--a-ink", t.ink); r.setProperty("--a-rgb", t.rgb);
+  }, [accentKey]);
+
+  // Streak Freeze — auto-cover yesterday when it would break a live chain.
+  // Gated on `synced` (server state seen) so a stale cache can't waste one;
+  // idempotent via frozenDates. Chains: a frozen day counts as "present".
+  useEffect(() => {
+    if (!synced || !member || !entries) return;
+    const shop = shopOf(pstate);
+    if (!(shop.freezes > 0)) return;
+    const d = new Date(); d.setDate(d.getDate() - 1); const yd = dayKey(d);
+    d.setDate(d.getDate() - 1); const dayBefore = dayKey(d);
+    const days = new Set((entries || []).map(e => dayKey(e.createdAt)));
+    const frozen = shop.frozenDates || [];
+    if (days.has(yd) || frozen.includes(yd)) return;                       // nothing to save
+    if (!days.has(dayBefore) && !frozen.includes(dayBefore)) return;       // chain already gone — don't waste one
+    setState("shop", Object.assign({}, shop, { freezes: shop.freezes - 1, frozenDates: frozen.concat(yd).slice(-60) }));
+    toast.ok("Streak Freeze used — your chain survived yesterday.");
+  }, [synced, member, entries, pstate.shop, setState]);
+
+  // Level-up detection. The baseline lives per-device (localStorage) so a
+  // late-arriving server pstate can never be clobbered by a boot-time write.
+  useEffect(() => {
+    if (!member || !entries) return;
+    const days = new Set((entries || []).map(e => dayKey(e.createdAt))).size;
+    const lvl = Math.min(RANKS.length, Math.floor(days * XP_PER_REFLECTION / XP_PER_LEVEL) + 1);
+    let seen = null;
+    try { seen = parseInt(localStorage.getItem("ngg_aj_lvl"), 10); } catch {}
+    if (!(seen >= 1)) { try { localStorage.setItem("ngg_aj_lvl", String(lvl)); } catch {} return; }
+    if (lvl > seen) {
+      setLevelUp({ level: lvl, name: (RANKS[lvl - 1] || {}).name || "", icon: (RANKS[lvl - 1] || {}).icon || "ph-crown-simple" });
+      try { localStorage.setItem("ngg_aj_lvl", String(lvl)); } catch {}
+    }
+  }, [member, entries]);
+
   /* save a reflection (Anchor it) */
   const anchorReflection = useCallback(async ({ mood, musing, s1, s2, s3, school, home, peer }) => {
     const parts = [];
@@ -321,23 +380,26 @@ function App() {
   if (booting) return <Boot/>;
   if (!member) return <SignInGate onIn={m => { setMember(m); if (localStorage.getItem("ngg_aj_onb") !== "1") setOnboard(true); }}/>;
 
-  // Derived progression
+  // Derived progression — one flat model, shared with the server's momentum
+  // engine: XP counts distinct reflection DAYS (never multiple posts a day).
   const dates = new Set((entries || []).map(e => dayKey(e.createdAt)));
-  const reflections = (entries || []).length;
-  const xp = Math.min(RANKS[RANKS.length - 1].xp, reflections * 60);
-  const diamonds = reflections * 5;
-  const streak = computeStreak(dates);
+  const reflectionDays = dates.size;
+  const xp = reflectionDays * XP_PER_REFLECTION;
+  const shop = shopOf(pstate);
+  const diamonds = Math.max(0, reflectionDays * 5 + (shop.earned || 0) - (shop.spent || 0));
+  const frozenDates = shop.frozenDates || [];
+  const effDates = frozenDates.length ? new Set([...dates, ...frozenDates]) : dates;
+  const streak = computeStreak(effDates);
   const { cur, next } = rankFor(xp);
-  const bandBase = cur.xp, bandNext = next ? next.xp : cur.xp;
-  const xpInBand = xp - bandBase, xpBand = Math.max(1, bandNext - bandBase);
-  const xpPct = next ? Math.min(100, Math.round(xpInBand / xpBand * 100)) : 100;
+  const xpInLevel = next ? xp - cur.xp : XP_PER_LEVEL;
+  const xpPct = next ? Math.min(100, Math.round(xpInLevel / XP_PER_LEVEL * 100)) : 100;
   const reflectedToday = dates.has(dayKey(Date.now()));
   const currentWeek = (session && session.weekOf) || 1;
   const isNGG = String(member.type || "").toUpperCase() === "NGG";
 
   const openWeek = (n) => { setSelWeek(n); go("weekdetail"); };
   const openEntry = (e) => { setSelEntry(e); go("entry"); };
-  const ctx = { member, entries, weeks, session, mentor, pstate, setState, go, back, xp, diamonds, streak, cur, next, xpPct, reflectedToday, currentWeek, isNGG, anchorReflection, online, selWeek, openWeek, selEntry, openEntry };
+  const ctx = { member, entries, weeks, session, mentor, pstate, setState, go, back, xp, xpInLevel, diamonds, shop, streak, cur, next, xpPct, reflectedToday, currentWeek, isNGG, anchorReflection, online, selWeek, openWeek, selEntry, openEntry };
 
   return (
     <div className="aj-app">
@@ -359,8 +421,10 @@ function App() {
       {view === "notepad" && <Notepad ctx={ctx}/>}
       {view === "goals" && <Goals ctx={ctx}/>}
       {view === "coach" && <Coach ctx={ctx}/>}
+      {view === "shop" && <Shop ctx={ctx}/>}
       {view !== "reflect" && view !== "coach" && <BottomNav view={view} go={go}/>}
       {celebrate && <Celebrate/>}
+      {levelUp && !celebrate && <LevelUp info={levelUp} onDone={() => setLevelUp(null)}/>}
       {onboard && <Onboarding member={member} prefs={pstate.prefs} onDone={(picked) => {
         setState("prefs", Object.assign({}, pstate.prefs || {}, picked, { onboardedAt: (pstate.prefs || {}).onboardedAt || new Date().toISOString() }));
         try { localStorage.setItem("ngg_aj_onb", "1"); sessionStorage.removeItem("ngg_aj_onb_replay"); } catch {}
@@ -385,7 +449,7 @@ function Journey({ ctx }) {
       <div className="aj-top">
         <div className="aj-top-metrics">
           <span className="aj-metric flame"><i className="ph-fill ph-fire"/>{streak}</span>
-          <span className="aj-metric dia"><i className="ph-fill ph-diamond"/>{diamonds}</span>
+          <button className="aj-metric dia as-btn" onClick={() => go("shop")} aria-label={"Anchor Shop — " + diamonds + " diamonds"}><i className="ph-fill ph-diamond"/>{diamonds}</button>
         </div>
         <div className="aj-top-actions">
           <button className="icon-btn" aria-label="Calendar" onClick={() => go("calendar")}><i className="ph-bold ph-calendar-dots"/></button>
@@ -400,7 +464,7 @@ function Journey({ ctx }) {
       </div>
       <div className="aj-xp">
         <div className="aj-xp-track"><div className="aj-xp-fill" style={{ width: xpPct + "%" }}/></div>
-        <div className="aj-xp-meta"><span>{xp} XP</span><span>{next ? "LEVEL " + next.L : "MAX"}</span></div>
+        <div className="aj-xp-meta"><span>{ctx.xpInLevel} / 250 XP</span><span>{next ? "NEXT · LEVEL " + next.L : "MAX LEVEL"}</span></div>
       </div>
       <div className="aj-wkchip"><span><b>WK {String(currentWeek).padStart(2, "0")}</b><em>{(WEEK_TITLES[currentWeek - 1] || "").split(" · ")[0].toUpperCase()}</em></span></div>
 
@@ -709,6 +773,7 @@ function Focus({ ctx }) {
   const [preset, setPreset] = useState(FOCUS_PRESETS[0]);
   const [left, setLeft] = useState(FOCUS_PRESETS[0].min * 60);
   const [running, setRunning] = useState(false);
+  const [award, setAward] = useState(0);   // completed focus sessions awaiting their +5 💎
   const tick = useRef(null);
   const today = dayKey(Date.now());
   const tasksKey = "focusTasks:" + today;
@@ -722,13 +787,21 @@ function Focus({ ctx }) {
       if (l <= 1) {
         clearInterval(tick.current); setRunning(false);
         try { navigator.vibrate && navigator.vibrate(180); } catch (e) {}
-        toast.ok(preset.id === "break" ? "Break's over — back to it." : "Session complete · +5 💎");
+        if (preset.id === "break") toast.ok("Break's over — back to it.");
+        else { toast.ok("Session complete · +5 💎"); setAward(a => a + 1); }
         return 0;
       }
       return l - 1;
     }), 1000);
     return () => clearInterval(tick.current);
   }, [running, preset.id]);
+  // Credit outside the interval closure so we always merge the LATEST shop state.
+  useEffect(() => {
+    if (!award) return;
+    const shop = shopOf(pstate);
+    setState("shop", Object.assign({}, shop, { earned: (shop.earned || 0) + 5 * award }));
+    setAward(0);
+  }, [award]);
 
   const total = preset.min * 60;
   const mm = String(Math.floor(left / 60)).padStart(2, "0");
@@ -1147,7 +1220,7 @@ function Growth({ ctx }) {
         <div className="aj-ring" style={{ "--deg": (xpPct * 3.6) + "deg" }}><div className="aj-ring-in"><b>L{cur.L}</b><small>{cur.name.toUpperCase()}</small></div></div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="aj-gstat"><i className="ph-fill ph-fire" style={{ color: "var(--flame)" }}/><div><b>{streak} days</b><small>current streak</small></div></div>
-          <div className="aj-gstat"><i className="ph-fill ph-diamond" style={{ color: "var(--a)" }}/><div><b>{diamonds}</b><small>diamonds earned</small></div></div>
+          <div className="aj-gstat"><i className="ph-fill ph-diamond" style={{ color: "var(--a)" }}/><div><b>{diamonds}</b><small>diamonds</small></div></div>
         </div>
       </div></Tilt></div>
 
@@ -1192,6 +1265,7 @@ function Growth({ ctx }) {
       </div>
 
       <div className="pad" style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 10 }}>
+        <button className="aj-link" onClick={() => go("shop")}><i className="ph-fill ph-storefront lead" style={{ color: "var(--a)" }}/><span>Anchor shop</span><span className="mono" style={{ fontSize: 12, color: "var(--a)", fontWeight: 700, marginRight: 8 }}><i className="ph-fill ph-diamond"/> {diamonds}</span><i className="ph-bold ph-arrow-right chev"/></button>
         <button className="aj-link" onClick={() => go("library")}><i className="ph-fill ph-books lead" style={{ color: "var(--gold)" }}/><span>Prompt library</span><i className="ph-bold ph-arrow-right chev"/></button>
         <button className="aj-link" onClick={() => go("peers")}><i className="ph-fill ph-users-three lead" style={{ color: "var(--violet-l)" }}/><span>Peer modeling</span>{isNGG ? <i className="ph-bold ph-arrow-right chev"/> : <span className="aj-lock-note"><i className="ph-fill ph-lock-simple"/>NGG</span>}</button>
         <button className="aj-link" onClick={() => go("review")}><i className="ph-fill ph-seal-check lead" style={{ color: "var(--a)" }}/><span>Weekly review</span><i className="ph-bold ph-arrow-right chev"/></button>
@@ -1274,7 +1348,7 @@ function Review({ ctx }) {
   // The member's own execution logs this week — real data captured in their
   // reflections. Empty states are honest, never fabricated.
   const myLogs = [
-    { role: "Home", icon: "ph-house", tint: "rgba(201,242,78,.14)", ic: "#c9f24e", msg: logs.home },
+    { role: "Home", icon: "ph-house", tint: "rgba(var(--a-rgb),.14)", ic: "#c9f24e", msg: logs.home },
     { role: "School", icon: "ph-chalkboard-teacher", tint: "rgba(139,92,246,.2)", ic: "#c9b0ff", msg: logs.school },
     { role: "Peers", icon: "ph-users-three", tint: "rgba(217,110,194,.2)", ic: "#f0a6da", msg: logs.peer },
   ];
@@ -1338,14 +1412,14 @@ function You({ ctx }) {
   const toggle = (k) => setState("prefs", Object.assign({}, prefs, { [k]: !(prefs[k] !== false) }));
   const on = (k) => prefs[k] !== false;
   const circle = [
-    { role: "Home · Parent", sub: "Confirms daily order", icon: "ph-house", tint: "rgba(201,242,78,.16)", ic: "#c9f24e", tag: isNGG ? "pending" : "locked" },
+    { role: "Home · Parent", sub: "Confirms daily order", icon: "ph-house", tint: "rgba(var(--a-rgb),.16)", ic: "#c9f24e", tag: isNGG ? "pending" : "locked" },
     { role: "School · Teacher", sub: "Verifies school conduct", icon: "ph-chalkboard-teacher", tint: "rgba(139,92,246,.2)", ic: "#c9b0ff", tag: isNGG ? "pending" : "locked" },
     { role: mentor ? mentor.fullName : "Afrovanguard Mentor", sub: "Weekly discipline & remarks", icon: "ph-compass", tint: "rgba(217,110,194,.2)", ic: "#f0a6da", tag: mentor ? "linked" : (isNGG ? "pending" : "locked") },
   ];
   return (
     <div className="aj-view">
       <div className="pad"><h2 className="disp" style={{ fontSize: 26, margin: 0 }}>You</h2></div>
-      <div className="pad" style={{ marginTop: 18 }}><Tilt strength={7}><div className="card-grad" style={{ background: "linear-gradient(140deg,rgba(139,92,246,.35),rgba(201,242,78,.12))", display: "flex", alignItems: "center", gap: 16 }}>
+      <div className="pad" style={{ marginTop: 18 }}><Tilt strength={7}><div className="card-grad" style={{ background: "linear-gradient(140deg,rgba(139,92,246,.35),rgba(var(--a-rgb),.12))", display: "flex", alignItems: "center", gap: 16 }}>
         <div className="aj-profile-av"><i className="ph-fill ph-star"/></div>
         <div style={{ flex: 1 }}><div className="disp" style={{ fontSize: 22 }}>{member.fullName}</div><div className="mono" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700, marginTop: 2 }}>{cur.name.toUpperCase()} · LEVEL {cur.L}</div></div>
       </div></Tilt></div>
@@ -1390,6 +1464,93 @@ function BottomNav({ view, go }) {
 /* ---- Celebrate ---------------------------------------------------------- */
 function Celebrate() {
   return <div className="aj-celebrate"><div className="aj-celebrate-in"><div className="aj-celebrate-badge"><i className="ph-fill ph-anchor"/></div><h2>Anchored!</h2><p>+60 XP · your streak is alive</p></div></div>;
+}
+
+/* ---- Level-up (distinct from the daily "Anchored!" moment) --------------- */
+function LevelUp({ info, onDone }) {
+  useEffect(() => { const t = setTimeout(onDone, 4200); return () => clearTimeout(t); }, [onDone]);
+  return (
+    <div className="aj-celebrate aj-levelup" onClick={onDone} role="alertdialog" aria-label={"Level up — level " + info.level}>
+      <div className="aj-celebrate-in">
+        <div className="aj-lvl-rays" aria-hidden="true"/>
+        <div className="aj-lvl-badge"><i className={"ph-fill " + (info.icon || "ph-crown-simple")}/></div>
+        <div className="aj-lvl-tag">LEVEL {info.level}</div>
+        <h2>{info.name || "Level up"}!</h2>
+        <p>You crossed 250 XP — a new rank is yours.</p>
+        <button className="btn-a" style={{ marginTop: 22, width: "auto", padding: "13px 26px" }} onClick={onDone}>Keep going <i className="ph-bold ph-arrow-right"/></button>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Anchor Shop (cosmetic economy: freezes + accent themes) ------------- */
+function Shop({ ctx }) {
+  const { pstate, setState, diamonds, back } = ctx;
+  const shop = shopOf(pstate);
+  const owned = shop.ownedThemes || ["lime"];
+
+  const buyFreeze = () => {
+    if (shop.freezes >= FREEZE_MAX) { toast.info("You already hold the maximum " + FREEZE_MAX + " freezes."); return; }
+    if (diamonds < FREEZE_COST) { toast.err("Not enough diamonds yet — reflections earn +5 💎 a day."); return; }
+    setState("shop", Object.assign({}, shop, { spent: (shop.spent || 0) + FREEZE_COST, freezes: (shop.freezes || 0) + 1 }));
+    toast.ok("Streak Freeze equipped — it protects your chain automatically.");
+  };
+  const pickTheme = (t) => {
+    if (owned.includes(t.key)) {
+      if (shop.accent !== t.key) { setState("shop", Object.assign({}, shop, { accent: t.key })); toast.ok(t.name + " equipped"); }
+      return;
+    }
+    if (diamonds < THEME_COST) { toast.err("Not enough diamonds yet — reflections earn +5 💎 a day."); return; }
+    setState("shop", Object.assign({}, shop, { spent: (shop.spent || 0) + THEME_COST, ownedThemes: owned.concat(t.key), accent: t.key }));
+    toast.ok(t.name + " is yours — equipped.");
+  };
+
+  return (
+    <div className="aj-view">
+      <div className="aj-head" style={{ justifyContent: "space-between" }}>
+        <button className="icon-btn" aria-label="Back" onClick={back}><i className="ph-bold ph-arrow-left"/></button>
+        <div className="aj-head-center">ANCHOR SHOP</div>
+        <span className="aj-metric dia" style={{ fontSize: 15 }}><i className="ph-fill ph-diamond"/>{diamonds}</span>
+      </div>
+      <div className="pad" style={{ marginTop: 14 }}>
+        <p className="muted" style={{ fontSize: 13, margin: 0 }}>Diamonds come from showing up — reflections and focus sessions. Everything here is cosmetic: your journal never depends on it.</p>
+      </div>
+
+      <div className="pad" style={{ marginTop: 22 }}>
+        <div className="eyebrow" style={{ marginBottom: 12 }}>POWER-UP</div>
+        <div className="aj-shop-item">
+          <span className="aj-shop-ic freeze"><i className="ph-fill ph-snowflake"/></span>
+          <div className="aj-shop-tx">
+            <b>Streak Freeze</b>
+            <small>Miss a day without losing your streak. Used automatically the day it's needed.{shop.freezes > 0 ? " · " + shop.freezes + " held" : ""}</small>
+          </div>
+          <button className={"aj-shop-buy" + (shop.freezes >= FREEZE_MAX || diamonds < FREEZE_COST ? " off" : "")} onClick={buyFreeze}>
+            {shop.freezes >= FREEZE_MAX ? "MAX " + FREEZE_MAX : <><i className="ph-fill ph-diamond"/> {FREEZE_COST}</>}
+          </button>
+        </div>
+      </div>
+
+      <div className="pad" style={{ marginTop: 24 }}>
+        <div className="eyebrow" style={{ marginBottom: 6 }}>ACCENT THEMES</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Recolour the whole app. Equipping is instant — and yours forever.</div>
+        <div className="aj-shop-themes">
+          {THEMES.map(t => {
+            const isOwned = owned.includes(t.key) || t.free;
+            const equipped = shop.accent === t.key;
+            return (
+              <button key={t.key} className={"aj-shop-theme" + (equipped ? " on" : "")} onClick={() => pickTheme(t)} aria-pressed={equipped}>
+                <span className="aj-shop-swatch" style={{ background: t.hex, color: t.ink }}>{equipped ? <i className="ph-bold ph-check"/> : null}</span>
+                <b>{t.name}</b>
+                <small>{equipped ? "EQUIPPED" : isOwned ? "TAP TO EQUIP" : <><i className="ph-fill ph-diamond"/> {THEME_COST}</>}</small>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <p className="aj-virtues" style={{ margin: "30px 24px 0" }}>Earned, never bought — 💎 only come from consistency.</p>
+    </div>
+  );
 }
 
 /* ---- Onboarding (4 steps: Welcome → Name → Why → Study time) ------------ */
