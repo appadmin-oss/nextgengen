@@ -179,7 +179,7 @@ function App() {
     if (ogd && meta.desc) ogd.setAttribute("content", meta.desc);
     // Canonical + og:url must follow the route — a canonical pinned to "/"
     // tells crawlers every deep page is a duplicate of the homepage.
-    const canonicalUrl = "https://ngg.afrovanguard.org" + (page === "home" ? "/" : "/" + page);
+    const canonicalUrl = "https://next.afrovanguard.org.ng" + (page === "home" ? "/" : "/" + page);
     const can = document.querySelector('link[rel="canonical"]');
     if (can && PAGE_IDS.includes(page)) can.setAttribute("href", canonicalUrl);
     const ogu = document.querySelector('meta[property="og:url"]');

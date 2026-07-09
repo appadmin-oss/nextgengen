@@ -134,6 +134,8 @@ object-src 'none'"
   RewriteRule ^ - [L]
 
   # Don't rewrite known asset paths or the API tree (its own .htaccess wins)
+  # Sitemap is generated (static pages + published posts).
+  RewriteRule ^sitemap\.xml$ api/public/sitemap.php [L]
   RewriteRule ^(assets|uploads|api|vendor|apps-script|docs)/ - [L]
 
   # Everything else → index.html (SPA fallback)

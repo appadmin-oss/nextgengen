@@ -6,4 +6,4 @@ Disallow: /_check3/
 Disallow: /uploads/
 Disallow: /api/
 
-Sitemap: https://ngg.afrovanguard.org/sitemap.xml
+Sitemap: https://next.afrovanguard.org.ng/sitemap.xml

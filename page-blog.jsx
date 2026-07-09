@@ -3,8 +3,24 @@
    ================================================================ */
 
 function BlogPage({ setPage }) {
-  const [reading, setReading] = useState(null);
+  const [reading, setReadingRaw] = useState(null);
   const [filter, setFilter] = useState("All");
+  // Deep links: /blog?post=<id|slug> opens that article directly, and every
+  // open/close keeps the URL shareable (also feeds the dynamic sitemap).
+  const setReading = (p) => {
+    setReadingRaw(p);
+    try {
+      const u = new URL(window.location.href);
+      if (p) u.searchParams.set("post", String(p.slug || p.id)); else u.searchParams.delete("post");
+      history.replaceState(history.state, "", u.pathname + (u.search || ""));
+    } catch (_) {}
+  };
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get("post");
+    if (!want) return;
+    const hit = BLOG_POSTS.find(p => String(p.slug || p.id) === want);
+    if (hit) setReadingRaw(hit);
+  }, []);
   const categories = ["All", ...Array.from(new Set(BLOG_POSTS.map(p => p.category)))];
   const filtered = filter === "All" ? BLOG_POSTS : BLOG_POSTS.filter(p => p.category === filter);
 

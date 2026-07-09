@@ -172,7 +172,19 @@ browser E2E. UX blueprint (locked v2): https://claude.ai/code/artifact/6744d694-
    QR decode needs a vendored lib (jsQR); tokens already bind at verification
    and check in via typed code today.
 6. **Legal pages** (NDPR set, §blueprint) — static content page + footer links.
-7. Desktop journal rail shell (W9) + ⌘K in journal.
+7. ✅ Desktop journal rail shell shipped; ⌘K in journal still open.
+8. **Admin edits the website (next wave, user-requested).** The Control Room
+   already edits posts/missions/events/anchor-content/settings/promotions —
+   but the public BlogPage renders STATIC photos.js BLOG_POSTS, not the
+   admin's posts API. To make admin posts live on the site: map API posts
+   {postId, slug, title, excerpt, body, coverUrl, category, publishAt} into
+   the blog card shape {id, title, category, excerpt, cover, date, read,
+   author:{name, portrait}}; BlogArticle needs a body renderer (static posts
+   have none) — render post.body as paragraphs; merge API-first with static
+   fallback; deep links (?post=slug) + the dynamic sitemap
+   (api/public/sitemap.php) are ALREADY wired for this. Next: expose homepage
+   hero copy/stats via admin.settings keys with public bootstrap, and a
+   'Site copy' tab in the Control Room.
 
 Gotchas for the wave: new JSX pages were appended to page-other.jsx (no new
 ORDER entry needed); /gate + /verify are chrome-less routes in app.jsx; the
