@@ -176,9 +176,9 @@ function member_coach(array $p): array {
     }
     if (!$clean) return ['ok' => false, 'error' => 'empty'];
 
-    if (ai_enabled()) {
-        $r = ai_chat(COACH_SYSTEM, $clean, 220);
+    if (ai_enabled('coach')) {
+        $r = ai_chat(COACH_SYSTEM, $clean, 220, 'coach');
         if (!empty($r['ok'])) return ['ok' => true, 'reply' => $r['text'], 'source' => 'ai', 'provider' => $r['provider']];
     }
-    return ['ok' => true, 'reply' => coach_fallback($clean), 'source' => 'fallback', 'aiConfigured' => ai_enabled()];
+    return ['ok' => true, 'reply' => coach_fallback($clean), 'source' => 'fallback', 'aiConfigured' => ai_enabled('coach')];
 }

@@ -56,11 +56,28 @@ return [
     // Get keys: Groq → https://console.groq.com  ·  Gemini → https://aistudio.google.com
     // -----------------------------------------------------------------------
     'ai' => [
+        // Default profile (legacy flat block — used when a purpose below has
+        // no key of its own):
         'provider'       => 'groq',                    // preference: 'groq' | 'gemini'
         'groq_api_key'   => '',                        // leave empty to disable
         'groq_model'     => 'llama-3.1-8b-instant',
         'gemini_api_key' => '',                        // leave empty to disable
         'gemini_model'   => 'gemini-1.5-flash',
+
+        // Pro allocation — one key per purpose so a rate-limited or leaked
+        // key degrades ONE feature. Every entry optional; each may carry a
+        // 'fallback' => [provider, api_key, model] tried when the first
+        // provider errors. All free-tier friendly.
+        'profiles' => [
+            // Reflection Coach — best free conversational quality.
+            'coach'      => ['provider' => 'gemini', 'api_key' => '', 'model' => 'gemini-1.5-flash'],
+            // Behaviour classification — high volume, fast, strict JSON.
+            'behaviour'  => ['provider' => 'groq', 'api_key' => '', 'model' => 'llama-3.1-8b-instant'],
+            // Digests / attendance & registration analysis.
+            'analysis'   => ['provider' => 'gemini', 'api_key' => '', 'model' => 'gemini-1.5-flash'],
+            // Cheap pre-screen of free text before storage.
+            'moderation' => ['provider' => 'groq', 'api_key' => '', 'model' => 'llama-3.1-8b-instant'],
+        ],
     ],
 
     // -----------------------------------------------------------------------

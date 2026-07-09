@@ -413,6 +413,29 @@ chk('student can revoke a link', !empty(backend_dispatch('member.circle.revoke',
 chk('revoked token no longer works', backend_dispatch('circle.dashboard', ['token' => $ctok])['error'] === 'link_invalid');
 chk('revoked token drops out of the cohort', backend_dispatch('circle.cohort', ['tokens' => [$ctok]])['students'] === []);
 
+// ── AI profiles (offline resolution only — no network in tests) ──
+chk('ai disabled with no keys', ai_enabled() === false && ai_enabled('coach') === false && ai_complete('s', 'u')['error'] === 'ai_disabled');
+chk('ai profile chain: profile → fallback → default, deduped', (function () {
+    $GLOBALS['CONFIG']['ai'] = [
+        'provider' => 'gemini', 'gemini_api_key' => 'DEFKEY', 'gemini_model' => 'gemini-1.5-flash',
+        'profiles' => [
+            'behaviour' => ['provider' => 'groq', 'api_key' => 'BKEY', 'model' => 'llama-3.1-8b-instant',
+                            'fallback' => ['provider' => 'gemini', 'api_key' => 'DEFKEY', 'model' => 'gemini-1.5-flash']],
+        ],
+    ];
+    $c = ai_profile_candidates('behaviour');
+    $ok = count($c) === 2 && $c[0]['provider'] === 'groq' && $c[0]['api_key'] === 'BKEY' && $c[1]['api_key'] === 'DEFKEY';
+    $ok = $ok && ai_provider('behaviour') === 'groq' && ai_provider('coach') === 'gemini'; // coach falls to default
+    $GLOBALS['CONFIG']['ai'] = null;
+    return $ok;
+})());
+chk('ai profile with junk provider is skipped', (function () {
+    $GLOBALS['CONFIG']['ai'] = ['profiles' => ['x' => ['provider' => 'evilhost', 'api_key' => 'k']]];
+    $ok = ai_profile_candidates('x') === [] && ai_enabled('x') === false;
+    $GLOBALS['CONFIG']['ai'] = null;
+    return $ok;
+})());
+
 // ── Behavioral Momentum engine + nudges (isolated fresh member) ──
 db_insert('members', ['memberId' => 'NGG-2025-0800', 'fullName' => 'Momo Test', 'email' => 'momo@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 db_insert('journal', ['entryId' => 'JM-1', 'memberId' => 'NGG-2025-0800', 'week' => 1, 'mood' => 'good', 'body' => 'x', 'createdAt' => gmdate('Y-m-d\TH:i:s', time() - 86400)]);

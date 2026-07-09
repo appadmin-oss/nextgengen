@@ -333,11 +333,11 @@ function admin_summer_insights(array $p): array {
     $res = admin_summer_attendance($p);
     if (empty($res['ok'])) return $res;
     $a = $res['attendance'];
-    $out = ['ok' => true, 'aiConfigured' => ai_enabled(), 'provider' => '', 'source' => 'rules', 'insight' => summer_rule_insights($a)];
-    if (ai_enabled()) {
+    $out = ['ok' => true, 'aiConfigured' => ai_enabled('analysis'), 'provider' => '', 'source' => 'rules', 'insight' => summer_rule_insights($a)];
+    if (ai_enabled('analysis')) {
         $r = ai_complete(
             "You are an attendance analyst for a youth summer program. Be concise, warm and practical. Reply as 3-5 short bullet points starting with '· '. No preamble.",
-            summer_insight_prompt($a), 400
+            summer_insight_prompt($a), 400, 'analysis'
         );
         if (!empty($r['ok'])) { $out['insight'] = $r['text']; $out['provider'] = $r['provider']; $out['source'] = 'ai'; }
         else { $out['aiError'] = $r['error'] ?? 'ai_failed'; }
