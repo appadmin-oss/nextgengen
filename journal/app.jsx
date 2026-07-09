@@ -239,7 +239,7 @@ function App() {
         NGGApi.member.dashboard().catch(() => null),
         NGGApi.member.journal().catch(() => null),
         NGGApi.member.anchor().catch(() => null),
-        NGGApi.member.stateGet(["peers", "prefs", "systems:" + dayKey(Date.now()), "selfscore:" + dayKey(mondayOf(Date.now()))]).catch(() => null),
+        NGGApi.member.stateGet(["peers", "prefs", "systems:" + dayKey(Date.now()), "selfscore:" + dayKey(mondayOf(Date.now())), "focusTasks:" + dayKey(Date.now())]).catch(() => null),
       ]);
       if (dash) { setSession(dash.session || null); setMentor(dash.mentor || null); store.patch({ session: dash.session, mentor: dash.mentor }); }
       if (jrnl) { setEntries(jrnl.entries || []); store.patch({ entries: jrnl.entries || [] }); }
@@ -341,6 +341,7 @@ function App() {
       {view === "peers" && <Peers ctx={ctx}/>}
       {view === "review" && <Review ctx={ctx}/>}
       {view === "you" && <You ctx={ctx}/>}
+      {view === "focus" && <Focus ctx={ctx}/>}
       {view === "coach" && <Coach ctx={ctx}/>}
       {view !== "reflect" && view !== "coach" && <BottomNav view={view} go={go}/>}
       {celebrate && <Celebrate/>}
@@ -549,6 +550,88 @@ function Reflect({ ctx }) {
       <div className="pad" style={{ marginTop: 24 }}>
         <button className="btn-a" disabled={busy} onClick={submit}>Anchor it <i className="ph-fill ph-anchor"/></button>
         <p className="center muted" style={{ fontSize: 12, margin: "14px 0 0" }}>Earn +60 XP · keep your streak alive</p>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Focus (Pomodoro + today's tasks) ----------------------------------- */
+const FOCUS_PRESETS = [{ id: "study", label: "Study", min: 25 }, { id: "break", label: "Break", min: 5 }, { id: "deep", label: "Deep", min: 45 }];
+function Focus({ ctx }) {
+  const { pstate, setState } = ctx;
+  const [preset, setPreset] = useState(FOCUS_PRESETS[0]);
+  const [left, setLeft] = useState(FOCUS_PRESETS[0].min * 60);
+  const [running, setRunning] = useState(false);
+  const tick = useRef(null);
+  const today = dayKey(Date.now());
+  const tasksKey = "focusTasks:" + today;
+  const tasks = pstate[tasksKey] || [];
+  const [taskInput, setTaskInput] = useState("");
+
+  useEffect(() => { setRunning(false); setLeft(preset.min * 60); }, [preset.id]);
+  useEffect(() => {
+    if (!running) { if (tick.current) clearInterval(tick.current); return; }
+    tick.current = setInterval(() => setLeft(l => {
+      if (l <= 1) {
+        clearInterval(tick.current); setRunning(false);
+        try { navigator.vibrate && navigator.vibrate(180); } catch (e) {}
+        toast.ok(preset.id === "break" ? "Break's over — back to it." : "Session complete · +5 💎");
+        return 0;
+      }
+      return l - 1;
+    }), 1000);
+    return () => clearInterval(tick.current);
+  }, [running, preset.id]);
+
+  const total = preset.min * 60;
+  const mm = String(Math.floor(left / 60)).padStart(2, "0");
+  const ss = String(left % 60).padStart(2, "0");
+  const R = 130, C = 2 * Math.PI * R, done = total ? (total - left) / total : 0;
+
+  const addTask = () => { const t = taskInput.trim(); if (!t) return; setState(tasksKey, tasks.concat({ text: t.slice(0, 120), done: false })); setTaskInput(""); };
+  const toggleTask = (i) => setState(tasksKey, tasks.map((t, j) => j === i ? Object.assign({}, t, { done: !t.done }) : t));
+  const delTask = (i) => setState(tasksKey, tasks.filter((_, j) => j !== i));
+
+  return (
+    <div className="aj-view">
+      <div className="pad" style={{ marginTop: 8 }}>
+        <div className="eyebrow">STAY WITH IT</div>
+        <h2 className="disp" style={{ fontSize: 27, margin: "8px 0 0" }}>Focus</h2>
+      </div>
+      <div className="pad" style={{ marginTop: 18 }}>
+        <div className="aj-focus-presets">
+          {FOCUS_PRESETS.map(p => <button key={p.id} className={"aj-focus-preset" + (preset.id === p.id ? " on" : "")} onClick={() => setPreset(p)}>{p.label}<span>{p.min}m</span></button>)}
+        </div>
+      </div>
+      <div className="aj-focus-ring">
+        <svg viewBox="0 0 300 300" width="260" height="260">
+          <circle cx="150" cy="150" r={R} className="aj-ring-bg"/>
+          <circle cx="150" cy="150" r={R} className="aj-ring-fg" strokeDasharray={C} strokeDashoffset={C * (1 - done)} transform="rotate(-90 150 150)"/>
+        </svg>
+        <div className="aj-focus-time">{mm}:{ss}</div>
+      </div>
+      <div className="pad" style={{ display: "flex", gap: 12, marginTop: 8 }}>
+        <button className="btn-a" style={{ flex: 1 }} onClick={() => setRunning(r => !r)}>{running ? "Pause" : (left === total ? "Start" : "Resume")} <i className={"ph-fill " + (running ? "ph-pause" : "ph-play")}/></button>
+        <button className="icon-btn" aria-label="Reset" onClick={() => { setRunning(false); setLeft(total); }}><i className="ph-bold ph-arrow-counter-clockwise"/></button>
+      </div>
+
+      <div className="pad" style={{ marginTop: 28 }}>
+        <div className="eyebrow" style={{ marginBottom: 12 }}>TODAY'S TASKS</div>
+        <div className="aj-task-add">
+          <input className="aj-logline" placeholder="Add a task for today…" value={taskInput} maxLength={120}
+            onChange={e => setTaskInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addTask(); }}/>
+          <button className="aj-coach-send" onClick={addTask} aria-label="Add task"><i className="ph-bold ph-plus"/></button>
+        </div>
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          {tasks.length === 0 && <p className="muted" style={{ fontSize: 13, margin: 0 }}>No tasks yet — add one to focus on.</p>}
+          {tasks.map((t, i) => (
+            <div className={"aj-task" + (t.done ? " done" : "")} key={i}>
+              <button className="aj-task-check" onClick={() => toggleTask(i)} aria-label="Toggle"><i className={"ph-fill " + (t.done ? "ph-check-circle" : "ph-circle")}/></button>
+              <span className="aj-task-tx">{t.text}</span>
+              <button className="aj-task-del" onClick={() => delTask(i)} aria-label="Remove"><i className="ph-bold ph-x"/></button>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1153,7 +1236,7 @@ function You({ ctx }) {
 /* ---- Bottom nav --------------------------------------------------------- */
 function BottomNav({ view, go }) {
   const growthViews = ["growth", "library", "peers", "review"];
-  const items = [{ id: "home", label: "Journey", icon: "ph-path", on: view === "home" || view === "reflect" || view === "systems" || view === "timeline" }, { id: "growth", label: "Growth", icon: "ph-chart-line-up", on: growthViews.includes(view) }, { id: "you", label: "You", icon: "ph-user-circle", on: view === "you" }];
+  const items = [{ id: "home", label: "Journey", icon: "ph-path", on: view === "home" || view === "reflect" || view === "systems" || view === "timeline" }, { id: "focus", label: "Focus", icon: "ph-timer", on: view === "focus" }, { id: "growth", label: "Growth", icon: "ph-chart-line-up", on: growthViews.includes(view) }, { id: "you", label: "You", icon: "ph-user-circle", on: view === "you" }];
   return <nav className="aj-nav" role="tablist">{items.map(it => <button key={it.id} className={"aj-nav-btn" + (it.on ? " on" : "")} role="tab" aria-selected={it.on} onClick={() => go(it.id)}><i className={"ph-fill " + it.icon}/>{it.label}</button>)}</nav>;
 }
 

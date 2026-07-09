@@ -176,6 +176,24 @@ i[class^="ph"] { line-height: 1; }
 .aj-yn-b.yes { background: rgba(201,242,78,.16); border-color: var(--a); color: #fff; }
 .aj-yn-b.no { background: rgba(255,90,90,.16); border-color: #ff8a8a; color: #fff; }
 
+/* Focus — presets, ring, tasks */
+.aj-focus-presets { display: flex; gap: 8px; }
+.aj-focus-preset { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 8px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); color: var(--tx-70); font-weight: 700; font-size: 14px; cursor: pointer; }
+.aj-focus-preset span { font-family: var(--mono); font-size: 11px; color: var(--tx-45); }
+.aj-focus-preset.on { background: rgba(201,242,78,.14); border-color: var(--a); color: #fff; }
+.aj-focus-preset.on span { color: var(--a); }
+.aj-focus-ring { position: relative; display: flex; align-items: center; justify-content: center; margin: 18px auto 6px; width: 260px; height: 260px; }
+.aj-ring-bg { fill: none; stroke: var(--line); stroke-width: 14; }
+.aj-ring-fg { fill: none; stroke: var(--a); stroke-width: 14; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+.aj-focus-time { position: absolute; font-family: var(--mono); font-weight: 700; font-size: 46px; color: #fff; letter-spacing: .02em; }
+.aj-task-add { display: flex; gap: 10px; }
+.aj-task { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
+.aj-task-check { background: none; border: none; color: var(--a); font-size: 22px; cursor: pointer; flex: none; padding: 0; }
+.aj-task-tx { flex: 1; color: #fff; font-size: 14.5px; }
+.aj-task.done .aj-task-tx { text-decoration: line-through; color: var(--tx-45); }
+.aj-task.done .aj-task-check { color: var(--tx-45); }
+.aj-task-del { background: none; border: none; color: var(--tx-45); font-size: 15px; cursor: pointer; flex: none; padding: 4px; }
+
 /* Coach — entry card + chat */
 .aj-coach-entry { width: 100%; display: flex; align-items: center; gap: 13px; padding: 15px 16px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); cursor: pointer; color: #fff; text-align: left; }
 .aj-coach-entry-ic { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(139,92,246,.2); color: var(--violet-l); font-size: 20px; flex: none; }
