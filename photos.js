@@ -82,7 +82,9 @@ const BLOG_COVERS = [
   "1530021232320-687d8e3dba54",
 ];
 function blogCover(seed, w = 800, h = 500) {
-  const id = BLOG_COVERS[seed % BLOG_COVERS.length];
+  // Admin-authored posts carry a real cover URL; seed posts carry an index.
+  if (typeof seed === "string" && /^(https?:)?\/\//i.test(seed)) return seed;
+  const id = BLOG_COVERS[(parseInt(seed, 10) || 0) % BLOG_COVERS.length];
   return ux(id, w, h);
 }
 

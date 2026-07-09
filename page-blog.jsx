@@ -2,13 +2,41 @@
    NGG — Blog / Journal
    ================================================================ */
 
+// Map an admin-authored API post (posts table) into the blog card shape the
+// page renders. Static photos.js posts remain the fallback bed underneath.
+function mapApiPost(p) {
+  const words = ((p.excerpt || "") + " " + (p.body || "")).split(/\s+/).length;
+  return {
+    id: p.slug || p.postId, slug: p.slug || p.postId,
+    cover: p.coverUrl || 0,
+    category: p.category || "Journal",
+    title: p.title, excerpt: p.excerpt || "",
+    author: { name: p.authorId || "NGG Editorial", role: "NGG", portrait: p.slug || "ngg" },
+    date: p.publishAt ? new Date(p.publishAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : "",
+    read: Math.max(2, Math.round(words / 200)) + " min",
+    body: p.body || "", api: true,
+  };
+}
+
 function BlogPage({ setPage }) {
   const [reading, setReadingRaw] = useState(null);
   const [filter, setFilter] = useState("All");
+  const [apiPosts, setApiPosts] = useState([]);
+  useEffect(() => {
+    NGGApi.public.posts()
+      .then(r => setApiPosts(((r && r.posts) || []).filter(x => x.kind !== "promo").map(mapApiPost)))
+      .catch(() => {});
+  }, []);
+  const ALL = [...apiPosts, ...BLOG_POSTS];
   // Deep links: /blog?post=<id|slug> opens that article directly, and every
   // open/close keeps the URL shareable (also feeds the dynamic sitemap).
   const setReading = (p) => {
     setReadingRaw(p);
+    if (p && p.api && !p.body && p.slug) {
+      NGGApi.public.post(p.slug).then(r => {
+        if (r && r.post) setReadingRaw(prev => (prev && prev.id === p.id) ? { ...prev, body: r.post.body || "" } : prev);
+      }).catch(() => {});
+    }
     try {
       const u = new URL(window.location.href);
       if (p) u.searchParams.set("post", String(p.slug || p.id)); else u.searchParams.delete("post");
@@ -18,15 +46,15 @@ function BlogPage({ setPage }) {
   useEffect(() => {
     const want = new URLSearchParams(window.location.search).get("post");
     if (!want) return;
-    const hit = BLOG_POSTS.find(p => String(p.slug || p.id) === want);
-    if (hit) setReadingRaw(hit);
-  }, []);
-  const categories = ["All", ...Array.from(new Set(BLOG_POSTS.map(p => p.category)))];
-  const filtered = filter === "All" ? BLOG_POSTS : BLOG_POSTS.filter(p => p.category === filter);
+    const hit = ALL.find(p => String(p.slug || p.id) === want);
+    if (hit) setReading(hit);
+  }, [apiPosts.length]);
+  const categories = ["All", ...Array.from(new Set(ALL.map(p => p.category)))];
+  const filtered = filter === "All" ? ALL : ALL.filter(p => p.category === filter);
 
   if (reading) return <BlogArticle post={reading} setPage={setPage} onBack={() => setReading(null)} onOpen={(p) => setReading(p)}/>;
 
-  const [feat, ...rest] = BLOG_POSTS;
+  const [feat, ...rest] = ALL;
 
   return (
     <div className="page" data-screen-label="Blog">
@@ -171,8 +199,8 @@ function BlogArticle({ post, setPage, onBack, onOpen }) {
           </p>
           <ArticleBody post={post}/>
 
-          {/* Pull quote */}
-          <blockquote style={{
+          {/* Pull quote — editorial garnish for the seed posts only */}
+          {!post.api && <blockquote style={{
             borderLeft:"4px solid var(--gold-500)",
             padding:"18px 0 18px 28px",
             margin:"48px 0",
@@ -183,7 +211,7 @@ function BlogArticle({ post, setPage, onBack, onOpen }) {
             letterSpacing:"-0.015em",
           }}>
             "We do not chase prodigies. We build habit, attention and follow-through — talent is downstream of these."
-          </blockquote>
+          </blockquote>}
 
           <p style={{fontSize:17, lineHeight:1.7, color:"var(--ink-700)"}}>
             The shape of the work is mundane on most days. A teenager opens the dashboard, sees the week's missions, opens the camera, films a reflection. A mentor reads it, writes back. Another teenager messages in the cohort feed asking for help with a chord change or a paragraph. Saturday comes. Everyone shows up.
@@ -243,6 +271,14 @@ function BlogArticle({ post, setPage, onBack, onOpen }) {
 }
 
 function ArticleBody({ post }) {
+  if (post.body) {
+    return (
+      <div style={{fontSize:17, lineHeight:1.7, color:"var(--ink-700)"}}>
+        {post.body.split(/\n{2,}|\r\n{2,}/).map((para, i) => <p key={i} style={{whiteSpace:"pre-wrap"}}>{para}</p>)}
+      </div>
+    );
+  }
+  if (post.api) return <div style={{fontSize:15, color:"var(--ink-500)"}}>Loading the full story…</div>;
   return (
     <div style={{fontSize:17, lineHeight:1.7, color:"var(--ink-700)"}}>
       <p>
