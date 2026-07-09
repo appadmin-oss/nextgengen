@@ -160,3 +160,26 @@ A separate surface (the "linking" the user flagged). Flow:
 9. **Weekly report** (printable) + remark→Weekly-Review wiring.
 10. **Self-hosted fonts** + final visual alignment.
 11. Each phase: tests + build both targets + Playwright smoke + commit.
+
+---
+
+## G. Status update (audit-sync session)
+
+Delivered in this branch (`claude/ngg-afrovanguard-audit-sync-becs2k`), each
+verified with `node build.js`:
+
+- ✅ **Phase 2 — Focus / Notepad / Goals + Quick Tools grid + 4-tab nav.**
+  Focus = Pomodoro (Study/Break/Deep) + SVG ring + per-day tasks
+  (`focusTasks:<day>`). Notepad = private notes (`notes`). Goals = steppers +
+  Share (`goals`). Quick Tools grid on Journey; bottom nav now Journey · Focus
+  · Growth · You.
+- ✅ **Phase 3 — Reflect editor v2.** School (learned + Yes/No), Home (Yes/No +
+  phone use), Peer (influence/notice), folded into the existing entry body, plus
+  the Coach entry card.
+- ✅ **Phase 4 — Coach UI** wired to the existing `member.coach` backend (chat,
+  typing state, offline-aware, privacy note, graceful fallback).
+
+Still open (backends for Circle/Momentum already exist — these are front-end +
+economy work): multi-step onboarding (Phase 1), Shop + economy & level-up
+celebration (Phase 5), You → Your Circle invite code + Portal wiring (Phases
+6–9), and reconciling the two XP models (`journal/app.jsx` vs `momentum.php`).
