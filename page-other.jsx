@@ -1003,7 +1003,10 @@ function SummerProfilePage({ setPage }) {
         <div className="container" style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
           {m.photoUrl
             ? <img src={m.photoUrl} alt="" style={{ width: 96, height: 96, borderRadius: "50%", objectFit: "cover", border: "3px solid var(--gold-500)" }} onError={e => { e.target.style.display = "none"; }}/>
-            : <Avatar name={m.fullName} seed={m.studentId} size={96} ring/>}
+            : /* No stand-in portraits here — this page represents a real child. */
+              <div aria-hidden="true" style={{ width: 96, height: 96, borderRadius: "50%", background: "var(--navy-700)", border: "3px solid var(--gold-500)", display: "grid", placeItems: "center", fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 34, color: "var(--gold-500)", flexShrink: 0 }}>
+                {(m.fullName || "?").trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()}
+              </div>}
           <div>
             <span className="chip chip-on-dark"><span className="dot dot-gold"/> SUMMER SCHOOL · {m.cohortId}</span>
             <h1 className="display" style={{ fontSize: "clamp(40px,6vw,76px)", margin: "12px 0 6px", color: "white", lineHeight: 0.95 }}>{m.fullName}</h1>
@@ -1757,6 +1760,17 @@ function CardBack({ card, program, S }) {
   return (
     <div className="idcard" style={{ width: px(590), height: px(1004), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>{wm}</div>
+      {/* Woven aso-oke trim across the top — stepped two-tone chevrons in
+          muted blue-gray, matching the textile band on the printed design. */}
+      <svg aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, width: "100%", height: px(26) }} viewBox="0 0 590 26" preserveAspectRatio="none">
+        <pattern id={"wv" + card.studentId} width="73.75" height="26" patternUnits="userSpaceOnUse">
+          <path d="M0 -6 L36.9 10 L73.75 -6" fill="none" stroke="#CDD3E1" strokeWidth="5"/>
+          <path d="M0 4 L36.9 20 L73.75 4" fill="none" stroke="#A9B2C9" strokeWidth="5"/>
+          <path d="M0 20 L36.9 4 L73.75 20" fill="none" stroke="#C2C9DA" strokeWidth="3.4"/>
+        </pattern>
+        <rect width="590" height="26" fill={"url(#wv" + card.studentId + ")"}/>
+        <rect y="24.4" width="590" height="1.6" fill="#9AA3BE" opacity="0.55"/>
+      </svg>
       <div style={{ position: "absolute", top: px(170), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(62), letterSpacing: px(-1) }}>
         <span style={{ color: CARD_CRIMSON }}>{program.program}</span> <span style={{ color: CARD_NAVY }}>{program.year}</span>
       </div>
@@ -1777,7 +1791,7 @@ function CardBack({ card, program, S }) {
       </div>
       <div style={{ position: "absolute", top: px(714), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#D9D9D9" }}/>
       <img src="/assets/idcard/logo-lockup.png" alt="" style={{ position: "absolute", top: px(756), left: "50%", transform: "translateX(-50%)", width: px(250) }}/>
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: CARD_NAVY }}/>
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: "#00225F" }}/>
     </div>
   );
 }
