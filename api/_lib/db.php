@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 15;
+const NGG_SCHEMA_TARGET = 16;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -531,6 +531,24 @@ function db_migrate(PDO $db): void {
         15 => "
             ALTER TABLE applications ADD COLUMN phone TEXT DEFAULT '';
             ALTER TABLE applications ADD COLUMN courses TEXT DEFAULT '';
+        ",
+
+        // The approved volunteer roster. Approval mints VOL-YY-serial,
+        // binds a check-in QR token, and the row backs /q/<token> profiles.
+        16 => "
+            CREATE TABLE volunteers (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              volunteerId TEXT UNIQUE NOT NULL,
+              applicationId INTEGER,
+              fullName TEXT, email TEXT, phone TEXT DEFAULT '',
+              role TEXT, courses TEXT DEFAULT '',
+              token TEXT DEFAULT '', photoUrl TEXT DEFAULT '',
+              status TEXT DEFAULT 'active',
+              createdAt TEXT DEFAULT (datetime('now')),
+              updatedAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_vol_email ON volunteers(email);
+            CREATE INDEX idx_vol_token ON volunteers(token);
         ",
     ];
 

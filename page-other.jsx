@@ -1014,10 +1014,10 @@ function SummerProfilePage({ setPage }) {
                 {(m.fullName || "?").trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()}
               </div>}
           <div>
-            <span className="chip chip-on-dark"><span className="dot dot-gold"/> SUMMER SCHOOL · {m.cohortId}</span>
+            <span className="chip chip-on-dark"><span className="dot dot-gold"/> {m.kind === "volunteer" ? "VOLUNTEER" + (m.role ? " · " + m.role.toUpperCase() : "") : "SUMMER SCHOOL · " + m.cohortId}</span>
             <h1 className="display" style={{ fontSize: "clamp(40px,6vw,76px)", margin: "12px 0 6px", color: "white", lineHeight: 0.95 }}>{m.fullName}</h1>
             <div className="mono" style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.1em" }}>
-              {m.studentId}{m.track ? " · " + m.track : ""}{m.centre ? " · CACENTRE " + m.centre : ""} · @{m.handle}
+              {m.studentId}{m.track ? " · " + m.track : ""}{(m.courses || []).length ? " · " + m.courses.join(" · ") : ""}{m.centre ? " · CACENTRE " + m.centre : ""}{m.handle ? " · @" + m.handle : ""}
             </div>
           </div>
         </div>
@@ -1073,7 +1073,10 @@ function VolunteerRegisterPage({ setPage }) {
   const set = (k) => (e) => { setD({ ...d, [k]: e.target.value }); if (err) setErr(""); };
   const toggleCourse = (c) => setCourses(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]);
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim());
-  const ready = role !== "" && d.name.trim().length >= 2 && emailOk && (role !== "instructor" || courses.length > 0);
+  const phoneNeeded = role === "instructor";
+  const ready = role !== "" && d.name.trim().length >= 2 && emailOk
+    && (role !== "instructor" || courses.length > 0)
+    && (!phoneNeeded || d.phone.trim().length >= 7);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -1093,6 +1096,7 @@ function VolunteerRegisterPage({ setPage }) {
         rate_limited: "Too many submissions — wait a few minutes and try again.",
         applications_closed: "Volunteer registration is closed right now. Check back soon.",
         course_required: "Pick at least one course you can teach.",
+        phone_required: "Instructors must be reachable by phone — add your number.",
         bad_email: "That email doesn't look right.",
       }[code] || "Couldn't submit. Please try again.");
     } finally { setBusy(false); }
@@ -1184,7 +1188,7 @@ function VolunteerRegisterPage({ setPage }) {
                     <input id="vol-name" value={d.name} onChange={set("name")} autoComplete="name" placeholder="Your name"/></div>
                   <div className="field"><label htmlFor="vol-email">Email</label>
                     <input id="vol-email" type="email" value={d.email} onChange={set("email")} autoComplete="email" placeholder="you@example.com"/></div>
-                  <div className="field"><label htmlFor="vol-phone">Phone · optional</label>
+                  <div className="field"><label htmlFor="vol-phone">{phoneNeeded ? "Phone · required for instructors" : "Phone · optional"}</label>
                     <input id="vol-phone" type="tel" value={d.phone} onChange={set("phone")} autoComplete="tel" placeholder="0803 000 0000"/></div>
                   <div className="field" style={{ gridColumn: "1 / -1" }}><label htmlFor="vol-why">Why you · optional</label>
                     <textarea id="vol-why" rows={3} value={d.why} onChange={set("why")} placeholder="A line or two — craft, experience, or simply why this matters to you."/></div>
@@ -1911,7 +1915,15 @@ function CardFront({ card, S }) {
       <div style={{ position: "absolute", top: px(588), left: "50%", transform: "translateX(-50%)", width: px(30), height: px(6), borderRadius: px(3), background: "#8FA3C8" }}/>
       <div style={{ position: "absolute", top: px(614), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(52), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1) }}>{card.firstName}</div>
       <div style={{ position: "absolute", top: px(668), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(56), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding: `0 ${px(16)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
-      <div style={{ position: "absolute", top: px(732), left: 0, right: 0, textAlign: "center", fontWeight: 700, fontSize: px(22), color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(2) }}>{card.track}</div>
+      <div style={{ position: "absolute", top: px(732), left: 0, right: 0, textAlign: "center", fontWeight: 500, fontSize: px(22), color: "#111", textTransform: "uppercase", letterSpacing: px(1.4) }}>
+        {(() => {
+          // "Arts • Tye & Dye" → bold category, dot, regular course (v3 design).
+          const parts = String(card.track || "").split(/\s*[•·]\s*/);
+          return parts.length > 1
+            ? <><span style={{ fontWeight: 800 }}>{parts[0]}</span> • {parts.slice(1).join(" • ")}</>
+            : <span style={{ fontWeight: 800, color: CARD_NAVY }}>{card.track}</span>;
+        })()}
+      </div>
       <div style={{ position: "absolute", top: px(776), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#E4E4E4" }}/>
       <div style={{ position: "absolute", top: px(812), left: "50%", transform: "translateX(-50%)", border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff" }}>
         <CardQR token={card.token} size={px(112)}/>
@@ -1964,7 +1976,12 @@ function CardBack({ card, program, S }) {
         ))}
       </div>
       <div style={{ position: "absolute", top: px(714), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#D9D9D9" }}/>
-      <img src="/assets/idcard/logo-lockup.png" alt="" style={{ position: "absolute", top: px(756), left: "50%", transform: "translateX(-50%)", width: px(250) }}/>
+      <div style={{ position: "absolute", top: px(748), left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: px(14) }}>
+        <img src="/assets/idcard/logo-okun.png" alt="Okun Alimọsho" style={{ height: px(64) }}
+          onError={e => { e.target.style.display = "none"; if (e.target.nextSibling) e.target.nextSibling.style.display = "none"; }}/>
+        <span aria-hidden="true" style={{ width: 1.5, height: px(44), background: "#C9CDD8" }}/>
+        <img src="/assets/idcard/logo-lockup.png" alt="Lagos Child Project × STS" style={{ width: px(230) }}/>
+      </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: "#00225F" }}/>
     </div>
   );

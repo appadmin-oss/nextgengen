@@ -404,3 +404,16 @@ ALTER TABLE summer_students ADD COLUMN displayId VARCHAR(24);
 
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
 INSERT INTO schema_version (version) VALUES (14) ON DUPLICATE KEY UPDATE version = version;
+
+CREATE TABLE IF NOT EXISTS volunteers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  volunteerId VARCHAR(32) NOT NULL UNIQUE,
+  applicationId INT,
+  fullName VARCHAR(255), email VARCHAR(200), phone VARCHAR(24) DEFAULT '',
+  role VARCHAR(24), courses TEXT,
+  token VARCHAR(64) DEFAULT '', photoUrl VARCHAR(512) DEFAULT '',
+  status VARCHAR(24) DEFAULT 'active',
+  createdAt VARCHAR(40), updatedAt VARCHAR(40),
+  INDEX idx_vol_email (email),
+  INDEX idx_vol_token (token)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

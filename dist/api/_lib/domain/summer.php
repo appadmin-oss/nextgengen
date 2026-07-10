@@ -192,7 +192,19 @@ function summer_checkin(array $p): array {
     $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
     if (!$qr || empty($qr['studentId'])) return ['ok' => false, 'error' => 'qr_unassigned'];
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
-    if (!$s) return ['ok' => false, 'error' => 'student_not_found'];
+    if (!$s) {
+        // Volunteer badges check in through the same scanner.
+        $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$qr['studentId']]);
+        if (!$v) return ['ok' => false, 'error' => 'student_not_found'];
+        $today = gmdate('Y-m-d');
+        $existing = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$v['volunteerId'], $today]);
+        $already = (bool)$existing;
+        if (!$already) {
+            db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $g['requester']['memberId'], 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
+            audit('volunteer.checkin', $g['requester']['memberId'], $v['volunteerId'], ['date' => $today], (string)($p['ip'] ?? ''));
+        }
+        return ['ok' => true, 'already' => $already, 'student' => volunteer_public($v)];
+    }
     $today = gmdate('Y-m-d');
     $existing = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$s['studentId'], $today]);
     $already = (bool)$existing;
@@ -352,7 +364,14 @@ function public_summer_profile(array $p): array {
     $s = null;
     if ($token !== '') {
         $qr = db_row('SELECT studentId FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
-        if ($qr && !empty($qr['studentId'])) $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
+        if ($qr && !empty($qr['studentId'])) {
+            $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
+            if (!$s) {
+                // Volunteer tokens serve the volunteer's digital ID here.
+                $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$qr['studentId']]);
+                if ($v) return ['ok' => true, 'profile' => volunteer_public($v, true)];
+            }
+        }
     } elseif ($handle !== '') {
         $s = db_row('SELECT * FROM summer_students WHERE handle = ? LIMIT 1', [$handle]);
     }

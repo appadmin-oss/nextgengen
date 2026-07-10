@@ -46,6 +46,9 @@ function csrf_require(): void {
     if (preg_match('#/api/public/verify\\.php$#', $path)) return; // parent link: the token IS the proof
     if (preg_match('#/api/hooks/[a-z-]+\\.php$#', $path)) return;  // inbound hooks: the HMAC IS the proof
     if (preg_match('#/api/public/newsletter\\.php$#', $path))     return;
+    // Anonymous intake — no session privileges to ride; IP rate-limited,
+    // validated server-side, and reachable cross-origin from sister sites.
+    if (preg_match('#/api/public/apply\\.php$#', $path))          return;
 
     $cookie = $_COOKIE[csrf_cookie_name()] ?? '';
     $header = $_SERVER['HTTP_X_NGG_CSRF'] ?? '';

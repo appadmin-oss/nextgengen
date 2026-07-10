@@ -29,6 +29,26 @@ if (!file_exists(__DIR__ . '/../config.php')) {
 
 $CONFIG = require __DIR__ . '/../config.php';
 
+// Cross-origin access for the PUBLIC api only — lets sister sites (the STS
+// site embeds the volunteer form headlessly) call it from the browser.
+// Origins are allow-listed; no credentials cross the boundary.
+$__origin = (string)($_SERVER['HTTP_ORIGIN'] ?? '');
+if ($__origin !== '' && preg_match('#/api/public/[a-z0-9-]+\.php$#', (string)($_SERVER['SCRIPT_NAME'] ?? ''))) {
+    $__allowed = $CONFIG['cors_origins'] ?? [
+        'https://sts.afrovanguard.org.ng',
+        'https://afrovanguard.org.ng',
+        'https://www.afrovanguard.org.ng',
+    ];
+    if (in_array($__origin, $__allowed, true)) {
+        header('Access-Control-Allow-Origin: ' . $__origin);
+        header('Vary: Origin');
+        header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type');
+        header('Access-Control-Max-Age: 86400');
+        if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') { http_response_code(204); exit; }
+    }
+}
+
 if ($CONFIG['debug']) {
     ini_set('display_errors', '1');
 }
@@ -41,7 +61,7 @@ require_once __DIR__ . '/anchor-content.php';
 require_once __DIR__ . '/ai.php';
 require_once __DIR__ . '/bus.php';
 require_once __DIR__ . '/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour'] as $__d) {
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers'] as $__d) {
     require_once __DIR__ . '/domain/' . $__d . '.php';
 }
 require_once __DIR__ . '/backend.php';

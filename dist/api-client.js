@@ -265,6 +265,11 @@
         log:    (subjectId, note, category, severity) => request('/admin/behaviour.php', { body: { action: 'log', subjectId, note, category, severity } }),
         review: (logId) => request('/admin/behaviour.php', { body: { action: 'review', logId } }),
       },
+      volunteers: {
+        list:    () => request('/admin/volunteers.php'),
+        approve: (id) => request('/admin/volunteers.php', { body: { action: 'approve', id } }),
+        decline: (id, reason) => request('/admin/volunteers.php', { body: { action: 'decline', id, reason: reason || '' } }),
+      },
       registration: {
         form:       () => request('/admin/registration.php' + qs({ view: 'form' })),
         publishForm: (fields, name) => request('/admin/registration.php', { body: { action: 'publish_form', fields, name } }),

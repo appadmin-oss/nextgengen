@@ -224,6 +224,8 @@ function public_apply(array $p): array {
         $role = strtolower(trim((string)($p['role'] ?? '')));
         if (!in_array($role, ['admin', 'mentor', 'instructor'], true)) return ['ok' => false, 'error' => 'bad_role'];
         $phone = sms_normalize((string)($p['phone'] ?? ''));
+        // Instructors run rooms — they must be reachable by phone.
+        if ($role === 'instructor' && $phone === '') return ['ok' => false, 'error' => 'phone_required'];
         if ($role === 'instructor') {
             $offered = volunteer_course_options();
             foreach ((is_array($p['courses'] ?? null) ? $p['courses'] : []) as $c) {

@@ -36,7 +36,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
@@ -127,13 +127,35 @@ $vctx = backend_dispatch('public.volunteer.context', []);
 chk('volunteer context lists roles', $vctx['roles'] === ['admin', 'mentor', 'instructor']);
 chk('volunteer context serves the course catalogue', in_array('Coding & Robotics', $vctx['courses'], true));
 chk('volunteer apply rejects unknown role', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'chef', 'name' => 'Vol One', 'email' => 'vol1@example.com'])['error'] === 'bad_role');
-chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'instructor', 'name' => 'Vol One', 'email' => 'vol1@example.com', 'courses' => ['Basket Weaving']])['error'] === 'course_required');
+chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'instructor', 'name' => 'Vol One', 'email' => 'vol1@example.com', 'phone' => '08031110001', 'courses' => ['Basket Weaving']])['error'] === 'course_required');
 chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'admin', 'name' => 'Vol Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567'])['ok'] === true);
 chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications WHERE email = 'vol-admin@example.com'")['phone'] === '+2348031234567');
-chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'instructor', 'name' => 'Vol Teach', 'email' => 'vol-teach@example.com', 'courses' => ['Coding & Robotics', 'Chess & Strategy', 'Basket Weaving']])['ok'] === true);
+chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'instructor', 'name' => 'Vol Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'courses' => ['Coding & Robotics', 'Chess & Strategy', 'Basket Weaving']])['ok'] === true);
 chk('instructor courses stored filtered to catalogue', json_decode((string)db_row("SELECT courses FROM applications WHERE email = 'vol-teach@example.com'")['courses'], true) === ['Coding & Robotics', 'Chess & Strategy']);
 chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'admin', 'name' => 'Vol Admin', 'email' => 'vol-admin@example.com'])['duplicate'] === true);
 chk('volunteer.applied event queued for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.applied'")['c'] === 2);
+chk('instructor without phone is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'instructor', 'name' => 'No Phone', 'email' => 'nophone@example.com', 'courses' => ['Coding & Robotics']])['error'] === 'phone_required');
+
+// ── Volunteer review desk: approve → ID + QR + profile; decline ──
+$volAppId = (int)db_row("SELECT id FROM applications WHERE email = 'vol-teach@example.com'")['id'];
+chk('non-admin cannot review volunteers', backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+chk('review desk lists the pending queue', count(backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-2025-0099'])['pending']) >= 2);
+$appr = backend_dispatch('admin.volunteers.approve', ['requesterId' => 'NGG-2025-0099', 'id' => $volAppId]);
+chk('approval mints a VOL display id', preg_match('/^VOL-\d{2}-\d{3}$/', $appr['volunteer']['volunteerId']) === 1);
+chk('approval binds a check-in token', str_starts_with((string)$appr['volunteer']['token'], 'VOLQR-'));
+chk('approval marks the application accepted', db_row('SELECT status FROM applications WHERE id = ?', [$volAppId])['status'] === 'accepted');
+chk('approval queues volunteer.approved for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.approved'")['c'] === 1);
+chk('re-approving is idempotent', backend_dispatch('admin.volunteers.approve', ['requesterId' => 'NGG-2025-0099', 'id' => $volAppId])['already'] === true);
+$volTok = (string)$appr['volunteer']['token'];
+$volId  = (string)$appr['volunteer']['volunteerId'];
+chk('volunteer token serves the public digital ID', backend_dispatch('public.summerProfile', ['token' => $volTok])['profile']['kind'] === 'volunteer');
+$vchk = backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-2025-0099', 'token' => $volTok]);
+chk('volunteer badge checks in through the scanner', $vchk['ok'] === true && $vchk['student']['volunteerId'] === $volId);
+chk('volunteer re-scan flags already', backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-2025-0099', 'token' => $volTok])['already'] === true);
+chk('volunteer attendance shows on the profile', backend_dispatch('public.summerProfile', ['token' => $volTok])['profile']['attendanceCount'] === 1);
+$volAppId2 = (int)db_row("SELECT id FROM applications WHERE email = 'vol-admin@example.com'")['id'];
+chk('decline marks the application rejected', backend_dispatch('admin.volunteers.decline', ['requesterId' => 'NGG-2025-0099', 'id' => $volAppId2, 'reason' => 'Intake full'])['ok'] === true && db_row('SELECT status FROM applications WHERE id = ?', [$volAppId2])['status'] === 'rejected');
+chk('approved roster lists the volunteer', in_array($volId, array_column(backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-2025-0099'])['volunteers'], 'volunteerId'), true));
 
 // ── Anchor content (admin-managed, member_state) ──
 chk('anchor defaults have 12 weeks', count(backend_dispatch('public.anchorContent', [])['content']['weeks']) === 12);
