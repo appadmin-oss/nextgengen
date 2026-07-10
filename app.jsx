@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","mentors","join","blog","contact","admin","summer-admin","club-admin","circle","gate","verify"];
+const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","mentors","join","blog","contact","admin","summer-admin","club-admin","circle","gate","verify","cards"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
@@ -33,6 +33,7 @@ const PAGE_META = {
   circle:     { title: "Anchor Circle · Guardian & Mentor Portal",    desc: "Support your child's twelve-week Anchor journey — confirm conduct, encourage, and track growth without reading their private words." },
   gate:       { title: "The Gate · NGG",                              desc: "" },
   verify:     { title: "Confirm your child's registration · NGG",     desc: "" },
+  cards:      { title: "ID Card Studio · NGG",                        desc: "" },
 };
 
 /* ---- 404 fallback — when a hash doesn't match any registered page ---- */
@@ -237,11 +238,12 @@ function App() {
     circle:     <CirclePortal   setPage={setPage}/>,
     gate:       <GatePage/>,
     verify:     <ParentVerifyPage/>,
+    cards:      <CardStudio/>,
   };
 
   // The staff console/portals, the guardian Circle portal, the gate desk and
   // the parent verification page use their own chrome — no topnav/footer.
-  if (page === "admin" || page === "summer-admin" || page === "club-admin" || page === "circle" || page === "gate" || page === "verify") {
+  if (page === "admin" || page === "summer-admin" || page === "club-admin" || page === "circle" || page === "gate" || page === "verify" || page === "cards") {
     return (
       <div className="app-shell app-shell-admin">
         <SkipLink/>

@@ -387,5 +387,19 @@ CREATE TABLE IF NOT EXISTS behaviour_logs (
   INDEX idx_blog_category (category)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ID cards: centres (code + color) + printed display IDs.
+CREATE TABLE IF NOT EXISTS centres (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  centreId VARCHAR(48) UNIQUE NOT NULL,
+  name VARCHAR(160) NOT NULL,
+  code VARCHAR(8) NOT NULL,
+  color VARCHAR(16) DEFAULT '#76B043',
+  status VARCHAR(16) DEFAULT 'active',
+  createdAt VARCHAR(40), updatedAt VARCHAR(40),
+  UNIQUE KEY idx_centres_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE summer_students ADD COLUMN displayId VARCHAR(24);
+
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
-INSERT INTO schema_version (version) VALUES (13) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (14) ON DUPLICATE KEY UPDATE version = version;

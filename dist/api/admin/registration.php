@@ -9,6 +9,8 @@ if ($method === 'GET') {
     if ($view === 'form')            $res = gs_call('admin.forms.get', ['requesterId' => $s['mid']]);
     elseif ($view === 'gates')       $res = gs_call('admin.gates.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'registrations') $res = gs_call('admin.registrations.list', ['requesterId' => $s['mid']]);
+    elseif ($view === 'centres')     $res = gs_call('admin.centres.list', ['requesterId' => $s['mid']]);
+    elseif ($view === 'cards')       $res = gs_call('admin.cards.data', ['requesterId' => $s['mid'], 'studentId' => (string)($_GET['studentId'] ?? '')]);
     else json_error('unknown_view', 400);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -18,6 +20,8 @@ if ($method === 'GET') {
     elseif ($action === 'gate_create') $res = gs_call('admin.gates.create', ['requesterId' => $s['mid'], 'name' => $b['name'] ?? '', 'expiresAt' => $b['expiresAt'] ?? '', 'ip' => $ip]);
     elseif ($action === 'gate_revoke') $res = gs_call('admin.gates.revoke', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'remind')      $res = gs_call('admin.registrations.remind', ['requesterId' => $s['mid'], 'studentId' => $b['studentId'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'centre_upsert') $res = gs_call('admin.centres.upsert', ['requesterId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => $ip]);
+    elseif ($action === 'centre_delete') $res = gs_call('admin.centres.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'ip' => $ip]);
     else json_error('unknown_action', 400);
 } else {
     json_error('method_not_allowed', 405);

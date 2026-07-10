@@ -272,6 +272,10 @@
         gateRevoke: (gateId) => request('/admin/registration.php', { body: { action: 'gate_revoke', gateId } }),
         list:       () => request('/admin/registration.php' + qs({ view: 'registrations' })),
         remind:     (studentId) => request('/admin/registration.php', { body: { action: 'remind', studentId } }),
+        centres:      () => request('/admin/registration.php' + qs({ view: 'centres' })),
+        centreUpsert: (data) => request('/admin/registration.php', { body: { action: 'centre_upsert', data } }),
+        centreDelete: (centreId) => request('/admin/registration.php', { body: { action: 'centre_delete', centreId } }),
+        cards:        (studentId) => request('/admin/registration.php' + qs({ view: 'cards', studentId })),
       },
       integrations: {
         list:     () => request('/admin/integrations.php'),

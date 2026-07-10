@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 13;
+const NGG_SCHEMA_TARGET = 14;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -505,6 +505,24 @@ function db_migrate(PDO $db): void {
             CREATE INDEX idx_blog_subject ON behaviour_logs(subjectId);
             CREATE INDEX idx_blog_status ON behaviour_logs(status);
             CREATE INDEX idx_blog_category ON behaviour_logs(category);
+        ",
+        // ID cards: admin-managed centres (code + accent color drive the card)
+        // and the printed display ID (CODE-YY-serial) per student.
+        14 => "
+            CREATE TABLE centres (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              centreId TEXT UNIQUE NOT NULL,
+              name TEXT NOT NULL,
+              code TEXT NOT NULL,
+              color TEXT DEFAULT '#76B043',
+              status TEXT DEFAULT 'active',
+              createdAt TEXT DEFAULT (datetime('now')),
+              updatedAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_centres_code ON centres(code);
+
+            ALTER TABLE summer_students ADD COLUMN displayId TEXT;
+            CREATE INDEX idx_sstu_displayid ON summer_students(displayId);
         ",
     ];
 

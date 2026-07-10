@@ -35,6 +35,7 @@ function form_default_fields(): array {
         ['key' => 'fullName', 'label' => 'Full name', 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'age', 'label' => 'Age', 'type' => 'number', 'required' => true, 'min' => 5, 'max' => 19, 'locked' => true],
         ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => ['Coding & Robotics', 'Design & Media', 'Public Speaking', 'Chess & Strategy']],
+        ['key' => 'centre', 'label' => 'Centre', 'type' => 'choice', 'required' => true, 'options' => ['Main'], 'help' => 'Options come from Admin → Centres; drives the ID prefix and card colour.'],
         ['key' => 'parentName', 'label' => "Parent / guardian's name", 'type' => 'text', 'required' => true],
         ['key' => 'parentPhone', 'label' => "Parent's phone", 'type' => 'phone', 'required' => false, 'help' => 'Either phone or email is required — both is best.', 'locked' => true],
         ['key' => 'parentEmail', 'label' => "Parent's email", 'type' => 'email', 'required' => false, 'locked' => true],
@@ -201,6 +202,12 @@ function gate_context(array $p): array {
     $fields = array_map(function ($f) {
         return array_intersect_key($f, array_flip(['key', 'label', 'type', 'required', 'options', 'help', 'placeholder', 'min', 'max', 'showIf', 'sensitive']));
     }, $live['fields']);
+    // Centres drive the 'centre' choice field + the card's ID prefix/color.
+    $centres = db_all("SELECT name, code FROM centres WHERE status = 'active' ORDER BY name");
+    foreach ($fields as &$f) {
+        if ($f['key'] === 'centre' && $centres) { $f['type'] = 'choice'; $f['options'] = array_column($centres, 'name'); }
+    }
+    unset($f);
     return ['ok' => true, 'gate' => ['name' => $gate['name'], 'cohortId' => $gate['cohortId']],
         'cohort' => $c ? ['cohortId' => $c['cohortId'], 'name' => $c['name']] : null,
         'form' => ['version' => (int)$live['version'], 'fields' => $fields],
@@ -211,7 +218,15 @@ function gate_register(array $p): array {
     $gate = gate_resolve((string)($p['gate'] ?? ''));
     if (!$gate) return ['ok' => false, 'error' => 'gate_invalid'];
     $live = form_live();
-    $v = form_validate_submission($live['fields'], is_array($p['data'] ?? null) ? $p['data'] : []);
+    // The centre choice is driven by the centres table (same source the gate
+    // context serves) — validate against it, not the stored placeholder.
+    $fields = $live['fields'];
+    $centreNames = array_column(db_all("SELECT name FROM centres WHERE status = 'active'"), 'name');
+    if ($centreNames) {
+        foreach ($fields as &$f) if ($f['key'] === 'centre') { $f['type'] = 'choice'; $f['options'] = $centreNames; }
+        unset($f);
+    }
+    $v = form_validate_submission($fields, is_array($p['data'] ?? null) ? $p['data'] : []);
     if (empty($v['ok'])) return $v;
     $d = $v['data'];
 
@@ -329,6 +344,7 @@ function parent_verify_submit(array $p): array {
     }
     db_update('qr_codes', ['status' => 'assigned', 'studentId' => $s['studentId'], 'assignedName' => (string)$s['handle'], 'assignedAt' => now_iso(), 'cohortId' => $s['cohortId']], ['token' => $qr['token']]);
     db_update('summer_students', ['regStatus' => 'verified', 'verifiedAt' => now_iso(), 'token' => $qr['token'], 'updatedAt' => now_iso()], ['studentId' => $s['studentId']]);
+    card_display_id(db_row('SELECT * FROM summer_students WHERE studentId = ?', [$s['studentId']]) ?: $s);
 
     $feedback = substr(trim((string)($p['feedback'] ?? '')), 0, 1000);
     audit('registration.verified', null, $s['studentId'], ['feedback' => $feedback !== ''], '');
@@ -358,4 +374,97 @@ function admin_registrations_remind(array $p): array {
     $channels = registration_send_verification($studentId);
     audit('registration.remind', $g['requester']['memberId'], $studentId, ['channels' => $channels], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'channels' => $channels];
+}
+
+/* ── Centres (admin-managed: name + code + card accent color) ─────────────── */
+
+function admin_centres_list(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    return ['ok' => true, 'centres' => db_all("SELECT centreId, name, code, color, status FROM centres ORDER BY name")];
+}
+
+function admin_centres_upsert(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $d = is_array($p['data'] ?? null) ? $p['data'] : [];
+    $name = substr(trim((string)($d['name'] ?? '')), 0, 80);
+    $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($d['code'] ?? '')));
+    $color = (string)($d['color'] ?? '#76B043');
+    if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name'];
+    if (strlen($code) < 1 || strlen($code) > 4) return ['ok' => false, 'error' => 'bad_code'];
+    if (!preg_match('/^#[0-9a-fA-F]{6}$/', $color)) return ['ok' => false, 'error' => 'bad_color'];
+    $id = (string)($d['centreId'] ?? '');
+    $existing = $id !== '' ? db_row('SELECT * FROM centres WHERE centreId = ?', [$id]) : null;
+    // The code is the printed ID prefix — it must stay unique across centres.
+    $clash = db_row('SELECT centreId FROM centres WHERE code = ? LIMIT 1', [$code]);
+    if ($clash && (!$existing || $clash['centreId'] !== $id)) return ['ok' => false, 'error' => 'code_taken'];
+    $row = ['name' => $name, 'code' => $code, 'color' => $color,
+        'status' => in_array((string)($d['status'] ?? 'active'), ['active', 'archived'], true) ? (string)($d['status'] ?? 'active') : 'active',
+        'updatedAt' => now_iso()];
+    if ($existing) db_update('centres', $row, ['centreId' => $id]);
+    else { $id = 'CTR-' . strtoupper(rand_hex(4)); db_insert('centres', $row + ['centreId' => $id, 'createdAt' => now_iso()]); }
+    audit('centre.upsert', $g['requester']['memberId'], $id, ['code' => $code], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'centreId' => $id];
+}
+
+function admin_centres_delete(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $n = db_exec('DELETE FROM centres WHERE centreId = ?', [(string)($p['centreId'] ?? '')]);
+    if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    audit('centre.delete', $g['requester']['memberId'], (string)$p['centreId'], [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/**
+ * The printed card ID: CODE-YY-serial (e.g. IJ-26-001), allocated once per
+ * student, serialled per centre + year in allocation order.
+ */
+function card_display_id(array $student): string {
+    if (!empty($student['displayId'])) return (string)$student['displayId'];
+    $centre = db_row("SELECT code FROM centres WHERE (name = ? OR code = ?) AND status = 'active' LIMIT 1",
+        [(string)($student['centre'] ?? ''), strtoupper((string)($student['centre'] ?? ''))]);
+    $code = $centre ? (string)$centre['code'] : 'ST';
+    $yy = gmdate('y');
+    $n = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE displayId LIKE ?", [$code . '-' . $yy . '-%'])['c'] ?? 0) + 1;
+    $displayId = $code . '-' . $yy . '-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT);
+    // Serial race safety on shared hosting: bump until free (bounded).
+    for ($i = 0; $i < 50 && db_row('SELECT id FROM summer_students WHERE displayId = ?', [$displayId]); $i++) {
+        $n++; $displayId = $code . '-' . $yy . '-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT);
+    }
+    db_update('summer_students', ['displayId' => $displayId], ['studentId' => $student['studentId']]);
+    return $displayId;
+}
+
+/** Everything the card studio needs to draw front + back for students. */
+function admin_cards_data(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $c = summer_ensure_cohort();
+    $where = "cohortId = ? AND regStatus = 'verified' AND token != ''";
+    $params = [$c['cohortId']];
+    if (!empty($p['studentId'])) { $where .= ' AND studentId = ?'; $params[] = (string)$p['studentId']; }
+    $rows = db_all("SELECT * FROM summer_students WHERE $where ORDER BY id ASC LIMIT 500", $params);
+    $centres = [];
+    foreach (db_all("SELECT name, code, color FROM centres WHERE status = 'active'") as $cr) {
+        $centres[strtolower($cr['name'])] = $cr;
+    }
+    $cards = [];
+    foreach ($rows as $s) {
+        $ctr = $centres[strtolower((string)$s['centre'])] ?? null;
+        $names = preg_split('/\s+/', trim((string)$s['fullName'])) ?: [''];
+        $first = array_shift($names);
+        $cards[] = [
+            'studentId' => $s['studentId'],
+            'firstName' => $first, 'surname' => implode(' ', $names),
+            'track' => (string)$s['track'],
+            'centre' => ['name' => $ctr['name'] ?? (string)$s['centre'], 'code' => $ctr['code'] ?? 'ST', 'color' => $ctr['color'] ?? '#76B043'],
+            'displayId' => card_display_id($s),
+            'token' => (string)$s['token'],
+            'photoUrl' => (string)$s['photoUrl'],
+        ];
+    }
+    // Program identity block — admin-editable via settings key 'idcard'.
+    $cfg = setting_get('idcard');
+    $program = is_array($cfg) ? $cfg : [];
+    $program += ['program' => 'LCASP', 'year' => gmdate('Y'), 'motto' => 'EMPOWERED 360°',
+        'website' => 'sts.afrovanguard.org.ng', 'phone' => '+234 903 777 6318'];
+    return ['ok' => true, 'cards' => $cards, 'program' => $program];
 }

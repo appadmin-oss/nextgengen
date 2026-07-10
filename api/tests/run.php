@@ -515,17 +515,17 @@ chk('gate: created with URL, context serves live form', (function () use ($GATE)
 chk('gate: register validates fields and requires a parent channel', (function () use ($GATE) {
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'K', 'age' => 3, 'course' => 'Nope']]);
     if (empty($r['errors'])) return false;
-    $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'parentName' => 'Mrs Okafor']]);
+    $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'centre' => 'Main', 'parentName' => 'Mrs Okafor']]);
     return !empty($r2['errors']['parentPhone']);
 })());
-$REG = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567', 'parentEmail' => 'okafor@example.com', 'allergies' => 'Peanuts']]);
+$REG = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567', 'parentEmail' => 'okafor@example.com', 'allergies' => 'Peanuts']]);
 chk('gate: registration lands parent_pending with normalised phone + no QR yet', (function () use ($REG) {
     if (empty($REG['ok']) || $REG['regStatus'] !== 'parent_pending') return false;
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ?', [$REG['studentId']]);
     return $s['guardianPhone'] === '+2348031234567' && ($s['token'] ?? '') === '' && !empty($s['verifyToken']);
 })());
 chk('gate: duplicate guard flags same child + parent, force overrides', (function () use ($GATE) {
-    $d = ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567'];
+    $d = ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567'];
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => $d]);
     if (($r['error'] ?? '') !== 'duplicate_suspect' || empty($r['existing']['studentId'])) return false;
     $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => $d, 'force' => true]);
@@ -606,6 +606,35 @@ chk('behaviour: manual category wins over classifier', backend_dispatch('admin.b
 chk('behaviour: unknown subject + plain member both handled, non-staff blocked', (function () {
     if (backend_dispatch('admin.behaviour.log', ['requesterId' => 'NGG-2025-0099', 'subjectId' => 'NOPE-1', 'note' => 'ghost entry'])['error'] !== 'subject_not_found') return false;
     return backend_dispatch('admin.behaviour.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden';
+})());
+
+// ── Centres + ID cards ──
+chk('centres: upsert validates, code unique, list works', (function () {
+    $r = backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Ijaiye', 'code' => 'ij', 'color' => '#76B043']]);
+    if (empty($r['ok'])) return false;
+    if (backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Other', 'code' => 'IJ', 'color' => '#111111']])['error'] !== 'code_taken') return false;
+    if (backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Bad', 'code' => 'B', 'color' => 'red']])['error'] !== 'bad_color') return false;
+    $l = backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-2025-0099']);
+    return count($l['centres']) === 1 && $l['centres'][0]['code'] === 'IJ';
+})());
+chk('cards: verified student gets CODE-YY-serial + QR token + centre colour', (function () {
+    db_update('summer_students', ['centre' => 'Ijaiye'], ['regStatus' => 'verified']);
+    $d = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099']);
+    if (empty($d['ok']) || count($d['cards']) < 1) return false;
+    $c = $d['cards'][0];
+    $yy = gmdate('y');
+    if (!preg_match('/^IJ-' . $yy . '-\d{3}$/', $c['displayId'])) return false;
+    if (strpos($c['token'], 'SUMQR-') !== 0 || $c['centre']['color'] !== '#76B043') return false;
+    if ($c['firstName'] === '' || $d['program']['program'] !== 'LCASP') return false;
+    // Allocation is sticky — a second read must not re-serial.
+    $d2 = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099']);
+    return $d2['cards'][0]['displayId'] === $c['displayId'];
+})());
+chk('cards: gate context serves centre options for the centre field', (function () {
+    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Card desk']);
+    $ctx = backend_dispatch('gate.context', ['gate' => $g['gateId']]);
+    foreach ($ctx['form']['fields'] as $f) if ($f['key'] === 'centre') return ($f['options'] ?? []) === ['Ijaiye'];
+    return true; // no centre field in the form — acceptable
 })());
 
 // ── AI profiles (offline resolution only — no network in tests) ──

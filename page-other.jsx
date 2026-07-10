@@ -1695,4 +1695,181 @@ function GateCheckin({ g, card, inputS, gold, goldInk }) {
   );
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage });
+/* ============================================================================
+   ID Card Studio (/cards) — renders the 2026 Summer ID design exactly:
+   590×1004 front (logo lockup · circular photo with soft shadow · crimson
+   first name / navy surname in TT Firs Neue · track · QR of the check-in
+   token · centre-coloured bar) + back (Ìlú Èkó Pagkaki watermark · LCASP
+   year · program contacts · printed ID). Admin-managed centres drive the
+   bar colour and the CODE-YY-serial ID. Print = true 54×92mm per card.
+   ============================================================================ */
+const CARD_CRIMSON = "#E4155F", CARD_NAVY = "#1B2B6B";
+
+function CardQR({ token, size }) {
+  const [src, setSrc] = React.useState("");
+  React.useEffect(() => {
+    const draw = () => {
+      try {
+        const q = window.qrcode(0, "M");
+        q.addData(String(token)); q.make();
+        setSrc(q.createDataURL(8, 0));
+      } catch (_) {}
+    };
+    if (window.qrcode) { draw(); return; }
+    let sc = document.getElementById("ngg-qrlib");
+    if (!sc) { sc = document.createElement("script"); sc.id = "ngg-qrlib"; sc.src = "/vendor/qrcode.min.js"; document.head.appendChild(sc); }
+    sc.addEventListener("load", draw, { once: true });
+  }, [token]);
+  return src ? <img src={src} alt={"QR " + token} style={{ width: size, height: size, imageRendering: "pixelated" }}/> : <div style={{ width: size, height: size, background: "#f2f2f2" }}/>;
+}
+
+function CardFront({ card, S }) {
+  const px = (n) => n * S;
+  return (
+    <div className="idcard" style={{ width: px(590), height: px(1004), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
+      <img src="/assets/idcard/logo-lockup.png" alt="Lagos Child Project × STS" style={{ position: "absolute", top: px(58), left: "50%", transform: "translateX(-50%)", width: px(290) }}/>
+      <div style={{ position: "absolute", top: px(182), left: "50%", transform: "translateX(-50%)", width: px(372), height: px(372), borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", boxShadow: `0 ${px(16)}px ${px(38)}px rgba(27,43,107,.16)` }}>
+        {card.photoUrl && <img src={card.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>}
+      </div>
+      <div style={{ position: "absolute", top: px(588), left: "50%", transform: "translateX(-50%)", width: px(30), height: px(6), borderRadius: px(3), background: "#8FA3C8" }}/>
+      <div style={{ position: "absolute", top: px(614), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(52), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1) }}>{card.firstName}</div>
+      <div style={{ position: "absolute", top: px(668), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(56), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding: `0 ${px(16)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
+      <div style={{ position: "absolute", top: px(732), left: 0, right: 0, textAlign: "center", fontWeight: 700, fontSize: px(22), color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(2) }}>{card.track}</div>
+      <div style={{ position: "absolute", top: px(776), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#E4E4E4" }}/>
+      <div style={{ position: "absolute", top: px(812), left: "50%", transform: "translateX(-50%)", border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff" }}>
+        <CardQR token={card.token} size={px(112)}/>
+      </div>
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: card.centre.color }}/>
+    </div>
+  );
+}
+
+function CardBack({ card, program, S }) {
+  const px = (n) => n * S;
+  const rows = [
+    ["WEBSITE", program.website, "M2 12a10 10 0 1 0 20 0 10 10 0 0 0-20 0Zm2 0h16M12 2c3 3.5 3 16.5 0 20-3-3.5-3-16.5 0-20Z"],
+    ["PHONE", program.phone, "M6 3h4l2 5-2.5 1.5a12 12 0 0 0 5 5L16 12l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 4 5a2 2 0 0 1 2-2Z"],
+    ["CENTRE", (card.centre.name || "").toUpperCase(), "M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11Zm0-8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"],
+    ["ID", card.displayId, "M4 5h16v14H4zM8 9.5a2 2 0 1 0 4 0 2 2 0 0 0-4 0ZM7 15c.7-1.8 2.2-2.5 3-2.5s2.3.7 3 2.5M15 10h3M15 13h3"],
+  ];
+  const wm = [];
+  for (let i = 0; i < 9; i++) wm.push(<div key={i} style={{ fontFamily: '"Pagkaki", Georgia, serif', fontWeight: 800, fontSize: px(86), lineHeight: 1.28, color: "rgba(27,43,107,.045)", whiteSpace: "nowrap", textTransform: "uppercase", marginLeft: (i % 2 ? px(-70) : 0) }}>ÈKÓ ÌLÚ ÈKÓ ÌLÚ</div>);
+  return (
+    <div className="idcard" style={{ width: px(590), height: px(1004), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>{wm}</div>
+      <div style={{ position: "absolute", top: px(170), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(62), letterSpacing: px(-1) }}>
+        <span style={{ color: CARD_CRIMSON }}>{program.program}</span> <span style={{ color: CARD_NAVY }}>{program.year}</span>
+      </div>
+      <div style={{ position: "absolute", top: px(244), left: 0, right: 0, textAlign: "center", fontWeight: 800, fontSize: px(23), color: CARD_NAVY, letterSpacing: px(2) }}>{program.motto}</div>
+      <div style={{ position: "absolute", top: px(296), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#D9D9D9" }}/>
+      <div style={{ position: "absolute", top: px(342), left: px(155), display: "flex", flexDirection: "column", gap: px(28) }}>
+        {rows.map(([label, value, path]) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: px(22) }}>
+            <span style={{ width: px(46), height: px(46), borderRadius: "50%", background: "#101010", display: "grid", placeItems: "center", flex: "none" }}>
+              <svg width={px(24)} height={px(24)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8"><path d={path}/></svg>
+            </span>
+            <span>
+              <span style={{ display: "block", fontWeight: 800, fontSize: px(19), color: "#101010", letterSpacing: px(1) }}>{label}</span>
+              <span style={{ display: "block", fontWeight: 500, fontSize: px(19), color: "#101010", marginTop: px(2) }}>{value}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "absolute", top: px(714), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#D9D9D9" }}/>
+      <img src="/assets/idcard/logo-lockup.png" alt="" style={{ position: "absolute", top: px(756), left: "50%", transform: "translateX(-50%)", width: px(250) }}/>
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: CARD_NAVY }}/>
+    </div>
+  );
+}
+
+function CardStudio() {
+  const auth = (window.useAuth || (() => null))();
+  const [data, setData] = React.useState(null);
+  const [centres, setCentres] = React.useState([]);
+  const [state, setState] = React.useState("loading");
+  const [cName, setCName] = React.useState(""); const [cCode, setCCode] = React.useState(""); const [cColor, setCColor] = React.useState("#76B043");
+  const [msg, setMsg] = React.useState("");
+  const navy = "#16223e", gold = "#ffce54";
+
+  const load = React.useCallback(() => {
+    setState("loading");
+    Promise.all([NGGApi.admin.registration.cards(), NGGApi.admin.registration.centres()])
+      .then(([c, ct]) => { setData(c); setCentres(ct.centres || []); setState("ready"); })
+      .catch(e => setState((e.code || e.message) === "unauthorized" ? "need-auth" : "error"));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(); }, [auth && auth.isSignedIn]);
+
+  const addCentre = async () => {
+    setMsg("");
+    try { await NGGApi.admin.registration.centreUpsert({ name: cName, code: cCode, color: cColor }); setCName(""); setCCode(""); load(); }
+    catch (e) { setMsg(e.code === "code_taken" ? "That code is already used by another centre." : "Couldn't save — check name (2+ chars) and code (1–4 letters)."); }
+  };
+
+  const shell = (ch) => (
+    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 20px 80px" }}>
+      <div style={{ maxWidth: 1120, margin: "0 auto" }}>{ch}</div>
+    </div>
+  );
+  if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
+  if (state === "need-auth") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 22 }}>Staff sign-in required</h1><button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Sign in →</button></div>);
+  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load the studio</h1><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
+
+  const cards = (data && data.cards) || [];
+  const program = (data && data.program) || {};
+  return shell(<>
+    <style>{`
+      @font-face { font-family: "TT Firs Neue"; src: url("/assets/fonts/tt-firs-neue-800.woff2") format("woff2"); font-weight: 800; font-display: swap; }
+      @font-face { font-family: "Pagkaki"; src: url("/assets/fonts/pagkaki.woff2") format("woff2"); font-display: swap; }
+      .card-pair { display: flex; gap: 14px; }
+      @media print {
+        body * { visibility: hidden; }
+        .print-zone, .print-zone * { visibility: visible; }
+        .print-zone { position: absolute; left: 0; top: 0; background: #fff; }
+        .idcard { width: 54mm !important; height: 92mm !important; page-break-inside: avoid; box-shadow: none !important; }
+        .card-pair { gap: 4mm; margin: 3mm; page-break-inside: avoid; float: left; }
+      }
+    `}</style>
+    <div className="no-print" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 18, marginBottom: 26 }}>
+      <div>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>ID CARD STUDIO · {String(program.program || "")} {String(program.year || "")}</div>
+        <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{cards.length} verified student{cards.length === 1 ? "" : "s"} ready</h1>
+        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0", maxWidth: 520 }}>Cards render for verified students only — the ID and QR bind at parent consent. Print uses true 54×92mm per card.</p>
+      </div>
+      <button onClick={() => window.print()} disabled={!cards.length} style={{ padding: "13px 24px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Print all ({cards.length * 2} faces)</button>
+    </div>
+
+    <div className="no-print" style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, padding: 16, marginBottom: 30 }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 10 }}>CENTRES — CODE + CARD COLOUR</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        {centres.map(c => (
+          <span key={c.centreId} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: 99, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.15)", fontSize: 13, fontWeight: 600 }}>
+            <span style={{ width: 14, height: 14, borderRadius: "50%", background: c.color, flex: "none" }}/>
+            {c.name} · <span style={{ fontFamily: "var(--font-mono, monospace)" }}>{c.code}</span>
+            <button onClick={async () => { if (confirm("Remove " + c.name + "?")) { await NGGApi.admin.registration.centreDelete(c.centreId).catch(() => {}); load(); } }} style={{ background: "none", border: "none", color: "rgba(230,238,255,.5)", cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
+          </span>
+        ))}
+        {!centres.length && <span style={{ fontSize: 13, color: "rgba(230,238,255,.55)" }}>No centres yet — add the first below. New registrations then pick from this list.</span>}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <input value={cName} onChange={e => setCName(e.target.value)} placeholder="Centre name (Ijaiye)" style={{ flex: "1 1 180px", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14 }}/>
+        <input value={cCode} onChange={e => setCCode(e.target.value.toUpperCase())} placeholder="CODE (IJ)" maxLength={4} style={{ width: 110, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
+        <input type="color" value={cColor} onChange={e => setCColor(e.target.value)} style={{ width: 46, height: 40, border: "none", borderRadius: 10, background: "none", cursor: "pointer" }} aria-label="Card colour"/>
+        <button onClick={addCentre} disabled={cName.trim().length < 2 || !cCode.trim()} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>Add centre</button>
+      </div>
+      {msg && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "10px 0 0" }}>{msg}</p>}
+    </div>
+
+    <div className="print-zone" style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
+      {cards.map(card => (
+        <div key={card.studentId} className="card-pair">
+          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardFront card={card} S={0.5}/></div>
+          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5}/></div>
+        </div>
+      ))}
+      {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No verified students yet — cards appear here the moment a parent consents.</p>}
+    </div>
+  </>);
+}
+
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio });
