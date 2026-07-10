@@ -24,13 +24,15 @@ function HomePage({ setPage }) {
 function Hero({ setPage }) {
   const session = useSession();
   const stats = useStats();
+  const site = useSiteContent();
   // Live badge copy: when we know the session, name it; when it hasn't
   // started yet, show the countdown. Falls back to evergreen copy.
   const daysToStart = sessionDaysToStart(session);
+  const liveWord = site.heroEyebrowLive || "Live now";
   const badge = !session
     ? "Applications open · current session"
     : session.isActive
-      ? "Live now · " + sessionLabel(session, "current session")
+      ? liveWord + " · " + sessionLabel(session, "current session")
       : daysToStart > 0
         ? sessionLabel(session, "Next cohort") + " · starts in " + daysToStart + (daysToStart === 1 ? " day" : " days")
         : "Applications open · " + sessionLabel(session, "next cohort");
@@ -55,24 +57,24 @@ function Hero({ setPage }) {
               </span>
             </div>
             <h1 className="display" style={{fontSize:"clamp(52px, 6.4vw, 108px)", margin:0, color:"white", lineHeight:0.94}}>
-              <Kinetic as="span" text="Africa's next geniuses" by="word"/><br/>
-              <Kinetic as="span" text="are " by="word" delay={300}/>
+              <Kinetic as="span" text={site.heroTitle1 || "Africa's next geniuses"} by="word"/><br/>
+              <Kinetic as="span" text={(site.heroTitle2 || "are") + " "} by="word" delay={300}/>
               <em className="shimmer-gold" style={{fontStyle:"normal"}}>
-                <Kinetic as="span" text="not waiting" by="word" delay={420}/>
+                <Kinetic as="span" text={site.heroEmphasis || "not waiting"} by="word" delay={420}/>
               </em>
               <Kinetic as="span" text="." by="word" delay={620}/>
             </h1>
             <p data-reveal className="reveal" style={{fontSize:19, lineHeight:1.55, color:"rgba(255,255,255,0.82)", maxWidth:560, marginTop:28, "--reveal-delay":"500ms"}}>
-              A twelve-week growth journey for teenagers, 10–17. From summer student to vanguard leader — by mission, mentorship and the discipline of public work.
+              {site.heroSubhead || "A twelve-week growth journey for teenagers, 10–17. From summer student to vanguard leader — by mission, mentorship and the discipline of public work."}
             </p>
             <div data-reveal className="reveal" style={{display:"flex", gap:12, marginTop:40, flexWrap:"wrap", "--reveal-delay":"650ms"}}>
               <Magnetic>
                 <button className="btn btn-gold btn-lg" onClick={() => setPage("summer")}>
-                  Join the Summer Program →
+                  {site.heroCtaPrimary || "Join the Summer Program"} →
                 </button>
               </Magnetic>
               <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("anchor")}>
-                Explore Anchor 12
+                {site.heroCtaSecondary || "Explore Anchor 12"}
               </button>
             </div>
             <div style={{display:"flex", gap:24, marginTop:52, color:"rgba(255,255,255,0.7)", fontSize:13, alignItems:"center", flexWrap:"wrap"}}>

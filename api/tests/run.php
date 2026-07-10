@@ -227,6 +227,14 @@ chk('member detail has journal + progress', isset($det['detail']['journal']) && 
 backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['applications_open' => false, 'featured_session_id' => 'SUMMER-' . gmdate('Y')]]);
 $set = backend_dispatch('admin.settings.get', ['requesterId' => 'NGG-2025-0099'])['settings'];
 chk('settings persist (applications closed)', $set['applications_open'] === false);
+// Site content: defaults, admin edit, public read, blank restores default
+chk('site content serves defaults', backend_dispatch('public.siteContent', [])['site']['heroEmphasis'] === 'not waiting');
+backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['site_content' => ['heroEmphasis' => 'not waiting anymore', 'heroCtaPrimary' => 'Start now']]]);
+chk('site content edit goes live', backend_dispatch('public.siteContent', [])['site']['heroEmphasis'] === 'not waiting anymore');
+chk('unedited site keys keep defaults', backend_dispatch('public.siteContent', [])['site']['heroTitle1'] === "Africa's next geniuses");
+backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['site_content' => ['heroEmphasis' => '']]]);
+chk('blank site field restores its default', backend_dispatch('public.siteContent', [])['site']['heroEmphasis'] === 'not waiting');
+chk('volunteer settings roundtrip', (function () { backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['volunteer_session_hours' => 6, 'volunteer_applications_open' => false]]); $g = backend_dispatch('admin.settings.get', ['requesterId' => 'NGG-2025-0099'])['settings']; return $g['volunteer_session_hours'] === 6 && $g['volunteer_applications_open'] === false; })());
 chk('apply blocked when closed', backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'X Y', 'email' => 'x@example.com', 'age' => 14])['error'] === 'applications_closed');
 chk('newsletter list works', is_array(backend_dispatch('admin.newsletter.list', ['requesterId' => 'NGG-2025-0099'])['subscribers']));
 

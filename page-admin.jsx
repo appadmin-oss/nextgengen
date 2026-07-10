@@ -70,6 +70,7 @@ function AdminPage({ setPage }) {
           {view === "newsletter" && <AdminNewsletter/>}
           {view === "messages" && <AdminContact/>}
           {view === "settings" && <AdminSettings/>}
+          {view === "site" && <AdminSite/>}
           {view === "sessions" && <AdminSessions/>}
           {view === "missions" && <AdminMissions/>}
           {view === "anchor" && <AdminAnchor/>}
@@ -200,6 +201,7 @@ function AdminNav({ section, setSection, hasCap }) {
       { id: "events",    label: "Events",     icon: "▶", cap: "content" },
       { id: "posts",     label: "Posts",      icon: "✎", cap: "content" },
       { id: "broadcast", label: "Announce",   icon: "📣", cap: "content" },
+      { id: "site",      label: "Site content", icon: "◧", cap: "settings" },
     ]},
     { h: "Inbox", items: [
       { id: "newsletter",label: "Newsletter", icon: "✦", cap: "inbox" },
@@ -240,7 +242,7 @@ function titleFor(s) {
   return {
     home: "Overview", members: "Members", mentors: "Mentors", mentorship: "Mentorship", sessions: "Sessions",
     missions: "Anchor missions", anchor: "Anchor Journal app", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
-    applications: "Applications", volunteers: "Volunteers", newsletter: "Newsletter", messages: "Messages", settings: "Settings", summer: "Summer School",
+    applications: "Applications", volunteers: "Volunteers", newsletter: "Newsletter", messages: "Messages", settings: "Settings", site: "Site content", summer: "Summer School",
   }[s] || "";
 }
 
@@ -458,7 +460,7 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
             <FieldSelect label="Status" value={d.status||"active"} onChange={v => set("status", v)} options={["active","graduated-ngg","graduated-vanguard","suspended","inactive"]}/>
             <Field label="Track" value={d.track||""} onChange={v => set("track", v)}/>
           </div>
-          <Field label="Photo URL" value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/>
+          <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
           <Field label="Parent email" value={d.parentEmail||""} onChange={v => set("parentEmail", v)} type="email"/>
           <Field label="School" value={d.school||""} onChange={v => set("school", v)}/>
           {/* Staff level — only super_admins (the 'rbac' capability) may assign roles. */}
@@ -534,7 +536,7 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
           <FieldSelect label="Centre" value={d.centre||"Egbeda"} onChange={v => set("centre", v)} options={["Egbeda","Ayobo","Both"]}/>
           <FieldSelect label="Status" value={d.status||"pending-checks"} onChange={v => set("status", v)} options={["active","pending-checks","on-break","retired"]}/>
           <Field label="Max mentees" value={d.maxMentees||"8"} onChange={v => set("maxMentees", v)} type="number"/>
-          <FieldUpload label="Photo" value={d.photoUrl||""} onChange={v => set("photoUrl", v)} kind="avatar"/>
+          <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
           <FieldTextarea label="Public bio" value={d.bio||""} onChange={v => set("bio", v)}/>
           <div className="admin-fields-row">
             <FieldSelect label="Source" value={d.source||"ngg"} onChange={v => set("source", v)} options={["ngg","afrovanguard"]}/>
@@ -1059,7 +1061,7 @@ function SummerEnroll({ cohort, blank, onDone }) {
           <Field label="Guardian name" value={d.guardianName} onChange={v => set("guardianName", v)}/>
           <Field label="Guardian phone" value={d.guardianPhone} onChange={v => set("guardianPhone", v)}/>
         </div>
-        <FieldUpload label="Photo" value={d.photoUrl} onChange={v => set("photoUrl", v)} kind="avatar"/>
+        <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl} onChange={v => set("photoUrl", v)}/></div>
         <Field label="QR card token (optional — auto-picks a blank card if empty)" value={d.token} onChange={v => set("token", v)} placeholder="SUMQR-XXXXXXXX"/>
         <button className="btn btn-primary" disabled={busy || blank === 0}>{busy ? "Enrolling…" : "Enrol student →"}</button>
       </form>
@@ -2407,7 +2409,68 @@ function AdminSettings() {
       <div className="admin-fields" style={{ maxWidth: 520 }}>
         <FieldCheckbox label="Teen applications open" value={s.applications_open} onChange={v => setS(o => ({ ...o, applications_open: v }))}/>
         <FieldCheckbox label="Mentor applications open" value={s.mentor_applications_open} onChange={v => setS(o => ({ ...o, mentor_applications_open: v }))}/>
+        <FieldCheckbox label="Volunteer registration open" value={s.volunteer_applications_open} onChange={v => setS(o => ({ ...o, volunteer_applications_open: v }))}/>
+        <FieldCheckbox label="Text volunteer IDs by SMS (when phone on file)" value={s.volunteer_sms_notify} onChange={v => setS(o => ({ ...o, volunteer_sms_notify: v }))}/>
+        <Field label="Hours credited per volunteer session" type="number" value={s.volunteer_session_hours} onChange={v => setS(o => ({ ...o, volunteer_session_hours: v }))}/>
         <FieldSelect label="Featured session (homepage countdown)" value={s.featured_session_id || ""} onChange={v => setS(o => ({ ...o, featured_session_id: v }))} options={[""].concat(sessions.map(x => x.sessionId))}/>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Site content — homepage hero + taglines (website management)
+// ============================================================================
+function AdminSite() {
+  const [c, setC] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+  const load = () => NGGApi.admin.settings.get().then(r => setC({ ...(r.settings.site_content || {}) })).catch(e => toast.error(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  const set = (k) => (v) => setC(o => ({ ...o, [k]: v }));
+  const save = async () => { setBusy(true); try { await NGGApi.admin.settings.set({ site_content: c }); setSaved(true); setTimeout(() => setSaved(false), 2200); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
+  if (!c) return <div className="admin-section"><div className="dash-spinner"/></div>;
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Site content</h2>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}><span className="mono" style={{ color: saved ? "var(--lime-ink)" : "var(--ink-500)" }}>{saved ? "SAVED ✓ · live" : busy ? "SAVING…" : ""}</span><button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>Publish</button></div>
+      </div>
+      <p className="admin-hint">Edit the public homepage copy. Changes go live immediately — leave a field blank to restore its default.</p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "start" }} className="site-editor">
+        <div className="admin-fields">
+          <div className="mono admin-cell-sub" style={{ marginBottom: 4 }}>HERO</div>
+          <Field label="'Live now' word" value={c.heroEyebrowLive || ""} onChange={set("heroEyebrowLive")} placeholder="Live now"/>
+          <Field label="Headline line 1" value={c.heroTitle1 || ""} onChange={set("heroTitle1")} placeholder="Africa's next geniuses"/>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Field label="Line 2 lead" value={c.heroTitle2 || ""} onChange={set("heroTitle2")} placeholder="are"/>
+            <Field label="Line 2 emphasis (gold)" value={c.heroEmphasis || ""} onChange={set("heroEmphasis")} placeholder="not waiting"/>
+          </div>
+          <FieldTextarea label="Sub-headline" rows={3} value={c.heroSubhead || ""} onChange={set("heroSubhead")}/>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Field label="Primary button" value={c.heroCtaPrimary || ""} onChange={set("heroCtaPrimary")} placeholder="Join the Summer Program"/>
+            <Field label="Secondary button" value={c.heroCtaSecondary || ""} onChange={set("heroCtaSecondary")} placeholder="Explore Anchor 12"/>
+          </div>
+          <div className="mono admin-cell-sub" style={{ margin: "10px 0 4px" }}>MOVEMENT</div>
+          <FieldTextarea label="Footer tagline" rows={3} value={c.movementTagline || ""} onChange={set("movementTagline")}/>
+        </div>
+
+        {/* Live preview of the hero copy */}
+        <div style={{ position: "sticky", top: 90 }}>
+          <div className="mono admin-cell-sub" style={{ marginBottom: 8 }}>PREVIEW</div>
+          <div style={{ background: "var(--navy-900)", borderRadius: 16, padding: "28px 24px", color: "#fff", overflow: "hidden" }}>
+            <span className="chip chip-on-dark" style={{ fontSize: 10 }}><span className="dot dot-coral"/> {(c.heroEyebrowLive || "Live now").toUpperCase()} · SUMMER 2026</span>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 34, lineHeight: 0.98, margin: "12px 0 10px" }}>
+              {c.heroTitle1 || "Africa's next geniuses"}<br/>{c.heroTitle2 || "are"} <span style={{ color: "var(--gold-500)" }}>{c.heroEmphasis || "not waiting"}</span>.
+            </div>
+            <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 13.5, lineHeight: 1.5, margin: "0 0 16px" }}>{c.heroSubhead || "A twelve-week growth journey…"}</p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <span className="btn btn-gold btn-sm">{c.heroCtaPrimary || "Join the Summer Program"} →</span>
+              <span className="btn btn-on-dark-ghost btn-sm">{c.heroCtaSecondary || "Explore Anchor 12"}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

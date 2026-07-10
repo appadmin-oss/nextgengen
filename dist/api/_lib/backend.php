@@ -163,6 +163,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.apply'            => 'public_apply',
             'public.volunteer.context' => 'public_volunteer_context',
             'public.cert'             => 'public_cert',
+            'public.siteContent'      => 'public_site_content',
             'public.instructorRoster' => 'public_instructor_roster',
             'public.contact'          => 'public_contact',
         ];

@@ -39,6 +39,13 @@ function useStats() {
     NGGApi.public.stats().then(r => r.stats || null));
 }
 
+/* Editable site copy (homepage hero + taglines), admin-managed via Site
+   settings. Falls back to {} so callers use their own hardcoded defaults. */
+function useSiteContent() {
+  return usePublicData("siteContent", () =>
+    NGGApi.public.siteContent().then(r => r.site || {}).catch(() => ({}))) || {};
+}
+
 /* Human session label, e.g. "SUM · 2026" → falls back to given text. */
 function sessionLabel(session, fallback) {
   if (!session) return fallback;
@@ -639,6 +646,7 @@ function Footer({ setPage }) {
   const go = (id) => () => setPage(id);
   const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false, member: null };
   const session = useSession();
+  const site = useSiteContent();
 
   const CENTRES = [
     { id: "egbeda", name: "CACENTRE Egbeda", lga: "Alimosho · Lagos", line: "Saturdays · 09:00 – 13:00", note: "Main hub" },
@@ -752,7 +760,7 @@ function Footer({ setPage }) {
                 </div>
               </div>
               <p>
-                Not a school. Not a club. The structured runway from teenage potential to African leadership — built mission by mission, week by week.
+                {site.movementTagline || "Not a school. Not a club. The structured runway from teenage potential to African leadership — built mission by mission, week by week."}
               </p>
               <div className="footer-socials" aria-label="Social channels">
                 <SocialLink label="Instagram" href={CONTACT.socials.instagram} icon={SOCIAL_ICONS.instagram}/>
@@ -915,6 +923,94 @@ function Sparkline({ data, color = "var(--gold-500)", w = 120, h = 36, fill = fa
    (GET /api/public/config.php → uploads.enabled). On success calls
    onUploaded(secureUrl, meta). Renders nothing when uploads are disabled,
    so callers can still show a paste-a-URL field alongside. */
+/* ---- PhotoCapture — camera-first headshot, with upload + link fallbacks ----
+   Used wherever a person's photo is set (admin enrol, member editor, gate
+   registration). The site TAKES the picture; uploading a file or pasting a
+   link are secondary options. Editors can re-take/re-upload any time. */
+function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
+  const [mode, setMode] = React.useState("idle"); // idle | camera | link
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const [linkVal, setLinkVal] = React.useState("");
+  const videoRef = React.useRef(null);
+  const streamRef = React.useRef(null);
+  const fileRef = React.useRef(null);
+
+  const stop = () => { if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } };
+  React.useEffect(() => stop, []);
+
+  const startCamera = async () => {
+    setErr(""); setMode("camera");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setErr("No camera on this device — upload a photo or paste a link instead."); setMode("idle"); return; }
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 720 } }, audio: false });
+      streamRef.current = s;
+      if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.play().catch(() => {}); }
+    } catch (_) { setErr("Camera permission denied — upload a photo or paste a link instead."); setMode("idle"); }
+  };
+
+  const uploadBlob = async (blob, name) => {
+    setBusy(true); setErr("");
+    try {
+      const file = blob instanceof File ? blob : new File([blob], name || "headshot.jpg", { type: "image/jpeg" });
+      const up = await NGGApi.uploadFile(file, "headshot");
+      // Face-centred crop + brighten (Cloudinary URL transform).
+      onChange(up.url.replace("/upload/", "/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/"));
+      stop(); setMode("idle");
+    } catch (e) {
+      setErr((e.code || /upload/.test(e.message || "")) ? "Uploads aren't configured on this server — paste an image link instead." : "Couldn't upload — check the connection and try again.");
+    } finally { setBusy(false); }
+  };
+
+  const capture = () => {
+    const v = videoRef.current; if (!v) return;
+    const c = document.createElement("canvas");
+    c.width = 720; c.height = 900;
+    const ctx = c.getContext("2d");
+    // Cover-crop the video frame to a 4:5 portrait.
+    const vw = v.videoWidth || 720, vh = v.videoHeight || 900;
+    const scale = Math.max(c.width / vw, c.height / vh);
+    const dw = vw * scale, dh = vh * scale;
+    ctx.drawImage(v, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
+    c.toBlob(b => b && uploadBlob(b), "image/jpeg", 0.9);
+  };
+
+  return (
+    <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flex: "0 0 auto", background: "var(--bg-sunken, #f4f4f0)", border: "1px solid rgba(12,20,50,0.14)", display: "grid", placeItems: "center", fontSize: size / 3, color: "var(--ink-400, #93939a)" }}>
+        {mode === "camera"
+          ? <video ref={videoRef} playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
+          : value ? <img src={value} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : "📷"}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {mode === "camera" ? (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={capture}>{busy ? "Saving…" : "📸 Capture"}</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { stop(); setMode("idle"); }}>Cancel</button>
+          </div>
+        ) : mode === "link" ? (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input className="admin-input" style={{ flex: "1 1 180px" }} placeholder="https://…/photo.jpg" value={linkVal} onChange={e => setLinkVal(e.target.value)}/>
+            <button type="button" className="btn btn-primary btn-sm" disabled={!linkVal.trim()} onClick={() => { onChange(linkVal.trim()); setMode("idle"); setLinkVal(""); }}>Use</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("idle")}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={startCamera}>{value ? "Re-take" : "Take photo"}</button>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy ? "Uploading…" : "Upload"}</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("link")}>Paste link</button>
+            {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange("")}>Remove</button>}
+            <input ref={fileRef} type="file" accept="image/*" capture="user" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) uploadBlob(f, f.name); }}/>
+          </div>
+        )}
+        <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)", marginTop: 8 }}>
+          {err ? <span style={{ color: "var(--coral)" }}>{err}</span> : (label + " — the site takes the picture; upload or link are optional. Face-centred & brightened automatically.")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Uploader({ kind = "proof", accept, onUploaded, compact }) {
   const [enabled, setEnabled] = useState(null);
   const [busy, setBusy] = useState(false);

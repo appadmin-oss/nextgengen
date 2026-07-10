@@ -4264,3 +4264,6 @@ section p[style*="var(--ink-500)"] {
 .fb-help { font-size: 13px; }
 .fb-add { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px dashed rgba(12,20,50,0.14); }
 :root[data-theme="dark"] .fb-field, :root[data-theme="dark"] .fb-move { background: var(--surface-2, #1a1a24); }
+
+/* Site content editor — stack the preview under the form on narrow screens. */
+@media (max-width: 900px) { .site-editor { grid-template-columns: 1fr !important; } .site-editor > div:last-child { position: static !important; } }

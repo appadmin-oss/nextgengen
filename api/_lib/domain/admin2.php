@@ -190,21 +190,59 @@ function admin_contact_status(array $p): array {
 function admin_settings_get(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     return ['ok' => true, 'settings' => [
-        'applications_open'        => (setting_raw('applications_open') ?? '1') !== '0',
-        'mentor_applications_open' => (setting_raw('mentor_applications_open') ?? '1') !== '0',
-        'featured_session_id'      => setting_raw('featured_session_id') ?? '',
+        'applications_open'         => (setting_raw('applications_open') ?? '1') !== '0',
+        'mentor_applications_open'  => (setting_raw('mentor_applications_open') ?? '1') !== '0',
+        'volunteer_applications_open' => (setting_raw('volunteer_applications_open') ?? '1') !== '0',
+        'volunteer_sms_notify'      => (setting_raw('volunteer_sms_notify') ?? '1') !== '0',
+        'volunteer_session_hours'   => (int)(setting_raw('volunteer_session_hours') ?: 4),
+        'featured_session_id'       => setting_raw('featured_session_id') ?? '',
+        'site_content'              => site_content(),
     ]];
 }
 
 function admin_settings_set(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $data = $p['data'] ?? [];
-    foreach (['applications_open', 'mentor_applications_open', 'featured_session_id'] as $k) {
-        if (array_key_exists($k, $data)) {
-            $v = $data[$k];
-            setting_set($k, is_bool($v) ? ($v ? '1' : '0') : (string)$v, $g['requester']['memberId']);
-        }
+    foreach (['applications_open', 'mentor_applications_open', 'volunteer_applications_open', 'volunteer_sms_notify'] as $k) {
+        if (array_key_exists($k, $data)) setting_set($k, !empty($data[$k]) ? '1' : '0', $g['requester']['memberId']);
+    }
+    if (array_key_exists('volunteer_session_hours', $data)) setting_set('volunteer_session_hours', (string)max(1, min(12, (int)$data['volunteer_session_hours'])), $g['requester']['memberId']);
+    if (array_key_exists('featured_session_id', $data)) setting_set('featured_session_id', (string)$data['featured_session_id'], $g['requester']['memberId']);
+    // Homepage / site copy — validated + length-capped, stored as one JSON blob.
+    if (array_key_exists('site_content', $data) && is_array($data['site_content'])) {
+        setting_set('site_content', site_content_clean($data['site_content']), $g['requester']['memberId']);
     }
     audit('admin.settings.set', $g['requester']['memberId'], '', ['keys' => array_keys((array)$data)], (string)($p['ip'] ?? ''));
     return ['ok' => true];
+}
+
+/** Editable site copy, merged over defaults so the homepage never breaks. */
+function site_content_defaults(): array {
+    return [
+        'heroEyebrowLive'  => 'Live now',
+        'heroTitle1'       => "Africa's next geniuses",
+        'heroTitle2'       => 'are',
+        'heroEmphasis'     => 'not waiting',
+        'heroSubhead'      => 'A twelve-week growth journey for teenagers, 10–17. From summer student to vanguard leader — by mission, mentorship and the discipline of public work.',
+        'heroCtaPrimary'   => 'Join the Summer Program',
+        'heroCtaSecondary' => 'Explore Anchor 12',
+        'movementTagline'  => 'Not a school. Not a club. The structured runway from teenage potential to African leadership — built mission by mission, week by week.',
+    ];
+}
+function site_content(): array {
+    $stored = setting_get('site_content');
+    return array_merge(site_content_defaults(), is_array($stored) ? $stored : []);
+}
+function site_content_clean(array $in): array {
+    $out = [];
+    foreach (site_content_defaults() as $k => $def) {
+        if (!array_key_exists($k, $in)) continue;
+        $v = trim((string)$in[$k]);
+        if ($v !== '') $out[$k] = substr($v, 0, $k === 'heroSubhead' || $k === 'movementTagline' ? 400 : 120);
+    }
+    return $out;
+}
+
+function public_site_content(array $p = []): array {
+    return ['ok' => true, 'site' => site_content()];
 }

@@ -161,6 +161,7 @@
       apply:      (data) => request('/public/apply.php', { body: data }),
       volunteer:  { context: () => request('/public/volunteer.php') },
       cert:       (id) => request('/public/cert.php' + qs({ id })),
+      siteContent: () => request('/public/site.php'),
       instructorRoster: (token, email) => request('/public/instructor.php', { body: { token, email } }),
       contact:    (data) => request('/public/contact.php', { body: data }),
       gate: {
