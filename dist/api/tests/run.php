@@ -134,6 +134,31 @@ chk('instructor with valid courses applies clean', backend_dispatch('public.appl
 chk('instructor courses stored filtered to catalogue', json_decode((string)db_row("SELECT courses FROM applications WHERE email = 'vol-teach@example.com'")['courses'], true) === ['Coding & Robotics', 'Chess & Strategy']);
 chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'admin', 'name' => 'Vol Admin', 'email' => 'vol-admin@example.com'])['duplicate'] === true);
 chk('volunteer.applied event queued for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.applied'")['c'] === 2);
+// ── Multi-form builder (registration + volunteer + contact) ──
+$fl = backend_dispatch('admin.forms.list', ['requesterId' => 'NGG-2025-0099']);
+chk('forms list has all three forms', count($fl['forms']) === 3 && in_array('volunteer', array_column($fl['forms'], 'formId'), true) && in_array('contact', array_column($fl['forms'], 'formId'), true));
+chk('form get is formId-scoped', backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'contact'])['form']['formId'] === 'contact');
+chk('unknown form rejected', backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'nope'])['error'] === 'unknown_form');
+$cf = backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'contact'])['form']['fields'];
+$cf2 = array_merge($cf, [['key' => 'phone_opt', 'label' => 'Phone (optional)', 'type' => 'phone']]);
+chk('publish a custom field to the contact form', backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'contact', 'fields' => $cf2])['version'] === 2);
+chk('custom field is live on contact form', in_array('phone_opt', array_column(form_live('contact')['fields'], 'key'), true));
+chk('dropping a locked field is refused', backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'contact', 'fields' => [['key' => 'name', 'label' => 'Name', 'type' => 'text']]])['error'] === 'locked_field_missing');
+chk('editing one form does not touch another', form_live('summer-reg')['version'] === 1);
+
+// ── QR full lifecycle: mint → reassign → void ──
+$qm = backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 2]);
+$qtok = $qm['tokens'][0];
+chk('qr list reports status counts', is_array(backend_dispatch('admin.summer.qr.list', ['requesterId' => 'NGG-2025-0099'])['counts']));
+// Bind that blank card to the verified summer student from earlier (SUM-2026-0001 exists in this run? use enroll path)
+$enr = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'QR Test Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'token' => $qm['tokens'][1]]]);
+$qrKid = $enr['studentId'] ?? '';
+chk('reassign moves a student onto another card', backend_dispatch('admin.summer.qr.reassign', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok, 'studentId' => $qrKid])['ok'] === true);
+chk('reassigned card is now assigned to the student', db_row('SELECT studentId FROM qr_codes WHERE token = ?', [$qtok])['studentId'] === $qrKid);
+chk('old card freed on reassign', db_row('SELECT status FROM qr_codes WHERE token = ?', [$qm['tokens'][1]])['status'] === 'blank');
+chk('void retires a card + detaches student', backend_dispatch('admin.summer.qr.void', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok])['ok'] === true && db_row('SELECT status FROM qr_codes WHERE token = ?', [$qtok])['status'] === 'void' && db_row('SELECT token FROM summer_students WHERE studentId = ?', [$qrKid])['token'] === '');
+chk('void card cannot be reassigned', backend_dispatch('admin.summer.qr.reassign', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok, 'studentId' => $qrKid])['error'] === 'card_void');
+
 chk('instructor without phone is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'instructor', 'name' => 'No Phone', 'email' => 'nophone@example.com', 'courses' => ['Coding & Robotics']])['error'] === 'phone_required');
 
 // ── Volunteer review desk: approve → ID + QR + profile; decline ──
@@ -227,6 +252,14 @@ chk('member detail has journal + progress', isset($det['detail']['journal']) && 
 backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['applications_open' => false, 'featured_session_id' => 'SUMMER-' . gmdate('Y')]]);
 $set = backend_dispatch('admin.settings.get', ['requesterId' => 'NGG-2025-0099'])['settings'];
 chk('settings persist (applications closed)', $set['applications_open'] === false);
+// Site content: defaults, admin edit, public read, blank restores default
+chk('site content serves defaults', backend_dispatch('public.siteContent', [])['site']['heroEmphasis'] === 'not waiting');
+backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['site_content' => ['heroEmphasis' => 'not waiting anymore', 'heroCtaPrimary' => 'Start now']]]);
+chk('site content edit goes live', backend_dispatch('public.siteContent', [])['site']['heroEmphasis'] === 'not waiting anymore');
+chk('unedited site keys keep defaults', backend_dispatch('public.siteContent', [])['site']['heroTitle1'] === "Africa's next geniuses");
+backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['site_content' => ['heroEmphasis' => '']]]);
+chk('blank site field restores its default', backend_dispatch('public.siteContent', [])['site']['heroEmphasis'] === 'not waiting');
+chk('volunteer settings roundtrip', (function () { backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['volunteer_session_hours' => 6, 'volunteer_applications_open' => false]]); $g = backend_dispatch('admin.settings.get', ['requesterId' => 'NGG-2025-0099'])['settings']; return $g['volunteer_session_hours'] === 6 && $g['volunteer_applications_open'] === false; })());
 chk('apply blocked when closed', backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'X Y', 'email' => 'x@example.com', 'age' => 14])['error'] === 'applications_closed');
 chk('newsletter list works', is_array(backend_dispatch('admin.newsletter.list', ['requesterId' => 'NGG-2025-0099'])['subscribers']));
 

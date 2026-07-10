@@ -17,6 +17,8 @@ if ($method === 'GET') {
     $action = (string)($b['action'] ?? '');
     $map = [
         'mint'         => 'admin.summer.qr.mint',
+        'qr_void'      => 'admin.summer.qr.void',
+        'qr_reassign'  => 'admin.summer.qr.reassign',
         'enroll'       => 'admin.summer.enroll',
         'cohort'       => 'admin.summer.cohort.upsert',
         'studentStatus'=> 'admin.summer.student.status',

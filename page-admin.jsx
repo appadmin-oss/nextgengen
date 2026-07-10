@@ -70,6 +70,7 @@ function AdminPage({ setPage }) {
           {view === "newsletter" && <AdminNewsletter/>}
           {view === "messages" && <AdminContact/>}
           {view === "settings" && <AdminSettings/>}
+          {view === "forms" && <AdminForms/>}
           {view === "site" && <AdminSite/>}
           {view === "sessions" && <AdminSessions/>}
           {view === "missions" && <AdminMissions/>}
@@ -201,6 +202,7 @@ function AdminNav({ section, setSection, hasCap }) {
       { id: "events",    label: "Events",     icon: "▶", cap: "content" },
       { id: "posts",     label: "Posts",      icon: "✎", cap: "content" },
       { id: "broadcast", label: "Announce",   icon: "📣", cap: "content" },
+      { id: "forms",     label: "Forms",      icon: "❏", cap: "content" },
       { id: "site",      label: "Site content", icon: "◧", cap: "settings" },
     ]},
     { h: "Inbox", items: [
@@ -242,7 +244,7 @@ function titleFor(s) {
   return {
     home: "Overview", members: "Members", mentors: "Mentors", mentorship: "Mentorship", sessions: "Sessions",
     missions: "Anchor missions", anchor: "Anchor Journal app", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
-    applications: "Applications", volunteers: "Volunteers", newsletter: "Newsletter", messages: "Messages", settings: "Settings", site: "Site content", summer: "Summer School",
+    applications: "Applications", volunteers: "Volunteers", newsletter: "Newsletter", messages: "Messages", settings: "Settings", forms: "Forms", site: "Site content", summer: "Summer School",
   }[s] || "";
 }
 
@@ -786,10 +788,11 @@ function keyFromLabel(label) {
   return (label || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "field";
 }
 
-function SummerFormBuilder() {
+function SummerFormBuilder({ formId = "summer-reg" }) {
   const [state, setState] = React.useState({ status: "loading", err: "" });
   const [fields, setFields] = React.useState([]);
   const [name, setName] = React.useState("");
+  const [note, setNote] = React.useState("");
   const [version, setVersion] = React.useState(0);
   const [types, setTypes] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
@@ -798,16 +801,17 @@ function SummerFormBuilder() {
 
   const load = () => {
     setState({ status: "loading", err: "" });
-    NGGApi.admin.registration.form().then(r => {
+    NGGApi.admin.registration.form(formId).then(r => {
       setFields((r.form.fields || []).map(f => ({ ...f, _id: Math.random().toString(36).slice(2) })));
-      setName(r.form.name || "Summer registration");
+      setName(r.form.name || "Form");
+      setNote(r.form.note || "");
       setVersion(r.form.version || 1);
       setTypes(r.fieldTypes || Object.keys(FIELD_TYPE_LABELS));
       setDirty(false);
       setState({ status: "ready", err: "" });
     }).catch(e => setState({ status: "error", err: e.code || e.message }));
   };
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [formId]);
 
   const mut = (fn) => { setFields(fn); setDirty(true); };
   const update = (id, patch) => mut(fs => fs.map(f => f._id === id ? { ...f, ...patch } : f));
@@ -836,7 +840,7 @@ function SummerFormBuilder() {
     const keys = out.map(f => f.key);
     if (new Set(keys).size !== keys.length) { toast.error("Two fields share the same key — rename one."); return; }
     setBusy(true);
-    try { const r = await NGGApi.admin.registration.publishForm(out, name); toast.success("Published v" + (r.version || (version + 1)) + " — live now."); load(); }
+    try { const r = await NGGApi.admin.registration.publishForm(formId, out, name); toast.success("Published v" + (r.version || (version + 1)) + " — live now."); load(); }
     catch (e) { toast.error(e.error || e.code || "Couldn't publish — check field types and keys."); }
     finally { setBusy(false); }
   };
@@ -849,7 +853,7 @@ function SummerFormBuilder() {
       <div className="admin-section-head" style={{ alignItems: "center" }}>
         <div>
           <input className="admin-input" value={name} onChange={e => { setName(e.target.value); setDirty(true); }} style={{ fontWeight: 700, fontSize: 16, minWidth: 260 }}/>
-          <div className="mono admin-cell-sub" style={{ marginTop: 4 }}>Live v{version} · {fields.length} fields · public gate registration uses this</div>
+          <div className="mono admin-cell-sub" style={{ marginTop: 4 }}>Live v{version} · {fields.length} fields{note ? " · " + note : ""}</div>
         </div>
         <div className="admin-section-actions">
           <button className="btn btn-ghost btn-sm" onClick={() => setPreview(p => !p)}>{preview ? "Edit" : "Preview"}</button>
@@ -1071,15 +1075,29 @@ function SummerEnroll({ cohort, blank, onDone }) {
 
 function SummerQR({ onChange }) {
   const [codes, setCodes] = React.useState(null);
+  const [counts, setCounts] = React.useState({});
   const [count, setCount] = React.useState(30);
   const [busy, setBusy] = React.useState(false);
-  const load = () => NGGApi.admin.summer.qrList().then(r => setCodes(r.codes || [])).catch(() => setCodes([]));
-  React.useEffect(() => { load(); }, []);
+  const [filter, setFilter] = React.useState("");
+  const [q, setQ] = React.useState("");
+  const load = () => NGGApi.admin.summer.qrList(filter, "").then(r => { setCodes(r.codes || []); setCounts(r.counts || {}); }).catch(() => setCodes([]));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter]);
   const mint = async () => {
     setBusy(true);
     try { const r = await NGGApi.admin.summer.mint(Number(count)); toast.success("Minted " + r.count + " cards (" + r.batch + ")"); load(); onChange && onChange(); }
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
+  const voidCard = async (token) => {
+    if (!(await dialog.confirm({ title: "Void " + token + "?", body: "The card can no longer be scanned. If it's bound to a student they'll be detached and need a fresh card.", cta: "Void card" }))) return;
+    try { await NGGApi.admin.summer.qrVoid(token); toast.success("Card voided."); load(); onChange && onChange(); } catch (e) { toast.error(e.code || e.message); }
+  };
+  const reassign = async (token) => {
+    const sid = await dialog.prompt({ title: "Reassign " + token, body: "Enter the student ID to bind this card to (e.g. SUM-2026-0001). Their old card is freed.", placeholder: "SUM-2026-…", cta: "Reassign" });
+    if (!sid) return;
+    try { await NGGApi.admin.summer.qrReassign(token, sid.trim()); toast.success("Card reassigned."); load(); onChange && onChange(); }
+    catch (e) { toast.error(e.code === "student_not_found" ? "No student with that ID." : e.code === "card_void" ? "That card is voided." : (e.code || e.message)); }
+  };
+  const shown = (codes || []).filter(c => !q.trim() || (c.token + " " + (c.assignedName || "") + " " + (c.studentId || "")).toLowerCase().includes(q.trim().toLowerCase()));
   const [printing, setPrinting] = React.useState(false);
   const printCards = async () => {
     setPrinting(true);
@@ -1108,18 +1126,37 @@ function SummerQR({ onChange }) {
   };
   return (
     <div>
+      <div className="admin-tiles" style={{ marginBottom: 8 }}>
+        <AdminTile n={counts.blank || 0} l="Blank (ready)"/>
+        <AdminTile n={counts.assigned || 0} l="Assigned"/>
+        <AdminTile n={counts.void || 0} l="Voided"/>
+      </div>
       <div className="admin-filters" style={{ alignItems: "center" }}>
-        <input className="admin-input" type="number" min="1" max="500" style={{ maxWidth: 120 }} value={count} onChange={e => setCount(e.target.value)}/>
+        <input className="admin-input" type="number" min="1" max="500" style={{ maxWidth: 100 }} value={count} onChange={e => setCount(e.target.value)}/>
         <button className="btn btn-primary btn-sm" onClick={mint} disabled={busy}>{busy ? "Minting…" : "Mint blank cards"}</button>
         <button className="btn btn-ghost btn-sm" disabled={!codes || !codes.length || printing} onClick={printCards}>{printing ? "Preparing…" : "Print cards ↗"}</button>
+        <span style={{ flex: 1 }}/>
+        <select className="admin-select" value={filter} onChange={e => setFilter(e.target.value)}><option value="">All statuses</option><option value="blank">Blank</option><option value="assigned">Assigned</option><option value="void">Voided</option></select>
+        <input className="admin-input" placeholder="Search token / name / ID" value={q} onChange={e => setQ(e.target.value)} style={{ maxWidth: 220 }}/>
       </div>
-      <p className="admin-hint">Cards are printed <b>before</b> enrollment, each with a real scannable QR (encodes the student's <span className="mono">/q/&lt;token&gt;</span> profile URL). The check-in kiosk reads them by camera, a handheld/USB scanner reads the token straight into the kiosk field, and any phone camera opens the profile.</p>
+      <p className="admin-hint">Cards are printed <b>before</b> enrollment, each with a real scannable QR (encodes the student's <span className="mono">/q/&lt;token&gt;</span> profile URL). Void lost or damaged cards to retire them; reassign to move a student onto a reprinted card.</p>
       {codes === null ? <div className="dash-spinner"/> :
-        codes.length === 0 ? <div className="admin-empty">No cards minted yet.</div> :
+        shown.length === 0 ? <div className="admin-empty">No cards match.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Token</th><th>Batch</th><th>Status</th><th>Assigned to</th></tr></thead>
-          <tbody>{codes.slice(0, 300).map(c => (
-            <tr key={c.token}><td className="mono">{c.token}</td><td className="mono">{c.batch}</td><td><span className={"chip status-" + (c.status === "assigned" ? "published" : "draft")}>{c.status}</span></td><td>{c.assignedName || "—"}</td></tr>
+          <thead><tr><th>Token</th><th>Batch</th><th>Status</th><th>Assigned to</th><th></th></tr></thead>
+          <tbody>{shown.slice(0, 400).map(c => (
+            <tr key={c.token} style={c.status === "void" ? { opacity: 0.55 } : undefined}>
+              <td className="mono">{c.token}</td>
+              <td className="mono">{c.batch}</td>
+              <td><span className={"chip " + (c.status === "assigned" ? "chip-lime" : c.status === "void" ? "status-archived" : "status-draft")}>{c.status}</span></td>
+              <td>{c.assignedName || "—"}{c.studentId ? <span className="mono admin-cell-sub"> · {c.studentId}</span> : null}</td>
+              <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                {c.status !== "void" && <>
+                  <button className="btn btn-ghost btn-sm" onClick={() => reassign(c.token)}>Reassign</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => voidCard(c.token)} style={{ color: "#b03535" }}>Void</button>
+                </>}
+              </td>
+            </tr>
           ))}</tbody>
         </table></div>
       }
@@ -2414,6 +2451,32 @@ function AdminSettings() {
         <Field label="Hours credited per volunteer session" type="number" value={s.volunteer_session_hours} onChange={v => setS(o => ({ ...o, volunteer_session_hours: v }))}/>
         <FieldSelect label="Featured session (homepage countdown)" value={s.featured_session_id || ""} onChange={v => setS(o => ({ ...o, featured_session_id: v }))} options={[""].concat(sessions.map(x => x.sessionId))}/>
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Forms — one visual builder, every public form (registration/volunteer/contact)
+// ============================================================================
+function AdminForms() {
+  const [forms, setForms] = React.useState(null);
+  const [active, setActive] = React.useState("summer-reg");
+  const [err, setErr] = React.useState("");
+  React.useEffect(() => { NGGApi.admin.registration.formsList().then(r => setForms(r.forms || [])).catch(e => setErr(e.code || e.message)); }, []);
+  if (err) return <div className="admin-section"><ErrorState title="Couldn't load forms" code={err} onRetry={() => location.reload()}/></div>;
+  if (!forms) return <div className="admin-section"><div className="dash-spinner"/></div>;
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head"><h2 className="admin-h2">Forms</h2></div>
+      <p className="admin-hint">Every public form, edited with the same visual builder. Locked system fields stay put; add, reorder and configure the rest, then publish a new live version.</p>
+      <div className="admin-anchor-tabs">
+        {forms.map(f => (
+          <button key={f.formId} className={"admin-anchor-tab" + (active === f.formId ? " is-active" : "")} onClick={() => setActive(f.formId)}>
+            {f.name} <span className="mono" style={{ opacity: 0.6, fontSize: 11 }}>· v{f.version} · {f.fieldCount}f</span>
+          </button>
+        ))}
+      </div>
+      <SummerFormBuilder formId={active} key={active}/>
     </div>
   );
 }

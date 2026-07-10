@@ -44,10 +44,55 @@ function form_default_fields(): array {
     ];
 }
 
+/** The public volunteer form. The first block is structural (the wizard +
+ *  approval pipeline depend on these keys) and locked; admins append their
+ *  own custom questions after them, which render on the public form. */
+function volunteer_default_fields(): array {
+    return [
+        ['key' => 'role', 'label' => 'Volunteer role', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => ['Admin / Ops', 'Mentor', 'Instructor']],
+        ['key' => 'name', 'label' => 'Full name', 'type' => 'text', 'required' => true, 'locked' => true],
+        ['key' => 'email', 'label' => 'Email', 'type' => 'email', 'required' => true, 'locked' => true],
+        ['key' => 'phone', 'label' => 'Phone', 'type' => 'phone', 'required' => false, 'locked' => true, 'help' => 'Required for instructors — enforced at submit.'],
+        ['key' => 'why', 'label' => 'Why you', 'type' => 'longtext', 'required' => false, 'locked' => true],
+    ];
+}
+
+/** The public contact form — fully builder-driven. */
+function contact_default_fields(): array {
+    return [
+        ['key' => 'name', 'label' => 'Your name', 'type' => 'text', 'required' => true, 'locked' => true],
+        ['key' => 'email', 'label' => 'Email', 'type' => 'email', 'required' => true, 'locked' => true],
+        ['key' => 'purpose', 'label' => 'What is this about?', 'type' => 'choice', 'required' => false, 'options' => ['General', 'Volunteering', 'Partnership', 'Press', 'Safeguarding concern']],
+        ['key' => 'message', 'label' => 'Message', 'type' => 'longtext', 'required' => true, 'locked' => true],
+    ];
+}
+
+/**
+ * Registry of every admin-editable form. formId → metadata + default-field
+ * factory. This is the single source that makes the builder multi-form.
+ */
+function form_registry(): array {
+    return [
+        'summer-reg' => ['name' => 'Summer registration', 'defaults' => 'form_default_fields',
+            'note' => 'The public gate registration form — drives student sign-up, IDs and the instructor course catalogue.'],
+        'volunteer'  => ['name' => 'Volunteer registration', 'defaults' => 'volunteer_default_fields',
+            'note' => 'The public /volunteer form. Core fields are locked; add custom questions to collect more from volunteers.'],
+        'contact'    => ['name' => 'Contact form', 'defaults' => 'contact_default_fields',
+            'note' => 'The public contact form.'],
+    ];
+}
+function form_defaults_for(string $formId): array {
+    $reg = form_registry();
+    $fn = $reg[$formId]['defaults'] ?? 'form_default_fields';
+    return $fn();
+}
+
 function form_live(string $formId = 'summer-reg'): array {
     $row = db_row("SELECT * FROM form_defs WHERE formId = ? AND status = 'live' ORDER BY version DESC LIMIT 1", [$formId]);
     if (!$row) {
-        db_insert('form_defs', ['formId' => $formId, 'version' => 1, 'name' => 'Summer registration', 'fields' => json_encode(form_default_fields(), JSON_UNESCAPED_SLASHES), 'status' => 'live', 'publishedBy' => 'system', 'createdAt' => now_iso()]);
+        $reg = form_registry();
+        $nm = $reg[$formId]['name'] ?? 'Form';
+        db_insert('form_defs', ['formId' => $formId, 'version' => 1, 'name' => $nm, 'fields' => json_encode(form_defaults_for($formId), JSON_UNESCAPED_SLASHES), 'status' => 'live', 'publishedBy' => 'system', 'createdAt' => now_iso()]);
         $row = db_row("SELECT * FROM form_defs WHERE formId = ? AND status = 'live' ORDER BY version DESC LIMIT 1", [$formId]);
     }
     $row['fields'] = json_decode((string)$row['fields'], true) ?: [];
@@ -55,7 +100,7 @@ function form_live(string $formId = 'summer-reg'): array {
 }
 
 /** Validate + normalise a builder-submitted field list. Returns [ok, fields|error]. */
-function form_validate_fields(array $fields): array {
+function form_validate_fields(array $fields, ?array $systemFields = null): array {
     $out = []; $keys = [];
     foreach ($fields as $f) {
         if (!is_array($f)) return ['ok' => false, 'error' => 'bad_field'];
@@ -85,8 +130,9 @@ function form_validate_fields(array $fields): array {
         }
         $out[] = $clean;
     }
-    // System fields the lifecycle depends on must survive every edit.
-    foreach (form_default_fields() as $sys) {
+    // System fields the lifecycle depends on must survive every edit. The
+    // set is per-form (defaults to the summer registration fields).
+    foreach (($systemFields ?? form_default_fields()) as $sys) {
         if (!empty($sys['locked']) && !isset($keys[$sys['key']])) return ['ok' => false, 'error' => 'locked_field_missing', 'field' => $sys['key']];
     }
     if (count($out) > 60) return ['ok' => false, 'error' => 'too_many_fields'];
@@ -133,24 +179,40 @@ function form_validate_submission(array $fields, array $data): array {
 
 /* ── Form builder (main admin) ────────────────────────────────────────────── */
 
+function admin_forms_list(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $out = [];
+    foreach (form_registry() as $formId => $meta) {
+        $live = form_live($formId);
+        $out[] = ['formId' => $formId, 'name' => (string)$live['name'], 'note' => $meta['note'],
+            'version' => (int)$live['version'], 'fieldCount' => count($live['fields'])];
+    }
+    return ['ok' => true, 'forms' => $out];
+}
+
 function admin_forms_get(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    $live = form_live();
-    $versions = db_all("SELECT version, name, publishedBy, createdAt, status FROM form_defs WHERE formId = 'summer-reg' ORDER BY version DESC LIMIT 20");
-    return ['ok' => true, 'form' => ['formId' => 'summer-reg', 'version' => (int)$live['version'], 'name' => (string)$live['name'], 'fields' => $live['fields']], 'versions' => $versions, 'fieldTypes' => FORM_FIELD_TYPES];
+    $formId = (string)($p['formId'] ?? 'summer-reg');
+    if (!isset(form_registry()[$formId])) return ['ok' => false, 'error' => 'unknown_form'];
+    $live = form_live($formId);
+    $versions = db_all("SELECT version, name, publishedBy, createdAt, status FROM form_defs WHERE formId = ? ORDER BY version DESC LIMIT 20", [$formId]);
+    return ['ok' => true, 'form' => ['formId' => $formId, 'version' => (int)$live['version'], 'name' => (string)$live['name'], 'fields' => $live['fields'], 'note' => form_registry()[$formId]['note']], 'versions' => $versions, 'fieldTypes' => FORM_FIELD_TYPES];
 }
 
 function admin_forms_publish(array $p): array {
-    // "Main admin" — publishing the live registration form is super_admin only.
+    // Publishing a live public form is super_admin only.
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     if (strtolower((string)$g['requester']['role']) !== 'super_admin') return ['ok' => false, 'error' => 'forbidden'];
-    $v = form_validate_fields(is_array($p['fields'] ?? null) ? $p['fields'] : []);
+    $formId = (string)($p['formId'] ?? 'summer-reg');
+    if (!isset(form_registry()[$formId])) return ['ok' => false, 'error' => 'unknown_form'];
+    // Validate the field list, enforcing THIS form's locked/system fields.
+    $v = form_validate_fields(is_array($p['fields'] ?? null) ? $p['fields'] : [], form_defaults_for($formId));
     if (empty($v['ok'])) return $v;
-    $live = form_live();
+    $live = form_live($formId);
     $next = (int)$live['version'] + 1;
-    db_exec("UPDATE form_defs SET status = 'archived' WHERE formId = 'summer-reg' AND status = 'live'");
-    db_insert('form_defs', ['formId' => 'summer-reg', 'version' => $next, 'name' => substr((string)($p['name'] ?? $live['name']), 0, 160), 'fields' => json_encode($v['fields'], JSON_UNESCAPED_SLASHES), 'status' => 'live', 'publishedBy' => $g['requester']['memberId'], 'createdAt' => now_iso()]);
-    audit('forms.publish', $g['requester']['memberId'], 'summer-reg', ['version' => $next], (string)($p['ip'] ?? ''));
+    db_exec("UPDATE form_defs SET status = 'archived' WHERE formId = ? AND status = 'live'", [$formId]);
+    db_insert('form_defs', ['formId' => $formId, 'version' => $next, 'name' => substr((string)($p['name'] ?? $live['name']), 0, 160), 'fields' => json_encode($v['fields'], JSON_UNESCAPED_SLASHES), 'status' => 'live', 'publishedBy' => $g['requester']['memberId'], 'createdAt' => now_iso()]);
+    audit('forms.publish', $g['requester']['memberId'], $formId, ['version' => $next], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'version' => $next];
 }
 

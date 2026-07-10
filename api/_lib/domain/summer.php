@@ -115,8 +115,45 @@ function admin_summer_qr_list(array $p): array {
     $where = []; $params = [];
     if (!empty($p['status'])) { $where[] = 'status = ?'; $params[] = (string)$p['status']; }
     if (!empty($p['batch'])) { $where[] = 'batch = ?'; $params[] = (string)$p['batch']; }
+    if (!empty($p['q'])) { $where[] = '(token LIKE ? OR assignedName LIKE ? OR studentId LIKE ?)'; $like = '%' . (string)$p['q'] . '%'; array_push($params, $like, $like, $like); }
     $sql = 'SELECT token, batch, cohortId, status, studentId, assignedName FROM qr_codes' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY id DESC LIMIT 1000';
-    return ['ok' => true, 'codes' => db_all($sql, $params)];
+    $codes = db_all($sql, $params);
+    $counts = ['blank' => 0, 'assigned' => 0, 'void' => 0];
+    foreach (db_all("SELECT status, COUNT(*) c FROM qr_codes GROUP BY status") as $r) $counts[$r['status']] = (int)$r['c'];
+    return ['ok' => true, 'codes' => $codes, 'counts' => $counts];
+}
+
+/** Void a card — a lost/damaged QR is retired so it can't be scanned. If it
+ *  was bound to a student, the student is detached (they get a fresh card). */
+function admin_summer_qr_void(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $token = trim((string)($p['token'] ?? ''));
+    $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
+    if (!$qr) return ['ok' => false, 'error' => 'not_found'];
+    if (!empty($qr['studentId'])) db_update('summer_students', ['token' => '', 'updatedAt' => now_iso()], ['token' => $token]);
+    db_update('qr_codes', ['status' => 'void', 'studentId' => '', 'assignedName' => '', 'assignedAt' => ''], ['token' => $token]);
+    audit('summer.qr.void', $g['requester']['memberId'], $token, ['was' => $qr['status'], 'student' => (string)$qr['studentId']], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/** Reassign: move a student's binding onto a different blank card (e.g. a
+ *  reprint), or bind a specific blank card to a student by id. */
+function admin_summer_qr_reassign(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $token = trim((string)($p['token'] ?? ''));
+    $studentId = trim((string)($p['studentId'] ?? ''));
+    $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
+    if (!$qr) return ['ok' => false, 'error' => 'not_found'];
+    if ($qr['status'] === 'void') return ['ok' => false, 'error' => 'card_void'];
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
+    if (!$s) return ['ok' => false, 'error' => 'student_not_found'];
+    // Free the student's old card, free any student on the target card.
+    if (!empty($s['token']) && $s['token'] !== $token) db_update('qr_codes', ['status' => 'blank', 'studentId' => '', 'assignedName' => '', 'assignedAt' => ''], ['token' => $s['token']]);
+    if (!empty($qr['studentId']) && $qr['studentId'] !== $studentId) db_update('summer_students', ['token' => '', 'updatedAt' => now_iso()], ['studentId' => $qr['studentId']]);
+    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $studentId, 'assignedName' => (string)($s['handle'] ?? $s['fullName']), 'assignedAt' => now_iso(), 'cohortId' => (string)$s['cohortId']], ['token' => $token]);
+    db_update('summer_students', ['token' => $token, 'updatedAt' => now_iso()], ['studentId' => $studentId]);
+    audit('summer.qr.reassign', $g['requester']['memberId'], $token, ['student' => $studentId], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
 }
 
 // ── Standardized enrollment (binds a QR token to a new student) ──────────────
