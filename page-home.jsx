@@ -92,54 +92,66 @@ function Hero({ setPage }) {
                   </div>
                 </div>
               </div>
-              {/* Live KPI strip — data-forward proof, pulled from /public/stats */}
-              <div style={{display:"flex", gap:28, paddingLeft:24, borderLeft:"1px solid rgba(255,255,255,0.16)"}}>
-                {[
-                  [stats ? (stats.missionsVerified || 0).toLocaleString() : "1,200+", "Missions verified"],
-                  [stats ? (stats.graduates || 0).toLocaleString() : "60+", "Graduates"],
-                  [stats && stats.centres ? String(stats.centres).padStart(2, "0") : "02", "Centres"],
-                ].map(([n, l], i) => (
-                  <div key={i}>
-                    <div style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:26, color:"white", lineHeight:1}}>{n}</div>
-                    <div className="mono" style={{fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color:"rgba(255,255,255,0.6)", marginTop:5}}>{l}</div>
+              {/* Live KPI strip — real numbers only. A zero here reads as
+                  "this movement is empty", so unstarted KPIs stay hidden. */}
+              {(() => {
+                const kpis = [
+                  ["missionsVerified", "Missions verified", "1,200+"],
+                  ["graduates", "Graduates", "60+"],
+                  ["centres", "Centres", "02"],
+                ].map(([key, label, evergreen]) => {
+                  if (!stats) return [evergreen, label];
+                  if (!(stats[key] > 0)) return null;
+                  const n = key === "centres" ? String(stats[key]).padStart(2, "0") : stats[key].toLocaleString();
+                  return [n, label];
+                }).filter(Boolean);
+                if (!kpis.length) return null;
+                return (
+                  <div style={{display:"flex", gap:28, paddingLeft:24, borderLeft:"1px solid rgba(255,255,255,0.16)"}}>
+                    {kpis.map(([n, l], i) => (
+                      <div key={i}>
+                        <div style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:26, color:"white", lineHeight:1}}>{n}</div>
+                        <div className="mono" style={{fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color:"rgba(255,255,255,0.6)", marginTop:5}}>{l}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </div>
           </div>
 
-          {/* Right: cinematic photo collage */}
-          <div style={{position:"relative", height:560}}>
-            {/* Main vertical portrait */}
-            <Photo name="speaker" ratio="3/4" style={{position:"absolute", top:0, right:0, width:"82%", height:380, boxShadow:"0 30px 60px -20px rgba(0,0,0,0.6)"}} overlay>
-              <div style={{position:"absolute", top:18, left:18}}>
+          {/* Right: photo composition — one anchor image with satellites in
+              its corners, plus a tidy bottom row. Class-driven so the mobile
+              layout is deliberate, not attribute-selector patchwork. */}
+          <div className="hero-visual reveal" data-reveal>
+            <Photo name="speaker" ratio="auto" style={{flex:"1 1 auto", minHeight:0, boxShadow:"0 30px 60px -20px rgba(0,0,0,0.6)"}} overlay eager>
+              <div style={{position:"absolute", top:16, left:16}}>
                 <span className="chip chip-on-dark" style={{background:"rgba(12,20,50,0.55)", color:"white"}}>NGGC · WK 07</span>
               </div>
-              <div style={{position:"absolute", bottom:18, left:18, right:18, color:"white"}}>
+              <div style={{position:"absolute", bottom:16, left:16, right:"40%", color:"white"}}>
                 <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", color:"var(--gold-400)"}}>FROM THE COHORT</div>
-                <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, lineHeight:1.05, marginTop:4}}>Zara — Voice of Influence</div>
+                <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:21, lineHeight:1.05, marginTop:4}}>Zara — Voice of Influence</div>
+              </div>
+              <div className="hero-theme-card">
+                <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", textTransform:"uppercase", fontWeight:600}}>This week's theme</div>
+                <div style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:24, lineHeight:1, marginTop:2}}>Discipline.</div>
               </div>
             </Photo>
-            {/* Bottom-left */}
-            <Photo name="studio" ratio="4/3" style={{position:"absolute", bottom:0, left:0, width:"58%", height:230, boxShadow:"0 30px 60px -20px rgba(0,0,0,0.6)"}}/>
-            {/* Floating live card */}
-            <div className="float" style={{position:"absolute", top:208, right:-16, padding:16, minWidth:236, background:"rgba(12,20,50,0.72)", backdropFilter:"blur(20px) saturate(1.4)", WebkitBackdropFilter:"blur(20px) saturate(1.4)", border:"1px solid rgba(255,255,255,0.18)", borderRadius:14, color:"white", boxShadow:"0 20px 40px -10px rgba(0,0,0,0.5)"}}>
-              <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:12}}>
-                <span className="dot dot-lime"/>
-                <span className="mono" style={{fontSize:10, letterSpacing:"0.15em", textTransform:"uppercase", color:"rgba(255,255,255,0.75)"}}>GENIUS OF THE WEEK</span>
-              </div>
-              <div style={{display:"flex", alignItems:"center", gap:12}}>
-                <Avatar seed="tunde" name="Tunde" size={42} ring/>
-                <div>
-                  <div style={{fontWeight:600, fontSize:15}}>Tunde · 16</div>
-                  <div style={{fontSize:11, color:"rgba(255,255,255,0.7)", marginTop:2}}>+2,980 XP · Week 10 / 12</div>
+            <div className="hero-visual-row">
+              <Photo name="studio" ratio="auto" style={{width:"56%", boxShadow:"0 30px 60px -20px rgba(0,0,0,0.6)"}}/>
+              <div className="hero-live-card">
+                <div style={{display:"flex", alignItems:"center", gap:8}}>
+                  <span className="dot dot-lime"/>
+                  <span className="mono" style={{fontSize:10, letterSpacing:"0.15em", textTransform:"uppercase", color:"rgba(255,255,255,0.75)"}}>GENIUS OF THE WEEK</span>
+                </div>
+                <div style={{display:"flex", alignItems:"center", gap:12}}>
+                  <Avatar seed="tunde" name="Tunde" size={42} ring/>
+                  <div>
+                    <div style={{fontWeight:600, fontSize:15}}>Tunde · 16</div>
+                    <div style={{fontSize:11, color:"rgba(255,255,255,0.7)", marginTop:2}}>+2,980 XP · Week 10 / 12</div>
+                  </div>
                 </div>
               </div>
-            </div>
-            {/* Gold card */}
-            <div style={{position:"absolute", bottom:-12, right:14, padding:"14px 18px", background:"var(--gold-500)", color:"var(--navy-900)", borderRadius:14, boxShadow:"0 16px 40px -8px rgba(245,176,38,0.5), 0 4px 0 #b07c12"}}>
-              <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", textTransform:"uppercase", fontWeight:600}}>This week's theme</div>
-              <div style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:26, lineHeight:1, marginTop:2}}>Discipline.</div>
             </div>
           </div>
         </div>
