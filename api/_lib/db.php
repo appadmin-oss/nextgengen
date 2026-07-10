@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 14;
+const NGG_SCHEMA_TARGET = 15;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -523,6 +523,14 @@ function db_migrate(PDO $db): void {
 
             ALTER TABLE summer_students ADD COLUMN displayId TEXT;
             CREATE INDEX idx_sstu_displayid ON summer_students(displayId);
+        ",
+
+        // Volunteer registration: structured role taxonomy on applications
+        // (kind='volunteer', role admin|mentor|instructor) — instructors
+        // carry the courses they can teach; a phone makes NG follow-up real.
+        15 => "
+            ALTER TABLE applications ADD COLUMN phone TEXT DEFAULT '';
+            ALTER TABLE applications ADD COLUMN courses TEXT DEFAULT '';
         ",
     ];
 

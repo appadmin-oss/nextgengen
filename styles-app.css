@@ -2241,6 +2241,64 @@ button:focus-visible, .nav-link:focus-visible, .btn:focus-visible {
 }
 
 /* ============================================================
+   7y. VOLUNTEER REGISTRATION — /volunteer
+   Minimalist selectable lanes + course chips. Same tokens as
+   the rest of the site; gold ring marks the active choice.
+   ============================================================ */
+.vol-lanes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.vol-lane {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 22px 20px;
+  background: white;
+  border: 1px solid rgba(12, 20, 50, 0.10);
+  border-radius: 18px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+.vol-lane:hover { transform: translateY(-2px); border-color: rgba(12, 20, 50, 0.22); box-shadow: 0 12px 28px -14px rgba(12, 20, 50, 0.25); }
+.vol-lane.is-active {
+  border-color: var(--gold-500);
+  box-shadow: 0 0 0 3px rgba(245, 176, 38, 0.25), 0 12px 28px -14px rgba(176, 124, 18, 0.35);
+}
+.vol-lane-icon { font-size: 26px; line-height: 1; }
+.vol-lane-name { font-family: var(--font-display); font-weight: 800; font-size: 19px; color: var(--ink-900); }
+.vol-lane-line { font-size: 13px; color: var(--ink-500); line-height: 1.45; }
+.vol-lane.is-active .vol-lane-name::after { content: " ✓"; color: var(--gold-500); }
+.vol-chip {
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: white;
+  border: 1px solid rgba(12, 20, 50, 0.14);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-900);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.vol-chip:hover { border-color: rgba(12, 20, 50, 0.3); }
+.vol-chip.is-active {
+  background: var(--navy-900);
+  border-color: var(--navy-900);
+  color: var(--gold-400);
+  box-shadow: 0 8px 20px -10px rgba(12, 20, 50, 0.5);
+}
+@media (max-width: 720px) {
+  .vol-lanes { grid-template-columns: 1fr; }
+  .vol-fields { grid-template-columns: 1fr !important; }
+  .vol-role-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ============================================================
    8a. PRE-FOOTER + FOOTER UPGRADES
    ============================================================ */
 .prefooter {

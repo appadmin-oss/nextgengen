@@ -191,9 +191,9 @@ function public_contact(array $p): array {
 
 function public_apply(array $p): array {
     $kind = (string)($p['kind'] ?? 'teen');
-    if ($kind !== 'teen' && $kind !== 'mentor') return ['ok' => false, 'error' => 'bad_kind'];
+    if (!in_array($kind, ['teen', 'mentor', 'volunteer'], true)) return ['ok' => false, 'error' => 'bad_kind'];
     // Respect the admin toggles (default open).
-    $openKey = $kind === 'mentor' ? 'mentor_applications_open' : 'applications_open';
+    $openKey = $kind === 'teen' ? 'applications_open' : ($kind === 'mentor' ? 'mentor_applications_open' : 'volunteer_applications_open');
     if (setting_raw($openKey) === '0') return ['ok' => false, 'error' => 'applications_closed'];
     $name = trim((string)($p['name'] ?? ''));
     if (strlen($name) < 2 || strlen($name) > 120) return ['ok' => false, 'error' => 'bad_name'];
@@ -203,7 +203,7 @@ function public_apply(array $p): array {
     $why = trim((string)($p['why'] ?? ''));
     if (strlen($why) > 2000) return ['ok' => false, 'error' => 'why_too_long'];
 
-    $age = 0; $track = ''; $centre = ''; $role = ''; $program = '';
+    $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $phone = ''; $courses = [];
     // A short URL to a headshot uploaded (unsigned) to Cloudinary. Optional —
     // only trusted if it points at the configured Cloudinary CDN host.
     $photoUrl = trim((string)($p['photoUrl'] ?? ''));
@@ -218,6 +218,20 @@ function public_apply(array $p): array {
         // Students on-ramp; 'anchor' = the flagship 12-week NGG. Drives the
         // member type created on conversion.
         $program = in_array((string)($p['program'] ?? ''), ['summer', 'anchor'], true) ? (string)$p['program'] : 'anchor';
+    } elseif ($kind === 'volunteer') {
+        // Structured taxonomy: Volunteer → admin | mentor | instructor,
+        // instructors additionally pick the course(s) they can teach.
+        $role = strtolower(trim((string)($p['role'] ?? '')));
+        if (!in_array($role, ['admin', 'mentor', 'instructor'], true)) return ['ok' => false, 'error' => 'bad_role'];
+        $phone = sms_normalize((string)($p['phone'] ?? ''));
+        if ($role === 'instructor') {
+            $offered = volunteer_course_options();
+            foreach ((is_array($p['courses'] ?? null) ? $p['courses'] : []) as $c) {
+                $c = (string)$c;
+                if (in_array($c, $offered, true) && !in_array($c, $courses, true)) $courses[] = $c;
+            }
+            if (!$courses) return ['ok' => false, 'error' => 'course_required'];
+        }
     } else {
         $role = substr(trim((string)($p['role'] ?? '')), 0, 60);
     }
@@ -228,12 +242,19 @@ function public_apply(array $p): array {
         db_insert('applications', [
             'kind' => $kind, 'name' => $name, 'age' => $age ?: null, 'centre' => $centre, 'track' => $track,
             'role' => $role, 'why' => $why, 'email' => $email, 'program' => $program, 'photoUrl' => $photoUrl,
+            'phone' => $phone, 'courses' => $courses ? json_encode($courses, JSON_UNESCAPED_SLASHES) : '',
             'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
         ]);
+        if ($kind === 'volunteer') {
+            event_emit('volunteer.applied', [
+                'name' => $name, 'role' => $role, 'courses' => $courses,
+                'contact' => mask_email($email), 'status' => 'new',
+            ]);
+        }
         // Notify the admissions inbox so applications don't sit unseen.
         $adminEmail = ($GLOBALS['CONFIG']['admin_email'] ?? '') ?: ($GLOBALS['CONFIG']['mail']['reply_to'] ?? '');
         if ($adminEmail) {
-            $label = $kind === 'mentor' ? 'mentor' : ($program === 'summer' ? 'Summer' : 'Anchor 12');
+            $label = $kind === 'volunteer' ? ('volunteer · ' . $role) : ($kind === 'mentor' ? 'mentor' : ($program === 'summer' ? 'Summer' : 'Anchor 12'));
             @send_mail((string)$adminEmail, "New {$label} application — {$name}",
                 email_template([
                     'title' => 'New application',
@@ -250,4 +271,28 @@ function public_apply(array $p): array {
     }
     audit('apply.' . $kind, null, $email, ['name' => $name, 'track' => $track ?: $role, 'program' => $program], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'duplicate' => (bool)$dupe];
+}
+
+/* ── Volunteer registration (public) ──────────────────────────────────────── */
+
+/** The courses instructors can offer — same source the live summer
+ *  registration form serves, so the admin's form builder stays the single
+ *  place to manage the catalogue. */
+function volunteer_course_options(): array {
+    $live = form_live();
+    foreach ($live['fields'] as $f) {
+        if (($f['key'] ?? '') === 'course' && !empty($f['options']) && is_array($f['options'])) {
+            return array_values(array_map('strval', $f['options']));
+        }
+    }
+    return ['Coding & Robotics', 'Design & Media', 'Public Speaking', 'Chess & Strategy'];
+}
+
+function public_volunteer_context(): array {
+    return [
+        'ok' => true,
+        'open' => setting_raw('volunteer_applications_open') !== '0',
+        'roles' => ['admin', 'mentor', 'instructor'],
+        'courses' => volunteer_course_options(),
+    ];
 }

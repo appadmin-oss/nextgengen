@@ -122,6 +122,19 @@ chk('public reads published post', count(backend_dispatch('public.posts', ['kind
 chk('newsletter idempotent', backend_dispatch('public.newsletter', ['email' => 'sub@example.com'])['ok'] && backend_dispatch('public.newsletter', ['email' => 'sub@example.com'])['ok']);
 chk('apply validates age', backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'Kid', 'email' => 'k@example.com', 'age' => 40])['error'] === 'bad_age');
 
+// ── Volunteer registration (public taxonomy: admin | mentor | instructor) ──
+$vctx = backend_dispatch('public.volunteer.context', []);
+chk('volunteer context lists roles', $vctx['roles'] === ['admin', 'mentor', 'instructor']);
+chk('volunteer context serves the course catalogue', in_array('Coding & Robotics', $vctx['courses'], true));
+chk('volunteer apply rejects unknown role', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'chef', 'name' => 'Vol One', 'email' => 'vol1@example.com'])['error'] === 'bad_role');
+chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'instructor', 'name' => 'Vol One', 'email' => 'vol1@example.com', 'courses' => ['Basket Weaving']])['error'] === 'course_required');
+chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'admin', 'name' => 'Vol Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567'])['ok'] === true);
+chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications WHERE email = 'vol-admin@example.com'")['phone'] === '+2348031234567');
+chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'instructor', 'name' => 'Vol Teach', 'email' => 'vol-teach@example.com', 'courses' => ['Coding & Robotics', 'Chess & Strategy', 'Basket Weaving']])['ok'] === true);
+chk('instructor courses stored filtered to catalogue', json_decode((string)db_row("SELECT courses FROM applications WHERE email = 'vol-teach@example.com'")['courses'], true) === ['Coding & Robotics', 'Chess & Strategy']);
+chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'admin', 'name' => 'Vol Admin', 'email' => 'vol-admin@example.com'])['duplicate'] === true);
+chk('volunteer.applied event queued for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.applied'")['c'] === 2);
+
 // ── Anchor content (admin-managed, member_state) ──
 chk('anchor defaults have 12 weeks', count(backend_dispatch('public.anchorContent', [])['content']['weeks']) === 12);
 backend_dispatch('admin.anchor.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['quotes' => ['Only this one.']]]);

@@ -319,7 +319,7 @@ function VolunteersPage({ setPage }) {
         <div style={{position:"absolute", inset:0, backgroundImage:"radial-gradient(circle at 80% 50%, rgba(208,255,58,0.14), transparent 60%)"}}/>
         <div className="container" style={{position:"relative", display:"grid", gridTemplateColumns:"1.3fr 1fr", gap:48, alignItems:"center"}}>
           <div>
-            <span className="chip chip-on-dark"><span className="dot dot-lime"/> MENTORS · INSTRUCTORS · CREATIVES · OPS</span>
+            <span className="chip chip-on-dark"><span className="dot dot-lime"/> ADMINS · MENTORS · INSTRUCTORS</span>
             <h1 className="display" style={{fontSize:"clamp(56px, 8vw, 124px)", margin:"18px 0 16px", color:"white", lineHeight:0.9}}>
               Join the rebuilding<br/>of <span style={{color:"var(--lime)"}}>the next generation.</span>
             </h1>
@@ -328,11 +328,8 @@ function VolunteersPage({ setPage }) {
             </p>
             <button
               className="btn btn-lime btn-lg mt-32"
-              onClick={() => {
-                const el = document.getElementById("mentor-apply");
-                if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-              }}
-            >Apply to mentor →</button>
+              onClick={() => setPage("volunteer")}
+            >Register as a volunteer →</button>
           </div>
           <Photo name="mentor" style={{height:420}} overlay>
             <div style={{position:"absolute", bottom:20, left:20, right:20, color:"white"}}>
@@ -347,17 +344,18 @@ function VolunteersPage({ setPage }) {
 
       <section className="section">
         <div className="container">
-          <SectionHead eyebrow="FIVE WAYS TO BE USEFUL" title="Pick the shape of your time." />
-          <div style={{display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:14}}>
+          <SectionHead eyebrow="THREE WAYS TO BE USEFUL" title="Pick the shape of your time." />
+          <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:14}} className="vol-role-grid">
             {VOLUNTEER_ROLES.map((r, i) => (
-              <div key={r.name} className="card" style={{padding:24, minHeight:240, display:"flex", flexDirection:"column", justifyContent:"space-between"}}>
+              <button key={r.key} className="card vol-role-card" style={{padding:24, minHeight:240, display:"flex", flexDirection:"column", justifyContent:"space-between", textAlign:"left", cursor:"pointer"}}
+                onClick={() => { history.replaceState({}, "", "/volunteer?role=" + r.key); setPage("volunteer"); }}>
                 <div>
                   <div className="display" style={{fontSize:36, color:"var(--gold-500)"}}>0{i+1}</div>
                   <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, marginTop:8, lineHeight:1.1}}>{r.name}</div>
                   <div className="mono" style={{fontSize:11, color:"var(--coral)", marginTop:8, letterSpacing:"0.12em"}}>{r.commit.toUpperCase()}</div>
                 </div>
-                <div style={{fontSize:13, color:"var(--ink-500)", lineHeight:1.4}}>{r.ideal}</div>
-              </div>
+                <div style={{fontSize:13, color:"var(--ink-500)", lineHeight:1.4}}>{r.ideal}<span style={{display:"block", marginTop:10, fontWeight:600, color:"var(--navy-900)"}}>Register →</span></div>
+              </button>
             ))}
           </div>
         </div>
@@ -386,8 +384,16 @@ function VolunteersPage({ setPage }) {
         </div>
       </section>
 
-      {/* Mentor application */}
-      <MentorApplySection/>
+      {/* Registration hand-off */}
+      <section className="section" style={{paddingTop:0}}>
+        <div className="container" style={{maxWidth:760, textAlign:"center"}}>
+          <div className="card" style={{padding:"44px 36px"}}>
+            <h2 className="display" style={{fontSize:"clamp(28px,4vw,44px)", margin:"0 0 10px"}}>Ready? It takes two minutes.</h2>
+            <p style={{color:"var(--ink-500)", fontSize:15, margin:"0 0 22px"}}>One form — pick Admin, Mentor or Instructor, and instructors choose their courses.</p>
+            <button className="btn btn-gold btn-lg" onClick={() => setPage("volunteer")}>Register as a volunteer →</button>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -1029,6 +1035,174 @@ function SummerProfilePage({ setPage }) {
                   {att.map((a, i) => <span key={i} className="chip chip-lime" title={a.checkInAt}>{a.date}</span>)}
                 </div>}
           </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* =================== VOLUNTEER REGISTRATION (public, /volunteer) ============
+   Volunteer is the category; the lanes below are its sub-roles. Instructors
+   additionally pick the course(s) they can teach — the catalogue is served
+   by the API from the live registration form, so admins manage it in one
+   place. Minimalist single-column flow: lane → (courses) → details. */
+const VOL_LANES = [
+  { key: "admin",      icon: "🗂", name: "Admin / Ops", line: "Logistics, records, parent comms — the engine room of every Saturday." },
+  { key: "mentor",     icon: "🧭", name: "Mentor",      line: "Guide a small circle of teenagers through the season. Listen first." },
+  { key: "instructor", icon: "🎓", name: "Instructor",  line: "Teach one of the season's courses, from first class to showcase." },
+];
+
+function VolunteerRegisterPage({ setPage }) {
+  const [ctx, setCtx] = React.useState(null);
+  const [role, setRole] = React.useState(() => {
+    const r = new URLSearchParams(window.location.search).get("role") || "";
+    return VOL_LANES.some(l => l.key === r) ? r : "";
+  });
+  const [courses, setCourses] = React.useState([]);
+  const [d, setD] = React.useState({ name: "", email: "", phone: "", why: "" });
+  const [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+  const [err, setErr] = React.useState("");
+
+  React.useEffect(() => {
+    NGGApi.public.volunteer.context()
+      .then(setCtx)
+      .catch(() => setCtx({ open: true, courses: ["Coding & Robotics", "Design & Media", "Public Speaking", "Chess & Strategy"] }));
+  }, []);
+
+  const set = (k) => (e) => { setD({ ...d, [k]: e.target.value }); if (err) setErr(""); };
+  const toggleCourse = (c) => setCourses(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]);
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim());
+  const ready = role !== "" && d.name.trim().length >= 2 && emailOk && (role !== "instructor" || courses.length > 0);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!ready || busy) return;
+    setBusy(true); setErr("");
+    try {
+      await NGGApi.public.apply({
+        kind: "volunteer", role,
+        name: d.name.trim(), email: d.email.trim(), phone: d.phone.trim(),
+        why: d.why.trim(), courses: role === "instructor" ? courses : [],
+      });
+      setDone(true);
+      if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Registration received");
+    } catch (e2) {
+      const code = e2.code || e2.message;
+      setErr({
+        rate_limited: "Too many submissions — wait a few minutes and try again.",
+        applications_closed: "Volunteer registration is closed right now. Check back soon.",
+        course_required: "Pick at least one course you can teach.",
+        bad_email: "That email doesn't look right.",
+      }[code] || "Couldn't submit. Please try again.");
+    } finally { setBusy(false); }
+  };
+
+  const stepNo = (n, label) => (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 18 }}>
+      <span className="mono" style={{ fontSize: 12, color: "var(--gold-500)", letterSpacing: "0.14em" }}>{n}</span>
+      <h2 className="display" style={{ fontSize: "clamp(24px,3vw,34px)", margin: 0 }}>{label}</h2>
+    </div>
+  );
+
+  if (done) return (
+    <div className="page" data-screen-label="Volunteer · done">
+      <section className="section"><div className="container" style={{ maxWidth: 620 }}>
+        <div className="card reveal is-visible" style={{ padding: "48px 40px", textAlign: "center" }}>
+          <div style={{ width: 64, height: 64, margin: "0 auto 20px", borderRadius: "50%", background: "var(--lime)", display: "grid", placeItems: "center", fontSize: 30, color: "var(--navy-900)" }}>✓</div>
+          <h1 className="display" style={{ fontSize: "clamp(32px,4vw,44px)", margin: "0 0 12px" }}>You're in the pipeline.</h1>
+          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6, margin: "0 0 8px" }}>
+            Thank you, {d.name.trim().split(" ")[0] || "friend"}. We review every registration by hand and reply within a week.
+          </p>
+          <p style={{ color: "var(--ink-500)", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
+            Volunteers who work directly with teenagers complete safeguarding screening before their first session.
+          </p>
+          <button className="btn btn-primary btn-lg mt-32" onClick={() => setPage("home")}>Back to home →</button>
+        </div>
+      </div></section>
+    </div>
+  );
+
+  return (
+    <div className="page" data-screen-label="Volunteer · register">
+      <section className="section" style={{ paddingTop: 72 }}>
+        <div className="container" style={{ maxWidth: 760 }}>
+          <span className="eyebrow" style={{ color: "var(--gold-500)" }}>VOLUNTEER · NEXT GENERATION GENIUS</span>
+          <h1 className="display" style={{ fontSize: "clamp(44px,6vw,84px)", margin: "10px 0 14px", lineHeight: 0.95 }}>
+            Give a season.<br/>Shape a genius.
+          </h1>
+          <p style={{ fontSize: 17, color: "var(--ink-500)", lineHeight: 1.6, maxWidth: 560, margin: 0 }}>
+            One form, three ways in. Tell us the shape of your time and we'll take it from there.
+          </p>
+
+          {ctx && ctx.open === false ? (
+            <div className="card mt-40" style={{ padding: 32 }}>
+              <h2 className="display" style={{ fontSize: 26, margin: "0 0 8px" }}>Registration is paused.</h2>
+              <p style={{ color: "var(--ink-500)", margin: 0 }}>We're between intakes. Leave your email via the newsletter below and we'll announce the next window.</p>
+            </div>
+          ) : (
+            <form onSubmit={submit} noValidate>
+              {/* 01 · Lane */}
+              <div className="mt-48">
+                {stepNo("01", "Pick your lane")}
+                <div className="vol-lanes" role="radiogroup" aria-label="Volunteer role">
+                  {VOL_LANES.map(l => (
+                    <button type="button" key={l.key} role="radio" aria-checked={role === l.key}
+                      className={"vol-lane" + (role === l.key ? " is-active" : "")}
+                      onClick={() => { setRole(l.key); if (err) setErr(""); }}>
+                      <span className="vol-lane-icon" aria-hidden="true">{l.icon}</span>
+                      <span className="vol-lane-name">{l.name}</span>
+                      <span className="vol-lane-line">{l.line}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 02 · Courses (instructors only) */}
+              {role === "instructor" && (
+                <div className="mt-48">
+                  {stepNo("02", "What can you teach?")}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                    {(ctx ? ctx.courses : []).map(c => (
+                      <button type="button" key={c}
+                        className={"vol-chip" + (courses.includes(c) ? " is-active" : "")}
+                        aria-pressed={courses.includes(c)}
+                        onClick={() => toggleCourse(c)}>{c}</button>
+                    ))}
+                  </div>
+                  <p className="mono" style={{ fontSize: 11, color: "var(--ink-500)", letterSpacing: "0.08em", marginTop: 12 }}>
+                    PICK EVERY COURSE YOU COULD RUN — WE MATCH BY DEMAND.
+                  </p>
+                </div>
+              )}
+
+              {/* 03 · Details */}
+              <div className="mt-48">
+                {stepNo(role === "instructor" ? "03" : "02", "Your details")}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }} className="vol-fields">
+                  <div className="field"><label htmlFor="vol-name">Full name</label>
+                    <input id="vol-name" value={d.name} onChange={set("name")} autoComplete="name" placeholder="Your name"/></div>
+                  <div className="field"><label htmlFor="vol-email">Email</label>
+                    <input id="vol-email" type="email" value={d.email} onChange={set("email")} autoComplete="email" placeholder="you@example.com"/></div>
+                  <div className="field"><label htmlFor="vol-phone">Phone · optional</label>
+                    <input id="vol-phone" type="tel" value={d.phone} onChange={set("phone")} autoComplete="tel" placeholder="0803 000 0000"/></div>
+                  <div className="field" style={{ gridColumn: "1 / -1" }}><label htmlFor="vol-why">Why you · optional</label>
+                    <textarea id="vol-why" rows={3} value={d.why} onChange={set("why")} placeholder="A line or two — craft, experience, or simply why this matters to you."/></div>
+                </div>
+              </div>
+
+              {err && <p role="alert" style={{ color: "var(--coral)", fontSize: 14, marginTop: 20, marginBottom: 0 }}>{err}</p>}
+
+              <div className="mt-32" style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+                <button type="submit" className="btn btn-gold btn-lg" disabled={!ready || busy}>
+                  {busy ? "Sending…" : "Register as a volunteer →"}
+                </button>
+                <span style={{ fontSize: 12.5, color: "var(--ink-500)", maxWidth: 340, lineHeight: 1.5 }}>
+                  Roles that work with teenagers pass safeguarding screening before the first session.
+                </span>
+              </div>
+            </form>
+          )}
         </div>
       </section>
     </div>
@@ -1886,4 +2060,4 @@ function CardStudio() {
   </>);
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio });
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio });

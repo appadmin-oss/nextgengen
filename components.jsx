@@ -668,6 +668,7 @@ function Footer({ setPage }) {
       h: "Get involved",
       links: [
         { label: "Apply for a session", page: "join" },
+        { label: "Volunteer with us", page: "volunteer" },
         { label: "Become a mentor", page: "volunteers" },
         { label: "The mentors", page: "mentors" },
         { label: "Contact us", page: "contact" },

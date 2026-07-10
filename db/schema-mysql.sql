@@ -185,6 +185,7 @@ CREATE TABLE IF NOT EXISTS applications (
   kind VARCHAR(16), name VARCHAR(255), age INT, centre VARCHAR(64), track VARCHAR(64),
   role VARCHAR(64), why TEXT, email VARCHAR(200), status VARCHAR(32) DEFAULT 'new',
   program VARCHAR(16) DEFAULT '', photoUrl VARCHAR(512) DEFAULT '',
+  phone VARCHAR(24) DEFAULT '', courses TEXT,
   createdAt VARCHAR(40), ip VARCHAR(64),
   INDEX idx_apps_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -157,6 +157,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.summerProfile'    => 'public_summer_profile',
             'public.newsletter'       => 'public_newsletter',
             'public.apply'            => 'public_apply',
+            'public.volunteer.context' => 'public_volunteer_context',
             'public.contact'          => 'public_contact',
         ];
     }

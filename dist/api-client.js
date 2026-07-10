@@ -159,6 +159,7 @@
       summerProfile: (q) => request('/public/summer-profile.php' + qs(q || {})),
       newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
       apply:      (data) => request('/public/apply.php', { body: data }),
+      volunteer:  { context: () => request('/public/volunteer.php') },
       contact:    (data) => request('/public/contact.php', { body: data }),
       gate: {
         context:  (g) => request('/public/gate.php' + qs({ g })),

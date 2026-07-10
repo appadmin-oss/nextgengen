@@ -155,12 +155,12 @@ const FAQ = [
   { q: "Where do you meet?", a: "Two centres in Alimosho, Lagos: CACENTRE Egbeda and CACENTRE Ayobo. Saturdays — see the home page for the next session schedule." },
 ];
 
+// Volunteer taxonomy — Volunteer is the category; these are its lanes.
+// Keys match the server's accepted roles (public.apply kind=volunteer).
 const VOLUNTEER_ROLES = [
-  { name: "Mentor",            commit: "4 hrs / week",  ideal: "Adults 25+ in any field, willing to listen first." },
-  { name: "Instructor",        commit: "Cohort-based",  ideal: "Practitioners who can teach one skill across 12 weeks." },
-  { name: "Project Coordinator",commit:"6–10 hrs / week",ideal: "Operators who like calendars, logistics, momentum." },
-  { name: "Creative",          commit: "Project-based", ideal: "Designers, filmmakers, photographers, writers." },
-  { name: "Admin / Ops",       commit: "Flexible",      ideal: "People who turn chaos into a checklist." },
+  { key: "admin",      name: "Admin / Ops", commit: "Flexible",      ideal: "People who turn chaos into a checklist — logistics, records, parent comms." },
+  { key: "mentor",     name: "Mentor",      commit: "4 hrs / week",  ideal: "Adults 25+ in any field, willing to listen first and stay present for a cohort." },
+  { key: "instructor", name: "Instructor",  commit: "Cohort-based",  ideal: "Practitioners who can teach one course across the season." },
 ];
 
 // Organisation contact + social handles — the single place to update them.
