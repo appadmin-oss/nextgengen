@@ -820,10 +820,10 @@ function Footer({ setPage }) {
           <div className="footer-bottom">
             <span className="copy">© {new Date().getFullYear()} AFROVANGUARD · ALL RIGHTS RESERVED</span>
             <div className="legal-links">
-              <button className="legal" onClick={go("parents")}>Privacy</button>
-              <button className="legal" onClick={go("parents")}>Safeguarding</button>
+              <button className="legal" onClick={() => { history.replaceState({}, "", "/legal?doc=privacy"); setPage("legal"); }}>Privacy</button>
+              <button className="legal" onClick={() => { history.replaceState({}, "", "/legal?doc=safeguarding"); setPage("legal"); }}>Safeguarding</button>
+              <button className="legal" onClick={() => { history.replaceState({}, "", "/legal?doc=rights"); setPage("legal"); }}>Data rights</button>
               <button className="legal" onClick={go("contact")}>Contact</button>
-              <button className="legal" onClick={go("parents")}>Press kit</button>
               <button className="legal" onClick={go("admin")}>Staff</button>
             </div>
             <span className="made">

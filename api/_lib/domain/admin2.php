@@ -31,6 +31,11 @@ function admin_overview(array $p): array {
             'new'     => $one("SELECT COUNT(*) c FROM applications WHERE status='new'"),
             'total'   => $one("SELECT COUNT(*) c FROM applications"),
         ],
+        'volunteers' => [
+            'pending' => $one("SELECT COUNT(*) c FROM applications WHERE kind='volunteer' AND status IN ('new','reviewing')"),
+            'active'  => $one("SELECT COUNT(*) c FROM volunteers WHERE status='active'"),
+            'unscreened' => $one("SELECT COUNT(*) c FROM volunteers WHERE status='active' AND safeguarding != 'cleared'"),
+        ],
         'anchor' => [
             'journals'  => $one("SELECT COUNT(*) c FROM journal"),
             'verified'  => $one("SELECT COUNT(*) c FROM member_progress WHERE status='verified'"),

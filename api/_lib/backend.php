@@ -140,6 +140,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.volunteers.list'     => 'admin_volunteers_list',
             'admin.volunteers.approve'  => 'admin_volunteer_approve',
             'admin.volunteers.decline'  => 'admin_volunteer_decline',
+            'admin.volunteers.safeguard' => 'admin_volunteer_safeguard',
             'admin.application.convert' => 'admin_application_convert',
             'admin.newsletter.list'   => 'admin_newsletter_list',
             'admin.contact.list'      => 'admin_contact_list',
@@ -161,6 +162,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.newsletter'       => 'public_newsletter',
             'public.apply'            => 'public_apply',
             'public.volunteer.context' => 'public_volunteer_context',
+            'public.cert'             => 'public_cert',
+            'public.instructorRoster' => 'public_instructor_roster',
             'public.contact'          => 'public_contact',
         ];
     }

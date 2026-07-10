@@ -1014,7 +1014,12 @@ function SummerProfilePage({ setPage }) {
                 {(m.fullName || "?").trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()}
               </div>}
           <div>
-            <span className="chip chip-on-dark"><span className="dot dot-gold"/> {m.kind === "volunteer" ? "VOLUNTEER" + (m.role ? " · " + m.role.toUpperCase() : "") : "SUMMER SCHOOL · " + m.cohortId}</span>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <span className="chip chip-on-dark"><span className="dot dot-gold"/> {m.kind === "volunteer" ? "VOLUNTEER" + (m.role ? " · " + m.role.toUpperCase() : "") : "SUMMER SCHOOL · " + m.cohortId}</span>
+              {m.kind === "volunteer" && (m.safeguardingCleared
+                ? <span className="chip chip-lime">✓ SAFEGUARDING CLEARED</span>
+                : <span className="chip" style={{ background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.8)" }}>SCREENING PENDING</span>)}
+            </div>
             <h1 className="display" style={{ fontSize: "clamp(40px,6vw,76px)", margin: "12px 0 6px", color: "white", lineHeight: 0.95 }}>{m.fullName}</h1>
             <div className="mono" style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.1em" }}>
               {m.studentId}{m.track ? " · " + m.track : ""}{(m.courses || []).length ? " · " + m.courses.join(" · ") : ""}{m.centre ? " · CACENTRE " + m.centre : ""}{m.handle ? " · @" + m.handle : ""}
@@ -1025,9 +1030,12 @@ function SummerProfilePage({ setPage }) {
       <section className="section">
         <div className="container" style={{ maxWidth: 720 }}>
           <div className="card" style={{ padding: 28 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
               <h2 className="display" style={{ fontSize: 28, margin: 0 }}>Attendance</h2>
-              <div><span className="display" style={{ fontSize: 40, color: "var(--gold-500)" }}>{m.attendanceCount || 0}</span> <span className="mono" style={{ color: "var(--ink-500)", fontSize: 12 }}>DAYS PRESENT</span></div>
+              <div style={{ display: "flex", gap: 26, alignItems: "baseline" }}>
+                <div><span className="display" style={{ fontSize: 40, color: "var(--gold-500)" }}>{m.attendanceCount || 0}</span> <span className="mono" style={{ color: "var(--ink-500)", fontSize: 12 }}>{m.kind === "volunteer" ? "SESSIONS" : "DAYS PRESENT"}</span></div>
+                {m.kind === "volunteer" && typeof m.hours === "number" && <div><span className="display" style={{ fontSize: 40, color: "var(--navy-900)" }}>{m.hours}</span> <span className="mono" style={{ color: "var(--ink-500)", fontSize: 12 }}>HOURS</span></div>}
+              </div>
             </div>
             {att.length === 0
               ? <p style={{ color: "var(--ink-500)", marginTop: 12 }}>No check-ins recorded yet.</p>
@@ -1035,8 +1043,134 @@ function SummerProfilePage({ setPage }) {
                   {att.map((a, i) => <span key={i} className="chip chip-lime" title={a.checkInAt}>{a.date}</span>)}
                 </div>}
           </div>
+
+          {/* Volunteer service certificates — verifiable, shareable */}
+          {m.kind === "volunteer" && (m.certificates || []).length > 0 && (
+            <div className="card" style={{ padding: 28, marginTop: 20 }}>
+              <h2 className="display" style={{ fontSize: 24, margin: "0 0 4px" }}>Service certificates</h2>
+              <p style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 16px" }}>Verifiable proof of your hours — open, print or share the link.</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {m.certificates.map(c => (
+                  <a key={c.certId} href={"/cert/" + c.certId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderRadius: 14, background: "var(--cream-50, #faf6ec)", border: "1px solid rgba(12,20,50,0.08)", textDecoration: "none", color: "var(--ink-900)" }}>
+                    <span><b style={{ fontFamily: "var(--font-display)" }}>{c.milestone} sessions</b> <span style={{ color: "var(--ink-500)" }}>· ≈{c.hours} hours</span></span>
+                    <span className="mono" style={{ fontSize: 12, color: "var(--gold-600, #b07c12)" }}>{c.certId} →</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Instructor's own class roster — token + registered email gate */}
+          {m.kind === "volunteer" && m.role === "instructor" && (m.courses || []).length > 0 && (
+            <InstructorRoster token={(window.location.pathname.split("/").filter(Boolean)[1]) || ""}/>
+          )}
         </div>
       </section>
+    </div>
+  );
+}
+
+/* Instructor's course roster — a private view on the digital ID. Gated by the
+   QR token PLUS the instructor's registered email (typed here, never stored),
+   so a lost/forwarded card can't expose a class list. First names only. */
+function InstructorRoster({ token }) {
+  const [email, setEmail] = React.useState("");
+  const [state, setState] = React.useState({ status: "locked", data: null, err: "" });
+  const open = async (e) => {
+    if (e) e.preventDefault();
+    if (!email.trim() || state.status === "loading") return;
+    setState({ status: "loading", data: null, err: "" });
+    try {
+      const r = await NGGApi.public.instructorRoster(token, email.trim());
+      setState({ status: "open", data: r, err: "" });
+    } catch (e2) {
+      const c = e2.code || e2.message;
+      setState({ status: "locked", data: null, err: c === "not_authorised" ? "That email doesn't match this card." : "Couldn't open your roster." });
+    }
+  };
+  if (state.status === "open") {
+    const d = state.data;
+    return (
+      <div className="card" style={{ padding: 28, marginTop: 20 }}>
+        <h2 className="display" style={{ fontSize: 24, margin: "0 0 4px" }}>Your class{d.courses.length > 1 ? "es" : ""}</h2>
+        <p style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 16px" }}>{d.courses.join(" · ")} · {d.students.length} student{d.students.length === 1 ? "" : "s"}</p>
+        {d.students.length === 0
+          ? <p style={{ color: "var(--ink-500)" }}>No verified students in your course{d.courses.length > 1 ? "s" : ""} yet.</p>
+          : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {d.students.map((st, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, background: st.todayPresent ? "rgba(118,176,67,0.12)" : "var(--cream-50, #faf6ec)" }}>
+                  <span><b>{st.firstName}</b> <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>· {st.course}</span></span>
+                  <span className="mono" style={{ fontSize: 12, color: st.todayPresent ? "var(--lime-700, #4d7a12)" : "var(--ink-500)" }}>{st.todayPresent ? "● in today" : st.days + "d"}</span>
+                </div>
+              ))}
+            </div>}
+      </div>
+    );
+  }
+  return (
+    <div className="card" style={{ padding: 28, marginTop: 20 }}>
+      <h2 className="display" style={{ fontSize: 24, margin: "0 0 4px" }}>Instructor view</h2>
+      <p style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 16px" }}>Confirm your registered email to see today's class roster.</p>
+      <form onSubmit={open} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email"
+          style={{ flex: "1 1 220px", padding: "12px 14px", borderRadius: 11, border: "1px solid rgba(12,20,50,0.15)", fontSize: 15, fontFamily: "inherit" }}/>
+        <button className="btn btn-primary" disabled={!email.trim() || state.status === "loading"}>{state.status === "loading" ? "Opening…" : "Open roster →"}</button>
+      </form>
+      {state.err && <p style={{ color: "var(--coral)", fontSize: 14, marginTop: 12, marginBottom: 0 }}>{state.err}</p>}
+    </div>
+  );
+}
+
+/* =================== VOLUNTEER SERVICE CERTIFICATE (public, /cert/<id>) ===== */
+function CertificatePage() {
+  const [state, setState] = React.useState({ loading: true, cert: null });
+  React.useEffect(() => {
+    const id = (window.location.pathname || "").split("/").filter(Boolean)[1] || "";
+    NGGApi.public.cert(id).then(r => setState({ loading: false, cert: r.cert })).catch(() => setState({ loading: false, cert: null }));
+  }, []);
+  if (state.loading) return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0a1130" }}><div className="dash-spinner"/></div>;
+  if (!state.cert) return (
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0a1130", color: "#fff", textAlign: "center", padding: 24 }}>
+      <div>
+        <div className="mono" style={{ color: "#ff8a8a", letterSpacing: "0.14em" }}>CERTIFICATE NOT FOUND</div>
+        <h1 className="display" style={{ fontSize: "clamp(32px,5vw,56px)", margin: "12px 0" }}>We can't verify that link.</h1>
+        <p style={{ color: "rgba(255,255,255,0.6)" }}>The certificate ID is wrong, or it was revoked.</p>
+        <a className="btn btn-gold mt-24" href="/">Back to home →</a>
+      </div>
+    </div>
+  );
+  const c = state.cert;
+  const issued = new Date(c.issuedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  return (
+    <div className="cert-page" style={{ minHeight: "100vh", background: "#0a1130", padding: "48px 20px", display: "grid", placeItems: "center" }}>
+      <style>{`@media print { .cert-page { background: #fff !important; padding: 0 !important; } .cert-noprint { display: none !important; } .cert-card { box-shadow: none !important; border: 1px solid #ddd !important; } }`}</style>
+      <div className="cert-card" style={{ width: "min(760px, 100%)", background: "#fff", borderRadius: 20, padding: "clamp(32px, 6vw, 64px)", boxShadow: "0 30px 80px -20px rgba(0,0,0,0.5)", position: "relative", overflow: "hidden" }}>
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(60% 50% at 100% 0%, rgba(245,176,38,0.12), transparent 60%)" }}/>
+        <div style={{ position: "relative" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 36, flexWrap: "wrap", gap: 12 }}>
+            <img src="assets/logo.png" alt="Next Generation Genius" width={46} height={46} style={{ borderRadius: "50%" }}/>
+            <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#8a93a6" }}>CERTIFICATE OF SERVICE</span>
+          </div>
+          <p style={{ margin: 0, color: "#6b7385", fontSize: 15 }}>This certifies that</p>
+          <h1 className="display" style={{ fontSize: "clamp(34px,5vw,56px)", margin: "6px 0 4px", color: "#0a1130", lineHeight: 1 }}>{c.fullName}</h1>
+          <p style={{ margin: "0 0 28px", color: "#6b7385", fontSize: 15 }}>
+            served as a <b style={{ color: "#0a1130", textTransform: "capitalize" }}>{c.role}</b> volunteer with Next Generation Genius,
+            completing <b style={{ color: "#0a1130" }}>{c.milestone} sessions</b> — approximately <b style={{ color: "#0a1130" }}>{c.hours} hours</b> of service.
+          </p>
+          <div style={{ display: "flex", gap: 40, flexWrap: "wrap", borderTop: "1px solid #ececf0", paddingTop: 24 }}>
+            <div><div className="mono" style={{ fontSize: 10, color: "#8a93a6", letterSpacing: "0.12em" }}>ISSUED</div><div style={{ fontWeight: 600, color: "#0a1130" }}>{issued}</div></div>
+            <div><div className="mono" style={{ fontSize: 10, color: "#8a93a6", letterSpacing: "0.12em" }}>VOLUNTEER ID</div><div style={{ fontWeight: 600, color: "#0a1130" }}>{c.volunteerId}</div></div>
+            <div><div className="mono" style={{ fontSize: 10, color: "#8a93a6", letterSpacing: "0.12em" }}>CERTIFICATE</div><div style={{ fontWeight: 600, color: "#0a1130" }}>{c.certId}</div></div>
+          </div>
+        </div>
+      </div>
+      <div className="cert-noprint" style={{ marginTop: 24, display: "flex", gap: 12 }}>
+        <button className="btn btn-gold" onClick={() => window.print()}>Print / Save PDF</button>
+        <a className="btn btn-on-dark-ghost" href="/">Home</a>
+      </div>
+      <p className="cert-noprint mono" style={{ marginTop: 16, color: "rgba(255,255,255,0.45)", fontSize: 12, textAlign: "center" }}>
+        Verified live at next.afrovanguard.org.ng/cert/{c.certId}
+      </p>
     </div>
   );
 }
@@ -1848,29 +1982,42 @@ function GateCheckin({ g, card, inputS, gold, goldInk }) {
     setBusy(true); setErr("");
     try {
       const r = await NGGApi.public.gate.checkin(g, token);
-      setRecent(list => [{ name: r.student.fullName, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), already: !!r.already }, ...list].slice(0, 12));
+      const st = r.student || {};
+      const isVol = st.kind === "volunteer";
+      setRecent(list => [{
+        name: st.fullName,
+        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        already: !!r.already,
+        volunteer: isVol,
+        role: st.role || "",
+        // Warn if a volunteer who works with youth hasn't cleared screening.
+        warn: isVol && st.role !== "admin" && st.safeguardingCleared === false,
+        cert: r.certIssued ? r.certIssued.milestone : 0,
+      }, ...list].slice(0, 12));
       setCode("");
     } catch (e2) {
       const c = e2.code || e2.message;
-      setErr(c === "qr_unassigned" ? "That code isn't assigned to any student yet." : c === "student_not_found" ? "No student found for that code." : "Couldn't check in — try again.");
+      setErr(c === "qr_unassigned" ? "That code isn't assigned to anyone yet." : c === "student_not_found" ? "No student or volunteer found for that code." : "Couldn't check in — try again.");
     } finally { setBusy(false); }
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <form onSubmit={mark} style={{ display: "flex", gap: 8 }}>
-        <input style={{ ...inputS, flex: 1, fontFamily: "var(--font-mono, monospace)", letterSpacing: ".08em" }} placeholder="SUMQR-XXXX from the ID card" value={code} onChange={e => setCode(e.target.value.toUpperCase())} autoFocus/>
+        <input style={{ ...inputS, flex: 1, fontFamily: "var(--font-mono, monospace)", letterSpacing: ".08em" }} placeholder="Code from the ID card (SUMQR / VOLQR)" value={code} onChange={e => setCode(e.target.value.toUpperCase())} autoFocus/>
         <button disabled={busy || !code.trim()} style={{ padding: "0 20px", borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "…" : "✓"}</button>
       </form>
-      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Type the code printed under the QR. Duplicate scans are safe — a day counts once.</p>
+      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Type the code printed under the QR. Students and volunteers both scan here. Duplicate scans are safe — a day counts once.</p>
       {err && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 13 }}>{err}</div>}
       {recent.map((r, i) => (
-        <div key={i} style={{ ...card, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+        <div key={i} style={{ ...card, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, border: r.warn ? "1px solid rgba(255,120,120,.5)" : (card.border || undefined) }}>
           <span style={{ color: r.already ? "#ffce54" : "#6fdc9d", fontWeight: 800 }}>{r.already ? "↻" : "✓"}</span>
-          <b style={{ flex: 1, fontSize: 14 }}>{r.name}</b>
+          <b style={{ flex: 1, fontSize: 14 }}>{r.name}{r.volunteer && <span style={{ marginLeft: 8, fontSize: 10, letterSpacing: ".1em", padding: "2px 7px", borderRadius: 6, background: "rgba(245,176,38,.18)", color: "#ffce54", fontWeight: 700 }}>{(r.role || "VOL").toUpperCase()}</span>}</b>
+          {r.cert > 0 && <span title={r.cert + "-session certificate issued"} style={{ fontSize: 11, color: "#6fdc9d", fontWeight: 700 }}>🏅 {r.cert}</span>}
           <span style={{ color: "rgba(230,238,255,.6)", fontSize: 12 }}>{r.already ? "already in · " : ""}{r.at}</span>
         </div>
       ))}
+      {recent.some(r => r.warn) && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 12.5 }}>⚠ A volunteer above has not cleared safeguarding screening. They should not be unsupervised with young people.</div>}
       {!recent.length && <p style={{ color: "rgba(230,238,255,.45)", fontSize: 13, textAlign: "center", marginTop: 20 }}>Check-ins appear here as they happen.</p>}
     </div>
   );
@@ -2077,4 +2224,151 @@ function CardStudio() {
   </>);
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio });
+/* =================== LEGAL & DATA PROTECTION (public, /legal) ===============
+   NDPA/NDPR-aligned. Six documents in one page with an anchored side-nav.
+   Written for parents and volunteers of a Nigerian youth organisation, not
+   copy-pasted boilerplate. `?doc=safeguarding` deep-links a section. */
+const LEGAL_DOCS = [
+  { id: "privacy",    label: "Privacy Notice" },
+  { id: "terms",      label: "Terms of Use" },
+  { id: "safeguarding", label: "Safeguarding" },
+  { id: "consent",    label: "Parental Consent" },
+  { id: "cookies",    label: "Cookies" },
+  { id: "rights",     label: "Your Data Rights" },
+];
+
+function LegalPage({ setPage }) {
+  const initial = new URLSearchParams(window.location.search).get("doc");
+  const [doc, setDoc] = React.useState(LEGAL_DOCS.some(d => d.id === initial) ? initial : "privacy");
+  const updated = "July 2026";
+  const P = ({ children }) => <p style={{ color: "var(--ink-700)", lineHeight: 1.7, margin: "0 0 14px", fontSize: 15.5 }}>{children}</p>;
+  const H = ({ children }) => <h3 style={{ fontFamily: "var(--font-display)", fontSize: 20, margin: "28px 0 12px", color: "var(--navy-900)" }}>{children}</h3>;
+  const LI = ({ children }) => <li style={{ color: "var(--ink-700)", lineHeight: 1.65, marginBottom: 8, fontSize: 15.5 }}>{children}</li>;
+  const UL = ({ children }) => <ul style={{ margin: "0 0 14px", paddingLeft: 22 }}>{children}</ul>;
+
+  const bodies = {
+    privacy: <>
+      <P>Next Generation Genius (“NGG”, “we”), a programme of Street‑To‑Stardom under the Afrovanguard initiative, collects and processes personal data in line with the Nigeria Data Protection Act 2023 (NDPA) and the NDPR. This notice explains what we hold, why, and for how long. Because most of the people we serve are children, we treat this as a duty, not a formality.</P>
+      <H>What we collect</H>
+      <UL>
+        <LI><b>Summer students &amp; members (children):</b> name, age, school, course/centre, a website headshot, and program work (attendance, missions, journal reflections).</LI>
+        <LI><b>Parents/guardians:</b> name and at least one contact channel (phone or email), plus the consents you grant.</LI>
+        <LI><b>Volunteers:</b> name, email, phone, role, courses you can teach, and — for roles working with children — safeguarding-screening status.</LI>
+        <LI><b>Everyone:</b> minimal technical data (IP, coarse device info) used only for security and rate-limiting.</LI>
+      </UL>
+      <H>Why we process it (lawful basis)</H>
+      <P>For children, our basis is <b>verifiable parental consent</b> plus our legitimate interest in running a safe programme. For volunteers and parents, it is consent and the performance of our arrangement with you. Safeguarding processing rests on protecting the <b>vital interests</b> of a child.</P>
+      <H>Who can see it</H>
+      <P>Program staff see what their role requires. Sensitive answers (e.g. medical notes) are visible only to program staff and are never exported. We publish first names and attendance on a child's QR profile — never contact details, never a home address. We do not sell data, ever.</P>
+      <H>Sharing &amp; transfers</H>
+      <P>We use a small set of processors — email/SMS delivery (Termii, Twilio), image hosting (Cloudinary), and an optional Google Sheet mirror for admins. Each receives only what it needs. Where data leaves Nigeria, we rely on the processor's adequacy/contractual safeguards.</P>
+      <H>Retention</H>
+      <P>Child records are kept for the programme cycle plus the period we are required to retain safeguarding records, then archived or deleted. Volunteer records persist while active and for a reasonable period after, to honour service certificates. You can request earlier deletion (see Your Data Rights).</P>
+      <H>Contact</H>
+      <P>Data questions: <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng"}</a>. We respond within 30 days.</P>
+    </>,
+    terms: <>
+      <P>By using this website and our registration tools, you agree to these terms. They are deliberately short and plain.</P>
+      <H>Who may register</H>
+      <P>Children are registered <b>by a parent or guardian, or by our staff with a parent's contact on file</b> — never by the child alone. Volunteer registration is for adults (18+). You confirm the information you give is true and yours to share.</P>
+      <H>Acceptable use</H>
+      <UL>
+        <LI>Don't submit false registrations, scrape the site, or attempt to access another person's profile or ID.</LI>
+        <LI>QR codes and volunteer IDs are personal — don't share or forge them.</LI>
+        <LI>Don't upload anything you don't have the right to, or anything harmful.</LI>
+      </UL>
+      <H>Our commitments &amp; limits</H>
+      <P>We work to keep the service accurate and available, but provide it “as is”. Attendance, IDs and certificates reflect our records; if something looks wrong, tell us and we'll fix it. We may suspend accounts that put children or the programme at risk.</P>
+      <H>Changes</H>
+      <P>We may update these terms; material changes are announced on this page with a new date.</P>
+    </>,
+    safeguarding: <>
+      <P>The safety of every child in our rooms comes before everything else on this site. This is our public safeguarding commitment.</P>
+      <H>Screening</H>
+      <P>Every volunteer whose role brings them into contact with children — mentors and instructors — must complete <b>safeguarding screening before their first session</b>. Our attendance scanner shows a clear warning if an unscreened volunteer checks in, and they must not be alone with young people until cleared. Admin/ops roles that never work directly with children are screened proportionately.</P>
+      <H>Least data, seen by the fewest people</H>
+      <P>A child's public QR profile shows a first name, course and attendance — never contact details or address. Medical and sensitive notes are ring-fenced to program staff and excluded from every export and integration.</P>
+      <H>Photography &amp; media</H>
+      <P>Headshots are used for IDs and, where separately consented, programme media. Parents can withhold media consent without affecting registration, and can withdraw it later.</P>
+      <H>Reporting a concern</H>
+      <P>If you have a safeguarding concern, contact us immediately at <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng"}</a> or {typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "+234 903 777 6318"}. Urgent risk to a child should also be reported to the Lagos State authorities.</P>
+    </>,
+    consent: <>
+      <P>Registering a child is a two-step, consent-first process. A child is only officially enrolled once a parent or guardian has confirmed and granted consent.</P>
+      <H>The consents we ask for</H>
+      <UL>
+        <LI><b>Participation</b> — required. Permission for the child to take part in the programme.</LI>
+        <LI><b>Medical &amp; emergency care</b> — required. Basic first aid and seeking care in an emergency where you can't be reached.</LI>
+        <LI><b>Data processing</b> — required. Holding the child's registration data as described in the Privacy Notice.</LI>
+        <LI><b>Media</b> — optional. Using photos/video of the child in programme media.</LI>
+        <LI><b>Trips</b> — optional. Off-site programme activities.</LI>
+        <LI><b>Communications</b> — optional. Programme updates to your contact channel.</LI>
+      </UL>
+      <P>The three required consents must each be granted explicitly — there are no pre-ticked boxes and no bundling. Optional consents can be declined without affecting the child's place, and any consent can be withdrawn later by contacting us.</P>
+      <H>How we verify it's really you</H>
+      <P>We send a private confirmation link to the parent contact on file (email and/or SMS). Only someone with that link can complete consent, and the record notes who confirmed and when.</P>
+    </>,
+    cookies: <>
+      <P>We keep browser storage to the minimum needed to make the site work. We do not run advertising or third-party tracking cookies.</P>
+      <H>What we store</H>
+      <UL>
+        <LI><b>Session &amp; security</b> — a signed session cookie for signed-in staff/members, and a CSRF token. Strictly necessary.</LI>
+        <LI><b>Preferences</b> — small local-storage entries (e.g. theme, a saved registration draft) that stay on your device.</LI>
+        <LI><b>Anonymous counts</b> — aggregate stats with no personal profile attached.</LI>
+      </UL>
+      <P>Because we use only strictly-necessary and preference storage, the site works without a consent banner interrupting you. Clearing your browser storage removes the preference entries at any time.</P>
+    </>,
+    rights: <>
+      <P>Under the NDPA/NDPR you (or a parent, on a child's behalf) have clear rights over personal data. We honour them free of charge, within 30 days.</P>
+      <H>Your rights</H>
+      <UL>
+        <LI><b>Access</b> — a copy of the data we hold.</LI>
+        <LI><b>Rectification</b> — correct anything inaccurate.</LI>
+        <LI><b>Erasure</b> — delete data, subject to safeguarding-retention duties.</LI>
+        <LI><b>Restriction &amp; objection</b> — limit or object to certain processing.</LI>
+        <LI><b>Portability</b> — receive your data in a portable format.</LI>
+        <LI><b>Withdraw consent</b> — at any time, without affecting prior lawful processing.</LI>
+      </UL>
+      <H>How to exercise them</H>
+      <P>Email <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng"}</a> from the address on file, or call {typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "+234 903 777 6318"}. If you're unhappy with our response, you may complain to the Nigeria Data Protection Commission (NDPC).</P>
+    </>,
+  };
+
+  const active = LEGAL_DOCS.find(d => d.id === doc) || LEGAL_DOCS[0];
+  return (
+    <div className="page" data-screen-label="Legal">
+      <section className="page-hero page-hero-dark" style={{ background: "var(--navy-900)", color: "white", padding: "56px 0 40px" }}>
+        <div className="container">
+          <span className="chip chip-on-dark"><span className="dot dot-gold"/> LEGAL &amp; DATA PROTECTION</span>
+          <h1 className="display" style={{ fontSize: "clamp(36px,5vw,64px)", margin: "12px 0 6px", color: "white", lineHeight: 0.98 }}>The fine print, in plain words.</h1>
+          <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 15, margin: 0 }}>NDPA/NDPR-aligned · last updated {updated}</p>
+        </div>
+      </section>
+      <section className="section">
+        <div className="container legal-layout" style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 40, alignItems: "start" }}>
+          <nav className="legal-nav" style={{ position: "sticky", top: 90, display: "flex", flexDirection: "column", gap: 4 }}>
+            {LEGAL_DOCS.map(d => (
+              <button key={d.id} onClick={() => { setDoc(d.id); history.replaceState({}, "", "/legal?doc=" + d.id); }}
+                className="legal-nav-item"
+                style={{ textAlign: "left", padding: "10px 14px", borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 14.5, fontWeight: doc === d.id ? 700 : 500,
+                  background: doc === d.id ? "var(--navy-900)" : "transparent", color: doc === d.id ? "#fff" : "var(--ink-700)" }}>
+                {d.label}
+              </button>
+            ))}
+          </nav>
+          <div className="legal-body" style={{ maxWidth: 720 }}>
+            <h2 className="display" style={{ fontSize: 32, margin: "0 0 6px" }}>{active.label}</h2>
+            <div className="mono" style={{ color: "var(--ink-500)", fontSize: 12, marginBottom: 24 }}>UPDATED {updated.toUpperCase()}</div>
+            {bodies[doc]}
+            <div style={{ marginTop: 36, paddingTop: 20, borderTop: "1px solid rgba(12,20,50,0.1)", display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setPage("contact")}>Contact us</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setPage("home")}>Back to home</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, InstructorRoster, CertificatePage, LegalPage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio });

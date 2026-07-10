@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 16;
+const NGG_SCHEMA_TARGET = 17;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -549,6 +549,21 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX idx_vol_email ON volunteers(email);
             CREATE INDEX idx_vol_token ON volunteers(token);
+        ",
+
+        // Safeguarding status + the service ledger's milestone certificates.
+        17 => "
+            ALTER TABLE volunteers ADD COLUMN safeguarding TEXT DEFAULT 'pending';
+
+            CREATE TABLE volunteer_certs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              certId TEXT UNIQUE NOT NULL,
+              volunteerId TEXT NOT NULL,
+              milestone INTEGER,
+              hours INTEGER,
+              issuedAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_certs_vol ON volunteer_certs(volunteerId);
         ",
     ];
 

@@ -64,6 +64,7 @@ function AdminPage({ setPage }) {
           {view === "home" && <AdminHome setSection={setSection} hasCap={hasCap} member={member}/>}
           {view === "members" && <AdminMembers/>}
           {view === "applications" && <AdminApplications/>}
+          {view === "volunteers" && <AdminVolunteers/>}
           {view === "mentors" && <AdminMentors/>}
           {view === "mentorship" && <AdminMentorship/>}
           {view === "newsletter" && <AdminNewsletter/>}
@@ -188,6 +189,7 @@ function AdminNav({ section, setSection, hasCap }) {
     { h: "People", items: [
       { id: "members",   label: "Members",    icon: "◯", cap: "people" },
       { id: "applications", label: "Applications", icon: "✉", cap: "people" },
+      { id: "volunteers", label: "Volunteers", icon: "◈", cap: "people" },
       { id: "mentorship", label: "Mentorship", icon: "◐", cap: "people" },
     ]},
     { h: "Content", items: [
@@ -238,7 +240,7 @@ function titleFor(s) {
   return {
     home: "Overview", members: "Members", mentors: "Mentors", mentorship: "Mentorship", sessions: "Sessions",
     missions: "Anchor missions", anchor: "Anchor Journal app", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
-    applications: "Applications", newsletter: "Newsletter", messages: "Messages", settings: "Settings", summer: "Summer School",
+    applications: "Applications", volunteers: "Volunteers", newsletter: "Newsletter", messages: "Messages", settings: "Settings", summer: "Summer School",
   }[s] || "";
 }
 
@@ -255,7 +257,7 @@ function AdminHome({ setSection, hasCap, member }) {
 
   if (err) return <div className="admin-empty">Couldn't load overview: {err}</div>;
   if (!o) return <div className="dash-spinner"/>;
-  const m = o.members || {}, ap = o.applications || {}, asg = o.assignments || {}, an = o.anchor || {}, msg = o.messages || {};
+  const m = o.members || {}, ap = o.applications || {}, asg = o.assignments || {}, an = o.anchor || {}, msg = o.messages || {}, vol = o.volunteers || {};
   const maxCentre = Math.max(1, ...(o.byCentre || []).map(c => c.c));
   const maxTrack = Math.max(1, ...(o.byTrack || []).map(t => t.c));
   const roleLabels = { super_admin: "Super admin", admin: "Admin", editor: "Editor" };
@@ -278,9 +280,11 @@ function AdminHome({ setSection, hasCap, member }) {
       </div>
 
       {/* Needs-attention callouts */}
-      {((can("people") && ap.new > 0) || (can("content") && asg.toGrade > 0) || (can("inbox") && msg.unread > 0)) && (
+      {((can("people") && ap.new > 0) || (can("people") && vol.pending > 0) || (can("people") && vol.unscreened > 0) || (can("content") && asg.toGrade > 0) || (can("inbox") && msg.unread > 0)) && (
         <div className="admin-attn">
           {can("people") && ap.new > 0 && <button className="admin-attn-card" onClick={() => setSection("applications")}><b>{ap.new}</b><span>application{ap.new === 1 ? "" : "s"} to review</span><i>→</i></button>}
+          {can("people") && vol.pending > 0 && <button className="admin-attn-card" onClick={() => setSection("volunteers")}><b>{vol.pending}</b><span>volunteer{vol.pending === 1 ? "" : "s"} to review</span><i>→</i></button>}
+          {can("people") && vol.unscreened > 0 && <button className="admin-attn-card admin-attn-warn" onClick={() => setSection("volunteers")}><b>{vol.unscreened}</b><span>volunteer{vol.unscreened === 1 ? "" : "s"} not yet screened</span><i>→</i></button>}
           {can("content") && asg.toGrade > 0 && <button className="admin-attn-card" onClick={() => setSection("assignments")}><b>{asg.toGrade}</b><span>submission{asg.toGrade === 1 ? "" : "s"} to grade</span><i>→</i></button>}
           {can("inbox") && msg.unread > 0 && <button className="admin-attn-card" onClick={() => setSection("messages")}><b>{msg.unread}</b><span>message{msg.unread === 1 ? "" : "s"} unread</span><i>→</i></button>}
         </div>
@@ -1921,6 +1925,126 @@ function AdminApplications() {
             </div>
           ))}
         </div>
+      }
+    </div>
+  );
+}
+
+// ============================================================================
+// Volunteers — review desk + approved roster + safeguarding
+// ============================================================================
+
+function AdminVolunteers() {
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const [tab, setTab] = React.useState("pending");
+  const [q, setQ] = React.useState("");
+  const load = () => NGGApi.admin.volunteers.list().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const approve = async (a) => {
+    if (a.role === "instructor" && !a.phone) { toast.error("Instructors need a phone before approval."); return; }
+    const ok = await dialog.confirm({ title: "Approve " + a.name + "?", body: "This issues a volunteer ID + QR attendance profile and emails" + (a.phone ? "/SMSes" : "") + " it to them. " + (a.role !== "admin" ? "Safeguarding screening is still required before they work with young people." : ""), cta: "Approve & issue ID" });
+    if (!ok) return;
+    setBusy("a" + a.id);
+    try { const r = await NGGApi.admin.volunteers.approve(a.id); toast.success("Approved · " + r.volunteer.volunteerId + (r.idSent && r.idSent.length ? " · ID sent by " + r.idSent.join(" + ") : "")); load(); }
+    catch (e) { toast.error(e.code === "phone_required" ? "Instructors need a phone first." : (e.code || e.message)); }
+    finally { setBusy(""); }
+  };
+  const decline = async (a) => {
+    const reason = await dialog.prompt({ title: "Decline " + a.name + "?", body: "Optional reason — included in the courteous email we send.", placeholder: "e.g. Intake full this season", cta: "Decline" });
+    if (reason === null) return;
+    setBusy("d" + a.id);
+    try { await NGGApi.admin.volunteers.decline(a.id, reason); toast.success("Declined."); load(); }
+    catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(""); }
+  };
+  const setSafeguard = async (v, status) => {
+    setBusy("s" + v.volunteerId);
+    try { await NGGApi.admin.volunteers.safeguard(v.volunteerId, status); toast.success(status === "cleared" ? "Marked screened." : "Set to pending."); load(); }
+    catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(""); }
+  };
+
+  const roleChip = (r) => <span className={"chip " + (r === "instructor" ? "chip-gold" : r === "mentor" ? "chip-lime" : "chip-navy")}>{r}</span>;
+  const pending = (data && data.pending) || [];
+  const roster = ((data && data.volunteers) || []).filter(v => {
+    if (!q.trim()) return true;
+    const s = (v.fullName + " " + v.volunteerId + " " + v.email + " " + v.role).toLowerCase();
+    return s.includes(q.trim().toLowerCase());
+  });
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Volunteers {data ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {pending.length} pending · {(data.volunteers || []).length} active</span> : null}</h2>
+        <div className="admin-section-actions">
+          <button className="btn btn-ghost btn-sm" disabled={!data || !(data.volunteers || []).length} onClick={() => downloadCsv("volunteers", (data.volunteers || []).map(v => ({ volunteerId: v.volunteerId, name: v.fullName, email: v.email, phone: v.phone || "", role: v.role, courses: (v.courses || []).join("; "), safeguarding: v.safeguarding, status: v.status, createdAt: v.createdAt })))}>Export CSV</button>
+        </div>
+      </div>
+
+      <div className="admin-tabs">
+        <button className={"admin-tab" + (tab === "pending" ? " is-active" : "")} onClick={() => setTab("pending")}>Review queue{pending.length ? " · " + pending.length : ""}</button>
+        <button className={"admin-tab" + (tab === "roster" ? " is-active" : "")} onClick={() => setTab("roster")}>Roster · {(data && (data.volunteers || []).length) || 0}</button>
+      </div>
+
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        data === null ? <div className="dash-spinner"/> :
+
+        tab === "pending" ? (
+          pending.length === 0 ? <div className="admin-empty">No volunteers waiting for review. 🎉</div> :
+          <div className="admin-app-list">
+            {pending.map(a => (
+              <div className="admin-app" key={a.id}>
+                <div className="admin-app-top">
+                  <div>
+                    <div className="admin-cell-name">{a.name} {roleChip(a.role)}</div>
+                    <div className="mono admin-cell-sub">{a.email}{a.phone ? " · " + a.phone : " · no phone"}{(a.courses || []).length ? " · " + a.courses.join(", ") : ""} · {fmtDate(a.createdAt)}</div>
+                  </div>
+                  {a.role === "instructor" && !a.phone && <span className="chip status-archived">phone required</span>}
+                </div>
+                {a.why && <p className="admin-app-why">{a.why}</p>}
+                <div className="admin-app-actions">
+                  <button className="btn btn-primary btn-sm" disabled={busy === "a" + a.id || (a.role === "instructor" && !a.phone)} onClick={() => approve(a)}>{busy === "a" + a.id ? "Approving…" : "Approve & issue ID →"}</button>
+                  <button className="btn btn-ghost btn-sm" disabled={busy === "d" + a.id} onClick={() => decline(a)}>Decline</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <>
+            <div className="admin-filters">
+              <input className="admin-input" placeholder="Search name, ID, email, role…" value={q} onChange={e => setQ(e.target.value)}/>
+            </div>
+            {roster.length === 0 ? <div className="admin-empty">No volunteers yet.</div> :
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead><tr><th>Volunteer</th><th>Role</th><th>Courses</th><th>Safeguarding</th><th>ID</th><th></th></tr></thead>
+                <tbody>
+                  {roster.map(v => (
+                    <tr key={v.volunteerId}>
+                      <td><div className="admin-cell-name">{v.fullName}</div><div className="mono admin-cell-sub">{v.volunteerId} · {v.email}</div></td>
+                      <td>{roleChip(v.role)}</td>
+                      <td className="mono" style={{ fontSize: 12 }}>{(v.courses || []).join(", ") || "—"}</td>
+                      <td>
+                        {v.safeguarding === "cleared"
+                          ? <span className="chip chip-lime">✓ screened</span>
+                          : <span className="chip status-archived">pending</span>}
+                      </td>
+                      <td className="mono" style={{ fontSize: 12 }}><a href={"/q/" + v.token} target="_blank" rel="noreferrer">/q/{(v.token || "").slice(0, 10)}…</a></td>
+                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        {v.safeguarding === "cleared"
+                          ? <button className="btn btn-ghost btn-sm" disabled={busy === "s" + v.volunteerId} onClick={() => setSafeguard(v, "pending")}>Un-clear</button>
+                          : <button className="btn btn-primary btn-sm" disabled={busy === "s" + v.volunteerId} onClick={() => setSafeguard(v, "cleared")}>{busy === "s" + v.volunteerId ? "…" : "Mark screened"}</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>}
+          </>
+        )
       }
     </div>
   );

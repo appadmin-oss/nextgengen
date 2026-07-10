@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","join","blog","contact","admin","summer-admin","club-admin","circle","gate","verify","cards"];
+const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","join","blog","contact","admin","summer-admin","club-admin","circle","gate","verify","cards","certificate","legal"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
@@ -23,6 +23,8 @@ const PAGE_META = {
   parents:    { title: "For parents · Safe room with high ceilings",  desc: "Safeguarding, philosophy, FAQ. A program built to protect while it builds." },
   volunteers: { title: "Become a mentor · NGG",                       desc: "Three ways to be useful. Pick the shape of your time." },
   volunteer:  { title: "Volunteer registration · NGG",                desc: "Register to volunteer — as an admin, a mentor, or an instructor teaching a course." },
+  certificate:{ title: "Service certificate · NGG",                   desc: "A verifiable Next Generation Genius volunteer service certificate." },
+  legal:      { title: "Legal & data protection · NGG",               desc: "Privacy, terms, safeguarding, parental consent, cookies and your data rights under the NDPA/NDPR." },
   mentors:    { title: "The mentors · NGG",                           desc: "The Afrovanguard Street-To-Stardom volunteers who show up every Saturday." },
   join:       { title: "Apply · Summer 2026 · NGG",                   desc: "Four short steps. About six minutes. Pause and come back — we save as you go." },
   blog:       { title: "The Journal · NGG",                           desc: "Long-form writing from mentors, members and the editorial team." },
@@ -146,6 +148,8 @@ function pageFromPath() {
   if (seg === "login" || seg === "signin") return "home";
   // Summer student profiles: /q/<qr-token> or /s/<handle>.
   if (seg === "q" || seg === "s") return "summerprofile";
+  // Volunteer service certificates: /cert/<certId> — public + printable.
+  if (seg === "cert") return "certificate";
   // The staff Control Room lives at /nextadmin; /hq and /admin are kept as
   // legacy aliases so old links keep working.
   if (seg === "nextadmin" || seg === "hq" || seg === "admin") return "admin";
@@ -164,7 +168,7 @@ function App() {
     window.scrollTo({ top: 0, behavior: "instant" });
     // Reflect the current page as a clean path so refresh + share work.
     // Skip the 404 sentinel + deep-linked profile URLs so they stay as-typed.
-    if (page !== "_notfound" && page !== "summerprofile" && window.location.pathname !== pathForPage(page)) {
+    if (page !== "_notfound" && page !== "summerprofile" && page !== "certificate" && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.
@@ -241,11 +245,13 @@ function App() {
     gate:       <GatePage/>,
     verify:     <ParentVerifyPage/>,
     cards:      <CardStudio/>,
+    certificate: <CertificatePage/>,
+    legal:      <LegalPage setPage={setPage}/>,
   };
 
   // The staff console/portals, the guardian Circle portal, the gate desk and
   // the parent verification page use their own chrome — no topnav/footer.
-  if (page === "admin" || page === "summer-admin" || page === "club-admin" || page === "circle" || page === "gate" || page === "verify" || page === "cards") {
+  if (page === "admin" || page === "summer-admin" || page === "club-admin" || page === "circle" || page === "gate" || page === "verify" || page === "cards" || page === "certificate") {
     return (
       <div className="app-shell app-shell-admin">
         <SkipLink/>

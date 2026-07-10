@@ -413,7 +413,17 @@ CREATE TABLE IF NOT EXISTS volunteers (
   role VARCHAR(24), courses TEXT,
   token VARCHAR(64) DEFAULT '', photoUrl VARCHAR(512) DEFAULT '',
   status VARCHAR(24) DEFAULT 'active',
+  safeguarding VARCHAR(16) DEFAULT 'pending',
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
   INDEX idx_vol_email (email),
   INDEX idx_vol_token (token)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS volunteer_certs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  certId VARCHAR(32) NOT NULL UNIQUE,
+  volunteerId VARCHAR(32) NOT NULL,
+  milestone INT, hours INT,
+  issuedAt VARCHAR(40),
+  INDEX idx_certs_vol (volunteerId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

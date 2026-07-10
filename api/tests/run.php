@@ -157,6 +157,42 @@ $volAppId2 = (int)db_row("SELECT id FROM applications WHERE email = 'vol-admin@e
 chk('decline marks the application rejected', backend_dispatch('admin.volunteers.decline', ['requesterId' => 'NGG-2025-0099', 'id' => $volAppId2, 'reason' => 'Intake full'])['ok'] === true && db_row('SELECT status FROM applications WHERE id = ?', [$volAppId2])['status'] === 'rejected');
 chk('approved roster lists the volunteer', in_array($volId, array_column(backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-2025-0099'])['volunteers'], 'volunteerId'), true));
 
+// ── Service ledger + milestone certificates ──
+$volProfile = backend_dispatch('public.summerProfile', ['token' => $volTok])['profile'];
+chk('ledger counts sessions and hours (default 4h)', $volProfile['sessions'] === 1 && $volProfile['hours'] === 4);
+chk('new volunteer starts safeguarding-pending', $volProfile['safeguardingCleared'] === false);
+// Back-date four sessions so today's scan is the 5th — the first milestone.
+db_exec('DELETE FROM attendance WHERE studentId = ?', [$volId]);
+for ($i = 1; $i <= 4; $i++) db_insert('attendance', ['cohortId' => 'SUM-TEST', 'studentId' => $volId, 'token' => $volTok, 'date' => gmdate('Y-m-d', time() - $i * 86400), 'checkInAt' => now_iso(), 'method' => 'qr', 'byId' => 'NGG-2025-0099', 'device' => '', 'createdAt' => now_iso()]);
+$m = backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-2025-0099', 'token' => $volTok]);
+chk('5th session mints the milestone certificate', is_array($m['certIssued']) && $m['certIssued']['milestone'] === 5 && str_starts_with($m['certIssued']['certId'], 'NGGV-'));
+$certId = $m['certIssued']['certId'];
+$cv = backend_dispatch('public.cert', ['id' => $certId]);
+chk('certificate verifies publicly', $cv['cert']['fullName'] === 'Vol Teach' && $cv['cert']['milestone'] === 5 && $cv['cert']['hours'] === 20);
+chk('unknown certificate rejects', backend_dispatch('public.cert', ['id' => 'NGGV-NOPE1'])['error'] === 'not_found');
+chk('milestone never mints twice', (int)db_row('SELECT COUNT(*) c FROM volunteer_certs WHERE volunteerId = ?', [$volId])['c'] === 1);
+chk('milestone event queued for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.milestone'")['c'] === 1);
+chk('profile lists the certificate', backend_dispatch('public.summerProfile', ['token' => $volTok])['profile']['certificates'][0]['certId'] === $certId);
+
+// ── Safeguarding toggle ──
+chk('safeguard validates status', backend_dispatch('admin.volunteers.safeguard', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => $volId, 'status' => 'maybe'])['error'] === 'bad_status');
+backend_dispatch('admin.volunteers.safeguard', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => $volId, 'status' => 'cleared']);
+chk('cleared safeguarding shows on the profile', backend_dispatch('public.summerProfile', ['token' => $volTok])['profile']['safeguardingCleared'] === true);
+chk('scanner payload carries safeguarding', backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-2025-0099', 'token' => $volTok])['student']['safeguardingCleared'] === true);
+
+// ── Instructor roster view (token + email gate) ──
+chk('roster refuses a wrong email', backend_dispatch('public.instructorRoster', ['token' => $volTok, 'email' => 'wrong@example.com'])['error'] === 'not_authorised');
+$roster = backend_dispatch('public.instructorRoster', ['token' => $volTok, 'email' => 'VOL-TEACH@example.com']);
+chk('roster opens with token + registered email', $roster['ok'] === true && $roster['courses'] === ['Coding & Robotics', 'Chess & Strategy'] && is_array($roster['students']));
+chk('roster rows carry first names only', !array_filter($roster['students'], fn($r) => str_contains((string)$r['firstName'], ' ')));
+
+// ── Overview + upcoming sessions ──
+$ov = backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0099']);
+chk('overview counts volunteers', $ov['overview']['volunteers']['active'] === 1 && $ov['overview']['volunteers']['unscreened'] === 0);
+db_insert('events', ['eventId' => 'EV-VOL-1', 'title' => 'Saturday session', 'kind' => 'session', 'sessionId' => '', 'startAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 3 * 86400), 'endAt' => '', 'centre' => 'Egbeda', 'location' => 'Main hall', 'coverUrl' => '', 'body' => '', 'capacity' => 20, 'isPublic' => 1, 'status' => 'published', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+$slots = volunteer_upcoming_sessions();
+chk('upcoming sessions are capacity-aware', $slots[0]['title'] === 'Saturday session' && $slots[0]['spotsLeft'] === 20);
+
 // ── Anchor content (admin-managed, member_state) ──
 chk('anchor defaults have 12 weeks', count(backend_dispatch('public.anchorContent', [])['content']['weeks']) === 12);
 backend_dispatch('admin.anchor.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['quotes' => ['Only this one.']]]);

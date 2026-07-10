@@ -160,6 +160,8 @@
       newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
       apply:      (data) => request('/public/apply.php', { body: data }),
       volunteer:  { context: () => request('/public/volunteer.php') },
+      cert:       (id) => request('/public/cert.php' + qs({ id })),
+      instructorRoster: (token, email) => request('/public/instructor.php', { body: { token, email } }),
       contact:    (data) => request('/public/contact.php', { body: data }),
       gate: {
         context:  (g) => request('/public/gate.php' + qs({ g })),
@@ -269,6 +271,7 @@
         list:    () => request('/admin/volunteers.php'),
         approve: (id) => request('/admin/volunteers.php', { body: { action: 'approve', id } }),
         decline: (id, reason) => request('/admin/volunteers.php', { body: { action: 'decline', id, reason: reason || '' } }),
+        safeguard: (volunteerId, status) => request('/admin/volunteers.php', { body: { action: 'safeguard', volunteerId, status } }),
       },
       registration: {
         form:       () => request('/admin/registration.php' + qs({ view: 'form' })),

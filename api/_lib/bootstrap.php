@@ -39,6 +39,8 @@ if ($__origin !== '' && preg_match('#/api/public/[a-z0-9-]+\.php$#', (string)($_
         'https://afrovanguard.org.ng',
         'https://www.afrovanguard.org.ng',
     ];
+    // Local development of sister sites (debug configs only).
+    if (!empty($CONFIG['debug']) && preg_match('#^https?://(localhost|127\.0\.0\.1)(:\d+)?$#', $__origin)) $__allowed[] = $__origin;
     if (in_array($__origin, $__allowed, true)) {
         header('Access-Control-Allow-Origin: ' . $__origin);
         header('Vary: Origin');

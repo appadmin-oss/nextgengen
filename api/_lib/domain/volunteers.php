@@ -34,13 +34,116 @@ function volunteer_public(array $v, bool $withAttendance = false): array {
         'courses' => json_decode((string)($v['courses'] ?? ''), true) ?: [],
         'photoUrl' => (string)($v['photoUrl'] ?? ''),
         'status' => $v['status'],
+        'safeguardingCleared' => (string)($v['safeguarding'] ?? 'pending') === 'cleared',
     ];
     if ($withAttendance) {
         $rows = db_all('SELECT date, checkInAt, method FROM attendance WHERE studentId = ? ORDER BY date DESC LIMIT 60', [$v['volunteerId']]);
         $out['attendance'] = $rows;
         $out['attendanceCount'] = count($rows);
+        $out += volunteer_ledger((string)$v['volunteerId']);
     }
     return $out;
+}
+
+/* ── Service ledger: sessions → hours → milestone certificates ────────────── */
+
+const VOL_MILESTONES = [5, 10, 25, 50];
+
+function volunteer_session_hours(): int {
+    $h = (int)(setting_raw('volunteer_session_hours') ?: 4);
+    return max(1, min(12, $h));
+}
+
+function volunteer_ledger(string $volunteerId): array {
+    $sessions = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$volunteerId])['c'] ?? 0);
+    $certs = db_all('SELECT certId, milestone, hours, issuedAt FROM volunteer_certs WHERE volunteerId = ? ORDER BY milestone', [$volunteerId]);
+    return ['sessions' => $sessions, 'hours' => $sessions * volunteer_session_hours(), 'certificates' => $certs];
+}
+
+/** Crossing a milestone mints a verifiable certificate — once per milestone. */
+function volunteer_maybe_issue_cert(array $v, int $sessions): ?array {
+    if (!in_array($sessions, VOL_MILESTONES, true)) return null;
+    if (db_row('SELECT id FROM volunteer_certs WHERE volunteerId = ? AND milestone = ?', [$v['volunteerId'], $sessions])) return null;
+    $certId = 'NGGV-' . strtoupper(rand_hex(5));
+    while (db_row('SELECT id FROM volunteer_certs WHERE certId = ?', [$certId])) $certId = 'NGGV-' . strtoupper(rand_hex(5));
+    $hours = $sessions * volunteer_session_hours();
+    db_insert('volunteer_certs', ['certId' => $certId, 'volunteerId' => (string)$v['volunteerId'], 'milestone' => $sessions, 'hours' => $hours, 'issuedAt' => now_iso()]);
+    $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/cert/' . $certId;
+    if (!empty($v['email'])) {
+        @send_mail((string)$v['email'], "{$sessions} sessions of service — your certificate", email_template([
+            'title' => 'Milestone unlocked',
+            'intro' => 'Hello ' . esc_html((string)$v['fullName']) . " — you've now shown up for {$sessions} sessions (≈{$hours} hours of service).",
+            'bodyHtml' => '<p style="margin:0 0 10px">Your certificate is live, verifiable, and yours to share — print it or link it anywhere.</p>',
+            'ctaLabel' => 'Open my certificate →', 'ctaUrl' => $url,
+        ]));
+    }
+    event_emit('volunteer.milestone', ['ref' => (string)$v['volunteerId'], 'name' => (string)$v['fullName'], 'sessions' => $sessions, 'hours' => $hours, 'cert' => $certId]);
+    return ['certId' => $certId, 'milestone' => $sessions, 'hours' => $hours];
+}
+
+/** Public, verifiable certificate — anyone with the link can confirm it. */
+function public_cert(array $p): array {
+    $c = db_row('SELECT * FROM volunteer_certs WHERE certId = ? LIMIT 1', [strtoupper(trim((string)($p['id'] ?? '')))]);
+    if (!$c) return ['ok' => false, 'error' => 'not_found'];
+    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$c['volunteerId']]);
+    if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    return ['ok' => true, 'cert' => [
+        'certId' => $c['certId'], 'milestone' => (int)$c['milestone'], 'hours' => (int)$c['hours'],
+        'issuedAt' => $c['issuedAt'], 'fullName' => $v['fullName'], 'role' => $v['role'],
+        'volunteerId' => $v['volunteerId'],
+    ]];
+}
+
+/* ── Safeguarding: pending until screening clears — the scanner shows it ──── */
+
+function admin_volunteer_safeguard(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $status = (string)($p['status'] ?? '');
+    if (!in_array($status, ['pending', 'cleared'], true)) return ['ok' => false, 'error' => 'bad_status'];
+    $volunteerId = (string)($p['volunteerId'] ?? '');
+    $n = db_update('volunteers', ['safeguarding' => $status, 'updatedAt' => now_iso()], ['volunteerId' => $volunteerId]);
+    if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    audit('volunteer.safeguard', $g['requester']['memberId'], $volunteerId, ['status' => $status], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/* ── Upcoming sessions (capacity-aware) — offered at approval ─────────────── */
+
+function volunteer_upcoming_sessions(int $limit = 3): array {
+    $rows = db_all("SELECT eventId, title, startAt, centre, location, capacity FROM events WHERE status = 'published' AND startAt >= ? ORDER BY startAt LIMIT " . max(1, min(6, $limit)), [now_iso()]);
+    foreach ($rows as &$e) {
+        $taken = (int)(db_row('SELECT COUNT(*) c FROM event_rsvps WHERE eventId = ?', [$e['eventId']])['c'] ?? 0);
+        $e['spotsLeft'] = (int)$e['capacity'] > 0 ? max(0, (int)$e['capacity'] - $taken) : null;
+        unset($e['capacity']);
+    }
+    unset($e);
+    return $rows;
+}
+
+/* ── Instructor view: course roster, gated by token + registered email ────── */
+
+function public_instructor_roster(array $p): array {
+    $token = trim((string)($p['token'] ?? ''));
+    $email = strtolower(trim((string)($p['email'] ?? '')));
+    $v = db_row("SELECT * FROM volunteers WHERE token = ? AND status = 'active' LIMIT 1", [$token]);
+    if (!$v || $email === '' || strtolower((string)$v['email']) !== $email) return ['ok' => false, 'error' => 'not_authorised'];
+    if ((string)$v['role'] !== 'instructor') return ['ok' => false, 'error' => 'not_instructor'];
+    $courses = json_decode((string)($v['courses'] ?? ''), true) ?: [];
+    if (!$courses) return ['ok' => true, 'courses' => [], 'students' => []];
+    $ph = implode(',', array_fill(0, count($courses), '?'));
+    $rows = db_all("SELECT studentId, fullName, track FROM summer_students WHERE status = 'active' AND regStatus = 'verified' AND track IN ($ph) ORDER BY fullName", $courses);
+    $today = gmdate('Y-m-d');
+    $students = [];
+    foreach ($rows as $r) {
+        // First names only — this view exists for the room, not for data export.
+        $students[] = [
+            'firstName' => explode(' ', trim((string)$r['fullName']))[0],
+            'course' => $r['track'],
+            'days' => (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$r['studentId']])['c'] ?? 0),
+            'todayPresent' => (bool)db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$r['studentId'], $today]),
+        ];
+    }
+    return ['ok' => true, 'courses' => $courses, 'students' => $students];
 }
 
 function admin_volunteers_list(array $p): array {
@@ -48,7 +151,7 @@ function admin_volunteers_list(array $p): array {
     $pending = db_all("SELECT id, name, email, phone, role, courses, why, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing') ORDER BY id DESC LIMIT 200");
     foreach ($pending as &$a) $a['courses'] = json_decode((string)($a['courses'] ?? ''), true) ?: [];
     unset($a);
-    $roster = db_all('SELECT volunteerId, fullName, email, phone, role, courses, token, status, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
+    $roster = db_all('SELECT volunteerId, fullName, email, phone, role, courses, token, status, safeguarding, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
     foreach ($roster as &$v) $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
     unset($v);
     return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster];
@@ -101,11 +204,22 @@ function volunteer_send_id(string $volunteerId): array {
     $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/q/' . $v['token'];
     $roleLabel = ucfirst((string)$v['role']);
     $channels = [];
+    $sessionsHtml = (function () {
+        $out = '';
+        foreach (volunteer_upcoming_sessions() as $e) {
+            $when = date('D j M · H:i', strtotime((string)$e['startAt']));
+            $where = trim(((string)($e['centre'] ?? '')) . ' ' . ((string)($e['location'] ?? '')));
+            $spots = $e['spotsLeft'] === null ? '' : ' · ' . (int)$e['spotsLeft'] . ' spots left';
+            $out .= '<li style="margin:0 0 6px">' . esc_html((string)$e['title']) . ' — ' . esc_html($when) . ($where !== '' ? ' · ' . esc_html($where) : '') . esc_html($spots) . '</li>';
+        }
+        return $out === '' ? '' : '<p style="margin:14px 0 6px"><b>Come shadow a session:</b></p><ul style="margin:0;padding-left:18px">' . $out . '</ul>';
+    })();
     $html = email_template([
         'title' => "You're in — welcome to the team",
         'intro' => 'Hello ' . esc_html((string)$v['fullName']) . ' — your volunteer registration was approved.',
         'bodyHtml' => '<p style="margin:0 0 10px"><b>Volunteer ID:</b> ' . esc_html($volunteerId) . '<br><b>Role:</b> ' . esc_html($roleLabel) . '</p>'
-            . '<p style="margin:0 0 10px">The link below is your digital ID and attendance profile — the QR on your printed card opens the same page. Show either at any centre to check in.</p>',
+            . '<p style="margin:0 0 10px">The link below is your digital ID and attendance profile — the QR on your printed card opens the same page. Show either at any centre to check in.</p>'
+            . $sessionsHtml,
         'ctaLabel' => 'Open my volunteer ID →', 'ctaUrl' => $url,
         'footNote' => 'Printed IDs are issued at your first session. Roles working directly with teenagers complete safeguarding screening first.',
     ]);
