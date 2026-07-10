@@ -812,6 +812,9 @@ function Footer({ setPage }) {
             </div>
           </div>
 
+          {/* ---- Editorial signature ---- */}
+          <div className="footer-wordmark" aria-hidden="true">Next Gen Genius</div>
+
           {/* ---- Bottom row ---- */}
           <div className="footer-bottom">
             <span className="copy">© {new Date().getFullYear()} AFROVANGUARD · ALL RIGHTS RESERVED</span>

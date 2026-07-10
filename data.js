@@ -168,8 +168,8 @@ const VOLUNTEER_ROLES = [
 // with the real account links when the handles are confirmed.
 const CONTACT = {
   email: "cacentre@afrovanguard.org.ng",
-  phone: "+2348000000000",          // TODO: real public line
-  phoneDisplay: "+234 800 000 0000",
+  phone: "+2349037776318",          // same public line as the printed ID cards
+  phoneDisplay: "+234 903 777 6318",
   socials: {
     instagram: "https://instagram.com/",   // TODO: real handle
     x:         "https://x.com/",           // TODO: real handle

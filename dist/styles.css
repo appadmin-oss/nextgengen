@@ -285,8 +285,10 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
   content: "";
   position: absolute; inset: 0;
   background:
-    radial-gradient(60% 50% at 90% 10%, rgba(245,176,38,0.22), transparent 60%),
-    radial-gradient(50% 50% at 10% 90%, rgba(208,255,58,0.10), transparent 60%);
+    linear-gradient(180deg, rgba(255,255,255,0.05), transparent 140px),
+    radial-gradient(56% 44% at 88% 6%, rgba(245,176,38,0.26), transparent 62%),
+    radial-gradient(46% 52% at 26% 14%, rgba(147,87,255,0.13), transparent 65%),
+    radial-gradient(42% 44% at 6% 88%, rgba(208,255,58,0.10), transparent 60%);
   z-index: -1;
 }
 .hero-grid {
@@ -449,23 +451,21 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
    Footer
    =============================================================== */
 .footer {
-  background: var(--navy-900);
+  background: linear-gradient(180deg, var(--navy-900) 0%, #070d24 100%);
   color: white;
   padding: 0 0 28px;
   position: relative;
   overflow: hidden;
 }
-/* Solid, segmented brand accent bar (no gradient) sitting on the top edge.
-   Weighted gold-first so it reads as a designed mark, not a rainbow. */
+/* Glowing gradient hairline on the top edge — one designed stroke. */
 .footer-accent {
-  display: flex;
-  height: 4px;
+  display: block;
+  height: 2px;
   width: 100%;
+  background: linear-gradient(90deg, var(--gold-500) 0%, var(--gold-400) 38%, var(--lime) 58%, transparent 88%);
+  box-shadow: 0 0 18px rgba(245, 176, 38, 0.45);
 }
-.footer-accent > i:nth-child(1) { background: var(--gold-500); flex: 7; }
-.footer-accent > i:nth-child(2) { background: var(--lime);     flex: 1.4; }
-.footer-accent > i:nth-child(3) { background: var(--coral);    flex: 0.8; }
-.footer-accent > i:nth-child(4) { background: var(--plum);     flex: 0.5; }
+.footer-accent > i { display: none; }
 .footer .container { position: relative; z-index: 1; }
 
 /* Newsletter band */
@@ -495,15 +495,18 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 }
 .newsletter-form {
   display: flex; gap: 8px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
   padding: 8px;
-  border-radius: 999px;
-  transition: border-color 0.2s ease, background 0.2s ease;
+  border-radius: 18px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 .newsletter-form:focus-within {
   border-color: var(--gold-500);
-  background: rgba(255,255,255,0.09);
+  background: rgba(255,255,255,0.08);
+  box-shadow: 0 0 0 3px rgba(245,176,38,0.22);
 }
 .newsletter-form input {
   flex: 1;
@@ -519,20 +522,20 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 .newsletter-form input::placeholder { color: rgba(255,255,255,0.4); }
 .newsletter-form button {
   border: none;
-  background: var(--gold-500);
+  background: linear-gradient(135deg, var(--gold-400), var(--gold-500));
   color: var(--navy-900);
   font-family: inherit;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
   padding: 11px 22px;
-  border-radius: 999px;
+  border-radius: 12px;
   cursor: pointer;
   white-space: nowrap;
-  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
-  box-shadow: 0 2px 0 #b07c12;
+  transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 10px 24px -10px rgba(245,176,38,0.65);
 }
-.newsletter-form button:hover { background: var(--gold-400); transform: translateY(-1px); box-shadow: 0 3px 0 #b07c12; }
-.newsletter-form button:active { transform: translateY(1px); box-shadow: 0 1px 0 #b07c12; }
+.newsletter-form button:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 14px 28px -10px rgba(245,176,38,0.7); }
+.newsletter-form button:active { transform: translateY(1px); box-shadow: 0 6px 16px -8px rgba(245,176,38,0.6); }
 .newsletter-form.is-sent {
   border-color: var(--lime);
   background: rgba(208,255,58,0.08);
@@ -578,7 +581,7 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 .footer-socials { display: flex; gap: 8px; }
 .footer-social {
   width: 40px; height: 40px;
-  border-radius: 50%;
+  border-radius: 13px;
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.08);
   display: grid; place-items: center;

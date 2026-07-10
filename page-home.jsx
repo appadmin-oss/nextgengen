@@ -41,14 +41,14 @@ function Hero({ setPage }) {
       <div className="hero-grid" />
       {/* Background hero image with deep gradient */}
       <div style={{position:"absolute", inset:0, zIndex:-1}}>
-        <img src={scene("heroMain", 2000)} alt="" style={{width:"100%", height:"100%", objectFit:"cover", opacity:0.4}}/>
-        <div style={{position:"absolute", inset:0, background:"rgba(12,20,50,0.82)"}}/>
+        <img src={scene("heroMain", 2000)} alt="" style={{width:"100%", height:"100%", objectFit:"cover", opacity:0.35}}/>
+        <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, rgba(10,17,48,0.72) 0%, rgba(10,17,48,0.9) 55%, rgba(8,13,36,0.97) 100%)"}}/>
       </div>
 
       <div className="container" style={{padding:"112px 28px 96px"}}>
         <div style={{display:"grid", gridTemplateColumns:"1.45fr 1fr", gap:64, alignItems:"center", minHeight:560}}>
           <div>
-            <div data-reveal className="reveal" style={{display:"inline-flex", alignItems:"center", gap:10, marginBottom:30, flexWrap:"wrap", padding:"8px 16px", background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.16)", borderRadius:999}}>
+            <div data-reveal className="reveal" style={{display:"inline-flex", alignItems:"center", gap:10, marginBottom:30, flexWrap:"wrap", padding:"8px 16px", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.14)", borderRadius:999, backdropFilter:"blur(12px)", WebkitBackdropFilter:"blur(12px)"}}>
               <span className="live-dot"/>
               <span className="mono" style={{fontSize:11, letterSpacing:"0.16em", textTransform:"uppercase", color:"rgba(255,255,255,0.9)"}}>
                 {badge}
@@ -124,7 +124,7 @@ function Hero({ setPage }) {
               its corners, plus a tidy bottom row. Class-driven so the mobile
               layout is deliberate, not attribute-selector patchwork. */}
           <div className="hero-visual reveal" data-reveal>
-            <Photo name="speaker" ratio="auto" style={{flex:"1 1 auto", minHeight:0, boxShadow:"0 30px 60px -20px rgba(0,0,0,0.6)"}} overlay eager>
+            <Photo name="speaker" ratio="auto" style={{flex:"1 1 auto", minHeight:0}} overlay eager>
               <div style={{position:"absolute", top:16, left:16}}>
                 <span className="chip chip-on-dark" style={{background:"rgba(12,20,50,0.55)", color:"white"}}>NGGC · WK 07</span>
               </div>
@@ -138,7 +138,7 @@ function Hero({ setPage }) {
               </div>
             </Photo>
             <div className="hero-visual-row">
-              <Photo name="studio" ratio="auto" style={{width:"56%", boxShadow:"0 30px 60px -20px rgba(0,0,0,0.6)"}}/>
+              <Photo name="studio" ratio="auto" style={{width:"56%"}}/>
               <div className="hero-live-card">
                 <div style={{display:"flex", alignItems:"center", gap:8}}>
                   <span className="dot dot-lime"/>
