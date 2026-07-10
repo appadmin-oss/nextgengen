@@ -745,7 +745,7 @@ function AdminSummer() {
       <div className="admin-section-head">
         <h2 className="admin-h2">Summer School <span className="chip chip-gold" style={{ fontSize: 11 }}>{cohort.name || cohort.cohortId}</span></h2>
       </div>
-      <p className="admin-hint">Pre-print QR cards, enrol students against them, and track attendance. Everything mirrors to Google Sheets.</p>
+      <p className="admin-hint">Build the registration form, hand out gate links, review parent-pending sign-ups, pre-print QR cards, enrol, and track attendance — all mirrored to Google Sheets.</p>
 
       <div className="admin-tiles" style={{ marginBottom: 8 }}>
         <AdminTile n={o.students} l="Enrolled students"/>
@@ -755,16 +755,271 @@ function AdminSummer() {
       </div>
 
       <div className="admin-anchor-tabs">
-        {[["overview", "Enrol"], ["kiosk", "Check-in kiosk"], ["attendance", "Attendance"], ["qr", "QR cards"], ["students", "Roster (" + o.students + ")"]].map(([id, lbl]) => (
+        {[["form", "Form builder"], ["gates", "Gate links"], ["pending", "Pending sign-ups"], ["overview", "Enrol"], ["kiosk", "Check-in kiosk"], ["attendance", "Attendance"], ["qr", "QR cards"], ["cards", "ID cards"], ["students", "Roster (" + o.students + ")"]].map(([id, lbl]) => (
           <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
         ))}
       </div>
 
+      {tab === "form" && <SummerFormBuilder/>}
+      {tab === "gates" && <SummerGates/>}
+      {tab === "pending" && <SummerPending onChange={load}/>}
       {tab === "overview" && <SummerEnroll cohort={cohort} blank={o.qrBlank} onDone={load}/>}
       {tab === "kiosk" && <SummerKiosk onCheckin={load}/>}
       {tab === "attendance" && <SummerAttendance/>}
       {tab === "qr" && <SummerQR onChange={load}/>}
+      {tab === "cards" && <SummerCardsLink/>}
       {tab === "students" && <SummerRoster cohortId={cohort.cohortId}/>}
+    </div>
+  );
+}
+
+/* ── Form builder — visual editor for the live registration form ──────────── */
+const FIELD_TYPE_LABELS = {
+  text: "Short text", longtext: "Paragraph", email: "Email", phone: "Phone",
+  number: "Number", date: "Date", choice: "Single choice", multi: "Multiple choice",
+  yesno: "Yes / No", file: "File upload", section: "Section break", info: "Info text",
+};
+const HAS_OPTIONS = (t) => t === "choice" || t === "multi";
+function keyFromLabel(label) {
+  return (label || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "field";
+}
+
+function SummerFormBuilder() {
+  const [state, setState] = React.useState({ status: "loading", err: "" });
+  const [fields, setFields] = React.useState([]);
+  const [name, setName] = React.useState("");
+  const [version, setVersion] = React.useState(0);
+  const [types, setTypes] = React.useState([]);
+  const [busy, setBusy] = React.useState(false);
+  const [dirty, setDirty] = React.useState(false);
+  const [preview, setPreview] = React.useState(false);
+
+  const load = () => {
+    setState({ status: "loading", err: "" });
+    NGGApi.admin.registration.form().then(r => {
+      setFields((r.form.fields || []).map(f => ({ ...f, _id: Math.random().toString(36).slice(2) })));
+      setName(r.form.name || "Summer registration");
+      setVersion(r.form.version || 1);
+      setTypes(r.fieldTypes || Object.keys(FIELD_TYPE_LABELS));
+      setDirty(false);
+      setState({ status: "ready", err: "" });
+    }).catch(e => setState({ status: "error", err: e.code || e.message }));
+  };
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const mut = (fn) => { setFields(fn); setDirty(true); };
+  const update = (id, patch) => mut(fs => fs.map(f => f._id === id ? { ...f, ...patch } : f));
+  const move = (id, dir) => mut(fs => {
+    const i = fs.findIndex(f => f._id === id); const j = i + dir;
+    if (i < 0 || j < 0 || j >= fs.length) return fs;
+    const c = [...fs]; [c[i], c[j]] = [c[j], c[i]]; return c;
+  });
+  const remove = (id) => mut(fs => fs.filter(f => f._id !== id));
+  const addField = (type) => mut(fs => [...fs, {
+    _id: Math.random().toString(36).slice(2),
+    key: "", label: type === "section" ? "New section" : type === "info" ? "Helpful note" : "New question",
+    type, required: false, sensitive: false, locked: false,
+    options: HAS_OPTIONS(type) ? ["Option 1"] : undefined,
+  }]);
+
+  const publish = async () => {
+    // Auto-key any blank keys from their labels; keep locked keys intact.
+    const out = fields.map(f => {
+      const clean = { key: f.locked ? f.key : (f.key || keyFromLabel(f.label)), label: f.label, type: f.type, required: !!f.required, sensitive: !!f.sensitive, locked: !!f.locked };
+      if (HAS_OPTIONS(f.type)) clean.options = (f.options || []).map(o => String(o).trim()).filter(Boolean);
+      if (f.help) clean.help = f.help;
+      if (f.type === "number") { if (f.min != null && f.min !== "") clean.min = Number(f.min); if (f.max != null && f.max !== "") clean.max = Number(f.max); }
+      return clean;
+    });
+    const keys = out.map(f => f.key);
+    if (new Set(keys).size !== keys.length) { toast.error("Two fields share the same key — rename one."); return; }
+    setBusy(true);
+    try { const r = await NGGApi.admin.registration.publishForm(out, name); toast.success("Published v" + (r.version || (version + 1)) + " — live now."); load(); }
+    catch (e) { toast.error(e.error || e.code || "Couldn't publish — check field types and keys."); }
+    finally { setBusy(false); }
+  };
+
+  if (state.status === "loading") return <div className="dash-spinner"/>;
+  if (state.status === "error") return <ErrorState title="Couldn't load the form" code={state.err} onRetry={load}/>;
+
+  return (
+    <div className="fb">
+      <div className="admin-section-head" style={{ alignItems: "center" }}>
+        <div>
+          <input className="admin-input" value={name} onChange={e => { setName(e.target.value); setDirty(true); }} style={{ fontWeight: 700, fontSize: 16, minWidth: 260 }}/>
+          <div className="mono admin-cell-sub" style={{ marginTop: 4 }}>Live v{version} · {fields.length} fields · public gate registration uses this</div>
+        </div>
+        <div className="admin-section-actions">
+          <button className="btn btn-ghost btn-sm" onClick={() => setPreview(p => !p)}>{preview ? "Edit" : "Preview"}</button>
+          <button className="btn btn-primary btn-sm" disabled={busy || !dirty} onClick={publish}>{busy ? "Publishing…" : dirty ? "Publish changes" : "Published ✓"}</button>
+        </div>
+      </div>
+
+      {preview ? <FormPreview fields={fields} name={name}/> : <>
+        <div className="fb-list">
+          {fields.map((f, i) => (
+            <div className="fb-field" key={f._id}>
+              <div className="fb-field-rail">
+                <button className="fb-move" disabled={i === 0} onClick={() => move(f._id, -1)} aria-label="Move up">↑</button>
+                <button className="fb-move" disabled={i === fields.length - 1} onClick={() => move(f._id, 1)} aria-label="Move down">↓</button>
+              </div>
+              <div className="fb-field-body">
+                <div className="fb-field-top">
+                  <input className="admin-input fb-label" value={f.label} onChange={e => update(f._id, { label: e.target.value })} placeholder="Question label"/>
+                  <select className="admin-select" value={f.type} disabled={f.locked} onChange={e => update(f._id, { type: e.target.value, options: HAS_OPTIONS(e.target.value) ? (f.options || ["Option 1"]) : undefined })}>
+                    {types.map(t => <option key={t} value={t}>{FIELD_TYPE_LABELS[t] || t}</option>)}
+                  </select>
+                  {f.locked
+                    ? <span className="chip" title="System field — required by the platform" style={{ alignSelf: "center" }}>🔒 system</span>
+                    : <button className="fb-del" onClick={() => remove(f._id)} aria-label="Remove field">✕</button>}
+                </div>
+                <div className="fb-field-meta">
+                  <span className="mono fb-key">key: {f.locked ? f.key : (f.key || keyFromLabel(f.label))}</span>
+                  {f.type !== "section" && f.type !== "info" && <label className="fb-toggle"><input type="checkbox" checked={!!f.required} onChange={e => update(f._id, { required: e.target.checked })}/> Required</label>}
+                  {f.type !== "section" && f.type !== "info" && <label className="fb-toggle"><input type="checkbox" checked={!!f.sensitive} onChange={e => update(f._id, { sensitive: e.target.checked })}/> Sensitive <span title="Staff-only; never exported or sent to integrations">ⓘ</span></label>}
+                </div>
+                {HAS_OPTIONS(f.type) && (
+                  <div className="fb-options">
+                    {(f.options || []).map((opt, oi) => (
+                      <div className="fb-option" key={oi}>
+                        <input className="admin-input" value={opt} onChange={e => update(f._id, { options: f.options.map((o, k) => k === oi ? e.target.value : o) })}/>
+                        <button className="fb-del" onClick={() => update(f._id, { options: f.options.filter((_, k) => k !== oi) })}>✕</button>
+                      </div>
+                    ))}
+                    <button className="btn btn-ghost btn-sm" onClick={() => update(f._id, { options: [...(f.options || []), "Option " + ((f.options || []).length + 1)] })}>+ Option</button>
+                  </div>
+                )}
+                {(f.type === "number") && (
+                  <div className="fb-field-meta">
+                    <label className="fb-toggle">Min <input className="admin-input" style={{ width: 70 }} type="number" value={f.min ?? ""} onChange={e => update(f._id, { min: e.target.value })}/></label>
+                    <label className="fb-toggle">Max <input className="admin-input" style={{ width: 70 }} type="number" value={f.max ?? ""} onChange={e => update(f._id, { max: e.target.value })}/></label>
+                  </div>
+                )}
+                <input className="admin-input fb-help" value={f.help || ""} onChange={e => update(f._id, { help: e.target.value })} placeholder="Helper text (optional)"/>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="fb-add">
+          <span className="mono admin-cell-sub">Add field:</span>
+          {["text", "longtext", "choice", "multi", "number", "date", "yesno", "file", "section", "info"].map(t => (
+            <button key={t} className="btn btn-ghost btn-sm" onClick={() => addField(t)}>+ {FIELD_TYPE_LABELS[t]}</button>
+          ))}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+function FormPreview({ fields, name }) {
+  return (
+    <div className="card" style={{ padding: 28, maxWidth: 640 }}>
+      <h3 className="display" style={{ fontSize: 24, margin: "0 0 18px" }}>{name}</h3>
+      {fields.map((f, i) => {
+        if (f.type === "section") return <h4 key={i} style={{ fontFamily: "var(--font-display)", fontSize: 18, margin: "22px 0 6px", color: "var(--navy-900)" }}>{f.label}</h4>;
+        if (f.type === "info") return <p key={i} style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 12px" }}>{f.label}</p>;
+        return (
+          <div key={i} style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontWeight: 600, fontSize: 14, marginBottom: 6 }}>{f.label}{f.required && <span style={{ color: "var(--coral)" }}> *</span>}</label>
+            {f.type === "longtext" ? <textarea className="admin-input" style={{ width: "100%" }} rows={3} disabled/>
+              : HAS_OPTIONS(f.type) ? <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{(f.options || []).map((o, k) => <span key={k} className="chip">{o}</span>)}</div>
+              : f.type === "yesno" ? <div style={{ display: "flex", gap: 8 }}><span className="chip">Yes</span><span className="chip">No</span></div>
+              : <input className="admin-input" style={{ width: "100%" }} type={f.type === "number" ? "number" : f.type === "date" ? "date" : "text"} disabled/>}
+            {f.help && <div className="mono admin-cell-sub" style={{ marginTop: 4 }}>{f.help}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Gate links — create/revoke the staff-gated public registration links ── */
+function SummerGates() {
+  const [gates, setGates] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [name, setName] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.admin.registration.gates().then(r => { setGates(r.gates || []); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  const create = async (e) => {
+    e && e.preventDefault();
+    setBusy(true);
+    try { await NGGApi.admin.registration.gateCreate(name || "Registration desk", ""); setName(""); toast.success("Gate link created."); load(); }
+    catch (e2) { toast.error(e2.code || e2.message); } finally { setBusy(false); }
+  };
+  const revoke = async (id) => { if (!(await dialog.confirm({ title: "Revoke this link?", body: "Anyone using it will no longer be able to register.", cta: "Revoke" }))) return; try { await NGGApi.admin.registration.gateRevoke(id); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const linkFor = (g) => location.origin + "/gate?g=" + g.gateId;
+  return (
+    <div>
+      <p className="admin-hint">A gate link opens the public registration form — but a signed-in staff member must also be present. Hand these to desk staff on registration day.</p>
+      <form onSubmit={create} className="admin-filters">
+        <input className="admin-input" placeholder="Label (e.g. Egbeda desk · Sat)" value={name} onChange={e => setName(e.target.value)} style={{ minWidth: 260 }}/>
+        <button className="btn btn-primary btn-sm" disabled={busy}>{busy ? "…" : "+ Create gate link"}</button>
+      </form>
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        gates === null ? <div className="dash-spinner"/> :
+        gates.length === 0 ? <div className="admin-empty">No gate links yet.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Label</th><th>Link</th><th>Used</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {gates.map(g => (
+              <tr key={g.gateId}>
+                <td><b>{g.name}</b><div className="mono admin-cell-sub">{fmtDate(g.createdAt)}</div></td>
+                <td><button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(linkFor(g)); toast.success("Link copied."); }}>Copy link</button></td>
+                <td className="mono">{g.usedCount || 0}</td>
+                <td>{g.status === "active" ? <span className="chip chip-lime">active</span> : <span className="chip status-archived">{g.status}</span>}</td>
+                <td style={{ textAlign: "right" }}>{g.status === "active" && <button className="btn btn-ghost btn-sm" onClick={() => revoke(g.gateId)}>Revoke</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>}
+    </div>
+  );
+}
+
+/* ── Pending sign-ups — parent-verification queue with resend ─────────────── */
+function SummerPending({ onChange }) {
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const load = () => NGGApi.admin.registration.list().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  const remind = async (id) => { setBusy(id); try { const r = await NGGApi.admin.registration.remind(id); toast.success(r.channels && r.channels.length ? "Reminder sent by " + r.channels.join(" + ") : "Reminder queued."); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  if (err) return <ErrorState title="Couldn't load" code={err} onRetry={load}/>;
+  if (data === null) return <div className="dash-spinner"/>;
+  const rows = data.registrations || [];
+  const pending = rows.filter(r => r.regStatus === "parent_pending");
+  const badge = (s) => s === "verified" ? <span className="chip chip-lime">verified</span> : s === "parent_pending" ? <span className="chip status-draft">awaiting parent</span> : <span className="chip">{s}</span>;
+  return (
+    <div>
+      <p className="admin-hint">{pending.length} awaiting parent verification · {rows.length} total this cohort. Consent + QR bind happen automatically when the parent confirms.</p>
+      {rows.length === 0 ? <div className="admin-empty">No registrations yet — share a gate link to start.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Student</th><th>Course</th><th>Parent contact</th><th>Consents</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.studentId}>
+                <td><b>{r.fullName}</b><div className="mono admin-cell-sub">{r.studentId}</div></td>
+                <td className="mono" style={{ fontSize: 12 }}>{r.track || "—"}</td>
+                <td className="mono" style={{ fontSize: 12 }}>{r.parentEmail || r.guardianPhone || "—"}</td>
+                <td className="mono" style={{ fontSize: 12 }}>{(r.consents || []).length || 0}</td>
+                <td>{badge(r.regStatus)}</td>
+                <td style={{ textAlign: "right" }}>{r.regStatus === "parent_pending" && <button className="btn btn-ghost btn-sm" disabled={busy === r.studentId} onClick={() => remind(r.studentId)}>{busy === r.studentId ? "…" : "Resend link"}</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>}
+    </div>
+  );
+}
+
+/* ── ID cards — deep link into the full-screen studio ─────────────────────── */
+function SummerCardsLink() {
+  return (
+    <div className="card" style={{ padding: 28, textAlign: "center", maxWidth: 520 }}>
+      <h3 className="display" style={{ fontSize: 24, margin: "0 0 8px" }}>ID Card Studio</h3>
+      <p style={{ color: "var(--ink-500)", margin: "0 0 18px" }}>Design, manage centres, and print the 54×92mm ID cards for verified students in the full-screen studio.</p>
+      <a className="btn btn-primary" href="/cards" target="_blank" rel="noreferrer">Open the Card Studio ↗</a>
     </div>
   );
 }

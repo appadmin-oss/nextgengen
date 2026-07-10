@@ -4244,3 +4244,23 @@ section p[style*="var(--ink-500)"] {
   .legal-nav { position: static !important; flex-direction: row !important; flex-wrap: wrap; gap: 6px !important; }
   .legal-nav-item { border: 1px solid rgba(12,20,50,0.1); }
 }
+
+/* Registration form builder (Summer portal → Form builder tab) */
+.fb-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.fb-field { display: flex; gap: 10px; background: var(--surface, #fff); border: 1px solid rgba(12,20,50,0.1); border-radius: 14px; padding: 14px; }
+.fb-field-rail { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
+.fb-move { width: 26px; height: 26px; border-radius: 7px; border: 1px solid rgba(12,20,50,0.12); background: #fff; cursor: pointer; font-size: 13px; color: var(--ink-700); }
+.fb-move:disabled { opacity: 0.3; cursor: default; }
+.fb-field-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.fb-field-top { display: flex; gap: 8px; align-items: flex-start; }
+.fb-label { flex: 1; min-width: 0; font-weight: 600; }
+.fb-del { width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(228,21,95,0.25); background: rgba(228,21,95,0.06); color: #b03535; cursor: pointer; flex: 0 0 auto; }
+.fb-field-meta { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.fb-key { font-size: 11px; color: var(--ink-500); }
+.fb-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-700); }
+.fb-options { display: flex; flex-direction: column; gap: 6px; padding-left: 4px; border-left: 2px solid rgba(12,20,50,0.08); }
+.fb-option { display: flex; gap: 6px; align-items: center; }
+.fb-option .admin-input { flex: 1; }
+.fb-help { font-size: 13px; }
+.fb-add { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px dashed rgba(12,20,50,0.14); }
+:root[data-theme="dark"] .fb-field, :root[data-theme="dark"] .fb-move { background: var(--surface-2, #1a1a24); }
