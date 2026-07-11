@@ -7,7 +7,10 @@
  * api_secret never leaves this server. Uploads are foldered per-kind and
  * scoped to the requesting member so they're easy to audit and purge.
  *
- * Request  (POST JSON): { "kind": "proof|submission|avatar|cover" }
+ * Request  (POST JSON): { "kind": "proof|submission|avatar|cover|headshot|…" }
+ *   Configured kinds carry a resource_type/folder spec; any other safe kind
+ *   (matching ^[a-z][a-z0-9_-]{1,30}$) falls back to an image upload in a
+ *   folder of the same name.
  * Response: { ok, cloudName, apiKey, timestamp, signature, folder,
  *             resourceType, uploadUrl, maxBytes }
  */
@@ -27,7 +30,17 @@ if (empty($cfg['cloud_name']) || empty($cfg['api_key']) || empty($cfg['api_secre
 $body = read_json_body();
 $kind = (string)($body['kind'] ?? 'proof');
 $kinds = $cfg['kinds'] ?? [];
-if (!isset($kinds[$kind])) {
+
+// Configured kinds win. For any other kind we fall back to a safe image spec
+// rather than rejecting it — this keeps the client and server from having to
+// move in lockstep every time a new upload surface (e.g. "headshot") ships,
+// and means an older config.php on a host without shell access still works.
+// The kind is strictly sanitised first so it can never escape the base folder.
+if (isset($kinds[$kind])) {
+    $spec = $kinds[$kind];
+} elseif (preg_match('/^[a-z][a-z0-9_-]{1,30}$/', $kind)) {
+    $spec = ['resource_type' => 'image', 'folder' => $kind];
+} else {
     json_error('bad_kind', 400);
 }
 
@@ -36,7 +49,6 @@ if ($kind === 'cover') {
     require_admin();
 }
 
-$spec = $kinds[$kind];
 $resourceType = $spec['resource_type'] ?? 'auto';
 $sub = $spec['folder'] ?? $kind;
 $base = trim((string)($cfg['folder'] ?? 'ngg'), '/');

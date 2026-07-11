@@ -1917,9 +1917,18 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
     setBusy(true); setUErr("");
     try {
       const file = new File([blob], "headshot.jpg", { type: "image/jpeg" });
-      const up = await NGGApi.uploadFile(file, "headshot");
-      // Face-centred crop + lighting fix via Cloudinary URL transforms — the
-      // "AI optimisation" step; the editor can re-upload a corrected image later.
+      // Gate registration is a public flow with no session, so the unsigned
+      // (public) upload is the primary path. When it isn't set up — or a staff
+      // member is signed in at a kiosk — fall back to the signed member path.
+      let up;
+      try {
+        up = await NGGApi.uploadPublic(file);
+      } catch (pe) {
+        up = await NGGApi.uploadFile(file, "headshot");
+      }
+      // Face-centred crop + lighting fix via Cloudinary URL transforms — a fast
+      // client preview; the server pipeline does the professional edit and an
+      // editor can re-upload a corrected image later.
       const optimised = up.url.replace("/upload/", "/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/");
       setPhotoUrl(optimised);
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());

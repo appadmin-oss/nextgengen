@@ -200,12 +200,24 @@ return [
         'credit_guard' => ['enabled' => true, 'threshold_pct' => 90],
         'max_bytes'   => 25 * 1024 * 1024, // 25MB hard cap (advisory to client)
         // Allowed upload "kinds" → Cloudinary resource type + folder segment.
+        // Any kind not listed here still works: it falls back to an image
+        // upload in a folder of the same name (see upload-sign.php), so new
+        // surfaces don't need a config change to a host you can't SSH into.
         'kinds' => [
             'proof'      => ['resource_type' => 'auto',  'folder' => 'proofs'],
             'submission' => ['resource_type' => 'auto',  'folder' => 'submissions'],
             'avatar'     => ['resource_type' => 'image', 'folder' => 'avatars'],
             'cover'      => ['resource_type' => 'image', 'folder' => 'covers'],
+            'headshot'   => ['resource_type' => 'image', 'folder' => 'headshots'],
         ],
+        // Public (unsigned) uploads — for registration photos captured by
+        // applicants who have no account yet (the gate flow has no session).
+        // Create an *unsigned* upload preset in Cloudinary (Settings → Upload →
+        // Upload presets) and put its name here. Leave empty to disable the
+        // public path; the signed path is then used when a staff member is
+        // signed in (kiosk registration). The api_secret is never involved.
+        'unsigned_preset' => '',             // e.g. 'ngg_public_headshots'
+        'unsigned_folder' => 'ngg/headshots',
     ],
 
     // Debug — flip to true only in local dev. Leaks internal errors.
