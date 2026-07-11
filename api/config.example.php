@@ -194,6 +194,10 @@ return [
         'api_key'     => '',               // numeric key
         'api_secret'  => '',               // secret — NEVER exposed to the browser
         'folder'      => 'ngg',            // base folder; per-kind subfolders appended
+        // Photo-pipeline credit guard: poll /usage and stop spending AI-transform
+        // credits (upscale/background/restore) once usage crosses the threshold —
+        // Cloudinary still does the free optimization pass. Humans are alerted.
+        'credit_guard' => ['enabled' => true, 'threshold_pct' => 90],
         'max_bytes'   => 25 * 1024 * 1024, // 25MB hard cap (advisory to client)
         // Allowed upload "kinds" → Cloudinary resource type + folder segment.
         'kinds' => [

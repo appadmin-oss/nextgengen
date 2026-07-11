@@ -450,3 +450,28 @@ ON DUPLICATE KEY UPDATE tierId = tierId;
 
 -- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
 INSERT INTO schema_version (version) VALUES (18) ON DUPLICATE KEY UPDATE version = version;
+
+-- Photo pipeline: governed image asset with its own lifecycle (migration 19).
+CREATE TABLE IF NOT EXISTS photo_assets (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  assetId VARCHAR(48) UNIQUE NOT NULL,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(48) NOT NULL,
+  version INT DEFAULT 1,
+  status VARCHAR(24) DEFAULT 'captured',
+  sourceUrl VARCHAR(512) DEFAULT '',
+  editedUrl VARCHAR(512) DEFAULT '',
+  aiScore INT NULL,
+  aiProvider VARCHAR(24) DEFAULT '',
+  aiFindings TEXT,
+  transforms TEXT,
+  autoApproved TINYINT DEFAULT 0,
+  claimedBy VARCHAR(48) DEFAULT '', claimedAt VARCHAR(40) DEFAULT '',
+  reviewedBy VARCHAR(48) DEFAULT '', reviewedAt VARCHAR(40) DEFAULT '',
+  decisionNote TEXT,
+  createdAt VARCHAR(40), updatedAt VARCHAR(40),
+  INDEX idx_photo_subject (subjectType, subjectId),
+  INDEX idx_photo_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (19) ON DUPLICATE KEY UPDATE version = version;

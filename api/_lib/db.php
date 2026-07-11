@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 18;
+const NGG_SCHEMA_TARGET = 19;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -588,6 +588,35 @@ function db_migrate(PDO $db): void {
               ('VT-admin',      'Admin / Ops', 'ADM', '#00225F', 1),
               ('VT-mentor',     'Mentor',      'MEN', '#1B7F5A', 2),
               ('VT-instructor', 'Instructor',  'INS', '#B0143C', 3);
+        ",
+
+        // Photo pipeline — a governed image asset with its own lifecycle,
+        // versioned per subject (student|volunteer). Free vision-AI flags
+        // problems; Cloudinary does the (credit-gated) editing; a human can
+        // review any edit later. Issuance is gated on an approved asset.
+        19 => "
+            CREATE TABLE photo_assets (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              assetId TEXT UNIQUE NOT NULL,
+              subjectType TEXT NOT NULL,          -- student | volunteer
+              subjectId TEXT NOT NULL,
+              version INTEGER DEFAULT 1,
+              status TEXT DEFAULT 'captured',      -- captured|analyzing|edited|pending_review|in_review|approved|changes_requested|rejected|superseded|expired
+              sourceUrl TEXT DEFAULT '',
+              editedUrl TEXT DEFAULT '',
+              aiScore INTEGER,
+              aiProvider TEXT DEFAULT '',
+              aiFindings TEXT DEFAULT '',          -- JSON {score,issues[],flags[],recommend{}}
+              transforms TEXT DEFAULT '',          -- Cloudinary transform chain applied
+              autoApproved INTEGER DEFAULT 0,
+              claimedBy TEXT DEFAULT '', claimedAt TEXT DEFAULT '',
+              reviewedBy TEXT DEFAULT '', reviewedAt TEXT DEFAULT '',
+              decisionNote TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now')),
+              updatedAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_photo_subject ON photo_assets(subjectType, subjectId);
+            CREATE INDEX idx_photo_status ON photo_assets(status);
         ",
     ];
 

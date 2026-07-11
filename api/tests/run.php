@@ -36,7 +36,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
@@ -821,6 +821,62 @@ $co = backend_dispatch('member.coach', ['requesterId' => 'NGG-2025-0800', 'messa
 chk('coach returns a reflective reply (fallback)', !empty($co['ok']) && $co['source'] === 'fallback' && strlen($co['reply']) > 5 && $co['aiConfigured'] === false);
 chk('coach rejects an empty transcript', backend_dispatch('member.coach', ['requesterId' => 'NGG-2025-0800', 'messages' => []])['error'] === 'empty');
 chk('coach gated to a real member', backend_dispatch('member.coach', ['requesterId' => 'NOPE', 'messages' => [['role' => 'me', 'text' => 'hi']]])['error'] === 'member_gone');
+
+// ── Photo pipeline: free-AI analysis → Cloudinary edit (credit-gated) → approve/queue → alerts ──
+$SRC = 'https://res.cloudinary.com/demo/image/upload/sample.jpg';
+// Cloudinary edit: general optimization ALWAYS applied; AI transforms gated on credits.
+$ed = cloudinary_edit($SRC, ['brighten' => true, 'upscale' => true, 'removeBackground' => true], true);
+chk('cloudinary always optimizes (f_auto,q_auto,e_improve,face crop)', strpos($ed['transforms'], 'f_auto') !== false && strpos($ed['transforms'], 'q_auto') !== false && strpos($ed['transforms'], 'g_face') !== false && strpos($ed['transforms'], 'e_improve') !== false);
+chk('AI transforms applied when credits OK', $ed['aiUsed'] === true && strpos($ed['transforms'], 'e_upscale') !== false && strpos($ed['transforms'], 'e_background_removal') !== false);
+$edNo = cloudinary_edit($SRC, ['upscale' => true, 'removeBackground' => true], false);
+chk('AI transforms SKIPPED when credits exhausted (still optimizes)', $edNo['aiUsed'] === false && strpos($edNo['transforms'], 'e_upscale') === false && strpos($edNo['transforms'], 'f_auto') !== false);
+chk('transform is inserted into the delivery URL', strpos($ed['url'], '/upload/c_fill,g_face') !== false);
+
+// Clean photo → auto-approved.
+$GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 92, 'issues' => [], 'flags' => [], 'recommend' => ['crop' => true]]];
+$ing = photo_ingest('student', 'SUM-2026-9001', $SRC, 'NGG-2025-0099');
+chk('photo_ingest creates a v1 asset', !empty($ing['ok']) && $ing['version'] === 1 && strpos($ing['assetId'], 'PH-') === 0);
+$pr = photo_process($ing['assetId']);
+chk('clean photo auto-approves with an edited URL', $pr['status'] === 'approved' && strpos($pr['editedUrl'], '/upload/') !== false);
+chk('approved photo satisfies the issuance gate', photo_approved_for('student', 'SUM-2026-9001') === true);
+
+// Re-capture supersedes and versions.
+$ing2 = photo_ingest('student', 'SUM-2026-9001', $SRC, 'NGG-2025-0099');
+chk('re-capture supersedes v1 and creates v2', $ing2['version'] === 2 && db_row("SELECT status FROM photo_assets WHERE assetId=?", [$ing['assetId']])['status'] === 'superseded');
+
+// Flagged photo (two faces) → human review queue, never auto-approved.
+$GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 80, 'issues' => ['two people'], 'flags' => ['multiple_faces'], 'recommend' => ['crop' => true]]];
+$fi = photo_ingest('volunteer', 'VOL-INS-26-777', $SRC, 'NGG-2025-0099');
+$fp = photo_process($fi['assetId']);
+chk('a flagged photo routes to human review, not auto-approve', $fp['status'] === 'pending_review');
+$queue = backend_dispatch('admin.photo.queue', ['requesterId' => 'NGG-2025-0099']);
+chk('review queue lists the flagged asset', in_array($fi['assetId'], array_column($queue['queue'], 'assetId'), true));
+chk('editor cannot be a plain member', backend_dispatch('admin.photo.queue', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+// Atomic claim, then approve.
+$c1 = backend_dispatch('admin.photo.claim', ['requesterId' => 'NGG-2025-0099', 'assetId' => $fi['assetId']]);
+chk('editor claims the asset (atomic lock)', !empty($c1['ok']));
+chk('a second claim on the same asset fails', backend_dispatch('admin.photo.claim', ['requesterId' => 'NGG-2025-0099', 'assetId' => $fi['assetId']])['error'] === 'already_claimed');
+chk('editor approves after review', !empty(backend_dispatch('admin.photo.approve', ['requesterId' => 'NGG-2025-0099', 'assetId' => $fi['assetId'], 'note' => 'ok'])['ok']) && db_row("SELECT status,autoApproved FROM photo_assets WHERE assetId=?", [$fi['assetId']])['status'] === 'approved');
+
+// AI unavailable → human review + alert on email + bus.
+$GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => false, 'error' => 'ai_disabled'];
+$GLOBALS['CONFIG']['admin_email'] = 'ops@example.com'; // give the alert an inbox
+$GLOBALS['__mail_sink'] = [];
+$au = photo_ingest('student', 'SUM-2026-9002', $SRC, 'NGG-2025-0099');
+$ap = photo_process($au['assetId']);
+chk('AI-unavailable photo still gets a Cloudinary optimization', strpos((string)$ap['editedUrl'], 'f_auto') !== false);
+chk('AI-unavailable photo goes to human review', $ap['status'] === 'pending_review');
+chk('AI outage alerts a human by email', count(array_filter($GLOBALS['__mail_sink'], fn($m) => strpos($m['subject'], 'Photo pipeline') !== false)) >= 1);
+unset($GLOBALS['__mail_sink'], $GLOBALS['__ai_photo_mock']);
+
+// Credit guard: crossing the threshold flips the flag + alerts.
+$GLOBALS['__cloudinary_usage_mock'] = fn() => 95;
+$GLOBALS['CONFIG']['cloudinary'] = (($GLOBALS['CONFIG']['cloudinary'] ?? []) + []) ; $GLOBALS['CONFIG']['cloudinary']['credit_guard'] = ['enabled' => true, 'threshold_pct' => 90];
+$GLOBALS['__mail_sink'] = [];
+$ru = cloudinary_refresh_usage();
+chk('credit guard flips to exhausted past the threshold', !empty($ru['exhausted']) && cloudinary_credits_ok() === false);
+setting_set('cloudinary_credits', 'ok', 'system');
+unset($GLOBALS['__cloudinary_usage_mock'], $GLOBALS['__mail_sink']);
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

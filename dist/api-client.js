@@ -276,6 +276,13 @@
         decline: (id, reason) => request('/admin/volunteers.php', { body: { action: 'decline', id, reason: reason || '' } }),
         safeguard: (volunteerId, status) => request('/admin/volunteers.php', { body: { action: 'safeguard', volunteerId, status } }),
       },
+      photos: {
+        queue:   () => request('/admin/photos.php'),
+        claim:   (assetId) => request('/admin/photos.php', { body: { action: 'claim', assetId } }),
+        approve: (assetId, editedUrl, note) => request('/admin/photos.php', { body: { action: 'approve', assetId, editedUrl: editedUrl || '', note: note || '' } }),
+        retake:  (assetId, reason) => request('/admin/photos.php', { body: { action: 'retake', assetId, reason } }),
+        reject:  (assetId, reason) => request('/admin/photos.php', { body: { action: 'reject', assetId, reason } }),
+      },
       registration: {
         formsList:  () => request('/admin/registration.php' + qs({ view: 'forms' })),
         form:       (formId) => request('/admin/registration.php' + qs({ view: 'form', formId: formId || 'summer-reg' })),

@@ -186,3 +186,64 @@ function ai_classify(string $instructions, string $input, int $maxTokens = 300, 
     if (!is_array($data)) return ['ok' => false, 'error' => 'ai_bad_json'];
     return ['ok' => true, 'data' => $data, 'provider' => $r['provider']];
 }
+
+/** Fetch an https image and inline it as base64 for a vision request. */
+function ai_fetch_image(string $url): array {
+    if (!preg_match('#^https://#', $url)) return ['ok' => false, 'error' => 'bad_url'];
+    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'no_curl'];
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
+        CURLOPT_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2,
+    ]);
+    $out = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $mime = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+    curl_close($ch);
+    if ($out === false || $code < 200 || $code >= 300) return ['ok' => false, 'error' => 'image_http_' . $code];
+    if (strlen($out) > 8 * 1024 * 1024) return ['ok' => false, 'error' => 'image_too_large'];
+    return ['ok' => true, 'mime' => explode(';', $mime)[0] ?: 'image/jpeg', 'b64' => base64_encode($out)];
+}
+
+/**
+ * Vision photo review — the FREE analysis half of the photo pipeline. It
+ * *points out problems* in a headshot so Cloudinary's (credit-costed) editing
+ * has a clear, minimal job. Uses a vision-capable Gemini candidate from the
+ * 'photo' profile. Never throws — on any failure the caller routes the photo
+ * to human review. Returns ['ok'=>true,'data'=>{score,issues[],flags[],
+ * recommend{}},'provider'] or ['ok'=>false,'error'].
+ * Test seam: $GLOBALS['__ai_photo_mock'].
+ */
+function ai_photo_review(string $imageUrl): array {
+    if (isset($GLOBALS['__ai_photo_mock']) && is_callable($GLOBALS['__ai_photo_mock'])) {
+        return ($GLOBALS['__ai_photo_mock'])($imageUrl);
+    }
+    $cand = null;
+    foreach (ai_profile_candidates('photo') as $c) { if ($c['provider'] === 'gemini') { $cand = $c; break; } }
+    if (!$cand) return ['ok' => false, 'error' => 'no_vision_provider'];
+    $img = ai_fetch_image($imageUrl);
+    if (empty($img['ok'])) return $img;
+    $system = 'You are a passport-photo quality inspector for a children\'s program ID card. '
+        . 'Assess the single headshot and reply with ONLY a JSON object: '
+        . '{"score":0-100,"issues":["short strings"],"flags":["..."],"recommend":{"crop":true,"brighten":false,"upscale":false,"removeBackground":false}}. '
+        . 'flags may include any of: no_face, multiple_faces, not_a_child_headshot, inappropriate, too_dark, too_blurry, low_resolution, busy_background. '
+        . 'score is overall usability for a printed ID (100 = perfect).';
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($cand['model']) . ':generateContent?key=' . urlencode($cand['api_key']);
+    $body = json_encode([
+        'systemInstruction' => ['parts' => [['text' => $system]]],
+        'contents' => [['role' => 'user', 'parts' => [
+            ['inline_data' => ['mime_type' => $img['mime'], 'data' => $img['b64']]],
+            ['text' => 'Inspect this headshot for use on a printed ID card.'],
+        ]]],
+        'generationConfig' => ['maxOutputTokens' => 320, 'temperature' => 0.1],
+    ], JSON_UNESCAPED_SLASHES);
+    $r = ai_http_post($url, $body, ['Content-Type: application/json']);
+    if (!$r['ok']) return $r;
+    $j = json_decode($r['body'], true);
+    $text = $j['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    if (preg_match('/\{.*\}/s', $text, $m)) $text = $m[0];
+    $data = json_decode($text, true);
+    if (!is_array($data)) return ['ok' => false, 'error' => 'ai_bad_json'];
+    return ['ok' => true, 'data' => $data, 'provider' => 'gemini'];
+}
