@@ -29,6 +29,7 @@ if ($kind === 'teen') {
 } elseif ($kind === 'volunteer') {
     v_require($body, ['role']);
     $payload['role']    = v_safe_text($body['role'] ?? '', 24);
+    $payload['photoUrl'] = v_safe_text($body['photoUrl'] ?? '', 512);
     $payload['phone']   = v_safe_text($body['phone'] ?? '', 24);
     $payload['courses'] = is_array($body['courses'] ?? null)
         ? array_slice(array_map(fn($c) => v_safe_text((string)$c, 60), $body['courses']), 0, 8)

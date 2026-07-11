@@ -65,6 +65,8 @@ function AdminPage({ setPage }) {
           {view === "members" && <AdminMembers/>}
           {view === "applications" && <AdminApplications/>}
           {view === "volunteers" && <AdminVolunteers/>}
+          {view === "registration" && <AdminRegistration/>}
+          {view === "qr" && <AdminQRCodes/>}
           {view === "mentors" && <AdminMentors/>}
           {view === "mentorship" && <AdminMentorship/>}
           {view === "newsletter" && <AdminNewsletter/>}
@@ -192,6 +194,8 @@ function AdminNav({ section, setSection, hasCap }) {
       { id: "members",   label: "Members",    icon: "◯", cap: "people" },
       { id: "applications", label: "Applications", icon: "✉", cap: "people" },
       { id: "volunteers", label: "Volunteers", icon: "◈", cap: "people" },
+      { id: "registration", label: "Registration", icon: "❑", cap: "summer" },
+      { id: "qr", label: "QR codes", icon: "▦", cap: "summer" },
       { id: "mentorship", label: "Mentorship", icon: "◐", cap: "people" },
     ]},
     { h: "Content", items: [
@@ -244,7 +248,7 @@ function titleFor(s) {
   return {
     home: "Overview", members: "Members", mentors: "Mentors", mentorship: "Mentorship", sessions: "Sessions",
     missions: "Anchor missions", anchor: "Anchor Journal app", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
-    applications: "Applications", volunteers: "Volunteers", newsletter: "Newsletter", messages: "Messages", settings: "Settings", forms: "Forms", site: "Site content", summer: "Summer School",
+    applications: "Applications", volunteers: "Volunteers", registration: "Registration", qr: "QR codes", newsletter: "Newsletter", messages: "Messages", settings: "Settings", forms: "Forms", site: "Site content", summer: "Summer School",
   }[s] || "";
 }
 
@@ -2451,6 +2455,79 @@ function AdminSettings() {
         <Field label="Hours credited per volunteer session" type="number" value={s.volunteer_session_hours} onChange={v => setS(o => ({ ...o, volunteer_session_hours: v }))}/>
         <FieldSelect label="Featured session (homepage countdown)" value={s.featured_session_id || ""} onChange={v => setS(o => ({ ...o, featured_session_id: v }))} options={[""].concat(sessions.map(x => x.sessionId))}/>
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Registration — first-class page: gate links, pending queue, centres
+// ============================================================================
+function AdminRegistration() {
+  const [tab, setTab] = React.useState("gates");
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head"><h2 className="admin-h2">Registration</h2></div>
+      <p className="admin-hint">Run the gated public sign-up: hand out desk links, review parent-pending sign-ups, and manage the centres that drive ID prefixes and card colours. The form itself lives under <b>Forms</b>.</p>
+      <div className="admin-anchor-tabs">
+        {[["gates", "Gate links"], ["pending", "Pending sign-ups"], ["centres", "Centres"]].map(([id, l]) => (
+          <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{l}</button>
+        ))}
+      </div>
+      {tab === "gates" && <SummerGates/>}
+      {tab === "pending" && <SummerPending/>}
+      {tab === "centres" && <SummerCentres/>}
+    </div>
+  );
+}
+
+function AdminQRCodes() {
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head"><h2 className="admin-h2">QR codes</h2></div>
+      <SummerQR/>
+    </div>
+  );
+}
+
+/* Centres manager — name + code + card colour (drives the ID prefix). */
+function SummerCentres() {
+  const [centres, setCentres] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [d, setD] = React.useState({ name: "", code: "", color: "#76B043" });
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.admin.registration.centres().then(r => { setCentres(r.centres || []); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  const add = async (e) => {
+    e && e.preventDefault();
+    setBusy(true);
+    try { await NGGApi.admin.registration.centreUpsert(d); setD({ name: "", code: "", color: "#76B043" }); toast.success("Centre saved."); load(); }
+    catch (e2) { toast.error(e2.code === "code_taken" ? "That code is already used." : "Check the name (2+) and code (1–4 letters)."); }
+    finally { setBusy(false); }
+  };
+  const remove = async (c) => { if (!(await dialog.confirm({ title: "Remove " + c.name + "?", body: "Existing students keep their IDs; the centre just stops being offered.", cta: "Remove" }))) return; try { await NGGApi.admin.registration.centreDelete(c.centreId); load(); } catch (e) { toast.error(e.code || e.message); } };
+  if (err) return <ErrorState title="Couldn't load centres" code={err} onRetry={load}/>;
+  return (
+    <div>
+      <p className="admin-hint">Each centre has a 1–4 letter code (the printed ID prefix, e.g. <span className="mono">IJ-26-001</span>) and a colour that drives its ID card accent.</p>
+      <form onSubmit={add} className="admin-filters" style={{ alignItems: "center" }}>
+        <input className="admin-input" placeholder="Centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
+        <input className="admin-input" placeholder="CODE" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
+        <input type="color" value={d.color} onChange={e => setD({ ...d, color: e.target.value })} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/>
+        <button className="btn btn-primary btn-sm" disabled={busy || d.name.length < 2 || !d.code}>{busy ? "…" : "+ Add centre"}</button>
+      </form>
+      {centres === null ? <div className="dash-spinner"/> :
+        centres.length === 0 ? <div className="admin-empty">No centres yet — add your first above.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Centre</th><th>Code</th><th>Colour</th><th></th></tr></thead>
+          <tbody>{centres.map(c => (
+            <tr key={c.centreId}>
+              <td><b>{c.name}</b></td>
+              <td className="mono">{c.code}</td>
+              <td><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 18, height: 18, borderRadius: 5, background: c.color, border: "1px solid rgba(0,0,0,0.1)" }}/><span className="mono" style={{ fontSize: 12 }}>{c.color}</span></span></td>
+              <td style={{ textAlign: "right" }}><button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button></td>
+            </tr>
+          ))}</tbody>
+        </table></div>}
     </div>
   );
 }

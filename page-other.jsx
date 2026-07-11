@@ -656,23 +656,10 @@ function JoinPage({ setPage }) {
                     </select>
                   </div>
                 </div>
-                {/* Optional headshot — unsigned Cloudinary upload, before the
-                    applicant has an account. Silently skipped if not configured. */}
-                <div style={{display:"flex", alignItems:"center", gap:16, marginTop:6}}>
-                  <div style={{
-                    width:64, height:64, borderRadius:"50%", overflow:"hidden", flex:"0 0 auto",
-                    background:"var(--cream-100)", border:"1px solid rgba(12,20,50,0.12)",
-                    display:"grid", placeItems:"center", fontSize:24, color:"var(--ink-400)",
-                  }}>
-                    {data.photoUrl ? <img src={data.photoUrl} alt="" style={{width:"100%", height:"100%", objectFit:"cover"}}/> : "📷"}
-                  </div>
-                  <div>
-                    <label className="btn btn-ghost btn-sm" style={{cursor:"pointer", margin:0}}>
-                      {photoBusy ? "Uploading…" : data.photoUrl ? "Change photo" : "Add a photo (optional)"}
-                      <input type="file" accept="image/*" onChange={pickPhoto} disabled={photoBusy} style={{display:"none"}}/>
-                    </label>
-                    <div className="mono" style={{fontSize:11, color:"var(--ink-500)", marginTop:6}}>A friendly headshot helps us know you. Optional.</div>
-                  </div>
+                {/* Headshot — the site takes the picture (camera-first), with
+                    upload + paste-link as fallbacks. Optional at application. */}
+                <div style={{marginTop:6}}>
+                  <PhotoCapture value={data.photoUrl} onChange={(url) => setData(d => ({ ...d, photoUrl: url }))} size={64} label="A friendly headshot (optional)"/>
                 </div>
               </div>
             )}
@@ -1193,7 +1180,7 @@ function VolunteerRegisterPage({ setPage }) {
     return VOL_LANES.some(l => l.key === r) ? r : "";
   });
   const [courses, setCourses] = React.useState([]);
-  const [d, setD] = React.useState({ name: "", email: "", phone: "", why: "" });
+  const [d, setD] = React.useState({ name: "", email: "", phone: "", why: "", photoUrl: "" });
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const [err, setErr] = React.useState("");
@@ -1220,7 +1207,7 @@ function VolunteerRegisterPage({ setPage }) {
       await NGGApi.public.apply({
         kind: "volunteer", role,
         name: d.name.trim(), email: d.email.trim(), phone: d.phone.trim(),
-        why: d.why.trim(), courses: role === "instructor" ? courses : [],
+        why: d.why.trim(), photoUrl: d.photoUrl || "", courses: role === "instructor" ? courses : [],
       });
       setDone(true);
       if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Registration received");
@@ -1326,6 +1313,8 @@ function VolunteerRegisterPage({ setPage }) {
                     <input id="vol-phone" type="tel" value={d.phone} onChange={set("phone")} autoComplete="tel" placeholder="0803 000 0000"/></div>
                   <div className="field" style={{ gridColumn: "1 / -1" }}><label htmlFor="vol-why">Why you · optional</label>
                     <textarea id="vol-why" rows={3} value={d.why} onChange={set("why")} placeholder="A line or two — craft, experience, or simply why this matters to you."/></div>
+                  <div className="field" style={{ gridColumn: "1 / -1" }}><label>Photo · optional</label>
+                    <PhotoCapture value={d.photoUrl} onChange={(url) => { setD({ ...d, photoUrl: url }); if (err) setErr(""); }} size={72} label="Used on your volunteer ID once approved (optional)"/></div>
                 </div>
               </div>
 
