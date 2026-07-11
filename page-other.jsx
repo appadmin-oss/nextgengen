@@ -1204,12 +1204,12 @@ function VolunteerRegisterPage({ setPage }) {
     if (!ready || busy) return;
     setBusy(true); setErr("");
     try {
-      await NGGApi.public.apply({
+      const r = await NGGApi.public.apply({
         kind: "volunteer", role,
         name: d.name.trim(), email: d.email.trim(), phone: d.phone.trim(),
         why: d.why.trim(), photoUrl: d.photoUrl || "", courses: role === "instructor" ? courses : [],
       });
-      setDone(true);
+      setDone(r && r.ref ? r.ref : true);
       if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Registration received");
     } catch (e2) {
       const code = e2.code || e2.message;
@@ -1241,6 +1241,15 @@ function VolunteerRegisterPage({ setPage }) {
           </p>
           <p style={{ color: "var(--ink-500)", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
             Volunteers who work directly with teenagers complete safeguarding screening before their first session.
+          </p>
+          {typeof done === "string" && (
+            <div style={{ marginTop: 22, display: "inline-flex", alignItems: "center", gap: 10, padding: "10px 16px", borderRadius: 12, background: "var(--paper-100, #f4f1e8)", border: "1px solid rgba(12,20,50,0.10)" }}>
+              <span className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", color: "var(--ink-500)" }}>YOUR REFERENCE</span>
+              <span className="mono" style={{ fontSize: 15, fontWeight: 700, color: "var(--navy-900)" }}>{done}</span>
+            </div>
+          )}
+          <p style={{ color: "var(--ink-500)", fontSize: 13, lineHeight: 1.6, margin: "14px 0 0" }}>
+            We've emailed a copy to <b>{d.email.trim()}</b>. Keep your reference for any follow-up.
           </p>
           <button className="btn btn-primary btn-lg mt-32" onClick={() => setPage("home")}>Back to home →</button>
         </div>
