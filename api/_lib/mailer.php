@@ -7,13 +7,25 @@ declare(strict_types=1);
  * Dependency-free — no Composer, matching the buildless philosophy.
  */
 
+/** Public reply channels shown in every email footer — single source. */
+function org_contact(): array {
+    global $CONFIG;
+    $o = $CONFIG['org'] ?? [];
+    return [
+        'email' => (string)(($o['email'] ?? '') ?: ($CONFIG['mail']['reply_to'] ?? '') ?: 'cacentre@afrovanguard.org.ng'),
+        'phone' => (string)($o['phone'] ?? '+234 903 777 6318'),
+        'site'  => preg_replace('#^https?://#', '', (string)($CONFIG['app_origin'] ?? 'next.afrovanguard.org.ng')) ?: 'next.afrovanguard.org.ng',
+    ];
+}
+
 function mail_from(): array {
     global $CONFIG;
     $m = $CONFIG['mail'] ?? [];
     return [
         'name'    => $m['from_name']  ?? 'Next Generation Genius',
         'email'   => $m['from_email'] ?? ('no-reply@' . (parse_url($CONFIG['app_origin'] ?? 'https://ngg.afrovanguard.org', PHP_URL_HOST) ?: 'localhost')),
-        'replyTo' => $m['reply_to']   ?? '',
+        // Replies should reach a human even when the From is a no-reply box.
+        'replyTo' => ($m['reply_to'] ?? '') ?: org_contact()['email'],
     ];
 }
 
@@ -130,11 +142,18 @@ function smtp_send(array $smtp, array $from, string $to, string $subject, string
 function email_template(array $opts): string {
     global $CONFIG;
     $origin = $CONFIG['app_origin'] ?? '';
+    $c = org_contact();
     $navy = '#00225F'; $crimson = '#E4155F'; $ink = '#333A4D'; $muted = '#8A93A6';
+    // Hidden preview text — controls the one-line snippet inboxes show.
+    $pre = trim((string)($opts['preheader'] ?? $opts['intro'] ?? $opts['title'] ?? ''));
+    $preheader = $pre !== ''
+        ? '<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#eef1f5;opacity:0">' . esc_html($pre) . '</div>'
+        : '';
     $cta = (!empty($opts['ctaLabel']) && !empty($opts['ctaUrl']))
         ? '<tr><td style="padding:22px 0 2px"><a href="' . esc_html($opts['ctaUrl']) . '" style="display:inline-block;background:' . $navy . ';color:#ffffff;text-decoration:none;font-weight:700;font-family:Arial,Helvetica,sans-serif;font-size:14px;letter-spacing:.2px;padding:13px 26px;border-radius:10px">' . esc_html($opts['ctaLabel']) . '</a></td></tr>'
         : '';
     return '<div style="background:#eef1f5;padding:36px 0;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased">'
+        . $preheader
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">'
         . '<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border:1px solid #e6e8ee;border-radius:16px;overflow:hidden">'
         . '<tr><td style="height:4px;background:' . $crimson . ';font-size:0;line-height:0">&nbsp;</td></tr>'
@@ -150,7 +169,8 @@ function email_template(array $opts): string {
         . '<tr><td style="padding:0 34px"><table role="presentation" cellpadding="0" cellspacing="0">' . $cta . '</table></td></tr>'
         . '<tr><td style="padding:26px 34px 30px"><div style="border-top:1px solid #eef0f4;padding-top:16px;color:' . $muted . ';font-size:12px;line-height:1.6">'
         . esc_html($opts['footNote'] ?? 'You are receiving this because you are part of Next Generation Genius.')
-        . ($origin ? '<br><a href="' . esc_html($origin) . '" style="color:' . $muted . ';text-decoration:none">' . esc_html(preg_replace('#^https?://#', '', $origin) ?? $origin) . '</a>' : '')
+        . '<br>Reply to this email, or reach us at <a href="mailto:' . esc_html($c['email']) . '" style="color:' . $muted . ';text-decoration:none">' . esc_html($c['email']) . '</a> · ' . esc_html($c['phone'])
+        . ($origin ? '<br><a href="' . esc_html($origin) . '" style="color:' . $muted . ';text-decoration:none">' . esc_html($c['site']) . '</a>' : '')
         . '</div></td></tr></table></td></tr></table></div>';
 }
 

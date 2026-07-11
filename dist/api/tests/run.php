@@ -207,6 +207,8 @@ chk('tier delete removes it', backend_dispatch('admin.hierarchy.delete', ['reque
 $__tpl = email_template(['title' => 'Test', 'intro' => 'Hi', 'bodyHtml' => '<p>x</p>', 'ctaLabel' => 'Open', 'ctaUrl' => 'https://x.test']);
 chk('email template is minimalist (navy + crimson, no gold/navy slab)', str_contains($__tpl, '#00225F') && str_contains($__tpl, '#E4155F') && !str_contains($__tpl, '#f5b026') && !str_contains($__tpl, '#0c1432'));
 chk('email cta button is navy, not gold', str_contains($__tpl, 'background:#00225F;color:#ffffff'));
+chk('email carries a hidden preheader', str_contains($__tpl, 'mso-hide:all'));
+chk('email footer carries a reply path + contact', str_contains($__tpl, 'Reply to this email') && str_contains($__tpl, 'afrovanguard.org'));
 $GLOBALS['__mail_sink'] = [];
 $__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'mentor', 'name' => 'Ada Ack', 'email' => 'ada-ack@example.com', 'why' => 'Glad to help']);
 chk('apply returns a traceable reference', isset($__ap['ref']) && preg_match('/^NGG-V-\d{5}$/', (string)$__ap['ref']) === 1 && $__ap['duplicate'] === false);
