@@ -498,3 +498,8 @@ ALTER TABLE summer_students ADD COLUMN regGeoOk TINYINT NULL;
 ALTER TABLE summer_students ADD COLUMN regGeoDist INT NULL;
 
 INSERT INTO schema_version (version) VALUES (21) ON DUPLICATE KEY UPDATE version = version;
+
+-- Guardian photo re-shoot token (migration 22).
+ALTER TABLE summer_students ADD COLUMN photoToken VARCHAR(64) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (22) ON DUPLICATE KEY UPDATE version = version;

@@ -179,6 +179,10 @@
         context: (t) => request('/public/verify.php' + qs({ t })),
         submit:  (t, consents, actorName, feedback) => request('/public/verify.php', { body: { t, consents, actorName, feedback } }),
       },
+      reshoot: {
+        context: (t) => request('/public/reshoot.php' + qs({ t })),
+        submit:  (t, photoUrl) => request('/public/reshoot.php', { body: { t, photoUrl } }),
+      },
       circle: {
         lookup:    (code) => request('/public/circle.php' + qs({ view: 'lookup', code })),
         connect:   (data) => request('/public/circle.php', { body: Object.assign({ action: 'connect' }, data) }),

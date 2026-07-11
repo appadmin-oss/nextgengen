@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 21;
+const NGG_SCHEMA_TARGET = 22;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -648,6 +648,13 @@ function db_migrate(PDO $db): void {
             ALTER TABLE summer_students ADD COLUMN regLng REAL;
             ALTER TABLE summer_students ADD COLUMN regGeoOk INTEGER;
             ALTER TABLE summer_students ADD COLUMN regGeoDist INTEGER;
+        ",
+
+        // Guardian photo re-shoot: a stable per-student token that opens a
+        // no-account page to recapture a headshot after an editor asks for a
+        // retake. Minted on the first retake request.
+        22 => "
+            ALTER TABLE summer_students ADD COLUMN photoToken TEXT DEFAULT '';
         ",
     ];
 

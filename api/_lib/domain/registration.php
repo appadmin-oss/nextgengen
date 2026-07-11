@@ -508,7 +508,40 @@ function parent_verify_submit(array $p): array {
             'method' => 'parent_link', 'actorName' => $actor, 'createdAt' => now_iso()]);
     }
 
-    // Verified → bind the ID/QR immediately (mint if the blank pool is dry).
+    // Consent recorded → mark verified. ID/QR issuance may still be gated on
+    // photo approval (see registration_issue_id); whichever finishes last —
+    // consent here or the editor approving the photo — triggers the ID.
+    db_update('summer_students', ['regStatus' => 'verified', 'verifiedAt' => now_iso(), 'updatedAt' => now_iso()], ['studentId' => $s['studentId']]);
+    $issue = registration_issue_id($s['studentId']);
+
+    $feedback = substr(trim((string)($p['feedback'] ?? '')), 0, 1000);
+    audit('registration.verified', null, $s['studentId'], ['feedback' => $feedback !== '', 'idHeld' => !empty($issue['held'])], '');
+    event_emit('registration.verified', ['ref' => $s['studentId'], 'name' => (string)$s['fullName'], 'course' => (string)$s['track'], 'status' => 'verified', 'feedback' => $feedback]);
+    return ['ok' => true, 'student' => ['name' => (string)$s['fullName']],
+        'idIssued' => !empty($issue['issued']) || !empty($issue['already']),
+        'photoPending' => !empty($issue['held']) && ($issue['reason'] ?? '') === 'photo_pending'];
+}
+
+/**
+ * Bind a student's ID card + attendance QR — the single issuance gate. Requires
+ * (a) parent consent recorded (regStatus 'verified') and (b) when the optional
+ * 'photo_gate_issuance' setting is on and a photo is in the pipeline, an
+ * APPROVED photo. Idempotent: no-ops once a token is bound. Safe to call from
+ * both the consent flow and the photo-approval hook — the last one to satisfy
+ * the gate issues the ID.
+ */
+function registration_issue_id(string $studentId): array {
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
+    if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    if (!empty($s['token'])) return ['ok' => true, 'already' => true, 'token' => (string)$s['token']];
+    if ((string)$s['regStatus'] !== 'verified') return ['ok' => true, 'held' => true, 'reason' => 'consent_pending'];
+    // Photo gate: only hold when the toggle is on AND a photo is actually in the
+    // pipeline for this student — a registration with no photo is never blocked.
+    if (setting_raw('photo_gate_issuance') === '1' && function_exists('photo_approved_for')) {
+        $hasPhoto = db_row("SELECT id FROM photo_assets WHERE subjectType = 'student' AND subjectId = ? AND status NOT IN ('rejected','superseded') LIMIT 1", [$studentId]);
+        if ($hasPhoto && !photo_approved_for('student', $studentId)) return ['ok' => true, 'held' => true, 'reason' => 'photo_pending'];
+    }
+    // Bind the ID/QR (mint a blank if the pool is dry).
     $qr = db_row("SELECT * FROM qr_codes WHERE status = 'blank' ORDER BY id ASC LIMIT 1");
     if (!$qr) {
         $tok = 'SUMQR-' . strtoupper(rand_hex(4));
@@ -516,13 +549,75 @@ function parent_verify_submit(array $p): array {
         $qr = db_row('SELECT * FROM qr_codes WHERE token = ?', [$tok]);
     }
     db_update('qr_codes', ['status' => 'assigned', 'studentId' => $s['studentId'], 'assignedName' => (string)$s['handle'], 'assignedAt' => now_iso(), 'cohortId' => $s['cohortId']], ['token' => $qr['token']]);
-    db_update('summer_students', ['regStatus' => 'verified', 'verifiedAt' => now_iso(), 'token' => $qr['token'], 'updatedAt' => now_iso()], ['studentId' => $s['studentId']]);
+    db_update('summer_students', ['token' => $qr['token'], 'updatedAt' => now_iso()], ['studentId' => $s['studentId']]);
     card_display_id(db_row('SELECT * FROM summer_students WHERE studentId = ?', [$s['studentId']]) ?: $s);
+    audit('registration.id_issued', null, $studentId, ['token' => $qr['token']], '');
+    event_emit('registration.id_issued', ['ref' => $studentId, 'name' => (string)$s['fullName'], 'token' => (string)$qr['token']]);
+    return ['ok' => true, 'issued' => true, 'token' => (string)$qr['token']];
+}
 
-    $feedback = substr(trim((string)($p['feedback'] ?? '')), 0, 1000);
-    audit('registration.verified', null, $s['studentId'], ['feedback' => $feedback !== ''], '');
-    event_emit('registration.verified', ['ref' => $s['studentId'], 'name' => (string)$s['fullName'], 'course' => (string)$s['track'], 'status' => 'verified', 'feedback' => $feedback]);
-    return ['ok' => true, 'student' => ['name' => (string)$s['fullName']]];
+/* ── Guardian photo re-shoot (public, token-authenticated) ────────────────── */
+
+/** Ensure a student has a stable re-shoot token; returns it. */
+function reshoot_token_for(string $studentId): string {
+    $s = db_row('SELECT photoToken FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
+    if (!$s) return '';
+    if (!empty($s['photoToken'])) return (string)$s['photoToken'];
+    $tok = 'PT' . rand_hex(18);
+    db_update('summer_students', ['photoToken' => $tok], ['studentId' => $studentId]);
+    return $tok;
+}
+
+/**
+ * Email the guardian a link to recapture the headshot. Called from the photo
+ * pipeline when an editor requests a retake for a STUDENT subject. Best-effort.
+ */
+function reshoot_notify_guardian(string $studentId, string $reason): void {
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
+    if (!$s || empty($s['parentEmail'])) return;
+    $tok = reshoot_token_for($studentId);
+    if ($tok === '') return;
+    $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/reshoot?t=' . $tok;
+    $first = explode(' ', (string)$s['fullName'])[0] ?: 'your child';
+    if (!function_exists('email_template') || !function_exists('send_mail')) return;
+    $html = email_template([
+        'title' => 'A quick new photo for ' . esc_html($first),
+        'intro' => 'Hello' . (!empty($s['guardianName']) ? ' ' . esc_html((string)$s['guardianName']) : '') . ' — the photo for ' . esc_html((string)$s['fullName']) . "'s ID needs a quick retake.",
+        'bodyHtml' => '<p style="margin:0 0 10px">' . ($reason !== '' ? '<b>What to fix:</b> ' . esc_html($reason) : 'Please take a clear, front-facing photo in good light.') . '</p>'
+            . '<p style="margin:0">It takes under a minute on your phone — tap below.</p>',
+        'ctaLabel' => 'Take a new photo →', 'ctaUrl' => $url,
+    ]);
+    send_mail((string)$s['parentEmail'], 'A quick new photo for ' . $first, $html);
+}
+
+function reshoot_context(array $p): array {
+    $t = (string)($p['t'] ?? '');
+    if ($t === '') return ['ok' => false, 'error' => 'link_invalid'];
+    $s = db_row('SELECT * FROM summer_students WHERE photoToken = ? LIMIT 1', [$t]);
+    if (!$s) return ['ok' => false, 'error' => 'link_invalid'];
+    $a = db_row("SELECT status, editedUrl, sourceUrl, decisionNote, aiFindings FROM photo_assets WHERE subjectType = 'student' AND subjectId = ? ORDER BY version DESC LIMIT 1", [$s['studentId']]);
+    $reason = '';
+    if ($a && $a['status'] === 'changes_requested') $reason = (string)$a['decisionNote'];
+    return ['ok' => true,
+        'student' => ['name' => (string)$s['fullName'], 'photoUrl' => (string)($a['editedUrl'] ?? '') ?: (string)$s['photoUrl']],
+        'status' => $a ? (string)$a['status'] : 'none',
+        'reason' => $reason,
+        'awaiting' => !$a || in_array((string)$a['status'], ['changes_requested', 'rejected'], true)];
+}
+
+function reshoot_submit(array $p): array {
+    $t = (string)($p['t'] ?? '');
+    if ($t === '') return ['ok' => false, 'error' => 'link_invalid'];
+    $s = db_row('SELECT * FROM summer_students WHERE photoToken = ? LIMIT 1', [$t]);
+    if (!$s) return ['ok' => false, 'error' => 'link_invalid'];
+    $url = (string)($p['photoUrl'] ?? '');
+    if ($url === '' || !preg_match('#^https://#', $url)) return ['ok' => false, 'error' => 'bad_photo'];
+    if (!function_exists('photo_ingest')) return ['ok' => false, 'error' => 'pipeline_unavailable'];
+    $ing = photo_ingest('student', (string)$s['studentId'], $url, 'guardian');
+    if (empty($ing['ok'])) return $ing;
+    $pr = function_exists('photo_process') ? photo_process($ing['assetId']) : ['status' => 'captured'];
+    audit('photo.reshoot', 'guardian', (string)$s['studentId'], ['assetId' => $ing['assetId'], 'v' => $ing['version']], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'status' => $pr['status'] ?? 'analyzing', 'version' => $ing['version']];
 }
 
 /* ── Admin registration queue (the "Needs you" list) ─────────────────────── */

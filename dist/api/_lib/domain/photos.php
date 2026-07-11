@@ -223,6 +223,7 @@ function photo_process(string $assetId): array {
     audit('photo.' . ($needsHuman ? 'ai_analyzed' : 'auto_approved'), $provider ? 'ai:' . $provider : 'ai', $assetId, ['score' => $score, 'flags' => $flags, 'aiUsed' => $edit['aiUsed']], '');
     if (!$needsHuman) {
         photo_apply_to_subject(array_merge($a, ['editedUrl' => $edit['url']]));
+        photo_after_approve($a);
         @event_emit('photo.approved', ['ref' => $assetId, 'subjectType' => $a['subjectType'], 'subjectId' => $a['subjectId'], 'auto' => true]);
     }
     return ['ok' => true, 'status' => $row['status'], 'score' => $score, 'flags' => $flags, 'aiUsed' => $edit['aiUsed'], 'editedUrl' => $edit['url']];
@@ -269,9 +270,18 @@ function photo_approve(array $p): array {
     $edited = trim((string)($p['editedUrl'] ?? '')) ?: (string)$a['editedUrl'];
     db_update('photo_assets', ['status' => 'approved', 'editedUrl' => $edited, 'reviewedBy' => $g['requester']['memberId'], 'reviewedAt' => now_iso(), 'decisionNote' => substr((string)($p['note'] ?? ''), 0, 300), 'autoApproved' => 0, 'updatedAt' => now_iso()], ['assetId' => $assetId]);
     photo_apply_to_subject(array_merge($a, ['editedUrl' => $edited]));
+    photo_after_approve($a);
     audit('photo.approved', $g['requester']['memberId'], $assetId, [], (string)($p['ip'] ?? ''));
     @event_emit('photo.approved', ['ref' => $assetId, 'subjectType' => $a['subjectType'], 'subjectId' => $a['subjectId'], 'auto' => false]);
     return ['ok' => true];
+}
+
+/** Once a photo is approved, retry the issuance gate for its student subject —
+ *  the ID is bound if consent is already in (photo_gate_issuance flow). */
+function photo_after_approve(array $a): void {
+    if (($a['subjectType'] ?? '') === 'student' && function_exists('registration_issue_id')) {
+        try { registration_issue_id((string)$a['subjectId']); } catch (Throwable $e) {}
+    }
 }
 
 function photo_request_retake(array $p): array {
@@ -284,6 +294,11 @@ function photo_request_retake(array $p): array {
     db_update('photo_assets', ['status' => 'changes_requested', 'reviewedBy' => $g['requester']['memberId'], 'reviewedAt' => now_iso(), 'decisionNote' => $reason, 'updatedAt' => now_iso()], ['assetId' => $assetId]);
     audit('photo.retake_requested', $g['requester']['memberId'], $assetId, ['reason' => $reason], (string)($p['ip'] ?? ''));
     @event_emit('photo.retake_requested', ['ref' => $assetId, 'subjectType' => $a['subjectType'], 'subjectId' => $a['subjectId'], 'reason' => $reason]);
+    // Email the guardian a re-shoot link (students only — volunteers re-upload
+    // through the admin console).
+    if (($a['subjectType'] ?? '') === 'student' && function_exists('reshoot_notify_guardian')) {
+        try { reshoot_notify_guardian((string)$a['subjectId'], $reason); } catch (Throwable $e) {}
+    }
     return ['ok' => true];
 }
 

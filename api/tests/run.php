@@ -937,5 +937,45 @@ chk('gate: kiosk password admin ops require the summer cap', backend_dispatch('a
 backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'geofence' => false]]);
 chk('geo: a partial update keeps the point but flips the fence off', (function () use ($cA) { $c = db_row("SELECT lat,lng,geofence FROM centres WHERE centreId=?", [$cA['centreId']]); return $c && abs((float)$c['lat'] - 6.6) < 0.0001 && (int)$c['geofence'] === 0; })());
 
+// ── Issuance gate on photo approval + guardian re-shoot ──
+$issGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Issue desk']);
+setting_set('photo_gate_issuance', '1', 'system');
+// A flagged photo → pending_review, so the ID is held until an editor approves.
+$GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 40, 'issues' => ['dark'], 'flags' => ['too_dark'], 'recommend' => ['crop' => true, 'brighten' => true]]];
+$ir = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Gate Hold Kid', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'hold@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+chk('issuance gate: registration ok with a photo queued for review', !empty($ir['ok']));
+$vtHold = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$ir['studentId']])['verifyToken'];
+$pvh = backend_dispatch('parent.verify.submit', ['t' => $vtHold, 'consents' => ['participation' => true, 'medical' => true, 'data' => true], 'actorName' => 'P']);
+chk('issuance gate: consent verifies but the ID is held pending the photo', !empty($pvh['ok']) && ($pvh['photoPending'] ?? false) === true && ($pvh['idIssued'] ?? true) === false);
+chk('issuance gate: no QR token is bound while the photo is pending', (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$ir['studentId']])['token']) === '');
+$holdAsset = db_row("SELECT assetId FROM photo_assets WHERE subjectType='student' AND subjectId=? ORDER BY version DESC LIMIT 1", [$ir['studentId']])['assetId'];
+backend_dispatch('admin.photo.approve', ['requesterId' => 'NGG-2025-0099', 'assetId' => $holdAsset]);
+chk('issuance gate: approving the photo issues the ID', (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$ir['studentId']])['token']) !== '');
+unset($GLOBALS['__ai_photo_mock']);
+// A registration with NO photo is never blocked by the gate.
+$np = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'No Photo Kid', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'nophoto@example.com']]);
+$vtNp = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$np['studentId']])['verifyToken'];
+$pvn = backend_dispatch('parent.verify.submit', ['t' => $vtNp, 'consents' => ['participation' => true, 'medical' => true, 'data' => true], 'actorName' => 'P']);
+chk('issuance gate: a photo-less registration still issues immediately', !empty($pvn['idIssued']) && (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$np['studentId']])['token']) !== '');
+setting_set('photo_gate_issuance', '0', 'system');
+
+// Guardian re-shoot after a retake.
+$GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 88, 'issues' => [], 'flags' => [], 'recommend' => ['crop' => true]]];
+$rsReg = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Reshoot Kid', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'reshoot@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+$rsAsset = db_row("SELECT assetId FROM photo_assets WHERE subjectType='student' AND subjectId=? ORDER BY version DESC LIMIT 1", [$rsReg['studentId']])['assetId'];
+$GLOBALS['__mail_sink'] = [];
+backend_dispatch('admin.photo.retake', ['requesterId' => 'NGG-2025-0099', 'assetId' => $rsAsset, 'reason' => 'Please use a plain background.']);
+chk('re-shoot: a retake emails the guardian a link', count(array_filter($GLOBALS['__mail_sink'], fn($m) => stripos($m['subject'], 'new photo') !== false)) >= 1);
+$ptok = db_row('SELECT photoToken FROM summer_students WHERE studentId = ?', [$rsReg['studentId']])['photoToken'];
+chk('re-shoot: a photo token is minted', $ptok && strpos($ptok, 'PT') === 0);
+$rc = backend_dispatch('reshoot.context', ['t' => $ptok]);
+chk('re-shoot: context returns the retake reason + awaiting flag', !empty($rc['ok']) && $rc['awaiting'] === true && strpos($rc['reason'], 'plain background') !== false);
+chk('re-shoot: a bad token is rejected', backend_dispatch('reshoot.context', ['t' => 'PTbogus'])['error'] === 'link_invalid');
+chk('re-shoot: an empty token is rejected', backend_dispatch('reshoot.context', ['t' => ''])['error'] === 'link_invalid');
+$rsub = backend_dispatch('reshoot.submit', ['t' => $ptok, 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+chk('re-shoot: submitting a new photo creates a fresh version', !empty($rsub['ok']) && $rsub['version'] >= 2);
+chk('re-shoot: a non-https photo is rejected', backend_dispatch('reshoot.submit', ['t' => $ptok, 'photoUrl' => 'ftp://nope'])['error'] === 'bad_photo');
+unset($GLOBALS['__ai_photo_mock'], $GLOBALS['__mail_sink']);
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
