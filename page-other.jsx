@@ -2069,12 +2069,59 @@ function CardFront({ card, S }) {
   );
 }
 
+/* Volunteer front — the whole card is the hierarchy-tier colour, with a white
+   inner panel. STS badge top, headshot/illustration, name, QR, VOLUNTEER|ROLE.
+   Same 590×1004 canvas as the student card so both print at 54×92mm. */
+function VolunteerCardFront({ card, S }) {
+  const px = (n) => n * S;
+  const tint = card.tier.color || "#00225F";
+  return (
+    <div className="idcard" style={{ width: px(590), height: px(1004), background: tint, position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
+      {/* White inner panel — the tier colour reads as a full-bleed border. */}
+      <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), background: "#fff", borderRadius: px(30) }}/>
+      {/* STS badge, straddling the top edge of the panel. The real badge slots
+          in at /assets/idcard/logo-sts.png; until then a clean STS monogram
+          shows (never a squashed wide lockup). */}
+      <div style={{ position: "absolute", top: px(6), left: "50%", transform: "translateX(-50%)", width: px(104), height: px(104), borderRadius: "50%", background: tint, boxShadow: `0 ${px(6)}px ${px(16)}px rgba(0,0,0,.18)`, display: "grid", placeItems: "center", overflow: "hidden" }}>
+        <span style={{ fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(34), letterSpacing: px(1), color: "#fff" }}>STS</span>
+        <img src="/assets/idcard/logo-sts.png" alt="Street-To-Stardom" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+          onError={e => { e.target.style.display = "none"; }}/>
+      </div>
+      {/* Headshot / illustration panel. */}
+      <div style={{ position: "absolute", top: px(140), left: px(70), width: px(450), height: px(354), borderRadius: px(22), overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)", boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)` }}>
+        {card.photoUrl && <img src={card.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>}
+      </div>
+      {/* Name — crimson first, navy surname (TT Firs Neue). */}
+      <div style={{ position: "absolute", top: px(548), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(52), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1) }}>{card.firstName}</div>
+      <div style={{ position: "absolute", top: px(602), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(56), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding: `0 ${px(24)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
+      <div style={{ position: "absolute", top: px(690), left: "50%", transform: "translateX(-50%)", width: px(360), height: 1, background: "#E4E4E4" }}/>
+      {/* Check-in QR. */}
+      <div style={{ position: "absolute", top: px(722), left: "50%", transform: "translateX(-50%)", border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff" }}>
+        <CardQR token={card.token} size={px(120)}/>
+      </div>
+      {/* VOLUNTEER | ROLE footer. */}
+      <div style={{ position: "absolute", top: px(902), left: 0, right: 0, textAlign: "center", fontSize: px(24), letterSpacing: px(1.2), color: "#101010", textTransform: "uppercase" }}>
+        <span style={{ fontWeight: 800 }}>Volunteer</span>
+        <span style={{ margin: `0 ${px(8)}px`, color: "#B9BFCB" }}>|</span>
+        <span style={{ fontWeight: 500 }}>{card.role || card.tier.name}</span>
+      </div>
+    </div>
+  );
+}
+
 function CardBack({ card, program, S }) {
   const px = (n) => n * S;
+  // The back is shared by students and volunteers; the 3rd row is a CENTRE
+  // for students and the ROLE for volunteers (who have no centre).
+  const isVol = !!card.tier;
+  const key = card.studentId || card.volunteerId || card.displayId;
+  const midRow = isVol
+    ? ["ROLE", String(card.role || card.tier.name || "").toUpperCase(), "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm-9 9a9 9 0 0 1 18 0"]
+    : ["CENTRE", ((card.centre && card.centre.name) || "").toUpperCase(), "M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11Zm0-8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"];
   const rows = [
     ["WEBSITE", program.website, "M2 12a10 10 0 1 0 20 0 10 10 0 0 0-20 0Zm2 0h16M12 2c3 3.5 3 16.5 0 20-3-3.5-3-16.5 0-20Z"],
     ["PHONE", program.phone, "M6 3h4l2 5-2.5 1.5a12 12 0 0 0 5 5L16 12l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 4 5a2 2 0 0 1 2-2Z"],
-    ["CENTRE", (card.centre.name || "").toUpperCase(), "M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11Zm0-8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"],
+    midRow,
     ["ID", card.displayId, "M4 5h16v14H4zM8 9.5a2 2 0 1 0 4 0 2 2 0 0 0-4 0ZM7 15c.7-1.8 2.2-2.5 3-2.5s2.3.7 3 2.5M15 10h3M15 13h3"],
   ];
   const wm = [];
@@ -2085,12 +2132,12 @@ function CardBack({ card, program, S }) {
       {/* Woven aso-oke trim across the top — stepped two-tone chevrons in
           muted blue-gray, matching the textile band on the printed design. */}
       <svg aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, width: "100%", height: px(26) }} viewBox="0 0 590 26" preserveAspectRatio="none">
-        <pattern id={"wv" + card.studentId} width="73.75" height="26" patternUnits="userSpaceOnUse">
+        <pattern id={"wv" + key} width="73.75" height="26" patternUnits="userSpaceOnUse">
           <path d="M0 -6 L36.9 10 L73.75 -6" fill="none" stroke="#CDD3E1" strokeWidth="5"/>
           <path d="M0 4 L36.9 20 L73.75 4" fill="none" stroke="#A9B2C9" strokeWidth="5"/>
           <path d="M0 20 L36.9 4 L73.75 20" fill="none" stroke="#C2C9DA" strokeWidth="3.4"/>
         </pattern>
-        <rect width="590" height="26" fill={"url(#wv" + card.studentId + ")"}/>
+        <rect width="590" height="26" fill={"url(#wv" + key + ")"}/>
         <rect y="24.4" width="590" height="1.6" fill="#9AA3BE" opacity="0.55"/>
       </svg>
       <div style={{ position: "absolute", top: px(170), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(62), letterSpacing: px(-1) }}>
@@ -2125,26 +2172,47 @@ function CardBack({ card, program, S }) {
 
 function CardStudio() {
   const auth = (window.useAuth || (() => null))();
-  const [data, setData] = React.useState(null);
+  const [mode, setMode] = React.useState("students"); // students | volunteers
+  const [data, setData] = React.useState(null);       // student cards + program
+  const [vdata, setVdata] = React.useState(null);      // volunteer cards + program
   const [centres, setCentres] = React.useState([]);
+  const [tiers, setTiers] = React.useState([]);
   const [state, setState] = React.useState("loading");
-  const [cName, setCName] = React.useState(""); const [cCode, setCCode] = React.useState(""); const [cColor, setCColor] = React.useState("#76B043");
+  // Shared manager inputs (reused across centres + tiers).
+  const [mName, setMName] = React.useState(""); const [mCode, setMCode] = React.useState(""); const [mColor, setMColor] = React.useState("#76B043");
   const [msg, setMsg] = React.useState("");
   const navy = "#16223e", gold = "#ffce54";
 
   const load = React.useCallback(() => {
     setState("loading");
-    Promise.all([NGGApi.admin.registration.cards(), NGGApi.admin.registration.centres()])
-      .then(([c, ct]) => { setData(c); setCentres(ct.centres || []); setState("ready"); })
+    Promise.all([
+      NGGApi.admin.registration.cards(), NGGApi.admin.registration.centres(),
+      NGGApi.admin.registration.volunteerCards(), NGGApi.admin.registration.hierarchy(),
+    ])
+      .then(([c, ct, vc, h]) => { setData(c); setCentres(ct.centres || []); setVdata(vc); setTiers(h.tiers || []); setState("ready"); })
       .catch(e => setState((e.code || e.message) === "unauthorized" ? "need-auth" : "error"));
   }, []);
   React.useEffect(() => { load(); }, [load]);
   React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(); }, [auth && auth.isSignedIn]);
 
-  const addCentre = async () => {
+  const isVol = mode === "volunteers";
+  const resetInputs = () => { setMName(""); setMCode(""); setMColor(isVol ? "#00225F" : "#76B043"); };
+  const switchMode = (m) => { setMode(m); setMsg(""); setMName(""); setMCode(""); setMColor(m === "volunteers" ? "#00225F" : "#76B043"); };
+
+  const addUnit = async () => {
     setMsg("");
-    try { await NGGApi.admin.registration.centreUpsert({ name: cName, code: cCode, color: cColor }); setCName(""); setCCode(""); load(); }
-    catch (e) { setMsg(e.code === "code_taken" ? "That code is already used by another centre." : "Couldn't save — check name (2+ chars) and code (1–4 letters)."); }
+    try {
+      if (isVol) await NGGApi.admin.registration.hierarchyUpsert({ name: mName, code: mCode, color: mColor });
+      else       await NGGApi.admin.registration.centreUpsert({ name: mName, code: mCode, color: mColor });
+      resetInputs(); load();
+    } catch (e) {
+      setMsg(e.code === "code_taken" ? "That code is already used." : "Couldn't save — check name (2+ chars) and code (1–4 letters).");
+    }
+  };
+  const delUnit = async (unit) => {
+    if (!confirm("Remove " + unit.name + "?")) return;
+    try { if (isVol) await NGGApi.admin.registration.hierarchyDelete(unit.tierId); else await NGGApi.admin.registration.centreDelete(unit.centreId); load(); }
+    catch (e) {}
   };
 
   const shell = (ch) => (
@@ -2156,8 +2224,12 @@ function CardStudio() {
   if (state === "need-auth") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 22 }}>Staff sign-in required</h1><button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Sign in →</button></div>);
   if (state === "error") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load the studio</h1><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
 
-  const cards = (data && data.cards) || [];
-  const program = (data && data.program) || {};
+  const cards = (isVol ? (vdata && vdata.cards) : (data && data.cards)) || [];
+  const program = ((isVol ? vdata : data) && (isVol ? vdata : data).program) || {};
+  const units = isVol ? tiers : centres;
+  const tab = (m, label) => (
+    <button onClick={() => switchMode(m)} style={{ padding: "9px 18px", borderRadius: 99, border: "1px solid " + (mode === m ? gold : "rgba(255,255,255,.18)"), background: mode === m ? gold : "transparent", color: mode === m ? "#2b2100" : "#eef2fb", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{label}</button>
+  );
   return shell(<>
     <style>{`
       @font-face { font-family: "TT Firs Neue"; src: url("/assets/fonts/tt-firs-neue-800.woff2") format("woff2"); font-weight: 800; font-display: swap; }
@@ -2171,44 +2243,49 @@ function CardStudio() {
         .card-pair { gap: 4mm; margin: 3mm; page-break-inside: avoid; float: left; }
       }
     `}</style>
-    <div className="no-print" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 18, marginBottom: 26 }}>
+    <div className="no-print" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 18, marginBottom: 18 }}>
       <div>
         <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>ID CARD STUDIO · {String(program.program || "")} {String(program.year || "")}</div>
-        <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{cards.length} verified student{cards.length === 1 ? "" : "s"} ready</h1>
-        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0", maxWidth: 520 }}>Cards render for verified students only — the ID and QR bind at parent consent. Print uses true 54×92mm per card.</p>
+        <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{cards.length} {isVol ? "volunteer" : "verified student"}{cards.length === 1 ? "" : "s"} ready</h1>
+        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0", maxWidth: 520 }}>{isVol ? "Cards render for active volunteers — the ID and QR bind at approval. Colour + code come from the hierarchy tier." : "Cards render for verified students only — the ID and QR bind at parent consent. Print uses true 54×92mm per card."}</p>
       </div>
       <button onClick={() => window.print()} disabled={!cards.length} style={{ padding: "13px 24px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Print all ({cards.length * 2} faces)</button>
     </div>
 
+    <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 26 }}>
+      {tab("students", "Summer students")}
+      {tab("volunteers", "Volunteers")}
+    </div>
+
     <div className="no-print" style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, padding: 16, marginBottom: 30 }}>
-      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 10 }}>CENTRES — CODE + CARD COLOUR</div>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 10 }}>{isVol ? "HIERARCHY — CODE + CARD COLOUR" : "CENTRES — CODE + CARD COLOUR"}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-        {centres.map(c => (
-          <span key={c.centreId} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: 99, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.15)", fontSize: 13, fontWeight: 600 }}>
-            <span style={{ width: 14, height: 14, borderRadius: "50%", background: c.color, flex: "none" }}/>
-            {c.name} · <span style={{ fontFamily: "var(--font-mono, monospace)" }}>{c.code}</span>
-            <button onClick={async () => { if (confirm("Remove " + c.name + "?")) { await NGGApi.admin.registration.centreDelete(c.centreId).catch(() => {}); load(); } }} style={{ background: "none", border: "none", color: "rgba(230,238,255,.5)", cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
+        {units.map(u => (
+          <span key={isVol ? u.tierId : u.centreId} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: 99, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.15)", fontSize: 13, fontWeight: 600 }}>
+            <span style={{ width: 14, height: 14, borderRadius: "50%", background: u.color, flex: "none" }}/>
+            {u.name} · <span style={{ fontFamily: "var(--font-mono, monospace)" }}>{u.code}</span>
+            <button onClick={() => delUnit(u)} style={{ background: "none", border: "none", color: "rgba(230,238,255,.5)", cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
           </span>
         ))}
-        {!centres.length && <span style={{ fontSize: 13, color: "rgba(230,238,255,.55)" }}>No centres yet — add the first below. New registrations then pick from this list.</span>}
+        {!units.length && <span style={{ fontSize: 13, color: "rgba(230,238,255,.55)" }}>{isVol ? "No tiers yet — add the first below. Volunteer cards colour by tier." : "No centres yet — add the first below. New registrations then pick from this list."}</span>}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <input value={cName} onChange={e => setCName(e.target.value)} placeholder="Centre name (Ijaiye)" style={{ flex: "1 1 180px", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14 }}/>
-        <input value={cCode} onChange={e => setCCode(e.target.value.toUpperCase())} placeholder="CODE (IJ)" maxLength={4} style={{ width: 110, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
-        <input type="color" value={cColor} onChange={e => setCColor(e.target.value)} style={{ width: 46, height: 40, border: "none", borderRadius: 10, background: "none", cursor: "pointer" }} aria-label="Card colour"/>
-        <button onClick={addCentre} disabled={cName.trim().length < 2 || !cCode.trim()} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>Add centre</button>
+        <input value={mName} onChange={e => setMName(e.target.value)} placeholder={isVol ? "Tier name (Team Lead)" : "Centre name (Ijaiye)"} style={{ flex: "1 1 180px", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14 }}/>
+        <input value={mCode} onChange={e => setMCode(e.target.value.toUpperCase())} placeholder={isVol ? "CODE (LED)" : "CODE (IJ)"} maxLength={4} style={{ width: 110, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
+        <input type="color" value={mColor} onChange={e => setMColor(e.target.value)} style={{ width: 46, height: 40, border: "none", borderRadius: 10, background: "none", cursor: "pointer" }} aria-label="Card colour"/>
+        <button onClick={addUnit} disabled={mName.trim().length < 2 || !mCode.trim()} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>{isVol ? "Add tier" : "Add centre"}</button>
       </div>
       {msg && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "10px 0 0" }}>{msg}</p>}
     </div>
 
     <div className="print-zone" style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
       {cards.map(card => (
-        <div key={card.studentId} className="card-pair">
-          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardFront card={card} S={0.5}/></div>
+        <div key={card.studentId || card.volunteerId} className="card-pair">
+          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} S={0.5}/> : <CardFront card={card} S={0.5}/>}</div>
           <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5}/></div>
         </div>
       ))}
-      {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No verified students yet — cards appear here the moment a parent consents.</p>}
+      {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>{isVol ? "No active volunteers yet — cards appear here the moment one is approved." : "No verified students yet — cards appear here the moment a parent consents."}</p>}
     </div>
   </>);
 }

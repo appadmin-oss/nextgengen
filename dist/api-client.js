@@ -289,6 +289,10 @@
         centreUpsert: (data) => request('/admin/registration.php', { body: { action: 'centre_upsert', data } }),
         centreDelete: (centreId) => request('/admin/registration.php', { body: { action: 'centre_delete', centreId } }),
         cards:        (studentId) => request('/admin/registration.php' + qs({ view: 'cards', studentId })),
+        hierarchy:       () => request('/admin/registration.php' + qs({ view: 'hierarchy' })),
+        hierarchyUpsert: (data) => request('/admin/registration.php', { body: { action: 'hierarchy_upsert', data } }),
+        hierarchyDelete: (tierId) => request('/admin/registration.php', { body: { action: 'hierarchy_delete', tierId } }),
+        volunteerCards:  (volunteerId) => request('/admin/registration.php' + qs({ view: 'vcards', volunteerId })),
       },
       integrations: {
         list:     () => request('/admin/integrations.php'),

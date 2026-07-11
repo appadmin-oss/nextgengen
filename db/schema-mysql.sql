@@ -427,3 +427,26 @@ CREATE TABLE IF NOT EXISTS volunteer_certs (
   issuedAt VARCHAR(40),
   INDEX idx_certs_vol (volunteerId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Volunteer hierarchy tiers — the volunteer analogue of centres. code → the
+-- VOL-CODE-YY-serial ID prefix; color → the full-bleed volunteer card bg.
+CREATE TABLE IF NOT EXISTS vol_tiers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tierId VARCHAR(48) UNIQUE NOT NULL,
+  name VARCHAR(80) NOT NULL,
+  code VARCHAR(8) NOT NULL,
+  color VARCHAR(16) DEFAULT '#00225F',
+  rank INT DEFAULT 0,
+  status VARCHAR(16) DEFAULT 'active',
+  createdAt VARCHAR(40), updatedAt VARCHAR(40),
+  UNIQUE KEY idx_vol_tiers_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO vol_tiers (tierId, name, code, color, rank) VALUES
+  ('VT-admin',      'Admin / Ops', 'ADM', '#00225F', 1),
+  ('VT-mentor',     'Mentor',      'MEN', '#1B7F5A', 2),
+  ('VT-instructor', 'Instructor',  'INS', '#B0143C', 3)
+ON DUPLICATE KEY UPDATE tierId = tierId;
+
+-- Mark schema current (keep in lockstep with NGG_SCHEMA_TARGET).
+INSERT INTO schema_version (version) VALUES (18) ON DUPLICATE KEY UPDATE version = version;

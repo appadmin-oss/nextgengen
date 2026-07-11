@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 17;
+const NGG_SCHEMA_TARGET = 18;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -564,6 +564,30 @@ function db_migrate(PDO $db): void {
               issuedAt TEXT DEFAULT (datetime('now'))
             );
             CREATE INDEX idx_certs_vol ON volunteer_certs(volunteerId);
+        ",
+
+        // Volunteer hierarchy tiers — the volunteer analogue of centres.
+        // Each tier carries a code (→ the VOL-CODE-YY-serial ID prefix) and a
+        // colour (→ the full-bleed volunteer card background). tierId is a
+        // stable slug (VT-<role>) so the public lane roles keep matching even
+        // after an admin renames/recolours a tier.
+        18 => "
+            CREATE TABLE vol_tiers (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              tierId TEXT UNIQUE NOT NULL,
+              name TEXT NOT NULL,
+              code TEXT NOT NULL,
+              color TEXT DEFAULT '#00225F',
+              rank INTEGER DEFAULT 0,
+              status TEXT DEFAULT 'active',
+              createdAt TEXT DEFAULT (datetime('now')),
+              updatedAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_vol_tiers_code ON vol_tiers(code);
+            INSERT INTO vol_tiers (tierId, name, code, color, rank) VALUES
+              ('VT-admin',      'Admin / Ops', 'ADM', '#00225F', 1),
+              ('VT-mentor',     'Mentor',      'MEN', '#1B7F5A', 2),
+              ('VT-instructor', 'Instructor',  'INS', '#B0143C', 3);
         ",
     ];
 

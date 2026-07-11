@@ -166,7 +166,8 @@ $volAppId = (int)db_row("SELECT id FROM applications WHERE email = 'vol-teach@ex
 chk('non-admin cannot review volunteers', backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 chk('review desk lists the pending queue', count(backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-2025-0099'])['pending']) >= 2);
 $appr = backend_dispatch('admin.volunteers.approve', ['requesterId' => 'NGG-2025-0099', 'id' => $volAppId]);
-chk('approval mints a VOL display id', preg_match('/^VOL-\d{2}-\d{3}$/', $appr['volunteer']['volunteerId']) === 1);
+chk('approval mints a VOL-CODE display id', preg_match('/^VOL-[A-Z]{2,4}-\d{2}-\d{3}$/', $appr['volunteer']['volunteerId']) === 1);
+chk('instructor id carries the INS tier code', str_starts_with((string)$appr['volunteer']['volunteerId'], 'VOL-INS-'));
 chk('approval binds a check-in token', str_starts_with((string)$appr['volunteer']['token'], 'VOLQR-'));
 chk('approval marks the application accepted', db_row('SELECT status FROM applications WHERE id = ?', [$volAppId])['status'] === 'accepted');
 chk('approval queues volunteer.approved for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.approved'")['c'] === 1);
@@ -181,6 +182,26 @@ chk('volunteer attendance shows on the profile', backend_dispatch('public.summer
 $volAppId2 = (int)db_row("SELECT id FROM applications WHERE email = 'vol-admin@example.com'")['id'];
 chk('decline marks the application rejected', backend_dispatch('admin.volunteers.decline', ['requesterId' => 'NGG-2025-0099', 'id' => $volAppId2, 'reason' => 'Intake full'])['ok'] === true && db_row('SELECT status FROM applications WHERE id = ?', [$volAppId2])['status'] === 'rejected');
 chk('approved roster lists the volunteer', in_array($volId, array_column(backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-2025-0099'])['volunteers'], 'volunteerId'), true));
+
+// ── Volunteer hierarchy (colour + code) + volunteer ID cards ──
+chk('members cannot read the hierarchy', backend_dispatch('admin.hierarchy.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+$tiers = backend_dispatch('admin.hierarchy.list', ['requesterId' => 'NGG-2025-0099'])['tiers'];
+chk('three tiers seeded (admin/mentor/instructor)', count($tiers) === 3 && in_array('INS', array_column($tiers, 'code'), true));
+chk('instructor tier is crimson', (function () use ($tiers) { foreach ($tiers as $t) if ($t['tierId'] === 'VT-instructor') return $t['color'] === '#B0143C'; return false; })());
+chk('tier code must stay unique', backend_dispatch('admin.hierarchy.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Clash', 'code' => 'INS', 'color' => '#123456']])['error'] === 'code_taken');
+chk('tier colour is validated', backend_dispatch('admin.hierarchy.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Lead', 'code' => 'LED', 'color' => 'red']])['error'] === 'bad_color');
+$newTier = backend_dispatch('admin.hierarchy.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Team Lead', 'code' => 'LED', 'color' => '#F5B026', 'rank' => 4]]);
+chk('a new tier can be added', !empty($newTier['ok']) && count(backend_dispatch('admin.hierarchy.list', ['requesterId' => 'NGG-2025-0099'])['tiers']) === 4);
+chk('recolouring the instructor tier sticks', backend_dispatch('admin.hierarchy.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['tierId' => 'VT-instructor', 'name' => 'Instructor', 'code' => 'INS', 'color' => '#7A0F2B']])['ok'] === true
+    && (function () { foreach (backend_dispatch('admin.hierarchy.list', ['requesterId' => 'NGG-2025-0099'])['tiers'] as $t) if ($t['tierId'] === 'VT-instructor') return $t['color'] === '#7A0F2B'; return false; })());
+$vcards = backend_dispatch('admin.vcards.data', ['requesterId' => 'NGG-2025-0099']);
+chk('volunteer cards render for active volunteers', count($vcards['cards']) >= 1);
+$vc = (function () use ($vcards, $volId) { foreach ($vcards['cards'] as $c) if ($c['volunteerId'] === $volId) return $c; return null; })();
+chk('volunteer card carries the tier colour + code + split name', $vc
+    && $vc['tier']['code'] === 'INS' && preg_match('/^#[0-9A-Fa-f]{6}$/', (string)$vc['tier']['color']) === 1
+    && $vc['firstName'] !== '' && $vc['token'] === $volTok);
+chk('tier delete removes it', backend_dispatch('admin.hierarchy.delete', ['requesterId' => 'NGG-2025-0099', 'tierId' => $newTier['tierId']])['ok'] === true
+    && count(backend_dispatch('admin.hierarchy.list', ['requesterId' => 'NGG-2025-0099'])['tiers']) === 3);
 
 // ── Service ledger + milestone certificates ──
 $volProfile = backend_dispatch('public.summerProfile', ['token' => $volTok])['profile'];

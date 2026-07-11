@@ -13,15 +13,96 @@ declare(strict_types=1);
  * (volunteer_sms_notify setting; on by default once SMS creds exist).
  */
 
-/** Race-safe VOL-YY-serial allocator (mirrors card_display_id). */
-function volunteer_display_id(): string {
+/* ── Hierarchy tiers — the volunteer analogue of centres (colour + code) ──── */
+
+/** The tier for a lane role (admin|mentor|instructor). tierId is a stable
+ *  slug so a rename/recolour by an admin never breaks the mapping. Falls back
+ *  to a neutral default when no tier matches (custom roles, empty table). */
+function vol_tier_for(string $role): array {
+    $key = 'VT-' . strtolower(trim($role));
+    $t = db_row("SELECT name, code, color FROM vol_tiers WHERE tierId = ? AND status = 'active' LIMIT 1", [$key]);
+    if ($t) return $t;
+    return ['name' => $role !== '' ? ucfirst($role) : 'Volunteer', 'code' => 'VOL', 'color' => '#00225F'];
+}
+
+/** Race-safe VOL-CODE-YY-serial allocator (mirrors card_display_id).
+ *  The tier code sits inside the fixed VOL family: VOL-ADM-26-001. */
+function volunteer_display_id(string $code = 'VOL'): string {
+    $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $code)) ?: 'VOL';
     $yy = gmdate('y');
-    for ($i = 0; $i < 40; $i++) {
-        $n = (int)(db_row('SELECT COUNT(*) c FROM volunteers WHERE volunteerId LIKE ?', ['VOL-' . $yy . '-%'])['c'] ?? 0) + 1 + $i;
-        $id = sprintf('VOL-%s-%03d', $yy, $n);
+    $prefix = 'VOL-' . $code . '-' . $yy . '-';
+    $base = (int)(db_row('SELECT COUNT(*) c FROM volunteers WHERE volunteerId LIKE ?', [$prefix . '%'])['c'] ?? 0);
+    for ($i = 1; $i <= 60; $i++) {
+        $id = $prefix . str_pad((string)($base + $i), 3, '0', STR_PAD_LEFT);
         if (!db_row('SELECT id FROM volunteers WHERE volunteerId = ?', [$id])) return $id;
     }
-    return 'VOL-' . $yy . '-' . strtolower(rand_hex(3));
+    return $prefix . strtolower(rand_hex(3));
+}
+
+function admin_hierarchy_list(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    return ['ok' => true, 'tiers' => db_all("SELECT tierId, name, code, color, rank, status FROM vol_tiers ORDER BY rank, name")];
+}
+
+function admin_hierarchy_upsert(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $d = is_array($p['data'] ?? null) ? $p['data'] : [];
+    $name = substr(trim((string)($d['name'] ?? '')), 0, 80);
+    $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($d['code'] ?? '')));
+    $color = (string)($d['color'] ?? '#00225F');
+    if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name'];
+    if (strlen($code) < 1 || strlen($code) > 4) return ['ok' => false, 'error' => 'bad_code'];
+    if (!preg_match('/^#[0-9a-fA-F]{6}$/', $color)) return ['ok' => false, 'error' => 'bad_color'];
+    $id = (string)($d['tierId'] ?? '');
+    $existing = $id !== '' ? db_row('SELECT * FROM vol_tiers WHERE tierId = ?', [$id]) : null;
+    // The code is the printed ID prefix — unique across tiers.
+    $clash = db_row('SELECT tierId FROM vol_tiers WHERE code = ? LIMIT 1', [$code]);
+    if ($clash && (!$existing || $clash['tierId'] !== $id)) return ['ok' => false, 'error' => 'code_taken'];
+    $row = ['name' => $name, 'code' => $code, 'color' => $color, 'rank' => (int)($d['rank'] ?? 0),
+        'status' => in_array((string)($d['status'] ?? 'active'), ['active', 'archived'], true) ? (string)($d['status'] ?? 'active') : 'active',
+        'updatedAt' => now_iso()];
+    if ($existing) db_update('vol_tiers', $row, ['tierId' => $id]);
+    else { $id = 'VT-' . strtolower(rand_hex(4)); db_insert('vol_tiers', $row + ['tierId' => $id, 'createdAt' => now_iso()]); }
+    audit('hierarchy.upsert', $g['requester']['memberId'], $id, ['code' => $code], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'tierId' => $id];
+}
+
+function admin_hierarchy_delete(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $n = db_exec('DELETE FROM vol_tiers WHERE tierId = ?', [(string)($p['tierId'] ?? '')]);
+    if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    audit('hierarchy.delete', $g['requester']['memberId'], (string)$p['tierId'], [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/** Printable volunteer cards — the volunteer analogue of admin_cards_data.
+ *  Each card is coloured by its tier and reuses the shared program block. */
+function admin_volunteer_cards_data(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $where = "status = 'active' AND token != ''";
+    $params = [];
+    if (!empty($p['volunteerId'])) { $where .= ' AND volunteerId = ?'; $params[] = (string)$p['volunteerId']; }
+    $rows = db_all("SELECT * FROM volunteers WHERE $where ORDER BY id ASC LIMIT 500", $params);
+    $cards = [];
+    foreach ($rows as $v) {
+        $tier = vol_tier_for((string)$v['role']);
+        $names = preg_split('/\s+/', trim((string)$v['fullName'])) ?: [''];
+        $first = array_shift($names);
+        $cards[] = [
+            'volunteerId' => $v['volunteerId'],
+            'firstName' => $first, 'surname' => implode(' ', $names),
+            'role' => (string)$v['role'],
+            'tier' => ['name' => $tier['name'], 'code' => $tier['code'], 'color' => $tier['color']],
+            'displayId' => (string)$v['volunteerId'],
+            'token' => (string)$v['token'],
+            'photoUrl' => (string)$v['photoUrl'],
+        ];
+    }
+    $cfg = setting_get('idcard');
+    $program = is_array($cfg) ? $cfg : [];
+    $program += ['program' => 'LCASP', 'year' => gmdate('Y'), 'motto' => 'EMPOWERED 360°',
+        'website' => 'sts.afrovanguard.org.ng', 'phone' => '+234 903 777 6318'];
+    return ['ok' => true, 'cards' => $cards, 'program' => $program];
 }
 
 function volunteer_public(array $v, bool $withAttendance = false): array {
@@ -175,7 +256,9 @@ function admin_volunteer_approve(array $p): array {
         return ['ok' => false, 'error' => 'phone_required'];
     }
 
-    $volunteerId = volunteer_display_id();
+    // The tier (by role) drives both the ID prefix and the card colour.
+    $tier = vol_tier_for((string)$a['role']);
+    $volunteerId = volunteer_display_id((string)$tier['code']);
     // Bind a check-in token — same pool the gate scanner reads.
     $token = 'VOLQR-' . strtoupper(rand_hex(4));
     while (db_row('SELECT id FROM qr_codes WHERE token = ?', [$token])) $token = 'VOLQR-' . strtoupper(rand_hex(4));
