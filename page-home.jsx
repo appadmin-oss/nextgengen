@@ -59,7 +59,7 @@ function Hero({ setPage }) {
             <h1 className="display" style={{fontSize:"clamp(52px, 6.4vw, 108px)", margin:0, color:"white", lineHeight:0.94}}>
               <Kinetic as="span" text={site.heroTitle1 || "Africa's next geniuses"} by="word"/><br/>
               <Kinetic as="span" text={(site.heroTitle2 || "are") + " "} by="word" delay={300}/>
-              <em className="shimmer-gold" style={{fontStyle:"normal"}}>
+              <em className="shimmer-gold" style={{fontStyle:"normal", fontFamily:"var(--font-marker)", fontWeight:700, fontSize:"1.14em", lineHeight:0.9, display:"inline-block"}}>
                 <Kinetic as="span" text={site.heroEmphasis || "not waiting"} by="word" delay={420}/>
               </em>
               <Kinetic as="span" text="." by="word" delay={620}/>
