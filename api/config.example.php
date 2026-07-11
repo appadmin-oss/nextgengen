@@ -121,8 +121,13 @@ return [
     // same way. Used to sign session cookies issued to the browser.
     'cookie_secret'   => 'REPLACE_ME_64_HEX_BYTES_DIFFERENT_FROM_ABOVE',
 
-    // Session lifetime in seconds (7 days).
+    // Session lifetime in seconds (7 days = absolute cap on a signed cookie).
     'session_ttl'     => 7 * 24 * 3600,
+
+    // Idle timeout: seconds of inactivity before a session is force-expired
+    // (revoked server-side + cookie cleared). Staff are held to a tight window
+    // per the operational policy; members get a longer leash. 0 disables a tier.
+    'session_idle'    => ['admin' => 1800, 'member' => 43200],
 
     // Cookie name + flags.
     'cookie_name'     => 'ngg_sess',
@@ -154,10 +159,12 @@ return [
 
     // Per-IP rate limits — sliding window inside the configured period.
     'rate_limits' => [
-        'auth.request' => ['max' => 5,  'window' => 60],
-        'auth.verify'  => ['max' => 10, 'window' => 60],
-        'upload.sign'  => ['max' => 30, 'window' => 60],
-        'default'      => ['max' => 60, 'window' => 60],
+        'auth.request' => ['max' => 5,   'window' => 60],
+        'auth.verify'  => ['max' => 10,  'window' => 60],
+        'upload.sign'  => ['max' => 30,  'window' => 60],
+        'gate'         => ['max' => 300, 'window' => 60],  // staff desk: high-volume check-ins
+        'hook'         => ['max' => 120, 'window' => 60],  // inbound webhook bursts
+        'default'      => ['max' => 60,  'window' => 60],
     ],
 
     // Cache settings (filesystem cache, keyed by op + arg hash). Reduces

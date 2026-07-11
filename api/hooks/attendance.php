@@ -12,6 +12,7 @@
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 require_method('POST');
+rate_limit_check('hook');
 
 $secret = (string)($CONFIG['hooks']['attendance_secret'] ?? '');
 if ($secret === '') json_error('hook_disabled', 404);

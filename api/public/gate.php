@@ -6,6 +6,7 @@
  * the HUMAN). The page itself lives at /gate?g=…
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
+rate_limit_check('gate');
 $s = require_session();
 if (!is_admin_role($s['role'] ?? '')) json_error('forbidden', 403);
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';

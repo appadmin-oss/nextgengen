@@ -121,6 +121,17 @@ function require_session(): array {
         if ($row) {
             if (!empty($row['revokedAt'])) { session_clear(); json_error('unauthorized', 401); }
             $last = strtotime((string)($row['lastSeenAt'] ?? '')) ?: 0;
+            // Idle timeout — a session that has sat untouched past its window is
+            // force-expired (revoked + cookie cleared). Staff are held to the
+            // tight window the operational policy demands; members get longer.
+            $idleCfg = $GLOBALS['CONFIG']['session_idle'] ?? [];
+            $isStaff = !empty($s['adminOk']) || is_admin_role((string)($s['role'] ?? ''));
+            $idleMax = (int)($isStaff ? ($idleCfg['admin'] ?? 1800) : ($idleCfg['member'] ?? 43200));
+            if ($idleMax > 0 && $last > 0 && (time() - $last) > $idleMax) {
+                try { db_update('device_sessions', ['revokedAt' => now_iso()], ['id' => $row['id']]); } catch (Throwable $e) {}
+                session_clear();
+                json_error('session_expired', 401);
+            }
             if (time() - $last > 300) {
                 try { db_update('device_sessions', ['lastSeenAt' => now_iso()], ['id' => $row['id']]); } catch (Throwable $e) {}
             }
