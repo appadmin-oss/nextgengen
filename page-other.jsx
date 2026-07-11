@@ -1924,7 +1924,14 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
       setPhotoUrl(optimised);
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
     } catch (e) {
-      setUErr((e.message || "").indexOf("upload") !== -1 || e.code ? "Upload isn't configured on this server yet — skip the photo for now; an editor can add it later." : "Couldn't upload — check the connection and try again.");
+      // Surface the real reason — a vague message can't be diagnosed or fixed.
+      const msg = String((e && (e.message || e.code)) || "");
+      if (/disabled|not.?configured|no_cloud|no_secret|missing/i.test(msg) || /_(400|401|403)\b/.test(msg))
+        setUErr("Photo uploads aren't set up on this server yet — Cloudinary keys/preset are missing. Skip for now; an editor can add the photo later.");
+      else if (/network|failed to fetch|timeout/i.test(msg))
+        setUErr("Couldn't reach the photo service — check the connection and try again.");
+      else
+        setUErr("Upload failed (" + (msg || "unknown error") + "). You can skip and add the photo later.");
     } finally { setBusy(false); }
   };
   const capture = () => {
