@@ -25,6 +25,11 @@ function mail_from(): array {
 function send_mail(string $to, string $subject, string $html, ?string $text = null): bool {
     global $CONFIG;
     if (!filter_var($to, FILTER_VALIDATE_EMAIL)) return false;
+    // Test seam: capture instead of send when a sink is registered.
+    if (isset($GLOBALS['__mail_sink']) && is_array($GLOBALS['__mail_sink'])) {
+        $GLOBALS['__mail_sink'][] = ['to' => $to, 'subject' => $subject, 'html' => $html];
+        return true;
+    }
     $from = mail_from();
     $text = $text ?? trim(preg_replace('/\n{3,}/', "\n\n", strip_tags(preg_replace('#<br\s*/?>|</p>|</div>#i', "\n", $html)) ?? ''));
 
@@ -116,30 +121,37 @@ function smtp_send(array $smtp, array $from, string $to, string $subject, string
     return true;
 }
 
-/** Branded HTML shell so every outbound email stays on-brand (navy + gold). */
+/**
+ * Minimalist HTML shell — the email counterpart of the printed ID cards:
+ * a white card on a light ground, a thin crimson identity rule, the navy
+ * wordmark, clean type, and a single quiet navy button. No heavy header bar,
+ * no gold slab. Table-based + inline styles for email-client safety.
+ */
 function email_template(array $opts): string {
     global $CONFIG;
     $origin = $CONFIG['app_origin'] ?? '';
+    $navy = '#00225F'; $crimson = '#E4155F'; $ink = '#333A4D'; $muted = '#8A93A6';
     $cta = (!empty($opts['ctaLabel']) && !empty($opts['ctaUrl']))
-        ? '<tr><td style="padding:8px 0 4px"><a href="' . esc_html($opts['ctaUrl']) . '" style="display:inline-block;background:#f5b026;color:#0c1432;text-decoration:none;font-weight:700;font-family:Arial,Helvetica,sans-serif;font-size:15px;padding:13px 26px;border-radius:10px">' . esc_html($opts['ctaLabel']) . '</a></td></tr>'
+        ? '<tr><td style="padding:22px 0 2px"><a href="' . esc_html($opts['ctaUrl']) . '" style="display:inline-block;background:' . $navy . ';color:#ffffff;text-decoration:none;font-weight:700;font-family:Arial,Helvetica,sans-serif;font-size:14px;letter-spacing:.2px;padding:13px 26px;border-radius:10px">' . esc_html($opts['ctaLabel']) . '</a></td></tr>'
         : '';
-    return '<div style="background:#0c1432;padding:32px 0;font-family:Arial,Helvetica,sans-serif">'
+    return '<div style="background:#eef1f5;padding:36px 0;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased">'
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">'
-        . '<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">'
-        . '<tr><td style="background:#0c1432;padding:22px 28px">'
-        . '<span style="color:#f5b026;font-weight:800;font-size:18px;letter-spacing:.5px">Next Generation Genius</span>'
-        . '<span style="color:#8a93b8;font-size:11px;letter-spacing:2px;display:block;margin-top:2px;text-transform:uppercase">Afrovanguard</span>'
+        . '<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border:1px solid #e6e8ee;border-radius:16px;overflow:hidden">'
+        . '<tr><td style="height:4px;background:' . $crimson . ';font-size:0;line-height:0">&nbsp;</td></tr>'
+        . '<tr><td style="padding:28px 34px 0">'
+        . '<div style="font-size:11px;letter-spacing:2.5px;color:' . $navy . ';font-weight:700;text-transform:uppercase">Next Generation Genius</div>'
+        . '<div style="font-size:10px;letter-spacing:2px;color:' . $muted . ';text-transform:uppercase;margin-top:3px">Afrovanguard</div>'
         . '</td></tr>'
-        . '<tr><td style="padding:30px 28px 8px">'
-        . '<h1 style="margin:0 0 6px;color:#0c1432;font-size:22px">' . esc_html($opts['title'] ?? '') . '</h1>'
-        . (!empty($opts['intro']) ? '<p style="margin:0 0 14px;color:#4a5170;font-size:15px;line-height:1.55">' . esc_html($opts['intro']) . '</p>' : '')
+        . '<tr><td style="padding:22px 34px 0">'
+        . '<h1 style="margin:0;color:' . $navy . ';font-size:21px;font-weight:800;line-height:1.25">' . esc_html($opts['title'] ?? '') . '</h1>'
+        . (!empty($opts['intro']) ? '<p style="margin:12px 0 0;color:' . $ink . ';font-size:15px;line-height:1.6">' . esc_html($opts['intro']) . '</p>' : '')
         . '</td></tr>'
-        . '<tr><td style="padding:0 28px 8px;color:#2a3050;font-size:15px;line-height:1.6">' . ($opts['bodyHtml'] ?? '') . '</td></tr>'
-        . '<tr><td style="padding:6px 28px 26px"><table role="presentation" cellpadding="0" cellspacing="0">' . $cta . '</table></td></tr>'
-        . '<tr><td style="background:#f5f6fa;padding:16px 28px;color:#8a93b8;font-size:12px;line-height:1.5">'
-        . esc_html($opts['footNote'] ?? 'You are receiving this because you are a member of Next Generation Genius.')
-        . ($origin ? '<br><a href="' . esc_html($origin) . '" style="color:#8a93b8">' . esc_html(preg_replace('#^https?://#', '', $origin) ?? $origin) . '</a>' : '')
-        . '</td></tr></table></td></tr></table></div>';
+        . (!empty($opts['bodyHtml']) ? '<tr><td style="padding:14px 34px 0;color:' . $ink . ';font-size:15px;line-height:1.65">' . $opts['bodyHtml'] . '</td></tr>' : '')
+        . '<tr><td style="padding:0 34px"><table role="presentation" cellpadding="0" cellspacing="0">' . $cta . '</table></td></tr>'
+        . '<tr><td style="padding:26px 34px 30px"><div style="border-top:1px solid #eef0f4;padding-top:16px;color:' . $muted . ';font-size:12px;line-height:1.6">'
+        . esc_html($opts['footNote'] ?? 'You are receiving this because you are part of Next Generation Genius.')
+        . ($origin ? '<br><a href="' . esc_html($origin) . '" style="color:' . $muted . ';text-decoration:none">' . esc_html(preg_replace('#^https?://#', '', $origin) ?? $origin) . '</a>' : '')
+        . '</div></td></tr></table></td></tr></table></div>';
 }
 
 /**

@@ -270,6 +270,33 @@ function public_apply(array $p): array {
                     'footNote' => 'Review in the admin Applications tab.',
                 ]));
         }
+        // Acknowledge the applicant — a clean, professional confirmation so
+        // nobody applies into silence. Volunteer copy names the role + the
+        // safeguarding note; teen/mentor get the short version.
+        $first = explode(' ', $name)[0] ?: 'there';
+        if ($kind === 'volunteer') {
+            $roleLabel = ['admin' => 'Admin / Ops', 'mentor' => 'Mentor', 'instructor' => 'Instructor'][$role] ?? ucfirst($role);
+            $body = '<p style="margin:0 0 12px">We review every application by hand and write back within a week.</p>'
+                . '<p style="margin:0 0 12px"><b>Role:</b> ' . esc_html($roleLabel)
+                . ($courses ? '<br><b>Courses:</b> ' . esc_html(implode(', ', $courses)) : '') . '</p>'
+                . '<p style="margin:0">Volunteers working directly with young people complete safeguarding screening before their first session.</p>';
+            @send_mail($email, 'We received your volunteer application — Next Generation Genius',
+                email_template([
+                    'title' => 'Application received',
+                    'intro' => 'Thank you for offering your time, ' . $first . '.',
+                    'bodyHtml' => $body,
+                    'footNote' => 'You applied to volunteer with Next Generation Genius.',
+                ]));
+        } else {
+            $what = $kind === 'mentor' ? 'mentor application' : 'application';
+            @send_mail($email, 'We received your ' . $what . ' — Next Generation Genius',
+                email_template([
+                    'title' => 'Application received',
+                    'intro' => 'Thank you, ' . $first . '.',
+                    'bodyHtml' => '<p style="margin:0">We review every ' . esc_html($what) . ' by hand and write back within a week.</p>',
+                    'footNote' => 'You applied to Next Generation Genius.',
+                ]));
+        }
     }
     audit('apply.' . $kind, null, $email, ['name' => $name, 'track' => $track ?: $role, 'program' => $program], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'duplicate' => (bool)$dupe];
