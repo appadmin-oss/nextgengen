@@ -2079,6 +2079,91 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
   );
 }
 
+/* Guardian re-shoot page (/reshoot?t=…) — a no-account, phone-first uploader
+ * the guardian reaches from the emailed retake link. */
+function ReshootPage() {
+  const t = new URLSearchParams(window.location.search).get("t") || "";
+  const fileRef = React.useRef(null);
+  const [ctx, setCtx] = React.useState(null);
+  const [state, setState] = React.useState("loading"); // loading|ready|error|done
+  const [err, setErr] = React.useState("");
+  const [photoUrl, setPhotoUrl] = React.useState("");
+  const [uploading, setUploading] = React.useState(false);
+  const [uErr, setUErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  const navy = "#16223e", gold = "#ffce54", goldInk = "#2b2100";
+  const card = { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14 };
+  const mut = { color: "rgba(230,238,255,.62)" };
+  const shell = (children) => (
+    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)" }}>
+      <div style={{ maxWidth: 460, margin: "0 auto", padding: "26px 18px 70px" }}>{children}</div>
+    </div>
+  );
+
+  React.useEffect(() => {
+    if (!t) { setErr("This link is missing its code."); setState("error"); return; }
+    NGGApi.public.reshoot.context(t)
+      .then(r => { setCtx(r); setState("ready"); })
+      .catch(e => { const c = e.code || e.message; setErr(c === "link_invalid" ? "This photo link isn't valid or has already been used." : "Couldn't load — check your connection and reopen the link."); setState("error"); });
+  }, [t]);
+
+  const upload = async (file) => {
+    setUploading(true); setUErr("");
+    try {
+      let up;
+      try { up = await NGGApi.uploadPublic(file); }
+      catch (pe) { up = await NGGApi.uploadFile(file, "headshot"); }
+      setPhotoUrl(up.url.replace("/upload/", "/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/"));
+    } catch (e) {
+      const m = String((e && (e.message || e.code)) || "");
+      setUErr(/network|failed to fetch/i.test(m) ? "Couldn't reach the photo service — check the connection." : "Upload failed — please try another photo.");
+    } finally { setUploading(false); }
+  };
+  const submit = async () => {
+    if (!photoUrl || busy) return;
+    setBusy(true); setUErr("");
+    try { await NGGApi.public.reshoot.submit(t, photoUrl); setState("done"); }
+    catch (e) { setUErr(e.code === "bad_photo" ? "That photo didn't come through — try again." : "Couldn't send the photo — try again."); }
+    finally { setBusy(false); }
+  };
+  const first = ctx && ctx.student ? String(ctx.student.name || "").split(" ")[0] : "";
+
+  if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
+  if (state === "error") return shell(<div style={{ ...card, padding: 24, marginTop: 60 }}><h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Photo link</h1><p style={mut}>{err}</p></div>);
+  if (state === "done") return shell(<div style={{ ...card, padding: 24, textAlign: "center", marginTop: 50 }}>
+    <div style={{ fontSize: 40 }}>✅</div>
+    <h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Thank you!</h1>
+    <p style={mut}>The new photo is in. Our team will check it and finish {first || "your child"}'s ID — no need to do anything else.</p>
+  </div>);
+
+  return shell(<>
+    <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>NEW PHOTO</div>
+    <h1 style={{ fontSize: 22, margin: "4px 0 12px", fontWeight: 800 }}>A quick new photo{first ? " for " + first : ""}</h1>
+    {ctx && ctx.reason
+      ? <div style={{ ...card, padding: 14, marginBottom: 12, fontSize: 13.5, lineHeight: 1.5 }}><b style={{ color: gold }}>What to fix:</b> {ctx.reason}</div>
+      : <p style={{ ...mut, fontSize: 13.5, marginBottom: 12 }}>Please use a clear, front-facing photo in good light, with a plain background.</p>}
+
+    <div style={{ ...card, overflow: "hidden", height: 300, display: "grid", placeItems: "center", marginBottom: 12 }}>
+      {photoUrl
+        ? <img src={photoUrl} alt="New headshot" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>
+        : ctx && ctx.student && ctx.student.photoUrl
+          ? <img src={ctx.student.photoUrl} alt="Current" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: .45 }}/>
+          : <div style={{ textAlign: "center" }}><div style={{ fontSize: 34 }}>📷</div><p style={{ ...mut, fontSize: 13, margin: "8px 0 0" }}>Tap below to take or choose a photo</p></div>}
+    </div>
+    {uErr && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,206,84,.12)", border: "1px solid rgba(255,206,84,.4)", fontSize: 13, marginBottom: 10 }}>{uErr}</div>}
+    <input ref={fileRef} type="file" accept="image/*" capture="user" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) upload(f); }}/>
+
+    {!photoUrl
+      ? <button onClick={() => fileRef.current && fileRef.current.click()} disabled={uploading} style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{uploading ? "Uploading…" : "Take / choose photo"}</button>
+      : <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={() => { setPhotoUrl(""); }} disabled={busy} style={{ padding: "13px 18px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Retake</button>
+          <button onClick={submit} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "Sending…" : "Send this photo →"}</button>
+        </div>}
+    <p style={{ ...mut, fontSize: 11.5, textAlign: "center", margin: "12px 0 0", lineHeight: 1.5 }}>Used only for {first || "your child"}'s program ID. We enhance lighting and framing but never change the face.</p>
+  </>);
+}
+
 function GateCheckin({ g, card, inputS, gold, goldInk }) {
   const [code, setCode] = React.useState("");
   const [busy, setBusy] = React.useState(false);

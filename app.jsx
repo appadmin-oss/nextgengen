@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","join","blog","contact","admin","summer-admin","club-admin","circle","gate","verify","cards","certificate","legal"];
+const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","join","blog","contact","admin","summer-admin","club-admin","circle","gate","verify","reshoot","cards","certificate","legal"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
@@ -36,6 +36,7 @@ const PAGE_META = {
   circle:     { title: "Anchor Circle · Guardian & Mentor Portal",    desc: "Support your child's twelve-week Anchor journey — confirm conduct, encourage, and track growth without reading their private words." },
   gate:       { title: "The Gate · NGG",                              desc: "" },
   verify:     { title: "Confirm your child's registration · NGG",     desc: "" },
+  reshoot:    { title: "A new photo · NGG",                           desc: "" },
   cards:      { title: "ID Card Studio · NGG",                        desc: "" },
 };
 
@@ -244,6 +245,7 @@ function App() {
     circle:     <CirclePortal   setPage={setPage}/>,
     gate:       <GatePage/>,
     verify:     <ParentVerifyPage/>,
+    reshoot:    <ReshootPage/>,
     cards:      <CardStudio/>,
     certificate: <CertificatePage/>,
     legal:      <LegalPage setPage={setPage}/>,
@@ -251,7 +253,7 @@ function App() {
 
   // The staff console/portals, the guardian Circle portal, the gate desk and
   // the parent verification page use their own chrome — no topnav/footer.
-  if (page === "admin" || page === "summer-admin" || page === "club-admin" || page === "circle" || page === "gate" || page === "verify" || page === "cards" || page === "certificate") {
+  if (page === "admin" || page === "summer-admin" || page === "club-admin" || page === "circle" || page === "gate" || page === "verify" || page === "reshoot" || page === "cards" || page === "certificate") {
     return (
       <div className="app-shell app-shell-admin">
         <SkipLink/>
