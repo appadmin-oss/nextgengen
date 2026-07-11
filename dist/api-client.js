@@ -166,8 +166,14 @@
       contact:    (data) => request('/public/contact.php', { body: data }),
       gate: {
         context:  (g) => request('/public/gate.php' + qs({ g })),
-        register: (gate, data, photoUrl, force) => request('/public/gate.php', { body: { action: 'register', gate, data, photoUrl, force } }),
+        register: (gate, data, photoUrl, force, opts) => request('/public/gate.php', { body: {
+          action: 'register', gate, data, photoUrl, force,
+          lat: opts && opts.lat, lng: opts && opts.lng, geoOverride: !!(opts && opts.geoOverride),
+        } }),
         checkin:  (gate, token) => request('/public/gate.php', { body: { action: 'checkin', gate, token } }),
+        // Kiosk unlock — mints a gate-scoped session so field staff run the
+        // desk without an admin login (see /public/gate-unlock.php).
+        unlock:   (gate, password) => request('/public/gate-unlock.php', { body: { gate, password } }),
       },
       verify: {
         context: (t) => request('/public/verify.php' + qs({ t })),
@@ -288,7 +294,8 @@
         form:       (formId) => request('/admin/registration.php' + qs({ view: 'form', formId: formId || 'summer-reg' })),
         publishForm: (formId, fields, name) => request('/admin/registration.php', { body: { action: 'publish_form', formId, fields, name } }),
         gates:      () => request('/admin/registration.php' + qs({ view: 'gates' })),
-        gateCreate: (name, expiresAt) => request('/admin/registration.php', { body: { action: 'gate_create', name, expiresAt } }),
+        gateCreate: (name, expiresAt, password, centreId) => request('/admin/registration.php', { body: { action: 'gate_create', name, expiresAt, password: password || '', centreId: centreId || '' } }),
+        gateSetpass: (gateId, password) => request('/admin/registration.php', { body: { action: 'gate_setpass', gateId, password: password || '' } }),
         gateRevoke: (gateId) => request('/admin/registration.php', { body: { action: 'gate_revoke', gateId } }),
         list:       () => request('/admin/registration.php' + qs({ view: 'registrations' })),
         remind:     (studentId) => request('/admin/registration.php', { body: { action: 'remind', studentId } }),

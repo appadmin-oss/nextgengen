@@ -1726,6 +1726,9 @@ function GatePage() {
   const [state, setState] = React.useState("loading"); // loading|need-auth|error|ready
   const [err, setErr] = React.useState("");
   const [tab, setTab] = React.useState("register");
+  const [pw, setPw] = React.useState("");
+  const [unlockBusy, setUnlockBusy] = React.useState(false);
+  const [unlockErr, setUnlockErr] = React.useState("");
   const draftKey = "ngg_gate_draft_" + g;
 
   const load = React.useCallback(() => {
@@ -1742,6 +1745,22 @@ function GatePage() {
   // After the operator signs in through the modal, retry automatically.
   React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(); }, [auth && auth.isSignedIn]);
 
+  // Kiosk unlock — field staff without an admin login open the desk with the
+  // gate's password. On success a gate-scoped session is set; reload the gate.
+  const doUnlock = async (e) => {
+    if (e) e.preventDefault();
+    if (!pw.trim() || unlockBusy) return;
+    setUnlockBusy(true); setUnlockErr("");
+    try { await NGGApi.public.gate.unlock(g, pw.trim()); setPw(""); load(); }
+    catch (err) {
+      const c = err.code || err.message;
+      setUnlockErr(c === "bad_password" ? "That desk password didn't match. Try again."
+        : c === "no_password" ? "This gate has no desk password — an admin must sign in, or set one first."
+        : c === "gate_invalid" ? "This gate link has been closed or revoked."
+        : "Couldn't unlock — check the connection and try again.");
+    } finally { setUnlockBusy(false); }
+  };
+
   const navy = "#16223e", gold = "#ffce54", goldInk = "#2b2100";
   const card = { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14 };
   const inputS = { width: "100%", padding: "12px 14px", borderRadius: 11, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 16, fontFamily: "inherit" };
@@ -1752,11 +1771,24 @@ function GatePage() {
   );
 
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
-  if (state === "need-auth") return shell(<div style={{ ...card, padding: 24, textAlign: "center", marginTop: 60 }}>
-    <div style={{ fontSize: 38 }}>🛡️</div>
-    <h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Staff sign-in required</h1>
-    <p style={{ color: "rgba(230,238,255,.66)", fontSize: 14, lineHeight: 1.55 }}>This gate link is real — but the person operating it must be signed in as staff.</p>
-    <button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Sign in →</button>
+  if (state === "need-auth") return shell(<div style={{ ...card, padding: 24, marginTop: 48 }}>
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 38 }}>🛡️</div>
+      <h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Open the desk</h1>
+      <p style={{ color: "rgba(230,238,255,.66)", fontSize: 14, lineHeight: 1.55 }}>This gate link is real — the person operating it just needs to unlock it.</p>
+      <button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Staff sign-in →</button>
+    </div>
+    {/* Desk password — no admin account needed. */}
+    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0 14px", color: "rgba(230,238,255,.4)", fontSize: 11, fontWeight: 700, letterSpacing: ".14em" }}>
+      <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.14)" }}/>OR DESK PASSWORD<div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.14)" }}/>
+    </div>
+    <form onSubmit={doUnlock} style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+      <input type="password" value={pw} onChange={e => { setPw(e.target.value); if (unlockErr) setUnlockErr(""); }} placeholder="Desk password" autoComplete="off"
+        style={{ width: "100%", padding: "12px 14px", borderRadius: 11, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 16, fontFamily: "inherit" }}/>
+      {unlockErr && <div style={{ fontSize: 12.5, color: "#ff9a9a" }}>{unlockErr}</div>}
+      <button type="submit" disabled={unlockBusy || !pw.trim()} style={{ padding: "12px 26px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", opacity: pw.trim() ? 1 : .55 }}>{unlockBusy ? "Unlocking…" : "Unlock the desk"}</button>
+      <p style={{ color: "rgba(230,238,255,.5)", fontSize: 11.5, textAlign: "center", margin: "2px 0 0", lineHeight: 1.5 }}>Ask your coordinator for the desk password. It works only for this gate and expires automatically.</p>
+    </form>
   </div>);
   if (state === "error") return shell(<div style={{ ...card, padding: 24, marginTop: 60 }}><h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Gate unavailable</h1><p style={{ color: "rgba(230,238,255,.66)", fontSize: 14 }}>{err}</p><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
 
@@ -1779,8 +1811,18 @@ function GatePage() {
   </>);
 }
 
+// Great-circle distance in metres — client preview of the fence match; the
+// server re-checks authoritatively on submit.
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R = 6371000, r = Math.PI / 180;
+  const dLat = (lat2 - lat1) * r, dLng = (lng2 - lng1) * r;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
-  const fields = (ctx.form && ctx.form.fields) || [];
+  const geoOn = !!(ctx.geo && ctx.geo.enabled);
+  const fields = ((ctx.form && ctx.form.fields) || []).filter(f => !(geoOn && f.key === "centre"));
   const [step, setStep] = React.useState(0);           // 0 details · 1 photo · 2 confirm
   const [form, setForm] = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey)) || {}; } catch (_) { return {}; } });
   const [errors, setErrors] = React.useState({});
@@ -1788,20 +1830,47 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
   const [busy, setBusy] = React.useState(false);
   const [dupe, setDupe] = React.useState(null);
   const [done, setDone] = React.useState(null);
+  const [geo, setGeo] = React.useState({ st: geoOn ? "idle" : "off", lat: null, lng: null, centre: null, dist: null, err: "" });
   const set = (k, v) => setForm(f => { const n = { ...f, [k]: v }; try { localStorage.setItem(draftKey, JSON.stringify(n)); } catch (_) {} return n; });
   const visible = (f) => !f.showIf || String(form[f.showIf.key] || "") === String(f.showIf.value);
   const mut = { color: "rgba(230,238,255,.62)" };
 
+  // Geo-fence: capture the device location and match it to a fenced centre.
+  const captureGeo = React.useCallback(() => {
+    if (!geoOn) return;
+    if (!navigator.geolocation) { setGeo(x => ({ ...x, st: "denied", err: "This device can't share its location." })); return; }
+    setGeo(x => ({ ...x, st: "locating", err: "" }));
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const lat = pos.coords.latitude, lng = pos.coords.longitude;
+        let best = null;
+        (ctx.geo.centres || []).forEach(c => {
+          const d = haversineM(lat, lng, c.lat, c.lng);
+          if (!best || d < best.dist) best = { centre: c, dist: Math.round(d), inFence: d <= (c.radiusM || 150) };
+        });
+        const st = best ? (best.inFence ? "in" : "out") : "nofence";
+        if (best && best.inFence) set("centre", best.centre.name);
+        setGeo({ st, lat, lng, centre: best && best.centre, dist: best && best.dist, err: "" });
+      },
+      err => setGeo(x => ({ ...x, st: "denied", err: err && err.code === 1 ? "Location permission was blocked. Enable it in the browser to register at this desk." : "Couldn't get a location fix — move into the open and retry." })),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+    );
+  }, [geoOn]);
+  React.useEffect(() => { captureGeo(); }, [captureGeo]);
+  const geoReady = !geoOn || geo.st === "in" || geo.st === "nofence";
+
   const submit = async (force) => {
     setBusy(true); setErrors({}); setDupe(null);
     try {
-      const r = await NGGApi.public.gate.register(g, form, photoUrl, !!force);
+      const r = await NGGApi.public.gate.register(g, form, photoUrl, !!force, { lat: geo.lat, lng: geo.lng });
       try { localStorage.removeItem(draftKey); } catch (_) {}
       setDone(r);
     } catch (e) {
-      if (e.code === "duplicate_suspect" || (e.detail && e.detail.existing)) { setDupe((e.detail && e.detail.existing) || {}); }
+      const c = e.code || (e.detail && e.detail.error);
+      if (c === "duplicate_suspect" || (e.detail && e.detail.existing)) { setDupe((e.detail && e.detail.existing) || {}); }
+      else if (c === "geo_unavailable") { setErrors({ _: "This desk needs your location to register. Allow location access and try again." }); setStep(0); }
+      else if (c === "geo_out_of_fence") { const n = (e.detail && e.detail.nearest) || {}; setErrors({ _: "You're outside every registration centre's area" + (n.name ? " — nearest is " + n.name + ", about " + n.distanceM + "m away" : "") + ". Registration is only allowed on-site." }); setStep(0); }
       else if (e.errors || (e.detail && e.detail.errors)) { setErrors(e.errors || e.detail.errors); setStep(0); }
-      else if (e.code === "duplicate_suspect") { setDupe({}); }
       else setErrors({ _: "Couldn't save — check the connection and try again. The draft is safe on this device." });
     } finally { setBusy(false); }
   };
@@ -1839,6 +1908,30 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
     {step === 0 && (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {errors._ && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 13 }}>{errors._}</div>}
+        {geoOn && (() => {
+          const tone = geo.st === "in" ? ["rgba(118,176,67,.14)", "rgba(118,176,67,.4)", "#bfe6a0"]
+            : geo.st === "out" || geo.st === "denied" ? ["rgba(255,120,120,.12)", "rgba(255,120,120,.35)", "#ff9a9a"]
+            : ["rgba(255,206,84,.12)", "rgba(255,206,84,.4)", "#ffdd8a"];
+          return (
+            <div style={{ padding: "11px 13px", borderRadius: 10, background: tone[0], border: "1px solid " + tone[1], fontSize: 13, lineHeight: 1.5 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, color: tone[2] }}>
+                <span>📍</span>
+                <span>{geo.st === "locating" || geo.st === "idle" ? "Finding this centre…"
+                  : geo.st === "in" ? "On-site at " + (geo.centre ? geo.centre.name : "a centre")
+                  : geo.st === "out" ? "Not at a registration centre"
+                  : geo.st === "nofence" ? "Location captured" : "Location needed"}</span>
+              </div>
+              <div style={{ ...mut, marginTop: 4 }}>
+                {geo.st === "in" ? "The centre is set automatically from where you are — no cheating possible." + (geo.dist != null ? " (~" + geo.dist + "m from the marker)" : "")
+                  : geo.st === "out" ? (geo.centre ? "Nearest is " + geo.centre.name + ", ~" + geo.dist + "m away. You must be on-site to register." : "You're outside every centre's area.")
+                  : geo.st === "denied" ? geo.err
+                  : geo.st === "nofence" ? "No centre has a mapped area yet — an admin can set that under Centres."
+                  : "Sharing your location lets the desk pick the right centre and prevents off-site sign-ups."}
+              </div>
+              {(geo.st === "out" || geo.st === "denied") && <button type="button" onClick={captureGeo} style={{ marginTop: 8, padding: "8px 16px", borderRadius: 9, border: "1px solid rgba(255,255,255,.3)", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Retry location</button>}
+            </div>
+          );
+        })()}
         {fields.filter(visible).map(f => {
           if (f.type === "section") return <div key={f.key} style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.55)", marginTop: 6 }}>{f.label.toUpperCase()}</div>;
           if (f.type === "info") return <p key={f.key} style={{ ...mut, fontSize: 13, margin: 0 }}>{f.label}</p>;
@@ -1866,7 +1959,9 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
             </label>
           );
         })}
-        <button onClick={() => setStep(1)} disabled={!(form.fullName || "").trim()} style={{ padding: 14, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer", opacity: (form.fullName || "").trim() ? 1 : .5 }}>Continue → Photo</button>
+        {(() => { const ready = (form.fullName || "").trim() && geoReady;
+          return <button onClick={() => setStep(1)} disabled={!ready} style={{ padding: 14, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer", opacity: ready ? 1 : .5 }}>Continue → Photo</button>; })()}
+        {geoOn && !geoReady && <p style={{ fontSize: 11.5, textAlign: "center", margin: 0, color: "#ffb0b0" }}>You must be on-site at a registration centre to continue.</p>}
         <p style={{ ...mut, fontSize: 11.5, textAlign: "center", margin: 0 }}>Every field autosaves on this device — nothing is lost if you're interrupted.</p>
       </div>
     )}

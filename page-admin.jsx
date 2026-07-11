@@ -8,7 +8,7 @@
 const SECTION_CAP = {
   home: null, members: "people", applications: "people", mentors: "people", mentorship: "people",
   sessions: "content", missions: "content", anchor: "content", assignments: "content",
-  events: "content", posts: "content", broadcast: "content",
+  events: "content", posts: "content", broadcast: "content", photos: "content",
   newsletter: "inbox", messages: "inbox", audit: "rbac", settings: "settings",
 };
 
@@ -80,6 +80,7 @@ function AdminPage({ setPage }) {
           {view === "assignments" && <AdminAssignments/>}
           {view === "events" && <AdminEvents/>}
           {view === "posts" && <AdminPosts/>}
+          {view === "photos" && <AdminPhotos/>}
           {view === "broadcast" && <AdminBroadcast/>}
           {view === "audit" && <AdminAudit/>}
         </main>
@@ -205,6 +206,7 @@ function AdminNav({ section, setSection, hasCap }) {
       { id: "assignments", label: "Assignments", icon: "❏", cap: "content" },
       { id: "events",    label: "Events",     icon: "▶", cap: "content" },
       { id: "posts",     label: "Posts",      icon: "✎", cap: "content" },
+      { id: "photos",    label: "Photo review", icon: "📷", cap: "content" },
       { id: "broadcast", label: "Announce",   icon: "📣", cap: "content" },
       { id: "forms",     label: "Forms",      icon: "❏", cap: "content" },
       { id: "site",      label: "Site content", icon: "◧", cap: "settings" },
@@ -948,37 +950,51 @@ function SummerGates() {
   const [gates, setGates] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [name, setName] = React.useState("");
+  const [pw, setPw] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const load = () => NGGApi.admin.registration.gates().then(r => { setGates(r.gates || []); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const create = async (e) => {
     e && e.preventDefault();
+    if (pw && pw.trim().length < 4) { toast.error("Desk password must be at least 4 characters."); return; }
     setBusy(true);
-    try { await NGGApi.admin.registration.gateCreate(name || "Registration desk", ""); setName(""); toast.success("Gate link created."); load(); }
-    catch (e2) { toast.error(e2.code || e2.message); } finally { setBusy(false); }
+    try { await NGGApi.admin.registration.gateCreate(name || "Registration desk", "", pw.trim()); setName(""); setPw(""); toast.success(pw.trim() ? "Kiosk gate created." : "Gate link created."); load(); }
+    catch (e2) { toast.error(e2.code === "weak_password" ? "Desk password is too short." : (e2.code || e2.message)); } finally { setBusy(false); }
   };
   const revoke = async (id) => { if (!(await dialog.confirm({ title: "Revoke this link?", body: "Anyone using it will no longer be able to register.", cta: "Revoke" }))) return; try { await NGGApi.admin.registration.gateRevoke(id); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const setPassword = async (g) => {
+    const next = await dialog.prompt({ title: g.hasPassword ? "Change desk password" : "Set a desk password", body: "Field staff open this desk with the password — no admin login needed. Leave blank to remove it.", cta: "Save", placeholder: "Desk password (min 4 chars)", inputType: "password", required: false });
+    if (next === null) return; // cancelled
+    if (next && next.trim() && next.trim().length < 4) { toast.error("Too short — use at least 4 characters."); return; }
+    try { const r = await NGGApi.admin.registration.gateSetpass(g.gateId, next.trim()); toast.success(r.hasPassword ? "Desk password set." : "Desk password removed."); load(); }
+    catch (e) { toast.error(e.code === "weak_password" ? "Too short." : (e.code || e.message)); }
+  };
   const linkFor = (g) => location.origin + "/gate?g=" + g.gateId;
   return (
     <div>
-      <p className="admin-hint">A gate link opens the public registration form — but a signed-in staff member must also be present. Hand these to desk staff on registration day.</p>
+      <p className="admin-hint">A gate link opens the public registration desk. Give it a <b>desk password</b> and field staff can run it without an admin login; otherwise a signed-in staff member must be present.</p>
       <form onSubmit={create} className="admin-filters">
-        <input className="admin-input" placeholder="Label (e.g. Egbeda desk · Sat)" value={name} onChange={e => setName(e.target.value)} style={{ minWidth: 260 }}/>
+        <input className="admin-input" placeholder="Label (e.g. Egbeda desk · Sat)" value={name} onChange={e => setName(e.target.value)} style={{ minWidth: 220 }}/>
+        <input className="admin-input" type="text" autoComplete="off" placeholder="Desk password (optional)" value={pw} onChange={e => setPw(e.target.value)} style={{ minWidth: 180 }}/>
         <button className="btn btn-primary btn-sm" disabled={busy}>{busy ? "…" : "+ Create gate link"}</button>
       </form>
       {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         gates === null ? <div className="dash-spinner"/> :
         gates.length === 0 ? <div className="admin-empty">No gate links yet.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Label</th><th>Link</th><th>Used</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Label</th><th>Link</th><th>Kiosk</th><th>Used</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {gates.map(g => (
               <tr key={g.gateId}>
                 <td><b>{g.name}</b><div className="mono admin-cell-sub">{fmtDate(g.createdAt)}</div></td>
                 <td><button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(linkFor(g)); toast.success("Link copied."); }}>Copy link</button></td>
+                <td>{g.hasPassword ? <span className="chip chip-lime">🔑 password</span> : <span className="chip status-archived">admin only</span>}</td>
                 <td className="mono">{g.usedCount || 0}</td>
                 <td>{g.status === "active" ? <span className="chip chip-lime">active</span> : <span className="chip status-archived">{g.status}</span>}</td>
-                <td style={{ textAlign: "right" }}>{g.status === "active" && <button className="btn btn-ghost btn-sm" onClick={() => revoke(g.gateId)}>Revoke</button>}</td>
+                <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{g.status === "active" && <>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setPassword(g)}>{g.hasPassword ? "Password" : "Set password"}</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => revoke(g.gateId)}>Revoke</button>
+                </>}</td>
               </tr>
             ))}
           </tbody>
@@ -2454,6 +2470,8 @@ function AdminSettings() {
         <FieldCheckbox label="Text volunteer IDs by SMS (when phone on file)" value={s.volunteer_sms_notify} onChange={v => setS(o => ({ ...o, volunteer_sms_notify: v }))}/>
         <Field label="Hours credited per volunteer session" type="number" value={s.volunteer_session_hours} onChange={v => setS(o => ({ ...o, volunteer_session_hours: v }))}/>
         <FieldSelect label="Featured session (homepage countdown)" value={s.featured_session_id || ""} onChange={v => setS(o => ({ ...o, featured_session_id: v }))} options={[""].concat(sessions.map(x => x.sessionId))}/>
+        <FieldCheckbox label="Geo-fenced registration (auto-pick the centre by location; block off-site sign-ups)" value={s.geofence_enabled} onChange={v => setS(o => ({ ...o, geofence_enabled: v }))}/>
+        {s.geofence_enabled && <p className="admin-hint" style={{ margin: "-4px 0 0" }}>Walk-ups must be on-site at a mapped centre to register. Map each centre's point under <b>Registration → Centres → Map</b>.</p>}
       </div>
     </div>
   );
@@ -2489,12 +2507,15 @@ function AdminQRCodes() {
   );
 }
 
-/* Centres manager — name + code + card colour (drives the ID prefix). */
+/* Centres manager — name + code + card colour (drives the ID prefix) and an
+ * optional geo-fence (mapped to the centre, used to auto-pick it + stop off-site
+ * sign-ups when the global fence toggle is on). */
 function SummerCentres() {
   const [centres, setCentres] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [d, setD] = React.useState({ name: "", code: "", color: "#76B043" });
   const [busy, setBusy] = React.useState(false);
+  const [mapId, setMapId] = React.useState("");
   const load = () => NGGApi.admin.registration.centres().then(r => { setCentres(r.centres || []); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const add = async (e) => {
@@ -2505,10 +2526,11 @@ function SummerCentres() {
     finally { setBusy(false); }
   };
   const remove = async (c) => { if (!(await dialog.confirm({ title: "Remove " + c.name + "?", body: "Existing students keep their IDs; the centre just stops being offered.", cta: "Remove" }))) return; try { await NGGApi.admin.registration.centreDelete(c.centreId); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const geoLabel = (c) => c.lat == null ? <span className="chip status-archived">— unmapped</span> : c.geofence ? <span className="chip chip-lime">🟢 fence on · {c.radiusM || 150}m</span> : <span className="chip">mapped · off</span>;
   if (err) return <ErrorState title="Couldn't load centres" code={err} onRetry={load}/>;
   return (
     <div>
-      <p className="admin-hint">Each centre has a 1–4 letter code (the printed ID prefix, e.g. <span className="mono">IJ-26-001</span>) and a colour that drives its ID card accent.</p>
+      <p className="admin-hint">Each centre has a 1–4 letter code (the printed ID prefix, e.g. <span className="mono">IJ-26-001</span>) and a colour that drives its ID card accent. <b>Map</b> a centre to draw its geo-fence — with the global fence on (Settings), walk-ups are auto-assigned to the centre they're physically at.</p>
       <form onSubmit={add} className="admin-filters" style={{ alignItems: "center" }}>
         <input className="admin-input" placeholder="Centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
         <input className="admin-input" placeholder="CODE" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
@@ -2518,16 +2540,177 @@ function SummerCentres() {
       {centres === null ? <div className="dash-spinner"/> :
         centres.length === 0 ? <div className="admin-empty">No centres yet — add your first above.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Centre</th><th>Code</th><th>Colour</th><th></th></tr></thead>
+          <thead><tr><th>Centre</th><th>Code</th><th>Colour</th><th>Geo-fence</th><th></th></tr></thead>
           <tbody>{centres.map(c => (
-            <tr key={c.centreId}>
+            <React.Fragment key={c.centreId}>
+            <tr>
               <td><b>{c.name}</b></td>
               <td className="mono">{c.code}</td>
               <td><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 18, height: 18, borderRadius: 5, background: c.color, border: "1px solid rgba(0,0,0,0.1)" }}/><span className="mono" style={{ fontSize: 12 }}>{c.color}</span></span></td>
-              <td style={{ textAlign: "right" }}><button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button></td>
+              <td>{geoLabel(c)}</td>
+              <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setMapId(mapId === c.centreId ? "" : c.centreId)}>{mapId === c.centreId ? "Close" : "Map"}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button>
+              </td>
             </tr>
+            {mapId === c.centreId && <tr><td colSpan={5} style={{ background: "rgba(12,20,50,0.03)" }}><CentreGeoEditor c={c} onSaved={() => { setMapId(""); load(); }}/></td></tr>}
+            </React.Fragment>
           ))}</tbody>
         </table></div>}
+    </div>
+  );
+}
+
+/* Per-centre geo-fence editor: capture the point on-site (device GPS) or enter
+ * coordinates from a dependable source, set the radius, and toggle the fence. */
+function CentreGeoEditor({ c, onSaved }) {
+  const [lat, setLat] = React.useState(c.lat != null ? String(c.lat) : "");
+  const [lng, setLng] = React.useState(c.lng != null ? String(c.lng) : "");
+  const [radiusM, setRadiusM] = React.useState(c.radiusM || 150);
+  const [fence, setFence] = React.useState(!!c.geofence);
+  const [src, setSrc] = React.useState(c.mapSource || "");
+  const [acc, setAcc] = React.useState(c.mapAccuracyM != null ? c.mapAccuracyM : null);
+  const [capBusy, setCapBusy] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const capture = () => {
+    if (!navigator.geolocation) { toast.error("This device can't capture GPS."); return; }
+    setCapBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      p => { setLat(p.coords.latitude.toFixed(6)); setLng(p.coords.longitude.toFixed(6)); setAcc(Math.round(p.coords.accuracy)); setSrc("onsite"); setCapBusy(false); toast.success("Captured this spot (±" + Math.round(p.coords.accuracy) + "m). Review and save."); },
+      e => { setCapBusy(false); toast.error(e && e.code === 1 ? "Location permission was blocked." : "Couldn't get a GPS fix — try again outdoors."); },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  };
+  const save = async () => {
+    const la = parseFloat(lat), ln = parseFloat(lng);
+    if (fence && (isNaN(la) || isNaN(ln))) { toast.error("Map a point (capture on-site or enter coordinates) before turning the fence on."); return; }
+    setBusy(true);
+    try {
+      const data = { centreId: c.centreId, name: c.name, code: c.code, color: c.color, geofence: fence, radiusM: Number(radiusM) || 150 };
+      if (!isNaN(la) && !isNaN(ln)) { data.lat = la; data.lng = ln; data.mapSource = src || "coordinates"; if (acc != null) data.mapAccuracyM = acc; }
+      await NGGApi.admin.registration.centreUpsert(data);
+      toast.success("Geo-fence saved."); onSaved();
+    } catch (e) { toast.error(e.code === "bad_latlng" ? "Those coordinates aren't valid." : (e.code || e.message)); }
+    finally { setBusy(false); }
+  };
+  const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
+  return (
+    <div style={{ padding: "14px 4px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end" }}>
+        <div><span style={lbl}>Latitude</span><input className="admin-input" value={lat} onChange={e => { setLat(e.target.value); setSrc("coordinates"); }} placeholder="6.601234" style={{ width: 140 }}/></div>
+        <div><span style={lbl}>Longitude</span><input className="admin-input" value={lng} onChange={e => { setLng(e.target.value); setSrc("coordinates"); }} placeholder="3.301234" style={{ width: 140 }}/></div>
+        <div><span style={lbl}>Radius (m)</span><input className="admin-input" type="number" min={25} max={5000} value={radiusM} onChange={e => setRadiusM(e.target.value)} style={{ width: 100 }}/></div>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={capBusy} onClick={capture}>{capBusy ? "Locating…" : "📍 Capture on-site"}</button>
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13.5, fontWeight: 600 }}>
+        <input type="checkbox" checked={fence} onChange={e => setFence(e.target.checked)}/>
+        Fence on — auto-assign walk-ups here and block off-site sign-ups
+      </label>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save geo-fence"}</button>
+        <span className="admin-cell-sub" style={{ fontSize: 12 }}>
+          {src === "onsite" ? "Source: on-site GPS" + (acc != null ? " (±" + acc + "m)" : "") : (lat && lng) ? "Source: entered coordinates" : "Not mapped yet"}
+          {c.mappedAt ? " · last mapped " + fmtDate(c.mappedAt) : ""}
+        </span>
+      </div>
+      <p className="admin-hint" style={{ margin: 0 }}>Stand at the centre entrance and tap <b>Capture on-site</b> for the most accurate point, or paste coordinates from Google Maps (right-click → the lat,lng at the top). The global fence toggle lives in Settings.</p>
+    </div>
+  );
+}
+
+// ============================================================================
+// Photo review — the editor's console. Free-AI triage flags problems; Cloudinary
+// does identity-safe edits; a human approves, requests a retake, or rejects.
+// ============================================================================
+function AdminPhotos() {
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busyId, setBusyId] = React.useState("");
+  const load = () => NGGApi.admin.photos.queue().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+
+  const claim = async (a) => { setBusyId(a.assetId); try { await NGGApi.admin.photos.claim(a.assetId); toast.success("Claimed — you're reviewing this one."); load(); } catch (e) { toast.error(e.code === "already_claimed" ? "Another editor already claimed it." : (e.code || e.message)); } finally { setBusyId(""); } };
+  const approve = async (a) => {
+    const edited = await dialog.prompt({ title: "Approve this photo", body: "Approves the edited image for the ID card. Paste a corrected Cloudinary URL to override it, or leave it as-is.", cta: "Approve", required: false, defaultValue: a.editedUrl || "", placeholder: "https://res.cloudinary.com/…" });
+    if (edited === null) return;
+    setBusyId(a.assetId);
+    try { await NGGApi.admin.photos.approve(a.assetId, (edited || "").trim() || a.editedUrl, ""); toast.success("Photo approved."); load(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusyId(""); }
+  };
+  const retake = async (a) => {
+    const reason = await dialog.prompt({ title: "Request a retake", body: "Tell the desk what to fix (lighting, framing, background). The registration keeps its place in the queue.", cta: "Request retake", placeholder: "e.g. Please retake against a plain wall." });
+    if (!reason) return;
+    setBusyId(a.assetId);
+    try { await NGGApi.admin.photos.retake(a.assetId, reason.trim()); toast.success("Retake requested."); load(); }
+    catch (e) { toast.error(e.code === "reason_required" ? "Add a short reason." : (e.code || e.message)); } finally { setBusyId(""); }
+  };
+  const reject = async (a) => {
+    const reason = await dialog.prompt({ title: "Reject this photo", body: "Rejects the image entirely — for inappropriate or unusable uploads. Needs elevated (People) access.", cta: "Reject", danger: true, placeholder: "Reason" });
+    if (!reason) return;
+    setBusyId(a.assetId);
+    try { await NGGApi.admin.photos.reject(a.assetId, reason.trim()); toast.success("Photo rejected."); load(); }
+    catch (e) { toast.error(e.code === "forbidden" ? "Rejecting needs the People permission." : (e.code || e.message)); } finally { setBusyId(""); }
+  };
+
+  const shot = (url, label, tone) => (
+    <div style={{ flex: "1 1 160px" }}>
+      <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 5 }}>{label}</div>
+      <div style={{ aspectRatio: "4/5", borderRadius: 10, overflow: "hidden", background: "rgba(12,20,50,0.05)", border: "1px solid " + (tone || "rgba(12,20,50,0.12)"), display: "grid", placeItems: "center" }}>
+        {url ? <img src={url} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : <span style={{ color: "var(--ink-400)", fontSize: 12 }}>—</span>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Photo review {data && data.pending ? <span className="chip chip-lime">{data.pending} waiting</span> : null}</h2>
+        <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
+      </div>
+      <p className="admin-hint">The free AI only <b>flags</b> problems; Cloudinary <b>enhances</b> — it never alters the person. Approve the edit, request a retake, or (for unusable/inappropriate uploads) reject. You can paste a corrected image URL when approving.</p>
+      {err ? <ErrorState title="Couldn't load the queue" code={err} onRetry={load}/> :
+        data === null ? <div className="dash-spinner"/> :
+        (data.queue || []).length === 0 ? <div className="admin-empty">Nothing waiting — clean photos auto-approve and only flagged ones land here. 🎉</div> :
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {data.queue.map(a => {
+            const f = a.aiFindings || {};
+            const flags = f.flags || [];
+            const issues = f.issues || [];
+            const claimed = a.status === "in_review";
+            const busy = busyId === a.assetId;
+            return (
+              <div key={a.assetId} className="admin-card" style={{ padding: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                  <div><b className="mono">{a.subjectType}:{a.subjectId}</b> <span className="admin-cell-sub">· v{a.version} · {a.assetId}</span></div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    {a.aiScore != null && <span className="chip" style={{ background: a.aiScore >= 70 ? "rgba(118,176,67,.16)" : a.aiScore >= 45 ? "rgba(255,206,84,.18)" : "rgba(255,120,120,.16)" }}>AI score {a.aiScore}</span>}
+                    <span className={"chip " + (claimed ? "chip-lime" : "status-archived")}>{claimed ? "in review" : "waiting"}</span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
+                  {shot(a.sourceUrl, "AS CAPTURED", null)}
+                  {shot(a.editedUrl, "ENHANCED (IDENTITY-SAFE)", "rgba(118,176,67,.4)")}
+                  <div style={{ flex: "2 1 220px", minWidth: 200 }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 6 }}>AI FINDINGS</div>
+                    {flags.length === 0 && issues.length === 0 ? <p className="admin-cell-sub" style={{ margin: 0 }}>No specific issues flagged.</p> : (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                        {flags.map((fl, i) => <span key={i} className="chip" style={{ background: "rgba(255,120,120,.14)" }}>{String(fl).replace(/_/g, " ")}</span>)}
+                      </div>
+                    )}
+                    {issues.length > 0 && <ul style={{ margin: "0 0 0 16px", padding: 0, color: "var(--ink-600)", fontSize: 13, lineHeight: 1.5 }}>{issues.map((it, i) => <li key={i}>{it}</li>)}</ul>}
+                    {flags.indexOf("ai_unavailable") >= 0 && <p className="admin-cell-sub" style={{ margin: "6px 0 0" }}>Analysis was unavailable — please eyeball this one carefully.</p>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                  {!claimed && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => claim(a)}>Claim to review</button>}
+                  <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => approve(a)}>Approve</button>
+                  <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => retake(a)}>Request retake</button>
+                  <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => reject(a)} style={{ color: "#b03535" }}>Reject</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>}
     </div>
   );
 }
