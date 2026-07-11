@@ -2088,12 +2088,13 @@ function VolunteerCardFront({ card, S }) {
     <div className="idcard" style={{ width: px(590), height: px(1004), background: tint, position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
       {/* White inner panel — the tier colour reads as a full-bleed border. */}
       <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), background: "#fff", borderRadius: px(30) }}/>
-      {/* STS badge, straddling the top edge of the panel. The real badge slots
-          in at /assets/idcard/logo-sts.png; until then a clean STS monogram
-          shows (never a squashed wide lockup). */}
-      <div style={{ position: "absolute", top: px(6), left: "50%", transform: "translateX(-50%)", width: px(104), height: px(104), borderRadius: "50%", background: tint, boxShadow: `0 ${px(6)}px ${px(16)}px rgba(0,0,0,.18)`, display: "grid", placeItems: "center", overflow: "hidden" }}>
-        <span style={{ fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(34), letterSpacing: px(1), color: "#fff" }}>STS</span>
-        <img src="/assets/idcard/logo-sts.png" alt="Street-To-Stardom" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+      {/* STS badge, straddling the top edge of the panel — the Street-To-Stardom
+          circular mark. A tier-tinted STS monogram shows only if it fails. */}
+      <div style={{ position: "absolute", top: px(2), left: "50%", transform: "translateX(-50%)", width: px(116), height: px(116) }}>
+        <div style={{ position: "absolute", inset: px(8), borderRadius: "50%", background: tint, boxShadow: `0 ${px(6)}px ${px(16)}px rgba(0,0,0,.18)`, display: "grid", placeItems: "center" }}>
+          <span style={{ fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(34), letterSpacing: px(1), color: "#fff" }}>STS</span>
+        </div>
+        <img src="/assets/idcard/logo-sts.svg" alt="Street-To-Stardom" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
           onError={e => { e.target.style.display = "none"; }}/>
       </div>
       {/* Headshot / illustration panel. */}
@@ -2241,7 +2242,7 @@ function CardStudio() {
   );
   return shell(<>
     <style>{`
-      @font-face { font-family: "TT Firs Neue"; src: url("/assets/fonts/tt-firs-neue-800.woff2") format("woff2"); font-weight: 800; font-display: swap; }
+      @font-face { font-family: "TT Firs Neue"; src: url("/assets/fonts/tt-firs-neue-800.woff") format("woff"); font-weight: 700 900; font-display: swap; }
       @font-face { font-family: "Pagkaki"; src: url("/assets/fonts/pagkaki.woff2") format("woff2"); font-display: swap; }
       .card-pair { display: flex; gap: 14px; }
       @media print {
