@@ -337,7 +337,7 @@ function gate_register(array $p): array {
         'parentContact' => $pEmail !== '' ? mask_email($pEmail) : substr($pPhone, 0, 7) . '•••',
         'status' => 'parent_pending', 'gate' => (string)$gate['name'],
     ]);
-    return ['ok' => true, 'studentId' => $studentId, 'regStatus' => 'parent_pending', 'verificationSent' => $sent];
+    return ['ok' => true, 'ref' => $studentId, 'studentId' => $studentId, 'regStatus' => 'parent_pending', 'verificationSent' => $sent];
 }
 
 /** Send (or resend) the parent verification link. Returns channels used. */

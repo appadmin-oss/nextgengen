@@ -162,31 +162,50 @@ function public_contact(array $p): array {
         'subject' => $subject, 'message' => $message, 'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
     ]);
 
-    $adminEmail = ($GLOBALS['CONFIG']['admin_email'] ?? '') ?: ($GLOBALS['CONFIG']['mail']['reply_to'] ?? '');
-    if ($adminEmail) {
-        @send_mail((string)$adminEmail, '[Contact · ' . $purpose . '] ' . ($subject ?: $name),
-            email_template([
-                'title' => 'New message',
-                'intro' => $name . ' sent a message via the contact form.',
-                'bodyHtml' => '<b>From:</b> ' . esc_html($name) . ' &lt;' . esc_html($email) . '&gt;'
-                    . ($phone ? '<br><b>Phone:</b> ' . esc_html($phone) : '')
-                    . '<br><b>Topic:</b> ' . esc_html($purpose)
-                    . ($subject ? '<br><b>Subject:</b> ' . esc_html($subject) : '')
-                    . '<br><br>' . nl2br(esc_html($message)),
-                'footNote' => 'Reference ' . $ref . ' — reply from the admin Messages tab.',
-            ]));
-    }
-    // Auto-acknowledge the sender.
-    @send_mail($email, 'We got your message — Next Generation Genius',
-        email_template([
-            'title' => 'Message received',
-            'intro' => 'Thanks for reaching out, ' . explode(' ', $name)[0] . '.',
-            'bodyHtml' => 'A member of our team will reply within 2 working days. Your reference is <b>' . esc_html($ref) . '</b>.',
-            'footNote' => 'You received this because you contacted Next Generation Genius.',
-        ]));
+    intake_admin_alert('[Contact · ' . $purpose . '] ' . ($subject ?: $name), [
+        'title' => 'New message',
+        'intro' => $name . ' sent a message via the contact form.',
+        'bodyHtml' => '<b>From:</b> ' . esc_html($name) . ' &lt;' . esc_html($email) . '&gt;'
+            . ($phone ? '<br><b>Phone:</b> ' . esc_html($phone) : '')
+            . '<br><b>Topic:</b> ' . esc_html($purpose)
+            . ($subject ? '<br><b>Subject:</b> ' . esc_html($subject) : '')
+            . '<br><br>' . nl2br(esc_html($message)),
+        'footNote' => 'Reference ' . $ref . ' — reply from the admin Messages tab.',
+    ]);
+    intake_acknowledge($email, 'We got your message — Next Generation Genius', [
+        'title' => 'Message received',
+        'intro' => 'Thanks for reaching out, ' . explode(' ', $name)[0] . '.',
+        'bodyHtml' => '<p style="margin:0 0 12px">A member of our team will reply within 2 working days.</p>'
+            . '<p style="margin:0"><b>Reference:</b> ' . esc_html($ref) . '</p>',
+        'footNote' => 'Reference ' . $ref . ' — you contacted Next Generation Genius.',
+    ]);
 
     audit('contact.received', null, $email, ['ref' => $ref, 'purpose' => $purpose], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'ref' => $ref];
+}
+
+/* ── Shared intake plumbing (apply + contact) ─────────────────────────────── */
+
+/** The admin inbox intake notifications go to — single source of truth. */
+function intake_inbox(): string {
+    return (string)(($GLOBALS['CONFIG']['admin_email'] ?? '') ?: ($GLOBALS['CONFIG']['mail']['reply_to'] ?? ''));
+}
+
+/** A human, traceable reference an applicant can quote and the admin can find. */
+function intake_reference(string $kind, int $id): string {
+    $tag = ['teen' => 'A', 'anchor' => 'A', 'mentor' => 'M', 'volunteer' => 'V', 'contact' => 'C'][$kind] ?? 'A';
+    return 'NGG-' . $tag . '-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+}
+
+/** Best-effort alert to the admissions inbox (no-op when unconfigured). */
+function intake_admin_alert(string $subject, array $opts): void {
+    $to = intake_inbox();
+    if ($to !== '') @send_mail($to, $subject, email_template($opts));
+}
+
+/** Best-effort acknowledgement to the person who reached out. */
+function intake_acknowledge(string $to, string $subject, array $opts): void {
+    if ($to !== '') @send_mail($to, $subject, email_template($opts));
 }
 
 function public_apply(array $p): array {
@@ -238,68 +257,71 @@ function public_apply(array $p): array {
         $role = substr(trim((string)($p['role'] ?? '')), 0, 60);
     }
 
+    // Standardised intake: dedupe → persist → reference → notify + acknowledge.
+    // Every path returns { ok, ref, duplicate } so the client + admin queue
+    // and the applicant's inbox all speak the same reference.
     $cutoff = gmdate('Y-m-d\TH:i:s\Z', time() - 24 * 3600);
     $dupe = db_row('SELECT id FROM applications WHERE lower(email) = ? AND kind = ? AND createdAt > ? LIMIT 1', [$email, $kind, $cutoff]);
-    if (!$dupe) {
-        db_insert('applications', [
-            'kind' => $kind, 'name' => $name, 'age' => $age ?: null, 'centre' => $centre, 'track' => $track,
-            'role' => $role, 'why' => $why, 'email' => $email, 'program' => $program, 'photoUrl' => $photoUrl,
-            'phone' => $phone, 'courses' => $courses ? json_encode($courses, JSON_UNESCAPED_SLASHES) : '',
-            'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
-        ]);
-        if ($kind === 'volunteer') {
-            event_emit('volunteer.applied', [
-                'name' => $name, 'role' => $role, 'courses' => $courses,
-                'contact' => mask_email($email), 'status' => 'new',
-            ]);
-        }
-        // Notify the admissions inbox so applications don't sit unseen.
-        $adminEmail = ($GLOBALS['CONFIG']['admin_email'] ?? '') ?: ($GLOBALS['CONFIG']['mail']['reply_to'] ?? '');
-        if ($adminEmail) {
-            $label = $kind === 'volunteer' ? ('volunteer · ' . $role) : ($kind === 'mentor' ? 'mentor' : ($program === 'summer' ? 'Summer' : 'Anchor 12'));
-            @send_mail((string)$adminEmail, "New {$label} application — {$name}",
-                email_template([
-                    'title' => 'New application',
-                    'intro' => "{$name} just applied.",
-                    'bodyHtml' => '<b>Name:</b> ' . esc_html($name) . '<br><b>Email:</b> ' . esc_html($email)
-                        . ($track ? '<br><b>Track:</b> ' . esc_html($track) : '')
-                        . ($role ? '<br><b>Role:</b> ' . esc_html($role) : '')
-                        . ($program ? '<br><b>Program:</b> ' . esc_html($program) : '')
-                        . ($age ? '<br><b>Age:</b> ' . (int)$age : '')
-                        . ($why ? '<br><br>' . nl2br(esc_html(substr($why, 0, 800))) : ''),
-                    'footNote' => 'Review in the admin Applications tab.',
-                ]));
-        }
-        // Acknowledge the applicant — a clean, professional confirmation so
-        // nobody applies into silence. Volunteer copy names the role + the
-        // safeguarding note; teen/mentor get the short version.
-        $first = explode(' ', $name)[0] ?: 'there';
-        if ($kind === 'volunteer') {
-            $roleLabel = ['admin' => 'Admin / Ops', 'mentor' => 'Mentor', 'instructor' => 'Instructor'][$role] ?? ucfirst($role);
-            $body = '<p style="margin:0 0 12px">We review every application by hand and write back within a week.</p>'
-                . '<p style="margin:0 0 12px"><b>Role:</b> ' . esc_html($roleLabel)
-                . ($courses ? '<br><b>Courses:</b> ' . esc_html(implode(', ', $courses)) : '') . '</p>'
-                . '<p style="margin:0">Volunteers working directly with young people complete safeguarding screening before their first session.</p>';
-            @send_mail($email, 'We received your volunteer application — Next Generation Genius',
-                email_template([
-                    'title' => 'Application received',
-                    'intro' => 'Thank you for offering your time, ' . $first . '.',
-                    'bodyHtml' => $body,
-                    'footNote' => 'You applied to volunteer with Next Generation Genius.',
-                ]));
-        } else {
-            $what = $kind === 'mentor' ? 'mentor application' : 'application';
-            @send_mail($email, 'We received your ' . $what . ' — Next Generation Genius',
-                email_template([
-                    'title' => 'Application received',
-                    'intro' => 'Thank you, ' . $first . '.',
-                    'bodyHtml' => '<p style="margin:0">We review every ' . esc_html($what) . ' by hand and write back within a week.</p>',
-                    'footNote' => 'You applied to Next Generation Genius.',
-                ]));
-        }
+    if ($dupe) {
+        audit('apply.' . $kind, null, $email, ['name' => $name, 'duplicate' => true], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'ref' => intake_reference($kind, (int)$dupe['id']), 'duplicate' => true];
     }
-    audit('apply.' . $kind, null, $email, ['name' => $name, 'track' => $track ?: $role, 'program' => $program], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'duplicate' => (bool)$dupe];
+    $appId = db_insert('applications', [
+        'kind' => $kind, 'name' => $name, 'age' => $age ?: null, 'centre' => $centre, 'track' => $track,
+        'role' => $role, 'why' => $why, 'email' => $email, 'program' => $program, 'photoUrl' => $photoUrl,
+        'phone' => $phone, 'courses' => $courses ? json_encode($courses, JSON_UNESCAPED_SLASHES) : '',
+        'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
+    ]);
+    $ref = intake_reference($kind, $appId);
+    if ($kind === 'volunteer') {
+        event_emit('volunteer.applied', [
+            'ref' => $ref, 'name' => $name, 'role' => $role, 'courses' => $courses,
+            'contact' => mask_email($email), 'status' => 'new',
+        ]);
+    }
+    // Notify the admissions inbox so applications don't sit unseen.
+    $label = $kind === 'volunteer' ? ('volunteer · ' . $role) : ($kind === 'mentor' ? 'mentor' : ($program === 'summer' ? 'Summer' : 'Anchor 12'));
+    intake_admin_alert("New {$label} application — {$name}", [
+        'title' => 'New application',
+        'intro' => "{$name} just applied.",
+        'bodyHtml' => '<b>Name:</b> ' . esc_html($name) . '<br><b>Email:</b> ' . esc_html($email)
+            . ($phone ? '<br><b>Phone:</b> ' . esc_html($phone) : '')
+            . ($track ? '<br><b>Track:</b> ' . esc_html($track) : '')
+            . ($role ? '<br><b>Role:</b> ' . esc_html($role) : '')
+            . ($courses ? '<br><b>Courses:</b> ' . esc_html(implode(', ', $courses)) : '')
+            . ($program ? '<br><b>Program:</b> ' . esc_html($program) : '')
+            . ($age ? '<br><b>Age:</b> ' . (int)$age : '')
+            . ($why ? '<br><br>' . nl2br(esc_html(substr($why, 0, 800))) : ''),
+        'footNote' => 'Reference ' . $ref . ' — review in the admin Applications tab.',
+    ]);
+    // Acknowledge the applicant — clean, professional, and traceable so nobody
+    // applies into silence. Volunteer copy names the role + safeguarding note.
+    $first = explode(' ', $name)[0] ?: 'there';
+    if ($kind === 'volunteer') {
+        $roleLabel = ['admin' => 'Admin / Ops', 'mentor' => 'Mentor', 'instructor' => 'Instructor'][$role] ?? ucfirst($role);
+        $body = '<p style="margin:0 0 12px">We review every application by hand and write back within a week.</p>'
+            . '<p style="margin:0 0 12px"><b>Role:</b> ' . esc_html($roleLabel)
+            . ($courses ? '<br><b>Courses:</b> ' . esc_html(implode(', ', $courses)) : '')
+            . '<br><b>Reference:</b> ' . esc_html($ref) . '</p>'
+            . '<p style="margin:0">Volunteers working directly with young people complete safeguarding screening before their first session.</p>';
+        intake_acknowledge($email, 'We received your volunteer application — Next Generation Genius', [
+            'title' => 'Application received',
+            'intro' => 'Thank you for offering your time, ' . $first . '.',
+            'bodyHtml' => $body,
+            'footNote' => 'Reference ' . $ref . ' — you applied to volunteer with Next Generation Genius.',
+        ]);
+    } else {
+        $what = $kind === 'mentor' ? 'mentor application' : 'application';
+        intake_acknowledge($email, 'We received your ' . $what . ' — Next Generation Genius', [
+            'title' => 'Application received',
+            'intro' => 'Thank you, ' . $first . '.',
+            'bodyHtml' => '<p style="margin:0 0 12px">We review every ' . esc_html($what) . ' by hand and write back within a week.</p>'
+                . '<p style="margin:0"><b>Reference:</b> ' . esc_html($ref) . '</p>',
+            'footNote' => 'Reference ' . $ref . ' — you applied to Next Generation Genius.',
+        ]);
+    }
+    audit('apply.' . $kind, null, $email, ['name' => $name, 'ref' => $ref, 'track' => $track ?: $role, 'program' => $program], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'ref' => $ref, 'duplicate' => false];
 }
 
 /* ── Volunteer registration (public) ──────────────────────────────────────── */

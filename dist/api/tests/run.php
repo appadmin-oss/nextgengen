@@ -208,10 +208,14 @@ $__tpl = email_template(['title' => 'Test', 'intro' => 'Hi', 'bodyHtml' => '<p>x
 chk('email template is minimalist (navy + crimson, no gold/navy slab)', str_contains($__tpl, '#00225F') && str_contains($__tpl, '#E4155F') && !str_contains($__tpl, '#f5b026') && !str_contains($__tpl, '#0c1432'));
 chk('email cta button is navy, not gold', str_contains($__tpl, 'background:#00225F;color:#ffffff'));
 $GLOBALS['__mail_sink'] = [];
-backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'mentor', 'name' => 'Ada Ack', 'email' => 'ada-ack@example.com', 'why' => 'Glad to help']);
+$__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'mentor', 'name' => 'Ada Ack', 'email' => 'ada-ack@example.com', 'why' => 'Glad to help']);
+chk('apply returns a traceable reference', isset($__ap['ref']) && preg_match('/^NGG-V-\d{5}$/', (string)$__ap['ref']) === 1 && $__ap['duplicate'] === false);
 $__ack = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'));
 chk('volunteer application acknowledges the applicant', count($__ack) === 1 && str_contains($__ack[0]['subject'], 'volunteer application'));
-chk('acknowledgement is on-brand + names the role', str_contains($__ack[0]['html'], '#00225F') && str_contains($__ack[0]['html'], 'Mentor'));
+chk('ack is on-brand + names role + carries the reference', str_contains($__ack[0]['html'], '#00225F') && str_contains($__ack[0]['html'], 'Mentor') && str_contains($__ack[0]['html'], (string)$__ap['ref']));
+$__dup = backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'mentor', 'name' => 'Ada Ack', 'email' => 'ada-ack@example.com', 'why' => 'again']);
+chk('resubmit is a no-op duplicate with the same reference', $__dup['duplicate'] === true && $__dup['ref'] === $__ap['ref']);
+chk('duplicate does not re-acknowledge', count(array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'))) === 1);
 unset($GLOBALS['__mail_sink']);
 
 // ── Service ledger + milestone certificates ──
