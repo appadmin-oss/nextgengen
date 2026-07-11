@@ -824,12 +824,16 @@ chk('coach gated to a real member', backend_dispatch('member.coach', ['requester
 
 // ── Photo pipeline: free-AI analysis → Cloudinary edit (credit-gated) → approve/queue → alerts ──
 $SRC = 'https://res.cloudinary.com/demo/image/upload/sample.jpg';
-// Cloudinary edit: general optimization ALWAYS applied; AI transforms gated on credits.
-$ed = cloudinary_edit($SRC, ['brighten' => true, 'upscale' => true, 'removeBackground' => true], true);
+// Cloudinary edit: general optimization ALWAYS applied; the one credit-gated
+// AI step (background replacement) gated on credits. Enhancement is identity-
+// safe — no generative transforms (no e_upscale / e_gen_restore) ever appear.
+$ed = cloudinary_edit($SRC, ['brighten' => true, 'sharpen' => true, 'removeBackground' => true], true);
 chk('cloudinary always optimizes (f_auto,q_auto,e_improve,face crop)', strpos($ed['transforms'], 'f_auto') !== false && strpos($ed['transforms'], 'q_auto') !== false && strpos($ed['transforms'], 'g_face') !== false && strpos($ed['transforms'], 'e_improve') !== false);
-chk('AI transforms applied when credits OK', $ed['aiUsed'] === true && strpos($ed['transforms'], 'e_upscale') !== false && strpos($ed['transforms'], 'e_background_removal') !== false);
-$edNo = cloudinary_edit($SRC, ['upscale' => true, 'removeBackground' => true], false);
-chk('AI transforms SKIPPED when credits exhausted (still optimizes)', $edNo['aiUsed'] === false && strpos($edNo['transforms'], 'e_upscale') === false && strpos($edNo['transforms'], 'f_auto') !== false);
+chk('softness recovered with a NON-generative unsharp mask', strpos($ed['transforms'], 'e_sharpen') !== false);
+chk('identity-safe: no generative transforms are ever emitted', strpos($ed['transforms'], 'e_upscale') === false && strpos($ed['transforms'], 'e_gen_') === false);
+chk('background replacement applied when credits OK', $ed['aiUsed'] === true && strpos($ed['transforms'], 'e_background_removal') !== false);
+$edNo = cloudinary_edit($SRC, ['sharpen' => true, 'removeBackground' => true], false);
+chk('background replacement SKIPPED when credits exhausted (still optimizes + sharpens)', $edNo['aiUsed'] === false && strpos($edNo['transforms'], 'e_background_removal') === false && strpos($edNo['transforms'], 'e_sharpen') !== false && strpos($edNo['transforms'], 'f_auto') !== false);
 chk('transform is inserted into the delivery URL', strpos($ed['url'], '/upload/c_fill,g_face') !== false);
 
 // Clean photo → auto-approved.
@@ -877,6 +881,61 @@ $ru = cloudinary_refresh_usage();
 chk('credit guard flips to exhausted past the threshold', !empty($ru['exhausted']) && cloudinary_credits_ok() === false);
 setting_set('cloudinary_credits', 'ok', 'system');
 unset($GLOBALS['__cloudinary_usage_mock'], $GLOBALS['__mail_sink']);
+
+// ── Geo-fencing: distance math, centre mapping, auto-select + anti-cheat ──
+chk('geo: haversine ~111m per 0.001° latitude', (function () { $d = geo_distance_m(6.600, 3.300, 6.601, 3.300); return $d > 108 && $d < 114; })());
+chk('geo: identical points are ~0m apart', geo_distance_m(6.6, 3.3, 6.6, 3.3) < 0.5);
+
+$cA = backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'lat' => 6.6000, 'lng' => 3.3000, 'radiusM' => 150, 'geofence' => true, 'mapSource' => 'onsite', 'mapAccuracyM' => 8]]);
+chk('geo: a centre maps with an on-site point', !empty($cA['ok']));
+chk('geo: an out-of-range lat/lng is rejected', backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Bad Geo', 'code' => 'BGX', 'color' => '#123456', 'lat' => 200, 'lng' => 3.3]])['error'] === 'bad_latlng');
+chk('geo: a lone lat with no lng is rejected', backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Half Geo', 'code' => 'HGX', 'color' => '#123456', 'lat' => 6.6]])['error'] === 'bad_latlng');
+chk('geo: a device inside the fence matches its centre', (function () { $m = geo_match_centre(6.6000, 3.3000); return $m && $m['inFence'] === true && $m['centre']['code'] === 'AYB'; })());
+chk('geo: a device ~500m out is the nearest fence but out of range', (function () { $m = geo_match_centre(6.6045, 3.3000); return $m && $m['inFence'] === false && $m['distanceM'] > 400; })());
+
+setting_set('geofence_enabled', '1', 'system');
+$geoGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Geo desk']);
+chk('geo: registration is blocked with no location when the fence is on',
+    backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid One', 'age' => 12, 'course' => 'Coding & Robotics', 'parentName' => 'P', 'parentPhone' => '08030000001']])['error'] === 'geo_unavailable');
+$gi = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Two', 'age' => 12, 'course' => 'Coding & Robotics', 'parentName' => 'P', 'parentPhone' => '08030000002'], 'lat' => 6.6000, 'lng' => 3.3000]);
+chk('geo: an in-fence registration auto-selects the fenced centre', !empty($gi['ok']) && ($gi['geo']['autoCentre'] ?? '') === 'Ayobo Hub' && $gi['geo']['ok'] === 1);
+chk('geo: the student row records the fence pass + captured location', (function () use ($gi) { $s = db_row("SELECT regGeoOk, regLat, centre FROM summer_students WHERE studentId=?", [$gi['studentId']]); return (int)$s['regGeoOk'] === 1 && $s['centre'] === 'Ayobo Hub' && abs((float)$s['regLat'] - 6.6) < 0.0001; })());
+$go = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Three', 'age' => 12, 'course' => 'Coding & Robotics', 'parentName' => 'P', 'parentPhone' => '08030000003'], 'lat' => 6.6045, 'lng' => 3.3000]);
+chk('geo: an out-of-fence registration is blocked with the nearest distance', ($go['error'] ?? '') === 'geo_out_of_fence' && ($go['nearest']['distanceM'] ?? 0) > 400);
+$gov = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Four', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000004'], 'lat' => 6.6045, 'lng' => 3.3000, 'isAdmin' => true, 'geoOverride' => true]);
+chk('geo: a full admin may override an out-of-fence registration', !empty($gov['ok']) && $gov['geo']['ok'] === 0);
+setting_set('geofence_enabled', '0', 'system');
+chk('geo: with the fence off, no location is required', !empty(backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Five', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000005']])['ok']));
+
+// Photo pipeline wiring: gate registration ingests the headshot end-to-end.
+$GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 90, 'issues' => [], 'flags' => [], 'recommend' => ['crop' => true]]];
+$rp = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Photo Reg Kid', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000009'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+chk('gate register ingests the headshot into the photo pipeline', !empty($rp['ok']) && photo_approved_for('student', $rp['studentId']) === true);
+chk('an approved headshot is written back to the student record', strpos((string)(db_row("SELECT photoUrl FROM summer_students WHERE studentId=?", [$rp['studentId']])['photoUrl'] ?? ''), '/upload/') !== false);
+unset($GLOBALS['__ai_photo_mock']);
+
+// ── Gate kiosk password: run the desk without an admin login ──
+$kg = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Kiosk desk', 'password' => 'desk123']);
+chk('gate: created with a kiosk password', !empty($kg['ok']) && $kg['hasPassword'] === true);
+chk('gate: list reports hasPassword and never leaks the hash', (function () use ($kg) { foreach (backend_dispatch('admin.gates.list', ['requesterId' => 'NGG-2025-0099'])['gates'] as $g) if ($g['gateId'] === $kg['gateId']) return ($g['hasPassword'] === true) && !isset($g['passHash']); return false; })());
+chk('gate: a too-short kiosk password is refused', backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'x', 'password' => 'ab'])['error'] === 'weak_password');
+chk('gate: a wrong kiosk password is rejected', backend_dispatch('gate.unlock', ['gate' => $kg['gateId'], 'password' => 'nope'])['error'] === 'bad_password');
+$un = backend_dispatch('gate.unlock', ['gate' => $kg['gateId'], 'password' => 'desk123']);
+chk('gate: the correct kiosk password unlocks the gate', !empty($un['ok']) && $un['gate']['gateId'] === $kg['gateId']);
+$plainGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'No pass']);
+chk('gate: a gate with no password cannot be kiosk-unlocked', backend_dispatch('gate.unlock', ['gate' => $plainGate['gateId']])['error'] === 'no_password');
+chk('gate: setpass can add then clear a kiosk password', (function () use ($plainGate) {
+    $a = backend_dispatch('admin.gates.setpass', ['requesterId' => 'NGG-2025-0099', 'gateId' => $plainGate['gateId'], 'password' => 'field99']);
+    if (empty($a['ok']) || $a['hasPassword'] !== true) return false;
+    if (empty(backend_dispatch('gate.unlock', ['gate' => $plainGate['gateId'], 'password' => 'field99'])['ok'])) return false;
+    $b = backend_dispatch('admin.gates.setpass', ['requesterId' => 'NGG-2025-0099', 'gateId' => $plainGate['gateId'], 'password' => '']);
+    return !empty($b['ok']) && $b['hasPassword'] === false && backend_dispatch('gate.unlock', ['gate' => $plainGate['gateId'], 'password' => 'field99'])['error'] === 'no_password';
+})());
+chk('gate: kiosk password admin ops require the summer cap', backend_dispatch('admin.gates.setpass', ['requesterId' => 'NGG-2025-0001', 'gateId' => $kg['gateId'], 'password' => 'xxxx'])['error'] === 'forbidden');
+
+// Centre partial-update keeps the mapped point (done last — frees AYB's fence).
+backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'geofence' => false]]);
+chk('geo: a partial update keeps the point but flips the fence off', (function () use ($cA) { $c = db_row("SELECT lat,lng,geofence FROM centres WHERE centreId=?", [$cA['centreId']]); return $c && abs((float)$c['lat'] - 6.6) < 0.0001 && (int)$c['geofence'] === 0; })());
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

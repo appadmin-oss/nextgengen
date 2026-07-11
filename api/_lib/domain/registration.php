@@ -220,21 +220,49 @@ function admin_forms_publish(array $p): array {
 
 function admin_gates_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    return ['ok' => true, 'gates' => db_all('SELECT gateId, name, cohortId, status, createdBy, expiresAt, usedCount, createdAt FROM gate_links ORDER BY id DESC LIMIT 50')];
+    $rows = db_all('SELECT gateId, name, cohortId, centreId, status, createdBy, expiresAt, usedCount, createdAt, passHash FROM gate_links ORDER BY id DESC LIMIT 50');
+    foreach ($rows as &$r) { $r['hasPassword'] = ($r['passHash'] ?? '') !== ''; unset($r['passHash']); }
+    unset($r);
+    return ['ok' => true, 'gates' => $rows];
 }
 
 function admin_gates_create(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
     $gateId = 'GL-' . strtoupper(rand_hex(6));
+    // Optional kiosk password: field staff without an admin login unlock the
+    // desk with it (see gate_unlock). Stored as a bcrypt hash, never plaintext.
+    $passHash = '';
+    $pw = (string)($p['password'] ?? '');
+    if ($pw !== '') {
+        if (strlen($pw) < 4) return ['ok' => false, 'error' => 'weak_password'];
+        $passHash = password_hash($pw, PASSWORD_DEFAULT);
+    }
     db_insert('gate_links', [
         'gateId' => $gateId, 'name' => substr(trim((string)($p['name'] ?? 'Front desk')), 0, 160),
-        'cohortId' => $c['cohortId'], 'status' => 'active',
-        'createdBy' => $g['requester']['memberId'],
+        'cohortId' => $c['cohortId'], 'centreId' => (string)($p['centreId'] ?? ''), 'status' => 'active',
+        'createdBy' => $g['requester']['memberId'], 'passHash' => $passHash,
         'expiresAt' => (string)($p['expiresAt'] ?? ''), 'createdAt' => now_iso(),
     ]);
-    audit('gate.create', $g['requester']['memberId'], $gateId, [], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'gateId' => $gateId, 'url' => rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/gate?g=' . $gateId];
+    audit('gate.create', $g['requester']['memberId'], $gateId, ['kiosk' => $passHash !== ''], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'gateId' => $gateId, 'hasPassword' => $passHash !== '', 'url' => rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/gate?g=' . $gateId];
+}
+
+/** Set or clear a gate's kiosk password. Empty password removes it. */
+function admin_gates_setpass(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $gateId = (string)($p['gateId'] ?? '');
+    if (!db_row('SELECT gateId FROM gate_links WHERE gateId = ?', [$gateId])) return ['ok' => false, 'error' => 'not_found'];
+    $pw = (string)($p['password'] ?? '');
+    if ($pw === '') {
+        db_update('gate_links', ['passHash' => ''], ['gateId' => $gateId]);
+        audit('gate.password_cleared', $g['requester']['memberId'], $gateId, [], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'hasPassword' => false];
+    }
+    if (strlen($pw) < 4) return ['ok' => false, 'error' => 'weak_password'];
+    db_update('gate_links', ['passHash' => password_hash($pw, PASSWORD_DEFAULT)], ['gateId' => $gateId]);
+    audit('gate.password_set', $g['requester']['memberId'], $gateId, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'hasPassword' => true];
 }
 
 function admin_gates_revoke(array $p): array {
@@ -243,6 +271,28 @@ function admin_gates_revoke(array $p): array {
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('gate.revoke', $g['requester']['memberId'], (string)$p['gateId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true];
+}
+
+/**
+ * Verify a gate's kiosk password. On success the ROUTE mints a short-lived,
+ * gate-scoped kiosk session (never an admin session) — see gate-unlock.php.
+ * This lets field staff run the desk without an admin login while the gate
+ * link itself remains the revocable credential.
+ */
+function gate_unlock(array $p): array {
+    $gate = gate_resolve((string)($p['gate'] ?? ''));
+    if (!$gate) return ['ok' => false, 'error' => 'gate_invalid'];
+    if (($gate['passHash'] ?? '') === '') return ['ok' => false, 'error' => 'no_password'];
+    $pw = (string)($p['password'] ?? '');
+    if ($pw === '' || !password_verify($pw, (string)$gate['passHash'])) {
+        audit('gate.unlock_fail', 'kiosk', (string)$gate['gateId'], [], (string)($p['ip'] ?? ''));
+        return ['ok' => false, 'error' => 'bad_password'];
+    }
+    audit('gate.unlock', 'kiosk:' . $gate['gateId'], (string)$gate['gateId'], [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'gate' => [
+        'gateId' => (string)$gate['gateId'], 'name' => (string)$gate['name'],
+        'cohortId' => (string)$gate['cohortId'], 'expiresAt' => (string)($gate['expiresAt'] ?? ''),
+    ]];
 }
 
 /** Resolve + validate a gate token (staff session is checked at the route). */
@@ -270,9 +320,20 @@ function gate_context(array $p): array {
         if ($f['key'] === 'centre' && $centres) { $f['type'] = 'choice'; $f['options'] = array_column($centres, 'name'); }
     }
     unset($f);
+    // Geo-fence context: when on, the client must capture a location and the
+    // matching fenced centre is chosen automatically. We publish the fenced
+    // centres (physical program sites) so the desk can resolve + map locally.
+    $geo = null;
+    if (geofence_enabled()) {
+        $geo = ['enabled' => true, 'required' => true, 'centres' => array_map(fn($c) => [
+            'code' => $c['code'], 'name' => $c['name'],
+            'lat' => (float)$c['lat'], 'lng' => (float)$c['lng'], 'radiusM' => (int)($c['radiusM'] ?: 150),
+        ], geo_fenced_centres())];
+    }
     return ['ok' => true, 'gate' => ['name' => $gate['name'], 'cohortId' => $gate['cohortId']],
         'cohort' => $c ? ['cohortId' => $c['cohortId'], 'name' => $c['name']] : null,
         'form' => ['version' => (int)$live['version'], 'fields' => $fields],
+        'geo' => $geo,
         'consentTypes' => CONSENT_TYPES];
 }
 
@@ -280,15 +341,51 @@ function gate_register(array $p): array {
     $gate = gate_resolve((string)($p['gate'] ?? ''));
     if (!$gate) return ['ok' => false, 'error' => 'gate_invalid'];
     $live = form_live();
+
+    // Capture the device location if the client sent one — recorded regardless
+    // of the toggle, for the anti-cheat ledger.
+    $regLat = (isset($p['lat']) && is_numeric($p['lat'])) ? (float)$p['lat'] : null;
+    $regLng = (isset($p['lng']) && is_numeric($p['lng'])) ? (float)$p['lng'] : null;
+    $regGeoOk = null; $regGeoDist = null;
+    $incoming = is_array($p['data'] ?? null) ? $p['data'] : [];
+
+    // Geo-fence: the centre is derived from real location, not the operator's
+    // claim, so a walk-up can't be booked at a centre they're not at. Only a
+    // full admin may override a missing/out-of-fence location — kiosk operators
+    // cannot. A matching fence AUTO-SELECTS its centre.
+    $geoEnforced = geofence_enabled();
+    $canOverride = !empty($p['isAdmin']) && !empty($p['geoOverride']);
+    if ($geoEnforced) {
+        if ($regLat === null || $regLng === null) {
+            if (!$canOverride) return ['ok' => false, 'error' => 'geo_unavailable'];
+        } else {
+            $m = geo_match_centre($regLat, $regLng);
+            if ($m === null) {
+                $regGeoOk = null; // toggle on but no centre mapped yet — don't hard-block
+            } elseif ($m['inFence']) {
+                $regGeoOk = 1; $regGeoDist = $m['distanceM'];
+                $incoming['centre'] = (string)$m['centre']['name']; // authoritative
+            } else {
+                $regGeoOk = 0; $regGeoDist = $m['distanceM'];
+                if (!$canOverride) return ['ok' => false, 'error' => 'geo_out_of_fence',
+                    'nearest' => ['name' => (string)$m['centre']['name'], 'distanceM' => $m['distanceM'], 'radiusM' => (int)($m['centre']['radiusM'] ?: 150)]];
+            }
+        }
+    }
+
     // The centre choice is driven by the centres table (same source the gate
-    // context serves) — validate against it, not the stored placeholder.
+    // context serves). When the fence is on it assigns the centre, so we don't
+    // force the field on the operator.
     $fields = $live['fields'];
     $centreNames = array_column(db_all("SELECT name FROM centres WHERE status = 'active'"), 'name');
-    if ($centreNames) {
-        foreach ($fields as &$f) if ($f['key'] === 'centre') { $f['type'] = 'choice'; $f['options'] = $centreNames; }
-        unset($f);
+    foreach ($fields as &$f) {
+        if ($f['key'] === 'centre') {
+            if ($centreNames) { $f['type'] = 'choice'; $f['options'] = $centreNames; }
+            if ($geoEnforced) $f['required'] = false;
+        }
     }
-    $v = form_validate_submission($fields, is_array($p['data'] ?? null) ? $p['data'] : []);
+    unset($f);
+    $v = form_validate_submission($fields, $incoming);
     if (empty($v['ok'])) return $v;
     $d = $v['data'];
 
@@ -326,10 +423,22 @@ function gate_register(array $p): array {
         'status' => 'active', 'regStatus' => 'parent_pending',
         'verifyToken' => $vtoken, 'verifyExpiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 7 * 86400),
         'formVersion' => (int)$live['version'], 'formData' => json_encode($d, JSON_UNESCAPED_SLASHES),
+        'regLat' => $regLat, 'regLng' => $regLng, 'regGeoOk' => $regGeoOk, 'regGeoDist' => $regGeoDist,
         'notes' => '', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
     db_exec('UPDATE gate_links SET usedCount = usedCount + 1 WHERE gateId = ?', [$gate['gateId']]);
-    audit('registration.create', (string)($p['byId'] ?? ''), $studentId, ['gate' => $gate['gateId']], (string)($p['ip'] ?? ''));
+    audit('registration.create', (string)($p['byId'] ?? ''), $studentId, ['gate' => $gate['gateId'], 'geoOk' => $regGeoOk], (string)($p['ip'] ?? ''));
+
+    // Photo pipeline: ingest the captured headshot and run the free-AI triage →
+    // identity-safe Cloudinary edit → auto-approve / editor-queue. Best-effort —
+    // a pipeline hiccup must never fail the registration itself.
+    $photoUrl = (string)($p['photoUrl'] ?? '');
+    if ($photoUrl !== '' && function_exists('photo_ingest')) {
+        try {
+            $ing = photo_ingest('student', $studentId, $photoUrl, (string)($p['byId'] ?? ''));
+            if (!empty($ing['ok']) && function_exists('photo_process')) photo_process($ing['assetId']);
+        } catch (Throwable $e) { error_log('[gate_register] photo pipeline: ' . $e->getMessage()); }
+    }
 
     $sent = registration_send_verification($studentId);
     event_emit('registration.created', [
@@ -337,7 +446,9 @@ function gate_register(array $p): array {
         'parentContact' => $pEmail !== '' ? mask_email($pEmail) : substr($pPhone, 0, 7) . '•••',
         'status' => 'parent_pending', 'gate' => (string)$gate['name'],
     ]);
-    return ['ok' => true, 'ref' => $studentId, 'studentId' => $studentId, 'regStatus' => 'parent_pending', 'verificationSent' => $sent];
+    return ['ok' => true, 'ref' => $studentId, 'studentId' => $studentId, 'regStatus' => 'parent_pending',
+        'verificationSent' => $sent, 'centre' => (string)($d['centre'] ?? ''),
+        'geo' => $geoEnforced ? ['ok' => $regGeoOk, 'distanceM' => $regGeoDist, 'autoCentre' => $regGeoOk === 1 ? (string)($d['centre'] ?? '') : null] : null];
 }
 
 /** Send (or resend) the parent verification link. Returns channels used. */
@@ -440,9 +551,50 @@ function admin_registrations_remind(array $p): array {
 
 /* ── Centres (admin-managed: name + code + card accent color) ─────────────── */
 
+/* ── Geo-fencing — a fence mapped to a CENTRE, not a device ───────────────── */
+
+/** Master toggle. Off by default; admins flip it in Settings. */
+function geofence_enabled(): bool {
+    return setting_raw('geofence_enabled') === '1';
+}
+
+/** Great-circle distance in metres (Haversine). */
+function geo_distance_m(float $lat1, float $lng1, float $lat2, float $lng2): float {
+    $R = 6371000.0; // mean Earth radius, metres
+    $dLat = deg2rad($lat2 - $lat1);
+    $dLng = deg2rad($lng2 - $lng1);
+    $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+    return $R * 2 * atan2(sqrt($a), sqrt(1 - $a));
+}
+
+/** Active centres that are fenced AND carry a mapped point. */
+function geo_fenced_centres(): array {
+    return db_all("SELECT centreId, name, code, color, lat, lng, radiusM FROM centres
+                   WHERE status = 'active' AND geofence = 1 AND lat IS NOT NULL AND lng IS NOT NULL");
+}
+
+/**
+ * Match a device location to the nearest fenced centre. Returns
+ * ['centre'=>row, 'distanceM'=>int, 'inFence'=>bool] for the NEAREST fenced
+ * centre, or null when none are mapped. inFence=false = nearest fence was out
+ * of range (the anti-cheat signal).
+ */
+function geo_match_centre(float $lat, float $lng): ?array {
+    $best = null;
+    foreach (geo_fenced_centres() as $c) {
+        $d = geo_distance_m($lat, $lng, (float)$c['lat'], (float)$c['lng']);
+        if ($best === null || $d < $best['distanceM']) {
+            $best = ['centre' => $c, 'distanceM' => (int)round($d), 'inFence' => $d <= (float)($c['radiusM'] ?: 150)];
+        }
+    }
+    return $best;
+}
+
 function admin_centres_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    return ['ok' => true, 'centres' => db_all("SELECT centreId, name, code, color, status FROM centres ORDER BY name")];
+    return ['ok' => true,
+        'centres' => db_all("SELECT centreId, name, code, color, status, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt FROM centres ORDER BY name"),
+        'geofenceEnabled' => geofence_enabled()];
 }
 
 function admin_centres_upsert(array $p): array {
@@ -462,9 +614,29 @@ function admin_centres_upsert(array $p): array {
     $row = ['name' => $name, 'code' => $code, 'color' => $color,
         'status' => in_array((string)($d['status'] ?? 'active'), ['active', 'archived'], true) ? (string)($d['status'] ?? 'active') : 'active',
         'updatedAt' => now_iso()];
+
+    // Optional geo-mapping. Partial updates preserve any existing point: lat/lng
+    // are only written when BOTH are supplied and valid; the fence flag only
+    // when explicitly present. mapSource distinguishes an on-site GPS capture
+    // from a coordinate entered from a dependable source.
+    $hasLat = isset($d['lat']) && $d['lat'] !== '' && $d['lat'] !== null;
+    $hasLng = isset($d['lng']) && $d['lng'] !== '' && $d['lng'] !== null;
+    if ($hasLat || $hasLng) {
+        if (!$hasLat || !$hasLng) return ['ok' => false, 'error' => 'bad_latlng'];
+        $lat = (float)$d['lat']; $lng = (float)$d['lng'];
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180 || ($lat === 0.0 && $lng === 0.0)) return ['ok' => false, 'error' => 'bad_latlng'];
+        $row['lat'] = $lat; $row['lng'] = $lng;
+        $src = (string)($d['mapSource'] ?? 'coordinates');
+        $row['mapSource'] = in_array($src, ['onsite', 'coordinates', 'address'], true) ? $src : 'coordinates';
+        $row['mapAccuracyM'] = (isset($d['mapAccuracyM']) && $d['mapAccuracyM'] !== '') ? max(0, (int)$d['mapAccuracyM']) : null;
+        $row['mappedAt'] = now_iso();
+    }
+    if (isset($d['radiusM']) && $d['radiusM'] !== '') $row['radiusM'] = max(25, min(5000, (int)$d['radiusM']));
+    if (array_key_exists('geofence', $d)) $row['geofence'] = !empty($d['geofence']) ? 1 : 0;
+
     if ($existing) db_update('centres', $row, ['centreId' => $id]);
     else { $id = 'CTR-' . strtoupper(rand_hex(4)); db_insert('centres', $row + ['centreId' => $id, 'createdAt' => now_iso()]); }
-    audit('centre.upsert', $g['requester']['memberId'], $id, ['code' => $code], (string)($p['ip'] ?? ''));
+    audit('centre.upsert', $g['requester']['memberId'], $id, ['code' => $code, 'geofence' => $row['geofence'] ?? null], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'centreId' => $id];
 }
 

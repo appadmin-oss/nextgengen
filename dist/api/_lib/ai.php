@@ -225,9 +225,11 @@ function ai_photo_review(string $imageUrl): array {
     $img = ai_fetch_image($imageUrl);
     if (empty($img['ok'])) return $img;
     $system = 'You are a passport-photo quality inspector for a children\'s program ID card. '
+        . 'You ONLY inspect and report problems — you never edit the photo, and downstream enhancement never alters the person. '
         . 'Assess the single headshot and reply with ONLY a JSON object: '
-        . '{"score":0-100,"issues":["short strings"],"flags":["..."],"recommend":{"crop":true,"brighten":false,"upscale":false,"removeBackground":false}}. '
+        . '{"score":0-100,"issues":["short strings"],"flags":["..."],"recommend":{"crop":true,"brighten":false,"sharpen":false,"removeBackground":false}}. '
         . 'flags may include any of: no_face, multiple_faces, not_a_child_headshot, inappropriate, too_dark, too_blurry, low_resolution, busy_background. '
+        . 'Flag genuinely unusable photos (heavy blur, very low resolution) so a human requests a fresh capture — do not assume detail can be reconstructed. '
         . 'score is overall usability for a printed ID (100 = perfect).';
     $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($cand['model']) . ':generateContent?key=' . urlencode($cand['api_key']);
     $body = json_encode([

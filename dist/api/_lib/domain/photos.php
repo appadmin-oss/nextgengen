@@ -7,9 +7,11 @@ declare(strict_types=1);
  * Division of labour (cost-aware):
  *   • FREE vision AI (ai_photo_review) *points out problems* → gives Cloudinary
  *     a clear, minimal job and keeps analysis off Cloudinary's credit meter.
- *   • Cloudinary does the EDITING only: always a general optimization pass,
- *     plus credit-costed AI transforms (upscale / background / restore) applied
- *     ONLY when the free analysis flagged a specific need AND credits remain.
+ *   • Cloudinary does the EDITING only: always a general optimization pass
+ *     (exposure, colour, sharpness, face-framed crop), plus a credit-costed
+ *     background replacement when the free analysis flags a busy background AND
+ *     credits remain. Editing ENHANCES but never ALTERS the person — no
+ *     generative face reconstruction (see cloudinary_edit's identity rule).
  *   • A human can still review any edit later; serious flags route to the
  *     editor queue before use.
  *   • Any failure — credit exhaustion, provider down — alerts humans on every
@@ -28,19 +30,34 @@ function cloudinary_apply(string $url, string $transform): string {
 
 /**
  * Build the edited delivery URL. The base is ALWAYS a professional-grade
- * optimization + face crop; credit-costed AI transforms are added only when
- * recommended and $creditsOk. Returns [url, transforms, aiUsed].
+ * optimization + face crop; the only credit-costed AI step is background
+ * replacement (added when recommended and $creditsOk). Returns
+ * [url, transforms, aiUsed].
+ *
+ * IDENTITY-PRESERVATION RULE (non-negotiable): the pipeline may ENHANCE a
+ * photo but must never ALTER the person. Every transform here is either a
+ * non-generative adjustment of the *existing* pixels (exposure, colour,
+ * sharpness, reframing) or a background swap that leaves the subject untouched.
+ * We deliberately do NOT use generative operations — no e_gen_restore, no
+ * generative upscale, no gen_replace/recolor — because those reconstruct
+ * facial detail and can change how a face looks. A soft but real face is
+ * always preferred over a sharpened but invented one; genuinely unusable
+ * images are sent back for a retake by a human, not "fixed" by generative AI.
  */
 function cloudinary_edit(string $sourceUrl, array $rec, bool $creditsOk): array {
-    // General optimization + tidy face-framed crop — always applied.
+    // General optimization + a tidy, face-framed crop — always applied and all
+    // non-generative (they reframe/adjust the existing pixels only).
     $base = 'c_fill,g_face,w_600,h_750,f_auto,q_auto:good,e_improve:30';
     if (!empty($rec['brighten'])) $base .= ',e_brightness:18';
+    // Perceived-detail recovery for soft/low-res captures — an unsharp mask,
+    // NOT generative reconstruction. Enhances edges that are already there.
+    if (!empty($rec['sharpen']))  $base .= ',e_sharpen:80';
     $chain = [$base];
     $aiUsed = false;
     if ($creditsOk) {
+        // Background replacement isolates the subject against a clean studio
+        // backdrop — it changes the environment, never the face. Identity safe.
         if (!empty($rec['removeBackground'])) { $chain[] = 'e_background_removal'; $chain[] = 'b_rgb:ffffff'; $aiUsed = true; }
-        if (!empty($rec['upscale']))          { $chain[] = 'e_upscale'; $aiUsed = true; }
-        if (!empty($rec['restore']))          { $chain[] = 'e_gen_restore'; $aiUsed = true; }
     }
     $transforms = implode('/', $chain);
     return ['url' => cloudinary_apply($sourceUrl, $transforms), 'transforms' => $transforms, 'aiUsed' => $aiUsed];
@@ -171,14 +188,17 @@ function photo_process(string $assetId): array {
         $flags = ['ai_unavailable'];
         photo_pipeline_alert('ai_unavailable', ['error' => (string)($review['error'] ?? 'unknown'), 'asset' => $assetId]);
     }
-    // Derive extra Cloudinary intents from flags.
-    if (in_array('too_blurry', $flags, true)) $rec['restore'] = true;
-    if (in_array('low_resolution', $flags, true)) $rec['upscale'] = true;
+    // Derive Cloudinary intents from flags. Softness/low-res are handled with a
+    // non-generative unsharp mask (never generative restore/upscale — see the
+    // identity-preservation rule in cloudinary_edit). Very low-res images that
+    // sharpening can't save are flagged for a human retake, not reconstructed.
+    if (in_array('too_blurry', $flags, true)) $rec['sharpen'] = true;
+    if (in_array('low_resolution', $flags, true)) $rec['sharpen'] = true;
     if (in_array('too_dark', $flags, true)) $rec['brighten'] = true;
     if (in_array('busy_background', $flags, true)) $rec['removeBackground'] = true;
 
     $creditsOk = cloudinary_credits_ok();
-    $wantedAi = !empty($rec['upscale']) || !empty($rec['removeBackground']) || !empty($rec['restore']);
+    $wantedAi = !empty($rec['removeBackground']);
     if ($wantedAi && !$creditsOk) photo_pipeline_alert('cloudinary_credits_low', ['asset' => $assetId, 'degraded' => true]);
     $edit = cloudinary_edit((string)$a['sourceUrl'], $rec, $creditsOk);
 
@@ -201,7 +221,10 @@ function photo_process(string $assetId): array {
     }
     db_update('photo_assets', $row, ['assetId' => $assetId]);
     audit('photo.' . ($needsHuman ? 'ai_analyzed' : 'auto_approved'), $provider ? 'ai:' . $provider : 'ai', $assetId, ['score' => $score, 'flags' => $flags, 'aiUsed' => $edit['aiUsed']], '');
-    if (!$needsHuman) @event_emit('photo.approved', ['ref' => $assetId, 'subjectType' => $a['subjectType'], 'subjectId' => $a['subjectId'], 'auto' => true]);
+    if (!$needsHuman) {
+        photo_apply_to_subject(array_merge($a, ['editedUrl' => $edit['url']]));
+        @event_emit('photo.approved', ['ref' => $assetId, 'subjectType' => $a['subjectType'], 'subjectId' => $a['subjectId'], 'auto' => true]);
+    }
     return ['ok' => true, 'status' => $row['status'], 'score' => $score, 'flags' => $flags, 'aiUsed' => $edit['aiUsed'], 'editedUrl' => $edit['url']];
 }
 
@@ -245,6 +268,7 @@ function photo_approve(array $p): array {
     if (!in_array((string)$a['status'], ['pending_review', 'in_review', 'changes_requested'], true)) return ['ok' => false, 'error' => 'bad_state'];
     $edited = trim((string)($p['editedUrl'] ?? '')) ?: (string)$a['editedUrl'];
     db_update('photo_assets', ['status' => 'approved', 'editedUrl' => $edited, 'reviewedBy' => $g['requester']['memberId'], 'reviewedAt' => now_iso(), 'decisionNote' => substr((string)($p['note'] ?? ''), 0, 300), 'autoApproved' => 0, 'updatedAt' => now_iso()], ['assetId' => $assetId]);
+    photo_apply_to_subject(array_merge($a, ['editedUrl' => $edited]));
     audit('photo.approved', $g['requester']['memberId'], $assetId, [], (string)($p['ip'] ?? ''));
     @event_emit('photo.approved', ['ref' => $assetId, 'subjectType' => $a['subjectType'], 'subjectId' => $a['subjectId'], 'auto' => false]);
     return ['ok' => true];
@@ -273,6 +297,17 @@ function photo_reject(array $p): array {
     db_update('photo_assets', ['status' => 'rejected', 'reviewedBy' => $g['requester']['memberId'], 'reviewedAt' => now_iso(), 'decisionNote' => $reason, 'updatedAt' => now_iso()], ['assetId' => $assetId]);
     audit('photo.rejected', $g['requester']['memberId'], $assetId, ['reason' => $reason], (string)($p['ip'] ?? ''));
     return ['ok' => true];
+}
+
+/** Push the approved (edited) image back onto the subject's record so the ID
+ *  card + profile always render the approved photo. Best-effort. */
+function photo_apply_to_subject(array $a): void {
+    $url = (string)($a['editedUrl'] ?? '') ?: (string)($a['sourceUrl'] ?? '');
+    if ($url === '') return;
+    try {
+        if ($a['subjectType'] === 'student')        db_update('summer_students', ['photoUrl' => $url, 'updatedAt' => now_iso()], ['studentId' => $a['subjectId']]);
+        elseif ($a['subjectType'] === 'volunteer')  db_update('volunteers', ['photoUrl' => $url, 'updatedAt' => now_iso()], ['volunteerId' => $a['subjectId']]);
+    } catch (Throwable $e) { /* subject may not exist yet in tests */ }
 }
 
 /** Is a subject's current photo approved? (The issuance gate reads this.) */

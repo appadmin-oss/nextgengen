@@ -475,3 +475,26 @@ CREATE TABLE IF NOT EXISTS photo_assets (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (19) ON DUPLICATE KEY UPDATE version = version;
+
+-- Gate kiosk password + optional centre pin (migration 20).
+ALTER TABLE gate_links ADD COLUMN passHash VARCHAR(255) DEFAULT '';
+ALTER TABLE gate_links ADD COLUMN centreId VARCHAR(48) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (20) ON DUPLICATE KEY UPDATE version = version;
+
+-- Geo-fence mapped to a centre + the location a student was registered at
+-- (migration 21).
+ALTER TABLE centres ADD COLUMN lat DOUBLE NULL;
+ALTER TABLE centres ADD COLUMN lng DOUBLE NULL;
+ALTER TABLE centres ADD COLUMN radiusM INT DEFAULT 150;
+ALTER TABLE centres ADD COLUMN geofence TINYINT DEFAULT 0;
+ALTER TABLE centres ADD COLUMN mapSource VARCHAR(16) DEFAULT '';
+ALTER TABLE centres ADD COLUMN mapAccuracyM INT NULL;
+ALTER TABLE centres ADD COLUMN mappedAt VARCHAR(40) DEFAULT '';
+
+ALTER TABLE summer_students ADD COLUMN regLat DOUBLE NULL;
+ALTER TABLE summer_students ADD COLUMN regLng DOUBLE NULL;
+ALTER TABLE summer_students ADD COLUMN regGeoOk TINYINT NULL;
+ALTER TABLE summer_students ADD COLUMN regGeoDist INT NULL;
+
+INSERT INTO schema_version (version) VALUES (21) ON DUPLICATE KEY UPDATE version = version;

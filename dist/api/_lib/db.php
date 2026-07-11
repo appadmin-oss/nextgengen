@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 19;
+const NGG_SCHEMA_TARGET = 21;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -617,6 +617,37 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX idx_photo_subject ON photo_assets(subjectType, subjectId);
             CREATE INDEX idx_photo_status ON photo_assets(status);
+        ",
+
+        // Gate kiosk password — an optional shared secret an admin sets on a
+        // gate so field staff WITHOUT an admin login can run the desk. Stored
+        // as a bcrypt hash; verifying it mints a short-lived, gate-scoped kiosk
+        // session (never an admin session). centreId optionally pins a gate to
+        // one centre.
+        20 => "
+            ALTER TABLE gate_links ADD COLUMN passHash TEXT DEFAULT '';
+            ALTER TABLE gate_links ADD COLUMN centreId TEXT DEFAULT '';
+        ",
+
+        // Geo-fence — a circle (lat/lng + radius metres) mapped to a CENTRE,
+        // not a device. When the master toggle is on, a walk-up's captured
+        // location auto-selects the matching centre and out-of-fence attempts
+        // are blocked (anti-cheat). mapSource/mapAccuracyM/mappedAt record how
+        // the point was captured (on-site GPS vs entered coordinate) for audit.
+        // The student row keeps the location it was registered at + the result.
+        21 => "
+            ALTER TABLE centres ADD COLUMN lat REAL;
+            ALTER TABLE centres ADD COLUMN lng REAL;
+            ALTER TABLE centres ADD COLUMN radiusM INTEGER DEFAULT 150;
+            ALTER TABLE centres ADD COLUMN geofence INTEGER DEFAULT 0;
+            ALTER TABLE centres ADD COLUMN mapSource TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN mapAccuracyM INTEGER;
+            ALTER TABLE centres ADD COLUMN mappedAt TEXT DEFAULT '';
+
+            ALTER TABLE summer_students ADD COLUMN regLat REAL;
+            ALTER TABLE summer_students ADD COLUMN regLng REAL;
+            ALTER TABLE summer_students ADD COLUMN regGeoOk INTEGER;
+            ALTER TABLE summer_students ADD COLUMN regGeoDist INTEGER;
         ",
     ];
 

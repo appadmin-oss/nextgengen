@@ -8,17 +8,30 @@
 require_once __DIR__ . '/../_lib/bootstrap.php';
 rate_limit_check('gate');
 $s = require_session();
-if (!is_admin_role($s['role'] ?? '')) json_error('forbidden', 403);
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$b = $method === 'POST' ? read_json_body() : [];
+
+// Two ways to operate a gate: a signed-in staff/admin session, OR a gate-scoped
+// kiosk session (password-unlocked) bound to exactly THIS gate token.
+$reqGate = $method === 'GET' ? (string)($_GET['g'] ?? '') : (string)($b['gate'] ?? '');
+$isAdmin = is_admin_role($s['role'] ?? '');
+$isKiosk = strtolower((string)($s['role'] ?? '')) === 'kiosk'
+    && ($s['gate'] ?? '') !== '' && $reqGate !== '' && hash_equals((string)$s['gate'], $reqGate);
+if (!$isAdmin && !$isKiosk) json_error('forbidden', 403);
 
 if ($method === 'GET') {
     $res = gs_call('gate.context', ['gate' => (string)($_GET['g'] ?? '')]);
 } elseif ($method === 'POST') {
-    $b = read_json_body();
     $action = (string)($b['action'] ?? '');
     $ip = client_ip();
     if ($action === 'register') {
-        $res = gs_call('gate.register', ['gate' => $b['gate'] ?? '', 'data' => $b['data'] ?? [], 'photoUrl' => $b['photoUrl'] ?? '', 'force' => !empty($b['force']), 'byId' => $s['mid'], 'ip' => $ip]);
+        $res = gs_call('gate.register', [
+            'gate' => $b['gate'] ?? '', 'data' => $b['data'] ?? [], 'photoUrl' => $b['photoUrl'] ?? '',
+            'force' => !empty($b['force']), 'byId' => $s['mid'], 'ip' => $ip,
+            // Geo capture from the device; only a full admin may override.
+            'lat' => $b['lat'] ?? null, 'lng' => $b['lng'] ?? null,
+            'isAdmin' => $isAdmin, 'geoOverride' => $isAdmin && !empty($b['geoOverride']),
+        ]);
     } elseif ($action === 'checkin') {
         // Reuse the summer check-in op (QR token or explicit studentId).
         if (!gate_resolve((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);

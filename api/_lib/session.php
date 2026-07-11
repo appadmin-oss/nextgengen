@@ -80,6 +80,36 @@ function security_notify_new_device(array $member, string $ip, string $ua): void
     send_mail((string)$member['email'], 'New sign-in to your NGG account', $html);
 }
 
+/**
+ * Mint a short-lived, gate-scoped KIOSK session — issued only after a gate's
+ * password is verified (gate_unlock). It is NEVER an admin session: role
+ * 'kiosk', no adminOk, and a 'gate' claim binding it to exactly one gate. The
+ * gate route re-checks gate_resolve() on every request, so revoking the gate
+ * link instantly disables every kiosk session riding on it. Not registered in
+ * device_sessions — its authority is the gate, and it expires with the gate.
+ */
+function session_issue_kiosk(array $gate): string {
+    global $CONFIG;
+    $now = time();
+    $ttl = (int)($CONFIG['kiosk_ttl'] ?? 43200); // 12h default
+    $exp = $now + $ttl;
+    if (!empty($gate['expiresAt'])) { $ge = strtotime((string)$gate['expiresAt']); if ($ge && $ge < $exp) $exp = $ge; }
+    $payload = [
+        'mid'     => 'kiosk:' . ($gate['gateId'] ?? ''),
+        'role'    => 'kiosk', 'type' => 'KIOSK', 'status' => 'active',
+        'gate'    => (string)($gate['gateId'] ?? ''),
+        'iat'     => $now, 'exp' => $exp, 'adminOk' => false, 'kiosk' => true,
+    ];
+    $body = b64url(json_encode($payload, JSON_UNESCAPED_SLASHES));
+    $sig  = b64url(hash_hmac('sha256', $body, $CONFIG['cookie_secret'], true));
+    $token = $body . '.' . $sig;
+    setcookie($CONFIG['cookie_name'], $token, [
+        'expires'  => $exp, 'path' => '/', 'domain' => $CONFIG['cookie_domain'] ?: '',
+        'secure'   => (bool)$CONFIG['cookie_secure'], 'httponly' => true, 'samesite' => $CONFIG['cookie_samesite'],
+    ]);
+    return $token;
+}
+
 function session_clear(): void {
     global $CONFIG;
     setcookie($CONFIG['cookie_name'], '', [

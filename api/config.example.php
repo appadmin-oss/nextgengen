@@ -124,6 +124,11 @@ return [
     // Session lifetime in seconds (7 days = absolute cap on a signed cookie).
     'session_ttl'     => 7 * 24 * 3600,
 
+    // Kiosk session lifetime (seconds) — a gate-scoped desk session minted when
+    // field staff unlock a gate with its password. Kept short; it also never
+    // outlives the gate link's own expiry.
+    'kiosk_ttl'       => 12 * 3600,
+
     // Idle timeout: seconds of inactivity before a session is force-expired
     // (revoked server-side + cookie cleared). Staff are held to a tight window
     // per the operational policy; members get a longer leash. 0 disables a tier.
@@ -163,6 +168,7 @@ return [
         'auth.verify'  => ['max' => 10,  'window' => 60],
         'upload.sign'  => ['max' => 30,  'window' => 60],
         'gate'         => ['max' => 300, 'window' => 60],  // staff desk: high-volume check-ins
+        'gate.unlock'  => ['max' => 8,   'window' => 300], // kiosk password: brute-force throttle
         'hook'         => ['max' => 120, 'window' => 60],  // inbound webhook bursts
         'default'      => ['max' => 60,  'window' => 60],
     ],
