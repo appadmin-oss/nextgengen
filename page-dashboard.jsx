@@ -208,8 +208,16 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
   React.useEffect(() => { setEvents(data.events || []); }, [data.events]);
   React.useEffect(() => { setNotes(data.notifications || []); }, [data.notifications]);
 
-  const xpToNext = (Math.floor(s.xp / 250) + 1) * 250;
-  const xpPct = Math.min(100, Math.round((s.xp % 250) / 250 * 100));
+  // Canonical reflection-economy progression — fetched once here and shared by
+  // the Stats and Momentum cards so the dashboard never shows two different
+  // levels for the same member (and matches the Anchor Journal exactly).
+  const [momentum, setMomentum] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.member.momentum().then(r => { if (alive) setMomentum(r.momentum); }).catch(() => {});
+    return () => { alive = false; };
+  }, [mutateSeq]);
+  const prog = canonicalProgress(s, momentum);
 
   // Optimistic RSVP: flip local state now (authoritative once the request
   // succeeds), roll back + toast on failure. We deliberately do NOT trigger
@@ -248,8 +256,8 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
             {/* RIGHT RAIL */}
             <div className="dash-rail">
-              <DashboardStats stats={s} xpToNext={xpToNext} xpPct={xpPct}/>
-              <DashboardMomentum setPage={setPage}/>
+              <DashboardStats stats={s} prog={prog}/>
+              <DashboardMomentum momentum={momentum}/>
               {mentor && <DashboardMentor mentor={mentor}/>}
               <DashboardEvents events={events} onRsvp={onRsvp}/>
               <DashboardNotifications notes={notes} onRead={onRead}/>
@@ -686,10 +694,26 @@ function fmtShortDate(d) { if (!d) return ""; const x = new Date(d); return isNa
 
 // ----------------------------------------------------------------------------
 
-// Character ranks — shared identity with the Anchor Journal.
+// Character ranks — the ONE canonical progression, identical to the Anchor
+// Journal (journal/app.jsx RANKS) and the server momentum engine
+// (momentum.php): 60 XP per distinct reflection day, a flat 250 XP per level,
+// 5 levels. Thresholds are the cumulative floors of that flat model. Do not
+// fork these numbers again — a member who is "Rooted" here must be "Rooted"
+// in the journal at the same XP.
+const DASH_XP_PER_LEVEL = 250;
+// Mood taxonomy — the SAME keys the Anchor Journal stores (journal/app.jsx
+// MOODS/MOOD_ICON) so an entry created here renders correctly there. The emoji
+// is display-only; the stored value is the key.
+const DASH_MOODS = [
+  { key: "great", emoji: "🔥", label: "Great" },
+  { key: "good",  emoji: "🙂", label: "Good" },
+  { key: "okay",  emoji: "😐", label: "Okay" },
+  { key: "low",   emoji: "😔", label: "Low" },
+  { key: "rough", emoji: "😴", label: "Rough" },
+];
 const DASH_RANKS = [
-  { name: "Seedling", at: 0 }, { name: "Sprout", at: 250 }, { name: "Sapling", at: 750 },
-  { name: "Rooted", at: 1500 }, { name: "Vanguard", at: 3000 },
+  { name: "Seedling", at: 0 }, { name: "Sprout", at: 250 }, { name: "Sapling", at: 500 },
+  { name: "Rooted", at: 750 }, { name: "Vanguard", at: 1000 },
 ];
 function dashRank(xp) {
   let cur = DASH_RANKS[0], next = null;
@@ -700,19 +724,38 @@ function dashRank(xp) {
   const pct = next ? Math.min(100, Math.round((xp - cur.at) / (next.at - cur.at) * 100)) : 100;
   return { cur, next, pct };
 }
+// Reconcile the dashboard headline progression onto the canonical reflection
+// economy. The server momentum payload (when present) is authoritative and is
+// what the journal shows; `member_stats.xpTotal` is a separate mission-driven
+// tally and must NOT drive the rank/level (that was the cross-surface bug).
+// Falls back to the flat model over the momentum total, then to stored stats.
+function canonicalProgress(stats, momentum) {
+  if (momentum && typeof momentum.level === "number") {
+    const level = momentum.level;
+    const xpInLevel = momentum.xp || 0;               // 0..250 within the level
+    const total = (level - 1) * DASH_XP_PER_LEVEL + xpInLevel;
+    const r = dashRank(total);
+    return { total, level, rank: r.cur, next: r.next, pct: r.next ? r.pct : 100 };
+  }
+  const total = (stats && stats.xp) || 0;
+  const r = dashRank(total);
+  const level = (stats && stats.level) || (DASH_RANKS.indexOf(r.cur) + 1);
+  return { total, level, rank: r.cur, next: r.next, pct: r.next ? r.pct : 100 };
+}
 
-function DashboardStats({ stats, xpToNext, xpPct }) {
-  const rank = dashRank(stats.xp || 0);
+function DashboardStats({ stats, prog }) {
+  // `prog` is the canonical reflection-economy progression (see
+  // canonicalProgress) — the same model the journal and server momentum use.
   return (
     <div className="dash-card dash-stats">
       <div className="dash-card-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h3 className="dash-card-h-sm">Your tally.</h3>
-        <span className="chip chip-gold" title="Character rank">{rank.cur.name}</span>
+        <span className="chip chip-gold" title="Character rank">{prog.rank.name}</span>
       </div>
       <div className="dash-stats-grid">
         <div className="dash-stat">
           <div className="mono dash-stat-l">LEVEL</div>
-          <div className="dash-stat-n">{String(stats.level).padStart(2, "0")}</div>
+          <div className="dash-stat-n">{String(prog.level).padStart(2, "0")}</div>
         </div>
         <div className="dash-stat">
           <div className="mono dash-stat-l">STREAK</div>
@@ -720,7 +763,7 @@ function DashboardStats({ stats, xpToNext, xpPct }) {
         </div>
         <div className="dash-stat">
           <div className="mono dash-stat-l">XP</div>
-          <div className="dash-stat-n">{stats.xp}</div>
+          <div className="dash-stat-n">{prog.total}</div>
         </div>
         <div className="dash-stat">
           <div className="mono dash-stat-l">BADGES</div>
@@ -728,11 +771,11 @@ function DashboardStats({ stats, xpToNext, xpPct }) {
         </div>
       </div>
       <div className="dash-xp-bar">
-        <div className="dash-xp-fill" style={{width: (rank.next ? rank.pct : 100) + "%"}}/>
+        <div className="dash-xp-fill" style={{width: prog.pct + "%"}}/>
       </div>
       <div className="dash-xp-meta">
-        <span>{(stats.xp || 0).toLocaleString()} XP</span>
-        <span>{rank.next ? "→ " + rank.next.name + " at " + rank.next.at.toLocaleString() : "Top rank reached ★"}</span>
+        <span>{prog.total.toLocaleString()} XP</span>
+        <span>{prog.next ? "→ " + prog.next.name + " at " + prog.next.at.toLocaleString() : "Top rank reached ★"}</span>
       </div>
     </div>
   );
@@ -749,11 +792,11 @@ const MOMENTUM_TONE = {
   practical: { bg: "rgba(47,111,208,0.12)", bd: "rgba(47,111,208,0.3)", fg: "#1f4f9c" },
   gentle: { bg: "rgba(12,20,50,0.06)", bd: "rgba(12,20,50,0.14)", fg: "var(--ink-600,#4a536b)" },
 };
-function DashboardMomentum({ setPage }) {
-  const [m, setM] = React.useState(null);
-  const [failed, setFailed] = React.useState(false);
-  React.useEffect(() => { NGGApi.member.momentum().then(r => setM(r.momentum)).catch(() => setFailed(true)); }, []);
-  if (failed || !m) return null;
+function DashboardMomentum({ momentum }) {
+  // Momentum is fetched once by DashboardLive and shared, so this card and the
+  // Stats card can never disagree about the member's level.
+  const m = momentum;
+  if (!m) return null;
   const nudge = (m.nudges || [])[0];
   const tone = (nudge && MOMENTUM_TONE[nudge.tone]) || MOMENTUM_TONE.gentle;
   return (
@@ -957,8 +1000,8 @@ function DashboardJournal({ onMutate }) {
       </div>
       <form onSubmit={submit}>
         <div className="dash-mood">
-          {["🔥","🙂","😐","😔","😴"].map(em => (
-            <button key={em} type="button" className={"dash-mood-btn" + (mood === em ? " is-on" : "")} onClick={() => setMood(em)} aria-label={"Mood " + em}>{em}</button>
+          {DASH_MOODS.map(mo => (
+            <button key={mo.key} type="button" className={"dash-mood-btn" + (mood === mo.key ? " is-on" : "")} onClick={() => setMood(mo.key)} aria-label={"Mood: " + mo.label} aria-pressed={mood === mo.key}>{mo.emoji}</button>
           ))}
         </div>
         <textarea

@@ -424,7 +424,7 @@ function App() {
       {view === "shop" && <Shop ctx={ctx}/>}
       {view !== "reflect" && view !== "coach" && <BottomNav view={view} go={go}/>}
       <SideRail view={view} go={go} streak={streak} diamonds={diamonds} cur={cur}/>
-      {celebrate && <Celebrate/>}
+      {celebrate && <Celebrate already={celebrate.already}/>}
       {levelUp && !celebrate && <LevelUp info={levelUp} onDone={() => setLevelUp(null)}/>}
       {onboard && <Onboarding member={member} prefs={pstate.prefs} onDone={(picked) => {
         setState("prefs", Object.assign({}, pstate.prefs || {}, picked, { onboardedAt: (pstate.prefs || {}).onboardedAt || new Date().toISOString() }));
@@ -1639,8 +1639,10 @@ function SideRail({ view, go, streak, diamonds, cur }) {
 }
 
 /* ---- Celebrate ---------------------------------------------------------- */
-function Celebrate() {
-  return <div className="aj-celebrate"><div className="aj-celebrate-in"><div className="aj-celebrate-badge"><i className="ph-fill ph-anchor"/></div><h2>Anchored!</h2><p>+60 XP · your streak is alive</p></div></div>;
+function Celebrate({ already }) {
+  // A second entry on a day already reflected earns no new XP/diamonds (XP
+  // counts distinct DAYS) — so don't promise "+60 XP" the member won't get.
+  return <div className="aj-celebrate"><div className="aj-celebrate-in"><div className="aj-celebrate-badge"><i className="ph-fill ph-anchor"/></div><h2>Anchored!</h2><p>{already ? "Another reflection saved · today already counts" : "+60 XP · your streak is alive"}</p></div></div>;
 }
 
 /* ---- Level-up (distinct from the daily "Anchored!" moment) --------------- */
@@ -1653,7 +1655,7 @@ function LevelUp({ info, onDone }) {
         <div className="aj-lvl-badge"><i className={"ph-fill " + (info.icon || "ph-crown-simple")}/></div>
         <div className="aj-lvl-tag">LEVEL {info.level}</div>
         <h2>{info.name || "Level up"}!</h2>
-        <p>You crossed 250 XP — a new rank is yours.</p>
+        <p>You crossed {((info.level - 1) * XP_PER_LEVEL).toLocaleString()} XP — a new rank is yours.</p>
         <button className="btn-a" style={{ marginTop: 22, width: "auto", padding: "13px 26px" }} onClick={onDone}>Keep going <i className="ph-bold ph-arrow-right"/></button>
       </div>
     </div>
