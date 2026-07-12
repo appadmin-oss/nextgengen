@@ -497,6 +497,7 @@ function JoinPage({ setPage }) {
     return p;
   });
   const isSummer = program === "summer";
+  const [restored, setRestored] = useState(false);
   const [data, setData] = useState(() => {
     const base = { name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "", photoUrl: "" };
     try {
@@ -505,6 +506,14 @@ function JoinPage({ setPage }) {
     } catch (_) {}
     return base;
   });
+  // Announce (once, on mount) that we restored a non-empty saved draft, so the
+  // "save as you go" promise is visible rather than silent.
+  React.useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
+      if (saved && (saved.name || saved.why || saved.parentEmail || saved.photoUrl)) setRestored(true);
+    } catch (_) {}
+  }, []);
   const [busy, setBusy] = useState(false);
   const [fieldErr, setFieldErr] = useState("");
   const steps = ["Identity", "Track", "Story", "Parent"];
@@ -593,6 +602,13 @@ function JoinPage({ setPage }) {
               Four short steps. Should take six minutes. You can pause and come back — we save as you go.
             </p>
           </div>
+
+          {restored && (
+            <div role="status" style={{display:"flex", alignItems:"center", gap:12, justifyContent:"space-between", marginBottom:20, padding:"12px 16px", borderRadius:12, background:"rgba(245,176,38,0.14)", border:"1px solid rgba(245,176,38,0.4)", fontSize:14, color:"var(--ink-900)"}}>
+              <span>↩︎ We saved your progress — pick up where you left off.</span>
+              <button type="button" onClick={() => { try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {} setData({ name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "", photoUrl: "" }); setStep(0); setRestored(false); }} className="mono" style={{background:"none", border:"none", cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--ink-500)", fontWeight:600}}>Start fresh</button>
+            </div>
+          )}
 
           {/* Stepper */}
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:32, padding:"0 12px"}}>

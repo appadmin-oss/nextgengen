@@ -9,15 +9,15 @@
 // trap, and focus restore on close — giving the admin-drawer modals the same
 // accessibility as the dialog/sign-in modals. Attach `panelRef`, `onMouseDown`
 // (scrim) and `onInput` to the scrim; wire `close` to the ✕ and Cancel buttons.
-function useAdminDrawer(onClose) {
+function useAdminDrawer(onClose, guard = true) {
   const panelRef = React.useRef(null);
   const touched = React.useRef(false);
   const close = React.useCallback(() => {
-    if (touched.current && typeof dialog !== "undefined" && dialog.confirm) {
+    if (guard && touched.current && typeof dialog !== "undefined" && dialog.confirm) {
       dialog.confirm({ title: "Discard changes?", body: "You have edits that haven't been saved yet.", cta: "Discard", cancel: "Keep editing", danger: true })
         .then(ok => { if (ok) onClose(); });
     } else { onClose(); }
-  }, [onClose]);
+  }, [onClose, guard]);
   React.useEffect(() => {
     const prev = document.activeElement;
     const el = panelRef.current;
@@ -1696,7 +1696,7 @@ function AdminAudit() {
         <h2 className="admin-h2">Audit trail <span className="chip chip-gold" style={{ fontSize: 11, verticalAlign: "middle" }}>super admin</span></h2>
         <button className="btn btn-ghost btn-sm" disabled={!rows || !rows.length} onClick={exportCsv}>Export CSV</button>
       </div>
-      <p className="admin-hint">Every action taken by admins and managers, most recent first. This accountability record is visible to super admins only.</p>
+      <p className="admin-hint">Every action taken by admins and managers, most recent first. This accountability record is visible to super admins only.{rows && rows.length >= 500 ? " Showing the 500 most recent — use the filters above to reach older entries." : ""}</p>
       <div className="admin-filters">
         <select className="admin-select" value={f.actor} onChange={e => setF(o => ({ ...o, actor: e.target.value }))}>
           <option value="">All actors</option>
@@ -2096,7 +2096,7 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
 }
 
 function AdminSubmissions({ assignment, onClose }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput } = useAdminDrawer(onClose, false);
   const [data, setData] = React.useState(null);
   const load = () => NGGApi.admin.assignments.submissions(assignment.assignmentId)
     .then(setData).catch(e => toast.error(e.code || e.message));
@@ -2165,7 +2165,7 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
 // ============================================================================
 
 function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput } = useAdminDrawer(onClose, false);
   const [d, setD] = React.useState(null);
   const [mentors, setMentors] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
