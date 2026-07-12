@@ -125,6 +125,13 @@ function SignInModal({ seed, onClose, onVerified }) {
   const [otp, setOtp] = React.useState("");
   const [masked, setMasked] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [cooldown, setCooldown] = React.useState(0); // seconds until a code can be resent
+  // Tick the resend cooldown down to zero.
+  React.useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
   const [err, setErr] = React.useState(seed && seed.error ? humanizeAuthError(seed.error) : "");
   const inputRef = React.useRef(null);
   const cardRef = React.useRef(null);
@@ -195,6 +202,16 @@ function SignInModal({ seed, onClose, onVerified }) {
     const r = await NGGApi.auth.request(identifier.trim());
     setMasked(r.masked || "");
     setStage("enter-otp");
+    setCooldown(30); // let the user resend after 30s
+  };
+  // Send / resend a code from the OTP screen (also rescues the "I already have
+  // a code" path when no code was ever sent). Needs a valid identifier.
+  const sendCode = async () => {
+    if (busy || cooldown > 0 || identifier.trim().length < 3) return;
+    setErr(""); setBusy(true);
+    try { await requestLinkInner(); }
+    catch (e) { setErr(humanizeAuthError(e.code || e.message)); }
+    finally { setBusy(false); }
   };
   const requestLink = async (e) => {
     if (e) e.preventDefault();
@@ -325,6 +342,9 @@ function SignInModal({ seed, onClose, onVerified }) {
                 />
               </>
             )}
+            {masked
+              ? <p className="signin-hint" style={{ margin: "0 0 4px", fontSize: 13, color: "var(--ink-500)" }}>We sent a 6-digit code to <b>{masked}</b>. It expires in 15 minutes.</p>
+              : <p className="signin-hint" style={{ margin: "0 0 4px", fontSize: 13, color: "var(--ink-500)" }}>Enter your ID above, then send yourself a fresh code.</p>}
             <label className="signin-label" htmlFor="signin-otp">6-digit code</label>
             <input
               id="signin-otp"
@@ -344,7 +364,10 @@ function SignInModal({ seed, onClose, onVerified }) {
             <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || otp.replace(/\s/g, "").length !== 6}>
               {busy ? "Verifying…" : "Sign in →"}
             </button>
-            <button type="button" className="signin-link" onClick={() => { setStage("id"); setOtp(""); setErr(""); }}>
+            <button type="button" className="signin-link" onClick={sendCode} disabled={busy || cooldown > 0 || identifier.trim().length < 3}>
+              {cooldown > 0 ? "Resend code in " + cooldown + "s" : (masked ? "Resend code" : "Send me a code")}
+            </button>
+            <button type="button" className="signin-link" onClick={() => { setStage("id"); setOtp(""); setErr(""); setCooldown(0); }}>
               ← Start over
             </button>
           </form>

@@ -404,6 +404,11 @@ function App() {
   return (
     <div className="aj-app">
       <div className="aj-bg" aria-hidden="true"/><div className="aj-blob b1" aria-hidden="true"/><div className="aj-blob b2" aria-hidden="true"/><div className="aj-blob b3" aria-hidden="true"/><div className="aj-veil" aria-hidden="true"/>
+      {!online && (
+        <div className="aj-offlinebar" role="status" aria-live="polite">
+          <i className="ph-fill ph-cloud-slash" aria-hidden="true"/> You're offline — your reflections are saved on this device and will sync when you reconnect.
+        </div>
+      )}
       {view === "home" && <Journey ctx={ctx}/>}
       {view === "reflect" && <Reflect ctx={ctx}/>}
       {view === "systems" && <Systems ctx={ctx}/>}
@@ -1177,7 +1182,9 @@ function Calendar({ ctx }) {
       </div>
       <div className="pad aj-calgrid" style={{ marginTop: 20 }}>{["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <div key={i} className="aj-calwd">{d}</div>)}</div>
       <div className="pad aj-calgrid">{cells.map((c, i) => c ? (
-        <button key={i} className={"aj-calday " + c.cls + (c.d === sel ? " sel" : "")} onClick={() => setSel(c.d)}>
+        <button key={i} className={"aj-calday " + c.cls + (c.d === sel ? " sel" : "")} onClick={() => setSel(c.d)}
+          aria-pressed={c.d === sel}
+          aria-label={c.d + " " + monthLabel + ", " + ({ done: "reflected", missed: "missed", up: "upcoming" }[c.cls] || "no entry") + (c.held !== null ? ", " + c.held + " systems held" : "")}>
           {c.d}
           {c.held !== null && <span className="aj-calday-sys" aria-hidden="true">{c.held}</span>}
         </button>
@@ -1290,10 +1297,12 @@ function Growth({ ctx }) {
         <div className="eyebrow" style={{ marginBottom: 14 }}>THIS WEEK · SELF SCORE <span className="muted" style={{ letterSpacing: 0 }}>· tap to rate</span></div>
         <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
           {SCORE_DIMS.map(dim => { const v = scores[dim.key] || 0; return (
-            <div key={dim.key} onClick={() => setScore(dim.key, v >= 5 ? 1 : v + 1)} style={{ cursor: "pointer" }}>
+            <button key={dim.key} type="button" onClick={() => setScore(dim.key, v >= 5 ? 1 : v + 1)}
+              aria-label={dim.label + ": " + v + " out of 5. Tap to change."}
+              style={{ cursor: "pointer", background: "none", border: "none", padding: 0, width: "100%", textAlign: "left", font: "inherit", color: "inherit" }}>
               <div className="aj-score-row"><span>{dim.label}</span><span className="v">{v}/5</span></div>
               <div className="aj-score-track"><div className="aj-score-fill" style={{ width: (v / 5 * 100) + "%" }}/></div>
-            </div>
+            </button>
           ); })}
         </div>
       </div>

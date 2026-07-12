@@ -506,30 +506,15 @@ function JoinPage({ setPage }) {
   });
   const [busy, setBusy] = useState(false);
   const [fieldErr, setFieldErr] = useState("");
-  const [photoBusy, setPhotoBusy] = useState(false);
   const steps = ["Identity", "Track", "Story", "Parent"];
   const session = useSession();
   const applyEyebrow = isSummer
     ? "APPLY · SUMMER STUDENTS"
     : (session ? "APPLY · " + sessionLabel(session, "NEXT SESSION").toUpperCase() : "APPLY · NEXT SESSION");
 
-  async function pickPhoto(e) {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!file) return;
-    if (!/^image\//.test(file.type)) { setFieldErr("Please choose an image file."); return; }
-    if (file.size > 8 * 1024 * 1024) { setFieldErr("Photo must be under 8 MB."); return; }
-    setPhotoBusy(true); setFieldErr("");
-    try {
-      const r = await NGGApi.uploadPublic(file);
-      setData(d => ({ ...d, photoUrl: r.url }));
-    } catch (err) {
-      const msg = err.message === "public_upload_disabled"
-        ? "Photo upload isn't available right now — you can apply without one."
-        : "Couldn't upload that photo. You can apply without one.";
-      setFieldErr(msg);
-    } finally { setPhotoBusy(false); }
-  }
+  // Jump back to an already-completed step (photo capture is handled by the
+  // shared <PhotoCapture> in step 0 — there is no separate upload path here).
+  const goToStep = (i) => { if (i < step) { setFieldErr(""); setStep(i); } };
 
   // Persist draft on every change (cleared on successful submit).
   React.useEffect(() => {
@@ -610,18 +595,27 @@ function JoinPage({ setPage }) {
 
           {/* Stepper */}
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:32, padding:"0 12px"}}>
-            {steps.map((s, i) => (
+            {steps.map((s, i) => {
+              const done = i < step;
+              return (
               <React.Fragment key={s}>
                 <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:8, flex:"0 0 auto"}}>
-                  <div style={{
-                    width:42, height:42, borderRadius:"50%",
-                    background: i < step ? "var(--navy-900)" : i === step ? "var(--gold-500)" : "var(--cream-100)",
+                  <button
+                    type="button"
+                    onClick={() => goToStep(i)}
+                    disabled={!done}
+                    aria-label={done ? ("Go back to step " + (i + 1) + ": " + s) : ("Step " + (i + 1) + ": " + s + (i === step ? " (current)" : ""))}
+                    aria-current={i === step ? "step" : undefined}
+                    style={{
+                    width:42, height:42, borderRadius:"50%", padding:0,
+                    background: done ? "var(--navy-900)" : i === step ? "var(--gold-500)" : "var(--cream-100)",
                     color: i <= step ? (i === step ? "var(--navy-900)" : "white") : "var(--ink-400)",
                     display:"grid", placeItems:"center", fontWeight:700, fontFamily:"var(--font-display)", fontSize:18,
                     border: i === step ? "2px solid var(--navy-900)" : "none",
+                    cursor: done ? "pointer" : "default",
                   }}>
-                    {i < step ? "✓" : i + 1}
-                  </div>
+                    {done ? "✓" : i + 1}
+                  </button>
                   <div className="mono" style={{fontSize:10, letterSpacing:"0.15em", textTransform:"uppercase", fontWeight: i === step ? 700 : 400, color: i === step ? "var(--navy-900)" : "var(--ink-500)"}}>
                     {s}
                   </div>
@@ -630,7 +624,7 @@ function JoinPage({ setPage }) {
                   <div style={{flex:1, height:2, background: i < step ? "var(--navy-900)" : "var(--cream-200)", margin:"-22px 12px 0"}}/>
                 )}
               </React.Fragment>
-            ))}
+            );})}
           </div>
 
           <div className="card" style={{padding:48, minHeight:380}}>
