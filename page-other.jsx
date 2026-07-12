@@ -114,14 +114,15 @@ function FeatureCard({ item, big = false, onPlay }) {
       type="button"
       onClick={onPlay}
       className="media-card"
-      aria-label={"Play " + item.label}
+      aria-label={item.label + " — preview coming soon, screened at Saturday sessions"}
       style={{display:"flex", flexDirection:"column", gap:10, background:"none", border:"none", padding:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", width:"100%"}}
     >
       <div style={{position:"relative", borderRadius:18, overflow:"hidden", aspectRatio: big ? "16/9" : "4/3"}}>
         <Photo name={kindImg} ratio="auto" style={{height:"100%", borderRadius:0}}/>
         <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, transparent 30%, rgba(12,20,50,0.78) 100%)"}}/>
-        <div style={{position:"absolute", top:14, left:14}}>
+        <div style={{position:"absolute", top:14, left:14, display:"flex", gap:8, alignItems:"center"}}>
           <span className={"chip " + kindColor}>{item.kind}</span>
+          <span className="chip" style={{background:"rgba(12,20,50,0.72)", color:"#fff", fontSize:10, letterSpacing:"0.12em"}}>SOON</span>
         </div>
         <div className="media-card-play" style={{position:"absolute", inset:0, display:"grid", placeItems:"center"}}>
           <div style={{width: big ? 84 : 64, height: big ? 84 : 64, borderRadius:"50%", background:"rgba(255,255,255,0.92)", display:"grid", placeItems:"center", color:"var(--navy-900)"}}>
@@ -681,7 +682,7 @@ function JoinPage({ setPage }) {
             {step === 2 && (
               <div style={{display:"flex", flexDirection:"column", gap:18}}>
                 <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:0, letterSpacing:"-0.02em"}}>Tell us one thing.</h2>
-                <p style={{color:"var(--ink-500)", margin:0}}>In 3 sentences: what would you build with twelve uninterrupted weeks?</p>
+                <p style={{color:"var(--ink-500)", margin:0}}>In 3 sentences: what would you build with {isSummer ? "six" : "twelve"} uninterrupted weeks?</p>
                 <div className="field">
                   <label>Your answer</label>
                   <textarea rows={6} value={data.why} onChange={e => setData({...data, why: e.target.value})} placeholder="A short answer is fine. Be honest, not impressive."/>
@@ -1192,6 +1193,13 @@ function VolunteerRegisterPage({ setPage }) {
   const ready = role !== "" && d.name.trim().length >= 2 && emailOk
     && (role !== "instructor" || courses.length > 0)
     && (!phoneNeeded || d.phone.trim().length >= 7);
+  // Tell the applicant WHY the button is disabled instead of greying silently.
+  const missing = [];
+  if (role === "") missing.push("pick a role");
+  if (d.name.trim().length < 2) missing.push("your name");
+  if (!emailOk) missing.push("a valid email");
+  if (role === "instructor" && courses.length === 0) missing.push("at least one course");
+  if (phoneNeeded && d.phone.trim().length < 7) missing.push("a phone number");
 
   const submit = async (e) => {
     e.preventDefault();
@@ -1328,7 +1336,9 @@ function VolunteerRegisterPage({ setPage }) {
                   {busy ? "Sending…" : "Register as a volunteer →"}
                 </button>
                 <span style={{ fontSize: 12.5, color: "var(--ink-500)", maxWidth: 340, lineHeight: 1.5 }}>
-                  Roles that work with teenagers pass safeguarding screening before the first session.
+                  {!ready && missing.length
+                    ? "Still needed: " + missing.join(", ") + "."
+                    : "Roles that work with teenagers pass safeguarding screening before the first session."}
                 </span>
               </div>
             </form>
@@ -1522,8 +1532,8 @@ function CirclePortal({ setPage }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>{CIRCLE_CAN.map((c, i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 15px", borderRadius: 14, background: "rgba(94,224,192,.08)", border: "1px solid rgba(94,224,192,.2)" }}><span style={{ color: teal }}>✓</span><span style={{ fontSize: 13, fontWeight: 600 }}>{c}</span></div>)}</div>
     <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "#ff8a8a", margin: "20px 0 10px" }}>✕ YOU CAN NOT</div>
     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>{CIRCLE_CANNOT.map((c, i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 15px", borderRadius: 14, background: "rgba(255,90,90,.08)", border: "1px solid rgba(255,120,120,.2)" }}><span style={{ color: "#ff8a8a" }}>⃠</span><span style={{ fontSize: 13, fontWeight: 600 }}>{c}</span></div>)}</div>
-    <button onClick={() => setConsent(v => !v)} style={{ display: "flex", gap: 12, width: "100%", textAlign: "left", marginTop: 20, padding: 15, borderRadius: 14, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)", cursor: "pointer", color: "#fff", alignItems: "center" }}>
-      <span style={{ width: 26, height: 26, borderRadius: 8, border: "2px solid " + (consent ? teal : "rgba(255,255,255,.3)"), background: consent ? teal : "transparent", display: "grid", placeItems: "center", color: "#06231d", fontWeight: 800 }}>{consent ? "✓" : ""}</span>
+    <button type="button" role="checkbox" aria-checked={consent} aria-label="I agree to Anchor's guardian terms and the student's privacy" onClick={() => setConsent(v => !v)} style={{ display: "flex", gap: 12, width: "100%", textAlign: "left", marginTop: 20, padding: 15, borderRadius: 14, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)", cursor: "pointer", color: "#fff", alignItems: "center" }}>
+      <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: 8, border: "2px solid " + (consent ? teal : "rgba(255,255,255,.3)"), background: consent ? teal : "transparent", display: "grid", placeItems: "center", color: "#06231d", fontWeight: 800 }}>{consent ? "✓" : ""}</span>
       <span style={{ flex: 1, fontSize: 13, lineHeight: 1.4 }}>I agree to Anchor's guardian terms &amp; the student's privacy.</span>
     </button>
     {err && <div className="circle-err">{err}</div>}

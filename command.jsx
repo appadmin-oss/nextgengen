@@ -169,13 +169,13 @@ function buildItems(auth) {
 
   if (auth.isSignedIn) {
     list.push(
-      { id: "me.dashboard", section: "You",   icon: "◎", label: "Open dashboard",    hint: "Missions, streak, journal", run: nav("dashboard"), kbd: "G D" },
+      { id: "me.dashboard", section: "You",   icon: "◎", label: "Open dashboard",    hint: "Missions, streak, journal", run: nav("dashboard") },
       { id: "me.anchor",    section: "You",   icon: "◴", label: "My anchor progress",hint: "Current week + missions",   run: nav("anchor") },
       { id: "me.signout",   section: "You",   icon: "⏻", label: "Sign out",           hint: "End this session",          run: () => auth.signOut && auth.signOut() },
     );
   } else {
     list.push(
-      { id: "me.signin", section: "You", icon: "→", label: "Sign in",     hint: "Members + admins",  run: () => auth.openSignIn && auth.openSignIn(), kbd: "G S" },
+      { id: "me.signin", section: "You", icon: "→", label: "Sign in",     hint: "Members + admins",  run: () => auth.openSignIn && auth.openSignIn() },
     );
   }
 
