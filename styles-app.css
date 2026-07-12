@@ -1529,6 +1529,12 @@ html { scroll-behavior: smooth; }
 @media (max-width: 820px) { .admin-filters { grid-template-columns: 1fr 1fr; } }
 
 .admin-table-wrap { overflow-x: auto; }
+/* Pagination + count chip (shared by paged admin tables). */
+.admin-pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 2px 2px; flex-wrap: wrap; }
+.admin-pager-count { font-size: 12px; color: var(--ink-500); }
+.admin-pager-btns { display: flex; align-items: center; gap: 10px; }
+.admin-pager-page { font-size: 12px; color: var(--ink-500); }
+.admin-count { display: inline-block; margin-left: 10px; padding: 2px 9px; border-radius: 999px; background: rgba(12,20,50,0.06); color: var(--ink-500); font-size: 12px; vertical-align: middle; }
 .admin-table { width: 100%; border-collapse: collapse; }
 .admin-table th, .admin-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(12,20,50,0.06); font-size: 14px; }
 .admin-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; color: var(--ink-500); text-transform: uppercase; }

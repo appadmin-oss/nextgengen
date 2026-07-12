@@ -56,9 +56,18 @@ function admin_members_list(array $p): array {
     foreach (['centre', 'status', 'type'] as $f) {
         if (!empty($p[$f])) { $where[] = "$f = ?"; $params[] = $p[$f]; }
     }
-    $sql = 'SELECT * FROM members' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY createdAt DESC';
-    $rows = db_all($sql, $params);
-    return ['ok' => true, 'total' => count($rows), 'members' => array_map('public_member', $rows)];
+    $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+    // Accurate total for the filtered set, computed before paging so the client
+    // can render "N–M of T" and page controls without loading every row.
+    $total = (int) db_row('SELECT COUNT(*) c FROM members' . $whereSql, $params)['c'];
+    // Optional pagination. page is 1-based; pageSize is clamped. When absent we
+    // still cap the result so an unbounded table can't be requested by default.
+    $pageSize = min(200, max(1, (int)($p['pageSize'] ?? 50)));
+    $page = max(1, (int)($p['page'] ?? 1));
+    $offset = ($page - 1) * $pageSize;
+    $sql = 'SELECT * FROM members' . $whereSql . ' ORDER BY createdAt DESC LIMIT ? OFFSET ?';
+    $rows = db_all($sql, array_merge($params, [$pageSize, $offset]));
+    return ['ok' => true, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize, 'members' => array_map('public_member', $rows)];
 }
 
 function admin_members_upsert(array $p): array {
@@ -331,17 +340,22 @@ function admin_audit_tail(array $p): array {
     $g = admin_cap_gate($p, 'rbac');
     if (!$g['ok']) $g = admin_cap_gate($p, 'audit');
     if (!$g['ok']) return $g;
-    $limit = min(2000, max(1, (int)($p['limit'] ?? 300)));
     $where = []; $params = [];
     if (!empty($p['actor']))  { $where[] = 'a.actorId = ?'; $params[] = (string)$p['actor']; }
     if (!empty($p['event']))  { $where[] = 'a.event LIKE ?'; $params[] = '%' . (string)$p['event'] . '%'; }
     if (!empty($p['staffOnly'])) { $where[] = "m.role IN ('editor','admin','super_admin')"; }
+    $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+    // True total so the accountability record is never silently truncated —
+    // the client pages through ALL matching entries instead of a hard cap.
+    $total = (int) db_row("SELECT COUNT(*) c FROM audit_log a LEFT JOIN members m ON m.memberId = a.actorId" . $whereSql, $params)['c'];
+    $pageSize = min(500, max(1, (int)($p['pageSize'] ?? 100)));
+    $page = max(1, (int)($p['page'] ?? 1));
+    $offset = ($page - 1) * $pageSize;
     $sql = "SELECT a.at, a.actorId, a.event, a.subject, a.ip, a.meta, m.fullName actorName, m.role actorRole
             FROM audit_log a LEFT JOIN members m ON m.memberId = a.actorId"
-        . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
-        . ' ORDER BY a.id DESC LIMIT ?';
-    $params[] = $limit;
-    $rows = db_all($sql, $params);
+        . $whereSql
+        . ' ORDER BY a.id DESC LIMIT ? OFFSET ?';
+    $rows = db_all($sql, array_merge($params, [$pageSize, $offset]));
 
     // Distinct staff actors seen in the log — powers the actor filter.
     $actors = db_all(
@@ -349,7 +363,7 @@ function admin_audit_tail(array $p): array {
          JOIN members m ON m.memberId = a.actorId
          WHERE m.role IN ('editor','admin','super_admin') ORDER BY m.fullName"
     );
-    return ['ok' => true, 'audit' => $rows, 'actors' => $actors];
+    return ['ok' => true, 'audit' => $rows, 'actors' => $actors, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize];
 }
 
 // ── Announcements / broadcast ────────────────────────────────────────────

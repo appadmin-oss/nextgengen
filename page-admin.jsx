@@ -386,6 +386,25 @@ function AdminTile({ n, l, onClick, loading }) {
   );
 }
 
+// Shared pagination control. Renders "N–M of T" plus prev/next; hides itself
+// when everything fits on one page. `page` is 1-based.
+function Pager({ page, pageSize, total, onPage }) {
+  if (!total || total <= pageSize) return null;
+  const pages = Math.ceil(total / pageSize);
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
+  return (
+    <div className="admin-pager" role="navigation" aria-label="Pagination">
+      <span className="admin-pager-count mono">{from.toLocaleString()}–{to.toLocaleString()} of {total.toLocaleString()}</span>
+      <div className="admin-pager-btns">
+        <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">← Prev</button>
+        <span className="admin-pager-page mono" aria-current="page">Page {page} / {pages}</span>
+        <button className="btn btn-ghost btn-sm" disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Next page">Next →</button>
+      </div>
+    </div>
+  );
+}
+
 // ============================================================================
 // Members
 // ============================================================================
@@ -394,26 +413,30 @@ function AdminMembers() {
   const [list, setList] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [filters, setFilters] = React.useState({ q: "", centre: "", status: "", type: "" });
+  const [page, setPage] = React.useState(1);
+  const [meta, setMeta] = React.useState({ total: 0, pageSize: 50 });
   const [editing, setEditing] = React.useState(null);
   const [viewing, setViewing] = React.useState(null);
 
   const exportCsv = () => downloadCsv("members", (list || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, track: m.track || "" })));
   // A failed fetch must surface an error + retry, never leave the spinner
-  // hanging forever (previously there was no .catch here).
-  const load = () => { setErr(""); return NGGApi.admin.members.list(filters).then(r => setList(r.members || [])).catch(e => setErr(e.code || e.message || "load_failed")); };
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type]);
+  // hanging forever (previously there was no .catch here). Server-paged.
+  const load = (p = page) => { setErr(""); return NGGApi.admin.members.list(Object.assign({}, filters, { page: p, pageSize: meta.pageSize })).then(r => { setList(r.members || []); setMeta({ total: r.total || 0, pageSize: r.pageSize || 50 }); }).catch(e => setErr(e.code || e.message || "load_failed")); };
+  // Filter changes reset to page 1; the debounced search does too.
+  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type]);
   React.useEffect(() => {
-    const t = setTimeout(load, 250);
+    const t = setTimeout(() => { setPage(1); load(1); }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line
   }, [filters.q]);
+  const goPage = (p) => { setPage(p); setList(null); load(p); };
 
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Members</h2>
+        <h2 className="admin-h2">Members {meta.total ? <span className="admin-count mono">{meta.total.toLocaleString()}</span> : null}</h2>
         <div className="admin-section-actions">
-          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!list || !list.length}>Export CSV</button>
+          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!list || !list.length} title="Exports the current page">Export CSV</button>
           <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
         </div>
       </div>
@@ -457,6 +480,7 @@ function AdminMembers() {
               {list.length === 0 && <tr><td colSpan="6" className="admin-empty">No members match.</td></tr>}
             </tbody>
           </table>
+          <Pager page={page} pageSize={meta.pageSize} total={meta.total} onPage={goPage}/>
         </div>
       }
       {editing && <AdminMemberEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
@@ -1681,11 +1705,13 @@ function AdminBroadcast() {
 function AdminAudit() {
   const [data, setData] = React.useState(null);
   const [f, setF] = React.useState({ actor: "", event: "", staffOnly: false });
+  const [page, setPage] = React.useState(1);
   const [err, setErr] = React.useState("");
   const roleChip = (role) => role === "super_admin" ? "chip-gold" : role === "admin" ? "chip-navy" : role === "editor" ? "chip-lime" : "";
-  const load = () => NGGApi.admin.audit({ limit: 500, actor: f.actor, event: f.event, staffOnly: f.staffOnly ? 1 : "" })
+  const load = (p = page) => NGGApi.admin.audit({ page: p, pageSize: 100, actor: f.actor, event: f.event, staffOnly: f.staffOnly ? 1 : "" })
     .then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [f.actor, f.event, f.staffOnly]);
+  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [f.actor, f.event, f.staffOnly]);
+  const goPage = (p) => { setPage(p); setData(null); load(p); };
   const rows = data ? data.audit : null;
   const actors = (data && data.actors) || [];
   const exportCsv = () => downloadCsv("audit-trail", (rows || []).map(r => ({ at: r.at, actor: r.actorName || r.actorId || "system", role: r.actorRole || "", event: r.event, subject: r.subject || "", ip: r.ip || "" })));
@@ -1696,7 +1722,7 @@ function AdminAudit() {
         <h2 className="admin-h2">Audit trail <span className="chip chip-gold" style={{ fontSize: 11, verticalAlign: "middle" }}>super admin</span></h2>
         <button className="btn btn-ghost btn-sm" disabled={!rows || !rows.length} onClick={exportCsv}>Export CSV</button>
       </div>
-      <p className="admin-hint">Every action taken by admins and managers, most recent first. This accountability record is visible to super admins only.{rows && rows.length >= 500 ? " Showing the 500 most recent — use the filters above to reach older entries." : ""}</p>
+      <p className="admin-hint">Every action taken by admins and managers, most recent first. This accountability record is visible to super admins only.{data && data.total ? " " + data.total.toLocaleString() + " entries." : ""}</p>
       <div className="admin-filters">
         <select className="admin-select" value={f.actor} onChange={e => setF(o => ({ ...o, actor: e.target.value }))}>
           <option value="">All actors</option>
@@ -1725,7 +1751,9 @@ function AdminAudit() {
               </tr>
             ))}
           </tbody>
-        </table></div>
+        </table>
+        <Pager page={data ? data.page : 1} pageSize={data ? data.pageSize : 100} total={data ? data.total : 0} onPage={goPage}/>
+        </div>
       }
     </div>
   );
