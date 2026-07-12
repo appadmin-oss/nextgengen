@@ -19,7 +19,7 @@
   font-size: 11px;
   letter-spacing: 0.26em;
   text-transform: uppercase;
-  color: var(--gold-500);
+  color: var(--eyebrow-fg, var(--gold-700));
   font-weight: 500;
 }
 

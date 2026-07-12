@@ -204,7 +204,7 @@ function SectionHead({ eyebrow, title, sub, align = "left" }) {
   const baseStyle = align === "center" ? { margin: "0 auto 48px", textAlign: "center", alignItems: "center" } : {};
   return (
     <div className="section-h reveal" data-reveal style={baseStyle}>
-      {eyebrow && <span className="eyebrow reveal" data-reveal style={{ color: "var(--gold-500)", "--reveal-delay": "0ms" }}>{eyebrow}</span>}
+      {eyebrow && <span className="eyebrow reveal" data-reveal style={{ color: "var(--eyebrow-fg, var(--gold-700))", "--reveal-delay": "0ms" }}>{eyebrow}</span>}
       <h2 className="reveal" data-reveal style={{ "--reveal-delay": "120ms" }}>{title}</h2>
       {sub && <p className="reveal" data-reveal style={{ fontSize: 17, color: "var(--ink-500)", margin: 0, lineHeight: 1.5, maxWidth: 640, "--reveal-delay": "240ms" }}>{sub}</p>}
     </div>
@@ -317,12 +317,13 @@ function TopNav({ page, setPage }) {
       { id: "club",    label: "NGGC",             desc: "Identity society",         icon: "◐" },
       { id: "book",    label: "The Anchor book", desc: "Field manual",              icon: "▢" },
     ]},
-    { id: "stay", kind: "mega", label: "The room", match: ["blog","media","volunteers","parents"], items: [
+    { id: "stay", kind: "mega", label: "The room", match: ["blog","media","volunteers","parents","contact"], items: [
       { id: "blog",       label: "The Journal",     desc: "Stories + essays",        icon: "✎" },
       { id: "media",      label: "Media room",      desc: "Films · podcast · reels", icon: "▶" },
       { id: "mentors",    label: "The mentors",     desc: "Meet the mentor circle",  icon: "◐" },
       { id: "volunteers", label: "Become a mentor", desc: "Volunteer with NGG",      icon: "✚" },
       { id: "parents",    label: "For parents",     desc: "Safeguarding · FAQ",      icon: "♡" },
+      { id: "contact",    label: "Contact",         desc: "Talk to a human",         icon: "✆" },
     ]},
   ];
 
@@ -330,7 +331,29 @@ function TopNav({ page, setPage }) {
   const [mega, setMega]       = React.useState(null);   // active mega panel id
   const [scrolled, setScroll] = React.useState(false);
   const navRef = React.useRef(null);
+  const drawerRef = React.useRef(null);
+  const burgerRef = React.useRef(null);
   const megaTimer = React.useRef(0);
+
+  // Mobile drawer focus management — trap Tab inside the open drawer and
+  // restore focus to the burger on close (parity with the other modals).
+  React.useEffect(() => {
+    if (!open) return;
+    const panel = drawerRef.current;
+    if (!panel) return;
+    const first = panel.querySelector('button,a[href],input,[tabindex]:not([tabindex="-1"])');
+    if (first) setTimeout(() => { try { first.focus(); } catch (_) {} }, 40);
+    const onKey = (e) => {
+      if (e.key !== "Tab") return;
+      const f = panel.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])');
+      if (!f.length) return;
+      const a = f[0], b = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); b.focus(); }
+      else if (!e.shiftKey && document.activeElement === b) { e.preventDefault(); a.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); if (burgerRef.current) { try { burgerRef.current.focus(); } catch (_) {} } };
+  }, [open]);
 
   // Scroll-state — apply solid background when not at top.
   React.useEffect(() => {
@@ -376,7 +399,7 @@ function TopNav({ page, setPage }) {
     <React.Fragment>
       <div ref={navRef} role="banner" className={"topnav" + (scrolled ? " is-scrolled" : "") + (mega ? " has-mega" : "")}>
         <div className="topnav-inner">
-          <a className="brand" onClick={() => go("home")} role="link" tabIndex={0} aria-label="Next Generation Genius — Home">
+          <a className="brand" href="/" onClick={(e) => { e.preventDefault(); go("home"); }} aria-label="Next Generation Genius — Home">
             <BrandLogo size={42}/>
             <div className="brand-word">
               <b>Next Generation Genius</b>
@@ -426,6 +449,7 @@ function TopNav({ page, setPage }) {
               <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("join")}>Apply →</button>
             </Magnetic>
             <button
+              ref={burgerRef}
               className={"nav-burger" + (open ? " is-open" : "")}
               onClick={() => setOpen(v => !v)}
               aria-label={open ? "Close menu" : "Open menu"}
@@ -483,7 +507,7 @@ function TopNav({ page, setPage }) {
       {/* Mobile drawer */}
       <div className={"mobile-drawer" + (open ? " is-open" : "")} role="dialog" aria-modal="true">
         <div className="mobile-drawer-scrim" onClick={() => setOpen(false)}/>
-        <div className="mobile-drawer-panel">
+        <div className="mobile-drawer-panel" ref={drawerRef}>
           <div className="mobile-drawer-head">
             <div style={{display:"flex", alignItems:"center", gap:10}}>
               <BrandLogo size={34}/>
