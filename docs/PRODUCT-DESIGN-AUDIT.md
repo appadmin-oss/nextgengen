@@ -777,17 +777,28 @@ counts. Changes are committed incrementally.
   "SOON" badge + honest label; command palette drops phantom chord hints; Audit
   trail states when it shows the 500 most-recent rows.
 
-### Deferred (need server work, or visual-regression QA that can't be done blind)
-- **C3/H5 — pagination, server-side sort, bulk actions:** require server cursor
-  support and a shared `<DataTable>`; error/empty states and the Audit truncation
-  notice were added as interim safety. This is the top remaining item.
-- **H6 (full CSS dedup) / H7 (inline-style-substring responsive rewrite):** need
-  visual-diff QA to merge the double-defined `.btn`/`.chip`/`.card` and replace
-  the substring media queries without regressions; the contrast/token subset was
+### Fixed (second pass)
+- **C3/H5 (pagination + bulk):** `admin_members_list` and `admin_audit_tail` are
+  now server-paged (COUNT-based `total` + LIMIT/OFFSET); a shared `<Pager>` drives
+  the Members and Audit tables, the Members header shows the total, and the Audit
+  trail no longer silently caps at 500. Applications gained multi-select +
+  confirmed bulk status changes. *(Server-side column sort is the remaining slice —
+  the grid + paging are in place to add it per-column.)*
+- **H4 (RBAC roster):** new super-admin-only **Access & roles** screen — every
+  staff account, its role, and effective capabilities, with guarded inline role
+  editing. Backed by a `staff` filter on the members list.
+
+### Deferred — genuinely need a product/design decision or visual-regression QA
+- **H6 (CSS component dedup) — needs a brand decision.** `.btn`/`.chip`/`.card`
+  are defined twice with *deliberately different* looks (marketing soft-shadow vs.
+  app hard-bevel). Merging means choosing one visual identity for the whole
+  product; that's a brand call, not a mechanical fix. The contrast/token subset was
   done safely.
-- **Full RBAC roster screen** and **optimistic-concurrency tokens:** guards +
-  confirmations landed; the dedicated screen and record-level concurrency are
-  larger, partly server-side, builds.
-- **Two-design-language bridge** and the **static demo `profile` route:** product/
-  design decisions (unify vs. bridge; make the profile live) rather than
-  mechanical fixes.
+- **H7 (inline-style-substring responsive rewrite):** a large mechanical refactor
+  of the entire responsive layer with real regression risk across breakpoints and
+  little user-visible upside; warrants a dedicated, visually-QA'd effort.
+- **Optimistic-concurrency tokens:** record-level "someone else changed this"
+  detection is a server-side build (versioned rows); UI guards/confirms landed.
+- **Two-design-language bridge** and the **static demo `profile` route:** product
+  decisions (unify vs. bridge the journal theme; make the profile a live per-member
+  page) rather than mechanical fixes.
