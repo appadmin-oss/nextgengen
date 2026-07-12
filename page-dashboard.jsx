@@ -733,7 +733,12 @@ function canonicalProgress(stats, momentum) {
   if (momentum && typeof momentum.level === "number") {
     const level = momentum.level;
     const xpInLevel = momentum.xp || 0;               // 0..250 within the level
-    const total = (level - 1) * DASH_XP_PER_LEVEL + xpInLevel;
+    // Prefer the true cumulative from reflection days (matches the journal's
+    // reflectionDays*60 exactly); the level-math reconstruction under-counts at
+    // the capped max level, where xpInLevel is pinned to 250.
+    const total = typeof momentum.totalReflections === "number"
+      ? momentum.totalReflections * 60
+      : (level - 1) * DASH_XP_PER_LEVEL + xpInLevel;
     const r = dashRank(total);
     return { total, level, rank: r.cur, next: r.next, pct: r.next ? r.pct : 100 };
   }
