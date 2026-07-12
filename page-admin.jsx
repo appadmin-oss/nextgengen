@@ -4,13 +4,70 @@
    Posts (blog/news/updates/promos), Audit log.
    ================================================================ */
 
-// Which capability each admin section needs (null = any staff).
-const SECTION_CAP = {
-  home: null, members: "people", applications: "people", mentors: "people", mentorship: "people",
-  sessions: "content", missions: "content", anchor: "content", assignments: "content",
-  events: "content", posts: "content", broadcast: "content", photos: "content",
-  newsletter: "inbox", messages: "inbox", audit: "rbac", settings: "settings",
-};
+// Shared drawer behaviour for every admin editor: an unsaved-changes guard
+// (confirms before an accidental scrim-click / Escape discards edits), a focus
+// trap, and focus restore on close — giving the admin-drawer modals the same
+// accessibility as the dialog/sign-in modals. Attach `panelRef`, `onMouseDown`
+// (scrim) and `onInput` to the scrim; wire `close` to the ✕ and Cancel buttons.
+function useAdminDrawer(onClose) {
+  const panelRef = React.useRef(null);
+  const touched = React.useRef(false);
+  const close = React.useCallback(() => {
+    if (touched.current && typeof dialog !== "undefined" && dialog.confirm) {
+      dialog.confirm({ title: "Discard changes?", body: "You have edits that haven't been saved yet.", cta: "Discard", cancel: "Keep editing", danger: true })
+        .then(ok => { if (ok) onClose(); });
+    } else { onClose(); }
+  }, [onClose]);
+  React.useEffect(() => {
+    const prev = document.activeElement;
+    const el = panelRef.current;
+    if (el) { const f = el.querySelector('input,select,textarea,button:not(.admin-drawer-close)'); if (f) setTimeout(() => { try { f.focus(); } catch (_) {} }, 40); }
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); close(); return; }
+      if (e.key === "Tab" && el) {
+        const f = el.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
+        if (!f.length) return;
+        const a = f[0], b = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === a) { e.preventDefault(); b.focus(); }
+        else if (!e.shiftKey && document.activeElement === b) { e.preventDefault(); a.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); if (prev && prev.focus) { try { prev.focus(); } catch (_) {} } };
+  }, [close]);
+  return { panelRef, close, onInput: () => { touched.current = true; } };
+}
+
+// ── Single source of truth for every Control Room section ──────────────────
+// Nav grouping, sidebar label, page title, icon and required capability all
+// live here so they can never drift apart again. `cap: null` = any staffer.
+// Add a new module by adding ONE row.
+const ADMIN_SECTIONS = [
+  { id: "home",        group: null,       label: "Overview",     title: "Overview",            icon: "◎", cap: null },
+  { id: "members",     group: "People",   label: "Members",      title: "Members",             icon: "◯", cap: "people" },
+  { id: "applications",group: "People",   label: "Applications", title: "Applications",        icon: "✉", cap: "people" },
+  { id: "volunteers",  group: "People",   label: "Volunteers",   title: "Volunteers",          icon: "◈", cap: "people" },
+  { id: "mentors",     group: "People",   label: "Mentors",      title: "Mentors",             icon: "☺", cap: "people" },
+  { id: "mentorship",  group: "People",   label: "Mentorship",   title: "Mentorship",          icon: "◐", cap: "people" },
+  { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
+  { id: "qr",          group: "People",   label: "QR codes",     title: "QR codes",            icon: "▦", cap: "summer" },
+  { id: "sessions",    group: "Content",  label: "Sessions",     title: "Sessions",            icon: "▢", cap: "content" },
+  { id: "missions",    group: "Content",  label: "Missions",     title: "Anchor missions",     icon: "✦", cap: "content" },
+  { id: "anchor",      group: "Content",  label: "Anchor app",   title: "Anchor Journal app",  icon: "⚓", cap: "content" },
+  { id: "assignments", group: "Content",  label: "Assignments",  title: "Assignments",         icon: "❏", cap: "content" },
+  { id: "events",      group: "Content",  label: "Events",       title: "Events",              icon: "▶", cap: "content" },
+  { id: "posts",       group: "Content",  label: "Posts",        title: "Posts",               icon: "✎", cap: "content" },
+  { id: "photos",      group: "Content",  label: "Photo review", title: "Photo review",        icon: "◲", cap: "content" },
+  { id: "broadcast",   group: "Content",  label: "Announce",     title: "Announcements",       icon: "📣", cap: "content" },
+  { id: "forms",       group: "Content",  label: "Forms",        title: "Forms",               icon: "▤", cap: "content" },
+  { id: "site",        group: "Content",  label: "Site content", title: "Site content",        icon: "◧", cap: "settings" },
+  { id: "newsletter",  group: "Inbox",    label: "Newsletter",   title: "Newsletter",          icon: "✧", cap: "inbox" },
+  { id: "messages",    group: "Inbox",    label: "Messages",     title: "Messages",            icon: "✆", cap: "inbox" },
+  { id: "audit",       group: "System",   label: "Audit trail",  title: "Audit log",           icon: "⌗", cap: "rbac" },
+  { id: "settings",    group: "System",   label: "Settings",     title: "Settings",            icon: "⚙", cap: "settings" },
+];
+// Which capability each admin section needs (null = any staff) — derived.
+const SECTION_CAP = ADMIN_SECTIONS.reduce((m, s) => { m[s.id] = s.cap; return m; }, {});
 
 function AdminPage({ setPage }) {
   const { member, isAdmin, adminOk, loading, openSignIn, setAdminOk, hasCap } = useAuth();
@@ -188,39 +245,12 @@ function AdminTopbar({ section, setSection, setPage, member }) {
   );
 }
 
+// Group order for the sidebar; `null` is the ungrouped top entry (Overview).
+const ADMIN_NAV_GROUPS = [null, "People", "Content", "Inbox", "System"];
+
 function AdminNav({ section, setSection, hasCap }) {
-  const groups = [
-    { h: null, items: [{ id: "home", label: "Overview", icon: "◎" }] },
-    { h: "People", items: [
-      { id: "members",   label: "Members",    icon: "◯", cap: "people" },
-      { id: "applications", label: "Applications", icon: "✉", cap: "people" },
-      { id: "volunteers", label: "Volunteers", icon: "◈", cap: "people" },
-      { id: "registration", label: "Registration", icon: "❑", cap: "summer" },
-      { id: "qr", label: "QR codes", icon: "▦", cap: "summer" },
-      { id: "mentorship", label: "Mentorship", icon: "◐", cap: "people" },
-    ]},
-    { h: "Content", items: [
-      { id: "sessions",  label: "Sessions",   icon: "▢", cap: "content" },
-      { id: "missions",  label: "Missions",   icon: "✦", cap: "content" },
-      { id: "anchor",    label: "Anchor app", icon: "⚓", cap: "content" },
-      { id: "assignments", label: "Assignments", icon: "❏", cap: "content" },
-      { id: "events",    label: "Events",     icon: "▶", cap: "content" },
-      { id: "posts",     label: "Posts",      icon: "✎", cap: "content" },
-      { id: "photos",    label: "Photo review", icon: "📷", cap: "content" },
-      { id: "broadcast", label: "Announce",   icon: "📣", cap: "content" },
-      { id: "forms",     label: "Forms",      icon: "❏", cap: "content" },
-      { id: "site",      label: "Site content", icon: "◧", cap: "settings" },
-    ]},
-    { h: "Inbox", items: [
-      { id: "newsletter",label: "Newsletter", icon: "✦", cap: "inbox" },
-      { id: "messages",  label: "Messages",   icon: "✉", cap: "inbox" },
-    ]},
-    { h: "System", items: [
-      { id: "audit",     label: "Audit trail", icon: "⌗", cap: "rbac" },
-      { id: "settings",  label: "Settings",   icon: "⚙", cap: "settings" },
-    ]},
-  ];
   const can = (it) => !it.cap || (hasCap ? hasCap(it.cap) : true);
+  const groups = ADMIN_NAV_GROUPS.map(h => ({ h, items: ADMIN_SECTIONS.filter(s => s.group === h) }));
   return (
     <aside className="admin-nav">
       {groups.map((grp, gi) => {
@@ -247,11 +277,8 @@ function AdminNav({ section, setSection, hasCap }) {
 }
 
 function titleFor(s) {
-  return {
-    home: "Overview", members: "Members", mentors: "Mentors", mentorship: "Mentorship", sessions: "Sessions",
-    missions: "Anchor missions", anchor: "Anchor Journal app", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
-    applications: "Applications", volunteers: "Volunteers", registration: "Registration", qr: "QR codes", newsletter: "Newsletter", messages: "Messages", settings: "Settings", forms: "Forms", site: "Site content", summer: "Summer School",
-  }[s] || "";
+  const sec = ADMIN_SECTIONS.find(x => x.id === s);
+  return sec ? sec.title : (s === "summer" ? "Summer School" : "");
 }
 
 // ============================================================================
@@ -365,12 +392,15 @@ function AdminTile({ n, l, onClick, loading }) {
 
 function AdminMembers() {
   const [list, setList] = React.useState(null);
+  const [err, setErr] = React.useState("");
   const [filters, setFilters] = React.useState({ q: "", centre: "", status: "", type: "" });
   const [editing, setEditing] = React.useState(null);
   const [viewing, setViewing] = React.useState(null);
 
   const exportCsv = () => downloadCsv("members", (list || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, track: m.track || "" })));
-  const load = () => NGGApi.admin.members.list(filters).then(r => setList(r.members || []));
+  // A failed fetch must surface an error + retry, never leave the spinner
+  // hanging forever (previously there was no .catch here).
+  const load = () => { setErr(""); return NGGApi.admin.members.list(filters).then(r => setList(r.members || [])).catch(e => setErr(e.code || e.message || "load_failed")); };
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type]);
   React.useEffect(() => {
     const t = setTimeout(load, 250);
@@ -404,7 +434,7 @@ function AdminMembers() {
           <option value="inactive">Inactive</option>
         </select>
       </div>
-      {list === null ? <div className="dash-spinner"/> :
+      {list === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead><tr>
@@ -419,7 +449,7 @@ function AdminMembers() {
                   </td>
                   <td>{m.type}</td>
                   <td>{m.centre}</td>
-                  <td><span className={"chip status-" + m.status}>{m.status}</span></td>
+                  <td><span className={"chip status-" + m.status}>{memberStatusLabel(m.status)}</span></td>
                   <td>{m.track || "—"}</td>
                   <td onClick={(e) => e.stopPropagation()}><button className="btn btn-ghost btn-sm" onClick={() => setEditing(m)}>Edit</button></td>
                 </tr>
@@ -435,11 +465,47 @@ function AdminMembers() {
   );
 }
 
+// Human labels for machine enums shown in staff selects/chips.
+const MEMBER_STATUS_OPTS = [
+  { value: "active", label: "Active" },
+  { value: "graduated-ngg", label: "Graduated · NGG" },
+  { value: "graduated-vanguard", label: "Graduated · Vanguard" },
+  { value: "suspended", label: "Suspended" },
+  { value: "inactive", label: "Inactive" },
+];
+const ROLE_OPTS = [
+  { value: "member", label: "Member (no staff access)" },
+  { value: "editor", label: "Editor · content" },
+  { value: "summer_admin", label: "Summer coordinator" },
+  { value: "club_admin", label: "Club coordinator" },
+  { value: "admin", label: "Admin" },
+  { value: "super_admin", label: "Super admin (full access)" },
+];
+const ELEVATED_ROLES = ["admin", "super_admin"];
+function memberStatusLabel(v) { const o = MEMBER_STATUS_OPTS.find(x => x.value === v); return o ? o.label : (v || "—"); }
+
 function AdminMemberEditor({ data, onClose, onSaved }) {
-  const { hasCap } = useAuth();
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { hasCap, member: me } = useAuth();
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
+  // Role changes are the highest-consequence edit here. Confirm before granting
+  // elevated access, and warn a staffer editing THEIR OWN record before they
+  // drop their own access (a lock-out risk the server also guards).
+  const isSelf = me && d.memberId && d.memberId === me.memberId;
+  const setRole = async (v) => {
+    const from = d.role || "member";
+    if (v === from) return;
+    if (isSelf && ELEVATED_ROLES.indexOf(from) !== -1 && ELEVATED_ROLES.indexOf(v) === -1) {
+      const ok = await dialog.confirm({ title: "Change your own access?", body: "You're lowering your OWN staff level. You may immediately lose access to parts of the Control Room. The last active super admin cannot be demoted.", cta: "Change my access", cancel: "Keep as is", danger: true });
+      if (!ok) return;
+    } else if (ELEVATED_ROLES.indexOf(v) !== -1) {
+      const ok = await dialog.confirm({ title: "Grant " + (v === "super_admin" ? "super admin" : "admin") + " access?", body: (d.fullName || "This member") + " will be able to " + (v === "super_admin" ? "manage everything, including roles and the audit trail." : "manage members, content and the inbox."), cta: "Grant access", cancel: "Cancel", danger: v === "super_admin" });
+      if (!ok) return;
+    }
+    set("role", v);
+  };
   const save = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -450,11 +516,11 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.memberId ? "Edit member" : "New member"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <Field label="Full name" value={d.fullName||""} onChange={v => set("fullName", v)} required/>
@@ -465,19 +531,20 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
             <FieldSelect label="Centre" value={d.centre||"Egbeda"} onChange={v => set("centre", v)} options={["Egbeda","Ayobo"]}/>
           </div>
           <div className="admin-fields-row">
-            <FieldSelect label="Status" value={d.status||"active"} onChange={v => set("status", v)} options={["active","graduated-ngg","graduated-vanguard","suspended","inactive"]}/>
+            <FieldSelect label="Status" value={d.status||"active"} onChange={v => set("status", v)} options={MEMBER_STATUS_OPTS}/>
             <Field label="Track" value={d.track||""} onChange={v => set("track", v)}/>
           </div>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
           <Field label="Parent email" value={d.parentEmail||""} onChange={v => set("parentEmail", v)} type="email"/>
           <Field label="School" value={d.school||""} onChange={v => set("school", v)}/>
-          {/* Staff level — only super_admins (the 'rbac' capability) may assign roles. */}
+          {/* Staff level — only super_admins (the 'rbac' capability) may assign roles.
+              setRole confirms elevation and warns on self-demotion. */}
           {hasCap && hasCap("rbac") && (
-            <FieldSelect label="Staff level (access)" value={d.role||"member"} onChange={v => set("role", v)} options={["member","editor","summer_admin","club_admin","admin","super_admin"]}/>
+            <FieldSelect label="Staff level (access)" value={d.role||"member"} onChange={setRole} options={ROLE_OPTS}/>
           )}
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : (d.memberId ? "Save changes" : "Create member")}</button>
         </div>
       </form>
@@ -491,8 +558,9 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
 
 function AdminMentors() {
   const [list, setList] = React.useState(null);
+  const [err, setErr] = React.useState("");
   const [editing, setEditing] = React.useState(null);
-  const load = () => NGGApi.admin.mentors.list().then(r => setList(r.mentors || []));
+  const load = () => { setErr(""); return NGGApi.admin.mentors.list().then(r => setList(r.mentors || [])).catch(e => setErr(e.code || e.message || "load_failed")); };
   React.useEffect(() => { load(); }, []);
   return (
     <div className="admin-section">
@@ -500,7 +568,7 @@ function AdminMentors() {
         <h2 className="admin-h2">Mentors</h2>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New mentor</button>
       </div>
-      {list === null ? <div className="dash-spinner"/> :
+      {list === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
         <div className="admin-grid-cards">
           {list.map(m => (
             <button key={m.mentorId} className="admin-card" onClick={() => setEditing(m)}>
@@ -520,6 +588,7 @@ function AdminMentors() {
 }
 
 function AdminMentorEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({}, data, { tracks: Array.isArray(data.tracks) ? data.tracks.join(", ") : (data.tracks || "") }));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -530,11 +599,11 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.mentorId ? "Edit mentor" : "New mentor"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <Field label="Full name" value={d.fullName||""} onChange={v => set("fullName", v)} required/>
@@ -557,7 +626,7 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
           </div>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : (d.mentorId ? "Save changes" : "Create mentor")}</button>
         </div>
       </form>
@@ -1255,6 +1324,7 @@ function AdminSessions() {
 }
 
 function AdminSessionEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -1265,11 +1335,11 @@ function AdminSessionEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.sessionId} · {d.year}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <Field label="Display name" value={d.name||""} onChange={v => set("name", v)}/>
@@ -1280,7 +1350,7 @@ function AdminSessionEditor({ data, onClose, onSaved }) {
           <FieldTextarea label="Internal notes" value={d.notes||""} onChange={v => set("notes", v)}/>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </form>
@@ -1336,6 +1406,7 @@ function AdminMissions() {
 }
 
 function AdminMissionEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -1346,11 +1417,11 @@ function AdminMissionEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.missionId ? "Edit mission" : "New mission"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <div className="admin-fields-row">
@@ -1372,7 +1443,7 @@ function AdminMissionEditor({ data, onClose, onSaved }) {
           <FieldCheckbox label="Active — assignable to members now" value={d.missionId ? (d.isActive !== false) : (d.isActive === undefined ? true : d.isActive)} onChange={v => set("isActive", v)}/>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </form>
@@ -1420,6 +1491,7 @@ function AdminEvents() {
 }
 
 function AdminEventEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ status:"draft", kind:"session", centre:"Egbeda", isPublic: false }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -1430,11 +1502,11 @@ function AdminEventEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.eventId ? "Edit event" : "New event"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <Field label="Title" value={d.title||""} onChange={v => set("title", v)} required/>
@@ -1456,7 +1528,7 @@ function AdminEventEditor({ data, onClose, onSaved }) {
           </div>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </form>
@@ -1508,6 +1580,7 @@ function AdminPosts() {
 }
 
 function AdminPostEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ kind:"blog", status:"draft" }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -1518,11 +1591,11 @@ function AdminPostEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.postId ? "Edit post" : "New post"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <div className="admin-fields-row">
@@ -1549,7 +1622,7 @@ function AdminPostEditor({ data, onClose, onSaved }) {
           <Field label="Publish at (leave blank for now)" value={d.publishAt||""} onChange={v => set("publishAt", v)} type="datetime-local"/>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </form>
@@ -1977,6 +2050,7 @@ function AdminAssignments() {
 }
 
 function AdminAssignmentEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ status:"draft", proof:"text", points:10, centre:"", track:"" }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -1987,11 +2061,11 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.assignmentId ? "Edit assignment" : "New assignment"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <Field label="Title" value={d.title||""} onChange={v => set("title", v)} required/>
@@ -2013,7 +2087,7 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
           </div>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy || !d.title}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </form>
@@ -2022,16 +2096,17 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
 }
 
 function AdminSubmissions({ assignment, onClose }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [data, setData] = React.useState(null);
   const load = () => NGGApi.admin.assignments.submissions(assignment.assignmentId)
     .then(setData).catch(e => toast.error(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
           <h3>Submissions · {assignment.title}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         {!data ? <div className="dash-spinner"/> :
           data.submissions.length === 0 ? <div className="admin-empty">No submissions yet.</div> :
@@ -2090,21 +2165,31 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
 // ============================================================================
 
 function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(null);
   const [mentors, setMentors] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   const load = () => NGGApi.admin.memberDetail(memberId).then(r => setD(r.detail)).catch(e => toast.error(e.code || e.message));
   React.useEffect(() => { load(); NGGApi.admin.mentors.list().then(r => setMentors(r.mentors || [])).catch(() => {}); /* eslint-disable-next-line */ }, [memberId]);
-  const setStatus = async (status) => { setBusy(true); try { await NGGApi.admin.members.upsert({ memberId, status }); toast.success("Status → " + status); await load(); onChanged && onChanged(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
+  const STATUS_LABEL = { active: "Activate", suspended: "Suspend", "graduated-ngg": "Graduate from NGG", "graduated-vanguard": "Graduate as Vanguard", inactive: "Deactivate" };
+  const setStatus = async (status) => {
+    // Suspend / graduate change a real member's standing and are hard to
+    // reverse — confirm first (consistent with the rest of the console).
+    if (status !== "active") {
+      const ok = await dialog.confirm({ title: (STATUS_LABEL[status] || "Change status") + "?", body: "This changes " + ((m && m.fullName) || "this member") + "'s standing" + (status === "suspended" ? " and revokes their access" : "") + ". You can change it again later.", cta: STATUS_LABEL[status] || "Change", cancel: "Cancel", danger: status === "suspended" });
+      if (!ok) return;
+    }
+    setBusy(true); try { await NGGApi.admin.members.upsert({ memberId, status }); toast.success("Status → " + status); await load(); onChanged && onChanged(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
   const assign = async (mentorId) => { setBusy(true); try { await NGGApi.admin.assignMentor({ memberId, mentorId }); toast.success(mentorId ? "Mentor assigned" : "Mentor cleared"); await load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
 
   const m = d && d.member;
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
           <h3>{m ? m.fullName : "Member"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         {!d ? <div className="dash-spinner"/> : (
           <div className="admin-detail">
@@ -2833,11 +2918,17 @@ function FieldTextarea({ label, value, onChange, rows }) {
   );
 }
 function FieldSelect({ label, value, onChange, options }) {
+  // options may be plain strings OR { value, label } objects so machine enums
+  // (e.g. "graduated-vanguard") can render as human labels ("Graduated · Vanguard").
   return (
     <label className="admin-field">
       <span>{label}</span>
       <select className="admin-select" value={value} onChange={(e) => onChange(e.target.value)}>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        {options.map(o => {
+          const val = (o && typeof o === "object") ? o.value : o;
+          const lab = (o && typeof o === "object") ? o.label : o;
+          return <option key={val} value={val}>{lab}</option>;
+        })}
       </select>
     </label>
   );
