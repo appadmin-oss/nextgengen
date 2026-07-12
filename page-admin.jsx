@@ -63,6 +63,7 @@ const ADMIN_SECTIONS = [
   { id: "site",        group: "Content",  label: "Site content", title: "Site content",        icon: "◧", cap: "settings" },
   { id: "newsletter",  group: "Inbox",    label: "Newsletter",   title: "Newsletter",          icon: "✧", cap: "inbox" },
   { id: "messages",    group: "Inbox",    label: "Messages",     title: "Messages",            icon: "✆", cap: "inbox" },
+  { id: "access",      group: "System",   label: "Access & roles", title: "Access & roles",    icon: "⚿", cap: "rbac" },
   { id: "audit",       group: "System",   label: "Audit trail",  title: "Audit log",           icon: "⌗", cap: "rbac" },
   { id: "settings",    group: "System",   label: "Settings",     title: "Settings",            icon: "⚙", cap: "settings" },
 ];
@@ -139,6 +140,7 @@ function AdminPage({ setPage }) {
           {view === "posts" && <AdminPosts/>}
           {view === "photos" && <AdminPhotos/>}
           {view === "broadcast" && <AdminBroadcast/>}
+          {view === "access" && <AdminAccess/>}
           {view === "audit" && <AdminAudit/>}
         </main>
       </div>
@@ -1698,6 +1700,87 @@ function AdminBroadcast() {
           <button className="btn btn-primary" disabled={busy || !d.title}>Send to {audienceLabel}</button>
         </div>
       </form>
+    </div>
+  );
+}
+
+// Effective capabilities per role — mirrors util.php admin_role_caps() so the
+// roster can show what each staffer can actually do (read-only display).
+const ROLE_CAPS = {
+  super_admin: ["content", "people", "inbox", "settings", "rbac", "summer", "club"],
+  admin: ["content", "people", "inbox"],
+  editor: ["content"],
+  summer_admin: ["summer"],
+  club_admin: ["club"],
+  audit: ["audit"],
+  member: [],
+};
+
+// Access & roles — the RBAC roster the audit called for: every staff account,
+// its role and effective capabilities, with inline role editing (super_admin
+// only). Server enforces last-super-admin / self-demotion; we surface those.
+function AdminAccess() {
+  const { member: me } = useAuth();
+  const [list, setList] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const load = () => { setErr(""); return NGGApi.admin.members.list({ staff: 1, pageSize: 200 }).then(r => setList(r.members || [])).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  const roleLabel = (r) => (ROLE_OPTS.find(o => o.value === r) || {}).label || r;
+  const changeRole = async (m, v) => {
+    if (v === m.role) return;
+    const isSelf = me && m.memberId === me.memberId;
+    if (isSelf && ELEVATED_ROLES.indexOf(m.role) !== -1 && ELEVATED_ROLES.indexOf(v) === -1) {
+      const ok = await dialog.confirm({ title: "Change your own access?", body: "You're lowering your OWN staff level and may lose access. The last active super admin cannot be demoted.", cta: "Change my access", cancel: "Keep as is", danger: true });
+      if (!ok) return;
+    } else if (ELEVATED_ROLES.indexOf(v) !== -1) {
+      const ok = await dialog.confirm({ title: "Grant " + roleLabel(v) + "?", body: m.fullName + " will gain elevated access.", cta: "Grant access", cancel: "Cancel", danger: v === "super_admin" });
+      if (!ok) return;
+    }
+    setBusy(m.memberId);
+    try { await NGGApi.admin.members.upsert({ memberId: m.memberId, role: v }); toast.success("Role updated"); await load(); }
+    catch (e) {
+      const map = { last_super_admin: "That's the last active super admin — promote another first.", cannot_demote_self: "Ask another super admin to change your role.", cannot_suspend_self: "You can't suspend yourself." };
+      toast.error(map[e.code || e.message] || (e.code || e.message));
+    } finally { setBusy(""); }
+  };
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Access &amp; roles <span className="chip chip-gold" style={{ fontSize: 11, verticalAlign: "middle" }}>super admin</span>{list ? <span className="admin-count mono">{list.length}</span> : null}</h2>
+      </div>
+      <p className="admin-hint">Everyone with staff access and what they can do. Roles map to fixed capability sets; the last active super admin can't be demoted, and you can't demote yourself.</p>
+      {err ? <ErrorState code={err} onRetry={load}/> :
+        list === null ? <div className="dash-spinner"/> :
+        list.length === 0 ? <EmptyState title="No staff yet" message="Grant a member a staff role from the Members editor."/> :
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Person</th><th>Role</th><th>Can access</th></tr></thead>
+            <tbody>
+              {list.map(m => (
+                <tr key={m.memberId}>
+                  <td>
+                    <div className="admin-cell-name">{m.fullName}{me && m.memberId === me.memberId ? <span className="chip" style={{ marginLeft: 8, fontSize: 10 }}>you</span> : null}</div>
+                    <div className="mono admin-cell-sub">{m.memberId} · {m.email}</div>
+                  </td>
+                  <td style={{ minWidth: 190 }}>
+                    <select className="admin-select" value={m.role} disabled={busy === m.memberId} onChange={(e) => changeRole(m, e.target.value)} aria-label={"Role for " + m.fullName}>
+                      {ROLE_OPTS.filter(o => o.value !== "member").map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {(ROLE_CAPS[m.role] || []).length
+                        ? (ROLE_CAPS[m.role] || []).map(c => <span key={c} className="chip" style={{ fontSize: 10 }}>{c}</span>)
+                        : <span className="mono" style={{ color: "var(--ink-400)", fontSize: 12 }}>—</span>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      }
     </div>
   );
 }

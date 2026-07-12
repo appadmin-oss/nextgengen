@@ -56,6 +56,8 @@ function admin_members_list(array $p): array {
     foreach (['centre', 'status', 'type'] as $f) {
         if (!empty($p[$f])) { $where[] = "$f = ?"; $params[] = $p[$f]; }
     }
+    // Staff-only view powers the Access & roles roster.
+    if (!empty($p['staff'])) { $where[] = "role IN ('editor','summer_admin','club_admin','audit','admin','super_admin')"; }
     $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
     // Accurate total for the filtered set, computed before paging so the client
     // can render "N–M of T" and page controls without loading every row.
