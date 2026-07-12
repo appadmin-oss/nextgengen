@@ -208,6 +208,16 @@ function intake_acknowledge(string $to, string $subject, array $opts): void {
     if ($to !== '') @send_mail($to, $subject, email_template($opts));
 }
 
+/** Absolute URL to the volunteer Operations Manual (LCASP handbook). Admins can
+ *  override the path via the `volunteer_handbook_url` setting; otherwise it
+ *  resolves against app_origin to the copy bundled in /assets/docs. */
+function volunteer_handbook_url(): string {
+    $override = trim((string)(function_exists('setting_raw') ? (setting_raw('volunteer_handbook_url') ?: '') : ''));
+    if ($override !== '') return $override;
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    return $origin . '/assets/docs/lcasp-operations-manual-2026.pdf';
+}
+
 function public_apply(array $p): array {
     $kind = (string)($p['kind'] ?? 'teen');
     if (!in_array($kind, ['teen', 'mentor', 'volunteer'], true)) return ['ok' => false, 'error' => 'bad_kind'];
@@ -299,16 +309,20 @@ function public_apply(array $p): array {
     $first = explode(' ', $name)[0] ?: 'there';
     if ($kind === 'volunteer') {
         $roleLabel = ['admin' => 'Admin / Ops', 'mentor' => 'Mentor', 'instructor' => 'Instructor'][$role] ?? ucfirst($role);
+        $handbook = volunteer_handbook_url();
         $body = '<p style="margin:0 0 12px">We review every application by hand and write back within a week.</p>'
             . '<p style="margin:0 0 12px"><b>Role:</b> ' . esc_html($roleLabel)
             . ($courses ? '<br><b>Courses:</b> ' . esc_html(implode(', ', $courses)) : '')
             . '<br><b>Reference:</b> ' . esc_html($ref) . '</p>'
+            . '<p style="margin:0 0 12px">Please read the <b>LCASP Summer Impact School 2026 Operations Manual</b> before your first deployment — it covers the five core pillars, the daily rhythm, and the Volunteer Vanguard Code (conduct, punctuality and safeguarding). One movement, one standard.</p>'
             . '<p style="margin:0">Volunteers working directly with young people complete safeguarding screening before their first session.</p>';
         intake_acknowledge($email, 'We received your volunteer application — Next Generation Genius', [
             'title' => 'Application received',
             'intro' => 'Thank you for offering your time, ' . $first . '.',
             'bodyHtml' => $body,
-            'footNote' => 'Reference ' . $ref . ' — you applied to volunteer with Next Generation Genius.',
+            'ctaLabel' => 'Read the Operations Manual (PDF)',
+            'ctaUrl' => $handbook,
+            'footNote' => 'Reference ' . $ref . ' — you applied to volunteer with Next Generation Genius. Keep the handbook to hand throughout the programme.',
         ]);
     } else {
         $what = $kind === 'mentor' ? 'mentor application' : 'application';

@@ -1184,6 +1184,83 @@ const VOL_LANES = [
   { key: "instructor", icon: "🎓", name: "Instructor",  line: "Teach one of the season's courses, from first class to showcase." },
 ];
 
+// The volunteer Operations Manual (LCASP Summer Impact School 2026) — bundled in
+// /assets/docs and emailed to every volunteer on registration. Keep this path in
+// sync with volunteer_handbook_url() in api/_lib/domain/events.php.
+const NGG_HANDBOOK_URL = "/assets/docs/lcasp-operations-manual-2026.pdf";
+
+// A faithful, scannable summary of the manual shown on /volunteer so people know
+// the standard they're signing up to before they register. Source: LCASP Summer
+// Impact School 2026 Integrated Operations Manual & KPI Framework.
+function HandbookSummary() {
+  const [open, setOpen] = React.useState(false);
+  const pillars = [
+    ["Character", "Values, mentorship and foundational ethics."],
+    ["Leadership", "Institutional capacity and anti-corruption habits."],
+    ["Skill Acquisition", "Hands-on, project-based technical & creative learning."],
+    ["Community Impact", "Civic responsibility and local service."],
+    ["Purpose Development", "Life vision aligned with Afrocentric impact."],
+  ];
+  return (
+    <div className="card handbook-summary" style={{ padding: "28px 30px", marginTop: 36, background: "var(--navy-900)", color: "#fff", border: "none" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span className="eyebrow" style={{ color: "var(--gold-400)" }}>BEFORE YOU REGISTER · THE OPERATIONS MANUAL</span>
+      </div>
+      <h2 style={{ fontFamily: "var(--font-display)", fontSize: 26, margin: "10px 0 6px", letterSpacing: "-0.02em" }}>
+        One movement, one standard.
+      </h2>
+      <p style={{ color: "rgba(255,255,255,0.78)", lineHeight: 1.6, margin: "0 0 18px", maxWidth: 620 }}>
+        The <b>LCASP Summer Impact School 2026</b> — a Street&nbsp;to&nbsp;Stardom initiative under the
+        Afrovanguard Governing Council — runs <b>900 learners across 6 Lagos centres</b> under the theme
+        <b> “Ìlú Èkó · Empowered 360°.”</b> Volunteers don't follow the schedule of the public; they set
+        the standard. Here's what you're signing up to.
+      </p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 18 }}>
+        {pillars.map(([t, d], i) => (
+          <div key={t} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "12px 14px" }}>
+            <div className="mono" style={{ fontSize: 10, color: "var(--gold-400)", letterSpacing: "0.12em" }}>PILLAR {i + 1}</div>
+            <div style={{ fontWeight: 700, fontSize: 14, margin: "4px 0 3px" }}>{t}</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.45 }}>{d}</div>
+          </div>
+        ))}
+      </div>
+
+      {open && (
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.14)", paddingTop: 16, marginBottom: 6, display: "grid", gap: 16 }}>
+          <div>
+            <div className="mono" style={{ fontSize: 11, color: "var(--gold-400)", letterSpacing: "0.12em", marginBottom: 6 }}>THE DAILY RHYTHM</div>
+            <p style={{ color: "rgba(255,255,255,0.78)", lineHeight: 1.6, margin: 0, fontSize: 14 }}>
+              Every centre runs one fixed frame: arrival &amp; environmental sanitation → morning energizer
+              &amp; musing → <b>Anchor Journal</b> (Values·Vision·Virtues) → leadership masterclass → the main
+              project-based skill class → chess &amp; strategic thinking → reflection, appraisal &amp; clean-up.
+              Nine programs run inside it, from AI &amp; Tech to Music, Media, Creative Arts and the Authors Program.
+            </p>
+          </div>
+          <div>
+            <div className="mono" style={{ fontSize: 11, color: "var(--gold-400)", letterSpacing: "0.12em", marginBottom: 6 }}>THE VOLUNTEER VANGUARD CODE</div>
+            <ul style={{ color: "rgba(255,255,255,0.78)", lineHeight: 1.6, margin: 0, paddingLeft: 18, fontSize: 14 }}>
+              <li><b>Turn up early.</b> The check-in window closes a clear hour before briefings begin.</li>
+              <li><b>Punctuality is enforced.</b> Repeated lateness leads to review, suspension, then eviction.</li>
+              <li><b>Review Times are compulsory.</b> The daily/weekly post-programme review isn't optional.</li>
+              <li><b>Carry your ID.</b> Your digital volunteer credential is checked at the gate.</li>
+              <li><b>Safeguarding first.</b> Anyone working with young people is screened before their first session.</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+        <a className="btn btn-gold btn-sm" href={NGG_HANDBOOK_URL} target="_blank" rel="noopener noreferrer">Read the full manual (PDF) ↗</a>
+        <button type="button" className="btn btn-on-dark-ghost btn-sm" onClick={() => setOpen(v => !v)} aria-expanded={open}>
+          {open ? "Show less" : "The daily rhythm & volunteer code"}
+        </button>
+        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>We'll email you this handbook when you register.</span>
+      </div>
+    </div>
+  );
+}
+
 function VolunteerRegisterPage({ setPage }) {
   const [ctx, setCtx] = React.useState(null);
   const [role, setRole] = React.useState(() => {
@@ -1267,9 +1344,12 @@ function VolunteerRegisterPage({ setPage }) {
             </div>
           )}
           <p style={{ color: "var(--ink-500)", fontSize: 13, lineHeight: 1.6, margin: "14px 0 0" }}>
-            We've emailed a copy to <b>{d.email.trim()}</b>. Keep your reference for any follow-up.
+            We've emailed a copy to <b>{d.email.trim()}</b>, along with the Operations Manual. Keep your reference for any follow-up.
           </p>
-          <button className="btn btn-primary btn-lg mt-32" onClick={() => setPage("home")}>Back to home →</button>
+          <div style={{ marginTop: 26, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <a className="btn btn-gold btn-lg" href={NGG_HANDBOOK_URL} target="_blank" rel="noopener noreferrer">Read the Operations Manual (PDF) ↗</a>
+            <button className="btn btn-ghost btn-lg" onClick={() => setPage("home")}>Back to home →</button>
+          </div>
         </div>
       </div></section>
     </div>
@@ -1286,6 +1366,8 @@ function VolunteerRegisterPage({ setPage }) {
           <p style={{ fontSize: 17, color: "var(--ink-500)", lineHeight: 1.6, maxWidth: 560, margin: 0 }}>
             One form, three ways in. Tell us the shape of your time and we'll take it from there.
           </p>
+
+          <HandbookSummary/>
 
           {ctx && ctx.open === false ? (
             <div className="card mt-40" style={{ padding: 32 }}>
