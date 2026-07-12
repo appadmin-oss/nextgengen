@@ -2306,9 +2306,28 @@ function AdminApplications() {
   const [list, setList] = React.useState(null);
   const [filter, setFilter] = React.useState({ kind: "", status: "" });
   const [err, setErr] = React.useState("");
-  const load = () => NGGApi.admin.applications.list(filter).then(r => { setList(r.applications || []); setErr(""); }).catch(e => setErr(e.code || e.message));
+  const [sel, setSel] = React.useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = React.useState(false);
+  const load = () => NGGApi.admin.applications.list(filter).then(r => { setList(r.applications || []); setErr(""); setSel(new Set()); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter.kind, filter.status]);
   const setStatus = async (id, status) => { try { await NGGApi.admin.applications.status(id, status); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const toggle = (id) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allSelected = list && list.length > 0 && sel.size === list.length;
+  const toggleAll = () => setSel(allSelected ? new Set() : new Set((list || []).map(a => a.id)));
+  // Bulk status change — one confirm, then apply to every selected row and
+  // report how many succeeded. Beats changing dozens of rows one at a time.
+  const bulkStatus = async (status) => {
+    if (!sel.size || bulkBusy) return;
+    const ids = Array.from(sel);
+    const ok = await dialog.confirm({ title: "Set " + ids.length + " to " + status + "?", body: "Applies the “" + status + "” status to every selected application.", cta: "Apply to " + ids.length, danger: status === "rejected" });
+    if (!ok) return;
+    setBulkBusy(true);
+    const results = await Promise.allSettled(ids.map(id => NGGApi.admin.applications.status(id, status)));
+    const failed = results.filter(r => r.status === "rejected").length;
+    setBulkBusy(false);
+    if (failed) toast.error(failed + " of " + ids.length + " couldn't be updated."); else toast.success(ids.length + " applications updated.");
+    load();
+  };
   const convert = async (id) => {
     const ok = await dialog.confirm({ title: "Convert to member?", body: "This creates an active member account from this application.", cta: "Create member" });
     if (!ok) return;
@@ -2329,11 +2348,25 @@ function AdminApplications() {
       {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         list === null ? <div className="dash-spinner"/> :
         list.length === 0 ? <div className="admin-empty">No applications.</div> :
+        <React.Fragment>
+        <div className="admin-bulkbar">
+          <label className="admin-bulk-all"><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all applications"/> <span>{sel.size ? sel.size + " selected" : "Select all"}</span></label>
+          {sel.size > 0 && (
+            <div className="admin-bulk-actions">
+              <span className="mono admin-bulk-label">Set status:</span>
+              {["reviewing", "accepted", "waitlist", "rejected"].map(s => (
+                <button key={s} className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => bulkStatus(s)}>{s}</button>
+              ))}
+              <button className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => setSel(new Set())}>Clear</button>
+            </div>
+          )}
+        </div>
         <div className="admin-app-list">
           {list.map(a => (
-            <div className="admin-app" key={a.id}>
+            <div className={"admin-app" + (sel.has(a.id) ? " is-selected" : "")} key={a.id}>
               <div className="admin-app-top">
                 <div style={{display:"flex", gap:12, alignItems:"center"}}>
+                  <input type="checkbox" checked={sel.has(a.id)} onChange={() => toggle(a.id)} aria-label={"Select " + a.name} style={{flex:"0 0 auto", width:18, height:18}}/>
                   {a.photoUrl && <img src={a.photoUrl} alt="" style={{width:40, height:40, borderRadius:"50%", objectFit:"cover", flex:"0 0 auto"}} onError={e => { e.target.style.display = "none"; }}/>}
                   <div>
                     <div className="admin-cell-name">{a.name} <span className="chip">{a.kind}</span>{a.program ? <span className={"chip " + (a.program === "summer" ? "chip-gold" : "chip-navy")}>{a.program}</span> : null}</div>
@@ -2352,6 +2385,7 @@ function AdminApplications() {
             </div>
           ))}
         </div>
+        </React.Fragment>
       }
     </div>
   );

@@ -1535,6 +1535,12 @@ html { scroll-behavior: smooth; }
 .admin-pager-btns { display: flex; align-items: center; gap: 10px; }
 .admin-pager-page { font-size: 12px; color: var(--ink-500); }
 .admin-count { display: inline-block; margin-left: 10px; padding: 2px 9px; border-radius: 999px; background: rgba(12,20,50,0.06); color: var(--ink-500); font-size: 12px; vertical-align: middle; }
+/* Bulk-select bar for review queues. */
+.admin-bulkbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 12px; border-radius: 12px; background: rgba(12,20,50,0.04); border: 1px solid rgba(12,20,50,0.06); }
+.admin-bulk-all { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-700); cursor: pointer; }
+.admin-bulk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.admin-bulk-label { font-size: 11px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.1em; }
+.admin-app.is-selected { outline: 2px solid var(--gold-500); outline-offset: 1px; }
 .admin-table { width: 100%; border-collapse: collapse; }
 .admin-table th, .admin-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(12,20,50,0.06); font-size: 14px; }
 .admin-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; color: var(--ink-500); text-transform: uppercase; }
