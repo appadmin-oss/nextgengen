@@ -727,3 +727,67 @@ growth cheaper, safer, and more consistent by construction.
 - **What I explicitly did not flag:** cosmetic-only preferences. Per the brief, every
   finding above is tied to usability, trust, accessibility, or maintainability — not
   taste.
+
+---
+
+## 20. Implementation Status (this pass)
+
+The audit above was followed by an implementation pass. Every change below was
+verified with `node build.js` (full JSX transpile of the SPA + journal PWA), a
+DOM smoke test that loads the real in-browser-Babel app and asserts **zero
+uncaught errors** across home, apply, dashboard, admin, contact, anchor, legal,
+volunteer and the journal PWA, and — for the progression model — a standalone
+unit check proving rank **and** XP total now agree across all reflection-day
+counts. Changes are committed incrementally.
+
+### Fixed
+- **C1/C2 (progression):** one canonical reflection-economy model. Dashboard
+  ranks realigned to the flat 250/level thresholds; dashboard level/rank/XP now
+  derive from the server momentum payload (via `totalReflections`), fetched once
+  and shared by the Stats + Momentum cards. A member's rank/XP is now identical
+  on the dashboard and in the journal.
+- **H10 (mood):** dashboard quick-journal stores the journal's mood keys.
+- **H11 (curriculum):** `data.js WEEKS` + the anchor deep-dive realigned to the
+  canonical 12-week program (`anchor-content.php`); public site and app now
+  describe the same weeks. "+340 XP" corrected to the reflection economy.
+- **Celebration/level-up copy** now reflects real XP (no false "+60 XP" on repeat
+  days; correct threshold at each level).
+- **H3:** AdminMembers/AdminMentors show ErrorState + retry instead of an
+  infinite spinner.
+- **H2:** shared `useAdminDrawer` — unsaved-changes guard, focus trap, focus
+  restore, Escape — on all nine editor drawers (opt-out for immediate-persist
+  detail views).
+- **H4 (UI layer):** confirm on admin/super-admin elevation; self-demotion
+  warning; member suspend/graduate now confirm; human role/status labels.
+- **H12:** one `ADMIN_SECTIONS` registry (nav + caps + titles + icons); cap drift
+  fixed, missing Mentors nav added, duplicate icons removed.
+- **H8 (contrast):** `--gold-700` + surface-aware `--eyebrow-fg`; footer text
+  raised to AA. **Tokens:** added spacing (`--space-*`) and elevation
+  (`--shadow-*`) scales.
+- **Navigation a11y:** brand link keyboard-activatable; mobile-drawer focus trap +
+  restore; Contact promoted into the primary nav.
+- **H13:** dead JoinPage photo code removed; stepper dots are navigable buttons;
+  draft-restored banner honors "save as you go".
+- **H14:** OTP resend-with-cooldown + masked destination; "I already have a code"
+  dead-end fixed.
+- **Journal a11y:** keyboard-operable self-score; calendar day `aria-label`s;
+  persistent offline indicator.
+- **Medium/Low:** "six vs twelve weeks" copy leak; VolunteerRegister explains
+  what's missing; CirclePortal consent gets `role="checkbox"`; Media cards get a
+  "SOON" badge + honest label; command palette drops phantom chord hints; Audit
+  trail states when it shows the 500 most-recent rows.
+
+### Deferred (need server work, or visual-regression QA that can't be done blind)
+- **C3/H5 — pagination, server-side sort, bulk actions:** require server cursor
+  support and a shared `<DataTable>`; error/empty states and the Audit truncation
+  notice were added as interim safety. This is the top remaining item.
+- **H6 (full CSS dedup) / H7 (inline-style-substring responsive rewrite):** need
+  visual-diff QA to merge the double-defined `.btn`/`.chip`/`.card` and replace
+  the substring media queries without regressions; the contrast/token subset was
+  done safely.
+- **Full RBAC roster screen** and **optimistic-concurrency tokens:** guards +
+  confirmations landed; the dedicated screen and record-level concurrency are
+  larger, partly server-side, builds.
+- **Two-design-language bridge** and the **static demo `profile` route:** product/
+  design decisions (unify vs. bridge; make the profile live) rather than
+  mechanical fixes.
