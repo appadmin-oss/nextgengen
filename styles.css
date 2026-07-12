@@ -190,7 +190,13 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
-/* ---------- Buttons (with 3D press effect) ---------- */
+/* ---------- Buttons (with 3D press effect) ----------
+   NOTE (design system): `.btn` and its variants are ALSO defined in
+   styles-app.css, which loads AFTER this file and therefore WINS at runtime
+   (the app hard-bevel look is what actually ships). This split is intentional
+   — a marketing look vs. an app look — but it means edits here to shared
+   `.btn*` rules have no visible effect. Change styles-app.css, or unify the two
+   (a brand decision) rather than editing this block expecting a change. */
 .btn {
   font-family: inherit;
   border: none;

@@ -526,9 +526,15 @@ function HabitGrid() {
 
 /* =================== MEMBER PROFILE =================== */
 function ProfilePage({ setPage }) {
-  const m = MEMBERS.find(x => x.id === 2); // Tunde
+  const m = MEMBERS.find(x => x.id === 2); // Tunde — illustrative sample only
   return (
     <div className="page" data-screen-label="05 Member Profile">
+      {/* Honest labelling: this route renders a fixed SAMPLE profile from static
+          data (there is no member id in the URL), so it must not read as a real
+          member's page. A live per-member profile is a separate feature build. */}
+      <div style={{background:"var(--gold-500)", color:"var(--navy-900)", textAlign:"center", padding:"8px 16px", fontFamily:"var(--font-mono)", fontSize:11, letterSpacing:"0.14em", textTransform:"uppercase", fontWeight:600}}>
+        Sample profile · illustrative layout, not a real member
+      </div>
       {/* Profile header */}
       <section style={{background:"var(--navy-900)", color:"white", padding:"56px 0 88px", position:"relative", overflow:"hidden"}}>
         <div style={{position:"absolute", inset:0, backgroundImage:"linear-gradient(135deg, rgba(245,176,38,0.18), transparent 50%), radial-gradient(circle at 20% 80%, rgba(208,255,58,0.12), transparent 60%)"}}/>

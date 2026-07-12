@@ -46,9 +46,10 @@
   margin: 0;
 }
 
-/* Button — production-grade, single source of truth.
-   We override the existing .btn slightly to lift hover/active feel
-   without breaking layouts. */
+/* Button — this is the DEFINITION THAT SHIPS. It loads after styles.css and
+   overrides the `.btn*` rules there, so treat this block as the effective
+   source of truth for buttons (and `.chip`). If you ever unify the marketing
+   and app looks into one, delete the duplicate block in styles.css. */
 .btn {
   display: inline-flex;
   align-items: center;
