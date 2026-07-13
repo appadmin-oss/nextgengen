@@ -160,12 +160,24 @@ function AdminTotpGate({ onPass, member }) {
   const [err, setErr] = React.useState("");
   const [setupMode, setSetupMode] = React.useState(member && member.needsTotp);
   const [setupData, setSetupData] = React.useState(null);
+  const [qrHtml, setQrHtml] = React.useState("");
 
   React.useEffect(() => {
     if (setupMode) {
       NGGApi.auth.adminTotpSetup().then(setSetupData).catch(e => setErr(e.code || e.message));
     }
   }, [setupMode]);
+
+  // Render the otpauth:// URI as a scannable QR once the setup data lands.
+  React.useEffect(() => {
+    let alive = true;
+    if (setupData && setupData.otpauth) {
+      ensureQREncoder()
+        .then(() => { if (alive) setQrHtml(qrSvg(setupData.otpauth, 5, 2)); })
+        .catch(() => { if (alive) setQrHtml(""); });
+    }
+    return () => { alive = false; };
+  }, [setupData]);
 
   const verify = async (e) => {
     e.preventDefault();
@@ -186,11 +198,14 @@ function AdminTotpGate({ onPass, member }) {
           <h2 className="display admin-gate-h">{setupMode ? "First-time setup" : "Verify it's you."}</h2>
           {setupMode ? (
             <>
-              <p className="admin-gate-p">Add NGG Admin to your authenticator app, then enter the code it shows.</p>
+              <p className="admin-gate-p">Scan this with your authenticator app (Google Authenticator, Authy, 1Password…), then enter the 6-digit code it shows.</p>
               {setupData ? (
                 <>
+                  {qrHtml
+                    ? <div className="admin-totp-qr" style={{ background: "#fff", padding: 12, borderRadius: 12, width: "fit-content", margin: "0 auto 4px", border: "1px solid var(--line-200, #e6e8ee)" }} dangerouslySetInnerHTML={{ __html: qrHtml }}/>
+                    : <div className="dash-spinner"/>}
                   <div className="admin-gate-secret">
-                    <div className="mono" style={{fontSize:10, color:"var(--ink-500)"}}>OR ENTER MANUALLY</div>
+                    <div className="mono" style={{fontSize:10, color:"var(--ink-500)"}}>CAN'T SCAN? ENTER THIS KEY MANUALLY</div>
                     <code>{setupData.secret}</code>
                   </div>
                 </>
