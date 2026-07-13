@@ -173,7 +173,7 @@ const VOLUNTEER_ROLES = [
 // The footer (and anything else) reads from here. Replace the social URLs
 // with the real account links when the handles are confirmed.
 const CONTACT = {
-  email: "cacentre@afrovanguard.org.ng",
+  email: "next@afrovanguard.org.ng",
   phone: "+2349037776318",          // same public line as the printed ID cards
   phoneDisplay: "+234 903 777 6318",
   socials: {

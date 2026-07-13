@@ -2422,6 +2422,42 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
   const [dutyMsg, setDutyMsg] = React.useState("");
   const [dutyBusy, setDutyBusy] = React.useState(false);
   const centre = (ctx && ctx.centre) || "";
+  // Offline scan queue — field kiosks lose signal; a scan must never be lost.
+  const [pending, setPending] = React.useState(0);
+  const flushing = React.useRef(false);
+  const QKEY = "ngg.gate.q." + g;
+  const loadQ = () => { try { return JSON.parse(localStorage.getItem(QKEY) || "[]"); } catch (_) { return []; } };
+  const saveQ = (q) => { try { localStorage.setItem(QKEY, JSON.stringify(q)); } catch (_) {} setPending(q.length); };
+  // A network/offline failure has no server error code/status; a real rejection
+  // (qr_unassigned, student_not_found) does — only the former should queue.
+  const isNetErr = (e) => (typeof navigator !== "undefined" && !navigator.onLine) || (e && !e.code && !e.status);
+  const flushQueue = async () => {
+    if (flushing.current || (typeof navigator !== "undefined" && !navigator.onLine)) return;
+    let q = loadQ(); if (!q.length) return;
+    flushing.current = true;
+    try {
+      for (const item of q.slice()) {
+        try {
+          const r = await NGGApi.public.gate.checkin(g, item.token);
+          q = q.filter(x => x.token !== item.token); saveQ(q);
+          const st = r.student || {};
+          setRecent(list => [{ name: st.fullName || item.token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), already: !!r.already, synced: true }, ...list].slice(0, 12));
+        } catch (e) {
+          if (isNetErr(e)) break;                       // still offline — stop, keep the rest
+          q = q.filter(x => x.token !== item.token); saveQ(q); // bad token — drop it
+        }
+      }
+    } finally { flushing.current = false; }
+  };
+  React.useEffect(() => {
+    setPending(loadQ().length);
+    flushQueue();
+    const onOnline = () => flushQueue();
+    window.addEventListener("online", onOnline);
+    const id = setInterval(() => { if (loadQ().length) flushQueue(); }, 20000);
+    return () => { window.removeEventListener("online", onOnline); clearInterval(id); };
+    // eslint-disable-next-line
+  }, []);
 
   const closeRoll = async () => {
     if (dutyBusy) return;
@@ -2454,8 +2490,15 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
       }, ...list].slice(0, 12));
       setCode("");
     } catch (e2) {
-      const c = e2.code || e2.message;
-      setErr(c === "qr_unassigned" ? "That code isn't assigned to anyone yet." : c === "student_not_found" ? "No student or volunteer found for that code." : "Couldn't check in — try again.");
+      if (isNetErr(e2)) {
+        // Offline / unreachable — bank it and sync later so the scan isn't lost.
+        const q = loadQ(); if (!q.some(x => x.token === token)) { q.push({ token, at: Date.now() }); saveQ(q); }
+        setRecent(list => [{ name: token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), queued: true }, ...list].slice(0, 12));
+        setCode("");
+      } else {
+        const c = e2.code || e2.message;
+        setErr(c === "qr_unassigned" ? "That code isn't assigned to anyone yet." : c === "student_not_found" ? "No student or volunteer found for that code." : "Couldn't check in — try again.");
+      }
     } finally { setBusy(false); }
   };
 
@@ -2477,6 +2520,13 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
       {/* QR-first: the camera scans continuously; typing is the fallback. */}
       <QRScanner onToken={mark} gold={gold}/>
       <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Hold a Genius ID or volunteer card up to the camera. Students and volunteers both scan here — a duplicate scan is safe, a day counts once.</p>
+      {pending > 0 && (
+        <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(245,176,38,.14)", border: "1px solid rgba(245,176,38,.4)", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+          <span aria-hidden="true">☁︎</span>
+          <span style={{ flex: 1 }}>{pending} scan{pending === 1 ? "" : "s"} saved offline — they'll sync automatically when you're back online.</span>
+          <button type="button" onClick={flushQueue} style={{ background: "none", border: "1px solid rgba(245,176,38,.5)", color: gold, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Sync now</button>
+        </div>
+      )}
       {!typed
         ? <button type="button" onClick={() => setTyped(true)} style={{ background: "none", border: "none", color: "rgba(230,238,255,.8)", textDecoration: "underline", cursor: "pointer", fontSize: 13, alignSelf: "center" }}>Camera not working? Enter the code</button>
         : (
@@ -2488,10 +2538,10 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
       {err && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 13 }}>{err}</div>}
       {recent.map((r, i) => (
         <div key={i} style={{ ...card, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, border: r.warn ? "1px solid rgba(255,120,120,.5)" : (card.border || undefined) }}>
-          <span style={{ color: r.already ? "#ffce54" : "#6fdc9d", fontWeight: 800 }}>{r.already ? "↻" : "✓"}</span>
-          <b style={{ flex: 1, fontSize: 14 }}>{r.name}{r.volunteer && <span style={{ marginLeft: 8, fontSize: 10, letterSpacing: ".1em", padding: "2px 7px", borderRadius: 6, background: "rgba(245,176,38,.18)", color: "#ffce54", fontWeight: 700 }}>{(r.role || "VOL").toUpperCase()}</span>}</b>
+          <span style={{ color: r.queued ? "#ffce54" : r.already ? "#ffce54" : "#6fdc9d", fontWeight: 800 }}>{r.queued ? "☁︎" : r.already ? "↻" : "✓"}</span>
+          <b style={{ flex: 1, fontSize: 14, fontFamily: r.queued ? "var(--font-mono, monospace)" : undefined }}>{r.name}{r.volunteer && <span style={{ marginLeft: 8, fontSize: 10, letterSpacing: ".1em", padding: "2px 7px", borderRadius: 6, background: "rgba(245,176,38,.18)", color: "#ffce54", fontWeight: 700 }}>{(r.role || "VOL").toUpperCase()}</span>}</b>
           {r.cert > 0 && <span title={r.cert + "-session certificate issued"} style={{ fontSize: 11, color: "#6fdc9d", fontWeight: 700 }}>🏅 {r.cert}</span>}
-          <span style={{ color: "rgba(230,238,255,.6)", fontSize: 12 }}>{r.already ? "already in · " : ""}{r.at}</span>
+          <span style={{ color: "rgba(230,238,255,.6)", fontSize: 12 }}>{r.queued ? "saved offline · " : r.synced ? "synced · " : r.already ? "already in · " : ""}{r.at}</span>
         </div>
       ))}
       {recent.some(r => r.warn) && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 12.5 }}>⚠ A volunteer above has not cleared safeguarding screening. They should not be unsupervised with young people.</div>}
@@ -2826,7 +2876,7 @@ function LegalPage({ setPage }) {
       <H>Retention</H>
       <P>Child records are kept for the programme cycle plus the period we are required to retain safeguarding records, then archived or deleted. Volunteer records persist while active and for a reasonable period after, to honour service certificates. You can request earlier deletion (see Your Data Rights).</P>
       <H>Contact</H>
-      <P>Data questions: <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng"}</a>. We respond within 30 days.</P>
+      <P>Data questions: <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng"}</a>. We respond within 30 days.</P>
     </>,
     terms: <>
       <P>By using this website and our registration tools, you agree to these terms. They are deliberately short and plain.</P>
@@ -2852,7 +2902,7 @@ function LegalPage({ setPage }) {
       <H>Photography &amp; media</H>
       <P>Headshots are used for IDs and, where separately consented, programme media. Parents can withhold media consent without affecting registration, and can withdraw it later.</P>
       <H>Reporting a concern</H>
-      <P>If you have a safeguarding concern, contact us immediately at <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng"}</a> or {typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "+234 903 777 6318"}. Urgent risk to a child should also be reported to the Lagos State authorities.</P>
+      <P>If you have a safeguarding concern, contact us immediately at <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng"}</a> or {typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "+234 903 777 6318"}. Urgent risk to a child should also be reported to the Lagos State authorities.</P>
     </>,
     consent: <>
       <P>Registering a child is a two-step, consent-first process. A child is only officially enrolled once a parent or guardian has confirmed and granted consent.</P>
@@ -2891,7 +2941,7 @@ function LegalPage({ setPage }) {
         <LI><b>Withdraw consent</b> — at any time, without affecting prior lawful processing.</LI>
       </UL>
       <H>How to exercise them</H>
-      <P>Email <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng"}</a> from the address on file, or call {typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "+234 903 777 6318"}. If you're unhappy with our response, you may complain to the Nigeria Data Protection Commission (NDPC).</P>
+      <P>Email <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng"}</a> from the address on file, or call {typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "+234 903 777 6318"}. If you're unhappy with our response, you may complain to the Nigeria Data Protection Commission (NDPC).</P>
     </>,
   };
 

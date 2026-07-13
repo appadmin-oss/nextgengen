@@ -12,7 +12,7 @@ function org_contact(): array {
     global $CONFIG;
     $o = $CONFIG['org'] ?? [];
     return [
-        'email' => (string)(($o['email'] ?? '') ?: ($CONFIG['mail']['reply_to'] ?? '') ?: 'cacentre@afrovanguard.org.ng'),
+        'email' => (string)(($o['email'] ?? '') ?: ($CONFIG['mail']['reply_to'] ?? '') ?: 'next@afrovanguard.org.ng'),
         'phone' => (string)($o['phone'] ?? '+234 903 777 6318'),
         'site'  => preg_replace('#^https?://#', '', (string)($CONFIG['app_origin'] ?? 'next.afrovanguard.org.ng')) ?: 'next.afrovanguard.org.ng',
     ];

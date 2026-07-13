@@ -31,7 +31,7 @@ return [
     'mail' => [
         'from_name'  => 'Next Generation Genius',
         'from_email' => 'no-reply@ngg.afrovanguard.org',
-        'reply_to'   => 'hello@afrovanguard.org',
+        'reply_to'   => 'next@afrovanguard.org.ng',
         'smtp' => [
             'host'   => '',            // e.g. 'smtp.mailgun.org' — empty = use mail()
             'port'   => 587,
