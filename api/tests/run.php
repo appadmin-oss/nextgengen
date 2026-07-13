@@ -368,6 +368,17 @@ chk('mail test surfaces sender config + actionable hints', (function () {
     return $r['from'] === 'test@example.com' && $r['fromDomain'] === 'example.com' && is_array($r['hints'])
         && (bool)array_filter($r['hints'], fn($h) => stripos($h, 'SMTP') !== false || stripos($h, 'SPF') !== false);
 })());
+chk('mail test gives Gmail-specific guidance (From rewrite + App Password)', (function () {
+    $save = $GLOBALS['CONFIG']['mail'];
+    $GLOBALS['CONFIG']['mail'] = ['from_name' => 'NGG', 'from_email' => 'no-reply@ngg.afrovanguard.org', 'reply_to' => '', 'smtp' => ['host' => 'smtp.gmail.com', 'port' => 587, 'secure' => 'tls', 'user' => 'ngg.desk@gmail.com', 'pass' => 'x']];
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('admin.mail.test', ['requesterId' => 'NGG-2025-0099', 'to' => 'diag@example.com']);
+    unset($GLOBALS['__mail_sink']);
+    $GLOBALS['CONFIG']['mail'] = $save;
+    return $r['mode'] === 'smtp' && $r['smtp']['host'] === 'smtp.gmail.com'
+        && (bool)array_filter($r['hints'], fn($h) => stripos($h, 'rewrites the From') !== false)
+        && (bool)array_filter($r['hints'], fn($h) => stripos($h, 'App Password') !== false);
+})());
 // Deliverability headers: every message must carry Date + a domain-scoped Message-ID.
 chk('mail headers include Date + domain-scoped Message-ID', (function () {
     $h = mail_std_headers('no-reply@afrovanguard.org.ng');

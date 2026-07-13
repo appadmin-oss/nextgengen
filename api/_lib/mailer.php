@@ -147,8 +147,15 @@ function smtp_send(array $smtp, array $from, string $to, string $subject, string
     $cmd("EHLO $ehloHost", '250');
     if ($secure === 'tls') {
         $cmd('STARTTLS', '220');
-        if (!stream_socket_enable_crypto($sock, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
-            throw new RuntimeException('smtp_tls_failed');
+        // Explicitly offer TLS 1.1/1.2/1.3. On some PHP builds the bare
+        // *_TLS_CLIENT flag negotiates only TLS 1.0, which modern relays
+        // (Gmail included) refuse — the handshake would fail silently.
+        $crypto = STREAM_CRYPTO_METHOD_TLS_CLIENT;
+        if (defined('STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT')) $crypto |= STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT;
+        if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) $crypto |= STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
+        if (defined('STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT')) $crypto |= STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT;
+        if (!stream_socket_enable_crypto($sock, true, $crypto)) {
+            throw new RuntimeException('smtp_tls_failed: could not negotiate TLS with ' . $host);
         }
         $cmd("EHLO $ehloHost", '250');
     }

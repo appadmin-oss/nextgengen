@@ -251,12 +251,24 @@ function admin_mail_test(array $p): array {
     if ($mode === 'php_mail') {
         $hints[] = 'No SMTP configured — using PHP mail(). Set mail.smtp.host/user/pass in api/config.php for reliable delivery.';
     }
-    // Envelope/From must be a domain you're authorized to send for, or SPF fails.
-    if ($fromDomain && $fromDomain !== 'localhost' && !preg_match('/afrovanguard\./i', $fromDomain)) {
-        $hints[] = "From domain is {$fromDomain}. Make sure its DNS has SPF (and ideally DKIM/DMARC) authorizing this relay, or mail will be spam-filtered.";
-    }
-    if ($mode === 'smtp' && !empty($smtp['user']) && $fromDomain && stripos((string)$smtp['user'], (string)$fromDomain) === false) {
-        $hints[] = "SMTP auth user doesn't match the From domain ({$fromDomain}) — many relays reject or spam-flag a mismatched From. Align mail.from_email with the authenticated mailbox.";
+    $isGmail = $mode === 'smtp' && preg_match('/gmail|googlemail|google\.com|smtp\.google/i', (string)($smtp['host'] ?? ''));
+    $authUser = strtolower(trim((string)($smtp['user'] ?? '')));
+    $fromEmail = strtolower((string)$from['email']);
+    if ($isGmail) {
+        // Gmail-specific: it rewrites the From to the authenticated account
+        // unless it's a verified alias, and requires an App Password.
+        if ($authUser !== '' && $fromEmail !== $authUser) {
+            $hints[] = "Gmail rewrites the From to the signed-in account unless it's a verified alias. Recipients will see {$authUser}, not {$fromEmail}. Either set mail.from_email to {$authUser}, or add {$fromEmail} under Gmail → Settings → Accounts → \"Send mail as\" (Workspace) first.";
+        }
+        $hints[] = "Gmail SMTP needs an App Password (Google Account → Security → 2-Step Verification → App passwords), not your normal password. Use smtp.gmail.com with port 587/secure 'tls' or 465/'ssl'. Consumer Gmail caps at ~500 messages/day.";
+    } else {
+        // Envelope/From must be a domain you're authorized to send for, or SPF fails.
+        if ($fromDomain && $fromDomain !== 'localhost' && !preg_match('/afrovanguard\./i', $fromDomain)) {
+            $hints[] = "From domain is {$fromDomain}. Make sure its DNS has SPF (and ideally DKIM/DMARC) authorizing this relay, or mail will be spam-filtered.";
+        }
+        if ($mode === 'smtp' && $authUser !== '' && $fromDomain && stripos($authUser, (string)$fromDomain) === false) {
+            $hints[] = "SMTP auth user doesn't match the From domain ({$fromDomain}) — many relays reject or spam-flag a mismatched From. Align mail.from_email with the authenticated mailbox.";
+        }
     }
     // ok:true = the diagnostic ran; `delivered` says whether the send succeeded.
     return [

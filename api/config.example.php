@@ -40,12 +40,24 @@ return [
     //      email") — it reports the mode, resolved From/Reply-To, SMTP target,
     //      and flags SPF/From-alignment problems.
     // -----------------------------------------------------------------------
+    // GMAIL EXAMPLE (consumer Gmail or Workspace):
+    //   'from_email' => 'youraccount@gmail.com',   // MUST be the signed-in
+    //                    account (Gmail rewrites any other From) — or a Gmail
+    //                    "Send mail as" verified alias on Workspace.
+    //   'smtp' => [
+    //       'host' => 'smtp.gmail.com', 'port' => 587, 'secure' => 'tls',
+    //       'user' => 'youraccount@gmail.com',
+    //       'pass' => 'abcd efgh ijkl mnop',   // a 16-char APP PASSWORD, not
+    //                  your login password. Google Account → Security →
+    //                  2-Step Verification → App passwords. Consumer Gmail
+    //                  sends ~500 messages/day.
+    //   ],
     'mail' => [
         'from_name'  => 'Next Generation Genius',
-        'from_email' => 'no-reply@ngg.afrovanguard.org',  // match the smtp.user domain
+        'from_email' => 'no-reply@ngg.afrovanguard.org',  // match the smtp.user mailbox
         'reply_to'   => 'next@afrovanguard.org.ng',
         'smtp' => [
-            'host'   => '',            // e.g. 'smtp.mailgun.org' — empty = use mail()
+            'host'   => '',            // e.g. 'smtp.gmail.com' — empty = use mail()
             'port'   => 587,
             'secure' => 'tls',         // 'tls' (587) | 'ssl' (465) | '' (plain)
             'user'   => '',

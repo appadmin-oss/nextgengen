@@ -73,6 +73,15 @@ maps to). `dist/` deliberately excludes `api/config.php` and the local SQLite fi
      which reports the mode, resolved sender, SMTP target, and SPF/alignment
      warnings. (Messages already ship with `Date`, a domain-scoped `Message-ID`,
      and a `text/plain` part alongside the HTML.)
+
+     **Gmail SMTP:** `host: smtp.gmail.com`, `port: 587`, `secure: tls`,
+     `user`/`pass` = your Gmail address and a **16-character App Password**
+     (Google Account → Security → 2-Step Verification → App passwords — your
+     normal password will not work). Set `from_email` to the **same Gmail
+     address** — Gmail rewrites any other `From` to the signed-in account
+     unless it's a verified "Send mail as" alias (Workspace). Gmail signs with
+     its own SPF/DKIM, so no DNS setup is needed; consumer Gmail caps at
+     ~500 messages/day.
    - `cloudinary` — cloud name + key + secret if you want direct uploads
      (leave `cloud_name` blank to disable; the UI falls back to pasting URLs).
 2. Permissions:
