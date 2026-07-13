@@ -425,6 +425,24 @@ chk('gateway: unknown and passwordless answer identically', (function () {
 })());
 chk('gateway: staff look like ordinary password accounts', backend_dispatch('auth.gateway', ['identifier' => 'pa@example.com'])['methods'] === (!empty(db_row("SELECT passwordHash FROM members WHERE email='pa@example.com'")['passwordHash']) ? ['code', 'password'] : ['code']));
 
+// ── auth.request is resilient when the mail relay hiccups ──
+// Delivered: banks an OTP row and reports delivery=true (sink captures the mail).
+$GLOBALS['__mail_sink'] = [];
+$rq = backend_dispatch('auth.request', ['identifier' => 'nopass@example.com']);
+chk('auth.request delivered → ok + delivery=true', !empty($rq['ok']) && $rq['delivery'] === true && count($GLOBALS['__mail_sink']) === 1);
+chk('auth.request banks an OTP session even so', (int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email='nopass@example.com'")['c'] >= 1);
+unset($GLOBALS['__mail_sink']);
+// Mail relay down: must NOT hard-fail (no login dead-end) — still ok, delivery=false,
+// and the OTP row is banked so a user who does get mail can still finish.
+$before = (int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email='nopass@example.com'")['c'];
+$GLOBALS['__mail_fail'] = true;
+$rq2 = backend_dispatch('auth.request', ['identifier' => 'nopass@example.com']);
+unset($GLOBALS['__mail_fail']);
+chk('auth.request mail failure stays ok with delivery=false', !empty($rq2['ok']) && $rq2['delivery'] === false && !empty($rq2['masked']));
+chk('auth.request still banks the OTP when mail fails', (int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email='nopass@example.com'")['c'] === $before + 1);
+// Unknown identifier looks identical (ok + delivery=true) — no account oracle.
+chk('auth.request hides unknown accounts', (function () { $r = backend_dispatch('auth.request', ['identifier' => 'ghost@example.com']); return !empty($r['ok']) && $r['delivery'] === true && !empty($r['masked']); })());
+
 // ── Account lockout (8 consecutive fails → 15-minute pause) ──
 chk('lockout after repeated wrong passwords', (function () {
     for ($i = 0; $i < 8; $i++) backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'wrong-' . $i]);

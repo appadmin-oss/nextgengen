@@ -64,11 +64,11 @@ function auth_request(array $p): array {
 
     if (!$member) {
         audit('login.fail.unknown', null, $identifier, ['identifier' => $identifier], $ip);
-        return ['ok' => true, 'masked' => $masked];
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
     }
     if ((string)$member['status'] === 'suspended') {
         audit('login.fail.suspended', $member['memberId'], (string)$member['memberId'], [], $ip);
-        return ['ok' => true, 'masked' => $masked];
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
     }
 
     $token = rand_hex(32);
@@ -93,13 +93,14 @@ function auth_request(array $p): array {
             . '<p style="margin:12px 0 0;color:#8a93b8;font-size:12px">This link and code expire in 15 minutes. If you didn\'t request this, ignore it.</p>',
         'ctaLabel' => 'Sign in →', 'ctaUrl' => $link,
     ]);
-    if (!send_mail((string)$member['email'], 'Your sign-in to Next Generation Genius', $html)) {
-        audit('login.mail_fail', $member['memberId'], (string)$member['memberId'], [], $ip);
-        return ['ok' => false, 'error' => 'mail_failed'];
-    }
-
-    audit('login.request', $member['memberId'], (string)$member['memberId'], [], $ip);
-    return ['ok' => true, 'masked' => $masked];
+    // The OTP/link row is already banked. If the mail relay fails we must NOT
+    // hard-fail the request: that dead-ends the only email-free retry path and
+    // leaks that this identifier is a real, active account (unknown/suspended
+    // both return ok above). Report delivery=false instead so the UI can keep
+    // the code screen open, warn the user, and steer them to password sign-in.
+    $delivered = send_mail((string)$member['email'], 'Your sign-in to Next Generation Genius', $html);
+    audit($delivered ? 'login.request' : 'login.mail_fail', $member['memberId'], (string)$member['memberId'], [], $ip);
+    return ['ok' => true, 'masked' => $masked, 'delivery' => $delivered];
 }
 
 /**

@@ -37,6 +37,8 @@ function mail_from(): array {
 function send_mail(string $to, string $subject, string $html, ?string $text = null): bool {
     global $CONFIG;
     if (!filter_var($to, FILTER_VALIDATE_EMAIL)) return false;
+    // Test seam: simulate a relay failure (auth must degrade, not dead-end).
+    if (!empty($GLOBALS['__mail_fail'])) { $GLOBALS['__mail_last_error'] = 'forced_test_failure'; return false; }
     // Test seam: capture instead of send when a sink is registered.
     if (isset($GLOBALS['__mail_sink']) && is_array($GLOBALS['__mail_sink'])) {
         $GLOBALS['__mail_sink'][] = ['to' => $to, 'subject' => $subject, 'html' => $html];

@@ -124,6 +124,7 @@ function SignInModal({ seed, onClose, onVerified }) {
   const [showPw, setShowPw] = React.useState(false);
   const [otp, setOtp] = React.useState("");
   const [masked, setMasked] = React.useState("");
+  const [deliveryOk, setDeliveryOk] = React.useState(true); // false ⇒ mail relay hiccup
   const [busy, setBusy] = React.useState(false);
   const [cooldown, setCooldown] = React.useState(0); // seconds until a code can be resent
   // Tick the resend cooldown down to zero.
@@ -201,6 +202,7 @@ function SignInModal({ seed, onClose, onVerified }) {
   const requestLinkInner = async () => {
     const r = await NGGApi.auth.request(identifier.trim());
     setMasked(r.masked || "");
+    setDeliveryOk(r.delivery !== false);
     setStage("enter-otp");
     setCooldown(30); // let the user resend after 30s
   };
@@ -341,6 +343,11 @@ function SignInModal({ seed, onClose, onVerified }) {
                   autoComplete="username"
                 />
               </>
+            )}
+            {!deliveryOk && (
+              <p className="signin-hint" style={{ margin: "0 0 8px", padding: "8px 10px", fontSize: 13, borderRadius: 8, background: "var(--amber-50, #fff7ed)", color: "var(--amber-800, #9a3412)", border: "1px solid var(--amber-200, #fed7aa)" }}>
+                We had trouble sending your email just now. If it doesn't arrive, use <b>Resend code</b>, sign in with your <b>password</b>, or contact admin.
+              </p>
             )}
             {masked
               ? <p className="signin-hint" style={{ margin: "0 0 4px", fontSize: 13, color: "var(--ink-500)" }}>We sent a 6-digit code to <b>{masked}</b>. It expires in 15 minutes.</p>
