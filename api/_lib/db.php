@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 22;
+const NGG_SCHEMA_TARGET = 23;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -655,6 +655,38 @@ function db_migrate(PDO $db): void {
         // retake. Minted on the first retake request.
         22 => "
             ALTER TABLE summer_students ADD COLUMN photoToken TEXT DEFAULT '';
+        ",
+
+        // Attendance-taker rotation: one volunteer per centre is on attendance
+        // duty each day. Rows are the resolved/overridable daily assignment
+        // (auto round-robin when absent). Plus a per-volunteer attendance-duty
+        // gamification ledger (points/streak drive levels + awards).
+        23 => "
+            CREATE TABLE attendance_duty (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              date TEXT NOT NULL,
+              centre TEXT NOT NULL,
+              volunteerId TEXT NOT NULL,
+              source TEXT DEFAULT 'auto',
+              assignedById TEXT DEFAULT '',
+              completedAt TEXT DEFAULT '',
+              takenCount INTEGER DEFAULT 0,
+              createdAt TEXT DEFAULT (datetime('now')),
+              UNIQUE (date, centre)
+            );
+            CREATE INDEX idx_duty_vol ON attendance_duty(volunteerId);
+            CREATE INDEX idx_duty_date ON attendance_duty(date);
+
+            CREATE TABLE volunteer_points (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              volunteerId TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              points INTEGER DEFAULT 0,
+              date TEXT DEFAULT '',
+              note TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_vpoints_vol ON volunteer_points(volunteerId);
         ",
     ];
 

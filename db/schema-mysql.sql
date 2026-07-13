@@ -428,6 +428,35 @@ CREATE TABLE IF NOT EXISTS volunteer_certs (
   INDEX idx_certs_vol (volunteerId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Attendance-taker rotation: one volunteer per centre on attendance duty each
+-- day (auto round-robin, admin-overridable), plus a per-volunteer points ledger
+-- that drives gamified levels + awards.
+CREATE TABLE IF NOT EXISTS attendance_duty (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  date VARCHAR(12) NOT NULL,
+  centre VARCHAR(48) NOT NULL,
+  volunteerId VARCHAR(32) NOT NULL,
+  source VARCHAR(16) DEFAULT 'auto',
+  assignedById VARCHAR(48) DEFAULT '',
+  completedAt VARCHAR(40) DEFAULT '',
+  takenCount INT DEFAULT 0,
+  createdAt VARCHAR(40),
+  UNIQUE KEY idx_duty_unique (date, centre),
+  INDEX idx_duty_vol (volunteerId),
+  INDEX idx_duty_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS volunteer_points (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  volunteerId VARCHAR(32) NOT NULL,
+  kind VARCHAR(32) NOT NULL,
+  points INT DEFAULT 0,
+  date VARCHAR(12) DEFAULT '',
+  note VARCHAR(255) DEFAULT '',
+  createdAt VARCHAR(40),
+  INDEX idx_vpoints_vol (volunteerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Volunteer hierarchy tiers — the volunteer analogue of centres. code → the
 -- VOL-CODE-YY-serial ID prefix; color → the full-bleed volunteer card bg.
 CREATE TABLE IF NOT EXISTS vol_tiers (
