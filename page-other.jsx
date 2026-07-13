@@ -979,14 +979,45 @@ function MentorsPage({ setPage }) {
 }
 
 /* =================== SUMMER STUDENT PROFILE (by QR token or handle) =========== */
+// Staff-only "mark present" on a person's page. This is what makes the QR aid
+// attendance even when a normal phone camera (an unconfigured device) opens the
+// profile URL instead of the kiosk scanner: a signed-in staffer taps once here.
+function ProfileCheckin({ token, name }) {
+  const [busy, setBusy] = React.useState(false);
+  const [res, setRes] = React.useState(null);
+  const go = async () => {
+    if (busy) return; setBusy(true);
+    try { const r = await NGGApi.admin.summer.checkin(token, "profile", "profile-scan"); setRes({ ok: true, already: !!r.already }); }
+    catch (e) { setRes({ err: (e.code === "student_not_found" ? "Not assigned to anyone yet." : e.code === "qr_unassigned" ? "This card isn't assigned yet." : "Couldn't mark present — try again.") }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 20, border: "1px solid var(--gold-500)", background: "rgba(245,176,38,0.07)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 170 }}>
+          <div className="mono" style={{ fontSize: 11, letterSpacing: ".12em", color: "var(--ink-500)" }}>STAFF · ATTENDANCE</div>
+          <div style={{ fontWeight: 700, marginTop: 2 }}>Mark {(name || "this person").trim().split(/\s+/)[0]} present today</div>
+        </div>
+        {res && res.ok
+          ? <span className="chip chip-lime">{res.already ? "↻ Already marked today" : "✓ Marked present"}</span>
+          : <button className="btn btn-gold" disabled={busy} onClick={go}>{busy ? "Marking…" : "Mark present"}</button>}
+      </div>
+      {res && res.err && <div style={{ marginTop: 10, color: "var(--coral)", fontSize: 13 }}>{res.err}</div>}
+    </div>
+  );
+}
+
 function SummerProfilePage({ setPage }) {
-  const [state, setState] = React.useState({ loading: true, profile: null });
+  const [state, setState] = React.useState({ loading: true, profile: null, token: "" });
+  // Called unconditionally (hooks rule) — lets a signed-in staffer mark this
+  // person present straight from the page they land on after a phone-camera scan.
+  const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false };
   React.useEffect(() => {
     const parts = (window.location.pathname || "").split("/").filter(Boolean);
     const kind = parts[0], id = decodeURIComponent(parts[1] || "");
     const req = kind === "s" ? NGGApi.public.summerProfile({ handle: id }) : NGGApi.public.summerProfile({ token: id });
-    req.then(r => setState({ loading: false, profile: r.profile }))
-       .catch(() => setState({ loading: false, profile: null }));
+    req.then(r => setState({ loading: false, profile: r.profile, token: kind === "q" ? id : ((r.profile && r.profile.token) || "") }))
+       .catch(() => setState({ loading: false, profile: null, token: "" }));
   }, []);
 
   if (state.loading) return <div className="page"><div className="container" style={{ padding: "120px 0", textAlign: "center" }}><div className="dash-spinner" style={{ margin: "0 auto" }}/></div></div>;
@@ -1027,6 +1058,8 @@ function SummerProfilePage({ setPage }) {
       </section>
       <section className="section">
         <div className="container" style={{ maxWidth: 720 }}>
+          {auth && auth.isSignedIn && (auth.isAdmin || (auth.hasCap && (auth.hasCap("summer") || auth.hasCap("people")))) && state.token
+            ? <ProfileCheckin token={state.token} name={m.fullName}/> : null}
           <div className="card" style={{ padding: 28 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
               <h2 className="display" style={{ fontSize: 28, margin: 0 }}>Attendance</h2>
