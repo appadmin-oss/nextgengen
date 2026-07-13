@@ -2480,10 +2480,15 @@ const CARD_CRIMSON = "#E4155F", CARD_NAVY = "#1B2B6B";
 function CardQR({ token, size }) {
   const [src, setSrc] = React.useState("");
   React.useEffect(() => {
+    // Encode the FULL profile URL (not the bare token) so a normal phone camera
+    // / any QR app opens the student's page on the site. The kiosk decoder
+    // (extractCheckinToken) still pulls the token back out for check-in.
+    const origin = (typeof window !== "undefined" && window.location && window.location.origin) ? window.location.origin : "https://next.afrovanguard.org.ng";
+    const payload = origin + "/q/" + String(token);
     const draw = () => {
       try {
         const q = window.qrcode(0, "M");
-        q.addData(String(token)); q.make();
+        q.addData(payload); q.make();
         setSrc(q.createDataURL(8, 0));
       } catch (_) {}
     };
@@ -2495,11 +2500,12 @@ function CardQR({ token, size }) {
   return src ? <img src={src} alt={"QR " + token} style={{ width: size, height: size, imageRendering: "pixelated" }}/> : <div style={{ width: size, height: size, background: "#f2f2f2" }}/>;
 }
 
-function CardFront({ card, S }) {
+function CardFront({ card, program, S }) {
   const px = (n) => n * S;
+  const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
   return (
     <div className="idcard" style={{ width: px(590), height: px(1004), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
-      <img src="/assets/idcard/logo-lockup.png" alt="Lagos Child Project × STS" style={{ position: "absolute", top: px(58), left: "50%", transform: "translateX(-50%)", width: px(290) }}/>
+      <img src={lockup} alt="Programme lockup" style={{ position: "absolute", top: px(58), left: "50%", transform: "translateX(-50%)", width: px(290) }}/>
       <div style={{ position: "absolute", top: px(182), left: "50%", transform: "translateX(-50%)", width: px(372), height: px(372), borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", boxShadow: `0 ${px(16)}px ${px(38)}px rgba(27,43,107,.16)` }}>
         {card.photoUrl && <img src={card.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>}
       </div>
@@ -2616,10 +2622,10 @@ function CardBack({ card, program, S }) {
       </div>
       <div style={{ position: "absolute", top: px(714), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#D9D9D9" }}/>
       <div style={{ position: "absolute", top: px(748), left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: px(14) }}>
-        <img src="/assets/idcard/logo-okun.png" alt="Okun Alimọsho" style={{ height: px(64) }}
+        <img src={(program && program.logoOkun) || "/assets/idcard/logo-okun.png"} alt="Okun Alimọsho" style={{ height: px(64) }}
           onError={e => { e.target.style.display = "none"; if (e.target.nextSibling) e.target.nextSibling.style.display = "none"; }}/>
         <span aria-hidden="true" style={{ width: 1.5, height: px(44), background: "#C9CDD8" }}/>
-        <img src="/assets/idcard/logo-lockup.png" alt="Lagos Child Project × STS" style={{ width: px(230) }}/>
+        <img src={(program && program.logoLockup) || "/assets/idcard/logo-lockup.png"} alt="Programme lockup" style={{ width: px(230) }}/>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: "#00225F" }}/>
     </div>
@@ -2737,7 +2743,7 @@ function CardStudio() {
     <div className="print-zone" style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
       {cards.map(card => (
         <div key={card.studentId || card.volunteerId} className="card-pair">
-          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} S={0.5}/> : <CardFront card={card} S={0.5}/>}</div>
+          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} program={program} S={0.5}/> : <CardFront card={card} program={program} S={0.5}/>}</div>
           <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5}/></div>
         </div>
       ))}

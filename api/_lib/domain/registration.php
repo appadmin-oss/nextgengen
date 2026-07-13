@@ -798,10 +798,29 @@ function admin_cards_data(array $p): array {
             'photoUrl' => (string)$s['photoUrl'],
         ];
     }
-    // Program identity block — admin-editable via settings key 'idcard'.
+    return ['ok' => true, 'cards' => $cards, 'program' => idcard_program()];
+}
+
+// Program/branding identity block for the ID cards — admin-editable via the
+// 'idcard' setting (see admin.settings). Logos are configurable URLs so a wrong
+// or missing mark can be corrected without a code change.
+function idcard_program(): array {
     $cfg = setting_get('idcard');
-    $program = is_array($cfg) ? $cfg : [];
-    $program += ['program' => 'LCASP', 'year' => gmdate('Y'), 'motto' => 'EMPOWERED 360°',
-        'website' => 'sts.afrovanguard.org.ng', 'phone' => '+234 903 777 6318'];
-    return ['ok' => true, 'cards' => $cards, 'program' => $program];
+    $p = is_array($cfg) ? $cfg : [];
+    $p += [
+        'program' => 'LCASP', 'year' => gmdate('Y'), 'motto' => 'EMPOWERED 360°',
+        'website' => 'sts.afrovanguard.org.ng', 'phone' => '+234 903 777 6318',
+        'logoLockup' => '/assets/idcard/logo-lockup.png',
+        'logoOkun' => '/assets/idcard/logo-okun.png',
+    ];
+    return $p;
+}
+
+// Validate + persist the ID-card branding block (called from admin.settings.set).
+function idcard_program_save(array $in, string $by): void {
+    $clean = [];
+    foreach (['program', 'year', 'motto', 'website', 'phone', 'logoLockup', 'logoOkun'] as $k) {
+        if (array_key_exists($k, $in)) $clean[$k] = substr(trim((string)$in[$k]), 0, 512);
+    }
+    setting_set('idcard', $clean, $by);
 }

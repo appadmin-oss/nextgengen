@@ -98,11 +98,7 @@ function admin_volunteer_cards_data(array $p): array {
             'photoUrl' => (string)$v['photoUrl'],
         ];
     }
-    $cfg = setting_get('idcard');
-    $program = is_array($cfg) ? $cfg : [];
-    $program += ['program' => 'LCASP', 'year' => gmdate('Y'), 'motto' => 'EMPOWERED 360°',
-        'website' => 'sts.afrovanguard.org.ng', 'phone' => '+234 903 777 6318'];
-    return ['ok' => true, 'cards' => $cards, 'program' => $program];
+    return ['ok' => true, 'cards' => $cards, 'program' => idcard_program()];
 }
 
 function volunteer_public(array $v, bool $withAttendance = false): array {

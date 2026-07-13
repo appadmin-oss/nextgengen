@@ -2753,6 +2753,28 @@ function AdminSettings() {
         {s.geofence_enabled && <p className="admin-hint" style={{ margin: "-4px 0 0" }}>Walk-ups must be on-site at a mapped centre to register. Map each centre's point under <b>Registration → Centres → Map</b>.</p>}
         <FieldCheckbox label="Hold the ID until the photo is approved (issue only after an editor approves the headshot)" value={s.photo_gate_issuance} onChange={v => setS(o => ({ ...o, photo_gate_issuance: v }))}/>
         {s.photo_gate_issuance && <p className="admin-hint" style={{ margin: "-4px 0 0" }}>The QR/ID is bound only once both parent consent is in AND the photo is approved in <b>Photo review</b>. Registrations without a photo are never held.</p>}
+
+        <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>ID card branding</div>
+        <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>Drives the printed cards + digital IDs. The card QR always encodes the student's <span className="mono">/q/&lt;token&gt;</span> profile URL, so scanning with any phone opens their page.</p>
+        {(() => {
+          const id = s.idcard || {};
+          const setId = (k, v) => setS(o => ({ ...o, idcard: { ...(o.idcard || {}), [k]: v } }));
+          return (
+            <React.Fragment>
+              <div className="admin-fields-row">
+                <Field label="Programme name" value={id.program || ""} onChange={v => setId("program", v)}/>
+                <Field label="Year" value={id.year || ""} onChange={v => setId("year", v)}/>
+              </div>
+              <Field label="Motto" value={id.motto || ""} onChange={v => setId("motto", v)}/>
+              <div className="admin-fields-row">
+                <Field label="Website (printed on card)" value={id.website || ""} onChange={v => setId("website", v)}/>
+                <Field label="Phone (printed on card)" value={id.phone || ""} onChange={v => setId("phone", v)}/>
+              </div>
+              <Field label="Lockup logo URL" value={id.logoLockup || ""} onChange={v => setId("logoLockup", v)}/>
+              <Field label="Okun/partner logo URL (card back)" value={id.logoOkun || ""} onChange={v => setId("logoOkun", v)}/>
+            </React.Fragment>
+          );
+        })()}
       </div>
     </div>
   );
