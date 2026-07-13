@@ -1042,6 +1042,37 @@ function SummerProfilePage({ setPage }) {
                 </div>}
           </div>
 
+          {/* Gamified attendance standing — the in-app award surface (levels,
+              points, streak, awards). Mirrors the emailed awards. */}
+          {m.kind === "volunteer" && m.game && (
+            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "none" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <div className="eyebrow" style={{ color: "var(--gold-400)" }}>ATTENDANCE STANDING</div>
+                  <h2 className="display" style={{ fontSize: 26, margin: "6px 0 0" }}>Level {m.game.level} · {m.game.levelName}</h2>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <span className="display" style={{ fontSize: 40, color: "var(--gold-400)" }}>{m.game.points}</span>
+                  <span className="mono" style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginLeft: 6 }}>POINTS</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 24, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
+                <div><b style={{ fontSize: 20 }}>{m.game.streak}</b> <span className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>DAY STREAK</span></div>
+                {m.game.next && (
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginBottom: 4 }}>{m.game.next.remaining} pts to {m.game.next.name}</div>
+                    <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.14)" }}><div style={{ height: "100%", borderRadius: 999, background: "var(--gold-400)", width: Math.min(100, Math.round((m.game.points / m.game.next.at) * 100)) + "%" }}/></div>
+                  </div>
+                )}
+              </div>
+              {(m.game.awards || []).length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
+                  {m.game.awards.map((a, i) => <span key={i} className="chip" style={{ background: "var(--gold-500)", color: "var(--navy-900)", fontWeight: 700 }}>🏅 {a.name}</span>)}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Volunteer service certificates — verifiable, shareable */}
           {m.kind === "volunteer" && (m.certificates || []).length > 0 && (
             <div className="card" style={{ padding: 28, marginTop: 20 }}>

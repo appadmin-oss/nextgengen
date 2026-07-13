@@ -51,6 +51,7 @@ const ADMIN_SECTIONS = [
   { id: "mentorship",  group: "People",   label: "Mentorship",   title: "Mentorship",          icon: "◐", cap: "people" },
   { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
   { id: "qr",          group: "People",   label: "QR codes",     title: "QR codes",            icon: "▦", cap: "summer" },
+  { id: "attendance",  group: "People",   label: "Attendance duty", title: "Attendance duty",  icon: "🗓", cap: "summer" },
   { id: "sessions",    group: "Content",  label: "Sessions",     title: "Sessions",            icon: "▢", cap: "content" },
   { id: "missions",    group: "Content",  label: "Missions",     title: "Anchor missions",     icon: "✦", cap: "content" },
   { id: "anchor",      group: "Content",  label: "Anchor app",   title: "Anchor Journal app",  icon: "⚓", cap: "content" },
@@ -140,6 +141,7 @@ function AdminPage({ setPage }) {
           {view === "posts" && <AdminPosts/>}
           {view === "photos" && <AdminPhotos/>}
           {view === "broadcast" && <AdminBroadcast/>}
+          {view === "attendance" && <AdminAttendanceDuty/>}
           {view === "access" && <AdminAccess/>}
           {view === "audit" && <AdminAudit/>}
         </main>
@@ -403,6 +405,53 @@ function Pager({ page, pageSize, total, onPage }) {
         <span className="admin-pager-page mono" aria-current="page">Page {page} / {pages}</span>
         <button className="btn btn-ghost btn-sm" disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Next page">Next →</button>
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Attendance-taker rotation — the daily duty board + gamified roll-close
+// ============================================================================
+function AdminAttendanceDuty() {
+  const [date, setDate] = React.useState(() => new Date().toISOString().slice(0, 10));
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const load = (d) => { setErr(""); return NGGApi.admin.attendance.admin(d || date).then(setData).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { setData(null); load(date); /* eslint-disable-next-line */ }, [date]);
+  const vols = (data && data.volunteers) || [];
+  const setTaker = async (centre, volunteerId) => { if (!volunteerId) return; setBusy(centre); try { const r = await NGGApi.admin.attendance.set(date, centre, volunteerId); setData(r); toast.success("Duty updated"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  const closeRoll = async (centre, volunteerId) => { setBusy(centre); try { const r = await NGGApi.admin.attendance.complete(date, centre, volunteerId); toast.success(r.message || "Roll closed"); await load(date); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Attendance duty</h2>
+        <input type="date" className="admin-input" value={date} onChange={e => setDate(e.target.value)} style={{ maxWidth: 180 }} aria-label="Duty date"/>
+      </div>
+      <p className="admin-hint">One volunteer per centre is on the roll each day — auto-rotated across active volunteers; override any pick. Closing the roll awards points toward levels + awards (emailed and shown on the volunteer's digital ID).{data ? " " + data.pool + " volunteers in rotation." : ""}</p>
+      {err ? <ErrorState code={err} onRetry={() => load(date)}/> :
+        !data ? <div className="dash-spinner"/> :
+        (data.duties || []).length === 0 ? <EmptyState title="No centres in rotation yet" message="Enrol summer students to a centre, and register volunteers, to start the daily rotation."/> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Centre</th><th>On duty</th><th>Source</th><th>Status</th><th>Override</th><th></th></tr></thead>
+          <tbody>
+            {data.duties.map(d => (
+              <tr key={d.centre}>
+                <td className="admin-cell-name">{d.centre}</td>
+                <td>{d.volunteer ? d.volunteer.fullName : "—"}</td>
+                <td><span className="chip" style={{ fontSize: 10 }}>{d.source}</span></td>
+                <td>{d.completedAt ? <span className="chip chip-lime" style={{ fontSize: 10 }}>closed · {d.takenCount} present</span> : <span className="mono" style={{ color: "var(--ink-400)", fontSize: 12 }}>open</span>}</td>
+                <td>
+                  <select className="admin-select" value={d.volunteerId} disabled={busy === d.centre} onChange={e => setTaker(d.centre, e.target.value)} aria-label={"Attendance taker for " + d.centre}>
+                    {vols.map(v => <option key={v.volunteerId} value={v.volunteerId}>{v.fullName} · {v.role}</option>)}
+                  </select>
+                </td>
+                <td>{!d.completedAt && <button className="btn btn-ghost btn-sm" disabled={busy === d.centre} onClick={() => closeRoll(d.centre, d.volunteerId)}>Close roll</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      }
     </div>
   );
 }
