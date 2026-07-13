@@ -300,12 +300,12 @@ function AfrovanguardMentorStrip() {
               NGG mentoring runs inside the <em style={{ fontStyle: "normal", color: "var(--coral)" }}>{av.mentorProgram}</em> network.
             </h3>
             <p style={{ color: "var(--ink-700)", margin: 0, lineHeight: 1.5, fontSize: 15 }}>
-              Apply below to mentor with NGG directly, or join the wider Afrovanguard volunteer pool — the same people, the same mission across every STS program.
+              Register to mentor with NGG here — it's the same mission and the same volunteer pool, run on this site. NGG is part of Afrovanguard's Street-To-Stardom network.
             </p>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <a className="btn btn-primary" href={av.volunteerUrl} target="_blank" rel="noopener noreferrer">Afrovanguard volunteer hub ↗</a>
-            <a className="btn btn-ghost" href={av.stsUrl} target="_blank" rel="noopener noreferrer">Explore STS programs ↗</a>
+            <a className="btn btn-primary" href="/volunteer" onClick={(e) => { e.preventDefault(); if (window.__navigate) window.__navigate("volunteer"); }}>Register to volunteer →</a>
+            {av.orgUrl && <a className="btn btn-ghost" href={av.orgUrl} target="_blank" rel="noopener noreferrer">About Afrovanguard ↗</a>}
           </div>
         </div>
       </div>
@@ -933,7 +933,7 @@ function MentorsPage({ setPage }) {
           </p>
           <div style={{ display: "flex", gap: 12, marginTop: 30, flexWrap: "wrap" }}>
             <button className="btn btn-gold btn-lg" onClick={() => setPage("volunteers")}>Become a mentor →</button>
-            {av && <a className="btn btn-on-dark-ghost btn-lg" href={av.volunteerUrl} target="_blank" rel="noopener noreferrer">Afrovanguard volunteer hub ↗</a>}
+            <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("volunteer")}>Register to volunteer →</button>
           </div>
         </div>
       </section>

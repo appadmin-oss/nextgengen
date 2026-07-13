@@ -34,10 +34,14 @@ function mentor_full(array $m): array {
 
 function mentorship_links(): array {
     $av = $GLOBALS['CONFIG']['afrovanguard'] ?? [];
+    // NGG is the primary site. The parent-org / STS destinations aren't fully
+    // set up, so anything not explicitly configured falls back to NGG's own
+    // pages rather than pointing users at an unbuilt site.
+    $ngg = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? 'https://next.afrovanguard.org.ng'), '/');
     return [
         'orgUrl'        => $av['org_url'] ?? 'https://afrovanguard.org.ng',
-        'stsUrl'        => $av['sts_url'] ?? 'https://afrovanguard.org.ng/projects/sts/programs/',
-        'volunteerUrl'  => $av['volunteer_url'] ?? 'https://cacentre.afrovanguard.org.ng/volunteer',
+        'stsUrl'        => $av['sts_url'] ?? $ngg,
+        'volunteerUrl'  => $av['volunteer_url'] ?? ($ngg . '/volunteer'),
         'mentorProgram' => $av['mentor_program'] ?? 'Street-To-Stardom · Next Gen',
     ];
 }

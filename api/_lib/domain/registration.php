@@ -807,9 +807,12 @@ function admin_cards_data(array $p): array {
 function idcard_program(): array {
     $cfg = setting_get('idcard');
     $p = is_array($cfg) ? $cfg : [];
+    // Default the printed website to NGG (the main site, where every /q/<token>
+    // profile resolves) — not the not-yet-live STS domain. Admin-overridable.
+    $siteHost = preg_replace('#^https?://#', '', rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? 'next.afrovanguard.org.ng'), '/')) ?: 'next.afrovanguard.org.ng';
     $p += [
         'program' => 'LCASP', 'year' => gmdate('Y'), 'motto' => 'EMPOWERED 360°',
-        'website' => 'sts.afrovanguard.org.ng', 'phone' => '+234 903 777 6318',
+        'website' => $siteHost, 'phone' => '+234 903 777 6318',
         'logoLockup' => '/assets/idcard/logo-lockup.png',
         'logoOkun' => '/assets/idcard/logo-okun.png',
     ];

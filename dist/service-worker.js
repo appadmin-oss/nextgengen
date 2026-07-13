@@ -6,7 +6,7 @@
    - Bumping CACHE_VERSION invalidates everything on next visit
    ================================================================ */
 
-const CACHE_VERSION = 'ngg-47d614d0db';
+const CACHE_VERSION = 'ngg-4f916e16fa';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 

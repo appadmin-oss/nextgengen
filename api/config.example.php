@@ -145,14 +145,15 @@ return [
 
     // -----------------------------------------------------------------------
     // Afrovanguard mentorship connection. NGG ("Next Gen") is a program inside
-    // Afrovanguard's Street-To-Stardom (STS). Mentors are drawn from the same
-    // pool; these links wire the NGG mentorship surface to Afrovanguard's, and
-    // the mentor sign-up funnels into the shared STS volunteer pipeline.
+    // Afrovanguard's Street-To-Stardom (STS) — but NGG is the MAIN, live site.
+    // Leave sts_url / volunteer_url EMPTY and they fall back to NGG's own pages
+    // (this site + /volunteer); only set them once the external STS site is
+    // actually live, so nothing links users to an unbuilt destination.
     // -----------------------------------------------------------------------
     'afrovanguard' => [
-        'org_url'        => 'https://afrovanguard.org.ng',
-        'sts_url'        => 'https://afrovanguard.org.ng/projects/sts/programs/',
-        'volunteer_url'  => 'https://cacentre.afrovanguard.org.ng/volunteer',
+        'org_url'        => 'https://afrovanguard.org.ng',   // parent org (optional)
+        'sts_url'        => '',   // empty ⇒ NGG (app_origin); set when STS is live
+        'volunteer_url'  => '',   // empty ⇒ NGG's own /volunteer
         'mentor_program' => 'Street-To-Stardom · Next Gen',
         // Sync: pull Afrovanguard's approved mentor/volunteer pool into NGG's
         // mentors table (source='afrovanguard'). Leave `api_token` empty to
