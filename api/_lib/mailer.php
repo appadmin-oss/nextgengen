@@ -45,13 +45,17 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
     $from = mail_from();
     $text = $text ?? trim(preg_replace('/\n{3,}/', "\n\n", strip_tags(preg_replace('#<br\s*/?>|</p>|</div>#i', "\n", $html)) ?? ''));
 
+    $GLOBALS['__mail_last_error'] = '';
     $smtp = $CONFIG['mail']['smtp'] ?? [];
     try {
         if (!empty($smtp['host'])) {
             return smtp_send($smtp, $from, $to, $subject, $html, $text);
         }
-        return mail_native($from, $to, $subject, $html);
+        $ok = mail_native($from, $to, $subject, $html);
+        if (!$ok) $GLOBALS['__mail_last_error'] = 'php_mail() was rejected or is unavailable on this host. No SMTP is configured — set mail.smtp.host/user/pass in api/config.php for reliable delivery.';
+        return $ok;
     } catch (Throwable $e) {
+        $GLOBALS['__mail_last_error'] = $e->getMessage();
         error_log('[send_mail] ' . $e->getMessage());
         return false;
     }
@@ -66,7 +70,11 @@ function mail_native(array $from, string $to, string $subject, string $html): bo
     ];
     if (!empty($from['replyTo'])) $headers[] = 'Reply-To: ' . $from['replyTo'];
     unset($boundary);
-    return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $html, implode("\r\n", $headers));
+    // Set the envelope sender (-f). Many shared hosts drop or SPF-fail mail
+    // without a real envelope-from on the sending domain. Only when it's a
+    // valid address (from trusted config) — never interpolate untrusted input.
+    $params = filter_var($from['email'], FILTER_VALIDATE_EMAIL) ? ('-f' . $from['email']) : '';
+    return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $html, implode("\r\n", $headers), $params);
 }
 
 /**

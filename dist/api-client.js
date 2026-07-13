@@ -331,6 +331,7 @@
       settings: {
         get: () => request('/admin/settings.php'),
         set: (data) => request('/admin/settings.php', { body: { data } }),
+        testMail: (to) => request('/admin/settings.php', { body: { action: 'testMail', to } }),
       },
       audit:     (q) => request('/admin/audit.php' + qs(typeof q === 'object' && q ? q : { limit: q })),
     },

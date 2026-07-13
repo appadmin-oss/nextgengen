@@ -168,6 +168,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.contact.status'    => 'admin_contact_status',
             'admin.settings.get'      => 'admin_settings_get',
             'admin.settings.set'      => 'admin_settings_set',
+            'admin.mail.test'         => 'admin_mail_test',
             'admin.assignments.list'        => 'admin_assignments_list',
             'admin.assignments.upsert'      => 'admin_assignments_upsert',
             'admin.assignments.submissions' => 'admin_assignment_submissions',

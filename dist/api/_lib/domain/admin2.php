@@ -223,6 +223,27 @@ function admin_settings_set(array $p): array {
     return ['ok' => true];
 }
 
+// Diagnose email delivery: send a real message and report exactly what happened
+// (mode = smtp|php_mail, delivered, and the captured error) so "emails don't
+// deliver" is debuggable instead of silent.
+function admin_mail_test(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $to = trim((string)($p['to'] ?? ''));
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) $to = (string)($g['requester']['email'] ?? '');
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'no_valid_recipient'];
+    $mode = !empty($GLOBALS['CONFIG']['mail']['smtp']['host'] ?? '') ? 'smtp' : 'php_mail';
+    $GLOBALS['__mail_last_error'] = '';
+    $delivered = send_mail($to, 'NGG email delivery test', email_template([
+        'title' => 'Delivery test',
+        'intro' => 'If you can read this, outbound email is working.',
+        'bodyHtml' => '<p style="margin:0">Sent from the Control Room email diagnostic (' . esc_html($mode) . ' mode).</p>',
+        'footNote' => 'Automated delivery test — no action needed.',
+    ]));
+    audit('admin.mail.test', $g['requester']['memberId'], $to, ['mode' => $mode, 'delivered' => $delivered], (string)($p['ip'] ?? ''));
+    // ok:true = the diagnostic ran; `delivered` says whether the send succeeded.
+    return ['ok' => true, 'delivered' => $delivered, 'to' => $to, 'mode' => $mode, 'error' => (string)($GLOBALS['__mail_last_error'] ?? '')];
+}
+
 /** Editable site copy, merged over defaults so the homepage never breaks. */
 function site_content_defaults(): array {
     return [

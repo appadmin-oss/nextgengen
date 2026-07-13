@@ -329,6 +329,10 @@ backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data'
 chk('blank site field restores its default', backend_dispatch('public.siteContent', [])['site']['heroEmphasis'] === 'not waiting');
 chk('volunteer settings roundtrip', (function () { backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['volunteer_session_hours' => 6, 'volunteer_applications_open' => false]]); $g = backend_dispatch('admin.settings.get', ['requesterId' => 'NGG-2025-0099'])['settings']; return $g['volunteer_session_hours'] === 6 && $g['volunteer_applications_open'] === false; })());
 chk('idcard branding: defaults exposed', isset(backend_dispatch('admin.settings.get', ['requesterId' => 'NGG-2025-0099'])['settings']['idcard']['program']));
+chk('mail delivery test op reports mode + delivered + recipient', (function () {
+    $r = backend_dispatch('admin.mail.test', ['requesterId' => 'NGG-2025-0099', 'to' => 'diag@example.com']);
+    return $r['ok'] === true && array_key_exists('delivered', $r) && $r['to'] === 'diag@example.com' && in_array($r['mode'], ['php_mail', 'smtp'], true);
+})());
 chk('idcard branding roundtrip (editable)', (function () {
     backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['idcard' => ['website' => 'next.afrovanguard.org.ng', 'motto' => 'EMPOWERED 360°', 'logoLockup' => '/assets/idcard/logo-lockup.png']]]);
     $id = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099'])['program'];

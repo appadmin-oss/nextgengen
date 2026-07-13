@@ -42,7 +42,7 @@
   --font-display: "Sora", "Archivo", system-ui, sans-serif;
   --font-body:    "Inter", system-ui, sans-serif;
   --font-mono:    "JetBrains Mono", ui-monospace, monospace;
-  --font-marker:  "Caveat", "Bricolage Grotesque", cursive;
+  --font-marker:  "Caveat Brush", "Caveat", "Bricolage Grotesque", cursive;
 
   /* Radius / shadow */
   --r-sm: 8px;
