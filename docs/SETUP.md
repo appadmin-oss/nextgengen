@@ -66,7 +66,13 @@ maps to). `dist/` deliberately excludes `api/config.php` and the local SQLite fi
    - `app_origin` — your final HTTPS URL (no trailing slash).
    - `db` — leave `dsn` empty for SQLite (simplest), or point it at MySQL.
    - `mail` — SMTP host/user/pass for reliable delivery (or leave blank to use
-     PHP `mail()`).
+     PHP `mail()`). For inbox placement: put `from_email` on a domain you
+     control, align it with the SMTP mailbox, and add **SPF + DKIM + DMARC**
+     DNS records for that domain — without them mail is spam-filtered even when
+     the send succeeds. Verify with **Control Room → Settings → Email delivery**,
+     which reports the mode, resolved sender, SMTP target, and SPF/alignment
+     warnings. (Messages already ship with `Date`, a domain-scoped `Message-ID`,
+     and a `text/plain` part alongside the HTML.)
    - `cloudinary` — cloud name + key + secret if you want direct uploads
      (leave `cloud_name` blank to disable; the UI falls back to pasting URLs).
 2. Permissions:

@@ -25,12 +25,24 @@ return [
     ],
 
     // -----------------------------------------------------------------------
-    // Outbound email. Uses SMTP when `smtp.host` is set (recommended for
-    // deliverability on shared hosting), else PHP mail().
+    // Outbound email. Uses SMTP when `smtp.host` is set (STRONGLY recommended —
+    // shared-host PHP mail() is usually SPF-unaligned and lands in spam), else
+    // PHP mail(). Every message carries Date + Message-ID + a text/plain part.
+    //
+    // DELIVERABILITY CHECKLIST (the usual cause of "emails don't arrive"):
+    //   1. Set smtp.* below to an authenticated relay (Mailgun/SES/Postmark/etc).
+    //   2. `from_email` MUST be on a domain you control and that the relay is
+    //      authorized to send for — ideally the same mailbox as `smtp.user`.
+    //   3. In that domain's DNS add SPF (include the relay), DKIM (the relay's
+    //      key), and a DMARC record. Without these, mail is spam-filtered or
+    //      rejected even when the send "succeeds".
+    //   4. Verify from Control Room → Settings → Email delivery ("Send test
+    //      email") — it reports the mode, resolved From/Reply-To, SMTP target,
+    //      and flags SPF/From-alignment problems.
     // -----------------------------------------------------------------------
     'mail' => [
         'from_name'  => 'Next Generation Genius',
-        'from_email' => 'no-reply@ngg.afrovanguard.org',
+        'from_email' => 'no-reply@ngg.afrovanguard.org',  // match the smtp.user domain
         'reply_to'   => 'next@afrovanguard.org.ng',
         'smtp' => [
             'host'   => '',            // e.g. 'smtp.mailgun.org' — empty = use mail()

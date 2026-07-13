@@ -241,8 +241,35 @@ function admin_mail_test(array $p): array {
         'footNote' => 'Automated delivery test — no action needed.',
     ]));
     audit('admin.mail.test', $g['requester']['memberId'], $to, ['mode' => $mode, 'delivered' => $delivered], (string)($p['ip'] ?? ''));
+
+    // Surface the resolved sender config so SPF/DKIM alignment problems (the
+    // usual "it sends but lands in spam / gets rejected" cause) are visible.
+    $from = mail_from();
+    $smtp = (array)($GLOBALS['CONFIG']['mail']['smtp'] ?? []);
+    $fromDomain = function_exists('mail_domain_of') ? mail_domain_of((string)$from['email']) : '';
+    $hints = [];
+    if ($mode === 'php_mail') {
+        $hints[] = 'No SMTP configured — using PHP mail(). Set mail.smtp.host/user/pass in api/config.php for reliable delivery.';
+    }
+    // Envelope/From must be a domain you're authorized to send for, or SPF fails.
+    if ($fromDomain && $fromDomain !== 'localhost' && !preg_match('/afrovanguard\./i', $fromDomain)) {
+        $hints[] = "From domain is {$fromDomain}. Make sure its DNS has SPF (and ideally DKIM/DMARC) authorizing this relay, or mail will be spam-filtered.";
+    }
+    if ($mode === 'smtp' && !empty($smtp['user']) && $fromDomain && stripos((string)$smtp['user'], (string)$fromDomain) === false) {
+        $hints[] = "SMTP auth user doesn't match the From domain ({$fromDomain}) — many relays reject or spam-flag a mismatched From. Align mail.from_email with the authenticated mailbox.";
+    }
     // ok:true = the diagnostic ran; `delivered` says whether the send succeeded.
-    return ['ok' => true, 'delivered' => $delivered, 'to' => $to, 'mode' => $mode, 'error' => (string)($GLOBALS['__mail_last_error'] ?? '')];
+    return [
+        'ok' => true, 'delivered' => $delivered, 'to' => $to, 'mode' => $mode,
+        'error' => (string)($GLOBALS['__mail_last_error'] ?? ''),
+        'from' => (string)$from['email'], 'fromName' => (string)$from['name'],
+        'replyTo' => (string)$from['replyTo'], 'fromDomain' => $fromDomain,
+        'smtp' => $mode === 'smtp' ? [
+            'host' => (string)($smtp['host'] ?? ''), 'port' => (int)($smtp['port'] ?? 587),
+            'secure' => (string)($smtp['secure'] ?? 'tls'), 'authUser' => (string)($smtp['user'] ?? ''),
+        ] : null,
+        'hints' => $hints,
+    ];
 }
 
 /** Editable site copy, merged over defaults so the homepage never breaks. */

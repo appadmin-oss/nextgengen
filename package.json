@@ -8,6 +8,7 @@
     "dev": "http-server -p 8123 -s",
     "check": "node build.js && echo build OK",
     "test:api": "php api/tests/run.php",
+    "test:smtp": "php api/tests/smtp-send.php",
     "test:kiosk": "node tests/kiosk-offline.js"
   },
   "devDependencies": {

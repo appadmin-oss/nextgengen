@@ -53,7 +53,7 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
         if (!empty($smtp['host'])) {
             return smtp_send($smtp, $from, $to, $subject, $html, $text);
         }
-        $ok = mail_native($from, $to, $subject, $html);
+        $ok = mail_native($from, $to, $subject, $html, $text);
         if (!$ok) $GLOBALS['__mail_last_error'] = 'php_mail() was rejected or is unavailable on this host. No SMTP is configured — set mail.smtp.host/user/pass in api/config.php for reliable delivery.';
         return $ok;
     } catch (Throwable $e) {
@@ -63,20 +63,52 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
     }
 }
 
-function mail_native(array $from, string $to, string $subject, string $html): bool {
-    $boundary = 'ngg_' . bin2hex(random_bytes(8));
-    $headers = [
-        'MIME-Version: 1.0',
-        'From: ' . mb_encode_mimeheader($from['name']) . ' <' . $from['email'] . '>',
-        'Content-Type: text/html; charset=UTF-8',
+/** The domain an address belongs to (for Message-ID / diagnostics). */
+function mail_domain_of(string $email): string {
+    return substr((string)strrchr($email, '@'), 1) ?: 'localhost';
+}
+
+/**
+ * RFC 5322 Date + a domain-scoped Message-ID. Omitting either is a strong spam
+ * signal and some strict MTAs reject outright — every message must carry both.
+ */
+function mail_std_headers(string $fromEmail): array {
+    return [
+        'Date: ' . gmdate('D, d M Y H:i:s') . ' +0000',
+        'Message-ID: <' . bin2hex(random_bytes(16)) . '@' . mail_domain_of($fromEmail) . '>',
     ];
+}
+
+/**
+ * A multipart/alternative body carrying BOTH a text/plain and a text/html part
+ * (HTML-only mail places worse). CRLF-normalized per RFC 5322.
+ */
+function mail_alt_body(string $html, string $text, string $boundary): string {
+    $crlf = fn($s) => preg_replace('/\r\n|\r|\n/', "\r\n", $s) ?? $s;
+    return "--$boundary\r\n"
+        . "Content-Type: text/plain; charset=UTF-8\r\n\r\n"
+        . $crlf($text) . "\r\n\r\n"
+        . "--$boundary\r\n"
+        . "Content-Type: text/html; charset=UTF-8\r\n\r\n"
+        . $crlf($html) . "\r\n\r\n"
+        . "--$boundary--\r\n";
+}
+
+function mail_native(array $from, string $to, string $subject, string $html, string $text = ''): bool {
+    $boundary = 'ngg_' . bin2hex(random_bytes(8));
+    $headers = array_merge([
+        'MIME-Version: 1.0',
+    ], mail_std_headers($from['email']), [
+        'From: ' . mb_encode_mimeheader($from['name']) . ' <' . $from['email'] . '>',
+        'Content-Type: multipart/alternative; boundary="' . $boundary . '"',
+    ]);
     if (!empty($from['replyTo'])) $headers[] = 'Reply-To: ' . $from['replyTo'];
-    unset($boundary);
+    $body = mail_alt_body($html, $text !== '' ? $text : strip_tags($html), $boundary);
     // Set the envelope sender (-f). Many shared hosts drop or SPF-fail mail
     // without a real envelope-from on the sending domain. Only when it's a
     // valid address (from trusted config) — never interpolate untrusted input.
     $params = filter_var($from['email'], FILTER_VALIDATE_EMAIL) ? ('-f' . $from['email']) : '';
-    return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $html, implode("\r\n", $headers), $params);
+    return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, implode("\r\n", $headers), $params);
 }
 
 /**
@@ -129,15 +161,19 @@ function smtp_send(array $smtp, array $from, string $to, string $subject, string
     $cmd('RCPT TO:<' . $to . '>', '250');
     $cmd('DATA', '354');
 
-    $headers = "From: " . mb_encode_mimeheader($from['name']) . " <" . $from['email'] . ">\r\n"
+    $boundary = 'ngg_' . bin2hex(random_bytes(8));
+    $msg = implode("\r\n", mail_std_headers($from['email'])) . "\r\n"
+        . "From: " . mb_encode_mimeheader($from['name']) . " <" . $from['email'] . ">\r\n"
         . "To: <$to>\r\n"
         . ($from['replyTo'] ? "Reply-To: " . $from['replyTo'] . "\r\n" : '')
         . "Subject: =?UTF-8?B?" . base64_encode($subject) . "?=\r\n"
         . "MIME-Version: 1.0\r\n"
-        . "Content-Type: text/html; charset=UTF-8\r\n\r\n";
-    // Dot-stuff lines beginning with '.'
-    $body = preg_replace('/^\./m', '..', $html) ?? $html;
-    $cmd($headers . $body . "\r\n.", '250');
+        . "Content-Type: multipart/alternative; boundary=\"$boundary\"\r\n\r\n"
+        . mail_alt_body($html, $text, $boundary);
+    // Normalize to CRLF (RFC 5321) then dot-stuff any line starting with '.'.
+    $msg = preg_replace('/\r\n|\r|\n/', "\r\n", $msg) ?? $msg;
+    $msg = preg_replace('/^\./m', '..', $msg) ?? $msg;
+    $cmd($msg . "\r\n.", '250');
     fwrite($sock, "QUIT\r\n");
     fclose($sock);
     return true;

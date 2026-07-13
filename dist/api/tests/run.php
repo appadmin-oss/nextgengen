@@ -363,6 +363,23 @@ chk('mail delivery test op reports mode + delivered + recipient', (function () {
     $r = backend_dispatch('admin.mail.test', ['requesterId' => 'NGG-2025-0099', 'to' => 'diag@example.com']);
     return $r['ok'] === true && array_key_exists('delivered', $r) && $r['to'] === 'diag@example.com' && in_array($r['mode'], ['php_mail', 'smtp'], true);
 })());
+chk('mail test surfaces sender config + actionable hints', (function () {
+    $r = backend_dispatch('admin.mail.test', ['requesterId' => 'NGG-2025-0099', 'to' => 'diag@example.com']);
+    return $r['from'] === 'test@example.com' && $r['fromDomain'] === 'example.com' && is_array($r['hints'])
+        && (bool)array_filter($r['hints'], fn($h) => stripos($h, 'SMTP') !== false || stripos($h, 'SPF') !== false);
+})());
+// Deliverability headers: every message must carry Date + a domain-scoped Message-ID.
+chk('mail headers include Date + domain-scoped Message-ID', (function () {
+    $h = mail_std_headers('no-reply@afrovanguard.org.ng');
+    return (bool)preg_grep('/^Date: /', $h) && (bool)preg_grep('/^Message-ID: <[0-9a-f]{32}@afrovanguard\.org\.ng>$/', $h);
+})());
+chk('mail domain falls back to localhost for a bare address', mail_domain_of('garbage') === 'localhost');
+// multipart/alternative body carries both parts and is CRLF-clean (no bare LF).
+chk('multipart body carries text + html parts, CRLF-normalized', (function () {
+    $b = mail_alt_body("<p>Hi</p>\nMore", "Hi\nMore", 'BND');
+    $hasBoth = strpos($b, 'text/plain') !== false && strpos($b, 'text/html') !== false && strpos($b, '--BND--') !== false;
+    return $hasBoth && strpos($b, "\r\n") !== false && !preg_match('/[^\r]\n/', $b);
+})());
 chk('idcard branding roundtrip (editable)', (function () {
     backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['idcard' => ['website' => 'next.afrovanguard.org.ng', 'motto' => 'EMPOWERED 360°', 'logoLockup' => '/assets/idcard/logo-lockup.png']]]);
     $id = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099'])['program'];
