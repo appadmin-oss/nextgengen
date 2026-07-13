@@ -194,6 +194,7 @@ function admin_settings_get(array $p): array {
         'mentor_applications_open'  => (setting_raw('mentor_applications_open') ?? '1') !== '0',
         'volunteer_applications_open' => (setting_raw('volunteer_applications_open') ?? '1') !== '0',
         'volunteer_sms_notify'      => (setting_raw('volunteer_sms_notify') ?? '1') !== '0',
+        'checkin_state_emails'      => (setting_raw('checkin_state_emails') ?? '1') !== '0',
         'volunteer_session_hours'   => (int)(setting_raw('volunteer_session_hours') ?: 4),
         'featured_session_id'       => setting_raw('featured_session_id') ?? '',
         'geofence_enabled'          => setting_raw('geofence_enabled') === '1',
@@ -206,7 +207,7 @@ function admin_settings_get(array $p): array {
 function admin_settings_set(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $data = $p['data'] ?? [];
-    foreach (['applications_open', 'mentor_applications_open', 'volunteer_applications_open', 'volunteer_sms_notify', 'geofence_enabled', 'photo_gate_issuance'] as $k) {
+    foreach (['applications_open', 'mentor_applications_open', 'volunteer_applications_open', 'volunteer_sms_notify', 'checkin_state_emails', 'geofence_enabled', 'photo_gate_issuance'] as $k) {
         if (array_key_exists($k, $data)) setting_set($k, !empty($data[$k]) ? '1' : '0', $g['requester']['memberId']);
     }
     if (array_key_exists('volunteer_session_hours', $data)) setting_set('volunteer_session_hours', (string)max(1, min(12, (int)$data['volunteer_session_hours'])), $g['requester']['memberId']);

@@ -288,6 +288,30 @@ db_insert('summer_students', ['studentId' => 'SUM-K-1', 'cohortId' => '', 'token
 $ci = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-KIOSK1', 'method' => 'gate']);
 chk('gate-authorized kiosk check-in writes attendance (no staff cap needed)', $ci['ok'] === true && (int)db_row("SELECT COUNT(*) c FROM attendance WHERE studentId='SUM-K-1'")['c'] === 1);
 chk('unauthorized check-in (no cap, no gate) is still refused', !empty(backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-2025-0001', 'token' => 'SUMQR-KIOSK1'])['error']));
+// Check-in state emails — synchronous (no SSH/cron), gated by a setting.
+db_insert('qr_codes', ['token' => 'SUMQR-STATE1', 'batch' => 'BK', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'SUM-ST-1', 'assignedName' => 'State Kid', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-ST-1', 'cohortId' => '', 'token' => 'SUMQR-STATE1', 'handle' => 'statekid', 'fullName' => 'State Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'parentEmail' => 'guardian-state@example.com', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+$GLOBALS['__mail_sink'] = [];
+$sci = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-STATE1', 'method' => 'gate']);
+chk('new student check-in emails the guardian a state note', $sci['ok'] === true && count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'guardian-state@example.com')) === 1);
+$GLOBALS['__mail_sink'] = [];
+backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-STATE1', 'method' => 'gate']);
+chk('same-day re-scan does not re-email the guardian', count($GLOBALS['__mail_sink']) === 0);
+// Setting off ⇒ no state email even on a fresh check-in.
+setting_set('checkin_state_emails', '0', 'test');
+db_insert('qr_codes', ['token' => 'SUMQR-STATE2', 'batch' => 'BK', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'SUM-ST-2', 'assignedName' => 'Off Kid', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-ST-2', 'cohortId' => '', 'token' => 'SUMQR-STATE2', 'handle' => 'offkid', 'fullName' => 'Off Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'parentEmail' => 'guardian-off@example.com', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+$GLOBALS['__mail_sink'] = [];
+backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-STATE2', 'method' => 'gate']);
+chk('checkin_state_emails=0 suppresses the state email', count($GLOBALS['__mail_sink']) === 0);
+setting_set('checkin_state_emails', '1', 'test');
+// Volunteer check-in mails the volunteer their standing (award-focused / nudge).
+db_insert('volunteers', ['volunteerId' => 'VOL-ST-99', 'fullName' => 'State Volunteer', 'email' => 'vol-state@example.com', 'role' => 'Mentor', 'token' => 'VOLQR-STATE', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('qr_codes', ['token' => 'VOLQR-STATE', 'batch' => 'BK', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'VOL-ST-99', 'assignedName' => 'State Volunteer', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+$GLOBALS['__mail_sink'] = [];
+$vsci = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'VOLQR-STATE', 'method' => 'gate']);
+chk('volunteer check-in emails the volunteer their state', $vsci['ok'] === true && empty($vsci['already']) && count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'vol-state@example.com')) === 1);
+unset($GLOBALS['__mail_sink']);
 db_insert('events', ['eventId' => 'EV-VOL-1', 'title' => 'Saturday session', 'kind' => 'session', 'sessionId' => '', 'startAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 3 * 86400), 'endAt' => '', 'centre' => 'Egbeda', 'location' => 'Main hall', 'coverUrl' => '', 'body' => '', 'capacity' => 20, 'isPublic' => 1, 'status' => 'published', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 $slots = volunteer_upcoming_sessions();
 chk('upcoming sessions are capacity-aware', $slots[0]['title'] === 'Saturday session' && $slots[0]['spotsLeft'] === 20);

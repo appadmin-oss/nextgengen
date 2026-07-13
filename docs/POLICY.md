@@ -84,6 +84,13 @@ ledger and drive levels, streaks and awards.
   Attendance Marshal, Vanguard of Order) are minted **once each**, **emailed**,
   and shown **in-app** on the volunteer's digital ID. These sit alongside the
   service-hour certificates (§5) and feed the ₦-value Awards framework.
+- **Check-in state email:** every new check-in triggers a personal email about
+  where that person stands. When they're **doing well** — a service-certificate
+  milestone within reach — the message is **award-focused** ("one more session
+  to unlock your award"); otherwise it's a warm **nudge** toward the habit.
+  Guardians receive the student's version (milestone celebration or a "they made
+  it today" note). Sent **synchronously** at check-in (no cron/SSH dependency)
+  and toggleable in *Control Room → Settings* (default on).
 
 ## Part III — Architecture of Order & Crisis Protocol
 

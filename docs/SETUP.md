@@ -122,6 +122,27 @@ Add two cron entries (cPanel → Cron Jobs):
 30 * * * *  php /home/USER/public_html/api/tools/export-sheets.php >/dev/null 2>&1
 ```
 
+### No SSH / no cron host
+
+Some shared hosts give you no shell and no scheduler. The app is built to run
+without either:
+
+- **Schema migrations** apply automatically on the first request after a deploy
+  (`db_migrate` runs against the target version) — no CLI step.
+- **The first admin sign-in** self-provisions the super-admin, so you never need
+  a shell to bootstrap access.
+- **All transactional email is synchronous** — registration confirmations,
+  volunteer IDs, milestone certificates, and the **check-in state emails**
+  (a nudge, or an award-focused note when the person is doing well) are sent
+  in-request at the moment they're triggered. Nothing here waits on `run-jobs`.
+
+What *does* need the cron in `Step 6` (and therefore quietly no-ops without it):
+scheduled-post publishing, promo expiry, auth/audit GC, and the optional Sheets
+mirror. If you can't run cron, either add a **web-cron** service that hits
+`api/tools/run-jobs.php` over HTTPS on a schedule, or accept that those
+housekeeping jobs won't run. The core attendance/kiosk/email flows do not
+depend on them.
+
 ## Step 7 — Google Sheets mirror (optional)
 
 Only if admins want a spreadsheet view. Follow `apps-script/README.md`: deploy the

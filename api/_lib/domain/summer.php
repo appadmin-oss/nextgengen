@@ -222,6 +222,100 @@ function admin_summer_student_status(array $p): array {
     return ['ok' => true];
 }
 
+// ── Check-in state emails ────────────────────────────────────────────────────
+// On a NEW check-in we send the person a note about where they stand — a nudge
+// when they're building the habit, an award-focused message when they're doing
+// well and a milestone is close. Sent SYNCHRONOUSLY (the production host has no
+// SSH/cron), best-effort, and gated by the `checkin_state_emails` setting so an
+// admin can switch it off. Default: on.
+function checkin_emails_enabled(): bool {
+    $v = setting_raw('checkin_state_emails');
+    if ($v === null || $v === '') return true; // default on
+    return !in_array(strtolower(trim($v)), ['0', 'off', 'false', 'no'], true);
+}
+
+/** Volunteer just checked in → mail them their standing. When a milestone cert
+ *  was minted this very check-in, that certificate email already IS the award
+ *  message, so we don't double-send here. */
+function checkin_volunteer_email(array $v, int $sessions, ?array $cert): void {
+    if ($cert) return; // the cert email (award) was already sent this check-in
+    if (!checkin_emails_enabled()) return;
+    $to = trim((string)($v['email'] ?? ''));
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) return;
+    $first = esc_html(explode(' ', trim((string)($v['fullName'] ?? '')))[0] ?: 'there');
+    $game = function_exists('volunteer_game_state')
+        ? volunteer_game_state((string)$v['volunteerId'])
+        : ['streak' => 0, 'points' => 0];
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $url = $origin . '/volunteer';
+    // Next service certificate milestone.
+    $next = null; foreach (VOL_MILESTONES as $m) { if ($m > $sessions) { $next = $m; break; } }
+
+    if ($next !== null && ($next - $sessions) <= 2) {
+        // Doing well and the award is within reach — make it about the award.
+        $left = $next - $sessions;
+        $subject = "You're almost at your {$next}-session award";
+        $html = email_template([
+            'title' => 'The award is close',
+            'intro' => "Checked in, {$first} — that's {$sessions} sessions of service. Just " . ($left === 1 ? 'one more' : "{$left} more") . " to unlock your {$next}-session certificate.",
+            'bodyHtml' => '<p style="margin:0 0 10px">Show up ' . ($left === 1 ? 'one more time' : "{$left} more times") . ' and the certificate mints automatically — verifiable, yours to share, and it lands right here in your inbox.</p>'
+                . (((int)($game['streak'] ?? 0)) > 1 ? '<p style="margin:0;color:#8A93A6;font-size:13px">Current streak: ' . (int)$game['streak'] . ' days · ' . (int)($game['points'] ?? 0) . ' service points.</p>' : ''),
+            'ctaLabel' => 'See my progress →', 'ctaUrl' => $url,
+        ]);
+    } elseif (((int)($game['streak'] ?? 0)) > 1) {
+        // On a roll — motivate, keep the streak alive.
+        $subject = "Checked in — {$game['streak']}-day streak";
+        $html = email_template([
+            'title' => 'You showed up',
+            'intro' => "Good to see you, {$first}. That's {$sessions} sessions logged and a {$game['streak']}-day streak going.",
+            'bodyHtml' => '<p style="margin:0 0 10px">You keep this place in order. Every day you take the roll builds toward your next service award — come back tomorrow and keep it alive.</p>',
+            'ctaLabel' => 'See my progress →', 'ctaUrl' => $url,
+        ]);
+    } else {
+        // Gentle nudge — build the habit.
+        $subject = 'Checked in — thank you';
+        $html = email_template([
+            'title' => 'You showed up',
+            'intro' => "Good to see you, {$first}. That's {$sessions} sessions of service logged.",
+            'bodyHtml' => '<p style="margin:0 0 10px">Consistency is the whole game — come back tomorrow and start a streak. Your service adds up to a certificate you can show anywhere.</p>',
+            'ctaLabel' => 'See my progress →', 'ctaUrl' => $url,
+        ]);
+    }
+    @send_mail($to, $subject, $html);
+}
+
+/** Student just checked in → mail the guardian a warm note about where their
+ *  child stands: a milestone celebration, or a gentle "they made it today". */
+function checkin_student_email(array $s, int $days): void {
+    if (!checkin_emails_enabled()) return;
+    $to = trim((string)($s['parentEmail'] ?? ''));
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) return;
+    $first = esc_html(explode(' ', trim((string)($s['fullName'] ?? '')))[0] ?: 'your child');
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $url = $origin . '/q/' . rawurlencode((string)($s['token'] ?? ''));
+    $milestones = [1, 5, 10, 15, 20];
+
+    if ($days === 1) {
+        $subject = "{$first} checked in — day one";
+        $intro = "{$first} just checked in for their first day at NGG Summer School.";
+        $body = "<p style=\"margin:0 0 10px\">We're glad they're here. You'll get a note as they reach each milestone — the goal is a certificate of completion at the end of the programme.</p>";
+    } elseif (in_array($days, $milestones, true)) {
+        $subject = "{$first} has attended {$days} days";
+        $intro = "{$first} just checked in — that's {$days} days at NGG Summer School.";
+        $body = "<p style=\"margin:0 0 10px\">Steady attendance is how the growth compounds. {$first} is building the habit that earns the certificate of completion.</p>";
+    } else {
+        $subject = "{$first} checked in today";
+        $intro = "{$first} arrived and checked in at NGG Summer School today.";
+        $body = "<p style=\"margin:0 0 10px\">Thank you for getting them here. Every day counts toward the certificate of completion — see the days so far on their page.</p>";
+    }
+    $html = email_template([
+        'title' => 'Checked in', 'intro' => $intro, 'bodyHtml' => $body,
+        'ctaLabel' => "Open {$first}'s page →", 'ctaUrl' => $url,
+        'footNote' => "You are receiving this because you are {$first}'s guardian at Next Generation Genius.",
+    ]);
+    @send_mail($to, $subject, $html);
+}
+
 // ── Attendance check-in (scan a card) — used by the kiosk in Phase 2 ─────────
 function summer_checkin(array $p): array {
     // A desk-password KIOSK session has no staff member/cap — but the caller
@@ -252,6 +346,7 @@ function summer_checkin(array $p): array {
             // Service ledger: a milestone day mints the certificate right here.
             $sessions = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$v['volunteerId']])['c'] ?? 0);
             $cert = volunteer_maybe_issue_cert($v, $sessions);
+            checkin_volunteer_email($v, $sessions, $cert);
         }
         return ['ok' => true, 'already' => $already, 'student' => volunteer_public($v), 'certIssued' => $cert];
     }
@@ -261,6 +356,8 @@ function summer_checkin(array $p): array {
     if (!$already) {
         db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
         audit('summer.checkin', $byId, $s['studentId'], ['date' => $today], (string)($p['ip'] ?? ''));
+        $days = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$s['studentId']])['c'] ?? 0);
+        checkin_student_email($s, $days);
     }
     return ['ok' => true, 'already' => $already, 'student' => summer_student_public($s)];
 }
