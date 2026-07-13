@@ -224,7 +224,16 @@ function admin_summer_student_status(array $p): array {
 
 // ── Attendance check-in (scan a card) — used by the kiosk in Phase 2 ─────────
 function summer_checkin(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    // A desk-password KIOSK session has no staff member/cap — but the caller
+    // (public gate route) has already verified the gate token + kiosk session
+    // bound to it, so it passes gateAuthorized. Everyone else must hold the
+    // 'summer' cap. byId records who/what took the roll for the audit trail.
+    if (!empty($p['gateAuthorized'])) {
+        $byId = substr((string)($p['byId'] ?? 'kiosk'), 0, 64) ?: 'kiosk';
+    } else {
+        $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+        $byId = (string)$g['requester']['memberId'];
+    }
     $token = trim((string)($p['token'] ?? ''));
     $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
     if (!$qr || empty($qr['studentId'])) return ['ok' => false, 'error' => 'qr_unassigned'];
@@ -238,8 +247,8 @@ function summer_checkin(array $p): array {
         $already = (bool)$existing;
         $cert = null;
         if (!$already) {
-            db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $g['requester']['memberId'], 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
-            audit('volunteer.checkin', $g['requester']['memberId'], $v['volunteerId'], ['date' => $today], (string)($p['ip'] ?? ''));
+            db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
+            audit('volunteer.checkin', $byId, $v['volunteerId'], ['date' => $today], (string)($p['ip'] ?? ''));
             // Service ledger: a milestone day mints the certificate right here.
             $sessions = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$v['volunteerId']])['c'] ?? 0);
             $cert = volunteer_maybe_issue_cert($v, $sessions);
@@ -250,8 +259,8 @@ function summer_checkin(array $p): array {
     $existing = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$s['studentId'], $today]);
     $already = (bool)$existing;
     if (!$already) {
-        db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $g['requester']['memberId'], 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
-        audit('summer.checkin', $g['requester']['memberId'], $s['studentId'], ['date' => $today], (string)($p['ip'] ?? ''));
+        db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
+        audit('summer.checkin', $byId, $s['studentId'], ['date' => $today], (string)($p['ip'] ?? ''));
     }
     return ['ok' => true, 'already' => $already, 'student' => summer_student_public($s)];
 }

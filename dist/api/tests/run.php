@@ -282,6 +282,12 @@ chk('point-award milestone mints once + surfaces in-app', (function () {
 db_insert('gate_links', ['gateId' => 'GATE-T-1', 'name' => 'Egbeda Desk', 'cohortId' => '', 'centreId' => 'Egbeda', 'status' => 'active', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso()]);
 $gc = backend_dispatch('gate.context', ['gate' => 'GATE-T-1']);
 chk('gate context resolves centre + attendance duty for the kiosk', ($gc['centre'] ?? '') === 'Egbeda' && !empty($gc['duty']) && !empty($gc['duty']['volunteerId']));
+// Desk-password kiosk check-in: no staff cap, authorized by the gate token.
+db_insert('qr_codes', ['token' => 'SUMQR-KIOSK1', 'batch' => 'BK', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'SUM-K-1', 'assignedName' => 'Kiosk Kid', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-K-1', 'cohortId' => '', 'token' => 'SUMQR-KIOSK1', 'handle' => 'kioskkid', 'fullName' => 'Kiosk Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+$ci = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-KIOSK1', 'method' => 'gate']);
+chk('gate-authorized kiosk check-in writes attendance (no staff cap needed)', $ci['ok'] === true && (int)db_row("SELECT COUNT(*) c FROM attendance WHERE studentId='SUM-K-1'")['c'] === 1);
+chk('unauthorized check-in (no cap, no gate) is still refused', !empty(backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-2025-0001', 'token' => 'SUMQR-KIOSK1'])['error']));
 db_insert('events', ['eventId' => 'EV-VOL-1', 'title' => 'Saturday session', 'kind' => 'session', 'sessionId' => '', 'startAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 3 * 86400), 'endAt' => '', 'centre' => 'Egbeda', 'location' => 'Main hall', 'coverUrl' => '', 'body' => '', 'capacity' => 20, 'isPublic' => 1, 'status' => 'published', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 $slots = volunteer_upcoming_sessions();
 chk('upcoming sessions are capacity-aware', $slots[0]['title'] === 'Saturday session' && $slots[0]['spotsLeft'] === 20);
