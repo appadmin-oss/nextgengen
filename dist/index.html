@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="ngg-build" content="4cbf5b1f54"/>
+<meta name="ngg-build" content="1baf812af6"/>
 <meta charset="utf-8"/>
 <!-- Resolve every relative asset from the site root so deep clean-URL paths
      (e.g. /q/<token>, /s/<handle>) still load app.jsx / styles.css correctly. -->
@@ -127,6 +127,10 @@
 <script defer src="photos.js"></script>
 <script defer src="api-client.js"></script>
 <script defer src="app.min.js"></script>
+<!-- QR decoder for the camera-first check-in kiosk (window.jsQR). Plain vendor
+     script, so the prod build keeps it (only Babel + JSX tags are stripped). -->
+<script src="vendor/jsQR.min.js" defer></script>
+
 <script>
   // Fade out boot screen after React mounts
   (function(){

@@ -2297,15 +2297,96 @@ function ReshootPage() {
   </>);
 }
 
+// Pull a check-in token out of whatever the QR encodes: a full digital-ID URL
+// (…/q/<token> or …/s/<handle>) or a bare printed code.
+function extractCheckinToken(s) {
+  s = String(s || "").trim();
+  const m = s.match(/\/(?:q|s)\/([^/?#\s]+)/i);
+  if (m) { try { return decodeURIComponent(m[1]).toUpperCase(); } catch (_) { return m[1].toUpperCase(); } }
+  return s.replace(/^https?:\/\/[^/]+\/?/i, "").toUpperCase();
+}
+
+// Camera-first QR reader (window.jsQR). Scans continuously, debounces repeat
+// reads, and calls onToken with the extracted code. Falls back gracefully when
+// the camera is denied or the decoder isn't loaded.
+function QRScanner({ onToken, gold }) {
+  const videoRef = React.useRef(null);
+  const streamRef = React.useRef(null);
+  const rafRef = React.useRef(0);
+  const last = React.useRef({ tok: "", at: 0 });
+  const [state, setState] = React.useState("starting"); // starting|live|denied|nolib
+  const [hit, setHit] = React.useState(0); // brief flash on a successful read
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || typeof window.jsQR !== "function") { setState("nolib"); return; }
+    let cancelled = false;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const tick = () => {
+      const v = videoRef.current;
+      if (v && v.readyState >= 2 && v.videoWidth) {
+        canvas.width = v.videoWidth; canvas.height = v.videoHeight;
+        ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+        let img = null; try { img = ctx.getImageData(0, 0, canvas.width, canvas.height); } catch (_) {}
+        if (img) {
+          const res = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+          if (res && res.data) {
+            const tok = extractCheckinToken(res.data);
+            const now = Date.now();
+            if (tok && (tok !== last.current.tok || now - last.current.at > 2500)) {
+              last.current = { tok, at: now };
+              setHit(now);
+              if (navigator.vibrate) { try { navigator.vibrate(40); } catch (_) {} }
+              onToken(tok);
+            }
+          }
+        }
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+      ? navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false })
+          .then(stream => {
+            if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+            streamRef.current = stream;
+            if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.setAttribute("playsinline", ""); videoRef.current.muted = true; videoRef.current.play().catch(() => {}); }
+            setState("live"); rafRef.current = requestAnimationFrame(tick);
+          })
+          .catch(() => setState("denied"))
+      : setState("denied");
+    return () => { cancelled = true; if (rafRef.current) cancelAnimationFrame(rafRef.current); if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
+  }, []);
+
+  const flashing = hit && (Date.now() - hit < 700);
+  const box = { position: "relative", width: "100%", aspectRatio: "1/1", maxHeight: 340, borderRadius: 16, overflow: "hidden", background: "#05070f", display: "grid", placeItems: "center" };
+  if (state === "nolib" || state === "denied") {
+    return (
+      <div style={{ ...box, aspectRatio: "auto", minHeight: 120, padding: 20, textAlign: "center", color: "rgba(230,238,255,.7)", fontSize: 13 }}>
+        <div><div style={{ fontSize: 26, marginBottom: 8 }} aria-hidden="true">{state === "denied" ? "📷" : "⌨"}</div>
+        {state === "denied" ? "Camera unavailable — type the code below to check in." : "Scanner still loading — type the code below."}</div>
+      </div>
+    );
+  }
+  return (
+    <div style={box} aria-label="QR scanner">
+      <video ref={videoRef} style={{ width: "100%", height: "100%", objectFit: "cover" }} playsInline muted/>
+      {state === "starting" && <div style={{ position: "absolute", color: "rgba(230,238,255,.7)", fontSize: 13 }}>Starting camera…</div>}
+      {/* Reticle */}
+      <div aria-hidden="true" style={{ position: "absolute", inset: "18%", border: "3px solid " + (flashing ? "#6fdc9d" : (gold || "#ffce54")), borderRadius: 14, boxShadow: "0 0 0 100vmax rgba(0,0,0,.28)", transition: "border-color .2s" }}/>
+      <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, textAlign: "center", color: "#fff", fontSize: 12, textShadow: "0 1px 3px rgba(0,0,0,.8)" }}>{flashing ? "✓ Scanned" : "Point the QR at the camera"}</div>
+    </div>
+  );
+}
+
 function GateCheckin({ g, card, inputS, gold, goldInk }) {
   const [code, setCode] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [recent, setRecent] = React.useState([]);
   const [err, setErr] = React.useState("");
+  const [typed, setTyped] = React.useState(false); // reveal the manual fallback
 
-  const mark = async (e) => {
-    if (e) e.preventDefault();
-    const token = code.trim(); if (!token || busy) return;
+  const mark = async (raw) => {
+    const token = String(raw || "").trim(); if (!token || busy) return;
     setBusy(true); setErr("");
     try {
       const r = await NGGApi.public.gate.checkin(g, token);
@@ -2330,11 +2411,17 @@ function GateCheckin({ g, card, inputS, gold, goldInk }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <form onSubmit={mark} style={{ display: "flex", gap: 8 }}>
-        <input style={{ ...inputS, flex: 1, fontFamily: "var(--font-mono, monospace)", letterSpacing: ".08em" }} placeholder="Code from the ID card (SUMQR / VOLQR)" value={code} onChange={e => setCode(e.target.value.toUpperCase())} autoFocus/>
-        <button disabled={busy || !code.trim()} style={{ padding: "0 20px", borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "…" : "✓"}</button>
-      </form>
-      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Type the code printed under the QR. Students and volunteers both scan here. Duplicate scans are safe — a day counts once.</p>
+      {/* QR-first: the camera scans continuously; typing is the fallback. */}
+      <QRScanner onToken={mark} gold={gold}/>
+      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Hold a Genius ID or volunteer card up to the camera. Students and volunteers both scan here — a duplicate scan is safe, a day counts once.</p>
+      {!typed
+        ? <button type="button" onClick={() => setTyped(true)} style={{ background: "none", border: "none", color: "rgba(230,238,255,.8)", textDecoration: "underline", cursor: "pointer", fontSize: 13, alignSelf: "center" }}>Camera not working? Enter the code</button>
+        : (
+          <form onSubmit={e => { e.preventDefault(); mark(code); setCode(""); }} style={{ display: "flex", gap: 8 }}>
+            <input style={{ ...inputS, flex: 1, fontFamily: "var(--font-mono, monospace)", letterSpacing: ".08em" }} placeholder="Code from the ID card (SUMQR / VOLQR)" value={code} onChange={e => setCode(e.target.value.toUpperCase())} autoFocus/>
+            <button disabled={busy || !code.trim()} style={{ padding: "0 20px", borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "…" : "✓"}</button>
+          </form>
+        )}
       {err && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 13 }}>{err}</div>}
       {recent.map((r, i) => (
         <div key={i} style={{ ...card, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, border: r.warn ? "1px solid rgba(255,120,120,.5)" : (card.border || undefined) }}>
