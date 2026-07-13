@@ -73,6 +73,11 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.summer.checkin'        => 'summer_checkin',
             'admin.summer.attendance'     => 'admin_summer_attendance',
             'admin.summer.insights'       => 'admin_summer_insights',
+            // Attendance-taker rotation + gamified attendance
+            'attendance.duty.board'       => 'attendance_duty_board',
+            'attendance.duty.complete'    => 'attendance_duty_complete',
+            'admin.attendance.duty'       => 'admin_attendance_duty',
+            'admin.attendance.duty.set'   => 'admin_attendance_duty_set',
             'admin.summer.cohort.archive' => 'admin_summer_cohort_archive',
             // NGG Club coordinator (Summer → Club bridge)
             'admin.club.overview'         => 'admin_club_overview',

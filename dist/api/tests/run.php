@@ -252,6 +252,32 @@ chk('roster rows carry first names only', !array_filter($roster['students'], fn(
 // ── Overview + upcoming sessions ──
 $ov = backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0099']);
 chk('overview counts volunteers', $ov['overview']['volunteers']['active'] === 1 && $ov['overview']['volunteers']['unscreened'] === 0);
+
+// ── Attendance-taker rotation + gamified attendance (seeds active volunteers,
+//    so this must run AFTER the overview volunteer-count assertion above) ──
+db_insert('volunteers', ['volunteerId' => 'VOL-T-1', 'fullName' => 'Duty One', 'email' => 'd1@example.com', 'role' => 'admin', 'status' => 'active', 'safeguarding' => 'cleared', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('volunteers', ['volunteerId' => 'VOL-T-2', 'fullName' => 'Duty Two', 'email' => 'd2@example.com', 'role' => 'mentor', 'status' => 'active', 'safeguarding' => 'cleared', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+$today = gmdate('Y-m-d');
+$board = backend_dispatch('attendance.duty.board', ['requesterId' => 'NGG-2025-0099', 'date' => $today]);
+chk('duty board assigns a taker per centre', $board['ok'] === true && count($board['duties']) >= 1 && !empty($board['duties'][0]['volunteerId']));
+$firstVol = $board['duties'][0]['volunteerId'];
+chk('duty assignment is stable on re-read (round-robin persisted)', backend_dispatch('attendance.duty.board', ['requesterId' => 'NGG-2025-0099', 'date' => $today])['duties'][0]['volunteerId'] === $firstVol);
+$centre0 = $board['duties'][0]['centre'];
+chk('admin override pins a specific volunteer', backend_dispatch('admin.attendance.duty.set', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-T-2'])['ok'] === true);
+chk('override is recorded as admin-sourced', db_row('SELECT source FROM attendance_duty WHERE date = ? AND centre = ?', [$today, $centre0])['source'] === 'admin');
+$done = backend_dispatch('attendance.duty.complete', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-T-2']);
+chk('completing the roll awards points + returns a value-driven response', $done['ok'] === true && !empty($done['message']) && $done['game']['points'] > 0);
+$ptsAfter = volunteer_game_state('VOL-T-2')['points'];
+backend_dispatch('attendance.duty.complete', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-T-2']);
+chk('duty completion is idempotent (no double points)', volunteer_game_state('VOL-T-2')['points'] === $ptsAfter);
+chk('game state exposes level + level name', volunteer_game_state('VOL-T-2')['levelName'] === 'Recruit');
+chk('point-award milestone mints once + surfaces in-app', (function () {
+    $v = db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-T-2'");
+    volunteer_check_point_awards($v, 100, 200); // cross the 150 'Reliable Steward' threshold
+    $has = count(array_filter(volunteer_game_state('VOL-T-2')['awards'], fn($a) => $a['name'] === 'Reliable Steward')) === 1;
+    volunteer_check_point_awards($v, 100, 200); // re-run must not duplicate
+    return $has && count(array_filter(volunteer_game_state('VOL-T-2')['awards'], fn($a) => $a['name'] === 'Reliable Steward')) === 1;
+})());
 db_insert('events', ['eventId' => 'EV-VOL-1', 'title' => 'Saturday session', 'kind' => 'session', 'sessionId' => '', 'startAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 3 * 86400), 'endAt' => '', 'centre' => 'Egbeda', 'location' => 'Main hall', 'coverUrl' => '', 'body' => '', 'capacity' => 20, 'isPublic' => 1, 'status' => 'published', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 $slots = volunteer_upcoming_sessions();
 chk('upcoming sessions are capacity-aware', $slots[0]['title'] === 'Saturday session' && $slots[0]['spotsLeft'] === 20);

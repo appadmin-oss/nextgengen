@@ -138,7 +138,219 @@ function volunteer_session_hours(): int {
 function volunteer_ledger(string $volunteerId): array {
     $sessions = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$volunteerId])['c'] ?? 0);
     $certs = db_all('SELECT certId, milestone, hours, issuedAt FROM volunteer_certs WHERE volunteerId = ? ORDER BY milestone', [$volunteerId]);
-    return ['sessions' => $sessions, 'hours' => $sessions * volunteer_session_hours(), 'certificates' => $certs];
+    return ['sessions' => $sessions, 'hours' => $sessions * volunteer_session_hours(), 'certificates' => $certs, 'game' => volunteer_game_state($volunteerId)];
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Attendance-taker rotation + gamified attendance
+   One volunteer per centre is on attendance duty each day — auto round-robin
+   over active volunteers, overridable by an admin. Taking attendance earns
+   points that drive levels, streaks and awards (emailed + shown in-app on the
+   volunteer's digital ID). Policy: docs/attendance-webhook.md.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+// Points economy. Values are deliberately generous + legible to teenagers/vols.
+const DUTY_POINTS_ASSIGNED = 10;   // being trusted with the day's roll
+const DUTY_POINTS_COMPLETE = 40;   // closing out the day's attendance
+const DUTY_POINTS_PER_HEAD = 2;    // per student marked (capped)
+const DUTY_POINTS_STREAK    = 15;  // per consecutive duty-day beyond the first
+const DUTY_LEVELS = [
+    ['level' => 1, 'at' => 0,    'name' => 'Recruit'],
+    ['level' => 2, 'at' => 150,  'name' => 'Steward'],
+    ['level' => 3, 'at' => 400,  'name' => 'Keeper'],
+    ['level' => 4, 'at' => 800,  'name' => 'Marshal'],
+    ['level' => 5, 'at' => 1500, 'name' => 'Vanguard'],
+];
+// Point milestones that mint an award (email + in-app), distinct from the
+// session-count service certificates above.
+const DUTY_AWARDS = [
+    150  => 'Reliable Steward',
+    400  => 'Roll Keeper',
+    800  => 'Attendance Marshal',
+    1500 => 'Vanguard of Order',
+];
+
+/** Centres that run attendance — distinct enrolled centres, sensible fallback. */
+function attendance_centres(): array {
+    $rows = db_all("SELECT DISTINCT centre FROM summer_students WHERE centre IS NOT NULL AND centre != '' ORDER BY centre");
+    $list = array_values(array_filter(array_map(fn($r) => (string)$r['centre'], $rows)));
+    if ($list) return $list;
+    return ['Egbeda', 'Ayobo'];
+}
+
+/** Active volunteers eligible to take attendance, ordered stably (fair rotation). */
+function attendance_duty_pool(): array {
+    return db_all("SELECT volunteerId, fullName, email, role, safeguarding FROM volunteers
+                   WHERE status = 'active' ORDER BY createdAt, volunteerId");
+}
+
+/** Epoch day number for a YYYY-MM-DD date — a stable, calendar-independent index. */
+function _duty_day_index(string $date): int {
+    $t = strtotime($date . ' 00:00:00 UTC');
+    return $t === false ? 0 : intdiv($t, 86400);
+}
+
+/** Resolve (materialising once) the volunteer on duty for a centre on a date.
+ *  Auto round-robin unless an admin has set an override row. */
+function attendance_duty_for(string $date, string $centre): ?array {
+    $date = substr(trim($date), 0, 12); $centre = trim($centre);
+    if ($date === '' || $centre === '') return null;
+    $row = db_row('SELECT * FROM attendance_duty WHERE date = ? AND centre = ? LIMIT 1', [$date, $centre]);
+    if ($row) return _duty_hydrate($row);
+
+    $pool = attendance_duty_pool();
+    if (!$pool) return null;
+    $centres = attendance_centres();
+    $cIdx = array_search($centre, $centres, true); if ($cIdx === false) $cIdx = 0;
+    // Offset by centre so different centres get different takers the same day.
+    $pick = $pool[(_duty_day_index($date) + (int)$cIdx) % count($pool)];
+    db_insert('attendance_duty', [
+        'date' => $date, 'centre' => $centre, 'volunteerId' => (string)$pick['volunteerId'],
+        'source' => 'auto', 'createdAt' => now_iso(),
+    ]);
+    volunteer_award_points((string)$pick['volunteerId'], 'duty_assigned', DUTY_POINTS_ASSIGNED, "On duty · {$centre}", $date);
+    // Only notify for today/future assignments (don't email about backfilled past dates).
+    if ($date >= gmdate('Y-m-d') && !empty($pick['email'])) {
+        @send_mail((string)$pick['email'], "You're on attendance duty today — {$centre}", email_template([
+            'title' => "You've got the roll today",
+            'intro' => 'Hello ' . esc_html((string)$pick['fullName']) . " — you're the attendance vanguard for {$centre} today.",
+            'bodyHtml' => '<p style="margin:0 0 10px">Check every learner in at arrival, then close out the roll before you leave. It keeps +' . DUTY_POINTS_COMPLETE . ' points and your streak alive.</p>',
+        ]));
+    }
+    $row = db_row('SELECT * FROM attendance_duty WHERE date = ? AND centre = ? LIMIT 1', [$date, $centre]);
+    return $row ? _duty_hydrate($row) : null;
+}
+
+function _duty_hydrate(array $row): array {
+    $v = db_row('SELECT volunteerId, fullName, photoUrl, role FROM volunteers WHERE volunteerId = ? LIMIT 1', [$row['volunteerId']]);
+    return [
+        'date' => $row['date'], 'centre' => $row['centre'], 'source' => $row['source'],
+        'completedAt' => $row['completedAt'] ?? '', 'takenCount' => (int)($row['takenCount'] ?? 0),
+        'volunteerId' => $row['volunteerId'],
+        'volunteer' => $v ? ['volunteerId' => $v['volunteerId'], 'fullName' => $v['fullName'], 'photoUrl' => $v['photoUrl'], 'role' => $v['role']] : null,
+    ];
+}
+
+/** Record points to the ledger (idempotent per (vol,kind,date) for daily kinds). */
+function volunteer_award_points(string $volunteerId, string $kind, int $points, string $note, string $date = ''): void {
+    if ($date !== '' && in_array($kind, ['duty_assigned', 'duty_complete', 'duty_streak'], true)) {
+        if (db_row('SELECT id FROM volunteer_points WHERE volunteerId = ? AND kind = ? AND date = ? LIMIT 1', [$volunteerId, $kind, $date])) return;
+    }
+    db_insert('volunteer_points', ['volunteerId' => $volunteerId, 'kind' => $kind, 'points' => $points, 'date' => $date, 'note' => substr($note, 0, 255), 'createdAt' => now_iso()]);
+}
+
+/** Derived game state: total points, level, duty-day streak, next award. */
+function volunteer_game_state(string $volunteerId): array {
+    $total = (int)(db_row('SELECT COALESCE(SUM(points),0) s FROM volunteer_points WHERE volunteerId = ?', [$volunteerId])['s'] ?? 0);
+    $lvl = DUTY_LEVELS[0];
+    foreach (DUTY_LEVELS as $L) { if ($total >= $L['at']) $lvl = $L; }
+    $next = null; foreach (DUTY_LEVELS as $L) { if ($L['at'] > $total) { $next = $L; break; } }
+    // Duty-day streak: consecutive dates with a completed duty ending today/yesterday.
+    $days = array_map(fn($r) => (string)$r['date'], db_all("SELECT DISTINCT date FROM volunteer_points WHERE volunteerId = ? AND kind = 'duty_complete' AND date != '' ORDER BY date DESC", [$volunteerId]));
+    $streak = 0; $cursor = null;
+    foreach ($days as $d) {
+        if ($cursor === null) { if ($d === gmdate('Y-m-d') || $d === gmdate('Y-m-d', time() - 86400)) { $streak = 1; $cursor = $d; } else break; }
+        else { if ($d === gmdate('Y-m-d', strtotime($cursor . ' UTC') - 86400)) { $streak++; $cursor = $d; } else break; }
+    }
+    $awards = array_map(fn($r) => ['name' => $r['note'], 'at' => (int)$r['points'], 'date' => $r['createdAt']],
+        db_all("SELECT note, points, createdAt FROM volunteer_points WHERE volunteerId = ? AND kind = 'award' ORDER BY id", [$volunteerId]));
+    return [
+        'points' => $total, 'level' => $lvl['level'], 'levelName' => $lvl['name'],
+        'next' => $next ? ['level' => $next['level'], 'name' => $next['name'], 'at' => $next['at'], 'remaining' => $next['at'] - $total] : null,
+        'streak' => $streak, 'awards' => $awards,
+    ];
+}
+
+/** Award point-milestones once each — emailed + surfaced in-app on the ID. */
+function volunteer_check_point_awards(array $v, int $before, int $after): array {
+    $earned = [];
+    foreach (DUTY_AWARDS as $at => $name) {
+        if ($before < $at && $after >= $at) {
+            if (db_row("SELECT id FROM volunteer_points WHERE volunteerId = ? AND kind = 'award' AND note = ? LIMIT 1", [$v['volunteerId'], $name])) continue;
+            db_insert('volunteer_points', ['volunteerId' => (string)$v['volunteerId'], 'kind' => 'award', 'points' => 0, 'date' => gmdate('Y-m-d'), 'note' => $name, 'createdAt' => now_iso()]);
+            $earned[] = ['name' => $name, 'at' => $at];
+            if (!empty($v['email'])) {
+                @send_mail((string)$v['email'], "Award unlocked: {$name}", email_template([
+                    'title' => $name,
+                    'intro' => 'Congratulations ' . esc_html((string)$v['fullName']) . " — you crossed {$at} service points.",
+                    'bodyHtml' => '<p style="margin:0 0 10px">This award now shows on your digital ID for everyone you check in. Order is a discipline — thank you for keeping it.</p>',
+                ]));
+            }
+            event_emit('volunteer.award', ['ref' => (string)$v['volunteerId'], 'name' => (string)$v['fullName'], 'award' => $name, 'points' => $at]);
+        }
+    }
+    return $earned;
+}
+
+/** Complete the day's roll: award points/streak, check level-up + awards, and
+ *  return a value-driven response the kiosk shows the volunteer. */
+function attendance_duty_complete(array $p): array {
+    $date = substr(trim((string)($p['date'] ?? gmdate('Y-m-d'))), 0, 12);
+    $centre = trim((string)($p['centre'] ?? ''));
+    $volunteerId = trim((string)($p['volunteerId'] ?? ''));
+    if ($centre === '' || $volunteerId === '') return ['ok' => false, 'error' => 'missing_fields'];
+    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
+    if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    // How many students were checked in at this centre today (the work done).
+    $taken = (int)(db_row("SELECT COUNT(*) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.date = ? AND s.centre = ?", [$date, $centre])['c'] ?? 0);
+    $already = db_row('SELECT completedAt FROM attendance_duty WHERE date = ? AND centre = ? LIMIT 1', [$date, $centre]);
+    db_update('attendance_duty', ['completedAt' => now_iso(), 'takenCount' => $taken], ['date' => $date, 'centre' => $centre]);
+
+    $before = (int)(db_row('SELECT COALESCE(SUM(points),0) s FROM volunteer_points WHERE volunteerId = ?', [$volunteerId])['s'] ?? 0);
+    if (!$already || empty($already['completedAt'])) {
+        volunteer_award_points($volunteerId, 'duty_complete', DUTY_POINTS_COMPLETE + min(40, $taken * DUTY_POINTS_PER_HEAD), "Closed roll · {$centre} · {$taken} present", $date);
+        // Streak bonus if they also closed a roll the day before.
+        $prev = gmdate('Y-m-d', strtotime($date . ' UTC') - 86400);
+        if (db_row("SELECT id FROM volunteer_points WHERE volunteerId = ? AND kind = 'duty_complete' AND date = ? LIMIT 1", [$volunteerId, $prev])) {
+            volunteer_award_points($volunteerId, 'duty_streak', DUTY_POINTS_STREAK, 'Streak bonus', $date);
+        }
+    }
+    $after = (int)(db_row('SELECT COALESCE(SUM(points),0) s FROM volunteer_points WHERE volunteerId = ?', [$volunteerId])['s'] ?? 0);
+    $awards = volunteer_check_point_awards($v, $before, $after);
+    $game = volunteer_game_state($volunteerId);
+    $leveledUp = false;
+    foreach (DUTY_LEVELS as $L) { if ($before < $L['at'] && $after >= $L['at'] && $L['at'] > 0) $leveledUp = true; }
+    // Value-driven response — warm, specific, never hollow.
+    $msg = $awards ? ("Award unlocked: " . $awards[0]['name'] . "! ")
+        : ($leveledUp ? ("You reached Level {$game['level']} · {$game['levelName']}! ")
+        : ($game['streak'] > 1 ? ("{$game['streak']}-day streak — you keep this place in order. ") : "Roll closed. Thank you for the discipline. "));
+    $msg .= "+" . (DUTY_POINTS_COMPLETE + min(40, $taken * DUTY_POINTS_PER_HEAD)) . " points · {$taken} learners present.";
+    audit('attendance.duty.complete', $volunteerId, $centre, ['date' => $date, 'taken' => $taken], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'message' => $msg, 'taken' => $taken, 'game' => $game, 'awards' => $awards, 'leveledUp' => $leveledUp];
+}
+
+/* ── Read/write ops (routes call these) ─────────────────────────────────── */
+
+/** Public/kiosk read: who's on duty across centres for a date (default today). */
+function attendance_duty_board(array $p): array {
+    $date = substr(trim((string)($p['date'] ?? gmdate('Y-m-d'))), 0, 12) ?: gmdate('Y-m-d');
+    $out = [];
+    foreach (attendance_centres() as $c) { $d = attendance_duty_for($date, $c); if ($d) $out[] = $d; }
+    return ['ok' => true, 'date' => $date, 'duties' => $out, 'pool' => count(attendance_duty_pool())];
+}
+
+/** Admin override: pin a specific volunteer to a centre's duty for a date. */
+function admin_attendance_duty_set(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $date = substr(trim((string)($p['date'] ?? gmdate('Y-m-d'))), 0, 12);
+    $centre = trim((string)($p['centre'] ?? ''));
+    $volunteerId = trim((string)($p['volunteerId'] ?? ''));
+    if ($centre === '' || $volunteerId === '') return ['ok' => false, 'error' => 'missing_fields'];
+    if (!db_row('SELECT id FROM volunteers WHERE volunteerId = ? AND status = ? LIMIT 1', [$volunteerId, 'active'])) return ['ok' => false, 'error' => 'not_active_volunteer'];
+    $exists = db_row('SELECT id FROM attendance_duty WHERE date = ? AND centre = ? LIMIT 1', [$date, $centre]);
+    if ($exists) db_update('attendance_duty', ['volunteerId' => $volunteerId, 'source' => 'admin', 'assignedById' => (string)$g['requester']['memberId']], ['date' => $date, 'centre' => $centre]);
+    else db_insert('attendance_duty', ['date' => $date, 'centre' => $centre, 'volunteerId' => $volunteerId, 'source' => 'admin', 'assignedById' => (string)$g['requester']['memberId'], 'createdAt' => now_iso()]);
+    volunteer_award_points($volunteerId, 'duty_assigned', DUTY_POINTS_ASSIGNED, "On duty · {$centre}", $date);
+    audit('attendance.duty.set', $g['requester']['memberId'], $volunteerId, ['date' => $date, 'centre' => $centre], (string)($p['ip'] ?? ''));
+    return attendance_duty_board(['date' => $date]);
+}
+
+/** Admin: the duty board + the eligible volunteer pool (for the override picker). */
+function admin_attendance_duty(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $board = attendance_duty_board($p);
+    $board['volunteers'] = array_map(fn($v) => ['volunteerId' => $v['volunteerId'], 'fullName' => $v['fullName'], 'role' => $v['role']], attendance_duty_pool());
+    return $board;
 }
 
 /** Crossing a milestone mints a verifiable certificate — once per milestone. */

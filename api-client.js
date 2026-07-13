@@ -265,6 +265,13 @@
         insights:     (cohortId) => request('/admin/summer.php' + qs({ view: 'insights', cohortId })),
         archive:      (cohortId, compress) => request('/admin/summer.php', { body: { action: 'archive', cohortId, compress: !!compress } }),
       },
+      // Attendance-taker rotation + gamified attendance duty.
+      attendance: {
+        board:    (date) => request('/admin/attendance.php' + qs({ view: 'board', date })),
+        admin:    (date) => request('/admin/attendance.php' + qs({ view: 'admin', date })),
+        set:      (date, centre, volunteerId) => request('/admin/attendance.php', { body: { action: 'set', date, centre, volunteerId } }),
+        complete: (date, centre, volunteerId) => request('/admin/attendance.php', { body: { action: 'complete', date, centre, volunteerId } }),
+      },
       club: {
         overview:   () => request('/admin/club.php?view=overview'),
         promotable: () => request('/admin/club.php?view=promotable'),
