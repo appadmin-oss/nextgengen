@@ -1940,7 +1940,7 @@ function GatePage() {
     </div>
     {tab === "register"
       ? <GateRegister g={g} ctx={ctx} card={card} inputS={inputS} gold={gold} goldInk={goldInk} draftKey={draftKey}/>
-      : <GateCheckin g={g} card={card} inputS={inputS} gold={gold} goldInk={goldInk}/>}
+      : <GateCheckin g={g} ctx={ctx} card={card} inputS={inputS} gold={gold} goldInk={goldInk}/>}
   </>);
 }
 
@@ -2378,12 +2378,29 @@ function QRScanner({ onToken, gold }) {
   );
 }
 
-function GateCheckin({ g, card, inputS, gold, goldInk }) {
+function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
   const [code, setCode] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [recent, setRecent] = React.useState([]);
   const [err, setErr] = React.useState("");
   const [typed, setTyped] = React.useState(false); // reveal the manual fallback
+  // Attendance-taker duty for this gate's centre today (rotation banner).
+  const [duty, setDuty] = React.useState((ctx && ctx.duty) || null);
+  const [dutyMsg, setDutyMsg] = React.useState("");
+  const [dutyBusy, setDutyBusy] = React.useState(false);
+  const centre = (ctx && ctx.centre) || "";
+
+  const closeRoll = async () => {
+    if (dutyBusy) return;
+    setDutyBusy(true); setDutyMsg("");
+    try {
+      const r = await NGGApi.public.gate.dutyClose(g);
+      setDutyMsg(r.message || "Roll closed.");
+      setDuty(d => d ? { ...d, completedAt: new Date().toISOString(), takenCount: r.taken } : d);
+    } catch (e) {
+      setDutyMsg(e.code === "no_duty" ? "No one is on duty for this centre yet." : "Couldn't close the roll — try again.");
+    } finally { setDutyBusy(false); }
+  };
 
   const mark = async (raw) => {
     const token = String(raw || "").trim(); if (!token || busy) return;
@@ -2411,6 +2428,19 @@ function GateCheckin({ g, card, inputS, gold, goldInk }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Attendance-taker rotation: who's on the roll today + one-tap close. */}
+      {duty && (
+        <div style={{ ...card, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", borderLeft: "3px solid " + gold }}>
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <div style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "rgba(230,238,255,.55)", fontFamily: "var(--font-mono, monospace)" }}>On attendance duty{centre ? " · " + centre : ""}</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>{duty.volunteer ? duty.volunteer.fullName : "Unassigned"}</div>
+          </div>
+          {duty.completedAt
+            ? <span className="chip chip-lime" style={{ fontSize: 11 }}>Roll closed{duty.takenCount ? " · " + duty.takenCount + " present" : ""}</span>
+            : <button type="button" onClick={closeRoll} disabled={dutyBusy || !duty.volunteer} style={{ padding: "8px 16px", borderRadius: 10, border: "1px solid " + gold, background: "transparent", color: gold, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{dutyBusy ? "Closing…" : "Close the roll"}</button>}
+        </div>
+      )}
+      {dutyMsg && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(111,220,157,.12)", border: "1px solid rgba(111,220,157,.35)", fontSize: 13 }}>{dutyMsg}</div>}
       {/* QR-first: the camera scans continuously; typing is the fallback. */}
       <QRScanner onToken={mark} gold={gold}/>
       <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Hold a Genius ID or volunteer card up to the camera. Students and volunteers both scan here — a duplicate scan is safe, a day counts once.</p>

@@ -171,6 +171,7 @@
           lat: opts && opts.lat, lng: opts && opts.lng, geoOverride: !!(opts && opts.geoOverride),
         } }),
         checkin:  (gate, token) => request('/public/gate.php', { body: { action: 'checkin', gate, token } }),
+        dutyClose:(gate) => request('/public/gate.php', { body: { action: 'duty_close', gate } }),
         // Kiosk unlock — mints a gate-scoped session so field staff run the
         // desk without an admin login (see /public/gate-unlock.php).
         unlock:   (gate, password) => request('/public/gate-unlock.php', { body: { gate, password } }),

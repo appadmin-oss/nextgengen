@@ -278,6 +278,10 @@ chk('point-award milestone mints once + surfaces in-app', (function () {
     volunteer_check_point_awards($v, 100, 200); // re-run must not duplicate
     return $has && count(array_filter(volunteer_game_state('VOL-T-2')['awards'], fn($a) => $a['name'] === 'Reliable Steward')) === 1;
 })());
+// Gate kiosk carries the day's attendance duty for its centre (rotation banner).
+db_insert('gate_links', ['gateId' => 'GATE-T-1', 'name' => 'Egbeda Desk', 'cohortId' => '', 'centreId' => 'Egbeda', 'status' => 'active', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso()]);
+$gc = backend_dispatch('gate.context', ['gate' => 'GATE-T-1']);
+chk('gate context resolves centre + attendance duty for the kiosk', ($gc['centre'] ?? '') === 'Egbeda' && !empty($gc['duty']) && !empty($gc['duty']['volunteerId']));
 db_insert('events', ['eventId' => 'EV-VOL-1', 'title' => 'Saturday session', 'kind' => 'session', 'sessionId' => '', 'startAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 3 * 86400), 'endAt' => '', 'centre' => 'Egbeda', 'location' => 'Main hall', 'coverUrl' => '', 'body' => '', 'capacity' => 20, 'isPublic' => 1, 'status' => 'published', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 $slots = volunteer_upcoming_sessions();
 chk('upcoming sessions are capacity-aware', $slots[0]['title'] === 'Saturday session' && $slots[0]['spotsLeft'] === 20);

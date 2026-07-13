@@ -330,10 +330,18 @@ function gate_context(array $p): array {
             'lat' => (float)$c['lat'], 'lng' => (float)$c['lng'], 'radiusM' => (int)($c['radiusM'] ?: 150),
         ], geo_fenced_centres())];
     }
+    // Attendance-taker rotation: resolve this gate's centre name and today's
+    // on-duty volunteer, so the kiosk can show the duty banner + close the roll.
+    $centreName = (string)($gate['centreId'] ?? '');
+    if ($centreName !== '') {
+        $cc = db_row("SELECT name FROM centres WHERE name = ? OR code = ? LIMIT 1", [$centreName, $centreName]);
+        if ($cc) $centreName = (string)$cc['name'];
+    }
+    $duty = ($centreName !== '' && function_exists('attendance_duty_for')) ? attendance_duty_for(gmdate('Y-m-d'), $centreName) : null;
     return ['ok' => true, 'gate' => ['name' => $gate['name'], 'cohortId' => $gate['cohortId']],
         'cohort' => $c ? ['cohortId' => $c['cohortId'], 'name' => $c['name']] : null,
         'form' => ['version' => (int)$live['version'], 'fields' => $fields],
-        'geo' => $geo,
+        'geo' => $geo, 'centre' => $centreName, 'duty' => $duty,
         'consentTypes' => CONSENT_TYPES];
 }
 

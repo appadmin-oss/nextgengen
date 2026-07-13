@@ -39,6 +39,15 @@ if ($method === 'GET') {
         if (!empty($res['ok']) && empty($res['already'])) {
             event_emit('attendance.marked', ['memberId' => $res['student']['studentId'] ?? '', 'name' => $res['student']['fullName'] ?? '', 'date' => gmdate('Y-m-d'), 'source' => 'gate', 'by' => $s['mid']]);
         }
+    } elseif ($action === 'duty_close') {
+        // Close today's roll for this gate's centre — credits the on-duty
+        // volunteer (points/level/awards) and returns the value-driven response.
+        if (!gate_resolve((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
+        $ctx = gs_call('gate.context', ['gate' => (string)($b['gate'] ?? '')]);
+        $centre = (string)($ctx['centre'] ?? '');
+        $volId = (string)(($ctx['duty']['volunteerId'] ?? '') ?: '');
+        if ($centre === '' || $volId === '') json_error('no_duty', 400);
+        $res = gs_call('attendance.duty.complete', ['date' => gmdate('Y-m-d'), 'centre' => $centre, 'volunteerId' => $volId, 'ip' => $ip]);
     } else {
         json_error('unknown_action', 400);
     }
