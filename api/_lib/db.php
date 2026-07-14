@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 27;
+const NGG_SCHEMA_TARGET = 28;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -721,6 +721,11 @@ function db_migrate(PDO $db): void {
         // Attendance check-OUT (optional dwell tracking) + guardian absence alerts.
         27 => "
             ALTER TABLE attendance ADD COLUMN checkOutAt TEXT DEFAULT '';
+        ",
+
+        // Per-centre capacity (0 = unlimited) → waitlist when full.
+        28 => "
+            ALTER TABLE centres ADD COLUMN capacity INTEGER DEFAULT 0;
         ",
     ];
 

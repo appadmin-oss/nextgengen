@@ -1239,5 +1239,27 @@ chk('re-shoot: submitting a new photo creates a fresh version', !empty($rsub['ok
 chk('re-shoot: a non-https photo is rejected', backend_dispatch('reshoot.submit', ['t' => $ptok, 'photoUrl' => 'ftp://nope'])['error'] === 'bad_photo');
 unset($GLOBALS['__ai_photo_mock'], $GLOBALS['__mail_sink']);
 
+// ── Centre capacity → waitlist, and bulk import (run last: they add centres/students) ──
+chk('centre capacity waitlists once full', (function () {
+    backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'CapCentre', 'code' => 'CAP', 'color' => '#123456', 'capacity' => 1]]);
+    backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 4]);
+    $a = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Cap One', 'age' => 12, 'centre' => 'CapCentre']]);
+    $b = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Cap Two', 'age' => 12, 'centre' => 'CapCentre']]);
+    return empty($a['waitlisted']) && !empty($b['waitlisted'])
+        && db_row('SELECT status FROM summer_students WHERE studentId=?', [$b['studentId']])['status'] === 'waitlisted';
+})());
+chk('centre list reports enrolled/capacity/full', (function () {
+    foreach (backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-2025-0099'])['centres'] as $c) if ($c['name'] === 'CapCentre') return (int)$c['capacity'] === 1 && $c['enrolled'] >= 1 && $c['full'] === true && $c['waitlisted'] >= 1;
+    return false;
+})());
+chk('bulk import enrols multiple students', (function () {
+    $r = backend_dispatch('admin.summer.import', ['requesterId' => 'NGG-2025-0099', 'rows' => [
+        ['fullName' => 'Import A', 'age' => 12, 'centre' => 'Egbeda', 'parentEmail' => 'ia@example.com'],
+        ['fullName' => 'Import B', 'age' => 13, 'centre' => 'Egbeda'],
+    ]]);
+    return !empty($r['ok']) && $r['enrolled'] === 2 && $r['failed'] === 0;
+})());
+chk('bulk import rejects an empty batch', backend_dispatch('admin.summer.import', ['requesterId' => 'NGG-2025-0099', 'rows' => []])['error'] === 'no_rows');
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

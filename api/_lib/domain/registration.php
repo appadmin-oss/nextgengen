@@ -695,9 +695,24 @@ function geo_match_centre(float $lat, float $lng): ?array {
 
 function admin_centres_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    return ['ok' => true,
-        'centres' => db_all("SELECT centreId, name, code, color, status, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt FROM centres ORDER BY name"),
-        'geofenceEnabled' => geofence_enabled()];
+    $c = summer_ensure_cohort();
+    $rows = db_all("SELECT centreId, name, code, color, status, capacity, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt FROM centres ORDER BY name");
+    foreach ($rows as &$r) {
+        $r['enrolled'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $r['waitlisted'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'waitlisted'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $r['full'] = ((int)$r['capacity'] > 0 && $r['enrolled'] >= (int)$r['capacity']);
+    }
+    unset($r);
+    return ['ok' => true, 'centres' => $rows, 'geofenceEnabled' => geofence_enabled()];
+}
+
+/** Is a centre (by NAME) at/over capacity for the active cohort? capacity 0 = unlimited. */
+function centre_is_full(string $centreName, string $cohortId): bool {
+    if ($centreName === '') return false;
+    $cap = (int)(db_row('SELECT capacity FROM centres WHERE name = ? LIMIT 1', [$centreName])['capacity'] ?? 0);
+    if ($cap <= 0) return false;
+    $active = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$cohortId, $centreName])['c'] ?? 0);
+    return $active >= $cap;
 }
 
 function admin_centres_upsert(array $p): array {
@@ -717,6 +732,7 @@ function admin_centres_upsert(array $p): array {
     $row = ['name' => $name, 'code' => $code, 'color' => $color,
         'status' => in_array((string)($d['status'] ?? 'active'), ['active', 'archived'], true) ? (string)($d['status'] ?? 'active') : 'active',
         'updatedAt' => now_iso()];
+    if (array_key_exists('capacity', $d)) $row['capacity'] = max(0, (int)$d['capacity']);
 
     // Optional geo-mapping. Partial updates preserve any existing point: lat/lng
     // are only written when BOTH are supplied and valid; the fence flag only

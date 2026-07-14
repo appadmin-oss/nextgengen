@@ -187,18 +187,44 @@ function admin_summer_enroll(array $p): array {
     $handle = $base . '-' . strtolower(substr($token, -4));
     if (db_row('SELECT id FROM summer_students WHERE handle = ?', [$handle])) $handle .= '-' . $n;
 
+    $centre = substr((string)($d['centre'] ?? ''), 0, 48);
+    // Waitlist when the centre is at capacity (unless an admin forces it).
+    $waitlisted = empty($p['force']) && function_exists('centre_is_full') && centre_is_full($centre, $c['cohortId']);
     db_insert('summer_students', [
         'studentId' => $studentId, 'cohortId' => $c['cohortId'], 'token' => $token, 'handle' => $handle,
-        'fullName' => $name, 'age' => $age, 'centre' => substr((string)($d['centre'] ?? ''), 0, 48),
+        'fullName' => $name, 'age' => $age, 'centre' => $centre,
         'track' => substr((string)($d['track'] ?? ''), 0, 64), 'photoUrl' => (string)($d['photoUrl'] ?? ''),
         'guardianName' => substr((string)($d['guardianName'] ?? ''), 0, 255), 'guardianPhone' => substr((string)($d['guardianPhone'] ?? ''), 0, 48),
         'parentEmail' => substr(trim((string)($d['parentEmail'] ?? '')), 0, 160),
-        'status' => 'active', 'notes' => substr((string)($d['notes'] ?? ''), 0, 2000),
+        'status' => $waitlisted ? 'waitlisted' : 'active', 'notes' => substr((string)($d['notes'] ?? ''), 0, 2000),
         'enrolledAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
     db_update('qr_codes', ['status' => 'assigned', 'studentId' => $studentId, 'assignedName' => $handle, 'assignedAt' => now_iso(), 'cohortId' => $c['cohortId']], ['token' => $token]);
-    audit('summer.enroll', $g['requester']['memberId'], $studentId, ['token' => $token, 'handle' => $handle], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'studentId' => $studentId, 'handle' => $handle, 'token' => $token];
+    audit('summer.enroll', $g['requester']['memberId'], $studentId, ['token' => $token, 'handle' => $handle, 'waitlisted' => $waitlisted], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'studentId' => $studentId, 'handle' => $handle, 'token' => $token, 'waitlisted' => $waitlisted];
+}
+
+/** Bulk enrol students from parsed CSV rows. Each row reuses admin_summer_enroll
+ *  (QR binding, capacity/waitlist, parentEmail). Returns per-row results. */
+function admin_summer_import(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $rows = is_array($p['rows'] ?? null) ? $p['rows'] : [];
+    if (!$rows) return ['ok' => false, 'error' => 'no_rows'];
+    if (count($rows) > 500) return ['ok' => false, 'error' => 'too_many_rows'];
+    $ok = 0; $failed = 0; $waitlisted = 0; $results = [];
+    foreach ($rows as $i => $r) {
+        if (!is_array($r)) { $failed++; $results[] = ['row' => $i + 1, 'ok' => false, 'error' => 'bad_row']; continue; }
+        $res = admin_summer_enroll(['requesterId' => $p['requesterId'] ?? '', 'ip' => $p['ip'] ?? '', 'data' => [
+            'fullName' => (string)($r['fullName'] ?? ''), 'age' => (int)($r['age'] ?? 0),
+            'centre' => (string)($r['centre'] ?? ''), 'track' => (string)($r['track'] ?? ''),
+            'guardianName' => (string)($r['guardianName'] ?? ''), 'guardianPhone' => (string)($r['guardianPhone'] ?? ''),
+            'parentEmail' => (string)($r['parentEmail'] ?? ''),
+        ]]);
+        if (!empty($res['ok'])) { $ok++; if (!empty($res['waitlisted'])) $waitlisted++; $results[] = ['row' => $i + 1, 'ok' => true, 'studentId' => $res['studentId'], 'waitlisted' => !empty($res['waitlisted'])]; }
+        else { $failed++; $results[] = ['row' => $i + 1, 'ok' => false, 'error' => $res['error'] ?? 'failed', 'name' => (string)($r['fullName'] ?? '')]; }
+    }
+    audit('summer.import', $g['requester']['memberId'], '', ['ok' => $ok, 'failed' => $failed], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'enrolled' => $ok, 'failed' => $failed, 'waitlisted' => $waitlisted, 'results' => $results];
 }
 
 function admin_summer_students_list(array $p): array {
@@ -216,7 +242,7 @@ function admin_summer_student_status(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $studentId = (string)($p['studentId'] ?? '');
     $status = (string)($p['status'] ?? '');
-    if (!in_array($status, ['active', 'withdrawn', 'graduated', 'promoted'], true)) return ['ok' => false, 'error' => 'bad_status'];
+    if (!in_array($status, ['active', 'withdrawn', 'graduated', 'promoted', 'waitlisted'], true)) return ['ok' => false, 'error' => 'bad_status'];
     $n = db_update('summer_students', ['status' => $status, 'updatedAt' => now_iso()], ['studentId' => $studentId]);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('summer.student.status', $g['requester']['memberId'], $studentId, ['status' => $status], (string)($p['ip'] ?? ''));

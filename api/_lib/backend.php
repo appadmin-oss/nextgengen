@@ -78,6 +78,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.cert.revoke'           => 'admin_cert_revoke',
             'admin.summer.checkout'       => 'summer_checkout',
             'admin.summer.absence.alert'  => 'admin_summer_absence_alert',
+            'admin.summer.import'         => 'admin_summer_import',
             'admin.summer.insights'       => 'admin_summer_insights',
             // Attendance-taker rotation + gamified attendance
             'attendance.duty.board'       => 'attendance_duty_board',

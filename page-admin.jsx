@@ -3043,7 +3043,7 @@ function AdminRegistration() {
       <div className="admin-section-head"><h2 className="admin-h2">Registration</h2></div>
       <p className="admin-hint">Run the gated public sign-up: hand out desk links, review parent-pending sign-ups, and manage the centres that drive ID prefixes and card colours. The form itself lives under <b>Forms</b>.</p>
       <div className="admin-anchor-tabs">
-        {[["gates", "Gate links"], ["pending", "Pending sign-ups"], ["centres", "Centres"], ["certs", "Certificates"]].map(([id, l]) => (
+        {[["gates", "Gate links"], ["pending", "Pending sign-ups"], ["centres", "Centres"], ["import", "Bulk import"], ["certs", "Certificates"]].map(([id, l]) => (
           <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
@@ -3051,6 +3051,7 @@ function AdminRegistration() {
       {tab === "pending" && <SummerPending/>}
       {tab === "centres" && <SummerCentres/>}
       {tab === "certs" && <SummerCertificates/>}
+      {tab === "import" && <SummerImport/>}
     </div>
   );
 }
@@ -3060,6 +3061,53 @@ function AdminQRCodes() {
     <div className="admin-section">
       <div className="admin-section-head"><h2 className="admin-h2">QR codes</h2></div>
       <SummerQR/>
+    </div>
+  );
+}
+
+/* Bulk student import — paste CSV (fullName,age,centre,track,guardianName,
+ * guardianPhone,parentEmail); each row is enrolled + QR-bound (capacity-aware). */
+function SummerImport() {
+  const [csv, setCsv] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [res, setRes] = React.useState(null);
+  const parse = (text) => {
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return [];
+    const header = lines[0].toLowerCase().split(",").map(s => s.trim());
+    const known = ["fullname", "age", "centre", "track", "guardianname", "guardianphone", "parentemail"];
+    const hasHeader = header.some(h => known.includes(h));
+    const cols = hasHeader ? header : ["fullname", "age", "centre", "track", "guardianname", "guardianphone", "parentemail"];
+    const map = { fullname: "fullName", age: "age", centre: "centre", track: "track", guardianname: "guardianName", guardianphone: "guardianPhone", parentemail: "parentEmail" };
+    return (hasHeader ? lines.slice(1) : lines).map(line => {
+      const cells = line.split(",").map(s => s.trim());
+      const row = {}; cols.forEach((c, i) => { if (map[c]) row[map[c]] = cells[i] || ""; }); return row;
+    });
+  };
+  const run = async () => {
+    const rows = parse(csv);
+    if (!rows.length) { toast.error("Nothing to import — paste CSV rows first."); return; }
+    if (!(await dialog.confirm({ title: "Import " + rows.length + " student(s)?", body: "Each gets a QR + student ID. Full centres go to the waitlist.", cta: "Import" }))) return;
+    setBusy(true);
+    try { const r = await NGGApi.admin.summer.importStudents(rows); setRes(r); toast.success("Enrolled " + r.enrolled + (r.waitlisted ? " (" + r.waitlisted + " waitlisted)" : "") + (r.failed ? ", " + r.failed + " failed" : "") + ".", "Import done"); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <p className="admin-hint">Paste CSV with a header row: <span className="mono">fullName,age,centre,track,guardianName,guardianPhone,parentEmail</span>. Each row is enrolled and bound to the next blank QR; a full centre routes to the waitlist. Up to 500 rows.</p>
+      <textarea className="admin-input" rows={8} value={csv} onChange={e => setCsv(e.target.value)} placeholder={"fullName,age,centre,track,guardianName,guardianPhone,parentEmail\nAda Obi,12,Egbeda,Tech,Mrs Obi,08030000000,obi@example.com"} style={{ fontFamily: "monospace", fontSize: 13 }}/>
+      <div style={{ marginTop: 10 }}><button className="btn btn-primary btn-sm" disabled={busy || !csv.trim()} onClick={run}>{busy ? "Importing…" : "Import students"}</button></div>
+      {res && (
+        <div style={{ marginTop: 14 }}>
+          <div className="mono" style={{ marginBottom: 6 }}>Enrolled {res.enrolled} · Waitlisted {res.waitlisted} · Failed {res.failed}</div>
+          {res.results.filter(r => !r.ok).length > 0 && (
+            <div className="admin-table-wrap"><table className="admin-table">
+              <thead><tr><th>Row</th><th>Name</th><th>Error</th></tr></thead>
+              <tbody>{res.results.filter(r => !r.ok).map((r, i) => <tr key={i}><td>{r.row}</td><td>{r.name || ""}</td><td className="mono">{r.error}</td></tr>)}</tbody>
+            </table></div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -3102,7 +3150,7 @@ function SummerCertificates() {
 function SummerCentres() {
   const [centres, setCentres] = React.useState(null);
   const [err, setErr] = React.useState("");
-  const [d, setD] = React.useState({ name: "", code: "", color: "#76B043" });
+  const [d, setD] = React.useState({ name: "", code: "", color: "#76B043", capacity: "" });
   const [busy, setBusy] = React.useState(false);
   const [mapId, setMapId] = React.useState("");
   const load = () => NGGApi.admin.registration.centres().then(r => { setCentres(r.centres || []); setErr(""); }).catch(e => setErr(e.code || e.message));
@@ -3110,7 +3158,7 @@ function SummerCentres() {
   const add = async (e) => {
     e && e.preventDefault();
     setBusy(true);
-    try { await NGGApi.admin.registration.centreUpsert(d); setD({ name: "", code: "", color: "#76B043" }); toast.success("Centre saved."); load(); }
+    try { await NGGApi.admin.registration.centreUpsert({ ...d, capacity: d.capacity === "" ? 0 : parseInt(d.capacity, 10) || 0 }); setD({ name: "", code: "", color: "#76B043", capacity: "" }); toast.success("Centre saved."); load(); }
     catch (e2) { toast.error(e2.code === "code_taken" ? "That code is already used." : "Check the name (2+) and code (1–4 letters)."); }
     finally { setBusy(false); }
   };
@@ -3124,25 +3172,27 @@ function SummerCentres() {
         <input className="admin-input" placeholder="Centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
         <input className="admin-input" placeholder="CODE" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
         <input type="color" value={d.color} onChange={e => setD({ ...d, color: e.target.value })} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/>
+        <input className="admin-input" type="number" min="0" placeholder="Capacity (0=∞)" value={d.capacity} onChange={e => setD({ ...d, capacity: e.target.value })} style={{ maxWidth: 140 }}/>
         <button className="btn btn-primary btn-sm" disabled={busy || d.name.length < 2 || !d.code}>{busy ? "…" : "+ Add centre"}</button>
       </form>
       {centres === null ? <div className="dash-spinner"/> :
         centres.length === 0 ? <div className="admin-empty">No centres yet — add your first above.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Centre</th><th>Code</th><th>Colour</th><th>Geo-fence</th><th></th></tr></thead>
+          <thead><tr><th>Centre</th><th>Code</th><th>Colour</th><th>Capacity</th><th>Geo-fence</th><th></th></tr></thead>
           <tbody>{centres.map(c => (
             <React.Fragment key={c.centreId}>
             <tr>
               <td><b>{c.name}</b></td>
               <td className="mono">{c.code}</td>
               <td><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 18, height: 18, borderRadius: 5, background: c.color, border: "1px solid rgba(0,0,0,0.1)" }}/><span className="mono" style={{ fontSize: 12 }}>{c.color}</span></span></td>
+              <td>{(c.capacity || 0) > 0 ? <span className={c.full ? "chip chip-crimson" : ""}>{c.enrolled || 0}/{c.capacity}{c.full ? " full" : ""}{c.waitlisted ? " · " + c.waitlisted + " waitlisted" : ""}</span> : <span className="mono" style={{ color: "var(--ink-500)" }}>∞ {c.enrolled ? "· " + c.enrolled : ""}</span>}</td>
               <td>{geoLabel(c)}</td>
               <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                 <button className="btn btn-ghost btn-sm" onClick={() => setMapId(mapId === c.centreId ? "" : c.centreId)}>{mapId === c.centreId ? "Close" : "Map"}</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button>
               </td>
             </tr>
-            {mapId === c.centreId && <tr><td colSpan={5} style={{ background: "rgba(12,20,50,0.03)" }}><CentreGeoEditor c={c} onSaved={() => { setMapId(""); load(); }}/></td></tr>}
+            {mapId === c.centreId && <tr><td colSpan={6} style={{ background: "rgba(12,20,50,0.03)" }}><CentreGeoEditor c={c} onSaved={() => { setMapId(""); load(); }}/></td></tr>}
             </React.Fragment>
           ))}</tbody>
         </table></div>}

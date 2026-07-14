@@ -272,6 +272,7 @@
         revokeCert:   (certId, restore) => request('/admin/summer.php', { body: { action: 'revokeCert', certId, restore: !!restore } }),
         checkout:     (token) => request('/admin/summer.php', { body: { action: 'checkout', token } }),
         absenceAlert: (studentId, cohortId) => request('/admin/summer.php', { body: { action: 'absenceAlert', studentId: studentId || '', cohortId: cohortId || '' } }),
+        importStudents: (rows) => request('/admin/summer.php', { body: { action: 'import', rows } }),
       },
       // Attendance-taker rotation + gamified attendance duty.
       attendance: {
