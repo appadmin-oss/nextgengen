@@ -145,3 +145,34 @@ source of truth). `apps-script/Code.gs` is an **optional, off-path** read-only
 Google Sheets mirror (receives HMAC-signed `mirror.push`; nothing reads back).
 `.htaccess` handles SPA fallback + CSP; `api/*/.htaccess` protect the backend,
 storage, and cache dirs.
+
+## Feature-gap remediation (2026-07)
+
+A five-agent feature-gap audit produced a prioritised inventory; all items were
+implemented. Highlights (see git history on `claude/product-design-audit-r89fjb`):
+
+- **No-cron cliff → built-in web-cron** (`api/_lib/webcron.php`): drains the
+  integration bus, sends parent-verification reminders + stalled alerts, and
+  runs daily GC/promo-expiry opportunistically after each response. The Step-6
+  cron jobs are now optional.
+- **Orphaned modules wired**: Integrations admin (+manual dispatch), Behaviour/
+  wellbeing monitor, session management ("Me → Security"), broadcast history.
+- **Safeguarding**: duty rotation now excludes unscreened volunteers.
+- **Broadcast** route no longer drops `audience`/`email`; in-app audience
+  targeting via a `notifications.audience` column.
+- **Account lifecycle**: 2FA backup codes + super-admin 2FA/password reset;
+  verified self-service email change; staff-invite email; GDPR export +
+  account deletion/anonymisation.
+- **Program**: student completion certificates + revocation (both cert kinds);
+  attendance check-out; guardian absence alerts; centre capacity + waitlist;
+  bulk CSV student import; member + volunteer-duty leaderboards.
+- **Learning**: assignment return-for-revision; event RSVP capacity + staff
+  attendance marking; anchor missions self-seed a 12-week starter set.
+- **Growth/ops**: newsletter compose/send + one-click unsubscribe; homepage
+  promo reader + banner; applicant status lookup; peer reactions + moderated
+  comments; donations (Paystack, config-gated) + ledger; per-member RBAC
+  capability editor; super-admin impersonation; full-CSV exports; dashboard
+  analytics tiles; media player embeds; SEO/PWA icon + metadata fixes.
+
+Backend test suite grew from 333 → **427** passing; SMTP e2e + kiosk-offline
+E2E green throughout. Schema advanced to **migration 31**.
