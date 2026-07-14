@@ -2,6 +2,21 @@
    NGG — Media + Parents + Volunteers + Join
    ================================================================ */
 
+/* Whole years from an ISO date-of-birth (YYYY-MM-DD) to today. Returns -1 for
+   an empty/invalid/future date. Shared by the volunteer + apply intake forms so
+   date-of-birth is validated the same way the backend validates it. */
+function dobToAge(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return -1;
+  const b = new Date(iso + "T00:00:00Z");
+  if (isNaN(b.getTime())) return -1;
+  const now = new Date();
+  if (b.getTime() > now.getTime()) return -1;
+  let age = now.getUTCFullYear() - b.getUTCFullYear();
+  const m = now.getUTCMonth() - b.getUTCMonth();
+  if (m < 0 || (m === 0 && now.getUTCDate() < b.getUTCDate())) age--;
+  return age;
+}
+
 /* =================== MEDIA =================== */
 function MediaPage({ setPage }) {
   const [filter, setFilter] = useState("All");
@@ -408,7 +423,7 @@ function VolunteersPage({ setPage }) {
 }
 
 function MentorApplySection() {
-  const [d, setD] = useState({ name: "", email: "", role: VOLUNTEER_ROLES[0] ? VOLUNTEER_ROLES[0].name : "Mentor", why: "" });
+  const [d, setD] = useState({ firstName: "", lastName: "", otherName: "", email: "", phone: "", dob: "", role: VOLUNTEER_ROLES[0] ? VOLUNTEER_ROLES[0].name : "Mentor", why: "" });
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [err, setErr] = useState("");
@@ -416,14 +431,17 @@ function MentorApplySection() {
   const submit = async (e) => {
     e.preventDefault();
     setErr("");
-    if (d.name.trim().length < 2) { setErr("Enter your name."); return; }
+    if (d.firstName.trim() === "" || d.lastName.trim() === "") { setErr("Enter your first and last name."); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) { setErr("Enter a valid email."); return; }
+    if (d.phone.trim().length < 7) { setErr("Enter a phone number."); return; }
+    const age = dobToAge(d.dob);
+    if (d.dob === "" || age < 16 || age > 100) { setErr("Enter a valid date of birth — volunteers must be 16 or older."); return; }
     setBusy(true);
     try {
       await NGGApi.public.apply({
         kind: "mentor",
-        name: d.name.trim(),
-        email: d.email.trim(),
+        firstName: d.firstName.trim(), lastName: d.lastName.trim(), otherName: d.otherName.trim(),
+        email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         role: d.role,
         why: d.why.trim(),
       });
@@ -431,9 +449,12 @@ function MentorApplySection() {
       if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Application received");
     } catch (e2) {
       const code = e2.code || e2.message;
-      setErr(code === "rate_limited"
-        ? "Too many submissions — wait a few minutes."
-        : "Couldn't submit right now. Try again in a moment.");
+      setErr({
+        rate_limited: "Too many submissions — wait a few minutes.",
+        bad_dob: "Enter a valid date of birth.",
+        dob_too_young: "Volunteers must be at least 16 years old.",
+        phone_required: "A phone number is required.",
+      }[code] || "Couldn't submit right now. Try again in a moment.");
     } finally {
       setBusy(false);
     }
@@ -461,12 +482,28 @@ function MentorApplySection() {
           <form onSubmit={submit} className="card" style={{padding:32, display:"flex", flexDirection:"column", gap:16, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)"}}>
             <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
               <div className="field">
-                <label style={{color:"rgba(255,255,255,0.8)"}}>Your name</label>
-                <input value={d.name} onChange={e => setD({...d, name: e.target.value})} placeholder="Full name" autoComplete="name"/>
+                <label style={{color:"rgba(255,255,255,0.8)"}}>First name</label>
+                <input value={d.firstName} onChange={e => setD({...d, firstName: e.target.value})} placeholder="e.g. Adaeze" autoComplete="given-name"/>
+              </div>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Last name</label>
+                <input value={d.lastName} onChange={e => setD({...d, lastName: e.target.value})} placeholder="e.g. Okafor" autoComplete="family-name"/>
+              </div>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Other name · optional</label>
+                <input value={d.otherName} onChange={e => setD({...d, otherName: e.target.value})} placeholder="Middle name(s)" autoComplete="additional-name"/>
+              </div>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Date of birth</label>
+                <input type="date" value={d.dob} max={new Date().toISOString().slice(0, 10)} onChange={e => setD({...d, dob: e.target.value})} autoComplete="bday"/>
               </div>
               <div className="field">
                 <label style={{color:"rgba(255,255,255,0.8)"}}>Email</label>
                 <input type="email" value={d.email} onChange={e => setD({...d, email: e.target.value})} placeholder="you@email.com" autoComplete="email"/>
+              </div>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Phone</label>
+                <input type="tel" value={d.phone} onChange={e => setD({...d, phone: e.target.value})} placeholder="0803 000 0000" autoComplete="tel"/>
               </div>
             </div>
             <div className="field">
@@ -507,7 +544,7 @@ function JoinPage({ setPage }) {
   const isSummer = program === "summer";
   const [restored, setRestored] = useState(false);
   const [data, setData] = useState(() => {
-    const base = { name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "", photoUrl: "" };
+    const base = { firstName: "", lastName: "", otherName: "", dob: "", city: "Egbeda", track: "Music", why: "", parentEmail: "", parentPhone: "", photoUrl: "" };
     try {
       const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
       if (saved && typeof saved === "object") return Object.assign(base, saved);
@@ -519,7 +556,7 @@ function JoinPage({ setPage }) {
   React.useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
-      if (saved && (saved.name || saved.why || saved.parentEmail || saved.photoUrl)) setRestored(true);
+      if (saved && (saved.firstName || saved.name || saved.why || saved.parentEmail || saved.photoUrl)) setRestored(true);
     } catch (_) {}
   }, []);
   const [busy, setBusy] = useState(false);
@@ -543,15 +580,18 @@ function JoinPage({ setPage }) {
 
   function validate(s) {
     if (s === 0) {
-      if (data.name.trim().length < 2) return "Enter the applicant's first name.";
-      const age = parseInt(data.age, 10);
-      if (!age || age < 10 || age > 17) return "Age must be between 10 and 17.";
+      if (data.firstName.trim() === "") return "Enter the applicant's first name.";
+      if (data.lastName.trim() === "") return "Enter the applicant's last name.";
+      if (data.dob === "") return "Select the applicant's date of birth.";
+      const age = dobToAge(data.dob);
+      if (age < 10 || age > 17) return "Applicants must be between 10 and 17 years old.";
     }
     if (s === 2 && data.why.trim().length < 20) {
       return "Give us at least a sentence or two — 20 characters minimum.";
     }
-    if (s === 3 && !emailOk(data.parentEmail)) {
-      return "Enter a valid parent or guardian email.";
+    if (s === 3) {
+      if (!emailOk(data.parentEmail)) return "Enter a valid parent or guardian email.";
+      if (data.parentPhone.trim().length < 7) return "Enter a parent or guardian phone number.";
     }
     return "";
   }
@@ -569,12 +609,15 @@ function JoinPage({ setPage }) {
       await NGGApi.public.apply({
         kind: "teen",
         program: program,
-        name: data.name.trim(),
-        age: parseInt(data.age, 10),
+        firstName: data.firstName.trim(),
+        lastName: data.lastName.trim(),
+        otherName: data.otherName.trim(),
+        dob: data.dob,
         centre: data.city,
         track: data.track,
         why: data.why.trim(),
         email: data.parentEmail.trim(),
+        phone: data.parentPhone.trim(),
         photoUrl: data.photoUrl || "",
       });
       try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {}
@@ -585,7 +628,11 @@ function JoinPage({ setPage }) {
       const map = {
         rate_limited: "Too many submissions from this connection — wait a few minutes and try again.",
         bad_email: "That parent email doesn't look right.",
-        bad_age: "Age must be between 10 and 17.",
+        bad_age: "Applicants must be between 10 and 17 years old.",
+        bad_dob: "Select a valid date of birth.",
+        phone_required: "A parent or guardian phone number is required.",
+        bad_firstName: "Enter the applicant's first name.",
+        bad_lastName: "Enter the applicant's last name.",
         upstream_unreachable: "We couldn't reach the server. Your draft is saved — try again in a moment.",
       };
       const text = map[code] || "Couldn't submit your application. Your draft is saved — try again.";
@@ -614,7 +661,7 @@ function JoinPage({ setPage }) {
           {restored && (
             <div role="status" style={{display:"flex", alignItems:"center", gap:12, justifyContent:"space-between", marginBottom:20, padding:"12px 16px", borderRadius:12, background:"rgba(245,176,38,0.14)", border:"1px solid rgba(245,176,38,0.4)", fontSize:14, color:"var(--ink-900)"}}>
               <span>↩︎ We saved your progress — pick up where you left off.</span>
-              <button type="button" onClick={() => { try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {} setData({ name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "", photoUrl: "" }); setStep(0); setRestored(false); }} className="mono" style={{background:"none", border:"none", cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--ink-500)", fontWeight:600}}>Start fresh</button>
+              <button type="button" onClick={() => { try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {} setData({ firstName: "", lastName: "", otherName: "", dob: "", city: "Egbeda", track: "Music", why: "", parentEmail: "", parentPhone: "", photoUrl: "" }); setStep(0); setRestored(false); }} className="mono" style={{background:"none", border:"none", cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--ink-500)", fontWeight:600}}>Start fresh</button>
             </div>
           )}
 
@@ -656,17 +703,25 @@ function JoinPage({ setPage }) {
             {step === 0 && (
               <div style={{display:"flex", flexDirection:"column", gap:18}}>
                 <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:0, letterSpacing:"-0.02em"}}>Who is applying?</h2>
-                <p style={{color:"var(--ink-500)", margin:0}}>Use the name you'd want printed on a Genius ID card. You can change it later.</p>
-                <div style={{display:"grid", gridTemplateColumns:"2fr 1fr 1.4fr", gap:14, marginTop:14}}>
+                <p style={{color:"var(--ink-500)", margin:0}}>Use the applicant's legal names as they'd appear on a Genius ID card. You can change them later.</p>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginTop:14}}>
                   <div className="field">
-                    <label>Your first name</label>
-                    <input value={data.name} onChange={e => setData({...data, name: e.target.value})} placeholder="e.g. Adaeze"/>
+                    <label>First name</label>
+                    <input value={data.firstName} onChange={e => setData({...data, firstName: e.target.value})} autoComplete="given-name" placeholder="e.g. Adaeze"/>
                   </div>
                   <div className="field">
-                    <label>Age</label>
-                    <input type="number" min="10" max="17" value={data.age} onChange={e => setData({...data, age: e.target.value})}/>
+                    <label>Last name</label>
+                    <input value={data.lastName} onChange={e => setData({...data, lastName: e.target.value})} autoComplete="family-name" placeholder="e.g. Okafor"/>
                   </div>
                   <div className="field">
+                    <label>Other name · optional</label>
+                    <input value={data.otherName} onChange={e => setData({...data, otherName: e.target.value})} autoComplete="additional-name" placeholder="Middle name(s)"/>
+                  </div>
+                  <div className="field">
+                    <label>Date of birth</label>
+                    <input type="date" value={data.dob} max={new Date().toISOString().slice(0, 10)} onChange={e => setData({...data, dob: e.target.value})} autoComplete="bday"/>
+                  </div>
+                  <div className="field" style={{gridColumn:"1 / -1"}}>
                     <label>Which centre is closest to you?</label>
                     <select value={data.city} onChange={e => setData({...data, city: e.target.value})}>
                       <option value="Egbeda">CACENTRE Egbeda</option>
@@ -718,15 +773,21 @@ function JoinPage({ setPage }) {
               <div style={{display:"flex", flexDirection:"column", gap:18}}>
                 <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:0, letterSpacing:"-0.02em"}}>Parent or guardian.</h2>
                 <p style={{color:"var(--ink-500)", margin:0}}>We will email them a one-pager explaining the program and asking for consent. We will not contact them again without your knowledge.</p>
-                <div className="field">
-                  <label>Parent / guardian email</label>
-                  <input value={data.parentEmail} onChange={e => setData({...data, parentEmail: e.target.value})} placeholder="parent@example.com"/>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+                  <div className="field">
+                    <label>Parent / guardian email</label>
+                    <input type="email" value={data.parentEmail} onChange={e => setData({...data, parentEmail: e.target.value})} autoComplete="email" placeholder="parent@example.com"/>
+                  </div>
+                  <div className="field">
+                    <label>Parent / guardian phone</label>
+                    <input type="tel" value={data.parentPhone} onChange={e => setData({...data, parentPhone: e.target.value})} autoComplete="tel" placeholder="0803 000 0000"/>
+                  </div>
                 </div>
                 <div className="card" style={{padding:18, background:"var(--cream-50)", border:"1px solid var(--cream-200)"}}>
                   <div className="eyebrow" style={{color:"var(--ink-500)"}}>APPLICATION SUMMARY</div>
                   <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:14, marginTop:12, fontSize:14}}>
-                    <div><b>Name</b><br/>{data.name || "—"}</div>
-                    <div><b>Age</b><br/>{data.age}</div>
+                    <div><b>Name</b><br/>{[data.firstName, data.otherName, data.lastName].filter(Boolean).join(" ") || "—"}</div>
+                    <div><b>Age</b><br/>{data.dob ? dobToAge(data.dob) : "—"}</div>
                     <div><b>Centre</b><br/>{data.city}</div>
                     <div><b>Track</b><br/>{data.track}</div>
                   </div>
@@ -1424,7 +1485,7 @@ function VolunteerRegisterPage({ setPage }) {
     return VOL_LANES.some(l => l.key === r) ? r : "";
   });
   const [courses, setCourses] = React.useState([]);
-  const [d, setD] = React.useState({ name: "", email: "", phone: "", why: "", photoUrl: "" });
+  const [d, setD] = React.useState({ firstName: "", lastName: "", otherName: "", email: "", phone: "", dob: "", why: "", photoUrl: "" });
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const [err, setErr] = React.useState("");
@@ -1438,17 +1499,23 @@ function VolunteerRegisterPage({ setPage }) {
   const set = (k) => (e) => { setD({ ...d, [k]: e.target.value }); if (err) setErr(""); };
   const toggleCourse = (c) => setCourses(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]);
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim());
-  const phoneNeeded = role === "instructor";
-  const ready = role !== "" && d.name.trim().length >= 2 && emailOk
-    && (role !== "instructor" || courses.length > 0)
-    && (!phoneNeeded || d.phone.trim().length >= 7);
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const dobAge = dobToAge(d.dob);
+  const dobOk = d.dob !== "" && dobAge >= 16 && dobAge <= 100;
+  const phoneOk = d.phone.trim().length >= 7;
+  const ready = role !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== "" && emailOk
+    && phoneOk && dobOk
+    && (role !== "instructor" || courses.length > 0);
   // Tell the applicant WHY the button is disabled instead of greying silently.
   const missing = [];
   if (role === "") missing.push("pick a role");
-  if (d.name.trim().length < 2) missing.push("your name");
+  if (d.firstName.trim() === "") missing.push("first name");
+  if (d.lastName.trim() === "") missing.push("last name");
   if (!emailOk) missing.push("a valid email");
+  if (!phoneOk) missing.push("a phone number");
+  if (d.dob === "") missing.push("date of birth");
+  else if (!dobOk) missing.push("volunteers must be 16 or older");
   if (role === "instructor" && courses.length === 0) missing.push("at least one course");
-  if (phoneNeeded && d.phone.trim().length < 7) missing.push("a phone number");
 
   const submit = async (e) => {
     e.preventDefault();
@@ -1457,7 +1524,8 @@ function VolunteerRegisterPage({ setPage }) {
     try {
       const r = await NGGApi.public.apply({
         kind: "volunteer", role,
-        name: d.name.trim(), email: d.email.trim(), phone: d.phone.trim(),
+        firstName: d.firstName.trim(), lastName: d.lastName.trim(), otherName: d.otherName.trim(),
+        email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         why: d.why.trim(), photoUrl: d.photoUrl || "", courses: role === "instructor" ? courses : [],
       });
       setDone(r && r.ref ? r.ref : true);
@@ -1468,8 +1536,12 @@ function VolunteerRegisterPage({ setPage }) {
         rate_limited: "Too many submissions — wait a few minutes and try again.",
         applications_closed: "Volunteer registration is closed right now. Check back soon.",
         course_required: "Pick at least one course you can teach.",
-        phone_required: "Instructors must be reachable by phone — add your number.",
+        phone_required: "A phone number is required — add your number.",
         bad_email: "That email doesn't look right.",
+        bad_dob: "Enter a valid date of birth.",
+        dob_too_young: "Volunteers must be at least 16 years old.",
+        bad_firstName: "Please enter your first name.",
+        bad_lastName: "Please enter your last name.",
       }[code] || "Couldn't submit. Please try again.");
     } finally { setBusy(false); }
   };
@@ -1488,7 +1560,7 @@ function VolunteerRegisterPage({ setPage }) {
           <div style={{ width: 64, height: 64, margin: "0 auto 20px", borderRadius: "50%", background: "var(--lime)", display: "grid", placeItems: "center", fontSize: 30, color: "var(--navy-900)" }}>✓</div>
           <h1 className="display" style={{ fontSize: "clamp(32px,4vw,44px)", margin: "0 0 12px" }}>You're in the pipeline.</h1>
           <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6, margin: "0 0 8px" }}>
-            Thank you, {d.name.trim().split(" ")[0] || "friend"}. We review every registration by hand and reply within a week.
+            Thank you, {d.firstName.trim() || "friend"}. We review every registration by hand and reply within a week.
           </p>
           <p style={{ color: "var(--ink-500)", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
             Volunteers who work directly with teenagers complete safeguarding screening before their first session.
@@ -1570,11 +1642,17 @@ function VolunteerRegisterPage({ setPage }) {
               <div className="mt-48">
                 {stepNo(role === "instructor" ? "03" : "02", "Your details")}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }} className="vol-fields">
-                  <div className="field"><label htmlFor="vol-name">Full name</label>
-                    <input id="vol-name" value={d.name} onChange={set("name")} autoComplete="name" placeholder="Your name"/></div>
+                  <div className="field"><label htmlFor="vol-first">First name</label>
+                    <input id="vol-first" value={d.firstName} onChange={set("firstName")} autoComplete="given-name" placeholder="e.g. Adaeze"/></div>
+                  <div className="field"><label htmlFor="vol-last">Last name</label>
+                    <input id="vol-last" value={d.lastName} onChange={set("lastName")} autoComplete="family-name" placeholder="e.g. Okafor"/></div>
+                  <div className="field"><label htmlFor="vol-other">Other name · optional</label>
+                    <input id="vol-other" value={d.otherName} onChange={set("otherName")} autoComplete="additional-name" placeholder="Middle name(s)"/></div>
+                  <div className="field"><label htmlFor="vol-dob">Date of birth</label>
+                    <input id="vol-dob" type="date" value={d.dob} onChange={set("dob")} max={todayISO} autoComplete="bday"/></div>
                   <div className="field"><label htmlFor="vol-email">Email</label>
                     <input id="vol-email" type="email" value={d.email} onChange={set("email")} autoComplete="email" placeholder="you@example.com"/></div>
-                  <div className="field"><label htmlFor="vol-phone">{phoneNeeded ? "Phone · required for instructors" : "Phone · optional"}</label>
+                  <div className="field"><label htmlFor="vol-phone">Phone</label>
                     <input id="vol-phone" type="tel" value={d.phone} onChange={set("phone")} autoComplete="tel" placeholder="0803 000 0000"/></div>
                   <div className="field" style={{ gridColumn: "1 / -1" }}><label htmlFor="vol-why">Why you · optional</label>
                     <textarea id="vol-why" rows={3} value={d.why} onChange={set("why")} placeholder="A line or two — craft, experience, or simply why this matters to you."/></div>

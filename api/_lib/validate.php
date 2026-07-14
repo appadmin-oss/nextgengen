@@ -75,6 +75,20 @@ function v_safe_text($v, int $max = 5000): string {
     return $v;
 }
 
+/** Validate an ISO date of birth: a real calendar date, not in the future, and
+ *  within [minAge, maxAge] years. Returns the normalized YYYY-MM-DD string. */
+function v_dob($v, int $minAge = 0, int $maxAge = 120): string {
+    $v = trim((string)$v);
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1])) {
+        json_error('bad_dob', 422);
+    }
+    $age = dob_age($v);
+    if ($age < 0) json_error('dob_in_future', 422);
+    if ($age < $minAge) json_error('dob_too_young', 422);
+    if ($age > $maxAge) json_error('dob_too_old', 422);
+    return $v;
+}
+
 function v_url($v): string {
     $v = trim((string)$v);
     if ($v === '') return '';

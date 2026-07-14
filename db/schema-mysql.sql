@@ -186,6 +186,8 @@ CREATE TABLE IF NOT EXISTS applications (
   role VARCHAR(64), why TEXT, email VARCHAR(200), status VARCHAR(32) DEFAULT 'new',
   program VARCHAR(16) DEFAULT '', photoUrl VARCHAR(512) DEFAULT '',
   phone VARCHAR(24) DEFAULT '', courses TEXT,
+  firstName VARCHAR(80) DEFAULT '', lastName VARCHAR(80) DEFAULT '',
+  otherName VARCHAR(80) DEFAULT '', dob VARCHAR(40) DEFAULT '',
   createdAt VARCHAR(40), ip VARCHAR(64),
   INDEX idx_apps_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -410,6 +412,8 @@ CREATE TABLE IF NOT EXISTS volunteers (
   volunteerId VARCHAR(32) NOT NULL UNIQUE,
   applicationId INT,
   fullName VARCHAR(255), email VARCHAR(200), phone VARCHAR(24) DEFAULT '',
+  firstName VARCHAR(80) DEFAULT '', lastName VARCHAR(80) DEFAULT '',
+  otherName VARCHAR(80) DEFAULT '', dob VARCHAR(40) DEFAULT '',
   role VARCHAR(24), courses TEXT,
   token VARCHAR(64) DEFAULT '', photoUrl VARCHAR(512) DEFAULT '',
   status VARCHAR(24) DEFAULT 'active',

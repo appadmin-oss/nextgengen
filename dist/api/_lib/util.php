@@ -10,6 +10,18 @@ declare(strict_types=1);
 
 function now_iso(): string { return gmdate('Y-m-d\TH:i:s\Z'); }
 
+/** Whole years elapsed from an ISO date (YYYY-MM-DD) to today (UTC). Returns
+ *  -1 if the date is unparseable or in the future. */
+function dob_age(string $iso): int {
+    $iso = trim($iso);
+    $t = strtotime($iso . ' 00:00:00 UTC');
+    if ($t === false || $t > time()) return -1;
+    $by = (int)gmdate('Y', $t); $bm = (int)gmdate('n', $t); $bd = (int)gmdate('j', $t);
+    $age = (int)gmdate('Y') - $by;
+    if ((int)gmdate('n') < $bm || ((int)gmdate('n') === $bm && (int)gmdate('j') < $bd)) $age--;
+    return $age;
+}
+
 function rand_hex(int $bytes): string { return bin2hex(random_bytes($bytes)); }
 
 function new_id(string $prefix): string {

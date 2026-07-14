@@ -57,12 +57,20 @@ return [
         'from_email' => 'no-reply@ngg.afrovanguard.org',  // match the smtp.user mailbox
         'reply_to'   => 'next@afrovanguard.org.ng',
         'smtp' => [
-            'host'   => '',            // e.g. 'smtp.gmail.com' — empty = use mail()
+            'host'   => '',            // e.g. 'smtp.gmail.com' — empty = skip SMTP
             'port'   => 587,
             'secure' => 'tls',         // 'tls' (587) | 'ssl' (465) | '' (plain)
             'user'   => '',
             'pass'   => '',
         ],
+        // Resend HTTPS fallback (https://resend.com). STRONGLY recommended on
+        // shared hosting: when the host blocks outbound SMTP ports AND silently
+        // drops PHP mail() (the usual reason "emails don't send"), Resend still
+        // works because it's a plain HTTPS POST. Delivery order is:
+        //   SMTP (if host set) → Resend (if key set) → PHP mail().
+        // Free tier = 3,000 emails/month. Set from_email to a domain verified
+        // in your Resend dashboard (or use onboarding@resend.dev for testing).
+        'resend_key' => '',            // e.g. 're_xxxxxxxx' — empty = disabled
     ],
 
     // -----------------------------------------------------------------------

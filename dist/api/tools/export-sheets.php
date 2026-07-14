@@ -33,7 +33,7 @@ $spec = [
     'Events'      => ['table' => 'events', 'cols' => ['eventId','title','kind','centre','startAt','status','isPublic']],
     'Posts'       => ['table' => 'posts', 'cols' => ['postId','slug','kind','title','status','publishAt']],
     'Newsletter'  => ['table' => 'newsletter', 'cols' => ['email','source','status','createdAt']],
-    'Applications'=> ['table' => 'applications', 'cols' => ['kind','name','age','centre','track','email','status','createdAt']],
+    'Applications'=> ['table' => 'applications', 'cols' => ['kind','firstName','lastName','otherName','name','dob','age','centre','track','role','email','phone','status','createdAt']],
     'SummerStudents' => ['table' => 'summer_students', 'cols' => ['studentId','cohortId','handle','fullName','age','centre','track','guardianName','guardianPhone','status','enrolledAt']],
     'Attendance'  => ['table' => 'attendance', 'cols' => ['cohortId','studentId','date','checkInAt','method','byId']],
     'QRCodes'     => ['table' => 'qr_codes', 'cols' => ['token','batch','cohortId','status','studentId','assignedName','createdAt']],

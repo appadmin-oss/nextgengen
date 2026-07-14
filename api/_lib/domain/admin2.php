@@ -265,7 +265,9 @@ function admin_mail_test(array $p): array {
     $to = trim((string)($p['to'] ?? ''));
     if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) $to = (string)($g['requester']['email'] ?? '');
     if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'no_valid_recipient'];
-    $mode = !empty($GLOBALS['CONFIG']['mail']['smtp']['host'] ?? '') ? 'smtp' : 'php_mail';
+    $mode = function_exists('mail_mode')
+        ? mail_mode()
+        : (!empty($GLOBALS['CONFIG']['mail']['smtp']['host'] ?? '') ? 'smtp' : 'php_mail');
     $GLOBALS['__mail_last_error'] = '';
     $delivered = send_mail($to, 'NGG email delivery test', email_template([
         'title' => 'Delivery test',
@@ -282,7 +284,9 @@ function admin_mail_test(array $p): array {
     $fromDomain = function_exists('mail_domain_of') ? mail_domain_of((string)$from['email']) : '';
     $hints = [];
     if ($mode === 'php_mail') {
-        $hints[] = 'No SMTP configured — using PHP mail(). Set mail.smtp.host/user/pass in api/config.php for reliable delivery.';
+        $hints[] = 'No SMTP or Resend configured — using PHP mail(), which most shared hosts silently drop. Set mail.smtp.host/user/pass, or (easiest on locked-down hosts) mail.resend_key in api/config.php.';
+    } elseif ($mode === 'resend') {
+        $hints[] = 'Using the Resend HTTPS API. Make sure mail.from_email is on a domain you have verified in the Resend dashboard, or delivery will be rejected.';
     }
     $isGmail = $mode === 'smtp' && preg_match('/gmail|googlemail|google\.com|smtp\.google/i', (string)($smtp['host'] ?? ''));
     $authUser = strtolower(trim((string)($smtp['user'] ?? '')));

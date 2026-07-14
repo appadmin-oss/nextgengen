@@ -48,19 +48,96 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
     $text = $text ?? trim(preg_replace('/\n{3,}/', "\n\n", strip_tags(preg_replace('#<br\s*/?>|</p>|</div>#i', "\n", $html)) ?? ''));
 
     $GLOBALS['__mail_last_error'] = '';
-    $smtp = $CONFIG['mail']['smtp'] ?? [];
-    try {
-        if (!empty($smtp['host'])) {
-            return smtp_send($smtp, $from, $to, $subject, $html, $text);
+    $mail = $CONFIG['mail'] ?? [];
+    $smtp = $mail['smtp'] ?? [];
+    $errors = [];
+
+    // Path 1 — SMTP (authenticated relay). Most reliable when the host permits
+    // outbound 587/465 and the relay is aligned with the From domain.
+    if (!empty($smtp['host'])) {
+        try {
+            if (smtp_send($smtp, $from, $to, $subject, $html, $text)) return true;
+            $errors[] = 'smtp: send returned false';
+        } catch (Throwable $e) {
+            $errors[] = 'smtp: ' . $e->getMessage();
+            error_log('[send_mail/smtp] ' . $e->getMessage());
         }
-        $ok = mail_native($from, $to, $subject, $html, $text);
-        if (!$ok) $GLOBALS['__mail_last_error'] = 'php_mail() was rejected or is unavailable on this host. No SMTP is configured — set mail.smtp.host/user/pass in api/config.php for reliable delivery.';
-        return $ok;
-    } catch (Throwable $e) {
-        $GLOBALS['__mail_last_error'] = $e->getMessage();
-        error_log('[send_mail] ' . $e->getMessage());
-        return false;
     }
+
+    // Path 2 — Resend HTTPS API. Shared hosts that block SMTP ports and drop
+    // mail() almost always still allow outbound HTTPS, so this is the most
+    // reliable cross-host fallback. Free tier at https://resend.com — one key.
+    $resendKey = trim((string)($mail['resend_key'] ?? ''));
+    if ($resendKey !== '' && $resendKey !== 'YOUR_RESEND_KEY_HERE') {
+        try {
+            if (resend_send($resendKey, $from, $to, $subject, $html, $text)) return true;
+            $errors[] = 'resend: send failed';
+        } catch (Throwable $e) {
+            $errors[] = 'resend: ' . $e->getMessage();
+            error_log('[send_mail/resend] ' . $e->getMessage());
+        }
+    }
+
+    // Path 3 — PHP mail() last resort (often silently dropped on shared hosts).
+    try {
+        if (mail_native($from, $to, $subject, $html, $text)) return true;
+        $errors[] = 'php_mail(): rejected or unavailable';
+    } catch (Throwable $e) {
+        $errors[] = 'php_mail(): ' . $e->getMessage();
+        error_log('[send_mail/native] ' . $e->getMessage());
+    }
+
+    $GLOBALS['__mail_last_error'] = $errors
+        ? implode(' | ', $errors)
+        : 'No delivery path available. Set mail.smtp.* or mail.resend_key in api/config.php.';
+    error_log('[send_mail] all paths failed for ' . $to . ' — ' . $GLOBALS['__mail_last_error']);
+    return false;
+}
+
+/** Which delivery path send_mail() will try first — for the Control Room diagnostic. */
+function mail_mode(): string {
+    global $CONFIG;
+    $mail = $CONFIG['mail'] ?? [];
+    if (!empty($mail['smtp']['host'] ?? '')) return 'smtp';
+    $k = trim((string)($mail['resend_key'] ?? ''));
+    if ($k !== '' && $k !== 'YOUR_RESEND_KEY_HERE') return 'resend';
+    return 'php_mail';
+}
+
+/**
+ * Send via the Resend HTTPS API (https://resend.com/docs). One JSON POST with
+ * the key as a bearer token — no SMTP socket, no Composer dependency, so it
+ * works on locked-down shared hosts where SMTP and mail() both fail.
+ */
+function resend_send(string $apiKey, array $from, string $to, string $subject, string $html, string $text): bool {
+    if (!function_exists('curl_init')) throw new RuntimeException('curl_unavailable');
+    $payload = [
+        'from'    => ($from['name'] ?? '') !== '' ? ($from['name'] . ' <' . $from['email'] . '>') : $from['email'],
+        'to'      => [$to],
+        'subject' => $subject,
+        'html'    => $html,
+        'text'    => $text,
+    ];
+    if (!empty($from['replyTo'])) $payload['reply_to'] = [$from['replyTo']];
+
+    $ch = curl_init('https://api.resend.com/emails');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Authorization: Bearer ' . $apiKey],
+        CURLOPT_TIMEOUT        => 12,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $raw  = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false) throw new RuntimeException('curl: ' . $cerr);
+    if ($code >= 200 && $code < 300) return true;
+    throw new RuntimeException('HTTP ' . $code . ' · ' . substr((string)$raw, 0, 200));
 }
 
 /** The domain an address belongs to (for Message-ID / diagnostics). */
@@ -108,7 +185,12 @@ function mail_native(array $from, string $to, string $subject, string $html, str
     // without a real envelope-from on the sending domain. Only when it's a
     // valid address (from trusted config) — never interpolate untrusted input.
     $params = filter_var($from['email'], FILTER_VALIDATE_EMAIL) ? ('-f' . $from['email']) : '';
-    return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, implode("\r\n", $headers), $params);
+    $subj = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    $hdr  = implode("\r\n", $headers);
+    $ok = @mail($to, $subj, $body, $hdr, $params);
+    // Some hosts reject the -f envelope param unless the sender is sendmail-trusted; retry without it.
+    if (!$ok && $params !== '') $ok = @mail($to, $subj, $body, $hdr);
+    return (bool)$ok;
 }
 
 /**

@@ -4,24 +4,34 @@ require_method('POST');
 rate_limit_check('default');
 
 $body = read_json_body();
-v_require($body, ['kind', 'name', 'email']);
+// Standardised intake: structured name, required phone, required DOB.
+v_require($body, ['kind', 'firstName', 'lastName', 'email', 'phone', 'dob']);
 
 $kind  = v_in($body['kind'], ['teen', 'mentor', 'volunteer']);
-$name  = v_safe_text(v_min(v_max(trim((string)$body['name']), 120), 2), 120);
+$first = v_safe_text(v_min(v_max(trim((string)$body['firstName']), 60), 1), 60);
+$last  = v_safe_text(v_min(v_max(trim((string)$body['lastName']), 60), 1), 60);
+$other = v_safe_text(v_max(trim((string)($body['otherName'] ?? '')), 60), 60);
+$name  = trim($first . ($other !== '' ? ' ' . $other : '') . ' ' . $last);
 $email = v_email($body['email']);
+$phone = v_safe_text(v_max(trim((string)$body['phone']), 32), 32);
+// Teens are 10–17; mentors/volunteers are adults (16+ minimum).
+$dob   = v_dob($body['dob'], $kind === 'teen' ? 10 : 16, $kind === 'teen' ? 17 : 100);
 $why   = v_safe_text($body['why'] ?? '', 2000);
 
 $payload = [
-    'kind'  => $kind,
-    'name'  => $name,
-    'email' => $email,
-    'why'   => $why,
-    'ip'    => client_ip(),
+    'kind'      => $kind,
+    'firstName' => $first,
+    'lastName'  => $last,
+    'otherName' => $other,
+    'name'      => $name,
+    'email'     => $email,
+    'phone'     => $phone,
+    'dob'       => $dob,
+    'why'       => $why,
+    'ip'        => client_ip(),
 ];
 
 if ($kind === 'teen') {
-    v_require($body, ['age']);
-    $payload['age']     = v_int($body['age'], 10, 17);
     $payload['centre']  = v_safe_text($body['centre'] ?? '', 60);
     $payload['track']   = v_safe_text($body['track'] ?? '', 60);
     $payload['program'] = v_safe_text($body['program'] ?? '', 16);
@@ -30,7 +40,6 @@ if ($kind === 'teen') {
     v_require($body, ['role']);
     $payload['role']    = v_safe_text($body['role'] ?? '', 24);
     $payload['photoUrl'] = v_safe_text($body['photoUrl'] ?? '', 512);
-    $payload['phone']   = v_safe_text($body['phone'] ?? '', 24);
     $payload['courses'] = is_array($body['courses'] ?? null)
         ? array_slice(array_map(fn($c) => v_safe_text((string)$c, 60), $body['courses']), 0, 8)
         : [];

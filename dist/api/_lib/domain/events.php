@@ -422,22 +422,43 @@ function public_apply(array $p): array {
     // Respect the admin toggles (default open).
     $openKey = $kind === 'teen' ? 'applications_open' : ($kind === 'mentor' ? 'mentor_applications_open' : 'volunteer_applications_open');
     if (setting_raw($openKey) === '0') return ['ok' => false, 'error' => 'applications_closed'];
-    $name = trim((string)($p['name'] ?? ''));
+    // Structured name: first + last required, other optional. Legacy `name`
+    // stays populated (composed) so downstream reads/emails keep working.
+    $first = trim((string)($p['firstName'] ?? ''));
+    $last  = trim((string)($p['lastName'] ?? ''));
+    $other = trim((string)($p['otherName'] ?? ''));
+    if ($first === '' || mb_strlen($first) > 60) return ['ok' => false, 'error' => 'bad_firstName'];
+    if ($last === '' || mb_strlen($last) > 60) return ['ok' => false, 'error' => 'bad_lastName'];
+    if (mb_strlen($other) > 60) return ['ok' => false, 'error' => 'bad_otherName'];
+    $name = trim((string)($p['name'] ?? '')) ?: trim($first . ($other !== '' ? ' ' . $other : '') . ' ' . $last);
     if (strlen($name) < 2 || strlen($name) > 120) return ['ok' => false, 'error' => 'bad_name'];
     $email = strtolower(trim((string)($p['email'] ?? '')));
     if (!preg_match('/^[^\s@]+@[^\s@]+\.[^\s@]+$/', $email)) return ['ok' => false, 'error' => 'bad_email'];
     if (strlen($email) > 200) return ['ok' => false, 'error' => 'email_too_long'];
     $why = trim((string)($p['why'] ?? ''));
     if (strlen($why) > 2000) return ['ok' => false, 'error' => 'why_too_long'];
+    // Phone is now required on every intake (previously instructor-only).
+    $phone = sms_normalize((string)($p['phone'] ?? ''));
+    if ($phone === '') return ['ok' => false, 'error' => 'phone_required'];
+    // Date of birth: a real calendar date, not in the future.
+    $dob = trim((string)($p['dob'] ?? ''));
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $dob, $dm) || !checkdate((int)$dm[2], (int)$dm[3], (int)$dm[1])) {
+        return ['ok' => false, 'error' => 'bad_dob'];
+    }
+    $dobAge = function_exists('dob_age') ? dob_age($dob) : -1;
+    if ($dobAge < 0) return ['ok' => false, 'error' => 'bad_dob'];
+    // Adults only for mentor/volunteer; the teen branch enforces 10–17 below.
+    if ($kind !== 'teen' && $dobAge < 16) return ['ok' => false, 'error' => 'dob_too_young'];
 
-    $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $phone = ''; $courses = [];
+    $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $courses = [];
     // A short URL to a headshot uploaded (unsigned) to Cloudinary. Optional —
     // only trusted if it points at the configured Cloudinary CDN host.
     $photoUrl = trim((string)($p['photoUrl'] ?? ''));
     if ($photoUrl !== '' && !preg_match('#^https://res\.cloudinary\.com/[A-Za-z0-9_-]+/#', $photoUrl)) $photoUrl = '';
     if (strlen($photoUrl) > 512) $photoUrl = '';
     if ($kind === 'teen') {
-        $age = (int)($p['age'] ?? 0);
+        // Age is derived from the date of birth, not entered separately.
+        $age = $dobAge;
         if ($age < 10 || $age > 17) return ['ok' => false, 'error' => 'bad_age'];
         $track = substr(trim((string)($p['track'] ?? '')), 0, 60);
         $centre = substr(trim((string)($p['centre'] ?? '')), 0, 60);
@@ -450,9 +471,6 @@ function public_apply(array $p): array {
         // instructors additionally pick the course(s) they can teach.
         $role = strtolower(trim((string)($p['role'] ?? '')));
         if (!in_array($role, ['admin', 'mentor', 'instructor'], true)) return ['ok' => false, 'error' => 'bad_role'];
-        $phone = sms_normalize((string)($p['phone'] ?? ''));
-        // Instructors run rooms — they must be reachable by phone.
-        if ($role === 'instructor' && $phone === '') return ['ok' => false, 'error' => 'phone_required'];
         if ($role === 'instructor') {
             $offered = volunteer_course_options();
             foreach ((is_array($p['courses'] ?? null) ? $p['courses'] : []) as $c) {
@@ -475,7 +493,9 @@ function public_apply(array $p): array {
         return ['ok' => true, 'ref' => intake_reference($kind, (int)$dupe['id']), 'duplicate' => true];
     }
     $appId = db_insert('applications', [
-        'kind' => $kind, 'name' => $name, 'age' => $age ?: null, 'centre' => $centre, 'track' => $track,
+        'kind' => $kind, 'name' => $name,
+        'firstName' => $first, 'lastName' => $last, 'otherName' => $other, 'dob' => $dob,
+        'age' => $age ?: null, 'centre' => $centre, 'track' => $track,
         'role' => $role, 'why' => $why, 'email' => $email, 'program' => $program, 'photoUrl' => $photoUrl,
         'phone' => $phone, 'courses' => $courses ? json_encode($courses, JSON_UNESCAPED_SLASHES) : '',
         'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
@@ -494,6 +514,7 @@ function public_apply(array $p): array {
         'intro' => "{$name} just applied.",
         'bodyHtml' => '<b>Name:</b> ' . esc_html($name) . '<br><b>Email:</b> ' . esc_html($email)
             . ($phone ? '<br><b>Phone:</b> ' . esc_html($phone) : '')
+            . ($dob ? '<br><b>DOB:</b> ' . esc_html($dob) . ' (age ' . (int)$dobAge . ')' : '')
             . ($track ? '<br><b>Track:</b> ' . esc_html($track) : '')
             . ($role ? '<br><b>Role:</b> ' . esc_html($role) : '')
             . ($courses ? '<br><b>Courses:</b> ' . esc_html(implode(', ', $courses)) : '')
@@ -504,7 +525,7 @@ function public_apply(array $p): array {
     ]);
     // Acknowledge the applicant — clean, professional, and traceable so nobody
     // applies into silence. Volunteer copy names the role + safeguarding note.
-    $first = explode(' ', $name)[0] ?: 'there';
+    $first = $first ?: (explode(' ', $name)[0] ?: 'there');
     if ($kind === 'volunteer') {
         $roleLabel = ['admin' => 'Admin / Ops', 'mentor' => 'Mentor', 'instructor' => 'Instructor'][$role] ?? ucfirst($role);
         $handbook = volunteer_handbook_url();

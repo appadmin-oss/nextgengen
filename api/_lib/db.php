@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 31;
+const NGG_SCHEMA_TARGET = 32;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -766,6 +766,20 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX idx_donations_status ON donations(status);
             ALTER TABLE members ADD COLUMN capsExtra TEXT DEFAULT '';
+        ",
+
+        // Standardised intake: structured name (first/last/other) + date of
+        // birth on public applications and the volunteers they convert into.
+        // Legacy `name`/`fullName` stay populated (composed) for back-compat.
+        32 => "
+            ALTER TABLE applications ADD COLUMN firstName TEXT DEFAULT '';
+            ALTER TABLE applications ADD COLUMN lastName TEXT DEFAULT '';
+            ALTER TABLE applications ADD COLUMN otherName TEXT DEFAULT '';
+            ALTER TABLE applications ADD COLUMN dob TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN firstName TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN lastName TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN otherName TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN dob TEXT DEFAULT '';
         ",
     ];
 

@@ -529,6 +529,8 @@ function admin_volunteer_approve(array $p): array {
     db_insert('volunteers', [
         'volunteerId' => $volunteerId, 'applicationId' => $id,
         'fullName' => (string)$a['name'], 'email' => (string)$a['email'], 'phone' => (string)($a['phone'] ?? ''),
+        'firstName' => (string)($a['firstName'] ?? ''), 'lastName' => (string)($a['lastName'] ?? ''),
+        'otherName' => (string)($a['otherName'] ?? ''), 'dob' => (string)($a['dob'] ?? ''),
         'role' => (string)$a['role'], 'courses' => (string)($a['courses'] ?? ''),
         'token' => $token, 'photoUrl' => (string)($a['photoUrl'] ?? ''),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
