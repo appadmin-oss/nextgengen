@@ -4,6 +4,7 @@ declare(strict_types=1);
 /** Members — dashboard, profile update, notifications. */
 
 function member_dashboard(array $p): array {
+    if (function_exists('anchor_ensure_seed')) anchor_ensure_seed();
     $memberId = (string)($p['memberId'] ?? '');
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     if (!$member) return ['ok' => false, 'error' => 'not_found'];

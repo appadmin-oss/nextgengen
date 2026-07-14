@@ -211,3 +211,17 @@ function assignment_grade(array $p): array {
     audit('assignment.grade', $g['requester']['memberId'], $submissionId, ['grade' => $grade], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
+
+/** Return a submission for revision (no lock) so the member can resubmit. */
+function assignment_return(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $row = db_row('SELECT * FROM assignment_submissions WHERE submissionId = ? LIMIT 1', [(string)($p['submissionId'] ?? '')]);
+    if (!$row) return ['ok' => false, 'error' => 'not_found'];
+    $a = db_row('SELECT title FROM assignments WHERE assignmentId = ? LIMIT 1', [$row['assignmentId']]);
+    $feedback = (string)($p['feedback'] ?? '');
+    db_update('assignment_submissions', ['status' => 'returned', 'feedback' => $feedback, 'gradedBy' => $g['requester']['memberId'], 'gradedAt' => now_iso()], ['id' => $row['id']]);
+    push_notification($row['memberId'], ['kind' => 'announcement', 'title' => 'Revise & resubmit: ' . ($a['title'] ?? 'assignment'),
+        'body' => ($feedback !== '' ? 'Feedback: ' . $feedback : 'Your mentor asked for a revision.') . ' Tap to resubmit.', 'linkPage' => 'dashboard']);
+    audit('assignment.return', $g['requester']['memberId'], (string)$row['submissionId'], [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}

@@ -82,6 +82,15 @@ chk('non-super cannot set role', (function () {
     return $m['role'] === 'member'; // unchanged
 })());
 
+// Anchor missions self-seed a 12-week starter set on first access (empty table).
+chk('anchor missions self-seed a 12-week starter set', (function () {
+    $before = (int)db_row('SELECT COUNT(*) c FROM anchor_missions')['c'];
+    backend_dispatch('anchor.weeks', ['memberId' => 'NGG-2025-0001']);
+    $seeded = (int)db_row('SELECT COUNT(*) c FROM anchor_missions')['c'];
+    db_exec("DELETE FROM anchor_missions WHERE missionId LIKE 'AM-W%'"); // reset for downstream tests
+    return $before === 0 && $seeded === 12;
+})());
+
 // ── Missions + dashboard ──
 $mid = backend_dispatch('admin.missions.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['week' => 1, 'order' => 1, 'theme' => 'Identity', 'title' => 'Name yourself', 'prompt' => 'Write it', 'type' => 'Reflect', 'proof' => 'none', 'xp' => 60, 'isActive' => true]])['missionId'];
 db_exec("UPDATE sessions SET startDate=?, endDate=? WHERE code='SUMMER' AND year=?", [gmdate('Y-m-d', time() - 7 * 86400), gmdate('Y-m-d', time() + 30 * 86400), (int)gmdate('Y')]);
@@ -106,6 +115,10 @@ $sid = $subs['submissions'][0]['submissionId'];
 backend_dispatch('admin.assignment.grade', ['requesterId' => 'NGG-2025-0099', 'submissionId' => $sid, 'grade' => 25, 'feedback' => 'Good']);
 chk('grade clamps to max', backend_dispatch('assignment.list', ['memberId' => 'NGG-2025-0001'])['assignments'][0]['submission']['grade'] === 10);
 chk('no resubmit after graded', backend_dispatch('assignment.submit', ['memberId' => 'NGG-2025-0001', 'assignmentId' => $aid, 'text' => 'x'])['error'] === 'already_graded');
+// Return-for-revision reopens resubmission.
+chk('return-for-revision unlocks the submission', !empty(backend_dispatch('admin.assignment.return', ['requesterId' => 'NGG-2025-0099', 'submissionId' => $sid, 'feedback' => 'Add a paragraph'])['ok']) && db_row('SELECT status FROM assignment_submissions WHERE submissionId=?', [$sid])['status'] === 'returned');
+chk('member can resubmit after a return', !empty(backend_dispatch('assignment.submit', ['memberId' => 'NGG-2025-0001', 'assignmentId' => $aid, 'text' => 'My revised essay'])['ok']) && db_row('SELECT status FROM assignment_submissions WHERE submissionId=?', [$sid])['status'] === 'submitted');
+backend_dispatch('admin.assignment.grade', ['requesterId' => 'NGG-2025-0099', 'submissionId' => $sid, 'grade' => 9, 'feedback' => 'Better']);
 
 // ── Announcement ──
 backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'Hello all', 'body' => 'Welcome', 'audience' => 'all']);
@@ -1260,6 +1273,23 @@ chk('bulk import enrols multiple students', (function () {
     return !empty($r['ok']) && $r['enrolled'] === 2 && $r['failed'] === 0;
 })());
 chk('bulk import rejects an empty batch', backend_dispatch('admin.summer.import', ['requesterId' => 'NGG-2025-0099', 'rows' => []])['error'] === 'no_rows');
+
+// ── Event RSVP capacity → waitlist, and staff attendance marking ──
+db_insert('events', ['eventId' => 'EV-CAP', 'title' => 'Capped meetup', 'kind' => 'session', 'sessionId' => '', 'startAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 5 * 86400), 'endAt' => '', 'centre' => 'Both', 'location' => 'Hall', 'coverUrl' => '', 'body' => '', 'capacity' => 1, 'isPublic' => 1, 'status' => 'published', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+chk('first RSVP within capacity is going', backend_dispatch('event.rsvp', ['memberId' => 'NGG-2025-0001', 'eventId' => 'EV-CAP', 'status' => 'going'])['status'] === 'going');
+chk('RSVP past capacity is waitlisted', (function () {
+    db_insert('members', ['memberId' => 'NGG-2025-0555', 'fullName' => 'RSVP Two', 'email' => 'r2@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('event.rsvp', ['memberId' => 'NGG-2025-0555', 'eventId' => 'EV-CAP', 'status' => 'going']);
+    return $r['status'] === 'waitlist' && !empty($r['waitlisted']);
+})());
+chk('staff can mark event attendance', (function () {
+    backend_dispatch('admin.event.attendance', ['requesterId' => 'NGG-2025-0099', 'eventId' => 'EV-CAP', 'memberId' => 'NGG-2025-0001']);
+    return !empty(db_row("SELECT attendedAt FROM event_rsvps WHERE eventId='EV-CAP' AND memberId='NGG-2025-0001'")['attendedAt']);
+})());
+chk('staff can clear event attendance', (function () {
+    backend_dispatch('admin.event.attendance', ['requesterId' => 'NGG-2025-0099', 'eventId' => 'EV-CAP', 'memberId' => 'NGG-2025-0001', 'clear' => true]);
+    return (string)db_row("SELECT attendedAt FROM event_rsvps WHERE eventId='EV-CAP' AND memberId='NGG-2025-0001'")['attendedAt'] === '';
+})());
 
 // ── Leaderboards (member cohort + volunteer duty) ──
 chk('public leaderboard ranks members by XP, privacy-safe', (function () {

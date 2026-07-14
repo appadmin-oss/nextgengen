@@ -19,7 +19,14 @@ if ($method === 'GET') {
 if ($method === 'POST') {
     $body = read_json_body();
     // A grade payload carries submissionId; an upsert carries the assignment fields.
-    if (!empty($body['submissionId'])) {
+    if (!empty($body['submissionId']) && ($body['action'] ?? '') === 'return') {
+        $res = gs_call('admin.assignment.return', [
+            'requesterId'  => $s['mid'],
+            'submissionId' => $body['submissionId'],
+            'feedback'     => $body['feedback'] ?? '',
+            'ip'           => client_ip(),
+        ]);
+    } elseif (!empty($body['submissionId'])) {
         $res = gs_call('admin.assignment.grade', [
             'requesterId'  => $s['mid'],
             'submissionId' => $body['submissionId'],

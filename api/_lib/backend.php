@@ -182,6 +182,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.assignments.upsert'      => 'admin_assignments_upsert',
             'admin.assignments.submissions' => 'admin_assignment_submissions',
             'admin.assignment.grade'        => 'assignment_grade',
+            'admin.assignment.return'       => 'assignment_return',
+            'admin.event.attendance'        => 'admin_event_attendance',
             // Public (cached by PHP)
             'public.stats'            => 'public_stats',
             'public.leaderboard'      => 'public_leaderboard',

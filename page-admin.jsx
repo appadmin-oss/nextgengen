@@ -2531,6 +2531,15 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
     } catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
   };
+  const returnForRevision = async () => {
+    setBusy(true);
+    try {
+      await NGGApi.admin.assignments.returnForRevision(s.submissionId, feedback);
+      toast.success("Returned for revision — they can resubmit.", s.memberName);
+      onGraded();
+    } catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(false); }
+  };
   return (
     <div className="admin-sub-row">
       <div className="admin-sub-head">
@@ -2550,6 +2559,7 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
           <input type="text" className="admin-input" value={feedback} onChange={e => setFeedback(e.target.value)} placeholder="What was strong, what to improve…"/>
         </label>
         <label className="admin-sub-email"><input type="checkbox" checked={email} onChange={e => setEmail(e.target.checked)}/> email</label>
+        <button className="btn btn-ghost btn-sm" onClick={returnForRevision} disabled={busy} title="Send back for a revision (unlocks resubmission)">Return</button>
         <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy || grade === ""}>{busy ? "…" : "Grade"}</button>
       </div>
     </div>

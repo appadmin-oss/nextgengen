@@ -39,14 +39,38 @@ function event_rsvp(array $p): array {
     if (!$evt) return ['ok' => false, 'error' => 'event_not_found'];
 
     $existing = db_row('SELECT * FROM event_rsvps WHERE eventId = ? AND memberId = ? LIMIT 1', [$eventId, $memberId]);
+    // Capacity: a full event puts new "going" RSVPs on the waitlist.
+    $waitlisted = false;
+    if ($status === 'going') {
+        $cap = (int)($evt['capacity'] ?? 0);
+        if ($cap > 0) {
+            $going = (int)(db_row("SELECT COUNT(*) c FROM event_rsvps WHERE eventId = ? AND status = 'going' AND memberId != ?", [$eventId, $memberId])['c'] ?? 0);
+            if ($going >= $cap) { $status = 'waitlist'; $waitlisted = true; }
+        }
+    }
     if ($existing) {
         db_update('event_rsvps', ['status' => $status, 'rsvpAt' => now_iso()], ['id' => $existing['id']]);
     } else {
         db_insert('event_rsvps', ['eventId' => $eventId, 'memberId' => $memberId, 'status' => $status, 'rsvpAt' => now_iso(), 'attendedAt' => '']);
     }
-    push_notification($memberId, ['kind' => 'event', 'title' => 'RSVP: ' . $evt['title'], 'body' => $status === 'going' ? "You're going. See you there." : 'RSVP updated.', 'linkPage' => 'events']);
+    $body = $status === 'going' ? "You're going. See you there." : ($status === 'waitlist' ? "This event is full — you're on the waitlist." : 'RSVP updated.');
+    push_notification($memberId, ['kind' => 'event', 'title' => 'RSVP: ' . $evt['title'], 'body' => $body, 'linkPage' => 'events']);
     audit('event.rsvp', $memberId, $eventId, ['status' => $status], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'status' => $status];
+    return ['ok' => true, 'status' => $status, 'waitlisted' => $waitlisted];
+}
+
+/** Staff: mark (or clear) a member's attendance at an event. */
+function admin_event_attendance(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $eventId = (string)($p['eventId'] ?? ''); $memberId = (string)($p['memberId'] ?? '');
+    if ($eventId === '' || $memberId === '') return ['ok' => false, 'error' => 'missing_fields'];
+    $on = empty($p['clear']);
+    $row = db_row('SELECT id FROM event_rsvps WHERE eventId = ? AND memberId = ? LIMIT 1', [$eventId, $memberId]);
+    if ($row) db_update('event_rsvps', ['attendedAt' => $on ? now_iso() : ''], ['id' => $row['id']]);
+    elseif ($on) db_insert('event_rsvps', ['eventId' => $eventId, 'memberId' => $memberId, 'status' => 'going', 'rsvpAt' => now_iso(), 'attendedAt' => now_iso()]);
+    else return ['ok' => false, 'error' => 'not_found'];
+    audit('event.attendance', $g['requester']['memberId'], $eventId . '/' . $memberId, ['on' => $on], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'attended' => $on];
 }
 
 function public_events(array $p): array {

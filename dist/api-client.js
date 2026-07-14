@@ -224,6 +224,7 @@
       events: {
         list:   () => request('/admin/events.php'),
         upsert: (data) => request('/admin/events.php', { body: data }),
+        markAttendance: (eventId, memberId, clear) => request('/admin/events.php', { body: { action: 'attendance', eventId, memberId, clear: !!clear } }),
       },
       posts: {
         list:   () => request('/admin/posts.php'),
@@ -238,6 +239,7 @@
         submissions: (assignmentId) => request('/admin/assignments.php' + qs({ assignmentId })),
         upsert:      (data) => request('/admin/assignments.php', { body: data }),
         grade:       (data) => request('/admin/assignments.php', { body: data }),
+        returnForRevision: (submissionId, feedback) => request('/admin/assignments.php', { body: { action: 'return', submissionId, feedback: feedback || '' } }),
       },
       broadcast: (data) => request('/admin/broadcast.php', { body: data }),
       broadcastHistory: () => request('/admin/broadcast.php'),
