@@ -66,6 +66,21 @@ return [
     ],
 
     // -----------------------------------------------------------------------
+    // Web-cron (for hosts with NO SSH/cron — the default assumption). A normal
+    // request, at most once per interval, drains the integration bus, sends due
+    // parent-verification reminders, and runs daily maintenance (publish
+    // scheduled posts, expire promo, GC auth challenges, trim audit log) AFTER
+    // the response is flushed. If you DO have a real cron driving api/tools/*,
+    // set 'enabled' => false to avoid doing the work twice.
+    // -----------------------------------------------------------------------
+    'webcron' => [
+        'enabled'   => true,
+        'deliver'   => 60,     // seconds between integration-bus drains
+        'reminders' => 900,    // seconds between reminder sweeps
+        'maint'     => 3600,   // seconds between maintenance passes
+    ],
+
+    // -----------------------------------------------------------------------
     // Google Sheets read-only mirror (OPTIONAL). If set, api/tools/export-sheets.php
     // pushes DB snapshots here on a cron so admins keep a familiar spreadsheet
     // view. Not on the read path — the database above is authoritative. Leave

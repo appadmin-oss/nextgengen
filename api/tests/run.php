@@ -23,6 +23,7 @@ $CONFIG = [
     'mail' => ['from_name' => 'NGG', 'from_email' => 'test@example.com', 'reply_to' => '', 'smtp' => ['host' => '']],
     'app_origin' => 'https://ngg.example.org',
     'cookie_secret' => 'test_cookie_secret_0123456789abcdef',
+    'cache_dir' => sys_get_temp_dir() . '/ngg-test-cache-' . getmypid(),
     'debug' => true,
 ];
 $GLOBALS['CONFIG'] = $CONFIG;
@@ -38,6 +39,7 @@ require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
 foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
+require $ROOT . '/_lib/webcron.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
 // recorder BEFORE any handler calls it.
@@ -470,6 +472,35 @@ chk('auth.request mail failure stays ok with delivery=false', !empty($rq2['ok'])
 chk('auth.request still banks the OTP when mail fails', (int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email='nopass@example.com'")['c'] === $before + 1);
 // Unknown identifier looks identical (ok + delivery=true) — no account oracle.
 chk('auth.request hides unknown accounts', (function () { $r = backend_dispatch('auth.request', ['identifier' => 'ghost@example.com']); return !empty($r['ok']) && $r['delivery'] === true && !empty($r['masked']); })());
+
+// ── Web-cron (no-SSH host: opportunistic maintenance without cron) ──
+chk('web_cron_due fires once then throttles', (function () {
+    $a = web_cron_due('unit_test_job', 3600); $b = web_cron_due('unit_test_job', 3600); return $a === true && $b === false;
+})());
+chk('web-cron maintenance publishes a due scheduled post', (function () {
+    db_insert('posts', ['postId' => 'P-SCHED-1', 'slug' => 'sched-1', 'kind' => 'blog', 'title' => 'Scheduled', 'body' => 'x', 'status' => 'draft', 'publishAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 60), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    web_cron_maintenance();
+    return db_row("SELECT status FROM posts WHERE slug = 'sched-1'")['status'] === 'published';
+})());
+chk('web-cron maintenance GCs an expired auth challenge', (function () {
+    db_insert('auth_sessions', ['token' => 'gc-old', 'memberId' => 'NGG-2025-0099', 'email' => 'a@b.co', 'otp' => '000000', 'attempts' => 0, 'createdAt' => now_iso(), 'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 48 * 3600), 'verifiedAt' => '', 'ip' => '', 'userAgent' => '']);
+    web_cron_maintenance();
+    return !db_row("SELECT id FROM auth_sessions WHERE token = 'gc-old'");
+})());
+chk('web-cron reminders escalate a >48h unverified registration once', (function () {
+    db_insert('summer_cohorts', ['cohortId' => 'WC1', 'name' => 'WC', 'status' => 'active', 'createdAt' => now_iso()]);
+    $old = gmdate('Y-m-d\TH:i:s\Z', time() - 50 * 3600);
+    db_insert('summer_students', ['studentId' => 'SUM-WC-1', 'cohortId' => 'WC1', 'token' => 'WCQR-1', 'handle' => 'wc1', 'fullName' => 'Stalled Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'regStatus' => 'parent_pending', 'parentEmail' => 'wcguardian@example.com', 'enrolledAt' => $old, 'remindedAt' => $old, 'updatedAt' => $old]);
+    $GLOBALS['__mail_sink'] = [];
+    web_cron_reminders(); web_cron_reminders(); // second run must not double-emit
+    unset($GLOBALS['__mail_sink']);
+    $ok = (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event='registration.stalled' AND subject='SUM-WC-1'")['c'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind='registration.stalled'")['c'] === 1;
+    // Clean up so this fixture never pollutes the downstream cards dataset.
+    db_exec("DELETE FROM summer_students WHERE studentId='SUM-WC-1'");
+    db_exec("DELETE FROM summer_cohorts WHERE cohortId='WC1'");
+    return $ok;
+})());
 
 // ── Account lockout (8 consecutive fails → 15-minute pause) ──
 chk('lockout after repeated wrong passwords', (function () {

@@ -150,13 +150,21 @@ without either:
   volunteer IDs, milestone certificates, and the **check-in state emails**
   (a nudge, or an award-focused note when the person is doing well) are sent
   in-request at the moment they're triggered. Nothing here waits on `run-jobs`.
+- **Built-in web-cron** — a normal request, at most once per interval, drains
+  the integration bus (Google Chat / webhooks / Sheets rows and the wellbeing
+  escalation), sends the parent-verification re-nudge + stalled-registration
+  alerts, and runs the daily maintenance below — all **after** the response is
+  flushed, so it never adds latency. This means the cron jobs in `Step 6` are
+  **optional**: everything they do (scheduled-post publishing, promo expiry,
+  auth/audit GC, integration delivery, reminders) also happens through web-cron.
+  Tune or disable it via the `webcron` block in `api/config.php`.
 
-What *does* need the cron in `Step 6` (and therefore quietly no-ops without it):
-scheduled-post publishing, promo expiry, auth/audit GC, and the optional Sheets
-mirror. If you can't run cron, either add a **web-cron** service that hits
-`api/tools/run-jobs.php` over HTTPS on a schedule, or accept that those
-housekeeping jobs won't run. The core attendance/kiosk/email flows do not
-depend on them.
+Only two things still benefit from a real cron: the **full Google Sheets
+snapshot** (`export-sheets.php`, a heavy periodic mirror — incremental Sheets
+rows still flow through the bus without it) and the **Afrovanguard mentor pull**
+(`sync-afrovanguard.php`). If you have cron, set `webcron.enabled => false` to
+avoid doing the shared work twice; if you don't, only those two optional mirrors
+are affected.
 
 ## Step 7 — Google Sheets mirror (optional)
 

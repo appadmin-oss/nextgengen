@@ -73,10 +73,15 @@ require_once __DIR__ . '/superadmin.php';
 require_once __DIR__ . '/rate-limit.php';
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
+require_once __DIR__ . '/webcron.php';
 
 // CSRF check happens once per request, for every write method. The
 // individual endpoint then validates further (session, role, input).
 csrf_require();
+
+// Opportunistic maintenance for no-cron hosts: drains the integration bus,
+// sends due reminders, and runs daily GC — throttled, after the response.
+web_cron_schedule();
 
 function client_ip(): string {
     foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $h) {
