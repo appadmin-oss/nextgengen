@@ -759,6 +759,25 @@ chk('bus: sheets member snapshot chunks through the bridge', (function () {
 chk('bus: integrations gated to settings cap', backend_dispatch('admin.integrations.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 chk('bus: url allowlists per kind enforced', backend_dispatch('admin.integrations.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'gchat', 'url' => 'https://evil.example/hook']])['error'] === 'bad_gchat_url');
 
+// ── Behaviour monitor (log → triage → wellbeing escalation → review) ──
+chk('behaviour: rule-triage tags a wellbeing note as urgent', (function () {
+    $r = backend_dispatch('admin.behaviour.log', ['requesterId' => 'NGG-2025-0099', 'subjectId' => 'NGG-2025-0001', 'note' => 'Seemed very sad and withdrawn today, not eating.']);
+    return !empty($r['ok']) && $r['category'] === 'wellbeing' && $r['severity'] === 'urgent';
+})());
+chk('behaviour: a wellbeing flag emits behaviour.flagged to the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind='behaviour.flagged'")['c'] >= 1);
+chk('behaviour: manual category+severity overrides triage', backend_dispatch('admin.behaviour.log', ['requesterId' => 'NGG-2025-0099', 'subjectId' => 'NGG-2025-0001', 'note' => 'Helped a peer set up chairs.', 'category' => 'commendation', 'severity' => 'positive'])['aiSource'] === 'manual');
+chk('behaviour: list returns logs, trend and open-flag count', (function () {
+    $r = backend_dispatch('admin.behaviour.list', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && count($r['logs']) >= 2 && is_array($r['trend']) && $r['openFlags'] >= 1;
+})());
+chk('behaviour: review marks a log reviewed', (function () {
+    $r = backend_dispatch('admin.behaviour.list', ['requesterId' => 'NGG-2025-0099', 'status' => 'open']);
+    $id = $r['logs'][0]['logId'];
+    return !empty(backend_dispatch('admin.behaviour.review', ['requesterId' => 'NGG-2025-0099', 'logId' => $id])['ok'])
+        && db_row('SELECT status FROM behaviour_logs WHERE logId = ?', [$id])['status'] === 'reviewed';
+})());
+chk('behaviour: gated to the people cap', backend_dispatch('admin.behaviour.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+
 // ── SMS layer (pure normalisation + routing; no network) ──
 chk('sms: NG numbers normalise to +234', sms_normalize('08031234567') === '+2348031234567' && sms_normalize('2348031234567') === '+2348031234567' && sms_normalize('+447911123456') === '+447911123456' && sms_normalize('abc') === '');
 chk('sms: provider order routes NG→termii-first, intl→twilio-first', (function () {

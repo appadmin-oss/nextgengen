@@ -49,6 +49,7 @@ const ADMIN_SECTIONS = [
   { id: "volunteers",  group: "People",   label: "Volunteers",   title: "Volunteers",          icon: "◈", cap: "people" },
   { id: "mentors",     group: "People",   label: "Mentors",      title: "Mentors",             icon: "☺", cap: "people" },
   { id: "mentorship",  group: "People",   label: "Mentorship",   title: "Mentorship",          icon: "◐", cap: "people" },
+  { id: "behaviour",   group: "People",   label: "Behaviour",    title: "Behaviour monitor",   icon: "◔", cap: "people" },
   { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
   { id: "qr",          group: "People",   label: "QR codes",     title: "QR codes",            icon: "▦", cap: "summer" },
   { id: "attendance",  group: "People",   label: "Attendance duty", title: "Attendance duty",  icon: "🗓", cap: "summer" },
@@ -66,6 +67,7 @@ const ADMIN_SECTIONS = [
   { id: "messages",    group: "Inbox",    label: "Messages",     title: "Messages",            icon: "✆", cap: "inbox" },
   { id: "access",      group: "System",   label: "Access & roles", title: "Access & roles",    icon: "⚿", cap: "rbac" },
   { id: "audit",       group: "System",   label: "Audit trail",  title: "Audit log",           icon: "⌗", cap: "rbac" },
+  { id: "integrations",group: "System",   label: "Integrations", title: "Integrations & delivery", icon: "⇄", cap: "settings" },
   { id: "settings",    group: "System",   label: "Settings",     title: "Settings",            icon: "⚙", cap: "settings" },
 ];
 // Which capability each admin section needs (null = any staff) — derived.
@@ -144,6 +146,8 @@ function AdminPage({ setPage }) {
           {view === "attendance" && <AdminAttendanceDuty/>}
           {view === "access" && <AdminAccess/>}
           {view === "audit" && <AdminAudit/>}
+          {view === "behaviour" && <AdminBehaviour/>}
+          {view === "integrations" && <AdminIntegrations/>}
         </main>
       </div>
     </div>
@@ -1845,6 +1849,168 @@ function AdminAccess() {
           </table>
         </div>
       }
+    </div>
+  );
+}
+
+// ============================================================================
+// Behaviour monitor — log observations, AI/rule triage, wellbeing flags
+// ============================================================================
+
+function AdminBehaviour() {
+  const [d, setD] = React.useState(null);
+  const [f, setF] = React.useState({ status: "", category: "" });
+  const [err, setErr] = React.useState("");
+  const [form, setForm] = React.useState({ subjectId: "", note: "", category: "", severity: "" });
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.admin.behaviour.list(f).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [f.status, f.category]);
+  const submit = async (e) => {
+    e.preventDefault(); setBusy(true);
+    try {
+      const r = await NGGApi.admin.behaviour.log(form.subjectId.trim(), form.note.trim(), form.category, form.severity);
+      toast.success("Logged as " + r.category + " · " + r.severity + (r.aiSource === "manual" ? "" : " (" + r.aiSource + ")"), "Observation saved");
+      setForm({ subjectId: "", note: "", category: "", severity: "" }); load();
+    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  const review = async (logId) => { try { await NGGApi.admin.behaviour.review(logId); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const sevChip = (s) => s === "urgent" ? "chip-crimson" : s === "concern" ? "chip-gold" : s === "positive" ? "chip-lime" : "chip-navy";
+  const logs = d ? d.logs : null;
+  const cats = (d && d.categories) || ["wellbeing", "commendation", "respect", "discipline", "peer", "participation"];
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Behaviour monitor {d && d.openFlags ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{d.openFlags} open flag{d.openFlags === 1 ? "" : "s"}</span> : null}</h2>
+      </div>
+      <p className="admin-hint">Log an observation about a student or member; it's auto-triaged (AI when configured, rules otherwise). Wellbeing/urgent notes page the team through configured integrations.</p>
+      <form onSubmit={submit} className="admin-fields" style={{ maxWidth: 640, marginBottom: 18 }}>
+        <div className="admin-fields-row">
+          <Field label="Subject ID (student or member)" value={form.subjectId} onChange={v => setForm(o => ({ ...o, subjectId: v }))}/>
+          <FieldSelect label="Category (blank = auto)" value={form.category} onChange={v => setForm(o => ({ ...o, category: v }))} options={[""].concat(cats)}/>
+          <FieldSelect label="Severity (blank = auto)" value={form.severity} onChange={v => setForm(o => ({ ...o, severity: v }))} options={["", "info", "concern", "urgent", "positive"]}/>
+        </div>
+        <label className="admin-field"><span className="admin-label">Observation</span>
+          <textarea className="admin-input" rows={3} value={form.note} onChange={e => setForm(o => ({ ...o, note: e.target.value }))} placeholder="What happened, in a sentence or two."/>
+        </label>
+        <div><button className="btn btn-primary btn-sm" disabled={busy || form.subjectId.trim() === "" || form.note.trim().length < 5}>{busy ? "Saving…" : "Log observation"}</button></div>
+      </form>
+      {d && d.trend && Object.keys(d.trend).length > 0 && (
+        <div className="admin-chips" style={{ marginBottom: 12 }}>
+          <span className="admin-hint" style={{ marginRight: 6 }}>Last 30 days:</span>
+          {Object.entries(d.trend).map(([k, v]) => <span key={k} className="chip chip-navy" style={{ marginRight: 6 }}>{k}: {v}</span>)}
+        </div>
+      )}
+      <div className="admin-filters">
+        <select className="admin-select" value={f.status} onChange={e => setF(o => ({ ...o, status: e.target.value }))}><option value="">All statuses</option><option value="open">Open</option><option value="reviewed">Reviewed</option></select>
+        <select className="admin-select" value={f.category} onChange={e => setF(o => ({ ...o, category: e.target.value }))}><option value="">All categories</option>{cats.map(c => <option key={c} value={c}>{c}</option>)}</select>
+      </div>
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        logs === null ? <div className="dash-spinner"/> :
+        logs.length === 0 ? <div className="admin-empty">No observations logged.</div> :
+        <div className="admin-app-list">
+          {logs.map(l => (
+            <div className="admin-app" key={l.logId}>
+              <div className="admin-app-top">
+                <div>
+                  <div className="admin-cell-name">{l.subjectName || l.subjectId} <span className={"chip " + sevChip(l.severity)}>{l.category} · {l.severity}</span></div>
+                  <div className="mono admin-cell-sub">{l.observerName || l.observerId} · {fmtDate(l.createdAt)}{l.aiSource ? " · " + l.aiSource : ""}</div>
+                </div>
+                <span className={"chip status-" + (l.status === "reviewed" ? "published" : "draft")}>{l.status}</span>
+              </div>
+              <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{l.note}</p>
+              {l.status === "open" && <div className="admin-app-actions"><button className="btn btn-ghost btn-sm" onClick={() => review(l.logId)}>Mark reviewed</button></div>}
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+// ============================================================================
+// Integrations & delivery — bus destinations, delivery log, manual dispatch
+// ============================================================================
+
+function AdminIntegrations() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const blank = { integrationId: "", kind: "gchat", name: "", url: "", events: "*", secret: "", status: "active" };
+  const [form, setForm] = React.useState(blank);
+  const load = () => NGGApi.admin.integrations.list().then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  const edit = (i) => setForm({ integrationId: i.integrationId, kind: i.kind, name: i.name, url: i.url, events: (i.events || ["*"]).join(", "), secret: "", status: i.status });
+  const save = async (e) => {
+    e.preventDefault(); setBusy("save");
+    try {
+      const events = form.events.split(",").map(s => s.trim()).filter(Boolean);
+      const r = await NGGApi.admin.integrations.upsert({ integrationId: form.integrationId || undefined, kind: form.kind, name: form.name, url: form.url, events: events.length ? events : ["*"], secret: form.secret || undefined, status: form.status });
+      if (r.secret) toast.show({ kind: "success", title: "Saved — copy the secret now", body: "Signing secret (shown once): " + r.secret, ttl: 20000 });
+      else toast.success("Saved.", "Integration");
+      setForm(blank); load();
+    } catch (e) { toast.error(e.code || e.message, "Couldn't save"); } finally { setBusy(""); }
+  };
+  const test = async (id) => { setBusy("t" + id); try { const r = await NGGApi.admin.integrations.test(id); r.delivered ? toast.success("Test delivered.", "OK") : toast.error(r.error || "No detail", "Test failed"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  const remove = async (id) => { if (!confirm("Delete this integration?")) return; try { await NGGApi.admin.integrations.remove(id); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const dispatch = async () => { setBusy("disp"); try { const r = await NGGApi.admin.integrations.dispatch(); toast.success("Attempted " + (r.attempted || 0) + ", delivered " + (r.delivered || 0) + ", failed " + (r.failed || 0) + ".", "Queue drained"); load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  const syncMembers = async () => { setBusy("sync"); try { const r = await NGGApi.admin.integrations.syncMembers(); toast.success("Sent " + (r.chunksSent || 0) + " chunk(s), " + (r.total || 0) + " members.", "Sheets sync"); } catch (e) { toast.error(e.code || e.message, "Sync failed"); } finally { setBusy(""); } };
+  const items = d ? d.integrations : null;
+  const log = (d && d.log) || [];
+  const pending = log.filter(x => x.status === "pending" || x.status === "failed").length;
+  const kindHint = { gchat: "https://chat.googleapis.com/…", sheets: "https://script.google.com/…", webhook: "https://your-endpoint.example/…" }[form.kind];
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Integrations & delivery {pending ? <span className="chip chip-gold" style={{ fontSize: 11, verticalAlign: "middle" }}>{pending} queued</span> : null}</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost btn-sm" disabled={busy === "disp"} onClick={dispatch}>{busy === "disp" ? "Draining…" : "Run delivery queue now"}</button>
+          <button className="btn btn-ghost btn-sm" disabled={busy === "sync"} onClick={syncMembers}>{busy === "sync" ? "Syncing…" : "Sync members → Sheets"}</button>
+        </div>
+      </div>
+      <p className="admin-hint">Send events (registrations, attendance, awards, wellbeing flags) to Google Chat, a signed webhook, or the Sheets mirror. Delivery runs automatically via web-cron; use "Run delivery queue now" to flush immediately.</p>
+      <form onSubmit={save} className="admin-fields" style={{ maxWidth: 640, marginBottom: 18 }}>
+        <div className="admin-fields-row">
+          <FieldSelect label="Type" value={form.kind} onChange={v => setForm(o => ({ ...o, kind: v }))} options={["gchat", "webhook", "sheets"]}/>
+          <Field label="Name" value={form.name} onChange={v => setForm(o => ({ ...o, name: v }))}/>
+          <FieldSelect label="Status" value={form.status} onChange={v => setForm(o => ({ ...o, status: v }))} options={["active", "paused"]}/>
+        </div>
+        <Field label={"Destination URL"} value={form.url} onChange={v => setForm(o => ({ ...o, url: v }))} placeholder={kindHint}/>
+        <Field label="Events (comma-separated; * = all, prefix.* matches)" value={form.events} onChange={v => setForm(o => ({ ...o, events: v }))} placeholder="* or attendance.*, registration.created"/>
+        {form.kind !== "gchat" && <Field label={"Signing secret " + (form.integrationId ? "(blank = keep current)" : "(blank = auto-generate)")} value={form.secret} onChange={v => setForm(o => ({ ...o, secret: v }))}/>}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-primary btn-sm" disabled={busy === "save" || !form.url}>{form.integrationId ? "Update" : "Add integration"}</button>
+          {form.integrationId ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => setForm(blank)}>Cancel</button> : null}
+        </div>
+      </form>
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        items === null ? <div className="dash-spinner"/> :
+        <>
+          {items.length === 0 ? <div className="admin-empty">No integrations yet.</div> :
+            <div className="admin-app-list">
+              {items.map(i => (
+                <div className="admin-app" key={i.integrationId}>
+                  <div className="admin-app-top">
+                    <div>
+                      <div className="admin-cell-name">{i.name} <span className="chip chip-navy">{i.kind}</span> {i.status === "paused" ? <span className="chip status-draft">paused</span> : null}</div>
+                      <div className="mono admin-cell-sub">{i.url}{i.hasSecret ? " · secret " + i.secretHint : ""} · {(i.events || []).join(", ")}</div>
+                    </div>
+                  </div>
+                  <div className="admin-app-actions">
+                    <button className="btn btn-ghost btn-sm" disabled={busy === "t" + i.integrationId} onClick={() => test(i.integrationId)}>{busy === "t" + i.integrationId ? "Testing…" : "Send test"}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => edit(i)}>Edit</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => remove(i.integrationId)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>}
+          <div className="admin-fields-h" style={{ marginTop: 18, fontWeight: 700 }}>Recent deliveries</div>
+          {log.length === 0 ? <div className="admin-empty">No deliveries yet.</div> :
+            <div className="admin-table-wrap"><table className="admin-table">
+              <thead><tr><th>Event</th><th>Status</th><th>Tries</th><th>Last error</th><th>When</th></tr></thead>
+              <tbody>{log.map((x, i) => (
+                <tr key={i}><td>{x.kind || x.eventId}</td><td><span className={"chip status-" + (x.status === "ok" ? "published" : x.status === "dead" ? "archived" : "draft")}>{x.status}</span></td><td>{x.attempts}</td><td className="mono" style={{ fontSize: 12, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{x.lastError || ""}</td><td className="mono" style={{ fontSize: 12 }}>{fmtDate(x.deliveredAt || x.nextAttemptAt)}</td></tr>
+              ))}</tbody>
+            </table></div>}
+        </>}
     </div>
   );
 }
