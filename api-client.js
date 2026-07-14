@@ -237,6 +237,7 @@
         grade:       (data) => request('/admin/assignments.php', { body: data }),
       },
       broadcast: (data) => request('/admin/broadcast.php', { body: data }),
+      broadcastHistory: () => request('/admin/broadcast.php'),
       anchor: {
         get:      () => request('/admin/anchor.php'),
         defaults: () => request('/admin/anchor.php?defaults=1'),

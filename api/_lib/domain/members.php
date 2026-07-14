@@ -38,8 +38,9 @@ function member_dashboard(array $p): array {
     );
     $events = array_map('public_event', $events);
 
-    // Unread notifications (this member or broadcast).
-    $notes = db_all("SELECT * FROM notifications WHERE (memberId = ? OR memberId = '*') AND (readAt = '' OR readAt IS NULL) ORDER BY createdAt DESC LIMIT 8", [$memberId]);
+    // Unread notifications (this member, or a broadcast whose audience matches).
+    [$bc, $bcp] = notif_broadcast_clause($member);
+    $notes = db_all("SELECT * FROM notifications WHERE (memberId = ? OR $bc) AND (readAt = '' OR readAt IS NULL) ORDER BY createdAt DESC LIMIT 8", array_merge([$memberId], $bcp));
     $notes = array_map('public_notification', $notes);
 
     // Assigned mentor for the current session.
@@ -100,9 +101,20 @@ function member_update(array $p): array {
     return ['ok' => true];
 }
 
+/** SQL clause (+params) matching broadcast rows targeted to THIS member. A
+ *  broadcast with no/`all` audience reaches everyone; a centre/type audience
+ *  reaches only matching members — mirroring the emailed audience. */
+function notif_broadcast_clause(?array $member): array {
+    $centre = (string)($member['centre'] ?? '');
+    $type = (string)($member['type'] ?? '');
+    return ["(memberId = '*' AND (audience IS NULL OR audience = '' OR audience = 'all' OR audience = ? OR audience = ?))", [$centre, $type]];
+}
+
 function member_notifications(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
-    $rows = db_all("SELECT * FROM notifications WHERE memberId = ? OR memberId = '*' ORDER BY createdAt DESC LIMIT 50", [$memberId]);
+    $member = db_row('SELECT centre, type FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    [$bc, $bcp] = notif_broadcast_clause($member);
+    $rows = db_all("SELECT * FROM notifications WHERE memberId = ? OR $bc ORDER BY createdAt DESC LIMIT 50", array_merge([$memberId], $bcp));
     return ['ok' => true, 'notifications' => array_map('public_notification', $rows)];
 }
 

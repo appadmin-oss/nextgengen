@@ -1728,6 +1728,9 @@ function AdminBroadcast() {
   const [d, setD] = React.useState({ title:"", body:"", linkPage:"", audience:"all", email:false });
   const [busy, setBusy] = React.useState(false);
   const [sent, setSent] = React.useState("");
+  const [history, setHistory] = React.useState(null);
+  const loadHistory = () => NGGApi.admin.broadcastHistory().then(r => setHistory(r.announcements || [])).catch(() => setHistory([]));
+  React.useEffect(() => { loadHistory(); }, []);
   const audienceLabel = {
     all: "every active member", Egbeda: "members at Egbeda", Ayobo: "members at Ayobo",
     Summer: "Summer students", NGG: "NGG members",
@@ -1746,6 +1749,7 @@ function AdminBroadcast() {
       const r = await NGGApi.admin.broadcast(d);
       setSent(d.email ? ("SENT ✓ · emailed " + (r.emailed || 0)) : "SENT ✓");
       setD({ title:"", body:"", linkPage:"", audience:"all", email:false });
+      loadHistory();
       setTimeout(() => setSent(""), 3200);
     }
     catch (e) { toast.error(e.code || e.message); }
@@ -1768,6 +1772,20 @@ function AdminBroadcast() {
           <button className="btn btn-primary" disabled={busy || !d.title}>Send to {audienceLabel}</button>
         </div>
       </form>
+      <div className="admin-fields-h" style={{ marginTop: 22, fontWeight: 700 }}>Recent announcements</div>
+      {history === null ? <div className="dash-spinner"/> :
+        history.length === 0 ? <div className="admin-empty">Nothing sent yet.</div> :
+        <div className="admin-app-list">
+          {history.map(a => (
+            <div className="admin-app" key={a.notifId}>
+              <div className="admin-app-top">
+                <div className="admin-cell-name">{a.title || "(untitled)"} <span className="chip chip-navy">{a.audience}</span></div>
+                <span className="mono admin-cell-sub">{fmtDate(a.createdAt)}</span>
+              </div>
+              {a.body && <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{a.body}</p>}
+            </div>
+          ))}
+        </div>}
     </div>
   );
 }

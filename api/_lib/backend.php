@@ -141,6 +141,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.promotions.set'    => 'admin_promotions_set',
             'admin.audit.tail'        => 'admin_audit_tail',
             'admin.broadcast'         => 'admin_broadcast',
+            'admin.broadcast.history' => 'admin_broadcast_history',
             'admin.anchor.get'        => 'admin_anchor_get',
             'admin.anchor.set'        => 'admin_anchor_set',
             'admin.anchor.defaults'   => 'admin_anchor_defaults',

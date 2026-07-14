@@ -174,10 +174,12 @@ function attendance_centres(): array {
     return ['Egbeda', 'Ayobo'];
 }
 
-/** Active volunteers eligible to take attendance, ordered stably (fair rotation). */
+/** Active, safeguarding-CLEARED volunteers eligible to take attendance, ordered
+ *  stably (fair rotation). Screening is mandatory to run a roll around minors,
+ *  so an unscreened (pending) volunteer is never auto-assigned. */
 function attendance_duty_pool(): array {
     return db_all("SELECT volunteerId, fullName, email, role, safeguarding FROM volunteers
-                   WHERE status = 'active' ORDER BY createdAt, volunteerId");
+                   WHERE status = 'active' AND safeguarding = 'cleared' ORDER BY createdAt, volunteerId");
 }
 
 /** Epoch day number for a YYYY-MM-DD date — a stable, calendar-independent index. */
@@ -198,8 +200,18 @@ function attendance_duty_for(string $date, string $centre): ?array {
     if (!$pool) return null;
     $centres = attendance_centres();
     $cIdx = array_search($centre, $centres, true); if ($cIdx === false) $cIdx = 0;
-    // Offset by centre so different centres get different takers the same day.
-    $pick = $pool[(_duty_day_index($date) + (int)$cIdx) % count($pool)];
+    // Offset by centre so different centres get different takers the same day,
+    // then skip anyone already on duty elsewhere today (no double-booking) —
+    // unless the pool is smaller than the number of centres, where reuse is
+    // unavoidable and we fall back to the base pick.
+    $n = count($pool);
+    $already = array_column(db_all('SELECT volunteerId FROM attendance_duty WHERE date = ?', [$date]), 'volunteerId');
+    $start = (_duty_day_index($date) + (int)$cIdx) % $n;
+    $pick = $pool[$start];
+    for ($k = 0; $k < $n; $k++) {
+        $cand = $pool[($start + $k) % $n];
+        if (!in_array((string)$cand['volunteerId'], $already, true)) { $pick = $cand; break; }
+    }
     db_insert('attendance_duty', [
         'date' => $date, 'centre' => $centre, 'volunteerId' => (string)$pick['volunteerId'],
         'source' => 'auto', 'createdAt' => now_iso(),
@@ -332,7 +344,9 @@ function admin_attendance_duty_set(array $p): array {
     $centre = trim((string)($p['centre'] ?? ''));
     $volunteerId = trim((string)($p['volunteerId'] ?? ''));
     if ($centre === '' || $volunteerId === '') return ['ok' => false, 'error' => 'missing_fields'];
-    if (!db_row('SELECT id FROM volunteers WHERE volunteerId = ? AND status = ? LIMIT 1', [$volunteerId, 'active'])) return ['ok' => false, 'error' => 'not_active_volunteer'];
+    $vrow = db_row('SELECT status, safeguarding FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
+    if (!$vrow || (string)$vrow['status'] !== 'active') return ['ok' => false, 'error' => 'not_active_volunteer'];
+    if ((string)($vrow['safeguarding'] ?? 'pending') !== 'cleared') return ['ok' => false, 'error' => 'not_cleared'];
     $exists = db_row('SELECT id FROM attendance_duty WHERE date = ? AND centre = ? LIMIT 1', [$date, $centre]);
     if ($exists) db_update('attendance_duty', ['volunteerId' => $volunteerId, 'source' => 'admin', 'assignedById' => (string)$g['requester']['memberId']], ['date' => $date, 'centre' => $centre]);
     else db_insert('attendance_duty', ['date' => $date, 'centre' => $centre, 'volunteerId' => $volunteerId, 'source' => 'admin', 'assignedById' => (string)$g['requester']['memberId'], 'createdAt' => now_iso()]);

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 23;
+const NGG_SCHEMA_TARGET = 24;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -687,6 +687,12 @@ function db_migrate(PDO $db): void {
               createdAt TEXT DEFAULT (datetime('now'))
             );
             CREATE INDEX idx_vpoints_vol ON volunteer_points(volunteerId);
+        ",
+
+        // Broadcast audience targeting: a '*' announcement can now be scoped to
+        // a centre or member type so the in-app feed matches the emailed list.
+        24 => "
+            ALTER TABLE notifications ADD COLUMN audience TEXT DEFAULT '';
         ",
     ];
 

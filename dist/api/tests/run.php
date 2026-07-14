@@ -112,6 +112,21 @@ backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' =
 $seen = false;
 foreach (backend_dispatch('member.notifications', ['memberId' => 'NGG-2025-0001'])['notifications'] as $n) if ($n['title'] === 'Hello all') $seen = true;
 chk('broadcast reaches member feed', $seen);
+// Audience targeting: a centre-scoped broadcast reaches matching members only.
+$feedHas = function ($mid, $title) { foreach (backend_dispatch('member.notifications', ['memberId' => $mid])['notifications'] as $n) if ($n['title'] === $title) return true; return false; };
+backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'Egbeda only', 'body' => 'x', 'audience' => 'Egbeda']);
+backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'Ayobo only', 'body' => 'x', 'audience' => 'Ayobo']);
+chk('centre-scoped broadcast reaches matching member', $feedHas('NGG-2025-0001', 'Egbeda only')); // NGG-2025-0001 is Egbeda
+chk('centre-scoped broadcast hidden from non-matching member', !$feedHas('NGG-2025-0001', 'Ayobo only'));
+// Email path is actually invoked when email=true (route used to drop it).
+$GLOBALS['__mail_sink'] = [];
+$br = backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'With email', 'body' => 'hi', 'audience' => 'all', 'email' => true]);
+unset($GLOBALS['__mail_sink']);
+chk('broadcast email fan-out runs when email=true', ($br['emailed'] ?? 0) >= 1);
+chk('broadcast history lists past announcements', (function () {
+    $h = backend_dispatch('admin.broadcast.history', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($h['ok']) && (bool)array_filter($h['announcements'], fn($a) => $a['title'] === 'Egbeda only' && $a['audience'] === 'Egbeda');
+})());
 
 // ── TOTP ──
 $secret = backend_dispatch('auth.totpSetup', ['memberId' => 'NGG-2025-0099'])['secret'];
@@ -267,6 +282,14 @@ chk('duty assignment is stable on re-read (round-robin persisted)', backend_disp
 $centre0 = $board['duties'][0]['centre'];
 chk('admin override pins a specific volunteer', backend_dispatch('admin.attendance.duty.set', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-T-2'])['ok'] === true);
 chk('override is recorded as admin-sourced', db_row('SELECT source FROM attendance_duty WHERE date = ? AND centre = ?', [$today, $centre0])['source'] === 'admin');
+// Safeguarding: an unscreened volunteer is never in the auto-rotation pool nor pinnable.
+chk('duty pool excludes unscreened (pending) volunteers', (function () {
+    db_insert('volunteers', ['volunteerId' => 'VOL-PEND', 'fullName' => 'Not Screened', 'email' => 'ns@example.com', 'role' => 'mentor', 'status' => 'active', 'safeguarding' => 'pending', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    foreach (attendance_duty_pool() as $v) if ($v['volunteerId'] === 'VOL-PEND') return false;
+    return true;
+})());
+chk('admin cannot pin an unscreened volunteer to duty', backend_dispatch('admin.attendance.duty.set', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-PEND'])['error'] === 'not_cleared');
+db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-PEND'");
 $done = backend_dispatch('attendance.duty.complete', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-T-2']);
 chk('completing the roll awards points + returns a value-driven response', $done['ok'] === true && !empty($done['message']) && $done['game']['points'] > 0);
 $ptsAfter = volunteer_game_state('VOL-T-2')['points'];

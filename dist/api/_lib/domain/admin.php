@@ -379,10 +379,12 @@ function admin_broadcast(array $p): array {
     $alsoEmail = !empty($p['email']);
 
     // Persistent broadcast notification (memberId '*' = every member's feed).
+    // The audience is stamped so the in-app feed matches the emailed audience.
+    $audKey = in_array($audience, ['Egbeda', 'Ayobo', 'Summer', 'NGG'], true) ? $audience : '';
     db_insert('notifications', [
         'notifId' => 'N-' . gmdate('Y') . '-' . rand_hex(4),
         'memberId' => '*', 'kind' => 'announcement', 'title' => $title, 'body' => $body,
-        'linkPage' => $linkPage, 'readAt' => '', 'createdAt' => now_iso(),
+        'linkPage' => $linkPage, 'audience' => $audKey, 'readAt' => '', 'createdAt' => now_iso(),
     ]);
 
     $emailResult = ['sent' => 0, 'skipped' => 0];
@@ -404,4 +406,14 @@ function admin_broadcast(array $p): array {
 
     audit('admin.broadcast', $g['requester']['memberId'], '', ['title' => $title, 'audience' => $audience, 'emailed' => $emailResult['sent']], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'emailed' => $emailResult['sent'], 'skipped' => $emailResult['skipped']];
+}
+
+/** Recent announcements (the broadcast history) — most recent first. */
+function admin_broadcast_history(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $rows = db_all("SELECT notifId, title, body, linkPage, audience, createdAt FROM notifications WHERE memberId = '*' AND kind = 'announcement' ORDER BY id DESC LIMIT 50");
+    return ['ok' => true, 'announcements' => array_map(fn($r) => [
+        'notifId' => $r['notifId'], 'title' => (string)$r['title'], 'body' => (string)$r['body'],
+        'linkPage' => (string)$r['linkPage'], 'audience' => (string)($r['audience'] ?? '') ?: 'all', 'createdAt' => $r['createdAt'],
+    ], $rows)];
 }
