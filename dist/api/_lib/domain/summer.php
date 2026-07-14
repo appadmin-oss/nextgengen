@@ -192,6 +192,7 @@ function admin_summer_enroll(array $p): array {
         'fullName' => $name, 'age' => $age, 'centre' => substr((string)($d['centre'] ?? ''), 0, 48),
         'track' => substr((string)($d['track'] ?? ''), 0, 64), 'photoUrl' => (string)($d['photoUrl'] ?? ''),
         'guardianName' => substr((string)($d['guardianName'] ?? ''), 0, 255), 'guardianPhone' => substr((string)($d['guardianPhone'] ?? ''), 0, 48),
+        'parentEmail' => substr(trim((string)($d['parentEmail'] ?? '')), 0, 160),
         'status' => 'active', 'notes' => substr((string)($d['notes'] ?? ''), 0, 2000),
         'enrolledAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
@@ -423,6 +424,62 @@ function summer_checkin(array $p): array {
         checkin_student_email($s, $days);
     }
     return ['ok' => true, 'already' => $already, 'student' => summer_student_public($s)];
+}
+
+/** Stamp a departure time on today's attendance row (optional dwell tracking).
+ *  Same auth model as check-in (gate token or 'summer' cap). */
+function summer_checkout(array $p): array {
+    if (!empty($p['gateAuthorized'])) {
+        $byId = substr((string)($p['byId'] ?? 'kiosk'), 0, 64) ?: 'kiosk';
+    } else {
+        $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+        $byId = (string)$g['requester']['memberId'];
+    }
+    $token = trim((string)($p['token'] ?? ''));
+    $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
+    if (!$qr || empty($qr['studentId'])) return ['ok' => false, 'error' => 'qr_unassigned'];
+    $today = gmdate('Y-m-d');
+    $row = db_row('SELECT * FROM attendance WHERE studentId = ? AND date = ?', [(string)$qr['studentId'], $today]);
+    if (!$row) return ['ok' => false, 'error' => 'not_checked_in'];
+    if (!empty($row['checkOutAt'])) return ['ok' => true, 'already' => true, 'checkOutAt' => $row['checkOutAt']];
+    db_update('attendance', ['checkOutAt' => now_iso()], ['id' => $row['id']]);
+    audit('summer.checkout', $byId, (string)$qr['studentId'], ['date' => $today], (string)($p['ip'] ?? ''));
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [(string)$qr['studentId']]);
+    return ['ok' => true, 'already' => false, 'checkOutAt' => now_iso(), 'student' => $s ? summer_student_public($s) : null];
+}
+
+/** Email guardians of students absent today (or one named student) a gentle
+ *  "we missed them" nudge — the manual follow-up the at-risk list points to. */
+function admin_summer_absence_alert(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $c = summer_ensure_cohort();
+    $cid = trim((string)($p['cohortId'] ?? '')) ?: $c['cohortId'];
+    $today = gmdate('Y-m-d');
+    $one = trim((string)($p['studentId'] ?? ''));
+    if ($one !== '') {
+        $rows = db_all("SELECT * FROM summer_students WHERE studentId = ? LIMIT 1", [$one]);
+    } else {
+        // Active students in the cohort with no attendance row today.
+        $rows = db_all("SELECT * FROM summer_students WHERE cohortId = ? AND status = 'active'
+                        AND studentId NOT IN (SELECT studentId FROM attendance WHERE date = ?) ORDER BY fullName LIMIT 300", [$cid, $today]);
+    }
+    $sent = 0; $skipped = 0;
+    foreach ($rows as $s) {
+        $to = trim((string)($s['parentEmail'] ?? ''));
+        if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) { $skipped++; continue; }
+        $first = esc_html(explode(' ', trim((string)$s['fullName']))[0] ?: 'your child');
+        $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/q/' . rawurlencode((string)$s['token']);
+        $ok = @send_mail($to, "We missed {$first} today", email_template([
+            'title' => 'We missed them today',
+            'intro' => "{$first} wasn't checked in at NGG Summer School today.",
+            'bodyHtml' => '<p style="margin:0 0 10px">If everything\'s okay, no need to reply — but consistent attendance is how the growth compounds, and we\'d love to see them next session.</p>',
+            'ctaLabel' => "See {$first}'s attendance →", 'ctaUrl' => $url,
+            'footNote' => "You are receiving this because you are {$first}'s guardian at Next Generation Genius.",
+        ]));
+        if ($ok) $sent++; else $skipped++;
+    }
+    audit('summer.absence.alert', $g['requester']['memberId'], $one ?: $cid, ['sent' => $sent, 'skipped' => $skipped], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'sent' => $sent, 'skipped' => $skipped, 'absent' => count($rows)];
 }
 
 // ── Attendance analytics (Phase 2 dashboard) ────────────────────────────────

@@ -3672,6 +3672,15 @@ function SummerAttendance() {
         </div>
       )}
 
+      <div style={{ marginTop: 18 }}>
+        <button className="btn btn-ghost btn-sm" onClick={async () => {
+          if (!confirm("Email the guardians of every student absent today?")) return;
+          try { const r = await NGGApi.admin.summer.absenceAlert(); toast.success("Emailed " + (r.sent || 0) + " guardian(s)" + (r.skipped ? " (" + r.skipped + " had no email)" : "") + ".", "Absence follow-up"); }
+          catch (e) { toast.error(e.code || e.message); }
+        }}>Email today's absentees' guardians</button>
+        <span className="admin-hint" style={{ marginLeft: 10 }}>Sends a warm "we missed them" nudge to guardians with an email on file.</span>
+      </div>
+
       <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 10 }}>
         <div className="eyebrow">ATTENDANCE BY STUDENT</div>
         <span style={{ flex: 1 }}/>

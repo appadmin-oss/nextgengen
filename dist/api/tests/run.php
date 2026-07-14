@@ -689,6 +689,24 @@ chk('public profile by QR token', backend_dispatch('public.summerProfile', ['tok
 chk('public profile by handle + attendance', backend_dispatch('public.summerProfile', ['handle' => $enr['handle']])['profile']['attendanceCount'] === 1);
 chk('summer gated from non-staff', backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 chk('enroll rejects an already-used QR', backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Dupe Kid', 'age' => 12, 'token' => $enr['token']]])['error'] === 'qr_already_used');
+// Admin single-enroll now captures parentEmail (was dropped → no guardian emails).
+$enr2 = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Ada Guardianed', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'parentEmail' => 'ada-guardian@example.com']]);
+chk('admin enroll persists parentEmail', db_row('SELECT parentEmail FROM summer_students WHERE studentId=?', [$enr2['studentId']])['parentEmail'] === 'ada-guardian@example.com');
+// Check-OUT stamps a departure time on today's row (Kofi checked in above).
+chk('checkout stamps a departure time', (function () use ($enr) {
+    $r = backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-2025-0099', 'token' => $enr['token']]);
+    return !empty($r['ok']) && $r['already'] === false && !empty($r['checkOutAt']) && !empty(db_row('SELECT checkOutAt FROM attendance WHERE studentId=? AND date=?', [$enr['studentId'], gmdate('Y-m-d')])['checkOutAt']);
+})());
+chk('a second checkout is idempotent', backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-2025-0099', 'token' => $enr['token']])['already'] === true);
+chk('checkout without a check-in is refused', backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-2025-0099', 'token' => $enr2['token']])['error'] === 'not_checked_in');
+// Absence alert emails guardians of students absent today (enr2 is absent + has email).
+chk('absence alert emails absent students\' guardians', (function () {
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('admin.summer.absence.alert', ['requesterId' => 'NGG-2025-0099']);
+    $hit = count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-guardian@example.com')) === 1;
+    unset($GLOBALS['__mail_sink']);
+    return !empty($r['ok']) && $r['sent'] >= 1 && $hit;
+})());
 
 // Attendance analytics (Phase 2 dashboard) — Kofi is enrolled + checked in above.
 $att = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099'])['attendance'];

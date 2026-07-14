@@ -42,6 +42,9 @@ if ($method === 'GET') {
         if (!empty($res['ok']) && empty($res['already'])) {
             event_emit('attendance.marked', ['memberId' => $res['student']['studentId'] ?? '', 'name' => $res['student']['fullName'] ?? '', 'date' => gmdate('Y-m-d'), 'source' => 'gate', 'by' => $s['mid']]);
         }
+    } elseif ($action === 'checkout') {
+        if (!gate_resolve((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
+        $res = gs_call('admin.summer.checkout', ['gateAuthorized' => true, 'byId' => ($s['mid'] ?: ('gate:' . substr((string)($b['gate'] ?? ''), 0, 24))), 'token' => $b['token'] ?? '', 'ip' => $ip]);
     } elseif ($action === 'duty_close') {
         // Close today's roll for this gate's centre — credits the on-duty
         // volunteer (points/level/awards) and returns the value-driven response.

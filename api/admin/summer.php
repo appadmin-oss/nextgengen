@@ -26,6 +26,8 @@ if ($method === 'GET') {
         'archive'      => 'admin.summer.cohort.archive',
         'issueCerts'   => 'admin.summer.certs.issue',
         'revokeCert'   => 'admin.cert.revoke',
+        'checkout'     => 'admin.summer.checkout',
+        'absenceAlert' => 'admin.summer.absence.alert',
     ];
     if (!isset($map[$action])) json_error('unknown_action', 400);
     $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));

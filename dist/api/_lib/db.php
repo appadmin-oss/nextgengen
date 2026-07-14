@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 26;
+const NGG_SCHEMA_TARGET = 27;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -716,6 +716,11 @@ function db_migrate(PDO $db): void {
               revokedAt TEXT DEFAULT ''
             );
             CREATE UNIQUE INDEX idx_stucert_student ON student_certs(studentId);
+        ",
+
+        // Attendance check-OUT (optional dwell tracking) + guardian absence alerts.
+        27 => "
+            ALTER TABLE attendance ADD COLUMN checkOutAt TEXT DEFAULT '';
         ",
     ];
 
