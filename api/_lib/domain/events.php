@@ -173,6 +173,104 @@ function public_newsletter_unsubscribe(array $p): array {
     return ['ok' => true];
 }
 
+/** Applicant self-service status lookup by reference + email (anti-enumeration). */
+function public_application_status(array $p): array {
+    $ref = strtoupper(trim((string)($p['ref'] ?? '')));
+    $email = strtolower(trim((string)($p['email'] ?? '')));
+    if (!preg_match('/^NGG-([AMVC])-(\d{3,6})$/', $ref, $mm)) return ['ok' => false, 'error' => 'bad_ref'];
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
+    $labels = ['new' => 'Received', 'read' => 'Under review', 'reviewing' => 'Under review', 'accepted' => 'Accepted', 'converted' => 'Accepted', 'rejected' => 'Not selected this time', 'replied' => 'Replied', 'archived' => 'Closed', 'waitlist' => 'Waitlisted'];
+    if ($mm[1] === 'C') {
+        $row = db_row('SELECT status, createdAt FROM contact_messages WHERE ref = ? AND lower(email) = ? LIMIT 1', [$ref, $email]);
+        $type = 'message';
+    } else {
+        $row = db_row('SELECT status, createdAt FROM applications WHERE id = ? AND lower(email) = ? LIMIT 1', [(int)$mm[2], $email]);
+        $type = 'application';
+    }
+    if (!$row) return ['ok' => false, 'error' => 'not_found'];
+    $st = (string)$row['status'];
+    return ['ok' => true, 'type' => $type, 'status' => $st, 'label' => $labels[$st] ?? ucfirst($st), 'submittedAt' => $row['createdAt']];
+}
+
+/* ── Peer interaction: emoji reactions + moderated comments on posts ───────── */
+
+const POST_REACTIONS = ['👏', '❤️', '🔥', '💡', '🎉'];
+
+function post_resolve_id(string $key): string {
+    if ($key === '') return '';
+    $row = db_row('SELECT postId FROM posts WHERE postId = ? OR slug = ? LIMIT 1', [$key, $key]);
+    return $row ? (string)$row['postId'] : '';
+}
+
+/** Public: reaction tallies + approved comments for a post (by slug or id). */
+function public_post_engagement(array $p): array {
+    $postId = post_resolve_id((string)($p['post'] ?? ''));
+    if ($postId === '') return ['ok' => false, 'error' => 'not_found'];
+    $counts = [];
+    foreach (db_all('SELECT emoji, COUNT(*) c FROM post_reactions WHERE postId = ? GROUP BY emoji', [$postId]) as $r) $counts[(string)$r['emoji']] = (int)$r['c'];
+    $mine = '';
+    $mid = (string)($p['memberId'] ?? '');
+    if ($mid !== '') { $r = db_row('SELECT emoji FROM post_reactions WHERE postId = ? AND memberId = ? LIMIT 1', [$postId, $mid]); $mine = $r ? (string)$r['emoji'] : ''; }
+    $comments = db_all("SELECT commentId, memberName, body, createdAt FROM post_comments WHERE postId = ? AND status = 'approved' ORDER BY id DESC LIMIT 100", [$postId]);
+    return ['ok' => true, 'reactions' => $counts, 'myReaction' => $mine, 'comments' => $comments, 'options' => POST_REACTIONS];
+}
+
+/** Member reacts (one per post; same emoji again clears it). */
+function post_react(array $p): array {
+    $mid = (string)($p['memberId'] ?? '');
+    if ($mid === '') return ['ok' => false, 'error' => 'unauthorized'];
+    $postId = post_resolve_id((string)($p['post'] ?? ''));
+    if ($postId === '') return ['ok' => false, 'error' => 'not_found'];
+    $emoji = (string)($p['emoji'] ?? '');
+    if (!in_array($emoji, POST_REACTIONS, true)) return ['ok' => false, 'error' => 'bad_emoji'];
+    $existing = db_row('SELECT id, emoji FROM post_reactions WHERE postId = ? AND memberId = ? LIMIT 1', [$postId, $mid]);
+    if ($existing) {
+        if ((string)$existing['emoji'] === $emoji) db_exec('DELETE FROM post_reactions WHERE id = ?', [$existing['id']]);
+        else db_update('post_reactions', ['emoji' => $emoji, 'createdAt' => now_iso()], ['id' => $existing['id']]);
+    } else {
+        db_insert('post_reactions', ['postId' => $postId, 'memberId' => $mid, 'emoji' => $emoji, 'createdAt' => now_iso()]);
+    }
+    return public_post_engagement(['post' => $postId, 'memberId' => $mid]);
+}
+
+/** Member comments → moderation queue (nothing public until an admin approves). */
+function post_comment_create(array $p): array {
+    $mid = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'unauthorized'];
+    $postId = post_resolve_id((string)($p['post'] ?? ''));
+    if ($postId === '') return ['ok' => false, 'error' => 'not_found'];
+    $body = trim((string)($p['body'] ?? ''));
+    if (strlen($body) < 2) return ['ok' => false, 'error' => 'too_short'];
+    if (strlen($body) > 1000) $body = substr($body, 0, 1000);
+    $first = explode(' ', trim((string)$m['fullName']))[0] ?: 'Member';
+    db_insert('post_comments', ['commentId' => 'CM-' . strtoupper(rand_hex(6)), 'postId' => $postId, 'memberId' => $mid, 'memberName' => $first, 'body' => $body, 'status' => 'pending', 'createdAt' => now_iso()]);
+    audit('post.comment', $mid, $postId, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'pending' => true];
+}
+
+/** Admin: moderation queue (pending by default). Cap: content. */
+function admin_comments_list(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $status = in_array((string)($p['status'] ?? 'pending'), ['pending', 'approved', 'rejected'], true) ? (string)($p['status'] ?? 'pending') : 'pending';
+    $rows = db_all("SELECT c.commentId, c.postId, c.memberName, c.body, c.status, c.createdAt, p.title postTitle, p.slug postSlug
+                    FROM post_comments c LEFT JOIN posts p ON p.postId = c.postId
+                    WHERE c.status = ? ORDER BY c.id DESC LIMIT 200", [$status]);
+    $pending = (int)(db_row("SELECT COUNT(*) c FROM post_comments WHERE status = 'pending'")['c'] ?? 0);
+    return ['ok' => true, 'comments' => $rows, 'pending' => $pending];
+}
+
+function admin_comment_moderate(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $action = (string)($p['do'] ?? '');
+    if (!in_array($action, ['approve', 'reject', 'delete'], true)) return ['ok' => false, 'error' => 'bad_action'];
+    $cid = (string)($p['commentId'] ?? '');
+    if ($action === 'delete') { db_exec('DELETE FROM post_comments WHERE commentId = ?', [$cid]); }
+    else db_update('post_comments', ['status' => $action === 'approve' ? 'approved' : 'rejected', 'moderatedBy' => $g['requester']['memberId'], 'moderatedAt' => now_iso()], ['commentId' => $cid]);
+    audit('post.comment.' . $action, $g['requester']['memberId'], $cid, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
 /** Contact / enquiry form. Stores the message and notifies the admissions inbox. */
 function public_contact(array $p): array {
     // Honeypot — a hidden field real users never fill. Pretend success.

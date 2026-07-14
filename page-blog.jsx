@@ -245,6 +245,8 @@ function BlogArticle({ post, setPage, onBack, onOpen }) {
               <div style={{fontSize:13, color:"var(--ink-500)", marginTop:4}}>{post.author.role} · Writing about youth movements, African excellence, and the small daily work of becoming.</div>
             </div>
           </div>
+
+          <PostEngagement post={post}/>
         </div>
       </section>
 
@@ -288,6 +290,65 @@ function ArticleBody({ post }) {
       <p>
         We run a twelve-week structured runway. The teenager picks a craft. We build them a weekly cadence of missions, mentor check-ins, public attempts and reflective writing. They live the cadence. We watch what happens to their voice, their follow-through and their relationship with their own time. We promise nothing about outcomes — we promise the shape of the work.
       </p>
+    </div>
+  );
+}
+
+// Reactions + moderated comments on an article. Reading is public; reacting or
+// commenting needs a signed-in member. New comments are held for moderation.
+function PostEngagement({ post }) {
+  const auth = (typeof useAuth === "function") ? useAuth() : { member: null, openSignIn: () => {} };
+  const signedIn = !!(auth && auth.member);
+  const key = post.slug || post.id;
+  const [eng, setEng] = React.useState(null);
+  const [text, setText] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [posted, setPosted] = React.useState(false);
+  const load = () => NGGApi.public.postEngagement(key).then(setEng).catch(() => setEng({ reactions: {}, comments: [], options: ["👏","❤️","🔥","💡","🎉"], myReaction: "" }));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [key]);
+  const react = async (emoji) => {
+    if (!signedIn) { auth.openSignIn && auth.openSignIn(); return; }
+    try { const r = await NGGApi.member.react(key, emoji); setEng(r); } catch (e) { if (window.toast) toast.error(e.code || e.message); }
+  };
+  const comment = async () => {
+    if (!signedIn) { auth.openSignIn && auth.openSignIn(); return; }
+    if (text.trim().length < 2) return;
+    setBusy(true);
+    try { await NGGApi.member.comment(key, text.trim()); setText(""); setPosted(true); if (window.toast) toast.success("Thanks — your comment will appear once a moderator approves it.", "Submitted"); }
+    catch (e) { if (window.toast) toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  if (!eng) return null;
+  const opts = eng.options || ["👏","❤️","🔥","💡","🎉"];
+  return (
+    <div style={{ marginTop: 48, borderTop: "1px solid rgba(12,20,50,0.1)", paddingTop: 28 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28 }}>
+        {opts.map(e => {
+          const n = (eng.reactions && eng.reactions[e]) || 0;
+          const mine = eng.myReaction === e;
+          return <button key={e} onClick={() => react(e)} style={{ border: "1px solid " + (mine ? "var(--gold-500)" : "rgba(12,20,50,0.15)"), background: mine ? "rgba(245,176,38,0.12)" : "#fff", borderRadius: 999, padding: "6px 14px", cursor: "pointer", fontSize: 15 }}>{e} {n > 0 ? <b style={{ fontSize: 13 }}>{n}</b> : null}</button>;
+        })}
+      </div>
+      <h3 style={{ fontFamily: "var(--font-display)", fontSize: 24, margin: "0 0 16px" }}>Comments</h3>
+      {signedIn ? (
+        <div style={{ marginBottom: 24 }}>
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={3} placeholder="Share a thoughtful comment…" style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid rgba(12,20,50,0.15)", fontFamily: "inherit", fontSize: 15 }}/>
+          <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 12 }}>
+            <button className="btn btn-primary btn-sm" disabled={busy || text.trim().length < 2} onClick={comment}>{busy ? "Posting…" : "Post comment"}</button>
+            <span style={{ fontSize: 12, color: "var(--ink-500)" }}>{posted ? "Awaiting moderation." : "Comments are reviewed before they appear."}</span>
+          </div>
+        </div>
+      ) : (
+        <p style={{ fontSize: 14, color: "var(--ink-500)", marginBottom: 24 }}><a href="#" onClick={e => { e.preventDefault(); auth.openSignIn && auth.openSignIn(); }} style={{ color: "var(--navy-900)", fontWeight: 600 }}>Sign in</a> to react and comment.</p>
+      )}
+      {(eng.comments || []).length === 0 ? <p style={{ fontSize: 14, color: "var(--ink-500)" }}>No comments yet — be the first.</p> :
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {eng.comments.map(c => (
+            <div key={c.commentId} style={{ padding: "12px 16px", background: "var(--cream-50)", borderRadius: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{c.memberName}</div>
+              <div style={{ fontSize: 15, marginTop: 4, whiteSpace: "pre-wrap" }}>{c.body}</div>
+            </div>
+          ))}
+        </div>}
     </div>
   );
 }

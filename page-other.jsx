@@ -900,10 +900,47 @@ function ContactPage({ setPage }) {
                 </p>
                 <button className="btn btn-gold" onClick={() => setPage("join")}>Start application →</button>
               </div>
+              <ApplicationStatusLookup/>
             </div>
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+/* Applicant self-service: check the status of an application/message by ref. */
+function ApplicationStatusLookup() {
+  const [ref, setRef] = useState("");
+  const [email, setEmail] = useState("");
+  const [res, setRes] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const check = async (e) => {
+    e && e.preventDefault();
+    setErr(""); setRes(null); setBusy(true);
+    try { const r = await NGGApi.public.applicationStatus(ref.trim().toUpperCase(), email.trim()); setRes(r); }
+    catch (ex) {
+      const map = { bad_ref: "That reference doesn't look right (e.g. NGG-A-00042).", bad_email: "Enter the email you applied with.", not_found: "No match — check the reference and email." };
+      setErr(map[ex.code || ex.message] || "Couldn't look that up.");
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="card" style={{ padding: 24 }}>
+      <div className="eyebrow" style={{ color: "var(--gold-500)" }}>CHECK YOUR STATUS</div>
+      <p style={{ fontSize: 14, color: "var(--ink-700)", margin: "12px 0 14px", lineHeight: 1.5 }}>
+        Quote your reference (e.g. <span className="mono">NGG-A-00042</span>) and the email you used.
+      </p>
+      <form onSubmit={check} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <input className="admin-input" value={ref} onChange={e => setRef(e.target.value)} placeholder="Reference (NGG-A-…)" style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)" }}/>
+        <input className="admin-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email you applied with" style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)" }}/>
+        <button className="btn btn-primary btn-sm" disabled={busy || !ref.trim() || !email.trim()}>{busy ? "Checking…" : "Check status"}</button>
+      </form>
+      {err && <p style={{ color: "var(--coral)", fontSize: 13, marginTop: 10 }}>{err}</p>}
+      {res && <div style={{ marginTop: 12, padding: "12px 14px", background: "var(--cream-50)", borderRadius: 10 }}>
+        <div style={{ fontWeight: 700 }}>{res.label}</div>
+        <div className="mono" style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 4 }}>Submitted {new Date(res.submittedAt).toLocaleDateString()}</div>
+      </div>}
     </div>
   );
 }

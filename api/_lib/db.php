@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 29;
+const NGG_SCHEMA_TARGET = 30;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -733,6 +733,26 @@ function db_migrate(PDO $db): void {
             ALTER TABLE members ADD COLUMN pendingEmail TEXT DEFAULT '';
             ALTER TABLE members ADD COLUMN emailChangeToken TEXT DEFAULT '';
             ALTER TABLE members ADD COLUMN emailChangeExpiresAt TEXT DEFAULT '';
+        ",
+
+        // Peer interaction on posts: emoji reactions + moderated comments.
+        30 => "
+            CREATE TABLE post_reactions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              postId TEXT NOT NULL, memberId TEXT NOT NULL, emoji TEXT NOT NULL,
+              createdAt TEXT DEFAULT (datetime('now')),
+              UNIQUE (postId, memberId)
+            );
+            CREATE INDEX idx_reactions_post ON post_reactions(postId);
+            CREATE TABLE post_comments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              commentId TEXT UNIQUE NOT NULL,
+              postId TEXT NOT NULL, memberId TEXT NOT NULL, memberName TEXT DEFAULT '',
+              body TEXT NOT NULL, status TEXT DEFAULT 'pending',
+              createdAt TEXT DEFAULT (datetime('now')), moderatedBy TEXT DEFAULT '', moderatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_comments_post ON post_comments(postId, status);
+            CREATE INDEX idx_comments_status ON post_comments(status);
         ",
     ];
 

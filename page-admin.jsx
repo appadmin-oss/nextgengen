@@ -60,6 +60,7 @@ const ADMIN_SECTIONS = [
   { id: "events",      group: "Content",  label: "Events",       title: "Events",              icon: "▶", cap: "content" },
   { id: "posts",       group: "Content",  label: "Posts",        title: "Posts",               icon: "✎", cap: "content" },
   { id: "photos",      group: "Content",  label: "Photo review", title: "Photo review",        icon: "◲", cap: "content" },
+  { id: "comments",    group: "Content",  label: "Comments",     title: "Comment moderation",  icon: "💬", cap: "content" },
   { id: "broadcast",   group: "Content",  label: "Announce",     title: "Announcements",       icon: "📣", cap: "content" },
   { id: "forms",       group: "Content",  label: "Forms",        title: "Forms",               icon: "▤", cap: "content" },
   { id: "site",        group: "Content",  label: "Site content", title: "Site content",        icon: "◧", cap: "settings" },
@@ -148,6 +149,7 @@ function AdminPage({ setPage }) {
           {view === "audit" && <AdminAudit/>}
           {view === "behaviour" && <AdminBehaviour/>}
           {view === "integrations" && <AdminIntegrations/>}
+          {view === "comments" && <AdminComments/>}
         </main>
       </div>
     </div>
@@ -1908,6 +1910,51 @@ function AdminAccess() {
           </table>
         </div>
       }
+    </div>
+  );
+}
+
+// ============================================================================
+// Comment moderation — approve/reject member comments before they go public
+// ============================================================================
+
+function AdminComments() {
+  const [status, setStatus] = React.useState("pending");
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.comments(status).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [status]);
+  const act = async (commentId, a) => { try { await NGGApi.admin.commentModerate(commentId, a); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const rows = d ? d.comments : null;
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Comment moderation {d && d.pending ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{d.pending} pending</span> : null}</h2>
+      </div>
+      <p className="admin-hint">Member comments on posts stay hidden until you approve them. Nothing is public until it's cleared here.</p>
+      <div className="admin-filters">
+        <select className="admin-select" value={status} onChange={e => setStatus(e.target.value)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
+      </div>
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        rows === null ? <div className="dash-spinner"/> :
+        rows.length === 0 ? <div className="admin-empty">Nothing here.</div> :
+        <div className="admin-app-list">
+          {rows.map(c => (
+            <div className="admin-app" key={c.commentId}>
+              <div className="admin-app-top">
+                <div><div className="admin-cell-name">{c.memberName} <span className="chip chip-navy">{c.postTitle || c.postSlug || c.postId}</span></div>
+                  <div className="mono admin-cell-sub">{fmtDate(c.createdAt)}</div></div>
+                <span className={"chip status-" + (c.status === "approved" ? "published" : c.status === "rejected" ? "archived" : "draft")}>{c.status}</span>
+              </div>
+              <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{c.body}</p>
+              <div className="admin-app-actions">
+                {c.status !== "approved" && <button className="btn btn-ghost btn-sm" onClick={() => act(c.commentId, "approve")}>Approve</button>}
+                {c.status !== "rejected" && <button className="btn btn-ghost btn-sm" onClick={() => act(c.commentId, "reject")}>Reject</button>}
+                <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={() => act(c.commentId, "delete")}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>}
     </div>
   );
 }

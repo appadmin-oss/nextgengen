@@ -144,6 +144,8 @@
       circle:       () => request('/member/circle.php'),
       circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
       circleRevoke: (linkId) => request('/member/circle.php', { body: { action: 'revoke', linkId } }),
+      react:               (post, emoji) => request('/member/engage.php', { body: { action: 'react', post, emoji } }),
+      comment:             (post, body) => request('/member/engage.php', { body: { action: 'comment', post, body } }),
       changeEmail:         (email) => request('/member/account.php', { body: { action: 'change_email', email } }),
       exportData:          () => request('/member/account.php'),
       deleteAccount:       () => request('/member/account.php', { body: { action: 'delete' } }),
@@ -154,6 +156,8 @@
     public: {
       stats:      () => request('/public/stats.php'),
       leaderboard: (limit) => request('/public/leaderboard.php' + qs(limit ? { limit } : {})),
+      applicationStatus: (ref, email) => request('/public/application-status.php', { body: { ref, email } }),
+      postEngagement: (post) => request('/public/engagement.php' + qs({ post })),
       events:     () => request('/public/events.php'),
       posts:      (kind, tag) => request('/public/posts.php' + qs({ kind, tag })),
       post:       (slug) => request('/public/post.php' + qs({ slug })),
@@ -263,6 +267,8 @@
       },
       newsletter:   () => request('/admin/newsletter.php'),
       newsletterSend: (subject, body) => request('/admin/newsletter.php', { body: { subject, body } }),
+      comments:     (status) => request('/admin/comments.php' + qs({ status: status || 'pending' })),
+      commentModerate: (commentId, act) => request('/admin/comments.php', { body: { commentId, do: act } }),
       summer: {
         overview:     () => request('/admin/summer.php?view=overview'),
         students:     (q, cohortId) => request('/admin/summer.php' + qs({ view: 'students', q, cohortId })),

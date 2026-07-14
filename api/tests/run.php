@@ -1359,6 +1359,40 @@ chk('super-admin deletes & anonymises a member', (function () {
 })());
 chk('deletion refuses the last super admin', backend_dispatch('admin.members.delete', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0099'])['error'] === 'cannot_delete_super_admin');
 
+// ── Applicant status lookup + peer interaction (reactions + moderated comments) ──
+chk('applicant status: ref+email returns a friendly status', (function () {
+    db_insert('applications', ['kind' => 'teen', 'name' => 'Status Seeker', 'email' => 'seeker@example.com', 'status' => 'reviewing', 'createdAt' => now_iso()]);
+    $id = (int)db_row("SELECT id FROM applications WHERE email='seeker@example.com'")['id'];
+    $ref = 'NGG-A-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+    $r = backend_dispatch('public.application.status', ['ref' => $ref, 'email' => 'seeker@example.com']);
+    return !empty($r['ok']) && $r['status'] === 'reviewing' && $r['label'] === 'Under review';
+})());
+chk('applicant status: wrong email is not found (no enumeration)', (function () {
+    $id = (int)db_row("SELECT id FROM applications WHERE email='seeker@example.com'")['id'];
+    $ref = 'NGG-A-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+    return backend_dispatch('public.application.status', ['ref' => $ref, 'email' => 'wrong@example.com'])['error'] === 'not_found';
+})());
+$peerPost = backend_dispatch('admin.posts.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'blog', 'title' => 'Peer Post', 'body' => 'Hi', 'status' => 'published']])['slug'];
+chk('member reaction is recorded and toggles off', (function () use ($peerPost) {
+    $a = backend_dispatch('post.react', ['memberId' => 'NGG-2025-0001', 'post' => $peerPost, 'emoji' => '🔥']);
+    $on = ($a['reactions']['🔥'] ?? 0) === 1 && $a['myReaction'] === '🔥';
+    $b = backend_dispatch('post.react', ['memberId' => 'NGG-2025-0001', 'post' => $peerPost, 'emoji' => '🔥']);
+    return $on && ($b['reactions']['🔥'] ?? 0) === 0 && $b['myReaction'] === '';
+})());
+chk('a comment is held for moderation (not public)', (function () use ($peerPost) {
+    backend_dispatch('post.comment', ['memberId' => 'NGG-2025-0001', 'post' => $peerPost, 'body' => 'Great piece!']);
+    $pub = backend_dispatch('public.post.engagement', ['post' => $peerPost]);
+    $queue = backend_dispatch('admin.comments.list', ['requesterId' => 'NGG-2025-0099', 'status' => 'pending']);
+    return count($pub['comments']) === 0 && $queue['pending'] >= 1;
+})());
+chk('approving a comment makes it public', (function () use ($peerPost) {
+    $q = backend_dispatch('admin.comments.list', ['requesterId' => 'NGG-2025-0099', 'status' => 'pending']);
+    $cid = $q['comments'][0]['commentId'];
+    backend_dispatch('admin.comments.moderate', ['requesterId' => 'NGG-2025-0099', 'commentId' => $cid, 'do' => 'approve']);
+    return count(backend_dispatch('public.post.engagement', ['post' => $peerPost])['comments']) === 1;
+})());
+chk('comment moderation gated to content cap', backend_dispatch('admin.comments.list', ['requesterId' => 'NGG-2025-0555'])['error'] === 'forbidden');
+
 // ── Leaderboards (member cohort + volunteer duty) ──
 chk('public leaderboard ranks members by XP, privacy-safe', (function () {
     $r = backend_dispatch('public.leaderboard', ['limit' => 10]);
