@@ -370,6 +370,28 @@ $GLOBALS['__mail_sink'] = [];
 $vsci = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'VOLQR-STATE', 'method' => 'gate']);
 chk('volunteer check-in emails the volunteer their state', $vsci['ok'] === true && empty($vsci['already']) && count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'vol-state@example.com')) === 1);
 unset($GLOBALS['__mail_sink']);
+
+// ── Student completion certificates (verifiable) + revocation ──
+$gr = backend_dispatch('admin.summer.student.status', ['requesterId' => 'NGG-2025-0099', 'studentId' => 'SUM-K-1', 'status' => 'graduated']);
+chk('graduating a student mints a completion certificate', !empty($gr['ok']) && !empty($gr['cert']['certId']) && strpos($gr['cert']['certId'], 'NGGS-') === 0);
+$stuCertId = $gr['cert']['certId'];
+chk('public cert resolves the student completion cert', (function () use ($stuCertId) {
+    $r = backend_dispatch('public.cert', ['id' => $stuCertId]);
+    return !empty($r['ok']) && $r['cert']['type'] === 'completion' && $r['cert']['fullName'] === 'Kiosk Kid' && $r['cert']['revoked'] === false && $r['cert']['daysPresent'] >= 1;
+})());
+chk('re-graduating does not mint a second cert', (function () {
+    backend_dispatch('admin.summer.student.status', ['requesterId' => 'NGG-2025-0099', 'studentId' => 'SUM-K-1', 'status' => 'active']);
+    backend_dispatch('admin.summer.student.status', ['requesterId' => 'NGG-2025-0099', 'studentId' => 'SUM-K-1', 'status' => 'graduated']);
+    return (int)db_row("SELECT COUNT(*) c FROM student_certs WHERE studentId='SUM-K-1'")['c'] === 1;
+})());
+chk('admin can revoke a certificate (public shows revoked)', (function () use ($stuCertId) {
+    backend_dispatch('admin.cert.revoke', ['requesterId' => 'NGG-2025-0099', 'certId' => $stuCertId]);
+    return backend_dispatch('public.cert', ['id' => $stuCertId])['cert']['revoked'] === true;
+})());
+chk('admin can restore a revoked certificate', (function () use ($stuCertId) {
+    backend_dispatch('admin.cert.revoke', ['requesterId' => 'NGG-2025-0099', 'certId' => $stuCertId, 'restore' => true]);
+    return backend_dispatch('public.cert', ['id' => $stuCertId])['cert']['revoked'] === false;
+})());
 db_insert('events', ['eventId' => 'EV-VOL-1', 'title' => 'Saturday session', 'kind' => 'session', 'sessionId' => '', 'startAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 3 * 86400), 'endAt' => '', 'centre' => 'Egbeda', 'location' => 'Main hall', 'coverUrl' => '', 'body' => '', 'capacity' => 20, 'isPublic' => 1, 'status' => 'published', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 $slots = volunteer_upcoming_sessions();
 chk('upcoming sessions are capacity-aware', $slots[0]['title'] === 'Saturday session' && $slots[0]['spotsLeft'] === 20);

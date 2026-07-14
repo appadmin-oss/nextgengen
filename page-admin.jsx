@@ -3043,13 +3043,14 @@ function AdminRegistration() {
       <div className="admin-section-head"><h2 className="admin-h2">Registration</h2></div>
       <p className="admin-hint">Run the gated public sign-up: hand out desk links, review parent-pending sign-ups, and manage the centres that drive ID prefixes and card colours. The form itself lives under <b>Forms</b>.</p>
       <div className="admin-anchor-tabs">
-        {[["gates", "Gate links"], ["pending", "Pending sign-ups"], ["centres", "Centres"]].map(([id, l]) => (
+        {[["gates", "Gate links"], ["pending", "Pending sign-ups"], ["centres", "Centres"], ["certs", "Certificates"]].map(([id, l]) => (
           <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
       {tab === "gates" && <SummerGates/>}
       {tab === "pending" && <SummerPending/>}
       {tab === "centres" && <SummerCentres/>}
+      {tab === "certs" && <SummerCertificates/>}
     </div>
   );
 }
@@ -3059,6 +3060,38 @@ function AdminQRCodes() {
     <div className="admin-section">
       <div className="admin-section-head"><h2 className="admin-h2">QR codes</h2></div>
       <SummerQR/>
+    </div>
+  );
+}
+
+/* Completion certificates — bulk-issue for graduates and revoke/restore by ID. */
+function SummerCertificates() {
+  const [busy, setBusy] = React.useState("");
+  const [certId, setCertId] = React.useState("");
+  const issue = async (status) => {
+    setBusy("issue");
+    try { const r = await NGGApi.admin.summer.issueCerts(status); toast.success("Issued " + (r.issued || 0) + " new certificate(s) of " + (r.considered || 0) + " " + status + " student(s).", "Certificates"); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
+  };
+  const revoke = async (restore) => {
+    if (!certId.trim()) return;
+    setBusy(restore ? "restore" : "revoke");
+    try { await NGGApi.admin.summer.revokeCert(certId.trim().toUpperCase(), restore); toast.success((restore ? "Restored " : "Revoked ") + certId.trim().toUpperCase(), "Certificate"); setCertId(""); }
+    catch (e) { toast.error(e.code || e.message, "Not found"); } finally { setBusy(""); }
+  };
+  return (
+    <div>
+      <p className="admin-hint">Graduating a student auto-issues their verifiable certificate of completion. You can also bulk-issue for everyone already marked graduated, or revoke a specific certificate (student <span className="mono">NGGS-…</span> or volunteer <span className="mono">NGGV-…</span>).</p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
+        <button className="btn btn-primary btn-sm" disabled={busy === "issue"} onClick={() => issue("graduated")}>{busy === "issue" ? "Issuing…" : "Issue for all graduated students"}</button>
+      </div>
+      <div className="admin-fields" style={{ maxWidth: 480 }}>
+        <Field label="Certificate ID" value={certId} onChange={setCertId} placeholder="NGGS-XXXXX or NGGV-XXXXX"/>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost btn-sm" disabled={busy === "revoke" || !certId.trim()} onClick={() => revoke(false)}>Revoke</button>
+          <button className="btn btn-ghost btn-sm" disabled={busy === "restore" || !certId.trim()} onClick={() => revoke(true)}>Restore</button>
+        </div>
+      </div>
     </div>
   );
 }

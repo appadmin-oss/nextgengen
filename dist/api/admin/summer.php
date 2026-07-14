@@ -24,6 +24,8 @@ if ($method === 'GET') {
         'studentStatus'=> 'admin.summer.student.status',
         'checkin'      => 'admin.summer.checkin',
         'archive'      => 'admin.summer.cohort.archive',
+        'issueCerts'   => 'admin.summer.certs.issue',
+        'revokeCert'   => 'admin.cert.revoke',
     ];
     if (!isset($map[$action])) json_error('unknown_action', 400);
     $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));

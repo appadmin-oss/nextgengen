@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 25;
+const NGG_SCHEMA_TARGET = 26;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -699,6 +699,23 @@ function db_migrate(PDO $db): void {
         // hard lockout.
         25 => "
             ALTER TABLE members ADD COLUMN totpBackup TEXT DEFAULT '';
+        ",
+
+        // Student completion certificates (verifiable, like the volunteer ones)
+        // + revocation for BOTH cert kinds so the public 'revoked' state is real.
+        26 => "
+            ALTER TABLE volunteer_certs ADD COLUMN revokedAt TEXT DEFAULT '';
+            CREATE TABLE student_certs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              certId TEXT UNIQUE NOT NULL,
+              studentId TEXT NOT NULL,
+              cohortId TEXT DEFAULT '',
+              daysPresent INTEGER DEFAULT 0,
+              attendanceRate INTEGER DEFAULT 0,
+              issuedAt TEXT DEFAULT (datetime('now')),
+              revokedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_stucert_student ON student_certs(studentId);
         ",
     ];
 

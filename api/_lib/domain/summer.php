@@ -219,7 +219,10 @@ function admin_summer_student_status(array $p): array {
     $n = db_update('summer_students', ['status' => $status, 'updatedAt' => now_iso()], ['studentId' => $studentId]);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('summer.student.status', $g['requester']['memberId'], $studentId, ['status' => $status], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+    // Graduating a student mints their verifiable completion certificate.
+    $cert = null;
+    if ($status === 'graduated') { $c = student_maybe_issue_completion_cert($studentId); if ($c) $cert = ['certId' => $c['certId']]; }
+    return ['ok' => true, 'cert' => $cert];
 }
 
 // ── Check-in state emails ────────────────────────────────────────────────────
@@ -314,6 +317,66 @@ function checkin_student_email(array $s, int $days): void {
         'footNote' => "You are receiving this because you are {$first}'s guardian at Next Generation Genius.",
     ]);
     @send_mail($to, $subject, $html);
+}
+
+// ── Completion certificates (verifiable, guardian-facing) ───────────────────
+/** Mint a student's completion certificate once, from their attendance record,
+ *  and email the guardian the verifiable link. Returns the cert row or null. */
+function student_maybe_issue_completion_cert(string $studentId): ?array {
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
+    if (!$s) return null;
+    $existing = db_row('SELECT * FROM student_certs WHERE studentId = ? LIMIT 1', [$studentId]);
+    if ($existing) return $existing; // once per student
+
+    $days = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$studentId])['c'] ?? 0);
+    $sessionDays = (int)(db_row('SELECT COUNT(DISTINCT date) c FROM attendance WHERE cohortId = ?', [(string)$s['cohortId']])['c'] ?? 0);
+    $rate = $sessionDays ? (int)round($days / $sessionDays * 100) : 0;
+    $certId = 'NGGS-' . strtoupper(rand_hex(5));
+    while (db_row('SELECT id FROM student_certs WHERE certId = ?', [$certId])) $certId = 'NGGS-' . strtoupper(rand_hex(5));
+    db_insert('student_certs', ['certId' => $certId, 'studentId' => $studentId, 'cohortId' => (string)$s['cohortId'], 'daysPresent' => $days, 'attendanceRate' => $rate, 'issuedAt' => now_iso()]);
+
+    $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/cert/' . $certId;
+    $first = esc_html(explode(' ', trim((string)$s['fullName']))[0] ?: 'your child');
+    if (!empty($s['parentEmail']) && filter_var((string)$s['parentEmail'], FILTER_VALIDATE_EMAIL)) {
+        @send_mail((string)$s['parentEmail'], "{$s['fullName']}'s NGG certificate of completion", email_template([
+            'title' => 'Certificate of completion',
+            'intro' => "Congratulations — {$first} has completed NGG Summer School with {$days} days of attendance.",
+            'bodyHtml' => '<p style="margin:0 0 10px">Their certificate is live, verifiable and yours to share — print it or link it anywhere.</p>',
+            'ctaLabel' => 'Open the certificate →', 'ctaUrl' => $url,
+        ]));
+    }
+    event_emit('student.completion', ['ref' => $studentId, 'name' => (string)$s['fullName'], 'days' => $days, 'cert' => $certId]);
+    return db_row('SELECT * FROM student_certs WHERE certId = ? LIMIT 1', [$certId]);
+}
+
+/** Admin: issue completion certs in bulk for a cohort (graduated students, or
+ *  all active when none are marked graduated). Returns how many were minted. */
+function admin_summer_certs_issue(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $c = summer_ensure_cohort();
+    $cohortId = trim((string)($p['cohortId'] ?? '')) ?: $c['cohortId'];
+    $status = in_array((string)($p['status'] ?? 'graduated'), ['graduated', 'active', 'promoted'], true) ? (string)($p['status'] ?? 'graduated') : 'graduated';
+    $rows = db_all('SELECT studentId FROM summer_students WHERE cohortId = ? AND status = ?', [$cohortId, $status]);
+    $issued = 0;
+    foreach ($rows as $r) {
+        if (db_row('SELECT id FROM student_certs WHERE studentId = ?', [$r['studentId']])) continue;
+        if (student_maybe_issue_completion_cert((string)$r['studentId'])) $issued++;
+    }
+    audit('summer.certs.issue', $g['requester']['memberId'], $cohortId, ['status' => $status, 'issued' => $issued], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'issued' => $issued, 'considered' => count($rows)];
+}
+
+/** Admin: revoke a certificate (student NGGS- or volunteer NGGV-). */
+function admin_cert_revoke(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $certId = strtoupper(trim((string)($p['certId'] ?? '')));
+    $on = empty($p['restore']);
+    $val = $on ? now_iso() : '';
+    $table = strpos($certId, 'NGGV-') === 0 ? 'volunteer_certs' : 'student_certs';
+    $n = db_update($table, ['revokedAt' => $val], ['certId' => $certId]);
+    if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    audit($on ? 'cert.revoke' : 'cert.restore', $g['requester']['memberId'], $certId, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'revoked' => $on];
 }
 
 // ── Attendance check-in (scan a card) — used by the kiosk in Phase 2 ─────────

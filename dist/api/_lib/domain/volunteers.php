@@ -384,17 +384,37 @@ function volunteer_maybe_issue_cert(array $v, int $sessions): ?array {
     return ['certId' => $certId, 'milestone' => $sessions, 'hours' => $hours];
 }
 
-/** Public, verifiable certificate — anyone with the link can confirm it. */
+/** Public, verifiable certificate — anyone with the link can confirm it.
+ *  Resolves BOTH volunteer service certs and student completion certs, and
+ *  reports a revoked cert as revoked (not merely "not found"). */
 function public_cert(array $p): array {
-    $c = db_row('SELECT * FROM volunteer_certs WHERE certId = ? LIMIT 1', [strtoupper(trim((string)($p['id'] ?? '')))]);
-    if (!$c) return ['ok' => false, 'error' => 'not_found'];
-    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$c['volunteerId']]);
-    if (!$v) return ['ok' => false, 'error' => 'not_found'];
-    return ['ok' => true, 'cert' => [
-        'certId' => $c['certId'], 'milestone' => (int)$c['milestone'], 'hours' => (int)$c['hours'],
-        'issuedAt' => $c['issuedAt'], 'fullName' => $v['fullName'], 'role' => $v['role'],
-        'volunteerId' => $v['volunteerId'],
-    ]];
+    $id = strtoupper(trim((string)($p['id'] ?? '')));
+    // Volunteer service certificate.
+    $c = db_row('SELECT * FROM volunteer_certs WHERE certId = ? LIMIT 1', [$id]);
+    if ($c) {
+        $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$c['volunteerId']]);
+        if (!$v) return ['ok' => false, 'error' => 'not_found'];
+        return ['ok' => true, 'cert' => [
+            'type' => 'service', 'certId' => $c['certId'], 'milestone' => (int)$c['milestone'], 'hours' => (int)$c['hours'],
+            'issuedAt' => $c['issuedAt'], 'revoked' => !empty($c['revokedAt']), 'revokedAt' => (string)($c['revokedAt'] ?? ''),
+            'fullName' => $v['fullName'], 'role' => $v['role'], 'volunteerId' => $v['volunteerId'],
+        ]];
+    }
+    // Student completion certificate.
+    $s = db_row('SELECT * FROM student_certs WHERE certId = ? LIMIT 1', [$id]);
+    if ($s) {
+        $stu = db_row('SELECT fullName, centre, track, cohortId FROM summer_students WHERE studentId = ? LIMIT 1', [$s['studentId']]);
+        $cohort = db_row('SELECT name FROM summer_cohorts WHERE cohortId = ? LIMIT 1', [$s['cohortId']]);
+        return ['ok' => true, 'cert' => [
+            'type' => 'completion', 'certId' => $s['certId'], 'issuedAt' => $s['issuedAt'],
+            'revoked' => !empty($s['revokedAt']), 'revokedAt' => (string)($s['revokedAt'] ?? ''),
+            'daysPresent' => (int)$s['daysPresent'], 'attendanceRate' => (int)$s['attendanceRate'],
+            'fullName' => (string)($stu['fullName'] ?? 'Student'), 'centre' => (string)($stu['centre'] ?? ''),
+            'track' => (string)($stu['track'] ?? ''), 'cohort' => (string)($cohort['name'] ?? ''),
+            'studentId' => $s['studentId'],
+        ]];
+    }
+    return ['ok' => false, 'error' => 'not_found'];
 }
 
 /* ── Safeguarding: pending until screening clears — the scanner shows it ──── */

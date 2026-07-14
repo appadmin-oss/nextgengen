@@ -268,6 +268,8 @@
         attendance:   (cohortId) => request('/admin/summer.php' + qs({ view: 'attendance', cohortId })),
         insights:     (cohortId) => request('/admin/summer.php' + qs({ view: 'insights', cohortId })),
         archive:      (cohortId, compress) => request('/admin/summer.php', { body: { action: 'archive', cohortId, compress: !!compress } }),
+        issueCerts:   (status, cohortId) => request('/admin/summer.php', { body: { action: 'issueCerts', status: status || 'graduated', cohortId: cohortId || '' } }),
+        revokeCert:   (certId, restore) => request('/admin/summer.php', { body: { action: 'revokeCert', certId, restore: !!restore } }),
       },
       // Attendance-taker rotation + gamified attendance duty.
       attendance: {

@@ -1202,28 +1202,38 @@ function CertificatePage() {
     </div>
   );
   const c = state.cert;
+  const isCompletion = c.type === "completion";
   const issued = new Date(c.issuedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
   return (
     <div className="cert-page" style={{ minHeight: "100vh", background: "#0a1130", padding: "48px 20px", display: "grid", placeItems: "center" }}>
       <style>{`@media print { .cert-page { background: #fff !important; padding: 0 !important; } .cert-noprint { display: none !important; } .cert-card { box-shadow: none !important; border: 1px solid #ddd !important; } }`}</style>
       <div className="cert-card" style={{ width: "min(760px, 100%)", background: "#fff", borderRadius: 20, padding: "clamp(32px, 6vw, 64px)", boxShadow: "0 30px 80px -20px rgba(0,0,0,0.5)", position: "relative", overflow: "hidden" }}>
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(60% 50% at 100% 0%, rgba(245,176,38,0.12), transparent 60%)" }}/>
+        {c.revoked && <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}><span style={{ transform: "rotate(-18deg)", border: "4px solid rgba(228,21,95,0.5)", color: "rgba(228,21,95,0.5)", fontWeight: 800, fontSize: "clamp(40px,9vw,90px)", letterSpacing: 6, padding: "6px 28px", borderRadius: 12 }}>REVOKED</span></div>}
         <div style={{ position: "relative" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 36, flexWrap: "wrap", gap: 12 }}>
             <img src="assets/logo.png" alt="Next Generation Genius" width={46} height={46} style={{ borderRadius: "50%" }}/>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#8a93a6" }}>CERTIFICATE OF SERVICE</span>
+            <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#8a93a6" }}>{isCompletion ? "CERTIFICATE OF COMPLETION" : "CERTIFICATE OF SERVICE"}</span>
           </div>
           <p style={{ margin: 0, color: "#6b7385", fontSize: 15 }}>This certifies that</p>
           <h1 className="display" style={{ fontSize: "clamp(34px,5vw,56px)", margin: "6px 0 4px", color: "#0a1130", lineHeight: 1 }}>{c.fullName}</h1>
-          <p style={{ margin: "0 0 28px", color: "#6b7385", fontSize: 15 }}>
-            served as a <b style={{ color: "#0a1130", textTransform: "capitalize" }}>{c.role}</b> volunteer with Next Generation Genius,
-            completing <b style={{ color: "#0a1130" }}>{c.milestone} sessions</b> — approximately <b style={{ color: "#0a1130" }}>{c.hours} hours</b> of service.
-          </p>
+          {isCompletion ? (
+            <p style={{ margin: "0 0 28px", color: "#6b7385", fontSize: 15 }}>
+              completed <b style={{ color: "#0a1130" }}>NGG Summer School{c.cohort ? " · " + c.cohort : ""}</b>{c.track ? <> on the <b style={{ color: "#0a1130" }}>{c.track}</b> track</> : null},
+              attending <b style={{ color: "#0a1130" }}>{c.daysPresent} days</b>{c.attendanceRate ? <> (<b style={{ color: "#0a1130" }}>{c.attendanceRate}%</b> attendance)</> : null}.
+            </p>
+          ) : (
+            <p style={{ margin: "0 0 28px", color: "#6b7385", fontSize: 15 }}>
+              served as a <b style={{ color: "#0a1130", textTransform: "capitalize" }}>{c.role}</b> volunteer with Next Generation Genius,
+              completing <b style={{ color: "#0a1130" }}>{c.milestone} sessions</b> — approximately <b style={{ color: "#0a1130" }}>{c.hours} hours</b> of service.
+            </p>
+          )}
           <div style={{ display: "flex", gap: 40, flexWrap: "wrap", borderTop: "1px solid #ececf0", paddingTop: 24 }}>
             <div><div className="mono" style={{ fontSize: 10, color: "#8a93a6", letterSpacing: "0.12em" }}>ISSUED</div><div style={{ fontWeight: 600, color: "#0a1130" }}>{issued}</div></div>
-            <div><div className="mono" style={{ fontSize: 10, color: "#8a93a6", letterSpacing: "0.12em" }}>VOLUNTEER ID</div><div style={{ fontWeight: 600, color: "#0a1130" }}>{c.volunteerId}</div></div>
+            <div><div className="mono" style={{ fontSize: 10, color: "#8a93a6", letterSpacing: "0.12em" }}>{isCompletion ? "STUDENT ID" : "VOLUNTEER ID"}</div><div style={{ fontWeight: 600, color: "#0a1130" }}>{isCompletion ? c.studentId : c.volunteerId}</div></div>
             <div><div className="mono" style={{ fontSize: 10, color: "#8a93a6", letterSpacing: "0.12em" }}>CERTIFICATE</div><div style={{ fontWeight: 600, color: "#0a1130" }}>{c.certId}</div></div>
           </div>
+          {c.revoked && <p style={{ margin: "20px 0 0", color: "#E4155F", fontWeight: 600, fontSize: 14 }}>This certificate has been revoked and is no longer valid.</p>}
         </div>
       </div>
       <div className="cert-noprint" style={{ marginTop: 24, display: "flex", gap: 12 }}>
