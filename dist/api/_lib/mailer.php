@@ -285,40 +285,80 @@ function smtp_send(array $smtp, array $from, string $to, string $subject, string
     if (!ngg_load_phpmailer()) {
         return smtp_send_raw($smtp, $from, $to, $subject, $html, $text);
     }
-    $m = new \PHPMailer\PHPMailer\PHPMailer(true);
-    $m->isSMTP();
-    $m->SMTPDebug = \PHPMailer\PHPMailer\SMTP::DEBUG_OFF;
-    $m->Host = (string)$smtp['host'];
-    $m->Port = (int)($smtp['port'] ?? 587);
-    $secure = strtolower((string)($smtp['secure'] ?? 'tls'));
-    if ($secure === 'ssl') {
-        $m->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
-    } elseif ($secure === '' || $secure === 'none') {
-        $m->SMTPSecure = '';
-        $m->SMTPAutoTLS = false;
-    } else {
-        $m->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+
+    // One configured attempt. $relaxTls skips certificate verification — the
+    // fallback for shared hosts whose CA bundle is stale/missing, where an
+    // otherwise-correct STARTTLS to smtp.gmail.com fails cert verification
+    // (the #1 cause of "the exact same SMTP works elsewhere but not here").
+    $attempt = function (bool $relaxTls) use ($smtp, $from, $to, $subject, $html, $text): array {
+        $m = new \PHPMailer\PHPMailer\PHPMailer(true);
+        $m->isSMTP();
+        // Capture only the SERVER side of the exchange for diagnostics — never
+        // the CLIENT lines, which carry the base64-encoded credentials.
+        $srv = '';
+        $m->SMTPDebug = \PHPMailer\PHPMailer\SMTP::DEBUG_SERVER;
+        $m->Debugoutput = function ($str, $level) use (&$srv) {
+            if (stripos((string)$str, 'CLIENT -> SERVER') !== false) return;
+            $srv .= trim((string)$str) . "\n";
+        };
+        $m->Host = (string)$smtp['host'];
+        $m->Port = (int)($smtp['port'] ?? 587);
+        $secure = strtolower((string)($smtp['secure'] ?? 'tls'));
+        if ($secure === 'ssl') {
+            $m->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+        } elseif ($secure === '' || $secure === 'none') {
+            $m->SMTPSecure = '';
+            $m->SMTPAutoTLS = false;
+        } else {
+            $m->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        }
+        if (!empty($smtp['user'])) {
+            $m->SMTPAuth = true;
+            $m->Username = (string)$smtp['user'];
+            $m->Password = (string)($smtp['pass'] ?? '');
+        }
+        if ($relaxTls || ($smtp['verify_peer'] ?? true) === false) {
+            $m->SMTPOptions = ['ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true]];
+        }
+        $m->Timeout = 12;
+        $m->CharSet = \PHPMailer\PHPMailer\PHPMailer::CHARSET_UTF8;
+        $m->setFrom($from['email'], (string)($from['name'] ?? ''));
+        // Envelope-from aligned with the authenticated mailbox — Gmail requires
+        // it, and it keeps SPF/DMARC happy on any authenticated relay.
+        $m->Sender = (!empty($smtp['user']) && filter_var($smtp['user'], FILTER_VALIDATE_EMAIL))
+            ? (string)$smtp['user'] : (string)$from['email'];
+        if (!empty($from['replyTo'])) $m->addReplyTo((string)$from['replyTo']);
+        $m->addAddress($to);
+        $m->isHTML(true);
+        $m->Subject = $subject;
+        $m->Body = $html;
+        $m->AltBody = $text !== '' ? $text : strip_tags($html);
+        try {
+            $m->send();
+            return ['ok' => true];
+        } catch (\Throwable $e) {
+            $info = trim((string)($m->ErrorInfo ?? '')) ?: $e->getMessage();
+            return ['ok' => false, 'error' => $info, 'log' => $srv];
+        }
+    };
+
+    $r = $attempt(false);
+    if (!empty($r['ok'])) return true;
+
+    // Retry once without cert verification only when the failure looks like a
+    // TLS/connect problem — never for an auth or recipient rejection.
+    $err = (string)($r['error'] ?? '');
+    $tlsish = preg_match('/certificate|ssl|tls|verify|self.signed|could not connect|connect\(\)|stream_socket/i', $err) === 1;
+    if ($tlsish && ($smtp['verify_peer'] ?? true) !== false) {
+        error_log('[smtp] cert verification failed — retrying without peer verification: ' . $err);
+        $r2 = $attempt(true);
+        if (!empty($r2['ok'])) return true;
+        $r = $r2;
     }
-    if (!empty($smtp['user'])) {
-        $m->SMTPAuth = true;
-        $m->Username = (string)$smtp['user'];
-        $m->Password = (string)($smtp['pass'] ?? '');
-    }
-    $m->Timeout = 12;
-    $m->CharSet = \PHPMailer\PHPMailer\PHPMailer::CHARSET_UTF8;
-    $m->setFrom($from['email'], (string)($from['name'] ?? ''));
-    // Envelope-from aligned with the authenticated mailbox — Gmail requires it,
-    // and it keeps SPF/DMARC happy on any authenticated relay.
-    $m->Sender = (!empty($smtp['user']) && filter_var($smtp['user'], FILTER_VALIDATE_EMAIL))
-        ? (string)$smtp['user'] : (string)$from['email'];
-    if (!empty($from['replyTo'])) $m->addReplyTo((string)$from['replyTo']);
-    $m->addAddress($to);
-    $m->isHTML(true);
-    $m->Subject = $subject;
-    $m->Body = $html;
-    $m->AltBody = $text !== '' ? $text : strip_tags($html);
-    $m->send();
-    return true;
+
+    $log = trim((string)($r['log'] ?? ''));
+    $log = $log !== '' ? ' | server: ' . substr((string)preg_replace('/\s+/', ' ', $log), -300) : '';
+    throw new \RuntimeException(((string)($r['error'] ?? 'smtp_failed')) . $log);
 }
 
 /**

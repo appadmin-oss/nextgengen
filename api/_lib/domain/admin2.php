@@ -308,10 +308,17 @@ function admin_mail_test(array $p): array {
         if ($mode === 'smtp' && $authUser !== '' && $fromDomain && stripos($authUser, (string)$fromDomain) === false) {
             $hints[] = "SMTP auth user doesn't match the From domain ({$fromDomain}) — many relays reject or spam-flag a mismatched From. Align mail.from_email with the authenticated mailbox.";
         }
+        // A deploy that missed api/_lib/phpmailer/ silently falls back to the
+        // hand-rolled SMTP client, which fails on Gmail. Flag it explicitly.
+        if ($mode === 'smtp' && !(function_exists('ngg_load_phpmailer') && ngg_load_phpmailer())) {
+            $hints[] = 'PHPMailer is NOT present on the server (api/_lib/phpmailer/ missing from this deploy) — SMTP is using the fallback client, which fails against Gmail. Re-upload api/_lib/phpmailer/.';
+        }
     }
+    $phpmailer = function_exists('ngg_load_phpmailer') && ngg_load_phpmailer();
     // ok:true = the diagnostic ran; `delivered` says whether the send succeeded.
     return [
         'ok' => true, 'delivered' => $delivered, 'to' => $to, 'mode' => $mode,
+        'phpmailer' => $phpmailer,
         'error' => (string)($GLOBALS['__mail_last_error'] ?? ''),
         'from' => (string)$from['email'], 'fromName' => (string)$from['name'],
         'replyTo' => (string)$from['replyTo'], 'fromDomain' => $fromDomain,
