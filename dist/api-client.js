@@ -150,6 +150,7 @@
     },
     public: {
       stats:      () => request('/public/stats.php'),
+      leaderboard: (limit) => request('/public/leaderboard.php' + qs(limit ? { limit } : {})),
       events:     () => request('/public/events.php'),
       posts:      (kind, tag) => request('/public/posts.php' + qs({ kind, tag })),
       post:       (slug) => request('/public/post.php' + qs({ slug })),
@@ -280,6 +281,7 @@
         admin:    (date) => request('/admin/attendance.php' + qs({ view: 'admin', date })),
         set:      (date, centre, volunteerId) => request('/admin/attendance.php', { body: { action: 'set', date, centre, volunteerId } }),
         complete: (date, centre, volunteerId) => request('/admin/attendance.php', { body: { action: 'complete', date, centre, volunteerId } }),
+        leaderboard: () => request('/admin/attendance.php' + qs({ view: 'leaderboard' })),
       },
       club: {
         overview:   () => request('/admin/club.php?view=overview'),

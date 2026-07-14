@@ -82,6 +82,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.summer.insights'       => 'admin_summer_insights',
             // Attendance-taker rotation + gamified attendance
             'attendance.duty.board'       => 'attendance_duty_board',
+            'attendance.duty.leaderboard' => 'attendance_duty_leaderboard',
             'attendance.duty.complete'    => 'attendance_duty_complete',
             'admin.attendance.duty'       => 'admin_attendance_duty',
             'admin.attendance.duty.set'   => 'admin_attendance_duty_set',
@@ -183,6 +184,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.assignment.grade'        => 'assignment_grade',
             // Public (cached by PHP)
             'public.stats'            => 'public_stats',
+            'public.leaderboard'      => 'public_leaderboard',
             'public.events'           => 'public_events',
             'public.posts'            => 'public_posts',
             'public.session'          => 'op_public_session',

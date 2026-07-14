@@ -13,6 +13,7 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'board');
     $date = (string)($_GET['date'] ?? '');
     if ($view === 'admin') $res = gs_call('admin.attendance.duty', ['requesterId' => $mid, 'date' => $date]);
+    elseif ($view === 'leaderboard') $res = gs_call('attendance.duty.leaderboard', ['requesterId' => $mid]);
     else                   $res = gs_call('attendance.duty.board', ['requesterId' => $mid, 'date' => $date]);
 } elseif ($method === 'POST') {
     $b = read_json_body();

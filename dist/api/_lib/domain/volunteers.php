@@ -327,6 +327,26 @@ function attendance_duty_complete(array $p): array {
     return ['ok' => true, 'message' => $msg, 'taken' => $taken, 'game' => $game, 'awards' => $awards, 'leveledUp' => $leveledUp];
 }
 
+/** Attendance-duty leaderboard: volunteers ranked by service points, with
+ *  level + streak. Staff view (summer cap) for recognition. */
+function attendance_duty_leaderboard(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $limit = max(3, min(50, (int)($p['limit'] ?? 15)));
+    $rows = db_all("SELECT v.volunteerId, v.fullName, v.role, COALESCE(SUM(vp.points),0) points
+                    FROM volunteers v LEFT JOIN volunteer_points vp ON vp.volunteerId = v.volunteerId
+                    WHERE v.status = 'active'
+                    GROUP BY v.volunteerId, v.fullName, v.role
+                    ORDER BY points DESC, v.fullName ASC LIMIT " . $limit);
+    $out = []; $rank = 0;
+    foreach ($rows as $r) {
+        $rank++;
+        $game = volunteer_game_state((string)$r['volunteerId']);
+        $out[] = ['rank' => $rank, 'volunteerId' => (string)$r['volunteerId'], 'fullName' => (string)$r['fullName'],
+            'role' => (string)$r['role'], 'points' => (int)$r['points'], 'level' => $game['level'], 'levelName' => $game['levelName'], 'streak' => $game['streak']];
+    }
+    return ['ok' => true, 'leaderboard' => $out];
+}
+
 /* ── Read/write ops (routes call these) ─────────────────────────────────── */
 
 /** Public/kiosk read: who's on duty across centres for a date (default today). */

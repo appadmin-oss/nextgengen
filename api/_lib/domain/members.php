@@ -101,6 +101,29 @@ function member_update(array $p): array {
     return ['ok' => true];
 }
 
+/** Public, privacy-safe cohort leaderboard: top active NGG members by XP,
+ *  first name + last initial only (they're minors). Powers the Club page. */
+function public_leaderboard(array $p): array {
+    $limit = max(3, min(50, (int)($p['limit'] ?? 12)));
+    $rows = db_all("SELECT m.memberId, m.fullName, m.centre, COALESCE(s.xpTotal,0) xp, COALESCE(s.level,1) level, COALESCE(s.streak,0) streak, COALESCE(s.currentWeek,1) week
+                    FROM members m LEFT JOIN member_stats s ON s.memberId = m.memberId
+                    WHERE m.status = 'active' AND m.type = 'NGG'
+                    ORDER BY xp DESC, m.fullName ASC LIMIT " . $limit);
+    $out = []; $rank = 0;
+    foreach ($rows as $r) {
+        $rank++;
+        $parts = preg_split('/\s+/', trim((string)$r['fullName'])) ?: [];
+        $first = $parts[0] ?? 'Member';
+        $initial = count($parts) > 1 ? strtoupper(substr((string)end($parts), 0, 1)) . '.' : '';
+        $out[] = [
+            'rank' => $rank, 'memberId' => (string)$r['memberId'], 'first' => $first, 'initial' => $initial,
+            'centre' => (string)($r['centre'] ?? ''), 'xp' => (int)$r['xp'], 'level' => (int)$r['level'],
+            'streak' => (int)$r['streak'], 'week' => (int)$r['week'],
+        ];
+    }
+    return ['ok' => true, 'leaderboard' => $out, 'total' => count($out)];
+}
+
 /** SQL clause (+params) matching broadcast rows targeted to THIS member. A
  *  broadcast with no/`all` audience reaches everyone; a centre/type audience
  *  reaches only matching members — mirroring the emailed audience. */

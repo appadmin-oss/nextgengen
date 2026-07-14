@@ -1261,5 +1261,20 @@ chk('bulk import enrols multiple students', (function () {
 })());
 chk('bulk import rejects an empty batch', backend_dispatch('admin.summer.import', ['requesterId' => 'NGG-2025-0099', 'rows' => []])['error'] === 'no_rows');
 
+// ── Leaderboards (member cohort + volunteer duty) ──
+chk('public leaderboard ranks members by XP, privacy-safe', (function () {
+    $r = backend_dispatch('public.leaderboard', ['limit' => 10]);
+    if (empty($r['ok']) || !count($r['leaderboard'])) return false;
+    $l = $r['leaderboard'];
+    // Descending XP, ranks sequential, no full surnames leaked.
+    for ($i = 1; $i < count($l); $i++) if ($l[$i]['xp'] > $l[$i - 1]['xp']) return false;
+    return $l[0]['rank'] === 1 && isset($l[0]['first']) && !isset($l[0]['fullName']);
+})());
+chk('duty leaderboard ranks volunteers by points (staff)', (function () {
+    $r = backend_dispatch('attendance.duty.leaderboard', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && count($r['leaderboard']) >= 1 && $r['leaderboard'][0]['rank'] === 1 && isset($r['leaderboard'][0]['points']);
+})());
+chk('duty leaderboard gated from non-staff', backend_dispatch('attendance.duty.leaderboard', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

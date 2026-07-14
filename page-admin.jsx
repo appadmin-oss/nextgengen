@@ -450,6 +450,9 @@ function AdminAttendanceDuty() {
   const vols = (data && data.volunteers) || [];
   const setTaker = async (centre, volunteerId) => { if (!volunteerId) return; setBusy(centre); try { const r = await NGGApi.admin.attendance.set(date, centre, volunteerId); setData(r); toast.success("Duty updated"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
   const closeRoll = async (centre, volunteerId) => { setBusy(centre); try { const r = await NGGApi.admin.attendance.complete(date, centre, volunteerId); toast.success(r.message || "Roll closed"); await load(date); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  const [board, setBoard] = React.useState(null);
+  const loadBoard = () => NGGApi.admin.attendance.leaderboard().then(r => setBoard(r.leaderboard || [])).catch(() => setBoard([]));
+  React.useEffect(() => { loadBoard(); }, []);
   return (
     <div className="admin-section">
       <div className="admin-section-head">
@@ -480,6 +483,16 @@ function AdminAttendanceDuty() {
           </tbody>
         </table></div>
       }
+      <div className="admin-fields-h" style={{ marginTop: 22, fontWeight: 700 }}>Service leaderboard</div>
+      <p className="admin-hint">Volunteers ranked by attendance-duty service points — recognise your most reliable stewards.</p>
+      {board === null ? <div className="dash-spinner"/> :
+        board.length === 0 ? <div className="admin-empty">No points logged yet.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>#</th><th>Volunteer</th><th>Level</th><th>Streak</th><th>Points</th></tr></thead>
+          <tbody>{board.map(v => (
+            <tr key={v.volunteerId}><td className="mono">{v.rank}</td><td>{v.fullName} <span className="chip" style={{ fontSize: 10 }}>{v.role}</span></td><td>L{v.level} · {v.levelName}</td><td>{v.streak}d</td><td><b>{v.points}</b></td></tr>
+          ))}</tbody>
+        </table></div>}
     </div>
   );
 }

@@ -156,8 +156,25 @@ function SummerPage({ setPage }) {
 /* =================== NGGC MEMBERS =================== */
 function ClubPage({ setPage }) {
   const [sortBy, setSortBy] = useState("rank"); // "rank" (by XP) | "name"
-  const top = [...MEMBERS].sort((a,b) => b.xp - a.xp);
-  const directory = sortBy === "rank" ? top : [...MEMBERS].sort((a,b) => a.first.localeCompare(b.first));
+  // Live cohort leaderboard (privacy-safe first name + initial); fall back to
+  // the demo roster when the API is empty (fresh install / marketing preview).
+  const [live, setLive] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    NGGApi.public.leaderboard(24).then(r => {
+      if (!alive) return;
+      const rows = (r && r.leaderboard) || [];
+      if (rows.length >= 3) setLive(rows.map(m => ({
+        id: m.memberId, first: m.first + (m.initial ? " " + m.initial : ""), community: m.centre || "NGG",
+        title: "Level " + m.level, xp: m.xp, level: m.level, streak: m.streak || 0, week: m.week || 1,
+        quote: "Showing up, leveling up.",
+      })));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const roster = live || MEMBERS;
+  const top = [...roster].sort((a,b) => b.xp - a.xp);
+  const directory = sortBy === "rank" ? top : [...roster].sort((a,b) => a.first.localeCompare(b.first));
   const featured = top[0];
 
   return (
