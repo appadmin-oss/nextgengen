@@ -129,9 +129,19 @@ chk('broadcast history lists past announcements', (function () {
 })());
 
 // ── TOTP ──
-$secret = backend_dispatch('auth.totpSetup', ['memberId' => 'NGG-2025-0099'])['secret'];
+$setup = backend_dispatch('auth.totpSetup', ['memberId' => 'NGG-2025-0099']);
+$secret = $setup['secret'];
 chk('totp accepts current code', backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => totp_code($secret, intdiv(time(), 30))])['ok'] === true);
 chk('totp rejects bad code', backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => '000000'])['ok'] === false);
+// Backup codes: setup mints 8; each works once at the gate, then is consumed.
+chk('totp setup mints 8 backup codes', is_array($setup['backupCodes']) && count($setup['backupCodes']) === 8);
+$bc = $setup['backupCodes'][0];
+chk('a backup code satisfies the 2FA gate', backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => $bc])['backupUsed'] === true);
+chk('a backup code cannot be reused', empty(backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => $bc])['ok']));
+// Super-admin recovery: reset a member's 2FA + password; non-super is refused.
+chk('super-admin can reset a member 2FA', !empty(backend_dispatch('admin.members.reset2fa', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0099'])['ok']) && (string)(db_row("SELECT totpSecret FROM members WHERE memberId='NGG-2025-0099'")['totpSecret'] ?? '') === '');
+chk('non-super cannot reset 2FA', backend_dispatch('admin.members.reset2fa', ['requesterId' => 'NGG-2025-0001', 'memberId' => 'NGG-2025-0099'])['error'] === 'forbidden');
+chk('super-admin can reset a member password', !empty(backend_dispatch('admin.members.resetPassword', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0001'])['ok']));
 
 // ── Posts / newsletter / apply ──
 chk('post publishes with slug', !empty(backend_dispatch('admin.posts.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'blog', 'title' => 'First Post', 'body' => 'Hi', 'status' => 'published']])['slug']));

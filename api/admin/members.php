@@ -19,11 +19,14 @@ if ($method === 'GET') {
 
 if ($method === 'POST') {
     $body = read_json_body();
-    $res = gs_call('admin.members.upsert', [
-        'requesterId' => $s['mid'],
-        'data'        => $body,
-        'ip'          => client_ip(),
-    ]);
+    $action = (string)($body['action'] ?? '');
+    if ($action === 'reset2fa') {
+        $res = gs_call('admin.members.reset2fa', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
+    } elseif ($action === 'resetPassword') {
+        $res = gs_call('admin.members.resetPassword', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
+    } else {
+        $res = gs_call('admin.members.upsert', ['requesterId' => $s['mid'], 'data' => $body, 'ip' => client_ip()]);
+    }
     if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
     unset($res['ok']);
     json_ok($res);

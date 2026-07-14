@@ -271,11 +271,18 @@ function auth_totp_setup(array $p): array {
     if (!is_admin_role($member['role'])) return ['ok' => false, 'error' => 'forbidden'];
 
     $secret = rand_base32(20);
-    db_update('members', ['totpSecret' => $secret, 'updatedAt' => now_iso()], ['id' => $member['id']]);
+    // Mint 8 one-time backup codes (shown once, stored hashed) so a lost
+    // authenticator is recoverable without an admin.
+    $codes = []; $hashes = [];
+    for ($i = 0; $i < 8; $i++) {
+        $c = strtoupper(rand_hex(2) . '-' . rand_hex(2)); // e.g. 3F9A-1C7B
+        $codes[] = $c; $hashes[] = password_hash(strtoupper(str_replace('-', '', $c)), PASSWORD_DEFAULT);
+    }
+    db_update('members', ['totpSecret' => $secret, 'totpBackup' => json_encode($hashes, JSON_UNESCAPED_SLASHES), 'updatedAt' => now_iso()], ['id' => $member['id']]);
     audit('admin.totp.setup', $member['memberId'], (string)$member['memberId'], [], (string)($p['ip'] ?? ''));
     $otpauth = 'otpauth://totp/NGG%20Admin:' . rawurlencode((string)$member['email'])
         . '?secret=' . $secret . '&issuer=NGG%20Admin&algorithm=SHA1&digits=6&period=30';
-    return ['ok' => true, 'secret' => $secret, 'otpauth' => $otpauth];
+    return ['ok' => true, 'secret' => $secret, 'otpauth' => $otpauth, 'backupCodes' => $codes];
 }
 
 function auth_totp_verify(array $p): array {
@@ -283,10 +290,48 @@ function auth_totp_verify(array $p): array {
     if (!$member || empty($member['totpSecret'])) return ['ok' => false, 'error' => 'no_totp'];
     if (!is_admin_role($member['role'])) return ['ok' => false, 'error' => 'forbidden'];
 
-    if (totp_verify((string)$member['totpSecret'], (string)($p['code'] ?? ''), 1)) {
+    $code = (string)($p['code'] ?? '');
+    if (totp_verify((string)$member['totpSecret'], $code, 1)) {
         audit('admin.totp.ok', $member['memberId'], (string)$member['memberId'], [], (string)($p['ip'] ?? ''));
         return ['ok' => true];
     }
+    // Fall back to a one-time backup code (case/format-insensitive), consumed on use.
+    $norm = strtoupper(preg_replace('/[^0-9a-z]/i', '', $code));
+    if (strlen($norm) >= 6) {
+        $hashes = json_decode((string)($member['totpBackup'] ?? ''), true) ?: [];
+        foreach ($hashes as $i => $h) {
+            if (is_string($h) && password_verify($norm, $h)) {
+                unset($hashes[$i]);
+                db_update('members', ['totpBackup' => json_encode(array_values($hashes), JSON_UNESCAPED_SLASHES), 'updatedAt' => now_iso()], ['id' => $member['id']]);
+                audit('admin.totp.backup_used', $member['memberId'], (string)$member['memberId'], ['remaining' => count($hashes)], (string)($p['ip'] ?? ''));
+                return ['ok' => true, 'backupUsed' => true, 'backupRemaining' => count($hashes)];
+            }
+        }
+    }
     audit('admin.totp.fail', $member['memberId'], (string)$member['memberId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => false, 'error' => 'invalid_code'];
+}
+
+/** Super-admin recovery: clear a member's TOTP + backup codes so they re-enrol
+ *  at next admin sign-in (the fix for a lost authenticator). */
+function admin_member_reset_2fa(array $p): array {
+    if (!admin_is_super($p)) return ['ok' => false, 'error' => 'forbidden'];
+    $target = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT id, role FROM members WHERE memberId = ? LIMIT 1', [$target]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    db_update('members', ['totpSecret' => '', 'totpBackup' => '', 'updatedAt' => now_iso()], ['id' => $m['id']]);
+    audit('admin.totp.reset', (string)($p['requesterId'] ?? ''), $target, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/** Super-admin recovery: clear a member's password so they sign in via the
+ *  emailed code/magic-link and can set a fresh password. */
+function admin_member_reset_password(array $p): array {
+    if (!admin_is_super($p)) return ['ok' => false, 'error' => 'forbidden'];
+    $target = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT id FROM members WHERE memberId = ? LIMIT 1', [$target]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    db_update('members', ['passwordHash' => '', 'updatedAt' => now_iso()], ['id' => $m['id']]);
+    audit('admin.password.reset', (string)($p['requesterId'] ?? ''), $target, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
 }

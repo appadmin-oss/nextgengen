@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 24;
+const NGG_SCHEMA_TARGET = 25;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -693,6 +693,12 @@ function db_migrate(PDO $db): void {
         // a centre or member type so the in-app feed matches the emailed list.
         24 => "
             ALTER TABLE notifications ADD COLUMN audience TEXT DEFAULT '';
+        ",
+
+        // 2FA backup codes (hashed, one-time) so a lost authenticator isn't a
+        // hard lockout.
+        25 => "
+            ALTER TABLE members ADD COLUMN totpBackup TEXT DEFAULT '';
         ",
     ];
 

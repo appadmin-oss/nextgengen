@@ -187,7 +187,8 @@ function AdminTotpGate({ onPass, member }) {
     e.preventDefault();
     setBusy(true); setErr("");
     try {
-      await NGGApi.auth.adminTotpVerify(code.replace(/\s/g, ""));
+      const r = await NGGApi.auth.adminTotpVerify(code.replace(/\s/g, ""));
+      if (r && r.backupUsed) toast.warn("Backup code used — " + (r.backupRemaining ?? 0) + " left. Re-enrol your authenticator soon.", "2FA");
       onPass();
     } catch (e) {
       setErr(e.code === "invalid_code" ? "Code didn't match. Try the latest one." : (e.code || e.message));
@@ -212,6 +213,14 @@ function AdminTotpGate({ onPass, member }) {
                     <div className="mono" style={{fontSize:10, color:"var(--ink-500)"}}>CAN'T SCAN? ENTER THIS KEY MANUALLY</div>
                     <code>{setupData.secret}</code>
                   </div>
+                  {Array.isArray(setupData.backupCodes) && setupData.backupCodes.length > 0 && (
+                    <div className="admin-gate-secret" style={{ marginTop: 10 }}>
+                      <div className="mono" style={{ fontSize: 10, color: "var(--crimson-500, #E4155F)" }}>BACKUP CODES — SAVE THESE NOW (shown once). Each works once if you lose your authenticator.</div>
+                      <div className="mono" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px", marginTop: 6, fontSize: 13 }}>
+                        {setupData.backupCodes.map((c, i) => <code key={i}>{c}</code>)}
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : <div className="dash-spinner"/>}
             </>
@@ -635,6 +644,21 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
               setRole confirms elevation and warns on self-demotion. */}
           {hasCap && hasCap("rbac") && (
             <FieldSelect label="Staff level (access)" value={d.role||"member"} onChange={setRole} options={ROLE_OPTS}/>
+          )}
+          {hasCap && hasCap("rbac") && d.memberId && (
+            <div className="admin-field">
+              <span className="admin-label">Account recovery</span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
+                  if (!confirm("Reset this member's 2FA? They'll re-enrol an authenticator at next admin sign-in.")) return;
+                  try { await NGGApi.admin.members.reset2fa(d.memberId); toast.success("2FA reset — they'll set it up again next sign-in.", "Done"); } catch (e) { toast.error(e.code || e.message); }
+                }}>Reset 2FA</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
+                  if (!confirm("Clear this member's password? They'll sign in via an emailed code and can set a new one.")) return;
+                  try { await NGGApi.admin.members.resetPassword(d.memberId); toast.success("Password cleared — they can sign in by email code.", "Done"); } catch (e) { toast.error(e.code || e.message); }
+                }}>Reset password</button>
+              </div>
+            </div>
           )}
         </div>
         <div className="admin-drawer-foot">

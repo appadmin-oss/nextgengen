@@ -198,6 +198,8 @@
       members: {
         list:   (q) => request('/admin/members.php' + qs(q || {})),
         upsert: (data) => request('/admin/members.php', { body: data }),
+        reset2fa: (memberId) => request('/admin/members.php', { body: { action: 'reset2fa', memberId } }),
+        resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
       },
       mentors: {
         list:   () => request('/admin/mentors.php'),
