@@ -64,6 +64,12 @@ function admin_members_list(array $p): array {
     $total = (int) db_row('SELECT COUNT(*) c FROM members' . $whereSql, $params)['c'];
     // Optional pagination. page is 1-based; pageSize is clamped. When absent we
     // still cap the result so an unbounded table can't be requested by default.
+    // Export mode: every matching row (bounded), no paging — for a full CSV.
+    if (!empty($p['all'])) {
+        $rows = db_all('SELECT * FROM members' . $whereSql . ' ORDER BY createdAt DESC LIMIT 5000', $params);
+        audit('admin.members.export', $g['requester']['memberId'], '', ['count' => count($rows)], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'total' => $total, 'members' => array_map('public_member', $rows)];
+    }
     $pageSize = min(200, max(1, (int)($p['pageSize'] ?? 50)));
     $page = max(1, (int)($p['page'] ?? 1));
     $offset = ($page - 1) * $pageSize;
@@ -394,6 +400,10 @@ function admin_audit_tail(array $p): array {
     // True total so the accountability record is never silently truncated —
     // the client pages through ALL matching entries instead of a hard cap.
     $total = (int) db_row("SELECT COUNT(*) c FROM audit_log a LEFT JOIN members m ON m.memberId = a.actorId" . $whereSql, $params)['c'];
+    if (!empty($p['all'])) {
+        $rows = db_all("SELECT a.at, a.actorId, a.event, a.subject, a.ip, m.fullName actorName, m.role actorRole FROM audit_log a LEFT JOIN members m ON m.memberId = a.actorId" . $whereSql . ' ORDER BY a.id DESC LIMIT 20000', $params);
+        return ['ok' => true, 'audit' => $rows, 'total' => $total];
+    }
     $pageSize = min(500, max(1, (int)($p['pageSize'] ?? 100)));
     $page = max(1, (int)($p['page'] ?? 1));
     $offset = ($page - 1) * $pageSize;

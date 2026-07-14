@@ -1421,6 +1421,17 @@ chk('donations ledger totals paid amounts (settings cap)', (function () {
     return !empty($r['ok']) && $r['totalPaid'] >= 5000 && count($r['donations']) >= 1;
 })());
 
+// ── Full-CSV export (all matching rows, not just the current page) ──
+chk('members export returns all rows, unpaged', (function () {
+    $paged = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'pageSize' => 2, 'page' => 1]);
+    $all = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1]);
+    return count($paged['members']) === 2 && count($all['members']) === $all['total'] && $all['total'] > 2;
+})());
+chk('audit export returns all rows, unpaged', (function () {
+    $all = backend_dispatch('admin.audit.tail', ['requesterId' => 'NGG-2025-0099', 'all' => 1]);
+    return !empty($all['ok']) && count($all['audit']) === $all['total'];
+})());
+
 // ── Leaderboards (member cohort + volunteer duty) ──
 chk('public leaderboard ranks members by XP, privacy-safe', (function () {
     $r = backend_dispatch('public.leaderboard', ['limit' => 10]);

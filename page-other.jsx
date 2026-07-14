@@ -122,7 +122,7 @@ function FeatureCard({ item, big = false, onPlay }) {
         <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, transparent 30%, rgba(12,20,50,0.78) 100%)"}}/>
         <div style={{position:"absolute", top:14, left:14, display:"flex", gap:8, alignItems:"center"}}>
           <span className={"chip " + kindColor}>{item.kind}</span>
-          <span className="chip" style={{background:"rgba(12,20,50,0.72)", color:"#fff", fontSize:10, letterSpacing:"0.12em"}}>SOON</span>
+          {!item.url && <span className="chip" style={{background:"rgba(12,20,50,0.72)", color:"#fff", fontSize:10, letterSpacing:"0.12em"}}>SOON</span>}
         </div>
         <div className="media-card-play" style={{position:"absolute", inset:0, display:"grid", placeItems:"center"}}>
           <div style={{width: big ? 84 : 64, height: big ? 84 : 64, borderRadius:"50%", background:"rgba(255,255,255,0.92)", display:"grid", placeItems:"center", color:"var(--navy-900)"}}>
@@ -149,6 +149,13 @@ function MediaModal({ item, onClose }) {
     <div className="media-modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true" aria-label={item.label}>
       <div className="media-modal-card">
         <button className="media-modal-close" onClick={onClose} aria-label="Close">✕</button>
+        {item.url ? (
+          <div className="media-modal-stage" style={{ padding: 0 }}>
+            {/\.(mp4|webm|ogg)(\?|$)/i.test(item.url)
+              ? <video src={item.url} controls autoPlay playsInline style={{ width: "100%", height: "100%", background: "#000" }}/>
+              : <iframe src={item.url} title={item.label} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ width: "100%", height: "100%", border: 0, background: "#000" }}/>}
+          </div>
+        ) : (
         <div className="media-modal-stage">
           <div className="media-modal-stage-inner">
             <div className="media-modal-mark" aria-hidden="true">▶</div>
@@ -157,13 +164,14 @@ function MediaModal({ item, onClose }) {
             </div>
             <div style={{fontFamily:"var(--font-display)", fontSize:28, fontWeight:700, lineHeight:1.15, marginTop:10, maxWidth:520}}>{item.label}</div>
             <p style={{color:"rgba(255,255,255,0.7)", marginTop:14, fontSize:14, maxWidth:480, lineHeight:1.5}}>
-              The full media player is coming soon — for now, this piece is screened live at our Saturday sessions. Drop your email below and we'll send you the link when it goes online.
+              This piece is screened live at our Saturday sessions — the recording isn't online yet. Drop your email and we'll send you the link when it goes live.
             </p>
             <div style={{maxWidth:480, marginTop:18}}>
               <NewsletterForm source={"media:" + item.kind}/>
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

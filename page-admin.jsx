@@ -371,6 +371,12 @@ function AdminHome({ setSection, hasCap, member }) {
         {can("people") && <AdminTile n={"+" + fmt(m.new30)} l="New · 30 days" onClick={() => setSection("members")}/>}
         {can("people") && <AdminTile n={fmt((o.mentors || {}).active)} l="Active mentors" onClick={() => setSection("mentors")}/>}
         {can("content") && <AdminTile n={fmt(an.journals)} l="Journal entries" onClick={() => setSection("anchor")}/>}
+        {can("content") && <AdminTile n={fmt(an.verified)} l="Missions verified" onClick={() => setSection("missions")}/>}
+        {can("content") && <AdminTile n={fmt(asg.published)} l="Assignments live" onClick={() => setSection("assignments")}/>}
+        {can("content") && <AdminTile n={fmt((o.events || {}).upcoming)} l="Upcoming events" onClick={() => setSection("events")}/>}
+        {can("people") && <AdminTile n={fmt(vol.active)} l="Active volunteers" onClick={() => setSection("volunteers")}/>}
+        {can("people") && m.suspended != null && <AdminTile n={fmt(m.suspended)} l="Suspended" onClick={() => setSection("members")}/>}
+        {can("inbox") && <AdminTile n={fmt((o.messages || {}).total)} l="Messages (all)" onClick={() => setSection("messages")}/>}
         {can("inbox") && <AdminTile n={fmt((o.newsletter || {}).subscribers)} l="Subscribers" onClick={() => setSection("newsletter")}/>}
       </div>
 
@@ -514,7 +520,14 @@ function AdminMembers() {
   const [editing, setEditing] = React.useState(null);
   const [viewing, setViewing] = React.useState(null);
 
-  const exportCsv = () => downloadCsv("members", (list || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, track: m.track || "" })));
+  const [exporting, setExporting] = React.useState(false);
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const r = await NGGApi.admin.members.list(Object.assign({}, filters, { all: 1 }));
+      downloadCsv("members", (r.members || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, track: m.track || "" })));
+    } catch (e) { toast.error(e.code || e.message, "Export failed"); } finally { setExporting(false); }
+  };
   // A failed fetch must surface an error + retry, never leave the spinner
   // hanging forever (previously there was no .catch here). Server-paged.
   const load = (p = page) => { setErr(""); return NGGApi.admin.members.list(Object.assign({}, filters, { page: p, pageSize: meta.pageSize })).then(r => { setList(r.members || []); setMeta({ total: r.total || 0, pageSize: r.pageSize || 50 }); }).catch(e => setErr(e.code || e.message || "load_failed")); };
@@ -532,7 +545,7 @@ function AdminMembers() {
       <div className="admin-section-head">
         <h2 className="admin-h2">Members {meta.total ? <span className="admin-count mono">{meta.total.toLocaleString()}</span> : null}</h2>
         <div className="admin-section-actions">
-          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!list || !list.length} title="Exports the current page">Export CSV</button>
+          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting || !meta.total} title="Exports all members matching the current filters">{exporting ? "Exporting…" : "Export CSV"}</button>
           <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
         </div>
       </div>
@@ -2199,7 +2212,12 @@ function AdminAudit() {
   const goPage = (p) => { setPage(p); setData(null); load(p); };
   const rows = data ? data.audit : null;
   const actors = (data && data.actors) || [];
-  const exportCsv = () => downloadCsv("audit-trail", (rows || []).map(r => ({ at: r.at, actor: r.actorName || r.actorId || "system", role: r.actorRole || "", event: r.event, subject: r.subject || "", ip: r.ip || "" })));
+  const exportCsv = async () => {
+    try {
+      const r = await NGGApi.admin.audit({ all: 1, actor: f.actor, event: f.event, staffOnly: f.staffOnly ? 1 : "" });
+      downloadCsv("audit-trail", (r.audit || []).map(x => ({ at: x.at, actor: x.actorName || x.actorId || "system", role: x.actorRole || "", event: x.event, subject: x.subject || "", ip: x.ip || "" })));
+    } catch (e) { toast.error(e.code || e.message, "Export failed"); }
+  };
 
   return (
     <div className="admin-section">
