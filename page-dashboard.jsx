@@ -397,12 +397,56 @@ function DashboardProfileModal({ m, onClose, onSaved }) {
               {pwBusy ? "Saving…" : pwDone ? "Saved ✓" : (hasPw ? "Change password" : "Set password")}
             </button>
           </div>
+
+          <DashboardSecurity/>
         </div>
         <div className="admin-drawer-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button type="button" className="btn btn-primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save profile"}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Active-device list with per-device + "sign out everywhere else" revoke.
+function DashboardSecurity() {
+  const [d, setD] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const load = () => NGGApi.member.security().then(setD).catch(() => setD({ sessions: [] }));
+  React.useEffect(() => { load(); }, []);
+  const shortUA = (ua) => {
+    if (!ua) return "Unknown device";
+    const os = /Android/i.test(ua) ? "Android" : /iPhone|iPad|iOS/i.test(ua) ? "iOS" : /Mac/i.test(ua) ? "macOS" : /Windows/i.test(ua) ? "Windows" : /Linux/i.test(ua) ? "Linux" : "Device";
+    const br = /Chrome/i.test(ua) ? "Chrome" : /Firefox/i.test(ua) ? "Firefox" : /Safari/i.test(ua) ? "Safari" : "browser";
+    return os + " · " + br;
+  };
+  const revoke = async (sid) => { setBusy(sid); try { await NGGApi.member.securityRevoke(sid); load(); } catch (e) { toast.error(humanError(e)); } finally { setBusy(""); } };
+  const revokeOthers = async () => {
+    if (!confirm("Sign out of every other device?")) return;
+    setBusy("others"); try { const r = await NGGApi.member.securityRevokeOthers(); toast.success("Signed out " + (r.revoked || 0) + " other device(s)."); load(); } catch (e) { toast.error(humanError(e)); } finally { setBusy(""); }
+  };
+  const sessions = d ? (d.sessions || []) : null;
+  return (
+    <div style={{ borderTop: "1px solid rgba(12,20,50,0.08)", margin: "6px 0 2px", paddingTop: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 15 }}>Devices &amp; security</div>
+      <div style={{ fontSize: 13, color: "var(--ink-500)", margin: "4px 0 12px" }}>Where you're signed in. Revoke any you don't recognise.</div>
+      {sessions === null ? <div className="dash-spinner"/> :
+        sessions.length === 0 ? <div style={{ fontSize: 13, color: "var(--ink-500)" }}>No active devices.</div> :
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {sessions.map(s => (
+            <div key={s.sid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontSize: 13, padding: "8px 10px", border: "1px solid rgba(12,20,50,0.08)", borderRadius: 8 }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{shortUA(s.device)} {s.current ? <span className="chip chip-lime" style={{ fontSize: 10 }}>this device</span> : null}</div>
+                <div className="mono" style={{ color: "var(--ink-500)", fontSize: 11 }}>{s.ip || "—"}{s.lastSeenAt ? " · last seen " + fmtDate(s.lastSeenAt) : ""}</div>
+              </div>
+              {!s.current && <button type="button" className="btn btn-ghost btn-sm" disabled={busy === s.sid} onClick={() => revoke(s.sid)}>{busy === s.sid ? "…" : "Sign out"}</button>}
+            </div>
+          ))}
+          {sessions.filter(s => !s.current).length > 0 && (
+            <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "others"} onClick={revokeOthers} style={{ alignSelf: "flex-start", marginTop: 4 }}>{busy === "others" ? "Signing out…" : "Sign out everywhere else"}</button>
+          )}
+        </div>}
     </div>
   );
 }

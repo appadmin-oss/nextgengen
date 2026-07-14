@@ -143,6 +143,29 @@ chk('super-admin can reset a member 2FA', !empty(backend_dispatch('admin.members
 chk('non-super cannot reset 2FA', backend_dispatch('admin.members.reset2fa', ['requesterId' => 'NGG-2025-0001', 'memberId' => 'NGG-2025-0099'])['error'] === 'forbidden');
 chk('super-admin can reset a member password', !empty(backend_dispatch('admin.members.resetPassword', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0001'])['ok']));
 
+// ── Device sessions (Me → Security): list, per-device revoke, sign-out-everywhere ──
+db_insert('device_sessions', ['sid' => 'SID-CUR', 'memberId' => 'NGG-2025-0001', 'ip' => '1.1.1.1', 'userAgent' => 'iPhone Safari', 'uaHash' => 'h1', 'createdAt' => now_iso(), 'lastSeenAt' => now_iso(), 'revokedAt' => '']);
+db_insert('device_sessions', ['sid' => 'SID-OTH', 'memberId' => 'NGG-2025-0001', 'ip' => '2.2.2.2', 'userAgent' => 'Windows Chrome', 'uaHash' => 'h2', 'createdAt' => now_iso(), 'lastSeenAt' => now_iso(), 'revokedAt' => '']);
+chk('security lists active devices, flags the current one', (function () {
+    $r = backend_dispatch('member.security', ['requesterId' => 'NGG-2025-0001', 'sid' => 'SID-CUR']);
+    $cur = array_filter($r['sessions'], fn($s) => $s['current']);
+    return count($r['sessions']) === 2 && count($cur) === 1 && array_values($cur)[0]['sid'] === 'SID-CUR';
+})());
+chk('revoke one device removes it from the list', (function () {
+    backend_dispatch('member.sessions.revoke', ['requesterId' => 'NGG-2025-0001', 'sid' => 'SID-CUR', 'targetSid' => 'SID-OTH']);
+    return count(backend_dispatch('member.security', ['requesterId' => 'NGG-2025-0001', 'sid' => 'SID-CUR'])['sessions']) === 1;
+})());
+chk('sign-out-everywhere keeps only the current session', (function () {
+    db_insert('device_sessions', ['sid' => 'SID-X', 'memberId' => 'NGG-2025-0001', 'ip' => '3.3.3.3', 'userAgent' => 'x', 'uaHash' => 'h3', 'createdAt' => now_iso(), 'lastSeenAt' => now_iso(), 'revokedAt' => '']);
+    backend_dispatch('member.sessions.revoke', ['requesterId' => 'NGG-2025-0001', 'sid' => 'SID-CUR', 'others' => true]);
+    $r = backend_dispatch('member.security', ['requesterId' => 'NGG-2025-0001', 'sid' => 'SID-CUR']);
+    return count($r['sessions']) === 1 && $r['sessions'][0]['sid'] === 'SID-CUR';
+})());
+chk('logout revokes the current device session server-side', (function () {
+    backend_dispatch('auth.logout', ['memberId' => 'NGG-2025-0001', 'sid' => 'SID-CUR']);
+    return !empty(db_row("SELECT revokedAt FROM device_sessions WHERE sid='SID-CUR'")['revokedAt']);
+})());
+
 // ── Posts / newsletter / apply ──
 chk('post publishes with slug', !empty(backend_dispatch('admin.posts.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'blog', 'title' => 'First Post', 'body' => 'Hi', 'status' => 'published']])['slug']));
 chk('public reads published post', count(backend_dispatch('public.posts', ['kind' => 'blog'])['posts']) === 1);

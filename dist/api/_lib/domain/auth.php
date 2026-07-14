@@ -261,6 +261,9 @@ function auth_me(array $p): array {
 }
 
 function auth_logout(array $p): array {
+    // Revoke this device's server-side session so the sid can't be reused.
+    $sid = (string)($p['sid'] ?? '');
+    if ($sid !== '') { try { db_update('device_sessions', ['revokedAt' => now_iso()], ['sid' => $sid]); } catch (Throwable $e) {} }
     audit('logout', (string)($p['memberId'] ?? '') ?: null, (string)($p['memberId'] ?? ''), [], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
