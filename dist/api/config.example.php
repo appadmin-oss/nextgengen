@@ -63,14 +63,18 @@ return [
             'user'   => '',
             'pass'   => '',
         ],
-        // Resend HTTPS fallback (https://resend.com). STRONGLY recommended on
-        // shared hosting: when the host blocks outbound SMTP ports AND silently
-        // drops PHP mail() (the usual reason "emails don't send"), Resend still
-        // works because it's a plain HTTPS POST. Delivery order is:
-        //   SMTP (if host set) → Resend (if key set) → PHP mail().
-        // Free tier = 3,000 emails/month. Set from_email to a domain verified
-        // in your Resend dashboard (or use onboarding@resend.dev for testing).
+        // Resend HTTPS fallback (https://resend.com). Good on shared hosting
+        // when the host blocks outbound SMTP ports AND silently drops PHP
+        // mail(): Resend is a plain HTTPS POST. Free tier = 3,000/month; set
+        // from_email to a domain verified in your Resend dashboard (or use
+        // onboarding@resend.dev for testing).
         'resend_key' => '',            // e.g. 're_xxxxxxxx' — empty = disabled
+
+        // Full delivery order: SMTP (if host set) → Apps Script MailApp (if
+        // apps_script_url + shared_secret set) → Resend (if key set) → mail().
+        // The Apps Script path is the most reliable on shared hosting — see the
+        // Apps Script block below. Set this to false to skip it.
+        'apps_script' => true,
     ],
 
     // -----------------------------------------------------------------------
@@ -93,8 +97,18 @@ return [
     // pushes DB snapshots here on a cron so admins keep a familiar spreadsheet
     // view. Not on the read path — the database above is authoritative. Leave
     // `apps_script_url` empty to disable the mirror entirely.
+    //
+    // EMAIL VIA APPS SCRIPT (recommended on shared hosting): the same Web App
+    // also relays transactional email through Google's MailApp — the most
+    // reliable path when the host blocks SMTP and drops mail() (it's how the
+    // STS CEO site delivers). To enable: deploy apps-script/Code.gs as a Web
+    // App (Execute as: Me, Access: Anyone), accept the Mail scope on first run,
+    // set SHARED_SECRET in its Script Properties to match `shared_secret`
+    // below, and put the /exec URL in `apps_script_url`. send_mail() then tries
+    // SMTP → Apps Script → Resend → mail(). Set mail.apps_script = false to
+    // opt out (e.g. keep the mirror but send email another way).
     // -----------------------------------------------------------------------
-    'apps_script_url' => '',   // Apps Script Web App URL for the export sink (…/exec)
+    'apps_script_url' => '',   // Apps Script Web App URL (…/exec) — mirror + email relay
 
     // -----------------------------------------------------------------------
     // Donations (OPTIONAL) — Paystack. Leave `secret` empty to hide the donate

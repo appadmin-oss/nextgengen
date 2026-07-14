@@ -22,6 +22,12 @@ function doPost(e) {
     if (!verifySignature_(raw, sig)) return json_({ ok: false, error: 'bad_signature' });
 
     const payload = JSON.parse(raw);
+
+    // Transactional email — Google relays it from the authenticated account,
+    // so it delivers where shared-host SMTP/mail() fail (this is how the STS
+    // CEO site sends). Needs the Mail scope (accepted on first run/deploy).
+    if (String(payload.op) === 'sendMail') return handleSendMail_(payload);
+
     if (String(payload.op) !== 'mirror.push') return json_({ ok: false, error: 'unknown_op' });
 
     const tables = payload.tables || {};
@@ -58,6 +64,26 @@ function doPost(e) {
 
 function doGet() {
   return json_({ ok: true, service: 'ngg-sheets-mirror' });
+}
+
+/**
+ * Send one HTML email via Google's MailApp. The signature is already verified
+ * by doPost. `from` is fixed to the account running the script (Google won't
+ * spoof arbitrary senders); we set the display name + reply-to instead.
+ */
+function handleSendMail_(p) {
+  const to = String((p && p.to) || '').trim();
+  if (!to) return json_({ ok: false, error: 'no_recipient' });
+  const opts = {
+    to: to,
+    subject: String((p && p.subject) || ''),
+    htmlBody: String((p && p.html) || ''),
+    name: String((p && p.fromName) || 'Next Generation Genius'),
+  };
+  if (p && p.text) opts.body = String(p.text);
+  if (p && p.replyTo) opts.replyTo = String(p.replyTo);
+  MailApp.sendEmail(opts);
+  return json_({ ok: true, sent: 1, at: new Date().toISOString() });
 }
 
 function prop_(k) {

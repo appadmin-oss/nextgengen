@@ -284,7 +284,9 @@ function admin_mail_test(array $p): array {
     $fromDomain = function_exists('mail_domain_of') ? mail_domain_of((string)$from['email']) : '';
     $hints = [];
     if ($mode === 'php_mail') {
-        $hints[] = 'No SMTP or Resend configured — using PHP mail(), which most shared hosts silently drop. Set mail.smtp.host/user/pass, or (easiest on locked-down hosts) mail.resend_key in api/config.php.';
+        $hints[] = 'No SMTP, Apps Script or Resend configured — using PHP mail(), which most shared hosts silently drop. Easiest reliable fix: deploy apps-script/Code.gs and set apps_script_url (Google relays the mail), or set mail.resend_key, in api/config.php.';
+    } elseif ($mode === 'apps_script') {
+        $hints[] = 'Sending via the Google Apps Script Web App (MailApp). Make sure the script was deployed with the Mail scope accepted and its SHARED_SECRET matches api/config.php. Google sends from the account that owns the script.';
     } elseif ($mode === 'resend') {
         $hints[] = 'Using the Resend HTTPS API. Make sure mail.from_email is on a domain you have verified in the Resend dashboard, or delivery will be rejected.';
     }

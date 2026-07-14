@@ -64,7 +64,25 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
         }
     }
 
-    // Path 2 — Resend HTTPS API. Shared hosts that block SMTP ports and drop
+    // Path 2 — Google Apps Script MailApp. If an Apps Script Web App is wired
+    // up (apps_script_url + shared_secret — the same one the Sheets mirror
+    // uses), Google sends the mail from the authenticated account. This is the
+    // most reliable path on shared hosting and is exactly how the STS CEO site
+    // delivers: no SMTP ports, no SPF/DKIM setup, no third-party key.
+    $asUrl = trim((string)($CONFIG['apps_script_url'] ?? ''));
+    $asSecret = (string)($CONFIG['shared_secret'] ?? '');
+    if (($mail['apps_script'] ?? true) !== false
+        && $asUrl !== '' && $asSecret !== '' && $asSecret !== 'REPLACE_ME_64_HEX_BYTES') {
+        try {
+            if (appsscript_send($asUrl, $asSecret, $from, $to, $subject, $html, $text)) return true;
+            $errors[] = 'apps_script: send failed';
+        } catch (Throwable $e) {
+            $errors[] = 'apps_script: ' . $e->getMessage();
+            error_log('[send_mail/apps_script] ' . $e->getMessage());
+        }
+    }
+
+    // Path 3 — Resend HTTPS API. Shared hosts that block SMTP ports and drop
     // mail() almost always still allow outbound HTTPS, so this is the most
     // reliable cross-host fallback. Free tier at https://resend.com — one key.
     $resendKey = trim((string)($mail['resend_key'] ?? ''));
@@ -78,7 +96,7 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
         }
     }
 
-    // Path 3 — PHP mail() last resort (often silently dropped on shared hosts).
+    // Path 4 — PHP mail() last resort (often silently dropped on shared hosts).
     try {
         if (mail_native($from, $to, $subject, $html, $text)) return true;
         $errors[] = 'php_mail(): rejected or unavailable';
@@ -99,9 +117,55 @@ function mail_mode(): string {
     global $CONFIG;
     $mail = $CONFIG['mail'] ?? [];
     if (!empty($mail['smtp']['host'] ?? '')) return 'smtp';
+    $asUrl = trim((string)($CONFIG['apps_script_url'] ?? ''));
+    $asSecret = (string)($CONFIG['shared_secret'] ?? '');
+    if (($mail['apps_script'] ?? true) !== false
+        && $asUrl !== '' && $asSecret !== '' && $asSecret !== 'REPLACE_ME_64_HEX_BYTES') return 'apps_script';
     $k = trim((string)($mail['resend_key'] ?? ''));
     if ($k !== '' && $k !== 'YOUR_RESEND_KEY_HERE') return 'resend';
     return 'php_mail';
+}
+
+/**
+ * Send via a Google Apps Script Web App (MailApp) — the same HMAC-signed
+ * endpoint the Sheets mirror uses. Google relays the message from the
+ * authenticated account, so it delivers on hosts that block SMTP and drop
+ * mail(). Posts {op:'sendMail', ...}; Apps Script /exec 302-redirects to
+ * googleusercontent, so redirects must be followed.
+ */
+function appsscript_send(string $url, string $secret, array $from, string $to, string $subject, string $html, string $text): bool {
+    if (!function_exists('curl_init')) throw new RuntimeException('curl_unavailable');
+    $body = json_encode([
+        'op'       => 'sendMail',
+        'to'       => $to,
+        'subject'  => $subject,
+        'html'     => $html,
+        'text'     => $text,
+        'fromName' => $from['name'] ?? '',
+        'replyTo'  => $from['replyTo'] ?? '',
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $sig = hash_hmac('sha256', $body, $secret);
+
+    $ch = curl_init($url . (strpos($url, '?') === false ? '?' : '&') . 'sig=' . $sig);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $body,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $raw  = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false) throw new RuntimeException('curl: ' . $cerr);
+    $j = json_decode((string)$raw, true);
+    if (is_array($j) && !empty($j['ok'])) return true;
+    throw new RuntimeException('HTTP ' . $code . ' · ' . substr((string)$raw, 0, 160));
 }
 
 /**

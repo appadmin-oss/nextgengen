@@ -583,6 +583,17 @@ chk('gateway now offers password after reset', backend_dispatch('auth.gateway', 
 chk('reset challenge is single-use (consumed code no longer matches)', backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $rsRow['otp'], 'password' => 'anotherpass12'])['error'] === 'invalid');
 chk('reset token replay after use → already_used', backend_dispatch('auth.resetConfirm', ['token' => $rsRow['token'], 'password' => 'anotherpass12'])['error'] === 'already_used');
 chk('reset request for an unknown account still looks ok (no oracle)', !empty(backend_dispatch('auth.resetRequest', ['identifier' => 'ghost-nobody@example.com'])['ok']));
+
+// ── Mail transport selection (Apps Script is preferred once wired, like CEO) ──
+chk('mail_mode is php_mail with nothing configured', mail_mode() === 'php_mail');
+$GLOBALS['CONFIG']['apps_script_url'] = 'https://script.google.com/macros/s/x/exec';
+$GLOBALS['CONFIG']['shared_secret'] = 'deadbeefdeadbeef';
+chk('mail_mode picks apps_script when the Web App is wired', mail_mode() === 'apps_script');
+$GLOBALS['CONFIG']['mail']['apps_script'] = false;
+chk('mail_mode honours apps_script=false opt-out', mail_mode() === 'php_mail');
+$GLOBALS['CONFIG']['apps_script_url'] = '';
+$GLOBALS['CONFIG']['shared_secret'] = '';
+unset($GLOBALS['CONFIG']['mail']['apps_script']);
 // Unknown identifier looks identical (ok + delivery=true) — no account oracle.
 chk('auth.request hides unknown accounts', (function () { $r = backend_dispatch('auth.request', ['identifier' => 'ghost@example.com']); return !empty($r['ok']) && $r['delivery'] === true && !empty($r['masked']); })());
 
