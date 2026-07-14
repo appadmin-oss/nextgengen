@@ -192,6 +192,70 @@ function public_application_status(array $p): array {
     return ['ok' => true, 'type' => $type, 'status' => $st, 'label' => $labels[$st] ?? ucfirst($st), 'submittedAt' => $row['createdAt']];
 }
 
+/* ── Donations (Paystack — config-gated, no-op when unconfigured) ─────────── */
+
+function paystack_secret(): string {
+    return trim((string)($GLOBALS['CONFIG']['paystack']['secret'] ?? ''));
+}
+
+/** HTTP to Paystack (mockable in tests). Returns decoded body or ['ok'=>false]. */
+function paystack_http(string $method, string $path, array $body = []): array {
+    if (isset($GLOBALS['__paystack_mock']) && is_callable($GLOBALS['__paystack_mock'])) {
+        return ($GLOBALS['__paystack_mock'])($method, $path, $body);
+    }
+    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'no_curl'];
+    $ch = curl_init('https://api.paystack.co' . $path);
+    $opts = [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 6,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . paystack_secret(), 'Content-Type: application/json'],
+    ];
+    if ($method === 'POST') { $opts[CURLOPT_POST] = true; $opts[CURLOPT_POSTFIELDS] = json_encode($body, JSON_UNESCAPED_SLASHES); }
+    curl_setopt_array($ch, $opts);
+    $out = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    if ($out === false) return ['ok' => false, 'error' => 'network'];
+    $j = json_decode((string)$out, true);
+    return is_array($j) ? $j : ['ok' => false, 'error' => 'bad_response'];
+}
+
+/** Start a donation → returns the Paystack checkout URL. */
+function public_donate_init(array $p): array {
+    if (paystack_secret() === '') return ['ok' => false, 'error' => 'donations_unavailable'];
+    $email = strtolower(trim((string)($p['email'] ?? '')));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
+    $naira = (int)($p['amount'] ?? 0);
+    if ($naira < 100 || $naira > 10000000) return ['ok' => false, 'error' => 'bad_amount'];
+    $name = substr(trim((string)($p['name'] ?? '')), 0, 120);
+    $reference = 'NGGD-' . strtoupper(rand_hex(8));
+    db_insert('donations', ['reference' => $reference, 'email' => $email, 'name' => $name, 'amount' => $naira, 'currency' => 'NGN', 'status' => 'pending', 'message' => substr((string)($p['message'] ?? ''), 0, 500), 'createdAt' => now_iso()]);
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $r = paystack_http('POST', '/transaction/initialize', ['email' => $email, 'amount' => $naira * 100, 'reference' => $reference, 'callback_url' => $origin . '/api/public/donate-callback.php']);
+    if (empty($r['status']) || empty($r['data']['authorization_url'])) return ['ok' => false, 'error' => 'init_failed'];
+    audit('donation.init', null, $reference, ['amount' => $naira], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'authorizationUrl' => (string)$r['data']['authorization_url'], 'reference' => $reference];
+}
+
+/** Verify a donation by reference (called on callback + webhook). */
+function donation_verify(string $reference): array {
+    $d = db_row('SELECT * FROM donations WHERE reference = ? LIMIT 1', [$reference]);
+    if (!$d) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$d['status'] === 'paid') return ['ok' => true, 'status' => 'paid', 'already' => true];
+    $r = paystack_http('GET', '/transaction/verify/' . rawurlencode($reference));
+    $paid = !empty($r['status']) && (($r['data']['status'] ?? '') === 'success');
+    if ($paid) {
+        db_update('donations', ['status' => 'paid', 'channel' => (string)($r['data']['channel'] ?? ''), 'paidAt' => now_iso()], ['id' => $d['id']]);
+        event_emit('donation.paid', ['ref' => $reference, 'amount' => (int)$d['amount'], 'name' => (string)$d['name']]);
+        return ['ok' => true, 'status' => 'paid'];
+    }
+    return ['ok' => true, 'status' => (string)$d['status']];
+}
+
+function admin_donations_list(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $rows = db_all('SELECT reference, email, name, amount, currency, status, channel, createdAt, paidAt FROM donations ORDER BY id DESC LIMIT 500');
+    $total = (int)(db_row("SELECT COALESCE(SUM(amount),0) s FROM donations WHERE status='paid'")['s'] ?? 0);
+    return ['ok' => true, 'donations' => $rows, 'totalPaid' => $total, 'enabled' => paystack_secret() !== ''];
+}
+
 /* ── Peer interaction: emoji reactions + moderated comments on posts ───────── */
 
 const POST_REACTIONS = ['👏', '❤️', '🔥', '💡', '🎉'];

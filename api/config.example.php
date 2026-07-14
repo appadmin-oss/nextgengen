@@ -89,6 +89,17 @@ return [
     'apps_script_url' => '',   // Apps Script Web App URL for the export sink (…/exec)
 
     // -----------------------------------------------------------------------
+    // Donations (OPTIONAL) — Paystack. Leave `secret` empty to hide the donate
+    // flow entirely (public.donate.init returns donations_unavailable). Set the
+    // Paystack webhook URL to  <app_origin>/api/hooks/paystack.php  and expose
+    // the public key to the donate form via `public`.
+    // -----------------------------------------------------------------------
+    'paystack' => [
+        'secret' => '',   // sk_live_… (or sk_test_…)
+        'public' => '',   // pk_live_… (shown to the browser; safe)
+    ],
+
+    // -----------------------------------------------------------------------
     // AI layer (OPTIONAL) — Summer School coordinator insights. Entirely opt-in:
     // with no key set the dashboard shows a deterministic rule-based summary and
     // makes no external call. Add a free-tier key to enable AI narratives.

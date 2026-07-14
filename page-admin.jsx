@@ -69,6 +69,7 @@ const ADMIN_SECTIONS = [
   { id: "access",      group: "System",   label: "Access & roles", title: "Access & roles",    icon: "⚿", cap: "rbac" },
   { id: "audit",       group: "System",   label: "Audit trail",  title: "Audit log",           icon: "⌗", cap: "rbac" },
   { id: "integrations",group: "System",   label: "Integrations", title: "Integrations & delivery", icon: "⇄", cap: "settings" },
+  { id: "donations",   group: "System",   label: "Donations",    title: "Donations",           icon: "❤", cap: "settings" },
   { id: "settings",    group: "System",   label: "Settings",     title: "Settings",            icon: "⚙", cap: "settings" },
 ];
 // Which capability each admin section needs (null = any staff) — derived.
@@ -150,6 +151,7 @@ function AdminPage({ setPage }) {
           {view === "behaviour" && <AdminBehaviour/>}
           {view === "integrations" && <AdminIntegrations/>}
           {view === "comments" && <AdminComments/>}
+          {view === "donations" && <AdminDonations/>}
         </main>
       </div>
     </div>
@@ -672,12 +674,19 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
                   if (!confirm("Clear this member's password? They'll sign in via an emailed code and can set a new one.")) return;
                   try { await NGGApi.admin.members.resetPassword(d.memberId); toast.success("Password cleared — they can sign in by email code.", "Done"); } catch (e) { toast.error(e.code || e.message); }
                 }}>Reset password</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
+                  if (!confirm("View the app as this member? You'll be signed in as them until you stop impersonating.")) return;
+                  try { await NGGApi.admin.members.impersonate(d.memberId); window.location.href = "/dashboard"; } catch (e) { toast.error(e.code || e.message); }
+                }}>View as member</button>
                 <button type="button" className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={async () => {
                   if (!confirm("Delete & anonymise this member? Their PII and journal are scrubbed and sessions revoked. This cannot be undone.")) return;
                   try { await NGGApi.admin.members.remove(d.memberId); toast.success("Member deleted & anonymised.", "Done"); close && close(); } catch (e) { toast.error(e.code || e.message); }
                 }}>Delete member</button>
               </div>
             </div>
+          )}
+          {hasCap && hasCap("rbac") && d.memberId && d.role && d.role !== "member" && (
+            <MemberCapsEditor member={d}/>
           )}
         </div>
         <div className="admin-drawer-foot">
@@ -1910,6 +1919,63 @@ function AdminAccess() {
           </table>
         </div>
       }
+    </div>
+  );
+}
+
+// Per-member capability editor (super only): grant caps beyond the role.
+const ALL_CAPS = ["content", "people", "inbox", "settings", "rbac", "summer", "club", "audit"];
+function MemberCapsEditor({ member }) {
+  const roleCaps = ROLE_CAPS[member.role] || [];
+  const [extra, setExtra] = React.useState(() => new Set(member.capsExtra || []));
+  const [busy, setBusy] = React.useState(false);
+  const toggle = (c) => setExtra(s => { const n = new Set(s); n.has(c) ? n.delete(c) : n.add(c); return n; });
+  const save = async () => {
+    setBusy(true);
+    try { await NGGApi.admin.members.setCaps(member.memberId, Array.from(extra)); toast.success("Capabilities updated.", "Access"); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  return (
+    <div className="admin-field">
+      <span className="admin-label">Extra capabilities (beyond the {member.role} role)</span>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 8px" }}>
+        {ALL_CAPS.map(c => {
+          const inRole = roleCaps.includes(c);
+          return <label key={c} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, opacity: inRole ? 0.5 : 1 }}>
+            <input type="checkbox" checked={inRole || extra.has(c)} disabled={inRole} onChange={() => toggle(c)}/> {c}
+          </label>;
+        })}
+      </div>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save capabilities"}</button>
+    </div>
+  );
+}
+
+// ============================================================================
+// Donations ledger (Paystack)
+// ============================================================================
+
+function AdminDonations() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.donations().then(setD).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  const naira = (n) => "₦" + (n || 0).toLocaleString();
+  const rows = d ? d.donations : null;
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Donations {d ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {naira(d.totalPaid)} raised</span> : null}</h2>
+        <button className="btn btn-ghost btn-sm" disabled={!rows || !rows.length} onClick={() => downloadCsv("donations", rows)}>Export CSV</button>
+      </div>
+      {d && !d.enabled && <p className="admin-hint" style={{ color: "var(--amber-800, #9a3412)" }}>⚠ Donations are off — set <span className="mono">paystack.secret</span> in api/config.php and point the Paystack webhook at <span className="mono">/api/hooks/paystack.php</span>.</p>}
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        rows === null ? <div className="dash-spinner"/> :
+        rows.length === 0 ? <div className="admin-empty">No donations yet.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Reference</th><th>Donor</th><th>Amount</th><th>Status</th><th>When</th></tr></thead>
+          <tbody>{rows.map(r => <tr key={r.reference}><td className="mono">{r.reference}</td><td>{r.name || r.email}</td><td>{naira(r.amount)}</td><td><span className={"chip status-" + (r.status === "paid" ? "published" : "draft")}>{r.status}</span></td><td className="mono">{fmtDate(r.paidAt || r.createdAt)}</td></tr>)}</tbody>
+        </table></div>}
     </div>
   );
 }

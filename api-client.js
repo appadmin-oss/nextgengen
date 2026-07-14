@@ -157,6 +157,7 @@
       stats:      () => request('/public/stats.php'),
       leaderboard: (limit) => request('/public/leaderboard.php' + qs(limit ? { limit } : {})),
       applicationStatus: (ref, email) => request('/public/application-status.php', { body: { ref, email } }),
+      donate: (data) => request('/public/donate.php', { body: data }),
       postEngagement: (post) => request('/public/engagement.php' + qs({ post })),
       events:     () => request('/public/events.php'),
       posts:      (kind, tag) => request('/public/posts.php' + qs({ kind, tag })),
@@ -209,6 +210,9 @@
         reset2fa: (memberId) => request('/admin/members.php', { body: { action: 'reset2fa', memberId } }),
         resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
         remove: (memberId) => request('/admin/members.php', { body: { action: 'delete', memberId } }),
+        setCaps: (memberId, caps) => request('/admin/members.php', { body: { action: 'setCaps', memberId, caps } }),
+        impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),
+        stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),
       },
       mentors: {
         list:   () => request('/admin/mentors.php'),
@@ -267,6 +271,7 @@
       },
       newsletter:   () => request('/admin/newsletter.php'),
       newsletterSend: (subject, body) => request('/admin/newsletter.php', { body: { subject, body } }),
+      donations:    () => request('/admin/donations.php'),
       comments:     (status) => request('/admin/comments.php' + qs({ status: status || 'pending' })),
       commentModerate: (commentId, act) => request('/admin/comments.php', { body: { commentId, do: act } }),
       summer: {

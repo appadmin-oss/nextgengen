@@ -1393,6 +1393,34 @@ chk('approving a comment makes it public', (function () use ($peerPost) {
 })());
 chk('comment moderation gated to content cap', backend_dispatch('admin.comments.list', ['requesterId' => 'NGG-2025-0555'])['error'] === 'forbidden');
 
+// ── RBAC: per-member extra capabilities ──
+db_insert('members', ['memberId' => 'NGG-2025-0710', 'fullName' => 'Extra Editor', 'email' => 'ee@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+chk('editor lacks the summer cap by default', backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0710'])['error'] === 'forbidden');
+chk('super grants an extra capability', !empty(backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0710', 'caps' => ['summer']])['ok']));
+chk('the extra cap now passes the gate', !empty(backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0710'])['ok']));
+chk('extra caps cannot be granted to a plain member', backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0555', 'caps' => ['content']])['error'] === 'not_staff');
+chk('only super can edit capabilities', backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0710', 'memberId' => 'NGG-2025-0710', 'caps' => ['rbac']])['error'] === 'forbidden');
+
+// ── Donations (Paystack, mocked) ──
+chk('donations are unavailable without a Paystack secret', backend_dispatch('public.donate.init', ['email' => 'giver@example.com', 'amount' => 5000])['error'] === 'donations_unavailable');
+chk('donation init returns a checkout URL and banks a pending row', (function () {
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) {
+        if (strpos($path, '/transaction/initialize') === 0) return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/xyz', 'reference' => $body['reference']]];
+        return ['status' => true, 'data' => ['status' => 'success', 'channel' => 'card']];
+    };
+    $r = backend_dispatch('public.donate.init', ['email' => 'giver@example.com', 'name' => 'Ada', 'amount' => 5000]);
+    $ok = !empty($r['ok']) && strpos($r['authorizationUrl'], 'paystack.com') !== false && db_row('SELECT status FROM donations WHERE reference = ?', [$r['reference']])['status'] === 'pending';
+    $v = donation_verify($r['reference']);
+    $paid = ($v['status'] ?? '') === 'paid' && db_row('SELECT status FROM donations WHERE reference = ?', [$r['reference']])['status'] === 'paid';
+    unset($GLOBALS['__paystack_mock'], $GLOBALS['CONFIG']['paystack']);
+    return $ok && $paid;
+})());
+chk('donations ledger totals paid amounts (settings cap)', (function () {
+    $r = backend_dispatch('admin.donations.list', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && $r['totalPaid'] >= 5000 && count($r['donations']) >= 1;
+})());
+
 // ── Leaderboards (member cohort + volunteer duty) ──
 chk('public leaderboard ranks members by XP, privacy-safe', (function () {
     $r = backend_dispatch('public.leaderboard', ['limit' => 10]);

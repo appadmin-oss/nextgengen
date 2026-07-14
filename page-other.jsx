@@ -901,10 +901,47 @@ function ContactPage({ setPage }) {
                 <button className="btn btn-gold" onClick={() => setPage("join")}>Start application →</button>
               </div>
               <ApplicationStatusLookup/>
+              <DonateWidget/>
             </div>
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+/* Donate — Paystack checkout (hides itself when donations aren't configured). */
+function DonateWidget() {
+  const [d, setD] = useState({ amount: "5000", name: "", email: "" });
+  const [busy, setBusy] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
+  const give = async (e) => {
+    e && e.preventDefault();
+    if (!emailOk(d.email) || (parseInt(d.amount, 10) || 0) < 100) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.public.donate({ email: d.email.trim(), name: d.name.trim(), amount: parseInt(d.amount, 10) });
+      if (r.authorizationUrl) window.location.href = r.authorizationUrl;
+    } catch (ex) {
+      if ((ex.code || ex.message) === "donations_unavailable") { setHidden(true); return; }
+      if (typeof toast !== "undefined") toast.error("Couldn't start the donation. Please try again.", "Donate");
+    } finally { setBusy(false); }
+  };
+  if (hidden) return null;
+  return (
+    <div className="card" style={{ padding: 24, background: "var(--navy-900)", color: "#fff" }}>
+      <div className="eyebrow" style={{ color: "var(--gold-400)" }}>SUPPORT THE MISSION</div>
+      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "12px 0 14px", lineHeight: 1.5 }}>Back the next generation — every naira funds a Saturday.</p>
+      <form onSubmit={give} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          {["2000", "5000", "10000"].map(a => <button type="button" key={a} onClick={() => setD(o => ({ ...o, amount: a }))} className={"btn btn-sm " + (d.amount === a ? "btn-gold" : "btn-on-dark-ghost")}>₦{Number(a).toLocaleString()}</button>)}
+        </div>
+        <input className="admin-input" type="number" min="100" value={d.amount} onChange={e => setD(o => ({ ...o, amount: e.target.value }))} placeholder="Amount (₦)" style={{ padding: 10, borderRadius: 8, border: "none" }}/>
+        <input className="admin-input" value={d.name} onChange={e => setD(o => ({ ...o, name: e.target.value }))} placeholder="Your name (optional)" style={{ padding: 10, borderRadius: 8, border: "none" }}/>
+        <input className="admin-input" type="email" value={d.email} onChange={e => setD(o => ({ ...o, email: e.target.value }))} placeholder="Email for your receipt" style={{ padding: 10, borderRadius: 8, border: "none" }}/>
+        <button className="btn btn-gold" disabled={busy || !emailOk(d.email)}>{busy ? "Starting…" : "Donate securely →"}</button>
+      </form>
     </div>
   );
 }

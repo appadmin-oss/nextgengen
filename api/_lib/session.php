@@ -11,7 +11,7 @@ declare(strict_types=1);
  * predating sid remain valid until natural expiry, just unmanaged.
  */
 
-function session_issue(array $member, bool $adminOk = false): string {
+function session_issue(array $member, bool $adminOk = false, string $impBy = ''): string {
     global $CONFIG;
     $now = time();
     $sid = rand_hex(20);
@@ -25,6 +25,7 @@ function session_issue(array $member, bool $adminOk = false): string {
         'adminOk' => $adminOk,
         'sid'     => $sid,
     ];
+    if ($impBy !== '') $payload['imp'] = $impBy; // super-admin impersonation marker
     $body = b64url(json_encode($payload, JSON_UNESCAPED_SLASHES));
     $sig  = b64url(hash_hmac('sha256', $body, $CONFIG['cookie_secret'], true));
     $token = $body . '.' . $sig;

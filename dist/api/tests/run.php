@@ -1359,6 +1359,68 @@ chk('super-admin deletes & anonymises a member', (function () {
 })());
 chk('deletion refuses the last super admin', backend_dispatch('admin.members.delete', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0099'])['error'] === 'cannot_delete_super_admin');
 
+// ── Applicant status lookup + peer interaction (reactions + moderated comments) ──
+chk('applicant status: ref+email returns a friendly status', (function () {
+    db_insert('applications', ['kind' => 'teen', 'name' => 'Status Seeker', 'email' => 'seeker@example.com', 'status' => 'reviewing', 'createdAt' => now_iso()]);
+    $id = (int)db_row("SELECT id FROM applications WHERE email='seeker@example.com'")['id'];
+    $ref = 'NGG-A-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+    $r = backend_dispatch('public.application.status', ['ref' => $ref, 'email' => 'seeker@example.com']);
+    return !empty($r['ok']) && $r['status'] === 'reviewing' && $r['label'] === 'Under review';
+})());
+chk('applicant status: wrong email is not found (no enumeration)', (function () {
+    $id = (int)db_row("SELECT id FROM applications WHERE email='seeker@example.com'")['id'];
+    $ref = 'NGG-A-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+    return backend_dispatch('public.application.status', ['ref' => $ref, 'email' => 'wrong@example.com'])['error'] === 'not_found';
+})());
+$peerPost = backend_dispatch('admin.posts.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'blog', 'title' => 'Peer Post', 'body' => 'Hi', 'status' => 'published']])['slug'];
+chk('member reaction is recorded and toggles off', (function () use ($peerPost) {
+    $a = backend_dispatch('post.react', ['memberId' => 'NGG-2025-0001', 'post' => $peerPost, 'emoji' => '🔥']);
+    $on = ($a['reactions']['🔥'] ?? 0) === 1 && $a['myReaction'] === '🔥';
+    $b = backend_dispatch('post.react', ['memberId' => 'NGG-2025-0001', 'post' => $peerPost, 'emoji' => '🔥']);
+    return $on && ($b['reactions']['🔥'] ?? 0) === 0 && $b['myReaction'] === '';
+})());
+chk('a comment is held for moderation (not public)', (function () use ($peerPost) {
+    backend_dispatch('post.comment', ['memberId' => 'NGG-2025-0001', 'post' => $peerPost, 'body' => 'Great piece!']);
+    $pub = backend_dispatch('public.post.engagement', ['post' => $peerPost]);
+    $queue = backend_dispatch('admin.comments.list', ['requesterId' => 'NGG-2025-0099', 'status' => 'pending']);
+    return count($pub['comments']) === 0 && $queue['pending'] >= 1;
+})());
+chk('approving a comment makes it public', (function () use ($peerPost) {
+    $q = backend_dispatch('admin.comments.list', ['requesterId' => 'NGG-2025-0099', 'status' => 'pending']);
+    $cid = $q['comments'][0]['commentId'];
+    backend_dispatch('admin.comments.moderate', ['requesterId' => 'NGG-2025-0099', 'commentId' => $cid, 'do' => 'approve']);
+    return count(backend_dispatch('public.post.engagement', ['post' => $peerPost])['comments']) === 1;
+})());
+chk('comment moderation gated to content cap', backend_dispatch('admin.comments.list', ['requesterId' => 'NGG-2025-0555'])['error'] === 'forbidden');
+
+// ── RBAC: per-member extra capabilities ──
+db_insert('members', ['memberId' => 'NGG-2025-0710', 'fullName' => 'Extra Editor', 'email' => 'ee@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+chk('editor lacks the summer cap by default', backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0710'])['error'] === 'forbidden');
+chk('super grants an extra capability', !empty(backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0710', 'caps' => ['summer']])['ok']));
+chk('the extra cap now passes the gate', !empty(backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0710'])['ok']));
+chk('extra caps cannot be granted to a plain member', backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0555', 'caps' => ['content']])['error'] === 'not_staff');
+chk('only super can edit capabilities', backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0710', 'memberId' => 'NGG-2025-0710', 'caps' => ['rbac']])['error'] === 'forbidden');
+
+// ── Donations (Paystack, mocked) ──
+chk('donations are unavailable without a Paystack secret', backend_dispatch('public.donate.init', ['email' => 'giver@example.com', 'amount' => 5000])['error'] === 'donations_unavailable');
+chk('donation init returns a checkout URL and banks a pending row', (function () {
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) {
+        if (strpos($path, '/transaction/initialize') === 0) return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/xyz', 'reference' => $body['reference']]];
+        return ['status' => true, 'data' => ['status' => 'success', 'channel' => 'card']];
+    };
+    $r = backend_dispatch('public.donate.init', ['email' => 'giver@example.com', 'name' => 'Ada', 'amount' => 5000]);
+    $ok = !empty($r['ok']) && strpos($r['authorizationUrl'], 'paystack.com') !== false && db_row('SELECT status FROM donations WHERE reference = ?', [$r['reference']])['status'] === 'pending';
+    $v = donation_verify($r['reference']);
+    $paid = ($v['status'] ?? '') === 'paid' && db_row('SELECT status FROM donations WHERE reference = ?', [$r['reference']])['status'] === 'paid';
+    unset($GLOBALS['__paystack_mock'], $GLOBALS['CONFIG']['paystack']);
+    return $ok && $paid;
+})());
+chk('donations ledger totals paid amounts (settings cap)', (function () {
+    $r = backend_dispatch('admin.donations.list', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && $r['totalPaid'] >= 5000 && count($r['donations']) >= 1;
+})());
+
 // ── Leaderboards (member cohort + volunteer duty) ──
 chk('public leaderboard ranks members by XP, privacy-safe', (function () {
     $r = backend_dispatch('public.leaderboard', ['limit' => 10]);

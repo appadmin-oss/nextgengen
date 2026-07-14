@@ -24,6 +24,7 @@ const BOOT_WANTS_LOGIN = BOOT_PATH === "/login" || BOOT_PATH === "/signin";
 function AuthProvider({ children }) {
   const [member, setMember] = React.useState(null);
   const [adminOk, setAdminOk] = React.useState(false);
+  const [impersonating, setImpersonating] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [signinOpen, setSigninOpen] = React.useState(false);
   const [signinSeed, setSigninSeed] = React.useState(null); // { token } when coming from magic link
@@ -50,6 +51,7 @@ function AuthProvider({ children }) {
           const me = await NGGApi.auth.me();
           setMember(me.member || null);
           setAdminOk(Boolean(me.adminOk));
+          setImpersonating(me.impersonating || null);
           // Conventional /login (or /signin) entry point: open the sign-in
           // modal for guests, send signed-in members to their dashboard.
           if (BOOT_WANTS_LOGIN) {
@@ -85,10 +87,13 @@ function AuthProvider({ children }) {
     hasCap: (cap) => !!member && Array.isArray(member.caps) && member.caps.indexOf(cap) !== -1,
     openSignIn: (seed) => { setSigninSeed(seed || null); setSigninOpen(true); },
     closeSignIn: () => setSigninOpen(false),
+    impersonating,
+    stopImpersonating: async () => { try { await NGGApi.admin.members.stopImpersonate(); } catch (_) {} window.location.href = "/admin"; },
     refresh: async () => {
       const me = await NGGApi.auth.me();
       setMember(me.member || null);
       setAdminOk(Boolean(me.adminOk));
+      setImpersonating(me.impersonating || null);
     },
     signOut: async () => {
       try { await NGGApi.auth.logout(); } catch (_) {}
@@ -103,6 +108,12 @@ function AuthProvider({ children }) {
 
   return (
     <AuthCtx.Provider value={ctx}>
+      {impersonating && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999, background: "#E4155F", color: "#fff", padding: "8px 16px", textAlign: "center", fontSize: 14, fontFamily: "Arial, sans-serif" }}>
+          Viewing as <b>{member ? member.fullName : "member"}</b> — actions are performed as them.
+          <button onClick={ctx.stopImpersonating} style={{ marginLeft: 12, background: "#fff", color: "#E4155F", border: "none", borderRadius: 6, padding: "3px 12px", fontWeight: 700, cursor: "pointer" }}>Stop</button>
+        </div>
+      )}
       {children}
       {signinOpen && (
         <SignInModal seed={signinSeed} onClose={ctx.closeSignIn} onVerified={ctx.onVerified}/>

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 30;
+const NGG_SCHEMA_TARGET = 31;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -753,6 +753,19 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX idx_comments_post ON post_comments(postId, status);
             CREATE INDEX idx_comments_status ON post_comments(status);
+        ",
+
+        // Donations (Paystack) + per-member extra capabilities (RBAC editor).
+        31 => "
+            CREATE TABLE donations (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              reference TEXT UNIQUE NOT NULL,
+              email TEXT, name TEXT, amount INTEGER DEFAULT 0, currency TEXT DEFAULT 'NGN',
+              status TEXT DEFAULT 'pending', channel TEXT DEFAULT '', message TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now')), paidAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_donations_status ON donations(status);
+            ALTER TABLE members ADD COLUMN capsExtra TEXT DEFAULT '';
         ",
     ];
 

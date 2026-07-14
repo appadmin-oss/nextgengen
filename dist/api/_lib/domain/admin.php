@@ -26,7 +26,7 @@ function admin_is_super(array $p): bool {
 function admin_cap_gate(array $p, string $cap): array {
     $g = admin_gate($p);
     if (!$g['ok']) return $g;
-    if (!role_has_cap($g['requester']['role'], $cap)) {
+    if (!in_array($cap, member_effective_caps($g['requester']), true)) {
         return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:' . $cap];
     }
     return $g;
@@ -134,6 +134,23 @@ function admin_members_upsert(array $p): array {
     audit('admin.member.create', $g['requester']['memberId'], $newId, [], (string)($p['ip'] ?? ''));
     event_emit('member.created', ['memberId' => $newId, 'fullName' => (string)($insert['fullName'] ?? ''), 'type' => (string)($insert['type'] ?? ''), 'centre' => (string)($insert['centre'] ?? '')]);
     return ['ok' => true, 'memberId' => $newId];
+}
+
+/** Super-admin: set a staff member's EXTRA capabilities (beyond their role). */
+function admin_member_caps_set(array $p): array {
+    if (!admin_is_super($p)) return ['ok' => false, 'error' => 'forbidden'];
+    $mid = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT id, role FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if (!is_admin_role((string)$m['role'])) return ['ok' => false, 'error' => 'not_staff'];
+    $valid = ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'audit'];
+    $roleCaps = admin_role_caps((string)$m['role']);
+    $in = is_array($p['caps'] ?? null) ? $p['caps'] : [];
+    // Store only extras that the role doesn't already grant.
+    $extra = array_values(array_unique(array_filter(array_map('strval', $in), fn($c) => in_array($c, $valid, true) && !in_array($c, $roleCaps, true))));
+    db_update('members', ['capsExtra' => json_encode($extra, JSON_UNESCAPED_SLASHES), 'updatedAt' => now_iso()], ['id' => $m['id']]);
+    audit('admin.member.caps', (string)($p['requesterId'] ?? ''), $mid, ['extra' => $extra], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'capsExtra' => $extra];
 }
 
 /** Email a newly-granted staff member their onboarding invite (sign-in link). */
