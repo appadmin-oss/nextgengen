@@ -112,6 +112,11 @@ function admin_members_upsert(array $p): array {
         $patch = db_pick($data, $cols);
         $patch['updatedAt'] = now_iso();
         db_update('members', $patch, ['id' => $existing['id']]);
+        // Newly promoted to a staff tier → send an invite/onboarding email.
+        $wasStaff = is_admin_role((string)$existing['role']);
+        if ($newRole !== null && !$wasStaff && in_array($newRole, ['editor', 'summer_admin', 'club_admin', 'audit', 'admin', 'super_admin'], true)) {
+            staff_invite_email($memberId, $newRole);
+        }
         audit('admin.member.update', $g['requester']['memberId'], $memberId, ['keys' => array_keys($patch)], (string)($p['ip'] ?? ''));
         event_emit('member.updated', ['memberId' => $memberId] + (db_row('SELECT memberId, fullName, email, phone, type, status, role, centre, track, cohort, school, parentName, parentEmail, parentPhone FROM members WHERE memberId = ?', [$memberId]) ?: []));
         return ['ok' => true, 'memberId' => $memberId];
@@ -125,9 +130,25 @@ function admin_members_upsert(array $p): array {
     $insert['createdAt'] = now_iso();
     $insert['updatedAt'] = now_iso();
     db_insert('members', $insert);
+    if (is_admin_role((string)$insert['role'])) staff_invite_email($newId, (string)$insert['role']);
     audit('admin.member.create', $g['requester']['memberId'], $newId, [], (string)($p['ip'] ?? ''));
     event_emit('member.created', ['memberId' => $newId, 'fullName' => (string)($insert['fullName'] ?? ''), 'type' => (string)($insert['type'] ?? ''), 'centre' => (string)($insert['centre'] ?? '')]);
     return ['ok' => true, 'memberId' => $newId];
+}
+
+/** Email a newly-granted staff member their onboarding invite (sign-in link). */
+function staff_invite_email(string $memberId, string $role): void {
+    $m = db_row('SELECT fullName, email FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m || empty($m['email']) || !filter_var((string)$m['email'], FILTER_VALIDATE_EMAIL)) return;
+    $roleName = ['editor' => 'Editor', 'summer_admin' => 'Summer School coordinator', 'club_admin' => 'Club coordinator', 'audit' => 'Auditor', 'admin' => 'Admin', 'super_admin' => 'Super admin'][$role] ?? 'Staff';
+    $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/login';
+    @send_mail((string)$m['email'], "You've been added to the NGG team", email_template([
+        'title' => 'Welcome to the team',
+        'intro' => 'Hi ' . esc_html(explode(' ', (string)$m['fullName'])[0] ?: 'there') . " — you've been granted the {$roleName} role at Next Generation Genius.",
+        'bodyHtml' => '<p style="margin:0 0 10px">Sign in with this email (request a code, or set a password), then you\'ll set up two-factor authentication the first time you open the Control Room.</p>',
+        'ctaLabel' => 'Sign in to the Control Room →', 'ctaUrl' => $url,
+    ]));
+    audit('staff.invite', null, $memberId, ['role' => $role], '');
 }
 
 // ── Mentors ──────────────────────────────────────────────────────────────

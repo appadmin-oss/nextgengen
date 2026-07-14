@@ -670,6 +670,10 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
                   if (!confirm("Clear this member's password? They'll sign in via an emailed code and can set a new one.")) return;
                   try { await NGGApi.admin.members.resetPassword(d.memberId); toast.success("Password cleared — they can sign in by email code.", "Done"); } catch (e) { toast.error(e.code || e.message); }
                 }}>Reset password</button>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={async () => {
+                  if (!confirm("Delete & anonymise this member? Their PII and journal are scrubbed and sessions revoked. This cannot be undone.")) return;
+                  try { await NGGApi.admin.members.remove(d.memberId); toast.success("Member deleted & anonymised.", "Done"); close && close(); } catch (e) { toast.error(e.code || e.message); }
+                }}>Delete member</button>
               </div>
             </div>
           )}

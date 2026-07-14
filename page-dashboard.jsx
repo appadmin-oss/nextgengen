@@ -399,6 +399,7 @@ function DashboardProfileModal({ m, onClose, onSaved }) {
           </div>
 
           <DashboardSecurity/>
+          <DashboardAccount m={m}/>
         </div>
         <div className="admin-drawer-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -447,6 +448,50 @@ function DashboardSecurity() {
             <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "others"} onClick={revokeOthers} style={{ alignSelf: "flex-start", marginTop: 4 }}>{busy === "others" ? "Signing out…" : "Sign out everywhere else"}</button>
           )}
         </div>}
+    </div>
+  );
+}
+
+// Account: verified email change, data export, and account deletion.
+function DashboardAccount({ m }) {
+  const [email, setEmail] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const changeEmail = async () => {
+    if (!email.trim()) return;
+    setBusy("email");
+    try { const r = await NGGApi.member.changeEmail(email.trim()); toast.success("Confirmation sent to " + (r.pending || email.trim()) + ". Click the link there to finish.", "Check your new inbox"); setEmail(""); }
+    catch (e) { toast.error(humanError(e)); } finally { setBusy(""); }
+  };
+  const exportData = async () => {
+    setBusy("export");
+    try {
+      const r = await NGGApi.member.exportData();
+      const blob = new Blob([JSON.stringify(r.export || r, null, 2)], { type: "application/json" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "ngg-my-data.json"; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    } catch (e) { toast.error(humanError(e)); } finally { setBusy(""); }
+  };
+  const del = async () => {
+    if (!confirm("Delete your account? This removes your profile and journal and signs you out. This cannot be undone.")) return;
+    if (!confirm("Are you absolutely sure? There is no undo.")) return;
+    setBusy("delete");
+    try { await NGGApi.member.deleteAccount(); toast.success("Your account has been deleted."); setTimeout(() => { window.location.href = "/"; }, 800); }
+    catch (e) { toast.error(humanError(e)); setBusy(""); }
+  };
+  return (
+    <div style={{ borderTop: "1px solid rgba(12,20,50,0.08)", margin: "6px 0 2px", paddingTop: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 15 }}>Account</div>
+      <div style={{ fontSize: 13, color: "var(--ink-500)", margin: "4px 0 12px" }}>Current email: <b>{m.email}</b></div>
+      <label className="admin-field"><span>Change email (needs confirmation)</span>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input className="admin-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="new@email.com"/>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "email" || !email.trim()} onClick={changeEmail}>{busy === "email" ? "…" : "Send link"}</button>
+        </div>
+      </label>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "export"} onClick={exportData}>{busy === "export" ? "Preparing…" : "Download my data"}</button>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "delete"} onClick={del} style={{ color: "#b03535" }}>Delete my account</button>
+      </div>
     </div>
   );
 }

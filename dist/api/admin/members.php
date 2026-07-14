@@ -22,6 +22,8 @@ if ($method === 'POST') {
     $action = (string)($body['action'] ?? '');
     if ($action === 'reset2fa') {
         $res = gs_call('admin.members.reset2fa', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
+    } elseif ($action === 'delete') {
+        $res = gs_call('admin.members.delete', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'resetPassword') {
         $res = gs_call('admin.members.resetPassword', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
     } else {

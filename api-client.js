@@ -144,6 +144,9 @@
       circle:       () => request('/member/circle.php'),
       circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
       circleRevoke: (linkId) => request('/member/circle.php', { body: { action: 'revoke', linkId } }),
+      changeEmail:         (email) => request('/member/account.php', { body: { action: 'change_email', email } }),
+      exportData:          () => request('/member/account.php'),
+      deleteAccount:       () => request('/member/account.php', { body: { action: 'delete' } }),
       security:            () => request('/member/security.php'),
       securityRevoke:      (sid) => request('/member/security.php', { body: { action: 'revoke', sid } }),
       securityRevokeOthers: () => request('/member/security.php', { body: { action: 'revoke_others' } }),
@@ -201,6 +204,7 @@
         upsert: (data) => request('/admin/members.php', { body: data }),
         reset2fa: (memberId) => request('/admin/members.php', { body: { action: 'reset2fa', memberId } }),
         resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
+        remove: (memberId) => request('/admin/members.php', { body: { action: 'delete', memberId } }),
       },
       mentors: {
         list:   () => request('/admin/mentors.php'),

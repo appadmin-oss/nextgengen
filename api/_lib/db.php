@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 28;
+const NGG_SCHEMA_TARGET = 29;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -726,6 +726,13 @@ function db_migrate(PDO $db): void {
         // Per-centre capacity (0 = unlimited) → waitlist when full.
         28 => "
             ALTER TABLE centres ADD COLUMN capacity INTEGER DEFAULT 0;
+        ",
+
+        // Verified self-service email change (pending address + signed token).
+        29 => "
+            ALTER TABLE members ADD COLUMN pendingEmail TEXT DEFAULT '';
+            ALTER TABLE members ADD COLUMN emailChangeToken TEXT DEFAULT '';
+            ALTER TABLE members ADD COLUMN emailChangeExpiresAt TEXT DEFAULT '';
         ",
     ];
 

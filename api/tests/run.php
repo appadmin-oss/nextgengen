@@ -1326,6 +1326,39 @@ chk('an expired promo is hidden', (function () {
     return backend_dispatch('public.siteContent', [])['promo'] === null;
 })());
 
+// ── Account lifecycle: verified email change, staff invite, export, deletion ──
+db_insert('members', ['memberId' => 'NGG-2025-0900', 'fullName' => 'Life Cycle', 'email' => 'life@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+chk('email change requires confirmation (pending set, not applied)', (function () {
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('member.email.changeRequest', ['memberId' => 'NGG-2025-0900', 'email' => 'newlife@example.com']);
+    $sent = count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'newlife@example.com')) === 1;
+    unset($GLOBALS['__mail_sink']);
+    return !empty($r['ok']) && db_row("SELECT email FROM members WHERE memberId='NGG-2025-0900'")['email'] === 'life@example.com' && db_row("SELECT pendingEmail FROM members WHERE memberId='NGG-2025-0900'")['pendingEmail'] === 'newlife@example.com' && $sent;
+})());
+chk('a bad email-change token is rejected', backend_dispatch('member.email.confirm', ['memberId' => 'NGG-2025-0900', 'token' => 'nope'])['error'] === 'invalid');
+chk('confirming the token applies the new email', (function () {
+    $tok = db_row("SELECT emailChangeToken FROM members WHERE memberId='NGG-2025-0900'")['emailChangeToken'];
+    $r = backend_dispatch('member.email.confirm', ['memberId' => 'NGG-2025-0900', 'token' => $tok]);
+    return !empty($r['ok']) && db_row("SELECT email FROM members WHERE memberId='NGG-2025-0900'")['email'] === 'newlife@example.com';
+})());
+chk('granting a staff role emails an invite', (function () {
+    $GLOBALS['__mail_sink'] = [];
+    backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['memberId' => 'NGG-2025-0900', 'role' => 'editor']]);
+    $hit = count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'newlife@example.com' && stripos($m['subject'], 'team') !== false)) === 1;
+    unset($GLOBALS['__mail_sink']);
+    return $hit;
+})());
+chk('member export returns their data bundle', (function () {
+    $r = backend_dispatch('member.export', ['memberId' => 'NGG-2025-0900']);
+    return !empty($r['ok']) && isset($r['export']['profile']) && $r['export']['profile']['memberId'] === 'NGG-2025-0900' && array_key_exists('journal', $r['export']);
+})());
+chk('super-admin deletes & anonymises a member', (function () {
+    $r = backend_dispatch('admin.members.delete', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0900']);
+    $m = db_row("SELECT fullName, email, status FROM members WHERE memberId='NGG-2025-0900'");
+    return !empty($r['ok']) && $m['status'] === 'deleted' && $m['email'] === '' && $m['fullName'] === 'Deleted member';
+})());
+chk('deletion refuses the last super admin', backend_dispatch('admin.members.delete', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0099'])['error'] === 'cannot_delete_super_admin');
+
 // ── Leaderboards (member cohort + volunteer duty) ──
 chk('public leaderboard ranks members by XP, privacy-safe', (function () {
     $r = backend_dispatch('public.leaderboard', ['limit' => 10]);
