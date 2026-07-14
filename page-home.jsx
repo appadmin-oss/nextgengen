@@ -5,6 +5,7 @@
 function HomePage({ setPage }) {
   return (
     <div className="page" data-screen-label="01 Home">
+      <PromoBanner setPage={setPage} />
       <Hero setPage={setPage} />
       <StatBar />
       <ProgressionSystem setPage={setPage} />
@@ -16,6 +17,32 @@ function HomePage({ setPage }) {
       <EventsBand setPage={setPage}/>
       <BlogPreview setPage={setPage}/>
       <ClosingCTA setPage={setPage} />
+    </div>
+  );
+}
+
+/* =========== Homepage promo banner (admin-managed, dismissible) =========== */
+function PromoBanner({ setPage }) {
+  const [promo, setPromo] = React.useState(null);
+  const [dismissed, setDismissed] = React.useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.public.siteContent().then(r => { if (alive && r && r.promo && r.promo.text) setPromo(r.promo); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  if (!promo || dismissed) return null;
+  const go = (e) => {
+    if (!promo.ctaUrl) return;
+    if (/^https?:\/\//.test(promo.ctaUrl)) return; // let the anchor navigate externally
+    e.preventDefault();
+    const p = promo.ctaUrl.replace(/^\//, "");
+    window.__navigate ? window.__navigate(p) : (setPage && setPage(p));
+  };
+  return (
+    <div style={{ background: "var(--navy-900, #00225F)", color: "#fff", padding: "10px 16px", textAlign: "center", position: "relative", fontSize: 14 }}>
+      <span>{promo.text}</span>
+      {promo.ctaLabel && promo.ctaUrl ? <a href={/^https?:\/\//.test(promo.ctaUrl) ? promo.ctaUrl : "#"} onClick={go} style={{ color: "var(--gold-400, #F5B026)", fontWeight: 700, marginLeft: 12, textDecoration: "underline" }}>{promo.ctaLabel} →</a> : null}
+      <button aria-label="Dismiss" onClick={() => setDismissed(true)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
     </div>
   );
 }

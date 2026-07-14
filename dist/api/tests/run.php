@@ -1291,6 +1291,41 @@ chk('staff can clear event attendance', (function () {
     return (string)db_row("SELECT attendedAt FROM event_rsvps WHERE eventId='EV-CAP' AND memberId='NGG-2025-0001'")['attendedAt'] === '';
 })());
 
+// ── Newsletter send + one-click unsubscribe ──
+backend_dispatch('public.newsletter', ['email' => 'reader@example.com', 'source' => 'test']);
+chk('newsletter send emails active subscribers', (function () {
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('admin.newsletter.send', ['requesterId' => 'NGG-2025-0099', 'subject' => 'July update', 'body' => 'Lots happening this month at NGG.']);
+    $hit = count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'reader@example.com' && $m['subject'] === 'July update')) === 1;
+    unset($GLOBALS['__mail_sink']);
+    return !empty($r['ok']) && $r['sent'] >= 1 && $hit;
+})());
+chk('newsletter send rejects a too-short subject', backend_dispatch('admin.newsletter.send', ['requesterId' => 'NGG-2025-0099', 'subject' => 'hi', 'body' => 'long enough body here'])['error'] === 'subject_too_short');
+chk('unsubscribe needs a valid signed token', backend_dispatch('public.newsletter.unsubscribe', ['email' => 'reader@example.com', 'token' => 'wrong'])['error'] === 'bad_token');
+chk('one-click unsubscribe flips status', (function () {
+    $tok = newsletter_unsub_token('reader@example.com');
+    backend_dispatch('public.newsletter.unsubscribe', ['email' => 'reader@example.com', 'token' => $tok]);
+    return db_row("SELECT status FROM newsletter WHERE email='reader@example.com'")['status'] === 'unsubscribed';
+})());
+chk('unsubscribed readers are excluded from a send', (function () {
+    $GLOBALS['__mail_sink'] = [];
+    backend_dispatch('admin.newsletter.send', ['requesterId' => 'NGG-2025-0099', 'subject' => 'Second update', 'body' => 'Another update body.']);
+    $hit = count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'reader@example.com'));
+    unset($GLOBALS['__mail_sink']);
+    return $hit === 0;
+})());
+
+// ── Homepage promo reader ──
+chk('active promo is served publicly', (function () {
+    backend_dispatch('admin.promotions.set', ['requesterId' => 'NGG-2025-0099', 'promo' => ['text' => 'Registration closes Friday', 'ctaLabel' => 'Register', 'ctaUrl' => '/join', 'expires' => '']]);
+    $r = backend_dispatch('public.siteContent', []);
+    return !empty($r['promo']) && $r['promo']['text'] === 'Registration closes Friday' && $r['promo']['ctaUrl'] === '/join';
+})());
+chk('an expired promo is hidden', (function () {
+    backend_dispatch('admin.promotions.set', ['requesterId' => 'NGG-2025-0099', 'promo' => ['text' => 'Old news', 'expires' => gmdate('Y-m-d\TH:i:s\Z', time() - 3600)]]);
+    return backend_dispatch('public.siteContent', [])['promo'] === null;
+})());
+
 // ── Leaderboards (member cohort + volunteer duty) ──
 chk('public leaderboard ranks members by XP, privacy-safe', (function () {
     $r = backend_dispatch('public.leaderboard', ['limit' => 10]);

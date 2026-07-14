@@ -161,7 +161,40 @@ function admin_application_convert(array $p): array {
 function admin_newsletter_list(array $p): array {
     $g = admin_cap_gate($p, 'inbox'); if (!$g['ok']) return $g;
     $rows = db_all('SELECT email, source, status, createdAt FROM newsletter ORDER BY id DESC LIMIT 5000');
-    return ['ok' => true, 'total' => count($rows), 'subscribers' => $rows];
+    $active = count(array_filter($rows, fn($r) => (string)$r['status'] === 'subscribed'));
+    return ['ok' => true, 'total' => count($rows), 'active' => $active, 'subscribers' => $rows];
+}
+
+/** A signed, per-email unsubscribe token (no DB column needed). */
+function newsletter_unsub_token(string $email): string {
+    $secret = (string)($GLOBALS['CONFIG']['cookie_secret'] ?? 'ngg');
+    return substr(hash_hmac('sha256', 'unsub:' . strtolower(trim($email)), $secret), 0, 32);
+}
+
+/** Compose + send a newsletter to all current subscribers (bounded), each with
+ *  a one-click unsubscribe link. Gated on 'inbox'. */
+function admin_newsletter_send(array $p): array {
+    $g = admin_cap_gate($p, 'inbox'); if (!$g['ok']) return $g;
+    $subject = trim((string)($p['subject'] ?? ''));
+    $body = trim((string)($p['body'] ?? ''));
+    if (strlen($subject) < 3) return ['ok' => false, 'error' => 'subject_too_short'];
+    if (strlen($body) < 10) return ['ok' => false, 'error' => 'body_too_short'];
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $subs = db_all("SELECT email FROM newsletter WHERE status = 'subscribed' LIMIT 2000");
+    $sent = 0; $skipped = 0;
+    foreach ($subs as $s) {
+        $to = trim((string)$s['email']);
+        if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL) || $sent >= 2000) { $skipped++; continue; }
+        $unsub = $origin . '/api/public/unsubscribe.php?e=' . rawurlencode($to) . '&t=' . newsletter_unsub_token($to);
+        $html = email_template([
+            'title' => $subject,
+            'bodyHtml' => '<div style="font-size:15px;line-height:1.65">' . nl2br(esc_html($body)) . '</div>',
+            'footNote' => 'You are receiving this because you subscribed to Next Generation Genius updates.',
+        ]) . '<div style="text-align:center;margin:-18px 0 24px;font-family:Arial,sans-serif"><a href="' . esc_html($unsub) . '" style="color:#8A93A6;font-size:12px">Unsubscribe</a></div>';
+        if (send_mail($to, $subject, $html)) $sent++; else $skipped++;
+    }
+    audit('newsletter.send', $g['requester']['memberId'], '', ['sent' => $sent, 'skipped' => $skipped], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'sent' => $sent, 'skipped' => $skipped, 'total' => count($subs)];
 }
 
 // ── Contact messages ─────────────────────────────────────────────────────────
@@ -312,5 +345,14 @@ function site_content_clean(array $in): array {
 }
 
 function public_site_content(array $p = []): array {
-    return ['ok' => true, 'site' => site_content()];
+    // Homepage promo banner — served only while active (unexpired).
+    $promo = setting_get('homepage_promo');
+    $activePromo = null;
+    if (is_array($promo) && !empty($promo['text'])) {
+        $exp = (string)($promo['expires'] ?? '');
+        if ($exp === '' || strtotime($exp) >= time()) {
+            $activePromo = ['text' => (string)$promo['text'], 'ctaLabel' => (string)($promo['ctaLabel'] ?? ''), 'ctaUrl' => (string)($promo['ctaUrl'] ?? ''), 'expires' => $exp];
+        }
+    }
+    return ['ok' => true, 'site' => site_content(), 'promo' => $activePromo];
 }

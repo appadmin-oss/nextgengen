@@ -161,6 +161,18 @@ function public_newsletter(array $p): array {
     return ['ok' => true];
 }
 
+/** One-click unsubscribe via a signed token (from the email footer link). */
+function public_newsletter_unsubscribe(array $p): array {
+    $email = strtolower(trim((string)($p['email'] ?? '')));
+    $token = (string)($p['token'] ?? '');
+    if ($email === '' || !function_exists('newsletter_unsub_token')) return ['ok' => false, 'error' => 'bad_request'];
+    if (!hash_equals(newsletter_unsub_token($email), $token)) return ['ok' => false, 'error' => 'bad_token'];
+    $row = db_row('SELECT id FROM newsletter WHERE lower(email) = ? LIMIT 1', [$email]);
+    if ($row) db_update('newsletter', ['status' => 'unsubscribed', 'updatedAt' => now_iso()], ['id' => $row['id']]);
+    audit('newsletter.unsubscribe', null, $email, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
 /** Contact / enquiry form. Stores the message and notifies the admissions inbox. */
 function public_contact(array $p): array {
     // Honeypot — a hidden field real users never fill. Pretend success.

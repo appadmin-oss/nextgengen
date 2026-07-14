@@ -296,6 +296,12 @@ function admin_posts_upsert(array $p): array {
     return ['ok' => true, 'postId' => $newId, 'slug' => $patch['slug']];
 }
 
+function admin_promotions_get(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $promo = setting_get('homepage_promo');
+    return ['ok' => true, 'promo' => is_array($promo) ? $promo : null];
+}
+
 function admin_promotions_set(array $p): array {
     $g = admin_gate($p); if (!$g['ok']) return $g;
     $promo = $p['promo'] ?? null;

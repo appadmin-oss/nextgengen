@@ -232,6 +232,7 @@
         upsert: (data) => request('/admin/posts.php', { body: data }),
       },
       promotions: {
+        get: () => request('/admin/promotions.php'),
         set: (promo) => request('/admin/promotions.php', { body: { promo } }),
       },
       assignments: {
@@ -257,6 +258,7 @@
         convert: (id) => request('/admin/applications.php', { body: { action: 'convert', id } }),
       },
       newsletter:   () => request('/admin/newsletter.php'),
+      newsletterSend: (subject, body) => request('/admin/newsletter.php', { body: { subject, body } }),
       summer: {
         overview:     () => request('/admin/summer.php?view=overview'),
         students:     (q, cohortId) => request('/admin/summer.php' + qs({ view: 'students', q, cohortId })),

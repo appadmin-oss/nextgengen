@@ -2893,16 +2893,63 @@ function AdminVolunteers() {
 // Newsletter
 // ============================================================================
 
+/* Homepage promo banner editor — text + optional CTA + expiry. */
+function AdminPromo() {
+  const [p, setP] = React.useState({ text: "", ctaLabel: "", ctaUrl: "", expires: "" });
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => { NGGApi.admin.promotions.get().then(r => { if (r.promo) setP({ text: r.promo.text || "", ctaLabel: r.promo.ctaLabel || "", ctaUrl: r.promo.ctaUrl || "", expires: (r.promo.expires || "").slice(0, 10) }); }).catch(() => {}); }, []);
+  const save = async (clear) => {
+    setBusy(true);
+    try {
+      const promo = clear ? null : { text: p.text.trim(), ctaLabel: p.ctaLabel.trim(), ctaUrl: p.ctaUrl.trim(), expires: p.expires ? p.expires + "T23:59:59Z" : "" };
+      await NGGApi.admin.promotions.set(promo);
+      if (clear) setP({ text: "", ctaLabel: "", ctaUrl: "", expires: "" });
+      toast.success(clear ? "Promo cleared." : "Promo saved — live on the homepage.", "Homepage promo");
+    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>Homepage promo banner</div>
+      <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>A dismissible banner across the top of the public homepage. Leave the text blank (or Clear) to hide it; set an expiry to auto-retire it.</p>
+      <Field label="Banner text" value={p.text} onChange={v => setP(o => ({ ...o, text: v }))} placeholder="e.g. Summer School registration closes Friday!"/>
+      <div className="admin-fields-row">
+        <Field label="Button label (optional)" value={p.ctaLabel} onChange={v => setP(o => ({ ...o, ctaLabel: v }))} placeholder="Register now"/>
+        <Field label="Button link (optional)" value={p.ctaUrl} onChange={v => setP(o => ({ ...o, ctaUrl: v }))} placeholder="/join"/>
+        <Field label="Expires (optional)" type="date" value={p.expires} onChange={v => setP(o => ({ ...o, expires: v }))}/>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-primary btn-sm" disabled={busy || !p.text.trim()} onClick={() => save(false)}>Save promo</button>
+        <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => save(true)}>Clear</button>
+      </div>
+    </>
+  );
+}
+
 function AdminNewsletter() {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
+  const [msg, setMsg] = React.useState({ subject: "", body: "" });
+  const [busy, setBusy] = React.useState(false);
   const load = () => { setErr(""); NGGApi.admin.newsletter().then(setD).catch(e => setErr(e.code || e.message)); };
   React.useEffect(() => { load(); }, []);
+  const send = async () => {
+    const active = (d && d.active) || 0;
+    if (!(await dialog.confirm({ title: "Send to " + active + " subscriber(s)?", body: "Emails the current newsletter to everyone subscribed. There's no undo.", cta: "Send newsletter", danger: true }))) return;
+    setBusy(true);
+    try { const r = await NGGApi.admin.newsletterSend(msg.subject, msg.body); toast.success("Sent to " + (r.sent || 0) + (r.skipped ? " (" + r.skipped + " skipped)" : "") + ".", "Newsletter"); setMsg({ subject: "", body: "" }); }
+    catch (e) { toast.error(e.code || e.message, "Couldn't send"); } finally { setBusy(false); }
+  };
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Newsletter {d ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {d.total}</span> : null}</h2>
+        <h2 className="admin-h2">Newsletter {d ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {d.active}/{d.total} active</span> : null}</h2>
         <button className="btn btn-ghost btn-sm" disabled={!d || !d.subscribers.length} onClick={() => downloadCsv("newsletter", d.subscribers)}>Export CSV</button>
+      </div>
+      <div className="admin-fields" style={{ maxWidth: 640, marginBottom: 18 }}>
+        <div className="admin-fields-h" style={{ fontWeight: 700 }}>Compose &amp; send</div>
+        <Field label="Subject" value={msg.subject} onChange={v => setMsg(o => ({ ...o, subject: v }))}/>
+        <label className="admin-field"><span className="admin-label">Body</span><textarea className="admin-input" rows={6} value={msg.body} onChange={e => setMsg(o => ({ ...o, body: e.target.value }))} placeholder="Write your update — plain text; links become clickable."/></label>
+        <div><button className="btn btn-primary btn-sm" disabled={busy || msg.subject.trim().length < 3 || msg.body.trim().length < 10} onClick={send}>{busy ? "Sending…" : "Send newsletter"}</button> <span className="admin-hint">Each email includes a one-click unsubscribe link.</span></div>
       </div>
       {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         !d ? <div className="dash-spinner"/> :
@@ -3029,6 +3076,8 @@ function AdminSettings() {
             {(mailRes.hints || []).map((h, i) => <div key={i} style={{ color: "var(--amber-800, #9a3412)" }}>⚠ {h}</div>)}
           </div>
         )}
+
+        <AdminPromo/>
 
         <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>ID card branding</div>
         <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>Drives the printed cards + digital IDs. The card QR always encodes the student's <span className="mono">/q/&lt;token&gt;</span> profile URL, so scanning with any phone opens their page.</p>
