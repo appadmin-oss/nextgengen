@@ -40,9 +40,11 @@ function csrf_require(): void {
     //   - auth/request  → user has no session yet; the OTP IS the proof
     //   - auth/verify   → same
     //   - auth/login    → pre-session; the password IS the proof
+    //   - auth/reset-request / reset-confirm → pre-session; the emailed code
+    //     or magic-link token IS the proof (same basis as request/verify)
     //   - public/newsletter → fully public, IP rate-limited at the server
     $path = $_SERVER['SCRIPT_NAME'] ?? '';
-    if (preg_match('#/api/auth/(gateway|request|verify|login)\\.php$#', $path)) return;
+    if (preg_match('#/api/auth/(gateway|request|verify|login|reset-request|reset-confirm)\\.php$#', $path)) return;
     if (preg_match('#/api/public/verify\\.php$#', $path)) return; // parent link: the token IS the proof
     if (preg_match('#/api/hooks/[a-z-]+\\.php$#', $path)) return;  // inbound hooks: the HMAC IS the proof
     if (preg_match('#/api/public/newsletter\\.php$#', $path))     return;
