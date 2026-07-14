@@ -40,17 +40,20 @@ return [
     //      email") — it reports the mode, resolved From/Reply-To, SMTP target,
     //      and flags SPF/From-alignment problems.
     // -----------------------------------------------------------------------
-    // GMAIL EXAMPLE (consumer Gmail or Workspace):
-    //   'from_email' => 'youraccount@gmail.com',   // MUST be the signed-in
-    //                    account (Gmail rewrites any other From) — or a Gmail
-    //                    "Send mail as" verified alias on Workspace.
+    // SMTP is sent through a bundled PHPMailer (api/_lib/phpmailer/) — the
+    // same client the sibling Africa GATES app uses to deliver on Google
+    // Workspace — so a correct config below "just works" without Composer.
+    //
+    // GOOGLE WORKSPACE / GMAIL EXAMPLE:
+    //   'from_email' => 'youraccount@yourdomain.com',  // the signed-in mailbox
+    //                    (or a Workspace "Send mail as" verified alias)
     //   'smtp' => [
     //       'host' => 'smtp.gmail.com', 'port' => 587, 'secure' => 'tls',
-    //       'user' => 'youraccount@gmail.com',
+    //       'user' => 'youraccount@yourdomain.com',
     //       'pass' => 'abcd efgh ijkl mnop',   // a 16-char APP PASSWORD, not
     //                  your login password. Google Account → Security →
-    //                  2-Step Verification → App passwords. Consumer Gmail
-    //                  sends ~500 messages/day.
+    //                  2-Step Verification → App passwords. (465 + secure 'ssl'
+    //                  also works.) Workspace relay: smtp-relay.gmail.com.
     //   ],
     'mail' => [
         'from_name'  => 'Next Generation Genius',

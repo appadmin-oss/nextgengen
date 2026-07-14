@@ -258,10 +258,75 @@ function mail_native(array $from, string $to, string $subject, string $html, str
 }
 
 /**
- * Minimal SMTP client: EHLO, optional STARTTLS, AUTH LOGIN, one HTML message.
- * `secure` = 'tls' (STARTTLS on 587), 'ssl' (implicit on 465), or '' (plain).
+ * Load the bundled PHPMailer (no Composer — 3 files under phpmailer/src/, the
+ * same manual-install approach the STS sites use). Returns true when the class
+ * is available.
+ */
+function ngg_load_phpmailer(): bool {
+    if (class_exists(\PHPMailer\PHPMailer\PHPMailer::class)) return true;
+    $base = __DIR__ . '/phpmailer/src/';
+    if (is_file($base . 'PHPMailer.php')) {
+        require_once $base . 'Exception.php';
+        require_once $base . 'PHPMailer.php';
+        require_once $base . 'SMTP.php';
+    }
+    return class_exists(\PHPMailer\PHPMailer\PHPMailer::class);
+}
+
+/**
+ * SMTP send via PHPMailer — the battle-tested client that reliably completes
+ * the Gmail/Google-Workspace handshake (EHLO, STARTTLS, AUTH) where a
+ * hand-rolled client can quietly fail. Configured exactly like the sibling
+ * Africa GATES app that delivers on the same Workspace SMTP. Throws on failure
+ * so send_mail() can log and fall through. If PHPMailer isn't present for any
+ * reason, falls back to the raw client below.
  */
 function smtp_send(array $smtp, array $from, string $to, string $subject, string $html, string $text): bool {
+    if (!ngg_load_phpmailer()) {
+        return smtp_send_raw($smtp, $from, $to, $subject, $html, $text);
+    }
+    $m = new \PHPMailer\PHPMailer\PHPMailer(true);
+    $m->isSMTP();
+    $m->SMTPDebug = \PHPMailer\PHPMailer\SMTP::DEBUG_OFF;
+    $m->Host = (string)$smtp['host'];
+    $m->Port = (int)($smtp['port'] ?? 587);
+    $secure = strtolower((string)($smtp['secure'] ?? 'tls'));
+    if ($secure === 'ssl') {
+        $m->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+    } elseif ($secure === '' || $secure === 'none') {
+        $m->SMTPSecure = '';
+        $m->SMTPAutoTLS = false;
+    } else {
+        $m->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+    }
+    if (!empty($smtp['user'])) {
+        $m->SMTPAuth = true;
+        $m->Username = (string)$smtp['user'];
+        $m->Password = (string)($smtp['pass'] ?? '');
+    }
+    $m->Timeout = 12;
+    $m->CharSet = \PHPMailer\PHPMailer\PHPMailer::CHARSET_UTF8;
+    $m->setFrom($from['email'], (string)($from['name'] ?? ''));
+    // Envelope-from aligned with the authenticated mailbox — Gmail requires it,
+    // and it keeps SPF/DMARC happy on any authenticated relay.
+    $m->Sender = (!empty($smtp['user']) && filter_var($smtp['user'], FILTER_VALIDATE_EMAIL))
+        ? (string)$smtp['user'] : (string)$from['email'];
+    if (!empty($from['replyTo'])) $m->addReplyTo((string)$from['replyTo']);
+    $m->addAddress($to);
+    $m->isHTML(true);
+    $m->Subject = $subject;
+    $m->Body = $html;
+    $m->AltBody = $text !== '' ? $text : strip_tags($html);
+    $m->send();
+    return true;
+}
+
+/**
+ * Minimal hand-rolled SMTP client (fallback when PHPMailer is unavailable):
+ * EHLO, optional STARTTLS, AUTH LOGIN, one HTML message.
+ * `secure` = 'tls' (STARTTLS on 587), 'ssl' (implicit on 465), or '' (plain).
+ */
+function smtp_send_raw(array $smtp, array $from, string $to, string $subject, string $html, string $text): bool {
     $host = (string)$smtp['host'];
     $port = (int)($smtp['port'] ?? 587);
     $secure = strtolower((string)($smtp['secure'] ?? 'tls'));
