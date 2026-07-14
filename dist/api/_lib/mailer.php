@@ -310,7 +310,12 @@ function smtp_send(array $smtp, array $from, string $to, string $subject, string
         $cmd(base64_encode((string)$smtp['user']), '334');
         $cmd(base64_encode((string)($smtp['pass'] ?? '')), '235');
     }
-    $cmd('MAIL FROM:<' . $from['email'] . '>', '250');
+    // Envelope sender must be the authenticated mailbox for Gmail (and most
+    // relays) — a mismatched MAIL FROM gets rejected or SPF-failed. Fall back
+    // to the configured From only when no SMTP user is set (open relay/local).
+    $envelopeFrom = (!empty($smtp['user']) && filter_var($smtp['user'], FILTER_VALIDATE_EMAIL))
+        ? (string)$smtp['user'] : $from['email'];
+    $cmd('MAIL FROM:<' . $envelopeFrom . '>', '250');
     $cmd('RCPT TO:<' . $to . '>', '250');
     $cmd('DATA', '354');
 
