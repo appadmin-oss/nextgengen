@@ -566,6 +566,23 @@ $rq2 = backend_dispatch('auth.request', ['identifier' => 'nopass@example.com']);
 unset($GLOBALS['__mail_fail']);
 chk('auth.request mail failure stays ok with delivery=false', !empty($rq2['ok']) && $rq2['delivery'] === false && !empty($rq2['masked']));
 chk('auth.request still banks the OTP when mail fails', (int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email='nopass@example.com'")['c'] === $before + 1);
+
+// ── Self-service password reset (set a password with no prior session) ──
+$GLOBALS['__mail_sink'] = [];
+$rr = backend_dispatch('auth.resetRequest', ['identifier' => 'nopass@example.com']);
+chk('reset request → ok + delivery, emails the member', !empty($rr['ok']) && $rr['delivery'] === true && count($GLOBALS['__mail_sink']) === 1);
+unset($GLOBALS['__mail_sink']);
+chk('reset request banks a reset-purpose challenge', (int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email='nopass@example.com' AND purpose='reset'")['c'] === 1);
+$rsRow = db_row("SELECT * FROM auth_sessions WHERE memberId='NGG-2025-0770' AND purpose='reset' ORDER BY id DESC LIMIT 1");
+chk('reset confirm rejects a short password', backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $rsRow['otp'], 'password' => 'short'])['error'] === 'password_too_short');
+chk('a reset token cannot be replayed as a login', backend_dispatch('auth.verify', ['token' => $rsRow['token']])['error'] === 'invalid');
+$rc = backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $rsRow['otp'], 'password' => 'freshpass12']);
+chk('reset confirm sets the password + returns the member', !empty($rc['ok']) && ($rc['member']['memberId'] ?? '') === 'NGG-2025-0770');
+chk('password sign-in now works for the reset account', !empty(backend_dispatch('auth.login', ['identifier' => 'nopass@example.com', 'password' => 'freshpass12'])['ok']));
+chk('gateway now offers password after reset', backend_dispatch('auth.gateway', ['identifier' => 'nopass@example.com'])['methods'] === ['code', 'password']);
+chk('reset challenge is single-use (consumed code no longer matches)', backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $rsRow['otp'], 'password' => 'anotherpass12'])['error'] === 'invalid');
+chk('reset token replay after use → already_used', backend_dispatch('auth.resetConfirm', ['token' => $rsRow['token'], 'password' => 'anotherpass12'])['error'] === 'already_used');
+chk('reset request for an unknown account still looks ok (no oracle)', !empty(backend_dispatch('auth.resetRequest', ['identifier' => 'ghost-nobody@example.com'])['ok']));
 // Unknown identifier looks identical (ok + delivery=true) — no account oracle.
 chk('auth.request hides unknown accounts', (function () { $r = backend_dispatch('auth.request', ['identifier' => 'ghost@example.com']); return !empty($r['ok']) && $r['delivery'] === true && !empty($r['masked']); })());
 

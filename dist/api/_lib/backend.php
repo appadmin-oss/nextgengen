@@ -22,6 +22,8 @@ function backend_dispatch(string $op, array $args = []): array {
             // Auth
             'auth.request'            => 'auth_request',
             'auth.login'              => 'auth_login',
+            'auth.resetRequest'       => 'auth_reset_request',
+            'auth.resetConfirm'       => 'auth_reset_confirm',
             'auth.setPassword'        => 'auth_set_password',
             'auth.verify'             => 'auth_verify',
             'auth.me'                 => 'auth_me',

@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   token VARCHAR(128), memberId VARCHAR(64), email VARCHAR(200), otp VARCHAR(8),
   attempts INT DEFAULT 0, createdAt VARCHAR(40), expiresAt VARCHAR(40),
   verifiedAt VARCHAR(40), ip VARCHAR(64), userAgent VARCHAR(256),
+  purpose VARCHAR(16) DEFAULT 'login',
   INDEX idx_auth_token (token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

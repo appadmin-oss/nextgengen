@@ -76,7 +76,7 @@ function auth_request(array $p): array {
     $now = time();
     db_insert('auth_sessions', [
         'token' => $token, 'memberId' => $member['memberId'], 'email' => $member['email'],
-        'otp' => $otp, 'attempts' => 0,
+        'otp' => $otp, 'attempts' => 0, 'purpose' => 'login',
         'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now),
         'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + 15 * 60),
         'verifiedAt' => '', 'ip' => $ip, 'userAgent' => (string)($p['userAgent'] ?? ''),
@@ -173,9 +173,9 @@ function auth_verify(array $p): array {
     $otp = trim((string)($p['otp'] ?? ''));
 
     if ($token !== '') {
-        $ch = db_row('SELECT * FROM auth_sessions WHERE token = ? LIMIT 1', [$token]);
+        $ch = db_row("SELECT * FROM auth_sessions WHERE token = ? AND (purpose = 'login' OR purpose IS NULL) LIMIT 1", [$token]);
     } elseif ($memberId !== '' && $otp !== '') {
-        $ch = db_row("SELECT * FROM auth_sessions WHERE memberId = ? AND otp = ? AND (verifiedAt = '' OR verifiedAt IS NULL) ORDER BY id DESC LIMIT 1", [$memberId, $otp]);
+        $ch = db_row("SELECT * FROM auth_sessions WHERE memberId = ? AND otp = ? AND (purpose = 'login' OR purpose IS NULL) AND (verifiedAt = '' OR verifiedAt IS NULL) ORDER BY id DESC LIMIT 1", [$memberId, $otp]);
     } else {
         return ['ok' => false, 'error' => 'no_credentials'];
     }
@@ -208,6 +208,93 @@ function auth_verify(array $p): array {
 
     auth_fail_reset($member);
     audit('login.success', $member['memberId'], (string)$member['memberId'], [], $ip);
+    return ['ok' => true, 'member' => public_member($member)];
+}
+
+/**
+ * Self-service password reset — step 1. Emails a link + 6-digit code so a
+ * member can set a password WITHOUT already being signed in (the only other
+ * way a password gets set is auth_set_password, which needs a session). This
+ * is what makes password sign-in reachable for accounts that never had one.
+ * Unknown/suspended accounts answer identically so existence never leaks.
+ */
+function auth_reset_request(array $p): array {
+    $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
+    $ip = (string)($p['ip'] ?? '');
+    if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
+
+    $member = db_row('SELECT * FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
+    $masked = mask_email($member ? (string)$member['email'] : (strpos($identifier, '@') !== false ? $identifier : 'a@b.co'));
+
+    if (!$member || (string)$member['status'] === 'suspended') {
+        audit('password.reset.request.noop', $member['memberId'] ?? null, $identifier, [], $ip);
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
+    }
+
+    $token = rand_hex(32);
+    $otp = new_otp();
+    $now = time();
+    db_insert('auth_sessions', [
+        'token' => $token, 'memberId' => $member['memberId'], 'email' => $member['email'],
+        'otp' => $otp, 'attempts' => 0, 'purpose' => 'reset',
+        'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now),
+        'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + 30 * 60),
+        'verifiedAt' => '', 'ip' => $ip, 'userAgent' => (string)($p['userAgent'] ?? ''),
+    ]);
+
+    global $CONFIG;
+    $link = ($CONFIG['app_origin'] ?? '') . '/?reset=' . rawurlencode($token);
+    $first = explode(' ', (string)$member['fullName'])[0] ?? '';
+    $html = email_template([
+        'title' => 'Set your NGG password',
+        'intro' => 'Hi ' . ($first ?: 'there') . ', use the code below to set a new password.',
+        'bodyHtml' => '<p style="margin:0 0 10px">Enter this code in the app:</p>'
+            . '<div style="font-family:monospace;font-size:32px;font-weight:800;letter-spacing:6px;color:#0c1432;margin:0 0 8px">' . esc_html($otp) . '</div>'
+            . '<p style="margin:12px 0 0;color:#8a93b8;font-size:12px">This link and code expire in 30 minutes. If you didn\'t request this, ignore it — your password stays unchanged.</p>',
+        'ctaLabel' => 'Set a password →', 'ctaUrl' => $link,
+    ]);
+    $delivered = send_mail((string)$member['email'], 'Set your Next Generation Genius password', $html);
+    audit($delivered ? 'password.reset.request' : 'password.reset.mail_fail', $member['memberId'], (string)$member['memberId'], [], $ip);
+    return ['ok' => true, 'masked' => $masked, 'delivery' => $delivered];
+}
+
+/**
+ * Self-service password reset — step 2. Consumes a reset challenge (magic-link
+ * token, or memberId + emailed code) and sets the new password. Single-use,
+ * expiry- and attempt-guarded, and scoped to purpose='reset' so a reset
+ * credential can never be replayed as a plain login. Returns the member so the
+ * route can sign them straight in (mirrors auth.verify / auth.login).
+ */
+function auth_reset_confirm(array $p): array {
+    $ip = (string)($p['ip'] ?? '');
+    $token = trim((string)($p['token'] ?? ''));
+    $memberId = trim((string)($p['memberId'] ?? ''));
+    $otp = trim((string)($p['otp'] ?? ''));
+    $new = (string)($p['password'] ?? '');
+    if (strlen($new) < 8) return ['ok' => false, 'error' => 'password_too_short'];
+    if (strlen($new) > 200) return ['ok' => false, 'error' => 'password_too_long'];
+
+    if ($token !== '') {
+        $ch = db_row("SELECT * FROM auth_sessions WHERE token = ? AND purpose = 'reset' LIMIT 1", [$token]);
+    } elseif ($memberId !== '' && $otp !== '') {
+        $ch = db_row("SELECT * FROM auth_sessions WHERE memberId = ? AND otp = ? AND purpose = 'reset' AND (verifiedAt = '' OR verifiedAt IS NULL) ORDER BY id DESC LIMIT 1", [$memberId, $otp]);
+    } else {
+        return ['ok' => false, 'error' => 'no_credentials'];
+    }
+
+    if (!$ch) { audit('password.reset.fail.bad_token', $memberId ?: null, '', [], $ip); return ['ok' => false, 'error' => 'invalid']; }
+    if (strtotime((string)$ch['expiresAt']) < time()) return ['ok' => false, 'error' => 'expired'];
+    if (!empty($ch['verifiedAt'])) return ['ok' => false, 'error' => 'already_used'];
+    if ((int)$ch['attempts'] >= 5) return ['ok' => false, 'error' => 'too_many_attempts'];
+
+    $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ch['memberId']]);
+    if (!$member) return ['ok' => false, 'error' => 'member_gone'];
+    if ((string)$member['status'] === 'suspended') return ['ok' => false, 'error' => 'account_suspended'];
+
+    db_update('auth_sessions', ['verifiedAt' => now_iso()], ['id' => $ch['id']]);
+    db_update('members', ['passwordHash' => password_hash_best($new), 'updatedAt' => now_iso()], ['id' => $member['id']]);
+    auth_fail_reset($member);
+    audit('password.reset.success', $member['memberId'], (string)$member['memberId'], [], $ip);
     return ['ok' => true, 'member' => public_member($member)];
 }
 

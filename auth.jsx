@@ -35,7 +35,21 @@ function AuthProvider({ children }) {
       try {
         const url = new URL(window.location.href);
         const token = url.searchParams.get("signin");
-        if (token) {
+        const resetToken = url.searchParams.get("reset");
+        if (resetToken) {
+          // Arrived from a "set your password" email — open the modal straight
+          // on the new-password step; the token stands in for the code.
+          setSigninOpen(true);
+          setSigninSeed({ resetToken });
+          url.searchParams.delete("reset");
+          window.history.replaceState({}, "", url.toString());
+          try {
+            const me = await NGGApi.auth.me();
+            setMember(me.member || null);
+            setAdminOk(Boolean(me.adminOk));
+            setImpersonating(me.impersonating || null);
+          } catch (_) {}
+        } else if (token) {
           try {
             const v = await NGGApi.auth.verify({ token });
             setMember(v.member);
@@ -129,11 +143,15 @@ function AuthProvider({ children }) {
 function SignInModal({ seed, onClose, onVerified }) {
   // One door (W1): 'id' → gateway decides → 'password' | 'enter-otp'.
   // The gateway never reveals account types — staff look like any member.
-  const [stage, setStage] = React.useState(seed && seed.token ? "enter-otp" : "id");
+  const [stage, setStage] = React.useState(seed && seed.resetToken ? "reset-new" : (seed && seed.token ? "enter-otp" : "id"));
   const [identifier, setIdentifier] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
   const [otp, setOtp] = React.useState("");
+  // Self-service password reset: a magic-link token (from ?reset=) skips the
+  // code entry; otherwise the member types the emailed code + a new password.
+  const [resetToken, setResetToken] = React.useState(seed && seed.resetToken ? seed.resetToken : "");
+  const [newPw, setNewPw] = React.useState("");
   const [masked, setMasked] = React.useState("");
   const [deliveryOk, setDeliveryOk] = React.useState(true); // false ⇒ mail relay hiccup
   const [busy, setBusy] = React.useState(false);
@@ -234,6 +252,38 @@ function SignInModal({ seed, onClose, onVerified }) {
     finally { setBusy(false); }
   };
 
+  // Password reset — step 1: email a set-password link + code, then show the
+  // code + new-password screen. Reuses the identifier the member already typed.
+  const sendReset = async (e) => {
+    if (e) e.preventDefault();
+    if (identifier.trim().length < 3) { setErr("Enter your email or member ID first."); return; }
+    setErr(""); setBusy(true);
+    try {
+      const r = await NGGApi.auth.resetRequest(identifier.trim());
+      setMasked(r.masked || "");
+      setDeliveryOk(r.delivery !== false);
+      setResetToken("");
+      setStage("reset-new");
+      setCooldown(30);
+    } catch (e) { setErr(humanizeAuthError(e.code || e.message)); }
+    finally { setBusy(false); }
+  };
+  // Password reset — step 2: set the new password (from the ?reset= token, or
+  // the emailed code + member ID). On success the server signs the user in.
+  const confirmReset = async (e) => {
+    if (e) e.preventDefault();
+    if (newPw.length < 8) { setErr("Use at least 8 characters."); return; }
+    setErr(""); setBusy(true);
+    try {
+      const creds = resetToken
+        ? { token: resetToken, password: newPw }
+        : { memberId: identifier.trim(), otp: otp.replace(/\s+/g, ""), password: newPw };
+      const r = await NGGApi.auth.resetConfirm(creds);
+      onVerified(r.member);
+    } catch (e) { setErr(humanizeAuthError(e.code || e.message)); }
+    finally { setBusy(false); }
+  };
+
   const verifyOtp = async (e) => {
     if (e) e.preventDefault();
     setErr(""); setBusy(true);
@@ -264,13 +314,19 @@ function SignInModal({ seed, onClose, onVerified }) {
         <div className="signin-brand">
           <div className="signin-eyebrow">SIGN IN · MEMBERS ONLY</div>
           <div id="signin-h" className="signin-headline">
-            {stage === "enter-otp" ? "Check your email." : "Welcome back."}
+            {stage === "enter-otp" ? "Check your email."
+              : (stage === "reset-request" || stage === "reset-new") ? "Set a password."
+              : "Welcome back."}
           </div>
           <div className="signin-sub">
             {stage === "id"
               ? "Your Member ID or email — we'll take it from there."
               : stage === "password"
                 ? "Enter your password, or get a code by email instead."
+              : stage === "reset-request"
+                ? "We'll email you a link and code to set a new password."
+              : stage === "reset-new"
+                ? "Choose a new password — you'll be signed in straight after."
                 : masked ? <>We sent a magic link and a 6-digit code to <b>{masked}</b>. Either works.</>
                          : "Paste the 6-digit code from your email."}
           </div>
@@ -297,6 +353,9 @@ function SignInModal({ seed, onClose, onVerified }) {
             </button>
             <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-otp"); }}>
               I already have a code
+            </button>
+            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("reset-request"); }}>
+              Set or reset a password
             </button>
           </form>
         )}
@@ -335,6 +394,9 @@ function SignInModal({ seed, onClose, onVerified }) {
             </button>
             <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>
               Email me a sign-in code instead
+            </button>
+            <button type="button" className="signin-link" onClick={() => { setErr(""); setPassword(""); setStage("reset-request"); }}>
+              Forgot your password?
             </button>
           </form>
         )}
@@ -385,7 +447,104 @@ function SignInModal({ seed, onClose, onVerified }) {
             <button type="button" className="signin-link" onClick={sendCode} disabled={busy || cooldown > 0 || identifier.trim().length < 3}>
               {cooldown > 0 ? "Resend code in " + cooldown + "s" : (masked ? "Resend code" : "Send me a code")}
             </button>
+            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("reset-request"); }}>
+              Set or reset a password instead
+            </button>
             <button type="button" className="signin-link" onClick={() => { setStage("id"); setOtp(""); setErr(""); setCooldown(0); }}>
+              ← Start over
+            </button>
+          </form>
+        )}
+
+        {stage === "reset-request" && (
+          <form onSubmit={sendReset} className="signin-form">
+            <label className="signin-label" htmlFor="signin-rid">Email or Member ID</label>
+            <input
+              id="signin-rid"
+              ref={inputRef}
+              className="signin-input"
+              type="text"
+              autoComplete="username"
+              placeholder="you@email.com  or  NGG-2025-0042"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              required
+              minLength={3}
+            />
+            <p className="signin-hint" style={{ margin: "4px 0 0", fontSize: 13, color: "var(--ink-500)" }}>
+              We'll email a link and a 6-digit code so you can set a new password.
+            </p>
+            {err && <div className="signin-err">{err}</div>}
+            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || identifier.trim().length < 3}>
+              {busy ? "Sending…" : "Email me a set-password link →"}
+            </button>
+            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("id"); }}>
+              ← Back to sign in
+            </button>
+          </form>
+        )}
+
+        {stage === "reset-new" && (
+          <form onSubmit={confirmReset} className="signin-form">
+            {!deliveryOk && (
+              <p className="signin-hint" style={{ margin: "0 0 8px", padding: "8px 10px", fontSize: 13, borderRadius: 8, background: "var(--amber-50, #fff7ed)", color: "var(--amber-800, #9a3412)", border: "1px solid var(--amber-200, #fed7aa)" }}>
+                We had trouble sending your email just now. Check spam, or use <b>Resend code</b> in a moment.
+              </p>
+            )}
+            {!resetToken && (
+              <>
+                <p className="signin-hint" style={{ margin: "0 0 4px", fontSize: 13, color: "var(--ink-500)" }}>
+                  {masked ? <>We sent a 6-digit code to <b>{masked}</b>. It expires in 30 minutes.</> : "Enter the code we emailed you."}
+                </p>
+                <label className="signin-label" htmlFor="signin-rotp">6-digit code</label>
+                <input
+                  id="signin-rotp"
+                  className="signin-input signin-otp"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={7}
+                  pattern="[0-9 ]*"
+                  placeholder="••• •••"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/[^\d ]/g, ""))}
+                  required
+                />
+              </>
+            )}
+            <label className="signin-label" htmlFor="signin-newpw">New password</label>
+            <div className="signin-pw-wrap" style={{ position: "relative" }}>
+              <input
+                id="signin-newpw"
+                ref={resetToken ? inputRef : null}
+                className="signin-input"
+                type={showPw ? "text" : "password"}
+                autoComplete="new-password"
+                placeholder="At least 8 characters"
+                value={newPw}
+                onChange={(e) => setNewPw(e.target.value)}
+                required
+                minLength={8}
+                style={{ paddingRight: 64 }}
+              />
+              <button
+                type="button"
+                className="signin-pw-toggle"
+                onClick={() => setShowPw(v => !v)}
+                aria-label={showPw ? "Hide password" : "Show password"}
+                style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink-500)", letterSpacing: "0.06em" }}
+              >{showPw ? "HIDE" : "SHOW"}</button>
+            </div>
+            {err && <div className="signin-err">{err}</div>}
+            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || newPw.length < 8 || (!resetToken && otp.replace(/\s/g, "").length !== 6)}>
+              {busy ? "Setting…" : "Set password & sign in →"}
+            </button>
+            {!resetToken && (
+              <button type="button" className="signin-link" onClick={sendReset} disabled={busy || cooldown > 0 || identifier.trim().length < 3}>
+                {cooldown > 0 ? "Resend code in " + cooldown + "s" : "Resend code"}
+              </button>
+            )}
+            <button type="button" className="signin-link" onClick={() => { setStage("id"); setOtp(""); setNewPw(""); setResetToken(""); setErr(""); setCooldown(0); }}>
               ← Start over
             </button>
           </form>
@@ -410,8 +569,10 @@ function humanizeAuthError(code) {
     no_identifier: "Tell us your Member ID or email.",
     invalid_login: "That email/ID or password isn't right.",
     missing_credentials: "Enter your email/ID and password.",
-    no_password: "No password set for this account yet. Use a sign-in code instead.",
+    no_password: "No password set yet. Use “Set or reset a password”, or sign in with an email code.",
     password_too_short: "Use at least 8 characters.",
+    password_too_long: "That password is too long (200 characters max).",
+    account_suspended: "This account is suspended. Contact admin.",
     bad_current_password: "Your current password isn't right.",
     mail_failed: "We couldn't send the email. Check your inbox in a minute or contact admin.",
     member_gone: "We can't find that account. Contact admin.",

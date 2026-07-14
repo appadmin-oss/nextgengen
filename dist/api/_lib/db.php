@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 32;
+const NGG_SCHEMA_TARGET = 33;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -780,6 +780,12 @@ function db_migrate(PDO $db): void {
             ALTER TABLE volunteers ADD COLUMN lastName TEXT DEFAULT '';
             ALTER TABLE volunteers ADD COLUMN otherName TEXT DEFAULT '';
             ALTER TABLE volunteers ADD COLUMN dob TEXT DEFAULT '';
+        ",
+
+        // Self-service password reset: reuse auth_sessions for reset challenges,
+        // tagged by purpose so a reset token can't be used as a plain login.
+        33 => "
+            ALTER TABLE auth_sessions ADD COLUMN purpose TEXT DEFAULT 'login';
         ",
     ];
 

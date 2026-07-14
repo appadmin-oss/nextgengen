@@ -118,6 +118,8 @@
       gateway: (identifier) => request('/auth/gateway.php', { body: { identifier } }),
       request: (identifier) => request('/auth/request.php', { body: { identifier } }),
       login:   (identifier, password) => request('/auth/login.php', { body: { identifier, password } }),
+      resetRequest: (identifier) => request('/auth/reset-request.php', { body: { identifier } }),
+      resetConfirm: (creds) => request('/auth/reset-confirm.php', { body: creds }),
       setPassword: (password, current) => request('/auth/set-password.php', { body: { password, current: current || '' } }),
       verify:  (creds) => request('/auth/verify.php', { body: creds }),
       me:      () => request('/auth/me.php'),
