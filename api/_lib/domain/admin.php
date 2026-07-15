@@ -26,7 +26,7 @@ function admin_is_super(array $p): bool {
 function admin_cap_gate(array $p, string $cap): array {
     $g = admin_gate($p);
     if (!$g['ok']) return $g;
-    if (!role_has_cap($g['requester']['role'], $cap)) {
+    if (!in_array($cap, member_effective_caps($g['requester']), true)) {
         return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:' . $cap];
     }
     return $g;
@@ -56,9 +56,26 @@ function admin_members_list(array $p): array {
     foreach (['centre', 'status', 'type'] as $f) {
         if (!empty($p[$f])) { $where[] = "$f = ?"; $params[] = $p[$f]; }
     }
-    $sql = 'SELECT * FROM members' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY createdAt DESC';
-    $rows = db_all($sql, $params);
-    return ['ok' => true, 'total' => count($rows), 'members' => array_map('public_member', $rows)];
+    // Staff-only view powers the Access & roles roster.
+    if (!empty($p['staff'])) { $where[] = "role IN ('editor','summer_admin','club_admin','audit','admin','super_admin')"; }
+    $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+    // Accurate total for the filtered set, computed before paging so the client
+    // can render "N–M of T" and page controls without loading every row.
+    $total = (int) db_row('SELECT COUNT(*) c FROM members' . $whereSql, $params)['c'];
+    // Optional pagination. page is 1-based; pageSize is clamped. When absent we
+    // still cap the result so an unbounded table can't be requested by default.
+    // Export mode: every matching row (bounded), no paging — for a full CSV.
+    if (!empty($p['all'])) {
+        $rows = db_all('SELECT * FROM members' . $whereSql . ' ORDER BY createdAt DESC LIMIT 5000', $params);
+        audit('admin.members.export', $g['requester']['memberId'], '', ['count' => count($rows)], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'total' => $total, 'members' => array_map('public_member', $rows)];
+    }
+    $pageSize = min(200, max(1, (int)($p['pageSize'] ?? 50)));
+    $page = max(1, (int)($p['page'] ?? 1));
+    $offset = ($page - 1) * $pageSize;
+    $sql = 'SELECT * FROM members' . $whereSql . ' ORDER BY createdAt DESC LIMIT ? OFFSET ?';
+    $rows = db_all($sql, array_merge($params, [$pageSize, $offset]));
+    return ['ok' => true, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize, 'members' => array_map('public_member', $rows)];
 }
 
 function admin_members_upsert(array $p): array {
@@ -101,6 +118,11 @@ function admin_members_upsert(array $p): array {
         $patch = db_pick($data, $cols);
         $patch['updatedAt'] = now_iso();
         db_update('members', $patch, ['id' => $existing['id']]);
+        // Newly promoted to a staff tier → send an invite/onboarding email.
+        $wasStaff = is_admin_role((string)$existing['role']);
+        if ($newRole !== null && !$wasStaff && in_array($newRole, ['editor', 'summer_admin', 'club_admin', 'audit', 'admin', 'super_admin'], true)) {
+            staff_invite_email($memberId, $newRole);
+        }
         audit('admin.member.update', $g['requester']['memberId'], $memberId, ['keys' => array_keys($patch)], (string)($p['ip'] ?? ''));
         event_emit('member.updated', ['memberId' => $memberId] + (db_row('SELECT memberId, fullName, email, phone, type, status, role, centre, track, cohort, school, parentName, parentEmail, parentPhone FROM members WHERE memberId = ?', [$memberId]) ?: []));
         return ['ok' => true, 'memberId' => $memberId];
@@ -114,9 +136,42 @@ function admin_members_upsert(array $p): array {
     $insert['createdAt'] = now_iso();
     $insert['updatedAt'] = now_iso();
     db_insert('members', $insert);
+    if (is_admin_role((string)$insert['role'])) staff_invite_email($newId, (string)$insert['role']);
     audit('admin.member.create', $g['requester']['memberId'], $newId, [], (string)($p['ip'] ?? ''));
     event_emit('member.created', ['memberId' => $newId, 'fullName' => (string)($insert['fullName'] ?? ''), 'type' => (string)($insert['type'] ?? ''), 'centre' => (string)($insert['centre'] ?? '')]);
     return ['ok' => true, 'memberId' => $newId];
+}
+
+/** Super-admin: set a staff member's EXTRA capabilities (beyond their role). */
+function admin_member_caps_set(array $p): array {
+    if (!admin_is_super($p)) return ['ok' => false, 'error' => 'forbidden'];
+    $mid = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT id, role FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if (!is_admin_role((string)$m['role'])) return ['ok' => false, 'error' => 'not_staff'];
+    $valid = ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'audit'];
+    $roleCaps = admin_role_caps((string)$m['role']);
+    $in = is_array($p['caps'] ?? null) ? $p['caps'] : [];
+    // Store only extras that the role doesn't already grant.
+    $extra = array_values(array_unique(array_filter(array_map('strval', $in), fn($c) => in_array($c, $valid, true) && !in_array($c, $roleCaps, true))));
+    db_update('members', ['capsExtra' => json_encode($extra, JSON_UNESCAPED_SLASHES), 'updatedAt' => now_iso()], ['id' => $m['id']]);
+    audit('admin.member.caps', (string)($p['requesterId'] ?? ''), $mid, ['extra' => $extra], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'capsExtra' => $extra];
+}
+
+/** Email a newly-granted staff member their onboarding invite (sign-in link). */
+function staff_invite_email(string $memberId, string $role): void {
+    $m = db_row('SELECT fullName, email FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m || empty($m['email']) || !filter_var((string)$m['email'], FILTER_VALIDATE_EMAIL)) return;
+    $roleName = ['editor' => 'Editor', 'summer_admin' => 'Summer School coordinator', 'club_admin' => 'Club coordinator', 'audit' => 'Auditor', 'admin' => 'Admin', 'super_admin' => 'Super admin'][$role] ?? 'Staff';
+    $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/login';
+    @send_mail((string)$m['email'], "You've been added to the NGG team", email_template([
+        'title' => 'Welcome to the team',
+        'intro' => 'Hi ' . esc_html(explode(' ', (string)$m['fullName'])[0] ?: 'there') . " — you've been granted the {$roleName} role at Next Generation Genius.",
+        'bodyHtml' => '<p style="margin:0 0 10px">Sign in with this email (request a code, or set a password), then you\'ll set up two-factor authentication the first time you open the Control Room.</p>',
+        'ctaLabel' => 'Sign in to the Control Room →', 'ctaUrl' => $url,
+    ]));
+    audit('staff.invite', null, $memberId, ['role' => $role], '');
 }
 
 // ── Mentors ──────────────────────────────────────────────────────────────
@@ -285,6 +340,12 @@ function admin_posts_upsert(array $p): array {
     return ['ok' => true, 'postId' => $newId, 'slug' => $patch['slug']];
 }
 
+function admin_promotions_get(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $promo = setting_get('homepage_promo');
+    return ['ok' => true, 'promo' => is_array($promo) ? $promo : null];
+}
+
 function admin_promotions_set(array $p): array {
     $g = admin_gate($p); if (!$g['ok']) return $g;
     $promo = $p['promo'] ?? null;
@@ -331,17 +392,26 @@ function admin_audit_tail(array $p): array {
     $g = admin_cap_gate($p, 'rbac');
     if (!$g['ok']) $g = admin_cap_gate($p, 'audit');
     if (!$g['ok']) return $g;
-    $limit = min(2000, max(1, (int)($p['limit'] ?? 300)));
     $where = []; $params = [];
     if (!empty($p['actor']))  { $where[] = 'a.actorId = ?'; $params[] = (string)$p['actor']; }
     if (!empty($p['event']))  { $where[] = 'a.event LIKE ?'; $params[] = '%' . (string)$p['event'] . '%'; }
     if (!empty($p['staffOnly'])) { $where[] = "m.role IN ('editor','admin','super_admin')"; }
+    $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+    // True total so the accountability record is never silently truncated —
+    // the client pages through ALL matching entries instead of a hard cap.
+    $total = (int) db_row("SELECT COUNT(*) c FROM audit_log a LEFT JOIN members m ON m.memberId = a.actorId" . $whereSql, $params)['c'];
+    if (!empty($p['all'])) {
+        $rows = db_all("SELECT a.at, a.actorId, a.event, a.subject, a.ip, m.fullName actorName, m.role actorRole FROM audit_log a LEFT JOIN members m ON m.memberId = a.actorId" . $whereSql . ' ORDER BY a.id DESC LIMIT 20000', $params);
+        return ['ok' => true, 'audit' => $rows, 'total' => $total];
+    }
+    $pageSize = min(500, max(1, (int)($p['pageSize'] ?? 100)));
+    $page = max(1, (int)($p['page'] ?? 1));
+    $offset = ($page - 1) * $pageSize;
     $sql = "SELECT a.at, a.actorId, a.event, a.subject, a.ip, a.meta, m.fullName actorName, m.role actorRole
             FROM audit_log a LEFT JOIN members m ON m.memberId = a.actorId"
-        . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
-        . ' ORDER BY a.id DESC LIMIT ?';
-    $params[] = $limit;
-    $rows = db_all($sql, $params);
+        . $whereSql
+        . ' ORDER BY a.id DESC LIMIT ? OFFSET ?';
+    $rows = db_all($sql, array_merge($params, [$pageSize, $offset]));
 
     // Distinct staff actors seen in the log — powers the actor filter.
     $actors = db_all(
@@ -349,7 +419,7 @@ function admin_audit_tail(array $p): array {
          JOIN members m ON m.memberId = a.actorId
          WHERE m.role IN ('editor','admin','super_admin') ORDER BY m.fullName"
     );
-    return ['ok' => true, 'audit' => $rows, 'actors' => $actors];
+    return ['ok' => true, 'audit' => $rows, 'actors' => $actors, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize];
 }
 
 // ── Announcements / broadcast ────────────────────────────────────────────
@@ -363,10 +433,12 @@ function admin_broadcast(array $p): array {
     $alsoEmail = !empty($p['email']);
 
     // Persistent broadcast notification (memberId '*' = every member's feed).
+    // The audience is stamped so the in-app feed matches the emailed audience.
+    $audKey = in_array($audience, ['Egbeda', 'Ayobo', 'Summer', 'NGG'], true) ? $audience : '';
     db_insert('notifications', [
         'notifId' => 'N-' . gmdate('Y') . '-' . rand_hex(4),
         'memberId' => '*', 'kind' => 'announcement', 'title' => $title, 'body' => $body,
-        'linkPage' => $linkPage, 'readAt' => '', 'createdAt' => now_iso(),
+        'linkPage' => $linkPage, 'audience' => $audKey, 'readAt' => '', 'createdAt' => now_iso(),
     ]);
 
     $emailResult = ['sent' => 0, 'skipped' => 0];
@@ -388,4 +460,14 @@ function admin_broadcast(array $p): array {
 
     audit('admin.broadcast', $g['requester']['memberId'], '', ['title' => $title, 'audience' => $audience, 'emailed' => $emailResult['sent']], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'emailed' => $emailResult['sent'], 'skipped' => $emailResult['skipped']];
+}
+
+/** Recent announcements (the broadcast history) — most recent first. */
+function admin_broadcast_history(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $rows = db_all("SELECT notifId, title, body, linkPage, audience, createdAt FROM notifications WHERE memberId = '*' AND kind = 'announcement' ORDER BY id DESC LIMIT 50");
+    return ['ok' => true, 'announcements' => array_map(fn($r) => [
+        'notifId' => $r['notifId'], 'title' => (string)$r['title'], 'body' => (string)$r['body'],
+        'linkPage' => (string)$r['linkPage'], 'audience' => (string)($r['audience'] ?? '') ?: 'all', 'createdAt' => $r['createdAt'],
+    ], $rows)];
 }

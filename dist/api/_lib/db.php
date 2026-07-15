@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 22;
+const NGG_SCHEMA_TARGET = 34;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -37,6 +37,7 @@ function db_conn(): PDO {
         if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
             $pdo->exec("SET NAMES utf8mb4");
             $pdo->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'");
+            db_apply_mysql_schema($pdo);
         }
         return $pdo;
     }
@@ -55,6 +56,65 @@ function db_conn(): PDO {
 
 function db_driver(): string {
     return db_conn()->getAttribute(PDO::ATTR_DRIVER_NAME);
+}
+
+/**
+ * Auto-migrate MySQL by replaying db/schema-mysql.sql — the manually-maintained
+ * mirror of the SQLite migrations. Hosts without SSH can't run migrations by
+ * hand, so on each connection we bring the live schema up to the mirror:
+ * missing tables are created and missing columns are added (the mirror declares
+ * post-baseline columns as trailing `ALTER ... ADD COLUMN`, which re-run
+ * harmlessly when the column already exists).
+ *
+ * Safety: only additive structural DDL runs (CREATE TABLE / CREATE INDEX /
+ * ALTER TABLE) — never INSERT/DROP/UPDATE. Idempotency errors (table/column/key
+ * already exists) are swallowed; anything unexpected is logged and does NOT
+ * break the request. Gated by a content hash in schema_meta so the full replay
+ * only runs when the mirror actually changes (steady state = two tiny queries).
+ */
+function db_apply_mysql_schema(PDO $db): void {
+    global $CONFIG;
+    $file = (string)($CONFIG['mysql_schema_path'] ?? (__DIR__ . '/../../db/schema-mysql.sql'));
+    if (!is_file($file)) { error_log('[db] mysql schema mirror not found: ' . $file); return; }
+    $sql = (string)@file_get_contents($file);
+    if ($sql === '') return;
+    $hash = hash('sha256', $sql);
+
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS schema_meta (k VARCHAR(64) PRIMARY KEY, v VARCHAR(191)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $st = $db->query("SELECT v FROM schema_meta WHERE k = 'mysql_schema_hash'");
+        if ($st && (string)($st->fetchColumn() ?: '') === $hash) return; // already current
+    } catch (Throwable $e) {
+        error_log('[db] schema_meta check: ' . $e->getMessage()); // fall through and try to apply
+    }
+
+    // Strip comments, split on ';', run only additive structural DDL.
+    $clean = preg_replace('#/\*.*?\*/#s', '', $sql);
+    $clean = preg_replace('#--[^\n]*#', '', (string)$clean);
+    $allOk = true;
+    foreach (explode(';', (string)$clean) as $stmt) {
+        $stmt = trim($stmt);
+        if ($stmt === '' || !preg_match('/^(CREATE TABLE|CREATE INDEX|CREATE UNIQUE INDEX|ALTER TABLE)\b/i', $stmt)) continue;
+        try {
+            $db->exec($stmt);
+        } catch (Throwable $e) {
+            // 1050 table exists · 1060 dup column · 1061 dup key · 1091 no such column · 1826 dup FK
+            $code = (int)($e->errorInfo[1] ?? 0);
+            if (!in_array($code, [1050, 1060, 1061, 1091, 1826], true)) {
+                $allOk = false;
+                error_log('[db] mysql schema stmt failed (' . $code . '): ' . substr($stmt, 0, 100) . ' — ' . $e->getMessage());
+            }
+        }
+    }
+    // Only record the hash when the whole mirror applied cleanly, so a transient
+    // failure (e.g. a missing ALTER privilege) retries on the next request.
+    if ($allOk) {
+        try {
+            $db->exec("INSERT INTO schema_meta (k, v) VALUES ('mysql_schema_hash', " . $db->quote($hash) . ") ON DUPLICATE KEY UPDATE v = VALUES(v)");
+        } catch (Throwable $e) {
+            error_log('[db] schema_meta write: ' . $e->getMessage());
+        }
+    }
 }
 
 function db_migrate(PDO $db): void {
@@ -655,6 +715,145 @@ function db_migrate(PDO $db): void {
         // retake. Minted on the first retake request.
         22 => "
             ALTER TABLE summer_students ADD COLUMN photoToken TEXT DEFAULT '';
+        ",
+
+        // Attendance-taker rotation: one volunteer per centre is on attendance
+        // duty each day. Rows are the resolved/overridable daily assignment
+        // (auto round-robin when absent). Plus a per-volunteer attendance-duty
+        // gamification ledger (points/streak drive levels + awards).
+        23 => "
+            CREATE TABLE attendance_duty (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              date TEXT NOT NULL,
+              centre TEXT NOT NULL,
+              volunteerId TEXT NOT NULL,
+              source TEXT DEFAULT 'auto',
+              assignedById TEXT DEFAULT '',
+              completedAt TEXT DEFAULT '',
+              takenCount INTEGER DEFAULT 0,
+              createdAt TEXT DEFAULT (datetime('now')),
+              UNIQUE (date, centre)
+            );
+            CREATE INDEX idx_duty_vol ON attendance_duty(volunteerId);
+            CREATE INDEX idx_duty_date ON attendance_duty(date);
+
+            CREATE TABLE volunteer_points (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              volunteerId TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              points INTEGER DEFAULT 0,
+              date TEXT DEFAULT '',
+              note TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_vpoints_vol ON volunteer_points(volunteerId);
+        ",
+
+        // Broadcast audience targeting: a '*' announcement can now be scoped to
+        // a centre or member type so the in-app feed matches the emailed list.
+        24 => "
+            ALTER TABLE notifications ADD COLUMN audience TEXT DEFAULT '';
+        ",
+
+        // 2FA backup codes (hashed, one-time) so a lost authenticator isn't a
+        // hard lockout.
+        25 => "
+            ALTER TABLE members ADD COLUMN totpBackup TEXT DEFAULT '';
+        ",
+
+        // Student completion certificates (verifiable, like the volunteer ones)
+        // + revocation for BOTH cert kinds so the public 'revoked' state is real.
+        26 => "
+            ALTER TABLE volunteer_certs ADD COLUMN revokedAt TEXT DEFAULT '';
+            CREATE TABLE student_certs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              certId TEXT UNIQUE NOT NULL,
+              studentId TEXT NOT NULL,
+              cohortId TEXT DEFAULT '',
+              daysPresent INTEGER DEFAULT 0,
+              attendanceRate INTEGER DEFAULT 0,
+              issuedAt TEXT DEFAULT (datetime('now')),
+              revokedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_stucert_student ON student_certs(studentId);
+        ",
+
+        // Attendance check-OUT (optional dwell tracking) + guardian absence alerts.
+        27 => "
+            ALTER TABLE attendance ADD COLUMN checkOutAt TEXT DEFAULT '';
+        ",
+
+        // Per-centre capacity (0 = unlimited) → waitlist when full.
+        28 => "
+            ALTER TABLE centres ADD COLUMN capacity INTEGER DEFAULT 0;
+        ",
+
+        // Verified self-service email change (pending address + signed token).
+        29 => "
+            ALTER TABLE members ADD COLUMN pendingEmail TEXT DEFAULT '';
+            ALTER TABLE members ADD COLUMN emailChangeToken TEXT DEFAULT '';
+            ALTER TABLE members ADD COLUMN emailChangeExpiresAt TEXT DEFAULT '';
+        ",
+
+        // Peer interaction on posts: emoji reactions + moderated comments.
+        30 => "
+            CREATE TABLE post_reactions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              postId TEXT NOT NULL, memberId TEXT NOT NULL, emoji TEXT NOT NULL,
+              createdAt TEXT DEFAULT (datetime('now')),
+              UNIQUE (postId, memberId)
+            );
+            CREATE INDEX idx_reactions_post ON post_reactions(postId);
+            CREATE TABLE post_comments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              commentId TEXT UNIQUE NOT NULL,
+              postId TEXT NOT NULL, memberId TEXT NOT NULL, memberName TEXT DEFAULT '',
+              body TEXT NOT NULL, status TEXT DEFAULT 'pending',
+              createdAt TEXT DEFAULT (datetime('now')), moderatedBy TEXT DEFAULT '', moderatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_comments_post ON post_comments(postId, status);
+            CREATE INDEX idx_comments_status ON post_comments(status);
+        ",
+
+        // Donations (Paystack) + per-member extra capabilities (RBAC editor).
+        31 => "
+            CREATE TABLE donations (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              reference TEXT UNIQUE NOT NULL,
+              email TEXT, name TEXT, amount INTEGER DEFAULT 0, currency TEXT DEFAULT 'NGN',
+              status TEXT DEFAULT 'pending', channel TEXT DEFAULT '', message TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now')), paidAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_donations_status ON donations(status);
+            ALTER TABLE members ADD COLUMN capsExtra TEXT DEFAULT '';
+        ",
+
+        // Standardised intake: structured name (first/last/other) + date of
+        // birth on public applications and the volunteers they convert into.
+        // Legacy `name`/`fullName` stay populated (composed) for back-compat.
+        32 => "
+            ALTER TABLE applications ADD COLUMN firstName TEXT DEFAULT '';
+            ALTER TABLE applications ADD COLUMN lastName TEXT DEFAULT '';
+            ALTER TABLE applications ADD COLUMN otherName TEXT DEFAULT '';
+            ALTER TABLE applications ADD COLUMN dob TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN firstName TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN lastName TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN otherName TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN dob TEXT DEFAULT '';
+        ",
+
+        // Self-service password reset: reuse auth_sessions for reset challenges,
+        // tagged by purpose so a reset token can't be used as a plain login.
+        33 => "
+            ALTER TABLE auth_sessions ADD COLUMN purpose TEXT DEFAULT 'login';
+        ",
+
+        // Standardised intake: sex on every intake (applications + the
+        // volunteers/summer students they convert into).
+        34 => "
+            ALTER TABLE applications ADD COLUMN sex TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN sex TEXT DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN sex TEXT DEFAULT '';
         ",
     ];
 

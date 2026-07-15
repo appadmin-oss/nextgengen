@@ -208,8 +208,16 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
   React.useEffect(() => { setEvents(data.events || []); }, [data.events]);
   React.useEffect(() => { setNotes(data.notifications || []); }, [data.notifications]);
 
-  const xpToNext = (Math.floor(s.xp / 250) + 1) * 250;
-  const xpPct = Math.min(100, Math.round((s.xp % 250) / 250 * 100));
+  // Canonical reflection-economy progression — fetched once here and shared by
+  // the Stats and Momentum cards so the dashboard never shows two different
+  // levels for the same member (and matches the Anchor Journal exactly).
+  const [momentum, setMomentum] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.member.momentum().then(r => { if (alive) setMomentum(r.momentum); }).catch(() => {});
+    return () => { alive = false; };
+  }, [mutateSeq]);
+  const prog = canonicalProgress(s, momentum);
 
   // Optimistic RSVP: flip local state now (authoritative once the request
   // succeeds), roll back + toast on failure. We deliberately do NOT trigger
@@ -248,8 +256,8 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
             {/* RIGHT RAIL */}
             <div className="dash-rail">
-              <DashboardStats stats={s} xpToNext={xpToNext} xpPct={xpPct}/>
-              <DashboardMomentum setPage={setPage}/>
+              <DashboardStats stats={s} prog={prog}/>
+              <DashboardMomentum momentum={momentum}/>
               {mentor && <DashboardMentor mentor={mentor}/>}
               <DashboardEvents events={events} onRsvp={onRsvp}/>
               <DashboardNotifications notes={notes} onRead={onRead}/>
@@ -389,11 +397,100 @@ function DashboardProfileModal({ m, onClose, onSaved }) {
               {pwBusy ? "Saving…" : pwDone ? "Saved ✓" : (hasPw ? "Change password" : "Set password")}
             </button>
           </div>
+
+          <DashboardSecurity/>
+          <DashboardAccount m={m}/>
         </div>
         <div className="admin-drawer-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button type="button" className="btn btn-primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save profile"}</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Active-device list with per-device + "sign out everywhere else" revoke.
+function DashboardSecurity() {
+  const [d, setD] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const load = () => NGGApi.member.security().then(setD).catch(() => setD({ sessions: [] }));
+  React.useEffect(() => { load(); }, []);
+  const shortUA = (ua) => {
+    if (!ua) return "Unknown device";
+    const os = /Android/i.test(ua) ? "Android" : /iPhone|iPad|iOS/i.test(ua) ? "iOS" : /Mac/i.test(ua) ? "macOS" : /Windows/i.test(ua) ? "Windows" : /Linux/i.test(ua) ? "Linux" : "Device";
+    const br = /Chrome/i.test(ua) ? "Chrome" : /Firefox/i.test(ua) ? "Firefox" : /Safari/i.test(ua) ? "Safari" : "browser";
+    return os + " · " + br;
+  };
+  const revoke = async (sid) => { setBusy(sid); try { await NGGApi.member.securityRevoke(sid); load(); } catch (e) { toast.error(humanError(e)); } finally { setBusy(""); } };
+  const revokeOthers = async () => {
+    if (!confirm("Sign out of every other device?")) return;
+    setBusy("others"); try { const r = await NGGApi.member.securityRevokeOthers(); toast.success("Signed out " + (r.revoked || 0) + " other device(s)."); load(); } catch (e) { toast.error(humanError(e)); } finally { setBusy(""); }
+  };
+  const sessions = d ? (d.sessions || []) : null;
+  return (
+    <div style={{ borderTop: "1px solid rgba(12,20,50,0.08)", margin: "6px 0 2px", paddingTop: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 15 }}>Devices &amp; security</div>
+      <div style={{ fontSize: 13, color: "var(--ink-500)", margin: "4px 0 12px" }}>Where you're signed in. Revoke any you don't recognise.</div>
+      {sessions === null ? <div className="dash-spinner"/> :
+        sessions.length === 0 ? <div style={{ fontSize: 13, color: "var(--ink-500)" }}>No active devices.</div> :
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {sessions.map(s => (
+            <div key={s.sid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontSize: 13, padding: "8px 10px", border: "1px solid rgba(12,20,50,0.08)", borderRadius: 8 }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{shortUA(s.device)} {s.current ? <span className="chip chip-lime" style={{ fontSize: 10 }}>this device</span> : null}</div>
+                <div className="mono" style={{ color: "var(--ink-500)", fontSize: 11 }}>{s.ip || "—"}{s.lastSeenAt ? " · last seen " + fmtDate(s.lastSeenAt) : ""}</div>
+              </div>
+              {!s.current && <button type="button" className="btn btn-ghost btn-sm" disabled={busy === s.sid} onClick={() => revoke(s.sid)}>{busy === s.sid ? "…" : "Sign out"}</button>}
+            </div>
+          ))}
+          {sessions.filter(s => !s.current).length > 0 && (
+            <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "others"} onClick={revokeOthers} style={{ alignSelf: "flex-start", marginTop: 4 }}>{busy === "others" ? "Signing out…" : "Sign out everywhere else"}</button>
+          )}
+        </div>}
+    </div>
+  );
+}
+
+// Account: verified email change, data export, and account deletion.
+function DashboardAccount({ m }) {
+  const [email, setEmail] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const changeEmail = async () => {
+    if (!email.trim()) return;
+    setBusy("email");
+    try { const r = await NGGApi.member.changeEmail(email.trim()); toast.success("Confirmation sent to " + (r.pending || email.trim()) + ". Click the link there to finish.", "Check your new inbox"); setEmail(""); }
+    catch (e) { toast.error(humanError(e)); } finally { setBusy(""); }
+  };
+  const exportData = async () => {
+    setBusy("export");
+    try {
+      const r = await NGGApi.member.exportData();
+      const blob = new Blob([JSON.stringify(r.export || r, null, 2)], { type: "application/json" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "ngg-my-data.json"; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    } catch (e) { toast.error(humanError(e)); } finally { setBusy(""); }
+  };
+  const del = async () => {
+    if (!confirm("Delete your account? This removes your profile and journal and signs you out. This cannot be undone.")) return;
+    if (!confirm("Are you absolutely sure? There is no undo.")) return;
+    setBusy("delete");
+    try { await NGGApi.member.deleteAccount(); toast.success("Your account has been deleted."); setTimeout(() => { window.location.href = "/"; }, 800); }
+    catch (e) { toast.error(humanError(e)); setBusy(""); }
+  };
+  return (
+    <div style={{ borderTop: "1px solid rgba(12,20,50,0.08)", margin: "6px 0 2px", paddingTop: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 15 }}>Account</div>
+      <div style={{ fontSize: 13, color: "var(--ink-500)", margin: "4px 0 12px" }}>Current email: <b>{m.email}</b></div>
+      <label className="admin-field"><span>Change email (needs confirmation)</span>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input className="admin-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="new@email.com"/>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "email" || !email.trim()} onClick={changeEmail}>{busy === "email" ? "…" : "Send link"}</button>
+        </div>
+      </label>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "export"} onClick={exportData}>{busy === "export" ? "Preparing…" : "Download my data"}</button>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "delete"} onClick={del} style={{ color: "#b03535" }}>Delete my account</button>
       </div>
     </div>
   );
@@ -686,10 +783,26 @@ function fmtShortDate(d) { if (!d) return ""; const x = new Date(d); return isNa
 
 // ----------------------------------------------------------------------------
 
-// Character ranks — shared identity with the Anchor Journal.
+// Character ranks — the ONE canonical progression, identical to the Anchor
+// Journal (journal/app.jsx RANKS) and the server momentum engine
+// (momentum.php): 60 XP per distinct reflection day, a flat 250 XP per level,
+// 5 levels. Thresholds are the cumulative floors of that flat model. Do not
+// fork these numbers again — a member who is "Rooted" here must be "Rooted"
+// in the journal at the same XP.
+const DASH_XP_PER_LEVEL = 250;
+// Mood taxonomy — the SAME keys the Anchor Journal stores (journal/app.jsx
+// MOODS/MOOD_ICON) so an entry created here renders correctly there. The emoji
+// is display-only; the stored value is the key.
+const DASH_MOODS = [
+  { key: "great", emoji: "🔥", label: "Great" },
+  { key: "good",  emoji: "🙂", label: "Good" },
+  { key: "okay",  emoji: "😐", label: "Okay" },
+  { key: "low",   emoji: "😔", label: "Low" },
+  { key: "rough", emoji: "😴", label: "Rough" },
+];
 const DASH_RANKS = [
-  { name: "Seedling", at: 0 }, { name: "Sprout", at: 250 }, { name: "Sapling", at: 750 },
-  { name: "Rooted", at: 1500 }, { name: "Vanguard", at: 3000 },
+  { name: "Seedling", at: 0 }, { name: "Sprout", at: 250 }, { name: "Sapling", at: 500 },
+  { name: "Rooted", at: 750 }, { name: "Vanguard", at: 1000 },
 ];
 function dashRank(xp) {
   let cur = DASH_RANKS[0], next = null;
@@ -700,19 +813,43 @@ function dashRank(xp) {
   const pct = next ? Math.min(100, Math.round((xp - cur.at) / (next.at - cur.at) * 100)) : 100;
   return { cur, next, pct };
 }
+// Reconcile the dashboard headline progression onto the canonical reflection
+// economy. The server momentum payload (when present) is authoritative and is
+// what the journal shows; `member_stats.xpTotal` is a separate mission-driven
+// tally and must NOT drive the rank/level (that was the cross-surface bug).
+// Falls back to the flat model over the momentum total, then to stored stats.
+function canonicalProgress(stats, momentum) {
+  if (momentum && typeof momentum.level === "number") {
+    const level = momentum.level;
+    const xpInLevel = momentum.xp || 0;               // 0..250 within the level
+    // Prefer the true cumulative from reflection days (matches the journal's
+    // reflectionDays*60 exactly); the level-math reconstruction under-counts at
+    // the capped max level, where xpInLevel is pinned to 250.
+    const total = typeof momentum.totalReflections === "number"
+      ? momentum.totalReflections * 60
+      : (level - 1) * DASH_XP_PER_LEVEL + xpInLevel;
+    const r = dashRank(total);
+    return { total, level, rank: r.cur, next: r.next, pct: r.next ? r.pct : 100 };
+  }
+  const total = (stats && stats.xp) || 0;
+  const r = dashRank(total);
+  const level = (stats && stats.level) || (DASH_RANKS.indexOf(r.cur) + 1);
+  return { total, level, rank: r.cur, next: r.next, pct: r.next ? r.pct : 100 };
+}
 
-function DashboardStats({ stats, xpToNext, xpPct }) {
-  const rank = dashRank(stats.xp || 0);
+function DashboardStats({ stats, prog }) {
+  // `prog` is the canonical reflection-economy progression (see
+  // canonicalProgress) — the same model the journal and server momentum use.
   return (
     <div className="dash-card dash-stats">
       <div className="dash-card-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h3 className="dash-card-h-sm">Your tally.</h3>
-        <span className="chip chip-gold" title="Character rank">{rank.cur.name}</span>
+        <span className="chip chip-gold" title="Character rank">{prog.rank.name}</span>
       </div>
       <div className="dash-stats-grid">
         <div className="dash-stat">
           <div className="mono dash-stat-l">LEVEL</div>
-          <div className="dash-stat-n">{String(stats.level).padStart(2, "0")}</div>
+          <div className="dash-stat-n">{String(prog.level).padStart(2, "0")}</div>
         </div>
         <div className="dash-stat">
           <div className="mono dash-stat-l">STREAK</div>
@@ -720,7 +857,7 @@ function DashboardStats({ stats, xpToNext, xpPct }) {
         </div>
         <div className="dash-stat">
           <div className="mono dash-stat-l">XP</div>
-          <div className="dash-stat-n">{stats.xp}</div>
+          <div className="dash-stat-n">{prog.total}</div>
         </div>
         <div className="dash-stat">
           <div className="mono dash-stat-l">BADGES</div>
@@ -728,11 +865,11 @@ function DashboardStats({ stats, xpToNext, xpPct }) {
         </div>
       </div>
       <div className="dash-xp-bar">
-        <div className="dash-xp-fill" style={{width: (rank.next ? rank.pct : 100) + "%"}}/>
+        <div className="dash-xp-fill" style={{width: prog.pct + "%"}}/>
       </div>
       <div className="dash-xp-meta">
-        <span>{(stats.xp || 0).toLocaleString()} XP</span>
-        <span>{rank.next ? "→ " + rank.next.name + " at " + rank.next.at.toLocaleString() : "Top rank reached ★"}</span>
+        <span>{prog.total.toLocaleString()} XP</span>
+        <span>{prog.next ? "→ " + prog.next.name + " at " + prog.next.at.toLocaleString() : "Top rank reached ★"}</span>
       </div>
     </div>
   );
@@ -749,11 +886,11 @@ const MOMENTUM_TONE = {
   practical: { bg: "rgba(47,111,208,0.12)", bd: "rgba(47,111,208,0.3)", fg: "#1f4f9c" },
   gentle: { bg: "rgba(12,20,50,0.06)", bd: "rgba(12,20,50,0.14)", fg: "var(--ink-600,#4a536b)" },
 };
-function DashboardMomentum({ setPage }) {
-  const [m, setM] = React.useState(null);
-  const [failed, setFailed] = React.useState(false);
-  React.useEffect(() => { NGGApi.member.momentum().then(r => setM(r.momentum)).catch(() => setFailed(true)); }, []);
-  if (failed || !m) return null;
+function DashboardMomentum({ momentum }) {
+  // Momentum is fetched once by DashboardLive and shared, so this card and the
+  // Stats card can never disagree about the member's level.
+  const m = momentum;
+  if (!m) return null;
   const nudge = (m.nudges || [])[0];
   const tone = (nudge && MOMENTUM_TONE[nudge.tone]) || MOMENTUM_TONE.gentle;
   return (
@@ -957,8 +1094,8 @@ function DashboardJournal({ onMutate }) {
       </div>
       <form onSubmit={submit}>
         <div className="dash-mood">
-          {["🔥","🙂","😐","😔","😴"].map(em => (
-            <button key={em} type="button" className={"dash-mood-btn" + (mood === em ? " is-on" : "")} onClick={() => setMood(em)} aria-label={"Mood " + em}>{em}</button>
+          {DASH_MOODS.map(mo => (
+            <button key={mo.key} type="button" className={"dash-mood-btn" + (mood === mo.key ? " is-on" : "")} onClick={() => setMood(mo.key)} aria-label={"Mood: " + mo.label} aria-pressed={mood === mo.key}>{mo.emoji}</button>
           ))}
         </div>
         <textarea

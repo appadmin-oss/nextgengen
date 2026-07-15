@@ -35,10 +35,25 @@ if ($method === 'GET') {
     } elseif ($action === 'checkin') {
         // Reuse the summer check-in op (QR token or explicit studentId).
         if (!gate_resolve((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
-        $res = gs_call('admin.summer.checkin', ['requesterId' => $s['mid'], 'token' => $b['token'] ?? '', 'method' => 'gate', 'device' => 'gate:' . substr((string)($b['gate'] ?? ''), 0, 12), 'ip' => $ip]);
+        // The gate token + session (admin or gate-bound kiosk) are already
+        // verified above, so authorize the check-in by the gate rather than by
+        // a staff capability (a desk-password kiosk has no member/cap).
+        $res = gs_call('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => ($s['mid'] ?: ('gate:' . substr((string)($b['gate'] ?? ''), 0, 24))), 'token' => $b['token'] ?? '', 'method' => 'gate', 'device' => 'gate:' . substr((string)($b['gate'] ?? ''), 0, 12), 'ip' => $ip]);
         if (!empty($res['ok']) && empty($res['already'])) {
             event_emit('attendance.marked', ['memberId' => $res['student']['studentId'] ?? '', 'name' => $res['student']['fullName'] ?? '', 'date' => gmdate('Y-m-d'), 'source' => 'gate', 'by' => $s['mid']]);
         }
+    } elseif ($action === 'checkout') {
+        if (!gate_resolve((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
+        $res = gs_call('admin.summer.checkout', ['gateAuthorized' => true, 'byId' => ($s['mid'] ?: ('gate:' . substr((string)($b['gate'] ?? ''), 0, 24))), 'token' => $b['token'] ?? '', 'ip' => $ip]);
+    } elseif ($action === 'duty_close') {
+        // Close today's roll for this gate's centre — credits the on-duty
+        // volunteer (points/level/awards) and returns the value-driven response.
+        if (!gate_resolve((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
+        $ctx = gs_call('gate.context', ['gate' => (string)($b['gate'] ?? '')]);
+        $centre = (string)($ctx['centre'] ?? '');
+        $volId = (string)(($ctx['duty']['volunteerId'] ?? '') ?: '');
+        if ($centre === '' || $volId === '') json_error('no_duty', 400);
+        $res = gs_call('attendance.duty.complete', ['date' => gmdate('Y-m-d'), 'centre' => $centre, 'volunteerId' => $volId, 'ip' => $ip]);
     } else {
         json_error('unknown_action', 400);
     }

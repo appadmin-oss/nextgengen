@@ -274,17 +274,20 @@ function AnchorWeekRow({ w, idx }) {
 // 5 · A WEEK INSIDE — editorial deep-dive on one week
 // ─────────────────────────────────────────────────────────────────────────
 
+// Week 3 of the canonical curriculum (see data.js WEEKS / anchor-content.php).
+// The missions below are the week's real home/school/peer actions, not
+// marketing invention — keep this consistent with the twelve-week map above.
 const SAMPLE_WEEK = {
   n: 3,
-  theme: "Communication",
-  verb: "Be understood. Then be remembered.",
+  theme: "Personal Hygiene",
+  verb: "Clean body, clear mind.",
   missions: [
-    { id: 1, t: "Record a 90-second voice note that argues a single idea.", type: "Speak", min: 15 },
-    { id: 2, t: "Read aloud, in front of someone older, for ten minutes.",  type: "Read",  min: 10 },
-    { id: 3, t: "Lead one conversation this week. Don't interrupt once.",   type: "Practice", min: 0 },
-    { id: 4, t: "Write the email you've been avoiding. Send it Friday.",    type: "Make", min: 20 },
+    { id: 1, t: "Build a morning & night wash routine — and hold it all week.", type: "System", min: 10 },
+    { id: 2, t: "Turn up to school neat: clean uniform, materials ready.",       type: "School", min: 5 },
+    { id: 3, t: "Tidy your own space each night before you sleep.",              type: "Home",   min: 10 },
+    { id: 4, t: "Model care, not vanity — help a peer without making it a show.", type: "Peer",  min: 0 },
   ],
-  reflection: "Where did your voice carry, and where did it disappear?",
+  reflection: "What does self-respect look like today?",
 };
 
 function AnchorWeekDeepDive() {
@@ -303,7 +306,7 @@ function AnchorWeekDeepDive() {
             <div className="anch-deep-stats">
               <div><div className="anch-deep-n">{SAMPLE_WEEK.missions.length}</div><div className="mono anch-deep-l">MISSIONS</div></div>
               <div><div className="anch-deep-n">~3h</div><div className="mono anch-deep-l">YOUR TIME</div></div>
-              <div><div className="anch-deep-n">+340</div><div className="mono anch-deep-l">XP MAX</div></div>
+              <div><div className="anch-deep-n">+420</div><div className="mono anch-deep-l">XP / WEEK</div></div>
             </div>
           </div>
           <ol className="anch-deep-missions">
@@ -523,9 +526,15 @@ function HabitGrid() {
 
 /* =================== MEMBER PROFILE =================== */
 function ProfilePage({ setPage }) {
-  const m = MEMBERS.find(x => x.id === 2); // Tunde
+  const m = MEMBERS.find(x => x.id === 2); // Tunde — illustrative sample only
   return (
     <div className="page" data-screen-label="05 Member Profile">
+      {/* Honest labelling: this route renders a fixed SAMPLE profile from static
+          data (there is no member id in the URL), so it must not read as a real
+          member's page. A live per-member profile is a separate feature build. */}
+      <div style={{background:"var(--gold-500)", color:"var(--navy-900)", textAlign:"center", padding:"8px 16px", fontFamily:"var(--font-mono)", fontSize:11, letterSpacing:"0.14em", textTransform:"uppercase", fontWeight:600}}>
+        Sample profile · illustrative layout, not a real member
+      </div>
       {/* Profile header */}
       <section style={{background:"var(--navy-900)", color:"white", padding:"56px 0 88px", position:"relative", overflow:"hidden"}}>
         <div style={{position:"absolute", inset:0, backgroundImage:"linear-gradient(135deg, rgba(245,176,38,0.18), transparent 50%), radial-gradient(circle at 20% 80%, rgba(208,255,58,0.12), transparent 60%)"}}/>

@@ -115,7 +115,16 @@ function admin_applications_list(array $p): array {
     if (!empty($p['kind'])) { $where[] = 'kind = ?'; $params[] = $p['kind']; }
     if (!empty($p['status'])) { $where[] = 'status = ?'; $params[] = $p['status']; }
     $sql = 'SELECT * FROM applications' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY id DESC LIMIT 500';
-    return ['ok' => true, 'applications' => db_all($sql, $params)];
+    $rows = db_all($sql, $params);
+    // Enrich each row so the admin detail view has everything structured:
+    // a human reference, decoded courses, and a derived age from DOB.
+    foreach ($rows as &$r) {
+        $r['ref'] = function_exists('intake_reference') ? intake_reference((string)($r['kind'] ?? 'teen'), (int)($r['id'] ?? 0)) : '';
+        $r['courses'] = $r['courses'] ? (json_decode((string)$r['courses'], true) ?: []) : [];
+        $r['dobAge'] = !empty($r['dob']) && function_exists('dob_age') ? dob_age((string)$r['dob']) : null;
+    }
+    unset($r);
+    return ['ok' => true, 'applications' => $rows];
 }
 
 function admin_applications_set_status(array $p): array {
@@ -161,7 +170,40 @@ function admin_application_convert(array $p): array {
 function admin_newsletter_list(array $p): array {
     $g = admin_cap_gate($p, 'inbox'); if (!$g['ok']) return $g;
     $rows = db_all('SELECT email, source, status, createdAt FROM newsletter ORDER BY id DESC LIMIT 5000');
-    return ['ok' => true, 'total' => count($rows), 'subscribers' => $rows];
+    $active = count(array_filter($rows, fn($r) => (string)$r['status'] === 'subscribed'));
+    return ['ok' => true, 'total' => count($rows), 'active' => $active, 'subscribers' => $rows];
+}
+
+/** A signed, per-email unsubscribe token (no DB column needed). */
+function newsletter_unsub_token(string $email): string {
+    $secret = (string)($GLOBALS['CONFIG']['cookie_secret'] ?? 'ngg');
+    return substr(hash_hmac('sha256', 'unsub:' . strtolower(trim($email)), $secret), 0, 32);
+}
+
+/** Compose + send a newsletter to all current subscribers (bounded), each with
+ *  a one-click unsubscribe link. Gated on 'inbox'. */
+function admin_newsletter_send(array $p): array {
+    $g = admin_cap_gate($p, 'inbox'); if (!$g['ok']) return $g;
+    $subject = trim((string)($p['subject'] ?? ''));
+    $body = trim((string)($p['body'] ?? ''));
+    if (strlen($subject) < 3) return ['ok' => false, 'error' => 'subject_too_short'];
+    if (strlen($body) < 10) return ['ok' => false, 'error' => 'body_too_short'];
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $subs = db_all("SELECT email FROM newsletter WHERE status = 'subscribed' LIMIT 2000");
+    $sent = 0; $skipped = 0;
+    foreach ($subs as $s) {
+        $to = trim((string)$s['email']);
+        if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL) || $sent >= 2000) { $skipped++; continue; }
+        $unsub = $origin . '/api/public/unsubscribe.php?e=' . rawurlencode($to) . '&t=' . newsletter_unsub_token($to);
+        $html = email_template([
+            'title' => $subject,
+            'bodyHtml' => '<div style="font-size:15px;line-height:1.65">' . nl2br(esc_html($body)) . '</div>',
+            'footNote' => 'You are receiving this because you subscribed to Next Generation Genius updates.',
+        ]) . '<div style="text-align:center;margin:-18px 0 24px;font-family:Arial,sans-serif"><a href="' . esc_html($unsub) . '" style="color:#8A93A6;font-size:12px">Unsubscribe</a></div>';
+        if (send_mail($to, $subject, $html)) $sent++; else $skipped++;
+    }
+    audit('newsletter.send', $g['requester']['memberId'], '', ['sent' => $sent, 'skipped' => $skipped], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'sent' => $sent, 'skipped' => $skipped, 'total' => count($subs)];
 }
 
 // ── Contact messages ─────────────────────────────────────────────────────────
@@ -194,18 +236,20 @@ function admin_settings_get(array $p): array {
         'mentor_applications_open'  => (setting_raw('mentor_applications_open') ?? '1') !== '0',
         'volunteer_applications_open' => (setting_raw('volunteer_applications_open') ?? '1') !== '0',
         'volunteer_sms_notify'      => (setting_raw('volunteer_sms_notify') ?? '1') !== '0',
+        'checkin_state_emails'      => (setting_raw('checkin_state_emails') ?? '1') !== '0',
         'volunteer_session_hours'   => (int)(setting_raw('volunteer_session_hours') ?: 4),
         'featured_session_id'       => setting_raw('featured_session_id') ?? '',
         'geofence_enabled'          => setting_raw('geofence_enabled') === '1',
         'photo_gate_issuance'       => setting_raw('photo_gate_issuance') === '1',
         'site_content'              => site_content(),
+        'idcard'                    => idcard_program(),
     ]];
 }
 
 function admin_settings_set(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $data = $p['data'] ?? [];
-    foreach (['applications_open', 'mentor_applications_open', 'volunteer_applications_open', 'volunteer_sms_notify', 'geofence_enabled', 'photo_gate_issuance'] as $k) {
+    foreach (['applications_open', 'mentor_applications_open', 'volunteer_applications_open', 'volunteer_sms_notify', 'checkin_state_emails', 'geofence_enabled', 'photo_gate_issuance'] as $k) {
         if (array_key_exists($k, $data)) setting_set($k, !empty($data[$k]) ? '1' : '0', $g['requester']['memberId']);
     }
     if (array_key_exists('volunteer_session_hours', $data)) setting_set('volunteer_session_hours', (string)max(1, min(12, (int)$data['volunteer_session_hours'])), $g['requester']['memberId']);
@@ -214,8 +258,85 @@ function admin_settings_set(array $p): array {
     if (array_key_exists('site_content', $data) && is_array($data['site_content'])) {
         setting_set('site_content', site_content_clean($data['site_content']), $g['requester']['memberId']);
     }
+    // ID-card branding block (program/year/motto/website/phone/logos).
+    if (array_key_exists('idcard', $data) && is_array($data['idcard'])) {
+        idcard_program_save($data['idcard'], $g['requester']['memberId']);
+    }
     audit('admin.settings.set', $g['requester']['memberId'], '', ['keys' => array_keys((array)$data)], (string)($p['ip'] ?? ''));
     return ['ok' => true];
+}
+
+// Diagnose email delivery: send a real message and report exactly what happened
+// (mode = smtp|php_mail, delivered, and the captured error) so "emails don't
+// deliver" is debuggable instead of silent.
+function admin_mail_test(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $to = trim((string)($p['to'] ?? ''));
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) $to = (string)($g['requester']['email'] ?? '');
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'no_valid_recipient'];
+    $mode = function_exists('mail_mode')
+        ? mail_mode()
+        : (!empty($GLOBALS['CONFIG']['mail']['smtp']['host'] ?? '') ? 'smtp' : 'php_mail');
+    $GLOBALS['__mail_last_error'] = '';
+    $delivered = send_mail($to, 'NGG email delivery test', email_template([
+        'title' => 'Delivery test',
+        'intro' => 'If you can read this, outbound email is working.',
+        'bodyHtml' => '<p style="margin:0">Sent from the Control Room email diagnostic (' . esc_html($mode) . ' mode).</p>',
+        'footNote' => 'Automated delivery test — no action needed.',
+    ]));
+    audit('admin.mail.test', $g['requester']['memberId'], $to, ['mode' => $mode, 'delivered' => $delivered], (string)($p['ip'] ?? ''));
+
+    // Surface the resolved sender config so SPF/DKIM alignment problems (the
+    // usual "it sends but lands in spam / gets rejected" cause) are visible.
+    $from = mail_from();
+    $smtp = (array)($GLOBALS['CONFIG']['mail']['smtp'] ?? []);
+    $fromDomain = function_exists('mail_domain_of') ? mail_domain_of((string)$from['email']) : '';
+    $hints = [];
+    if ($mode === 'php_mail') {
+        $hints[] = 'No SMTP, Apps Script or Resend configured — using PHP mail(), which most shared hosts silently drop. Easiest reliable fix: deploy apps-script/Code.gs and set apps_script_url (Google relays the mail), or set mail.resend_key, in api/config.php.';
+    } elseif ($mode === 'apps_script') {
+        $hints[] = 'Sending via the Google Apps Script Web App (MailApp). Make sure the script was deployed with the Mail scope accepted and its SHARED_SECRET matches api/config.php. Google sends from the account that owns the script.';
+    } elseif ($mode === 'resend') {
+        $hints[] = 'Using the Resend HTTPS API. Make sure mail.from_email is on a domain you have verified in the Resend dashboard, or delivery will be rejected.';
+    }
+    $isGmail = $mode === 'smtp' && preg_match('/gmail|googlemail|google\.com|smtp\.google/i', (string)($smtp['host'] ?? ''));
+    $authUser = strtolower(trim((string)($smtp['user'] ?? '')));
+    $fromEmail = strtolower((string)$from['email']);
+    if ($isGmail) {
+        // Gmail-specific: it rewrites the From to the authenticated account
+        // unless it's a verified alias, and requires an App Password.
+        if ($authUser !== '' && $fromEmail !== $authUser) {
+            $hints[] = "Gmail rewrites the From to the signed-in account unless it's a verified alias. Recipients will see {$authUser}, not {$fromEmail}. Either set mail.from_email to {$authUser}, or add {$fromEmail} under Gmail → Settings → Accounts → \"Send mail as\" (Workspace) first.";
+        }
+        $hints[] = "Gmail SMTP needs an App Password (Google Account → Security → 2-Step Verification → App passwords), not your normal password. Use smtp.gmail.com with port 587/secure 'tls' or 465/'ssl'. Consumer Gmail caps at ~500 messages/day.";
+    } else {
+        // Envelope/From must be a domain you're authorized to send for, or SPF fails.
+        if ($fromDomain && $fromDomain !== 'localhost' && !preg_match('/afrovanguard\./i', $fromDomain)) {
+            $hints[] = "From domain is {$fromDomain}. Make sure its DNS has SPF (and ideally DKIM/DMARC) authorizing this relay, or mail will be spam-filtered.";
+        }
+        if ($mode === 'smtp' && $authUser !== '' && $fromDomain && stripos($authUser, (string)$fromDomain) === false) {
+            $hints[] = "SMTP auth user doesn't match the From domain ({$fromDomain}) — many relays reject or spam-flag a mismatched From. Align mail.from_email with the authenticated mailbox.";
+        }
+        // A deploy that missed api/_lib/phpmailer/ silently falls back to the
+        // hand-rolled SMTP client, which fails on Gmail. Flag it explicitly.
+        if ($mode === 'smtp' && !(function_exists('ngg_load_phpmailer') && ngg_load_phpmailer())) {
+            $hints[] = 'PHPMailer is NOT present on the server (api/_lib/phpmailer/ missing from this deploy) — SMTP is using the fallback client, which fails against Gmail. Re-upload api/_lib/phpmailer/.';
+        }
+    }
+    $phpmailer = function_exists('ngg_load_phpmailer') && ngg_load_phpmailer();
+    // ok:true = the diagnostic ran; `delivered` says whether the send succeeded.
+    return [
+        'ok' => true, 'delivered' => $delivered, 'to' => $to, 'mode' => $mode,
+        'phpmailer' => $phpmailer,
+        'error' => (string)($GLOBALS['__mail_last_error'] ?? ''),
+        'from' => (string)$from['email'], 'fromName' => (string)$from['name'],
+        'replyTo' => (string)$from['replyTo'], 'fromDomain' => $fromDomain,
+        'smtp' => $mode === 'smtp' ? [
+            'host' => (string)($smtp['host'] ?? ''), 'port' => (int)($smtp['port'] ?? 587),
+            'secure' => (string)($smtp['secure'] ?? 'tls'), 'authUser' => (string)($smtp['user'] ?? ''),
+        ] : null,
+        'hints' => $hints,
+    ];
 }
 
 /** Editable site copy, merged over defaults so the homepage never breaks. */
@@ -246,5 +367,14 @@ function site_content_clean(array $in): array {
 }
 
 function public_site_content(array $p = []): array {
-    return ['ok' => true, 'site' => site_content()];
+    // Homepage promo banner — served only while active (unexpired).
+    $promo = setting_get('homepage_promo');
+    $activePromo = null;
+    if (is_array($promo) && !empty($promo['text'])) {
+        $exp = (string)($promo['expires'] ?? '');
+        if ($exp === '' || strtotime($exp) >= time()) {
+            $activePromo = ['text' => (string)$promo['text'], 'ctaLabel' => (string)($promo['ctaLabel'] ?? ''), 'ctaUrl' => (string)($promo['ctaUrl'] ?? ''), 'expires' => $exp];
+        }
+    }
+    return ['ok' => true, 'site' => site_content(), 'promo' => $activePromo];
 }

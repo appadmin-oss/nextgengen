@@ -25,20 +25,74 @@ return [
     ],
 
     // -----------------------------------------------------------------------
-    // Outbound email. Uses SMTP when `smtp.host` is set (recommended for
-    // deliverability on shared hosting), else PHP mail().
+    // Outbound email. Uses SMTP when `smtp.host` is set (STRONGLY recommended —
+    // shared-host PHP mail() is usually SPF-unaligned and lands in spam), else
+    // PHP mail(). Every message carries Date + Message-ID + a text/plain part.
+    //
+    // DELIVERABILITY CHECKLIST (the usual cause of "emails don't arrive"):
+    //   1. Set smtp.* below to an authenticated relay (Mailgun/SES/Postmark/etc).
+    //   2. `from_email` MUST be on a domain you control and that the relay is
+    //      authorized to send for — ideally the same mailbox as `smtp.user`.
+    //   3. In that domain's DNS add SPF (include the relay), DKIM (the relay's
+    //      key), and a DMARC record. Without these, mail is spam-filtered or
+    //      rejected even when the send "succeeds".
+    //   4. Verify from Control Room → Settings → Email delivery ("Send test
+    //      email") — it reports the mode, resolved From/Reply-To, SMTP target,
+    //      and flags SPF/From-alignment problems.
     // -----------------------------------------------------------------------
+    // SMTP is sent through a bundled PHPMailer (api/_lib/phpmailer/) — the
+    // same client the sibling Africa GATES app uses to deliver on Google
+    // Workspace — so a correct config below "just works" without Composer.
+    //
+    // GOOGLE WORKSPACE / GMAIL EXAMPLE:
+    //   'from_email' => 'youraccount@yourdomain.com',  // the signed-in mailbox
+    //                    (or a Workspace "Send mail as" verified alias)
+    //   'smtp' => [
+    //       'host' => 'smtp.gmail.com', 'port' => 587, 'secure' => 'tls',
+    //       'user' => 'youraccount@yourdomain.com',
+    //       'pass' => 'abcd efgh ijkl mnop',   // a 16-char APP PASSWORD, not
+    //                  your login password. Google Account → Security →
+    //                  2-Step Verification → App passwords. (465 + secure 'ssl'
+    //                  also works.) Workspace relay: smtp-relay.gmail.com.
+    //   ],
     'mail' => [
         'from_name'  => 'Next Generation Genius',
-        'from_email' => 'no-reply@ngg.afrovanguard.org',
-        'reply_to'   => 'hello@afrovanguard.org',
+        'from_email' => 'no-reply@ngg.afrovanguard.org',  // match the smtp.user mailbox
+        'reply_to'   => 'next@afrovanguard.org.ng',
         'smtp' => [
-            'host'   => '',            // e.g. 'smtp.mailgun.org' — empty = use mail()
+            'host'   => '',            // e.g. 'smtp.gmail.com' — empty = skip SMTP
             'port'   => 587,
             'secure' => 'tls',         // 'tls' (587) | 'ssl' (465) | '' (plain)
             'user'   => '',
             'pass'   => '',
         ],
+        // Resend HTTPS fallback (https://resend.com). Good on shared hosting
+        // when the host blocks outbound SMTP ports AND silently drops PHP
+        // mail(): Resend is a plain HTTPS POST. Free tier = 3,000/month; set
+        // from_email to a domain verified in your Resend dashboard (or use
+        // onboarding@resend.dev for testing).
+        'resend_key' => '',            // e.g. 're_xxxxxxxx' — empty = disabled
+
+        // Full delivery order: SMTP (if host set) → Apps Script MailApp (if
+        // apps_script_url + shared_secret set) → Resend (if key set) → mail().
+        // The Apps Script path is the most reliable on shared hosting — see the
+        // Apps Script block below. Set this to false to skip it.
+        'apps_script' => true,
+    ],
+
+    // -----------------------------------------------------------------------
+    // Web-cron (for hosts with NO SSH/cron — the default assumption). A normal
+    // request, at most once per interval, drains the integration bus, sends due
+    // parent-verification reminders, and runs daily maintenance (publish
+    // scheduled posts, expire promo, GC auth challenges, trim audit log) AFTER
+    // the response is flushed. If you DO have a real cron driving api/tools/*,
+    // set 'enabled' => false to avoid doing the work twice.
+    // -----------------------------------------------------------------------
+    'webcron' => [
+        'enabled'   => true,
+        'deliver'   => 60,     // seconds between integration-bus drains
+        'reminders' => 900,    // seconds between reminder sweeps
+        'maint'     => 3600,   // seconds between maintenance passes
     ],
 
     // -----------------------------------------------------------------------
@@ -46,8 +100,29 @@ return [
     // pushes DB snapshots here on a cron so admins keep a familiar spreadsheet
     // view. Not on the read path — the database above is authoritative. Leave
     // `apps_script_url` empty to disable the mirror entirely.
+    //
+    // EMAIL VIA APPS SCRIPT (recommended on shared hosting): the same Web App
+    // also relays transactional email through Google's MailApp — the most
+    // reliable path when the host blocks SMTP and drops mail() (it's how the
+    // STS CEO site delivers). To enable: deploy apps-script/Code.gs as a Web
+    // App (Execute as: Me, Access: Anyone), accept the Mail scope on first run,
+    // set SHARED_SECRET in its Script Properties to match `shared_secret`
+    // below, and put the /exec URL in `apps_script_url`. send_mail() then tries
+    // SMTP → Apps Script → Resend → mail(). Set mail.apps_script = false to
+    // opt out (e.g. keep the mirror but send email another way).
     // -----------------------------------------------------------------------
-    'apps_script_url' => '',   // Apps Script Web App URL for the export sink (…/exec)
+    'apps_script_url' => '',   // Apps Script Web App URL (…/exec) — mirror + email relay
+
+    // -----------------------------------------------------------------------
+    // Donations (OPTIONAL) — Paystack. Leave `secret` empty to hide the donate
+    // flow entirely (public.donate.init returns donations_unavailable). Set the
+    // Paystack webhook URL to  <app_origin>/api/hooks/paystack.php  and expose
+    // the public key to the donate form via `public`.
+    // -----------------------------------------------------------------------
+    'paystack' => [
+        'secret' => '',   // sk_live_… (or sk_test_…)
+        'public' => '',   // pk_live_… (shown to the browser; safe)
+    ],
 
     // -----------------------------------------------------------------------
     // AI layer (OPTIONAL) — Summer School coordinator insights. Entirely opt-in:
@@ -103,14 +178,20 @@ return [
     // Default Super Admin. Auto-provisioned on first sign-in so a fresh NGG
     // deploy always has a top-tier staff account (role=super_admin → every
     // capability). Separate from Afrovanguard's admin — its own account here.
-    // Leave `password` empty to have a strong one generated once; reveal it
-    // with `php api/tools/seed-admin.php`. Sign in with email + password, then
-    // set up the authenticator (TOTP) on the first Control Room visit.
+    //
+    // ADMINS SIGN IN WITH THIS PASSWORD — NOT AN EMAIL CODE. Every console
+    // (staff/admin) account is password-only: the emailed sign-in code and
+    // magic-link paths are refused for them, so set `password` here to a strong
+    // value you control. Leave it empty only if you want one generated once —
+    // reveal it with `php api/tools/seed-admin.php`. After signing in with the
+    // password, set up the authenticator (TOTP) on the first Control Room visit.
+    // (Forgot it? Use "Forgot your password?" — the email reset flow still
+    // works; it sets a new password rather than logging in without one.)
     // -----------------------------------------------------------------------
     'super_admin' => [
         'email'    => 'mamcareer@afrovanguard.org.ng',
         'name'     => 'Super Admin',
-        'password' => '',   // set an exact password here (recommended), or leave blank
+        'password' => '',   // REQUIRED for password sign-in — set an exact password here
     ],
 
     // Shared HMAC secret for signing export-sink calls. Generate with
@@ -145,14 +226,15 @@ return [
 
     // -----------------------------------------------------------------------
     // Afrovanguard mentorship connection. NGG ("Next Gen") is a program inside
-    // Afrovanguard's Street-To-Stardom (STS). Mentors are drawn from the same
-    // pool; these links wire the NGG mentorship surface to Afrovanguard's, and
-    // the mentor sign-up funnels into the shared STS volunteer pipeline.
+    // Afrovanguard's Street-To-Stardom (STS) — but NGG is the MAIN, live site.
+    // Leave sts_url / volunteer_url EMPTY and they fall back to NGG's own pages
+    // (this site + /volunteer); only set them once the external STS site is
+    // actually live, so nothing links users to an unbuilt destination.
     // -----------------------------------------------------------------------
     'afrovanguard' => [
-        'org_url'        => 'https://afrovanguard.org.ng',
-        'sts_url'        => 'https://afrovanguard.org.ng/projects/sts/programs/',
-        'volunteer_url'  => 'https://cacentre.afrovanguard.org.ng/volunteer',
+        'org_url'        => 'https://afrovanguard.org.ng',   // parent org (optional)
+        'sts_url'        => '',   // empty ⇒ NGG (app_origin); set when STS is live
+        'volunteer_url'  => '',   // empty ⇒ NGG's own /volunteer
         'mentor_program' => 'Street-To-Stardom · Next Gen',
         // Sync: pull Afrovanguard's approved mentor/volunteer pool into NGG's
         // mentors table (source='afrovanguard'). Leave `api_token` empty to

@@ -404,6 +404,11 @@ function App() {
   return (
     <div className="aj-app">
       <div className="aj-bg" aria-hidden="true"/><div className="aj-blob b1" aria-hidden="true"/><div className="aj-blob b2" aria-hidden="true"/><div className="aj-blob b3" aria-hidden="true"/><div className="aj-veil" aria-hidden="true"/>
+      {!online && (
+        <div className="aj-offlinebar" role="status" aria-live="polite">
+          <i className="ph-fill ph-cloud-slash" aria-hidden="true"/> You're offline — your reflections are saved on this device and will sync when you reconnect.
+        </div>
+      )}
       {view === "home" && <Journey ctx={ctx}/>}
       {view === "reflect" && <Reflect ctx={ctx}/>}
       {view === "systems" && <Systems ctx={ctx}/>}
@@ -424,7 +429,7 @@ function App() {
       {view === "shop" && <Shop ctx={ctx}/>}
       {view !== "reflect" && view !== "coach" && <BottomNav view={view} go={go}/>}
       <SideRail view={view} go={go} streak={streak} diamonds={diamonds} cur={cur}/>
-      {celebrate && <Celebrate/>}
+      {celebrate && <Celebrate already={celebrate.already}/>}
       {levelUp && !celebrate && <LevelUp info={levelUp} onDone={() => setLevelUp(null)}/>}
       {onboard && <Onboarding member={member} prefs={pstate.prefs} onDone={(picked) => {
         setState("prefs", Object.assign({}, pstate.prefs || {}, picked, { onboardedAt: (pstate.prefs || {}).onboardedAt || new Date().toISOString() }));
@@ -1177,7 +1182,9 @@ function Calendar({ ctx }) {
       </div>
       <div className="pad aj-calgrid" style={{ marginTop: 20 }}>{["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <div key={i} className="aj-calwd">{d}</div>)}</div>
       <div className="pad aj-calgrid">{cells.map((c, i) => c ? (
-        <button key={i} className={"aj-calday " + c.cls + (c.d === sel ? " sel" : "")} onClick={() => setSel(c.d)}>
+        <button key={i} className={"aj-calday " + c.cls + (c.d === sel ? " sel" : "")} onClick={() => setSel(c.d)}
+          aria-pressed={c.d === sel}
+          aria-label={c.d + " " + monthLabel + ", " + ({ done: "reflected", missed: "missed", up: "upcoming" }[c.cls] || "no entry") + (c.held !== null ? ", " + c.held + " systems held" : "")}>
           {c.d}
           {c.held !== null && <span className="aj-calday-sys" aria-hidden="true">{c.held}</span>}
         </button>
@@ -1290,10 +1297,12 @@ function Growth({ ctx }) {
         <div className="eyebrow" style={{ marginBottom: 14 }}>THIS WEEK · SELF SCORE <span className="muted" style={{ letterSpacing: 0 }}>· tap to rate</span></div>
         <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
           {SCORE_DIMS.map(dim => { const v = scores[dim.key] || 0; return (
-            <div key={dim.key} onClick={() => setScore(dim.key, v >= 5 ? 1 : v + 1)} style={{ cursor: "pointer" }}>
+            <button key={dim.key} type="button" onClick={() => setScore(dim.key, v >= 5 ? 1 : v + 1)}
+              aria-label={dim.label + ": " + v + " out of 5. Tap to change."}
+              style={{ cursor: "pointer", background: "none", border: "none", padding: 0, width: "100%", textAlign: "left", font: "inherit", color: "inherit" }}>
               <div className="aj-score-row"><span>{dim.label}</span><span className="v">{v}/5</span></div>
               <div className="aj-score-track"><div className="aj-score-fill" style={{ width: (v / 5 * 100) + "%" }}/></div>
-            </div>
+            </button>
           ); })}
         </div>
       </div>
@@ -1639,8 +1648,10 @@ function SideRail({ view, go, streak, diamonds, cur }) {
 }
 
 /* ---- Celebrate ---------------------------------------------------------- */
-function Celebrate() {
-  return <div className="aj-celebrate"><div className="aj-celebrate-in"><div className="aj-celebrate-badge"><i className="ph-fill ph-anchor"/></div><h2>Anchored!</h2><p>+60 XP · your streak is alive</p></div></div>;
+function Celebrate({ already }) {
+  // A second entry on a day already reflected earns no new XP/diamonds (XP
+  // counts distinct DAYS) — so don't promise "+60 XP" the member won't get.
+  return <div className="aj-celebrate"><div className="aj-celebrate-in"><div className="aj-celebrate-badge"><i className="ph-fill ph-anchor"/></div><h2>Anchored!</h2><p>{already ? "Another reflection saved · today already counts" : "+60 XP · your streak is alive"}</p></div></div>;
 }
 
 /* ---- Level-up (distinct from the daily "Anchored!" moment) --------------- */
@@ -1653,7 +1664,7 @@ function LevelUp({ info, onDone }) {
         <div className="aj-lvl-badge"><i className={"ph-fill " + (info.icon || "ph-crown-simple")}/></div>
         <div className="aj-lvl-tag">LEVEL {info.level}</div>
         <h2>{info.name || "Level up"}!</h2>
-        <p>You crossed 250 XP — a new rank is yours.</p>
+        <p>You crossed {((info.level - 1) * XP_PER_LEVEL).toLocaleString()} XP — a new rank is yours.</p>
         <button className="btn-a" style={{ marginTop: 22, width: "auto", padding: "13px 26px" }} onClick={onDone}>Keep going <i className="ph-bold ph-arrow-right"/></button>
       </div>
     </div>

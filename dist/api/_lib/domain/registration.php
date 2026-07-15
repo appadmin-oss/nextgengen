@@ -330,10 +330,18 @@ function gate_context(array $p): array {
             'lat' => (float)$c['lat'], 'lng' => (float)$c['lng'], 'radiusM' => (int)($c['radiusM'] ?: 150),
         ], geo_fenced_centres())];
     }
+    // Attendance-taker rotation: resolve this gate's centre name and today's
+    // on-duty volunteer, so the kiosk can show the duty banner + close the roll.
+    $centreName = (string)($gate['centreId'] ?? '');
+    if ($centreName !== '') {
+        $cc = db_row("SELECT name FROM centres WHERE name = ? OR code = ? LIMIT 1", [$centreName, $centreName]);
+        if ($cc) $centreName = (string)$cc['name'];
+    }
+    $duty = ($centreName !== '' && function_exists('attendance_duty_for')) ? attendance_duty_for(gmdate('Y-m-d'), $centreName) : null;
     return ['ok' => true, 'gate' => ['name' => $gate['name'], 'cohortId' => $gate['cohortId']],
         'cohort' => $c ? ['cohortId' => $c['cohortId'], 'name' => $c['name']] : null,
         'form' => ['version' => (int)$live['version'], 'fields' => $fields],
-        'geo' => $geo,
+        'geo' => $geo, 'centre' => $centreName, 'duty' => $duty,
         'consentTypes' => CONSENT_TYPES];
 }
 
@@ -687,9 +695,24 @@ function geo_match_centre(float $lat, float $lng): ?array {
 
 function admin_centres_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    return ['ok' => true,
-        'centres' => db_all("SELECT centreId, name, code, color, status, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt FROM centres ORDER BY name"),
-        'geofenceEnabled' => geofence_enabled()];
+    $c = summer_ensure_cohort();
+    $rows = db_all("SELECT centreId, name, code, color, status, capacity, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt FROM centres ORDER BY name");
+    foreach ($rows as &$r) {
+        $r['enrolled'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $r['waitlisted'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'waitlisted'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $r['full'] = ((int)$r['capacity'] > 0 && $r['enrolled'] >= (int)$r['capacity']);
+    }
+    unset($r);
+    return ['ok' => true, 'centres' => $rows, 'geofenceEnabled' => geofence_enabled()];
+}
+
+/** Is a centre (by NAME) at/over capacity for the active cohort? capacity 0 = unlimited. */
+function centre_is_full(string $centreName, string $cohortId): bool {
+    if ($centreName === '') return false;
+    $cap = (int)(db_row('SELECT capacity FROM centres WHERE name = ? LIMIT 1', [$centreName])['capacity'] ?? 0);
+    if ($cap <= 0) return false;
+    $active = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$cohortId, $centreName])['c'] ?? 0);
+    return $active >= $cap;
 }
 
 function admin_centres_upsert(array $p): array {
@@ -709,6 +732,7 @@ function admin_centres_upsert(array $p): array {
     $row = ['name' => $name, 'code' => $code, 'color' => $color,
         'status' => in_array((string)($d['status'] ?? 'active'), ['active', 'archived'], true) ? (string)($d['status'] ?? 'active') : 'active',
         'updatedAt' => now_iso()];
+    if (array_key_exists('capacity', $d)) $row['capacity'] = max(0, (int)$d['capacity']);
 
     // Optional geo-mapping. Partial updates preserve any existing point: lat/lng
     // are only written when BOTH are supplied and valid; the fence flag only
@@ -790,10 +814,32 @@ function admin_cards_data(array $p): array {
             'photoUrl' => (string)$s['photoUrl'],
         ];
     }
-    // Program identity block — admin-editable via settings key 'idcard'.
+    return ['ok' => true, 'cards' => $cards, 'program' => idcard_program()];
+}
+
+// Program/branding identity block for the ID cards — admin-editable via the
+// 'idcard' setting (see admin.settings). Logos are configurable URLs so a wrong
+// or missing mark can be corrected without a code change.
+function idcard_program(): array {
     $cfg = setting_get('idcard');
-    $program = is_array($cfg) ? $cfg : [];
-    $program += ['program' => 'LCASP', 'year' => gmdate('Y'), 'motto' => 'EMPOWERED 360°',
-        'website' => 'sts.afrovanguard.org.ng', 'phone' => '+234 903 777 6318'];
-    return ['ok' => true, 'cards' => $cards, 'program' => $program];
+    $p = is_array($cfg) ? $cfg : [];
+    // Default the printed website to NGG (the main site, where every /q/<token>
+    // profile resolves) — not the not-yet-live STS domain. Admin-overridable.
+    $siteHost = preg_replace('#^https?://#', '', rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? 'next.afrovanguard.org.ng'), '/')) ?: 'next.afrovanguard.org.ng';
+    $p += [
+        'program' => 'LCASP', 'year' => gmdate('Y'), 'motto' => 'EMPOWERED 360°',
+        'website' => $siteHost, 'phone' => '+234 903 777 6318',
+        'logoLockup' => '/assets/idcard/logo-lockup.png',
+        'logoOkun' => '/assets/idcard/logo-okun.png',
+    ];
+    return $p;
+}
+
+// Validate + persist the ID-card branding block (called from admin.settings.set).
+function idcard_program_save(array $in, string $by): void {
+    $clean = [];
+    foreach (['program', 'year', 'motto', 'website', 'phone', 'logoLockup', 'logoOkun'] as $k) {
+        if (array_key_exists($k, $in)) $clean[$k] = substr(trim((string)$in[$k]), 0, 512);
+    }
+    setting_set('idcard', $clean, $by);
 }

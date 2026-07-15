@@ -2,6 +2,21 @@
    NGG — Media + Parents + Volunteers + Join
    ================================================================ */
 
+/* Whole years from an ISO date-of-birth (YYYY-MM-DD) to today. Returns -1 for
+   an empty/invalid/future date. Shared by the volunteer + apply intake forms so
+   date-of-birth is validated the same way the backend validates it. */
+function dobToAge(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return -1;
+  const b = new Date(iso + "T00:00:00Z");
+  if (isNaN(b.getTime())) return -1;
+  const now = new Date();
+  if (b.getTime() > now.getTime()) return -1;
+  let age = now.getUTCFullYear() - b.getUTCFullYear();
+  const m = now.getUTCMonth() - b.getUTCMonth();
+  if (m < 0 || (m === 0 && now.getUTCDate() < b.getUTCDate())) age--;
+  return age;
+}
+
 /* =================== MEDIA =================== */
 function MediaPage({ setPage }) {
   const [filter, setFilter] = useState("All");
@@ -114,14 +129,15 @@ function FeatureCard({ item, big = false, onPlay }) {
       type="button"
       onClick={onPlay}
       className="media-card"
-      aria-label={"Play " + item.label}
+      aria-label={item.label + " — preview coming soon, screened at Saturday sessions"}
       style={{display:"flex", flexDirection:"column", gap:10, background:"none", border:"none", padding:0, textAlign:"left", cursor:"pointer", fontFamily:"inherit", width:"100%"}}
     >
       <div style={{position:"relative", borderRadius:18, overflow:"hidden", aspectRatio: big ? "16/9" : "4/3"}}>
         <Photo name={kindImg} ratio="auto" style={{height:"100%", borderRadius:0}}/>
         <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, transparent 30%, rgba(12,20,50,0.78) 100%)"}}/>
-        <div style={{position:"absolute", top:14, left:14}}>
+        <div style={{position:"absolute", top:14, left:14, display:"flex", gap:8, alignItems:"center"}}>
           <span className={"chip " + kindColor}>{item.kind}</span>
+          {!item.url && <span className="chip" style={{background:"rgba(12,20,50,0.72)", color:"#fff", fontSize:10, letterSpacing:"0.12em"}}>SOON</span>}
         </div>
         <div className="media-card-play" style={{position:"absolute", inset:0, display:"grid", placeItems:"center"}}>
           <div style={{width: big ? 84 : 64, height: big ? 84 : 64, borderRadius:"50%", background:"rgba(255,255,255,0.92)", display:"grid", placeItems:"center", color:"var(--navy-900)"}}>
@@ -148,6 +164,13 @@ function MediaModal({ item, onClose }) {
     <div className="media-modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true" aria-label={item.label}>
       <div className="media-modal-card">
         <button className="media-modal-close" onClick={onClose} aria-label="Close">✕</button>
+        {item.url ? (
+          <div className="media-modal-stage" style={{ padding: 0 }}>
+            {/\.(mp4|webm|ogg)(\?|$)/i.test(item.url)
+              ? <video src={item.url} controls autoPlay playsInline style={{ width: "100%", height: "100%", background: "#000" }}/>
+              : <iframe src={item.url} title={item.label} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ width: "100%", height: "100%", border: 0, background: "#000" }}/>}
+          </div>
+        ) : (
         <div className="media-modal-stage">
           <div className="media-modal-stage-inner">
             <div className="media-modal-mark" aria-hidden="true">▶</div>
@@ -156,13 +179,14 @@ function MediaModal({ item, onClose }) {
             </div>
             <div style={{fontFamily:"var(--font-display)", fontSize:28, fontWeight:700, lineHeight:1.15, marginTop:10, maxWidth:520}}>{item.label}</div>
             <p style={{color:"rgba(255,255,255,0.7)", marginTop:14, fontSize:14, maxWidth:480, lineHeight:1.5}}>
-              The full media player is coming soon — for now, this piece is screened live at our Saturday sessions. Drop your email below and we'll send you the link when it goes online.
+              This piece is screened live at our Saturday sessions — the recording isn't online yet. Drop your email and we'll send you the link when it goes live.
             </p>
             <div style={{maxWidth:480, marginTop:18}}>
               <NewsletterForm source={"media:" + item.kind}/>
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );
@@ -299,12 +323,12 @@ function AfrovanguardMentorStrip() {
               NGG mentoring runs inside the <em style={{ fontStyle: "normal", color: "var(--coral)" }}>{av.mentorProgram}</em> network.
             </h3>
             <p style={{ color: "var(--ink-700)", margin: 0, lineHeight: 1.5, fontSize: 15 }}>
-              Apply below to mentor with NGG directly, or join the wider Afrovanguard volunteer pool — the same people, the same mission across every STS program.
+              Register to mentor with NGG here — it's the same mission and the same volunteer pool, run on this site. NGG is part of Afrovanguard's Street-To-Stardom network.
             </p>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <a className="btn btn-primary" href={av.volunteerUrl} target="_blank" rel="noopener noreferrer">Afrovanguard volunteer hub ↗</a>
-            <a className="btn btn-ghost" href={av.stsUrl} target="_blank" rel="noopener noreferrer">Explore STS programs ↗</a>
+            <a className="btn btn-primary" href="/volunteer" onClick={(e) => { e.preventDefault(); if (window.__navigate) window.__navigate("volunteer"); }}>Register to volunteer →</a>
+            {av.orgUrl && <a className="btn btn-ghost" href={av.orgUrl} target="_blank" rel="noopener noreferrer">About Afrovanguard ↗</a>}
           </div>
         </div>
       </div>
@@ -399,7 +423,7 @@ function VolunteersPage({ setPage }) {
 }
 
 function MentorApplySection() {
-  const [d, setD] = useState({ name: "", email: "", role: VOLUNTEER_ROLES[0] ? VOLUNTEER_ROLES[0].name : "Mentor", why: "" });
+  const [d, setD] = useState({ firstName: "", lastName: "", otherName: "", sex: "", email: "", phone: "", dob: "", role: VOLUNTEER_ROLES[0] ? VOLUNTEER_ROLES[0].name : "Mentor", why: "" });
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [err, setErr] = useState("");
@@ -407,14 +431,19 @@ function MentorApplySection() {
   const submit = async (e) => {
     e.preventDefault();
     setErr("");
-    if (d.name.trim().length < 2) { setErr("Enter your name."); return; }
+    if (d.firstName.trim() === "" || d.lastName.trim() === "") { setErr("Enter your first and last name."); return; }
+    if (!d.sex) { setErr("Select your sex."); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) { setErr("Enter a valid email."); return; }
+    if (d.phone.trim().length < 7) { setErr("Enter a phone number."); return; }
+    const age = dobToAge(d.dob);
+    if (d.dob === "" || age < 16 || age > 100) { setErr("Enter a valid date of birth — volunteers must be 16 or older."); return; }
     setBusy(true);
     try {
       await NGGApi.public.apply({
         kind: "mentor",
-        name: d.name.trim(),
-        email: d.email.trim(),
+        firstName: d.firstName.trim(), lastName: d.lastName.trim(), otherName: d.otherName.trim(),
+        sex: d.sex,
+        email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         role: d.role,
         why: d.why.trim(),
       });
@@ -422,9 +451,12 @@ function MentorApplySection() {
       if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Application received");
     } catch (e2) {
       const code = e2.code || e2.message;
-      setErr(code === "rate_limited"
-        ? "Too many submissions — wait a few minutes."
-        : "Couldn't submit right now. Try again in a moment.");
+      setErr({
+        rate_limited: "Too many submissions — wait a few minutes.",
+        bad_dob: "Enter a valid date of birth.",
+        dob_too_young: "Volunteers must be at least 16 years old.",
+        phone_required: "A phone number is required.",
+      }[code] || "Couldn't submit right now. Try again in a moment.");
     } finally {
       setBusy(false);
     }
@@ -452,12 +484,36 @@ function MentorApplySection() {
           <form onSubmit={submit} className="card" style={{padding:32, display:"flex", flexDirection:"column", gap:16, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)"}}>
             <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
               <div className="field">
-                <label style={{color:"rgba(255,255,255,0.8)"}}>Your name</label>
-                <input value={d.name} onChange={e => setD({...d, name: e.target.value})} placeholder="Full name" autoComplete="name"/>
+                <label style={{color:"rgba(255,255,255,0.8)"}}>First name</label>
+                <input value={d.firstName} onChange={e => setD({...d, firstName: e.target.value})} placeholder="e.g. Adaeze" autoComplete="given-name"/>
+              </div>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Last name</label>
+                <input value={d.lastName} onChange={e => setD({...d, lastName: e.target.value})} placeholder="e.g. Okafor" autoComplete="family-name"/>
+              </div>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Other name · optional</label>
+                <input value={d.otherName} onChange={e => setD({...d, otherName: e.target.value})} placeholder="Middle name(s)" autoComplete="additional-name"/>
+              </div>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Date of birth</label>
+                <input type="date" value={d.dob} max={new Date().toISOString().slice(0, 10)} onChange={e => setD({...d, dob: e.target.value})} autoComplete="bday"/>
+              </div>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Sex</label>
+                <select value={d.sex} onChange={e => setD({...d, sex: e.target.value})}>
+                  <option value="" disabled>Select…</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
               </div>
               <div className="field">
                 <label style={{color:"rgba(255,255,255,0.8)"}}>Email</label>
                 <input type="email" value={d.email} onChange={e => setD({...d, email: e.target.value})} placeholder="you@email.com" autoComplete="email"/>
+              </div>
+              <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Phone</label>
+                <input type="tel" value={d.phone} onChange={e => setD({...d, phone: e.target.value})} placeholder="0803 000 0000" autoComplete="tel"/>
               </div>
             </div>
             <div className="field">
@@ -496,40 +552,34 @@ function JoinPage({ setPage }) {
     return p;
   });
   const isSummer = program === "summer";
+  const [restored, setRestored] = useState(false);
   const [data, setData] = useState(() => {
-    const base = { name: "", age: 14, city: "Egbeda", track: "Music", why: "", parentEmail: "", photoUrl: "" };
+    const base = { firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "Egbeda", track: "Music", why: "", parentEmail: "", parentPhone: "", photoUrl: "" };
     try {
       const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
       if (saved && typeof saved === "object") return Object.assign(base, saved);
     } catch (_) {}
     return base;
   });
+  // Announce (once, on mount) that we restored a non-empty saved draft, so the
+  // "save as you go" promise is visible rather than silent.
+  React.useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
+      if (saved && (saved.firstName || saved.name || saved.why || saved.parentEmail || saved.photoUrl)) setRestored(true);
+    } catch (_) {}
+  }, []);
   const [busy, setBusy] = useState(false);
   const [fieldErr, setFieldErr] = useState("");
-  const [photoBusy, setPhotoBusy] = useState(false);
   const steps = ["Identity", "Track", "Story", "Parent"];
   const session = useSession();
   const applyEyebrow = isSummer
     ? "APPLY · SUMMER STUDENTS"
     : (session ? "APPLY · " + sessionLabel(session, "NEXT SESSION").toUpperCase() : "APPLY · NEXT SESSION");
 
-  async function pickPhoto(e) {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!file) return;
-    if (!/^image\//.test(file.type)) { setFieldErr("Please choose an image file."); return; }
-    if (file.size > 8 * 1024 * 1024) { setFieldErr("Photo must be under 8 MB."); return; }
-    setPhotoBusy(true); setFieldErr("");
-    try {
-      const r = await NGGApi.uploadPublic(file);
-      setData(d => ({ ...d, photoUrl: r.url }));
-    } catch (err) {
-      const msg = err.message === "public_upload_disabled"
-        ? "Photo upload isn't available right now — you can apply without one."
-        : "Couldn't upload that photo. You can apply without one.";
-      setFieldErr(msg);
-    } finally { setPhotoBusy(false); }
-  }
+  // Jump back to an already-completed step (photo capture is handled by the
+  // shared <PhotoCapture> in step 0 — there is no separate upload path here).
+  const goToStep = (i) => { if (i < step) { setFieldErr(""); setStep(i); } };
 
   // Persist draft on every change (cleared on successful submit).
   React.useEffect(() => {
@@ -540,15 +590,19 @@ function JoinPage({ setPage }) {
 
   function validate(s) {
     if (s === 0) {
-      if (data.name.trim().length < 2) return "Enter the applicant's first name.";
-      const age = parseInt(data.age, 10);
-      if (!age || age < 10 || age > 17) return "Age must be between 10 and 17.";
+      if (data.firstName.trim() === "") return "Enter the applicant's first name.";
+      if (data.lastName.trim() === "") return "Enter the applicant's last name.";
+      if (data.dob === "") return "Select the applicant's date of birth.";
+      const age = dobToAge(data.dob);
+      if (age < 10 || age > 17) return "Applicants must be between 10 and 17 years old.";
+      if (!data.sex) return "Select the applicant's sex.";
     }
     if (s === 2 && data.why.trim().length < 20) {
       return "Give us at least a sentence or two — 20 characters minimum.";
     }
-    if (s === 3 && !emailOk(data.parentEmail)) {
-      return "Enter a valid parent or guardian email.";
+    if (s === 3) {
+      if (!emailOk(data.parentEmail)) return "Enter a valid parent or guardian email.";
+      if (data.parentPhone.trim().length < 7) return "Enter a parent or guardian phone number.";
     }
     return "";
   }
@@ -566,12 +620,16 @@ function JoinPage({ setPage }) {
       await NGGApi.public.apply({
         kind: "teen",
         program: program,
-        name: data.name.trim(),
-        age: parseInt(data.age, 10),
+        firstName: data.firstName.trim(),
+        lastName: data.lastName.trim(),
+        otherName: data.otherName.trim(),
+        sex: data.sex,
+        dob: data.dob,
         centre: data.city,
         track: data.track,
         why: data.why.trim(),
         email: data.parentEmail.trim(),
+        phone: data.parentPhone.trim(),
         photoUrl: data.photoUrl || "",
       });
       try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {}
@@ -582,7 +640,11 @@ function JoinPage({ setPage }) {
       const map = {
         rate_limited: "Too many submissions from this connection — wait a few minutes and try again.",
         bad_email: "That parent email doesn't look right.",
-        bad_age: "Age must be between 10 and 17.",
+        bad_age: "Applicants must be between 10 and 17 years old.",
+        bad_dob: "Select a valid date of birth.",
+        phone_required: "A parent or guardian phone number is required.",
+        bad_firstName: "Enter the applicant's first name.",
+        bad_lastName: "Enter the applicant's last name.",
         upstream_unreachable: "We couldn't reach the server. Your draft is saved — try again in a moment.",
       };
       const text = map[code] || "Couldn't submit your application. Your draft is saved — try again.";
@@ -608,20 +670,36 @@ function JoinPage({ setPage }) {
             </p>
           </div>
 
+          {restored && (
+            <div role="status" style={{display:"flex", alignItems:"center", gap:12, justifyContent:"space-between", marginBottom:20, padding:"12px 16px", borderRadius:12, background:"rgba(245,176,38,0.14)", border:"1px solid rgba(245,176,38,0.4)", fontSize:14, color:"var(--ink-900)"}}>
+              <span>↩︎ We saved your progress — pick up where you left off.</span>
+              <button type="button" onClick={() => { try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {} setData({ firstName: "", lastName: "", otherName: "", dob: "", city: "Egbeda", track: "Music", why: "", parentEmail: "", parentPhone: "", photoUrl: "" }); setStep(0); setRestored(false); }} className="mono" style={{background:"none", border:"none", cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--ink-500)", fontWeight:600}}>Start fresh</button>
+            </div>
+          )}
+
           {/* Stepper */}
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:32, padding:"0 12px"}}>
-            {steps.map((s, i) => (
+            {steps.map((s, i) => {
+              const done = i < step;
+              return (
               <React.Fragment key={s}>
                 <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:8, flex:"0 0 auto"}}>
-                  <div style={{
-                    width:42, height:42, borderRadius:"50%",
-                    background: i < step ? "var(--navy-900)" : i === step ? "var(--gold-500)" : "var(--cream-100)",
+                  <button
+                    type="button"
+                    onClick={() => goToStep(i)}
+                    disabled={!done}
+                    aria-label={done ? ("Go back to step " + (i + 1) + ": " + s) : ("Step " + (i + 1) + ": " + s + (i === step ? " (current)" : ""))}
+                    aria-current={i === step ? "step" : undefined}
+                    style={{
+                    width:42, height:42, borderRadius:"50%", padding:0,
+                    background: done ? "var(--navy-900)" : i === step ? "var(--gold-500)" : "var(--cream-100)",
                     color: i <= step ? (i === step ? "var(--navy-900)" : "white") : "var(--ink-400)",
                     display:"grid", placeItems:"center", fontWeight:700, fontFamily:"var(--font-display)", fontSize:18,
                     border: i === step ? "2px solid var(--navy-900)" : "none",
+                    cursor: done ? "pointer" : "default",
                   }}>
-                    {i < step ? "✓" : i + 1}
-                  </div>
+                    {done ? "✓" : i + 1}
+                  </button>
                   <div className="mono" style={{fontSize:10, letterSpacing:"0.15em", textTransform:"uppercase", fontWeight: i === step ? 700 : 400, color: i === step ? "var(--navy-900)" : "var(--ink-500)"}}>
                     {s}
                   </div>
@@ -630,24 +708,40 @@ function JoinPage({ setPage }) {
                   <div style={{flex:1, height:2, background: i < step ? "var(--navy-900)" : "var(--cream-200)", margin:"-22px 12px 0"}}/>
                 )}
               </React.Fragment>
-            ))}
+            );})}
           </div>
 
           <div className="card" style={{padding:48, minHeight:380}}>
             {step === 0 && (
               <div style={{display:"flex", flexDirection:"column", gap:18}}>
                 <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:0, letterSpacing:"-0.02em"}}>Who is applying?</h2>
-                <p style={{color:"var(--ink-500)", margin:0}}>Use the name you'd want printed on a Genius ID card. You can change it later.</p>
-                <div style={{display:"grid", gridTemplateColumns:"2fr 1fr 1.4fr", gap:14, marginTop:14}}>
+                <p style={{color:"var(--ink-500)", margin:0}}>Use the applicant's legal names as they'd appear on a Genius ID card. You can change them later.</p>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginTop:14}}>
                   <div className="field">
-                    <label>Your first name</label>
-                    <input value={data.name} onChange={e => setData({...data, name: e.target.value})} placeholder="e.g. Adaeze"/>
+                    <label>First name</label>
+                    <input value={data.firstName} onChange={e => setData({...data, firstName: e.target.value})} autoComplete="given-name" placeholder="e.g. Adaeze"/>
                   </div>
                   <div className="field">
-                    <label>Age</label>
-                    <input type="number" min="10" max="17" value={data.age} onChange={e => setData({...data, age: e.target.value})}/>
+                    <label>Last name</label>
+                    <input value={data.lastName} onChange={e => setData({...data, lastName: e.target.value})} autoComplete="family-name" placeholder="e.g. Okafor"/>
                   </div>
                   <div className="field">
+                    <label>Other name · optional</label>
+                    <input value={data.otherName} onChange={e => setData({...data, otherName: e.target.value})} autoComplete="additional-name" placeholder="Middle name(s)"/>
+                  </div>
+                  <div className="field">
+                    <label>Date of birth</label>
+                    <input type="date" value={data.dob} max={new Date().toISOString().slice(0, 10)} onChange={e => setData({...data, dob: e.target.value})} autoComplete="bday"/>
+                  </div>
+                  <div className="field">
+                    <label>Sex</label>
+                    <select value={data.sex} onChange={e => setData({...data, sex: e.target.value})}>
+                      <option value="" disabled>Select…</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </div>
+                  <div className="field" style={{gridColumn:"1 / -1"}}>
                     <label>Which centre is closest to you?</label>
                     <select value={data.city} onChange={e => setData({...data, city: e.target.value})}>
                       <option value="Egbeda">CACENTRE Egbeda</option>
@@ -687,7 +781,7 @@ function JoinPage({ setPage }) {
             {step === 2 && (
               <div style={{display:"flex", flexDirection:"column", gap:18}}>
                 <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:0, letterSpacing:"-0.02em"}}>Tell us one thing.</h2>
-                <p style={{color:"var(--ink-500)", margin:0}}>In 3 sentences: what would you build with twelve uninterrupted weeks?</p>
+                <p style={{color:"var(--ink-500)", margin:0}}>In 3 sentences: what would you build with {isSummer ? "six" : "twelve"} uninterrupted weeks?</p>
                 <div className="field">
                   <label>Your answer</label>
                   <textarea rows={6} value={data.why} onChange={e => setData({...data, why: e.target.value})} placeholder="A short answer is fine. Be honest, not impressive."/>
@@ -699,15 +793,21 @@ function JoinPage({ setPage }) {
               <div style={{display:"flex", flexDirection:"column", gap:18}}>
                 <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:0, letterSpacing:"-0.02em"}}>Parent or guardian.</h2>
                 <p style={{color:"var(--ink-500)", margin:0}}>We will email them a one-pager explaining the program and asking for consent. We will not contact them again without your knowledge.</p>
-                <div className="field">
-                  <label>Parent / guardian email</label>
-                  <input value={data.parentEmail} onChange={e => setData({...data, parentEmail: e.target.value})} placeholder="parent@example.com"/>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+                  <div className="field">
+                    <label>Parent / guardian email</label>
+                    <input type="email" value={data.parentEmail} onChange={e => setData({...data, parentEmail: e.target.value})} autoComplete="email" placeholder="parent@example.com"/>
+                  </div>
+                  <div className="field">
+                    <label>Parent / guardian phone</label>
+                    <input type="tel" value={data.parentPhone} onChange={e => setData({...data, parentPhone: e.target.value})} autoComplete="tel" placeholder="0803 000 0000"/>
+                  </div>
                 </div>
                 <div className="card" style={{padding:18, background:"var(--cream-50)", border:"1px solid var(--cream-200)"}}>
                   <div className="eyebrow" style={{color:"var(--ink-500)"}}>APPLICATION SUMMARY</div>
                   <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:14, marginTop:12, fontSize:14}}>
-                    <div><b>Name</b><br/>{data.name || "—"}</div>
-                    <div><b>Age</b><br/>{data.age}</div>
+                    <div><b>Name</b><br/>{[data.firstName, data.otherName, data.lastName].filter(Boolean).join(" ") || "—"}</div>
+                    <div><b>Age</b><br/>{data.dob ? dobToAge(data.dob) : "—"}</div>
                     <div><b>Centre</b><br/>{data.city}</div>
                     <div><b>Track</b><br/>{data.track}</div>
                   </div>
@@ -889,10 +989,84 @@ function ContactPage({ setPage }) {
                 </p>
                 <button className="btn btn-gold" onClick={() => setPage("join")}>Start application →</button>
               </div>
+              <ApplicationStatusLookup/>
+              <DonateWidget/>
             </div>
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+/* Donate — Paystack checkout (hides itself when donations aren't configured). */
+function DonateWidget() {
+  const [d, setD] = useState({ amount: "5000", name: "", email: "" });
+  const [busy, setBusy] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
+  const give = async (e) => {
+    e && e.preventDefault();
+    if (!emailOk(d.email) || (parseInt(d.amount, 10) || 0) < 100) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.public.donate({ email: d.email.trim(), name: d.name.trim(), amount: parseInt(d.amount, 10) });
+      if (r.authorizationUrl) window.location.href = r.authorizationUrl;
+    } catch (ex) {
+      if ((ex.code || ex.message) === "donations_unavailable") { setHidden(true); return; }
+      if (typeof toast !== "undefined") toast.error("Couldn't start the donation. Please try again.", "Donate");
+    } finally { setBusy(false); }
+  };
+  if (hidden) return null;
+  return (
+    <div className="card" style={{ padding: 24, background: "var(--navy-900)", color: "#fff" }}>
+      <div className="eyebrow" style={{ color: "var(--gold-400)" }}>SUPPORT THE MISSION</div>
+      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "12px 0 14px", lineHeight: 1.5 }}>Back the next generation — every naira funds a Saturday.</p>
+      <form onSubmit={give} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          {["2000", "5000", "10000"].map(a => <button type="button" key={a} onClick={() => setD(o => ({ ...o, amount: a }))} className={"btn btn-sm " + (d.amount === a ? "btn-gold" : "btn-on-dark-ghost")}>₦{Number(a).toLocaleString()}</button>)}
+        </div>
+        <input className="admin-input" type="number" min="100" value={d.amount} onChange={e => setD(o => ({ ...o, amount: e.target.value }))} placeholder="Amount (₦)" style={{ padding: 10, borderRadius: 8, border: "none" }}/>
+        <input className="admin-input" value={d.name} onChange={e => setD(o => ({ ...o, name: e.target.value }))} placeholder="Your name (optional)" style={{ padding: 10, borderRadius: 8, border: "none" }}/>
+        <input className="admin-input" type="email" value={d.email} onChange={e => setD(o => ({ ...o, email: e.target.value }))} placeholder="Email for your receipt" style={{ padding: 10, borderRadius: 8, border: "none" }}/>
+        <button className="btn btn-gold" disabled={busy || !emailOk(d.email)}>{busy ? "Starting…" : "Donate securely →"}</button>
+      </form>
+    </div>
+  );
+}
+
+/* Applicant self-service: check the status of an application/message by ref. */
+function ApplicationStatusLookup() {
+  const [ref, setRef] = useState("");
+  const [email, setEmail] = useState("");
+  const [res, setRes] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const check = async (e) => {
+    e && e.preventDefault();
+    setErr(""); setRes(null); setBusy(true);
+    try { const r = await NGGApi.public.applicationStatus(ref.trim().toUpperCase(), email.trim()); setRes(r); }
+    catch (ex) {
+      const map = { bad_ref: "That reference doesn't look right (e.g. NGG-A-00042).", bad_email: "Enter the email you applied with.", not_found: "No match — check the reference and email." };
+      setErr(map[ex.code || ex.message] || "Couldn't look that up.");
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="card" style={{ padding: 24 }}>
+      <div className="eyebrow" style={{ color: "var(--gold-500)" }}>CHECK YOUR STATUS</div>
+      <p style={{ fontSize: 14, color: "var(--ink-700)", margin: "12px 0 14px", lineHeight: 1.5 }}>
+        Quote your reference (e.g. <span className="mono">NGG-A-00042</span>) and the email you used.
+      </p>
+      <form onSubmit={check} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <input className="admin-input" value={ref} onChange={e => setRef(e.target.value)} placeholder="Reference (NGG-A-…)" style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)" }}/>
+        <input className="admin-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email you applied with" style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)" }}/>
+        <button className="btn btn-primary btn-sm" disabled={busy || !ref.trim() || !email.trim()}>{busy ? "Checking…" : "Check status"}</button>
+      </form>
+      {err && <p style={{ color: "var(--coral)", fontSize: 13, marginTop: 10 }}>{err}</p>}
+      {res && <div style={{ marginTop: 12, padding: "12px 14px", background: "var(--cream-50)", borderRadius: 10 }}>
+        <div style={{ fontWeight: 700 }}>{res.label}</div>
+        <div className="mono" style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 4 }}>Submitted {new Date(res.submittedAt).toLocaleDateString()}</div>
+      </div>}
     </div>
   );
 }
@@ -922,7 +1096,7 @@ function MentorsPage({ setPage }) {
           </p>
           <div style={{ display: "flex", gap: 12, marginTop: 30, flexWrap: "wrap" }}>
             <button className="btn btn-gold btn-lg" onClick={() => setPage("volunteers")}>Become a mentor →</button>
-            {av && <a className="btn btn-on-dark-ghost btn-lg" href={av.volunteerUrl} target="_blank" rel="noopener noreferrer">Afrovanguard volunteer hub ↗</a>}
+            <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("volunteer")}>Register to volunteer →</button>
           </div>
         </div>
       </section>
@@ -968,14 +1142,45 @@ function MentorsPage({ setPage }) {
 }
 
 /* =================== SUMMER STUDENT PROFILE (by QR token or handle) =========== */
+// Staff-only "mark present" on a person's page. This is what makes the QR aid
+// attendance even when a normal phone camera (an unconfigured device) opens the
+// profile URL instead of the kiosk scanner: a signed-in staffer taps once here.
+function ProfileCheckin({ token, name }) {
+  const [busy, setBusy] = React.useState(false);
+  const [res, setRes] = React.useState(null);
+  const go = async () => {
+    if (busy) return; setBusy(true);
+    try { const r = await NGGApi.admin.summer.checkin(token, "profile", "profile-scan"); setRes({ ok: true, already: !!r.already }); }
+    catch (e) { setRes({ err: (e.code === "student_not_found" ? "Not assigned to anyone yet." : e.code === "qr_unassigned" ? "This card isn't assigned yet." : "Couldn't mark present — try again.") }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 20, border: "1px solid var(--gold-500)", background: "rgba(245,176,38,0.07)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 170 }}>
+          <div className="mono" style={{ fontSize: 11, letterSpacing: ".12em", color: "var(--ink-500)" }}>STAFF · ATTENDANCE</div>
+          <div style={{ fontWeight: 700, marginTop: 2 }}>Mark {(name || "this person").trim().split(/\s+/)[0]} present today</div>
+        </div>
+        {res && res.ok
+          ? <span className="chip chip-lime">{res.already ? "↻ Already marked today" : "✓ Marked present"}</span>
+          : <button className="btn btn-gold" disabled={busy} onClick={go}>{busy ? "Marking…" : "Mark present"}</button>}
+      </div>
+      {res && res.err && <div style={{ marginTop: 10, color: "var(--coral)", fontSize: 13 }}>{res.err}</div>}
+    </div>
+  );
+}
+
 function SummerProfilePage({ setPage }) {
-  const [state, setState] = React.useState({ loading: true, profile: null });
+  const [state, setState] = React.useState({ loading: true, profile: null, token: "" });
+  // Called unconditionally (hooks rule) — lets a signed-in staffer mark this
+  // person present straight from the page they land on after a phone-camera scan.
+  const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false };
   React.useEffect(() => {
     const parts = (window.location.pathname || "").split("/").filter(Boolean);
     const kind = parts[0], id = decodeURIComponent(parts[1] || "");
     const req = kind === "s" ? NGGApi.public.summerProfile({ handle: id }) : NGGApi.public.summerProfile({ token: id });
-    req.then(r => setState({ loading: false, profile: r.profile }))
-       .catch(() => setState({ loading: false, profile: null }));
+    req.then(r => setState({ loading: false, profile: r.profile, token: kind === "q" ? id : ((r.profile && r.profile.token) || "") }))
+       .catch(() => setState({ loading: false, profile: null, token: "" }));
   }, []);
 
   if (state.loading) return <div className="page"><div className="container" style={{ padding: "120px 0", textAlign: "center" }}><div className="dash-spinner" style={{ margin: "0 auto" }}/></div></div>;
@@ -1016,6 +1221,8 @@ function SummerProfilePage({ setPage }) {
       </section>
       <section className="section">
         <div className="container" style={{ maxWidth: 720 }}>
+          {auth && auth.isSignedIn && (auth.isAdmin || (auth.hasCap && (auth.hasCap("summer") || auth.hasCap("people")))) && state.token
+            ? <ProfileCheckin token={state.token} name={m.fullName}/> : null}
           <div className="card" style={{ padding: 28 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
               <h2 className="display" style={{ fontSize: 28, margin: 0 }}>Attendance</h2>
@@ -1030,6 +1237,37 @@ function SummerProfilePage({ setPage }) {
                   {att.map((a, i) => <span key={i} className="chip chip-lime" title={a.checkInAt}>{a.date}</span>)}
                 </div>}
           </div>
+
+          {/* Gamified attendance standing — the in-app award surface (levels,
+              points, streak, awards). Mirrors the emailed awards. */}
+          {m.kind === "volunteer" && m.game && (
+            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "none" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <div className="eyebrow" style={{ color: "var(--gold-400)" }}>ATTENDANCE STANDING</div>
+                  <h2 className="display" style={{ fontSize: 26, margin: "6px 0 0" }}>Level {m.game.level} · {m.game.levelName}</h2>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <span className="display" style={{ fontSize: 40, color: "var(--gold-400)" }}>{m.game.points}</span>
+                  <span className="mono" style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginLeft: 6 }}>POINTS</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 24, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
+                <div><b style={{ fontSize: 20 }}>{m.game.streak}</b> <span className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>DAY STREAK</span></div>
+                {m.game.next && (
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginBottom: 4 }}>{m.game.next.remaining} pts to {m.game.next.name}</div>
+                    <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.14)" }}><div style={{ height: "100%", borderRadius: 999, background: "var(--gold-400)", width: Math.min(100, Math.round((m.game.points / m.game.next.at) * 100)) + "%" }}/></div>
+                  </div>
+                )}
+              </div>
+              {(m.game.awards || []).length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
+                  {m.game.awards.map((a, i) => <span key={i} className="chip" style={{ background: "var(--gold-500)", color: "var(--navy-900)", fontWeight: 700 }}>🏅 {a.name}</span>)}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Volunteer service certificates — verifiable, shareable */}
           {m.kind === "volunteer" && (m.certificates || []).length > 0 && (
@@ -1127,28 +1365,38 @@ function CertificatePage() {
     </div>
   );
   const c = state.cert;
+  const isCompletion = c.type === "completion";
   const issued = new Date(c.issuedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
   return (
     <div className="cert-page" style={{ minHeight: "100vh", background: "#0a1130", padding: "48px 20px", display: "grid", placeItems: "center" }}>
       <style>{`@media print { .cert-page { background: #fff !important; padding: 0 !important; } .cert-noprint { display: none !important; } .cert-card { box-shadow: none !important; border: 1px solid #ddd !important; } }`}</style>
       <div className="cert-card" style={{ width: "min(760px, 100%)", background: "#fff", borderRadius: 20, padding: "clamp(32px, 6vw, 64px)", boxShadow: "0 30px 80px -20px rgba(0,0,0,0.5)", position: "relative", overflow: "hidden" }}>
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(60% 50% at 100% 0%, rgba(245,176,38,0.12), transparent 60%)" }}/>
+        {c.revoked && <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}><span style={{ transform: "rotate(-18deg)", border: "4px solid rgba(228,21,95,0.5)", color: "rgba(228,21,95,0.5)", fontWeight: 800, fontSize: "clamp(40px,9vw,90px)", letterSpacing: 6, padding: "6px 28px", borderRadius: 12 }}>REVOKED</span></div>}
         <div style={{ position: "relative" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 36, flexWrap: "wrap", gap: 12 }}>
             <img src="assets/logo.png" alt="Next Generation Genius" width={46} height={46} style={{ borderRadius: "50%" }}/>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#8a93a6" }}>CERTIFICATE OF SERVICE</span>
+            <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#8a93a6" }}>{isCompletion ? "CERTIFICATE OF COMPLETION" : "CERTIFICATE OF SERVICE"}</span>
           </div>
           <p style={{ margin: 0, color: "#6b7385", fontSize: 15 }}>This certifies that</p>
           <h1 className="display" style={{ fontSize: "clamp(34px,5vw,56px)", margin: "6px 0 4px", color: "#0a1130", lineHeight: 1 }}>{c.fullName}</h1>
-          <p style={{ margin: "0 0 28px", color: "#6b7385", fontSize: 15 }}>
-            served as a <b style={{ color: "#0a1130", textTransform: "capitalize" }}>{c.role}</b> volunteer with Next Generation Genius,
-            completing <b style={{ color: "#0a1130" }}>{c.milestone} sessions</b> — approximately <b style={{ color: "#0a1130" }}>{c.hours} hours</b> of service.
-          </p>
+          {isCompletion ? (
+            <p style={{ margin: "0 0 28px", color: "#6b7385", fontSize: 15 }}>
+              completed <b style={{ color: "#0a1130" }}>NGG Summer School{c.cohort ? " · " + c.cohort : ""}</b>{c.track ? <> on the <b style={{ color: "#0a1130" }}>{c.track}</b> track</> : null},
+              attending <b style={{ color: "#0a1130" }}>{c.daysPresent} days</b>{c.attendanceRate ? <> (<b style={{ color: "#0a1130" }}>{c.attendanceRate}%</b> attendance)</> : null}.
+            </p>
+          ) : (
+            <p style={{ margin: "0 0 28px", color: "#6b7385", fontSize: 15 }}>
+              served as a <b style={{ color: "#0a1130", textTransform: "capitalize" }}>{c.role}</b> volunteer with Next Generation Genius,
+              completing <b style={{ color: "#0a1130" }}>{c.milestone} sessions</b> — approximately <b style={{ color: "#0a1130" }}>{c.hours} hours</b> of service.
+            </p>
+          )}
           <div style={{ display: "flex", gap: 40, flexWrap: "wrap", borderTop: "1px solid #ececf0", paddingTop: 24 }}>
             <div><div className="mono" style={{ fontSize: 10, color: "#8a93a6", letterSpacing: "0.12em" }}>ISSUED</div><div style={{ fontWeight: 600, color: "#0a1130" }}>{issued}</div></div>
-            <div><div className="mono" style={{ fontSize: 10, color: "#8a93a6", letterSpacing: "0.12em" }}>VOLUNTEER ID</div><div style={{ fontWeight: 600, color: "#0a1130" }}>{c.volunteerId}</div></div>
+            <div><div className="mono" style={{ fontSize: 10, color: "#8a93a6", letterSpacing: "0.12em" }}>{isCompletion ? "STUDENT ID" : "VOLUNTEER ID"}</div><div style={{ fontWeight: 600, color: "#0a1130" }}>{isCompletion ? c.studentId : c.volunteerId}</div></div>
             <div><div className="mono" style={{ fontSize: 10, color: "#8a93a6", letterSpacing: "0.12em" }}>CERTIFICATE</div><div style={{ fontWeight: 600, color: "#0a1130" }}>{c.certId}</div></div>
           </div>
+          {c.revoked && <p style={{ margin: "20px 0 0", color: "#E4155F", fontWeight: 600, fontSize: 14 }}>This certificate has been revoked and is no longer valid.</p>}
         </div>
       </div>
       <div className="cert-noprint" style={{ marginTop: 24, display: "flex", gap: 12 }}>
@@ -1173,6 +1421,83 @@ const VOL_LANES = [
   { key: "instructor", icon: "🎓", name: "Instructor",  line: "Teach one of the season's courses, from first class to showcase." },
 ];
 
+// The volunteer Operations Manual (LCASP Summer Impact School 2026) — bundled in
+// /assets/docs and emailed to every volunteer on registration. Keep this path in
+// sync with volunteer_handbook_url() in api/_lib/domain/events.php.
+const NGG_HANDBOOK_URL = "/assets/docs/lcasp-operations-manual-2026.pdf";
+
+// A faithful, scannable summary of the manual shown on /volunteer so people know
+// the standard they're signing up to before they register. Source: LCASP Summer
+// Impact School 2026 Integrated Operations Manual & KPI Framework.
+function HandbookSummary() {
+  const [open, setOpen] = React.useState(false);
+  const pillars = [
+    ["Character", "Values, mentorship and foundational ethics."],
+    ["Leadership", "Institutional capacity and anti-corruption habits."],
+    ["Skill Acquisition", "Hands-on, project-based technical & creative learning."],
+    ["Community Impact", "Civic responsibility and local service."],
+    ["Purpose Development", "Life vision aligned with Afrocentric impact."],
+  ];
+  return (
+    <div className="card handbook-summary" style={{ padding: "28px 30px", marginTop: 36, background: "var(--navy-900)", color: "#fff", border: "none" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span className="eyebrow" style={{ color: "var(--gold-400)" }}>BEFORE YOU REGISTER · THE OPERATIONS MANUAL</span>
+      </div>
+      <h2 style={{ fontFamily: "var(--font-display)", fontSize: 26, margin: "10px 0 6px", letterSpacing: "-0.02em" }}>
+        One movement, one standard.
+      </h2>
+      <p style={{ color: "rgba(255,255,255,0.78)", lineHeight: 1.6, margin: "0 0 18px", maxWidth: 620 }}>
+        The <b>LCASP Summer Impact School 2026</b> — a Street&nbsp;to&nbsp;Stardom initiative under the
+        Afrovanguard Governing Council — runs <b>900 learners across 6 Lagos centres</b> under the theme
+        <b> “Ìlú Èkó · Empowered 360°.”</b> Volunteers don't follow the schedule of the public; they set
+        the standard. Here's what you're signing up to.
+      </p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 18 }}>
+        {pillars.map(([t, d], i) => (
+          <div key={t} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "12px 14px" }}>
+            <div className="mono" style={{ fontSize: 10, color: "var(--gold-400)", letterSpacing: "0.12em" }}>PILLAR {i + 1}</div>
+            <div style={{ fontWeight: 700, fontSize: 14, margin: "4px 0 3px" }}>{t}</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.45 }}>{d}</div>
+          </div>
+        ))}
+      </div>
+
+      {open && (
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.14)", paddingTop: 16, marginBottom: 6, display: "grid", gap: 16 }}>
+          <div>
+            <div className="mono" style={{ fontSize: 11, color: "var(--gold-400)", letterSpacing: "0.12em", marginBottom: 6 }}>THE DAILY RHYTHM</div>
+            <p style={{ color: "rgba(255,255,255,0.78)", lineHeight: 1.6, margin: 0, fontSize: 14 }}>
+              Every centre runs one fixed frame: arrival &amp; environmental sanitation → morning energizer
+              &amp; musing → <b>Anchor Journal</b> (Values·Vision·Virtues) → leadership masterclass → the main
+              project-based skill class → chess &amp; strategic thinking → reflection, appraisal &amp; clean-up.
+              Nine programs run inside it, from AI &amp; Tech to Music, Media, Creative Arts and the Authors Program.
+            </p>
+          </div>
+          <div>
+            <div className="mono" style={{ fontSize: 11, color: "var(--gold-400)", letterSpacing: "0.12em", marginBottom: 6 }}>THE VOLUNTEER VANGUARD CODE</div>
+            <ul style={{ color: "rgba(255,255,255,0.78)", lineHeight: 1.6, margin: 0, paddingLeft: 18, fontSize: 14 }}>
+              <li><b>Turn up early.</b> The check-in window closes a clear hour before briefings begin.</li>
+              <li><b>Punctuality is enforced.</b> Repeated lateness leads to review, suspension, then eviction.</li>
+              <li><b>Review Times are compulsory.</b> The daily/weekly post-programme review isn't optional.</li>
+              <li><b>Carry your ID.</b> Your digital volunteer credential is checked at the gate.</li>
+              <li><b>Safeguarding first.</b> Anyone working with young people is screened before their first session.</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+        <a className="btn btn-gold btn-sm" href={NGG_HANDBOOK_URL} target="_blank" rel="noopener noreferrer">Read the full manual (PDF) ↗</a>
+        <button type="button" className="btn btn-on-dark-ghost btn-sm" onClick={() => setOpen(v => !v)} aria-expanded={open}>
+          {open ? "Show less" : "The daily rhythm & volunteer code"}
+        </button>
+        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>We'll email you this handbook when you register.</span>
+      </div>
+    </div>
+  );
+}
+
 function VolunteerRegisterPage({ setPage }) {
   const [ctx, setCtx] = React.useState(null);
   const [role, setRole] = React.useState(() => {
@@ -1180,7 +1505,7 @@ function VolunteerRegisterPage({ setPage }) {
     return VOL_LANES.some(l => l.key === r) ? r : "";
   });
   const [courses, setCourses] = React.useState([]);
-  const [d, setD] = React.useState({ name: "", email: "", phone: "", why: "", photoUrl: "" });
+  const [d, setD] = React.useState({ firstName: "", lastName: "", otherName: "", sex: "", email: "", phone: "", dob: "", why: "", photoUrl: "" });
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const [err, setErr] = React.useState("");
@@ -1194,10 +1519,24 @@ function VolunteerRegisterPage({ setPage }) {
   const set = (k) => (e) => { setD({ ...d, [k]: e.target.value }); if (err) setErr(""); };
   const toggleCourse = (c) => setCourses(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]);
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim());
-  const phoneNeeded = role === "instructor";
-  const ready = role !== "" && d.name.trim().length >= 2 && emailOk
-    && (role !== "instructor" || courses.length > 0)
-    && (!phoneNeeded || d.phone.trim().length >= 7);
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const dobAge = dobToAge(d.dob);
+  const dobOk = d.dob !== "" && dobAge >= 16 && dobAge <= 100;
+  const phoneOk = d.phone.trim().length >= 7;
+  const ready = role !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== "" && d.sex !== "" && emailOk
+    && phoneOk && dobOk
+    && (role !== "instructor" || courses.length > 0);
+  // Tell the applicant WHY the button is disabled instead of greying silently.
+  const missing = [];
+  if (role === "") missing.push("pick a role");
+  if (d.firstName.trim() === "") missing.push("first name");
+  if (d.lastName.trim() === "") missing.push("last name");
+  if (!emailOk) missing.push("a valid email");
+  if (!phoneOk) missing.push("a phone number");
+  if (d.dob === "") missing.push("date of birth");
+  else if (!dobOk) missing.push("volunteers must be 16 or older");
+  if (d.sex === "") missing.push("sex");
+  if (role === "instructor" && courses.length === 0) missing.push("at least one course");
 
   const submit = async (e) => {
     e.preventDefault();
@@ -1206,7 +1545,9 @@ function VolunteerRegisterPage({ setPage }) {
     try {
       const r = await NGGApi.public.apply({
         kind: "volunteer", role,
-        name: d.name.trim(), email: d.email.trim(), phone: d.phone.trim(),
+        firstName: d.firstName.trim(), lastName: d.lastName.trim(), otherName: d.otherName.trim(),
+        sex: d.sex,
+        email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         why: d.why.trim(), photoUrl: d.photoUrl || "", courses: role === "instructor" ? courses : [],
       });
       setDone(r && r.ref ? r.ref : true);
@@ -1217,8 +1558,12 @@ function VolunteerRegisterPage({ setPage }) {
         rate_limited: "Too many submissions — wait a few minutes and try again.",
         applications_closed: "Volunteer registration is closed right now. Check back soon.",
         course_required: "Pick at least one course you can teach.",
-        phone_required: "Instructors must be reachable by phone — add your number.",
+        phone_required: "A phone number is required — add your number.",
         bad_email: "That email doesn't look right.",
+        bad_dob: "Enter a valid date of birth.",
+        dob_too_young: "Volunteers must be at least 16 years old.",
+        bad_firstName: "Please enter your first name.",
+        bad_lastName: "Please enter your last name.",
       }[code] || "Couldn't submit. Please try again.");
     } finally { setBusy(false); }
   };
@@ -1237,7 +1582,7 @@ function VolunteerRegisterPage({ setPage }) {
           <div style={{ width: 64, height: 64, margin: "0 auto 20px", borderRadius: "50%", background: "var(--lime)", display: "grid", placeItems: "center", fontSize: 30, color: "var(--navy-900)" }}>✓</div>
           <h1 className="display" style={{ fontSize: "clamp(32px,4vw,44px)", margin: "0 0 12px" }}>You're in the pipeline.</h1>
           <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6, margin: "0 0 8px" }}>
-            Thank you, {d.name.trim().split(" ")[0] || "friend"}. We review every registration by hand and reply within a week.
+            Thank you, {d.firstName.trim() || "friend"}. We review every registration by hand and reply within a week.
           </p>
           <p style={{ color: "var(--ink-500)", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
             Volunteers who work directly with teenagers complete safeguarding screening before their first session.
@@ -1249,9 +1594,12 @@ function VolunteerRegisterPage({ setPage }) {
             </div>
           )}
           <p style={{ color: "var(--ink-500)", fontSize: 13, lineHeight: 1.6, margin: "14px 0 0" }}>
-            We've emailed a copy to <b>{d.email.trim()}</b>. Keep your reference for any follow-up.
+            We've emailed a copy to <b>{d.email.trim()}</b>, along with the Operations Manual. Keep your reference for any follow-up.
           </p>
-          <button className="btn btn-primary btn-lg mt-32" onClick={() => setPage("home")}>Back to home →</button>
+          <div style={{ marginTop: 26, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <a className="btn btn-gold btn-lg" href={NGG_HANDBOOK_URL} target="_blank" rel="noopener noreferrer">Read the Operations Manual (PDF) ↗</a>
+            <button className="btn btn-ghost btn-lg" onClick={() => setPage("home")}>Back to home →</button>
+          </div>
         </div>
       </div></section>
     </div>
@@ -1268,6 +1616,8 @@ function VolunteerRegisterPage({ setPage }) {
           <p style={{ fontSize: 17, color: "var(--ink-500)", lineHeight: 1.6, maxWidth: 560, margin: 0 }}>
             One form, three ways in. Tell us the shape of your time and we'll take it from there.
           </p>
+
+          <HandbookSummary/>
 
           {ctx && ctx.open === false ? (
             <div className="card mt-40" style={{ padding: 32 }}>
@@ -1314,11 +1664,23 @@ function VolunteerRegisterPage({ setPage }) {
               <div className="mt-48">
                 {stepNo(role === "instructor" ? "03" : "02", "Your details")}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }} className="vol-fields">
-                  <div className="field"><label htmlFor="vol-name">Full name</label>
-                    <input id="vol-name" value={d.name} onChange={set("name")} autoComplete="name" placeholder="Your name"/></div>
+                  <div className="field"><label htmlFor="vol-first">First name</label>
+                    <input id="vol-first" value={d.firstName} onChange={set("firstName")} autoComplete="given-name" placeholder="e.g. Adaeze"/></div>
+                  <div className="field"><label htmlFor="vol-last">Last name</label>
+                    <input id="vol-last" value={d.lastName} onChange={set("lastName")} autoComplete="family-name" placeholder="e.g. Okafor"/></div>
+                  <div className="field"><label htmlFor="vol-other">Other name · optional</label>
+                    <input id="vol-other" value={d.otherName} onChange={set("otherName")} autoComplete="additional-name" placeholder="Middle name(s)"/></div>
+                  <div className="field"><label htmlFor="vol-dob">Date of birth</label>
+                    <input id="vol-dob" type="date" value={d.dob} onChange={set("dob")} max={todayISO} autoComplete="bday"/></div>
+                  <div className="field"><label htmlFor="vol-sex">Sex</label>
+                    <select id="vol-sex" value={d.sex} onChange={set("sex")}>
+                      <option value="" disabled>Select…</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select></div>
                   <div className="field"><label htmlFor="vol-email">Email</label>
                     <input id="vol-email" type="email" value={d.email} onChange={set("email")} autoComplete="email" placeholder="you@example.com"/></div>
-                  <div className="field"><label htmlFor="vol-phone">{phoneNeeded ? "Phone · required for instructors" : "Phone · optional"}</label>
+                  <div className="field"><label htmlFor="vol-phone">Phone</label>
                     <input id="vol-phone" type="tel" value={d.phone} onChange={set("phone")} autoComplete="tel" placeholder="0803 000 0000"/></div>
                   <div className="field" style={{ gridColumn: "1 / -1" }}><label htmlFor="vol-why">Why you · optional</label>
                     <textarea id="vol-why" rows={3} value={d.why} onChange={set("why")} placeholder="A line or two — craft, experience, or simply why this matters to you."/></div>
@@ -1334,7 +1696,9 @@ function VolunteerRegisterPage({ setPage }) {
                   {busy ? "Sending…" : "Register as a volunteer →"}
                 </button>
                 <span style={{ fontSize: 12.5, color: "var(--ink-500)", maxWidth: 340, lineHeight: 1.5 }}>
-                  Roles that work with teenagers pass safeguarding screening before the first session.
+                  {!ready && missing.length
+                    ? "Still needed: " + missing.join(", ") + "."
+                    : "Roles that work with teenagers pass safeguarding screening before the first session."}
                 </span>
               </div>
             </form>
@@ -1528,8 +1892,8 @@ function CirclePortal({ setPage }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>{CIRCLE_CAN.map((c, i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 15px", borderRadius: 14, background: "rgba(94,224,192,.08)", border: "1px solid rgba(94,224,192,.2)" }}><span style={{ color: teal }}>✓</span><span style={{ fontSize: 13, fontWeight: 600 }}>{c}</span></div>)}</div>
     <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "#ff8a8a", margin: "20px 0 10px" }}>✕ YOU CAN NOT</div>
     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>{CIRCLE_CANNOT.map((c, i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 15px", borderRadius: 14, background: "rgba(255,90,90,.08)", border: "1px solid rgba(255,120,120,.2)" }}><span style={{ color: "#ff8a8a" }}>⃠</span><span style={{ fontSize: 13, fontWeight: 600 }}>{c}</span></div>)}</div>
-    <button onClick={() => setConsent(v => !v)} style={{ display: "flex", gap: 12, width: "100%", textAlign: "left", marginTop: 20, padding: 15, borderRadius: 14, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)", cursor: "pointer", color: "#fff", alignItems: "center" }}>
-      <span style={{ width: 26, height: 26, borderRadius: 8, border: "2px solid " + (consent ? teal : "rgba(255,255,255,.3)"), background: consent ? teal : "transparent", display: "grid", placeItems: "center", color: "#06231d", fontWeight: 800 }}>{consent ? "✓" : ""}</span>
+    <button type="button" role="checkbox" aria-checked={consent} aria-label="I agree to Anchor's guardian terms and the student's privacy" onClick={() => setConsent(v => !v)} style={{ display: "flex", gap: 12, width: "100%", textAlign: "left", marginTop: 20, padding: 15, borderRadius: 14, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)", cursor: "pointer", color: "#fff", alignItems: "center" }}>
+      <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: 8, border: "2px solid " + (consent ? teal : "rgba(255,255,255,.3)"), background: consent ? teal : "transparent", display: "grid", placeItems: "center", color: "#06231d", fontWeight: 800 }}>{consent ? "✓" : ""}</span>
       <span style={{ flex: 1, fontSize: 13, lineHeight: 1.4 }}>I agree to Anchor's guardian terms &amp; the student's privacy.</span>
     </button>
     {err && <div className="circle-err">{err}</div>}
@@ -1807,7 +2171,7 @@ function GatePage() {
     </div>
     {tab === "register"
       ? <GateRegister g={g} ctx={ctx} card={card} inputS={inputS} gold={gold} goldInk={goldInk} draftKey={draftKey}/>
-      : <GateCheckin g={g} card={card} inputS={inputS} gold={gold} goldInk={goldInk}/>}
+      : <GateCheckin g={g} ctx={ctx} card={card} inputS={inputS} gold={gold} goldInk={goldInk}/>}
   </>);
 }
 
@@ -1993,20 +2357,39 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
   const videoRef = React.useRef(null);
   const streamRef = React.useRef(null);
   const fileRef = React.useRef(null);
-  const [camState, setCamState] = React.useState("starting"); // starting|live|denied
+  const [camOpen, setCamOpen] = React.useState(false);
+  const [camState, setCamState] = React.useState("idle"); // idle|starting|live|denied
   const [busy, setBusy] = React.useState(false);
   const [uErr, setUErr] = React.useState("");
 
+  const stopStream = React.useCallback(() => {
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+  }, []);
+
+  // The camera only runs while the full-screen overlay is open. Opening it asks
+  // for the front camera; closing it (or unmounting the step) releases the
+  // hardware so the light doesn't stay on behind the rest of the form.
   React.useEffect(() => {
+    if (!camOpen) { stopStream(); return; }
     let cancelled = false;
-    if (photoUrl) { setCamState("denied"); return; }
-    navigator.mediaDevices && navigator.mediaDevices.getUserMedia
-      ? navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 720 } }, audio: false })
-          .then(stream => { if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; } streamRef.current = stream; if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); } setCamState("live"); })
-          .catch(() => setCamState("denied"))
-      : setCamState("denied");
-    return () => { cancelled = true; if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
-  }, [photoUrl]);
+    setCamState("starting"); setUErr("");
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { setCamState("denied"); return; }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1350 } }, audio: false })
+      .then(stream => {
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); }
+        setCamState("live");
+      })
+      .catch(() => setCamState("denied"));
+    return () => { cancelled = true; };
+  }, [camOpen, stopStream]);
+
+  // Release the camera when the step unmounts.
+  React.useEffect(() => stopStream, [stopStream]);
+
+  const openCam = () => { setUErr(""); setCamOpen(true); };
+  const closeCam = () => { setCamOpen(false); setCamState("idle"); };
 
   const uploadBlob = async (blob) => {
     setBusy(true); setUErr("");
@@ -2021,12 +2404,11 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
       } catch (pe) {
         up = await NGGApi.uploadFile(file, "headshot");
       }
-      // Face-centred crop + lighting fix via Cloudinary URL transforms — a fast
-      // client preview; the server pipeline does the professional edit and an
-      // editor can re-upload a corrected image later.
-      const optimised = up.url.replace("/upload/", "/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/");
-      setPhotoUrl(optimised);
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      // Face-centred crop + auto colour/lighting via Cloudinary URL transforms —
+      // a fast, free client preview; the server pipeline does the professional
+      // edit (including a clean studio backdrop) and an editor can re-upload.
+      setPhotoUrl(cldEnhance(up.url));
+      closeCam();
     } catch (e) {
       // Surface the real reason — a vague message can't be diagnosed or fixed.
       const msg = String((e && (e.message || e.code)) || "");
@@ -2039,41 +2421,110 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
     } finally { setBusy(false); }
   };
   const capture = () => {
-    const v = videoRef.current; if (!v) return;
+    const v = videoRef.current; if (!v || !v.videoWidth) return;
     const c = document.createElement("canvas");
     c.width = 720; c.height = 900;
     const scale = Math.max(c.width / v.videoWidth, c.height / v.videoHeight);
     const dx = (c.width - v.videoWidth * scale) / 2, dy = (c.height - v.videoHeight * scale) / 2;
     c.getContext("2d").drawImage(v, dx, dy, v.videoWidth * scale, v.videoHeight * scale);
-    c.toBlob(b => b && uploadBlob(b), "image/jpeg", 0.88);
+    c.toBlob(b => b && uploadBlob(b), "image/jpeg", 0.9);
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ ...card, overflow: "hidden", position: "relative", height: 300, display: "grid", placeItems: "center" }}>
         {photoUrl ? (
-          <img src={photoUrl} alt="Captured headshot" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>
-        ) : camState === "live" ? (<>
-          <video ref={videoRef} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
-          <div style={{ position: "absolute", width: 150, height: 190, border: "2.5px dashed rgba(255,206,84,.65)", borderRadius: "50% 50% 46% 46%" }} aria-hidden="true"/>
-        </>) : (
-          <div style={{ textAlign: "center", padding: 20 }}>
-            <div style={{ fontSize: 34 }}>📷</div>
-            <p style={{ ...mut, fontSize: 13, margin: "8px 0 0" }}>{camState === "starting" ? "Starting the camera…" : "Camera unavailable — use a photo from the device instead."}</p>
-          </div>
+          <PhotoCompare url={photoUrl}/>
+        ) : (
+          <button onClick={openCam} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", textAlign: "center", padding: 20 }}>
+            <div style={{ width: 88, height: 88, margin: "0 auto", borderRadius: "50%", border: "2px dashed rgba(255,206,84,.6)", display: "grid", placeItems: "center", fontSize: 34 }}>📷</div>
+            <p style={{ fontWeight: 800, margin: "12px 0 2px", fontSize: 15 }}>Open camera</p>
+            <p style={{ ...mut, fontSize: 12.5, margin: 0 }}>Full-screen guide helps you line up the face</p>
+          </button>
         )}
       </div>
-      <p style={{ ...mut, fontSize: 12.5, textAlign: "center", margin: 0 }}>Center the face — we crop and brighten automatically. Used only for the student ID.</p>
+      <p style={{ ...mut, fontSize: 12.5, textAlign: "center", margin: 0 }}>Center the face — we crop, brighten and set a clean backdrop automatically. Used only for the student ID.</p>
       {uErr && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,206,84,.12)", border: "1px solid rgba(255,206,84,.4)", fontSize: 13 }}>{uErr}</div>}
       <input ref={fileRef} type="file" accept="image/*" capture="user" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) uploadBlob(f); }}/>
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={onBack} style={{ padding: "13px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>←</button>
         {photoUrl
           ? <button onClick={() => setPhotoUrl("")} style={{ flex: 1, padding: 13, borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Retake</button>
-          : camState === "live"
-            ? <button onClick={capture} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>{busy ? "Uploading…" : "Take photo"}</button>
-            : <button onClick={() => fileRef.current && fileRef.current.click()} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>{busy ? "Uploading…" : "Choose photo"}</button>}
+          : <button onClick={openCam} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>{busy ? "Uploading…" : "Open camera"}</button>}
         <button onClick={onNext} style={{ flex: 1, padding: 13, borderRadius: 12, border: photoUrl ? "none" : "1px solid rgba(255,255,255,.25)", background: photoUrl ? gold : "transparent", color: photoUrl ? goldInk : "#fff", fontWeight: 800, cursor: "pointer" }}>{photoUrl ? "Use photo →" : "Skip for now →"}</button>
+      </div>
+      {camOpen && (
+        <CameraOverlay
+          videoRef={videoRef} camState={camState} busy={busy}
+          onCapture={capture} onClose={closeCam} gold={gold} goldInk={goldInk}
+          onPickFile={() => fileRef.current && fileRef.current.click()}
+        />
+      )}
+    </div>
+  );
+}
+
+/* Full-screen guided camera. A fixed overlay above the whole app: the live
+ * front-camera fills the screen, a dimming scrim with a transparent face oval
+ * shows exactly where to line up, and a shutter sits at the bottom. Falls back
+ * to a device-photo picker when the camera is blocked or unavailable. */
+function CameraOverlay({ videoRef, camState, busy, onCapture, onClose, onPickFile, gold, goldInk }) {
+  // Lock body scroll while the overlay is up.
+  React.useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+
+  const shell = { position: "fixed", inset: 0, zIndex: 4000, background: "#000", display: "flex", flexDirection: "column", overscrollBehavior: "contain" };
+  const iconBtn = { width: 44, height: 44, borderRadius: "50%", border: "1px solid rgba(255,255,255,.35)", background: "rgba(0,0,0,.35)", color: "#fff", fontSize: 20, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 };
+
+  return (
+    <div style={shell} role="dialog" aria-modal="true" aria-label="Take ID photo">
+      <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+        {camState === "live" ? (
+          <video ref={videoRef} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
+        ) : (
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 24, textAlign: "center", color: "#fff" }}>
+            <div>
+              <div style={{ fontSize: 40 }}>📷</div>
+              <p style={{ margin: "12px 0 0", fontSize: 15, maxWidth: 320 }}>
+                {camState === "starting"
+                  ? "Starting the camera…"
+                  : "Camera unavailable or blocked. Allow camera access, or use a photo from this device instead."}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Guide: a dashed face oval with everything outside it dimmed. */}
+      {camState === "live" && (
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
+          <div style={{ width: "min(72vw, 320px)", height: "min(92vw, 410px)", borderRadius: "50% 50% 47% 47%", border: "3px dashed rgba(255,206,84,.9)", boxShadow: "0 0 0 100vmax rgba(0,0,0,.55)" }}/>
+        </div>
+      )}
+
+      {/* Top bar: close + instruction. */}
+      <div style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", gap: 12, padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 0" }}>
+        <button onClick={onClose} style={iconBtn} aria-label="Close camera">✕</button>
+        <div style={{ color: "#fff", fontSize: 13.5, fontWeight: 600, textShadow: "0 1px 3px rgba(0,0,0,.6)" }}>
+          Line the face up inside the oval
+        </div>
+      </div>
+
+      <div style={{ flex: 1 }}/>
+
+      {/* Bottom controls: file fallback · shutter · retake-of-space. */}
+      <div style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 28px calc(env(safe-area-inset-bottom, 0px) + 28px)" }}>
+        <button onClick={onPickFile} disabled={busy} style={{ ...iconBtn, fontSize: 18 }} aria-label="Use a photo from this device">🖼️</button>
+        <button onClick={onCapture} disabled={busy || camState !== "live"} aria-label="Take photo"
+          style={{ width: 78, height: 78, borderRadius: "50%", border: "5px solid rgba(255,255,255,.85)", background: busy ? "rgba(255,255,255,.4)" : gold, cursor: busy || camState !== "live" ? "default" : "pointer", boxShadow: "0 6px 22px rgba(0,0,0,.4)" }}>
+          {busy ? <span style={{ color: goldInk, fontSize: 12, fontWeight: 800 }}>…</span> : null}
+        </button>
+        <div style={{ width: 44 }}/>
       </div>
     </div>
   );
@@ -2114,7 +2565,7 @@ function ReshootPage() {
       let up;
       try { up = await NGGApi.uploadPublic(file); }
       catch (pe) { up = await NGGApi.uploadFile(file, "headshot"); }
-      setPhotoUrl(up.url.replace("/upload/", "/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/"));
+      setPhotoUrl(cldEnhance(up.url));
     } catch (e) {
       const m = String((e && (e.message || e.code)) || "");
       setUErr(/network|failed to fetch/i.test(m) ? "Couldn't reach the photo service — check the connection." : "Upload failed — please try another photo.");
@@ -2146,7 +2597,7 @@ function ReshootPage() {
 
     <div style={{ ...card, overflow: "hidden", height: 300, display: "grid", placeItems: "center", marginBottom: 12 }}>
       {photoUrl
-        ? <img src={photoUrl} alt="New headshot" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>
+        ? <PhotoCompare url={photoUrl}/>
         : ctx && ctx.student && ctx.student.photoUrl
           ? <img src={ctx.student.photoUrl} alt="Current" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: .45 }}/>
           : <div style={{ textAlign: "center" }}><div style={{ fontSize: 34 }}>📷</div><p style={{ ...mut, fontSize: 13, margin: "8px 0 0" }}>Tap below to take or choose a photo</p></div>}
@@ -2164,15 +2615,149 @@ function ReshootPage() {
   </>);
 }
 
-function GateCheckin({ g, card, inputS, gold, goldInk }) {
+// Pull a check-in token out of whatever the QR encodes: a full digital-ID URL
+// (…/q/<token> or …/s/<handle>) or a bare printed code.
+function extractCheckinToken(s) {
+  s = String(s || "").trim();
+  const m = s.match(/\/(?:q|s)\/([^/?#\s]+)/i);
+  if (m) { try { return decodeURIComponent(m[1]).toUpperCase(); } catch (_) { return m[1].toUpperCase(); } }
+  return s.replace(/^https?:\/\/[^/]+\/?/i, "").toUpperCase();
+}
+
+// Camera-first QR reader (window.jsQR). Scans continuously, debounces repeat
+// reads, and calls onToken with the extracted code. Falls back gracefully when
+// the camera is denied or the decoder isn't loaded.
+function QRScanner({ onToken, gold }) {
+  const videoRef = React.useRef(null);
+  const streamRef = React.useRef(null);
+  const rafRef = React.useRef(0);
+  const last = React.useRef({ tok: "", at: 0 });
+  const [state, setState] = React.useState("starting"); // starting|live|denied|nolib
+  const [hit, setHit] = React.useState(0); // brief flash on a successful read
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || typeof window.jsQR !== "function") { setState("nolib"); return; }
+    let cancelled = false;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const tick = () => {
+      const v = videoRef.current;
+      if (v && v.readyState >= 2 && v.videoWidth) {
+        canvas.width = v.videoWidth; canvas.height = v.videoHeight;
+        ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+        let img = null; try { img = ctx.getImageData(0, 0, canvas.width, canvas.height); } catch (_) {}
+        if (img) {
+          const res = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+          if (res && res.data) {
+            const tok = extractCheckinToken(res.data);
+            const now = Date.now();
+            if (tok && (tok !== last.current.tok || now - last.current.at > 2500)) {
+              last.current = { tok, at: now };
+              setHit(now);
+              if (navigator.vibrate) { try { navigator.vibrate(40); } catch (_) {} }
+              onToken(tok);
+            }
+          }
+        }
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+      ? navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false })
+          .then(stream => {
+            if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+            streamRef.current = stream;
+            if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.setAttribute("playsinline", ""); videoRef.current.muted = true; videoRef.current.play().catch(() => {}); }
+            setState("live"); rafRef.current = requestAnimationFrame(tick);
+          })
+          .catch(() => setState("denied"))
+      : setState("denied");
+    return () => { cancelled = true; if (rafRef.current) cancelAnimationFrame(rafRef.current); if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
+  }, []);
+
+  const flashing = hit && (Date.now() - hit < 700);
+  const box = { position: "relative", width: "100%", aspectRatio: "1/1", maxHeight: 340, borderRadius: 16, overflow: "hidden", background: "#05070f", display: "grid", placeItems: "center" };
+  if (state === "nolib" || state === "denied") {
+    return (
+      <div style={{ ...box, aspectRatio: "auto", minHeight: 120, padding: 20, textAlign: "center", color: "rgba(230,238,255,.7)", fontSize: 13 }}>
+        <div><div style={{ fontSize: 26, marginBottom: 8 }} aria-hidden="true">{state === "denied" ? "📷" : "⌨"}</div>
+        {state === "denied" ? "Camera unavailable — type the code below to check in." : "Scanner still loading — type the code below."}</div>
+      </div>
+    );
+  }
+  return (
+    <div style={box} aria-label="QR scanner">
+      <video ref={videoRef} style={{ width: "100%", height: "100%", objectFit: "cover" }} playsInline muted/>
+      {state === "starting" && <div style={{ position: "absolute", color: "rgba(230,238,255,.7)", fontSize: 13 }}>Starting camera…</div>}
+      {/* Reticle */}
+      <div aria-hidden="true" style={{ position: "absolute", inset: "18%", border: "3px solid " + (flashing ? "#6fdc9d" : (gold || "#ffce54")), borderRadius: 14, boxShadow: "0 0 0 100vmax rgba(0,0,0,.28)", transition: "border-color .2s" }}/>
+      <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, textAlign: "center", color: "#fff", fontSize: 12, textShadow: "0 1px 3px rgba(0,0,0,.8)" }}>{flashing ? "✓ Scanned" : "Point the QR at the camera"}</div>
+    </div>
+  );
+}
+
+function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
   const [code, setCode] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [recent, setRecent] = React.useState([]);
   const [err, setErr] = React.useState("");
+  const [typed, setTyped] = React.useState(false); // reveal the manual fallback
+  // Attendance-taker duty for this gate's centre today (rotation banner).
+  const [duty, setDuty] = React.useState((ctx && ctx.duty) || null);
+  const [dutyMsg, setDutyMsg] = React.useState("");
+  const [dutyBusy, setDutyBusy] = React.useState(false);
+  const centre = (ctx && ctx.centre) || "";
+  // Offline scan queue — field kiosks lose signal; a scan must never be lost.
+  const [pending, setPending] = React.useState(0);
+  const flushing = React.useRef(false);
+  const QKEY = "ngg.gate.q." + g;
+  const loadQ = () => { try { return JSON.parse(localStorage.getItem(QKEY) || "[]"); } catch (_) { return []; } };
+  const saveQ = (q) => { try { localStorage.setItem(QKEY, JSON.stringify(q)); } catch (_) {} setPending(q.length); };
+  // A network/offline failure has no server error code/status; a real rejection
+  // (qr_unassigned, student_not_found) does — only the former should queue.
+  const isNetErr = (e) => (typeof navigator !== "undefined" && !navigator.onLine) || (e && !e.code && !e.status);
+  const flushQueue = async () => {
+    if (flushing.current || (typeof navigator !== "undefined" && !navigator.onLine)) return;
+    let q = loadQ(); if (!q.length) return;
+    flushing.current = true;
+    try {
+      for (const item of q.slice()) {
+        try {
+          const r = await NGGApi.public.gate.checkin(g, item.token);
+          q = q.filter(x => x.token !== item.token); saveQ(q);
+          const st = r.student || {};
+          setRecent(list => [{ name: st.fullName || item.token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), already: !!r.already, synced: true }, ...list].slice(0, 12));
+        } catch (e) {
+          if (isNetErr(e)) break;                       // still offline — stop, keep the rest
+          q = q.filter(x => x.token !== item.token); saveQ(q); // bad token — drop it
+        }
+      }
+    } finally { flushing.current = false; }
+  };
+  React.useEffect(() => {
+    setPending(loadQ().length);
+    flushQueue();
+    const onOnline = () => flushQueue();
+    window.addEventListener("online", onOnline);
+    const id = setInterval(() => { if (loadQ().length) flushQueue(); }, 20000);
+    return () => { window.removeEventListener("online", onOnline); clearInterval(id); };
+    // eslint-disable-next-line
+  }, []);
 
-  const mark = async (e) => {
-    if (e) e.preventDefault();
-    const token = code.trim(); if (!token || busy) return;
+  const closeRoll = async () => {
+    if (dutyBusy) return;
+    setDutyBusy(true); setDutyMsg("");
+    try {
+      const r = await NGGApi.public.gate.dutyClose(g);
+      setDutyMsg(r.message || "Roll closed.");
+      setDuty(d => d ? { ...d, completedAt: new Date().toISOString(), takenCount: r.taken } : d);
+    } catch (e) {
+      setDutyMsg(e.code === "no_duty" ? "No one is on duty for this centre yet." : "Couldn't close the roll — try again.");
+    } finally { setDutyBusy(false); }
+  };
+
+  const mark = async (raw) => {
+    const token = String(raw || "").trim(); if (!token || busy) return;
     setBusy(true); setErr("");
     try {
       const r = await NGGApi.public.gate.checkin(g, token);
@@ -2190,25 +2775,58 @@ function GateCheckin({ g, card, inputS, gold, goldInk }) {
       }, ...list].slice(0, 12));
       setCode("");
     } catch (e2) {
-      const c = e2.code || e2.message;
-      setErr(c === "qr_unassigned" ? "That code isn't assigned to anyone yet." : c === "student_not_found" ? "No student or volunteer found for that code." : "Couldn't check in — try again.");
+      if (isNetErr(e2)) {
+        // Offline / unreachable — bank it and sync later so the scan isn't lost.
+        const q = loadQ(); if (!q.some(x => x.token === token)) { q.push({ token, at: Date.now() }); saveQ(q); }
+        setRecent(list => [{ name: token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), queued: true }, ...list].slice(0, 12));
+        setCode("");
+      } else {
+        const c = e2.code || e2.message;
+        setErr(c === "qr_unassigned" ? "That code isn't assigned to anyone yet." : c === "student_not_found" ? "No student or volunteer found for that code." : "Couldn't check in — try again.");
+      }
     } finally { setBusy(false); }
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <form onSubmit={mark} style={{ display: "flex", gap: 8 }}>
-        <input style={{ ...inputS, flex: 1, fontFamily: "var(--font-mono, monospace)", letterSpacing: ".08em" }} placeholder="Code from the ID card (SUMQR / VOLQR)" value={code} onChange={e => setCode(e.target.value.toUpperCase())} autoFocus/>
-        <button disabled={busy || !code.trim()} style={{ padding: "0 20px", borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "…" : "✓"}</button>
-      </form>
-      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Type the code printed under the QR. Students and volunteers both scan here. Duplicate scans are safe — a day counts once.</p>
+      {/* Attendance-taker rotation: who's on the roll today + one-tap close. */}
+      {duty && (
+        <div style={{ ...card, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", borderLeft: "3px solid " + gold }}>
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <div style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "rgba(230,238,255,.55)", fontFamily: "var(--font-mono, monospace)" }}>On attendance duty{centre ? " · " + centre : ""}</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>{duty.volunteer ? duty.volunteer.fullName : "Unassigned"}</div>
+          </div>
+          {duty.completedAt
+            ? <span className="chip chip-lime" style={{ fontSize: 11 }}>Roll closed{duty.takenCount ? " · " + duty.takenCount + " present" : ""}</span>
+            : <button type="button" onClick={closeRoll} disabled={dutyBusy || !duty.volunteer} style={{ padding: "8px 16px", borderRadius: 10, border: "1px solid " + gold, background: "transparent", color: gold, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{dutyBusy ? "Closing…" : "Close the roll"}</button>}
+        </div>
+      )}
+      {dutyMsg && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(111,220,157,.12)", border: "1px solid rgba(111,220,157,.35)", fontSize: 13 }}>{dutyMsg}</div>}
+      {/* QR-first: the camera scans continuously; typing is the fallback. */}
+      <QRScanner onToken={mark} gold={gold}/>
+      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Hold a Genius ID or volunteer card up to the camera. Students and volunteers both scan here — a duplicate scan is safe, a day counts once.</p>
+      {pending > 0 && (
+        <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(245,176,38,.14)", border: "1px solid rgba(245,176,38,.4)", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+          <span aria-hidden="true">☁︎</span>
+          <span style={{ flex: 1 }}>{pending} scan{pending === 1 ? "" : "s"} saved offline — they'll sync automatically when you're back online.</span>
+          <button type="button" onClick={flushQueue} style={{ background: "none", border: "1px solid rgba(245,176,38,.5)", color: gold, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Sync now</button>
+        </div>
+      )}
+      {!typed
+        ? <button type="button" onClick={() => setTyped(true)} style={{ background: "none", border: "none", color: "rgba(230,238,255,.8)", textDecoration: "underline", cursor: "pointer", fontSize: 13, alignSelf: "center" }}>Camera not working? Enter the code</button>
+        : (
+          <form onSubmit={e => { e.preventDefault(); mark(code); setCode(""); }} style={{ display: "flex", gap: 8 }}>
+            <input style={{ ...inputS, flex: 1, fontFamily: "var(--font-mono, monospace)", letterSpacing: ".08em" }} placeholder="Code from the ID card (SUMQR / VOLQR)" value={code} onChange={e => setCode(e.target.value.toUpperCase())} autoFocus/>
+            <button disabled={busy || !code.trim()} style={{ padding: "0 20px", borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "…" : "✓"}</button>
+          </form>
+        )}
       {err && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 13 }}>{err}</div>}
       {recent.map((r, i) => (
         <div key={i} style={{ ...card, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, border: r.warn ? "1px solid rgba(255,120,120,.5)" : (card.border || undefined) }}>
-          <span style={{ color: r.already ? "#ffce54" : "#6fdc9d", fontWeight: 800 }}>{r.already ? "↻" : "✓"}</span>
-          <b style={{ flex: 1, fontSize: 14 }}>{r.name}{r.volunteer && <span style={{ marginLeft: 8, fontSize: 10, letterSpacing: ".1em", padding: "2px 7px", borderRadius: 6, background: "rgba(245,176,38,.18)", color: "#ffce54", fontWeight: 700 }}>{(r.role || "VOL").toUpperCase()}</span>}</b>
+          <span style={{ color: r.queued ? "#ffce54" : r.already ? "#ffce54" : "#6fdc9d", fontWeight: 800 }}>{r.queued ? "☁︎" : r.already ? "↻" : "✓"}</span>
+          <b style={{ flex: 1, fontSize: 14, fontFamily: r.queued ? "var(--font-mono, monospace)" : undefined }}>{r.name}{r.volunteer && <span style={{ marginLeft: 8, fontSize: 10, letterSpacing: ".1em", padding: "2px 7px", borderRadius: 6, background: "rgba(245,176,38,.18)", color: "#ffce54", fontWeight: 700 }}>{(r.role || "VOL").toUpperCase()}</span>}</b>
           {r.cert > 0 && <span title={r.cert + "-session certificate issued"} style={{ fontSize: 11, color: "#6fdc9d", fontWeight: 700 }}>🏅 {r.cert}</span>}
-          <span style={{ color: "rgba(230,238,255,.6)", fontSize: 12 }}>{r.already ? "already in · " : ""}{r.at}</span>
+          <span style={{ color: "rgba(230,238,255,.6)", fontSize: 12 }}>{r.queued ? "saved offline · " : r.synced ? "synced · " : r.already ? "already in · " : ""}{r.at}</span>
         </div>
       ))}
       {recent.some(r => r.warn) && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 12.5 }}>⚠ A volunteer above has not cleared safeguarding screening. They should not be unsupervised with young people.</div>}
@@ -2230,10 +2848,15 @@ const CARD_CRIMSON = "#E4155F", CARD_NAVY = "#1B2B6B";
 function CardQR({ token, size }) {
   const [src, setSrc] = React.useState("");
   React.useEffect(() => {
+    // Encode the FULL profile URL (not the bare token) so a normal phone camera
+    // / any QR app opens the student's page on the site. The kiosk decoder
+    // (extractCheckinToken) still pulls the token back out for check-in.
+    const origin = (typeof window !== "undefined" && window.location && window.location.origin) ? window.location.origin : "https://next.afrovanguard.org.ng";
+    const payload = origin + "/q/" + String(token);
     const draw = () => {
       try {
         const q = window.qrcode(0, "M");
-        q.addData(String(token)); q.make();
+        q.addData(payload); q.make();
         setSrc(q.createDataURL(8, 0));
       } catch (_) {}
     };
@@ -2245,11 +2868,12 @@ function CardQR({ token, size }) {
   return src ? <img src={src} alt={"QR " + token} style={{ width: size, height: size, imageRendering: "pixelated" }}/> : <div style={{ width: size, height: size, background: "#f2f2f2" }}/>;
 }
 
-function CardFront({ card, S }) {
+function CardFront({ card, program, S }) {
   const px = (n) => n * S;
+  const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
   return (
     <div className="idcard" style={{ width: px(590), height: px(1004), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
-      <img src="/assets/idcard/logo-lockup.png" alt="Lagos Child Project × STS" style={{ position: "absolute", top: px(58), left: "50%", transform: "translateX(-50%)", width: px(290) }}/>
+      <img src={lockup} alt="Programme lockup" style={{ position: "absolute", top: px(58), left: "50%", transform: "translateX(-50%)", width: px(290) }}/>
       <div style={{ position: "absolute", top: px(182), left: "50%", transform: "translateX(-50%)", width: px(372), height: px(372), borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", boxShadow: `0 ${px(16)}px ${px(38)}px rgba(27,43,107,.16)` }}>
         {card.photoUrl && <img src={card.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>}
       </div>
@@ -2366,10 +2990,10 @@ function CardBack({ card, program, S }) {
       </div>
       <div style={{ position: "absolute", top: px(714), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#D9D9D9" }}/>
       <div style={{ position: "absolute", top: px(748), left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: px(14) }}>
-        <img src="/assets/idcard/logo-okun.png" alt="Okun Alimọsho" style={{ height: px(64) }}
+        <img src={(program && program.logoOkun) || "/assets/idcard/logo-okun.png"} alt="Okun Alimọsho" style={{ height: px(64) }}
           onError={e => { e.target.style.display = "none"; if (e.target.nextSibling) e.target.nextSibling.style.display = "none"; }}/>
         <span aria-hidden="true" style={{ width: 1.5, height: px(44), background: "#C9CDD8" }}/>
-        <img src="/assets/idcard/logo-lockup.png" alt="Lagos Child Project × STS" style={{ width: px(230) }}/>
+        <img src={(program && program.logoLockup) || "/assets/idcard/logo-lockup.png"} alt="Programme lockup" style={{ width: px(230) }}/>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: "#00225F" }}/>
     </div>
@@ -2487,7 +3111,7 @@ function CardStudio() {
     <div className="print-zone" style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
       {cards.map(card => (
         <div key={card.studentId || card.volunteerId} className="card-pair">
-          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} S={0.5}/> : <CardFront card={card} S={0.5}/>}</div>
+          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} program={program} S={0.5}/> : <CardFront card={card} program={program} S={0.5}/>}</div>
           <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5}/></div>
         </div>
       ))}
@@ -2537,7 +3161,7 @@ function LegalPage({ setPage }) {
       <H>Retention</H>
       <P>Child records are kept for the programme cycle plus the period we are required to retain safeguarding records, then archived or deleted. Volunteer records persist while active and for a reasonable period after, to honour service certificates. You can request earlier deletion (see Your Data Rights).</P>
       <H>Contact</H>
-      <P>Data questions: <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng"}</a>. We respond within 30 days.</P>
+      <P>Data questions: <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng"}</a>. We respond within 30 days.</P>
     </>,
     terms: <>
       <P>By using this website and our registration tools, you agree to these terms. They are deliberately short and plain.</P>
@@ -2563,7 +3187,7 @@ function LegalPage({ setPage }) {
       <H>Photography &amp; media</H>
       <P>Headshots are used for IDs and, where separately consented, programme media. Parents can withhold media consent without affecting registration, and can withdraw it later.</P>
       <H>Reporting a concern</H>
-      <P>If you have a safeguarding concern, contact us immediately at <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng"}</a> or {typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "+234 903 777 6318"}. Urgent risk to a child should also be reported to the Lagos State authorities.</P>
+      <P>If you have a safeguarding concern, contact us immediately at <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng"}</a> or {typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "+234 903 777 6318"}. Urgent risk to a child should also be reported to the Lagos State authorities.</P>
     </>,
     consent: <>
       <P>Registering a child is a two-step, consent-first process. A child is only officially enrolled once a parent or guardian has confirmed and granted consent.</P>
@@ -2602,7 +3226,7 @@ function LegalPage({ setPage }) {
         <LI><b>Withdraw consent</b> — at any time, without affecting prior lawful processing.</LI>
       </UL>
       <H>How to exercise them</H>
-      <P>Email <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "cacentre@afrovanguard.org.ng"}</a> from the address on file, or call {typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "+234 903 777 6318"}. If you're unhappy with our response, you may complain to the Nigeria Data Protection Commission (NDPC).</P>
+      <P>Email <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng"}</a> from the address on file, or call {typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "+234 903 777 6318"}. If you're unhappy with our response, you may complain to the Nigeria Data Protection Commission (NDPC).</P>
     </>,
   };
 

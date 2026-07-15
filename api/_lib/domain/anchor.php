@@ -3,7 +3,33 @@ declare(strict_types=1);
 
 /** Anchor 12 — missions, submissions, verification, journal. */
 
+/** Seed a starter mission (one per week) from the 12-week curriculum the FIRST
+ *  time the table is empty, so a fresh install has a working Anchor journey
+ *  out of the box. Idempotent; admins can edit/replace them under Missions. */
+function anchor_ensure_seed(): void {
+    static $checked = false;
+    if ($checked) return; $checked = true;
+    try {
+        if (db_row('SELECT id FROM anchor_missions LIMIT 1')) return; // already populated
+        $content = function_exists('anchor_content') ? anchor_content() : anchor_default_content();
+        $weeks = $content['weeks'] ?? [];
+        foreach ($weeks as $i => $w) {
+            $week = $i + 1;
+            db_insert('anchor_missions', [
+                'missionId' => 'AM-W' . str_pad((string)$week, 2, '0', STR_PAD_LEFT),
+                'week' => $week, 'orderIndex' => 1,
+                'theme' => (string)($w['system'] ?? ($w['title'] ?? 'Anchor')),
+                'title' => (string)($w['title'] ?? ('Week ' . $week)),
+                'prompt' => (string)($w['journal'] ?? ($w['focus'] ?? 'Reflect on this week.')),
+                'type' => 'Reflect', 'proof' => 'text', 'xp' => 60, 'bookPage' => $week, 'estimatedMin' => 10,
+                'isActive' => 1, 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
+            ]);
+        }
+    } catch (Throwable $e) { error_log('[anchor_seed] ' . $e->getMessage()); }
+}
+
 function anchor_weeks(array $p): array {
+    anchor_ensure_seed();
     $memberId = (string)($p['memberId'] ?? '');
     $sc = session_current();
     $session = $sc['current'] ?: $sc['next'];

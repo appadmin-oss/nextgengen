@@ -55,6 +55,15 @@ if ($CONFIG['debug']) {
     ini_set('display_errors', '1');
 }
 
+// Route PHP warnings/errors and every error_log() call to the app's own logs/
+// folder when it exists and is writable (else the host's default log). Override
+// the location with $CONFIG['log_dir']. The folder ships with a deny-all
+// .htaccess so logs are never web-readable.
+$__logDir = rtrim((string)($CONFIG['log_dir'] ?? (__DIR__ . '/../logs')), '/');
+if ($__logDir !== '' && is_dir($__logDir) && is_writable($__logDir)) {
+    ini_set('error_log', $__logDir . '/php-error.log');
+}
+
 require_once __DIR__ . '/response.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/util.php';
@@ -73,10 +82,15 @@ require_once __DIR__ . '/superadmin.php';
 require_once __DIR__ . '/rate-limit.php';
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
+require_once __DIR__ . '/webcron.php';
 
 // CSRF check happens once per request, for every write method. The
 // individual endpoint then validates further (session, role, input).
 csrf_require();
+
+// Opportunistic maintenance for no-cron hosts: drains the integration bus,
+// sends due reminders, and runs daily GC — throttled, after the response.
+web_cron_schedule();
 
 function client_ip(): string {
     foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $h) {

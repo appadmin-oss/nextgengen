@@ -24,5 +24,6 @@ $res = gs_call('auth.request', [
 if (empty($res['ok'])) json_error($res['error'] ?? 'request_failed', 400);
 
 json_ok([
-    'masked' => $res['masked'] ?? '',
+    'masked'   => $res['masked'] ?? '',
+    'delivery' => $res['delivery'] ?? true,
 ]);

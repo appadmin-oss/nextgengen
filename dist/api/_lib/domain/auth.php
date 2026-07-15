@@ -44,12 +44,29 @@ function auth_fail_reset(array $m): void {
 function auth_gateway(array $p): array {
     $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
-    $member = db_row('SELECT passwordHash, status FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
+    $member = db_row('SELECT passwordHash, status, role FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
     $methods = ['code'];
     if ($member && !empty($member['passwordHash']) && (string)$member['status'] !== 'suspended') {
-        $methods[] = 'password';
+        // Staff/admin accounts are password-only: the config-provisioned password
+        // is required and the emailed-code path is not offered to them, so the
+        // client hides "email me a code". Regular members keep both methods.
+        if (is_admin_role($member['role'])) {
+            $methods = ['password'];
+        } else {
+            $methods[] = 'password';
+        }
     }
     return ['ok' => true, 'methods' => $methods];
+}
+
+/**
+ * Admins sign in with the config-provisioned password, never an emailed code.
+ * True when this account holds a console role AND has a password set — used to
+ * refuse the OTP/magic-link login path for staff. An admin somehow without a
+ * password is left on the code path so a fresh deploy can never be locked out.
+ */
+function auth_password_only(?array $member): bool {
+    return $member && !empty($member['passwordHash']) && is_admin_role($member['role'] ?? '');
 }
 
 function auth_request(array $p): array {
@@ -64,11 +81,16 @@ function auth_request(array $p): array {
 
     if (!$member) {
         audit('login.fail.unknown', null, $identifier, ['identifier' => $identifier], $ip);
-        return ['ok' => true, 'masked' => $masked];
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
     }
     if ((string)$member['status'] === 'suspended') {
         audit('login.fail.suspended', $member['memberId'], (string)$member['memberId'], [], $ip);
-        return ['ok' => true, 'masked' => $masked];
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
+    }
+    // Admins must use their password — never an emailed sign-in code.
+    if (auth_password_only($member)) {
+        audit('login.otp.blocked_admin', $member['memberId'], (string)$member['memberId'], [], $ip);
+        return ['ok' => false, 'error' => 'use_password'];
     }
 
     $token = rand_hex(32);
@@ -76,7 +98,7 @@ function auth_request(array $p): array {
     $now = time();
     db_insert('auth_sessions', [
         'token' => $token, 'memberId' => $member['memberId'], 'email' => $member['email'],
-        'otp' => $otp, 'attempts' => 0,
+        'otp' => $otp, 'attempts' => 0, 'purpose' => 'login',
         'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now),
         'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + 15 * 60),
         'verifiedAt' => '', 'ip' => $ip, 'userAgent' => (string)($p['userAgent'] ?? ''),
@@ -86,20 +108,22 @@ function auth_request(array $p): array {
     $link = ($CONFIG['app_origin'] ?? '') . '/?signin=' . rawurlencode($token);
     $first = explode(' ', (string)$member['fullName'])[0] ?? '';
     $html = email_template([
-        'title' => 'Sign in to NGG',
-        'intro' => 'Hi ' . ($first ?: 'there') . ', here is your secure sign-in.',
-        'bodyHtml' => '<p style="margin:0 0 10px">Enter this code in the app:</p>'
-            . '<div style="font-family:monospace;font-size:32px;font-weight:800;letter-spacing:6px;color:#0c1432;margin:0 0 8px">' . esc_html($otp) . '</div>'
-            . '<p style="margin:12px 0 0;color:#8a93b8;font-size:12px">This link and code expire in 15 minutes. If you didn\'t request this, ignore it.</p>',
-        'ctaLabel' => 'Sign in →', 'ctaUrl' => $link,
+        'eyebrow'  => 'Secure sign-in',
+        'title'    => 'Sign in to NGG',
+        'intro'    => 'Hi ' . ($first ?: 'there') . ', tap the button to sign in — or use the code below. Both are good for 15 minutes.',
+        'ctaLabel' => 'Sign in',
+        'ctaUrl'   => $link,
+        'otp'      => $otp,
+        'footNote' => 'You requested a sign-in to Next Generation Genius. Didn\'t request this? Ignore this email — your account stays secure.',
     ]);
-    if (!send_mail((string)$member['email'], 'Your sign-in to Next Generation Genius', $html)) {
-        audit('login.mail_fail', $member['memberId'], (string)$member['memberId'], [], $ip);
-        return ['ok' => false, 'error' => 'mail_failed'];
-    }
-
-    audit('login.request', $member['memberId'], (string)$member['memberId'], [], $ip);
-    return ['ok' => true, 'masked' => $masked];
+    // The OTP/link row is already banked. If the mail relay fails we must NOT
+    // hard-fail the request: that dead-ends the only email-free retry path and
+    // leaks that this identifier is a real, active account (unknown/suspended
+    // both return ok above). Report delivery=false instead so the UI can keep
+    // the code screen open, warn the user, and steer them to password sign-in.
+    $delivered = send_mail((string)$member['email'], 'Your sign-in to Next Generation Genius', $html);
+    audit($delivered ? 'login.request' : 'login.mail_fail', $member['memberId'], (string)$member['memberId'], [], $ip);
+    return ['ok' => true, 'masked' => $masked, 'delivery' => $delivered];
 }
 
 /**
@@ -172,9 +196,9 @@ function auth_verify(array $p): array {
     $otp = trim((string)($p['otp'] ?? ''));
 
     if ($token !== '') {
-        $ch = db_row('SELECT * FROM auth_sessions WHERE token = ? LIMIT 1', [$token]);
+        $ch = db_row("SELECT * FROM auth_sessions WHERE token = ? AND (purpose = 'login' OR purpose IS NULL) LIMIT 1", [$token]);
     } elseif ($memberId !== '' && $otp !== '') {
-        $ch = db_row("SELECT * FROM auth_sessions WHERE memberId = ? AND otp = ? AND (verifiedAt = '' OR verifiedAt IS NULL) ORDER BY id DESC LIMIT 1", [$memberId, $otp]);
+        $ch = db_row("SELECT * FROM auth_sessions WHERE memberId = ? AND otp = ? AND (purpose = 'login' OR purpose IS NULL) AND (verifiedAt = '' OR verifiedAt IS NULL) ORDER BY id DESC LIMIT 1", [$memberId, $otp]);
     } else {
         return ['ok' => false, 'error' => 'no_credentials'];
     }
@@ -204,9 +228,103 @@ function auth_verify(array $p): array {
 
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ch['memberId']]);
     if (!$member) return ['ok' => false, 'error' => 'member_gone'];
+    // Admins must complete sign-in with their password, never an emailed code or
+    // magic link — enforced here too so a stale/crafted challenge can't bypass it.
+    if (auth_password_only($member)) {
+        audit('login.otp.blocked_admin', $member['memberId'], (string)$member['memberId'], [], $ip);
+        return ['ok' => false, 'error' => 'use_password'];
+    }
 
     auth_fail_reset($member);
     audit('login.success', $member['memberId'], (string)$member['memberId'], [], $ip);
+    return ['ok' => true, 'member' => public_member($member)];
+}
+
+/**
+ * Self-service password reset — step 1. Emails a link + 6-digit code so a
+ * member can set a password WITHOUT already being signed in (the only other
+ * way a password gets set is auth_set_password, which needs a session). This
+ * is what makes password sign-in reachable for accounts that never had one.
+ * Unknown/suspended accounts answer identically so existence never leaks.
+ */
+function auth_reset_request(array $p): array {
+    $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
+    $ip = (string)($p['ip'] ?? '');
+    if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
+
+    $member = db_row('SELECT * FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
+    $masked = mask_email($member ? (string)$member['email'] : (strpos($identifier, '@') !== false ? $identifier : 'a@b.co'));
+
+    if (!$member || (string)$member['status'] === 'suspended') {
+        audit('password.reset.request.noop', $member['memberId'] ?? null, $identifier, [], $ip);
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
+    }
+
+    $token = rand_hex(32);
+    $otp = new_otp();
+    $now = time();
+    db_insert('auth_sessions', [
+        'token' => $token, 'memberId' => $member['memberId'], 'email' => $member['email'],
+        'otp' => $otp, 'attempts' => 0, 'purpose' => 'reset',
+        'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now),
+        'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + 30 * 60),
+        'verifiedAt' => '', 'ip' => $ip, 'userAgent' => (string)($p['userAgent'] ?? ''),
+    ]);
+
+    global $CONFIG;
+    $link = ($CONFIG['app_origin'] ?? '') . '/?reset=' . rawurlencode($token);
+    $first = explode(' ', (string)$member['fullName'])[0] ?? '';
+    $html = email_template([
+        'eyebrow'  => 'Password reset',
+        'title'    => 'Set your NGG password',
+        'intro'    => 'Hi ' . ($first ?: 'there') . ', tap the button to set a new password — or use the code below. Both are good for 30 minutes.',
+        'ctaLabel' => 'Set a password',
+        'ctaUrl'   => $link,
+        'otp'      => $otp,
+        'footNote' => 'Didn\'t request this? Ignore this email — your password stays unchanged.',
+    ]);
+    $delivered = send_mail((string)$member['email'], 'Set your Next Generation Genius password', $html);
+    audit($delivered ? 'password.reset.request' : 'password.reset.mail_fail', $member['memberId'], (string)$member['memberId'], [], $ip);
+    return ['ok' => true, 'masked' => $masked, 'delivery' => $delivered];
+}
+
+/**
+ * Self-service password reset — step 2. Consumes a reset challenge (magic-link
+ * token, or memberId + emailed code) and sets the new password. Single-use,
+ * expiry- and attempt-guarded, and scoped to purpose='reset' so a reset
+ * credential can never be replayed as a plain login. Returns the member so the
+ * route can sign them straight in (mirrors auth.verify / auth.login).
+ */
+function auth_reset_confirm(array $p): array {
+    $ip = (string)($p['ip'] ?? '');
+    $token = trim((string)($p['token'] ?? ''));
+    $memberId = trim((string)($p['memberId'] ?? ''));
+    $otp = trim((string)($p['otp'] ?? ''));
+    $new = (string)($p['password'] ?? '');
+    if (strlen($new) < 8) return ['ok' => false, 'error' => 'password_too_short'];
+    if (strlen($new) > 200) return ['ok' => false, 'error' => 'password_too_long'];
+
+    if ($token !== '') {
+        $ch = db_row("SELECT * FROM auth_sessions WHERE token = ? AND purpose = 'reset' LIMIT 1", [$token]);
+    } elseif ($memberId !== '' && $otp !== '') {
+        $ch = db_row("SELECT * FROM auth_sessions WHERE memberId = ? AND otp = ? AND purpose = 'reset' AND (verifiedAt = '' OR verifiedAt IS NULL) ORDER BY id DESC LIMIT 1", [$memberId, $otp]);
+    } else {
+        return ['ok' => false, 'error' => 'no_credentials'];
+    }
+
+    if (!$ch) { audit('password.reset.fail.bad_token', $memberId ?: null, '', [], $ip); return ['ok' => false, 'error' => 'invalid']; }
+    if (strtotime((string)$ch['expiresAt']) < time()) return ['ok' => false, 'error' => 'expired'];
+    if (!empty($ch['verifiedAt'])) return ['ok' => false, 'error' => 'already_used'];
+    if ((int)$ch['attempts'] >= 5) return ['ok' => false, 'error' => 'too_many_attempts'];
+
+    $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ch['memberId']]);
+    if (!$member) return ['ok' => false, 'error' => 'member_gone'];
+    if ((string)$member['status'] === 'suspended') return ['ok' => false, 'error' => 'account_suspended'];
+
+    db_update('auth_sessions', ['verifiedAt' => now_iso()], ['id' => $ch['id']]);
+    db_update('members', ['passwordHash' => password_hash_best($new), 'updatedAt' => now_iso()], ['id' => $member['id']]);
+    auth_fail_reset($member);
+    audit('password.reset.success', $member['memberId'], (string)$member['memberId'], [], $ip);
     return ['ok' => true, 'member' => public_member($member)];
 }
 
@@ -260,6 +378,9 @@ function auth_me(array $p): array {
 }
 
 function auth_logout(array $p): array {
+    // Revoke this device's server-side session so the sid can't be reused.
+    $sid = (string)($p['sid'] ?? '');
+    if ($sid !== '') { try { db_update('device_sessions', ['revokedAt' => now_iso()], ['sid' => $sid]); } catch (Throwable $e) {} }
     audit('logout', (string)($p['memberId'] ?? '') ?: null, (string)($p['memberId'] ?? ''), [], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
@@ -270,11 +391,18 @@ function auth_totp_setup(array $p): array {
     if (!is_admin_role($member['role'])) return ['ok' => false, 'error' => 'forbidden'];
 
     $secret = rand_base32(20);
-    db_update('members', ['totpSecret' => $secret, 'updatedAt' => now_iso()], ['id' => $member['id']]);
+    // Mint 8 one-time backup codes (shown once, stored hashed) so a lost
+    // authenticator is recoverable without an admin.
+    $codes = []; $hashes = [];
+    for ($i = 0; $i < 8; $i++) {
+        $c = strtoupper(rand_hex(2) . '-' . rand_hex(2)); // e.g. 3F9A-1C7B
+        $codes[] = $c; $hashes[] = password_hash(strtoupper(str_replace('-', '', $c)), PASSWORD_DEFAULT);
+    }
+    db_update('members', ['totpSecret' => $secret, 'totpBackup' => json_encode($hashes, JSON_UNESCAPED_SLASHES), 'updatedAt' => now_iso()], ['id' => $member['id']]);
     audit('admin.totp.setup', $member['memberId'], (string)$member['memberId'], [], (string)($p['ip'] ?? ''));
     $otpauth = 'otpauth://totp/NGG%20Admin:' . rawurlencode((string)$member['email'])
         . '?secret=' . $secret . '&issuer=NGG%20Admin&algorithm=SHA1&digits=6&period=30';
-    return ['ok' => true, 'secret' => $secret, 'otpauth' => $otpauth];
+    return ['ok' => true, 'secret' => $secret, 'otpauth' => $otpauth, 'backupCodes' => $codes];
 }
 
 function auth_totp_verify(array $p): array {
@@ -282,10 +410,48 @@ function auth_totp_verify(array $p): array {
     if (!$member || empty($member['totpSecret'])) return ['ok' => false, 'error' => 'no_totp'];
     if (!is_admin_role($member['role'])) return ['ok' => false, 'error' => 'forbidden'];
 
-    if (totp_verify((string)$member['totpSecret'], (string)($p['code'] ?? ''), 1)) {
+    $code = (string)($p['code'] ?? '');
+    if (totp_verify((string)$member['totpSecret'], $code, 1)) {
         audit('admin.totp.ok', $member['memberId'], (string)$member['memberId'], [], (string)($p['ip'] ?? ''));
         return ['ok' => true];
     }
+    // Fall back to a one-time backup code (case/format-insensitive), consumed on use.
+    $norm = strtoupper(preg_replace('/[^0-9a-z]/i', '', $code));
+    if (strlen($norm) >= 6) {
+        $hashes = json_decode((string)($member['totpBackup'] ?? ''), true) ?: [];
+        foreach ($hashes as $i => $h) {
+            if (is_string($h) && password_verify($norm, $h)) {
+                unset($hashes[$i]);
+                db_update('members', ['totpBackup' => json_encode(array_values($hashes), JSON_UNESCAPED_SLASHES), 'updatedAt' => now_iso()], ['id' => $member['id']]);
+                audit('admin.totp.backup_used', $member['memberId'], (string)$member['memberId'], ['remaining' => count($hashes)], (string)($p['ip'] ?? ''));
+                return ['ok' => true, 'backupUsed' => true, 'backupRemaining' => count($hashes)];
+            }
+        }
+    }
     audit('admin.totp.fail', $member['memberId'], (string)$member['memberId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => false, 'error' => 'invalid_code'];
+}
+
+/** Super-admin recovery: clear a member's TOTP + backup codes so they re-enrol
+ *  at next admin sign-in (the fix for a lost authenticator). */
+function admin_member_reset_2fa(array $p): array {
+    if (!admin_is_super($p)) return ['ok' => false, 'error' => 'forbidden'];
+    $target = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT id, role FROM members WHERE memberId = ? LIMIT 1', [$target]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    db_update('members', ['totpSecret' => '', 'totpBackup' => '', 'updatedAt' => now_iso()], ['id' => $m['id']]);
+    audit('admin.totp.reset', (string)($p['requesterId'] ?? ''), $target, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/** Super-admin recovery: clear a member's password so they sign in via the
+ *  emailed code/magic-link and can set a fresh password. */
+function admin_member_reset_password(array $p): array {
+    if (!admin_is_super($p)) return ['ok' => false, 'error' => 'forbidden'];
+    $target = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT id FROM members WHERE memberId = ? LIMIT 1', [$target]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    db_update('members', ['passwordHash' => '', 'updatedAt' => now_iso()], ['id' => $m['id']]);
+    audit('admin.password.reset', (string)($p['requesterId'] ?? ''), $target, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
 }

@@ -118,6 +118,8 @@
       gateway: (identifier) => request('/auth/gateway.php', { body: { identifier } }),
       request: (identifier) => request('/auth/request.php', { body: { identifier } }),
       login:   (identifier, password) => request('/auth/login.php', { body: { identifier, password } }),
+      resetRequest: (identifier) => request('/auth/reset-request.php', { body: { identifier } }),
+      resetConfirm: (creds) => request('/auth/reset-confirm.php', { body: creds }),
       setPassword: (password, current) => request('/auth/set-password.php', { body: { password, current: current || '' } }),
       verify:  (creds) => request('/auth/verify.php', { body: creds }),
       me:      () => request('/auth/me.php'),
@@ -144,12 +146,21 @@
       circle:       () => request('/member/circle.php'),
       circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
       circleRevoke: (linkId) => request('/member/circle.php', { body: { action: 'revoke', linkId } }),
+      react:               (post, emoji) => request('/member/engage.php', { body: { action: 'react', post, emoji } }),
+      comment:             (post, body) => request('/member/engage.php', { body: { action: 'comment', post, body } }),
+      changeEmail:         (email) => request('/member/account.php', { body: { action: 'change_email', email } }),
+      exportData:          () => request('/member/account.php'),
+      deleteAccount:       () => request('/member/account.php', { body: { action: 'delete' } }),
       security:            () => request('/member/security.php'),
       securityRevoke:      (sid) => request('/member/security.php', { body: { action: 'revoke', sid } }),
       securityRevokeOthers: () => request('/member/security.php', { body: { action: 'revoke_others' } }),
     },
     public: {
       stats:      () => request('/public/stats.php'),
+      leaderboard: (limit) => request('/public/leaderboard.php' + qs(limit ? { limit } : {})),
+      applicationStatus: (ref, email) => request('/public/application-status.php', { body: { ref, email } }),
+      donate: (data) => request('/public/donate.php', { body: data }),
+      postEngagement: (post) => request('/public/engagement.php' + qs({ post })),
       events:     () => request('/public/events.php'),
       posts:      (kind, tag) => request('/public/posts.php' + qs({ kind, tag })),
       post:       (slug) => request('/public/post.php' + qs({ slug })),
@@ -171,6 +182,7 @@
           lat: opts && opts.lat, lng: opts && opts.lng, geoOverride: !!(opts && opts.geoOverride),
         } }),
         checkin:  (gate, token) => request('/public/gate.php', { body: { action: 'checkin', gate, token } }),
+        dutyClose:(gate) => request('/public/gate.php', { body: { action: 'duty_close', gate } }),
         // Kiosk unlock — mints a gate-scoped session so field staff run the
         // desk without an admin login (see /public/gate-unlock.php).
         unlock:   (gate, password) => request('/public/gate-unlock.php', { body: { gate, password } }),
@@ -197,6 +209,12 @@
       members: {
         list:   (q) => request('/admin/members.php' + qs(q || {})),
         upsert: (data) => request('/admin/members.php', { body: data }),
+        reset2fa: (memberId) => request('/admin/members.php', { body: { action: 'reset2fa', memberId } }),
+        resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
+        remove: (memberId) => request('/admin/members.php', { body: { action: 'delete', memberId } }),
+        setCaps: (memberId, caps) => request('/admin/members.php', { body: { action: 'setCaps', memberId, caps } }),
+        impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),
+        stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),
       },
       mentors: {
         list:   () => request('/admin/mentors.php'),
@@ -220,6 +238,7 @@
       events: {
         list:   () => request('/admin/events.php'),
         upsert: (data) => request('/admin/events.php', { body: data }),
+        markAttendance: (eventId, memberId, clear) => request('/admin/events.php', { body: { action: 'attendance', eventId, memberId, clear: !!clear } }),
       },
       posts: {
         list:   () => request('/admin/posts.php'),
@@ -227,6 +246,7 @@
         upsert: (data) => request('/admin/posts.php', { body: data }),
       },
       promotions: {
+        get: () => request('/admin/promotions.php'),
         set: (promo) => request('/admin/promotions.php', { body: { promo } }),
       },
       assignments: {
@@ -234,8 +254,10 @@
         submissions: (assignmentId) => request('/admin/assignments.php' + qs({ assignmentId })),
         upsert:      (data) => request('/admin/assignments.php', { body: data }),
         grade:       (data) => request('/admin/assignments.php', { body: data }),
+        returnForRevision: (submissionId, feedback) => request('/admin/assignments.php', { body: { action: 'return', submissionId, feedback: feedback || '' } }),
       },
       broadcast: (data) => request('/admin/broadcast.php', { body: data }),
+      broadcastHistory: () => request('/admin/broadcast.php'),
       anchor: {
         get:      () => request('/admin/anchor.php'),
         defaults: () => request('/admin/anchor.php?defaults=1'),
@@ -250,6 +272,10 @@
         convert: (id) => request('/admin/applications.php', { body: { action: 'convert', id } }),
       },
       newsletter:   () => request('/admin/newsletter.php'),
+      newsletterSend: (subject, body) => request('/admin/newsletter.php', { body: { subject, body } }),
+      donations:    () => request('/admin/donations.php'),
+      comments:     (status) => request('/admin/comments.php' + qs({ status: status || 'pending' })),
+      commentModerate: (commentId, act) => request('/admin/comments.php', { body: { commentId, do: act } }),
       summer: {
         overview:     () => request('/admin/summer.php?view=overview'),
         students:     (q, cohortId) => request('/admin/summer.php' + qs({ view: 'students', q, cohortId })),
@@ -264,6 +290,19 @@
         attendance:   (cohortId) => request('/admin/summer.php' + qs({ view: 'attendance', cohortId })),
         insights:     (cohortId) => request('/admin/summer.php' + qs({ view: 'insights', cohortId })),
         archive:      (cohortId, compress) => request('/admin/summer.php', { body: { action: 'archive', cohortId, compress: !!compress } }),
+        issueCerts:   (status, cohortId) => request('/admin/summer.php', { body: { action: 'issueCerts', status: status || 'graduated', cohortId: cohortId || '' } }),
+        revokeCert:   (certId, restore) => request('/admin/summer.php', { body: { action: 'revokeCert', certId, restore: !!restore } }),
+        checkout:     (token) => request('/admin/summer.php', { body: { action: 'checkout', token } }),
+        absenceAlert: (studentId, cohortId) => request('/admin/summer.php', { body: { action: 'absenceAlert', studentId: studentId || '', cohortId: cohortId || '' } }),
+        importStudents: (rows) => request('/admin/summer.php', { body: { action: 'import', rows } }),
+      },
+      // Attendance-taker rotation + gamified attendance duty.
+      attendance: {
+        board:    (date) => request('/admin/attendance.php' + qs({ view: 'board', date })),
+        admin:    (date) => request('/admin/attendance.php' + qs({ view: 'admin', date })),
+        set:      (date, centre, volunteerId) => request('/admin/attendance.php', { body: { action: 'set', date, centre, volunteerId } }),
+        complete: (date, centre, volunteerId) => request('/admin/attendance.php', { body: { action: 'complete', date, centre, volunteerId } }),
+        leaderboard: () => request('/admin/attendance.php' + qs({ view: 'leaderboard' })),
       },
       club: {
         overview:   () => request('/admin/club.php?view=overview'),
@@ -323,6 +362,7 @@
       settings: {
         get: () => request('/admin/settings.php'),
         set: (data) => request('/admin/settings.php', { body: { data } }),
+        testMail: (to) => request('/admin/settings.php', { body: { action: 'testMail', to } }),
       },
       audit:     (q) => request('/admin/audit.php' + qs(typeof q === 'object' && q ? q : { limit: q })),
     },

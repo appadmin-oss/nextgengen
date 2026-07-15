@@ -58,6 +58,40 @@ Applies to Volunteers, Instructors, Mentors, Coordinators.
 - **Eviction:** critical post-suspension lateness, financial misconduct, gross
   subversion, or unapproved absences → termination + blacklisting.
 
+### 2.4 Attendance-taker rotation (daily duty)
+Taking the roll is a rotating duty, not a fixed post — every active volunteer
+carries the standard.
+- **One taker per centre per day.** The system auto-rotates the duty across the
+  active-volunteer pool (round-robin, offset per centre so no two centres draw
+  the same person on the same day). An admin may **override** the day's taker
+  from the Control Room (**People → Attendance duty**).
+- **On assignment**, the volunteer is notified by email ("You're on attendance
+  duty today — <centre>") and it appears on their digital ID.
+- **Close the roll.** The taker checks every learner in at arrival and *closes
+  the roll* before leaving. Closing is what banks the reward (below); an open
+  roll at end of day is a missed Review-Time infraction (§2.1).
+
+### 2.5 Gamified attendance — value-driven rewards, levels & awards
+Duty is rewarded, visibly and immediately. Points accrue to a per-volunteer
+ledger and drive levels, streaks and awards.
+- **Points:** on-duty assignment **+10**; closing the roll **+40** (plus **+2**
+  per learner marked, capped **+40**); a **+15** streak bonus for closing the
+  roll on consecutive days.
+- **Levels:** Recruit → Steward (150) → Keeper (400) → Marshal (800) → Vanguard
+  (1500). Level-ups and streaks return a warm, specific response at the kiosk —
+  never a hollow "done".
+- **Awards** at 150 / 400 / 800 / 1500 points (Reliable Steward, Roll Keeper,
+  Attendance Marshal, Vanguard of Order) are minted **once each**, **emailed**,
+  and shown **in-app** on the volunteer's digital ID. These sit alongside the
+  service-hour certificates (§5) and feed the ₦-value Awards framework.
+- **Check-in state email:** every new check-in triggers a personal email about
+  where that person stands. When they're **doing well** — a service-certificate
+  milestone within reach — the message is **award-focused** ("one more session
+  to unlock your award"); otherwise it's a warm **nudge** toward the habit.
+  Guardians receive the student's version (milestone celebration or a "they made
+  it today" note). Sent **synchronously** at check-in (no cron/SSH dependency)
+  and toggleable in *Control Room → Settings* (default on).
+
 ## Part III — Architecture of Order & Crisis Protocol
 
 ### 3.1 Chain of command (order over age)

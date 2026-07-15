@@ -4,13 +4,76 @@
    Posts (blog/news/updates/promos), Audit log.
    ================================================================ */
 
-// Which capability each admin section needs (null = any staff).
-const SECTION_CAP = {
-  home: null, members: "people", applications: "people", mentors: "people", mentorship: "people",
-  sessions: "content", missions: "content", anchor: "content", assignments: "content",
-  events: "content", posts: "content", broadcast: "content", photos: "content",
-  newsletter: "inbox", messages: "inbox", audit: "rbac", settings: "settings",
-};
+// Shared drawer behaviour for every admin editor: an unsaved-changes guard
+// (confirms before an accidental scrim-click / Escape discards edits), a focus
+// trap, and focus restore on close — giving the admin-drawer modals the same
+// accessibility as the dialog/sign-in modals. Attach `panelRef`, `onMouseDown`
+// (scrim) and `onInput` to the scrim; wire `close` to the ✕ and Cancel buttons.
+function useAdminDrawer(onClose, guard = true) {
+  const panelRef = React.useRef(null);
+  const touched = React.useRef(false);
+  const close = React.useCallback(() => {
+    if (guard && touched.current && typeof dialog !== "undefined" && dialog.confirm) {
+      dialog.confirm({ title: "Discard changes?", body: "You have edits that haven't been saved yet.", cta: "Discard", cancel: "Keep editing", danger: true })
+        .then(ok => { if (ok) onClose(); });
+    } else { onClose(); }
+  }, [onClose, guard]);
+  React.useEffect(() => {
+    const prev = document.activeElement;
+    const el = panelRef.current;
+    if (el) { const f = el.querySelector('input,select,textarea,button:not(.admin-drawer-close)'); if (f) setTimeout(() => { try { f.focus(); } catch (_) {} }, 40); }
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); close(); return; }
+      if (e.key === "Tab" && el) {
+        const f = el.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
+        if (!f.length) return;
+        const a = f[0], b = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === a) { e.preventDefault(); b.focus(); }
+        else if (!e.shiftKey && document.activeElement === b) { e.preventDefault(); a.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); if (prev && prev.focus) { try { prev.focus(); } catch (_) {} } };
+  }, [close]);
+  return { panelRef, close, onInput: () => { touched.current = true; } };
+}
+
+// ── Single source of truth for every Control Room section ──────────────────
+// Nav grouping, sidebar label, page title, icon and required capability all
+// live here so they can never drift apart again. `cap: null` = any staffer.
+// Add a new module by adding ONE row.
+const ADMIN_SECTIONS = [
+  { id: "home",        group: null,       label: "Overview",     title: "Overview",            icon: "◎", cap: null },
+  { id: "members",     group: "People",   label: "Members",      title: "Members",             icon: "◯", cap: "people" },
+  { id: "applications",group: "People",   label: "Applications", title: "Applications",        icon: "✉", cap: "people" },
+  { id: "volunteers",  group: "People",   label: "Volunteers",   title: "Volunteers",          icon: "◈", cap: "people" },
+  { id: "mentors",     group: "People",   label: "Mentors",      title: "Mentors",             icon: "☺", cap: "people" },
+  { id: "mentorship",  group: "People",   label: "Mentorship",   title: "Mentorship",          icon: "◐", cap: "people" },
+  { id: "behaviour",   group: "People",   label: "Behaviour",    title: "Behaviour monitor",   icon: "◔", cap: "people" },
+  { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
+  { id: "qr",          group: "People",   label: "QR codes",     title: "QR codes",            icon: "▦", cap: "summer" },
+  { id: "attendance",  group: "People",   label: "Attendance duty", title: "Attendance duty",  icon: "🗓", cap: "summer" },
+  { id: "sessions",    group: "Content",  label: "Sessions",     title: "Sessions",            icon: "▢", cap: "content" },
+  { id: "missions",    group: "Content",  label: "Missions",     title: "Anchor missions",     icon: "✦", cap: "content" },
+  { id: "anchor",      group: "Content",  label: "Anchor app",   title: "Anchor Journal app",  icon: "⚓", cap: "content" },
+  { id: "assignments", group: "Content",  label: "Assignments",  title: "Assignments",         icon: "❏", cap: "content" },
+  { id: "events",      group: "Content",  label: "Events",       title: "Events",              icon: "▶", cap: "content" },
+  { id: "posts",       group: "Content",  label: "Posts",        title: "Posts",               icon: "✎", cap: "content" },
+  { id: "photos",      group: "Content",  label: "Photo review", title: "Photo review",        icon: "◲", cap: "content" },
+  { id: "comments",    group: "Content",  label: "Comments",     title: "Comment moderation",  icon: "💬", cap: "content" },
+  { id: "broadcast",   group: "Content",  label: "Announce",     title: "Announcements",       icon: "📣", cap: "content" },
+  { id: "forms",       group: "Content",  label: "Forms",        title: "Forms",               icon: "▤", cap: "content" },
+  { id: "site",        group: "Content",  label: "Site content", title: "Site content",        icon: "◧", cap: "settings" },
+  { id: "newsletter",  group: "Inbox",    label: "Newsletter",   title: "Newsletter",          icon: "✧", cap: "inbox" },
+  { id: "messages",    group: "Inbox",    label: "Messages",     title: "Messages",            icon: "✆", cap: "inbox" },
+  { id: "access",      group: "System",   label: "Access & roles", title: "Access & roles",    icon: "⚿", cap: "rbac" },
+  { id: "audit",       group: "System",   label: "Audit trail",  title: "Audit log",           icon: "⌗", cap: "rbac" },
+  { id: "integrations",group: "System",   label: "Integrations", title: "Integrations & delivery", icon: "⇄", cap: "settings" },
+  { id: "donations",   group: "System",   label: "Donations",    title: "Donations",           icon: "❤", cap: "settings" },
+  { id: "settings",    group: "System",   label: "Settings",     title: "Settings",            icon: "⚙", cap: "settings" },
+];
+// Which capability each admin section needs (null = any staff) — derived.
+const SECTION_CAP = ADMIN_SECTIONS.reduce((m, s) => { m[s.id] = s.cap; return m; }, {});
 
 function AdminPage({ setPage }) {
   const { member, isAdmin, adminOk, loading, openSignIn, setAdminOk, hasCap } = useAuth();
@@ -82,7 +145,13 @@ function AdminPage({ setPage }) {
           {view === "posts" && <AdminPosts/>}
           {view === "photos" && <AdminPhotos/>}
           {view === "broadcast" && <AdminBroadcast/>}
+          {view === "attendance" && <AdminAttendanceDuty/>}
+          {view === "access" && <AdminAccess/>}
           {view === "audit" && <AdminAudit/>}
+          {view === "behaviour" && <AdminBehaviour/>}
+          {view === "integrations" && <AdminIntegrations/>}
+          {view === "comments" && <AdminComments/>}
+          {view === "donations" && <AdminDonations/>}
         </main>
       </div>
     </div>
@@ -99,6 +168,7 @@ function AdminTotpGate({ onPass, member }) {
   const [err, setErr] = React.useState("");
   const [setupMode, setSetupMode] = React.useState(member && member.needsTotp);
   const [setupData, setSetupData] = React.useState(null);
+  const [qrHtml, setQrHtml] = React.useState("");
 
   React.useEffect(() => {
     if (setupMode) {
@@ -106,11 +176,23 @@ function AdminTotpGate({ onPass, member }) {
     }
   }, [setupMode]);
 
+  // Render the otpauth:// URI as a scannable QR once the setup data lands.
+  React.useEffect(() => {
+    let alive = true;
+    if (setupData && setupData.otpauth) {
+      ensureQREncoder()
+        .then(() => { if (alive) setQrHtml(qrSvg(setupData.otpauth, 5, 2)); })
+        .catch(() => { if (alive) setQrHtml(""); });
+    }
+    return () => { alive = false; };
+  }, [setupData]);
+
   const verify = async (e) => {
     e.preventDefault();
     setBusy(true); setErr("");
     try {
-      await NGGApi.auth.adminTotpVerify(code.replace(/\s/g, ""));
+      const r = await NGGApi.auth.adminTotpVerify(code.replace(/\s/g, ""));
+      if (r && r.backupUsed) toast.warn("Backup code used — " + (r.backupRemaining ?? 0) + " left. Re-enrol your authenticator soon.", "2FA");
       onPass();
     } catch (e) {
       setErr(e.code === "invalid_code" ? "Code didn't match. Try the latest one." : (e.code || e.message));
@@ -125,13 +207,24 @@ function AdminTotpGate({ onPass, member }) {
           <h2 className="display admin-gate-h">{setupMode ? "First-time setup" : "Verify it's you."}</h2>
           {setupMode ? (
             <>
-              <p className="admin-gate-p">Add NGG Admin to your authenticator app, then enter the code it shows.</p>
+              <p className="admin-gate-p">Scan this with your authenticator app (Google Authenticator, Authy, 1Password…), then enter the 6-digit code it shows.</p>
               {setupData ? (
                 <>
+                  {qrHtml
+                    ? <div className="admin-totp-qr" style={{ background: "#fff", padding: 12, borderRadius: 12, width: "fit-content", margin: "0 auto 4px", border: "1px solid var(--line-200, #e6e8ee)" }} dangerouslySetInnerHTML={{ __html: qrHtml }}/>
+                    : <div className="dash-spinner"/>}
                   <div className="admin-gate-secret">
-                    <div className="mono" style={{fontSize:10, color:"var(--ink-500)"}}>OR ENTER MANUALLY</div>
+                    <div className="mono" style={{fontSize:10, color:"var(--ink-500)"}}>CAN'T SCAN? ENTER THIS KEY MANUALLY</div>
                     <code>{setupData.secret}</code>
                   </div>
+                  {Array.isArray(setupData.backupCodes) && setupData.backupCodes.length > 0 && (
+                    <div className="admin-gate-secret" style={{ marginTop: 10 }}>
+                      <div className="mono" style={{ fontSize: 10, color: "var(--crimson-500, #E4155F)" }}>BACKUP CODES — SAVE THESE NOW (shown once). Each works once if you lose your authenticator.</div>
+                      <div className="mono" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px", marginTop: 6, fontSize: 13 }}>
+                        {setupData.backupCodes.map((c, i) => <code key={i}>{c}</code>)}
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : <div className="dash-spinner"/>}
             </>
@@ -188,39 +281,12 @@ function AdminTopbar({ section, setSection, setPage, member }) {
   );
 }
 
+// Group order for the sidebar; `null` is the ungrouped top entry (Overview).
+const ADMIN_NAV_GROUPS = [null, "People", "Content", "Inbox", "System"];
+
 function AdminNav({ section, setSection, hasCap }) {
-  const groups = [
-    { h: null, items: [{ id: "home", label: "Overview", icon: "◎" }] },
-    { h: "People", items: [
-      { id: "members",   label: "Members",    icon: "◯", cap: "people" },
-      { id: "applications", label: "Applications", icon: "✉", cap: "people" },
-      { id: "volunteers", label: "Volunteers", icon: "◈", cap: "people" },
-      { id: "registration", label: "Registration", icon: "❑", cap: "summer" },
-      { id: "qr", label: "QR codes", icon: "▦", cap: "summer" },
-      { id: "mentorship", label: "Mentorship", icon: "◐", cap: "people" },
-    ]},
-    { h: "Content", items: [
-      { id: "sessions",  label: "Sessions",   icon: "▢", cap: "content" },
-      { id: "missions",  label: "Missions",   icon: "✦", cap: "content" },
-      { id: "anchor",    label: "Anchor app", icon: "⚓", cap: "content" },
-      { id: "assignments", label: "Assignments", icon: "❏", cap: "content" },
-      { id: "events",    label: "Events",     icon: "▶", cap: "content" },
-      { id: "posts",     label: "Posts",      icon: "✎", cap: "content" },
-      { id: "photos",    label: "Photo review", icon: "📷", cap: "content" },
-      { id: "broadcast", label: "Announce",   icon: "📣", cap: "content" },
-      { id: "forms",     label: "Forms",      icon: "❏", cap: "content" },
-      { id: "site",      label: "Site content", icon: "◧", cap: "settings" },
-    ]},
-    { h: "Inbox", items: [
-      { id: "newsletter",label: "Newsletter", icon: "✦", cap: "inbox" },
-      { id: "messages",  label: "Messages",   icon: "✉", cap: "inbox" },
-    ]},
-    { h: "System", items: [
-      { id: "audit",     label: "Audit trail", icon: "⌗", cap: "rbac" },
-      { id: "settings",  label: "Settings",   icon: "⚙", cap: "settings" },
-    ]},
-  ];
   const can = (it) => !it.cap || (hasCap ? hasCap(it.cap) : true);
+  const groups = ADMIN_NAV_GROUPS.map(h => ({ h, items: ADMIN_SECTIONS.filter(s => s.group === h) }));
   return (
     <aside className="admin-nav">
       {groups.map((grp, gi) => {
@@ -247,11 +313,8 @@ function AdminNav({ section, setSection, hasCap }) {
 }
 
 function titleFor(s) {
-  return {
-    home: "Overview", members: "Members", mentors: "Mentors", mentorship: "Mentorship", sessions: "Sessions",
-    missions: "Anchor missions", anchor: "Anchor Journal app", assignments: "Assignments", events: "Events", posts: "Posts", broadcast: "Announcements", audit: "Audit log",
-    applications: "Applications", volunteers: "Volunteers", registration: "Registration", qr: "QR codes", newsletter: "Newsletter", messages: "Messages", settings: "Settings", forms: "Forms", site: "Site content", summer: "Summer School",
-  }[s] || "";
+  const sec = ADMIN_SECTIONS.find(x => x.id === s);
+  return sec ? sec.title : (s === "summer" ? "Summer School" : "");
 }
 
 // ============================================================================
@@ -308,6 +371,12 @@ function AdminHome({ setSection, hasCap, member }) {
         {can("people") && <AdminTile n={"+" + fmt(m.new30)} l="New · 30 days" onClick={() => setSection("members")}/>}
         {can("people") && <AdminTile n={fmt((o.mentors || {}).active)} l="Active mentors" onClick={() => setSection("mentors")}/>}
         {can("content") && <AdminTile n={fmt(an.journals)} l="Journal entries" onClick={() => setSection("anchor")}/>}
+        {can("content") && <AdminTile n={fmt(an.verified)} l="Missions verified" onClick={() => setSection("missions")}/>}
+        {can("content") && <AdminTile n={fmt(asg.published)} l="Assignments live" onClick={() => setSection("assignments")}/>}
+        {can("content") && <AdminTile n={fmt((o.events || {}).upcoming)} l="Upcoming events" onClick={() => setSection("events")}/>}
+        {can("people") && <AdminTile n={fmt(vol.active)} l="Active volunteers" onClick={() => setSection("volunteers")}/>}
+        {can("people") && m.suspended != null && <AdminTile n={fmt(m.suspended)} l="Suspended" onClick={() => setSection("members")}/>}
+        {can("inbox") && <AdminTile n={fmt((o.messages || {}).total)} l="Messages (all)" onClick={() => setSection("messages")}/>}
         {can("inbox") && <AdminTile n={fmt((o.newsletter || {}).subscribers)} l="Subscribers" onClick={() => setSection("newsletter")}/>}
       </div>
 
@@ -359,31 +428,124 @@ function AdminTile({ n, l, onClick, loading }) {
   );
 }
 
+// Shared pagination control. Renders "N–M of T" plus prev/next; hides itself
+// when everything fits on one page. `page` is 1-based.
+function Pager({ page, pageSize, total, onPage }) {
+  if (!total || total <= pageSize) return null;
+  const pages = Math.ceil(total / pageSize);
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
+  return (
+    <div className="admin-pager" role="navigation" aria-label="Pagination">
+      <span className="admin-pager-count mono">{from.toLocaleString()}–{to.toLocaleString()} of {total.toLocaleString()}</span>
+      <div className="admin-pager-btns">
+        <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">← Prev</button>
+        <span className="admin-pager-page mono" aria-current="page">Page {page} / {pages}</span>
+        <button className="btn btn-ghost btn-sm" disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Next page">Next →</button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Attendance-taker rotation — the daily duty board + gamified roll-close
+// ============================================================================
+function AdminAttendanceDuty() {
+  const [date, setDate] = React.useState(() => new Date().toISOString().slice(0, 10));
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const load = (d) => { setErr(""); return NGGApi.admin.attendance.admin(d || date).then(setData).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { setData(null); load(date); /* eslint-disable-next-line */ }, [date]);
+  const vols = (data && data.volunteers) || [];
+  const setTaker = async (centre, volunteerId) => { if (!volunteerId) return; setBusy(centre); try { const r = await NGGApi.admin.attendance.set(date, centre, volunteerId); setData(r); toast.success("Duty updated"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  const closeRoll = async (centre, volunteerId) => { setBusy(centre); try { const r = await NGGApi.admin.attendance.complete(date, centre, volunteerId); toast.success(r.message || "Roll closed"); await load(date); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  const [board, setBoard] = React.useState(null);
+  const loadBoard = () => NGGApi.admin.attendance.leaderboard().then(r => setBoard(r.leaderboard || [])).catch(() => setBoard([]));
+  React.useEffect(() => { loadBoard(); }, []);
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Attendance duty</h2>
+        <input type="date" className="admin-input" value={date} onChange={e => setDate(e.target.value)} style={{ maxWidth: 180 }} aria-label="Duty date"/>
+      </div>
+      <p className="admin-hint">One volunteer per centre is on the roll each day — auto-rotated across active volunteers; override any pick. Closing the roll awards points toward levels + awards (emailed and shown on the volunteer's digital ID).{data ? " " + data.pool + " volunteers in rotation." : ""}</p>
+      {err ? <ErrorState code={err} onRetry={() => load(date)}/> :
+        !data ? <div className="dash-spinner"/> :
+        (data.duties || []).length === 0 ? <EmptyState title="No centres in rotation yet" message="Enrol summer students to a centre, and register volunteers, to start the daily rotation."/> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Centre</th><th>On duty</th><th>Source</th><th>Status</th><th>Override</th><th></th></tr></thead>
+          <tbody>
+            {data.duties.map(d => (
+              <tr key={d.centre}>
+                <td className="admin-cell-name">{d.centre}</td>
+                <td>{d.volunteer ? d.volunteer.fullName : "—"}</td>
+                <td><span className="chip" style={{ fontSize: 10 }}>{d.source}</span></td>
+                <td>{d.completedAt ? <span className="chip chip-lime" style={{ fontSize: 10 }}>closed · {d.takenCount} present</span> : <span className="mono" style={{ color: "var(--ink-400)", fontSize: 12 }}>open</span>}</td>
+                <td>
+                  <select className="admin-select" value={d.volunteerId} disabled={busy === d.centre} onChange={e => setTaker(d.centre, e.target.value)} aria-label={"Attendance taker for " + d.centre}>
+                    {vols.map(v => <option key={v.volunteerId} value={v.volunteerId}>{v.fullName} · {v.role}</option>)}
+                  </select>
+                </td>
+                <td>{!d.completedAt && <button className="btn btn-ghost btn-sm" disabled={busy === d.centre} onClick={() => closeRoll(d.centre, d.volunteerId)}>Close roll</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      }
+      <div className="admin-fields-h" style={{ marginTop: 22, fontWeight: 700 }}>Service leaderboard</div>
+      <p className="admin-hint">Volunteers ranked by attendance-duty service points — recognise your most reliable stewards.</p>
+      {board === null ? <div className="dash-spinner"/> :
+        board.length === 0 ? <div className="admin-empty">No points logged yet.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>#</th><th>Volunteer</th><th>Level</th><th>Streak</th><th>Points</th></tr></thead>
+          <tbody>{board.map(v => (
+            <tr key={v.volunteerId}><td className="mono">{v.rank}</td><td>{v.fullName} <span className="chip" style={{ fontSize: 10 }}>{v.role}</span></td><td>L{v.level} · {v.levelName}</td><td>{v.streak}d</td><td><b>{v.points}</b></td></tr>
+          ))}</tbody>
+        </table></div>}
+    </div>
+  );
+}
+
 // ============================================================================
 // Members
 // ============================================================================
 
 function AdminMembers() {
   const [list, setList] = React.useState(null);
+  const [err, setErr] = React.useState("");
   const [filters, setFilters] = React.useState({ q: "", centre: "", status: "", type: "" });
+  const [page, setPage] = React.useState(1);
+  const [meta, setMeta] = React.useState({ total: 0, pageSize: 50 });
   const [editing, setEditing] = React.useState(null);
   const [viewing, setViewing] = React.useState(null);
 
-  const exportCsv = () => downloadCsv("members", (list || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, track: m.track || "" })));
-  const load = () => NGGApi.admin.members.list(filters).then(r => setList(r.members || []));
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type]);
+  const [exporting, setExporting] = React.useState(false);
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const r = await NGGApi.admin.members.list(Object.assign({}, filters, { all: 1 }));
+      downloadCsv("members", (r.members || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, track: m.track || "" })));
+    } catch (e) { toast.error(e.code || e.message, "Export failed"); } finally { setExporting(false); }
+  };
+  // A failed fetch must surface an error + retry, never leave the spinner
+  // hanging forever (previously there was no .catch here). Server-paged.
+  const load = (p = page) => { setErr(""); return NGGApi.admin.members.list(Object.assign({}, filters, { page: p, pageSize: meta.pageSize })).then(r => { setList(r.members || []); setMeta({ total: r.total || 0, pageSize: r.pageSize || 50 }); }).catch(e => setErr(e.code || e.message || "load_failed")); };
+  // Filter changes reset to page 1; the debounced search does too.
+  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type]);
   React.useEffect(() => {
-    const t = setTimeout(load, 250);
+    const t = setTimeout(() => { setPage(1); load(1); }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line
   }, [filters.q]);
+  const goPage = (p) => { setPage(p); setList(null); load(p); };
 
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Members</h2>
+        <h2 className="admin-h2">Members {meta.total ? <span className="admin-count mono">{meta.total.toLocaleString()}</span> : null}</h2>
         <div className="admin-section-actions">
-          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!list || !list.length}>Export CSV</button>
+          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting || !meta.total} title="Exports all members matching the current filters">{exporting ? "Exporting…" : "Export CSV"}</button>
           <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
         </div>
       </div>
@@ -404,7 +566,7 @@ function AdminMembers() {
           <option value="inactive">Inactive</option>
         </select>
       </div>
-      {list === null ? <div className="dash-spinner"/> :
+      {list === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead><tr>
@@ -419,7 +581,7 @@ function AdminMembers() {
                   </td>
                   <td>{m.type}</td>
                   <td>{m.centre}</td>
-                  <td><span className={"chip status-" + m.status}>{m.status}</span></td>
+                  <td><span className={"chip status-" + m.status}>{memberStatusLabel(m.status)}</span></td>
                   <td>{m.track || "—"}</td>
                   <td onClick={(e) => e.stopPropagation()}><button className="btn btn-ghost btn-sm" onClick={() => setEditing(m)}>Edit</button></td>
                 </tr>
@@ -427,6 +589,7 @@ function AdminMembers() {
               {list.length === 0 && <tr><td colSpan="6" className="admin-empty">No members match.</td></tr>}
             </tbody>
           </table>
+          <Pager page={page} pageSize={meta.pageSize} total={meta.total} onPage={goPage}/>
         </div>
       }
       {editing && <AdminMemberEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
@@ -435,11 +598,47 @@ function AdminMembers() {
   );
 }
 
+// Human labels for machine enums shown in staff selects/chips.
+const MEMBER_STATUS_OPTS = [
+  { value: "active", label: "Active" },
+  { value: "graduated-ngg", label: "Graduated · NGG" },
+  { value: "graduated-vanguard", label: "Graduated · Vanguard" },
+  { value: "suspended", label: "Suspended" },
+  { value: "inactive", label: "Inactive" },
+];
+const ROLE_OPTS = [
+  { value: "member", label: "Member (no staff access)" },
+  { value: "editor", label: "Editor · content" },
+  { value: "summer_admin", label: "Summer coordinator" },
+  { value: "club_admin", label: "Club coordinator" },
+  { value: "admin", label: "Admin" },
+  { value: "super_admin", label: "Super admin (full access)" },
+];
+const ELEVATED_ROLES = ["admin", "super_admin"];
+function memberStatusLabel(v) { const o = MEMBER_STATUS_OPTS.find(x => x.value === v); return o ? o.label : (v || "—"); }
+
 function AdminMemberEditor({ data, onClose, onSaved }) {
-  const { hasCap } = useAuth();
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { hasCap, member: me } = useAuth();
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
+  // Role changes are the highest-consequence edit here. Confirm before granting
+  // elevated access, and warn a staffer editing THEIR OWN record before they
+  // drop their own access (a lock-out risk the server also guards).
+  const isSelf = me && d.memberId && d.memberId === me.memberId;
+  const setRole = async (v) => {
+    const from = d.role || "member";
+    if (v === from) return;
+    if (isSelf && ELEVATED_ROLES.indexOf(from) !== -1 && ELEVATED_ROLES.indexOf(v) === -1) {
+      const ok = await dialog.confirm({ title: "Change your own access?", body: "You're lowering your OWN staff level. You may immediately lose access to parts of the Control Room. The last active super admin cannot be demoted.", cta: "Change my access", cancel: "Keep as is", danger: true });
+      if (!ok) return;
+    } else if (ELEVATED_ROLES.indexOf(v) !== -1) {
+      const ok = await dialog.confirm({ title: "Grant " + (v === "super_admin" ? "super admin" : "admin") + " access?", body: (d.fullName || "This member") + " will be able to " + (v === "super_admin" ? "manage everything, including roles and the audit trail." : "manage members, content and the inbox."), cta: "Grant access", cancel: "Cancel", danger: v === "super_admin" });
+      if (!ok) return;
+    }
+    set("role", v);
+  };
   const save = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -450,11 +649,11 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.memberId ? "Edit member" : "New member"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <Field label="Full name" value={d.fullName||""} onChange={v => set("fullName", v)} required/>
@@ -465,19 +664,46 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
             <FieldSelect label="Centre" value={d.centre||"Egbeda"} onChange={v => set("centre", v)} options={["Egbeda","Ayobo"]}/>
           </div>
           <div className="admin-fields-row">
-            <FieldSelect label="Status" value={d.status||"active"} onChange={v => set("status", v)} options={["active","graduated-ngg","graduated-vanguard","suspended","inactive"]}/>
+            <FieldSelect label="Status" value={d.status||"active"} onChange={v => set("status", v)} options={MEMBER_STATUS_OPTS}/>
             <Field label="Track" value={d.track||""} onChange={v => set("track", v)}/>
           </div>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
           <Field label="Parent email" value={d.parentEmail||""} onChange={v => set("parentEmail", v)} type="email"/>
           <Field label="School" value={d.school||""} onChange={v => set("school", v)}/>
-          {/* Staff level — only super_admins (the 'rbac' capability) may assign roles. */}
+          {/* Staff level — only super_admins (the 'rbac' capability) may assign roles.
+              setRole confirms elevation and warns on self-demotion. */}
           {hasCap && hasCap("rbac") && (
-            <FieldSelect label="Staff level (access)" value={d.role||"member"} onChange={v => set("role", v)} options={["member","editor","summer_admin","club_admin","admin","super_admin"]}/>
+            <FieldSelect label="Staff level (access)" value={d.role||"member"} onChange={setRole} options={ROLE_OPTS}/>
+          )}
+          {hasCap && hasCap("rbac") && d.memberId && (
+            <div className="admin-field">
+              <span className="admin-label">Account recovery</span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
+                  if (!confirm("Reset this member's 2FA? They'll re-enrol an authenticator at next admin sign-in.")) return;
+                  try { await NGGApi.admin.members.reset2fa(d.memberId); toast.success("2FA reset — they'll set it up again next sign-in.", "Done"); } catch (e) { toast.error(e.code || e.message); }
+                }}>Reset 2FA</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
+                  if (!confirm("Clear this member's password? They'll sign in via an emailed code and can set a new one.")) return;
+                  try { await NGGApi.admin.members.resetPassword(d.memberId); toast.success("Password cleared — they can sign in by email code.", "Done"); } catch (e) { toast.error(e.code || e.message); }
+                }}>Reset password</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
+                  if (!confirm("View the app as this member? You'll be signed in as them until you stop impersonating.")) return;
+                  try { await NGGApi.admin.members.impersonate(d.memberId); window.location.href = "/dashboard"; } catch (e) { toast.error(e.code || e.message); }
+                }}>View as member</button>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={async () => {
+                  if (!confirm("Delete & anonymise this member? Their PII and journal are scrubbed and sessions revoked. This cannot be undone.")) return;
+                  try { await NGGApi.admin.members.remove(d.memberId); toast.success("Member deleted & anonymised.", "Done"); close && close(); } catch (e) { toast.error(e.code || e.message); }
+                }}>Delete member</button>
+              </div>
+            </div>
+          )}
+          {hasCap && hasCap("rbac") && d.memberId && d.role && d.role !== "member" && (
+            <MemberCapsEditor member={d}/>
           )}
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : (d.memberId ? "Save changes" : "Create member")}</button>
         </div>
       </form>
@@ -491,8 +717,9 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
 
 function AdminMentors() {
   const [list, setList] = React.useState(null);
+  const [err, setErr] = React.useState("");
   const [editing, setEditing] = React.useState(null);
-  const load = () => NGGApi.admin.mentors.list().then(r => setList(r.mentors || []));
+  const load = () => { setErr(""); return NGGApi.admin.mentors.list().then(r => setList(r.mentors || [])).catch(e => setErr(e.code || e.message || "load_failed")); };
   React.useEffect(() => { load(); }, []);
   return (
     <div className="admin-section">
@@ -500,7 +727,7 @@ function AdminMentors() {
         <h2 className="admin-h2">Mentors</h2>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New mentor</button>
       </div>
-      {list === null ? <div className="dash-spinner"/> :
+      {list === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
         <div className="admin-grid-cards">
           {list.map(m => (
             <button key={m.mentorId} className="admin-card" onClick={() => setEditing(m)}>
@@ -520,6 +747,7 @@ function AdminMentors() {
 }
 
 function AdminMentorEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({}, data, { tracks: Array.isArray(data.tracks) ? data.tracks.join(", ") : (data.tracks || "") }));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -530,11 +758,11 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.mentorId ? "Edit mentor" : "New mentor"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <Field label="Full name" value={d.fullName||""} onChange={v => set("fullName", v)} required/>
@@ -557,7 +785,7 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
           </div>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : (d.mentorId ? "Save changes" : "Create mentor")}</button>
         </div>
       </form>
@@ -724,9 +952,12 @@ const ensureQREncoder = () => loadVendorScript("/vendor/qrcode.min.js").then(() 
 const ensureQRDecoder = () => loadVendorScript("/vendor/jsQR.min.js").then(() => window.jsQR);
 
 // Build a crisp SVG QR for a string using the vendored encoder.
+// NOTE: emit an SVG WITH explicit width/height (scalable:false). A scalable
+// (viewBox-only) SVG has no intrinsic size, so inside a shrink-to-fit /
+// fit-content container it collapses to nothing — the QR renders blank.
 function qrSvg(text, cellSize = 4, margin = 2) {
   if (!window.qrcode) return "";
-  try { const q = window.qrcode(0, "M"); q.addData(String(text)); q.make(); return q.createSvgTag({ cellSize, margin, scalable: true }); }
+  try { const q = window.qrcode(0, "M"); q.addData(String(text)); q.make(); return q.createSvgTag({ cellSize, margin, scalable: false }); }
   catch (_) { return ""; }
 }
 
@@ -1255,6 +1486,7 @@ function AdminSessions() {
 }
 
 function AdminSessionEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -1265,11 +1497,11 @@ function AdminSessionEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.sessionId} · {d.year}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <Field label="Display name" value={d.name||""} onChange={v => set("name", v)}/>
@@ -1280,7 +1512,7 @@ function AdminSessionEditor({ data, onClose, onSaved }) {
           <FieldTextarea label="Internal notes" value={d.notes||""} onChange={v => set("notes", v)}/>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </form>
@@ -1336,6 +1568,7 @@ function AdminMissions() {
 }
 
 function AdminMissionEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -1346,11 +1579,11 @@ function AdminMissionEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.missionId ? "Edit mission" : "New mission"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <div className="admin-fields-row">
@@ -1372,7 +1605,7 @@ function AdminMissionEditor({ data, onClose, onSaved }) {
           <FieldCheckbox label="Active — assignable to members now" value={d.missionId ? (d.isActive !== false) : (d.isActive === undefined ? true : d.isActive)} onChange={v => set("isActive", v)}/>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </form>
@@ -1420,6 +1653,7 @@ function AdminEvents() {
 }
 
 function AdminEventEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ status:"draft", kind:"session", centre:"Egbeda", isPublic: false }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -1430,11 +1664,11 @@ function AdminEventEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.eventId ? "Edit event" : "New event"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <Field label="Title" value={d.title||""} onChange={v => set("title", v)} required/>
@@ -1456,7 +1690,7 @@ function AdminEventEditor({ data, onClose, onSaved }) {
           </div>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </form>
@@ -1508,6 +1742,7 @@ function AdminPosts() {
 }
 
 function AdminPostEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ kind:"blog", status:"draft" }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -1518,11 +1753,11 @@ function AdminPostEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.postId ? "Edit post" : "New post"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <div className="admin-fields-row">
@@ -1549,7 +1784,7 @@ function AdminPostEditor({ data, onClose, onSaved }) {
           <Field label="Publish at (leave blank for now)" value={d.publishAt||""} onChange={v => set("publishAt", v)} type="datetime-local"/>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </form>
@@ -1561,6 +1796,9 @@ function AdminBroadcast() {
   const [d, setD] = React.useState({ title:"", body:"", linkPage:"", audience:"all", email:false });
   const [busy, setBusy] = React.useState(false);
   const [sent, setSent] = React.useState("");
+  const [history, setHistory] = React.useState(null);
+  const loadHistory = () => NGGApi.admin.broadcastHistory().then(r => setHistory(r.announcements || [])).catch(() => setHistory([]));
+  React.useEffect(() => { loadHistory(); }, []);
   const audienceLabel = {
     all: "every active member", Egbeda: "members at Egbeda", Ayobo: "members at Ayobo",
     Summer: "Summer students", NGG: "NGG members",
@@ -1579,6 +1817,7 @@ function AdminBroadcast() {
       const r = await NGGApi.admin.broadcast(d);
       setSent(d.email ? ("SENT ✓ · emailed " + (r.emailed || 0)) : "SENT ✓");
       setD({ title:"", body:"", linkPage:"", audience:"all", email:false });
+      loadHistory();
       setTimeout(() => setSent(""), 3200);
     }
     catch (e) { toast.error(e.code || e.message); }
@@ -1601,6 +1840,365 @@ function AdminBroadcast() {
           <button className="btn btn-primary" disabled={busy || !d.title}>Send to {audienceLabel}</button>
         </div>
       </form>
+      <div className="admin-fields-h" style={{ marginTop: 22, fontWeight: 700 }}>Recent announcements</div>
+      {history === null ? <div className="dash-spinner"/> :
+        history.length === 0 ? <div className="admin-empty">Nothing sent yet.</div> :
+        <div className="admin-app-list">
+          {history.map(a => (
+            <div className="admin-app" key={a.notifId}>
+              <div className="admin-app-top">
+                <div className="admin-cell-name">{a.title || "(untitled)"} <span className="chip chip-navy">{a.audience}</span></div>
+                <span className="mono admin-cell-sub">{fmtDate(a.createdAt)}</span>
+              </div>
+              {a.body && <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{a.body}</p>}
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+// Effective capabilities per role — mirrors util.php admin_role_caps() so the
+// roster can show what each staffer can actually do (read-only display).
+const ROLE_CAPS = {
+  super_admin: ["content", "people", "inbox", "settings", "rbac", "summer", "club"],
+  admin: ["content", "people", "inbox"],
+  editor: ["content"],
+  summer_admin: ["summer"],
+  club_admin: ["club"],
+  audit: ["audit"],
+  member: [],
+};
+
+// Access & roles — the RBAC roster the audit called for: every staff account,
+// its role and effective capabilities, with inline role editing (super_admin
+// only). Server enforces last-super-admin / self-demotion; we surface those.
+function AdminAccess() {
+  const { member: me } = useAuth();
+  const [list, setList] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const load = () => { setErr(""); return NGGApi.admin.members.list({ staff: 1, pageSize: 200 }).then(r => setList(r.members || [])).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  const roleLabel = (r) => (ROLE_OPTS.find(o => o.value === r) || {}).label || r;
+  const changeRole = async (m, v) => {
+    if (v === m.role) return;
+    const isSelf = me && m.memberId === me.memberId;
+    if (isSelf && ELEVATED_ROLES.indexOf(m.role) !== -1 && ELEVATED_ROLES.indexOf(v) === -1) {
+      const ok = await dialog.confirm({ title: "Change your own access?", body: "You're lowering your OWN staff level and may lose access. The last active super admin cannot be demoted.", cta: "Change my access", cancel: "Keep as is", danger: true });
+      if (!ok) return;
+    } else if (ELEVATED_ROLES.indexOf(v) !== -1) {
+      const ok = await dialog.confirm({ title: "Grant " + roleLabel(v) + "?", body: m.fullName + " will gain elevated access.", cta: "Grant access", cancel: "Cancel", danger: v === "super_admin" });
+      if (!ok) return;
+    }
+    setBusy(m.memberId);
+    try { await NGGApi.admin.members.upsert({ memberId: m.memberId, role: v }); toast.success("Role updated"); await load(); }
+    catch (e) {
+      const map = { last_super_admin: "That's the last active super admin — promote another first.", cannot_demote_self: "Ask another super admin to change your role.", cannot_suspend_self: "You can't suspend yourself." };
+      toast.error(map[e.code || e.message] || (e.code || e.message));
+    } finally { setBusy(""); }
+  };
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Access &amp; roles <span className="chip chip-gold" style={{ fontSize: 11, verticalAlign: "middle" }}>super admin</span>{list ? <span className="admin-count mono">{list.length}</span> : null}</h2>
+      </div>
+      <p className="admin-hint">Everyone with staff access and what they can do. Roles map to fixed capability sets; the last active super admin can't be demoted, and you can't demote yourself.</p>
+      {err ? <ErrorState code={err} onRetry={load}/> :
+        list === null ? <div className="dash-spinner"/> :
+        list.length === 0 ? <EmptyState title="No staff yet" message="Grant a member a staff role from the Members editor."/> :
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Person</th><th>Role</th><th>Can access</th></tr></thead>
+            <tbody>
+              {list.map(m => (
+                <tr key={m.memberId}>
+                  <td>
+                    <div className="admin-cell-name">{m.fullName}{me && m.memberId === me.memberId ? <span className="chip" style={{ marginLeft: 8, fontSize: 10 }}>you</span> : null}</div>
+                    <div className="mono admin-cell-sub">{m.memberId} · {m.email}</div>
+                  </td>
+                  <td style={{ minWidth: 190 }}>
+                    <select className="admin-select" value={m.role} disabled={busy === m.memberId} onChange={(e) => changeRole(m, e.target.value)} aria-label={"Role for " + m.fullName}>
+                      {ROLE_OPTS.filter(o => o.value !== "member").map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {(ROLE_CAPS[m.role] || []).length
+                        ? (ROLE_CAPS[m.role] || []).map(c => <span key={c} className="chip" style={{ fontSize: 10 }}>{c}</span>)
+                        : <span className="mono" style={{ color: "var(--ink-400)", fontSize: 12 }}>—</span>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  );
+}
+
+// Per-member capability editor (super only): grant caps beyond the role.
+const ALL_CAPS = ["content", "people", "inbox", "settings", "rbac", "summer", "club", "audit"];
+function MemberCapsEditor({ member }) {
+  const roleCaps = ROLE_CAPS[member.role] || [];
+  const [extra, setExtra] = React.useState(() => new Set(member.capsExtra || []));
+  const [busy, setBusy] = React.useState(false);
+  const toggle = (c) => setExtra(s => { const n = new Set(s); n.has(c) ? n.delete(c) : n.add(c); return n; });
+  const save = async () => {
+    setBusy(true);
+    try { await NGGApi.admin.members.setCaps(member.memberId, Array.from(extra)); toast.success("Capabilities updated.", "Access"); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  return (
+    <div className="admin-field">
+      <span className="admin-label">Extra capabilities (beyond the {member.role} role)</span>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 8px" }}>
+        {ALL_CAPS.map(c => {
+          const inRole = roleCaps.includes(c);
+          return <label key={c} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, opacity: inRole ? 0.5 : 1 }}>
+            <input type="checkbox" checked={inRole || extra.has(c)} disabled={inRole} onChange={() => toggle(c)}/> {c}
+          </label>;
+        })}
+      </div>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save capabilities"}</button>
+    </div>
+  );
+}
+
+// ============================================================================
+// Donations ledger (Paystack)
+// ============================================================================
+
+function AdminDonations() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.donations().then(setD).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  const naira = (n) => "₦" + (n || 0).toLocaleString();
+  const rows = d ? d.donations : null;
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Donations {d ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {naira(d.totalPaid)} raised</span> : null}</h2>
+        <button className="btn btn-ghost btn-sm" disabled={!rows || !rows.length} onClick={() => downloadCsv("donations", rows)}>Export CSV</button>
+      </div>
+      {d && !d.enabled && <p className="admin-hint" style={{ color: "var(--amber-800, #9a3412)" }}>⚠ Donations are off — set <span className="mono">paystack.secret</span> in api/config.php and point the Paystack webhook at <span className="mono">/api/hooks/paystack.php</span>.</p>}
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        rows === null ? <div className="dash-spinner"/> :
+        rows.length === 0 ? <div className="admin-empty">No donations yet.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Reference</th><th>Donor</th><th>Amount</th><th>Status</th><th>When</th></tr></thead>
+          <tbody>{rows.map(r => <tr key={r.reference}><td className="mono">{r.reference}</td><td>{r.name || r.email}</td><td>{naira(r.amount)}</td><td><span className={"chip status-" + (r.status === "paid" ? "published" : "draft")}>{r.status}</span></td><td className="mono">{fmtDate(r.paidAt || r.createdAt)}</td></tr>)}</tbody>
+        </table></div>}
+    </div>
+  );
+}
+
+// ============================================================================
+// Comment moderation — approve/reject member comments before they go public
+// ============================================================================
+
+function AdminComments() {
+  const [status, setStatus] = React.useState("pending");
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.comments(status).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [status]);
+  const act = async (commentId, a) => { try { await NGGApi.admin.commentModerate(commentId, a); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const rows = d ? d.comments : null;
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Comment moderation {d && d.pending ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{d.pending} pending</span> : null}</h2>
+      </div>
+      <p className="admin-hint">Member comments on posts stay hidden until you approve them. Nothing is public until it's cleared here.</p>
+      <div className="admin-filters">
+        <select className="admin-select" value={status} onChange={e => setStatus(e.target.value)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
+      </div>
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        rows === null ? <div className="dash-spinner"/> :
+        rows.length === 0 ? <div className="admin-empty">Nothing here.</div> :
+        <div className="admin-app-list">
+          {rows.map(c => (
+            <div className="admin-app" key={c.commentId}>
+              <div className="admin-app-top">
+                <div><div className="admin-cell-name">{c.memberName} <span className="chip chip-navy">{c.postTitle || c.postSlug || c.postId}</span></div>
+                  <div className="mono admin-cell-sub">{fmtDate(c.createdAt)}</div></div>
+                <span className={"chip status-" + (c.status === "approved" ? "published" : c.status === "rejected" ? "archived" : "draft")}>{c.status}</span>
+              </div>
+              <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{c.body}</p>
+              <div className="admin-app-actions">
+                {c.status !== "approved" && <button className="btn btn-ghost btn-sm" onClick={() => act(c.commentId, "approve")}>Approve</button>}
+                {c.status !== "rejected" && <button className="btn btn-ghost btn-sm" onClick={() => act(c.commentId, "reject")}>Reject</button>}
+                <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={() => act(c.commentId, "delete")}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+// ============================================================================
+// Behaviour monitor — log observations, AI/rule triage, wellbeing flags
+// ============================================================================
+
+function AdminBehaviour() {
+  const [d, setD] = React.useState(null);
+  const [f, setF] = React.useState({ status: "", category: "" });
+  const [err, setErr] = React.useState("");
+  const [form, setForm] = React.useState({ subjectId: "", note: "", category: "", severity: "" });
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.admin.behaviour.list(f).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [f.status, f.category]);
+  const submit = async (e) => {
+    e.preventDefault(); setBusy(true);
+    try {
+      const r = await NGGApi.admin.behaviour.log(form.subjectId.trim(), form.note.trim(), form.category, form.severity);
+      toast.success("Logged as " + r.category + " · " + r.severity + (r.aiSource === "manual" ? "" : " (" + r.aiSource + ")"), "Observation saved");
+      setForm({ subjectId: "", note: "", category: "", severity: "" }); load();
+    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  const review = async (logId) => { try { await NGGApi.admin.behaviour.review(logId); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const sevChip = (s) => s === "urgent" ? "chip-crimson" : s === "concern" ? "chip-gold" : s === "positive" ? "chip-lime" : "chip-navy";
+  const logs = d ? d.logs : null;
+  const cats = (d && d.categories) || ["wellbeing", "commendation", "respect", "discipline", "peer", "participation"];
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Behaviour monitor {d && d.openFlags ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{d.openFlags} open flag{d.openFlags === 1 ? "" : "s"}</span> : null}</h2>
+      </div>
+      <p className="admin-hint">Log an observation about a student or member; it's auto-triaged (AI when configured, rules otherwise). Wellbeing/urgent notes page the team through configured integrations.</p>
+      <form onSubmit={submit} className="admin-fields" style={{ maxWidth: 640, marginBottom: 18 }}>
+        <div className="admin-fields-row">
+          <Field label="Subject ID (student or member)" value={form.subjectId} onChange={v => setForm(o => ({ ...o, subjectId: v }))}/>
+          <FieldSelect label="Category (blank = auto)" value={form.category} onChange={v => setForm(o => ({ ...o, category: v }))} options={[""].concat(cats)}/>
+          <FieldSelect label="Severity (blank = auto)" value={form.severity} onChange={v => setForm(o => ({ ...o, severity: v }))} options={["", "info", "concern", "urgent", "positive"]}/>
+        </div>
+        <label className="admin-field"><span className="admin-label">Observation</span>
+          <textarea className="admin-input" rows={3} value={form.note} onChange={e => setForm(o => ({ ...o, note: e.target.value }))} placeholder="What happened, in a sentence or two."/>
+        </label>
+        <div><button className="btn btn-primary btn-sm" disabled={busy || form.subjectId.trim() === "" || form.note.trim().length < 5}>{busy ? "Saving…" : "Log observation"}</button></div>
+      </form>
+      {d && d.trend && Object.keys(d.trend).length > 0 && (
+        <div className="admin-chips" style={{ marginBottom: 12 }}>
+          <span className="admin-hint" style={{ marginRight: 6 }}>Last 30 days:</span>
+          {Object.entries(d.trend).map(([k, v]) => <span key={k} className="chip chip-navy" style={{ marginRight: 6 }}>{k}: {v}</span>)}
+        </div>
+      )}
+      <div className="admin-filters">
+        <select className="admin-select" value={f.status} onChange={e => setF(o => ({ ...o, status: e.target.value }))}><option value="">All statuses</option><option value="open">Open</option><option value="reviewed">Reviewed</option></select>
+        <select className="admin-select" value={f.category} onChange={e => setF(o => ({ ...o, category: e.target.value }))}><option value="">All categories</option>{cats.map(c => <option key={c} value={c}>{c}</option>)}</select>
+      </div>
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        logs === null ? <div className="dash-spinner"/> :
+        logs.length === 0 ? <div className="admin-empty">No observations logged.</div> :
+        <div className="admin-app-list">
+          {logs.map(l => (
+            <div className="admin-app" key={l.logId}>
+              <div className="admin-app-top">
+                <div>
+                  <div className="admin-cell-name">{l.subjectName || l.subjectId} <span className={"chip " + sevChip(l.severity)}>{l.category} · {l.severity}</span></div>
+                  <div className="mono admin-cell-sub">{l.observerName || l.observerId} · {fmtDate(l.createdAt)}{l.aiSource ? " · " + l.aiSource : ""}</div>
+                </div>
+                <span className={"chip status-" + (l.status === "reviewed" ? "published" : "draft")}>{l.status}</span>
+              </div>
+              <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{l.note}</p>
+              {l.status === "open" && <div className="admin-app-actions"><button className="btn btn-ghost btn-sm" onClick={() => review(l.logId)}>Mark reviewed</button></div>}
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+// ============================================================================
+// Integrations & delivery — bus destinations, delivery log, manual dispatch
+// ============================================================================
+
+function AdminIntegrations() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const blank = { integrationId: "", kind: "gchat", name: "", url: "", events: "*", secret: "", status: "active" };
+  const [form, setForm] = React.useState(blank);
+  const load = () => NGGApi.admin.integrations.list().then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  const edit = (i) => setForm({ integrationId: i.integrationId, kind: i.kind, name: i.name, url: i.url, events: (i.events || ["*"]).join(", "), secret: "", status: i.status });
+  const save = async (e) => {
+    e.preventDefault(); setBusy("save");
+    try {
+      const events = form.events.split(",").map(s => s.trim()).filter(Boolean);
+      const r = await NGGApi.admin.integrations.upsert({ integrationId: form.integrationId || undefined, kind: form.kind, name: form.name, url: form.url, events: events.length ? events : ["*"], secret: form.secret || undefined, status: form.status });
+      if (r.secret) toast.show({ kind: "success", title: "Saved — copy the secret now", body: "Signing secret (shown once): " + r.secret, ttl: 20000 });
+      else toast.success("Saved.", "Integration");
+      setForm(blank); load();
+    } catch (e) { toast.error(e.code || e.message, "Couldn't save"); } finally { setBusy(""); }
+  };
+  const test = async (id) => { setBusy("t" + id); try { const r = await NGGApi.admin.integrations.test(id); r.delivered ? toast.success("Test delivered.", "OK") : toast.error(r.error || "No detail", "Test failed"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  const remove = async (id) => { if (!confirm("Delete this integration?")) return; try { await NGGApi.admin.integrations.remove(id); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const dispatch = async () => { setBusy("disp"); try { const r = await NGGApi.admin.integrations.dispatch(); toast.success("Attempted " + (r.attempted || 0) + ", delivered " + (r.delivered || 0) + ", failed " + (r.failed || 0) + ".", "Queue drained"); load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  const syncMembers = async () => { setBusy("sync"); try { const r = await NGGApi.admin.integrations.syncMembers(); toast.success("Sent " + (r.chunksSent || 0) + " chunk(s), " + (r.total || 0) + " members.", "Sheets sync"); } catch (e) { toast.error(e.code || e.message, "Sync failed"); } finally { setBusy(""); } };
+  const items = d ? d.integrations : null;
+  const log = (d && d.log) || [];
+  const pending = log.filter(x => x.status === "pending" || x.status === "failed").length;
+  const kindHint = { gchat: "https://chat.googleapis.com/…", sheets: "https://script.google.com/…", webhook: "https://your-endpoint.example/…" }[form.kind];
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Integrations & delivery {pending ? <span className="chip chip-gold" style={{ fontSize: 11, verticalAlign: "middle" }}>{pending} queued</span> : null}</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost btn-sm" disabled={busy === "disp"} onClick={dispatch}>{busy === "disp" ? "Draining…" : "Run delivery queue now"}</button>
+          <button className="btn btn-ghost btn-sm" disabled={busy === "sync"} onClick={syncMembers}>{busy === "sync" ? "Syncing…" : "Sync members → Sheets"}</button>
+        </div>
+      </div>
+      <p className="admin-hint">Send events (registrations, attendance, awards, wellbeing flags) to Google Chat, a signed webhook, or the Sheets mirror. Delivery runs automatically via web-cron; use "Run delivery queue now" to flush immediately.</p>
+      <form onSubmit={save} className="admin-fields" style={{ maxWidth: 640, marginBottom: 18 }}>
+        <div className="admin-fields-row">
+          <FieldSelect label="Type" value={form.kind} onChange={v => setForm(o => ({ ...o, kind: v }))} options={["gchat", "webhook", "sheets"]}/>
+          <Field label="Name" value={form.name} onChange={v => setForm(o => ({ ...o, name: v }))}/>
+          <FieldSelect label="Status" value={form.status} onChange={v => setForm(o => ({ ...o, status: v }))} options={["active", "paused"]}/>
+        </div>
+        <Field label={"Destination URL"} value={form.url} onChange={v => setForm(o => ({ ...o, url: v }))} placeholder={kindHint}/>
+        <Field label="Events (comma-separated; * = all, prefix.* matches)" value={form.events} onChange={v => setForm(o => ({ ...o, events: v }))} placeholder="* or attendance.*, registration.created"/>
+        {form.kind !== "gchat" && <Field label={"Signing secret " + (form.integrationId ? "(blank = keep current)" : "(blank = auto-generate)")} value={form.secret} onChange={v => setForm(o => ({ ...o, secret: v }))}/>}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-primary btn-sm" disabled={busy === "save" || !form.url}>{form.integrationId ? "Update" : "Add integration"}</button>
+          {form.integrationId ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => setForm(blank)}>Cancel</button> : null}
+        </div>
+      </form>
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        items === null ? <div className="dash-spinner"/> :
+        <>
+          {items.length === 0 ? <div className="admin-empty">No integrations yet.</div> :
+            <div className="admin-app-list">
+              {items.map(i => (
+                <div className="admin-app" key={i.integrationId}>
+                  <div className="admin-app-top">
+                    <div>
+                      <div className="admin-cell-name">{i.name} <span className="chip chip-navy">{i.kind}</span> {i.status === "paused" ? <span className="chip status-draft">paused</span> : null}</div>
+                      <div className="mono admin-cell-sub">{i.url}{i.hasSecret ? " · secret " + i.secretHint : ""} · {(i.events || []).join(", ")}</div>
+                    </div>
+                  </div>
+                  <div className="admin-app-actions">
+                    <button className="btn btn-ghost btn-sm" disabled={busy === "t" + i.integrationId} onClick={() => test(i.integrationId)}>{busy === "t" + i.integrationId ? "Testing…" : "Send test"}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => edit(i)}>Edit</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => remove(i.integrationId)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>}
+          <div className="admin-fields-h" style={{ marginTop: 18, fontWeight: 700 }}>Recent deliveries</div>
+          {log.length === 0 ? <div className="admin-empty">No deliveries yet.</div> :
+            <div className="admin-table-wrap"><table className="admin-table">
+              <thead><tr><th>Event</th><th>Status</th><th>Tries</th><th>Last error</th><th>When</th></tr></thead>
+              <tbody>{log.map((x, i) => (
+                <tr key={i}><td>{x.kind || x.eventId}</td><td><span className={"chip status-" + (x.status === "ok" ? "published" : x.status === "dead" ? "archived" : "draft")}>{x.status}</span></td><td>{x.attempts}</td><td className="mono" style={{ fontSize: 12, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{x.lastError || ""}</td><td className="mono" style={{ fontSize: 12 }}>{fmtDate(x.deliveredAt || x.nextAttemptAt)}</td></tr>
+              ))}</tbody>
+            </table></div>}
+        </>}
     </div>
   );
 }
@@ -1608,14 +2206,21 @@ function AdminBroadcast() {
 function AdminAudit() {
   const [data, setData] = React.useState(null);
   const [f, setF] = React.useState({ actor: "", event: "", staffOnly: false });
+  const [page, setPage] = React.useState(1);
   const [err, setErr] = React.useState("");
   const roleChip = (role) => role === "super_admin" ? "chip-gold" : role === "admin" ? "chip-navy" : role === "editor" ? "chip-lime" : "";
-  const load = () => NGGApi.admin.audit({ limit: 500, actor: f.actor, event: f.event, staffOnly: f.staffOnly ? 1 : "" })
+  const load = (p = page) => NGGApi.admin.audit({ page: p, pageSize: 100, actor: f.actor, event: f.event, staffOnly: f.staffOnly ? 1 : "" })
     .then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [f.actor, f.event, f.staffOnly]);
+  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [f.actor, f.event, f.staffOnly]);
+  const goPage = (p) => { setPage(p); setData(null); load(p); };
   const rows = data ? data.audit : null;
   const actors = (data && data.actors) || [];
-  const exportCsv = () => downloadCsv("audit-trail", (rows || []).map(r => ({ at: r.at, actor: r.actorName || r.actorId || "system", role: r.actorRole || "", event: r.event, subject: r.subject || "", ip: r.ip || "" })));
+  const exportCsv = async () => {
+    try {
+      const r = await NGGApi.admin.audit({ all: 1, actor: f.actor, event: f.event, staffOnly: f.staffOnly ? 1 : "" });
+      downloadCsv("audit-trail", (r.audit || []).map(x => ({ at: x.at, actor: x.actorName || x.actorId || "system", role: x.actorRole || "", event: x.event, subject: x.subject || "", ip: x.ip || "" })));
+    } catch (e) { toast.error(e.code || e.message, "Export failed"); }
+  };
 
   return (
     <div className="admin-section">
@@ -1623,7 +2228,7 @@ function AdminAudit() {
         <h2 className="admin-h2">Audit trail <span className="chip chip-gold" style={{ fontSize: 11, verticalAlign: "middle" }}>super admin</span></h2>
         <button className="btn btn-ghost btn-sm" disabled={!rows || !rows.length} onClick={exportCsv}>Export CSV</button>
       </div>
-      <p className="admin-hint">Every action taken by admins and managers, most recent first. This accountability record is visible to super admins only.</p>
+      <p className="admin-hint">Every action taken by admins and managers, most recent first. This accountability record is visible to super admins only.{data && data.total ? " " + data.total.toLocaleString() + " entries." : ""}</p>
       <div className="admin-filters">
         <select className="admin-select" value={f.actor} onChange={e => setF(o => ({ ...o, actor: e.target.value }))}>
           <option value="">All actors</option>
@@ -1652,7 +2257,9 @@ function AdminAudit() {
               </tr>
             ))}
           </tbody>
-        </table></div>
+        </table>
+        <Pager page={data ? data.page : 1} pageSize={data ? data.pageSize : 100} total={data ? data.total : 0} onPage={goPage}/>
+        </div>
       }
     </div>
   );
@@ -1977,6 +2584,7 @@ function AdminAssignments() {
 }
 
 function AdminAssignmentEditor({ data, onClose, onSaved }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ status:"draft", proof:"text", points:10, centre:"", track:"" }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -1987,11 +2595,11 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
           <h3>{d.assignmentId ? "Edit assignment" : "New assignment"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
           <Field label="Title" value={d.title||""} onChange={v => set("title", v)} required/>
@@ -2013,7 +2621,7 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
           </div>
         </div>
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy || !d.title}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </form>
@@ -2022,16 +2630,17 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
 }
 
 function AdminSubmissions({ assignment, onClose }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose, false);
   const [data, setData] = React.useState(null);
   const load = () => NGGApi.admin.assignments.submissions(assignment.assignmentId)
     .then(setData).catch(e => toast.error(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
           <h3>Submissions · {assignment.title}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         {!data ? <div className="dash-spinner"/> :
           data.submissions.length === 0 ? <div className="admin-empty">No submissions yet.</div> :
@@ -2060,6 +2669,15 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
     } catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(false); }
   };
+  const returnForRevision = async () => {
+    setBusy(true);
+    try {
+      await NGGApi.admin.assignments.returnForRevision(s.submissionId, feedback);
+      toast.success("Returned for revision — they can resubmit.", s.memberName);
+      onGraded();
+    } catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(false); }
+  };
   return (
     <div className="admin-sub-row">
       <div className="admin-sub-head">
@@ -2079,6 +2697,7 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
           <input type="text" className="admin-input" value={feedback} onChange={e => setFeedback(e.target.value)} placeholder="What was strong, what to improve…"/>
         </label>
         <label className="admin-sub-email"><input type="checkbox" checked={email} onChange={e => setEmail(e.target.checked)}/> email</label>
+        <button className="btn btn-ghost btn-sm" onClick={returnForRevision} disabled={busy} title="Send back for a revision (unlocks resubmission)">Return</button>
         <button className="btn btn-primary btn-sm" onClick={submit} disabled={busy || grade === ""}>{busy ? "…" : "Grade"}</button>
       </div>
     </div>
@@ -2090,21 +2709,31 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
 // ============================================================================
 
 function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
+  const { panelRef, close, onInput } = useAdminDrawer(onClose, false);
   const [d, setD] = React.useState(null);
   const [mentors, setMentors] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   const load = () => NGGApi.admin.memberDetail(memberId).then(r => setD(r.detail)).catch(e => toast.error(e.code || e.message));
   React.useEffect(() => { load(); NGGApi.admin.mentors.list().then(r => setMentors(r.mentors || [])).catch(() => {}); /* eslint-disable-next-line */ }, [memberId]);
-  const setStatus = async (status) => { setBusy(true); try { await NGGApi.admin.members.upsert({ memberId, status }); toast.success("Status → " + status); await load(); onChanged && onChanged(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
+  const STATUS_LABEL = { active: "Activate", suspended: "Suspend", "graduated-ngg": "Graduate from NGG", "graduated-vanguard": "Graduate as Vanguard", inactive: "Deactivate" };
+  const setStatus = async (status) => {
+    // Suspend / graduate change a real member's standing and are hard to
+    // reverse — confirm first (consistent with the rest of the console).
+    if (status !== "active") {
+      const ok = await dialog.confirm({ title: (STATUS_LABEL[status] || "Change status") + "?", body: "This changes " + ((m && m.fullName) || "this member") + "'s standing" + (status === "suspended" ? " and revokes their access" : "") + ". You can change it again later.", cta: STATUS_LABEL[status] || "Change", cancel: "Cancel", danger: status === "suspended" });
+      if (!ok) return;
+    }
+    setBusy(true); try { await NGGApi.admin.members.upsert({ memberId, status }); toast.success("Status → " + status); await load(); onChanged && onChanged(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
   const assign = async (mentorId) => { setBusy(true); try { await NGGApi.admin.assignMentor({ memberId, mentorId }); toast.success(mentorId ? "Mentor assigned" : "Mentor cleared"); await load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
 
   const m = d && d.member;
   return (
-    <div className="admin-drawer" onClick={onClose}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
           <h3>{m ? m.fullName : "Member"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={onClose}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         {!d ? <div className="dash-spinner"/> : (
           <div className="admin-detail">
@@ -2189,13 +2818,73 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
 // Applications — review teen/mentor applications, convert to members
 // ============================================================================
 
+// One labelled row in the applicant/volunteer detail grid. Renders "—" for any
+// empty value so the layout stays structured even with sparse data.
+function DetailRow({ label, children }) {
+  const empty = children === null || children === undefined || children === "" || (Array.isArray(children) && children.length === 0);
+  return (
+    <div className="admin-detail-row">
+      <div className="admin-detail-key mono">{label}</div>
+      <div className="admin-detail-val">{empty ? "—" : children}</div>
+    </div>
+  );
+}
+
+// Full, readable breakdown of everything an application/volunteer submitted —
+// the structured intake data that the one-line summary can't surface.
+function ApplicantDetail({ a }) {
+  const fullName = [a.firstName, a.otherName, a.lastName].filter(Boolean).join(" ") || a.name || "";
+  const age = (a.dobAge != null && a.dobAge >= 0) ? a.dobAge : (a.age || null);
+  const dobLine = a.dob ? (a.dob + (age != null ? " · age " + age : "")) : (age != null ? "age " + age : "");
+  return (
+    <div className="admin-detail">
+      {a.photoUrl ? <img className="admin-detail-photo" src={a.photoUrl} alt="" onError={e => { e.target.style.display = "none"; }}/> : null}
+      <DetailRow label="Reference">{a.ref ? <span className="mono">{a.ref}</span> : null}</DetailRow>
+      <DetailRow label="Full name">{fullName}</DetailRow>
+      {(a.firstName || a.lastName) ? <DetailRow label="Name parts">{"First: " + (a.firstName || "—") + "  ·  Other: " + (a.otherName || "—") + "  ·  Last: " + (a.lastName || "—")}</DetailRow> : null}
+      <DetailRow label="Email">{a.email ? <a href={"mailto:" + a.email}>{a.email}</a> : null}</DetailRow>
+      <DetailRow label="Phone">{a.phone ? <a href={"tel:" + a.phone}>{a.phone}</a> : null}</DetailRow>
+      <DetailRow label="Date of birth">{dobLine}</DetailRow>
+      {a.sex ? <DetailRow label="Sex">{a.sex}</DetailRow> : null}
+      {a.program ? <DetailRow label="Programme">{a.program}</DetailRow> : null}
+      {a.centre ? <DetailRow label="Centre">{a.centre}</DetailRow> : null}
+      {a.track ? <DetailRow label="Track">{a.track}</DetailRow> : null}
+      {a.role ? <DetailRow label="Role">{a.role}</DetailRow> : null}
+      {(a.courses && a.courses.length) ? <DetailRow label="Courses">{a.courses.join(", ")}</DetailRow> : null}
+      <DetailRow label="Submitted">{fmtDate(a.createdAt)}</DetailRow>
+      <DetailRow label="Reason">{a.why ? <span style={{ whiteSpace: "pre-wrap" }}>{a.why}</span> : null}</DetailRow>
+    </div>
+  );
+}
+
 function AdminApplications() {
   const [list, setList] = React.useState(null);
   const [filter, setFilter] = React.useState({ kind: "", status: "" });
   const [err, setErr] = React.useState("");
-  const load = () => NGGApi.admin.applications.list(filter).then(r => { setList(r.applications || []); setErr(""); }).catch(e => setErr(e.code || e.message));
+  const [sel, setSel] = React.useState(() => new Set());
+  const [expanded, setExpanded] = React.useState(() => new Set());
+  const toggleExpand = (id) => setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const [bulkBusy, setBulkBusy] = React.useState(false);
+  const load = () => NGGApi.admin.applications.list(filter).then(r => { setList(r.applications || []); setErr(""); setSel(new Set()); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter.kind, filter.status]);
   const setStatus = async (id, status) => { try { await NGGApi.admin.applications.status(id, status); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const toggle = (id) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allSelected = list && list.length > 0 && sel.size === list.length;
+  const toggleAll = () => setSel(allSelected ? new Set() : new Set((list || []).map(a => a.id)));
+  // Bulk status change — one confirm, then apply to every selected row and
+  // report how many succeeded. Beats changing dozens of rows one at a time.
+  const bulkStatus = async (status) => {
+    if (!sel.size || bulkBusy) return;
+    const ids = Array.from(sel);
+    const ok = await dialog.confirm({ title: "Set " + ids.length + " to " + status + "?", body: "Applies the “" + status + "” status to every selected application.", cta: "Apply to " + ids.length, danger: status === "rejected" });
+    if (!ok) return;
+    setBulkBusy(true);
+    const results = await Promise.allSettled(ids.map(id => NGGApi.admin.applications.status(id, status)));
+    const failed = results.filter(r => r.status === "rejected").length;
+    setBulkBusy(false);
+    if (failed) toast.error(failed + " of " + ids.length + " couldn't be updated."); else toast.success(ids.length + " applications updated.");
+    load();
+  };
   const convert = async (id) => {
     const ok = await dialog.confirm({ title: "Convert to member?", body: "This creates an active member account from this application.", cta: "Create member" });
     if (!ok) return;
@@ -2216,11 +2905,25 @@ function AdminApplications() {
       {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         list === null ? <div className="dash-spinner"/> :
         list.length === 0 ? <div className="admin-empty">No applications.</div> :
+        <React.Fragment>
+        <div className="admin-bulkbar">
+          <label className="admin-bulk-all"><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all applications"/> <span>{sel.size ? sel.size + " selected" : "Select all"}</span></label>
+          {sel.size > 0 && (
+            <div className="admin-bulk-actions">
+              <span className="mono admin-bulk-label">Set status:</span>
+              {["reviewing", "accepted", "waitlist", "rejected"].map(s => (
+                <button key={s} className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => bulkStatus(s)}>{s}</button>
+              ))}
+              <button className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => setSel(new Set())}>Clear</button>
+            </div>
+          )}
+        </div>
         <div className="admin-app-list">
           {list.map(a => (
-            <div className="admin-app" key={a.id}>
+            <div className={"admin-app" + (sel.has(a.id) ? " is-selected" : "")} key={a.id}>
               <div className="admin-app-top">
                 <div style={{display:"flex", gap:12, alignItems:"center"}}>
+                  <input type="checkbox" checked={sel.has(a.id)} onChange={() => toggle(a.id)} aria-label={"Select " + a.name} style={{flex:"0 0 auto", width:18, height:18}}/>
                   {a.photoUrl && <img src={a.photoUrl} alt="" style={{width:40, height:40, borderRadius:"50%", objectFit:"cover", flex:"0 0 auto"}} onError={e => { e.target.style.display = "none"; }}/>}
                   <div>
                     <div className="admin-cell-name">{a.name} <span className="chip">{a.kind}</span>{a.program ? <span className={"chip " + (a.program === "summer" ? "chip-gold" : "chip-navy")}>{a.program}</span> : null}</div>
@@ -2229,8 +2932,10 @@ function AdminApplications() {
                 </div>
                 <span className={"chip status-" + (a.status === "accepted" ? "published" : a.status === "rejected" ? "archived" : "draft")}>{a.status}</span>
               </div>
-              {a.why && <p className="admin-app-why">{a.why}</p>}
+              {!expanded.has(a.id) && a.why && <p className="admin-app-why">{a.why}</p>}
+              {expanded.has(a.id) && <ApplicantDetail a={a}/>}
               <div className="admin-app-actions">
+                <button className="btn btn-ghost btn-sm" aria-expanded={expanded.has(a.id)} onClick={() => toggleExpand(a.id)}>{expanded.has(a.id) ? "Hide details ▴" : "View details ▾"}</button>
                 <select className="admin-select admin-app-status" value={a.status} onChange={e => setStatus(a.id, e.target.value)}>
                   <option value="new">New</option><option value="reviewing">Reviewing</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="waitlist">Waitlist</option>
                 </select>
@@ -2239,6 +2944,7 @@ function AdminApplications() {
             </div>
           ))}
         </div>
+        </React.Fragment>
       }
     </div>
   );
@@ -2254,6 +2960,8 @@ function AdminVolunteers() {
   const [busy, setBusy] = React.useState("");
   const [tab, setTab] = React.useState("pending");
   const [q, setQ] = React.useState("");
+  const [expanded, setExpanded] = React.useState(() => new Set());
+  const toggleExpand = (id) => setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const load = () => NGGApi.admin.volunteers.list().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
@@ -2318,8 +3026,10 @@ function AdminVolunteers() {
                   </div>
                   {a.role === "instructor" && !a.phone && <span className="chip status-archived">phone required</span>}
                 </div>
-                {a.why && <p className="admin-app-why">{a.why}</p>}
+                {!expanded.has(a.id) && a.why && <p className="admin-app-why">{a.why}</p>}
+                {expanded.has(a.id) && <ApplicantDetail a={a}/>}
                 <div className="admin-app-actions">
+                  <button className="btn btn-ghost btn-sm" aria-expanded={expanded.has(a.id)} onClick={() => toggleExpand(a.id)}>{expanded.has(a.id) ? "Hide details ▴" : "View details ▾"}</button>
                   <button className="btn btn-primary btn-sm" disabled={busy === "a" + a.id || (a.role === "instructor" && !a.phone)} onClick={() => approve(a)}>{busy === "a" + a.id ? "Approving…" : "Approve & issue ID →"}</button>
                   <button className="btn btn-ghost btn-sm" disabled={busy === "d" + a.id} onClick={() => decline(a)}>Decline</button>
                 </div>
@@ -2368,16 +3078,63 @@ function AdminVolunteers() {
 // Newsletter
 // ============================================================================
 
+/* Homepage promo banner editor — text + optional CTA + expiry. */
+function AdminPromo() {
+  const [p, setP] = React.useState({ text: "", ctaLabel: "", ctaUrl: "", expires: "" });
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => { NGGApi.admin.promotions.get().then(r => { if (r.promo) setP({ text: r.promo.text || "", ctaLabel: r.promo.ctaLabel || "", ctaUrl: r.promo.ctaUrl || "", expires: (r.promo.expires || "").slice(0, 10) }); }).catch(() => {}); }, []);
+  const save = async (clear) => {
+    setBusy(true);
+    try {
+      const promo = clear ? null : { text: p.text.trim(), ctaLabel: p.ctaLabel.trim(), ctaUrl: p.ctaUrl.trim(), expires: p.expires ? p.expires + "T23:59:59Z" : "" };
+      await NGGApi.admin.promotions.set(promo);
+      if (clear) setP({ text: "", ctaLabel: "", ctaUrl: "", expires: "" });
+      toast.success(clear ? "Promo cleared." : "Promo saved — live on the homepage.", "Homepage promo");
+    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>Homepage promo banner</div>
+      <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>A dismissible banner across the top of the public homepage. Leave the text blank (or Clear) to hide it; set an expiry to auto-retire it.</p>
+      <Field label="Banner text" value={p.text} onChange={v => setP(o => ({ ...o, text: v }))} placeholder="e.g. Summer School registration closes Friday!"/>
+      <div className="admin-fields-row">
+        <Field label="Button label (optional)" value={p.ctaLabel} onChange={v => setP(o => ({ ...o, ctaLabel: v }))} placeholder="Register now"/>
+        <Field label="Button link (optional)" value={p.ctaUrl} onChange={v => setP(o => ({ ...o, ctaUrl: v }))} placeholder="/join"/>
+        <Field label="Expires (optional)" type="date" value={p.expires} onChange={v => setP(o => ({ ...o, expires: v }))}/>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-primary btn-sm" disabled={busy || !p.text.trim()} onClick={() => save(false)}>Save promo</button>
+        <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => save(true)}>Clear</button>
+      </div>
+    </>
+  );
+}
+
 function AdminNewsletter() {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
+  const [msg, setMsg] = React.useState({ subject: "", body: "" });
+  const [busy, setBusy] = React.useState(false);
   const load = () => { setErr(""); NGGApi.admin.newsletter().then(setD).catch(e => setErr(e.code || e.message)); };
   React.useEffect(() => { load(); }, []);
+  const send = async () => {
+    const active = (d && d.active) || 0;
+    if (!(await dialog.confirm({ title: "Send to " + active + " subscriber(s)?", body: "Emails the current newsletter to everyone subscribed. There's no undo.", cta: "Send newsletter", danger: true }))) return;
+    setBusy(true);
+    try { const r = await NGGApi.admin.newsletterSend(msg.subject, msg.body); toast.success("Sent to " + (r.sent || 0) + (r.skipped ? " (" + r.skipped + " skipped)" : "") + ".", "Newsletter"); setMsg({ subject: "", body: "" }); }
+    catch (e) { toast.error(e.code || e.message, "Couldn't send"); } finally { setBusy(false); }
+  };
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Newsletter {d ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {d.total}</span> : null}</h2>
+        <h2 className="admin-h2">Newsletter {d ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {d.active}/{d.total} active</span> : null}</h2>
         <button className="btn btn-ghost btn-sm" disabled={!d || !d.subscribers.length} onClick={() => downloadCsv("newsletter", d.subscribers)}>Export CSV</button>
+      </div>
+      <div className="admin-fields" style={{ maxWidth: 640, marginBottom: 18 }}>
+        <div className="admin-fields-h" style={{ fontWeight: 700 }}>Compose &amp; send</div>
+        <Field label="Subject" value={msg.subject} onChange={v => setMsg(o => ({ ...o, subject: v }))}/>
+        <label className="admin-field"><span className="admin-label">Body</span><textarea className="admin-input" rows={6} value={msg.body} onChange={e => setMsg(o => ({ ...o, body: e.target.value }))} placeholder="Write your update — plain text; links become clickable."/></label>
+        <div><button className="btn btn-primary btn-sm" disabled={busy || msg.subject.trim().length < 3 || msg.body.trim().length < 10} onClick={send}>{busy ? "Sending…" : "Send newsletter"}</button> <span className="admin-hint">Each email includes a one-click unsubscribe link.</span></div>
       </div>
       {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         !d ? <div className="dash-spinner"/> :
@@ -2456,6 +3213,19 @@ function AdminSettings() {
     NGGApi.admin.sessions.list(new Date().getFullYear()).then(r => setSessions(r.sessions || [])).catch(() => {});
   }, []);
   const save = async () => { setBusy(true); try { await NGGApi.admin.settings.set(s); setSaved(true); setTimeout(() => setSaved(false), 2200); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
+  const [mailTo, setMailTo] = React.useState("");
+  const [mailBusy, setMailBusy] = React.useState(false);
+  const [mailRes, setMailRes] = React.useState(null);
+  const testMail = async () => {
+    setMailBusy(true);
+    try {
+      const r = await NGGApi.admin.settings.testMail(mailTo.trim());
+      setMailRes(r);
+      if (r.delivered) toast.success("Sent to " + r.to + " via " + r.mode + ". Check the inbox (and spam).", "Email OK");
+      else toast.error((r.mode === "php_mail" ? "PHP mail() failed. " : "SMTP failed. ") + (r.error || "No detail.") , "Delivery failed");
+    } catch (e) { toast.error(e.code || e.message); }
+    finally { setMailBusy(false); }
+  };
   if (!s) return <div className="admin-section"><div className="dash-spinner"/></div>;
   return (
     <div className="admin-section">
@@ -2468,12 +3238,53 @@ function AdminSettings() {
         <FieldCheckbox label="Mentor applications open" value={s.mentor_applications_open} onChange={v => setS(o => ({ ...o, mentor_applications_open: v }))}/>
         <FieldCheckbox label="Volunteer registration open" value={s.volunteer_applications_open} onChange={v => setS(o => ({ ...o, volunteer_applications_open: v }))}/>
         <FieldCheckbox label="Text volunteer IDs by SMS (when phone on file)" value={s.volunteer_sms_notify} onChange={v => setS(o => ({ ...o, volunteer_sms_notify: v }))}/>
+        <FieldCheckbox label="Email a state note on check-in (award-focus when doing well, a nudge otherwise)" value={s.checkin_state_emails} onChange={v => setS(o => ({ ...o, checkin_state_emails: v }))}/>
         <Field label="Hours credited per volunteer session" type="number" value={s.volunteer_session_hours} onChange={v => setS(o => ({ ...o, volunteer_session_hours: v }))}/>
         <FieldSelect label="Featured session (homepage countdown)" value={s.featured_session_id || ""} onChange={v => setS(o => ({ ...o, featured_session_id: v }))} options={[""].concat(sessions.map(x => x.sessionId))}/>
         <FieldCheckbox label="Geo-fenced registration (auto-pick the centre by location; block off-site sign-ups)" value={s.geofence_enabled} onChange={v => setS(o => ({ ...o, geofence_enabled: v }))}/>
         {s.geofence_enabled && <p className="admin-hint" style={{ margin: "-4px 0 0" }}>Walk-ups must be on-site at a mapped centre to register. Map each centre's point under <b>Registration → Centres → Map</b>.</p>}
         <FieldCheckbox label="Hold the ID until the photo is approved (issue only after an editor approves the headshot)" value={s.photo_gate_issuance} onChange={v => setS(o => ({ ...o, photo_gate_issuance: v }))}/>
         {s.photo_gate_issuance && <p className="admin-hint" style={{ margin: "-4px 0 0" }}>The QR/ID is bound only once both parent consent is in AND the photo is approved in <b>Photo review</b>. Registrations without a photo are never held.</p>}
+
+        <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>Email delivery</div>
+        <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>Send a real test email and see exactly what happened. If it fails on <span className="mono">php_mail</span>, set <span className="mono">mail.smtp.*</span> in <span className="mono">api/config.php</span> — shared hosts usually drop plain mail().</p>
+        <div className="admin-fields-row" style={{ alignItems: "end" }}>
+          <Field label="Send test to (blank = your email)" value={mailTo} onChange={setMailTo} type="email"/>
+          <button className="btn btn-ghost btn-sm" disabled={mailBusy} onClick={testMail} style={{ height: 40 }}>{mailBusy ? "Sending…" : "Send test email"}</button>
+        </div>
+        {mailRes && (
+          <div className="admin-hint" style={{ margin: "2px 0 0", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--line-200, #e6e8ee)", background: "var(--surface-50, #f8fafc)", fontSize: 12.5, lineHeight: 1.6 }}>
+            <div><b>{mailRes.delivered ? "✓ Delivered" : "✗ Not delivered"}</b> · mode <span className="mono">{mailRes.mode}</span> · to <span className="mono">{mailRes.to}</span></div>
+            <div>From <span className="mono">{mailRes.from}</span>{mailRes.replyTo ? <> · reply-to <span className="mono">{mailRes.replyTo}</span></> : null}</div>
+            {mailRes.smtp && <div>SMTP <span className="mono">{mailRes.smtp.host}:{mailRes.smtp.port}</span> ({mailRes.smtp.secure || "plain"}){mailRes.smtp.authUser ? <> · auth <span className="mono">{mailRes.smtp.authUser}</span></> : null}</div>}
+            {mailRes.error ? <div style={{ color: "var(--danger-600, #b91c1c)" }}>Error: {mailRes.error}</div> : null}
+            {(mailRes.hints || []).map((h, i) => <div key={i} style={{ color: "var(--amber-800, #9a3412)" }}>⚠ {h}</div>)}
+          </div>
+        )}
+
+        <AdminPromo/>
+
+        <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>ID card branding</div>
+        <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>Drives the printed cards + digital IDs. The card QR always encodes the student's <span className="mono">/q/&lt;token&gt;</span> profile URL, so scanning with any phone opens their page.</p>
+        {(() => {
+          const id = s.idcard || {};
+          const setId = (k, v) => setS(o => ({ ...o, idcard: { ...(o.idcard || {}), [k]: v } }));
+          return (
+            <React.Fragment>
+              <div className="admin-fields-row">
+                <Field label="Programme name" value={id.program || ""} onChange={v => setId("program", v)}/>
+                <Field label="Year" value={id.year || ""} onChange={v => setId("year", v)}/>
+              </div>
+              <Field label="Motto" value={id.motto || ""} onChange={v => setId("motto", v)}/>
+              <div className="admin-fields-row">
+                <Field label="Website (printed on card)" value={id.website || ""} onChange={v => setId("website", v)}/>
+                <Field label="Phone (printed on card)" value={id.phone || ""} onChange={v => setId("phone", v)}/>
+              </div>
+              <Field label="Lockup logo URL" value={id.logoLockup || ""} onChange={v => setId("logoLockup", v)}/>
+              <Field label="Okun/partner logo URL (card back)" value={id.logoOkun || ""} onChange={v => setId("logoOkun", v)}/>
+            </React.Fragment>
+          );
+        })()}
       </div>
     </div>
   );
@@ -2489,13 +3300,15 @@ function AdminRegistration() {
       <div className="admin-section-head"><h2 className="admin-h2">Registration</h2></div>
       <p className="admin-hint">Run the gated public sign-up: hand out desk links, review parent-pending sign-ups, and manage the centres that drive ID prefixes and card colours. The form itself lives under <b>Forms</b>.</p>
       <div className="admin-anchor-tabs">
-        {[["gates", "Gate links"], ["pending", "Pending sign-ups"], ["centres", "Centres"]].map(([id, l]) => (
+        {[["gates", "Gate links"], ["pending", "Pending sign-ups"], ["centres", "Centres"], ["import", "Bulk import"], ["certs", "Certificates"]].map(([id, l]) => (
           <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
       {tab === "gates" && <SummerGates/>}
       {tab === "pending" && <SummerPending/>}
       {tab === "centres" && <SummerCentres/>}
+      {tab === "certs" && <SummerCertificates/>}
+      {tab === "import" && <SummerImport/>}
     </div>
   );
 }
@@ -2509,13 +3322,92 @@ function AdminQRCodes() {
   );
 }
 
+/* Bulk student import — paste CSV (fullName,age,centre,track,guardianName,
+ * guardianPhone,parentEmail); each row is enrolled + QR-bound (capacity-aware). */
+function SummerImport() {
+  const [csv, setCsv] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [res, setRes] = React.useState(null);
+  const parse = (text) => {
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return [];
+    const header = lines[0].toLowerCase().split(",").map(s => s.trim());
+    const known = ["fullname", "age", "centre", "track", "guardianname", "guardianphone", "parentemail"];
+    const hasHeader = header.some(h => known.includes(h));
+    const cols = hasHeader ? header : ["fullname", "age", "centre", "track", "guardianname", "guardianphone", "parentemail"];
+    const map = { fullname: "fullName", age: "age", centre: "centre", track: "track", guardianname: "guardianName", guardianphone: "guardianPhone", parentemail: "parentEmail" };
+    return (hasHeader ? lines.slice(1) : lines).map(line => {
+      const cells = line.split(",").map(s => s.trim());
+      const row = {}; cols.forEach((c, i) => { if (map[c]) row[map[c]] = cells[i] || ""; }); return row;
+    });
+  };
+  const run = async () => {
+    const rows = parse(csv);
+    if (!rows.length) { toast.error("Nothing to import — paste CSV rows first."); return; }
+    if (!(await dialog.confirm({ title: "Import " + rows.length + " student(s)?", body: "Each gets a QR + student ID. Full centres go to the waitlist.", cta: "Import" }))) return;
+    setBusy(true);
+    try { const r = await NGGApi.admin.summer.importStudents(rows); setRes(r); toast.success("Enrolled " + r.enrolled + (r.waitlisted ? " (" + r.waitlisted + " waitlisted)" : "") + (r.failed ? ", " + r.failed + " failed" : "") + ".", "Import done"); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <p className="admin-hint">Paste CSV with a header row: <span className="mono">fullName,age,centre,track,guardianName,guardianPhone,parentEmail</span>. Each row is enrolled and bound to the next blank QR; a full centre routes to the waitlist. Up to 500 rows.</p>
+      <textarea className="admin-input" rows={8} value={csv} onChange={e => setCsv(e.target.value)} placeholder={"fullName,age,centre,track,guardianName,guardianPhone,parentEmail\nAda Obi,12,Egbeda,Tech,Mrs Obi,08030000000,obi@example.com"} style={{ fontFamily: "monospace", fontSize: 13 }}/>
+      <div style={{ marginTop: 10 }}><button className="btn btn-primary btn-sm" disabled={busy || !csv.trim()} onClick={run}>{busy ? "Importing…" : "Import students"}</button></div>
+      {res && (
+        <div style={{ marginTop: 14 }}>
+          <div className="mono" style={{ marginBottom: 6 }}>Enrolled {res.enrolled} · Waitlisted {res.waitlisted} · Failed {res.failed}</div>
+          {res.results.filter(r => !r.ok).length > 0 && (
+            <div className="admin-table-wrap"><table className="admin-table">
+              <thead><tr><th>Row</th><th>Name</th><th>Error</th></tr></thead>
+              <tbody>{res.results.filter(r => !r.ok).map((r, i) => <tr key={i}><td>{r.row}</td><td>{r.name || ""}</td><td className="mono">{r.error}</td></tr>)}</tbody>
+            </table></div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Completion certificates — bulk-issue for graduates and revoke/restore by ID. */
+function SummerCertificates() {
+  const [busy, setBusy] = React.useState("");
+  const [certId, setCertId] = React.useState("");
+  const issue = async (status) => {
+    setBusy("issue");
+    try { const r = await NGGApi.admin.summer.issueCerts(status); toast.success("Issued " + (r.issued || 0) + " new certificate(s) of " + (r.considered || 0) + " " + status + " student(s).", "Certificates"); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
+  };
+  const revoke = async (restore) => {
+    if (!certId.trim()) return;
+    setBusy(restore ? "restore" : "revoke");
+    try { await NGGApi.admin.summer.revokeCert(certId.trim().toUpperCase(), restore); toast.success((restore ? "Restored " : "Revoked ") + certId.trim().toUpperCase(), "Certificate"); setCertId(""); }
+    catch (e) { toast.error(e.code || e.message, "Not found"); } finally { setBusy(""); }
+  };
+  return (
+    <div>
+      <p className="admin-hint">Graduating a student auto-issues their verifiable certificate of completion. You can also bulk-issue for everyone already marked graduated, or revoke a specific certificate (student <span className="mono">NGGS-…</span> or volunteer <span className="mono">NGGV-…</span>).</p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
+        <button className="btn btn-primary btn-sm" disabled={busy === "issue"} onClick={() => issue("graduated")}>{busy === "issue" ? "Issuing…" : "Issue for all graduated students"}</button>
+      </div>
+      <div className="admin-fields" style={{ maxWidth: 480 }}>
+        <Field label="Certificate ID" value={certId} onChange={setCertId} placeholder="NGGS-XXXXX or NGGV-XXXXX"/>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-ghost btn-sm" disabled={busy === "revoke" || !certId.trim()} onClick={() => revoke(false)}>Revoke</button>
+          <button className="btn btn-ghost btn-sm" disabled={busy === "restore" || !certId.trim()} onClick={() => revoke(true)}>Restore</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* Centres manager — name + code + card colour (drives the ID prefix) and an
  * optional geo-fence (mapped to the centre, used to auto-pick it + stop off-site
  * sign-ups when the global fence toggle is on). */
 function SummerCentres() {
   const [centres, setCentres] = React.useState(null);
   const [err, setErr] = React.useState("");
-  const [d, setD] = React.useState({ name: "", code: "", color: "#76B043" });
+  const [d, setD] = React.useState({ name: "", code: "", color: "#76B043", capacity: "" });
   const [busy, setBusy] = React.useState(false);
   const [mapId, setMapId] = React.useState("");
   const load = () => NGGApi.admin.registration.centres().then(r => { setCentres(r.centres || []); setErr(""); }).catch(e => setErr(e.code || e.message));
@@ -2523,7 +3415,7 @@ function SummerCentres() {
   const add = async (e) => {
     e && e.preventDefault();
     setBusy(true);
-    try { await NGGApi.admin.registration.centreUpsert(d); setD({ name: "", code: "", color: "#76B043" }); toast.success("Centre saved."); load(); }
+    try { await NGGApi.admin.registration.centreUpsert({ ...d, capacity: d.capacity === "" ? 0 : parseInt(d.capacity, 10) || 0 }); setD({ name: "", code: "", color: "#76B043", capacity: "" }); toast.success("Centre saved."); load(); }
     catch (e2) { toast.error(e2.code === "code_taken" ? "That code is already used." : "Check the name (2+) and code (1–4 letters)."); }
     finally { setBusy(false); }
   };
@@ -2537,25 +3429,27 @@ function SummerCentres() {
         <input className="admin-input" placeholder="Centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
         <input className="admin-input" placeholder="CODE" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
         <input type="color" value={d.color} onChange={e => setD({ ...d, color: e.target.value })} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/>
+        <input className="admin-input" type="number" min="0" placeholder="Capacity (0=∞)" value={d.capacity} onChange={e => setD({ ...d, capacity: e.target.value })} style={{ maxWidth: 140 }}/>
         <button className="btn btn-primary btn-sm" disabled={busy || d.name.length < 2 || !d.code}>{busy ? "…" : "+ Add centre"}</button>
       </form>
       {centres === null ? <div className="dash-spinner"/> :
         centres.length === 0 ? <div className="admin-empty">No centres yet — add your first above.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Centre</th><th>Code</th><th>Colour</th><th>Geo-fence</th><th></th></tr></thead>
+          <thead><tr><th>Centre</th><th>Code</th><th>Colour</th><th>Capacity</th><th>Geo-fence</th><th></th></tr></thead>
           <tbody>{centres.map(c => (
             <React.Fragment key={c.centreId}>
             <tr>
               <td><b>{c.name}</b></td>
               <td className="mono">{c.code}</td>
               <td><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 18, height: 18, borderRadius: 5, background: c.color, border: "1px solid rgba(0,0,0,0.1)" }}/><span className="mono" style={{ fontSize: 12 }}>{c.color}</span></span></td>
+              <td>{(c.capacity || 0) > 0 ? <span className={c.full ? "chip chip-crimson" : ""}>{c.enrolled || 0}/{c.capacity}{c.full ? " full" : ""}{c.waitlisted ? " · " + c.waitlisted + " waitlisted" : ""}</span> : <span className="mono" style={{ color: "var(--ink-500)" }}>∞ {c.enrolled ? "· " + c.enrolled : ""}</span>}</td>
               <td>{geoLabel(c)}</td>
               <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                 <button className="btn btn-ghost btn-sm" onClick={() => setMapId(mapId === c.centreId ? "" : c.centreId)}>{mapId === c.centreId ? "Close" : "Map"}</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button>
               </td>
             </tr>
-            {mapId === c.centreId && <tr><td colSpan={5} style={{ background: "rgba(12,20,50,0.03)" }}><CentreGeoEditor c={c} onSaved={() => { setMapId(""); load(); }}/></td></tr>}
+            {mapId === c.centreId && <tr><td colSpan={6} style={{ background: "rgba(12,20,50,0.03)" }}><CentreGeoEditor c={c} onSaved={() => { setMapId(""); load(); }}/></td></tr>}
             </React.Fragment>
           ))}</tbody>
         </table></div>}
@@ -2833,11 +3727,17 @@ function FieldTextarea({ label, value, onChange, rows }) {
   );
 }
 function FieldSelect({ label, value, onChange, options }) {
+  // options may be plain strings OR { value, label } objects so machine enums
+  // (e.g. "graduated-vanguard") can render as human labels ("Graduated · Vanguard").
   return (
     <label className="admin-field">
       <span>{label}</span>
       <select className="admin-select" value={value} onChange={(e) => onChange(e.target.value)}>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        {options.map(o => {
+          const val = (o && typeof o === "object") ? o.value : o;
+          const lab = (o && typeof o === "object") ? o.label : o;
+          return <option key={val} value={val}>{lab}</option>;
+        })}
       </select>
     </label>
   );
@@ -3078,6 +3978,15 @@ function SummerAttendance() {
           </div>
         </div>
       )}
+
+      <div style={{ marginTop: 18 }}>
+        <button className="btn btn-ghost btn-sm" onClick={async () => {
+          if (!confirm("Email the guardians of every student absent today?")) return;
+          try { const r = await NGGApi.admin.summer.absenceAlert(); toast.success("Emailed " + (r.sent || 0) + " guardian(s)" + (r.skipped ? " (" + r.skipped + " had no email)" : "") + ".", "Absence follow-up"); }
+          catch (e) { toast.error(e.code || e.message); }
+        }}>Email today's absentees' guardians</button>
+        <span className="admin-hint" style={{ marginLeft: 10 }}>Sends a warm "we missed them" nudge to guardians with an email on file.</span>
+      </div>
 
       <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 10 }}>
         <div className="eyebrow">ATTENDANCE BY STUDENT</div>

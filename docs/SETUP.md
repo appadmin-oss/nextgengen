@@ -66,7 +66,22 @@ maps to). `dist/` deliberately excludes `api/config.php` and the local SQLite fi
    - `app_origin` — your final HTTPS URL (no trailing slash).
    - `db` — leave `dsn` empty for SQLite (simplest), or point it at MySQL.
    - `mail` — SMTP host/user/pass for reliable delivery (or leave blank to use
-     PHP `mail()`).
+     PHP `mail()`). For inbox placement: put `from_email` on a domain you
+     control, align it with the SMTP mailbox, and add **SPF + DKIM + DMARC**
+     DNS records for that domain — without them mail is spam-filtered even when
+     the send succeeds. Verify with **Control Room → Settings → Email delivery**,
+     which reports the mode, resolved sender, SMTP target, and SPF/alignment
+     warnings. (Messages already ship with `Date`, a domain-scoped `Message-ID`,
+     and a `text/plain` part alongside the HTML.)
+
+     **Gmail SMTP:** `host: smtp.gmail.com`, `port: 587`, `secure: tls`,
+     `user`/`pass` = your Gmail address and a **16-character App Password**
+     (Google Account → Security → 2-Step Verification → App passwords — your
+     normal password will not work). Set `from_email` to the **same Gmail
+     address** — Gmail rewrites any other `From` to the signed-in account
+     unless it's a verified "Send mail as" alias (Workspace). Gmail signs with
+     its own SPF/DKIM, so no DNS setup is needed; consumer Gmail caps at
+     ~500 messages/day.
    - `cloudinary` — cloud name + key + secret if you want direct uploads
      (leave `cloud_name` blank to disable; the UI falls back to pasting URLs).
 2. Permissions:
@@ -121,6 +136,35 @@ Add two cron entries (cPanel → Cron Jobs):
 # (Optional) refresh the Google Sheets mirror more often:
 30 * * * *  php /home/USER/public_html/api/tools/export-sheets.php >/dev/null 2>&1
 ```
+
+### No SSH / no cron host
+
+Some shared hosts give you no shell and no scheduler. The app is built to run
+without either:
+
+- **Schema migrations** apply automatically on the first request after a deploy
+  (`db_migrate` runs against the target version) — no CLI step.
+- **The first admin sign-in** self-provisions the super-admin, so you never need
+  a shell to bootstrap access.
+- **All transactional email is synchronous** — registration confirmations,
+  volunteer IDs, milestone certificates, and the **check-in state emails**
+  (a nudge, or an award-focused note when the person is doing well) are sent
+  in-request at the moment they're triggered. Nothing here waits on `run-jobs`.
+- **Built-in web-cron** — a normal request, at most once per interval, drains
+  the integration bus (Google Chat / webhooks / Sheets rows and the wellbeing
+  escalation), sends the parent-verification re-nudge + stalled-registration
+  alerts, and runs the daily maintenance below — all **after** the response is
+  flushed, so it never adds latency. This means the cron jobs in `Step 6` are
+  **optional**: everything they do (scheduled-post publishing, promo expiry,
+  auth/audit GC, integration delivery, reminders) also happens through web-cron.
+  Tune or disable it via the `webcron` block in `api/config.php`.
+
+Only two things still benefit from a real cron: the **full Google Sheets
+snapshot** (`export-sheets.php`, a heavy periodic mirror — incremental Sheets
+rows still flow through the bus without it) and the **Afrovanguard mentor pull**
+(`sync-afrovanguard.php`). If you have cron, set `webcron.enabled => false` to
+avoid doing the shared work twice; if you don't, only those two optional mirrors
+are affected.
 
 ## Step 7 — Google Sheets mirror (optional)
 

@@ -31,7 +31,7 @@
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:title" content="Next Generation Genius · Afrovanguard"/>
 <meta name="twitter:description" content="Africa's next geniuses are not waiting."/>
-<meta name="twitter:image" content="assets/logo.png"/>
+<meta name="twitter:image" content="https://next.afrovanguard.org.ng/assets/icons/icon-512.png"/>
 
 <!-- Structured data — helps Google understand the organization and program -->
 <script type="application/ld+json">
@@ -55,8 +55,8 @@
 }
 </script>
 
-<link rel="icon" href="assets/logo.png" type="image/png"/>
-<link rel="apple-touch-icon" href="assets/logo.png"/>
+<link rel="icon" href="assets/icons/icon-192.png" type="image/png"/>
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-180.png"/>
 <link rel="manifest" href="manifest.webmanifest"/>
 <!-- Dynamic, season-aware tab icon (Duolingo-style). Repaints the favicon from
      today's date; leaves the static icon above as the offline/no-JS fallback. -->
@@ -69,8 +69,8 @@
 <!-- Preload the heaviest above-the-fold font subset; display=swap means the
      boot screen and first-paint text still render with the system fallback
      while the brand fonts decode in parallel. -->
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Caveat:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'"/>
-<noscript><link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;800&family=Caveat:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet"/></noscript>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Caveat+Brush&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'"/>
+<noscript><link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;800&family=Caveat+Brush&family=Inter:wght@400;600&display=swap" rel="stylesheet"/></noscript>
 <!-- Self-hosted Space Grotesk / Space Mono (+ Bricolage) for the Anchor Circle portal — CSP-safe, works offline. -->
 <link rel="stylesheet" href="/assets/fonts/fonts.css"/>
 
@@ -126,6 +126,9 @@
 <script src="data.js"></script>
 <script src="photos.js"></script>
 <script src="api-client.js"></script>
+<!-- QR decoder for the camera-first check-in kiosk (window.jsQR). Plain vendor
+     script, so the prod build keeps it (only Babel + JSX tags are stripped). -->
+<script src="vendor/jsQR.min.js" defer></script>
 
 <script type="text/babel" src="motion.jsx"></script>
 <script type="text/babel" src="safety.jsx"></script>

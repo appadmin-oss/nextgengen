@@ -23,6 +23,7 @@ $CONFIG = [
     'mail' => ['from_name' => 'NGG', 'from_email' => 'test@example.com', 'reply_to' => '', 'smtp' => ['host' => '']],
     'app_origin' => 'https://ngg.example.org',
     'cookie_secret' => 'test_cookie_secret_0123456789abcdef',
+    'cache_dir' => sys_get_temp_dir() . '/ngg-test-cache-' . getmypid(),
     'debug' => true,
 ];
 $GLOBALS['CONFIG'] = $CONFIG;
@@ -38,6 +39,7 @@ require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
 foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
+require $ROOT . '/_lib/webcron.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
 // recorder BEFORE any handler calls it.
@@ -80,6 +82,15 @@ chk('non-super cannot set role', (function () {
     return $m['role'] === 'member'; // unchanged
 })());
 
+// Anchor missions self-seed a 12-week starter set on first access (empty table).
+chk('anchor missions self-seed a 12-week starter set', (function () {
+    $before = (int)db_row('SELECT COUNT(*) c FROM anchor_missions')['c'];
+    backend_dispatch('anchor.weeks', ['memberId' => 'NGG-2025-0001']);
+    $seeded = (int)db_row('SELECT COUNT(*) c FROM anchor_missions')['c'];
+    db_exec("DELETE FROM anchor_missions WHERE missionId LIKE 'AM-W%'"); // reset for downstream tests
+    return $before === 0 && $seeded === 12;
+})());
+
 // ── Missions + dashboard ──
 $mid = backend_dispatch('admin.missions.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['week' => 1, 'order' => 1, 'theme' => 'Identity', 'title' => 'Name yourself', 'prompt' => 'Write it', 'type' => 'Reflect', 'proof' => 'none', 'xp' => 60, 'isActive' => true]])['missionId'];
 db_exec("UPDATE sessions SET startDate=?, endDate=? WHERE code='SUMMER' AND year=?", [gmdate('Y-m-d', time() - 7 * 86400), gmdate('Y-m-d', time() + 30 * 86400), (int)gmdate('Y')]);
@@ -104,36 +115,93 @@ $sid = $subs['submissions'][0]['submissionId'];
 backend_dispatch('admin.assignment.grade', ['requesterId' => 'NGG-2025-0099', 'submissionId' => $sid, 'grade' => 25, 'feedback' => 'Good']);
 chk('grade clamps to max', backend_dispatch('assignment.list', ['memberId' => 'NGG-2025-0001'])['assignments'][0]['submission']['grade'] === 10);
 chk('no resubmit after graded', backend_dispatch('assignment.submit', ['memberId' => 'NGG-2025-0001', 'assignmentId' => $aid, 'text' => 'x'])['error'] === 'already_graded');
+// Return-for-revision reopens resubmission.
+chk('return-for-revision unlocks the submission', !empty(backend_dispatch('admin.assignment.return', ['requesterId' => 'NGG-2025-0099', 'submissionId' => $sid, 'feedback' => 'Add a paragraph'])['ok']) && db_row('SELECT status FROM assignment_submissions WHERE submissionId=?', [$sid])['status'] === 'returned');
+chk('member can resubmit after a return', !empty(backend_dispatch('assignment.submit', ['memberId' => 'NGG-2025-0001', 'assignmentId' => $aid, 'text' => 'My revised essay'])['ok']) && db_row('SELECT status FROM assignment_submissions WHERE submissionId=?', [$sid])['status'] === 'submitted');
+backend_dispatch('admin.assignment.grade', ['requesterId' => 'NGG-2025-0099', 'submissionId' => $sid, 'grade' => 9, 'feedback' => 'Better']);
 
 // ── Announcement ──
 backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'Hello all', 'body' => 'Welcome', 'audience' => 'all']);
 $seen = false;
 foreach (backend_dispatch('member.notifications', ['memberId' => 'NGG-2025-0001'])['notifications'] as $n) if ($n['title'] === 'Hello all') $seen = true;
 chk('broadcast reaches member feed', $seen);
+// Audience targeting: a centre-scoped broadcast reaches matching members only.
+$feedHas = function ($mid, $title) { foreach (backend_dispatch('member.notifications', ['memberId' => $mid])['notifications'] as $n) if ($n['title'] === $title) return true; return false; };
+backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'Egbeda only', 'body' => 'x', 'audience' => 'Egbeda']);
+backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'Ayobo only', 'body' => 'x', 'audience' => 'Ayobo']);
+chk('centre-scoped broadcast reaches matching member', $feedHas('NGG-2025-0001', 'Egbeda only')); // NGG-2025-0001 is Egbeda
+chk('centre-scoped broadcast hidden from non-matching member', !$feedHas('NGG-2025-0001', 'Ayobo only'));
+// Email path is actually invoked when email=true (route used to drop it).
+$GLOBALS['__mail_sink'] = [];
+$br = backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'With email', 'body' => 'hi', 'audience' => 'all', 'email' => true]);
+unset($GLOBALS['__mail_sink']);
+chk('broadcast email fan-out runs when email=true', ($br['emailed'] ?? 0) >= 1);
+chk('broadcast history lists past announcements', (function () {
+    $h = backend_dispatch('admin.broadcast.history', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($h['ok']) && (bool)array_filter($h['announcements'], fn($a) => $a['title'] === 'Egbeda only' && $a['audience'] === 'Egbeda');
+})());
 
 // ── TOTP ──
-$secret = backend_dispatch('auth.totpSetup', ['memberId' => 'NGG-2025-0099'])['secret'];
+$setup = backend_dispatch('auth.totpSetup', ['memberId' => 'NGG-2025-0099']);
+$secret = $setup['secret'];
 chk('totp accepts current code', backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => totp_code($secret, intdiv(time(), 30))])['ok'] === true);
 chk('totp rejects bad code', backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => '000000'])['ok'] === false);
+// Backup codes: setup mints 8; each works once at the gate, then is consumed.
+chk('totp setup mints 8 backup codes', is_array($setup['backupCodes']) && count($setup['backupCodes']) === 8);
+$bc = $setup['backupCodes'][0];
+chk('a backup code satisfies the 2FA gate', backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => $bc])['backupUsed'] === true);
+chk('a backup code cannot be reused', empty(backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => $bc])['ok']));
+// Super-admin recovery: reset a member's 2FA + password; non-super is refused.
+chk('super-admin can reset a member 2FA', !empty(backend_dispatch('admin.members.reset2fa', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0099'])['ok']) && (string)(db_row("SELECT totpSecret FROM members WHERE memberId='NGG-2025-0099'")['totpSecret'] ?? '') === '');
+chk('non-super cannot reset 2FA', backend_dispatch('admin.members.reset2fa', ['requesterId' => 'NGG-2025-0001', 'memberId' => 'NGG-2025-0099'])['error'] === 'forbidden');
+chk('super-admin can reset a member password', !empty(backend_dispatch('admin.members.resetPassword', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0001'])['ok']));
+
+// ── Device sessions (Me → Security): list, per-device revoke, sign-out-everywhere ──
+db_insert('device_sessions', ['sid' => 'SID-CUR', 'memberId' => 'NGG-2025-0001', 'ip' => '1.1.1.1', 'userAgent' => 'iPhone Safari', 'uaHash' => 'h1', 'createdAt' => now_iso(), 'lastSeenAt' => now_iso(), 'revokedAt' => '']);
+db_insert('device_sessions', ['sid' => 'SID-OTH', 'memberId' => 'NGG-2025-0001', 'ip' => '2.2.2.2', 'userAgent' => 'Windows Chrome', 'uaHash' => 'h2', 'createdAt' => now_iso(), 'lastSeenAt' => now_iso(), 'revokedAt' => '']);
+chk('security lists active devices, flags the current one', (function () {
+    $r = backend_dispatch('member.security', ['requesterId' => 'NGG-2025-0001', 'sid' => 'SID-CUR']);
+    $cur = array_filter($r['sessions'], fn($s) => $s['current']);
+    return count($r['sessions']) === 2 && count($cur) === 1 && array_values($cur)[0]['sid'] === 'SID-CUR';
+})());
+chk('revoke one device removes it from the list', (function () {
+    backend_dispatch('member.sessions.revoke', ['requesterId' => 'NGG-2025-0001', 'sid' => 'SID-CUR', 'targetSid' => 'SID-OTH']);
+    return count(backend_dispatch('member.security', ['requesterId' => 'NGG-2025-0001', 'sid' => 'SID-CUR'])['sessions']) === 1;
+})());
+chk('sign-out-everywhere keeps only the current session', (function () {
+    db_insert('device_sessions', ['sid' => 'SID-X', 'memberId' => 'NGG-2025-0001', 'ip' => '3.3.3.3', 'userAgent' => 'x', 'uaHash' => 'h3', 'createdAt' => now_iso(), 'lastSeenAt' => now_iso(), 'revokedAt' => '']);
+    backend_dispatch('member.sessions.revoke', ['requesterId' => 'NGG-2025-0001', 'sid' => 'SID-CUR', 'others' => true]);
+    $r = backend_dispatch('member.security', ['requesterId' => 'NGG-2025-0001', 'sid' => 'SID-CUR']);
+    return count($r['sessions']) === 1 && $r['sessions'][0]['sid'] === 'SID-CUR';
+})());
+chk('logout revokes the current device session server-side', (function () {
+    backend_dispatch('auth.logout', ['memberId' => 'NGG-2025-0001', 'sid' => 'SID-CUR']);
+    return !empty(db_row("SELECT revokedAt FROM device_sessions WHERE sid='SID-CUR'")['revokedAt']);
+})());
 
 // ── Posts / newsletter / apply ──
 chk('post publishes with slug', !empty(backend_dispatch('admin.posts.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'blog', 'title' => 'First Post', 'body' => 'Hi', 'status' => 'published']])['slug']));
 chk('public reads published post', count(backend_dispatch('public.posts', ['kind' => 'blog'])['posts']) === 1);
 chk('newsletter idempotent', backend_dispatch('public.newsletter', ['email' => 'sub@example.com'])['ok'] && backend_dispatch('public.newsletter', ['email' => 'sub@example.com'])['ok']);
-chk('apply validates age', backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'Kid', 'email' => 'k@example.com', 'age' => 40])['error'] === 'bad_age');
+chk('apply validates age', backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Kid', 'lastName' => 'Test', 'email' => 'k@example.com', 'phone' => '08031234000', 'dob' => '1985-01-01'])['error'] === 'bad_age');
 
 // ── Volunteer registration (public taxonomy: admin | mentor | instructor) ──
 $vctx = backend_dispatch('public.volunteer.context', []);
 chk('volunteer context lists roles', $vctx['roles'] === ['admin', 'mentor', 'instructor']);
 chk('volunteer context serves the course catalogue', in_array('Coding & Robotics', $vctx['courses'], true));
-chk('volunteer apply rejects unknown role', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'chef', 'name' => 'Vol One', 'email' => 'vol1@example.com'])['error'] === 'bad_role');
-chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'instructor', 'name' => 'Vol One', 'email' => 'vol1@example.com', 'phone' => '08031110001', 'courses' => ['Basket Weaving']])['error'] === 'course_required');
-chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'admin', 'name' => 'Vol Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567'])['ok'] === true);
+chk('volunteer apply rejects unknown role', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'chef', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110009', 'dob' => '1990-01-01'])['error'] === 'bad_role');
+chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110001', 'dob' => '1990-01-01', 'courses' => ['Basket Weaving']])['error'] === 'course_required');
+chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01'])['ok'] === true);
 chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications WHERE email = 'vol-admin@example.com'")['phone'] === '+2348031234567');
-chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'instructor', 'name' => 'Vol Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'courses' => ['Coding & Robotics', 'Chess & Strategy', 'Basket Weaving']])['ok'] === true);
+chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'courses' => ['Coding & Robotics', 'Chess & Strategy', 'Basket Weaving']])['ok'] === true);
 chk('instructor courses stored filtered to catalogue', json_decode((string)db_row("SELECT courses FROM applications WHERE email = 'vol-teach@example.com'")['courses'], true) === ['Coding & Robotics', 'Chess & Strategy']);
-chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'admin', 'name' => 'Vol Admin', 'email' => 'vol-admin@example.com'])['duplicate'] === true);
+chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01'])['duplicate'] === true);
 chk('volunteer.applied event queued for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.applied'")['c'] === 2);
+// Standardised intake: structured name + DOB stored; legacy `name` composed.
+chk('structured name + dob stored on application', (function () { $r = db_row("SELECT firstName,lastName,dob,name FROM applications WHERE email='vol-teach@example.com'"); return $r && $r['firstName'] === 'Vol' && $r['lastName'] === 'Teach' && $r['dob'] === '1990-01-01' && $r['name'] === 'Vol Teach'; })());
+chk('apply rejects a malformed dob', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Dob', 'email' => 'baddob@example.com', 'phone' => '08031110099', 'dob' => 'not-a-date'])['error'] === 'bad_dob');
+chk('apply rejects an under-16 volunteer', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Too', 'lastName' => 'Young', 'email' => 'young@example.com', 'phone' => '08031110098', 'dob' => '2015-01-01'])['error'] === 'dob_too_young');
+chk('apply requires a first name', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'lastName' => 'Only', 'email' => 'nofirst@example.com', 'phone' => '08031110097', 'dob' => '1990-01-01'])['error'] === 'bad_firstName');
 // ── Multi-form builder (registration + volunteer + contact) ──
 $fl = backend_dispatch('admin.forms.list', ['requesterId' => 'NGG-2025-0099']);
 chk('forms list has all three forms', count($fl['forms']) === 3 && in_array('volunteer', array_column($fl['forms'], 'formId'), true) && in_array('contact', array_column($fl['forms'], 'formId'), true));
@@ -159,7 +227,7 @@ chk('old card freed on reassign', db_row('SELECT status FROM qr_codes WHERE toke
 chk('void retires a card + detaches student', backend_dispatch('admin.summer.qr.void', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok])['ok'] === true && db_row('SELECT status FROM qr_codes WHERE token = ?', [$qtok])['status'] === 'void' && db_row('SELECT token FROM summer_students WHERE studentId = ?', [$qrKid])['token'] === '');
 chk('void card cannot be reassigned', backend_dispatch('admin.summer.qr.reassign', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok, 'studentId' => $qrKid])['error'] === 'card_void');
 
-chk('instructor without phone is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'instructor', 'name' => 'No Phone', 'email' => 'nophone@example.com', 'courses' => ['Coding & Robotics']])['error'] === 'phone_required');
+chk('phone is required on volunteer intake', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Phone', 'email' => 'nophone@example.com', 'dob' => '1990-01-01', 'courses' => ['Coding & Robotics']])['error'] === 'phone_required');
 
 // ── Volunteer review desk: approve → ID + QR + profile; decline ──
 $volAppId = (int)db_row("SELECT id FROM applications WHERE email = 'vol-teach@example.com'")['id'];
@@ -204,18 +272,18 @@ chk('tier delete removes it', backend_dispatch('admin.hierarchy.delete', ['reque
     && count(backend_dispatch('admin.hierarchy.list', ['requesterId' => 'NGG-2025-0099'])['tiers']) === 3);
 
 // ── Minimalist email template + applicant acknowledgement ──
-$__tpl = email_template(['title' => 'Test', 'intro' => 'Hi', 'bodyHtml' => '<p>x</p>', 'ctaLabel' => 'Open', 'ctaUrl' => 'https://x.test']);
-chk('email template is minimalist (navy + crimson, no gold/navy slab)', str_contains($__tpl, '#00225F') && str_contains($__tpl, '#E4155F') && !str_contains($__tpl, '#f5b026') && !str_contains($__tpl, '#0c1432'));
-chk('email cta button is navy, not gold', str_contains($__tpl, 'background:#00225F;color:#ffffff'));
+$__tpl = email_template(['eyebrow' => 'Verify', 'title' => 'Test', 'intro' => 'Hi', 'bodyHtml' => '<p>x</p>', 'ctaLabel' => 'Open', 'ctaUrl' => 'https://x.test', 'otp' => '482917']);
+chk('email template is on-brand (navy + gold on cool neutrals, no legacy crimson)', str_contains($__tpl, '#0c1432') && str_contains($__tpl, '#f5b026') && !str_contains($__tpl, '#E4155F'));
+chk('email cta button is navy, not gold', str_contains($__tpl, 'linear-gradient(180deg,#1a2954,#0c1432)'));
 chk('email carries a hidden preheader', str_contains($__tpl, 'mso-hide:all'));
 chk('email footer carries a reply path + contact', str_contains($__tpl, 'Reply to this email') && str_contains($__tpl, 'afrovanguard.org'));
 $GLOBALS['__mail_sink'] = [];
-$__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'mentor', 'name' => 'Ada Ack', 'email' => 'ada-ack@example.com', 'why' => 'Glad to help']);
+$__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'why' => 'Glad to help']);
 chk('apply returns a traceable reference', isset($__ap['ref']) && preg_match('/^NGG-V-\d{5}$/', (string)$__ap['ref']) === 1 && $__ap['duplicate'] === false);
 $__ack = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'));
 chk('volunteer application acknowledges the applicant', count($__ack) === 1 && str_contains($__ack[0]['subject'], 'volunteer application'));
-chk('ack is on-brand + names role + carries the reference', str_contains($__ack[0]['html'], '#00225F') && str_contains($__ack[0]['html'], 'Mentor') && str_contains($__ack[0]['html'], (string)$__ap['ref']));
-$__dup = backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'mentor', 'name' => 'Ada Ack', 'email' => 'ada-ack@example.com', 'why' => 'again']);
+chk('ack is on-brand + names role + carries the reference', str_contains($__ack[0]['html'], '#0c1432') && str_contains($__ack[0]['html'], 'Mentor') && str_contains($__ack[0]['html'], (string)$__ap['ref']));
+$__dup = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'why' => 'again']);
 chk('resubmit is a no-op duplicate with the same reference', $__dup['duplicate'] === true && $__dup['ref'] === $__ap['ref']);
 chk('duplicate does not re-acknowledge', count(array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'))) === 1);
 unset($GLOBALS['__mail_sink']);
@@ -252,6 +320,96 @@ chk('roster rows carry first names only', !array_filter($roster['students'], fn(
 // ── Overview + upcoming sessions ──
 $ov = backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0099']);
 chk('overview counts volunteers', $ov['overview']['volunteers']['active'] === 1 && $ov['overview']['volunteers']['unscreened'] === 0);
+
+// ── Attendance-taker rotation + gamified attendance (seeds active volunteers,
+//    so this must run AFTER the overview volunteer-count assertion above) ──
+db_insert('volunteers', ['volunteerId' => 'VOL-T-1', 'fullName' => 'Duty One', 'email' => 'd1@example.com', 'role' => 'admin', 'status' => 'active', 'safeguarding' => 'cleared', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('volunteers', ['volunteerId' => 'VOL-T-2', 'fullName' => 'Duty Two', 'email' => 'd2@example.com', 'role' => 'mentor', 'status' => 'active', 'safeguarding' => 'cleared', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+$today = gmdate('Y-m-d');
+$board = backend_dispatch('attendance.duty.board', ['requesterId' => 'NGG-2025-0099', 'date' => $today]);
+chk('duty board assigns a taker per centre', $board['ok'] === true && count($board['duties']) >= 1 && !empty($board['duties'][0]['volunteerId']));
+$firstVol = $board['duties'][0]['volunteerId'];
+chk('duty assignment is stable on re-read (round-robin persisted)', backend_dispatch('attendance.duty.board', ['requesterId' => 'NGG-2025-0099', 'date' => $today])['duties'][0]['volunteerId'] === $firstVol);
+$centre0 = $board['duties'][0]['centre'];
+chk('admin override pins a specific volunteer', backend_dispatch('admin.attendance.duty.set', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-T-2'])['ok'] === true);
+chk('override is recorded as admin-sourced', db_row('SELECT source FROM attendance_duty WHERE date = ? AND centre = ?', [$today, $centre0])['source'] === 'admin');
+// Safeguarding: an unscreened volunteer is never in the auto-rotation pool nor pinnable.
+chk('duty pool excludes unscreened (pending) volunteers', (function () {
+    db_insert('volunteers', ['volunteerId' => 'VOL-PEND', 'fullName' => 'Not Screened', 'email' => 'ns@example.com', 'role' => 'mentor', 'status' => 'active', 'safeguarding' => 'pending', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    foreach (attendance_duty_pool() as $v) if ($v['volunteerId'] === 'VOL-PEND') return false;
+    return true;
+})());
+chk('admin cannot pin an unscreened volunteer to duty', backend_dispatch('admin.attendance.duty.set', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-PEND'])['error'] === 'not_cleared');
+db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-PEND'");
+$done = backend_dispatch('attendance.duty.complete', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-T-2']);
+chk('completing the roll awards points + returns a value-driven response', $done['ok'] === true && !empty($done['message']) && $done['game']['points'] > 0);
+$ptsAfter = volunteer_game_state('VOL-T-2')['points'];
+backend_dispatch('attendance.duty.complete', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-T-2']);
+chk('duty completion is idempotent (no double points)', volunteer_game_state('VOL-T-2')['points'] === $ptsAfter);
+chk('game state exposes level + level name', volunteer_game_state('VOL-T-2')['levelName'] === 'Recruit');
+chk('point-award milestone mints once + surfaces in-app', (function () {
+    $v = db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-T-2'");
+    volunteer_check_point_awards($v, 100, 200); // cross the 150 'Reliable Steward' threshold
+    $has = count(array_filter(volunteer_game_state('VOL-T-2')['awards'], fn($a) => $a['name'] === 'Reliable Steward')) === 1;
+    volunteer_check_point_awards($v, 100, 200); // re-run must not duplicate
+    return $has && count(array_filter(volunteer_game_state('VOL-T-2')['awards'], fn($a) => $a['name'] === 'Reliable Steward')) === 1;
+})());
+// Gate kiosk carries the day's attendance duty for its centre (rotation banner).
+db_insert('gate_links', ['gateId' => 'GATE-T-1', 'name' => 'Egbeda Desk', 'cohortId' => '', 'centreId' => 'Egbeda', 'status' => 'active', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso()]);
+$gc = backend_dispatch('gate.context', ['gate' => 'GATE-T-1']);
+chk('gate context resolves centre + attendance duty for the kiosk', ($gc['centre'] ?? '') === 'Egbeda' && !empty($gc['duty']) && !empty($gc['duty']['volunteerId']));
+// Desk-password kiosk check-in: no staff cap, authorized by the gate token.
+db_insert('qr_codes', ['token' => 'SUMQR-KIOSK1', 'batch' => 'BK', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'SUM-K-1', 'assignedName' => 'Kiosk Kid', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-K-1', 'cohortId' => '', 'token' => 'SUMQR-KIOSK1', 'handle' => 'kioskkid', 'fullName' => 'Kiosk Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+$ci = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-KIOSK1', 'method' => 'gate']);
+chk('gate-authorized kiosk check-in writes attendance (no staff cap needed)', $ci['ok'] === true && (int)db_row("SELECT COUNT(*) c FROM attendance WHERE studentId='SUM-K-1'")['c'] === 1);
+chk('unauthorized check-in (no cap, no gate) is still refused', !empty(backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-2025-0001', 'token' => 'SUMQR-KIOSK1'])['error']));
+// Check-in state emails — synchronous (no SSH/cron), gated by a setting.
+db_insert('qr_codes', ['token' => 'SUMQR-STATE1', 'batch' => 'BK', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'SUM-ST-1', 'assignedName' => 'State Kid', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-ST-1', 'cohortId' => '', 'token' => 'SUMQR-STATE1', 'handle' => 'statekid', 'fullName' => 'State Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'parentEmail' => 'guardian-state@example.com', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+$GLOBALS['__mail_sink'] = [];
+$sci = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-STATE1', 'method' => 'gate']);
+chk('new student check-in emails the guardian a state note', $sci['ok'] === true && count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'guardian-state@example.com')) === 1);
+$GLOBALS['__mail_sink'] = [];
+backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-STATE1', 'method' => 'gate']);
+chk('same-day re-scan does not re-email the guardian', count($GLOBALS['__mail_sink']) === 0);
+// Setting off ⇒ no state email even on a fresh check-in.
+setting_set('checkin_state_emails', '0', 'test');
+db_insert('qr_codes', ['token' => 'SUMQR-STATE2', 'batch' => 'BK', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'SUM-ST-2', 'assignedName' => 'Off Kid', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-ST-2', 'cohortId' => '', 'token' => 'SUMQR-STATE2', 'handle' => 'offkid', 'fullName' => 'Off Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'parentEmail' => 'guardian-off@example.com', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+$GLOBALS['__mail_sink'] = [];
+backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-STATE2', 'method' => 'gate']);
+chk('checkin_state_emails=0 suppresses the state email', count($GLOBALS['__mail_sink']) === 0);
+setting_set('checkin_state_emails', '1', 'test');
+// Volunteer check-in mails the volunteer their standing (award-focused / nudge).
+db_insert('volunteers', ['volunteerId' => 'VOL-ST-99', 'fullName' => 'State Volunteer', 'email' => 'vol-state@example.com', 'role' => 'Mentor', 'token' => 'VOLQR-STATE', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('qr_codes', ['token' => 'VOLQR-STATE', 'batch' => 'BK', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'VOL-ST-99', 'assignedName' => 'State Volunteer', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+$GLOBALS['__mail_sink'] = [];
+$vsci = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'VOLQR-STATE', 'method' => 'gate']);
+chk('volunteer check-in emails the volunteer their state', $vsci['ok'] === true && empty($vsci['already']) && count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'vol-state@example.com')) === 1);
+unset($GLOBALS['__mail_sink']);
+
+// ── Student completion certificates (verifiable) + revocation ──
+$gr = backend_dispatch('admin.summer.student.status', ['requesterId' => 'NGG-2025-0099', 'studentId' => 'SUM-K-1', 'status' => 'graduated']);
+chk('graduating a student mints a completion certificate', !empty($gr['ok']) && !empty($gr['cert']['certId']) && strpos($gr['cert']['certId'], 'NGGS-') === 0);
+$stuCertId = $gr['cert']['certId'];
+chk('public cert resolves the student completion cert', (function () use ($stuCertId) {
+    $r = backend_dispatch('public.cert', ['id' => $stuCertId]);
+    return !empty($r['ok']) && $r['cert']['type'] === 'completion' && $r['cert']['fullName'] === 'Kiosk Kid' && $r['cert']['revoked'] === false && $r['cert']['daysPresent'] >= 1;
+})());
+chk('re-graduating does not mint a second cert', (function () {
+    backend_dispatch('admin.summer.student.status', ['requesterId' => 'NGG-2025-0099', 'studentId' => 'SUM-K-1', 'status' => 'active']);
+    backend_dispatch('admin.summer.student.status', ['requesterId' => 'NGG-2025-0099', 'studentId' => 'SUM-K-1', 'status' => 'graduated']);
+    return (int)db_row("SELECT COUNT(*) c FROM student_certs WHERE studentId='SUM-K-1'")['c'] === 1;
+})());
+chk('admin can revoke a certificate (public shows revoked)', (function () use ($stuCertId) {
+    backend_dispatch('admin.cert.revoke', ['requesterId' => 'NGG-2025-0099', 'certId' => $stuCertId]);
+    return backend_dispatch('public.cert', ['id' => $stuCertId])['cert']['revoked'] === true;
+})());
+chk('admin can restore a revoked certificate', (function () use ($stuCertId) {
+    backend_dispatch('admin.cert.revoke', ['requesterId' => 'NGG-2025-0099', 'certId' => $stuCertId, 'restore' => true]);
+    return backend_dispatch('public.cert', ['id' => $stuCertId])['cert']['revoked'] === false;
+})());
 db_insert('events', ['eventId' => 'EV-VOL-1', 'title' => 'Saturday session', 'kind' => 'session', 'sessionId' => '', 'startAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 3 * 86400), 'endAt' => '', 'centre' => 'Egbeda', 'location' => 'Main hall', 'coverUrl' => '', 'body' => '', 'capacity' => 20, 'isPublic' => 1, 'status' => 'published', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 $slots = volunteer_upcoming_sessions();
 chk('upcoming sessions are capacity-aware', $slots[0]['title'] === 'Saturday session' && $slots[0]['spotsLeft'] === 20);
@@ -271,7 +429,7 @@ chk('member_state set+get roundtrips', (function () {
 // ── Enterprise admin: overview, applications, mentor assign, settings ──
 chk('overview returns member counts', backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['members']['active'] >= 2);
 chk('overview gated', backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
-backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'Applicant One', 'email' => 'app1@example.com', 'age' => 15, 'track' => 'Music', 'centre' => 'Ayobo']);
+backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Applicant', 'lastName' => 'One', 'email' => 'app1@example.com', 'phone' => '08031110030', 'dob' => '2011-01-01', 'track' => 'Music', 'centre' => 'Ayobo']);
 $apps = backend_dispatch('admin.applications.list', ['requesterId' => 'NGG-2025-0099', 'kind' => 'teen'])['applications'];
 chk('applications listed', count($apps) >= 1);
 $appId = $apps[0]['id'];
@@ -298,14 +456,52 @@ chk('unedited site keys keep defaults', backend_dispatch('public.siteContent', [
 backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['site_content' => ['heroEmphasis' => '']]]);
 chk('blank site field restores its default', backend_dispatch('public.siteContent', [])['site']['heroEmphasis'] === 'not waiting');
 chk('volunteer settings roundtrip', (function () { backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['volunteer_session_hours' => 6, 'volunteer_applications_open' => false]]); $g = backend_dispatch('admin.settings.get', ['requesterId' => 'NGG-2025-0099'])['settings']; return $g['volunteer_session_hours'] === 6 && $g['volunteer_applications_open'] === false; })());
-chk('apply blocked when closed', backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'X Y', 'email' => 'x@example.com', 'age' => 14])['error'] === 'applications_closed');
+chk('idcard branding: defaults exposed', isset(backend_dispatch('admin.settings.get', ['requesterId' => 'NGG-2025-0099'])['settings']['idcard']['program']));
+chk('mail delivery test op reports mode + delivered + recipient', (function () {
+    $r = backend_dispatch('admin.mail.test', ['requesterId' => 'NGG-2025-0099', 'to' => 'diag@example.com']);
+    return $r['ok'] === true && array_key_exists('delivered', $r) && $r['to'] === 'diag@example.com' && in_array($r['mode'], ['php_mail', 'smtp'], true);
+})());
+chk('mail test surfaces sender config + actionable hints', (function () {
+    $r = backend_dispatch('admin.mail.test', ['requesterId' => 'NGG-2025-0099', 'to' => 'diag@example.com']);
+    return $r['from'] === 'test@example.com' && $r['fromDomain'] === 'example.com' && is_array($r['hints'])
+        && (bool)array_filter($r['hints'], fn($h) => stripos($h, 'SMTP') !== false || stripos($h, 'SPF') !== false);
+})());
+chk('mail test gives Gmail-specific guidance (From rewrite + App Password)', (function () {
+    $save = $GLOBALS['CONFIG']['mail'];
+    $GLOBALS['CONFIG']['mail'] = ['from_name' => 'NGG', 'from_email' => 'no-reply@ngg.afrovanguard.org', 'reply_to' => '', 'smtp' => ['host' => 'smtp.gmail.com', 'port' => 587, 'secure' => 'tls', 'user' => 'ngg.desk@gmail.com', 'pass' => 'x']];
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('admin.mail.test', ['requesterId' => 'NGG-2025-0099', 'to' => 'diag@example.com']);
+    unset($GLOBALS['__mail_sink']);
+    $GLOBALS['CONFIG']['mail'] = $save;
+    return $r['mode'] === 'smtp' && $r['smtp']['host'] === 'smtp.gmail.com'
+        && (bool)array_filter($r['hints'], fn($h) => stripos($h, 'rewrites the From') !== false)
+        && (bool)array_filter($r['hints'], fn($h) => stripos($h, 'App Password') !== false);
+})());
+// Deliverability headers: every message must carry Date + a domain-scoped Message-ID.
+chk('mail headers include Date + domain-scoped Message-ID', (function () {
+    $h = mail_std_headers('no-reply@afrovanguard.org.ng');
+    return (bool)preg_grep('/^Date: /', $h) && (bool)preg_grep('/^Message-ID: <[0-9a-f]{32}@afrovanguard\.org\.ng>$/', $h);
+})());
+chk('mail domain falls back to localhost for a bare address', mail_domain_of('garbage') === 'localhost');
+// multipart/alternative body carries both parts and is CRLF-clean (no bare LF).
+chk('multipart body carries text + html parts, CRLF-normalized', (function () {
+    $b = mail_alt_body("<p>Hi</p>\nMore", "Hi\nMore", 'BND');
+    $hasBoth = strpos($b, 'text/plain') !== false && strpos($b, 'text/html') !== false && strpos($b, '--BND--') !== false;
+    return $hasBoth && strpos($b, "\r\n") !== false && !preg_match('/[^\r]\n/', $b);
+})());
+chk('idcard branding roundtrip (editable)', (function () {
+    backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['idcard' => ['website' => 'next.afrovanguard.org.ng', 'motto' => 'EMPOWERED 360°', 'logoLockup' => '/assets/idcard/logo-lockup.png']]]);
+    $id = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099'])['program'];
+    return $id['website'] === 'next.afrovanguard.org.ng' && $id['logoLockup'] === '/assets/idcard/logo-lockup.png';
+})());
+chk('apply blocked when closed', backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'X', 'lastName' => 'Y', 'email' => 'x@example.com', 'phone' => '08031110050', 'dob' => '2011-01-01'])['error'] === 'applications_closed');
 chk('newsletter list works', is_array(backend_dispatch('admin.newsletter.list', ['requesterId' => 'NGG-2025-0099'])['subscribers']));
 
 // ── Program tagging (Summer vs Anchor) + convert respects program ──
 backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['applications_open' => true]]);
-backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'Summer Kid', 'email' => 'summer1@example.com', 'age' => 12, 'track' => 'Dance', 'centre' => 'Egbeda', 'program' => 'summer']);
+backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Summer', 'lastName' => 'Kid', 'email' => 'summer1@example.com', 'phone' => '08031110031', 'dob' => '2013-01-01', 'track' => 'Dance', 'centre' => 'Egbeda', 'program' => 'summer']);
 chk('summer application tagged', db_row("SELECT program FROM applications WHERE email='summer1@example.com'")['program'] === 'summer');
-backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'Anchor Kid', 'email' => 'anchor1@example.com', 'age' => 16, 'track' => 'Tech', 'centre' => 'Egbeda', 'program' => 'anchor']);
+backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Anchor', 'lastName' => 'Kid', 'email' => 'anchor1@example.com', 'phone' => '08031110032', 'dob' => '2010-01-01', 'track' => 'Tech', 'centre' => 'Egbeda', 'program' => 'anchor']);
 $anchorApp = db_row("SELECT id FROM applications WHERE email='anchor1@example.com'")['id'];
 $convA = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $anchorApp]);
 chk('anchor applicant becomes NGG member', db_row('SELECT type FROM members WHERE memberId=?', [$convA['memberId']])['type'] === 'NGG');
@@ -313,7 +509,7 @@ $summerAppId = db_row("SELECT id FROM applications WHERE email='summer1@example.
 $convS = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $summerAppId]);
 chk('summer applicant becomes Summer member', db_row('SELECT type FROM members WHERE memberId=?', [$convS['memberId']])['type'] === 'Summer');
 chk('invalid program falls back to anchor', (function () {
-    backend_dispatch('public.apply', ['kind' => 'teen', 'name' => 'Junk Prog', 'email' => 'junkprog@example.com', 'age' => 14, 'program' => 'bogus']);
+    backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Junk', 'lastName' => 'Prog', 'email' => 'junkprog@example.com', 'phone' => '08031110033', 'dob' => '2011-06-01', 'program' => 'bogus']);
     return db_row("SELECT program FROM applications WHERE email='junkprog@example.com'")['program'] === 'anchor';
 })());
 
@@ -354,6 +550,81 @@ chk('gateway: unknown and passwordless answer identically', (function () {
     return $unknown === ['code'] && $passless === ['code'];
 })());
 chk('gateway: staff look like ordinary password accounts', backend_dispatch('auth.gateway', ['identifier' => 'pa@example.com'])['methods'] === (!empty(db_row("SELECT passwordHash FROM members WHERE email='pa@example.com'")['passwordHash']) ? ['code', 'password'] : ['code']));
+
+// ── auth.request is resilient when the mail relay hiccups ──
+// Delivered: banks an OTP row and reports delivery=true (sink captures the mail).
+$GLOBALS['__mail_sink'] = [];
+$rq = backend_dispatch('auth.request', ['identifier' => 'nopass@example.com']);
+chk('auth.request delivered → ok + delivery=true', !empty($rq['ok']) && $rq['delivery'] === true && count($GLOBALS['__mail_sink']) === 1);
+chk('auth.request banks an OTP session even so', (int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email='nopass@example.com'")['c'] >= 1);
+unset($GLOBALS['__mail_sink']);
+// Mail relay down: must NOT hard-fail (no login dead-end) — still ok, delivery=false,
+// and the OTP row is banked so a user who does get mail can still finish.
+$before = (int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email='nopass@example.com'")['c'];
+$GLOBALS['__mail_fail'] = true;
+$rq2 = backend_dispatch('auth.request', ['identifier' => 'nopass@example.com']);
+unset($GLOBALS['__mail_fail']);
+chk('auth.request mail failure stays ok with delivery=false', !empty($rq2['ok']) && $rq2['delivery'] === false && !empty($rq2['masked']));
+chk('auth.request still banks the OTP when mail fails', (int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email='nopass@example.com'")['c'] === $before + 1);
+
+// ── Self-service password reset (set a password with no prior session) ──
+$GLOBALS['__mail_sink'] = [];
+$rr = backend_dispatch('auth.resetRequest', ['identifier' => 'nopass@example.com']);
+chk('reset request → ok + delivery, emails the member', !empty($rr['ok']) && $rr['delivery'] === true && count($GLOBALS['__mail_sink']) === 1);
+unset($GLOBALS['__mail_sink']);
+chk('reset request banks a reset-purpose challenge', (int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email='nopass@example.com' AND purpose='reset'")['c'] === 1);
+$rsRow = db_row("SELECT * FROM auth_sessions WHERE memberId='NGG-2025-0770' AND purpose='reset' ORDER BY id DESC LIMIT 1");
+chk('reset confirm rejects a short password', backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $rsRow['otp'], 'password' => 'short'])['error'] === 'password_too_short');
+chk('a reset token cannot be replayed as a login', backend_dispatch('auth.verify', ['token' => $rsRow['token']])['error'] === 'invalid');
+$rc = backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $rsRow['otp'], 'password' => 'freshpass12']);
+chk('reset confirm sets the password + returns the member', !empty($rc['ok']) && ($rc['member']['memberId'] ?? '') === 'NGG-2025-0770');
+chk('password sign-in now works for the reset account', !empty(backend_dispatch('auth.login', ['identifier' => 'nopass@example.com', 'password' => 'freshpass12'])['ok']));
+chk('gateway now offers password after reset', backend_dispatch('auth.gateway', ['identifier' => 'nopass@example.com'])['methods'] === ['code', 'password']);
+chk('reset challenge is single-use (consumed code no longer matches)', backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $rsRow['otp'], 'password' => 'anotherpass12'])['error'] === 'invalid');
+chk('reset token replay after use → already_used', backend_dispatch('auth.resetConfirm', ['token' => $rsRow['token'], 'password' => 'anotherpass12'])['error'] === 'already_used');
+chk('reset request for an unknown account still looks ok (no oracle)', !empty(backend_dispatch('auth.resetRequest', ['identifier' => 'ghost-nobody@example.com'])['ok']));
+
+// ── Mail transport selection (Apps Script is preferred once wired, like CEO) ──
+chk('mail_mode is php_mail with nothing configured', mail_mode() === 'php_mail');
+$GLOBALS['CONFIG']['apps_script_url'] = 'https://script.google.com/macros/s/x/exec';
+$GLOBALS['CONFIG']['shared_secret'] = 'deadbeefdeadbeef';
+chk('mail_mode picks apps_script when the Web App is wired', mail_mode() === 'apps_script');
+$GLOBALS['CONFIG']['mail']['apps_script'] = false;
+chk('mail_mode honours apps_script=false opt-out', mail_mode() === 'php_mail');
+$GLOBALS['CONFIG']['apps_script_url'] = '';
+$GLOBALS['CONFIG']['shared_secret'] = '';
+unset($GLOBALS['CONFIG']['mail']['apps_script']);
+// Unknown identifier looks identical (ok + delivery=true) — no account oracle.
+chk('auth.request hides unknown accounts', (function () { $r = backend_dispatch('auth.request', ['identifier' => 'ghost@example.com']); return !empty($r['ok']) && $r['delivery'] === true && !empty($r['masked']); })());
+
+// ── Web-cron (no-SSH host: opportunistic maintenance without cron) ──
+chk('web_cron_due fires once then throttles', (function () {
+    $a = web_cron_due('unit_test_job', 3600); $b = web_cron_due('unit_test_job', 3600); return $a === true && $b === false;
+})());
+chk('web-cron maintenance publishes a due scheduled post', (function () {
+    db_insert('posts', ['postId' => 'P-SCHED-1', 'slug' => 'sched-1', 'kind' => 'blog', 'title' => 'Scheduled', 'body' => 'x', 'status' => 'draft', 'publishAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 60), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    web_cron_maintenance();
+    return db_row("SELECT status FROM posts WHERE slug = 'sched-1'")['status'] === 'published';
+})());
+chk('web-cron maintenance GCs an expired auth challenge', (function () {
+    db_insert('auth_sessions', ['token' => 'gc-old', 'memberId' => 'NGG-2025-0099', 'email' => 'a@b.co', 'otp' => '000000', 'attempts' => 0, 'createdAt' => now_iso(), 'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 48 * 3600), 'verifiedAt' => '', 'ip' => '', 'userAgent' => '']);
+    web_cron_maintenance();
+    return !db_row("SELECT id FROM auth_sessions WHERE token = 'gc-old'");
+})());
+chk('web-cron reminders escalate a >48h unverified registration once', (function () {
+    db_insert('summer_cohorts', ['cohortId' => 'WC1', 'name' => 'WC', 'status' => 'active', 'createdAt' => now_iso()]);
+    $old = gmdate('Y-m-d\TH:i:s\Z', time() - 50 * 3600);
+    db_insert('summer_students', ['studentId' => 'SUM-WC-1', 'cohortId' => 'WC1', 'token' => 'WCQR-1', 'handle' => 'wc1', 'fullName' => 'Stalled Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'regStatus' => 'parent_pending', 'parentEmail' => 'wcguardian@example.com', 'enrolledAt' => $old, 'remindedAt' => $old, 'updatedAt' => $old]);
+    $GLOBALS['__mail_sink'] = [];
+    web_cron_reminders(); web_cron_reminders(); // second run must not double-emit
+    unset($GLOBALS['__mail_sink']);
+    $ok = (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event='registration.stalled' AND subject='SUM-WC-1'")['c'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind='registration.stalled'")['c'] === 1;
+    // Clean up so this fixture never pollutes the downstream cards dataset.
+    db_exec("DELETE FROM summer_students WHERE studentId='SUM-WC-1'");
+    db_exec("DELETE FROM summer_cohorts WHERE cohortId='WC1'");
+    return $ok;
+})());
 
 // ── Account lockout (8 consecutive fails → 15-minute pause) ──
 chk('lockout after repeated wrong passwords', (function () {
@@ -409,7 +680,7 @@ chk('anchor set drops empty quotes', (function () {
 
 // ── Mentorship (Afrovanguard-connected) ──
 $GLOBALS['CONFIG']['afrovanguard'] = ['org_url' => 'https://afrovanguard.org.ng', 'sts_url' => 'https://afrovanguard.org.ng/projects/sts/programs/', 'volunteer_url' => 'https://cacentre.afrovanguard.org.ng/volunteer', 'mentor_program' => 'Street-To-Stardom · Next Gen'];
-backend_dispatch('public.apply', ['kind' => 'mentor', 'name' => 'Mentor Ada', 'email' => 'mentorada@example.com', 'role' => 'Music coach', 'why' => 'I want to help teens find their voice.']);
+backend_dispatch('public.apply', ['kind' => 'mentor', 'sex' => 'Male', 'firstName' => 'Mentor', 'lastName' => 'Ada', 'email' => 'mentorada@example.com', 'phone' => '08031110040', 'dob' => '1990-01-01', 'role' => 'Music coach', 'why' => 'I want to help teens find their voice.']);
 $mApp = db_row("SELECT id FROM applications WHERE email='mentorada@example.com' AND kind='mentor'")['id'];
 $mConv = backend_dispatch('admin.mentor.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $mApp]);
 chk('mentor application converts to mentor', !empty($mConv['mentorId']));
@@ -464,6 +735,24 @@ chk('public profile by QR token', backend_dispatch('public.summerProfile', ['tok
 chk('public profile by handle + attendance', backend_dispatch('public.summerProfile', ['handle' => $enr['handle']])['profile']['attendanceCount'] === 1);
 chk('summer gated from non-staff', backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 chk('enroll rejects an already-used QR', backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Dupe Kid', 'age' => 12, 'token' => $enr['token']]])['error'] === 'qr_already_used');
+// Admin single-enroll now captures parentEmail (was dropped → no guardian emails).
+$enr2 = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Ada Guardianed', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'parentEmail' => 'ada-guardian@example.com']]);
+chk('admin enroll persists parentEmail', db_row('SELECT parentEmail FROM summer_students WHERE studentId=?', [$enr2['studentId']])['parentEmail'] === 'ada-guardian@example.com');
+// Check-OUT stamps a departure time on today's row (Kofi checked in above).
+chk('checkout stamps a departure time', (function () use ($enr) {
+    $r = backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-2025-0099', 'token' => $enr['token']]);
+    return !empty($r['ok']) && $r['already'] === false && !empty($r['checkOutAt']) && !empty(db_row('SELECT checkOutAt FROM attendance WHERE studentId=? AND date=?', [$enr['studentId'], gmdate('Y-m-d')])['checkOutAt']);
+})());
+chk('a second checkout is idempotent', backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-2025-0099', 'token' => $enr['token']])['already'] === true);
+chk('checkout without a check-in is refused', backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-2025-0099', 'token' => $enr2['token']])['error'] === 'not_checked_in');
+// Absence alert emails guardians of students absent today (enr2 is absent + has email).
+chk('absence alert emails absent students\' guardians', (function () {
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('admin.summer.absence.alert', ['requesterId' => 'NGG-2025-0099']);
+    $hit = count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-guardian@example.com')) === 1;
+    unset($GLOBALS['__mail_sink']);
+    return !empty($r['ok']) && $r['sent'] >= 1 && $hit;
+})());
 
 // Attendance analytics (Phase 2 dashboard) — Kofi is enrolled + checked in above.
 $att = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099'])['attendance'];
@@ -611,6 +900,25 @@ chk('bus: sheets member snapshot chunks through the bridge', (function () {
 })());
 chk('bus: integrations gated to settings cap', backend_dispatch('admin.integrations.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 chk('bus: url allowlists per kind enforced', backend_dispatch('admin.integrations.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'gchat', 'url' => 'https://evil.example/hook']])['error'] === 'bad_gchat_url');
+
+// ── Behaviour monitor (log → triage → wellbeing escalation → review) ──
+chk('behaviour: rule-triage tags a wellbeing note as urgent', (function () {
+    $r = backend_dispatch('admin.behaviour.log', ['requesterId' => 'NGG-2025-0099', 'subjectId' => 'NGG-2025-0001', 'note' => 'Seemed very sad and withdrawn today, not eating.']);
+    return !empty($r['ok']) && $r['category'] === 'wellbeing' && $r['severity'] === 'urgent';
+})());
+chk('behaviour: a wellbeing flag emits behaviour.flagged to the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind='behaviour.flagged'")['c'] >= 1);
+chk('behaviour: manual category+severity overrides triage', backend_dispatch('admin.behaviour.log', ['requesterId' => 'NGG-2025-0099', 'subjectId' => 'NGG-2025-0001', 'note' => 'Helped a peer set up chairs.', 'category' => 'commendation', 'severity' => 'positive'])['aiSource'] === 'manual');
+chk('behaviour: list returns logs, trend and open-flag count', (function () {
+    $r = backend_dispatch('admin.behaviour.list', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && count($r['logs']) >= 2 && is_array($r['trend']) && $r['openFlags'] >= 1;
+})());
+chk('behaviour: review marks a log reviewed', (function () {
+    $r = backend_dispatch('admin.behaviour.list', ['requesterId' => 'NGG-2025-0099', 'status' => 'open']);
+    $id = $r['logs'][0]['logId'];
+    return !empty(backend_dispatch('admin.behaviour.review', ['requesterId' => 'NGG-2025-0099', 'logId' => $id])['ok'])
+        && db_row('SELECT status FROM behaviour_logs WHERE logId = ?', [$id])['status'] === 'reviewed';
+})());
+chk('behaviour: gated to the people cap', backend_dispatch('admin.behaviour.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 
 // ── SMS layer (pure normalisation + routing; no network) ──
 chk('sms: NG numbers normalise to +234', sms_normalize('08031234567') === '+2348031234567' && sms_normalize('2348031234567') === '+2348031234567' && sms_normalize('+447911123456') === '+447911123456' && sms_normalize('abc') === '');
@@ -842,7 +1150,14 @@ $ing = photo_ingest('student', 'SUM-2026-9001', $SRC, 'NGG-2025-0099');
 chk('photo_ingest creates a v1 asset', !empty($ing['ok']) && $ing['version'] === 1 && strpos($ing['assetId'], 'PH-') === 0);
 $pr = photo_process($ing['assetId']);
 chk('clean photo auto-approves with an edited URL', $pr['status'] === 'approved' && strpos($pr['editedUrl'], '/upload/') !== false);
+chk('every ID headshot gets a clean studio backdrop by default (not only busy_background)', $pr['aiUsed'] === true && strpos($pr['editedUrl'], 'e_background_removal') !== false);
 chk('approved photo satisfies the issuance gate', photo_approved_for('student', 'SUM-2026-9001') === true);
+// Backdrop swap is switchable off without touching the rest of the pipeline.
+setting_set('photo_bg_removal', '0');
+$ingOff = photo_ingest('student', 'SUM-2026-9011', $SRC, 'NGG-2025-0099');
+$prOff = photo_process($ingOff['assetId']);
+chk('photo_bg_removal=0 disables the backdrop swap (still optimizes)', strpos($prOff['editedUrl'], 'e_background_removal') === false && strpos($prOff['editedUrl'], 'f_auto') !== false);
+setting_set('photo_bg_removal', '1');
 
 // Re-capture supersedes and versions.
 $ing2 = photo_ingest('student', 'SUM-2026-9001', $SRC, 'NGG-2025-0099');
@@ -976,6 +1291,201 @@ $rsub = backend_dispatch('reshoot.submit', ['t' => $ptok, 'photoUrl' => 'https:/
 chk('re-shoot: submitting a new photo creates a fresh version', !empty($rsub['ok']) && $rsub['version'] >= 2);
 chk('re-shoot: a non-https photo is rejected', backend_dispatch('reshoot.submit', ['t' => $ptok, 'photoUrl' => 'ftp://nope'])['error'] === 'bad_photo');
 unset($GLOBALS['__ai_photo_mock'], $GLOBALS['__mail_sink']);
+
+// ── Centre capacity → waitlist, and bulk import (run last: they add centres/students) ──
+chk('centre capacity waitlists once full', (function () {
+    backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'CapCentre', 'code' => 'CAP', 'color' => '#123456', 'capacity' => 1]]);
+    backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 4]);
+    $a = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Cap One', 'age' => 12, 'centre' => 'CapCentre']]);
+    $b = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Cap Two', 'age' => 12, 'centre' => 'CapCentre']]);
+    return empty($a['waitlisted']) && !empty($b['waitlisted'])
+        && db_row('SELECT status FROM summer_students WHERE studentId=?', [$b['studentId']])['status'] === 'waitlisted';
+})());
+chk('centre list reports enrolled/capacity/full', (function () {
+    foreach (backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-2025-0099'])['centres'] as $c) if ($c['name'] === 'CapCentre') return (int)$c['capacity'] === 1 && $c['enrolled'] >= 1 && $c['full'] === true && $c['waitlisted'] >= 1;
+    return false;
+})());
+chk('bulk import enrols multiple students', (function () {
+    $r = backend_dispatch('admin.summer.import', ['requesterId' => 'NGG-2025-0099', 'rows' => [
+        ['fullName' => 'Import A', 'age' => 12, 'centre' => 'Egbeda', 'parentEmail' => 'ia@example.com'],
+        ['fullName' => 'Import B', 'age' => 13, 'centre' => 'Egbeda'],
+    ]]);
+    return !empty($r['ok']) && $r['enrolled'] === 2 && $r['failed'] === 0;
+})());
+chk('bulk import rejects an empty batch', backend_dispatch('admin.summer.import', ['requesterId' => 'NGG-2025-0099', 'rows' => []])['error'] === 'no_rows');
+
+// ── Event RSVP capacity → waitlist, and staff attendance marking ──
+db_insert('events', ['eventId' => 'EV-CAP', 'title' => 'Capped meetup', 'kind' => 'session', 'sessionId' => '', 'startAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 5 * 86400), 'endAt' => '', 'centre' => 'Both', 'location' => 'Hall', 'coverUrl' => '', 'body' => '', 'capacity' => 1, 'isPublic' => 1, 'status' => 'published', 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+chk('first RSVP within capacity is going', backend_dispatch('event.rsvp', ['memberId' => 'NGG-2025-0001', 'eventId' => 'EV-CAP', 'status' => 'going'])['status'] === 'going');
+chk('RSVP past capacity is waitlisted', (function () {
+    db_insert('members', ['memberId' => 'NGG-2025-0555', 'fullName' => 'RSVP Two', 'email' => 'r2@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('event.rsvp', ['memberId' => 'NGG-2025-0555', 'eventId' => 'EV-CAP', 'status' => 'going']);
+    return $r['status'] === 'waitlist' && !empty($r['waitlisted']);
+})());
+chk('staff can mark event attendance', (function () {
+    backend_dispatch('admin.event.attendance', ['requesterId' => 'NGG-2025-0099', 'eventId' => 'EV-CAP', 'memberId' => 'NGG-2025-0001']);
+    return !empty(db_row("SELECT attendedAt FROM event_rsvps WHERE eventId='EV-CAP' AND memberId='NGG-2025-0001'")['attendedAt']);
+})());
+chk('staff can clear event attendance', (function () {
+    backend_dispatch('admin.event.attendance', ['requesterId' => 'NGG-2025-0099', 'eventId' => 'EV-CAP', 'memberId' => 'NGG-2025-0001', 'clear' => true]);
+    return (string)db_row("SELECT attendedAt FROM event_rsvps WHERE eventId='EV-CAP' AND memberId='NGG-2025-0001'")['attendedAt'] === '';
+})());
+
+// ── Newsletter send + one-click unsubscribe ──
+backend_dispatch('public.newsletter', ['email' => 'reader@example.com', 'source' => 'test']);
+chk('newsletter send emails active subscribers', (function () {
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('admin.newsletter.send', ['requesterId' => 'NGG-2025-0099', 'subject' => 'July update', 'body' => 'Lots happening this month at NGG.']);
+    $hit = count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'reader@example.com' && $m['subject'] === 'July update')) === 1;
+    unset($GLOBALS['__mail_sink']);
+    return !empty($r['ok']) && $r['sent'] >= 1 && $hit;
+})());
+chk('newsletter send rejects a too-short subject', backend_dispatch('admin.newsletter.send', ['requesterId' => 'NGG-2025-0099', 'subject' => 'hi', 'body' => 'long enough body here'])['error'] === 'subject_too_short');
+chk('unsubscribe needs a valid signed token', backend_dispatch('public.newsletter.unsubscribe', ['email' => 'reader@example.com', 'token' => 'wrong'])['error'] === 'bad_token');
+chk('one-click unsubscribe flips status', (function () {
+    $tok = newsletter_unsub_token('reader@example.com');
+    backend_dispatch('public.newsletter.unsubscribe', ['email' => 'reader@example.com', 'token' => $tok]);
+    return db_row("SELECT status FROM newsletter WHERE email='reader@example.com'")['status'] === 'unsubscribed';
+})());
+chk('unsubscribed readers are excluded from a send', (function () {
+    $GLOBALS['__mail_sink'] = [];
+    backend_dispatch('admin.newsletter.send', ['requesterId' => 'NGG-2025-0099', 'subject' => 'Second update', 'body' => 'Another update body.']);
+    $hit = count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'reader@example.com'));
+    unset($GLOBALS['__mail_sink']);
+    return $hit === 0;
+})());
+
+// ── Homepage promo reader ──
+chk('active promo is served publicly', (function () {
+    backend_dispatch('admin.promotions.set', ['requesterId' => 'NGG-2025-0099', 'promo' => ['text' => 'Registration closes Friday', 'ctaLabel' => 'Register', 'ctaUrl' => '/join', 'expires' => '']]);
+    $r = backend_dispatch('public.siteContent', []);
+    return !empty($r['promo']) && $r['promo']['text'] === 'Registration closes Friday' && $r['promo']['ctaUrl'] === '/join';
+})());
+chk('an expired promo is hidden', (function () {
+    backend_dispatch('admin.promotions.set', ['requesterId' => 'NGG-2025-0099', 'promo' => ['text' => 'Old news', 'expires' => gmdate('Y-m-d\TH:i:s\Z', time() - 3600)]]);
+    return backend_dispatch('public.siteContent', [])['promo'] === null;
+})());
+
+// ── Account lifecycle: verified email change, staff invite, export, deletion ──
+db_insert('members', ['memberId' => 'NGG-2025-0900', 'fullName' => 'Life Cycle', 'email' => 'life@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+chk('email change requires confirmation (pending set, not applied)', (function () {
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('member.email.changeRequest', ['memberId' => 'NGG-2025-0900', 'email' => 'newlife@example.com']);
+    $sent = count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'newlife@example.com')) === 1;
+    unset($GLOBALS['__mail_sink']);
+    return !empty($r['ok']) && db_row("SELECT email FROM members WHERE memberId='NGG-2025-0900'")['email'] === 'life@example.com' && db_row("SELECT pendingEmail FROM members WHERE memberId='NGG-2025-0900'")['pendingEmail'] === 'newlife@example.com' && $sent;
+})());
+chk('a bad email-change token is rejected', backend_dispatch('member.email.confirm', ['memberId' => 'NGG-2025-0900', 'token' => 'nope'])['error'] === 'invalid');
+chk('confirming the token applies the new email', (function () {
+    $tok = db_row("SELECT emailChangeToken FROM members WHERE memberId='NGG-2025-0900'")['emailChangeToken'];
+    $r = backend_dispatch('member.email.confirm', ['memberId' => 'NGG-2025-0900', 'token' => $tok]);
+    return !empty($r['ok']) && db_row("SELECT email FROM members WHERE memberId='NGG-2025-0900'")['email'] === 'newlife@example.com';
+})());
+chk('granting a staff role emails an invite', (function () {
+    $GLOBALS['__mail_sink'] = [];
+    backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['memberId' => 'NGG-2025-0900', 'role' => 'editor']]);
+    $hit = count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'newlife@example.com' && stripos($m['subject'], 'team') !== false)) === 1;
+    unset($GLOBALS['__mail_sink']);
+    return $hit;
+})());
+chk('member export returns their data bundle', (function () {
+    $r = backend_dispatch('member.export', ['memberId' => 'NGG-2025-0900']);
+    return !empty($r['ok']) && isset($r['export']['profile']) && $r['export']['profile']['memberId'] === 'NGG-2025-0900' && array_key_exists('journal', $r['export']);
+})());
+chk('super-admin deletes & anonymises a member', (function () {
+    $r = backend_dispatch('admin.members.delete', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0900']);
+    $m = db_row("SELECT fullName, email, status FROM members WHERE memberId='NGG-2025-0900'");
+    return !empty($r['ok']) && $m['status'] === 'deleted' && $m['email'] === '' && $m['fullName'] === 'Deleted member';
+})());
+chk('deletion refuses the last super admin', backend_dispatch('admin.members.delete', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0099'])['error'] === 'cannot_delete_super_admin');
+
+// ── Applicant status lookup + peer interaction (reactions + moderated comments) ──
+chk('applicant status: ref+email returns a friendly status', (function () {
+    db_insert('applications', ['kind' => 'teen', 'name' => 'Status Seeker', 'email' => 'seeker@example.com', 'status' => 'reviewing', 'createdAt' => now_iso()]);
+    $id = (int)db_row("SELECT id FROM applications WHERE email='seeker@example.com'")['id'];
+    $ref = 'NGG-A-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+    $r = backend_dispatch('public.application.status', ['ref' => $ref, 'email' => 'seeker@example.com']);
+    return !empty($r['ok']) && $r['status'] === 'reviewing' && $r['label'] === 'Under review';
+})());
+chk('applicant status: wrong email is not found (no enumeration)', (function () {
+    $id = (int)db_row("SELECT id FROM applications WHERE email='seeker@example.com'")['id'];
+    $ref = 'NGG-A-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+    return backend_dispatch('public.application.status', ['ref' => $ref, 'email' => 'wrong@example.com'])['error'] === 'not_found';
+})());
+$peerPost = backend_dispatch('admin.posts.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'blog', 'title' => 'Peer Post', 'body' => 'Hi', 'status' => 'published']])['slug'];
+chk('member reaction is recorded and toggles off', (function () use ($peerPost) {
+    $a = backend_dispatch('post.react', ['memberId' => 'NGG-2025-0001', 'post' => $peerPost, 'emoji' => '🔥']);
+    $on = ($a['reactions']['🔥'] ?? 0) === 1 && $a['myReaction'] === '🔥';
+    $b = backend_dispatch('post.react', ['memberId' => 'NGG-2025-0001', 'post' => $peerPost, 'emoji' => '🔥']);
+    return $on && ($b['reactions']['🔥'] ?? 0) === 0 && $b['myReaction'] === '';
+})());
+chk('a comment is held for moderation (not public)', (function () use ($peerPost) {
+    backend_dispatch('post.comment', ['memberId' => 'NGG-2025-0001', 'post' => $peerPost, 'body' => 'Great piece!']);
+    $pub = backend_dispatch('public.post.engagement', ['post' => $peerPost]);
+    $queue = backend_dispatch('admin.comments.list', ['requesterId' => 'NGG-2025-0099', 'status' => 'pending']);
+    return count($pub['comments']) === 0 && $queue['pending'] >= 1;
+})());
+chk('approving a comment makes it public', (function () use ($peerPost) {
+    $q = backend_dispatch('admin.comments.list', ['requesterId' => 'NGG-2025-0099', 'status' => 'pending']);
+    $cid = $q['comments'][0]['commentId'];
+    backend_dispatch('admin.comments.moderate', ['requesterId' => 'NGG-2025-0099', 'commentId' => $cid, 'do' => 'approve']);
+    return count(backend_dispatch('public.post.engagement', ['post' => $peerPost])['comments']) === 1;
+})());
+chk('comment moderation gated to content cap', backend_dispatch('admin.comments.list', ['requesterId' => 'NGG-2025-0555'])['error'] === 'forbidden');
+
+// ── RBAC: per-member extra capabilities ──
+db_insert('members', ['memberId' => 'NGG-2025-0710', 'fullName' => 'Extra Editor', 'email' => 'ee@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+chk('editor lacks the summer cap by default', backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0710'])['error'] === 'forbidden');
+chk('super grants an extra capability', !empty(backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0710', 'caps' => ['summer']])['ok']));
+chk('the extra cap now passes the gate', !empty(backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0710'])['ok']));
+chk('extra caps cannot be granted to a plain member', backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0555', 'caps' => ['content']])['error'] === 'not_staff');
+chk('only super can edit capabilities', backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0710', 'memberId' => 'NGG-2025-0710', 'caps' => ['rbac']])['error'] === 'forbidden');
+
+// ── Donations (Paystack, mocked) ──
+chk('donations are unavailable without a Paystack secret', backend_dispatch('public.donate.init', ['email' => 'giver@example.com', 'amount' => 5000])['error'] === 'donations_unavailable');
+chk('donation init returns a checkout URL and banks a pending row', (function () {
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) {
+        if (strpos($path, '/transaction/initialize') === 0) return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/xyz', 'reference' => $body['reference']]];
+        return ['status' => true, 'data' => ['status' => 'success', 'channel' => 'card']];
+    };
+    $r = backend_dispatch('public.donate.init', ['email' => 'giver@example.com', 'name' => 'Ada', 'amount' => 5000]);
+    $ok = !empty($r['ok']) && strpos($r['authorizationUrl'], 'paystack.com') !== false && db_row('SELECT status FROM donations WHERE reference = ?', [$r['reference']])['status'] === 'pending';
+    $v = donation_verify($r['reference']);
+    $paid = ($v['status'] ?? '') === 'paid' && db_row('SELECT status FROM donations WHERE reference = ?', [$r['reference']])['status'] === 'paid';
+    unset($GLOBALS['__paystack_mock'], $GLOBALS['CONFIG']['paystack']);
+    return $ok && $paid;
+})());
+chk('donations ledger totals paid amounts (settings cap)', (function () {
+    $r = backend_dispatch('admin.donations.list', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && $r['totalPaid'] >= 5000 && count($r['donations']) >= 1;
+})());
+
+// ── Full-CSV export (all matching rows, not just the current page) ──
+chk('members export returns all rows, unpaged', (function () {
+    $paged = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'pageSize' => 2, 'page' => 1]);
+    $all = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1]);
+    return count($paged['members']) === 2 && count($all['members']) === $all['total'] && $all['total'] > 2;
+})());
+chk('audit export returns all rows, unpaged', (function () {
+    $all = backend_dispatch('admin.audit.tail', ['requesterId' => 'NGG-2025-0099', 'all' => 1]);
+    return !empty($all['ok']) && count($all['audit']) === $all['total'];
+})());
+
+// ── Leaderboards (member cohort + volunteer duty) ──
+chk('public leaderboard ranks members by XP, privacy-safe', (function () {
+    $r = backend_dispatch('public.leaderboard', ['limit' => 10]);
+    if (empty($r['ok']) || !count($r['leaderboard'])) return false;
+    $l = $r['leaderboard'];
+    // Descending XP, ranks sequential, no full surnames leaked.
+    for ($i = 1; $i < count($l); $i++) if ($l[$i]['xp'] > $l[$i - 1]['xp']) return false;
+    return $l[0]['rank'] === 1 && isset($l[0]['first']) && !isset($l[0]['fullName']);
+})());
+chk('duty leaderboard ranks volunteers by points (staff)', (function () {
+    $r = backend_dispatch('attendance.duty.leaderboard', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && count($r['leaderboard']) >= 1 && $r['leaderboard'][0]['rank'] === 1 && isset($r['leaderboard'][0]['points']);
+})());
+chk('duty leaderboard gated from non-staff', backend_dispatch('attendance.duty.leaderboard', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

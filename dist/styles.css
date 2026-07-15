@@ -15,6 +15,12 @@
   --gold-500: #f5b026;   /* logo gold */
   --gold-400: #ffc34d;
   --gold-300: #ffd680;
+  --gold-700: #7a5600;   /* dark gold — AA-safe as small text on cream/white */
+
+  /* Eyebrow micro-label colour. Defaults to the AA-safe dark gold for light
+     surfaces; dark surfaces re-point it to bright gold below. Use
+     var(--eyebrow-fg) instead of a raw gold token for any eyebrow text. */
+  --eyebrow-fg: var(--gold-700);
 
   --lime: #d0ff3a;        /* electric futurist accent */
   --coral: #ff5a3c;       /* pop, sparingly */
@@ -32,11 +38,17 @@
   --ink-400: #8088a6;
   --ink-300: #b8bfd6;
 
+  /* Cool-neutral hairlines — a crisp, intentional counterpoint to the warm
+     cream fields. Used for card/surface borders and dividers so edges read
+     defined without going heavy. */
+  --line-cool:      #e5e8ee;   /* crisp card edge */
+  --line-cool-soft: #eef0f4;   /* quiet dividers */
+
   /* Type */
   --font-display: "Sora", "Archivo", system-ui, sans-serif;
   --font-body:    "Inter", system-ui, sans-serif;
   --font-mono:    "JetBrains Mono", ui-monospace, monospace;
-  --font-marker:  "Caveat", "Bricolage Grotesque", cursive;
+  --font-marker:  "Caveat Brush", "Caveat", "Bricolage Grotesque", cursive;
 
   /* Radius / shadow */
   --r-sm: 8px;
@@ -44,6 +56,22 @@
   --r-lg: 22px;
   --r-xl: 32px;
   --shadow-card: 0 1px 0 rgba(12,20,50,0.04), 0 24px 40px -20px rgba(12,20,50,0.15);
+  /* Elevation scale — prefer these over hand-written box-shadows. */
+  --shadow-sm: 0 1px 2px rgba(12,20,50,0.06), 0 2px 8px -4px rgba(12,20,50,0.12);
+  --shadow-md: 0 2px 4px rgba(12,20,50,0.05), 0 12px 24px -12px rgba(12,20,50,0.18);
+  --shadow-lg: 0 4px 8px rgba(12,20,50,0.06), 0 32px 56px -24px rgba(12,20,50,0.28);
+
+  /* Spacing scale (4px base) — prefer these over raw px for padding/gap so
+     rhythm stays consistent as the product grows. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 88px;
 }
 
 * { box-sizing: border-box; }
@@ -168,7 +196,13 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
-/* ---------- Buttons (with 3D press effect) ---------- */
+/* ---------- Buttons (with 3D press effect) ----------
+   NOTE (design system): `.btn` and its variants are ALSO defined in
+   styles-app.css, which loads AFTER this file and therefore WINS at runtime
+   (the app hard-bevel look is what actually ships). This split is intentional
+   — a marketing look vs. an app look — but it means edits here to shared
+   `.btn*` rules have no visible effect. Change styles-app.css, or unify the two
+   (a brand decision) rather than editing this block expecting a change. */
 .btn {
   font-family: inherit;
   border: none;
@@ -231,15 +265,17 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 .section { padding: 88px 0; }
 .section-tight { padding: 56px 0; }
 
-.dark-surface { background: var(--navy-900); color: white; }
+.dark-surface { background: var(--navy-900); color: white; --eyebrow-fg: var(--gold-400); }
 .dark-surface .eyebrow { color: var(--gold-400); }
+/* Dark hero/footer contexts also carry bright-gold eyebrows. */
+.hero, .footer, .marquee { --eyebrow-fg: var(--gold-400); }
 .dark-surface .muted { color: rgba(255,255,255,0.6); }
 .muted { color: var(--ink-500); }
 
 /* Card */
 .card {
   background: white;
-  border: 1px solid rgba(12,20,50,0.07);
+  border: 1px solid var(--line-cool);
   border-radius: var(--r-lg);
   padding: 24px;
 }
@@ -546,7 +582,7 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 .newsletter-meta {
   margin-top: 12px;
   font-size: 11.5px;
-  color: rgba(255,255,255,0.45);
+  color: rgba(255,255,255,0.62);
   display: flex; gap: 14px; align-items: center;
   font-family: var(--font-mono);
   letter-spacing: 0.08em;
@@ -728,14 +764,14 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.12em;
-  color: rgba(255,255,255,0.45);
+  color: rgba(255,255,255,0.62);
   text-transform: uppercase;
 }
 .footer-bottom .made {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.12em;
-  color: rgba(255,255,255,0.45);
+  color: rgba(255,255,255,0.62);
   text-transform: uppercase;
   text-align: right;
   display: flex; align-items: center; gap: 6px; justify-content: flex-end;

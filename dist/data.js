@@ -96,19 +96,25 @@ const MEMBERS = [
   { id: 12, first: "Hadiza",   title: "Voice of Influence",       track: "Public Speaking",  level: 6, xp: 1880, badges: 8,  streak: 19, week: 7,  community: "Ayobo",  quote: "A small voice carries far if it is true." },
 ];
 
+// The canonical 12-week curriculum — MUST match the real program members walk
+// in the Anchor Journal. Source of truth is the server's admin-editable anchor
+// content (api/_lib/anchor-content.php, exposed at /public/anchor-content.php);
+// this static copy is the offline/no-JS fallback and is kept in sync with those
+// defaults. Do not reintroduce a separate "marketing" curriculum here — the
+// public site and the member app must describe the same twelve weeks.
 const WEEKS = [
-  { n: 1,  theme: "Identity",            verb: "Define who you are before others define you.", missions: 3 },
-  { n: 2,  theme: "Discipline",          verb: "The promises you keep when nobody is watching.", missions: 4 },
-  { n: 3,  theme: "Communication",       verb: "Be understood. Then be remembered.", missions: 4 },
-  { n: 4,  theme: "Leadership",          verb: "Lead the work you would not delegate.", missions: 5 },
-  { n: 5,  theme: "Creativity",          verb: "The original move beats the polished copy.", missions: 4 },
-  { n: 6,  theme: "African Intelligence",verb: "We carry knowledge older than our textbooks.", missions: 4 },
-  { n: 7,  theme: "Team Building",       verb: "A great team is a small army of generous minds.", missions: 4 },
-  { n: 8,  theme: "Digital Influence",   verb: "Build a feed your future self will be proud of.", missions: 5 },
-  { n: 9,  theme: "Entrepreneurship",    verb: "From idea to revenue, in plain sight.", missions: 5 },
-  { n: 10, theme: "Community Impact",    verb: "Pick a problem on your street, solve it in public.", missions: 4 },
-  { n: 11, theme: "Responsibility",      verb: "Own the outcome, not just the assignment.", missions: 4 },
-  { n: 12, theme: "Legacy & Graduation", verb: "Leave a doorway, not a monument.", missions: 6 },
+  { n: 1,  theme: "Identity",              verb: "Name who you are becoming.",         missions: 4 },
+  { n: 2,  theme: "Study Time",            verb: "Same time, same place, every day.",  missions: 4 },
+  { n: 3,  theme: "Personal Hygiene",      verb: "Clean body, clear mind.",            missions: 4 },
+  { n: 4,  theme: "Device Control",        verb: "Own the phone — don't be owned.",    missions: 4 },
+  { n: 5,  theme: "Note-Taking",           verb: "Capture — don't just consume.",      missions: 4 },
+  { n: 6,  theme: "Respect",               verb: "Honor those who lead you.",          missions: 4 },
+  { n: 7,  theme: "Time Consciousness",    verb: "On time is early.",                  missions: 4 },
+  { n: 8,  theme: "Self-Control",          verb: "Master the impulse.",                missions: 4 },
+  { n: 9,  theme: "Integrity",             verb: "Do right when unseen.",              missions: 4 },
+  { n: 10, theme: "Responsibility",        verb: "Own the outcome.",                   missions: 4 },
+  { n: 11, theme: "Independent Integrity", verb: "Discipline without supervision.",    missions: 4 },
+  { n: 12, theme: "Review & Leadership",   verb: "Lead by example.",                   missions: 5 },
 ];
 
 const BADGES = [
@@ -167,7 +173,7 @@ const VOLUNTEER_ROLES = [
 // The footer (and anything else) reads from here. Replace the social URLs
 // with the real account links when the handles are confirmed.
 const CONTACT = {
-  email: "cacentre@afrovanguard.org.ng",
+  email: "next@afrovanguard.org.ng",
   phone: "+2349037776318",          // same public line as the printed ID cards
   phoneDisplay: "+234 903 777 6318",
   socials: {

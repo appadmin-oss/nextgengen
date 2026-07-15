@@ -19,7 +19,7 @@
   font-size: 11px;
   letter-spacing: 0.26em;
   text-transform: uppercase;
-  color: var(--gold-500);
+  color: var(--eyebrow-fg, var(--gold-700));
   font-weight: 500;
 }
 
@@ -46,9 +46,10 @@
   margin: 0;
 }
 
-/* Button — production-grade, single source of truth.
-   We override the existing .btn slightly to lift hover/active feel
-   without breaking layouts. */
+/* Button — this is the DEFINITION THAT SHIPS. It loads after styles.css and
+   overrides the `.btn*` rules there, so treat this block as the effective
+   source of truth for buttons (and `.chip`). If you ever unify the marketing
+   and app looks into one, delete the duplicate block in styles.css. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -1529,6 +1530,18 @@ html { scroll-behavior: smooth; }
 @media (max-width: 820px) { .admin-filters { grid-template-columns: 1fr 1fr; } }
 
 .admin-table-wrap { overflow-x: auto; }
+/* Pagination + count chip (shared by paged admin tables). */
+.admin-pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 2px 2px; flex-wrap: wrap; }
+.admin-pager-count { font-size: 12px; color: var(--ink-500); }
+.admin-pager-btns { display: flex; align-items: center; gap: 10px; }
+.admin-pager-page { font-size: 12px; color: var(--ink-500); }
+.admin-count { display: inline-block; margin-left: 10px; padding: 2px 9px; border-radius: 999px; background: rgba(12,20,50,0.06); color: var(--ink-500); font-size: 12px; vertical-align: middle; }
+/* Bulk-select bar for review queues. */
+.admin-bulkbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 12px; border-radius: 12px; background: rgba(12,20,50,0.04); border: 1px solid rgba(12,20,50,0.06); }
+.admin-bulk-all { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-700); cursor: pointer; }
+.admin-bulk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.admin-bulk-label { font-size: 11px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.1em; }
+.admin-app.is-selected { outline: 2px solid var(--gold-500); outline-offset: 1px; }
 .admin-table { width: 100%; border-collapse: collapse; }
 .admin-table th, .admin-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(12,20,50,0.06); font-size: 14px; }
 .admin-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; color: var(--ink-500); text-transform: uppercase; }
@@ -4234,8 +4247,18 @@ section p[style*="var(--ink-500)"] {
 .admin-app { background: #fff; border: 1px solid var(--line, #e6e2d6); border-radius: 14px; padding: 16px; }
 .admin-app-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .admin-app-why { margin: 10px 0; padding: 10px 12px; background: var(--paper); border-radius: 10px; font-size: 14px; line-height: 1.5; color: var(--ink-700); }
-.admin-app-actions { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+.admin-app-actions { display: flex; gap: 10px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
 .admin-app-status { max-width: 160px; }
+
+/* Structured applicant / volunteer detail — a readable labelled grid, opened
+   from "View details". Cool hairline rows so the data reads clearly. */
+.admin-detail { margin: 10px 0; padding: 6px 16px 12px; background: var(--cream-50, #faf6ec); border: 1px solid var(--line-cool, #e5e8ee); border-radius: 12px; }
+.admin-detail-photo { width: 72px; height: 72px; border-radius: 12px; object-fit: cover; margin: 12px 0 6px; border: 1px solid var(--line-cool, #e5e8ee); }
+.admin-detail-row { display: grid; grid-template-columns: 148px 1fr; gap: 14px; padding: 8px 0; border-top: 1px solid var(--line-cool-soft, #eef0f4); }
+.admin-detail-row:first-of-type { border-top: 0; }
+.admin-detail-key { font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-400); padding-top: 1px; }
+.admin-detail-val { font-size: 14px; color: var(--ink-700); line-height: 1.55; word-break: break-word; }
+@media (max-width: 560px) { .admin-detail-row { grid-template-columns: 1fr; gap: 2px; } }
 .admin-section-actions { display: flex; gap: 8px; align-items: center; }
 
 /* Legal & data-protection page — sticky side-nav collapses on mobile. */

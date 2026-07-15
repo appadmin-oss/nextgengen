@@ -4,6 +4,7 @@ declare(strict_types=1);
 /** Members — dashboard, profile update, notifications. */
 
 function member_dashboard(array $p): array {
+    if (function_exists('anchor_ensure_seed')) anchor_ensure_seed();
     $memberId = (string)($p['memberId'] ?? '');
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     if (!$member) return ['ok' => false, 'error' => 'not_found'];
@@ -38,8 +39,9 @@ function member_dashboard(array $p): array {
     );
     $events = array_map('public_event', $events);
 
-    // Unread notifications (this member or broadcast).
-    $notes = db_all("SELECT * FROM notifications WHERE (memberId = ? OR memberId = '*') AND (readAt = '' OR readAt IS NULL) ORDER BY createdAt DESC LIMIT 8", [$memberId]);
+    // Unread notifications (this member, or a broadcast whose audience matches).
+    [$bc, $bcp] = notif_broadcast_clause($member);
+    $notes = db_all("SELECT * FROM notifications WHERE (memberId = ? OR $bc) AND (readAt = '' OR readAt IS NULL) ORDER BY createdAt DESC LIMIT 8", array_merge([$memberId], $bcp));
     $notes = array_map('public_notification', $notes);
 
     // Assigned mentor for the current session.
@@ -100,9 +102,43 @@ function member_update(array $p): array {
     return ['ok' => true];
 }
 
+/** Public, privacy-safe cohort leaderboard: top active NGG members by XP,
+ *  first name + last initial only (they're minors). Powers the Club page. */
+function public_leaderboard(array $p): array {
+    $limit = max(3, min(50, (int)($p['limit'] ?? 12)));
+    $rows = db_all("SELECT m.memberId, m.fullName, m.centre, COALESCE(s.xpTotal,0) xp, COALESCE(s.level,1) level, COALESCE(s.streak,0) streak, COALESCE(s.currentWeek,1) week
+                    FROM members m LEFT JOIN member_stats s ON s.memberId = m.memberId
+                    WHERE m.status = 'active' AND m.type = 'NGG'
+                    ORDER BY xp DESC, m.fullName ASC LIMIT " . $limit);
+    $out = []; $rank = 0;
+    foreach ($rows as $r) {
+        $rank++;
+        $parts = preg_split('/\s+/', trim((string)$r['fullName'])) ?: [];
+        $first = $parts[0] ?? 'Member';
+        $initial = count($parts) > 1 ? strtoupper(substr((string)end($parts), 0, 1)) . '.' : '';
+        $out[] = [
+            'rank' => $rank, 'memberId' => (string)$r['memberId'], 'first' => $first, 'initial' => $initial,
+            'centre' => (string)($r['centre'] ?? ''), 'xp' => (int)$r['xp'], 'level' => (int)$r['level'],
+            'streak' => (int)$r['streak'], 'week' => (int)$r['week'],
+        ];
+    }
+    return ['ok' => true, 'leaderboard' => $out, 'total' => count($out)];
+}
+
+/** SQL clause (+params) matching broadcast rows targeted to THIS member. A
+ *  broadcast with no/`all` audience reaches everyone; a centre/type audience
+ *  reaches only matching members — mirroring the emailed audience. */
+function notif_broadcast_clause(?array $member): array {
+    $centre = (string)($member['centre'] ?? '');
+    $type = (string)($member['type'] ?? '');
+    return ["(memberId = '*' AND (audience IS NULL OR audience = '' OR audience = 'all' OR audience = ? OR audience = ?))", [$centre, $type]];
+}
+
 function member_notifications(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
-    $rows = db_all("SELECT * FROM notifications WHERE memberId = ? OR memberId = '*' ORDER BY createdAt DESC LIMIT 50", [$memberId]);
+    $member = db_row('SELECT centre, type FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    [$bc, $bcp] = notif_broadcast_clause($member);
+    $rows = db_all("SELECT * FROM notifications WHERE memberId = ? OR $bc ORDER BY createdAt DESC LIMIT 50", array_merge([$memberId], $bcp));
     return ['ok' => true, 'notifications' => array_map('public_notification', $rows)];
 }
 
@@ -140,6 +176,89 @@ function member_state_set(array $p): array {
         ['stateValue' => $json, 'updatedAt' => now_iso()]
     );
     return ['ok' => true];
+}
+
+/** Member requests an email change → verification link to the NEW address. */
+function member_request_email_change(array $p): array {
+    $mid = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $new = strtolower(trim((string)($p['email'] ?? '')));
+    if (!filter_var($new, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
+    if ($new === strtolower((string)$m['email'])) return ['ok' => false, 'error' => 'same_email'];
+    if (db_row('SELECT id FROM members WHERE lower(email) = ? AND memberId != ? LIMIT 1', [$new, $mid])) return ['ok' => false, 'error' => 'email_taken'];
+    $token = rand_hex(20);
+    db_update('members', ['pendingEmail' => $new, 'emailChangeToken' => $token, 'emailChangeExpiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 86400), 'updatedAt' => now_iso()], ['id' => $m['id']]);
+    $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/api/member/confirm-email.php?m=' . rawurlencode($mid) . '&t=' . $token;
+    @send_mail($new, 'Confirm your new NGG email', email_template([
+        'title' => 'Confirm your new email',
+        'intro' => 'Hi ' . esc_html(explode(' ', (string)$m['fullName'])[0] ?: 'there') . ', confirm this address to make it your NGG sign-in email.',
+        'bodyHtml' => '<p style="margin:0 0 10px">If you didn\'t request this, ignore this email — nothing changes until you confirm. The link expires in 24 hours.</p>',
+        'ctaLabel' => 'Confirm this email →', 'ctaUrl' => $url,
+    ]));
+    audit('member.email.change_request', $mid, $mid, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'pending' => mask_email($new)];
+}
+
+/** Confirm an email change via the signed token (from the new address). */
+function member_confirm_email_change(array $p): array {
+    $mid = (string)($p['memberId'] ?? '');
+    $token = (string)($p['token'] ?? '');
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m || empty($m['emailChangeToken']) || $token === '') return ['ok' => false, 'error' => 'invalid'];
+    if (!hash_equals((string)$m['emailChangeToken'], $token)) return ['ok' => false, 'error' => 'invalid'];
+    if (strtotime((string)$m['emailChangeExpiresAt']) < time()) return ['ok' => false, 'error' => 'expired'];
+    $new = strtolower(trim((string)$m['pendingEmail']));
+    if (!filter_var($new, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'invalid'];
+    if (db_row('SELECT id FROM members WHERE lower(email) = ? AND memberId != ? LIMIT 1', [$new, $mid])) return ['ok' => false, 'error' => 'email_taken'];
+    db_update('members', ['email' => $new, 'pendingEmail' => '', 'emailChangeToken' => '', 'emailChangeExpiresAt' => '', 'updatedAt' => now_iso()], ['id' => $m['id']]);
+    audit('member.email.changed', $mid, $mid, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'email' => $new];
+}
+
+/** GDPR self-service export: everything we hold about this member, as JSON. */
+function member_export(array $p): array {
+    $mid = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT memberId, fullName, email, phone, type, status, role, centre, track, cohort, school, bio, socials, parentName, parentEmail, parentPhone, joinDate, createdAt FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    return ['ok' => true, 'export' => [
+        'profile' => $m,
+        'stats' => db_row('SELECT * FROM member_stats WHERE memberId = ?', [$mid]) ?: null,
+        'progress' => db_all('SELECT missionId, sessionId, status, submittedAt, verifiedAt FROM member_progress WHERE memberId = ?', [$mid]),
+        'journal' => db_all('SELECT mood, body, isPrivate, createdAt FROM journal WHERE memberId = ?', [$mid]),
+        'assignments' => db_all('SELECT assignmentId, answerText, status, grade, feedback, submittedAt FROM assignment_submissions WHERE memberId = ?', [$mid]),
+        'notifications' => db_all('SELECT title, body, kind, createdAt FROM notifications WHERE memberId = ?', [$mid]),
+        'devices' => db_all("SELECT ip, userAgent, createdAt, lastSeenAt FROM device_sessions WHERE memberId = ?", [$mid]),
+        'exportedAt' => now_iso(),
+    ]];
+}
+
+/** Erase a member: scrub PII, anonymise the row, revoke sessions. Kept (not
+ *  hard-deleted) for referential integrity of aggregate records. */
+function member_erase(string $mid, string $by, string $ip = ''): array {
+    $m = db_row('SELECT id, role FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if (strtolower((string)$m['role']) === 'super_admin') return ['ok' => false, 'error' => 'cannot_delete_super_admin'];
+    db_update('members', [
+        'fullName' => 'Deleted member', 'email' => '', 'phone' => '', 'photoUrl' => '', 'bio' => '',
+        'socials' => '', 'parentName' => '', 'parentEmail' => '', 'parentPhone' => '', 'school' => '',
+        'notes' => '', 'passwordHash' => '', 'totpSecret' => '', 'totpBackup' => '',
+        'pendingEmail' => '', 'emailChangeToken' => '', 'status' => 'deleted', 'updatedAt' => now_iso(),
+    ], ['id' => $m['id']]);
+    db_update('device_sessions', ['revokedAt' => now_iso()], ['memberId' => $mid]);
+    db_exec('DELETE FROM journal WHERE memberId = ?', [$mid]);
+    audit('member.erase', $by ?: null, $mid, [], $ip);
+    return ['ok' => true];
+}
+
+function member_delete_account(array $p): array {
+    $mid = (string)($p['memberId'] ?? '');
+    return member_erase($mid, $mid, (string)($p['ip'] ?? ''));
+}
+
+function admin_member_delete(array $p): array {
+    if (!admin_is_super($p)) return ['ok' => false, 'error' => 'forbidden'];
+    return member_erase((string)($p['memberId'] ?? ''), (string)($p['requesterId'] ?? ''), (string)($p['ip'] ?? ''));
 }
 
 function member_notification_read(array $p): array {

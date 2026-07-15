@@ -67,6 +67,19 @@ i[class^="ph"] { line-height: 1; }
 
 /* ---- Shell ---- */
 .aj-app { position: relative; min-height: 100dvh; max-width: 480px; margin: 0 auto; }
+/* Persistent offline notice — offline-first apps must SAY when they're offline. */
+.aj-offlinebar {
+  position: sticky; top: 0; z-index: 40;
+  margin: calc(var(--st, 0px)) 0 0;
+  padding: 9px 16px;
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(250, 204, 21, 0.16);
+  border-bottom: 1px solid rgba(250, 204, 21, 0.35);
+  color: var(--tx-90, #fff);
+  font-size: 12.5px; line-height: 1.35; font-weight: 600;
+  backdrop-filter: blur(8px);
+}
+.aj-offlinebar i { font-size: 16px; color: var(--gold, #ffce54); flex: none; }
 .aj-view { min-height: 100dvh; padding-top: calc(var(--st) + 14px); padding-bottom: calc(var(--nav-h) + var(--sb) + 24px); animation: viewIn .34s ease; }
 .aj-view.noNav { padding-bottom: calc(var(--sb) + 24px); }
 @keyframes viewIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }

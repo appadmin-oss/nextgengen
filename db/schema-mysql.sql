@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   token VARCHAR(128), memberId VARCHAR(64), email VARCHAR(200), otp VARCHAR(8),
   attempts INT DEFAULT 0, createdAt VARCHAR(40), expiresAt VARCHAR(40),
   verifiedAt VARCHAR(40), ip VARCHAR(64), userAgent VARCHAR(256),
+  purpose VARCHAR(16) DEFAULT 'login',
   INDEX idx_auth_token (token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -186,6 +187,8 @@ CREATE TABLE IF NOT EXISTS applications (
   role VARCHAR(64), why TEXT, email VARCHAR(200), status VARCHAR(32) DEFAULT 'new',
   program VARCHAR(16) DEFAULT '', photoUrl VARCHAR(512) DEFAULT '',
   phone VARCHAR(24) DEFAULT '', courses TEXT,
+  firstName VARCHAR(80) DEFAULT '', lastName VARCHAR(80) DEFAULT '',
+  otherName VARCHAR(80) DEFAULT '', dob VARCHAR(40) DEFAULT '',
   createdAt VARCHAR(40), ip VARCHAR(64),
   INDEX idx_apps_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -410,6 +413,8 @@ CREATE TABLE IF NOT EXISTS volunteers (
   volunteerId VARCHAR(32) NOT NULL UNIQUE,
   applicationId INT,
   fullName VARCHAR(255), email VARCHAR(200), phone VARCHAR(24) DEFAULT '',
+  firstName VARCHAR(80) DEFAULT '', lastName VARCHAR(80) DEFAULT '',
+  otherName VARCHAR(80) DEFAULT '', dob VARCHAR(40) DEFAULT '',
   role VARCHAR(24), courses TEXT,
   token VARCHAR(64) DEFAULT '', photoUrl VARCHAR(512) DEFAULT '',
   status VARCHAR(24) DEFAULT 'active',
@@ -426,6 +431,35 @@ CREATE TABLE IF NOT EXISTS volunteer_certs (
   milestone INT, hours INT,
   issuedAt VARCHAR(40),
   INDEX idx_certs_vol (volunteerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Attendance-taker rotation: one volunteer per centre on attendance duty each
+-- day (auto round-robin, admin-overridable), plus a per-volunteer points ledger
+-- that drives gamified levels + awards.
+CREATE TABLE IF NOT EXISTS attendance_duty (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  date VARCHAR(12) NOT NULL,
+  centre VARCHAR(48) NOT NULL,
+  volunteerId VARCHAR(32) NOT NULL,
+  source VARCHAR(16) DEFAULT 'auto',
+  assignedById VARCHAR(48) DEFAULT '',
+  completedAt VARCHAR(40) DEFAULT '',
+  takenCount INT DEFAULT 0,
+  createdAt VARCHAR(40),
+  UNIQUE KEY idx_duty_unique (date, centre),
+  INDEX idx_duty_vol (volunteerId),
+  INDEX idx_duty_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS volunteer_points (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  volunteerId VARCHAR(32) NOT NULL,
+  kind VARCHAR(32) NOT NULL,
+  points INT DEFAULT 0,
+  date VARCHAR(12) DEFAULT '',
+  note VARCHAR(255) DEFAULT '',
+  createdAt VARCHAR(40),
+  INDEX idx_vpoints_vol (volunteerId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Volunteer hierarchy tiers — the volunteer analogue of centres. code → the
@@ -503,3 +537,76 @@ INSERT INTO schema_version (version) VALUES (21) ON DUPLICATE KEY UPDATE version
 ALTER TABLE summer_students ADD COLUMN photoToken VARCHAR(64) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (22) ON DUPLICATE KEY UPDATE version = version;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Migrations 23–33 parity — the items the SQLite migrations add that this
+-- mirror was missing. Declared as trailing ALTER/CREATE so the runtime
+-- auto-migrator (db_apply_mysql_schema) applies them to EXISTING databases by
+-- replaying this file (a CREATE would skip an already-present table). Every
+-- future post-baseline column MUST be added here as a trailing ALTER too.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- 24: broadcast audience targeting
+ALTER TABLE notifications ADD COLUMN audience VARCHAR(64) DEFAULT '';
+
+-- 25: 2FA one-time backup codes (hashed JSON)
+ALTER TABLE members ADD COLUMN totpBackup TEXT;
+
+-- 26: student completion certificates + revocation on both cert kinds
+ALTER TABLE volunteer_certs ADD COLUMN revokedAt VARCHAR(40) DEFAULT '';
+CREATE TABLE IF NOT EXISTS student_certs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  certId VARCHAR(64) UNIQUE NOT NULL, studentId VARCHAR(64) NOT NULL, cohortId VARCHAR(64) DEFAULT '',
+  daysPresent INT DEFAULT 0, attendanceRate INT DEFAULT 0,
+  issuedAt VARCHAR(40), revokedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_stucert_student (studentId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 27: attendance check-out
+ALTER TABLE attendance ADD COLUMN checkOutAt VARCHAR(40) DEFAULT '';
+
+-- 28: per-centre capacity (0 = unlimited)
+ALTER TABLE centres ADD COLUMN capacity INT DEFAULT 0;
+
+-- 29: verified self-service email change
+ALTER TABLE members ADD COLUMN pendingEmail VARCHAR(200) DEFAULT '';
+ALTER TABLE members ADD COLUMN emailChangeToken VARCHAR(191) DEFAULT '';
+ALTER TABLE members ADD COLUMN emailChangeExpiresAt VARCHAR(40) DEFAULT '';
+
+-- 30: peer interaction — reactions + moderated comments
+CREATE TABLE IF NOT EXISTS post_reactions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  postId VARCHAR(64) NOT NULL, memberId VARCHAR(64) NOT NULL, emoji VARCHAR(16) NOT NULL,
+  createdAt VARCHAR(40),
+  UNIQUE KEY uq_reaction (postId, memberId),
+  INDEX idx_reactions_post (postId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS post_comments (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  commentId VARCHAR(64) UNIQUE NOT NULL,
+  postId VARCHAR(64) NOT NULL, memberId VARCHAR(64) NOT NULL, memberName VARCHAR(255) DEFAULT '',
+  body TEXT NOT NULL, status VARCHAR(24) DEFAULT 'pending',
+  createdAt VARCHAR(40), moderatedBy VARCHAR(64) DEFAULT '', moderatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_comments_post (postId, status), INDEX idx_comments_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 31: donations (Paystack) + per-member extra capabilities
+CREATE TABLE IF NOT EXISTS donations (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  reference VARCHAR(191) UNIQUE NOT NULL,
+  email VARCHAR(200), name VARCHAR(255), amount BIGINT DEFAULT 0, currency VARCHAR(8) DEFAULT 'NGN',
+  status VARCHAR(24) DEFAULT 'pending', channel VARCHAR(32) DEFAULT '', message TEXT,
+  createdAt VARCHAR(40), paidAt VARCHAR(40) DEFAULT '',
+  INDEX idx_donations_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE members ADD COLUMN capsExtra TEXT;
+
+INSERT INTO schema_version (version) VALUES (33) ON DUPLICATE KEY UPDATE version = version;
+
+-- 34: sex on every intake (applications + volunteers + summer students)
+ALTER TABLE applications ADD COLUMN sex VARCHAR(24) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN sex VARCHAR(24) DEFAULT '';
+ALTER TABLE summer_students ADD COLUMN sex VARCHAR(24) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (34) ON DUPLICATE KEY UPDATE version = version;

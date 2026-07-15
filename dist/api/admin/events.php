@@ -13,6 +13,12 @@ if ($method === 'GET') {
 
 if ($method === 'POST') {
     $body = read_json_body();
+    if (($body['action'] ?? '') === 'attendance') {
+        $res = gs_call('admin.event.attendance', ['requesterId' => $s['mid'], 'eventId' => $body['eventId'] ?? '', 'memberId' => $body['memberId'] ?? '', 'clear' => !empty($body['clear']), 'ip' => client_ip()]);
+        if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+        unset($res['ok']);
+        json_ok($res);
+    }
     $res = gs_call('admin.events.upsert', [
         'requesterId' => $s['mid'],
         'data'        => $body,

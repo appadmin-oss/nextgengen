@@ -204,7 +204,7 @@ function SectionHead({ eyebrow, title, sub, align = "left" }) {
   const baseStyle = align === "center" ? { margin: "0 auto 48px", textAlign: "center", alignItems: "center" } : {};
   return (
     <div className="section-h reveal" data-reveal style={baseStyle}>
-      {eyebrow && <span className="eyebrow reveal" data-reveal style={{ color: "var(--gold-500)", "--reveal-delay": "0ms" }}>{eyebrow}</span>}
+      {eyebrow && <span className="eyebrow reveal" data-reveal style={{ color: "var(--eyebrow-fg, var(--gold-700))", "--reveal-delay": "0ms" }}>{eyebrow}</span>}
       <h2 className="reveal" data-reveal style={{ "--reveal-delay": "120ms" }}>{title}</h2>
       {sub && <p className="reveal" data-reveal style={{ fontSize: 17, color: "var(--ink-500)", margin: 0, lineHeight: 1.5, maxWidth: 640, "--reveal-delay": "240ms" }}>{sub}</p>}
     </div>
@@ -317,12 +317,13 @@ function TopNav({ page, setPage }) {
       { id: "club",    label: "NGGC",             desc: "Identity society",         icon: "◐" },
       { id: "book",    label: "The Anchor book", desc: "Field manual",              icon: "▢" },
     ]},
-    { id: "stay", kind: "mega", label: "The room", match: ["blog","media","volunteers","parents"], items: [
+    { id: "stay", kind: "mega", label: "The room", match: ["blog","media","volunteers","parents","contact"], items: [
       { id: "blog",       label: "The Journal",     desc: "Stories + essays",        icon: "✎" },
       { id: "media",      label: "Media room",      desc: "Films · podcast · reels", icon: "▶" },
       { id: "mentors",    label: "The mentors",     desc: "Meet the mentor circle",  icon: "◐" },
       { id: "volunteers", label: "Become a mentor", desc: "Volunteer with NGG",      icon: "✚" },
       { id: "parents",    label: "For parents",     desc: "Safeguarding · FAQ",      icon: "♡" },
+      { id: "contact",    label: "Contact",         desc: "Talk to a human",         icon: "✆" },
     ]},
   ];
 
@@ -330,7 +331,29 @@ function TopNav({ page, setPage }) {
   const [mega, setMega]       = React.useState(null);   // active mega panel id
   const [scrolled, setScroll] = React.useState(false);
   const navRef = React.useRef(null);
+  const drawerRef = React.useRef(null);
+  const burgerRef = React.useRef(null);
   const megaTimer = React.useRef(0);
+
+  // Mobile drawer focus management — trap Tab inside the open drawer and
+  // restore focus to the burger on close (parity with the other modals).
+  React.useEffect(() => {
+    if (!open) return;
+    const panel = drawerRef.current;
+    if (!panel) return;
+    const first = panel.querySelector('button,a[href],input,[tabindex]:not([tabindex="-1"])');
+    if (first) setTimeout(() => { try { first.focus(); } catch (_) {} }, 40);
+    const onKey = (e) => {
+      if (e.key !== "Tab") return;
+      const f = panel.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])');
+      if (!f.length) return;
+      const a = f[0], b = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); b.focus(); }
+      else if (!e.shiftKey && document.activeElement === b) { e.preventDefault(); a.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); if (burgerRef.current) { try { burgerRef.current.focus(); } catch (_) {} } };
+  }, [open]);
 
   // Scroll-state — apply solid background when not at top.
   React.useEffect(() => {
@@ -376,7 +399,7 @@ function TopNav({ page, setPage }) {
     <React.Fragment>
       <div ref={navRef} role="banner" className={"topnav" + (scrolled ? " is-scrolled" : "") + (mega ? " has-mega" : "")}>
         <div className="topnav-inner">
-          <a className="brand" onClick={() => go("home")} role="link" tabIndex={0} aria-label="Next Generation Genius — Home">
+          <a className="brand" href="/" onClick={(e) => { e.preventDefault(); go("home"); }} aria-label="Next Generation Genius — Home">
             <BrandLogo size={42}/>
             <div className="brand-word">
               <b>Next Generation Genius</b>
@@ -426,6 +449,7 @@ function TopNav({ page, setPage }) {
               <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("join")}>Apply →</button>
             </Magnetic>
             <button
+              ref={burgerRef}
               className={"nav-burger" + (open ? " is-open" : "")}
               onClick={() => setOpen(v => !v)}
               aria-label={open ? "Close menu" : "Open menu"}
@@ -483,7 +507,7 @@ function TopNav({ page, setPage }) {
       {/* Mobile drawer */}
       <div className={"mobile-drawer" + (open ? " is-open" : "")} role="dialog" aria-modal="true">
         <div className="mobile-drawer-scrim" onClick={() => setOpen(false)}/>
-        <div className="mobile-drawer-panel">
+        <div className="mobile-drawer-panel" ref={drawerRef}>
           <div className="mobile-drawer-head">
             <div style={{display:"flex", alignItems:"center", gap:10}}>
               <BrandLogo size={34}/>
@@ -927,6 +951,53 @@ function Sparkline({ data, color = "var(--gold-500)", w = 120, h = 36, fill = fa
    Used wherever a person's photo is set (admin enrol, member editor, gate
    registration). The site TAKES the picture; uploading a file or pasting a
    link are secondary options. Editors can re-take/re-upload any time. */
+/* Cloudinary delivery-URL enhancement used across every photo taker. Kept in
+   one place so the capture preview, the compare toggle and the fallbacks all
+   agree on the exact transform. e_improve auto-fixes colour/lighting and the
+   face-centred crop tidies the framing — both are FREE (no add-on). The
+   background swap (e_background_removal) is deliberately NOT here: it is a paid
+   add-on and runs server-side behind the credit guard, never on a client URL. */
+const CLD_ENHANCE = "c_thumb,g_face,w_600,h_750,e_improve,q_auto";
+const CLD_PLAIN   = "c_thumb,g_face,w_600,h_750,q_auto"; // same framing, no e_improve → the "before"
+
+function cldEnhance(url) {
+  return url && url.indexOf("/upload/") !== -1 ? url.replace("/upload/", "/upload/" + CLD_ENHANCE + "/") : url;
+}
+// Swap (or insert) the transform segment right after /upload/. Leaves non-
+// Cloudinary URLs (pasted links) untouched so the compare simply hides itself.
+function cldWith(url, tf) {
+  if (!url) return url;
+  const i = url.indexOf("/upload/");
+  if (i === -1) return url;
+  let tail = url.slice(i + 8);
+  const slash = tail.indexOf("/");
+  const seg = slash === -1 ? tail : tail.slice(0, slash);
+  if (slash !== -1 && !/^v\d+$/.test(seg) && /[,_]/.test(seg)) tail = tail.slice(slash + 1); // drop existing transform
+  return url.slice(0, i + 8) + (tf ? tf + "/" : "") + tail;
+}
+
+/* Before/after preview with a reverse button, like Canva's edit toggle. Shows
+   the enhanced image by default; press ⤺ to peek at the original, press again
+   to restore. Only appears for Cloudinary uploads (there's nothing to compare
+   for a pasted link). Purely a view — the stored value stays the enhanced URL. */
+function PhotoCompare({ url, radius = "0", onError }) {
+  const [orig, setOrig] = React.useState(false);
+  const canCompare = !!(url && url.indexOf("/upload/") !== -1);
+  React.useEffect(() => { setOrig(false); }, [url]); // a fresh capture resets to "enhanced"
+  const shown = orig && canCompare ? cldWith(url, CLD_PLAIN) : url;
+  const pill = { position: "absolute", top: 8, left: 8, fontSize: 10.5, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", padding: "3px 8px", borderRadius: 999, background: orig ? "rgba(0,0,0,.6)" : "rgba(245,176,38,.92)", color: orig ? "#fff" : "#2b2100", pointerEvents: "none" };
+  const btn = { position: "absolute", bottom: 8, right: 8, width: 34, height: 34, borderRadius: "50%", border: "none", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 17, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1, boxShadow: "0 2px 8px rgba(0,0,0,.35)" };
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%", borderRadius: radius, overflow: "hidden" }}>
+      <img src={shown} alt={orig ? "Original photo" : "Enhanced photo"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onError={onError}/>
+      {canCompare && (<>
+        <span style={pill}>{orig ? "Original" : "Enhanced"}</span>
+        <button type="button" onClick={() => setOrig(o => !o)} style={btn} title={orig ? "Show enhanced" : "Show original"} aria-label={orig ? "Show enhanced photo" : "Show original photo"}>⤺</button>
+      </>)}
+    </div>
+  );
+}
+
 function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   const [mode, setMode] = React.useState("idle"); // idle | camera | link
   const [busy, setBusy] = React.useState(false);
@@ -954,8 +1025,8 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     try {
       const file = blob instanceof File ? blob : new File([blob], name || "headshot.jpg", { type: "image/jpeg" });
       const up = await NGGApi.uploadFile(file, "headshot");
-      // Face-centred crop + brighten (Cloudinary URL transform).
-      onChange(up.url.replace("/upload/", "/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/"));
+      // Face-centred crop + auto colour/lighting (Cloudinary URL transform).
+      onChange(cldEnhance(up.url));
       stop(); setMode("idle");
     } catch (e) {
       setErr((e.code || /upload/.test(e.message || "")) ? "Uploads aren't configured on this server — paste an image link instead." : "Couldn't upload — check the connection and try again.");
@@ -980,7 +1051,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
       <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flex: "0 0 auto", background: "var(--bg-sunken, #f4f4f0)", border: "1px solid rgba(12,20,50,0.14)", display: "grid", placeItems: "center", fontSize: size / 3, color: "var(--ink-400, #93939a)" }}>
         {mode === "camera"
           ? <video ref={videoRef} playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
-          : value ? <img src={value} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : "📷"}
+          : value ? <PhotoCompare url={value} onError={e => { e.target.style.display = "none"; }}/> : "📷"}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         {mode === "camera" ? (

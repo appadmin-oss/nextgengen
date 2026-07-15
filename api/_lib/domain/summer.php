@@ -187,17 +187,44 @@ function admin_summer_enroll(array $p): array {
     $handle = $base . '-' . strtolower(substr($token, -4));
     if (db_row('SELECT id FROM summer_students WHERE handle = ?', [$handle])) $handle .= '-' . $n;
 
+    $centre = substr((string)($d['centre'] ?? ''), 0, 48);
+    // Waitlist when the centre is at capacity (unless an admin forces it).
+    $waitlisted = empty($p['force']) && function_exists('centre_is_full') && centre_is_full($centre, $c['cohortId']);
     db_insert('summer_students', [
         'studentId' => $studentId, 'cohortId' => $c['cohortId'], 'token' => $token, 'handle' => $handle,
-        'fullName' => $name, 'age' => $age, 'centre' => substr((string)($d['centre'] ?? ''), 0, 48),
+        'fullName' => $name, 'age' => $age, 'centre' => $centre,
         'track' => substr((string)($d['track'] ?? ''), 0, 64), 'photoUrl' => (string)($d['photoUrl'] ?? ''),
         'guardianName' => substr((string)($d['guardianName'] ?? ''), 0, 255), 'guardianPhone' => substr((string)($d['guardianPhone'] ?? ''), 0, 48),
-        'status' => 'active', 'notes' => substr((string)($d['notes'] ?? ''), 0, 2000),
+        'parentEmail' => substr(trim((string)($d['parentEmail'] ?? '')), 0, 160),
+        'status' => $waitlisted ? 'waitlisted' : 'active', 'notes' => substr((string)($d['notes'] ?? ''), 0, 2000),
         'enrolledAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
     db_update('qr_codes', ['status' => 'assigned', 'studentId' => $studentId, 'assignedName' => $handle, 'assignedAt' => now_iso(), 'cohortId' => $c['cohortId']], ['token' => $token]);
-    audit('summer.enroll', $g['requester']['memberId'], $studentId, ['token' => $token, 'handle' => $handle], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'studentId' => $studentId, 'handle' => $handle, 'token' => $token];
+    audit('summer.enroll', $g['requester']['memberId'], $studentId, ['token' => $token, 'handle' => $handle, 'waitlisted' => $waitlisted], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'studentId' => $studentId, 'handle' => $handle, 'token' => $token, 'waitlisted' => $waitlisted];
+}
+
+/** Bulk enrol students from parsed CSV rows. Each row reuses admin_summer_enroll
+ *  (QR binding, capacity/waitlist, parentEmail). Returns per-row results. */
+function admin_summer_import(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $rows = is_array($p['rows'] ?? null) ? $p['rows'] : [];
+    if (!$rows) return ['ok' => false, 'error' => 'no_rows'];
+    if (count($rows) > 500) return ['ok' => false, 'error' => 'too_many_rows'];
+    $ok = 0; $failed = 0; $waitlisted = 0; $results = [];
+    foreach ($rows as $i => $r) {
+        if (!is_array($r)) { $failed++; $results[] = ['row' => $i + 1, 'ok' => false, 'error' => 'bad_row']; continue; }
+        $res = admin_summer_enroll(['requesterId' => $p['requesterId'] ?? '', 'ip' => $p['ip'] ?? '', 'data' => [
+            'fullName' => (string)($r['fullName'] ?? ''), 'age' => (int)($r['age'] ?? 0),
+            'centre' => (string)($r['centre'] ?? ''), 'track' => (string)($r['track'] ?? ''),
+            'guardianName' => (string)($r['guardianName'] ?? ''), 'guardianPhone' => (string)($r['guardianPhone'] ?? ''),
+            'parentEmail' => (string)($r['parentEmail'] ?? ''),
+        ]]);
+        if (!empty($res['ok'])) { $ok++; if (!empty($res['waitlisted'])) $waitlisted++; $results[] = ['row' => $i + 1, 'ok' => true, 'studentId' => $res['studentId'], 'waitlisted' => !empty($res['waitlisted'])]; }
+        else { $failed++; $results[] = ['row' => $i + 1, 'ok' => false, 'error' => $res['error'] ?? 'failed', 'name' => (string)($r['fullName'] ?? '')]; }
+    }
+    audit('summer.import', $g['requester']['memberId'], '', ['ok' => $ok, 'failed' => $failed], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'enrolled' => $ok, 'failed' => $failed, 'waitlisted' => $waitlisted, 'results' => $results];
 }
 
 function admin_summer_students_list(array $p): array {
@@ -215,16 +242,182 @@ function admin_summer_student_status(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $studentId = (string)($p['studentId'] ?? '');
     $status = (string)($p['status'] ?? '');
-    if (!in_array($status, ['active', 'withdrawn', 'graduated', 'promoted'], true)) return ['ok' => false, 'error' => 'bad_status'];
+    if (!in_array($status, ['active', 'withdrawn', 'graduated', 'promoted', 'waitlisted'], true)) return ['ok' => false, 'error' => 'bad_status'];
     $n = db_update('summer_students', ['status' => $status, 'updatedAt' => now_iso()], ['studentId' => $studentId]);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('summer.student.status', $g['requester']['memberId'], $studentId, ['status' => $status], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+    // Graduating a student mints their verifiable completion certificate.
+    $cert = null;
+    if ($status === 'graduated') { $c = student_maybe_issue_completion_cert($studentId); if ($c) $cert = ['certId' => $c['certId']]; }
+    return ['ok' => true, 'cert' => $cert];
+}
+
+// ── Check-in state emails ────────────────────────────────────────────────────
+// On a NEW check-in we send the person a note about where they stand — a nudge
+// when they're building the habit, an award-focused message when they're doing
+// well and a milestone is close. Sent SYNCHRONOUSLY (the production host has no
+// SSH/cron), best-effort, and gated by the `checkin_state_emails` setting so an
+// admin can switch it off. Default: on.
+function checkin_emails_enabled(): bool {
+    $v = setting_raw('checkin_state_emails');
+    if ($v === null || $v === '') return true; // default on
+    return !in_array(strtolower(trim($v)), ['0', 'off', 'false', 'no'], true);
+}
+
+/** Volunteer just checked in → mail them their standing. When a milestone cert
+ *  was minted this very check-in, that certificate email already IS the award
+ *  message, so we don't double-send here. */
+function checkin_volunteer_email(array $v, int $sessions, ?array $cert): void {
+    if ($cert) return; // the cert email (award) was already sent this check-in
+    if (!checkin_emails_enabled()) return;
+    $to = trim((string)($v['email'] ?? ''));
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) return;
+    $first = esc_html(explode(' ', trim((string)($v['fullName'] ?? '')))[0] ?: 'there');
+    $game = function_exists('volunteer_game_state')
+        ? volunteer_game_state((string)$v['volunteerId'])
+        : ['streak' => 0, 'points' => 0];
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $url = $origin . '/volunteer';
+    // Next service certificate milestone.
+    $next = null; foreach (VOL_MILESTONES as $m) { if ($m > $sessions) { $next = $m; break; } }
+
+    if ($next !== null && ($next - $sessions) <= 2) {
+        // Doing well and the award is within reach — make it about the award.
+        $left = $next - $sessions;
+        $subject = "You're almost at your {$next}-session award";
+        $html = email_template([
+            'title' => 'The award is close',
+            'intro' => "Checked in, {$first} — that's {$sessions} sessions of service. Just " . ($left === 1 ? 'one more' : "{$left} more") . " to unlock your {$next}-session certificate.",
+            'bodyHtml' => '<p style="margin:0 0 10px">Show up ' . ($left === 1 ? 'one more time' : "{$left} more times") . ' and the certificate mints automatically — verifiable, yours to share, and it lands right here in your inbox.</p>'
+                . (((int)($game['streak'] ?? 0)) > 1 ? '<p style="margin:0;color:#8A93A6;font-size:13px">Current streak: ' . (int)$game['streak'] . ' days · ' . (int)($game['points'] ?? 0) . ' service points.</p>' : ''),
+            'ctaLabel' => 'See my progress →', 'ctaUrl' => $url,
+        ]);
+    } elseif (((int)($game['streak'] ?? 0)) > 1) {
+        // On a roll — motivate, keep the streak alive.
+        $subject = "Checked in — {$game['streak']}-day streak";
+        $html = email_template([
+            'title' => 'You showed up',
+            'intro' => "Good to see you, {$first}. That's {$sessions} sessions logged and a {$game['streak']}-day streak going.",
+            'bodyHtml' => '<p style="margin:0 0 10px">You keep this place in order. Every day you take the roll builds toward your next service award — come back tomorrow and keep it alive.</p>',
+            'ctaLabel' => 'See my progress →', 'ctaUrl' => $url,
+        ]);
+    } else {
+        // Gentle nudge — build the habit.
+        $subject = 'Checked in — thank you';
+        $html = email_template([
+            'title' => 'You showed up',
+            'intro' => "Good to see you, {$first}. That's {$sessions} sessions of service logged.",
+            'bodyHtml' => '<p style="margin:0 0 10px">Consistency is the whole game — come back tomorrow and start a streak. Your service adds up to a certificate you can show anywhere.</p>',
+            'ctaLabel' => 'See my progress →', 'ctaUrl' => $url,
+        ]);
+    }
+    @send_mail($to, $subject, $html);
+}
+
+/** Student just checked in → mail the guardian a warm note about where their
+ *  child stands: a milestone celebration, or a gentle "they made it today". */
+function checkin_student_email(array $s, int $days): void {
+    if (!checkin_emails_enabled()) return;
+    $to = trim((string)($s['parentEmail'] ?? ''));
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) return;
+    $first = esc_html(explode(' ', trim((string)($s['fullName'] ?? '')))[0] ?: 'your child');
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $url = $origin . '/q/' . rawurlencode((string)($s['token'] ?? ''));
+    $milestones = [1, 5, 10, 15, 20];
+
+    if ($days === 1) {
+        $subject = "{$first} checked in — day one";
+        $intro = "{$first} just checked in for their first day at NGG Summer School.";
+        $body = "<p style=\"margin:0 0 10px\">We're glad they're here. You'll get a note as they reach each milestone — the goal is a certificate of completion at the end of the programme.</p>";
+    } elseif (in_array($days, $milestones, true)) {
+        $subject = "{$first} has attended {$days} days";
+        $intro = "{$first} just checked in — that's {$days} days at NGG Summer School.";
+        $body = "<p style=\"margin:0 0 10px\">Steady attendance is how the growth compounds. {$first} is building the habit that earns the certificate of completion.</p>";
+    } else {
+        $subject = "{$first} checked in today";
+        $intro = "{$first} arrived and checked in at NGG Summer School today.";
+        $body = "<p style=\"margin:0 0 10px\">Thank you for getting them here. Every day counts toward the certificate of completion — see the days so far on their page.</p>";
+    }
+    $html = email_template([
+        'title' => 'Checked in', 'intro' => $intro, 'bodyHtml' => $body,
+        'ctaLabel' => "Open {$first}'s page →", 'ctaUrl' => $url,
+        'footNote' => "You are receiving this because you are {$first}'s guardian at Next Generation Genius.",
+    ]);
+    @send_mail($to, $subject, $html);
+}
+
+// ── Completion certificates (verifiable, guardian-facing) ───────────────────
+/** Mint a student's completion certificate once, from their attendance record,
+ *  and email the guardian the verifiable link. Returns the cert row or null. */
+function student_maybe_issue_completion_cert(string $studentId): ?array {
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
+    if (!$s) return null;
+    $existing = db_row('SELECT * FROM student_certs WHERE studentId = ? LIMIT 1', [$studentId]);
+    if ($existing) return $existing; // once per student
+
+    $days = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$studentId])['c'] ?? 0);
+    $sessionDays = (int)(db_row('SELECT COUNT(DISTINCT date) c FROM attendance WHERE cohortId = ?', [(string)$s['cohortId']])['c'] ?? 0);
+    $rate = $sessionDays ? (int)round($days / $sessionDays * 100) : 0;
+    $certId = 'NGGS-' . strtoupper(rand_hex(5));
+    while (db_row('SELECT id FROM student_certs WHERE certId = ?', [$certId])) $certId = 'NGGS-' . strtoupper(rand_hex(5));
+    db_insert('student_certs', ['certId' => $certId, 'studentId' => $studentId, 'cohortId' => (string)$s['cohortId'], 'daysPresent' => $days, 'attendanceRate' => $rate, 'issuedAt' => now_iso()]);
+
+    $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/cert/' . $certId;
+    $first = esc_html(explode(' ', trim((string)$s['fullName']))[0] ?: 'your child');
+    if (!empty($s['parentEmail']) && filter_var((string)$s['parentEmail'], FILTER_VALIDATE_EMAIL)) {
+        @send_mail((string)$s['parentEmail'], "{$s['fullName']}'s NGG certificate of completion", email_template([
+            'title' => 'Certificate of completion',
+            'intro' => "Congratulations — {$first} has completed NGG Summer School with {$days} days of attendance.",
+            'bodyHtml' => '<p style="margin:0 0 10px">Their certificate is live, verifiable and yours to share — print it or link it anywhere.</p>',
+            'ctaLabel' => 'Open the certificate →', 'ctaUrl' => $url,
+        ]));
+    }
+    event_emit('student.completion', ['ref' => $studentId, 'name' => (string)$s['fullName'], 'days' => $days, 'cert' => $certId]);
+    return db_row('SELECT * FROM student_certs WHERE certId = ? LIMIT 1', [$certId]);
+}
+
+/** Admin: issue completion certs in bulk for a cohort (graduated students, or
+ *  all active when none are marked graduated). Returns how many were minted. */
+function admin_summer_certs_issue(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $c = summer_ensure_cohort();
+    $cohortId = trim((string)($p['cohortId'] ?? '')) ?: $c['cohortId'];
+    $status = in_array((string)($p['status'] ?? 'graduated'), ['graduated', 'active', 'promoted'], true) ? (string)($p['status'] ?? 'graduated') : 'graduated';
+    $rows = db_all('SELECT studentId FROM summer_students WHERE cohortId = ? AND status = ?', [$cohortId, $status]);
+    $issued = 0;
+    foreach ($rows as $r) {
+        if (db_row('SELECT id FROM student_certs WHERE studentId = ?', [$r['studentId']])) continue;
+        if (student_maybe_issue_completion_cert((string)$r['studentId'])) $issued++;
+    }
+    audit('summer.certs.issue', $g['requester']['memberId'], $cohortId, ['status' => $status, 'issued' => $issued], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'issued' => $issued, 'considered' => count($rows)];
+}
+
+/** Admin: revoke a certificate (student NGGS- or volunteer NGGV-). */
+function admin_cert_revoke(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $certId = strtoupper(trim((string)($p['certId'] ?? '')));
+    $on = empty($p['restore']);
+    $val = $on ? now_iso() : '';
+    $table = strpos($certId, 'NGGV-') === 0 ? 'volunteer_certs' : 'student_certs';
+    $n = db_update($table, ['revokedAt' => $val], ['certId' => $certId]);
+    if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    audit($on ? 'cert.revoke' : 'cert.restore', $g['requester']['memberId'], $certId, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'revoked' => $on];
 }
 
 // ── Attendance check-in (scan a card) — used by the kiosk in Phase 2 ─────────
 function summer_checkin(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    // A desk-password KIOSK session has no staff member/cap — but the caller
+    // (public gate route) has already verified the gate token + kiosk session
+    // bound to it, so it passes gateAuthorized. Everyone else must hold the
+    // 'summer' cap. byId records who/what took the roll for the audit trail.
+    if (!empty($p['gateAuthorized'])) {
+        $byId = substr((string)($p['byId'] ?? 'kiosk'), 0, 64) ?: 'kiosk';
+    } else {
+        $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+        $byId = (string)$g['requester']['memberId'];
+    }
     $token = trim((string)($p['token'] ?? ''));
     $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
     if (!$qr || empty($qr['studentId'])) return ['ok' => false, 'error' => 'qr_unassigned'];
@@ -238,11 +431,12 @@ function summer_checkin(array $p): array {
         $already = (bool)$existing;
         $cert = null;
         if (!$already) {
-            db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $g['requester']['memberId'], 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
-            audit('volunteer.checkin', $g['requester']['memberId'], $v['volunteerId'], ['date' => $today], (string)($p['ip'] ?? ''));
+            db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
+            audit('volunteer.checkin', $byId, $v['volunteerId'], ['date' => $today], (string)($p['ip'] ?? ''));
             // Service ledger: a milestone day mints the certificate right here.
             $sessions = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$v['volunteerId']])['c'] ?? 0);
             $cert = volunteer_maybe_issue_cert($v, $sessions);
+            checkin_volunteer_email($v, $sessions, $cert);
         }
         return ['ok' => true, 'already' => $already, 'student' => volunteer_public($v), 'certIssued' => $cert];
     }
@@ -250,10 +444,68 @@ function summer_checkin(array $p): array {
     $existing = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$s['studentId'], $today]);
     $already = (bool)$existing;
     if (!$already) {
-        db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $g['requester']['memberId'], 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
-        audit('summer.checkin', $g['requester']['memberId'], $s['studentId'], ['date' => $today], (string)($p['ip'] ?? ''));
+        db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
+        audit('summer.checkin', $byId, $s['studentId'], ['date' => $today], (string)($p['ip'] ?? ''));
+        $days = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$s['studentId']])['c'] ?? 0);
+        checkin_student_email($s, $days);
     }
     return ['ok' => true, 'already' => $already, 'student' => summer_student_public($s)];
+}
+
+/** Stamp a departure time on today's attendance row (optional dwell tracking).
+ *  Same auth model as check-in (gate token or 'summer' cap). */
+function summer_checkout(array $p): array {
+    if (!empty($p['gateAuthorized'])) {
+        $byId = substr((string)($p['byId'] ?? 'kiosk'), 0, 64) ?: 'kiosk';
+    } else {
+        $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+        $byId = (string)$g['requester']['memberId'];
+    }
+    $token = trim((string)($p['token'] ?? ''));
+    $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
+    if (!$qr || empty($qr['studentId'])) return ['ok' => false, 'error' => 'qr_unassigned'];
+    $today = gmdate('Y-m-d');
+    $row = db_row('SELECT * FROM attendance WHERE studentId = ? AND date = ?', [(string)$qr['studentId'], $today]);
+    if (!$row) return ['ok' => false, 'error' => 'not_checked_in'];
+    if (!empty($row['checkOutAt'])) return ['ok' => true, 'already' => true, 'checkOutAt' => $row['checkOutAt']];
+    db_update('attendance', ['checkOutAt' => now_iso()], ['id' => $row['id']]);
+    audit('summer.checkout', $byId, (string)$qr['studentId'], ['date' => $today], (string)($p['ip'] ?? ''));
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [(string)$qr['studentId']]);
+    return ['ok' => true, 'already' => false, 'checkOutAt' => now_iso(), 'student' => $s ? summer_student_public($s) : null];
+}
+
+/** Email guardians of students absent today (or one named student) a gentle
+ *  "we missed them" nudge — the manual follow-up the at-risk list points to. */
+function admin_summer_absence_alert(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $c = summer_ensure_cohort();
+    $cid = trim((string)($p['cohortId'] ?? '')) ?: $c['cohortId'];
+    $today = gmdate('Y-m-d');
+    $one = trim((string)($p['studentId'] ?? ''));
+    if ($one !== '') {
+        $rows = db_all("SELECT * FROM summer_students WHERE studentId = ? LIMIT 1", [$one]);
+    } else {
+        // Active students in the cohort with no attendance row today.
+        $rows = db_all("SELECT * FROM summer_students WHERE cohortId = ? AND status = 'active'
+                        AND studentId NOT IN (SELECT studentId FROM attendance WHERE date = ?) ORDER BY fullName LIMIT 300", [$cid, $today]);
+    }
+    $sent = 0; $skipped = 0;
+    foreach ($rows as $s) {
+        $to = trim((string)($s['parentEmail'] ?? ''));
+        if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) { $skipped++; continue; }
+        $first = esc_html(explode(' ', trim((string)$s['fullName']))[0] ?: 'your child');
+        $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/q/' . rawurlencode((string)$s['token']);
+        $ok = @send_mail($to, "We missed {$first} today", email_template([
+            'title' => 'We missed them today',
+            'intro' => "{$first} wasn't checked in at NGG Summer School today.",
+            'bodyHtml' => '<p style="margin:0 0 10px">If everything\'s okay, no need to reply — but consistent attendance is how the growth compounds, and we\'d love to see them next session.</p>',
+            'ctaLabel' => "See {$first}'s attendance →", 'ctaUrl' => $url,
+            'footNote' => "You are receiving this because you are {$first}'s guardian at Next Generation Genius.",
+        ]));
+        if ($ok) $sent++; else $skipped++;
+    }
+    audit('summer.absence.alert', $g['requester']['memberId'], $one ?: $cid, ['sent' => $sent, 'skipped' => $skipped], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'sent' => $sent, 'skipped' => $skipped, 'absent' => count($rows)];
 }
 
 // ── Attendance analytics (Phase 2 dashboard) ────────────────────────────────
@@ -408,8 +660,11 @@ function public_summer_profile(array $p): array {
         if ($qr && !empty($qr['studentId'])) {
             $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
             if (!$s) {
-                // Volunteer tokens serve the volunteer's digital ID here.
-                $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$qr['studentId']]);
+                // Volunteer tokens serve the volunteer's digital ID here. Resolve
+                // any volunteer that isn't explicitly declined/removed (a bound
+                // token means they were approved) so a non-'active' status value
+                // doesn't wrongly 404 the ID link.
+                $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND (status IS NULL OR status NOT IN ('declined','removed','deleted')) LIMIT 1", [$qr['studentId']]);
                 if ($v) return ['ok' => true, 'profile' => volunteer_public($v, true)];
             }
         }

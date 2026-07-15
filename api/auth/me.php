@@ -14,5 +14,6 @@ if (empty($res['ok'])) json_ok(['member' => null, 'csrf' => $csrf]);
 json_ok([
     'member'  => $res['member'],
     'adminOk' => (bool)($s['adminOk'] ?? false),
+    'impersonating' => !empty($s['imp']) ? (string)$s['imp'] : null,
     'csrf'    => $csrf,
 ]);
