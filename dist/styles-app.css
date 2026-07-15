@@ -4247,8 +4247,18 @@ section p[style*="var(--ink-500)"] {
 .admin-app { background: #fff; border: 1px solid var(--line, #e6e2d6); border-radius: 14px; padding: 16px; }
 .admin-app-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .admin-app-why { margin: 10px 0; padding: 10px 12px; background: var(--paper); border-radius: 10px; font-size: 14px; line-height: 1.5; color: var(--ink-700); }
-.admin-app-actions { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+.admin-app-actions { display: flex; gap: 10px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
 .admin-app-status { max-width: 160px; }
+
+/* Structured applicant / volunteer detail — a readable labelled grid, opened
+   from "View details". Cool hairline rows so the data reads clearly. */
+.admin-detail { margin: 10px 0; padding: 6px 16px 12px; background: var(--cream-50, #faf6ec); border: 1px solid var(--line-cool, #e5e8ee); border-radius: 12px; }
+.admin-detail-photo { width: 72px; height: 72px; border-radius: 12px; object-fit: cover; margin: 12px 0 6px; border: 1px solid var(--line-cool, #e5e8ee); }
+.admin-detail-row { display: grid; grid-template-columns: 148px 1fr; gap: 14px; padding: 8px 0; border-top: 1px solid var(--line-cool-soft, #eef0f4); }
+.admin-detail-row:first-of-type { border-top: 0; }
+.admin-detail-key { font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-400); padding-top: 1px; }
+.admin-detail-val { font-size: 14px; color: var(--ink-700); line-height: 1.55; word-break: break-word; }
+@media (max-width: 560px) { .admin-detail-row { grid-template-columns: 1fr; gap: 2px; } }
 .admin-section-actions { display: flex; gap: 8px; align-items: center; }
 
 /* Legal & data-protection page — sticky side-nav collapses on mobile. */

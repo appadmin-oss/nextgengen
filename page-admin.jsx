@@ -2818,11 +2818,51 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
 // Applications — review teen/mentor applications, convert to members
 // ============================================================================
 
+// One labelled row in the applicant/volunteer detail grid. Renders "—" for any
+// empty value so the layout stays structured even with sparse data.
+function DetailRow({ label, children }) {
+  const empty = children === null || children === undefined || children === "" || (Array.isArray(children) && children.length === 0);
+  return (
+    <div className="admin-detail-row">
+      <div className="admin-detail-key mono">{label}</div>
+      <div className="admin-detail-val">{empty ? "—" : children}</div>
+    </div>
+  );
+}
+
+// Full, readable breakdown of everything an application/volunteer submitted —
+// the structured intake data that the one-line summary can't surface.
+function ApplicantDetail({ a }) {
+  const fullName = [a.firstName, a.otherName, a.lastName].filter(Boolean).join(" ") || a.name || "";
+  const age = (a.dobAge != null && a.dobAge >= 0) ? a.dobAge : (a.age || null);
+  const dobLine = a.dob ? (a.dob + (age != null ? " · age " + age : "")) : (age != null ? "age " + age : "");
+  return (
+    <div className="admin-detail">
+      {a.photoUrl ? <img className="admin-detail-photo" src={a.photoUrl} alt="" onError={e => { e.target.style.display = "none"; }}/> : null}
+      <DetailRow label="Reference">{a.ref ? <span className="mono">{a.ref}</span> : null}</DetailRow>
+      <DetailRow label="Full name">{fullName}</DetailRow>
+      {(a.firstName || a.lastName) ? <DetailRow label="Name parts">{"First: " + (a.firstName || "—") + "  ·  Other: " + (a.otherName || "—") + "  ·  Last: " + (a.lastName || "—")}</DetailRow> : null}
+      <DetailRow label="Email">{a.email ? <a href={"mailto:" + a.email}>{a.email}</a> : null}</DetailRow>
+      <DetailRow label="Phone">{a.phone ? <a href={"tel:" + a.phone}>{a.phone}</a> : null}</DetailRow>
+      <DetailRow label="Date of birth">{dobLine}</DetailRow>
+      {a.program ? <DetailRow label="Programme">{a.program}</DetailRow> : null}
+      {a.centre ? <DetailRow label="Centre">{a.centre}</DetailRow> : null}
+      {a.track ? <DetailRow label="Track">{a.track}</DetailRow> : null}
+      {a.role ? <DetailRow label="Role">{a.role}</DetailRow> : null}
+      {(a.courses && a.courses.length) ? <DetailRow label="Courses">{a.courses.join(", ")}</DetailRow> : null}
+      <DetailRow label="Submitted">{fmtDate(a.createdAt)}</DetailRow>
+      <DetailRow label="Reason">{a.why ? <span style={{ whiteSpace: "pre-wrap" }}>{a.why}</span> : null}</DetailRow>
+    </div>
+  );
+}
+
 function AdminApplications() {
   const [list, setList] = React.useState(null);
   const [filter, setFilter] = React.useState({ kind: "", status: "" });
   const [err, setErr] = React.useState("");
   const [sel, setSel] = React.useState(() => new Set());
+  const [expanded, setExpanded] = React.useState(() => new Set());
+  const toggleExpand = (id) => setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [bulkBusy, setBulkBusy] = React.useState(false);
   const load = () => NGGApi.admin.applications.list(filter).then(r => { setList(r.applications || []); setErr(""); setSel(new Set()); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter.kind, filter.status]);
@@ -2891,8 +2931,10 @@ function AdminApplications() {
                 </div>
                 <span className={"chip status-" + (a.status === "accepted" ? "published" : a.status === "rejected" ? "archived" : "draft")}>{a.status}</span>
               </div>
-              {a.why && <p className="admin-app-why">{a.why}</p>}
+              {!expanded.has(a.id) && a.why && <p className="admin-app-why">{a.why}</p>}
+              {expanded.has(a.id) && <ApplicantDetail a={a}/>}
               <div className="admin-app-actions">
+                <button className="btn btn-ghost btn-sm" aria-expanded={expanded.has(a.id)} onClick={() => toggleExpand(a.id)}>{expanded.has(a.id) ? "Hide details ▴" : "View details ▾"}</button>
                 <select className="admin-select admin-app-status" value={a.status} onChange={e => setStatus(a.id, e.target.value)}>
                   <option value="new">New</option><option value="reviewing">Reviewing</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="waitlist">Waitlist</option>
                 </select>
@@ -2917,6 +2959,8 @@ function AdminVolunteers() {
   const [busy, setBusy] = React.useState("");
   const [tab, setTab] = React.useState("pending");
   const [q, setQ] = React.useState("");
+  const [expanded, setExpanded] = React.useState(() => new Set());
+  const toggleExpand = (id) => setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const load = () => NGGApi.admin.volunteers.list().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
@@ -2981,8 +3025,10 @@ function AdminVolunteers() {
                   </div>
                   {a.role === "instructor" && !a.phone && <span className="chip status-archived">phone required</span>}
                 </div>
-                {a.why && <p className="admin-app-why">{a.why}</p>}
+                {!expanded.has(a.id) && a.why && <p className="admin-app-why">{a.why}</p>}
+                {expanded.has(a.id) && <ApplicantDetail a={a}/>}
                 <div className="admin-app-actions">
+                  <button className="btn btn-ghost btn-sm" aria-expanded={expanded.has(a.id)} onClick={() => toggleExpand(a.id)}>{expanded.has(a.id) ? "Hide details ▴" : "View details ▾"}</button>
                   <button className="btn btn-primary btn-sm" disabled={busy === "a" + a.id || (a.role === "instructor" && !a.phone)} onClick={() => approve(a)}>{busy === "a" + a.id ? "Approving…" : "Approve & issue ID →"}</button>
                   <button className="btn btn-ghost btn-sm" disabled={busy === "d" + a.id} onClick={() => decline(a)}>Decline</button>
                 </div>

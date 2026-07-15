@@ -115,7 +115,16 @@ function admin_applications_list(array $p): array {
     if (!empty($p['kind'])) { $where[] = 'kind = ?'; $params[] = $p['kind']; }
     if (!empty($p['status'])) { $where[] = 'status = ?'; $params[] = $p['status']; }
     $sql = 'SELECT * FROM applications' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY id DESC LIMIT 500';
-    return ['ok' => true, 'applications' => db_all($sql, $params)];
+    $rows = db_all($sql, $params);
+    // Enrich each row so the admin detail view has everything structured:
+    // a human reference, decoded courses, and a derived age from DOB.
+    foreach ($rows as &$r) {
+        $r['ref'] = function_exists('intake_reference') ? intake_reference((string)($r['kind'] ?? 'teen'), (int)($r['id'] ?? 0)) : '';
+        $r['courses'] = $r['courses'] ? (json_decode((string)$r['courses'], true) ?: []) : [];
+        $r['dobAge'] = !empty($r['dob']) && function_exists('dob_age') ? dob_age((string)$r['dob']) : null;
+    }
+    unset($r);
+    return ['ok' => true, 'applications' => $rows];
 }
 
 function admin_applications_set_status(array $p): array {

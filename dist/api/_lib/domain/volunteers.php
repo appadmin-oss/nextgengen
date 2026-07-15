@@ -491,8 +491,12 @@ function public_instructor_roster(array $p): array {
 
 function admin_volunteers_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-    $pending = db_all("SELECT id, name, email, phone, role, courses, why, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing') ORDER BY id DESC LIMIT 200");
-    foreach ($pending as &$a) $a['courses'] = json_decode((string)($a['courses'] ?? ''), true) ?: [];
+    $pending = db_all("SELECT id, name, firstName, lastName, otherName, dob, email, phone, role, courses, why, photoUrl, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing') ORDER BY id DESC LIMIT 200");
+    foreach ($pending as &$a) {
+        $a['courses'] = json_decode((string)($a['courses'] ?? ''), true) ?: [];
+        $a['ref'] = function_exists('intake_reference') ? intake_reference('volunteer', (int)$a['id']) : '';
+        $a['dobAge'] = !empty($a['dob']) && function_exists('dob_age') ? dob_age((string)$a['dob']) : null;
+    }
     unset($a);
     $roster = db_all('SELECT volunteerId, fullName, email, phone, role, courses, token, status, safeguarding, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
     foreach ($roster as &$v) $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
