@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS members (
   centre VARCHAR(32), photoUrl TEXT, track VARCHAR(64), cohort VARCHAR(64),
   joinDate VARCHAR(40), dob VARCHAR(40),
   parentName VARCHAR(255), parentEmail VARCHAR(200), parentPhone VARCHAR(40), school VARCHAR(255),
-  bio TEXT, socials TEXT, totpSecret VARCHAR(64), totpBackup TEXT, passwordHash VARCHAR(255) DEFAULT '', notes TEXT,
+  bio TEXT, socials TEXT, totpSecret VARCHAR(64), passwordHash VARCHAR(255) DEFAULT '', notes TEXT,
   anchorCode VARCHAR(12),
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
   INDEX idx_members_email (email), INDEX idx_members_centre (centre), INDEX idx_members_status (status),
@@ -537,3 +537,69 @@ INSERT INTO schema_version (version) VALUES (21) ON DUPLICATE KEY UPDATE version
 ALTER TABLE summer_students ADD COLUMN photoToken VARCHAR(64) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (22) ON DUPLICATE KEY UPDATE version = version;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Migrations 23–33 parity — the items the SQLite migrations add that this
+-- mirror was missing. Declared as trailing ALTER/CREATE so the runtime
+-- auto-migrator (db_apply_mysql_schema) applies them to EXISTING databases by
+-- replaying this file (a CREATE would skip an already-present table). Every
+-- future post-baseline column MUST be added here as a trailing ALTER too.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- 24: broadcast audience targeting
+ALTER TABLE notifications ADD COLUMN audience VARCHAR(64) DEFAULT '';
+
+-- 25: 2FA one-time backup codes (hashed JSON)
+ALTER TABLE members ADD COLUMN totpBackup TEXT;
+
+-- 26: student completion certificates + revocation on both cert kinds
+ALTER TABLE volunteer_certs ADD COLUMN revokedAt VARCHAR(40) DEFAULT '';
+CREATE TABLE IF NOT EXISTS student_certs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  certId VARCHAR(64) UNIQUE NOT NULL, studentId VARCHAR(64) NOT NULL, cohortId VARCHAR(64) DEFAULT '',
+  daysPresent INT DEFAULT 0, attendanceRate INT DEFAULT 0,
+  issuedAt VARCHAR(40), revokedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_stucert_student (studentId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 27: attendance check-out
+ALTER TABLE attendance ADD COLUMN checkOutAt VARCHAR(40) DEFAULT '';
+
+-- 28: per-centre capacity (0 = unlimited)
+ALTER TABLE centres ADD COLUMN capacity INT DEFAULT 0;
+
+-- 29: verified self-service email change
+ALTER TABLE members ADD COLUMN pendingEmail VARCHAR(200) DEFAULT '';
+ALTER TABLE members ADD COLUMN emailChangeToken VARCHAR(191) DEFAULT '';
+ALTER TABLE members ADD COLUMN emailChangeExpiresAt VARCHAR(40) DEFAULT '';
+
+-- 30: peer interaction — reactions + moderated comments
+CREATE TABLE IF NOT EXISTS post_reactions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  postId VARCHAR(64) NOT NULL, memberId VARCHAR(64) NOT NULL, emoji VARCHAR(16) NOT NULL,
+  createdAt VARCHAR(40),
+  UNIQUE KEY uq_reaction (postId, memberId),
+  INDEX idx_reactions_post (postId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS post_comments (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  commentId VARCHAR(64) UNIQUE NOT NULL,
+  postId VARCHAR(64) NOT NULL, memberId VARCHAR(64) NOT NULL, memberName VARCHAR(255) DEFAULT '',
+  body TEXT NOT NULL, status VARCHAR(24) DEFAULT 'pending',
+  createdAt VARCHAR(40), moderatedBy VARCHAR(64) DEFAULT '', moderatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_comments_post (postId, status), INDEX idx_comments_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 31: donations (Paystack) + per-member extra capabilities
+CREATE TABLE IF NOT EXISTS donations (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  reference VARCHAR(191) UNIQUE NOT NULL,
+  email VARCHAR(200), name VARCHAR(255), amount BIGINT DEFAULT 0, currency VARCHAR(8) DEFAULT 'NGN',
+  status VARCHAR(24) DEFAULT 'pending', channel VARCHAR(32) DEFAULT '', message TEXT,
+  createdAt VARCHAR(40), paidAt VARCHAR(40) DEFAULT '',
+  INDEX idx_donations_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE members ADD COLUMN capsExtra TEXT;
+
+INSERT INTO schema_version (version) VALUES (33) ON DUPLICATE KEY UPDATE version = version;
