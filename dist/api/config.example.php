@@ -178,14 +178,20 @@ return [
     // Default Super Admin. Auto-provisioned on first sign-in so a fresh NGG
     // deploy always has a top-tier staff account (role=super_admin → every
     // capability). Separate from Afrovanguard's admin — its own account here.
-    // Leave `password` empty to have a strong one generated once; reveal it
-    // with `php api/tools/seed-admin.php`. Sign in with email + password, then
-    // set up the authenticator (TOTP) on the first Control Room visit.
+    //
+    // ADMINS SIGN IN WITH THIS PASSWORD — NOT AN EMAIL CODE. Every console
+    // (staff/admin) account is password-only: the emailed sign-in code and
+    // magic-link paths are refused for them, so set `password` here to a strong
+    // value you control. Leave it empty only if you want one generated once —
+    // reveal it with `php api/tools/seed-admin.php`. After signing in with the
+    // password, set up the authenticator (TOTP) on the first Control Room visit.
+    // (Forgot it? Use "Forgot your password?" — the email reset flow still
+    // works; it sets a new password rather than logging in without one.)
     // -----------------------------------------------------------------------
     'super_admin' => [
         'email'    => 'mamcareer@afrovanguard.org.ng',
         'name'     => 'Super Admin',
-        'password' => '',   // set an exact password here (recommended), or leave blank
+        'password' => '',   // REQUIRED for password sign-in — set an exact password here
     ],
 
     // Shared HMAC secret for signing export-sink calls. Generate with

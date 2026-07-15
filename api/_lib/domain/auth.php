@@ -44,12 +44,29 @@ function auth_fail_reset(array $m): void {
 function auth_gateway(array $p): array {
     $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
-    $member = db_row('SELECT passwordHash, status FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
+    $member = db_row('SELECT passwordHash, status, role FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
     $methods = ['code'];
     if ($member && !empty($member['passwordHash']) && (string)$member['status'] !== 'suspended') {
-        $methods[] = 'password';
+        // Staff/admin accounts are password-only: the config-provisioned password
+        // is required and the emailed-code path is not offered to them, so the
+        // client hides "email me a code". Regular members keep both methods.
+        if (is_admin_role($member['role'])) {
+            $methods = ['password'];
+        } else {
+            $methods[] = 'password';
+        }
     }
     return ['ok' => true, 'methods' => $methods];
+}
+
+/**
+ * Admins sign in with the config-provisioned password, never an emailed code.
+ * True when this account holds a console role AND has a password set — used to
+ * refuse the OTP/magic-link login path for staff. An admin somehow without a
+ * password is left on the code path so a fresh deploy can never be locked out.
+ */
+function auth_password_only(?array $member): bool {
+    return $member && !empty($member['passwordHash']) && is_admin_role($member['role'] ?? '');
 }
 
 function auth_request(array $p): array {
@@ -69,6 +86,11 @@ function auth_request(array $p): array {
     if ((string)$member['status'] === 'suspended') {
         audit('login.fail.suspended', $member['memberId'], (string)$member['memberId'], [], $ip);
         return ['ok' => true, 'masked' => $masked, 'delivery' => true];
+    }
+    // Admins must use their password — never an emailed sign-in code.
+    if (auth_password_only($member)) {
+        audit('login.otp.blocked_admin', $member['memberId'], (string)$member['memberId'], [], $ip);
+        return ['ok' => false, 'error' => 'use_password'];
     }
 
     $token = rand_hex(32);
@@ -205,6 +227,12 @@ function auth_verify(array $p): array {
 
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ch['memberId']]);
     if (!$member) return ['ok' => false, 'error' => 'member_gone'];
+    // Admins must complete sign-in with their password, never an emailed code or
+    // magic link — enforced here too so a stale/crafted challenge can't bypass it.
+    if (auth_password_only($member)) {
+        audit('login.otp.blocked_admin', $member['memberId'], (string)$member['memberId'], [], $ip);
+        return ['ok' => false, 'error' => 'use_password'];
+    }
 
     auth_fail_reset($member);
     audit('login.success', $member['memberId'], (string)$member['memberId'], [], $ip);

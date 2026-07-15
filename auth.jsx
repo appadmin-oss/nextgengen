@@ -147,6 +147,9 @@ function SignInModal({ seed, onClose, onVerified }) {
   const [identifier, setIdentifier] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
+  // Which sign-in methods the gateway offered for this identifier. Admins come
+  // back password-only (no 'code'), so we hide the emailed-code fallback.
+  const [methods, setMethods] = React.useState([]);
   const [otp, setOtp] = React.useState("");
   // Self-service password reset: a magic-link token (from ?reset=) skips the
   // code entry; otherwise the member types the emailed code + a new password.
@@ -200,7 +203,9 @@ function SignInModal({ seed, onClose, onVerified }) {
     setErr(""); setBusy(true);
     try {
       const r = await NGGApi.auth.gateway(identifier.trim());
-      if ((r.methods || []).includes("password")) { setStage("password"); }
+      const m = r.methods || [];
+      setMethods(m);
+      if (m.includes("password")) { setStage("password"); }
       else { await requestLinkInner(); }
     } catch (e) {
       setErr(humanizeAuthError(e.code || e.message));
@@ -322,7 +327,7 @@ function SignInModal({ seed, onClose, onVerified }) {
             {stage === "id"
               ? "Your Member ID or email — we'll take it from there."
               : stage === "password"
-                ? "Enter your password, or get a code by email instead."
+                ? (methods.includes("code") ? "Enter your password, or get a code by email instead." : "Enter your password to continue.")
               : stage === "reset-request"
                 ? "We'll email you a link and code to set a new password."
               : stage === "reset-new"
@@ -392,9 +397,11 @@ function SignInModal({ seed, onClose, onVerified }) {
             <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || !identifier.trim() || !password}>
               {busy ? "Signing in…" : "Sign in →"}
             </button>
-            <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>
-              Email me a sign-in code instead
-            </button>
+            {methods.includes("code") && (
+              <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>
+                Email me a sign-in code instead
+              </button>
+            )}
             <button type="button" className="signin-link" onClick={() => { setErr(""); setPassword(""); setStage("reset-request"); }}>
               Forgot your password?
             </button>
@@ -570,6 +577,7 @@ function humanizeAuthError(code) {
     invalid_login: "That email/ID or password isn't right.",
     missing_credentials: "Enter your email/ID and password.",
     no_password: "No password set yet. Use “Set or reset a password”, or sign in with an email code.",
+    use_password: "Admin accounts sign in with a password — email codes aren't available. Use your password, or “Forgot your password?” to set one.",
     password_too_short: "Use at least 8 characters.",
     password_too_long: "That password is too long (200 characters max).",
     account_suspended: "This account is suspended. Contact admin.",
