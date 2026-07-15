@@ -195,7 +195,11 @@ function photo_process(string $assetId): array {
     if (in_array('too_blurry', $flags, true)) $rec['sharpen'] = true;
     if (in_array('low_resolution', $flags, true)) $rec['sharpen'] = true;
     if (in_array('too_dark', $flags, true)) $rec['brighten'] = true;
-    if (in_array('busy_background', $flags, true)) $rec['removeBackground'] = true;
+    // Every ID headshot gets a clean, uniform studio backdrop by default — it is
+    // an environment swap that leaves the face untouched (identity safe), and it
+    // makes the printed card look consistent regardless of where the photo was
+    // taken. Still credit-gated below and switchable off via the setting.
+    if (setting_raw('photo_bg_removal') !== '0') $rec['removeBackground'] = true;
 
     $creditsOk = cloudinary_credits_ok();
     $wantedAi = !empty($rec['removeBackground']);

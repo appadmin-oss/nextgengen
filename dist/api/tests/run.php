@@ -1150,7 +1150,14 @@ $ing = photo_ingest('student', 'SUM-2026-9001', $SRC, 'NGG-2025-0099');
 chk('photo_ingest creates a v1 asset', !empty($ing['ok']) && $ing['version'] === 1 && strpos($ing['assetId'], 'PH-') === 0);
 $pr = photo_process($ing['assetId']);
 chk('clean photo auto-approves with an edited URL', $pr['status'] === 'approved' && strpos($pr['editedUrl'], '/upload/') !== false);
+chk('every ID headshot gets a clean studio backdrop by default (not only busy_background)', $pr['aiUsed'] === true && strpos($pr['editedUrl'], 'e_background_removal') !== false);
 chk('approved photo satisfies the issuance gate', photo_approved_for('student', 'SUM-2026-9001') === true);
+// Backdrop swap is switchable off without touching the rest of the pipeline.
+setting_set('photo_bg_removal', '0');
+$ingOff = photo_ingest('student', 'SUM-2026-9011', $SRC, 'NGG-2025-0099');
+$prOff = photo_process($ingOff['assetId']);
+chk('photo_bg_removal=0 disables the backdrop swap (still optimizes)', strpos($prOff['editedUrl'], 'e_background_removal') === false && strpos($prOff['editedUrl'], 'f_auto') !== false);
+setting_set('photo_bg_removal', '1');
 
 // Re-capture supersedes and versions.
 $ing2 = photo_ingest('student', 'SUM-2026-9001', $SRC, 'NGG-2025-0099');

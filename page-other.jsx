@@ -505,7 +505,6 @@ function MentorApplySection() {
                   <option value="" disabled>Select…</option>
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
-                  <option value="Other">Prefer not to say</option>
                 </select>
               </div>
               <div className="field">
@@ -740,7 +739,6 @@ function JoinPage({ setPage }) {
                       <option value="" disabled>Select…</option>
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
-                      <option value="Other">Prefer not to say</option>
                     </select>
                   </div>
                   <div className="field" style={{gridColumn:"1 / -1"}}>
@@ -1679,7 +1677,6 @@ function VolunteerRegisterPage({ setPage }) {
                       <option value="" disabled>Select…</option>
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
-                      <option value="Other">Prefer not to say</option>
                     </select></div>
                   <div className="field"><label htmlFor="vol-email">Email</label>
                     <input id="vol-email" type="email" value={d.email} onChange={set("email")} autoComplete="email" placeholder="you@example.com"/></div>
@@ -2360,20 +2357,39 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
   const videoRef = React.useRef(null);
   const streamRef = React.useRef(null);
   const fileRef = React.useRef(null);
-  const [camState, setCamState] = React.useState("starting"); // starting|live|denied
+  const [camOpen, setCamOpen] = React.useState(false);
+  const [camState, setCamState] = React.useState("idle"); // idle|starting|live|denied
   const [busy, setBusy] = React.useState(false);
   const [uErr, setUErr] = React.useState("");
 
+  const stopStream = React.useCallback(() => {
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+  }, []);
+
+  // The camera only runs while the full-screen overlay is open. Opening it asks
+  // for the front camera; closing it (or unmounting the step) releases the
+  // hardware so the light doesn't stay on behind the rest of the form.
   React.useEffect(() => {
+    if (!camOpen) { stopStream(); return; }
     let cancelled = false;
-    if (photoUrl) { setCamState("denied"); return; }
-    navigator.mediaDevices && navigator.mediaDevices.getUserMedia
-      ? navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 720 } }, audio: false })
-          .then(stream => { if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; } streamRef.current = stream; if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); } setCamState("live"); })
-          .catch(() => setCamState("denied"))
-      : setCamState("denied");
-    return () => { cancelled = true; if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
-  }, [photoUrl]);
+    setCamState("starting"); setUErr("");
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { setCamState("denied"); return; }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1350 } }, audio: false })
+      .then(stream => {
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); }
+        setCamState("live");
+      })
+      .catch(() => setCamState("denied"));
+    return () => { cancelled = true; };
+  }, [camOpen, stopStream]);
+
+  // Release the camera when the step unmounts.
+  React.useEffect(() => stopStream, [stopStream]);
+
+  const openCam = () => { setUErr(""); setCamOpen(true); };
+  const closeCam = () => { setCamOpen(false); setCamState("idle"); };
 
   const uploadBlob = async (blob) => {
     setBusy(true); setUErr("");
@@ -2389,11 +2405,11 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
         up = await NGGApi.uploadFile(file, "headshot");
       }
       // Face-centred crop + lighting fix via Cloudinary URL transforms — a fast
-      // client preview; the server pipeline does the professional edit and an
-      // editor can re-upload a corrected image later.
+      // client preview; the server pipeline does the professional edit (including
+      // a clean studio backdrop) and an editor can re-upload a corrected image.
       const optimised = up.url.replace("/upload/", "/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/");
       setPhotoUrl(optimised);
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      closeCam();
     } catch (e) {
       // Surface the real reason — a vague message can't be diagnosed or fixed.
       const msg = String((e && (e.message || e.code)) || "");
@@ -2406,13 +2422,13 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
     } finally { setBusy(false); }
   };
   const capture = () => {
-    const v = videoRef.current; if (!v) return;
+    const v = videoRef.current; if (!v || !v.videoWidth) return;
     const c = document.createElement("canvas");
     c.width = 720; c.height = 900;
     const scale = Math.max(c.width / v.videoWidth, c.height / v.videoHeight);
     const dx = (c.width - v.videoWidth * scale) / 2, dy = (c.height - v.videoHeight * scale) / 2;
     c.getContext("2d").drawImage(v, dx, dy, v.videoWidth * scale, v.videoHeight * scale);
-    c.toBlob(b => b && uploadBlob(b), "image/jpeg", 0.88);
+    c.toBlob(b => b && uploadBlob(b), "image/jpeg", 0.9);
   };
 
   return (
@@ -2420,27 +2436,96 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
       <div style={{ ...card, overflow: "hidden", position: "relative", height: 300, display: "grid", placeItems: "center" }}>
         {photoUrl ? (
           <img src={photoUrl} alt="Captured headshot" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>
-        ) : camState === "live" ? (<>
-          <video ref={videoRef} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
-          <div style={{ position: "absolute", width: 150, height: 190, border: "2.5px dashed rgba(255,206,84,.65)", borderRadius: "50% 50% 46% 46%" }} aria-hidden="true"/>
-        </>) : (
-          <div style={{ textAlign: "center", padding: 20 }}>
-            <div style={{ fontSize: 34 }}>📷</div>
-            <p style={{ ...mut, fontSize: 13, margin: "8px 0 0" }}>{camState === "starting" ? "Starting the camera…" : "Camera unavailable — use a photo from the device instead."}</p>
-          </div>
+        ) : (
+          <button onClick={openCam} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", textAlign: "center", padding: 20 }}>
+            <div style={{ width: 88, height: 88, margin: "0 auto", borderRadius: "50%", border: "2px dashed rgba(255,206,84,.6)", display: "grid", placeItems: "center", fontSize: 34 }}>📷</div>
+            <p style={{ fontWeight: 800, margin: "12px 0 2px", fontSize: 15 }}>Open camera</p>
+            <p style={{ ...mut, fontSize: 12.5, margin: 0 }}>Full-screen guide helps you line up the face</p>
+          </button>
         )}
       </div>
-      <p style={{ ...mut, fontSize: 12.5, textAlign: "center", margin: 0 }}>Center the face — we crop and brighten automatically. Used only for the student ID.</p>
+      <p style={{ ...mut, fontSize: 12.5, textAlign: "center", margin: 0 }}>Center the face — we crop, brighten and set a clean backdrop automatically. Used only for the student ID.</p>
       {uErr && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,206,84,.12)", border: "1px solid rgba(255,206,84,.4)", fontSize: 13 }}>{uErr}</div>}
       <input ref={fileRef} type="file" accept="image/*" capture="user" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) uploadBlob(f); }}/>
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={onBack} style={{ padding: "13px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>←</button>
         {photoUrl
           ? <button onClick={() => setPhotoUrl("")} style={{ flex: 1, padding: 13, borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Retake</button>
-          : camState === "live"
-            ? <button onClick={capture} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>{busy ? "Uploading…" : "Take photo"}</button>
-            : <button onClick={() => fileRef.current && fileRef.current.click()} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>{busy ? "Uploading…" : "Choose photo"}</button>}
+          : <button onClick={openCam} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>{busy ? "Uploading…" : "Open camera"}</button>}
         <button onClick={onNext} style={{ flex: 1, padding: 13, borderRadius: 12, border: photoUrl ? "none" : "1px solid rgba(255,255,255,.25)", background: photoUrl ? gold : "transparent", color: photoUrl ? goldInk : "#fff", fontWeight: 800, cursor: "pointer" }}>{photoUrl ? "Use photo →" : "Skip for now →"}</button>
+      </div>
+      {camOpen && (
+        <CameraOverlay
+          videoRef={videoRef} camState={camState} busy={busy}
+          onCapture={capture} onClose={closeCam} gold={gold} goldInk={goldInk}
+          onPickFile={() => fileRef.current && fileRef.current.click()}
+        />
+      )}
+    </div>
+  );
+}
+
+/* Full-screen guided camera. A fixed overlay above the whole app: the live
+ * front-camera fills the screen, a dimming scrim with a transparent face oval
+ * shows exactly where to line up, and a shutter sits at the bottom. Falls back
+ * to a device-photo picker when the camera is blocked or unavailable. */
+function CameraOverlay({ videoRef, camState, busy, onCapture, onClose, onPickFile, gold, goldInk }) {
+  // Lock body scroll while the overlay is up.
+  React.useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+
+  const shell = { position: "fixed", inset: 0, zIndex: 4000, background: "#000", display: "flex", flexDirection: "column", overscrollBehavior: "contain" };
+  const iconBtn = { width: 44, height: 44, borderRadius: "50%", border: "1px solid rgba(255,255,255,.35)", background: "rgba(0,0,0,.35)", color: "#fff", fontSize: 20, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 };
+
+  return (
+    <div style={shell} role="dialog" aria-modal="true" aria-label="Take ID photo">
+      <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+        {camState === "live" ? (
+          <video ref={videoRef} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
+        ) : (
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 24, textAlign: "center", color: "#fff" }}>
+            <div>
+              <div style={{ fontSize: 40 }}>📷</div>
+              <p style={{ margin: "12px 0 0", fontSize: 15, maxWidth: 320 }}>
+                {camState === "starting"
+                  ? "Starting the camera…"
+                  : "Camera unavailable or blocked. Allow camera access, or use a photo from this device instead."}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Guide: a dashed face oval with everything outside it dimmed. */}
+      {camState === "live" && (
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
+          <div style={{ width: "min(72vw, 320px)", height: "min(92vw, 410px)", borderRadius: "50% 50% 47% 47%", border: "3px dashed rgba(255,206,84,.9)", boxShadow: "0 0 0 100vmax rgba(0,0,0,.55)" }}/>
+        </div>
+      )}
+
+      {/* Top bar: close + instruction. */}
+      <div style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", gap: 12, padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 0" }}>
+        <button onClick={onClose} style={iconBtn} aria-label="Close camera">✕</button>
+        <div style={{ color: "#fff", fontSize: 13.5, fontWeight: 600, textShadow: "0 1px 3px rgba(0,0,0,.6)" }}>
+          Line the face up inside the oval
+        </div>
+      </div>
+
+      <div style={{ flex: 1 }}/>
+
+      {/* Bottom controls: file fallback · shutter · retake-of-space. */}
+      <div style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 28px calc(env(safe-area-inset-bottom, 0px) + 28px)" }}>
+        <button onClick={onPickFile} disabled={busy} style={{ ...iconBtn, fontSize: 18 }} aria-label="Use a photo from this device">🖼️</button>
+        <button onClick={onCapture} disabled={busy || camState !== "live"} aria-label="Take photo"
+          style={{ width: 78, height: 78, borderRadius: "50%", border: "5px solid rgba(255,255,255,.85)", background: busy ? "rgba(255,255,255,.4)" : gold, cursor: busy || camState !== "live" ? "default" : "pointer", boxShadow: "0 6px 22px rgba(0,0,0,.4)" }}>
+          {busy ? <span style={{ color: goldInk, fontSize: 12, fontWeight: 800 }}>…</span> : null}
+        </button>
+        <div style={{ width: 44 }}/>
       </div>
     </div>
   );

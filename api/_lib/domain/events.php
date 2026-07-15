@@ -448,7 +448,7 @@ function public_apply(array $p): array {
     $dobAge = function_exists('dob_age') ? dob_age($dob) : -1;
     if ($dobAge < 0) return ['ok' => false, 'error' => 'bad_dob'];
     // Sex — standardised (not free text). Required on every intake.
-    $sexMap = ['male' => 'Male', 'female' => 'Female', 'other' => 'Other', 'prefer not to say' => 'Other'];
+    $sexMap = ['male' => 'Male', 'female' => 'Female'];
     $sex = $sexMap[strtolower(trim((string)($p['sex'] ?? '')))] ?? '';
     if ($sex === '') return ['ok' => false, 'error' => 'bad_sex'];
     // Adults only for mentor/volunteer; the teen branch enforces 10–17 below.
