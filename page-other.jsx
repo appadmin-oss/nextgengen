@@ -2404,11 +2404,10 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
       } catch (pe) {
         up = await NGGApi.uploadFile(file, "headshot");
       }
-      // Face-centred crop + lighting fix via Cloudinary URL transforms — a fast
-      // client preview; the server pipeline does the professional edit (including
-      // a clean studio backdrop) and an editor can re-upload a corrected image.
-      const optimised = up.url.replace("/upload/", "/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/");
-      setPhotoUrl(optimised);
+      // Face-centred crop + auto colour/lighting via Cloudinary URL transforms —
+      // a fast, free client preview; the server pipeline does the professional
+      // edit (including a clean studio backdrop) and an editor can re-upload.
+      setPhotoUrl(cldEnhance(up.url));
       closeCam();
     } catch (e) {
       // Surface the real reason — a vague message can't be diagnosed or fixed.
@@ -2435,7 +2434,7 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ ...card, overflow: "hidden", position: "relative", height: 300, display: "grid", placeItems: "center" }}>
         {photoUrl ? (
-          <img src={photoUrl} alt="Captured headshot" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>
+          <PhotoCompare url={photoUrl}/>
         ) : (
           <button onClick={openCam} style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", textAlign: "center", padding: 20 }}>
             <div style={{ width: 88, height: 88, margin: "0 auto", borderRadius: "50%", border: "2px dashed rgba(255,206,84,.6)", display: "grid", placeItems: "center", fontSize: 34 }}>📷</div>
@@ -2566,7 +2565,7 @@ function ReshootPage() {
       let up;
       try { up = await NGGApi.uploadPublic(file); }
       catch (pe) { up = await NGGApi.uploadFile(file, "headshot"); }
-      setPhotoUrl(up.url.replace("/upload/", "/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/"));
+      setPhotoUrl(cldEnhance(up.url));
     } catch (e) {
       const m = String((e && (e.message || e.code)) || "");
       setUErr(/network|failed to fetch/i.test(m) ? "Couldn't reach the photo service — check the connection." : "Upload failed — please try another photo.");
@@ -2598,7 +2597,7 @@ function ReshootPage() {
 
     <div style={{ ...card, overflow: "hidden", height: 300, display: "grid", placeItems: "center", marginBottom: 12 }}>
       {photoUrl
-        ? <img src={photoUrl} alt="New headshot" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>
+        ? <PhotoCompare url={photoUrl}/>
         : ctx && ctx.student && ctx.student.photoUrl
           ? <img src={ctx.student.photoUrl} alt="Current" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: .45 }}/>
           : <div style={{ textAlign: "center" }}><div style={{ fontSize: 34 }}>📷</div><p style={{ ...mut, fontSize: 13, margin: "8px 0 0" }}>Tap below to take or choose a photo</p></div>}

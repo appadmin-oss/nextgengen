@@ -951,6 +951,53 @@ function Sparkline({ data, color = "var(--gold-500)", w = 120, h = 36, fill = fa
    Used wherever a person's photo is set (admin enrol, member editor, gate
    registration). The site TAKES the picture; uploading a file or pasting a
    link are secondary options. Editors can re-take/re-upload any time. */
+/* Cloudinary delivery-URL enhancement used across every photo taker. Kept in
+   one place so the capture preview, the compare toggle and the fallbacks all
+   agree on the exact transform. e_improve auto-fixes colour/lighting and the
+   face-centred crop tidies the framing — both are FREE (no add-on). The
+   background swap (e_background_removal) is deliberately NOT here: it is a paid
+   add-on and runs server-side behind the credit guard, never on a client URL. */
+const CLD_ENHANCE = "c_thumb,g_face,w_600,h_750,e_improve,q_auto";
+const CLD_PLAIN   = "c_thumb,g_face,w_600,h_750,q_auto"; // same framing, no e_improve → the "before"
+
+function cldEnhance(url) {
+  return url && url.indexOf("/upload/") !== -1 ? url.replace("/upload/", "/upload/" + CLD_ENHANCE + "/") : url;
+}
+// Swap (or insert) the transform segment right after /upload/. Leaves non-
+// Cloudinary URLs (pasted links) untouched so the compare simply hides itself.
+function cldWith(url, tf) {
+  if (!url) return url;
+  const i = url.indexOf("/upload/");
+  if (i === -1) return url;
+  let tail = url.slice(i + 8);
+  const slash = tail.indexOf("/");
+  const seg = slash === -1 ? tail : tail.slice(0, slash);
+  if (slash !== -1 && !/^v\d+$/.test(seg) && /[,_]/.test(seg)) tail = tail.slice(slash + 1); // drop existing transform
+  return url.slice(0, i + 8) + (tf ? tf + "/" : "") + tail;
+}
+
+/* Before/after preview with a reverse button, like Canva's edit toggle. Shows
+   the enhanced image by default; press ⤺ to peek at the original, press again
+   to restore. Only appears for Cloudinary uploads (there's nothing to compare
+   for a pasted link). Purely a view — the stored value stays the enhanced URL. */
+function PhotoCompare({ url, radius = "0", onError }) {
+  const [orig, setOrig] = React.useState(false);
+  const canCompare = !!(url && url.indexOf("/upload/") !== -1);
+  React.useEffect(() => { setOrig(false); }, [url]); // a fresh capture resets to "enhanced"
+  const shown = orig && canCompare ? cldWith(url, CLD_PLAIN) : url;
+  const pill = { position: "absolute", top: 8, left: 8, fontSize: 10.5, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", padding: "3px 8px", borderRadius: 999, background: orig ? "rgba(0,0,0,.6)" : "rgba(245,176,38,.92)", color: orig ? "#fff" : "#2b2100", pointerEvents: "none" };
+  const btn = { position: "absolute", bottom: 8, right: 8, width: 34, height: 34, borderRadius: "50%", border: "none", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 17, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1, boxShadow: "0 2px 8px rgba(0,0,0,.35)" };
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%", borderRadius: radius, overflow: "hidden" }}>
+      <img src={shown} alt={orig ? "Original photo" : "Enhanced photo"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onError={onError}/>
+      {canCompare && (<>
+        <span style={pill}>{orig ? "Original" : "Enhanced"}</span>
+        <button type="button" onClick={() => setOrig(o => !o)} style={btn} title={orig ? "Show enhanced" : "Show original"} aria-label={orig ? "Show enhanced photo" : "Show original photo"}>⤺</button>
+      </>)}
+    </div>
+  );
+}
+
 function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   const [mode, setMode] = React.useState("idle"); // idle | camera | link
   const [busy, setBusy] = React.useState(false);
@@ -978,8 +1025,8 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     try {
       const file = blob instanceof File ? blob : new File([blob], name || "headshot.jpg", { type: "image/jpeg" });
       const up = await NGGApi.uploadFile(file, "headshot");
-      // Face-centred crop + brighten (Cloudinary URL transform).
-      onChange(up.url.replace("/upload/", "/upload/c_thumb,g_face,w_600,h_750,e_improve,q_auto/"));
+      // Face-centred crop + auto colour/lighting (Cloudinary URL transform).
+      onChange(cldEnhance(up.url));
       stop(); setMode("idle");
     } catch (e) {
       setErr((e.code || /upload/.test(e.message || "")) ? "Uploads aren't configured on this server — paste an image link instead." : "Couldn't upload — check the connection and try again.");
@@ -1004,7 +1051,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
       <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flex: "0 0 auto", background: "var(--bg-sunken, #f4f4f0)", border: "1px solid rgba(12,20,50,0.14)", display: "grid", placeItems: "center", fontSize: size / 3, color: "var(--ink-400, #93939a)" }}>
         {mode === "camera"
           ? <video ref={videoRef} playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
-          : value ? <img src={value} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : "📷"}
+          : value ? <PhotoCompare url={value} onError={e => { e.target.style.display = "none"; }}/> : "📷"}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         {mode === "camera" ? (
