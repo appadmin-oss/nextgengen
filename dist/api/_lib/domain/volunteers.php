@@ -491,7 +491,7 @@ function public_instructor_roster(array $p): array {
 
 function admin_volunteers_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-    $pending = db_all("SELECT id, name, firstName, lastName, otherName, dob, email, phone, role, courses, why, photoUrl, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing') ORDER BY id DESC LIMIT 200");
+    $pending = db_all("SELECT id, name, firstName, lastName, otherName, dob, sex, email, phone, role, courses, why, photoUrl, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing') ORDER BY id DESC LIMIT 200");
     foreach ($pending as &$a) {
         $a['courses'] = json_decode((string)($a['courses'] ?? ''), true) ?: [];
         $a['ref'] = function_exists('intake_reference') ? intake_reference('volunteer', (int)$a['id']) : '';
@@ -529,16 +529,20 @@ function admin_volunteer_approve(array $p): array {
     $token = 'VOLQR-' . strtoupper(rand_hex(4));
     while (db_row('SELECT id FROM qr_codes WHERE token = ?', [$token])) $token = 'VOLQR-' . strtoupper(rand_hex(4));
     $c = summer_ensure_cohort();
-    db_insert('qr_codes', ['token' => $token, 'batch' => 'VOL', 'cohortId' => $c['cohortId'], 'status' => 'assigned', 'studentId' => $volunteerId, 'assignedName' => (string)$a['name'], 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+    // Insert the volunteer FIRST, then bind the QR token — so if the volunteer
+    // row fails (e.g. a schema gap) we never leave a dangling qr_codes token
+    // that resolves to a nonexistent profile (the "/q link shows no ID" bug).
     db_insert('volunteers', [
         'volunteerId' => $volunteerId, 'applicationId' => $id,
         'fullName' => (string)$a['name'], 'email' => (string)$a['email'], 'phone' => (string)($a['phone'] ?? ''),
         'firstName' => (string)($a['firstName'] ?? ''), 'lastName' => (string)($a['lastName'] ?? ''),
         'otherName' => (string)($a['otherName'] ?? ''), 'dob' => (string)($a['dob'] ?? ''),
+        'sex' => (string)($a['sex'] ?? ''),
         'role' => (string)$a['role'], 'courses' => (string)($a['courses'] ?? ''),
         'token' => $token, 'photoUrl' => (string)($a['photoUrl'] ?? ''),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
+    db_insert('qr_codes', ['token' => $token, 'batch' => 'VOL', 'cohortId' => $c['cohortId'], 'status' => 'assigned', 'studentId' => $volunteerId, 'assignedName' => (string)$a['name'], 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);
 
     $sent = volunteer_send_id($volunteerId);

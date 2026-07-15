@@ -447,6 +447,10 @@ function public_apply(array $p): array {
     }
     $dobAge = function_exists('dob_age') ? dob_age($dob) : -1;
     if ($dobAge < 0) return ['ok' => false, 'error' => 'bad_dob'];
+    // Sex — standardised (not free text). Required on every intake.
+    $sexMap = ['male' => 'Male', 'female' => 'Female', 'other' => 'Other', 'prefer not to say' => 'Other'];
+    $sex = $sexMap[strtolower(trim((string)($p['sex'] ?? '')))] ?? '';
+    if ($sex === '') return ['ok' => false, 'error' => 'bad_sex'];
     // Adults only for mentor/volunteer; the teen branch enforces 10–17 below.
     if ($kind !== 'teen' && $dobAge < 16) return ['ok' => false, 'error' => 'dob_too_young'];
 
@@ -494,7 +498,7 @@ function public_apply(array $p): array {
     }
     $appId = db_insert('applications', [
         'kind' => $kind, 'name' => $name,
-        'firstName' => $first, 'lastName' => $last, 'otherName' => $other, 'dob' => $dob,
+        'firstName' => $first, 'lastName' => $last, 'otherName' => $other, 'dob' => $dob, 'sex' => $sex,
         'age' => $age ?: null, 'centre' => $centre, 'track' => $track,
         'role' => $role, 'why' => $why, 'email' => $email, 'program' => $program, 'photoUrl' => $photoUrl,
         'phone' => $phone, 'courses' => $courses ? json_encode($courses, JSON_UNESCAPED_SLASHES) : '',
@@ -515,6 +519,7 @@ function public_apply(array $p): array {
         'bodyHtml' => '<b>Name:</b> ' . esc_html($name) . '<br><b>Email:</b> ' . esc_html($email)
             . ($phone ? '<br><b>Phone:</b> ' . esc_html($phone) : '')
             . ($dob ? '<br><b>DOB:</b> ' . esc_html($dob) . ' (age ' . (int)$dobAge . ')' : '')
+            . ($sex ? '<br><b>Sex:</b> ' . esc_html($sex) : '')
             . ($track ? '<br><b>Track:</b> ' . esc_html($track) : '')
             . ($role ? '<br><b>Role:</b> ' . esc_html($role) : '')
             . ($courses ? '<br><b>Courses:</b> ' . esc_html(implode(', ', $courses)) : '')

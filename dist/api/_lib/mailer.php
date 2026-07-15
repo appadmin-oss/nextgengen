@@ -519,11 +519,14 @@ function email_template(array $opts): string {
         . $preheader
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">'
         . '<table role="presentation" width="580" cellpadding="0" cellspacing="0" style="max-width:580px;width:100%;background:#ffffff;border:1px solid ' . $cardLine . ';border-radius:18px;overflow:hidden">'
-        // header — monogram + wordmark, crisp hairline underneath
+        // header — real logo (falls back to a navy monogram if no origin is set
+        // so the mark still shows when images are blocked or the URL is unknown)
         . '<tr><td style="padding:22px 36px;border-bottom:1px solid ' . $hair . '">'
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
         . '<td style="vertical-align:middle"><table role="presentation" cellpadding="0" cellspacing="0"><tr>'
-        . '<td style="width:34px;height:34px;background:' . $navy . ';border-radius:9px;text-align:center;vertical-align:middle;font-family:' . $disp . ';font-size:18px;font-weight:800;color:' . $gold . '">G</td>'
+        . ($origin !== ''
+            ? '<td style="width:36px;vertical-align:middle"><img src="' . esc_html($origin . '/assets/logo.png') . '" width="36" height="36" alt="NGG" style="display:block;width:36px;height:36px;border-radius:9px"></td>'
+            : '<td style="width:34px;height:34px;background:' . $navy . ';border-radius:9px;text-align:center;vertical-align:middle;font-family:' . $disp . ';font-size:18px;font-weight:800;color:' . $gold . '">G</td>')
         . '<td style="padding-left:11px;vertical-align:middle;line-height:1.1">'
         . '<div style="font-family:' . $disp . ';color:' . $navy . ';font-size:14px;font-weight:700;letter-spacing:-.01em">Next Generation Genius</div>'
         . '<div style="font-family:' . $monoF . ';color:' . $faint . ';font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-top:4px">Afrovanguard</div>'

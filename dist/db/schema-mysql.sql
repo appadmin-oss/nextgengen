@@ -603,3 +603,10 @@ CREATE TABLE IF NOT EXISTS donations (
 ALTER TABLE members ADD COLUMN capsExtra TEXT;
 
 INSERT INTO schema_version (version) VALUES (33) ON DUPLICATE KEY UPDATE version = version;
+
+-- 34: sex on every intake (applications + volunteers + summer students)
+ALTER TABLE applications ADD COLUMN sex VARCHAR(24) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN sex VARCHAR(24) DEFAULT '';
+ALTER TABLE summer_students ADD COLUMN sex VARCHAR(24) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (34) ON DUPLICATE KEY UPDATE version = version;

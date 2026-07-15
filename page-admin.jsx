@@ -2845,6 +2845,7 @@ function ApplicantDetail({ a }) {
       <DetailRow label="Email">{a.email ? <a href={"mailto:" + a.email}>{a.email}</a> : null}</DetailRow>
       <DetailRow label="Phone">{a.phone ? <a href={"tel:" + a.phone}>{a.phone}</a> : null}</DetailRow>
       <DetailRow label="Date of birth">{dobLine}</DetailRow>
+      {a.sex ? <DetailRow label="Sex">{a.sex}</DetailRow> : null}
       {a.program ? <DetailRow label="Programme">{a.program}</DetailRow> : null}
       {a.centre ? <DetailRow label="Centre">{a.centre}</DetailRow> : null}
       {a.track ? <DetailRow label="Track">{a.track}</DetailRow> : null}

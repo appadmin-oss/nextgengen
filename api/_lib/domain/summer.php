@@ -660,8 +660,11 @@ function public_summer_profile(array $p): array {
         if ($qr && !empty($qr['studentId'])) {
             $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
             if (!$s) {
-                // Volunteer tokens serve the volunteer's digital ID here.
-                $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$qr['studentId']]);
+                // Volunteer tokens serve the volunteer's digital ID here. Resolve
+                // any volunteer that isn't explicitly declined/removed (a bound
+                // token means they were approved) so a non-'active' status value
+                // doesn't wrongly 404 the ID link.
+                $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND (status IS NULL OR status NOT IN ('declined','removed','deleted')) LIMIT 1", [$qr['studentId']]);
                 if ($v) return ['ok' => true, 'profile' => volunteer_public($v, true)];
             }
         }

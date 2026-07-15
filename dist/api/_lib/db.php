@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 33;
+const NGG_SCHEMA_TARGET = 34;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -846,6 +846,14 @@ function db_migrate(PDO $db): void {
         // tagged by purpose so a reset token can't be used as a plain login.
         33 => "
             ALTER TABLE auth_sessions ADD COLUMN purpose TEXT DEFAULT 'login';
+        ",
+
+        // Standardised intake: sex on every intake (applications + the
+        // volunteers/summer students they convert into).
+        34 => "
+            ALTER TABLE applications ADD COLUMN sex TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN sex TEXT DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN sex TEXT DEFAULT '';
         ",
     ];
 

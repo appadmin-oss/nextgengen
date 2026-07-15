@@ -423,7 +423,7 @@ function VolunteersPage({ setPage }) {
 }
 
 function MentorApplySection() {
-  const [d, setD] = useState({ firstName: "", lastName: "", otherName: "", email: "", phone: "", dob: "", role: VOLUNTEER_ROLES[0] ? VOLUNTEER_ROLES[0].name : "Mentor", why: "" });
+  const [d, setD] = useState({ firstName: "", lastName: "", otherName: "", sex: "", email: "", phone: "", dob: "", role: VOLUNTEER_ROLES[0] ? VOLUNTEER_ROLES[0].name : "Mentor", why: "" });
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [err, setErr] = useState("");
@@ -432,6 +432,7 @@ function MentorApplySection() {
     e.preventDefault();
     setErr("");
     if (d.firstName.trim() === "" || d.lastName.trim() === "") { setErr("Enter your first and last name."); return; }
+    if (!d.sex) { setErr("Select your sex."); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) { setErr("Enter a valid email."); return; }
     if (d.phone.trim().length < 7) { setErr("Enter a phone number."); return; }
     const age = dobToAge(d.dob);
@@ -441,6 +442,7 @@ function MentorApplySection() {
       await NGGApi.public.apply({
         kind: "mentor",
         firstName: d.firstName.trim(), lastName: d.lastName.trim(), otherName: d.otherName.trim(),
+        sex: d.sex,
         email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         role: d.role,
         why: d.why.trim(),
@@ -498,6 +500,15 @@ function MentorApplySection() {
                 <input type="date" value={d.dob} max={new Date().toISOString().slice(0, 10)} onChange={e => setD({...d, dob: e.target.value})} autoComplete="bday"/>
               </div>
               <div className="field">
+                <label style={{color:"rgba(255,255,255,0.8)"}}>Sex</label>
+                <select value={d.sex} onChange={e => setD({...d, sex: e.target.value})}>
+                  <option value="" disabled>Select…</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Prefer not to say</option>
+                </select>
+              </div>
+              <div className="field">
                 <label style={{color:"rgba(255,255,255,0.8)"}}>Email</label>
                 <input type="email" value={d.email} onChange={e => setD({...d, email: e.target.value})} placeholder="you@email.com" autoComplete="email"/>
               </div>
@@ -544,7 +555,7 @@ function JoinPage({ setPage }) {
   const isSummer = program === "summer";
   const [restored, setRestored] = useState(false);
   const [data, setData] = useState(() => {
-    const base = { firstName: "", lastName: "", otherName: "", dob: "", city: "Egbeda", track: "Music", why: "", parentEmail: "", parentPhone: "", photoUrl: "" };
+    const base = { firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "Egbeda", track: "Music", why: "", parentEmail: "", parentPhone: "", photoUrl: "" };
     try {
       const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
       if (saved && typeof saved === "object") return Object.assign(base, saved);
@@ -585,6 +596,7 @@ function JoinPage({ setPage }) {
       if (data.dob === "") return "Select the applicant's date of birth.";
       const age = dobToAge(data.dob);
       if (age < 10 || age > 17) return "Applicants must be between 10 and 17 years old.";
+      if (!data.sex) return "Select the applicant's sex.";
     }
     if (s === 2 && data.why.trim().length < 20) {
       return "Give us at least a sentence or two — 20 characters minimum.";
@@ -612,6 +624,7 @@ function JoinPage({ setPage }) {
         firstName: data.firstName.trim(),
         lastName: data.lastName.trim(),
         otherName: data.otherName.trim(),
+        sex: data.sex,
         dob: data.dob,
         centre: data.city,
         track: data.track,
@@ -720,6 +733,15 @@ function JoinPage({ setPage }) {
                   <div className="field">
                     <label>Date of birth</label>
                     <input type="date" value={data.dob} max={new Date().toISOString().slice(0, 10)} onChange={e => setData({...data, dob: e.target.value})} autoComplete="bday"/>
+                  </div>
+                  <div className="field">
+                    <label>Sex</label>
+                    <select value={data.sex} onChange={e => setData({...data, sex: e.target.value})}>
+                      <option value="" disabled>Select…</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Prefer not to say</option>
+                    </select>
                   </div>
                   <div className="field" style={{gridColumn:"1 / -1"}}>
                     <label>Which centre is closest to you?</label>
@@ -1485,7 +1507,7 @@ function VolunteerRegisterPage({ setPage }) {
     return VOL_LANES.some(l => l.key === r) ? r : "";
   });
   const [courses, setCourses] = React.useState([]);
-  const [d, setD] = React.useState({ firstName: "", lastName: "", otherName: "", email: "", phone: "", dob: "", why: "", photoUrl: "" });
+  const [d, setD] = React.useState({ firstName: "", lastName: "", otherName: "", sex: "", email: "", phone: "", dob: "", why: "", photoUrl: "" });
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
   const [err, setErr] = React.useState("");
@@ -1503,7 +1525,7 @@ function VolunteerRegisterPage({ setPage }) {
   const dobAge = dobToAge(d.dob);
   const dobOk = d.dob !== "" && dobAge >= 16 && dobAge <= 100;
   const phoneOk = d.phone.trim().length >= 7;
-  const ready = role !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== "" && emailOk
+  const ready = role !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== "" && d.sex !== "" && emailOk
     && phoneOk && dobOk
     && (role !== "instructor" || courses.length > 0);
   // Tell the applicant WHY the button is disabled instead of greying silently.
@@ -1515,6 +1537,7 @@ function VolunteerRegisterPage({ setPage }) {
   if (!phoneOk) missing.push("a phone number");
   if (d.dob === "") missing.push("date of birth");
   else if (!dobOk) missing.push("volunteers must be 16 or older");
+  if (d.sex === "") missing.push("sex");
   if (role === "instructor" && courses.length === 0) missing.push("at least one course");
 
   const submit = async (e) => {
@@ -1525,6 +1548,7 @@ function VolunteerRegisterPage({ setPage }) {
       const r = await NGGApi.public.apply({
         kind: "volunteer", role,
         firstName: d.firstName.trim(), lastName: d.lastName.trim(), otherName: d.otherName.trim(),
+        sex: d.sex,
         email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         why: d.why.trim(), photoUrl: d.photoUrl || "", courses: role === "instructor" ? courses : [],
       });
@@ -1650,6 +1674,13 @@ function VolunteerRegisterPage({ setPage }) {
                     <input id="vol-other" value={d.otherName} onChange={set("otherName")} autoComplete="additional-name" placeholder="Middle name(s)"/></div>
                   <div className="field"><label htmlFor="vol-dob">Date of birth</label>
                     <input id="vol-dob" type="date" value={d.dob} onChange={set("dob")} max={todayISO} autoComplete="bday"/></div>
+                  <div className="field"><label htmlFor="vol-sex">Sex</label>
+                    <select id="vol-sex" value={d.sex} onChange={set("sex")}>
+                      <option value="" disabled>Select…</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Prefer not to say</option>
+                    </select></div>
                   <div className="field"><label htmlFor="vol-email">Email</label>
                     <input id="vol-email" type="email" value={d.email} onChange={set("email")} autoComplete="email" placeholder="you@example.com"/></div>
                   <div className="field"><label htmlFor="vol-phone">Phone</label>
