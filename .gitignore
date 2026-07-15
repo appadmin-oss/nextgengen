@@ -17,10 +17,21 @@ Thumbs.db
 # Logs
 *.log
 
-# Build output + dependencies (generated; not committed)
-dist/
+# Dependencies (generated; not committed)
 node_modules/
 package-lock.json
+
+# dist/ is a PREBUILT, COMMITTED deploy artifact — shared hosts can't run
+# `node build.js`, so the whole built tree ships in the repo and must stay
+# complete. Track everything under dist/ EXCEPT its runtime-generated junk
+# and secrets (mirrors the api/ rules above).
+dist/api/config.php
+dist/api/_cache/*
+!dist/api/_cache/.htaccess
+!dist/api/_cache/.gitkeep
+dist/api/storage/*
+!dist/api/storage/.htaccess
+!dist/api/storage/.gitkeep
 
 # Local database + storage (SQLite dev DB, generated)
 api/storage/*
