@@ -273,8 +273,8 @@ chk('tier delete removes it', backend_dispatch('admin.hierarchy.delete', ['reque
 
 // ── Minimalist email template + applicant acknowledgement ──
 $__tpl = email_template(['title' => 'Test', 'intro' => 'Hi', 'bodyHtml' => '<p>x</p>', 'ctaLabel' => 'Open', 'ctaUrl' => 'https://x.test']);
-chk('email template is minimalist (navy + crimson, no gold/navy slab)', str_contains($__tpl, '#00225F') && str_contains($__tpl, '#E4155F') && !str_contains($__tpl, '#f5b026') && !str_contains($__tpl, '#0c1432'));
-chk('email cta button is navy, not gold', str_contains($__tpl, 'background:#00225F;color:#ffffff'));
+chk('email template is on-brand (navy + gold on cool neutrals, no legacy crimson)', str_contains($__tpl, '#0c1432') && str_contains($__tpl, '#f5b026') && !str_contains($__tpl, '#E4155F'));
+chk('email cta button is navy, not gold', str_contains($__tpl, 'linear-gradient(180deg,#1a2954,#0c1432)'));
 chk('email carries a hidden preheader', str_contains($__tpl, 'mso-hide:all'));
 chk('email footer carries a reply path + contact', str_contains($__tpl, 'Reply to this email') && str_contains($__tpl, 'afrovanguard.org'));
 $GLOBALS['__mail_sink'] = [];
@@ -282,7 +282,7 @@ $__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'ment
 chk('apply returns a traceable reference', isset($__ap['ref']) && preg_match('/^NGG-V-\d{5}$/', (string)$__ap['ref']) === 1 && $__ap['duplicate'] === false);
 $__ack = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'));
 chk('volunteer application acknowledges the applicant', count($__ack) === 1 && str_contains($__ack[0]['subject'], 'volunteer application'));
-chk('ack is on-brand + names role + carries the reference', str_contains($__ack[0]['html'], '#00225F') && str_contains($__ack[0]['html'], 'Mentor') && str_contains($__ack[0]['html'], (string)$__ap['ref']));
+chk('ack is on-brand + names role + carries the reference', str_contains($__ack[0]['html'], '#0c1432') && str_contains($__ack[0]['html'], 'Mentor') && str_contains($__ack[0]['html'], (string)$__ap['ref']));
 $__dup = backend_dispatch('public.apply', ['kind' => 'volunteer', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'why' => 'again']);
 chk('resubmit is a no-op duplicate with the same reference', $__dup['duplicate'] === true && $__dup['ref'] === $__ap['ref']);
 chk('duplicate does not re-acknowledge', count(array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'))) === 1);

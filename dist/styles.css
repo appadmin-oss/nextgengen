@@ -38,6 +38,12 @@
   --ink-400: #8088a6;
   --ink-300: #b8bfd6;
 
+  /* Cool-neutral hairlines — a crisp, intentional counterpoint to the warm
+     cream fields. Used for card/surface borders and dividers so edges read
+     defined without going heavy. */
+  --line-cool:      #e5e8ee;   /* crisp card edge */
+  --line-cool-soft: #eef0f4;   /* quiet dividers */
+
   /* Type */
   --font-display: "Sora", "Archivo", system-ui, sans-serif;
   --font-body:    "Inter", system-ui, sans-serif;
@@ -269,7 +275,7 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 /* Card */
 .card {
   background: white;
-  border: 1px solid rgba(12,20,50,0.07);
+  border: 1px solid var(--line-cool);
   border-radius: var(--r-lg);
   padding: 24px;
 }

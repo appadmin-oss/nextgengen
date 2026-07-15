@@ -448,39 +448,106 @@ function smtp_send_raw(array $smtp, array $from, string $to, string $subject, st
  * wordmark, clean type, and a single quiet navy button. No heavy header bar,
  * no gold slab. Table-based + inline styles for email-client safety.
  */
+/**
+ * Branded, email-client-safe HTML wrapper (tables + inline styles, no external
+ * CSS/fonts). Design system: navy #0c1432 / gold #f5b026 on cool neutrals with
+ * crisp hairline borders — mirrors the NGG public brand.
+ *
+ * Options (all optional, backward-compatible with every caller):
+ *   title, intro, bodyHtml, ctaLabel + ctaUrl, preheader, footNote
+ *   eyebrow      — small pill label above the title (e.g. "Verify your email")
+ *   eyebrowTone  — 'gold' (default) | 'coral'
+ *   badge        — tiny mono label in the header's top-right (e.g. "Cohort 03")
+ *   otp          — a code string; rendered as spaced digit cells in a panel
+ */
 function email_template(array $opts): string {
     global $CONFIG;
-    $origin = $CONFIG['app_origin'] ?? '';
+    $origin = rtrim((string)($CONFIG['app_origin'] ?? ''), '/');
     $c = org_contact();
-    $navy = '#00225F'; $crimson = '#E4155F'; $ink = '#333A4D'; $muted = '#8A93A6';
+    // Cool-neutral palette + brand accents.
+    $navy = '#0c1432'; $navyTop = '#1a2954';
+    $gold = '#f5b026'; $darkGold = '#7a5600'; $coral = '#a3331c';
+    $ink = '#414a63'; $muted = '#5a6488'; $faint = '#8088a6';
+    $hair = '#f0f1f5'; $panelLine = '#eceef2'; $cardLine = '#e8eaef'; $cellLine = '#e2e5ec';
+    $panel = '#f7f8fa'; $outer = '#eef0f4';
+    $disp = "'Sora','Segoe UI',Helvetica,Arial,sans-serif";
+    $sans = "'Inter','Segoe UI',Helvetica,Arial,sans-serif";
+    $monoF = "'JetBrains Mono',ui-monospace,'Courier New',monospace";
+
     // Hidden preview text — controls the one-line snippet inboxes show.
     $pre = trim((string)($opts['preheader'] ?? $opts['intro'] ?? $opts['title'] ?? ''));
     $preheader = $pre !== ''
-        ? '<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#eef1f5;opacity:0">' . esc_html($pre) . '</div>'
+        ? '<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:' . $outer . ';opacity:0">' . esc_html($pre) . '</div>'
         : '';
+
+    // Eyebrow pill (gold by default; coral tone available).
+    $eyebrow = '';
+    if (!empty($opts['eyebrow'])) {
+        $coralTone = ($opts['eyebrowTone'] ?? '') === 'coral';
+        $dot = $coralTone ? '#ff5a3c' : $gold;
+        $fg  = $coralTone ? $coral : $darkGold;
+        $bg  = $coralTone ? 'rgba(255,90,60,0.10)' : 'rgba(245,176,38,0.14)';
+        $bd  = $coralTone ? 'rgba(255,90,60,0.24)' : 'rgba(245,176,38,0.30)';
+        $eyebrow = '<div style="padding:36px 36px 0"><span style="display:inline-block;font-family:' . $monoF . ';font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:' . $fg . ';background:' . $bg . ';border:1px solid ' . $bd . ';padding:5px 12px;border-radius:999px"><span style="color:' . $dot . '">&#9679;</span>&nbsp;' . esc_html($opts['eyebrow']) . '</span></div>';
+    }
+
+    // OTP digit cells (email-safe: a row of bordered table cells).
+    $otpBlock = '';
+    if (!empty($opts['otp'])) {
+        $digits = preg_split('//u', trim((string)$opts['otp']), -1, PREG_SPLIT_NO_EMPTY);
+        $cells = '';
+        foreach ($digits as $d) {
+            $cells .= '<td style="padding:0 4px"><div style="width:44px;height:52px;line-height:52px;text-align:center;background:#ffffff;border:1px solid ' . $cellLine . ';border-radius:10px;font-family:' . $disp . ';font-size:22px;font-weight:700;color:' . $navy . '">' . esc_html($d) . '</div></td>';
+        }
+        $otpBlock = '<tr><td style="padding:24px 36px 0">'
+            . '<div style="background:' . $panel . ';border:1px solid ' . $panelLine . ';border-radius:14px;padding:20px">'
+            . '<div style="font-family:' . $monoF . ';font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:' . $faint . ';text-align:center">Or enter this code</div>'
+            . '<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:12px auto 0"><tr>' . $cells . '</tr></table>'
+            . '</div></td></tr>';
+    }
+
+    $badge = !empty($opts['badge'])
+        ? '<span style="font-family:' . $monoF . ';font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:' . $faint . '">' . esc_html($opts['badge']) . '</span>'
+        : '';
+
+    // Navy CTA — solid base for Outlook, gradient as progressive enhancement.
     $cta = (!empty($opts['ctaLabel']) && !empty($opts['ctaUrl']))
-        ? '<tr><td style="padding:22px 0 2px"><a href="' . esc_html($opts['ctaUrl']) . '" style="display:inline-block;background:' . $navy . ';color:#ffffff;text-decoration:none;font-weight:700;font-family:Arial,Helvetica,sans-serif;font-size:14px;letter-spacing:.2px;padding:13px 26px;border-radius:10px">' . esc_html($opts['ctaLabel']) . '</a></td></tr>'
+        ? '<tr><td style="padding:28px 36px 0"><a href="' . esc_html($opts['ctaUrl']) . '" style="display:block;text-align:center;background:' . $navy . ';background:linear-gradient(180deg,' . $navyTop . ',' . $navy . ');color:#ffffff;text-decoration:none;font-family:' . $sans . ';font-size:15px;font-weight:600;letter-spacing:.2px;padding:15px 30px;border-radius:12px">' . esc_html($opts['ctaLabel']) . '</a></td></tr>'
         : '';
-    return '<div style="background:#eef1f5;padding:36px 0;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased">'
+
+    return '<div style="background:' . $outer . ';padding:40px 0;font-family:' . $sans . ';-webkit-font-smoothing:antialiased">'
         . $preheader
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">'
-        . '<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border:1px solid #e6e8ee;border-radius:16px;overflow:hidden">'
-        . '<tr><td style="height:4px;background:' . $crimson . ';font-size:0;line-height:0">&nbsp;</td></tr>'
-        . '<tr><td style="padding:28px 34px 0">'
-        . '<div style="font-size:11px;letter-spacing:2.5px;color:' . $navy . ';font-weight:700;text-transform:uppercase">Next Generation Genius</div>'
-        . '<div style="font-size:10px;letter-spacing:2px;color:' . $muted . ';text-transform:uppercase;margin-top:3px">Afrovanguard</div>'
+        . '<table role="presentation" width="580" cellpadding="0" cellspacing="0" style="max-width:580px;width:100%;background:#ffffff;border:1px solid ' . $cardLine . ';border-radius:18px;overflow:hidden">'
+        // header — monogram + wordmark, crisp hairline underneath
+        . '<tr><td style="padding:22px 36px;border-bottom:1px solid ' . $hair . '">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+        . '<td style="vertical-align:middle"><table role="presentation" cellpadding="0" cellspacing="0"><tr>'
+        . '<td style="width:34px;height:34px;background:' . $navy . ';border-radius:9px;text-align:center;vertical-align:middle;font-family:' . $disp . ';font-size:18px;font-weight:800;color:' . $gold . '">G</td>'
+        . '<td style="padding-left:11px;vertical-align:middle;line-height:1.1">'
+        . '<div style="font-family:' . $disp . ';color:' . $navy . ';font-size:14px;font-weight:700;letter-spacing:-.01em">Next Generation Genius</div>'
+        . '<div style="font-family:' . $monoF . ';color:' . $faint . ';font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-top:4px">Afrovanguard</div>'
+        . '</td></tr></table></td>'
+        . '<td align="right" style="vertical-align:middle">' . $badge . '</td>'
+        . '</tr></table></td></tr>'
+        // eyebrow + title + intro
+        . ($eyebrow !== '' ? '<tr><td>' . $eyebrow . '</td></tr>' : '')
+        . '<tr><td style="padding:' . ($eyebrow !== '' ? '18px' : '36px') . ' 36px 0">'
+        . '<h1 style="margin:0;font-family:' . $disp . ';color:' . $navy . ';font-size:26px;font-weight:800;line-height:1.16;letter-spacing:-.02em">' . esc_html($opts['title'] ?? '') . '</h1>'
+        . (!empty($opts['intro']) ? '<p style="margin:14px 0 0;color:' . $ink . ';font-size:15px;line-height:1.65">' . esc_html($opts['intro']) . '</p>' : '')
         . '</td></tr>'
-        . '<tr><td style="padding:22px 34px 0">'
-        . '<h1 style="margin:0;color:' . $navy . ';font-size:21px;font-weight:800;line-height:1.25">' . esc_html($opts['title'] ?? '') . '</h1>'
-        . (!empty($opts['intro']) ? '<p style="margin:12px 0 0;color:' . $ink . ';font-size:15px;line-height:1.6">' . esc_html($opts['intro']) . '</p>' : '')
-        . '</td></tr>'
-        . (!empty($opts['bodyHtml']) ? '<tr><td style="padding:14px 34px 0;color:' . $ink . ';font-size:15px;line-height:1.65">' . $opts['bodyHtml'] . '</td></tr>' : '')
-        . '<tr><td style="padding:0 34px"><table role="presentation" cellpadding="0" cellspacing="0">' . $cta . '</table></td></tr>'
-        . '<tr><td style="padding:26px 34px 30px"><div style="border-top:1px solid #eef0f4;padding-top:16px;color:' . $muted . ';font-size:12px;line-height:1.6">'
+        . (!empty($opts['bodyHtml']) ? '<tr><td style="padding:14px 36px 0;color:' . $ink . ';font-size:15px;line-height:1.65">' . $opts['bodyHtml'] . '</td></tr>' : '')
+        . $cta
+        . $otpBlock
+        // footer — cool-neutral panel, crisp top border
+        . '<tr><td style="padding:28px 36px 30px;margin-top:26px;background:' . $panel . ';border-top:1px solid ' . $panelLine . '">'
+        . '<div style="color:' . $faint . ';font-size:12px;line-height:1.7">'
         . esc_html($opts['footNote'] ?? 'You are receiving this because you are part of Next Generation Genius.')
-        . '<br>Reply to this email, or reach us at <a href="mailto:' . esc_html($c['email']) . '" style="color:' . $muted . ';text-decoration:none">' . esc_html($c['email']) . '</a> · ' . esc_html($c['phone'])
-        . ($origin ? '<br><a href="' . esc_html($origin) . '" style="color:' . $muted . ';text-decoration:none">' . esc_html($c['site']) . '</a>' : '')
-        . '</div></td></tr></table></td></tr></table></div>';
+        . '<br>Reply to this email, or reach us at <a href="mailto:' . esc_html($c['email']) . '" style="color:' . $muted . ';text-decoration:underline">' . esc_html($c['email']) . '</a> &middot; ' . esc_html($c['phone'])
+        . '</div>'
+        . ($origin ? '<div style="margin-top:14px"><a href="' . esc_html($origin) . '" style="font-family:' . $monoF . ';font-size:11px;letter-spacing:.5px;color:' . $muted . ';text-decoration:none">' . esc_html($c['site']) . '</a></div>' : '')
+        . '</td></tr>'
+        . '</table></td></tr></table></div>';
 }
 
 /**

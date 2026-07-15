@@ -108,12 +108,13 @@ function auth_request(array $p): array {
     $link = ($CONFIG['app_origin'] ?? '') . '/?signin=' . rawurlencode($token);
     $first = explode(' ', (string)$member['fullName'])[0] ?? '';
     $html = email_template([
-        'title' => 'Sign in to NGG',
-        'intro' => 'Hi ' . ($first ?: 'there') . ', here is your secure sign-in.',
-        'bodyHtml' => '<p style="margin:0 0 10px">Enter this code in the app:</p>'
-            . '<div style="font-family:monospace;font-size:32px;font-weight:800;letter-spacing:6px;color:#0c1432;margin:0 0 8px">' . esc_html($otp) . '</div>'
-            . '<p style="margin:12px 0 0;color:#8a93b8;font-size:12px">This link and code expire in 15 minutes. If you didn\'t request this, ignore it.</p>',
-        'ctaLabel' => 'Sign in →', 'ctaUrl' => $link,
+        'eyebrow'  => 'Secure sign-in',
+        'title'    => 'Sign in to NGG',
+        'intro'    => 'Hi ' . ($first ?: 'there') . ', tap the button to sign in — or use the code below. Both are good for 15 minutes.',
+        'ctaLabel' => 'Sign in',
+        'ctaUrl'   => $link,
+        'otp'      => $otp,
+        'footNote' => 'You requested a sign-in to Next Generation Genius. Didn\'t request this? Ignore this email — your account stays secure.',
     ]);
     // The OTP/link row is already banked. If the mail relay fails we must NOT
     // hard-fail the request: that dead-ends the only email-free retry path and
@@ -274,12 +275,13 @@ function auth_reset_request(array $p): array {
     $link = ($CONFIG['app_origin'] ?? '') . '/?reset=' . rawurlencode($token);
     $first = explode(' ', (string)$member['fullName'])[0] ?? '';
     $html = email_template([
-        'title' => 'Set your NGG password',
-        'intro' => 'Hi ' . ($first ?: 'there') . ', use the code below to set a new password.',
-        'bodyHtml' => '<p style="margin:0 0 10px">Enter this code in the app:</p>'
-            . '<div style="font-family:monospace;font-size:32px;font-weight:800;letter-spacing:6px;color:#0c1432;margin:0 0 8px">' . esc_html($otp) . '</div>'
-            . '<p style="margin:12px 0 0;color:#8a93b8;font-size:12px">This link and code expire in 30 minutes. If you didn\'t request this, ignore it — your password stays unchanged.</p>',
-        'ctaLabel' => 'Set a password →', 'ctaUrl' => $link,
+        'eyebrow'  => 'Password reset',
+        'title'    => 'Set your NGG password',
+        'intro'    => 'Hi ' . ($first ?: 'there') . ', tap the button to set a new password — or use the code below. Both are good for 30 minutes.',
+        'ctaLabel' => 'Set a password',
+        'ctaUrl'   => $link,
+        'otp'      => $otp,
+        'footNote' => 'Didn\'t request this? Ignore this email — your password stays unchanged.',
     ]);
     $delivered = send_mail((string)$member['email'], 'Set your Next Generation Genius password', $html);
     audit($delivered ? 'password.reset.request' : 'password.reset.mail_fail', $member['memberId'], (string)$member['memberId'], [], $ip);
