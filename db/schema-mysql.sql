@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS members (
   centre VARCHAR(32), photoUrl TEXT, track VARCHAR(64), cohort VARCHAR(64),
   joinDate VARCHAR(40), dob VARCHAR(40),
   parentName VARCHAR(255), parentEmail VARCHAR(200), parentPhone VARCHAR(40), school VARCHAR(255),
-  bio TEXT, socials TEXT, totpSecret VARCHAR(64), passwordHash VARCHAR(255) DEFAULT '', notes TEXT,
+  bio TEXT, socials TEXT, totpSecret VARCHAR(64), totpBackup TEXT, passwordHash VARCHAR(255) DEFAULT '', notes TEXT,
   anchorCode VARCHAR(12),
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
   INDEX idx_members_email (email), INDEX idx_members_centre (centre), INDEX idx_members_status (status),

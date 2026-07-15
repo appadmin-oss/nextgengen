@@ -55,6 +55,15 @@ if ($CONFIG['debug']) {
     ini_set('display_errors', '1');
 }
 
+// Route PHP warnings/errors and every error_log() call to the app's own logs/
+// folder when it exists and is writable (else the host's default log). Override
+// the location with $CONFIG['log_dir']. The folder ships with a deny-all
+// .htaccess so logs are never web-readable.
+$__logDir = rtrim((string)($CONFIG['log_dir'] ?? (__DIR__ . '/../logs')), '/');
+if ($__logDir !== '' && is_dir($__logDir) && is_writable($__logDir)) {
+    ini_set('error_log', $__logDir . '/php-error.log');
+}
+
 require_once __DIR__ . '/response.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/util.php';

@@ -6,6 +6,11 @@ api/_cache/*
 !api/_cache/.htaccess
 !api/_cache/.gitkeep
 
+# Application logs (folder tracked, contents ignored)
+api/logs/*
+!api/logs/.htaccess
+!api/logs/.gitkeep
+
 # OS
 .DS_Store
 Thumbs.db
@@ -32,6 +37,9 @@ dist/api/_cache/*
 dist/api/storage/*
 !dist/api/storage/.htaccess
 !dist/api/storage/.gitkeep
+dist/api/logs/*
+!dist/api/logs/.htaccess
+!dist/api/logs/.gitkeep
 
 # Local database + storage (SQLite dev DB, generated)
 api/storage/*

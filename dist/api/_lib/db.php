@@ -37,6 +37,7 @@ function db_conn(): PDO {
         if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
             $pdo->exec("SET NAMES utf8mb4");
             $pdo->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'");
+            db_ensure_mysql_columns($pdo);
         }
         return $pdo;
     }
@@ -55,6 +56,40 @@ function db_conn(): PDO {
 
 function db_driver(): string {
     return db_conn()->getAttribute(PDO::ATTR_DRIVER_NAME);
+}
+
+/**
+ * MySQL has no auto-migration (its schema is the manual db/schema-mysql.sql
+ * mirror), so whenever that mirror lags the SQLite migrations, a column the code
+ * writes is simply absent — surfacing as an opaque 400/500 (e.g. admin TOTP
+ * setup writing members.totpBackup → the request just fails). This idempotently
+ * ADDs a small allowlist of post-baseline columns when they're missing. It is
+ * ADD-only: it never drops, alters, or touches data, and tolerates a DB user
+ * without ALTER (logs and moves on).
+ */
+function db_ensure_mysql_columns(PDO $db): void {
+    // table => [ column => "ALTER fragment" ]. Keep in sync with any column the
+    // SQLite migrations add that older MySQL mirrors may not have yet.
+    $need = [
+        'members' => ['totpBackup' => 'ADD COLUMN totpBackup TEXT'],
+    ];
+    try {
+        foreach ($need as $table => $cols) {
+            $st = $db->prepare(
+                'SELECT COLUMN_NAME FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?'
+            );
+            $st->execute([$table]);
+            $have = [];
+            foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $c) $have[strtolower((string)$c)] = true;
+            if (!$have) continue; // table not present here — leave it to the schema file
+            foreach ($cols as $col => $ddl) {
+                if (!isset($have[strtolower($col)])) $db->exec("ALTER TABLE `{$table}` {$ddl}");
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('[db] mysql column ensure: ' . $e->getMessage());
+    }
 }
 
 function db_migrate(PDO $db): void {
