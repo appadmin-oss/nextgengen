@@ -952,9 +952,12 @@ const ensureQREncoder = () => loadVendorScript("/vendor/qrcode.min.js").then(() 
 const ensureQRDecoder = () => loadVendorScript("/vendor/jsQR.min.js").then(() => window.jsQR);
 
 // Build a crisp SVG QR for a string using the vendored encoder.
+// NOTE: emit an SVG WITH explicit width/height (scalable:false). A scalable
+// (viewBox-only) SVG has no intrinsic size, so inside a shrink-to-fit /
+// fit-content container it collapses to nothing — the QR renders blank.
 function qrSvg(text, cellSize = 4, margin = 2) {
   if (!window.qrcode) return "";
-  try { const q = window.qrcode(0, "M"); q.addData(String(text)); q.make(); return q.createSvgTag({ cellSize, margin, scalable: true }); }
+  try { const q = window.qrcode(0, "M"); q.addData(String(text)); q.make(); return q.createSvgTag({ cellSize, margin, scalable: false }); }
   catch (_) { return ""; }
 }
 
