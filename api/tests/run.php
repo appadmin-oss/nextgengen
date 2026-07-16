@@ -1514,5 +1514,19 @@ chk('punctuality: invalid HH:MM rejected, valid kept', (function () {
     return $cfg['resumptionByType']['student'] === '09:00' && $cfg['resumptionByType']['volunteer'] === '08:30';
 })());
 
+// ── Admin resend ID ─────────────────────────────────────────────────────────
+db_insert('summer_cohorts', ['cohortId' => 'RC1', 'name' => 'Resend Cohort', 'status' => 'active', 'createdAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-R-1', 'cohortId' => 'RC1', 'token' => 'SUMQR-RS1', 'handle' => 'rskid', 'fullName' => 'Resend Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'regStatus' => 'verified', 'parentEmail' => 'parent@example.com', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-R-2', 'cohortId' => 'RC1', 'token' => '', 'handle' => 'noid', 'fullName' => 'No Id', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'regStatus' => 'verified', 'parentEmail' => 'p2@example.com', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+chk('resend ID: missing id rejected', backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => ''])['error'] === 'missing_id');
+chk('resend ID: non-staff forbidden', backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0001', 'kind' => 'student', 'id' => 'SUM-R-1'])['error'] === 'forbidden');
+chk('resend ID: unknown student not_found', backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => 'SUM-NOPE'])['error'] === 'not_found');
+chk('resend ID: student without a token ⇒ no_id', backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => 'SUM-R-2'])['error'] === 'no_id');
+chk('resend ID: issued student ⇒ ok + audited', (function () {
+    $r = backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => 'SUM-R-1']);
+    if (empty($r['ok']) || !isset($r['channels'])) return false;
+    return (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event='admin.id.resend' AND subject='SUM-R-1'")['c'] === 1;
+})());
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

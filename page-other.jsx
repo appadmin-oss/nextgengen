@@ -2857,7 +2857,7 @@ function CardQR({ token, size }) {
     if (!sc) { sc = document.createElement("script"); sc.id = "ngg-qrlib"; sc.src = "/vendor/qrcode.min.js"; document.head.appendChild(sc); }
     sc.addEventListener("load", draw, { once: true });
   }, [token]);
-  return src ? <img src={src} alt={"QR " + token} style={{ width: size, height: size, imageRendering: "pixelated" }}/> : <div style={{ width: size, height: size, background: "#f2f2f2" }}/>;
+  return src ? <img className="card-qr" src={src} alt={"QR " + token} style={{ width: size, height: size, imageRendering: "pixelated" }}/> : <div style={{ width: size, height: size, background: "#f2f2f2" }}/>;
 }
 
 function CardFront({ card, program, S }) {
@@ -3040,6 +3040,25 @@ function CardStudio() {
   // ── Export toolkit (PNG · bulk ZIP · print-ready CMYK PDF) ──────────────
   const zoneRef = React.useRef(null);
   const [exp, setExp] = React.useState("");   // progress/status text
+  const [notice, setNotice] = React.useState("");  // transient success note
+  const [resending, setResending] = React.useState("");  // id currently resending
+
+  const resendId = async (card) => {
+    const kind = isVol ? "volunteer" : "student";
+    const id = isVol ? card.volunteerId : card.studentId;
+    if (!id || resending) return;
+    const who = card.firstName || "this person";
+    if (!confirm("Resend " + who + "'s ID?\n\nSends the digital ID to the " + (isVol ? "volunteer" : "parent") + "'s email, and by SMS if a number is on file.")) return;
+    setResending(id); setNotice(""); setMsg("");
+    try {
+      const r = await NGGApi.admin.registration.resendId(kind, id);
+      const ch = (r.channels || []);
+      setNotice(ch.length ? (who + "'s ID sent by " + ch.join(" + ") + ".") : ("No email or phone on file for " + who + " — nothing was sent."));
+    } catch (e) {
+      const c = e.code || e.message;
+      setMsg(c === "no_id" ? "No ID has been issued for " + who + " yet." : c === "forbidden" ? "You don't have permission to resend IDs." : "Couldn't resend " + who + "'s ID — try again.");
+    } finally { setResending(""); }
+  };
   const ensureLib = () => new Promise((res, rej) => {
     if (window.CardExport) return res(window.CardExport);
     let sc = document.getElementById("ngg-cardexport");
@@ -3050,6 +3069,18 @@ function CardStudio() {
   // The print-zone renders each card as front then back, so DOM order is
   // [c0-front, c0-back, c1-front, c1-back, …].
   const faceNodes = () => Array.from(zoneRef.current ? zoneRef.current.querySelectorAll(".idcard") : []);
+  // The QR draws asynchronously (lazy vendor lib). Never rasterise a card before
+  // every QR + web-font is ready, or the export ships blank QR codes.
+  const waitReady = () => new Promise((res) => {
+    const want = cards.length, t0 = Date.now();
+    const tick = () => {
+      const qrs = zoneRef.current ? zoneRef.current.querySelectorAll("img.card-qr") : [];
+      const ready = qrs.length >= want && Array.from(qrs).every(im => im.complete && im.naturalWidth > 0);
+      if (ready || Date.now() - t0 > 9000) res();
+      else setTimeout(tick, 120);
+    };
+    tick();
+  });
   const cardName = (card) => (card.displayId || card.studentId || card.volunteerId || "card").replace(/[^\w.-]+/g, "-");
   const setName = () => (isVol ? "volunteer" : "student") + "-id-cards";
 
@@ -3057,7 +3088,7 @@ function CardStudio() {
     if (exp) return;
     try {
       setExp("Rendering…");
-      const CE = await ensureLib(); const n = faceNodes();
+      const CE = await ensureLib(); await waitReady(); const n = faceNodes();
       const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 4, bg: "#fff" });
       CE.download(f.bytes, cardName(cards[i]) + "-front.png", "image/png");
       const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 4, bg: "#fff" });
@@ -3069,7 +3100,8 @@ function CardStudio() {
   const exportZip = async () => {
     if (exp || !cards.length) return;
     try {
-      const CE = await ensureLib(); const n = faceNodes(); const files = [];
+      setExp("Preparing…");
+      const CE = await ensureLib(); await waitReady(); const n = faceNodes(); const files = [];
       for (let i = 0; i < cards.length; i++) {
         setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
         const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 4, bg: "#fff" });
@@ -3086,7 +3118,8 @@ function CardStudio() {
   const exportPdf = async () => {
     if (exp || !cards.length) return;
     try {
-      const CE = await ensureLib(); const n = faceNodes(); const fronts = [], backs = [];
+      setExp("Preparing…");
+      const CE = await ensureLib(); await waitReady(); const n = faceNodes(); const fronts = [], backs = [];
       for (let i = 0; i < cards.length; i++) {
         setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
         const f = await CE.nodeToImage(n[2 * i], { type: "image/jpeg", scale: 4, quality: 0.94, bg: "#fff" });
@@ -3137,6 +3170,7 @@ function CardStudio() {
         <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0", maxWidth: 520 }}>{isVol ? "Cards render for active volunteers — the ID and QR bind at approval. Colour + code come from the hierarchy tier." : "Cards render for verified students only — the ID and QR bind at parent consent. Print uses true 54×92mm per card."}</p>
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        {notice && <span className="mono" style={{ fontSize: 12, color: "#6fdc9d" }}>{notice}</span>}
         {exp && <span className="mono" style={{ fontSize: 12, color: gold }}>{exp}</span>}
         <button onClick={exportZip} disabled={!cards.length || !!exp} title="High-resolution PNG of every card face, zipped"
           style={{ padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#eef2fb", fontWeight: 800, fontSize: 14, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
@@ -3181,8 +3215,14 @@ function CardStudio() {
     <div className="print-zone" ref={zoneRef} style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
       {cards.map((card, i) => (
         <div key={card.studentId || card.volunteerId} className="card-pair" style={{ position: "relative" }}>
-          <button className="no-print" onClick={() => exportPairPng(i)} disabled={!!exp} title="Download this card as PNG (front + back)"
-            style={{ position: "absolute", top: -12, right: -8, zIndex: 2, width: 30, height: 30, borderRadius: "50%", border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>↓</button>
+          <div className="no-print" style={{ position: "absolute", top: -12, right: -8, zIndex: 2, display: "flex", gap: 6 }}>
+            <button onClick={() => resendId(card)} disabled={!!resending} title="Resend this ID to the parent / volunteer (email + SMS)"
+              style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>
+              {resending === (isVol ? card.volunteerId : card.studentId) ? "Sending…" : "Resend ID"}
+            </button>
+            <button onClick={() => exportPairPng(i)} disabled={!!exp} title="Download this card as PNG (front + back)"
+              style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>↓</button>
+          </div>
           <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} program={program} S={0.5}/> : <CardFront card={card} program={program} S={0.5}/>}</div>
           <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5}/></div>
         </div>

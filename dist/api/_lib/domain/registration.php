@@ -564,6 +564,64 @@ function registration_issue_id(string $studentId): array {
     return ['ok' => true, 'issued' => true, 'token' => (string)$qr['token']];
 }
 
+/** Deliver (or re-deliver) a student's Genius ID to the guardian — email
+ *  always when on file, SMS when SMS is configured. Idempotent + side-effect
+ *  free beyond the messages, so it is safe for an admin to press again. */
+function student_send_id(string $studentId): array {
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
+    if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    if (empty($s['token'])) return ['ok' => false, 'error' => 'no_id']; // ID not issued yet
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $url = $origin . '/q/' . rawurlencode((string)$s['token']);
+    $firstRaw = explode(' ', trim((string)$s['fullName']))[0] ?: 'your child';
+    $first = esc_html($firstRaw);
+    $displayId = card_display_id($s);
+    $channels = [];
+    $email = trim((string)($s['parentEmail'] ?? ''));
+    if (function_exists('email_template') && function_exists('send_mail') && $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $html = email_template([
+            'title' => $first . "'s Genius ID",
+            'intro' => 'Hello' . (!empty($s['guardianName']) ? ' ' . esc_html((string)$s['guardianName']) : '') . " — here is {$first}'s Next Generation Genius ID.",
+            'bodyHtml' => '<p style="margin:0 0 10px"><b>Student ID:</b> ' . esc_html($displayId) . '</p>'
+                . '<p style="margin:0 0 10px">The link below is ' . $first . "'s digital ID and attendance profile — the QR on the printed card opens the same page. Show either at any centre to check in.</p>",
+            'ctaLabel' => "Open {$first}'s ID →", 'ctaUrl' => $url,
+            'footNote' => "You are receiving this because you are {$firstRaw}'s guardian at Next Generation Genius.",
+        ]);
+        if (send_mail($email, "{$firstRaw}'s NGG Genius ID", $html)) $channels[] = 'email';
+    }
+    $phone = trim((string)($s['guardianPhone'] ?? ''));
+    if ($phone !== '' && function_exists('sms_enabled') && sms_enabled()) {
+        $r = sms_send($phone, "NGG: {$firstRaw}'s Genius ID ({$displayId}). Digital ID: {$url}");
+        if (!empty($r['ok'])) $channels[] = 'sms';
+    }
+    return ['ok' => true, 'channels' => $channels, 'url' => $url, 'displayId' => $displayId];
+}
+
+/** Admin: resend a student's or volunteer's ID. Gated per kind (students →
+ *  'summer', volunteers → 'people'), audited, and reports the channels used so
+ *  staff see exactly what went out (and what didn't). */
+function admin_id_resend(array $p): array {
+    $kind = (string)($p['kind'] ?? 'student');
+    $id = trim((string)($p['id'] ?? ''));
+    if ($id === '') return ['ok' => false, 'error' => 'missing_id'];
+
+    if ($kind === 'volunteer') {
+        $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+        $v = db_row('SELECT volunteerId, token FROM volunteers WHERE volunteerId = ? LIMIT 1', [$id]);
+        if (!$v) return ['ok' => false, 'error' => 'not_found'];
+        if (empty($v['token'])) return ['ok' => false, 'error' => 'no_id'];
+        $channels = volunteer_send_id($id);
+        audit('admin.id.resend', $g['requester']['memberId'], $id, ['kind' => 'volunteer', 'channels' => $channels], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'channels' => $channels, 'kind' => 'volunteer'];
+    }
+
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $res = student_send_id($id);
+    if (empty($res['ok'])) return $res;
+    audit('admin.id.resend', $g['requester']['memberId'], $id, ['kind' => 'student', 'channels' => $res['channels']], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'channels' => $res['channels'], 'kind' => 'student'];
+}
+
 /* ── Guardian photo re-shoot (public, token-authenticated) ────────────────── */
 
 /** Ensure a student has a stable re-shoot token; returns it. */

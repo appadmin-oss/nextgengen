@@ -350,6 +350,8 @@
         hierarchyUpsert: (data) => request('/admin/registration.php', { body: { action: 'hierarchy_upsert', data } }),
         hierarchyDelete: (tierId) => request('/admin/registration.php', { body: { action: 'hierarchy_delete', tierId } }),
         volunteerCards:  (volunteerId) => request('/admin/registration.php' + qs({ view: 'vcards', volunteerId })),
+        // Resend a student's or volunteer's ID (email + SMS where on file).
+        resendId:    (kind, id) => request('/admin/registration.php', { body: { action: 'resend_id', kind, id } }),
       },
       integrations: {
         list:     () => request('/admin/integrations.php'),
