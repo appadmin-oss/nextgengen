@@ -3136,7 +3136,7 @@ function CardStudio() {
         files.push({ name: cardName(cards[i]) + "-back.png", bytes: b.bytes });
       }
       setExp("Packaging…");
-      CE.download(CE.zipStore(files), setName() + "-png.zip", "application/zip");
+      CE.download(await CE.zipStore(files), setName() + "-png.zip", "application/zip");
       setExp("");
     } catch (e) { setExp(""); setMsg("Export failed — try again."); }
   };
@@ -3149,13 +3149,13 @@ function CardStudio() {
       for (let i = 0; i < cards.length; i++) {
         setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
         const f = await CE.nodeToImage(n[2 * i], { type: "image/jpeg", scale: 4, quality: 0.94, bg: "#fff" });
-        fronts.push({ jpeg: f.bytes, wPx: f.wPx, hPx: f.hPx });
+        fronts.push({ dataUrl: f.dataUrl });
         const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/jpeg", scale: 4, quality: 0.94, bg: "#fff" });
-        backs.push({ jpeg: b.bytes, wPx: b.wPx, hPx: b.hPx });
+        backs.push({ dataUrl: b.dataUrl });
       }
       setExp("Imposing sheets…");
       // Front sheets first, then back sheets — so a shop can duplex and cut.
-      const pdf = CE.buildImpositionPDF(fronts.concat(backs), { sheet: "A4", trimW_mm: 54, trimH_mm: 92, marks: true });
+      const pdf = await CE.buildImpositionPDF(fronts.concat(backs), { sheet: "A4", trimW_mm: 54, trimH_mm: 92, marks: true });
       CE.download(pdf, setName() + "-print-cmyk.pdf", "application/pdf");
       setExp("");
     } catch (e) { setExp(""); setMsg("PDF export failed — try again."); }

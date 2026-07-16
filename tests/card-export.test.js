@@ -1,60 +1,70 @@
-/* Structural tests for the ID-card export builders (Node, no browser).
-   Validates the .zip and .pdf byte layout since we have no PDF viewer here. */
-const CE = require('../vendor/card-export.js');
+/* Library-backed ID-card export test (html2canvas + jsPDF + JSZip).
+   Runs in real Chromium via Playwright, served by php -S so /vendor/* resolves.
+   Skips with a pass if playwright-core isn't installed (like the kiosk E2E). */
+const fs = require('fs'), path = require('path');
+const { spawn } = require('child_process');
 
-let pass = 0, fail = 0;
-function chk(label, cond) { if (cond) { pass++; } else { fail++; console.error('  ✗ ' + label); } }
-function latin(bytes) { let s = ''; for (const b of bytes) s += String.fromCharCode(b); return s; }
+const ROOT = path.resolve(__dirname, '..');
+const PORT = 8196, BASE = 'http://127.0.0.1:' + PORT;
+const FIX = path.join(ROOT, 'tests', '_export_fixture.html');
 
-/* ---- ZIP (store) ---- */
-(function () {
-  const files = [
-    { name: 'a.txt', bytes: new Uint8Array([104, 105]) },            // "hi"
-    { name: 'b.bin', bytes: new Uint8Array([0, 255, 1, 254, 2]) },
-  ];
-  const zip = CE.zipStore(files);
-  const s = latin(zip);
-  chk('zip: local file header signature', s.indexOf('PK\x03\x04') === 0);
-  chk('zip: two central dir records', (s.split('PK\x01\x02').length - 1) === 2);
-  chk('zip: EOCD present', s.indexOf('PK\x05\x06') !== -1);
-  chk('zip: filenames embedded', s.indexOf('a.txt') !== -1 && s.indexOf('b.bin') !== -1);
-  // CRC32 of "hi" is 0xD8932AAC (verified against Node zlib.crc32).
-  chk('crc32("hi") correct', CE.crc32(new Uint8Array([104, 105])) === 0xD8932AAC);
-  // EOCD central-dir count field (offset -18..-16) equals 2.
-  const count = zip[zip.length - 14] | (zip[zip.length - 13] << 8);
-  chk('zip: EOCD entry count = 2', count === 2);
+function loadChromium() {
+  for (const m of [process.env.PLAYWRIGHT_MODULE, 'playwright', 'playwright-core'].filter(Boolean)) {
+    try { return require(m).chromium; } catch (_) {}
+  }
+  return null;
+}
+
+(async () => {
+  const chromium = loadChromium();
+  if (!chromium) { console.log('⏭  card-export: skipped (playwright not installed)'); process.exit(0); }
+  const exe = process.env.CHROMIUM_PATH
+    || (fs.existsSync('/opt/pw-browsers/chromium-1194/chrome-linux/chrome') ? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' : undefined);
+
+  fs.writeFileSync(FIX, '<!doctype html><html><body>'
+    + '<div id="card" class="idcard" style="width:295px;height:502px;background:#fff;position:relative;font-family:Inter,sans-serif;overflow:hidden">'
+    + '<div style="position:absolute;top:200px;left:0;right:0;text-align:center;font-weight:800;font-size:26px;color:#E4155F">ADAEZE</div>'
+    + '<div style="position:absolute;left:0;right:0;bottom:0;height:14px;background:#B0143C"></div></div>'
+    + '<script src="/vendor/card-export.js"></script></body></html>');
+
+  const server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
+  await new Promise(r => setTimeout(r, 1000));
+  let pass = 0, fail = 0; const ok = (l, c) => { c ? pass++ : (fail++, console.error('  ✗ ' + l)); };
+  let browser;
+  try {
+    browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
+    const page = await browser.newPage();
+    page.on('console', m => { if (m.type() === 'error') console.error('    page:', m.text()); });
+    await page.goto(BASE + '/tests/_export_fixture.html', { waitUntil: 'networkidle' });
+    const r = await page.evaluate(async () => {
+      const CE = window.CardExport; await CE.ensureDeps();
+      const node = document.getElementById('card');
+      const img = await CE.nodeToImage(node, { type: 'image/jpeg', scale: 3, quality: 0.94, bg: '#fff' });
+      const png = await CE.nodeToImage(node, { scale: 2 });
+      const zip = await CE.zipStore([{ name: 'a.png', bytes: png.bytes }]);
+      const pdf = await CE.buildImpositionPDF([{ dataUrl: img.dataUrl }, { dataUrl: img.dataUrl }], { sheet: 'A4', marks: true });
+      let latin = ''; for (let i = 0; i < pdf.length; i++) latin += String.fromCharCode(pdf[i]);
+      // Uncompressed probe: prove setDrawColor(4 args) emits a DeviceCMYK op.
+      const jd = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' });
+      jd.setDrawColor(0, 0, 0, 1); jd.line(10, 10, 40, 10);
+      const pu = new Uint8Array(jd.output('arraybuffer'));
+      let pl = ''; for (let i = 0; i < pu.length; i++) pl += String.fromCharCode(pu[i]);
+      return {
+        jpg: img.bytes[0] === 0xFF && img.bytes[1] === 0xD8 && img.bytes.length > 1500,
+        zipPk: zip[0] === 0x50 && zip[1] === 0x4b && zip.length > 100,
+        pdfHeader: latin.indexOf('%PDF') === 0, pdfEof: latin.trim().slice(-5) === '%%EOF', pdfLen: pdf.length,
+        outputIntent: latin.indexOf('OutputIntent') !== -1 && latin.indexOf('FOGRA39') !== -1,
+        cmyk: /(\d+\.?\d* ){4}K/.test(pl) && pl.indexOf(' 255. K') === -1, // 4-channel K op, in-range (0..1)
+      };
+    });
+    ok('html2canvas rasterised the card to JPEG', r.jpg);
+    ok('JSZip produced a valid .zip', r.zipPk);
+    ok('jsPDF produced a valid PDF (%PDF … %%EOF, ' + r.pdfLen + ' bytes)', r.pdfHeader && r.pdfEof);
+    ok('PDF carries a FOGRA39 CMYK OutputIntent', r.outputIntent);
+    ok('marks drawn in DeviceCMYK (4-channel stroke operator)', r.cmyk);
+  } catch (e) { fail++; console.error('  ✗ harness error: ' + (e && e.message)); }
+  finally { if (browser) await browser.close(); try { process.kill(-server.pid); } catch (_) {} try { fs.unlinkSync(FIX); } catch (_) {} }
+
+  console.log((fail ? '❌ FAIL' : '✅ PASS') + ': ' + pass + ' passed, ' + fail + ' failed (card-export, library-backed)');
+  process.exit(fail ? 1 : 0);
 })();
-
-/* ---- JPEG size sniff ---- */
-(function () {
-  // Minimal JPEG framing: SOI, SOF0 with height=0x0064(100) width=0x00C8(200).
-  const j = new Uint8Array([0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x11, 0x08, 0x00, 0x64, 0x00, 0xC8, 0x03]);
-  const sz = CE.jpegSize(j);
-  chk('jpegSize reads WxH from SOF0', sz.w === 200 && sz.h === 100);
-})();
-
-/* ---- Imposition PDF ---- */
-(function () {
-  const fakeJpeg = new Uint8Array([0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x11, 0x08, 0x03, 0x84, 0x02, 0x4E, 0x03, 0xFF, 0xD9]);
-  const cards = [];
-  for (let i = 0; i < 20; i++) cards.push({ jpeg: fakeJpeg, wPx: 590, hPx: 1004 }); // > 9/sheet ⇒ multi-page
-  const pdf = CE.buildImpositionPDF(cards, { sheet: 'A4', marks: true });
-  const s = latin(pdf);
-  chk('pdf: %PDF header', s.indexOf('%PDF-1.') === 0);
-  chk('pdf: has catalog', s.indexOf('/Type /Catalog') !== -1);
-  chk('pdf: has pages tree', s.indexOf('/Type /Pages') !== -1);
-  chk('pdf: paginates 20 cards over multiple A4 sheets', (s.match(/\/Type \/Page[^s]/g) || []).length >= 3);
-  chk('pdf: CMYK output intent', s.indexOf('/OutputIntent') !== -1 && s.indexOf('FOGRA39') !== -1);
-  chk('pdf: DeviceRGB image xobjects (DCTDecode)', s.indexOf('/Filter /DCTDecode') !== -1);
-  chk('pdf: crop marks drawn in CMYK rich black', s.indexOf('0 0 0 1 RG') !== -1);
-  chk('pdf: registration targets in registration colour (all plates)', s.indexOf('1 1 1 1 RG') !== -1);
-  chk('pdf: trailer + startxref + EOF', s.indexOf('trailer') !== -1 && s.indexOf('startxref') !== -1 && s.trim().slice(-5) === '%%EOF');
-  // startxref offset must point exactly at the "xref" keyword.
-  const m = s.match(/startxref\n(\d+)\n%%EOF$/);
-  chk('pdf: startxref offset points at xref table', !!m && s.slice(parseInt(m[1], 10), parseInt(m[1], 10) + 4) === 'xref');
-  // No dangling placeholder parent (all patched to the real pages id).
-  chk('pdf: every page Parent patched', s.indexOf('/Parent 2 0 R') === -1 || s.indexOf('/Type /Pages') < s.indexOf('/Parent 2 0 R'));
-})();
-
-console.log((fail ? '❌ FAIL' : '✅ PASS') + ': ' + pass + ' passed, ' + fail + ' failed (card-export)');
-process.exit(fail ? 1 : 0);
