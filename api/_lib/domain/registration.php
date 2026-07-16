@@ -564,6 +564,34 @@ function registration_issue_id(string $studentId): array {
     return ['ok' => true, 'issued' => true, 'token' => (string)$qr['token']];
 }
 
+/* ── Emailable QR image cache ────────────────────────────────────────────────
+ * Reliable in-email QR needs a hosted PNG (mail clients strip data: URIs), so
+ * the browser (which already renders the card QR) hands us a PNG we cache and
+ * serve from api/public/qr.php. Stored under the persistent storage dir (not
+ * _cache, which is swept) so an already-sent email keeps rendering its QR. */
+function qr_cache_dir(): string {
+    $base = (string)($GLOBALS['CONFIG']['db']['sqlite_path'] ?? '');
+    $dir = ($base !== '' ? dirname($base) : (__DIR__ . '/../../storage')) . '/qr';
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    return $dir;
+}
+function qr_cache_path(string $token): string { return qr_cache_dir() . '/' . sha1($token) . '.png'; }
+function qr_cache_exists(string $token): bool { return $token !== '' && is_file(qr_cache_path($token)); }
+/** Persist a client-rendered QR PNG (a data: URL). Validates it's a real,
+ *  reasonably-sized PNG before writing — never trust the bytes blindly. */
+function qr_cache_store(string $token, string $dataUrl): bool {
+    if ($token === '' || strpos($dataUrl, 'data:image/png;base64,') !== 0) return false;
+    $bytes = base64_decode(substr($dataUrl, strlen('data:image/png;base64,')), true);
+    if ($bytes === false || strlen($bytes) < 60 || strlen($bytes) > 262144) return false;
+    if (substr($bytes, 0, 8) !== "\x89PNG\r\n\x1a\n") return false; // PNG magic
+    return @file_put_contents(qr_cache_path($token), $bytes) !== false;
+}
+/** The public URL the email uses for a token's QR (served by api/public/qr.php). */
+function qr_public_url(string $token): string {
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    return $origin . '/api/public/qr.php?t=' . rawurlencode($token);
+}
+
 /** Deliver (or re-deliver) a student's Genius ID to the guardian — email
  *  always when on file, SMS when SMS is configured. Idempotent + side-effect
  *  free beyond the messages, so it is safe for an admin to press again. */
@@ -579,11 +607,16 @@ function student_send_id(string $studentId): array {
     $channels = [];
     $email = trim((string)($s['parentEmail'] ?? ''));
     if (function_exists('email_template') && function_exists('send_mail') && $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        // Embed the scannable QR when we have a hosted copy for this token.
+        $qrHtml = qr_cache_exists((string)$s['token'])
+            ? '<div style="text-align:center;margin:6px 0 14px"><img src="' . esc_html(qr_public_url((string)$s['token'])) . '" width="180" height="180" alt="Check-in QR for ' . $first . '" style="width:180px;height:180px;border:1px solid #e4e4e4;border-radius:12px;padding:8px;background:#fff"/><div style="font:400 12px monospace;color:#888;margin-top:6px">Scan at any centre to check in</div></div>'
+            : '';
         $html = email_template([
             'title' => $first . "'s Genius ID",
             'intro' => 'Hello' . (!empty($s['guardianName']) ? ' ' . esc_html((string)$s['guardianName']) : '') . " — here is {$first}'s Next Generation Genius ID.",
             'bodyHtml' => '<p style="margin:0 0 10px"><b>Student ID:</b> ' . esc_html($displayId) . '</p>'
-                . '<p style="margin:0 0 10px">The link below is ' . $first . "'s digital ID and attendance profile — the QR on the printed card opens the same page. Show either at any centre to check in.</p>",
+                . $qrHtml
+                . '<p style="margin:0 0 10px">The QR above (and the button below) open ' . $first . "'s digital ID and attendance profile — the same code printed on the card. Show either at any centre to check in.</p>",
             'ctaLabel' => "Open {$first}'s ID →", 'ctaUrl' => $url,
             'footNote' => "You are receiving this because you are {$firstRaw}'s guardian at Next Generation Genius.",
         ]);
@@ -603,6 +636,7 @@ function student_send_id(string $studentId): array {
 function admin_id_resend(array $p): array {
     $kind = (string)($p['kind'] ?? 'student');
     $id = trim((string)($p['id'] ?? ''));
+    $qrPng = (string)($p['qrPng'] ?? ''); // optional client-rendered QR PNG (data URL)
     if ($id === '') return ['ok' => false, 'error' => 'missing_id'];
 
     if ($kind === 'volunteer') {
@@ -610,16 +644,20 @@ function admin_id_resend(array $p): array {
         $v = db_row('SELECT volunteerId, token FROM volunteers WHERE volunteerId = ? LIMIT 1', [$id]);
         if (!$v) return ['ok' => false, 'error' => 'not_found'];
         if (empty($v['token'])) return ['ok' => false, 'error' => 'no_id'];
+        if ($qrPng !== '') qr_cache_store((string)$v['token'], $qrPng);
         $channels = volunteer_send_id($id);
-        audit('admin.id.resend', $g['requester']['memberId'], $id, ['kind' => 'volunteer', 'channels' => $channels], (string)($p['ip'] ?? ''));
-        return ['ok' => true, 'channels' => $channels, 'kind' => 'volunteer'];
+        audit('admin.id.resend', $g['requester']['memberId'], $id, ['kind' => 'volunteer', 'channels' => $channels, 'qr' => qr_cache_exists((string)$v['token'])], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'channels' => $channels, 'kind' => 'volunteer', 'qr' => qr_cache_exists((string)$v['token'])];
     }
 
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $st = db_row('SELECT token FROM summer_students WHERE studentId = ? LIMIT 1', [$id]);
+    if ($qrPng !== '' && $st && !empty($st['token'])) qr_cache_store((string)$st['token'], $qrPng);
     $res = student_send_id($id);
     if (empty($res['ok'])) return $res;
-    audit('admin.id.resend', $g['requester']['memberId'], $id, ['kind' => 'student', 'channels' => $res['channels']], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'channels' => $res['channels'], 'kind' => 'student'];
+    $hasQr = $st && !empty($st['token']) && qr_cache_exists((string)$st['token']);
+    audit('admin.id.resend', $g['requester']['memberId'], $id, ['kind' => 'student', 'channels' => $res['channels'], 'qr' => $hasQr], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'channels' => $res['channels'], 'kind' => 'student', 'qr' => $hasQr];
 }
 
 /* ── Guardian photo re-shoot (public, token-authenticated) ────────────────── */

@@ -3043,17 +3043,43 @@ function CardStudio() {
   const [notice, setNotice] = React.useState("");  // transient success note
   const [resending, setResending] = React.useState("");  // id currently resending
 
+  // Render a crisp QR PNG for a token's /q profile URL, so the emailed ID can
+  // embed the scannable code (via the hosted qr.php image). Reuses the same
+  // vendored encoder the cards use. Returns "" if the lib can't load.
+  const ensureQrLib = () => new Promise((res) => {
+    if (window.qrcode) return res(window.qrcode);
+    let sc = document.getElementById("ngg-qrlib");
+    if (!sc) { sc = document.createElement("script"); sc.id = "ngg-qrlib"; sc.src = "/vendor/qrcode.min.js"; document.head.appendChild(sc); }
+    sc.addEventListener("load", () => res(window.qrcode), { once: true });
+    sc.addEventListener("error", () => res(null), { once: true });
+  });
+  const qrPngFor = async (token) => {
+    try {
+      const lib = await ensureQrLib(); if (!lib) return "";
+      const origin = window.location.origin || "https://next.afrovanguard.org.ng";
+      const q = lib(0, "M"); q.addData(origin + "/q/" + String(token)); q.make();
+      const n = q.getModuleCount(), cell = 8, margin = 16, size = n * cell + margin * 2;
+      const cv = document.createElement("canvas"); cv.width = cv.height = size;
+      const ctx = cv.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, size, size);
+      ctx.save(); ctx.translate(margin, margin); q.renderTo2dContext(ctx, cell); ctx.restore();
+      return cv.toDataURL("image/png");
+    } catch (_) { return ""; }
+  };
+
   const resendId = async (card) => {
     const kind = isVol ? "volunteer" : "student";
     const id = isVol ? card.volunteerId : card.studentId;
     if (!id || resending) return;
     const who = card.firstName || "this person";
-    if (!confirm("Resend " + who + "'s ID?\n\nSends the digital ID to the " + (isVol ? "volunteer" : "parent") + "'s email, and by SMS if a number is on file.")) return;
+    if (!confirm("Resend " + who + "'s ID?\n\nEmails the digital ID and the scannable QR to the " + (isVol ? "volunteer" : "parent") + ", and texts a link by SMS if a number is on file.")) return;
     setResending(id); setNotice(""); setMsg("");
     try {
-      const r = await NGGApi.admin.registration.resendId(kind, id);
+      const qrPng = card.token ? await qrPngFor(card.token) : "";
+      const r = await NGGApi.admin.registration.resendId(kind, id, qrPng);
       const ch = (r.channels || []);
-      setNotice(ch.length ? (who + "'s ID sent by " + ch.join(" + ") + ".") : ("No email or phone on file for " + who + " — nothing was sent."));
+      const qrNote = r.qr ? " (with QR)" : "";
+      setNotice(ch.length ? (who + "'s ID sent by " + ch.join(" + ") + qrNote + ".") : ("No email or phone on file for " + who + " — nothing was sent."));
     } catch (e) {
       const c = e.code || e.message;
       setMsg(c === "no_id" ? "No ID has been issued for " + who + " yet." : c === "forbidden" ? "You don't have permission to resend IDs." : "Couldn't resend " + who + "'s ID — try again.");

@@ -569,11 +569,15 @@ function volunteer_send_id(string $volunteerId): array {
         }
         return $out === '' ? '' : '<p style="margin:14px 0 6px"><b>Come shadow a session:</b></p><ul style="margin:0;padding-left:18px">' . $out . '</ul>';
     })();
+    $qrHtml = (function_exists('qr_cache_exists') && qr_cache_exists((string)$v['token']))
+        ? '<div style="text-align:center;margin:6px 0 14px"><img src="' . esc_html(qr_public_url((string)$v['token'])) . '" width="180" height="180" alt="Check-in QR" style="width:180px;height:180px;border:1px solid #e4e4e4;border-radius:12px;padding:8px;background:#fff"/><div style="font:400 12px monospace;color:#888;margin-top:6px">Scan at any centre to check in</div></div>'
+        : '';
     $html = email_template([
         'title' => "You're in — welcome to the team",
         'intro' => 'Hello ' . esc_html((string)$v['fullName']) . ' — your volunteer registration was approved.',
         'bodyHtml' => '<p style="margin:0 0 10px"><b>Volunteer ID:</b> ' . esc_html($volunteerId) . '<br><b>Role:</b> ' . esc_html($roleLabel) . '</p>'
-            . '<p style="margin:0 0 10px">The link below is your digital ID and attendance profile — the QR on your printed card opens the same page. Show either at any centre to check in.</p>'
+            . $qrHtml
+            . '<p style="margin:0 0 10px">The QR above (and the button below) open your digital ID and attendance profile — the same code on your printed card. Show either at any centre to check in.</p>'
             . $sessionsHtml,
         'ctaLabel' => 'Open my volunteer ID →', 'ctaUrl' => $url,
         'footNote' => 'Printed IDs are issued at your first session. Roles working directly with teenagers complete safeguarding screening first.',

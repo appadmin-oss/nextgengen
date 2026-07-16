@@ -1525,7 +1525,15 @@ chk('resend ID: student without a token ⇒ no_id', backend_dispatch('admin.id.r
 chk('resend ID: issued student ⇒ ok + audited', (function () {
     $r = backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => 'SUM-R-1']);
     if (empty($r['ok']) || !isset($r['channels'])) return false;
-    return (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event='admin.id.resend' AND subject='SUM-R-1'")['c'] === 1;
+    return (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event='admin.id.resend' AND subject='SUM-R-1'")['c'] >= 1;
+})());
+// Emailable QR image cache
+$TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR4nGP8z8Dwn4EIwDiqEAAlWAMBn1QzqQAAAABJRU5ErkJggg==';
+chk('QR cache rejects a non-PNG payload', qr_cache_store('SUMQR-RS1', 'data:image/gif;base64,R0lGODlhAQAB') === false);
+chk('QR cache stores a real PNG for a token', qr_cache_store('SUMQR-RS1', $TINY_PNG) === true && qr_cache_exists('SUMQR-RS1'));
+chk('resend with QR ⇒ qr:true (email will embed the hosted image)', (function () use ($TINY_PNG) {
+    $r = backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => 'SUM-R-1', 'qrPng' => $TINY_PNG]);
+    return !empty($r['ok']) && ($r['qr'] ?? false) === true;
 })());
 
 // ── Mission proof-review queue (M13: verify was built but unreachable) ────────

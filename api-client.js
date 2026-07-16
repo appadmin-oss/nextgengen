@@ -354,7 +354,9 @@
         hierarchyDelete: (tierId) => request('/admin/registration.php', { body: { action: 'hierarchy_delete', tierId } }),
         volunteerCards:  (volunteerId) => request('/admin/registration.php' + qs({ view: 'vcards', volunteerId })),
         // Resend a student's or volunteer's ID (email + SMS where on file).
-        resendId:    (kind, id) => request('/admin/registration.php', { body: { action: 'resend_id', kind, id } }),
+        // qrPng (optional data URL) is cached server-side so the email can embed
+        // the scannable QR via the hosted /api/public/qr.php image.
+        resendId:    (kind, id, qrPng) => request('/admin/registration.php', { body: { action: 'resend_id', kind, id, qrPng } }),
       },
       integrations: {
         list:     () => request('/admin/integrations.php'),
