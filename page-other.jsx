@@ -3047,6 +3047,71 @@ function CardStudio() {
     catch (e) {}
   };
 
+  // ── Export toolkit (PNG · bulk ZIP · print-ready CMYK PDF) ──────────────
+  const zoneRef = React.useRef(null);
+  const [exp, setExp] = React.useState("");   // progress/status text
+  const ensureLib = () => new Promise((res, rej) => {
+    if (window.CardExport) return res(window.CardExport);
+    let sc = document.getElementById("ngg-cardexport");
+    if (!sc) { sc = document.createElement("script"); sc.id = "ngg-cardexport"; sc.src = "/vendor/card-export.js"; document.head.appendChild(sc); }
+    sc.addEventListener("load", () => res(window.CardExport), { once: true });
+    sc.addEventListener("error", () => rej(new Error("load_failed")), { once: true });
+  });
+  // The print-zone renders each card as front then back, so DOM order is
+  // [c0-front, c0-back, c1-front, c1-back, …].
+  const faceNodes = () => Array.from(zoneRef.current ? zoneRef.current.querySelectorAll(".idcard") : []);
+  const cardName = (card) => (card.displayId || card.studentId || card.volunteerId || "card").replace(/[^\w.-]+/g, "-");
+  const setName = () => (isVol ? "volunteer" : "student") + "-id-cards";
+
+  const exportPairPng = async (i) => {
+    if (exp) return;
+    try {
+      setExp("Rendering…");
+      const CE = await ensureLib(); const n = faceNodes();
+      const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 4, bg: "#fff" });
+      CE.download(f.bytes, cardName(cards[i]) + "-front.png", "image/png");
+      const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 4, bg: "#fff" });
+      CE.download(b.bytes, cardName(cards[i]) + "-back.png", "image/png");
+      setExp("");
+    } catch (e) { setExp(""); setMsg("Couldn't render that card — try again."); }
+  };
+
+  const exportZip = async () => {
+    if (exp || !cards.length) return;
+    try {
+      const CE = await ensureLib(); const n = faceNodes(); const files = [];
+      for (let i = 0; i < cards.length; i++) {
+        setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
+        const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 4, bg: "#fff" });
+        files.push({ name: cardName(cards[i]) + "-front.png", bytes: f.bytes });
+        const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 4, bg: "#fff" });
+        files.push({ name: cardName(cards[i]) + "-back.png", bytes: b.bytes });
+      }
+      setExp("Packaging…");
+      CE.download(CE.zipStore(files), setName() + "-png.zip", "application/zip");
+      setExp("");
+    } catch (e) { setExp(""); setMsg("Export failed — try again."); }
+  };
+
+  const exportPdf = async () => {
+    if (exp || !cards.length) return;
+    try {
+      const CE = await ensureLib(); const n = faceNodes(); const fronts = [], backs = [];
+      for (let i = 0; i < cards.length; i++) {
+        setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
+        const f = await CE.nodeToImage(n[2 * i], { type: "image/jpeg", scale: 4, quality: 0.94, bg: "#fff" });
+        fronts.push({ jpeg: f.bytes, wPx: f.wPx, hPx: f.hPx });
+        const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/jpeg", scale: 4, quality: 0.94, bg: "#fff" });
+        backs.push({ jpeg: b.bytes, wPx: b.wPx, hPx: b.hPx });
+      }
+      setExp("Imposing sheets…");
+      // Front sheets first, then back sheets — so a shop can duplex and cut.
+      const pdf = CE.buildImpositionPDF(fronts.concat(backs), { sheet: "A4", trimW_mm: 54, trimH_mm: 92, marks: true });
+      CE.download(pdf, setName() + "-print-cmyk.pdf", "application/pdf");
+      setExp("");
+    } catch (e) { setExp(""); setMsg("PDF export failed — try again."); }
+  };
+
   const shell = (ch) => (
     <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 20px 80px" }}>
       <div style={{ maxWidth: 1120, margin: "0 auto" }}>{ch}</div>
@@ -3081,8 +3146,21 @@ function CardStudio() {
         <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{cards.length} {isVol ? "volunteer" : "verified student"}{cards.length === 1 ? "" : "s"} ready</h1>
         <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0", maxWidth: 520 }}>{isVol ? "Cards render for active volunteers — the ID and QR bind at approval. Colour + code come from the hierarchy tier." : "Cards render for verified students only — the ID and QR bind at parent consent. Print uses true 54×92mm per card."}</p>
       </div>
-      <button onClick={() => window.print()} disabled={!cards.length} style={{ padding: "13px 24px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Print all ({cards.length * 2} faces)</button>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        {exp && <span className="mono" style={{ fontSize: 12, color: gold }}>{exp}</span>}
+        <button onClick={exportZip} disabled={!cards.length || !!exp} title="High-resolution PNG of every card face, zipped"
+          style={{ padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#eef2fb", fontWeight: 800, fontSize: 14, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
+          ↓ PNG (all, .zip)
+        </button>
+        <button onClick={exportPdf} disabled={!cards.length || !!exp} title="Print-ready, imposed, CMYK — hand this to a printer"
+          style={{ padding: "13px 24px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
+          ⎙ Print-ready PDF (CMYK)
+        </button>
+      </div>
     </div>
+    <p className="no-print" style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "-8px 0 18px", maxWidth: 640 }}>
+      The PDF imposes cards {"—"} auto-laid out N-up on A4 at an exact 54{"×"}92&nbsp;mm trim with crop &amp; registration marks and a CMYK (FOGRA39) output intent, front sheets then back sheets for duplex. Card artwork is embedded at ~300&nbsp;DPI; the press RIP separates it to CMYK against the intent. Everything renders in your browser {"—"} nothing is uploaded.
+    </p>
 
     <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 26 }}>
       {tab("students", "Summer students")}
@@ -3110,9 +3188,11 @@ function CardStudio() {
       {msg && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "10px 0 0" }}>{msg}</p>}
     </div>
 
-    <div className="print-zone" style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
-      {cards.map(card => (
-        <div key={card.studentId || card.volunteerId} className="card-pair">
+    <div className="print-zone" ref={zoneRef} style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
+      {cards.map((card, i) => (
+        <div key={card.studentId || card.volunteerId} className="card-pair" style={{ position: "relative" }}>
+          <button className="no-print" onClick={() => exportPairPng(i)} disabled={!!exp} title="Download this card as PNG (front + back)"
+            style={{ position: "absolute", top: -12, right: -8, zIndex: 2, width: 30, height: 30, borderRadius: "50%", border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>↓</button>
           <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} program={program} S={0.5}/> : <CardFront card={card} program={program} S={0.5}/>}</div>
           <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5}/></div>
         </div>

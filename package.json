@@ -9,7 +9,8 @@
     "check": "node build.js && echo build OK",
     "test:api": "php api/tests/run.php",
     "test:smtp": "php api/tests/smtp-send.php",
-    "test:kiosk": "node tests/kiosk-offline.js"
+    "test:kiosk": "node tests/kiosk-offline.js",
+    "test:cards": "node tests/card-export.test.js"
   },
   "devDependencies": {
     "esbuild": "^0.23.0"
