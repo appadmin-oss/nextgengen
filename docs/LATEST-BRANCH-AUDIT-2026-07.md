@@ -437,3 +437,59 @@ needs ~700 KB of JS to render.
 *Prepared 2026-07-16. Every finding was verified against the cited source on
 this branch. Prior-audit repeats are noted; new findings dominate the Critical
 and High tiers.*
+
+---
+
+## Remediation status (2026-07-16, same branch)
+
+Fixes were made in four verified batches on `claude/nextgengen-latest-audit-wzccku`.
+Backend: 451 API tests pass; the kiosk offline E2E passes. New: 17 card-export
+builder tests + a Chromium end-to-end check of the rasteriser. `node build.js`
+rebuilds `dist/` clean each batch.
+
+**Fixed & verified**
+
+- **C1** — Journal never discards a reflection on session expiry; auth/transient
+  errors keep the queue and raise a re-sign-in banner; the member identity is
+  cached so the installed PWA boots offline (also addresses **H6**).
+- **C2** — `api/public/circle.php` rate-limits lookup + connect (safeguarding
+  throttle); `member_circle_revoke` rotates `anchorCode` so a revoked adult
+  can't re-pair.
+- **C3** — Impersonation `start` requires a full 2FA super-admin; `stop` can no
+  longer mint an unearned 2FA pass.
+- **C4** — Coach has a deterministic safeguarding path for self-harm/abuse
+  disclosures (server + prompt), and the journal has an always-reachable help
+  affordance on every screen.
+- **C5 / part of M12** — Fabricated press wall, fake named mentor, fake "Genius
+  of the Week", unlabeled sample cohort, and placeholder footer socials are
+  removed, labeled as samples, or gated on real handles.
+- **H2** — MySQL auto-migrate replays idempotent seed INSERTs and records its
+  hash even on partial failure (ends the per-request replay loop).
+- **H3** — Admin members/audit routes forward pagination/export/staff params.
+- **H4** — `admin-totp-setup` returns backup codes; 2FA lockout is recoverable.
+- **H5** — Journal read scoped to the caller (IDOR closed).
+- **H9** — Closed nav mega-menus use `visibility:hidden` (focus order fixed).
+- **M11** — Rate limiter holds one lock across read-modify-write and GCs `_rl`.
+
+**New capability work (requested alongside the audit)**
+
+- Attendance punctuality settings: per-member-type resumption time + grace +
+  timezone; every scan stamped present/late (migration 35, MySQL-mirrored);
+  the check-in desk shows it live. 5 new tests.
+- ID Card Studio export: per-card PNG, bulk PNG ZIP, and a print-ready,
+  N-up-imposed, CMYK-output-intent PDF with crop/registration marks —
+  replacing browser print. Self-contained + CSP-safe.
+
+**Still open (tracked here, not yet done)**
+
+- **H1 / H7 / H8 / L1 / L6** — the single-bundle / globals architecture and its
+  consequences: the module-bundler migration is the real fix and is deferred as
+  a deliberate, larger project. (jsQR could be lazy-loaded as a cheap partial
+  win.)
+- **M13** — `anchor.mission.verify` still has no client/admin surface.
+- **M14** — no SSR/prerender for share/SEO.
+- **M1** — default gold/coral small-text contrast still fails AA in places.
+- **M2 / M3 / M4 / M5 / M7 / M8 / M9 / M10 / M12 (media)** and the **Low** tier —
+  not yet addressed in this pass.
+- **L2 / L3 / L4** — prod CSP still permits eval; DB/logs in web root; SMTP TLS
+  auto-downgrade — hardening deferred.
