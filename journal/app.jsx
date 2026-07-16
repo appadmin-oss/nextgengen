@@ -202,6 +202,14 @@ function Toasts() {
 
 /* ---- Helpers ------------------------------------------------------------ */
 const isOffline = e => e && /network|fetch|Failed to fetch|offline/i.test(e.message || e.code || "");
+// An expired/revoked session (or CSRF) must be treated like being offline for
+// queue purposes — the write can succeed once the member re-authenticates, so
+// it must NEVER cause a queued reflection to be discarded.
+const isAuthErr = e => !!e && (e.status === 401 || e.status === 403 || /unauthor|session|expired|forbidden|csrf|sign.?in|no_requester/i.test(String((e && (e.code || e.message)) || "")));
+// Anything that isn't a definitive "this content is invalid" rejection is worth
+// retrying: offline, auth, server 5xx, rate-limit. Only a genuine 4xx content
+// rejection should ever drop an entry from the queue.
+const isRetryable = e => !e || isOffline(e) || isAuthErr(e) || (e && e.status >= 500) || (e && e.status === 429) || /rate/i.test(String((e && (e.code || e.message)) || ""));
 const dayKey = d => new Date(d).toISOString().slice(0, 10);
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
 function mondayOf(d) { const x = new Date(d); const day = (x.getUTCDay() + 6) % 7; x.setUTCDate(x.getUTCDate() - day); return x; }
@@ -212,7 +220,8 @@ function rankFor(xp) { let cur = RANKS[0], next = null; for (let i = 0; i < RANK
 /* ========================================================================== */
 function App() {
   const [booting, setBooting] = useState(true);
-  const [member, setMember] = useState(null);
+  const [member, setMember] = useState(store.cache().member || null);
+  const [sessionLost, setSessionLost] = useState(false);
   const [view, setView] = useState("home");
   const prev = useRef("home");
   const [online, setOnline] = useState(navigator.onLine);
@@ -249,8 +258,19 @@ function App() {
     NGGApi.auth.me().then(r => {
       if (!alive) return;
       setMember(r.member || null);
+      // Cache the identity so an installed PWA can boot into the journal while
+      // offline instead of hitting a sign-in wall it cannot satisfy offline.
+      if (r.member) store.patch({ member: r.member });
+      if (r.member) setSessionLost(false);
       if (r.member && (onbReplay || localStorage.getItem("ngg_aj_onb") !== "1")) setOnboard(true);
-    }).catch(() => {}).finally(() => { if (alive) setBooting(false); });
+    }).catch((e) => {
+      if (!alive) return;
+      // Offline / server unreachable: fall back to the last known member so the
+      // journal opens read-write (writes queue locally). A genuine signed-out
+      // state (auth error while online) instead flags re-sign-in.
+      const cached = store.cache().member;
+      if (cached) { setMember(cached); if (navigator.onLine && isAuthErr(e)) setSessionLost(true); }
+    }).finally(() => { if (alive) setBooting(false); });
     return () => { alive = false; };
   }, []);
 
@@ -296,7 +316,21 @@ function App() {
 
   const syncPending = useCallback(async () => {
     const q = store.queue(); if (!q.length || !navigator.onLine) return;
-    for (const it of q) { try { await NGGApi.member.journalCreate({ mood: it.mood, body: it.body, private: true }); store.setQueue(store.queue().filter(x => x.tempId !== it.tempId)); } catch (e) { if (isOffline(e)) break; else store.setQueue(store.queue().filter(x => x.tempId !== it.tempId)); } }
+    for (const it of q) {
+      try {
+        await NGGApi.member.journalCreate({ mood: it.mood, body: it.body, private: true });
+        store.setQueue(store.queue().filter(x => x.tempId !== it.tempId));
+      } catch (e) {
+        // NEVER discard a reflection on a recoverable error. An expired session
+        // (401) used to fall through to the delete branch and permanently erase
+        // a teen's words ~20s after "kept on this device". Now: keep the whole
+        // remaining queue and stop; if it's an auth error, surface re-sign-in.
+        if (isRetryable(e)) { if (isAuthErr(e)) setSessionLost(true); break; }
+        // A definitive content rejection (rare) is the only reason to drop, so a
+        // single poison entry can't wedge the queue forever.
+        store.setQueue(store.queue().filter(x => x.tempId !== it.tempId));
+      }
+    }
     setPending(store.queue()); await refresh();
   }, [refresh]);
   useEffect(() => {
@@ -373,7 +407,11 @@ function App() {
     setCelebrate({ already });
     setView("home");
     try { await NGGApi.member.journalCreate({ mood: mood || "good", body, private: true }); store.setQueue(store.queue().filter(x => x.tempId !== tempId)); setPending(store.queue()); await refresh(); }
-    catch (e) { if (!isOffline(e)) toast.err("Couldn't save — kept on this device."); }
+    catch (e) {
+      // The entry is already queued (above), so it is safe on-device regardless.
+      if (isAuthErr(e)) { setSessionLost(true); toast.err("Session expired — saved here, sign in to sync."); }
+      else if (!isOffline(e)) toast.err("Couldn't save — kept on this device.");
+    }
     setTimeout(() => setCelebrate(null), 2800);
   }, [entries, session, refresh]);
 
@@ -409,6 +447,15 @@ function App() {
           <i className="ph-fill ph-cloud-slash" aria-hidden="true"/> You're offline — your reflections are saved on this device and will sync when you reconnect.
         </div>
       )}
+      {online && sessionLost && (
+        <div className="aj-offlinebar" role="alert" aria-live="assertive" style={{ background: "#7c1d1d", color: "#fff" }}>
+          <i className="ph-fill ph-warning-circle" aria-hidden="true"/> Your session expired. Everything you wrote is safe on this device —{" "}
+          <button onClick={() => { setSessionLost(false); setMember(null); }}
+            style={{ background: "none", border: "none", color: "#ffd7d7", textDecoration: "underline", cursor: "pointer", font: "inherit", padding: 0 }}>
+            sign in to sync
+          </button>.
+        </div>
+      )}
       {view === "home" && <Journey ctx={ctx}/>}
       {view === "reflect" && <Reflect ctx={ctx}/>}
       {view === "systems" && <Systems ctx={ctx}/>}
@@ -437,10 +484,54 @@ function App() {
         setOnboard(false);
       }}/>}
       <InstallPrompt/>
+      <HelpFab/>
       <Toasts/>
     </div>
   );
 }
+
+/* ---- Help / crisis path (always reachable, every screen) ----------------- */
+/* Safeguarding baseline: a teen writing about something serious must never be
+   in a room with no visible door. This button is present on every view — even
+   Reflect and Coach, which hide the bottom nav — and never grades, scores or
+   logs anything. */
+function HelpFab() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="aj-help-fab" onClick={() => setOpen(true)} aria-label="Get help now"
+        style={{ position: "fixed", right: 16, bottom: "calc(env(safe-area-inset-bottom, 0px) + 84px)", zIndex: 60,
+          width: 46, height: 46, borderRadius: "50%", border: "1px solid rgba(255,255,255,.35)",
+          background: "rgba(124,29,29,.92)", color: "#fff", fontSize: 20, cursor: "pointer",
+          boxShadow: "0 6px 20px rgba(0,0,0,.35)", display: "grid", placeItems: "center" }}>
+        <i className="ph-fill ph-lifebuoy" aria-hidden="true"/>
+      </button>
+      {open && (
+        <div role="dialog" aria-modal="true" aria-label="Get help"
+          onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
+          style={{ position: "fixed", inset: 0, zIndex: 90, background: "rgba(4,8,20,.72)", display: "grid", placeItems: "center", padding: 18 }}>
+          <div style={{ maxWidth: 420, width: "100%", background: "#101a33", color: "#eef2fb", borderRadius: 18, padding: "22px 20px", border: "1px solid rgba(255,255,255,.14)" }}>
+            <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>You can always ask for help</h2>
+            <p style={{ margin: "0 0 16px", fontSize: 14, lineHeight: 1.6, color: "rgba(230,238,255,.78)" }}>
+              If something is worrying or hurting you, you don't have to carry it alone. Talking to a trusted adult — a parent, a teacher, or your NGG mentor — is a strong move, not a weak one.
+            </p>
+            <div style={{ display: "grid", gap: 10 }}>
+              <a href="tel:112" style={helpBtn}><b>Call 112</b><span style={helpSub}>Nigeria emergency — if you or someone is in danger right now</span></a>
+              <a href="tel:+2349037776318" style={helpBtn}><b>Call an NGG safeguarding adult</b><span style={helpSub}>+234 903 777 6318 · a real person who is here to help</span></a>
+              <a href="mailto:next@afrovanguard.org.ng?subject=I%20need%20help" style={helpBtn}><b>Message NGG safeguarding</b><span style={helpSub}>next@afrovanguard.org.ng · we reply as fast as we can</span></a>
+            </div>
+            <p style={{ margin: "16px 0 0", fontSize: 12.5, color: "rgba(230,238,255,.6)", lineHeight: 1.5 }}>
+              Your journal is private. Reaching out here doesn't share anything you've written — it just connects you to a person.
+            </p>
+            <button onClick={() => setOpen(false)} style={{ marginTop: 16, width: "100%", padding: "12px", borderRadius: 12, border: "none", background: "rgba(255,255,255,.12)", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Close</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+const helpBtn = { display: "block", textDecoration: "none", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 12, padding: "12px 14px", color: "#fff" };
+const helpSub = { display: "block", fontSize: 12, color: "rgba(230,238,255,.68)", marginTop: 3, fontWeight: 400 };
 
 /* ---- Journey (path) ----------------------------------------------------- */
 function Journey({ ctx }) {

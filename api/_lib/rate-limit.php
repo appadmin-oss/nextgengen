@@ -20,18 +20,40 @@ function rate_limit_check(string $op): void {
     $now = time();
     $cutoff = $now - $window;
 
+    // Hold an exclusive lock across the WHOLE read-modify-write so two concurrent
+    // requests can't both read a sub-limit count and both append — the previous
+    // unlocked read + LOCK_EX write let bursts slip past the cap, defeating the
+    // brute-force throttles this exists to enforce.
+    $fh = @fopen($path, 'c+');
+    if ($fh === false) return; // fail-open rather than 500 on a cache-dir hiccup
+    if (!flock($fh, LOCK_EX)) { fclose($fh); return; }
+
     $hits = [];
-    if (file_exists($path)) {
-        $raw = @file_get_contents($path);
-        if ($raw) {
-            foreach (explode("\n", trim($raw)) as $ts) {
-                if (is_numeric($ts) && (int)$ts >= $cutoff) $hits[] = (int)$ts;
-            }
+    $raw = stream_get_contents($fh);
+    if ($raw) {
+        foreach (explode("\n", trim($raw)) as $ts) {
+            if (is_numeric($ts) && (int)$ts >= $cutoff) $hits[] = (int)$ts;
         }
     }
     if (count($hits) >= $max) {
+        flock($fh, LOCK_UN); fclose($fh);
         json_error('rate_limited', 429);
     }
     $hits[] = $now;
-    @file_put_contents($path, implode("\n", $hits), LOCK_EX);
+    ftruncate($fh, 0); rewind($fh);
+    fwrite($fh, implode("\n", $hits));
+    fflush($fh);
+    flock($fh, LOCK_UN); fclose($fh);
+
+    // Opportunistic GC: the _rl dir otherwise grows one file per (op,IP) forever.
+    // ~0.5% of calls sweep files untouched for 2× the longest window.
+    if (function_exists('random_int') && random_int(0, 199) === 0) rate_limit_gc($dir);
+}
+
+/** Remove stale rate-limit files (older than a generous multiple of any window). */
+function rate_limit_gc(string $dir): void {
+    $stale = time() - 2 * 3600; // 2h: comfortably past every configured window
+    foreach (@glob($dir . '/*') ?: [] as $f) {
+        if (@filemtime($f) < $stale) @unlink($f);
+    }
 }

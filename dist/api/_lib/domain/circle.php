@@ -157,8 +157,14 @@ function member_circle_revoke(array $p): array {
     $linkId = (string)($p['linkId'] ?? '');
     $n = db_update('circle_links', ['status' => 'revoked', 'revokedAt' => now_iso()], ['linkId' => $linkId, 'memberId' => $mid]);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    // Rotate the invite code so a revoked adult who memorised it cannot silently
+    // re-pair — this is what "they lose access immediately" actually requires.
+    // Existing active links authenticate via their signed linkId token, not the
+    // code, so they are unaffected; only fresh pairing needs the new code.
+    db_update('members', ['anchorCode' => null], ['memberId' => $mid]);
+    $newCode = circle_ensure_code($mid);
     audit('circle.revoke', $mid, $linkId, [], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+    return ['ok' => true, 'code' => $newCode];
 }
 
 // ── Portal (guardian) side — code-based, no account ─────────────────────────

@@ -251,6 +251,8 @@ return [
         'upload.sign'  => ['max' => 30,  'window' => 60],
         'gate'         => ['max' => 300, 'window' => 60],  // staff desk: high-volume check-ins
         'gate.unlock'  => ['max' => 8,   'window' => 300], // kiosk password: brute-force throttle
+        'circle.lookup'=> ['max' => 6,   'window' => 300], // guardian invite-code lookup: safeguarding throttle (a 6-digit code → a child's name)
+        'circle.connect'=> ['max' => 5,  'window' => 600], // guardian pairing: consumes a code, tighter still
         'hook'         => ['max' => 120, 'window' => 60],  // inbound webhook bursts
         'default'      => ['max' => 60,  'window' => 60],
     ],

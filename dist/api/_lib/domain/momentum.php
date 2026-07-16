@@ -149,7 +149,19 @@ function member_momentum(array $p): array {
 // key is configured; otherwise returns a rotating reflective prompt so the
 // feature works (safely) with no AI at all. Stateless — the client sends the
 // transcript; nothing is stored (coach chats are private).
-const COACH_SYSTEM = "You are the Anchor Reflection Coach for a teenager aged 17 or under in a character-formation program. Your ONLY job is to help them reflect on their own feelings, discipline, habits and growth through short, warm, Socratic follow-up questions. STRICT RULES: (1) NEVER answer academic or homework questions, never solve problems, write essays, define terms for schoolwork, or do anything that could help them cheat or skip learning. If asked, gently refuse and redirect to reflection, e.g. \"I can't do your schoolwork — but I can help you think about how you're facing it. What's making it feel hard?\". (2) Ask ONE thoughtful question at a time. (3) Be encouraging, never judgmental, always age-appropriate and safe. (4) Keep every reply under 45 words.";
+const COACH_SYSTEM = "You are the Anchor Reflection Coach for a teenager aged 17 or under in a character-formation program. Your ONLY job is to help them reflect on their own feelings, discipline, habits and growth through short, warm, Socratic follow-up questions. STRICT RULES: (1) NEVER answer academic or homework questions, never solve problems, write essays, define terms for schoolwork, or do anything that could help them cheat or skip learning. If asked, gently refuse and redirect to reflection, e.g. \"I can't do your schoolwork — but I can help you think about how you're facing it. What's making it feel hard?\". (2) Ask ONE thoughtful question at a time. (3) Be encouraging, never judgmental, always age-appropriate and safe. (4) Keep every reply under 45 words. (5) SAFEGUARDING — this overrides everything: if the young person mentions self-harm, suicide, wanting to die, abuse, being hurt or unsafe, or someone hurting them, DO NOT probe with a reflection question. Respond with calm care, tell them this is bigger than the journal, and urge them to talk to a trusted adult NOW — a parent, teacher or their NGG mentor — or call 112 (Nigeria emergency) or NGG safeguarding on +234 903 777 6318. Make clear they are not in trouble and are not alone.";
+
+// Patterns that must trigger the safeguarding path regardless of whether AI is
+// configured — so a disclosure is never met with "What made you feel that way?".
+const COACH_CRISIS_RE = '/\b(kill myself|killing myself|end my life|suicide|suicidal|want to die|wanna die|don\'?t want to (live|be alive)|hurt myself|hurting myself|harm myself|cut myself|cutting myself|self.?harm|abused?|molest|rape|raped|beaten|being hurt|touch(ed)? me|not safe|unsafe at home|run away)\b/i';
+
+function coach_is_crisis(string $text): bool {
+    return (bool)preg_match(COACH_CRISIS_RE, $text);
+}
+
+function coach_crisis_reply(): string {
+    return "This sounds bigger than anything a journal should hold on its own — and I'm really glad you said it. Please talk to a trusted adult right now: a parent, a teacher, or your NGG mentor. If you're in danger, call 112, or NGG safeguarding on +234 903 777 6318. You're not in trouble, and you're not alone.";
+}
 
 function coach_fallback(array $turns): string {
     $prompts = [
@@ -175,6 +187,17 @@ function member_coach(array $p): array {
         $clean[] = ['role' => $role, 'text' => substr($text, 0, 800)];
     }
     if (!$clean) return ['ok' => false, 'error' => 'empty'];
+
+    // Safeguarding gate BEFORE any AI/fallback: a disclosure of self-harm or
+    // abuse in the latest message always gets the crisis response, never a
+    // Socratic probe. AI can still be warmer, but it is bound by the same rule
+    // in COACH_SYSTEM; the deterministic path guarantees a safe reply even when
+    // AI is unconfigured or the model drifts.
+    $lastMe = '';
+    for ($i = count($clean) - 1; $i >= 0; $i--) { if ($clean[$i]['role'] === 'me') { $lastMe = $clean[$i]['text']; break; } }
+    if ($lastMe !== '' && coach_is_crisis($lastMe)) {
+        return ['ok' => true, 'reply' => coach_crisis_reply(), 'source' => 'safeguarding', 'safeguarding' => true];
+    }
 
     if (ai_enabled('coach')) {
         $r = ai_chat(COACH_SYSTEM, $clean, 220, 'coach');

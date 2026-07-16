@@ -88,33 +88,41 @@ function db_apply_mysql_schema(PDO $db): void {
         error_log('[db] schema_meta check: ' . $e->getMessage()); // fall through and try to apply
     }
 
-    // Strip comments, split on ';', run only additive structural DDL.
+    // Strip comments, split on ';', run additive structural DDL AND the seed
+    // INSERTs. The mirror's INSERTs are all idempotent (ON DUPLICATE KEY UPDATE),
+    // so replaying them is safe — excluding them previously meant no-SSH MySQL
+    // hosts never got the seed rows (e.g. vol_tiers) the SQLite path installs.
     $clean = preg_replace('#/\*.*?\*/#s', '', $sql);
     $clean = preg_replace('#--[^\n]*#', '', (string)$clean);
     $allOk = true;
     foreach (explode(';', (string)$clean) as $stmt) {
         $stmt = trim($stmt);
-        if ($stmt === '' || !preg_match('/^(CREATE TABLE|CREATE INDEX|CREATE UNIQUE INDEX|ALTER TABLE)\b/i', $stmt)) continue;
+        if ($stmt === '' || !preg_match('/^(CREATE TABLE|CREATE INDEX|CREATE UNIQUE INDEX|ALTER TABLE|INSERT)\b/i', $stmt)) continue;
         try {
             $db->exec($stmt);
         } catch (Throwable $e) {
-            // 1050 table exists · 1060 dup column · 1061 dup key · 1091 no such column · 1826 dup FK
+            // 1050 table exists · 1060 dup column · 1061 dup key · 1062 dup entry
+            // · 1091 no such column · 1826 dup FK — all "already applied", benign.
             $code = (int)($e->errorInfo[1] ?? 0);
-            if (!in_array($code, [1050, 1060, 1061, 1091, 1826], true)) {
+            if (!in_array($code, [1050, 1060, 1061, 1062, 1091, 1826], true)) {
                 $allOk = false;
                 error_log('[db] mysql schema stmt failed (' . $code . '): ' . substr($stmt, 0, 100) . ' — ' . $e->getMessage());
             }
         }
     }
-    // Only record the hash when the whole mirror applied cleanly, so a transient
-    // failure (e.g. a missing ALTER privilege) retries on the next request.
-    if ($allOk) {
-        try {
-            $db->exec("INSERT INTO schema_meta (k, v) VALUES ('mysql_schema_hash', " . $db->quote($hash) . ") ON DUPLICATE KEY UPDATE v = VALUES(v)");
-        } catch (Throwable $e) {
-            error_log('[db] schema_meta write: ' . $e->getMessage());
-        }
+    // Record the hash even on partial failure. The old "only on full success"
+    // rule meant a single un-swallowed error (e.g. a missing ALTER privilege)
+    // replayed the entire ~40-statement mirror on EVERY request forever — a
+    // silent per-request performance cliff. Now a genuine failure is logged
+    // loudly and flagged in schema_meta for ops, but does not loop; a fixed
+    // mirror re-applies on the next deploy (its hash changes).
+    try {
+        $db->exec("INSERT INTO schema_meta (k, v) VALUES ('mysql_schema_hash', " . $db->quote($hash) . ") ON DUPLICATE KEY UPDATE v = VALUES(v)");
+        $db->exec("INSERT INTO schema_meta (k, v) VALUES ('mysql_schema_status', " . $db->quote($allOk ? 'ok' : 'partial') . ") ON DUPLICATE KEY UPDATE v = VALUES(v)");
+    } catch (Throwable $e) {
+        error_log('[db] schema_meta write: ' . $e->getMessage());
     }
+    if (!$allOk) error_log('[db] mysql schema applied with errors — see log; marked "partial" in schema_meta.');
 }
 
 function db_migrate(PDO $db): void {

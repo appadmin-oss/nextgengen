@@ -13,7 +13,11 @@ $res = gs_call('auth.totpSetup', [
 ]);
 if (empty($res['ok'])) json_error($res['error'] ?? 'totp_setup_failed', 400);
 
+// backupCodes are returned ONCE, at setup, and never again — the domain only
+// stores their hashes. Dropping them here left an admin with no recovery codes
+// and no way to recover a lost authenticator.
 json_ok([
-    'secret'  => $res['secret']  ?? '',
-    'otpauth' => $res['otpauth'] ?? '',
+    'secret'      => $res['secret']      ?? '',
+    'otpauth'     => $res['otpauth']     ?? '',
+    'backupCodes' => $res['backupCodes'] ?? [],
 ]);

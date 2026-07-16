@@ -9,7 +9,9 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? '');
-    if ($view === 'lookup')         $res = gs_call('circle.lookup', ['code' => $_GET['code'] ?? '']);
+    // A 6-digit invite code maps to a child's name — throttle lookups hard so
+    // the 10^6 space can't be walked to enumerate minors (safeguarding).
+    if ($view === 'lookup')         { rate_limit_check('circle.lookup'); $res = gs_call('circle.lookup', ['code' => $_GET['code'] ?? '']); }
     elseif ($view === 'dashboard')  $res = gs_call('circle.dashboard', ['token' => $_GET['token'] ?? '']);
     elseif ($view === 'report')     $res = gs_call('circle.report', ['token' => $_GET['token'] ?? '']);
     else                            json_error('unknown_view', 400);
@@ -17,7 +19,8 @@ if ($method === 'GET') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
     $ip = client_ip();
-    if ($action === 'connect')      $res = gs_call('circle.connect', array_merge($b, ['ip' => $ip]));
+    // Pairing consumes a code; throttle it on the same tight budget as lookup.
+    if ($action === 'connect')      { rate_limit_check('circle.connect'); $res = gs_call('circle.connect', array_merge($b, ['ip' => $ip])); }
     elseif ($action === 'confirm')  $res = gs_call('circle.confirm', $b);
     elseif ($action === 'remark')   $res = gs_call('circle.remark', array_merge($b, ['ip' => $ip]));
     elseif ($action === 'cohort')   $res = gs_call('circle.cohort', $b); // POST: token list stays out of URLs/logs
