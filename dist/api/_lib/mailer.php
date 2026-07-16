@@ -345,15 +345,21 @@ function smtp_send(array $smtp, array $from, string $to, string $subject, string
     $r = $attempt(false);
     if (!empty($r['ok'])) return true;
 
-    // Retry once without cert verification only when the failure looks like a
-    // TLS/connect problem — never for an auth or recipient rejection.
+    // Retry once WITHOUT cert verification only when the failure looks like a
+    // TLS/connect problem AND the operator has explicitly opted in. Downgrading
+    // TLS silently would let a MITM who can induce a TLS error strip verification
+    // off a connection carrying the SMTP AUTH credentials — so it is off by
+    // default and must be turned on deliberately (smtp.allow_insecure_fallback).
     $err = (string)($r['error'] ?? '');
     $tlsish = preg_match('/certificate|ssl|tls|verify|self.signed|could not connect|connect\(\)|stream_socket/i', $err) === 1;
-    if ($tlsish && ($smtp['verify_peer'] ?? true) !== false) {
-        error_log('[smtp] cert verification failed — retrying without peer verification: ' . $err);
+    $optedIn = ($smtp['allow_insecure_fallback'] ?? false) === true && ($smtp['verify_peer'] ?? true) !== false;
+    if ($tlsish && $optedIn) {
+        error_log('[smtp] cert verification failed — retrying without peer verification (operator opt-in): ' . $err);
         $r2 = $attempt(true);
         if (!empty($r2['ok'])) return true;
         $r = $r2;
+    } elseif ($tlsish) {
+        error_log('[smtp] TLS/connect failure; insecure fallback is disabled (set mail.smtp.allow_insecure_fallback=true to permit): ' . $err);
     }
 
     $log = trim((string)($r['log'] ?? ''));

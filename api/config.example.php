@@ -65,6 +65,10 @@ return [
             'secure' => 'tls',         // 'tls' (587) | 'ssl' (465) | '' (plain)
             'user'   => '',
             'pass'   => '',
+            // Leave OFF. Only enable on a host with a chronically stale CA bundle
+            // you cannot fix: it lets one send retry WITHOUT TLS cert verification
+            // on a TLS error, which weakens protection for the AUTH credentials.
+            'allow_insecure_fallback' => false,
         ],
         // Resend HTTPS fallback (https://resend.com). Good on shared hosting
         // when the host blocks outbound SMTP ports AND silently drops PHP
@@ -246,7 +250,8 @@ return [
 
     // Per-IP rate limits — sliding window inside the configured period.
     'rate_limits' => [
-        'auth.request' => ['max' => 5,   'window' => 60],
+        'auth.gateway' => ['max' => 30,  'window' => 60],  // identifier lookup only (sends nothing); generous for shared NATs
+        'auth.request' => ['max' => 5,   'window' => 60],  // actually emails a sign-in code
         'auth.verify'  => ['max' => 10,  'window' => 60],
         'upload.sign'  => ['max' => 30,  'window' => 60],
         'gate'         => ['max' => 300, 'window' => 60],  // staff desk: high-volume check-ins

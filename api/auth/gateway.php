@@ -8,7 +8,12 @@
 require_once __DIR__ . '/../_lib/bootstrap.php';
 require_method('POST');
 ensure_super_admin();
-rate_limit_check('auth.request');
+// The gateway only looks up which methods apply — it sends nothing — so it gets
+// its own, more generous bucket. Sharing 'auth.request' meant one code sign-in
+// spent TWO hits (gateway + request), locking out classrooms/cybercafés behind
+// a single NAT after ~2-3 teens. The tighter 'auth.request' still guards the
+// step that actually emails a code.
+rate_limit_check('auth.gateway');
 
 $body = read_json_body();
 v_require($body, ['identifier']);

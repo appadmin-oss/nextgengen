@@ -166,6 +166,15 @@ function require_session(): array {
             if (time() - $last > 300) {
                 try { db_update('device_sessions', ['lastSeenAt' => now_iso()], ['id' => $row['id']]); } catch (Throwable $e) {}
             }
+        } else {
+            // No device row for a sid that should have one. Every session_issue()
+            // inserts a row, and GC only removes rows revoked >30d ago, so a
+            // missing row means this session was revoked-and-pruned. For STAFF
+            // this must fail closed — otherwise the 30-min idle ceiling silently
+            // disappears and the cookie lives for the full absolute TTL. Members
+            // keep the lenient "cookie HMAC is the base authority" behaviour.
+            $isStaff = !empty($s['adminOk']) || is_admin_role((string)($s['role'] ?? ''));
+            if ($isStaff) { session_clear(); json_error('session_expired', 401); }
         }
     }
     return $s;
