@@ -89,17 +89,15 @@ function MediaPage({ setPage }) {
 
       {open && <MediaModal item={open} onClose={() => setOpen(null)}/>}
 
-      {/* Press / mentions */}
+      {/* Press & partnerships — honest CTA, not invented coverage. */}
       <section className="section" style={{background:"var(--cream-50)"}}>
         <div className="container">
-          <SectionHead eyebrow="THE MOVEMENT IN THE WORLD" title="Press, partnerships, signal." />
-          <div style={{display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:12}}>
-            {["BellaNaija","TechCabal","Pulse","Channels TV","The Continent"].map((p, i) => (
-              <div key={p} className="card" style={{padding:24, textAlign:"center"}}>
-                <div className="display" style={{fontSize:24, color:"var(--navy-900)"}}>{p}</div>
-                <div className="mono" style={{fontSize:10, letterSpacing:"0.15em", color:"var(--ink-500)", marginTop:8}}>FEATURED · {2025 - i}</div>
-              </div>
-            ))}
+          <SectionHead eyebrow="PRESS & PARTNERSHIPS" title="Telling this story with us." />
+          <div className="card" style={{padding:"28px 26px", maxWidth:640}}>
+            <p style={{color:"var(--ink-700)", fontSize:16, lineHeight:1.7, margin:"0 0 14px"}}>
+              We're a young movement building in public. If you're a journalist, a partner, or an organisation that wants to amplify what African teenagers can do, we'd love to talk — and we'll only ever point to coverage that's real.
+            </p>
+            <a className="btn btn-primary" href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng") + "?subject=Press%20%26%20partnerships"}>Reach the team →</a>
           </div>
         </div>
       </section>
@@ -385,25 +383,17 @@ function VolunteersPage({ setPage }) {
         </div>
       </section>
 
-      {/* Mentor spotlight */}
+      {/* Programme philosophy — editorial voice, not a fabricated named mentor. */}
       <section className="section" style={{background:"var(--cream-50)"}}>
         <div className="container">
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:48, alignItems:"center"}}>
-            <Photo src={portrait(8, 800, 1000)} ratio="4/5" style={{height:520}}/>
-            <div>
-              <span className="eyebrow" style={{color:"var(--gold-500)"}}>MENTOR SPOTLIGHT</span>
-              <h2 className="display" style={{fontSize:"clamp(40px, 5vw, 72px)", margin:"8px 0 18px", lineHeight:0.95}}>
-                "These teenagers do not need rescuing.<br/>They need a room with high ceilings."
-              </h2>
-              <p style={{fontSize:16, color:"var(--ink-500)", lineHeight:1.55, maxWidth:520}}>
-                Dr. Ade has mentored four cohorts. Six of his students are now in Vanguard. One is running a community library. He says the trick is to listen first, twice as long as you think is reasonable, then ask one hard question.
-              </p>
-              <div style={{display:"flex", gap:12, marginTop:24}}>
-                <span className="chip chip-gold">4 cohorts</span>
-                <span className="chip chip-lime">23 mentees</span>
-                <span className="chip">★ 4.9 rating</span>
-              </div>
-            </div>
+          <div style={{maxWidth:820, margin:"0 auto", textAlign:"center"}}>
+            <span className="eyebrow" style={{color:"var(--navy-900)"}}>OUR MENTORING PHILOSOPHY</span>
+            <h2 className="display" style={{fontSize:"clamp(32px, 5vw, 64px)", margin:"10px 0 18px", lineHeight:0.98}}>
+              "These teenagers do not need rescuing.<br/>They need a room with high ceilings."
+            </h2>
+            <p style={{fontSize:16, color:"var(--ink-700)", lineHeight:1.6, maxWidth:560, margin:"0 auto"}}>
+              The way we mentor: listen first — twice as long as feels reasonable — then ask one hard question. Every volunteer who works with a young person is safeguarding-screened before their first session.
+            </p>
           </div>
         </div>
       </section>

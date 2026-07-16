@@ -587,6 +587,12 @@ const SOCIAL_ICONS = {
 };
 
 function SocialLink({ name, href = "#", icon, label }) {
+  // Don't render a channel that points at a bare platform homepage (a
+  // placeholder handle) — an icon that lands on instagram.com/ reads as broken
+  // or fake. It appears only once a real profile URL (with a path) is set.
+  let real = false;
+  try { const u = new URL(href); real = u.pathname.replace(/\/+$/, "").length > 0; } catch (_) { real = false; }
+  if (!real) return null;
   return (
     <a className="footer-social" href={href} aria-label={label} target="_blank" rel="noopener noreferrer">
       {icon}

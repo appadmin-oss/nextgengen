@@ -70,8 +70,9 @@ function SummerPage({ setPage }) {
         <div className="container">
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"end", marginBottom:32, flexWrap:"wrap", gap:24}}>
             <div style={{maxWidth:560}}>
-              <span className="eyebrow" style={{color:"var(--gold-500)"}}>CURRENT COHORT</span>
-              <h2 className="display" style={{fontSize:"clamp(36px, 4.5vw, 60px)", margin:"6px 0 0"}}>Meet the summer class.</h2>
+              <span className="eyebrow" style={{color:"var(--navy-900)"}}>SAMPLE COHORT</span>
+              <h2 className="display" style={{fontSize:"clamp(36px, 4.5vw, 60px)", margin:"6px 0 0"}}>How the summer class looks.</h2>
+              <p style={{fontSize:13.5, color:"var(--ink-500)", margin:"8px 0 0"}}>An illustrative layout — not real students. Real cohort profiles appear here once the summer class is enrolled.</p>
             </div>
             <div style={{display:"flex", flexWrap:"wrap", gap:8}}>
               <button onClick={() => setTrack("all")} className={"chip " + (track === "all" ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>All tracks · {MEMBERS.length}</button>

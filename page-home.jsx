@@ -171,13 +171,13 @@ function Hero({ setPage }) {
               <div className="hero-live-card">
                 <div style={{display:"flex", alignItems:"center", gap:8}}>
                   <span className="dot dot-lime"/>
-                  <span className="mono" style={{fontSize:10, letterSpacing:"0.15em", textTransform:"uppercase", color:"rgba(255,255,255,0.75)"}}>GENIUS OF THE WEEK</span>
+                  <span className="mono" style={{fontSize:10, letterSpacing:"0.15em", textTransform:"uppercase", color:"rgba(255,255,255,0.75)"}}>GENIUS OF THE WEEK · SAMPLE</span>
                 </div>
                 <div style={{display:"flex", alignItems:"center", gap:12}}>
-                  <Avatar seed="tunde" name="Tunde" size={42} ring/>
+                  <Avatar seed="ngg-you" name="You" size={42} ring/>
                   <div>
-                    <div style={{fontWeight:600, fontSize:15}}>Tunde · 16</div>
-                    <div style={{fontSize:11, color:"rgba(255,255,255,0.7)", marginTop:2}}>+2,980 XP · Week 10 / 12</div>
+                    <div style={{fontWeight:600, fontSize:15}}>This could be you</div>
+                    <div style={{fontSize:11, color:"rgba(255,255,255,0.7)", marginTop:2}}>Earn XP every week you show up</div>
                   </div>
                 </div>
               </div>
@@ -542,9 +542,9 @@ function Testimonials() {
     <section className="section" style={{background:"var(--cream-50)"}}>
       <div className="container">
         <SectionHead
-          eyebrow="STORIES FROM THE COHORT"
+          eyebrow="THE KIND OF STORY WE BUILD"
           title="The work shows in the people."
-          sub="Four voices from inside the program. A teenager who shipped a beat. A parent who saw the change. A mentor who has watched it happen four times now."
+          sub="Illustrative of the journey a member goes through — a teenager who ships, a parent who sees the change, a mentor who keeps showing up. Real, named stories replace these as our first cohorts graduate."
         />
         <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:18}}>
           {TESTIMONIALS.map((t, i) => (
