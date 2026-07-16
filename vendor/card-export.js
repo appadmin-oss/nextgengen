@@ -167,6 +167,22 @@
     var mark = (x, y, dx, dy) => 'q 0 0 0 1 RG 0.5 w ' + fmt(x) + ' ' + fmt(y) + ' m ' + fmt(x + dx) + ' ' + fmt(y + dy) + ' l S Q\n';
     function fmt(n) { return (Math.round(n * 100) / 100).toString(); }
 
+    // Registration target — a crosshair inside a circle, drawn in REGISTRATION
+    // colour (100% of every ink: DeviceCMYK 1 1 1 1) so it prints on all four
+    // plates and the pressman can align them. Circle via 4 Béziers (kappa).
+    function regTarget(cx, cy) {
+      var r = 2.2 * MM, k = 0.5523 * r, arm = 3.4 * MM, s = '';
+      s += 'q 1 1 1 1 RG 0.4 w\n';
+      s += fmt(cx + r) + ' ' + fmt(cy) + ' m ';
+      s += fmt(cx + r) + ' ' + fmt(cy + k) + ' ' + fmt(cx + k) + ' ' + fmt(cy + r) + ' ' + fmt(cx) + ' ' + fmt(cy + r) + ' c ';
+      s += fmt(cx - k) + ' ' + fmt(cy + r) + ' ' + fmt(cx - r) + ' ' + fmt(cy + k) + ' ' + fmt(cx - r) + ' ' + fmt(cy) + ' c ';
+      s += fmt(cx - r) + ' ' + fmt(cy - k) + ' ' + fmt(cx - k) + ' ' + fmt(cy - r) + ' ' + fmt(cx) + ' ' + fmt(cy - r) + ' c ';
+      s += fmt(cx + k) + ' ' + fmt(cy - r) + ' ' + fmt(cx + r) + ' ' + fmt(cy - k) + ' ' + fmt(cx + r) + ' ' + fmt(cy) + ' c S\n';
+      s += fmt(cx - arm) + ' ' + fmt(cy) + ' m ' + fmt(cx + arm) + ' ' + fmt(cy) + ' l S\n';
+      s += fmt(cx) + ' ' + fmt(cy - arm) + ' m ' + fmt(cx) + ' ' + fmt(cy + arm) + ' l S Q\n';
+      return s;
+    }
+
     var pageCount = Math.max(1, Math.ceil(cards.length / perPage));
     var placedImgObjIds = new Array(cards.length);
 
@@ -194,6 +210,14 @@
           content += mark(x, y - off, 0, -m) + mark(x + cellW, y - off, 0, -m);
           content += mark(x, y + cellH + off, 0, m) + mark(x + cellW, y + cellH + off, 0, m);
         }
+      }
+      // Registration targets at the four sheet mid-edges (once per sheet), so
+      // the separations can be aligned on press. Placed in the margin band.
+      if (marks) {
+        content += regTarget(pageW / 2, margin / 2);
+        content += regTarget(pageW / 2, pageH - margin / 2);
+        content += regTarget(margin / 2, pageH / 2);
+        content += regTarget(pageW - margin / 2, pageH / 2);
       }
       // Build the page's resource /XObject map for the images on THIS page.
       var xobj = '';

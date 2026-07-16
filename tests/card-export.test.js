@@ -46,7 +46,8 @@ function latin(bytes) { let s = ''; for (const b of bytes) s += String.fromCharC
   chk('pdf: paginates 20 cards over multiple A4 sheets', (s.match(/\/Type \/Page[^s]/g) || []).length >= 3);
   chk('pdf: CMYK output intent', s.indexOf('/OutputIntent') !== -1 && s.indexOf('FOGRA39') !== -1);
   chk('pdf: DeviceRGB image xobjects (DCTDecode)', s.indexOf('/Filter /DCTDecode') !== -1);
-  chk('pdf: crop marks drawn in CMYK black', s.indexOf('0 0 0 1 RG') !== -1);
+  chk('pdf: crop marks drawn in CMYK rich black', s.indexOf('0 0 0 1 RG') !== -1);
+  chk('pdf: registration targets in registration colour (all plates)', s.indexOf('1 1 1 1 RG') !== -1);
   chk('pdf: trailer + startxref + EOF', s.indexOf('trailer') !== -1 && s.indexOf('startxref') !== -1 && s.trim().slice(-5) === '%%EOF');
   // startxref offset must point exactly at the "xref" keyword.
   const m = s.match(/startxref\n(\d+)\n%%EOF$/);

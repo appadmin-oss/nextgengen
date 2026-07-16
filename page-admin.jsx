@@ -1242,6 +1242,30 @@ function SummerPending({ onChange }) {
   const load = () => NGGApi.admin.registration.list().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const remind = async (id) => { setBusy(id); try { const r = await NGGApi.admin.registration.remind(id); toast.success(r.channels && r.channels.length ? "Reminder sent by " + r.channels.join(" + ") : "Reminder queued."); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  // Render the check-in QR to a PNG so the resent email can embed it (same
+  // encoder the ID cards use). Returns "" if the encoder can't load.
+  const qrPngData = async (token) => {
+    try {
+      const lib = await ensureQREncoder(); if (!lib) return "";
+      const q = lib(0, "M"); q.addData((location.origin || "") + "/q/" + String(token)); q.make();
+      const n = q.getModuleCount(), cell = 8, margin = 16, size = n * cell + margin * 2;
+      const cv = document.createElement("canvas"); cv.width = cv.height = size;
+      const ctx = cv.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, size, size);
+      ctx.save(); ctx.translate(margin, margin); q.renderTo2dContext(ctx, cell); ctx.restore();
+      return cv.toDataURL("image/png");
+    } catch (_) { return ""; }
+  };
+  const resendId = async (r) => {
+    if (!(await dialog.confirm({ title: "Resend " + (r.fullName || "this student") + "'s ID?", body: "Emails the digital ID and the scannable QR to the parent, and texts a link by SMS if a number is on file.", cta: "Send" }))) return;
+    setBusy(r.studentId);
+    try {
+      const qrPng = r.token ? await qrPngData(r.token) : "";
+      const res = await NGGApi.admin.registration.resendId("student", r.studentId, qrPng);
+      const ch = res.channels || [];
+      toast.success(ch.length ? "Sent by " + ch.join(" + ") + (res.qr ? " (with QR)" : "") : "No email or phone on file — nothing sent.");
+    } catch (e) { toast.error(e.code === "no_id" ? "No ID issued yet." : (e.code || e.message)); }
+    finally { setBusy(""); }
+  };
   if (err) return <ErrorState title="Couldn't load" code={err} onRetry={load}/>;
   if (data === null) return <div className="dash-spinner"/>;
   const rows = data.registrations || [];
@@ -1261,7 +1285,10 @@ function SummerPending({ onChange }) {
                 <td className="mono" style={{ fontSize: 12 }}>{r.parentEmail || r.guardianPhone || "—"}</td>
                 <td className="mono" style={{ fontSize: 12 }}>{(r.consents || []).length || 0}</td>
                 <td>{badge(r.regStatus)}</td>
-                <td style={{ textAlign: "right" }}>{r.regStatus === "parent_pending" && <button className="btn btn-ghost btn-sm" disabled={busy === r.studentId} onClick={() => remind(r.studentId)}>{busy === r.studentId ? "…" : "Resend link"}</button>}</td>
+                <td style={{ textAlign: "right" }}>
+                  {r.regStatus === "parent_pending" && <button className="btn btn-ghost btn-sm" disabled={busy === r.studentId} onClick={() => remind(r.studentId)}>{busy === r.studentId ? "…" : "Resend link"}</button>}
+                  {r.regStatus === "verified" && r.token && <button className="btn btn-ghost btn-sm" disabled={busy === r.studentId} onClick={() => resendId(r)}>{busy === r.studentId ? "…" : "Resend ID + QR"}</button>}
+                </td>
               </tr>
             ))}
           </tbody>
