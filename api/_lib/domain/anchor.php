@@ -137,6 +137,24 @@ function anchor_mission_verify(array $p): array {
     return ['ok' => true];
 }
 
+/** Admin/mentor review queue: proof-requiring mission submissions awaiting a
+ *  verdict in the active session. Without this list the verify handler had no
+ *  surface, so every photo/text-evidence submission sat 'submitted' forever. */
+function admin_mission_submissions(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $sc = session_current(); $session = $sc['current'] ?? null;
+    if (!$session) return ['ok' => true, 'submissions' => [], 'session' => null];
+    $rows = db_all(
+        "SELECT mp.memberId, mp.missionId, mp.status, mp.proofUrl, mp.note, mp.submittedAt,
+                m.fullName, m.centre, am.title, am.week, am.proof, am.xp
+         FROM member_progress mp
+         LEFT JOIN members m ON m.memberId = mp.memberId
+         LEFT JOIN anchor_missions am ON am.missionId = mp.missionId
+         WHERE mp.status = 'submitted' AND mp.sessionId = ?
+         ORDER BY mp.submittedAt ASC LIMIT 500", [$session['sessionId']]);
+    return ['ok' => true, 'submissions' => $rows, 'session' => ['sessionId' => $session['sessionId'], 'name' => (string)($session['name'] ?? '')]];
+}
+
 function anchor_journal_create(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);

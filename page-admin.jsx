@@ -1524,6 +1524,54 @@ function AdminSessionEditor({ data, onClose, onSaved }) {
 // Missions, Events, Posts (compact CRUD)
 // ============================================================================
 
+/* Proof-review queue — verify/reject the mission submissions that require it.
+   Without this, proof-requiring submissions sat 'submitted' forever (no XP,
+   no learner feedback). Approve awards XP + recomputes stats; reject returns
+   it for another pass with optional feedback. */
+function AdminMissionQueue() {
+  const [subs, setSubs] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const load = () => NGGApi.admin.missions.submissions().then(r => setSubs(r.submissions || [])).catch(e => { toast.error(e.code || e.message); setSubs([]); });
+  React.useEffect(() => { load(); }, []);
+  const act = async (s, approve) => {
+    const key = s.memberId + "/" + s.missionId;
+    if (busy) return;
+    let note = "";
+    if (!approve) { note = window.prompt("Feedback for " + (s.fullName || "the member") + " (optional):", "") || ""; }
+    setBusy(key);
+    try {
+      await NGGApi.admin.missions.verify(s.memberId, s.missionId, approve, note);
+      toast.success(approve ? "Verified · +" + (s.xp || 0) + " XP awarded" : "Returned for another pass");
+      setSubs(list => (list || []).filter(x => !(x.memberId === s.memberId && x.missionId === s.missionId)));
+    } catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(""); }
+  };
+  if (subs === null) return <div className="admin-card" style={{ padding: 16 }}><div className="dash-spinner"/></div>;
+  return (
+    <div className="admin-card" style={{ padding: 16, marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: subs.length ? 12 : 0 }}>
+        <h3 className="admin-h3" style={{ margin: 0 }}>Proof review queue {subs.length ? <span className="chip chip-gold" style={{ marginLeft: 8 }}>{subs.length}</span> : null}</h3>
+        <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
+      </div>
+      {!subs.length && <p className="admin-hint" style={{ margin: "8px 0 0" }}>Nothing waiting — proof-requiring submissions land here for a mentor or admin to verify.</p>}
+      {subs.map(s => (
+        <div key={s.memberId + "/" + s.missionId} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid var(--line-200, #e6e8ee)", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontWeight: 700 }}>{s.fullName || s.memberId} <span className="mono" style={{ color: "var(--ink-500)", fontWeight: 400 }}>· {s.centre || ""}</span></div>
+            <div style={{ fontSize: 13, color: "var(--ink-700)" }}>Wk {s.week} · {s.title} <span className="mono">+{s.xp} XP</span></div>
+            {s.note ? <div style={{ fontSize: 12.5, color: "var(--ink-500)", marginTop: 2 }}>“{s.note}”</div> : null}
+            {s.proofUrl ? <a href={s.proofUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>View proof ↗</a> : null}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => act(s, false)}>Return</button>
+            <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => act(s, true)}>{busy === (s.memberId + "/" + s.missionId) ? "…" : "Verify +" + s.xp}</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AdminMissions() {
   const [list, setList] = React.useState(null);
   const [editing, setEditing] = React.useState(null);
@@ -1535,6 +1583,7 @@ function AdminMissions() {
         <h2 className="admin-h2">Anchor missions</h2>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New mission</button>
       </div>
+      <AdminMissionQueue/>
       {list === null ? <div className="dash-spinner"/> :
         <div className="admin-mission-list">
           {Array.from({length: 12}).map((_, idx) => {

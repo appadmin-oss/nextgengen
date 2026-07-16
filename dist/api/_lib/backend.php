@@ -148,6 +148,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.sessions.upsert'   => 'admin_sessions_upsert',
             'admin.missions.list'     => 'admin_missions_list',
             'admin.missions.upsert'   => 'admin_missions_upsert',
+            'admin.missions.submissions' => 'admin_mission_submissions',
             'admin.events.list'       => 'admin_events_list',
             'admin.events.upsert'     => 'admin_events_upsert',
             'admin.posts.list'        => 'admin_posts_list',

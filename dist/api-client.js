@@ -234,6 +234,9 @@
       missions: {
         list:   () => request('/admin/missions.php'),
         upsert: (data) => request('/admin/missions.php', { body: data }),
+        // Proof-review queue: list submitted missions and verify/reject them.
+        submissions: () => request('/admin/missions.php' + qs({ view: 'submissions' })),
+        verify: (memberId, missionId, approve, note) => request('/admin/missions.php', { body: { action: 'verify', memberId, missionId, approve, note } }),
       },
       events: {
         list:   () => request('/admin/events.php'),

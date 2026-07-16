@@ -1528,5 +1528,21 @@ chk('resend ID: issued student ⇒ ok + audited', (function () {
     return (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event='admin.id.resend' AND subject='SUM-R-1'")['c'] === 1;
 })());
 
+// ── Mission proof-review queue (M13: verify was built but unreachable) ────────
+$pmid = backend_dispatch('admin.missions.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['week' => 2, 'order' => 1, 'theme' => 'Proof', 'title' => 'Show your work', 'prompt' => 'Upload a photo', 'type' => 'Do', 'proof' => 'photo', 'xp' => 90, 'isActive' => true]])['missionId'];
+chk('proof mission submit ⇒ submitted (not auto-verified)', backend_dispatch('anchor.mission.submit', ['memberId' => 'NGG-2025-0001', 'missionId' => $pmid, 'proofUrl' => 'https://example.org/p.jpg'])['status'] === 'submitted');
+chk('review queue lists the pending proof', (function () use ($pmid) {
+    $r = backend_dispatch('admin.missions.submissions', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && count(array_filter($r['submissions'], fn($x) => $x['missionId'] === $pmid)) === 1;
+})());
+chk('review queue gated from non-staff', backend_dispatch('admin.missions.submissions', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+chk('verify approve awards XP + clears from queue', (function () use ($pmid) {
+    $v = backend_dispatch('anchor.mission.verify', ['verifierId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0001', 'missionId' => $pmid, 'approve' => true]);
+    if (empty($v['ok'])) return false;
+    $row = db_row('SELECT status, xpAwarded FROM member_progress WHERE memberId=? AND missionId=?', ['NGG-2025-0001', $pmid]);
+    $q = backend_dispatch('admin.missions.submissions', ['requesterId' => 'NGG-2025-0099']);
+    return $row['status'] === 'verified' && (int)$row['xpAwarded'] === 90 && count(array_filter($q['submissions'], fn($x) => $x['missionId'] === $pmid)) === 0;
+})());
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

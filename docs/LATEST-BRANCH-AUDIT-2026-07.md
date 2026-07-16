@@ -480,16 +480,27 @@ rebuilds `dist/` clean each batch.
   N-up-imposed, CMYK-output-intent PDF with crop/registration marks —
   replacing browser print. Self-contained + CSP-safe.
 
+**Fixed & verified (second remediation pass)**
+
+- **M3** — `require_session()` now fails closed for staff when a `sid` has no
+  `device_sessions` row, so the 30-min idle ceiling can't silently vanish.
+- **M10** — the sign-in gateway (lookup) has its own bucket, so one code sign-in
+  no longer spends two `auth.request` hits (classroom/NAT lockout fixed).
+- **M13** — `anchor.mission.verify` is wired end-to-end: a proof-review queue in
+  the admin Missions section lists pending submissions and verifies/returns them
+  (awards XP, notifies the member). New backend list op + route + client + 4 tests.
+- **L4** — SMTP insecure-TLS fallback is now opt-in (`mail.smtp.allow_insecure_fallback`).
+- New capability: **admin Resend ID** (email + SMS, audited, rate-limited) with a
+  faultless export path (waits for QR/fonts before rasterising).
+
 **Still open (tracked here, not yet done)**
 
 - **H1 / H7 / H8 / L1 / L6** — the single-bundle / globals architecture and its
   consequences: the module-bundler migration is the real fix and is deferred as
   a deliberate, larger project. (jsQR could be lazy-loaded as a cheap partial
   win.)
-- **M13** — `anchor.mission.verify` still has no client/admin surface.
 - **M14** — no SSR/prerender for share/SEO.
 - **M1** — default gold/coral small-text contrast still fails AA in places.
-- **M2 / M3 / M4 / M5 / M7 / M8 / M9 / M10 / M12 (media)** and the **Low** tier —
-  not yet addressed in this pass.
-- **L2 / L3 / L4** — prod CSP still permits eval; DB/logs in web root; SMTP TLS
-  auto-downgrade — hardening deferred.
+- **M2 / M4 / M5 / M7 / M8 / M9 / M12 (media)** and most of the **Low** tier —
+  not yet addressed.
+- **L2 / L3** — prod CSP still permits eval; DB/logs in web root — hardening deferred.
