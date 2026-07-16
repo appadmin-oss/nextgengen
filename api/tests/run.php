@@ -1487,5 +1487,32 @@ chk('duty leaderboard ranks volunteers by points (staff)', (function () {
 })());
 chk('duty leaderboard gated from non-staff', backend_dispatch('attendance.duty.leaderboard', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 
+// ── Attendance punctuality (per-member-type resumption time) ─────────────────
+chk('punctuality: disabled ⇒ always present', (function () {
+    attendance_settings_save(['enabled' => false], 'test');
+    return attendance_punctuality('student')['status'] === 'present';
+})());
+chk('punctuality: on-time before resumption+grace', (function () {
+    // Resumption far in the future for the local clock ⇒ never late.
+    attendance_settings_save(['enabled' => true, 'tzOffset' => 0, 'graceMinutes' => 5, 'resumptionByType' => ['student' => '23:59']], 'test');
+    return attendance_punctuality('student')['status'] === 'present';
+})());
+chk('punctuality: late after resumption+grace, minutes computed', (function () {
+    // Resumption at 00:00 with no grace ⇒ any time today is late by now-of-day.
+    attendance_settings_save(['enabled' => true, 'tzOffset' => 0, 'graceMinutes' => 0, 'resumptionByType' => ['student' => '00:00']], 'test');
+    $r = attendance_punctuality('student');
+    return $r['status'] === 'late' && $r['lateMinutes'] >= 0;
+})());
+chk('punctuality: unknown type falls back to default', (function () {
+    attendance_settings_save(['enabled' => true, 'tzOffset' => 0, 'graceMinutes' => 0, 'resumptionByType' => ['default' => '00:00']], 'test');
+    return attendance_punctuality('mentor')['status'] === 'late';
+})());
+chk('punctuality: invalid HH:MM rejected, valid kept', (function () {
+    attendance_settings_save(['enabled' => true, 'resumptionByType' => ['student' => '99:99', 'volunteer' => '08:30']], 'test');
+    $cfg = attendance_settings();
+    // '99:99' rejected ⇒ student falls back to the default '09:00'; '08:30' kept.
+    return $cfg['resumptionByType']['student'] === '09:00' && $cfg['resumptionByType']['volunteer'] === '08:30';
+})());
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

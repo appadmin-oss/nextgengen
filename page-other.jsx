@@ -2772,6 +2772,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
         // Warn if a volunteer who works with youth hasn't cleared screening.
         warn: isVol && st.role !== "admin" && st.safeguardingCleared === false,
         cert: r.certIssued ? r.certIssued.milestone : 0,
+        late: r.status === "late" ? (r.lateMinutes || 0) : 0,
       }, ...list].slice(0, 12));
       setCode("");
     } catch (e2) {
@@ -2826,6 +2827,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
           <span style={{ color: r.queued ? "#ffce54" : r.already ? "#ffce54" : "#6fdc9d", fontWeight: 800 }}>{r.queued ? "☁︎" : r.already ? "↻" : "✓"}</span>
           <b style={{ flex: 1, fontSize: 14, fontFamily: r.queued ? "var(--font-mono, monospace)" : undefined }}>{r.name}{r.volunteer && <span style={{ marginLeft: 8, fontSize: 10, letterSpacing: ".1em", padding: "2px 7px", borderRadius: 6, background: "rgba(245,176,38,.18)", color: "#ffce54", fontWeight: 700 }}>{(r.role || "VOL").toUpperCase()}</span>}</b>
           {r.cert > 0 && <span title={r.cert + "-session certificate issued"} style={{ fontSize: 11, color: "#6fdc9d", fontWeight: 700 }}>🏅 {r.cert}</span>}
+          {r.late > 0 && <span title={"Arrived " + r.late + " min after resumption"} style={{ fontSize: 10, letterSpacing: ".08em", padding: "2px 7px", borderRadius: 6, background: "rgba(255,120,120,.16)", color: "#ff9a9a", fontWeight: 700 }}>LATE · {r.late}m</span>}
           <span style={{ color: "rgba(230,238,255,.6)", fontSize: 12 }}>{r.queued ? "saved offline · " : r.synced ? "synced · " : r.already ? "already in · " : ""}{r.at}</span>
         </div>
       ))}

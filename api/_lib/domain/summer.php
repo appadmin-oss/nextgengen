@@ -406,6 +406,50 @@ function admin_cert_revoke(array $p): array {
     return ['ok' => true, 'revoked' => $on];
 }
 
+// ── Attendance punctuality settings (per member type) ───────────────────────
+/** Resumption time per member type + grace, stored as one JSON blob. When
+ *  disabled every check-in is simply 'present'. tzOffset is minutes east of UTC
+ *  so a shared host on UTC still flags lateness against local wall-clock. */
+function attendance_settings(): array {
+    $cfg = setting_get('attendance');
+    $p = is_array($cfg) ? $cfg : [];
+    $p += ['enabled' => true, 'tzOffset' => 60, 'graceMinutes' => 10, 'resumptionByType' => []];
+    $p['resumptionByType'] = (array)$p['resumptionByType'] + ['default' => '09:00', 'student' => '09:00', 'volunteer' => '08:30'];
+    return $p;
+}
+
+function attendance_settings_save(array $in, string $by): void {
+    $clean = [
+        'enabled'      => !empty($in['enabled']),
+        'tzOffset'     => max(-720, min(840, (int)($in['tzOffset'] ?? 60))),
+        'graceMinutes' => max(0, min(180, (int)($in['graceMinutes'] ?? 10))),
+    ];
+    $byType = [];
+    if (isset($in['resumptionByType']) && is_array($in['resumptionByType'])) {
+        foreach ($in['resumptionByType'] as $type => $hhmm) {
+            $type = preg_replace('/[^a-z0-9_-]/', '', strtolower((string)$type));
+            $hhmm = trim((string)$hhmm);
+            if ($type !== '' && preg_match('/^([01]?\d|2[0-3]):[0-5]\d$/', $hhmm)) $byType[$type] = $hhmm;
+        }
+    }
+    $clean['resumptionByType'] = $byType;
+    setting_set('attendance', $clean, $by);
+}
+
+/** {status,lateMinutes} for a check-in of the given member type happening now. */
+function attendance_punctuality(string $type): array {
+    $cfg = attendance_settings();
+    if (empty($cfg['enabled'])) return ['status' => 'present', 'lateMinutes' => 0];
+    $byType = $cfg['resumptionByType'];
+    $hhmm = (string)($byType[$type] ?? $byType['default'] ?? '09:00');
+    [$rh, $rm] = array_pad(array_map('intval', explode(':', $hhmm)), 2, 0);
+    $resMin = $rh * 60 + $rm + (int)$cfg['graceMinutes'];
+    $localNow = time() + (int)$cfg['tzOffset'] * 60;
+    $nowMin = (int)gmdate('G', $localNow) * 60 + (int)gmdate('i', $localNow);
+    $late = max(0, $nowMin - $resMin);
+    return ['status' => $late > 0 ? 'late' : 'present', 'lateMinutes' => $late];
+}
+
 // ── Attendance check-in (scan a card) — used by the kiosk in Phase 2 ─────────
 function summer_checkin(array $p): array {
     // A desk-password KIOSK session has no staff member/cap — but the caller
@@ -430,26 +474,28 @@ function summer_checkin(array $p): array {
         $existing = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$v['volunteerId'], $today]);
         $already = (bool)$existing;
         $cert = null;
+        $punc = attendance_punctuality('volunteer');
         if (!$already) {
-            db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
-            audit('volunteer.checkin', $byId, $v['volunteerId'], ['date' => $today], (string)($p['ip'] ?? ''));
+            db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'createdAt' => now_iso()]);
+            audit('volunteer.checkin', $byId, $v['volunteerId'], ['date' => $today, 'status' => $punc['status']], (string)($p['ip'] ?? ''));
             // Service ledger: a milestone day mints the certificate right here.
             $sessions = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$v['volunteerId']])['c'] ?? 0);
             $cert = volunteer_maybe_issue_cert($v, $sessions);
             checkin_volunteer_email($v, $sessions, $cert);
         }
-        return ['ok' => true, 'already' => $already, 'student' => volunteer_public($v), 'certIssued' => $cert];
+        return ['ok' => true, 'already' => $already, 'student' => volunteer_public($v), 'certIssued' => $cert, 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes']];
     }
     $today = gmdate('Y-m-d');
     $existing = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$s['studentId'], $today]);
     $already = (bool)$existing;
+    $punc = attendance_punctuality('student');
     if (!$already) {
-        db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'createdAt' => now_iso()]);
-        audit('summer.checkin', $byId, $s['studentId'], ['date' => $today], (string)($p['ip'] ?? ''));
+        db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'createdAt' => now_iso()]);
+        audit('summer.checkin', $byId, $s['studentId'], ['date' => $today, 'status' => $punc['status']], (string)($p['ip'] ?? ''));
         $days = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$s['studentId']])['c'] ?? 0);
         checkin_student_email($s, $days);
     }
-    return ['ok' => true, 'already' => $already, 'student' => summer_student_public($s)];
+    return ['ok' => true, 'already' => $already, 'student' => summer_student_public($s), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes']];
 }
 
 /** Stamp a departure time on today's attendance row (optional dwell tracking).

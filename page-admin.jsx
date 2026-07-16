@@ -3246,6 +3246,30 @@ function AdminSettings() {
         <FieldCheckbox label="Hold the ID until the photo is approved (issue only after an editor approves the headshot)" value={s.photo_gate_issuance} onChange={v => setS(o => ({ ...o, photo_gate_issuance: v }))}/>
         {s.photo_gate_issuance && <p className="admin-hint" style={{ margin: "-4px 0 0" }}>The QR/ID is bound only once both parent consent is in AND the photo is approved in <b>Photo review</b>. Registrations without a photo are never held.</p>}
 
+        <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>Attendance &amp; punctuality</div>
+        <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>Set when each member type is due. Every card scan is stamped <span className="mono">present</span> or <span className="mono">late</span> against these times, and the check-in desk shows it live.</p>
+        {(() => {
+          const a = s.attendance || {};
+          const setA = (k, v) => setS(o => ({ ...o, attendance: { ...(o.attendance || {}), [k]: v } }));
+          const rbt = a.resumptionByType || {};
+          const setR = (type, v) => setS(o => ({ ...o, attendance: { ...(o.attendance || {}), resumptionByType: { ...((o.attendance || {}).resumptionByType || {}), [type]: v } } }));
+          const TYPES = [["student", "Summer students"], ["volunteer", "Volunteers"], ["default", "Everyone else (default)"]];
+          return (
+            <React.Fragment>
+              <FieldCheckbox label="Flag lateness at check-in" value={a.enabled !== false} onChange={v => setA("enabled", v)}/>
+              {a.enabled !== false && <React.Fragment>
+                {TYPES.map(([type, label]) => (
+                  <Field key={type} label={"Resumption time — " + label} type="time" value={rbt[type] || (type === "volunteer" ? "08:30" : "09:00")} onChange={v => setR(type, v)}/>
+                ))}
+                <div className="admin-fields-row">
+                  <Field label="Grace period (minutes) before 'late'" type="number" value={a.graceMinutes ?? 10} onChange={v => setA("graceMinutes", parseInt(v, 10) || 0)}/>
+                  <Field label="Timezone offset from UTC (minutes; WAT = 60)" type="number" value={a.tzOffset ?? 60} onChange={v => setA("tzOffset", parseInt(v, 10) || 0)}/>
+                </div>
+              </React.Fragment>}
+            </React.Fragment>
+          );
+        })()}
+
         <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>Email delivery</div>
         <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>Send a real test email and see exactly what happened. If it fails on <span className="mono">php_mail</span>, set <span className="mono">mail.smtp.*</span> in <span className="mono">api/config.php</span> — shared hosts usually drop plain mail().</p>
         <div className="admin-fields-row" style={{ alignItems: "end" }}>

@@ -610,3 +610,9 @@ ALTER TABLE volunteers ADD COLUMN sex VARCHAR(24) DEFAULT '';
 ALTER TABLE summer_students ADD COLUMN sex VARCHAR(24) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (34) ON DUPLICATE KEY UPDATE version = version;
+
+-- 35: punctuality — check-in status + minutes late (vs per-type resumption time)
+ALTER TABLE attendance ADD COLUMN status VARCHAR(16) DEFAULT '';
+ALTER TABLE attendance ADD COLUMN lateMinutes INT DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (35) ON DUPLICATE KEY UPDATE version = version;

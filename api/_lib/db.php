@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 34;
+const NGG_SCHEMA_TARGET = 35;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -862,6 +862,14 @@ function db_migrate(PDO $db): void {
             ALTER TABLE applications ADD COLUMN sex TEXT DEFAULT '';
             ALTER TABLE volunteers ADD COLUMN sex TEXT DEFAULT '';
             ALTER TABLE summer_students ADD COLUMN sex TEXT DEFAULT '';
+        ",
+
+        // Punctuality: stamp each check-in with a status ('present'|'late') and
+        // how many minutes late, computed against the per-member-type resumption
+        // time in attendance settings. Nullable so pre-feature rows read blank.
+        35 => "
+            ALTER TABLE attendance ADD COLUMN status TEXT DEFAULT '';
+            ALTER TABLE attendance ADD COLUMN lateMinutes INTEGER DEFAULT 0;
         ",
     ];
 

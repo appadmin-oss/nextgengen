@@ -243,6 +243,7 @@ function admin_settings_get(array $p): array {
         'photo_gate_issuance'       => setting_raw('photo_gate_issuance') === '1',
         'site_content'              => site_content(),
         'idcard'                    => idcard_program(),
+        'attendance'                => attendance_settings(),
     ]];
 }
 
@@ -261,6 +262,10 @@ function admin_settings_set(array $p): array {
     // ID-card branding block (program/year/motto/website/phone/logos).
     if (array_key_exists('idcard', $data) && is_array($data['idcard'])) {
         idcard_program_save($data['idcard'], $g['requester']['memberId']);
+    }
+    // Attendance punctuality (resumption time per member type + grace).
+    if (array_key_exists('attendance', $data) && is_array($data['attendance'])) {
+        attendance_settings_save($data['attendance'], $g['requester']['memberId']);
     }
     audit('admin.settings.set', $g['requester']['memberId'], '', ['keys' => array_keys((array)$data)], (string)($p['ip'] ?? ''));
     return ['ok' => true];
