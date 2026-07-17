@@ -969,6 +969,50 @@ const CLD_PLAIN   = "c_thumb,g_face,w_600,h_750,q_auto"; // same framing, no e_i
 function cldEnhance(url) {
   return url && url.indexOf("/upload/") !== -1 ? url.replace("/upload/", "/upload/" + CLD_ENHANCE + "/") : url;
 }
+
+/* Client-side headshot validator — a fast, forgiving pre-check before we upload.
+   Rejects only clearly-unusable captures (too dark/blurry, no face, more than
+   one face, off-centre or tiny) with specific guidance; the server AI review
+   (ai_photo_review) is still the authoritative gate. `el` is a loaded <img> or
+   a <canvas>; w/h are its natural pixel dimensions. Returns {ok, reason}. */
+async function validateHeadshot(el, w, h) {
+  try {
+    if (Math.min(w, h) < 360) return { ok: false, reason: "That image is too small — use a larger, clearer photo (at least 400px)." };
+    const MAX = 480, s = Math.min(1, MAX / Math.max(w, h));
+    const c = document.createElement("canvas"); c.width = Math.max(2, Math.round(w * s)); c.height = Math.max(2, Math.round(h * s));
+    const ctx = c.getContext("2d"); ctx.drawImage(el, 0, 0, c.width, c.height);
+    const data = ctx.getImageData(0, 0, c.width, c.height).data;
+    const N = c.width * c.height, gray = new Float32Array(N);
+    let sum = 0;
+    for (let i = 0, p = 0; i < data.length; i += 4, p++) { const g = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]; gray[p] = g; sum += g; }
+    const mean = sum / N;
+    if (mean < 32) return { ok: false, reason: "Too dark — face a window or add light, then retake." };
+    if (mean > 236) return { ok: false, reason: "Too bright/washed out — move out of direct glare and retake." };
+    // Blur: variance of the Laplacian. Low variance = soft/out-of-focus.
+    let ls = 0, lsq = 0, n = 0; const W = c.width;
+    for (let y = 1; y < c.height - 1; y++) for (let x = 1; x < W - 1; x++) { const idx = y * W + x; const lap = 4 * gray[idx] - gray[idx - 1] - gray[idx + 1] - gray[idx - W] - gray[idx + W]; ls += lap; lsq += lap * lap; n++; }
+    const lv = lsq / n - (ls / n) * (ls / n);
+    if (lv < 22) return { ok: false, reason: "Too blurry — hold steady, let the camera focus, then retake." };
+    // Face check where the browser supports it (Chrome/Android — our audience).
+    if (typeof window.FaceDetector === "function") {
+      try {
+        const faces = await new window.FaceDetector({ fastMode: true, maxDetectedFaces: 5 }).detect(el);
+        if (!faces || faces.length === 0) return { ok: false, reason: "No face detected — make sure the face is clearly visible and lit." };
+        if (faces.length > 1) return { ok: false, reason: "More than one face — a headshot should show just the one person." };
+        const b = faces[0].boundingBox, cx = (b.x + b.width / 2) / w, fh = b.height / h;
+        if (fh < 0.16) return { ok: false, reason: "Move closer — the face should fill more of the frame." };
+        if (cx < 0.18 || cx > 0.82) return { ok: false, reason: "Centre the face in the frame and retake." };
+      } catch (e) { /* detector hiccup — fall through, server AI still validates */ }
+    }
+    return { ok: true };
+  } catch (e) { return { ok: true }; } // never hard-block on a validator error
+}
+
+// Load a URL into an <img> (CORS-enabled) for validation / re-upload.
+function loadImageEl(src) {
+  return new Promise((res, rej) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => res(im); im.onerror = () => rej(new Error("load_failed")); im.src = src; });
+}
+function canvasToBlob(c, type, q) { return new Promise((res) => c.toBlob(res, type || "image/jpeg", q == null ? 0.9 : q)); }
 // Swap (or insert) the transform segment right after /upload/. Leaves non-
 // Cloudinary URLs (pasted links) untouched so the compare simply hides itself.
 function cldWith(url, tf) {
@@ -1039,7 +1083,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     } finally { setBusy(false); }
   };
 
-  const capture = () => {
+  const capture = async () => {
     const v = videoRef.current; if (!v) return;
     const c = document.createElement("canvas");
     c.width = 720; c.height = 900;
@@ -1049,7 +1093,43 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     const scale = Math.max(c.width / vw, c.height / vh);
     const dw = vw * scale, dh = vh * scale;
     ctx.drawImage(v, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
-    c.toBlob(b => b && uploadBlob(b), "image/jpeg", 0.9);
+    setBusy(true); setErr("");
+    const check = await validateHeadshot(c, c.width, c.height);
+    if (!check.ok) { setErr(check.reason); setBusy(false); return; }
+    const blob = await canvasToBlob(c, "image/jpeg", 0.9);
+    if (blob) uploadBlob(blob); else setBusy(false);
+  };
+
+  // Upload a chosen file — validate it first, then send.
+  const uploadPicked = async (file) => {
+    setBusy(true); setErr("");
+    try {
+      const im = await loadImageEl(URL.createObjectURL(file));
+      const check = await validateHeadshot(im, im.naturalWidth, im.naturalHeight);
+      if (!check.ok) { setErr(check.reason); setBusy(false); return; }
+      uploadBlob(file, file.name);
+    } catch (e) { setErr("Couldn't read that image — try a different photo."); setBusy(false); }
+  };
+
+  // Paste-a-link — load it, validate it, and RE-UPLOAD to Cloudinary so it's a
+  // real, enhanced, same-origin-safe headshot (never a raw foreign URL).
+  const useLink = async () => {
+    const url = linkVal.trim(); if (!url) return;
+    setBusy(true); setErr("");
+    try {
+      const im = await loadImageEl(url);
+      const check = await validateHeadshot(im, im.naturalWidth, im.naturalHeight);
+      if (!check.ok) { setErr(check.reason); setBusy(false); return; }
+      const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
+      c.getContext("2d").drawImage(im, 0, 0);
+      const blob = await canvasToBlob(c, "image/jpeg", 0.92);
+      if (!blob) throw new Error("encode");
+      await uploadBlob(blob, "headshot.jpg");
+      setLinkVal("");
+    } catch (e) {
+      setErr("That link isn't a directly-viewable image (a Drive/Photos share link won't work). Paste a direct image URL, or upload the file.");
+      setBusy(false);
+    }
   };
 
   return (
@@ -1067,9 +1147,9 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
           </div>
         ) : mode === "link" ? (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <input className="admin-input" style={{ flex: "1 1 180px" }} placeholder="https://…/photo.jpg" value={linkVal} onChange={e => setLinkVal(e.target.value)}/>
-            <button type="button" className="btn btn-primary btn-sm" disabled={!linkVal.trim()} onClick={() => { onChange(linkVal.trim()); setMode("idle"); setLinkVal(""); }}>Use</button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("idle")}>Cancel</button>
+            <input className="admin-input" style={{ flex: "1 1 180px" }} placeholder="https://…/photo.jpg (direct image link)" value={linkVal} onChange={e => setLinkVal(e.target.value)}/>
+            <button type="button" className="btn btn-primary btn-sm" disabled={!linkVal.trim() || busy} onClick={useLink}>{busy ? "Checking…" : "Use"}</button>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setMode("idle")}>Cancel</button>
           </div>
         ) : (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1077,7 +1157,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
             <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy ? "Uploading…" : "Upload"}</button>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("link")}>Paste link</button>
             {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange("")}>Remove</button>}
-            <input ref={fileRef} type="file" accept="image/*" capture="user" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) uploadBlob(f, f.name); }}/>
+            <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) uploadPicked(f); e.target.value = ""; }}/>
           </div>
         )}
         <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)", marginTop: 8 }}>

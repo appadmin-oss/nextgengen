@@ -47,20 +47,51 @@
     return a;
   }
 
+  function blobToDataURL(blob) {
+    return new Promise(function (res) { var fr = new FileReader(); fr.onload = function () { res(fr.result); }; fr.onerror = function () { res(null); }; fr.readAsDataURL(blob); });
+  }
+  async function fetchAsDataURL(src) {
+    try { var r = await fetch(src, { mode: 'cors', credentials: 'omit' }); if (r.ok) return await blobToDataURL(await r.blob()); } catch (e) {}
+    return null;
+  }
+  /* Inline every <img> in the node as a same-origin data URI before rasterising.
+   * Without this, html2canvas taints cross-origin photos (Cloudinary/external)
+   * and DROPS them — the on-screen edit "reverts" (vanishes) in the export. We
+   * swap src to a data URL, snapshot, then restore the originals. */
+  async function inlineImages(node) {
+    var imgs = Array.prototype.slice.call(node.querySelectorAll('img'));
+    var restore = [];
+    for (var i = 0; i < imgs.length; i++) {
+      var im = imgs[i], src = im.getAttribute('src') || '';
+      if (!src || src.indexOf('data:') === 0) continue;
+      var data = await fetchAsDataURL(src);
+      if (data) {
+        restore.push([im, src]);
+        im.setAttribute('src', data);
+        // Ensure the swapped image is decoded before html2canvas snapshots.
+        try { if (im.decode) await im.decode(); } catch (e) {}
+      }
+    }
+    return function () { for (var j = 0; j < restore.length; j++) restore[j][0].setAttribute('src', restore[j][1]); };
+  }
+
   /* Rasterise a rendered card node with html2canvas. Returns a data URL (+ bytes
-   * + pixel size). useCORS lets Cloudinary photos paint when they allow it. */
+   * + pixel size). Images are inlined first so cross-origin photos never taint. */
   async function nodeToImage(node, o) {
     o = o || {};
     var d = await ensureDeps();
-    var canvas = await d.html2canvas(node, {
-      scale: o.scale || 3,
-      backgroundColor: o.bg || '#ffffff',
-      useCORS: true, allowTaint: false, logging: false,
-      imageTimeout: 15000,
-    });
-    var type = o.type || 'image/png', q = o.quality || 0.95;
-    var dataUrl = canvas.toDataURL(type, q);
-    return { dataUrl: dataUrl, bytes: dataUrlToBytes(dataUrl), wPx: canvas.width, hPx: canvas.height };
+    var restore = await inlineImages(node);
+    try {
+      var canvas = await d.html2canvas(node, {
+        scale: o.scale || 3,
+        backgroundColor: o.bg || '#ffffff',
+        useCORS: true, allowTaint: false, logging: false,
+        imageTimeout: 15000,
+      });
+      var type = o.type || 'image/png', q = o.quality || 0.95;
+      var dataUrl = canvas.toDataURL(type, q);
+      return { dataUrl: dataUrl, bytes: dataUrlToBytes(dataUrl), wPx: canvas.width, hPx: canvas.height };
+    } finally { restore(); }
   }
 
   /* Bulk download: a real .zip of the PNG faces, built with JSZip. */

@@ -57,7 +57,12 @@
 
   async function uploadFile(file, kind, onProgress) {
     kind = kind || 'proof';
-    const sig = await request('/member/upload-sign.php', { body: { kind } });
+    // Headshots are captured on PUBLIC surfaces (apply, gate registration, the
+    // guardian reshoot page) where there is no session — so they sign through
+    // the public headshot endpoint. Everything else uses the member endpoint.
+    const sig = kind === 'headshot'
+      ? await request('/public/upload-headshot-sign.php', { body: {} })
+      : await request('/member/upload-sign.php', { body: { kind } });
     return await new Promise((resolve, reject) => {
       const fd = new FormData();
       fd.append('file', file);
