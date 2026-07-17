@@ -276,6 +276,9 @@
       },
       overview:     () => request('/admin/overview.php'),
       dashboard:    () => request('/admin/dashboard.php'),
+      analytics:    (filters) => request('/admin/analytics.php' + qs(filters || {})),
+      analyticsDrill: (metric, filters) => request('/admin/analytics.php', { body: { action: 'drilldown', metric, ...(filters || {}) } }),
+      activityAdd:  (data) => request('/admin/analytics.php', { body: { action: 'activity.add', ...data } }),
       memberDetail: (memberId) => request('/admin/member-detail.php' + qs({ memberId })),
       assignMentor: (data) => request('/admin/assign-mentor.php', { body: data }),
       applications: {

@@ -37,7 +37,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'analytics'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/webcron.php';
 
@@ -1639,6 +1639,34 @@ chk('verify approve awards XP + clears from queue', (function () use ($pmid) {
     $q = backend_dispatch('admin.missions.submissions', ['requesterId' => 'NGG-2025-0099']);
     return $row['status'] === 'verified' && (int)$row['xpAwarded'] === 90 && count(array_filter($q['submissions'], fn($x) => $x['missionId'] === $pmid)) === 0;
 })());
+
+// ── Analytics workspace (4-level M&E engine) ─────────────────────────────────
+db_exec("INSERT OR IGNORE INTO centres (centreId,name,code,color,status) VALUES ('CEN-AN','Analytics Centre','AN','#4C6FFF','active')");
+db_insert('summer_students', ['studentId' => 'SUM-AN-1', 'cohortId' => '', 'token' => '', 'handle' => 'ang1', 'fullName' => 'Ana Girl', 'age' => 12, 'gender' => 'F', 'centre' => 'Analytics Centre', 'track' => 'STEM', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-AN-2', 'cohortId' => '', 'token' => '', 'handle' => 'anb2', 'fullName' => 'Ben Boy', 'age' => 15, 'gender' => 'M', 'centre' => 'Analytics Centre', 'track' => 'Arts', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+$anToday = gmdate('Y-m-d');
+db_insert('attendance', ['cohortId' => '', 'studentId' => 'SUM-AN-1', 'token' => '', 'date' => $anToday, 'checkInAt' => now_iso(), 'method' => 'qr', 'byId' => 'NGG-2025-0099', 'device' => '', 'createdAt' => now_iso()]);
+db_insert('activities', ['activityId' => 'ACT-AN-1', 'title' => 'STEM Lab', 'category' => 'lesson', 'centre' => 'Analytics Centre', 'department' => 'STEM', 'date' => $anToday, 'facilitatorId' => '', 'facilitatorName' => 'Coach', 'notes' => '', 'evidence' => json_encode([['type' => 'photo', 'url' => 'https://example.org/a.jpg', 'label' => 'Group']]), 'participants' => 2, 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso()]);
+
+$ws = backend_dispatch('analytics.workspace', ['requesterId' => 'NGG-2025-0099']);
+chk('analytics.workspace returns the four levels', !empty($ws['ok']) && isset($ws['workspace']['executive'], $ws['workspace']['operations'], $ws['workspace']['research'], $ws['workspace']['evidence']));
+chk('analytics executive counts enrolled students', ($ws['workspace']['executive']['totalStudents'] ?? 0) >= 2);
+chk('analytics gender analysis is populated', count($ws['workspace']['research']['gender'] ?? []) >= 1);
+chk('analytics evidence gallery carries attachments', ($ws['workspace']['evidence']['total'] ?? 0) >= 1);
+chk('analytics filter options list centres + categories', !empty($ws['workspace']['filters']['options']['centres']) && !empty($ws['workspace']['filters']['options']['categories']));
+chk('analytics.workspace gated from non-staff', backend_dispatch('analytics.workspace', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+
+$anDrill = backend_dispatch('analytics.drilldown', ['requesterId' => 'NGG-2025-0099', 'metric' => 'present-today', 'centre' => 'Analytics Centre']);
+chk('analytics drilldown lists present students today', !empty($anDrill['ok']) && count(array_filter($anDrill['rows'], fn($r) => ($r['name'] ?? '') === 'Ana Girl')) === 1);
+chk('analytics drilldown rejects unknown metric', backend_dispatch('analytics.drilldown', ['requesterId' => 'NGG-2025-0099', 'metric' => 'nope'])['error'] === 'unknown_metric');
+
+$anAdd = backend_dispatch('analytics.activity.add', ['requesterId' => 'NGG-2025-0099', 'title' => 'Field Trip', 'category' => 'excursion', 'centre' => 'Analytics Centre', 'evidence' => [['type' => 'photo', 'url' => 'https://example.org/t.jpg']]]);
+chk('analytics.activity.add logs an activity with evidence', !empty($anAdd['ok']) && (int)db_row("SELECT COUNT(*) c FROM activities WHERE activityId=?", [$anAdd['activityId']])['c'] === 1);
+
+// Scoped admin: an admin scoped to a different centre must not see Analytics Centre students.
+db_insert('members', ['memberId' => 'NGG-AN-SCOPED', 'fullName' => 'Scoped Admin', 'email' => 'scoped-an@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Egbeda', 'centreScope' => json_encode(['CEN-AN']), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+$anScoped = backend_dispatch('analytics.workspace', ['requesterId' => 'NGG-AN-SCOPED']);
+chk('scoped analytics admin sees only their centre', !empty($anScoped['ok']) && ($anScoped['workspace']['executive']['centres'] ?? 0) === 1 && ($anScoped['workspace']['research']['centreComparison'][0]['name'] ?? '') === 'Analytics Centre');
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

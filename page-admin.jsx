@@ -44,7 +44,7 @@ function useAdminDrawer(onClose, guard = true) {
 // Add a new module by adding ONE row.
 const ADMIN_SECTIONS = [
   { id: "home",        group: null,       label: "Overview",     title: "Overview",            icon: "◎", cap: null },
-  { id: "dashboard",   group: null,       label: "Dashboard",    title: "Summer School Dashboard", icon: "◫", cap: null },
+  { id: "dashboard",   group: null,       label: "Analytics",    title: "Summer School Analytics", icon: "◫", cap: null },
   { id: "members",     group: "People",   label: "Members",      title: "Members",             icon: "◯", cap: "people" },
   { id: "applications",group: "People",   label: "Applications", title: "Applications",        icon: "✉", cap: "people" },
   { id: "volunteers",  group: "People",   label: "Volunteers",   title: "Volunteers",          icon: "◈", cap: "people" },
@@ -126,7 +126,7 @@ function AdminPage({ setPage }) {
         <AdminNav section={view} setSection={setSection} hasCap={hasCap}/>
         <main className="admin-main">
           {view === "home" && <AdminHome setSection={setSection} hasCap={hasCap} member={member}/>}
-          {view === "dashboard" && <AdminDashboard/>}
+          {view === "dashboard" && <AnalyticsWorkspace/>}
           {view === "members" && <AdminMembers/>}
           {view === "applications" && <AdminApplications/>}
           {view === "volunteers" && <AdminVolunteers/>}

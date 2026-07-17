@@ -672,3 +672,28 @@ CREATE TABLE IF NOT EXISTS awards (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (38) ON DUPLICATE KEY UPDATE version = version;
+
+-- 39: analytics dimensions — self-reported gender + first-class activities
+-- ledger with donor-grade evidence attachments (JSON).
+ALTER TABLE summer_students ADD COLUMN gender VARCHAR(24) DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS activities (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  activityId VARCHAR(48) UNIQUE NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  category VARCHAR(40) DEFAULT 'lesson',
+  centre VARCHAR(80) DEFAULT '',
+  department VARCHAR(80) DEFAULT '',
+  date VARCHAR(20) NOT NULL,
+  facilitatorId VARCHAR(64) DEFAULT '',
+  facilitatorName VARCHAR(120) DEFAULT '',
+  notes TEXT,
+  evidence TEXT,
+  participants INT DEFAULT 0,
+  createdBy VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40),
+  INDEX idx_activities_centre_date (centre, date),
+  INDEX idx_activities_category (category)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (39) ON DUPLICATE KEY UPDATE version = version;

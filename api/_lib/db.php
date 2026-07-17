@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 38;
+const NGG_SCHEMA_TARGET = 39;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -935,6 +935,35 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX idx_awards_subject ON awards(subjectId);
             CREATE INDEX idx_awards_period ON awards(period);
+        ",
+
+        // Analytics dimensions: a self-reported gender on the student record
+        // (M&E gender analysis — nullable, never required) and a first-class
+        // `activities` ledger that carries donor-grade supporting evidence
+        // (photos / videos / lesson plans / worksheets / outputs / notes) as a
+        // JSON attachment array. This is what turns the platform's activity feed
+        // into an auditable, exportable evidence base for research & reporting.
+        39 => "
+            ALTER TABLE summer_students ADD COLUMN gender TEXT DEFAULT '';
+
+            CREATE TABLE activities (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              activityId TEXT UNIQUE NOT NULL,
+              title TEXT NOT NULL,
+              category TEXT DEFAULT 'lesson',
+              centre TEXT DEFAULT '',
+              department TEXT DEFAULT '',
+              date TEXT NOT NULL,
+              facilitatorId TEXT DEFAULT '',
+              facilitatorName TEXT DEFAULT '',
+              notes TEXT DEFAULT '',
+              evidence TEXT DEFAULT '[]',
+              participants INTEGER DEFAULT 0,
+              createdBy TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_activities_centre_date ON activities(centre, date);
+            CREATE INDEX idx_activities_category ON activities(category);
         ",
     ];
 
