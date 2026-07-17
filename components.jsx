@@ -1168,6 +1168,99 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   );
 }
 
+/* Build a Cloudinary delivery transform from an explicit edit spec — mirrors
+   the server's cloudinary_edit_manual so the live preview matches the save. */
+function buildEditTransform(spec) {
+  const parts = ["c_fill", "g_" + (spec.gravity || "face"), "w_600", "h_750", "f_auto", "q_auto:good", "e_improve:30"];
+  if (spec.zoom && Math.abs(spec.zoom - 1) > 0.001) parts.push("z_" + String(Math.round(spec.zoom * 100) / 100));
+  if (spec.brighten) parts.push("e_brightness:18");
+  if (spec.sharpen) parts.push("e_sharpen:80");
+  let chain = parts.join(",");
+  if (spec.removeBg) chain += "/e_background_removal/b_rgb:ffffff";
+  return chain;
+}
+
+/* Admin photo editor — re-edit ANY image (card headshot, review-queue asset).
+   Live client-side preview via cldWith; Save persists through the server which
+   re-derives from the clean source and re-applies to the subject. Replace
+   uploads a fresh, validated headshot. `target` = {assetId} or
+   {subjectType, subjectId}; the latter also enables Replace. */
+function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
+  const [spec, setSpec] = React.useState({ gravity: "face", zoom: 1, brighten: false, sharpen: false, removeBg: false });
+  const [busy, setBusy] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const fileRef = React.useRef(null);
+  const set = (k, v) => setSpec(s => Object.assign({}, s, { [k]: v }));
+  const preview = currentUrl ? cldWith(currentUrl, buildEditTransform(spec)) : "";
+
+  const save = async () => {
+    setBusy("save"); setErr("");
+    try { const r = await NGGApi.admin.photos.edit(target, spec); onSaved && onSaved(r.url); onClose && onClose(); }
+    catch (e) { setErr(e.code === "not_editable" ? "This photo isn't a Cloudinary image — use Replace to edit it." : e.code === "no_photo" ? "No photo on file yet — use Replace to add one." : (e.code || e.message)); setBusy(""); }
+  };
+  const replace = async (file) => {
+    if (!target.subjectId) { setErr("Can't replace here."); return; }
+    setBusy("replace"); setErr("");
+    try {
+      const im = await loadImageEl(URL.createObjectURL(file));
+      const check = await validateHeadshot(im, im.naturalWidth, im.naturalHeight);
+      if (!check.ok) { setErr(check.reason); setBusy(""); return; }
+      const up = await NGGApi.uploadFile(file, "headshot");
+      const r = await NGGApi.admin.photos.replace(target.subjectType, target.subjectId, up.url);
+      onSaved && onSaved(r.editedUrl || up.url); onClose && onClose();
+    } catch (e) { setErr("Couldn't replace — " + (e.code || e.message)); setBusy(""); }
+  };
+
+  const chip = (k, v, label) => (
+    <button type="button" onClick={() => set(k, v)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid " + (spec[k] === v ? "#16223e" : "rgba(12,20,50,.18)"), background: spec[k] === v ? "#16223e" : "transparent", color: spec[k] === v ? "#fff" : "#16223e", cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>{label}</button>
+  );
+  const toggle = (k, label) => (
+    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+      <input type="checkbox" checked={!!spec[k]} onChange={e => set(k, e.target.checked)}/> {label}
+    </label>
+  );
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Edit photo" onClick={e => { if (e.target === e.currentTarget && !busy) onClose && onClose(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(6,10,24,.6)", display: "grid", placeItems: "center", padding: 18 }}>
+      <div style={{ maxWidth: 560, width: "100%", background: "#fff", borderRadius: 16, padding: 20, maxHeight: "92vh", overflow: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <h3 style={{ margin: 0, fontSize: 18 }}>Edit photo{title ? " — " + title : ""}</h3>
+          <button onClick={() => !busy && onClose && onClose()} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: "#888" }}>×</button>
+        </div>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ width: 168, height: 210, borderRadius: 12, overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", border: "1px solid rgba(12,20,50,.14)", flex: "0 0 auto" }}>
+            {preview ? <img src={preview} alt="Preview" style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : <div style={{ display: "grid", placeItems: "center", height: "100%", color: "#889" }}>No photo</div>}
+          </div>
+          <div style={{ flex: 1, minWidth: 220, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <div className="mono" style={{ fontSize: 11, letterSpacing: ".1em", color: "#889", marginBottom: 6 }}>CROP FOCUS</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{chip("gravity", "face", "Face")}{chip("gravity", "center", "Centre")}{chip("gravity", "north", "Top")}{chip("gravity", "south", "Bottom")}</div>
+            </div>
+            <div>
+              <div className="mono" style={{ fontSize: 11, letterSpacing: ".1em", color: "#889", marginBottom: 6 }}>ZOOM · {spec.zoom.toFixed(2)}×</div>
+              <input type="range" min="0.6" max="1.8" step="0.05" value={spec.zoom} onChange={e => set("zoom", parseFloat(e.target.value))} style={{ width: "100%" }}/>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {toggle("brighten", "Brighten")}
+              {toggle("sharpen", "Sharpen (unsharp — no generative)")}
+              {toggle("removeBg", "Clean studio backdrop")}
+            </div>
+          </div>
+        </div>
+        {err && <p style={{ color: "var(--coral, #ff5a3c)", fontSize: 13, margin: "12px 0 0" }}>{err}</p>}
+        <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+          <button className="btn btn-primary btn-sm" disabled={!!busy || !preview} onClick={save}>{busy === "save" ? "Saving…" : "Save edit"}</button>
+          {target.subjectId && <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy === "replace" ? "Uploading…" : "Replace photo"}</button>}
+          <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => onClose && onClose()}>Cancel</button>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) replace(f); e.target.value = ""; }}/>
+        </div>
+        <p className="mono" style={{ fontSize: 11, color: "#99a", marginTop: 10 }}>Edits reframe/adjust the existing photo only — never generative. The change applies to the card and profile immediately.</p>
+      </div>
+    </div>
+  );
+}
+
 function Uploader({ kind = "proof", accept, onUploaded, compact }) {
   const [enabled, setEnabled] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -1332,5 +1425,5 @@ Object.assign(window, {
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart,
-  Uploader, AccessibilityWidget,
+  Uploader, AccessibilityWidget, PhotoEditor,
 });

@@ -63,6 +63,41 @@ function cloudinary_edit(string $sourceUrl, array $rec, bool $creditsOk): array 
     return ['url' => cloudinary_apply($sourceUrl, $transforms), 'transforms' => $transforms, 'aiUsed' => $aiUsed];
 }
 
+/**
+ * Strip any transform segment(s) between /upload/ and the version marker, so a
+ * re-edit always derives from the CLEAN original rather than stacking transforms
+ * on top of an already-edited URL. Leaves non-Cloudinary URLs untouched.
+ */
+function cloudinary_base(string $url): string {
+    if (strpos($url, '/upload/') === false) return $url;
+    // .../upload/<transforms>/v123/<publicid> → .../upload/v123/<publicid>
+    $stripped = preg_replace('#(/upload/).*?(v\d+/)#', '$1$2', $url, 1);
+    return is_string($stripped) && $stripped !== '' ? $stripped : $url;
+}
+
+/**
+ * Admin-driven manual edit: build a delivery transform from an EXPLICIT spec
+ * (gravity/zoom/brighten/sharpen/removeBg) rather than the AI recommendation.
+ * Same identity-preservation rule as cloudinary_edit — reframe/adjust only,
+ * background swap is the only credit-costed step, never generative. Returns
+ * ['url','transforms'].
+ */
+function cloudinary_edit_manual(string $sourceUrl, array $spec): array {
+    $g = (string)($spec['gravity'] ?? 'face');
+    if (!in_array($g, ['face', 'faces', 'center', 'north', 'south', 'auto'], true)) $g = 'face';
+    $parts = ['c_fill', 'g_' . $g, 'w_600', 'h_750', 'f_auto', 'q_auto:good', 'e_improve:30'];
+    if (isset($spec['zoom'])) {
+        $z = max(0.5, min(2.0, (float)$spec['zoom']));
+        if (abs($z - 1.0) > 0.001) $parts[] = 'z_' . rtrim(rtrim(number_format($z, 2, '.', ''), '0'), '.');
+    }
+    if (!empty($spec['brighten'])) $parts[] = 'e_brightness:18';
+    if (!empty($spec['sharpen']))  $parts[] = 'e_sharpen:80';
+    $chain = [implode(',', $parts)];
+    if (!empty($spec['removeBg']) && cloudinary_credits_ok()) { $chain[] = 'e_background_removal'; $chain[] = 'b_rgb:ffffff'; }
+    $tf = implode('/', $chain);
+    return ['url' => cloudinary_apply(cloudinary_base($sourceUrl), $tf), 'transforms' => $tf];
+}
+
 /* ── Credit guard + refresh ───────────────────────────────────────────────── */
 
 /** Cheap read of the cached credit state. Defaults to OK (never blocks blind). */
@@ -316,6 +351,60 @@ function photo_reject(array $p): array {
     db_update('photo_assets', ['status' => 'rejected', 'reviewedBy' => $g['requester']['memberId'], 'reviewedAt' => now_iso(), 'decisionNote' => $reason, 'updatedAt' => now_iso()], ['assetId' => $assetId]);
     audit('photo.rejected', $g['requester']['memberId'], $assetId, ['reason' => $reason], (string)($p['ip'] ?? ''));
     return ['ok' => true];
+}
+
+/**
+ * Admin re-edit of ANY image — including already-live ones. Accepts an assetId
+ * (review queue) OR a subjectType+subjectId (a live card photo with no open
+ * asset). Rebuilds the delivery transform from the clean source per the given
+ * spec, updates the asset if one exists, and always re-applies to the subject
+ * so the card/profile update immediately. Returns the new URL for preview.
+ */
+function admin_photo_edit(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $spec = is_array($p['spec'] ?? null) ? $p['spec'] : [];
+    $assetId = (string)($p['assetId'] ?? '');
+    $subjectType = (string)($p['subjectType'] ?? '');
+    $subjectId = (string)($p['subjectId'] ?? '');
+
+    $a = null;
+    if ($assetId !== '') $a = db_row('SELECT * FROM photo_assets WHERE assetId = ? LIMIT 1', [$assetId]);
+    elseif ($subjectType !== '' && $subjectId !== '') $a = db_row("SELECT * FROM photo_assets WHERE subjectType = ? AND subjectId = ? AND status NOT IN ('rejected') ORDER BY version DESC LIMIT 1", [$subjectType, $subjectId]);
+
+    if ($a) { $source = (string)$a['sourceUrl']; $subjectType = (string)$a['subjectType']; $subjectId = (string)$a['subjectId']; }
+    else {
+        // No asset — derive the clean source from the subject's current photo.
+        $tbl = $subjectType === 'volunteer' ? 'volunteers' : 'summer_students';
+        $col = $subjectType === 'volunteer' ? 'volunteerId' : 'studentId';
+        $row = ($subjectId !== '') ? db_row("SELECT photoUrl FROM $tbl WHERE $col = ? LIMIT 1", [$subjectId]) : null;
+        if (!$row || empty($row['photoUrl'])) return ['ok' => false, 'error' => 'no_photo'];
+        $source = cloudinary_base((string)$row['photoUrl']);
+    }
+    if (strpos($source, '/upload/') === false) return ['ok' => false, 'error' => 'not_editable']; // non-Cloudinary photo
+
+    $edit = cloudinary_edit_manual($source, $spec);
+    if ($a) db_update('photo_assets', ['editedUrl' => $edit['url'], 'transforms' => $edit['transforms'], 'updatedAt' => now_iso()], ['assetId' => $a['assetId']]);
+    photo_apply_to_subject(['subjectType' => $subjectType, 'subjectId' => $subjectId, 'editedUrl' => $edit['url']]);
+    audit('photo.edited', $g['requester']['memberId'], ($subjectType . ':' . $subjectId), ['spec' => $spec, 'assetId' => $a['assetId'] ?? ''], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'url' => $edit['url'], 'transforms' => $edit['transforms']];
+}
+
+/**
+ * Admin replace — ingest a freshly-uploaded source for a subject and run it
+ * through the pipeline (a new version). The admin uploads via the signed
+ * endpoint, then passes the returned sourceUrl here.
+ */
+function admin_photo_replace(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $subjectType = (string)($p['subjectType'] ?? '');
+    $subjectId = (string)($p['subjectId'] ?? '');
+    $sourceUrl = (string)($p['sourceUrl'] ?? '');
+    if ($subjectId === '') return ['ok' => false, 'error' => 'missing_subject'];
+    $ing = photo_ingest($subjectType, $subjectId, $sourceUrl, $g['requester']['memberId']);
+    if (empty($ing['ok'])) return $ing;
+    $proc = photo_process($ing['assetId']);
+    audit('photo.replaced', $g['requester']['memberId'], ($subjectType . ':' . $subjectId), ['assetId' => $ing['assetId']], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'assetId' => $ing['assetId'], 'status' => $proc['status'] ?? 'captured', 'editedUrl' => $proc['editedUrl'] ?? ''];
 }
 
 /** Push the approved (edited) image back onto the subject's record so the ID

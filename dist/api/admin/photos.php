@@ -16,6 +16,8 @@ if ($method === 'GET') {
     elseif ($action === 'approve') $res = gs_call('admin.photo.approve', $base + ['editedUrl' => $b['editedUrl'] ?? '', 'note' => $b['note'] ?? '']);
     elseif ($action === 'retake')  $res = gs_call('admin.photo.retake', $base + ['reason' => $b['reason'] ?? '']);
     elseif ($action === 'reject')  $res = gs_call('admin.photo.reject', $base + ['reason' => $b['reason'] ?? '']);
+    elseif ($action === 'edit')    $res = gs_call('admin.photo.edit', ['requesterId' => $s['mid'], 'ip' => $ip, 'assetId' => $b['assetId'] ?? '', 'subjectType' => $b['subjectType'] ?? '', 'subjectId' => $b['subjectId'] ?? '', 'spec' => $b['spec'] ?? []]);
+    elseif ($action === 'replace') $res = gs_call('admin.photo.replace', ['requesterId' => $s['mid'], 'ip' => $ip, 'subjectType' => $b['subjectType'] ?? '', 'subjectId' => $b['subjectId'] ?? '', 'sourceUrl' => $b['sourceUrl'] ?? '']);
     else json_error('unknown_action', 400);
 } else {
     json_error('method_not_allowed', 405);

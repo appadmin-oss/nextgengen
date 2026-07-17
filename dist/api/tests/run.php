@@ -1536,6 +1536,23 @@ chk('resend with QR ⇒ qr:true (email will embed the hosted image)', (function 
     return !empty($r['ok']) && ($r['qr'] ?? false) === true;
 })());
 
+// ── Admin photo re-edit (all images re-editable) ────────────────────────────
+chk('cloudinary_base strips a transform to the clean source', function_exists('cloudinary_base') && cloudinary_base('https://res.cloudinary.com/x/image/upload/c_fill,g_face,w_600,h_750/v17/ngg/headshot/abc.jpg') === 'https://res.cloudinary.com/x/image/upload/v17/ngg/headshot/abc.jpg');
+chk('cloudinary_edit_manual builds the requested transform', (function () {
+    $e = cloudinary_edit_manual('https://res.cloudinary.com/x/image/upload/v17/ngg/headshot/abc.jpg', ['gravity' => 'center', 'brighten' => true]);
+    return strpos($e['transforms'], 'g_center') !== false && strpos($e['transforms'], 'e_brightness:18') !== false
+        && strpos($e['url'], '/upload/c_fill,g_center') !== false && strpos($e['url'], '/v17/') !== false;
+})());
+chk('admin.photo.edit re-crops a live student photo (no stacked transforms)', (function () {
+    db_update('summer_students', ['photoUrl' => 'https://res.cloudinary.com/x/image/upload/c_fill,g_face,w_600,h_750/v17/ngg/headshot/abc.jpg'], ['studentId' => 'SUM-R-1']);
+    $r = backend_dispatch('admin.photo.edit', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'SUM-R-1', 'spec' => ['gravity' => 'center', 'zoom' => 1.2]]);
+    if (empty($r['ok'])) return false;
+    $now = db_row('SELECT photoUrl FROM summer_students WHERE studentId=?', ['SUM-R-1'])['photoUrl'];
+    // Applied the new crop, derived from the CLEAN base (only one transform seg, keeps /v17/).
+    return strpos($now, 'g_center') !== false && strpos($now, 'z_1.2') !== false && strpos($now, 'g_face,w_600,h_750/c_fill') === false && substr_count($now, '/upload/') === 1 && strpos($now, '/v17/') !== false;
+})());
+chk('admin.photo.edit gated from non-staff', backend_dispatch('admin.photo.edit', ['requesterId' => 'NGG-2025-0001', 'subjectType' => 'student', 'subjectId' => 'SUM-R-1', 'spec' => []])['error'] === 'forbidden');
+
 // ── Mission proof-review queue (M13: verify was built but unreachable) ────────
 $pmid = backend_dispatch('admin.missions.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['week' => 2, 'order' => 1, 'theme' => 'Proof', 'title' => 'Show your work', 'prompt' => 'Upload a photo', 'type' => 'Do', 'proof' => 'photo', 'xp' => 90, 'isActive' => true]])['missionId'];
 chk('proof mission submit ⇒ submitted (not auto-verified)', backend_dispatch('anchor.mission.submit', ['memberId' => 'NGG-2025-0001', 'missionId' => $pmid, 'proofUrl' => 'https://example.org/p.jpg'])['status'] === 'submitted');

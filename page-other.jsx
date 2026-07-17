@@ -3042,6 +3042,7 @@ function CardStudio() {
   const [exp, setExp] = React.useState("");   // progress/status text
   const [notice, setNotice] = React.useState("");  // transient success note
   const [resending, setResending] = React.useState("");  // id currently resending
+  const [editPhoto, setEditPhoto] = React.useState(null);  // card whose photo is being edited
 
   // Render a crisp QR PNG for a token's /q profile URL, so the emailed ID can
   // embed the scannable code (via the hosted qr.php image). Reuses the same
@@ -3242,6 +3243,8 @@ function CardStudio() {
       {cards.map((card, i) => (
         <div key={card.studentId || card.volunteerId} className="card-pair" style={{ position: "relative" }}>
           <div className="no-print" style={{ position: "absolute", top: -12, right: -8, zIndex: 2, display: "flex", gap: 6 }}>
+            <button onClick={() => setEditPhoto(card)} title="Re-crop, adjust or replace this photo"
+              style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>Edit photo</button>
             <button onClick={() => resendId(card)} disabled={!!resending} title="Resend this ID to the parent / volunteer (email + SMS)"
               style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>
               {resending === (isVol ? card.volunteerId : card.studentId) ? "Sending…" : "Resend ID"}
@@ -3255,6 +3258,15 @@ function CardStudio() {
       ))}
       {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>{isVol ? "No active volunteers yet — cards appear here the moment one is approved." : "No verified students yet — cards appear here the moment a parent consents."}</p>}
     </div>
+    {editPhoto && (
+      <PhotoEditor
+        target={{ subjectType: isVol ? "volunteer" : "student", subjectId: editPhoto.volunteerId || editPhoto.studentId }}
+        currentUrl={editPhoto.photoUrl}
+        title={(editPhoto.firstName || "") + " " + (editPhoto.surname || "")}
+        onSaved={() => { setEditPhoto(null); setNotice("Photo updated."); load(); }}
+        onClose={() => setEditPhoto(null)}
+      />
+    )}
   </>);
 }
 
