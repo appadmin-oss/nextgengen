@@ -8,6 +8,51 @@ declare(strict_types=1);
  * admin role via admin_gate() (defined in admin.php).
  */
 
+// ── General dashboard (Summer School board) — attendance + analytics/centre ──
+// Read-only live aggregation. Gated on the M&E `audit` cap (finally giving that
+// long-orphaned role a home) and also open to `rbac`/super_admin. Grouped by
+// centre; centre-scope filtering is layered in with scoped admins (B2).
+function admin_dashboard_overview(array $p): array {
+    // Read-only board — any admin tier (incl. the M&E `audit` role) may view it.
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $one = fn($sql, $a = []) => (int)(db_row($sql, $a)['c'] ?? 0);
+    $today = gmdate('Y-m-d');
+    $since = gmdate('Y-m-d', time() - 13 * 86400); // 14-day window
+
+    $centres = db_all("SELECT centreId, name, code, color FROM centres WHERE status = 'active' ORDER BY name");
+    $byCentre = [];
+    foreach ($centres as $c) {
+        $name = (string)$c['name'];
+        $enrolled = $one("SELECT COUNT(*) c FROM summer_students WHERE centre = ? AND status = 'active'", [$name]);
+        $present  = $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE s.centre = ? AND a.date = ?", [$name, $today]);
+        $late     = $one("SELECT COUNT(*) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE s.centre = ? AND a.date = ? AND a.status = 'late'", [$name, $today]);
+        $byCentre[] = [
+            'centreId' => $c['centreId'], 'name' => $name, 'code' => $c['code'], 'color' => $c['color'],
+            'enrolled' => $enrolled, 'present' => $present, 'late' => $late,
+            'rate' => $enrolled ? (int)round($present / $enrolled * 100) : 0,
+        ];
+    }
+    // 14-day attendance trend across all centres.
+    $trend = db_all("SELECT date, COUNT(DISTINCT studentId) present, SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) late FROM attendance WHERE date >= ? GROUP BY date ORDER BY date", [$since]);
+    $enrolledTotal = $one("SELECT COUNT(*) c FROM summer_students WHERE status = 'active'");
+    $presentToday  = $one("SELECT COUNT(DISTINCT studentId) c FROM attendance WHERE date = ?", [$today]);
+
+    return ['ok' => true, 'dashboard' => [
+        'today' => $today,
+        'kpis' => [
+            'centres'          => count($centres),
+            'enrolled'         => $enrolledTotal,
+            'presentToday'     => $presentToday,
+            'attendanceRate'   => $enrolledTotal ? (int)round($presentToday / $enrolledTotal * 100) : 0,
+            'lateToday'        => $one("SELECT COUNT(*) c FROM attendance WHERE date = ? AND status = 'late'", [$today]),
+            'activeVolunteers' => $one("SELECT COUNT(*) c FROM volunteers WHERE status = 'active'"),
+            'presentVolToday'  => $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN volunteers v ON v.volunteerId = a.studentId WHERE a.date = ?", [$today]),
+        ],
+        'byCentre' => $byCentre,
+        'trend'    => $trend,
+    ]];
+}
+
 // ── Analytics overview ──────────────────────────────────────────────────────
 function admin_overview(array $p): array {
     $g = admin_gate($p); if (!$g['ok']) return $g;

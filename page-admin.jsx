@@ -44,6 +44,7 @@ function useAdminDrawer(onClose, guard = true) {
 // Add a new module by adding ONE row.
 const ADMIN_SECTIONS = [
   { id: "home",        group: null,       label: "Overview",     title: "Overview",            icon: "◎", cap: null },
+  { id: "dashboard",   group: null,       label: "Dashboard",    title: "Summer School Dashboard", icon: "◫", cap: null },
   { id: "members",     group: "People",   label: "Members",      title: "Members",             icon: "◯", cap: "people" },
   { id: "applications",group: "People",   label: "Applications", title: "Applications",        icon: "✉", cap: "people" },
   { id: "volunteers",  group: "People",   label: "Volunteers",   title: "Volunteers",          icon: "◈", cap: "people" },
@@ -67,7 +68,7 @@ const ADMIN_SECTIONS = [
   { id: "newsletter",  group: "Inbox",    label: "Newsletter",   title: "Newsletter",          icon: "✧", cap: "inbox" },
   { id: "messages",    group: "Inbox",    label: "Messages",     title: "Messages",            icon: "✆", cap: "inbox" },
   { id: "access",      group: "System",   label: "Access & roles", title: "Access & roles",    icon: "⚿", cap: "rbac" },
-  { id: "audit",       group: "System",   label: "Audit trail",  title: "Audit log",           icon: "⌗", cap: "rbac" },
+  { id: "audit",       group: "System",   label: "Audit trail",  title: "Audit log",           icon: "⌗", cap: "audit" },
   { id: "integrations",group: "System",   label: "Integrations", title: "Integrations & delivery", icon: "⇄", cap: "settings" },
   { id: "donations",   group: "System",   label: "Donations",    title: "Donations",           icon: "❤", cap: "settings" },
   { id: "settings",    group: "System",   label: "Settings",     title: "Settings",            icon: "⚙", cap: "settings" },
@@ -105,7 +106,7 @@ function AdminPage({ setPage }) {
   }
   // Coordinator-only accounts (summer/club, no console caps) belong in their
   // own stand-alone portal, not the admin console.
-  const hasConsole = ["content", "people", "inbox", "settings", "rbac"].some(c => hasCap(c));
+  const hasConsole = ["content", "people", "inbox", "settings", "rbac", "audit"].some(c => hasCap(c));
   if (!hasConsole && (hasCap("summer") || hasCap("club"))) {
     const dest = hasCap("summer") ? "summer-admin" : "club-admin";
     const label = hasCap("summer") ? "Summer School" : "NGG Club";
@@ -125,6 +126,7 @@ function AdminPage({ setPage }) {
         <AdminNav section={view} setSection={setSection} hasCap={hasCap}/>
         <main className="admin-main">
           {view === "home" && <AdminHome setSection={setSection} hasCap={hasCap} member={member}/>}
+          {view === "dashboard" && <AdminDashboard/>}
           {view === "members" && <AdminMembers/>}
           {view === "applications" && <AdminApplications/>}
           {view === "volunteers" && <AdminVolunteers/>}
@@ -415,6 +417,72 @@ function AdminHome({ setSection, hasCap, member }) {
           {can("settings") && <button className="admin-quick-btn" onClick={() => setSection("settings")}>⚙ Settings</button>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* General dashboard — the Summer School 2026 board: live attendance + per-centre
+   analytics. Read-only; any console admin (incl. the M&E audit role) sees it. */
+function AdminDashboard() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.dashboard().then(r => { setD(r.dashboard); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); const id = setInterval(() => { if (!document.hidden) load(); }, 30000); return () => clearInterval(id); }, []);
+  if (err) return <div className="admin-section"><ErrorState title="Couldn't load the dashboard" code={err} onRetry={load}/></div>;
+  if (!d) return <div className="admin-section"><div className="dash-spinner"/></div>;
+  const k = d.kpis || {};
+  const maxTrend = Math.max(1, ...(d.trend || []).map(t => (t.present || 0)));
+  const kpi = (n, l, sub) => (
+    <div className="admin-tile" style={{ cursor: "default", alignItems: "flex-start" }}>
+      <div className="admin-tile-n">{n}</div>
+      <div className="mono admin-tile-l">{l}</div>
+      {sub ? <div className="mono" style={{ fontSize: 10, color: "var(--ink-500)", marginTop: 2 }}>{sub}</div> : null}
+    </div>
+  );
+  const rateColor = (r) => r >= 85 ? "#2f9e44" : r >= 60 ? "#f08c00" : "#e03131";
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Summer School Dashboard</h2>
+        <span className="mono" style={{ color: "var(--ink-500)", fontSize: 12 }}>Live · {d.today} · updates every 30s</span>
+      </div>
+      <div className="admin-grid-cards" style={{ marginBottom: 22 }}>
+        {kpi(k.centres || 0, "Centres")}
+        {kpi(k.enrolled || 0, "Enrolled students")}
+        {kpi(k.presentToday || 0, "Present today")}
+        {kpi((k.attendanceRate || 0) + "%", "Attendance rate")}
+        {kpi(k.lateToday || 0, "Late today")}
+        {kpi(k.activeVolunteers || 0, "Active volunteers", (k.presentVolToday || 0) + " in today")}
+      </div>
+
+      <h3 className="admin-h3" style={{ margin: "0 0 10px" }}>Centre performance</h3>
+      {!(d.byCentre || []).length ? <div className="admin-empty">No active centres yet — add them under Registration → Centres.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Centre</th><th>Enrolled</th><th>Present today</th><th>Late</th><th>Attendance</th></tr></thead>
+          <tbody>
+            {(d.byCentre || []).map(c => (
+              <tr key={c.centreId || c.name}>
+                <td><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: c.color || "#76B043", marginRight: 8 }}/><b>{c.name}</b> <span className="mono admin-cell-sub">{c.code}</span></td>
+                <td className="mono">{c.enrolled}</td>
+                <td className="mono">{c.present}</td>
+                <td className="mono">{c.late ? <span style={{ color: "#e03131" }}>{c.late}</span> : "—"}</td>
+                <td><span style={{ fontWeight: 700, color: rateColor(c.rate) }}>{c.rate}%</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>}
+
+      <h3 className="admin-h3" style={{ margin: "24px 0 10px" }}>Attendance — last 14 days</h3>
+      {!(d.trend || []).length ? <div className="admin-empty">No check-ins recorded yet.</div> :
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 120, padding: "0 2px", overflowX: "auto" }}>
+          {(d.trend || []).map(t => (
+            <div key={t.date} title={t.date + " · " + t.present + " present" + (t.late ? " · " + t.late + " late" : "")} style={{ flex: "1 0 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+              <div style={{ width: "100%", maxWidth: 26, height: Math.max(2, Math.round((t.present || 0) / maxTrend * 96)), background: "linear-gradient(180deg,#4c6ef5,#3b5bdb)", borderRadius: "4px 4px 0 0" }}/>
+              <span className="mono" style={{ fontSize: 9, color: "var(--ink-500)", whiteSpace: "nowrap" }}>{String(t.date).slice(5)}</span>
+            </div>
+          ))}
+        </div>}
+      <p className="admin-hint" style={{ marginTop: 16 }}>Per-centre scoping, stars/behaviour, recognition and academic analytics land in the next phases (see the implementation plan). Late is measured against the resumption times in Settings → Attendance.</p>
     </div>
   );
 }

@@ -272,6 +272,7 @@
         set:      (data) => request('/admin/anchor.php', { body: { data } }),
       },
       overview:     () => request('/admin/overview.php'),
+      dashboard:    () => request('/admin/dashboard.php'),
       memberDetail: (memberId) => request('/admin/member-detail.php' + qs({ memberId })),
       assignMentor: (data) => request('/admin/assign-mentor.php', { body: data }),
       applications: {

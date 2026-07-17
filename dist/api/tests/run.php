@@ -1553,6 +1553,23 @@ chk('admin.photo.edit re-crops a live student photo (no stacked transforms)', (f
 })());
 chk('admin.photo.edit gated from non-staff', backend_dispatch('admin.photo.edit', ['requesterId' => 'NGG-2025-0001', 'subjectType' => 'student', 'subjectId' => 'SUM-R-1', 'spec' => []])['error'] === 'forbidden');
 
+// ── General dashboard (attendance + per-centre analytics) ───────────────────
+db_insert('centres', ['centreId' => 'CEN-EG', 'name' => 'Egbeda', 'code' => 'EG', 'color' => '#76B043', 'status' => 'active', 'createdAt' => now_iso()]);
+db_insert('attendance', ['cohortId' => 'RC1', 'studentId' => 'SUM-R-1', 'token' => 'SUMQR-RS1', 'date' => gmdate('Y-m-d'), 'checkInAt' => now_iso(), 'method' => 'qr', 'status' => 'present', 'lateMinutes' => 0, 'createdAt' => now_iso()]);
+chk('dashboard overview aggregates present + by centre', (function () {
+    $r = backend_dispatch('admin.dashboard.overview', ['requesterId' => 'NGG-2025-0099']);
+    if (empty($r['ok'])) return false;
+    $d = $r['dashboard']; $eg = null;
+    foreach ($d['byCentre'] as $c) if ($c['name'] === 'Egbeda') $eg = $c;
+    return $d['kpis']['presentToday'] >= 1 && $eg && $eg['present'] >= 1 && $eg['enrolled'] >= 1;
+})());
+chk('dashboard readable by the M&E audit role', (function () {
+    backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Auditor', 'email' => 'me@example.com', 'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'audit']]);
+    $aud = db_row("SELECT memberId FROM members WHERE email='me@example.com'")['memberId'];
+    return !empty(backend_dispatch('admin.dashboard.overview', ['requesterId' => $aud])['ok']);
+})());
+chk('dashboard gated from non-admin', backend_dispatch('admin.dashboard.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+
 // ── Mission proof-review queue (M13: verify was built but unreachable) ────────
 $pmid = backend_dispatch('admin.missions.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['week' => 2, 'order' => 1, 'theme' => 'Proof', 'title' => 'Show your work', 'prompt' => 'Upload a photo', 'type' => 'Do', 'proof' => 'photo', 'xp' => 90, 'isActive' => true]])['missionId'];
 chk('proof mission submit ⇒ submitted (not auto-verified)', backend_dispatch('anchor.mission.submit', ['memberId' => 'NGG-2025-0001', 'missionId' => $pmid, 'proofUrl' => 'https://example.org/p.jpg'])['status'] === 'submitted');
