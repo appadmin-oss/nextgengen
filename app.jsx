@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","status","admin","summer-admin","club-admin","circle","gate","verify","reshoot","cards","certificate","legal"];
+const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","verify","reshoot","cards","certificate","legal"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
@@ -30,7 +30,8 @@ const PAGE_META = {
   join:       { title: "Apply · Summer 2026 · NGG",                   desc: "Four short steps. About six minutes. Pause and come back — we save as you go." },
   blog:       { title: "The Journal · NGG",                           desc: "Long-form writing from mentors, members and the editorial team." },
   contact:    { title: "Contact · NGG",                               desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
-  status:     { title: "Live status · Summer School · NGG",           desc: "A live, public view of attendance and participation across every NGG Summer School centre — aggregate numbers only." },
+  "s-status": { title: "Live status · Summer School · NGG",           desc: "A live, public view of attendance and participation across every NGG Summer School centre — aggregate numbers only." },
+  "v-status": { title: "Volunteer status · Next Generation Genius",    desc: "A live, public view of volunteer needs and fulfilment across every NGG centre — aggregate counts only, never a volunteer's name." },
   summerprofile: { title: "Summer student · NGG",                     desc: "A Summer School student's standard profile." },
   admin:      { title: "Control Room · NGG",                          desc: "" },
   "summer-admin": { title: "Summer School · Staff Portal · NGG",      desc: "" },
@@ -156,6 +157,10 @@ function pageFromPath() {
   // The staff Control Room lives at /nextadmin; /hq and /admin are kept as
   // legacy aliases so old links keep working.
   if (seg === "nextadmin" || seg === "hq" || seg === "admin") return "admin";
+  // Legacy alias: the public attendance board moved from /status to /s-status.
+  // Resolve old bookmarks/shared links transparently (the router then rewrites
+  // the address bar to /s-status via pathForPage in the effect below).
+  if (seg === "status") return "s-status";
   return PAGE_IDS.includes(seg) ? seg : "_notfound";
 }
 function pathForPage(page) {
@@ -240,7 +245,8 @@ function App() {
     join:      <JoinPage      setPage={setPage}/>,
     blog:      <BlogPage      setPage={setPage}/>,
     contact:   <ContactPage   setPage={setPage}/>,
-    status:    <StatusPage    setPage={setPage}/>,
+    "s-status": <StatusPage    setPage={setPage}/>,
+    "v-status": <VolunteerStatusPage setPage={setPage}/>,
     summerprofile: <SummerProfilePage setPage={setPage}/>,
     admin:     <AdminPage     setPage={setPage}/>,
     "summer-admin": <SummerAdminPortal setPage={setPage}/>,

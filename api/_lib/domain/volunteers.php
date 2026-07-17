@@ -491,14 +491,14 @@ function public_instructor_roster(array $p): array {
 
 function admin_volunteers_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-    $pending = db_all("SELECT id, name, firstName, lastName, otherName, dob, sex, email, phone, role, courses, why, photoUrl, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing') ORDER BY id DESC LIMIT 200");
+    $pending = db_all("SELECT id, name, firstName, lastName, otherName, dob, sex, email, phone, role, courses, centre, faculty, why, photoUrl, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing') ORDER BY id DESC LIMIT 200");
     foreach ($pending as &$a) {
         $a['courses'] = json_decode((string)($a['courses'] ?? ''), true) ?: [];
         $a['ref'] = function_exists('intake_reference') ? intake_reference('volunteer', (int)$a['id']) : '';
         $a['dobAge'] = !empty($a['dob']) && function_exists('dob_age') ? dob_age((string)$a['dob']) : null;
     }
     unset($a);
-    $roster = db_all('SELECT volunteerId, fullName, email, phone, role, courses, token, status, safeguarding, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
+    $roster = db_all('SELECT volunteerId, fullName, email, phone, role, courses, centre, faculty, token, status, safeguarding, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
     foreach ($roster as &$v) $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
     unset($v);
     return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster];
@@ -539,6 +539,7 @@ function admin_volunteer_approve(array $p): array {
         'otherName' => (string)($a['otherName'] ?? ''), 'dob' => (string)($a['dob'] ?? ''),
         'sex' => (string)($a['sex'] ?? ''),
         'role' => (string)$a['role'], 'courses' => (string)($a['courses'] ?? ''),
+        'centre' => (string)($a['centre'] ?? ''), 'faculty' => (string)($a['faculty'] ?? ''),
         'token' => $token, 'photoUrl' => (string)($a['photoUrl'] ?? ''),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
@@ -605,5 +606,154 @@ function admin_volunteer_decline(array $p): array {
         ]));
     }
     audit('volunteer.decline', $g['requester']['memberId'], (string)$id, ['reason' => $reason !== ''], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/* ── Volunteer deployment planning: needs ledger + fulfilment status ────────
+   `volunteer_needs` holds the admin's target headcount per centre × role, with
+   an optional finer target per faculty. Role-level rows carry faculty=''.
+   The public /v-status board and the admin needs editor both compute against
+   the same live filled counts (active volunteers), so config and board never
+   drift. Volunteers store their centre/faculty as free text (the catalogue
+   value at apply time); we map centre NAME ↔ centreId through the catalogue. */
+
+const VOL_ROLES = ['admin', 'mentor', 'instructor'];
+
+/** Live filled counts from the active roster, keyed for O(1) lookup. */
+function volunteer_filled_index(): array {
+    $byRole = []; $byFaculty = []; $byCourse = []; $byCentre = [];
+    foreach (db_all("SELECT centre, role, faculty, courses FROM volunteers WHERE status = 'active'") as $v) {
+        $c = (string)$v['centre']; if ($c === '') continue;
+        $r = (string)$v['role']; $f = (string)($v['faculty'] ?? '');
+        $byCentre[$c] = ($byCentre[$c] ?? 0) + 1;
+        $byRole[$c . '|' . $r] = ($byRole[$c . '|' . $r] ?? 0) + 1;
+        if ($f !== '') $byFaculty[$c . '|' . $f] = ($byFaculty[$c . '|' . $f] ?? 0) + 1;
+        if ($r === 'instructor') {
+            $courses = json_decode((string)($v['courses'] ?? ''), true) ?: [];
+            foreach ($courses as $co) { $co = (string)$co; if ($co === '') continue; $byCourse[$c . '|' . $f . '|' . $co] = ($byCourse[$c . '|' . $f . '|' . $co] ?? 0) + 1; }
+        }
+    }
+    return ['centre' => $byCentre, 'role' => $byRole, 'faculty' => $byFaculty, 'course' => $byCourse];
+}
+
+function volunteer_tone(int $rate): string { return $rate >= 100 ? 'met' : ($rate >= 60 ? 'watch' : 'urgent'); }
+function volunteer_rate(int $filled, int $need): int { return $need > 0 ? (int)round($filled / $need * 100) : ($filled > 0 ? 100 : 100); }
+
+/** Full per-centre + global fulfilment structure (shared by public board). */
+function volunteer_status_compute(): array {
+    $centres = db_all("SELECT centreId, name, code, color FROM centres WHERE status = 'active' ORDER BY name");
+    $needsRows = db_all('SELECT centreId, role, faculty, needCount FROM volunteer_needs');
+    // Index needs: role-level (faculty='') and faculty-level.
+    $roleNeed = []; $facNeed = [];
+    foreach ($needsRows as $n) {
+        $cid = (string)$n['centreId']; $r = (string)$n['role']; $f = (string)($n['faculty'] ?? '');
+        if ($f === '') $roleNeed[$cid . '|' . $r] = (int)$n['needCount'];
+        else { $facNeed[$cid . '|' . $r . '|' . $f] = (int)$n['needCount']; $facNeed['sum|' . $cid . '|' . $r] = ($facNeed['sum|' . $cid . '|' . $r] ?? 0) + (int)$n['needCount']; }
+    }
+    $filled = volunteer_filled_index();
+
+    $byCentre = []; $tNeed = 0; $tFilled = 0;
+    foreach ($centres as $c) {
+        $cid = (string)$c['centreId']; $name = (string)$c['name'];
+        $cNeed = 0; $cFilled = 0; $byRole = [];
+        foreach (VOL_ROLES as $r) {
+            // Effective role need: explicit role-level row, else sum of its faculty rows.
+            $need = $roleNeed[$cid . '|' . $r] ?? ($facNeed['sum|' . $cid . '|' . $r] ?? 0);
+            $fl = $filled['role'][$name . '|' . $r] ?? 0;
+            $cNeed += $need; $cFilled += $fl;
+            $byRole[] = ['role' => $r, 'need' => $need, 'filled' => $fl, 'gap' => max(0, $need - $fl), 'fulfillmentRate' => volunteer_rate($fl, $need)];
+        }
+        // By faculty (mentors + instructors combined) — filled + optional need.
+        $facs = [];
+        foreach (volunteer_faculty_options() as $f) {
+            $fFilled = $filled['faculty'][$name . '|' . $f] ?? 0;
+            $fNeed = ($facNeed[$cid . '|mentor|' . $f] ?? 0) + ($facNeed[$cid . '|instructor|' . $f] ?? 0);
+            if ($fFilled === 0 && $fNeed === 0) continue;
+            $facs[] = ['faculty' => $f, 'filled' => $fFilled, 'need' => $fNeed];
+        }
+        // By faculty → course (instructors only).
+        $courses = [];
+        foreach ($filled['course'] as $key => $cnt) {
+            [$cn, $f, $co] = array_pad(explode('|', $key, 3), 3, '');
+            if ($cn !== $name) continue;
+            $courses[] = ['faculty' => $f, 'course' => $co, 'filled' => $cnt];
+        }
+        usort($courses, fn($a, $b) => [$a['faculty'], $a['course']] <=> [$b['faculty'], $b['course']]);
+        $rate = volunteer_rate($cFilled, $cNeed);
+        $byCentre[] = [
+            'centreId' => $cid, 'name' => $name, 'code' => (string)$c['code'], 'color' => (string)$c['color'],
+            'need' => $cNeed, 'filled' => $cFilled, 'gap' => max(0, $cNeed - $cFilled),
+            'fulfillmentRate' => $rate, 'tone' => volunteer_tone($rate),
+            'byRole' => $byRole, 'byFaculty' => $facs, 'byCourse' => $courses,
+        ];
+        $tNeed += $cNeed; $tFilled += $cFilled;
+    }
+    $totalActive = (int)(db_row("SELECT COUNT(*) c FROM volunteers WHERE status = 'active'")['c'] ?? 0);
+    $totalAll = (int)(db_row("SELECT COUNT(*) c FROM volunteers")['c'] ?? 0);
+    $globalRate = volunteer_rate($tFilled, $tNeed);
+    return [
+        'kpis' => [
+            'totalVolunteers' => $totalAll, 'activeVolunteers' => $totalActive,
+            'centres' => count($centres),
+            'totalNeed' => $tNeed, 'totalFilled' => $tFilled, 'totalGap' => max(0, $tNeed - $tFilled),
+            'fulfillmentRate' => $globalRate, 'tone' => volunteer_tone($globalRate),
+        ],
+        'byCentre' => $byCentre,
+    ];
+}
+
+/** Public, PII-free volunteer fulfilment board (powers /v-status). */
+function public_volunteer_status(array $p): array {
+    $s = volunteer_status_compute();
+    return ['ok' => true, 'status' => [
+        'generatedAt' => now_iso(),
+        'program' => ['name' => 'Next Generation Genius', 'year' => (int)gmdate('Y')],
+        'kpis' => $s['kpis'],
+        'byCentre' => $s['byCentre'],
+    ]];
+}
+
+/* ── Admin: volunteer needs CRUD (config the /v-status targets) ─────────── */
+
+function admin_volunteer_needs_list(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $centres = db_all("SELECT centreId, name, code, color FROM centres WHERE status = 'active' ORDER BY name");
+    $needs = db_all('SELECT centreId, role, faculty, needCount, updatedAt FROM volunteer_needs ORDER BY centreId, role, faculty');
+    // Live filled counts so admins don't edit blind.
+    $filled = volunteer_filled_index();
+    $filledOut = ['centre' => [], 'role' => [], 'faculty' => []];
+    foreach ($centres as $c) {
+        $name = (string)$c['name']; $cid = (string)$c['centreId'];
+        $filledOut['centre'][$cid] = $filled['centre'][$name] ?? 0;
+        foreach (VOL_ROLES as $r) $filledOut['role'][$cid . '|' . $r] = $filled['role'][$name . '|' . $r] ?? 0;
+        foreach (volunteer_faculty_options() as $f) { $v = $filled['faculty'][$name . '|' . $f] ?? 0; if ($v) $filledOut['faculty'][$cid . '|' . $f] = $v; }
+    }
+    return ['ok' => true, 'centres' => $centres, 'roles' => VOL_ROLES, 'faculties' => volunteer_faculty_options(), 'needs' => $needs, 'filled' => $filledOut];
+}
+
+function admin_volunteer_need_upsert(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $centreId = trim((string)($p['centreId'] ?? ''));
+    $role = strtolower(trim((string)($p['role'] ?? '')));
+    $faculty = substr(trim((string)($p['faculty'] ?? '')), 0, 80);
+    $need = max(0, min(9999, (int)($p['needCount'] ?? 0)));
+    if (!in_array($role, VOL_ROLES, true)) return ['ok' => false, 'error' => 'bad_role'];
+    if (!db_row('SELECT id FROM centres WHERE centreId = ? LIMIT 1', [$centreId])) return ['ok' => false, 'error' => 'invalid_centre'];
+    if ($faculty !== '' && !in_array($faculty, volunteer_faculty_options(), true)) return ['ok' => false, 'error' => 'invalid_faculty'];
+    $existing = db_row('SELECT id FROM volunteer_needs WHERE centreId = ? AND role = ? AND faculty = ? LIMIT 1', [$centreId, $role, $faculty]);
+    if ($existing) db_update('volunteer_needs', ['needCount' => $need, 'updatedAt' => now_iso(), 'updatedBy' => (string)$g['requester']['memberId']], ['id' => (int)$existing['id']]);
+    else db_insert('volunteer_needs', ['centreId' => $centreId, 'role' => $role, 'faculty' => $faculty, 'needCount' => $need, 'updatedAt' => now_iso(), 'updatedBy' => (string)$g['requester']['memberId']]);
+    audit('volunteer.need.upsert', $g['requester']['memberId'], $centreId, ['role' => $role, 'faculty' => $faculty, 'need' => $need], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+function admin_volunteer_need_delete(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $centreId = trim((string)($p['centreId'] ?? ''));
+    $role = strtolower(trim((string)($p['role'] ?? '')));
+    $faculty = substr(trim((string)($p['faculty'] ?? '')), 0, 80);
+    $n = db_exec('DELETE FROM volunteer_needs WHERE centreId = ? AND role = ? AND faculty = ?', [$centreId, $role, $faculty]);
+    if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    audit('volunteer.need.delete', $g['requester']['memberId'], $centreId, ['role' => $role, 'faculty' => $faculty], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }

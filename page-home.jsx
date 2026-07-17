@@ -712,8 +712,9 @@ function EventsBand({ setPage }) {
 }
 
 /* ============================================================================
-   PUBLIC STATUS PAGE (/status) — a live, PII-free transparency board.
+   PUBLIC STATUS PAGE (/s-status) — a live, PII-free transparency board.
    Aggregate numbers only: no child name or photo ever appears here.
+   (Legacy /status transparently resolves here — see pageFromPath in app.jsx.)
    ============================================================================ */
 function relAgo(iso) {
   if (!iso) return "";
@@ -868,4 +869,232 @@ function StatusPage({ setPage }) {
   );
 }
 
-Object.assign(window, { HomePage, EventsBand, StatusPage });
+/* ============================================================================
+   PUBLIC VOLUNTEER STATUS (/v-status) — a live, PII-free fulfilment board.
+   Need vs filled per centre × role × faculty × course. Aggregate counts only;
+   no volunteer name, photo or contact ever appears. Click a centre for the
+   structured breakdown. Mirrors StatusPage's polling + design language.
+   ============================================================================ */
+function volTone(r) { return r >= 100 ? "#2f9e44" : r >= 60 ? "#e8a92b" : "#e03131"; }
+function volLabel(r) { return r >= 100 ? "Fully staffed" : r >= 60 ? "Needs volunteers" : "Urgent need"; }
+const VOL_ROLE_META = { admin: { label: "Admin / Ops", icon: "🗂" }, mentor: { label: "Mentor", icon: "🧭" }, instructor: { label: "Instructor", icon: "🎓" } };
+
+function VolunteerStatusPage({ setPage }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [open, setOpen] = React.useState(null); // centreId of the open detail
+  const [, setTick] = React.useState(0);
+  const load = React.useCallback(() => {
+    NGGApi.public.volunteerStatus().then(r => { setD(r.status || r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  }, []);
+  React.useEffect(() => {
+    load();
+    const poll = setInterval(() => { if (!document.hidden) load(); }, 45000);
+    const clock = setInterval(() => setTick(t => t + 1), 1000);
+    return () => { clearInterval(poll); clearInterval(clock); };
+  }, [load]);
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === "Escape") setOpen(null); };
+    document.addEventListener("keydown", onKey); return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const k = (d && d.kpis) || {};
+  const centres = (d && d.byCentre) || [];
+  const prog = (d && d.program) || {};
+  const detail = open ? centres.find(c => c.centreId === open) : null;
+
+  const kpiCard = (icon, n, label, tone, suffix) => (
+    <div style={{ background: "var(--paper,#fff)", border: "1px solid rgba(12,20,50,0.08)", borderRadius: 16, padding: "20px 20px 18px", boxShadow: "0 1px 0 rgba(12,20,50,0.03)" }}>
+      <div style={{ fontSize: 20, marginBottom: 10 }} aria-hidden="true">{icon}</div>
+      <div className="display" style={{ fontSize: 36, lineHeight: 1, color: tone || "var(--navy-900)", fontWeight: 800 }}>{typeof n === "number" ? <CountUp to={n}/> : n}{suffix || ""}</div>
+      <div className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-500)", marginTop: 8 }}>{label}</div>
+    </div>
+  );
+
+  return (
+    <div className="page" data-screen-label="Volunteer status">
+      {/* Hero — violet identity, distinct from the green attendance board */}
+      <section style={{ background: "linear-gradient(155deg,#140a2e 0%,#2c1a63 55%,#4a2da0 100%)", color: "#fff", padding: "72px 0 56px", position: "relative", overflow: "hidden" }}>
+        <div aria-hidden="true" style={{ position: "absolute", right: -90, top: -90, width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle,rgba(245,176,38,0.30),transparent 70%)" }}/>
+        <div className="container" style={{ position: "relative" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(208,255,58,0.12)", border: "1px solid rgba(208,255,58,0.4)" }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#d0ff3a", animation: "volpulse 1.8s infinite" }}/>
+            <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#e8ffb0" }}>LIVE · VOLUNTEER STATUS</span>
+          </div>
+          <h1 className="display" style={{ fontSize: "clamp(38px,6vw,72px)", margin: "18px 0 6px", lineHeight: 0.98 }}>Build the team.</h1>
+          <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 16, margin: 0 }}>
+            A live, public view of volunteer needs across every centre.
+            {d ? <span style={{ marginLeft: 10, opacity: 0.7 }}>Updated {relAgo(d.generatedAt)}</span> : null}
+          </p>
+          {err && <p style={{ color: "#ffb4b4", marginTop: 16 }}>Couldn't load the board — <button onClick={load} style={{ background: "none", border: "none", color: "#fff", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</p>}
+          {d && !err && (
+            <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginTop: 34, flexWrap: "wrap" }}>
+              <div>
+                <div className="display" style={{ fontSize: "clamp(56px,10vw,110px)", lineHeight: 0.9, color: "#d0ff3a", fontWeight: 800 }}><CountUp to={k.fulfillmentRate || 0} suffix="%"/></div>
+                <div className="mono" style={{ fontSize: 12, letterSpacing: "0.15em", color: "rgba(255,255,255,0.6)", marginTop: 6 }}>OF VOLUNTEER NEEDS FILLED</div>
+              </div>
+              <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 18, paddingBottom: 18 }}>
+                <b><CountUp to={k.totalFilled || 0}/></b> of <b><CountUp to={k.totalNeed || 0}/></b> slots filled across <b>{k.centres || 0}</b> centre{(k.centres || 0) === 1 ? "" : "s"}.
+                {(k.totalGap || 0) > 0 && <span style={{ display: "block", marginTop: 6, color: "#ffd18a", fontSize: 15 }}>We still need <b>{k.totalGap}</b> more volunteer{k.totalGap === 1 ? "" : "s"} — could that be you?</span>}
+              </div>
+            </div>
+          )}
+          {d && !err && (
+            <div style={{ marginTop: 24 }}>
+              <button className="btn btn-gold btn-lg" onClick={() => setPage && setPage("volunteer")}>Volunteer with us →</button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {!d && !err && <div className="container" style={{ padding: "60px 0", textAlign: "center" }}><div className="dash-spinner"/></div>}
+
+      {d && (
+        <React.Fragment>
+          {/* KPI grid */}
+          <section className="section" style={{ paddingTop: 44 }}>
+            <div className="container">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16 }}>
+                {kpiCard("🤝", k.totalVolunteers || 0, "Total volunteers")}
+                {kpiCard("✅", k.activeVolunteers || 0, "Active now")}
+                {kpiCard("🏫", k.centres || 0, "Centres")}
+                {kpiCard("🎯", k.totalNeed || 0, "Total need")}
+                {kpiCard("🟢", k.totalFilled || 0, "Slots filled", "#2f9e44")}
+                {kpiCard("🧩", k.totalGap || 0, "Open slots", (k.totalGap || 0) > 0 ? "#e8a92b" : "#2f9e44")}
+              </div>
+            </div>
+          </section>
+
+          {/* Per-centre cards */}
+          <section className="section" style={{ background: "var(--cream-50)", paddingTop: 44, paddingBottom: 44 }}>
+            <div className="container">
+              <SectionHead eyebrow="NEED BY CENTRE" title="Where the gaps are." sub="Volunteer needs vs filled at each centre. Tap a centre for the full role, faculty and course breakdown." />
+              {!centres.length ? <p style={{ color: "var(--ink-500)" }}>No centres are reporting volunteer needs yet.</p> :
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 16 }}>
+                  {centres.map(c => (
+                    <button key={c.centreId} className="card" onClick={() => setOpen(c.centreId)}
+                      style={{ padding: 20, borderTop: "4px solid " + (c.color || "#5a3fb0"), textAlign: "left", cursor: "pointer", border: "1px solid rgba(12,20,50,0.08)", borderTopWidth: 4, borderTopColor: c.color || "#5a3fb0", background: "var(--paper,#fff)", transition: "transform .12s, box-shadow .12s" }}
+                      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 12px 24px -12px rgba(12,20,50,0.25)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 19 }}>{c.name}</div>
+                        <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{c.code}</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "14px 0 4px" }}>
+                        <span className="display" style={{ fontSize: 34, fontWeight: 800, color: volTone(c.fulfillmentRate) }}>{c.fulfillmentRate}%</span>
+                        <span style={{ fontSize: 13, color: "var(--ink-500)" }}>{c.filled}/{c.need || 0} filled</span>
+                      </div>
+                      <div style={{ height: 8, borderRadius: 99, background: "rgba(12,20,50,0.08)", overflow: "hidden", marginTop: 8 }}>
+                        <div style={{ width: Math.min(100, c.fulfillmentRate) + "%", height: "100%", background: volTone(c.fulfillmentRate), borderRadius: 99, transition: "width .6s ease" }}/>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
+                        <span className="mono" style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: volTone(c.fulfillmentRate) }}>{volLabel(c.fulfillmentRate)}</span>
+                        {c.gap > 0 ? <span className="mono" style={{ fontSize: 10, color: "var(--ink-500)" }}>{c.gap} needed →</span> : <span className="mono" style={{ fontSize: 10, color: "#2f9e44" }}>full →</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>}
+            </div>
+          </section>
+
+          {/* Transparency + CTA */}
+          <section className="section" style={{ background: "var(--navy-900)", color: "#fff", paddingTop: 44, paddingBottom: 52 }}>
+            <div className="container" style={{ maxWidth: 760 }}>
+              <span className="chip chip-on-dark"><span className="dot dot-lime"/> TRANSPARENCY</span>
+              <h2 className="display" style={{ fontSize: "clamp(26px,3.5vw,40px)", margin: "12px 0 10px", color: "#fff" }}>Roles, not people.</h2>
+              <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 15.5, lineHeight: 1.7, margin: "0 0 20px" }}>
+                This board shows only how many volunteers each centre needs and how many have stepped up — by role, faculty and course. A volunteer's name, photo or contact detail <b>never</b> appears here.
+              </p>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <button className="btn btn-primary" onClick={() => setPage && setPage("volunteer")}>Volunteer with us →</button>
+                <button className="btn btn-ghost btn-on-dark" onClick={() => setPage && setPage("s-status")}>See the Summer School board</button>
+              </div>
+              <p className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 22 }}>Auto-refreshes every 45s · {d ? "last updated " + relAgo(d.generatedAt) : ""}</p>
+            </div>
+          </section>
+        </React.Fragment>
+      )}
+
+      {/* Per-centre detail modal */}
+      {detail && (
+        <div onMouseDown={() => setOpen(null)} style={{ position: "fixed", inset: 0, zIndex: 120, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "5vh 16px", overflowY: "auto", background: "rgba(12,20,50,0.5)", backdropFilter: "blur(3px)" }}>
+          <div onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={detail.name + " volunteer breakdown"}
+            style={{ background: "var(--paper,#fbf7ed)", borderRadius: 20, maxWidth: 640, width: "100%", boxShadow: "0 32px 64px -24px rgba(0,0,0,0.5)", overflow: "hidden" }}>
+            <div style={{ padding: "22px 24px", background: "#fff", borderBottom: "1px solid var(--line-cool,#e5e8ee)", borderTop: "5px solid " + (detail.color || "#5a3fb0") }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ width: 16, height: 16, borderRadius: 5, background: detail.color || "#5a3fb0", display: "inline-block" }}/>
+                  <div>
+                    <h3 className="display" style={{ margin: 0, fontSize: 24 }}>{detail.name}</h3>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{detail.code}</span>
+                  </div>
+                </div>
+                <button className="btn btn-ghost" onClick={() => setOpen(null)} style={{ padding: "6px 12px" }}>Close ✕</button>
+              </div>
+              <div style={{ display: "flex", gap: 22, marginTop: 16, flexWrap: "wrap" }}>
+                <div><div className="display" style={{ fontSize: 28, fontWeight: 800, color: volTone(detail.fulfillmentRate) }}>{detail.fulfillmentRate}%</div><div className="mono" style={{ fontSize: 10, color: "var(--ink-500)", letterSpacing: ".1em" }}>FILLED</div></div>
+                <div><div className="display" style={{ fontSize: 28, fontWeight: 800 }}>{detail.filled}</div><div className="mono" style={{ fontSize: 10, color: "var(--ink-500)", letterSpacing: ".1em" }}>ON BOARD</div></div>
+                <div><div className="display" style={{ fontSize: 28, fontWeight: 800 }}>{detail.need || 0}</div><div className="mono" style={{ fontSize: 10, color: "var(--ink-500)", letterSpacing: ".1em" }}>NEEDED</div></div>
+                <div><div className="display" style={{ fontSize: 28, fontWeight: 800, color: detail.gap > 0 ? "#e8a92b" : "#2f9e44" }}>{detail.gap}</div><div className="mono" style={{ fontSize: 10, color: "var(--ink-500)", letterSpacing: ".1em" }}>OPEN</div></div>
+              </div>
+            </div>
+            <div style={{ padding: "20px 24px", display: "grid", gap: 22 }}>
+              {/* By role */}
+              <div>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: "var(--ink-400)", textTransform: "uppercase", marginBottom: 10 }}>By role</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {detail.byRole.map(r => (
+                    <div key={r.role} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ width: 118, fontSize: 14, fontWeight: 600 }}>{(VOL_ROLE_META[r.role] || {}).icon} {(VOL_ROLE_META[r.role] || {}).label || r.role}</span>
+                      <div style={{ flex: 1, height: 8, borderRadius: 99, background: "rgba(12,20,50,0.08)", overflow: "hidden" }}>
+                        <div style={{ width: Math.min(100, r.fulfillmentRate) + "%", height: "100%", background: volTone(r.fulfillmentRate), borderRadius: 99 }}/>
+                      </div>
+                      <span className="mono" style={{ fontSize: 12, width: 92, textAlign: "right", color: "var(--ink-600,#444)" }}>{r.filled}/{r.need} · {r.gap > 0 ? r.gap + " gap" : "full"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* By faculty */}
+              <div>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: "var(--ink-400)", textTransform: "uppercase", marginBottom: 10 }}>By faculty (mentors + instructors)</div>
+                {!detail.byFaculty.length ? <p style={{ color: "var(--ink-500)", fontSize: 13, margin: 0 }}>No mentors or instructors on board here yet.</p> :
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {detail.byFaculty.map(f => (
+                      <span key={f.faculty} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 12px", borderRadius: 10, background: "#fff", border: "1px solid var(--line-cool,#e5e8ee)", fontSize: 13 }}>
+                        <b>{f.faculty}</b>
+                        <span style={{ color: "var(--ink-500)" }}>{f.filled}{f.need ? " / " + f.need : ""}</span>
+                      </span>
+                    ))}
+                  </div>}
+              </div>
+              {/* By faculty → course (instructors) */}
+              <div>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: "var(--ink-400)", textTransform: "uppercase", marginBottom: 10 }}>Instructors by course</div>
+                {!detail.byCourse.length ? <p style={{ color: "var(--ink-500)", fontSize: 13, margin: 0 }}>No instructors have signed up for a course here yet.</p> :
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <tbody>
+                      {detail.byCourse.map((c, i) => (
+                        <tr key={i} style={{ borderBottom: "1px solid var(--line-cool-soft,#eef0f4)" }}>
+                          <td style={{ padding: "8px 6px", color: "var(--ink-500)" }}>{c.faculty || "—"}</td>
+                          <td style={{ padding: "8px 6px", fontWeight: 600 }}>{c.course}</td>
+                          <td style={{ padding: "8px 6px", textAlign: "right" }} className="mono">{c.filled} instructor{c.filled === 1 ? "" : "s"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>}
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button className="btn btn-primary" onClick={() => setPage && setPage("volunteer")}>Volunteer at {detail.name} →</button>
+                <button className="btn btn-ghost" onClick={() => setOpen(null)}>← Back to overview</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      <style>{`@keyframes volpulse{0%{box-shadow:0 0 0 0 rgba(208,255,58,0.6)}70%{box-shadow:0 0 0 9px rgba(208,255,58,0)}100%{box-shadow:0 0 0 0 rgba(208,255,58,0)}}`}</style>
+    </div>
+  );
+}
+
+Object.assign(window, { HomePage, EventsBand, StatusPage, VolunteerStatusPage });

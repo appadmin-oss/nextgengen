@@ -408,3 +408,36 @@ client as `text`.
 | `gradedAt`     | timestamp |                                                |
 | `submittedAt`  | timestamp |                                                |
 | `createdAt`    | timestamp | auto                                           |
+
+## SQL-only tables (post-Sheets) — Volunteers & deployment planning
+
+These live in SQLite/MySQL only (never in the legacy Sheet). Managed via
+`api/_lib/domain/volunteers.php` + `events.php`.
+
+### `applications` (kind='volunteer') — new columns
+| field     | type | notes |
+|-----------|------|-------|
+| `centre`  | text | Required for volunteer intake; must match an active `centres.name`. |
+| `faculty` | text | Required for `mentor`/`instructor`; from the Form-Builder faculty catalogue. |
+
+### `volunteers` — new columns (migration 40)
+| field     | type | notes |
+|-----------|------|-------|
+| `centre`  | text | Home centre, carried from the approved application. |
+| `faculty` | text | Teaching group (mentor/instructor); powers the `/v-status` faculty breakdown. |
+
+### `volunteer_needs` (migration 40) — admin target headcount
+| field       | type      | notes |
+|-------------|-----------|-------|
+| `id`        | int PK    | |
+| `centreId`  | text      | FK → `centres.centreId` |
+| `role`      | enum      | `admin` \| `mentor` \| `instructor` |
+| `faculty`   | text      | `''` = role-level need; non-empty = finer per-faculty target |
+| `needCount` | int       | Target headcount |
+| `updatedAt` | timestamp | |
+| `updatedBy` | text      | admin memberId |
+
+UNIQUE(`centreId`,`role`,`faculty`). Read by `public.volunteer.status` (the
+public `/v-status` board) and edited via `admin.volunteers.needs.*`. The
+faculty **catalogue** is Form-Builder-driven (volunteer form, `faculty` field),
+mirroring how the instructor `course` catalogue already works.

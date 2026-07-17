@@ -862,7 +862,8 @@ function Footer({ setPage }) {
               <button className="legal" onClick={() => { history.replaceState({}, "", "/legal?doc=safeguarding"); setPage("legal"); }}>Safeguarding</button>
               <button className="legal" onClick={() => { history.replaceState({}, "", "/legal?doc=rights"); setPage("legal"); }}>Data rights</button>
               <button className="legal" onClick={go("contact")}>Contact</button>
-              <button className="legal" onClick={go("status")}>Live status</button>
+              <button className="legal" onClick={go("s-status")}>Live status</button>
+              <button className="legal" onClick={go("v-status")}>Volunteer status</button>
               <button className="legal" onClick={go("admin")}>Staff</button>
             </div>
             <span className="made">

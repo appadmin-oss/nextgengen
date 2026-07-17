@@ -189,13 +189,23 @@ chk('apply validates age', backend_dispatch('public.apply', ['kind' => 'teen', '
 $vctx = backend_dispatch('public.volunteer.context', []);
 chk('volunteer context lists roles', $vctx['roles'] === ['admin', 'mentor', 'instructor']);
 chk('volunteer context serves the course catalogue', in_array('Coding & Robotics', $vctx['courses'], true));
+chk('volunteer context serves the faculty catalogue', is_array($vctx['faculties']) && count($vctx['faculties']) >= 1);
+// An active centre must exist for volunteer intake (centre is now required).
+db_insert('centres', ['centreId' => 'CEN-VOL', 'name' => 'Testville', 'code' => 'TVL', 'color' => '#4C6FFF', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+$vFac = $vctx['faculties'][0];
 chk('volunteer apply rejects unknown role', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'chef', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110009', 'dob' => '1990-01-01'])['error'] === 'bad_role');
-chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110001', 'dob' => '1990-01-01', 'courses' => ['Basket Weaving']])['error'] === 'course_required');
-chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01'])['ok'] === true);
+chk('volunteer apply rejects a missing centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'No', 'lastName' => 'Centre', 'email' => 'nocentre@example.com', 'phone' => '08031110077', 'dob' => '1990-01-01'])['error'] === 'centre_required');
+chk('volunteer apply rejects an invalid centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Centre', 'email' => 'badcentre@example.com', 'phone' => '08031110078', 'dob' => '1990-01-01', 'centre' => 'Nowhere'])['error'] === 'invalid_centre');
+chk('mentor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'No', 'lastName' => 'Fac', 'email' => 'nofac@example.com', 'phone' => '08031110076', 'dob' => '1990-01-01', 'centre' => 'Testville'])['error'] === 'faculty_required');
+chk('instructor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Fac2', 'email' => 'nofac2@example.com', 'phone' => '08031110075', 'dob' => '1990-01-01', 'centre' => 'Testville', 'courses' => ['Coding & Robotics']])['error'] === 'faculty_required');
+chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110001', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Basket Weaving']])['error'] === 'course_required');
+chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['ok'] === true);
+chk('volunteer centre stored on application', db_row("SELECT centre FROM applications WHERE email = 'vol-admin@example.com'")['centre'] === 'Testville');
 chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications WHERE email = 'vol-admin@example.com'")['phone'] === '+2348031234567');
-chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'courses' => ['Coding & Robotics', 'Chess & Strategy', 'Basket Weaving']])['ok'] === true);
+chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Coding & Robotics', 'Chess & Strategy', 'Basket Weaving']])['ok'] === true);
+chk('instructor faculty stored on application', db_row("SELECT faculty FROM applications WHERE email = 'vol-teach@example.com'")['faculty'] === $vFac);
 chk('instructor courses stored filtered to catalogue', json_decode((string)db_row("SELECT courses FROM applications WHERE email = 'vol-teach@example.com'")['courses'], true) === ['Coding & Robotics', 'Chess & Strategy']);
-chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01'])['duplicate'] === true);
+chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['duplicate'] === true);
 chk('volunteer.applied event queued for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.applied'")['c'] === 2);
 // Standardised intake: structured name + DOB stored; legacy `name` composed.
 chk('structured name + dob stored on application', (function () { $r = db_row("SELECT firstName,lastName,dob,name FROM applications WHERE email='vol-teach@example.com'"); return $r && $r['firstName'] === 'Vol' && $r['lastName'] === 'Teach' && $r['dob'] === '1990-01-01' && $r['name'] === 'Vol Teach'; })());
@@ -213,6 +223,12 @@ chk('publish a custom field to the contact form', backend_dispatch('admin.forms.
 chk('custom field is live on contact form', in_array('phone_opt', array_column(form_live('contact')['fields'], 'key'), true));
 chk('dropping a locked field is refused', backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'contact', 'fields' => [['key' => 'name', 'label' => 'Name', 'type' => 'text']]])['error'] === 'locked_field_missing');
 chk('editing one form does not touch another', form_live('summer-reg')['version'] === 1);
+// Faculty catalogue is Form-Builder-driven: an admin edit round-trips to the
+// public volunteer context (brief §5.4).
+$vform = backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'volunteer'])['form']['fields'];
+$vform2 = array_map(function ($f) { if (($f['key'] ?? '') === 'faculty') $f['options'] = ['STEM', 'Design Lab', 'Wordsmiths']; return $f; }, $vform);
+backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'volunteer', 'fields' => $vform2]);
+chk('faculty catalogue edit round-trips to public context', in_array('Design Lab', backend_dispatch('public.volunteer.context', [])['faculties'], true));
 
 // ── QR full lifecycle: mint → reassign → void ──
 $qm = backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 2]);
@@ -278,15 +294,40 @@ chk('email cta button is navy, not gold', str_contains($__tpl, 'linear-gradient(
 chk('email carries a hidden preheader', str_contains($__tpl, 'mso-hide:all'));
 chk('email footer carries a reply path + contact', str_contains($__tpl, 'Reply to this email') && str_contains($__tpl, 'afrovanguard.org'));
 $GLOBALS['__mail_sink'] = [];
-$__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'why' => 'Glad to help']);
+$__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'why' => 'Glad to help']);
 chk('apply returns a traceable reference', isset($__ap['ref']) && preg_match('/^NGG-V-\d{5}$/', (string)$__ap['ref']) === 1 && $__ap['duplicate'] === false);
 $__ack = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'));
 chk('volunteer application acknowledges the applicant', count($__ack) === 1 && str_contains($__ack[0]['subject'], 'volunteer application'));
 chk('ack is on-brand + names role + carries the reference', str_contains($__ack[0]['html'], '#0c1432') && str_contains($__ack[0]['html'], 'Mentor') && str_contains($__ack[0]['html'], (string)$__ap['ref']));
-$__dup = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'why' => 'again']);
+$__dup = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'why' => 'again']);
 chk('resubmit is a no-op duplicate with the same reference', $__dup['duplicate'] === true && $__dup['ref'] === $__ap['ref']);
 chk('duplicate does not re-acknowledge', count(array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'))) === 1);
 unset($GLOBALS['__mail_sink']);
+
+// ── Volunteer needs config + public /v-status fulfilment board ──
+// The approved instructor (vol-teach) sits at Testville with 2 courses.
+chk('needs CRUD gated from non-permitted roles', backend_dispatch('admin.volunteers.needs.upsert', ['requesterId' => 'NGG-2025-0001', 'centreId' => 'CEN-VOL', 'role' => 'instructor', 'needCount' => 3])['error'] === 'forbidden');
+chk('admin sets an instructor need', !empty(backend_dispatch('admin.volunteers.needs.upsert', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'role' => 'instructor', 'needCount' => 3])['ok']));
+backend_dispatch('admin.volunteers.needs.upsert', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'role' => 'admin', 'needCount' => 2]);
+$vneeds = backend_dispatch('admin.volunteers.needs.list', ['requesterId' => 'NGG-2025-0099']);
+chk('needs list carries live filled counts', ($vneeds['filled']['role']['CEN-VOL|instructor'] ?? 0) === 1);
+chk('needs upsert rejects an invalid centre', backend_dispatch('admin.volunteers.needs.upsert', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'NOPE', 'role' => 'admin', 'needCount' => 1])['error'] === 'invalid_centre');
+$vs = backend_dispatch('public.volunteer.status', []);
+$tv = null; foreach ($vs['status']['byCentre'] as $c) if ($c['centreId'] === 'CEN-VOL') $tv = $c;
+chk('v-status per-centre math (need/filled/gap)', $tv && $tv['need'] === 5 && $tv['filled'] === 1 && $tv['gap'] === 4);
+$insRow = null; foreach ($tv['byRole'] as $r) if ($r['role'] === 'instructor') $insRow = $r;
+chk('v-status by-role instructor fulfilment', $insRow['need'] === 3 && $insRow['filled'] === 1 && $insRow['gap'] === 2 && $insRow['fulfillmentRate'] === 33);
+$mentRow = null; foreach ($tv['byRole'] as $r) if ($r['role'] === 'mentor') $mentRow = $r;
+chk('v-status zero-need role does not divide by zero', $mentRow['need'] === 0 && $mentRow['fulfillmentRate'] === 100);
+$admRow = null; foreach ($tv['byRole'] as $r) if ($r['role'] === 'admin') $admRow = $r;
+chk('v-status zero-filled role reports 0%', $admRow['need'] === 2 && $admRow['filled'] === 0 && $admRow['fulfillmentRate'] === 0);
+chk('v-status by-course lists the instructor courses', count(array_filter($tv['byCourse'], fn($x) => $x['course'] === 'Coding & Robotics' && $x['filled'] === 1)) === 1);
+chk('v-status global fulfilment math', $vs['status']['kpis']['totalNeed'] === 5 && $vs['status']['kpis']['totalFilled'] === 1 && $vs['status']['kpis']['fulfillmentRate'] === 20);
+chk('v-status exposes no volunteer PII', !str_contains(json_encode($vs['status']), 'vol-teach@example.com') && !str_contains(json_encode($vs['status']), 'Vol Teach'));
+chk('need delete removes the row', !empty(backend_dispatch('admin.volunteers.needs.delete', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'role' => 'admin', 'faculty' => ''])['ok']));
+// Return the catalogue to a clean slate for the later centre-management tests.
+db_exec("DELETE FROM centres WHERE centreId = 'CEN-VOL'");
+db_exec("DELETE FROM volunteer_needs WHERE centreId = 'CEN-VOL'");
 
 // ── Service ledger + milestone certificates ──
 $volProfile = backend_dispatch('public.summerProfile', ['token' => $volTok])['profile'];
@@ -1667,6 +1708,12 @@ chk('analytics.activity.add logs an activity with evidence', !empty($anAdd['ok']
 db_insert('members', ['memberId' => 'NGG-AN-SCOPED', 'fullName' => 'Scoped Admin', 'email' => 'scoped-an@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Egbeda', 'centreScope' => json_encode(['CEN-AN']), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 $anScoped = backend_dispatch('analytics.workspace', ['requesterId' => 'NGG-AN-SCOPED']);
 chk('scoped analytics admin sees only their centre', !empty($anScoped['ok']) && ($anScoped['workspace']['executive']['centres'] ?? 0) === 1 && ($anScoped['workspace']['research']['centreComparison'][0]['name'] ?? '') === 'Analytics Centre');
+
+// ── Sitemap carries both public status boards (§5.8) ──
+$sm = @file_get_contents($ROOT . '/public/sitemap.php');
+chk('sitemap generator lists /s-status and /v-status', is_string($sm) && str_contains($sm, "/s-status") && str_contains($sm, "/v-status"));
+$smStatic = @file_get_contents(dirname($ROOT) . '/sitemap.xml');
+chk('static sitemap lists both status boards', is_string($smStatic) && str_contains($smStatic, '/s-status') && str_contains($smStatic, '/v-status'));
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -13,6 +13,7 @@ $pages = [
     ['/anchor', 'monthly', '0.9'], ['/book', 'monthly', '0.7'], ['/media', 'weekly', '0.7'],
     ['/parents', 'monthly', '0.8'], ['/volunteers', 'monthly', '0.7'], ['/volunteer', 'monthly', '0.8'], ['/legal', 'yearly', '0.4'], ['/join', 'monthly', '0.9'],
     ['/blog', 'weekly', '0.7'], ['/contact', 'monthly', '0.6'], ['/mentors', 'monthly', '0.7'],
+    ['/s-status', 'daily', '0.6'], ['/v-status', 'daily', '0.6'],
 ];
 $out = '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
 foreach ($pages as [$path, $freq, $pri]) {

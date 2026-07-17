@@ -133,6 +133,10 @@ object-src 'none'"
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
+  # Legacy route: the public attendance board moved to /s-status. Permanent
+  # redirect so old bookmarks/shared links never 404 (the SPA also aliases it).
+  RewriteRule ^status/?$ /s-status [R=301,L]
+
   # Don't rewrite known asset paths or the API tree (its own .htaccess wins)
   # Sitemap is generated (static pages + published posts).
   RewriteRule ^sitemap\.xml$ api/public/sitemap.php [L]

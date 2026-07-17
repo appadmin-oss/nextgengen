@@ -7,7 +7,8 @@ $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
-    $res = gs_call('admin.volunteers.list', ['requesterId' => $s['mid']]);
+    if (($_GET['view'] ?? '') === 'needs') $res = gs_call('admin.volunteers.needs.list', ['requesterId' => $s['mid']]);
+    else $res = gs_call('admin.volunteers.list', ['requesterId' => $s['mid']]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
@@ -15,6 +16,8 @@ if ($method === 'GET') {
     if ($action === 'approve')      $res = gs_call('admin.volunteers.approve', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'ip' => $ip]);
     elseif ($action === 'decline')  $res = gs_call('admin.volunteers.decline', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'reason' => $b['reason'] ?? '', 'ip' => $ip]);
     elseif ($action === 'safeguard') $res = gs_call('admin.volunteers.safeguard', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'status' => $b['status'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'need_upsert') $res = gs_call('admin.volunteers.needs.upsert', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'role' => $b['role'] ?? '', 'faculty' => $b['faculty'] ?? '', 'needCount' => $b['needCount'] ?? 0, 'ip' => $ip]);
+    elseif ($action === 'need_delete') $res = gs_call('admin.volunteers.needs.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'role' => $b['role'] ?? '', 'faculty' => $b['faculty'] ?? '', 'ip' => $ip]);
     else json_error('unknown_action', 400);
 } else {
     json_error('method_not_allowed', 405);

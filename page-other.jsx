@@ -1495,6 +1495,8 @@ function VolunteerRegisterPage({ setPage }) {
     return VOL_LANES.some(l => l.key === r) ? r : "";
   });
   const [courses, setCourses] = React.useState([]);
+  const [centre, setCentre] = React.useState("");
+  const [faculty, setFaculty] = React.useState("");
   const [d, setD] = React.useState({ firstName: "", lastName: "", otherName: "", sex: "", email: "", phone: "", dob: "", why: "", photoUrl: "" });
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
@@ -1503,7 +1505,7 @@ function VolunteerRegisterPage({ setPage }) {
   React.useEffect(() => {
     NGGApi.public.volunteer.context()
       .then(setCtx)
-      .catch(() => setCtx({ open: true, courses: ["Coding & Robotics", "Design & Media", "Public Speaking", "Chess & Strategy"] }));
+      .catch(() => setCtx({ open: true, courses: ["Coding & Robotics", "Design & Media", "Public Speaking", "Chess & Strategy"], faculties: ["STEM", "Arts & Media", "Literacy & Languages", "Leadership & Life Skills", "Sports & Wellbeing"], centres: [] }));
   }, []);
 
   const set = (k) => (e) => { setD({ ...d, [k]: e.target.value }); if (err) setErr(""); };
@@ -1513,12 +1515,16 @@ function VolunteerRegisterPage({ setPage }) {
   const dobAge = dobToAge(d.dob);
   const dobOk = d.dob !== "" && dobAge >= 16 && dobAge <= 100;
   const phoneOk = d.phone.trim().length >= 7;
-  const ready = role !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== "" && d.sex !== "" && emailOk
+  const needsFaculty = role === "mentor" || role === "instructor";
+  const ready = role !== "" && centre !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== "" && d.sex !== "" && emailOk
     && phoneOk && dobOk
+    && (!needsFaculty || faculty !== "")
     && (role !== "instructor" || courses.length > 0);
   // Tell the applicant WHY the button is disabled instead of greying silently.
   const missing = [];
   if (role === "") missing.push("pick a role");
+  if (centre === "") missing.push("your centre");
+  if (needsFaculty && faculty === "") missing.push("your faculty");
   if (d.firstName.trim() === "") missing.push("first name");
   if (d.lastName.trim() === "") missing.push("last name");
   if (!emailOk) missing.push("a valid email");
@@ -1539,6 +1545,7 @@ function VolunteerRegisterPage({ setPage }) {
         sex: d.sex,
         email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         why: d.why.trim(), photoUrl: d.photoUrl || "", courses: role === "instructor" ? courses : [],
+        centre, faculty: needsFaculty ? faculty : "",
       });
       setDone(r && r.ref ? r.ref : true);
       if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Registration received");
@@ -1548,6 +1555,10 @@ function VolunteerRegisterPage({ setPage }) {
         rate_limited: "Too many submissions — wait a few minutes and try again.",
         applications_closed: "Volunteer registration is closed right now. Check back soon.",
         course_required: "Pick at least one course you can teach.",
+        centre_required: "Choose the centre closest to you.",
+        invalid_centre: "That centre isn't active — pick one from the list.",
+        faculty_required: "Choose your faculty.",
+        invalid_faculty: "That faculty isn't available — pick one from the list.",
         phone_required: "A phone number is required — add your number.",
         bad_email: "That email doesn't look right.",
         bad_dob: "Enter a valid date of birth.",
@@ -1632,27 +1643,49 @@ function VolunteerRegisterPage({ setPage }) {
                 </div>
               </div>
 
-              {/* 02 · Courses (instructors only) */}
-              {role === "instructor" && (
+              {/* 02 · Placement — centre (all roles) + faculty (mentor/instructor) + courses (instructor) */}
+              {role !== "" && (
                 <div className="mt-48">
-                  {stepNo("02", "What can you teach?")}
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                    {(ctx ? ctx.courses : []).map(c => (
-                      <button type="button" key={c}
-                        className={"vol-chip" + (courses.includes(c) ? " is-active" : "")}
-                        aria-pressed={courses.includes(c)}
-                        onClick={() => toggleCourse(c)}>{c}</button>
-                    ))}
+                  {stepNo("02", "Where you'll serve")}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }} className="vol-fields">
+                    <div className="field"><label htmlFor="vol-centre">Centre</label>
+                      <select id="vol-centre" value={centre} onChange={(e) => { setCentre(e.target.value); if (err) setErr(""); }}>
+                        <option value="" disabled>Select a centre…</option>
+                        {(ctx && ctx.centres ? ctx.centres : []).map(c => (
+                          <option key={c.name} value={c.name}>{c.name}{c.code ? " · " + c.code : ""}</option>
+                        ))}
+                      </select></div>
+                    {needsFaculty && (
+                      <div className="field"><label htmlFor="vol-faculty">Faculty</label>
+                        <select id="vol-faculty" value={faculty} onChange={(e) => { setFaculty(e.target.value); if (err) setErr(""); }}>
+                          <option value="" disabled>Select a faculty…</option>
+                          {(ctx && ctx.faculties ? ctx.faculties : []).map(f => (
+                            <option key={f} value={f}>{f}</option>
+                          ))}
+                        </select></div>
+                    )}
                   </div>
-                  <p className="mono" style={{ fontSize: 11, color: "var(--ink-500)", letterSpacing: "0.08em", marginTop: 12 }}>
-                    PICK EVERY COURSE YOU COULD RUN — WE MATCH BY DEMAND.
-                  </p>
+                  {role === "instructor" && (
+                    <div className="mt-24">
+                      <p className="mono" style={{ fontSize: 11, color: "var(--ink-500)", letterSpacing: "0.08em", margin: "0 0 10px" }}>
+                        WHICH COURSES CAN YOU TEACH? PICK EVERY ONE — WE MATCH BY DEMAND.
+                      </p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                        {(ctx ? ctx.courses : []).map(c => (
+                          <button type="button" key={c}
+                            className={"vol-chip" + (courses.includes(c) ? " is-active" : "")}
+                            aria-pressed={courses.includes(c)}
+                            onClick={() => toggleCourse(c)}>{c}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* 03 · Details */}
               <div className="mt-48">
-                {stepNo(role === "instructor" ? "03" : "02", "Your details")}
+                {stepNo(role === "" ? "02" : "03", "Your details")}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }} className="vol-fields">
                   <div className="field"><label htmlFor="vol-first">First name</label>
                     <input id="vol-first" value={d.firstName} onChange={set("firstName")} autoComplete="given-name" placeholder="e.g. Adaeze"/></div>

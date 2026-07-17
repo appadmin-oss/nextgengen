@@ -454,7 +454,7 @@ function public_apply(array $p): array {
     // Adults only for mentor/volunteer; the teen branch enforces 10–17 below.
     if ($kind !== 'teen' && $dobAge < 16) return ['ok' => false, 'error' => 'dob_too_young'];
 
-    $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $courses = [];
+    $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $courses = []; $faculty = '';
     // A short URL to a headshot uploaded (unsigned) to Cloudinary. Optional —
     // only trusted if it points at the configured Cloudinary CDN host.
     $photoUrl = trim((string)($p['photoUrl'] ?? ''));
@@ -471,10 +471,20 @@ function public_apply(array $p): array {
         // member type created on conversion.
         $program = in_array((string)($p['program'] ?? ''), ['summer', 'anchor'], true) ? (string)$p['program'] : 'anchor';
     } elseif ($kind === 'volunteer') {
-        // Structured taxonomy: Volunteer → admin | mentor | instructor,
-        // instructors additionally pick the course(s) they can teach.
+        // Structured taxonomy: Volunteer → admin | mentor | instructor.
+        // Every volunteer picks a home CENTRE (required, must be an active
+        // centre from the admin catalogue). Mentors pick a FACULTY; instructors
+        // pick both a faculty and the course(s) they can teach.
         $role = strtolower(trim((string)($p['role'] ?? '')));
         if (!in_array($role, ['admin', 'mentor', 'instructor'], true)) return ['ok' => false, 'error' => 'bad_role'];
+        $centre = substr(trim((string)($p['centre'] ?? '')), 0, 80);
+        if ($centre === '') return ['ok' => false, 'error' => 'centre_required'];
+        if (!db_row("SELECT id FROM centres WHERE name = ? AND status = 'active' LIMIT 1", [$centre])) return ['ok' => false, 'error' => 'invalid_centre'];
+        if ($role === 'mentor' || $role === 'instructor') {
+            $faculty = substr(trim((string)($p['faculty'] ?? '')), 0, 80);
+            if ($faculty === '') return ['ok' => false, 'error' => 'faculty_required'];
+            if (!in_array($faculty, volunteer_faculty_options(), true)) return ['ok' => false, 'error' => 'invalid_faculty'];
+        }
         if ($role === 'instructor') {
             $offered = volunteer_course_options();
             foreach ((is_array($p['courses'] ?? null) ? $p['courses'] : []) as $c) {
@@ -499,7 +509,7 @@ function public_apply(array $p): array {
     $appId = db_insert('applications', [
         'kind' => $kind, 'name' => $name,
         'firstName' => $first, 'lastName' => $last, 'otherName' => $other, 'dob' => $dob, 'sex' => $sex,
-        'age' => $age ?: null, 'centre' => $centre, 'track' => $track,
+        'age' => $age ?: null, 'centre' => $centre, 'track' => $track, 'faculty' => $faculty,
         'role' => $role, 'why' => $why, 'email' => $email, 'program' => $program, 'photoUrl' => $photoUrl,
         'phone' => $phone, 'courses' => $courses ? json_encode($courses, JSON_UNESCAPED_SLASHES) : '',
         'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
@@ -577,11 +587,33 @@ function volunteer_course_options(): array {
     return ['Coding & Robotics', 'Design & Media', 'Public Speaking', 'Chess & Strategy'];
 }
 
+/** The faculties (teaching groups) mentors & instructors belong to — sourced
+ *  from the live Form Builder exactly like `volunteer_course_options()`, so the
+ *  admin's form is the single source of truth. Falls back to a small sane list
+ *  only if the field hasn't been configured yet. */
+function volunteer_faculty_options(): array {
+    $live = form_live('volunteer');
+    foreach ($live['fields'] as $f) {
+        if (($f['key'] ?? '') === 'faculty' && !empty($f['options']) && is_array($f['options'])) {
+            return array_values(array_map('strval', $f['options']));
+        }
+    }
+    return ['STEM', 'Arts & Media', 'Literacy & Languages', 'Leadership & Life Skills', 'Sports & Wellbeing'];
+}
+
+/** Public-safe centre catalogue for the volunteer form (no PII, active only). */
+function public_centre_options(): array {
+    $rows = db_all("SELECT name, code, color FROM centres WHERE status = 'active' ORDER BY name");
+    return array_map(fn($r) => ['name' => (string)$r['name'], 'code' => (string)$r['code'], 'color' => (string)$r['color']], $rows);
+}
+
 function public_volunteer_context(): array {
     return [
         'ok' => true,
         'open' => setting_raw('volunteer_applications_open') !== '0',
         'roles' => ['admin', 'mentor', 'instructor'],
         'courses' => volunteer_course_options(),
+        'faculties' => volunteer_faculty_options(),
+        'centres' => public_centre_options(),
     ];
 }

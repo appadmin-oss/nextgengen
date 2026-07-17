@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 39;
+const NGG_SCHEMA_TARGET = 40;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -964,6 +964,29 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX idx_activities_centre_date ON activities(centre, date);
             CREATE INDEX idx_activities_category ON activities(category);
+        ",
+
+        // Volunteer deployment planning: a required home `centre` and a `faculty`
+        // (the teaching group a mentor/instructor belongs to) on both the intake
+        // application and the approved volunteer record, plus a `volunteer_needs`
+        // ledger — the admin-set target headcount per centre × role (optionally
+        // per faculty) that powers the public /v-status fulfilment board.
+        40 => "
+            ALTER TABLE volunteers ADD COLUMN centre TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN faculty TEXT DEFAULT '';
+            ALTER TABLE applications ADD COLUMN faculty TEXT DEFAULT '';
+
+            CREATE TABLE volunteer_needs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              centreId TEXT NOT NULL,
+              role TEXT NOT NULL,
+              faculty TEXT DEFAULT '',
+              needCount INTEGER DEFAULT 0,
+              updatedAt TEXT DEFAULT (datetime('now')),
+              updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_vneeds_unique ON volunteer_needs(centreId, role, faculty);
+            CREATE INDEX idx_vneeds_centre ON volunteer_needs(centreId);
         ",
     ];
 

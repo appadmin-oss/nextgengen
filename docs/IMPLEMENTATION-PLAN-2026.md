@@ -177,10 +177,14 @@ New `v3_scores` table (1–5 each, weekly, one per student per week), composite
 attendance-freeze check. Rated in the Mentor Portal (B4).
 
 ### B10. Public status page + status for summer students / volunteers
-- **Public status page** — a no-auth, read-only board (like a live "how's the
-  programme doing"): per-centre attendance traffic-lights + headline KPIs,
-  served from a cached, PII-free slice of B3 (no names — aggregates only), at a
-  public route (`/status`). Auto-refresh by polling (no WebSocket in this stack).
+- **Public status page** ✅ SHIPPED — a no-auth, read-only board: per-centre
+  attendance traffic-lights + headline KPIs, PII-free (no names — aggregates
+  only), at `/s-status` (renamed from `/status`; legacy path 301-redirects).
+  A companion **`/v-status`** volunteer-fulfilment board (need vs filled per
+  centre × role × faculty × course) ships alongside it; admins configure the
+  per-centre needs under Admin → Volunteers → "Needs & /v-status", and the
+  volunteer form now captures a required centre + a faculty (mentor/instructor).
+  Both auto-refresh by polling (no WebSocket in this stack).
 - **Individual status** — for a summer student (via `/q/<token>`) and a volunteer
   (via `/q/<token>`): "here's where you stand" — attendance days, stars,
   badges/awards, V3, next milestone. Extends the existing profile pages rather

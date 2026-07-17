@@ -697,3 +697,23 @@ CREATE TABLE IF NOT EXISTS activities (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (39) ON DUPLICATE KEY UPDATE version = version;
+
+-- 40: volunteer deployment planning — centre + faculty on intake/roster, and a
+-- volunteer_needs ledger (admin target headcount per centre × role × faculty).
+ALTER TABLE volunteers ADD COLUMN centre VARCHAR(80) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN faculty VARCHAR(80) DEFAULT '';
+ALTER TABLE applications ADD COLUMN faculty VARCHAR(80) DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS volunteer_needs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  centreId VARCHAR(48) NOT NULL,
+  role VARCHAR(24) NOT NULL,
+  faculty VARCHAR(80) DEFAULT '',
+  needCount INT DEFAULT 0,
+  updatedAt VARCHAR(40),
+  updatedBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY idx_vneeds_unique (centreId, role, faculty),
+  INDEX idx_vneeds_centre (centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (40) ON DUPLICATE KEY UPDATE version = version;

@@ -53,6 +53,10 @@ function volunteer_default_fields(): array {
         ['key' => 'name', 'label' => 'Full name', 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'email', 'label' => 'Email', 'type' => 'email', 'required' => true, 'locked' => true],
         ['key' => 'phone', 'label' => 'Phone', 'type' => 'phone', 'required' => false, 'locked' => true, 'help' => 'Required for instructors — enforced at submit.'],
+        // Faculty is the teaching group mentors & instructors belong to. Locked
+        // key (the /v-status board + validation read it), but its OPTIONS are
+        // admin-editable here — the single source of truth for the catalogue.
+        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => false, 'locked' => true, 'options' => ['STEM', 'Arts & Media', 'Literacy & Languages', 'Leadership & Life Skills', 'Sports & Wellbeing'], 'help' => 'Required for mentors & instructors — enforced at submit. Drives the /v-status faculty breakdown.'],
         ['key' => 'why', 'label' => 'Why you', 'type' => 'longtext', 'required' => false, 'locked' => true],
     ];
 }

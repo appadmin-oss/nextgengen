@@ -3112,6 +3112,103 @@ function AdminApplications() {
 // Volunteers — review desk + approved roster + safeguarding
 // ============================================================================
 
+/* Volunteer needs editor — the admin sets target headcount per centre × role
+   (and optionally per faculty), with live filled counts so they never edit
+   blind. Feeds the public /v-status fulfilment board. */
+function VolunteerNeedsEditor() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [draft, setDraft] = React.useState({});
+  const [saving, setSaving] = React.useState("");
+  const [facOpen, setFacOpen] = React.useState(() => new Set());
+  const load = () => NGGApi.admin.volunteers.needsList().then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+
+  const needMap = {};
+  (d ? d.needs : []).forEach(n => { needMap[n.centreId + "|" + n.role + "|" + (n.faculty || "")] = n.needCount; });
+  const filled = (d && d.filled) || { centre: {}, role: {}, faculty: {} };
+  const roleMeta = { admin: "Admin / Ops", mentor: "Mentor", instructor: "Instructor" };
+
+  const cellVal = (key, fallback) => (key in draft ? draft[key] : (fallback === undefined ? "" : fallback));
+  const commit = async (centreId, role, faculty) => {
+    const key = centreId + "|" + role + "|" + faculty;
+    if (!(key in draft)) return;
+    const v = Math.max(0, parseInt(draft[key] || "0", 10) || 0);
+    setSaving(key);
+    try { await NGGApi.admin.volunteers.needUpsert(centreId, role, faculty, v); }
+    catch (e) { toast.error(e.code || e.message); }
+    setSaving(""); setDraft(s => { const n = { ...s }; delete n[key]; return n; }); load();
+  };
+  const toggleFac = (cid) => setFacOpen(s => { const n = new Set(s); n.has(cid) ? n.delete(cid) : n.add(cid); return n; });
+
+  if (err) return <ErrorState title="Couldn't load needs" code={err} onRetry={load}/>;
+  if (!d) return <div className="dash-spinner"/>;
+  if (!d.centres.length) return <div className="admin-empty">No active centres yet — add centres under Registration → Centres first.</div>;
+
+  const numInput = (centreId, role, faculty, filledCount) => {
+    const key = centreId + "|" + role + "|" + faculty;
+    const need = cellVal(key, needMap[key] ?? "");
+    const needN = parseInt(need || "0", 10) || 0;
+    const gap = Math.max(0, needN - filledCount);
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <input className="admin-input" type="number" min="0" style={{ width: 74 }} value={need}
+          onChange={e => setDraft(s => ({ ...s, [key]: e.target.value }))}
+          onBlur={() => commit(centreId, role, faculty)}
+          onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+          placeholder="0" aria-label={"need for " + role}/>
+        <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>
+          {saving === key ? "saving…" : <>{filledCount} on board{needN > 0 ? (gap > 0 ? " · " : " · ") : ""}{needN > 0 && (gap > 0 ? <b style={{ color: "#c0851a" }}>{gap} gap</b> : <b style={{ color: "#2f9e44" }}>full ✓</b>)}</>}
+        </span>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <p className="admin-hint" style={{ marginTop: 0 }}>Set how many volunteers each centre needs per role. Live counts show how many have already signed up. These targets drive the public <b>/v-status</b> board. Optionally set finer per-faculty targets.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
+        {d.centres.map(c => (
+          <div key={c.centreId} className="card" style={{ padding: 18, borderTop: "4px solid " + (c.color || "#5a3fb0") }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 17 }}>{c.name} <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{c.code}</span></div>
+              <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{filled.centre[c.centreId] || 0} on board</span>
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {d.roles.map(role => (
+                <div key={role} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, minWidth: 96 }}>{roleMeta[role] || role}</span>
+                  {numInput(c.centreId, role, "", filled.role[c.centreId + "|" + role] || 0)}
+                </div>
+              ))}
+            </div>
+            <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => toggleFac(c.centreId)} aria-expanded={facOpen.has(c.centreId)}>
+              {facOpen.has(c.centreId) ? "Hide faculty targets ▴" : "Faculty targets (optional) ▾"}
+            </button>
+            {facOpen.has(c.centreId) && (
+              <div style={{ marginTop: 12, borderTop: "1px solid var(--line-cool-soft,#eef0f4)", paddingTop: 12, display: "grid", gap: 12 }}>
+                {["mentor", "instructor"].map(role => (
+                  <div key={role}>
+                    <div className="mono" style={{ fontSize: 10, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 6 }}>{roleMeta[role]} · by faculty</div>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {d.faculties.map(f => (
+                        <div key={f} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontSize: 13, minWidth: 120 }}>{f}</span>
+                          {numInput(c.centreId, role, f, filled.faculty[c.centreId + "|" + f] || 0)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminVolunteers() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -3160,16 +3257,18 @@ function AdminVolunteers() {
       <div className="admin-section-head">
         <h2 className="admin-h2">Volunteers {data ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {pending.length} pending · {(data.volunteers || []).length} active</span> : null}</h2>
         <div className="admin-section-actions">
-          <button className="btn btn-ghost btn-sm" disabled={!data || !(data.volunteers || []).length} onClick={() => downloadCsv("volunteers", (data.volunteers || []).map(v => ({ volunteerId: v.volunteerId, name: v.fullName, email: v.email, phone: v.phone || "", role: v.role, courses: (v.courses || []).join("; "), safeguarding: v.safeguarding, status: v.status, createdAt: v.createdAt })))}>Export CSV</button>
+          <button className="btn btn-ghost btn-sm" disabled={!data || !(data.volunteers || []).length} onClick={() => downloadCsv("volunteers", (data.volunteers || []).map(v => ({ volunteerId: v.volunteerId, name: v.fullName, email: v.email, phone: v.phone || "", role: v.role, centre: v.centre || "", faculty: v.faculty || "", courses: (v.courses || []).join("; "), safeguarding: v.safeguarding, status: v.status, createdAt: v.createdAt })))}>Export CSV</button>
         </div>
       </div>
 
       <div className="admin-tabs">
         <button className={"admin-tab" + (tab === "pending" ? " is-active" : "")} onClick={() => setTab("pending")}>Review queue{pending.length ? " · " + pending.length : ""}</button>
         <button className={"admin-tab" + (tab === "roster" ? " is-active" : "")} onClick={() => setTab("roster")}>Roster · {(data && (data.volunteers || []).length) || 0}</button>
+        <button className={"admin-tab" + (tab === "needs" ? " is-active" : "")} onClick={() => setTab("needs")}>Needs &amp; /v-status</button>
       </div>
 
-      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+      {tab === "needs" ? <VolunteerNeedsEditor/> :
+        err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         data === null ? <div className="dash-spinner"/> :
 
         tab === "pending" ? (
@@ -3180,7 +3279,7 @@ function AdminVolunteers() {
                 <div className="admin-app-top">
                   <div>
                     <div className="admin-cell-name">{a.name} {roleChip(a.role)}</div>
-                    <div className="mono admin-cell-sub">{a.email}{a.phone ? " · " + a.phone : " · no phone"}{(a.courses || []).length ? " · " + a.courses.join(", ") : ""} · {fmtDate(a.createdAt)}</div>
+                    <div className="mono admin-cell-sub">{a.email}{a.phone ? " · " + a.phone : " · no phone"}{a.centre ? " · 🏫 " + a.centre : ""}{a.faculty ? " · " + a.faculty : ""}{(a.courses || []).length ? " · " + a.courses.join(", ") : ""} · {fmtDate(a.createdAt)}</div>
                   </div>
                   {a.role === "instructor" && !a.phone && <span className="chip status-archived">phone required</span>}
                 </div>
@@ -3202,13 +3301,14 @@ function AdminVolunteers() {
             {roster.length === 0 ? <div className="admin-empty">No volunteers yet.</div> :
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>Volunteer</th><th>Role</th><th>Courses</th><th>Safeguarding</th><th>ID</th><th></th></tr></thead>
+                <thead><tr><th>Volunteer</th><th>Role</th><th>Centre</th><th>Faculty / Courses</th><th>Safeguarding</th><th>ID</th><th></th></tr></thead>
                 <tbody>
                   {roster.map(v => (
                     <tr key={v.volunteerId}>
                       <td><div className="admin-cell-name">{v.fullName}</div><div className="mono admin-cell-sub">{v.volunteerId} · {v.email}</div></td>
                       <td>{roleChip(v.role)}</td>
-                      <td className="mono" style={{ fontSize: 12 }}>{(v.courses || []).join(", ") || "—"}</td>
+                      <td className="mono" style={{ fontSize: 12 }}>{v.centre || "—"}</td>
+                      <td className="mono" style={{ fontSize: 12 }}>{[v.faculty, (v.courses || []).join(", ")].filter(Boolean).join(" · ") || "—"}</td>
                       <td>
                         {v.safeguarding === "cleared"
                           ? <span className="chip chip-lime">✓ screened</span>

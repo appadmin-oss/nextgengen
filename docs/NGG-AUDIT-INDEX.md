@@ -36,6 +36,10 @@ Public SPA (component / file):
   DashboardPage `page-dashboard.jsx` · `book` BookPage `page-book.jsx` ·
   `media`/`parents`/`volunteers`/`mentors`/`join` `page-other.jsx` · `blog`
   BlogPage `page-blog.jsx` · `contact` · `summerprofile` (`/q`,`/s`).
+- **Public status boards** (PII-free, aggregates only): `s-status` StatusPage
+  (attendance) & `v-status` VolunteerStatusPage (volunteer needs vs filled),
+  both `page-home.jsx`. Legacy `/status` → `/s-status` (SPA alias in
+  `pageFromPath` + `.htaccess` 301).
 - **Admin** `AdminPage` `page-admin.jsx` · **`summer-admin`** SummerAdminPortal ·
   **`club-admin`** ClubAdminPortal (both in `page-admin.jsx`) · **`circle`**
   CirclePortal `page-other.jsx` (guardian read-only portal).

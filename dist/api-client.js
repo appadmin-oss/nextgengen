@@ -165,6 +165,7 @@
     public: {
       stats:      () => request('/public/stats.php'),
       status:     () => request('/public/status.php'),
+      volunteerStatus: () => request('/public/volunteer-status.php'),
       leaderboard: (limit) => request('/public/leaderboard.php' + qs(limit ? { limit } : {})),
       applicationStatus: (ref, email) => request('/public/application-status.php', { body: { ref, email } }),
       donate: (data) => request('/public/donate.php', { body: data }),
@@ -339,6 +340,9 @@
         approve: (id) => request('/admin/volunteers.php', { body: { action: 'approve', id } }),
         decline: (id, reason) => request('/admin/volunteers.php', { body: { action: 'decline', id, reason: reason || '' } }),
         safeguard: (volunteerId, status) => request('/admin/volunteers.php', { body: { action: 'safeguard', volunteerId, status } }),
+        needsList:  () => request('/admin/volunteers.php?view=needs'),
+        needUpsert: (centreId, role, faculty, needCount) => request('/admin/volunteers.php', { body: { action: 'need_upsert', centreId, role, faculty: faculty || '', needCount } }),
+        needDelete: (centreId, role, faculty) => request('/admin/volunteers.php', { body: { action: 'need_delete', centreId, role, faculty: faculty || '' } }),
       },
       photos: {
         queue:   () => request('/admin/photos.php'),
