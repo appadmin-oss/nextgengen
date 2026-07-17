@@ -155,6 +155,12 @@ function admin_centre_allowed(array $requester, ?string $centreName): bool {
     return $centreName !== null && $centreName !== '' && in_array($centreName, $names, true);
 }
 
+/** ISO-week period tag, e.g. '2026-W29' — the cadence for V3 ratings/champions. */
+function iso_week_period(?int $t = null): string {
+    $t = $t ?? time();
+    return gmdate('o', $t) . '-W' . gmdate('W', $t);
+}
+
 /** All capabilities of a member row: role caps + any per-member extras (RBAC
  *  editor). Extras only augment an existing staff member; they never make a
  *  plain member into staff (is_admin_role still gates console access by role). */

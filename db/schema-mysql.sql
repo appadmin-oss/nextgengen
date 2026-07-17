@@ -640,3 +640,35 @@ CREATE TABLE IF NOT EXISTS member_stars (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (37) ON DUPLICATE KEY UPDATE version = version;
+
+-- 38: V3 (Verbal/Vocal/Visual) weekly rating + awards ledger
+CREATE TABLE IF NOT EXISTS v3_scores (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  subjectId VARCHAR(64) NOT NULL,
+  givenById VARCHAR(64) NOT NULL,
+  verbal INT NOT NULL, vocal INT NOT NULL, visual INT NOT NULL,
+  period VARCHAR(16) NOT NULL,
+  note TEXT, centre VARCHAR(80) DEFAULT '',
+  createdAt VARCHAR(40),
+  UNIQUE KEY uniq_v3_subject_period (subjectId, period),
+  INDEX idx_v3_centre_period (centre, period)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS awards (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  awardId VARCHAR(48) UNIQUE NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectType VARCHAR(24) NOT NULL DEFAULT 'student',
+  name VARCHAR(120) NOT NULL,
+  tier INT DEFAULT 0,
+  valueNaira BIGINT DEFAULT 0,
+  period VARCHAR(24) DEFAULT '',
+  centre VARCHAR(80) DEFAULT '',
+  note TEXT,
+  eligibilityStatus VARCHAR(24) DEFAULT 'eligible',
+  mintedAt VARCHAR(40), createdBy VARCHAR(64) DEFAULT '',
+  INDEX idx_awards_subject (subjectId),
+  INDEX idx_awards_period (period)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (38) ON DUPLICATE KEY UPDATE version = version;

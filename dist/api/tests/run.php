@@ -1611,6 +1611,19 @@ chk('mentor cannot star a student in another centre', backend_dispatch('behaviou
 chk('star count clamped to 1-3', backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-2', 'stars' => 5])['error'] === 'bad_stars');
 chk('non-mentor blocked from the portal', backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0001'])['error'] === 'not_a_mentor');
 
+// ── Public status board (no auth, PII-free) ─────────────────────────────────
+chk('public status: no-auth, aggregates present, no PII', (function () {
+    $r = backend_dispatch('public.status', []); // no requester at all
+    if (empty($r['ok'])) return false;
+    $s = $r['status'];
+    if (!isset($s['kpis']['attendanceRate']) || !is_array($s['byCentre'])) return false;
+    foreach ($s['byCentre'] as $c) {
+        if (array_key_exists('studentId', $c) || array_key_exists('fullName', $c)) return false; // never leak a child
+        if (!array_key_exists('rate', $c) || !array_key_exists('present', $c)) return false;
+    }
+    return $s['kpis']['presentToday'] >= 1; // SUM-R-1 checked in today (dashboard test)
+})());
+
 // ── Mission proof-review queue (M13: verify was built but unreachable) ────────
 $pmid = backend_dispatch('admin.missions.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['week' => 2, 'order' => 1, 'theme' => 'Proof', 'title' => 'Show your work', 'prompt' => 'Upload a photo', 'type' => 'Do', 'proof' => 'photo', 'xp' => 90, 'isActive' => true]])['missionId'];
 chk('proof mission submit ⇒ submitted (not auto-verified)', backend_dispatch('anchor.mission.submit', ['memberId' => 'NGG-2025-0001', 'missionId' => $pmid, 'proofUrl' => 'https://example.org/p.jpg'])['status'] === 'submitted');

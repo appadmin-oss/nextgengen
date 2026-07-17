@@ -71,6 +71,48 @@ function admin_dashboard_overview(array $p): array {
     ]];
 }
 
+// ── Public status board (no auth, PII-free aggregates only) ──────────────────
+// Powers the public /status transparency page. Deliberately exposes ONLY
+// centre-level aggregate counts — never a child's name, photo or record.
+function public_status(array $p): array {
+    $one = fn($sql, $a = []) => (int)(db_row($sql, $a)['c'] ?? 0);
+    $today = gmdate('Y-m-d');
+    $since = gmdate('Y-m-d', time() - 13 * 86400);
+    $weekAgo = gmdate('Y-m-d', time() - 6 * 86400);
+
+    $centres = db_all("SELECT name, code, color FROM centres WHERE status = 'active' ORDER BY name");
+    $byCentre = [];
+    foreach ($centres as $c) {
+        $name = (string)$c['name'];
+        $enrolled = $one("SELECT COUNT(*) c FROM summer_students WHERE centre = ? AND status = 'active'", [$name]);
+        $present  = $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE s.centre = ? AND a.date = ?", [$name, $today]);
+        $byCentre[] = ['name' => $name, 'code' => $c['code'], 'color' => $c['color'], 'present' => $present, 'rate' => $enrolled ? (int)round($present / $enrolled * 100) : 0];
+    }
+    $enrolledTotal = $one("SELECT COUNT(*) c FROM summer_students WHERE status = 'active'");
+    $presentToday  = $one("SELECT COUNT(DISTINCT studentId) c FROM attendance WHERE date = ?", [$today]);
+    $trend = db_all("SELECT date, COUNT(DISTINCT studentId) present FROM attendance WHERE date >= ? GROUP BY date ORDER BY date", [$since]);
+    // Session week number (best-effort from the active session start).
+    $sess = db_row("SELECT startDate FROM sessions WHERE isActive = 1 ORDER BY id DESC LIMIT 1");
+    $week = 0;
+    if ($sess && !empty($sess['startDate'])) { $d = (int)floor((time() - strtotime((string)$sess['startDate'])) / 86400); if ($d >= 0) $week = (int)floor($d / 7) + 1; }
+
+    return ['ok' => true, 'status' => [
+        'today' => $today,
+        'generatedAt' => now_iso(),
+        'program' => ['name' => 'Summer School', 'year' => (int)gmdate('Y'), 'week' => $week],
+        'kpis' => [
+            'centres'          => count($centres),
+            'enrolled'         => $enrolledTotal,
+            'presentToday'     => $presentToday,
+            'attendanceRate'   => $enrolledTotal ? (int)round($presentToday / $enrolledTotal * 100) : 0,
+            'activeVolunteers' => $one("SELECT COUNT(*) c FROM volunteers WHERE status = 'active'"),
+            'starsThisWeek'    => $one("SELECT COUNT(*) c FROM member_stars WHERE date >= ?", [$weekAgo]),
+        ],
+        'byCentre' => $byCentre,
+        'trend'    => $trend,
+    ]];
+}
+
 // ── Analytics overview ──────────────────────────────────────────────────────
 function admin_overview(array $p): array {
     $g = admin_gate($p); if (!$g['ok']) return $g;

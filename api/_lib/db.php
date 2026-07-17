@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 37;
+const NGG_SCHEMA_TARGET = 38;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -897,6 +897,44 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX idx_stars_subject_date ON member_stars(subjectId, date);
             CREATE INDEX idx_stars_centre_date ON member_stars(centre, date);
+        ",
+
+        // V3 (Verbal · Vocal · Visual) weekly mentor rating + the awards ledger
+        // (supersedes the volunteer-only kind='award' rows; adds subjectType +
+        // a non-monetary valueNaira the Governing Council can set later).
+        38 => "
+            CREATE TABLE v3_scores (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              givenById TEXT NOT NULL,
+              verbal INTEGER NOT NULL,
+              vocal INTEGER NOT NULL,
+              visual INTEGER NOT NULL,
+              period TEXT NOT NULL,
+              note TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_v3_subject_period ON v3_scores(subjectId, period);
+            CREATE INDEX idx_v3_centre_period ON v3_scores(centre, period);
+
+            CREATE TABLE awards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              awardId TEXT UNIQUE NOT NULL,
+              subjectId TEXT NOT NULL,
+              subjectType TEXT NOT NULL DEFAULT 'student',
+              name TEXT NOT NULL,
+              tier INTEGER DEFAULT 0,
+              valueNaira INTEGER DEFAULT 0,
+              period TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              note TEXT DEFAULT '',
+              eligibilityStatus TEXT DEFAULT 'eligible',
+              mintedAt TEXT DEFAULT (datetime('now')),
+              createdBy TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_awards_subject ON awards(subjectId);
+            CREATE INDEX idx_awards_period ON awards(period);
         ",
     ];
 

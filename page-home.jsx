@@ -711,4 +711,161 @@ function EventsBand({ setPage }) {
   );
 }
 
-Object.assign(window, { HomePage, EventsBand });
+/* ============================================================================
+   PUBLIC STATUS PAGE (/status) — a live, PII-free transparency board.
+   Aggregate numbers only: no child name or photo ever appears here.
+   ============================================================================ */
+function relAgo(iso) {
+  if (!iso) return "";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return s + "s ago";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  return Math.floor(s / 3600) + "h ago";
+}
+function rateTone(r) { return r >= 85 ? "#2f9e44" : r >= 60 ? "#e8a92b" : "#e03131"; }
+
+function StatusPage({ setPage }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [, setTick] = React.useState(0);
+  const load = React.useCallback(() => {
+    NGGApi.public.status().then(r => { setD(r.status || r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  }, []);
+  React.useEffect(() => {
+    load();
+    const poll = setInterval(() => { if (!document.hidden) load(); }, 45000);
+    const clock = setInterval(() => setTick(t => t + 1), 1000); // keep "updated Xs ago" fresh
+    return () => { clearInterval(poll); clearInterval(clock); };
+  }, [load]);
+
+  const k = (d && d.kpis) || {};
+  const centres = (d && d.byCentre) || [];
+  const trend = (d && d.trend) || [];
+  const maxTrend = Math.max(1, ...trend.map(t => t.present || 0));
+  const prog = (d && d.program) || {};
+
+  const kpiCard = (icon, n, label, tone) => (
+    <div className="status-kpi" style={{ background: "var(--paper, #fff)", border: "1px solid rgba(12,20,50,0.08)", borderRadius: 16, padding: "20px 20px 18px", boxShadow: "0 1px 0 rgba(12,20,50,0.03)" }}>
+      <div style={{ fontSize: 20, marginBottom: 10 }} aria-hidden="true">{icon}</div>
+      <div className="display" style={{ fontSize: 38, lineHeight: 1, color: tone || "var(--navy-900)", fontWeight: 800 }}>{typeof n === "number" ? <CountUp to={n}/> : n}</div>
+      <div className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-500)", marginTop: 8 }}>{label}</div>
+    </div>
+  );
+
+  return (
+    <div className="page" data-screen-label="Live status">
+      {/* Hero */}
+      <section style={{ background: "linear-gradient(160deg,#0c1432 0%,#16224e 60%,#1d2c63 100%)", color: "#fff", padding: "72px 0 56px" }}>
+        <div className="container">
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(111,220,157,0.14)", border: "1px solid rgba(111,220,157,0.4)" }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#6fdc9d", boxShadow: "0 0 0 0 rgba(111,220,157,0.7)", animation: "statuspulse 1.8s infinite" }}/>
+            <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#bff3d4" }}>LIVE STATUS</span>
+          </div>
+          <h1 className="display" style={{ fontSize: "clamp(38px,6vw,72px)", margin: "18px 0 6px", lineHeight: 0.98 }}>{prog.name || "Summer School"} {prog.year || ""}</h1>
+          <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 16, margin: 0 }}>
+            {prog.week ? "Week " + prog.week + " · " : ""}A live, public view of attendance and participation across every centre.
+            {d ? <span style={{ marginLeft: 10, opacity: 0.7 }}>Updated {relAgo(d.generatedAt)}</span> : null}
+          </p>
+          {err && <p style={{ color: "#ffb4b4", marginTop: 16 }}>Couldn't load the board — <button onClick={load} style={{ background: "none", border: "none", color: "#fff", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</p>}
+
+          {/* Headline attendance number */}
+          {d && !err && (
+            <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginTop: 34, flexWrap: "wrap" }}>
+              <div>
+                <div className="display" style={{ fontSize: "clamp(56px,10vw,110px)", lineHeight: 0.9, color: "#d0ff3a", fontWeight: 800 }}><CountUp to={k.attendanceRate || 0} suffix="%"/></div>
+                <div className="mono" style={{ fontSize: 12, letterSpacing: "0.15em", color: "rgba(255,255,255,0.6)", marginTop: 6 }}>ATTENDANCE TODAY</div>
+              </div>
+              <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 18, paddingBottom: 18 }}>
+                <b><CountUp to={k.presentToday || 0}/></b> of <b><CountUp to={k.enrolled || 0}/></b> students present across <b>{k.centres || 0}</b> centre{(k.centres || 0) === 1 ? "" : "s"}.
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {!d && !err && <div className="container" style={{ padding: "60px 0", textAlign: "center" }}><div className="dash-spinner"/></div>}
+
+      {d && (
+        <React.Fragment>
+          {/* KPI grid */}
+          <section className="section" style={{ paddingTop: 44 }}>
+            <div className="container">
+              <div className="status-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16 }}>
+                {kpiCard("🏫", k.centres || 0, "Centres running")}
+                {kpiCard("🎓", k.enrolled || 0, "Students enrolled")}
+                {kpiCard("✅", k.presentToday || 0, "Present today")}
+                {kpiCard("📈", (k.attendanceRate || 0) + "%", "Attendance rate", rateTone(k.attendanceRate || 0))}
+                {kpiCard("🤝", k.activeVolunteers || 0, "Active volunteers")}
+                {kpiCard("⭐", k.starsThisWeek || 0, "Stars this week")}
+              </div>
+            </div>
+          </section>
+
+          {/* Per-centre performance */}
+          <section className="section" style={{ background: "var(--cream-50)", paddingTop: 44, paddingBottom: 44 }}>
+            <div className="container">
+              <SectionHead eyebrow="ACROSS THE CENTRES" title="Today, centre by centre." sub="Live attendance for each active centre. Green is on track; amber and red flag where the day needs attention." />
+              {!centres.length ? <p style={{ color: "var(--ink-500)" }}>No active centres reporting yet today.</p> :
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 16 }}>
+                  {centres.map(c => (
+                    <div key={c.name} className="card" style={{ padding: 20, borderTop: "4px solid " + (c.color || "#76B043") }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 19 }}>{c.name}</div>
+                        <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{c.code}</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "14px 0 4px" }}>
+                        <span className="display" style={{ fontSize: 34, fontWeight: 800, color: rateTone(c.rate) }}>{c.rate}%</span>
+                        <span style={{ fontSize: 13, color: "var(--ink-500)" }}>{c.present} present</span>
+                      </div>
+                      <div style={{ height: 8, borderRadius: 99, background: "rgba(12,20,50,0.08)", overflow: "hidden", marginTop: 8 }}>
+                        <div style={{ width: Math.min(100, c.rate) + "%", height: "100%", background: rateTone(c.rate), borderRadius: 99, transition: "width .6s ease" }}/>
+                      </div>
+                      <div className="mono" style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: rateTone(c.rate), marginTop: 10 }}>
+                        {c.rate >= 85 ? "On track" : c.rate >= 60 ? "Watch" : "Needs attention"}
+                      </div>
+                    </div>
+                  ))}
+                </div>}
+            </div>
+          </section>
+
+          {/* 14-day trend */}
+          <section className="section" style={{ paddingTop: 44 }}>
+            <div className="container">
+              <SectionHead eyebrow="THE LAST TWO WEEKS" title="Attendance trend." sub="Distinct students present each day over the last 14 days." />
+              {!trend.length ? <p style={{ color: "var(--ink-500)" }}>No check-ins recorded yet.</p> :
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 180, padding: "0 2px", overflowX: "auto" }}>
+                  {trend.map(t => (
+                    <div key={t.date} title={t.date + " · " + t.present + " present"} style={{ flex: "1 0 22px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                      <span className="mono" style={{ fontSize: 10, color: "var(--ink-500)" }}>{t.present}</span>
+                      <div style={{ width: "100%", maxWidth: 30, height: Math.max(3, Math.round((t.present || 0) / maxTrend * 140)), background: "linear-gradient(180deg,var(--navy-900),#3b5bdb)", borderRadius: "5px 5px 0 0" }}/>
+                      <span className="mono" style={{ fontSize: 9, color: "var(--ink-400,#93939a)", whiteSpace: "nowrap" }}>{String(t.date).slice(5)}</span>
+                    </div>
+                  ))}
+                </div>}
+            </div>
+          </section>
+
+          {/* Transparency + CTA */}
+          <section className="section" style={{ background: "var(--navy-900)", color: "#fff", paddingTop: 44, paddingBottom: 52 }}>
+            <div className="container" style={{ maxWidth: 760 }}>
+              <span className="chip chip-on-dark"><span className="dot dot-lime"/> TRANSPARENCY</span>
+              <h2 className="display" style={{ fontSize: "clamp(26px,3.5vw,40px)", margin: "12px 0 10px", color: "#fff" }}>Numbers, not names.</h2>
+              <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 15.5, lineHeight: 1.7, margin: "0 0 20px" }}>
+                This board updates live and shows only aggregate figures — how many students attended, at which centres, and how participation is trending. A child's name, photo, or record <b>never</b> appears here. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy.
+              </p>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <button className="btn btn-primary" onClick={() => setPage && setPage("join")}>Apply for a place →</button>
+                <button className="btn btn-ghost btn-on-dark" onClick={() => setPage && setPage("home")}>Back to home</button>
+              </div>
+              <p className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 22 }}>Auto-refreshes every 45s · {d ? "last updated " + relAgo(d.generatedAt) : ""}</p>
+            </div>
+          </section>
+        </React.Fragment>
+      )}
+      <style>{`@keyframes statuspulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,0.6)}70%{box-shadow:0 0 0 9px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}`}</style>
+    </div>
+  );
+}
+
+Object.assign(window, { HomePage, EventsBand, StatusPage });
