@@ -295,6 +295,102 @@ function AnFilterBar({ filters, opts, onChange, views, onSaveView, onApplyView, 
   </div>;
 }
 
+// ── activity + evidence capture drawer (Level 4 write path) ──────────────────
+const AN_EV_TYPES = ["photo", "video", "lesson-plan", "worksheet", "student-output", "attendance-sheet", "teacher-notes"];
+const AN_CATS = ["lesson", "assessment", "activity", "workshop", "excursion"];
+
+function AnActivityDrawer({ opts, defaults, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    title: "", category: "lesson", centre: defaults.centre || "", department: defaults.department || "",
+    date: new Date().toISOString().slice(0, 10), participants: "", notes: "",
+  });
+  const [evidence, setEvidence] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const addEv = (type) => setEvidence(e => [...e, { type, url: "", label: "", _uploading: false }]);
+  const setEv = (i, patch) => setEvidence(e => e.map((x, j) => j === i ? { ...x, ...patch } : x));
+  const rmEv = (i) => setEvidence(e => e.filter((_, j) => j !== i));
+
+  const upload = async (i, file) => {
+    if (!file) return;
+    setEv(i, { _uploading: true }); setErr("");
+    try { const r = await api.uploadFile(file, "evidence"); setEv(i, { url: r.url, label: file.name, _uploading: false }); }
+    catch (e) { setErr("Upload failed: " + (e.message || e)); setEv(i, { _uploading: false }); }
+  };
+
+  const save = async () => {
+    if (!form.title.trim()) { setErr("A title is required."); return; }
+    setSaving(true); setErr("");
+    try {
+      await api.admin.activityAdd({
+        title: form.title.trim(), category: form.category, centre: form.centre, department: form.department,
+        date: form.date, participants: Number(form.participants) || 0, notes: form.notes,
+        evidence: evidence.filter(e => e.url).map(e => ({ type: e.type, url: e.url, label: e.label })),
+      });
+      onSaved();
+    } catch (e) { setErr(e.message || "Could not save."); setSaving(false); }
+  };
+
+  useEffect(() => {
+    const onKey = e => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey); return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return <div className="an-drill" onMouseDown={onClose}>
+    <div className="scrim"/>
+    <div className="an-drawer" onMouseDown={e => e.stopPropagation()}>
+      <div className="head">
+        <div><div className="an-eyebrow">Level 4 · Evidence</div><h3 style={{ margin: "4px 0 0", fontSize: 18 }}>Log an activity</h3></div>
+        <button className="an-chip" onClick={onClose}>Close ✕</button>
+      </div>
+      <div style={{ padding: 20, display: "grid", gap: 14 }}>
+        <div className="an-field" style={{ gap: 5 }}><label>Title</label>
+          <input value={form.title} onChange={e => set("title", e.target.value)} placeholder="e.g. STEM robotics lab" style={{ minWidth: 0 }}/></div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div className="an-field" style={{ gap: 5 }}><label>Category</label>
+            <select value={form.category} onChange={e => set("category", e.target.value)}>{AN_CATS.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+          <div className="an-field" style={{ gap: 5 }}><label>Date</label>
+            <input type="date" value={form.date} onChange={e => set("date", e.target.value)}/></div>
+          <div className="an-field" style={{ gap: 5 }}><label>Centre</label>
+            <select value={form.centre} onChange={e => set("centre", e.target.value)}><option value="">— select —</option>{opts.centres.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+          <div className="an-field" style={{ gap: 5 }}><label>Department</label>
+            <select value={form.department} onChange={e => set("department", e.target.value)}><option value="">— none —</option>{opts.departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+          <div className="an-field" style={{ gap: 5 }}><label>Participants</label>
+            <input type="number" min="0" value={form.participants} onChange={e => set("participants", e.target.value)} placeholder="0"/></div>
+        </div>
+        <div className="an-field" style={{ gap: 5 }}><label>Notes</label>
+          <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} style={{ font: "inherit", padding: "8px 9px", border: "1px solid var(--an-line)", borderRadius: 9, resize: "vertical" }} placeholder="Teacher notes / summary…"/></div>
+
+        <div>
+          <label style={{ font: "600 9px/1 var(--font-mono)", letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>Evidence</label>
+          <div className="an-ev" style={{ margin: "8px 0" }}>{AN_EV_TYPES.map(t => <button key={t} type="button" className="an-chip" style={{ fontSize: 11, padding: "5px 9px" }} onClick={() => addEv(t)}>＋ {t}</button>)}</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {evidence.map((e, i) => <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", background: "#fff", border: "1px solid var(--an-line)", borderRadius: 10, padding: 8 }}>
+              <span className="an-evtype" style={{ fontSize: 10 }}>{e.type}</span>
+              {e.type === "photo"
+                ? (e.url ? <span style={{ flex: 1, fontSize: 12, color: "var(--ink-500)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✓ {e.label || "uploaded"}</span>
+                  : <label className="an-chip" style={{ flex: 1, justifyContent: "center", cursor: "pointer", fontSize: 12 }}>{e._uploading ? "Uploading…" : "Choose photo"}<input type="file" accept="image/*" hidden onChange={ev => upload(i, ev.target.files[0])}/></label>)
+                : <>
+                  <input value={e.url} onChange={ev => setEv(i, { url: ev.target.value })} placeholder="Link (URL)" style={{ flex: 1, fontSize: 12, padding: "6px 8px", border: "1px solid var(--an-line)", borderRadius: 8, minWidth: 0 }}/>
+                  <input value={e.label} onChange={ev => setEv(i, { label: ev.target.value })} placeholder="Label" style={{ width: 90, fontSize: 12, padding: "6px 8px", border: "1px solid var(--an-line)", borderRadius: 8 }}/>
+                </>}
+              <button type="button" className="an-chip" style={{ padding: "5px 8px" }} onClick={() => rmEv(i)}>✕</button>
+            </div>)}
+            {!evidence.length && <p className="an-sub" style={{ margin: 0, fontSize: 12 }}>Attach photos, videos, lesson plans, worksheets, student outputs, attendance sheets or teacher notes.</p>}
+          </div>
+        </div>
+
+        {err && <p style={{ color: AN_TONE.bad, fontSize: 13, margin: 0 }}>{err}</p>}
+        <div style={{ display: "flex", gap: 10 }}>
+          <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save activity"}</button>
+          <button className="an-chip" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
 // ── main workspace ───────────────────────────────────────────────────────────
 const AN_BLANK = { week: "", day: "", centre: "", department: "", category: "" };
 
@@ -305,6 +401,7 @@ function AnalyticsWorkspace() {
   const [err, setErr] = useState("");
   const [views, setViews] = useState(() => { try { return JSON.parse(localStorage.getItem("ngg.analytics.views") || "[]"); } catch { return []; } });
   const [drill, setDrill] = useState({ open: false, title: "", rows: null, loading: false });
+  const [logOpen, setLogOpen] = useState(false);
 
   const load = React.useCallback((f) => {
     setLoading(true); setErr("");
@@ -323,6 +420,8 @@ function AnalyticsWorkspace() {
     api.admin.analyticsDrill(metric, filters).then(r => setDrill({ open: true, title, rows: r.rows, loading: false }))
       .catch(() => setDrill({ open: true, title, rows: [], loading: false }));
   };
+  const showEvidence = (a) => setDrill({ open: true, title: a.title + " — evidence", loading: false,
+    rows: (a.evidence || []).map(e => ({ type: e.type, label: e.label || "", link: e.url || "" })) });
 
   const onExport = (kind) => {
     if (!ws) return;
@@ -552,17 +651,22 @@ function AnalyticsWorkspace() {
 
     {/* ── Level 4 · Evidence ── */}
     <section className="an-sec" id="an-evidence">
-      <div className="an-eyebrow">Level 4 · Evidence</div>
-      <h2 className="an-h">The evidence base.</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div className="an-eyebrow">Level 4 · Evidence</div>
+          <h2 className="an-h">The evidence base.</h2>
+        </div>
+        <button className="btn btn-primary" onClick={() => setLogOpen(true)}>＋ Log activity</button>
+      </div>
       <p className="an-sub">Every activity can carry supporting evidence — photos, videos, lesson plans, worksheets, student outputs, attendance sheets, teacher notes. This is what makes the platform auditable for donors and researchers.</p>
       {ev.byType.length > 0 && <div className="an-ev" style={{ marginBottom: 14 }}>
         {ev.byType.map(t => <span key={t.type} className="an-evtype">{t.type} · {t.count}</span>)}
         <span className="an-evtype" style={{ background: "var(--navy-900)", color: "#fff" }}>{ev.total} total artefacts</span>
       </div>}
-      {ev.gallery.length === 0 ? <div className="an-card"><div className="an-empty">No evidence logged in this range. Log an activity with attachments to build the evidence base.</div></div>
+      {ev.gallery.length === 0 ? <div className="an-card"><div className="an-empty">No evidence logged in this range. <a href="#" onClick={e => { e.preventDefault(); setLogOpen(true); }}>Log an activity</a> with attachments to build the evidence base.</div></div>
         : <div className="an-grid an-gal">{ev.gallery.slice(0, 12).map(a => {
           const photo = (a.evidence || []).find(e => e.type === "photo" && e.url);
-          return <div key={a.activityId} className="an-card" style={{ padding: 10 }}>
+          return <div key={a.activityId} className="an-card click" style={{ padding: 10 }} onClick={() => showEvidence(a)}>
             <div className="an-thumb">{photo ? <img src={photo.url} alt="" loading="lazy"/> : "🖼"}</div>
             <b style={{ display: "block", marginTop: 9, fontSize: 14 }}>{a.title}</b>
             <div style={{ color: "var(--ink-400)", fontSize: 12, margin: "2px 0 6px" }}>{a.category} · {a.centre || "All"} · {a.date}</div>
@@ -584,6 +688,8 @@ function AnalyticsWorkspace() {
     </section>
 
     <AnDrill open={drill.open} title={drill.title} rows={drill.rows} loading={drill.loading} onClose={() => setDrill({ open: false, title: "", rows: null, loading: false })}/>
+    {logOpen && <AnActivityDrawer opts={opts} defaults={filters} onClose={() => setLogOpen(false)}
+      onSaved={() => { setLogOpen(false); load(filters); }}/>}
   </div>;
 }
 
