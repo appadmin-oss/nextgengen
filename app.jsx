@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","join","blog","contact","admin","summer-admin","club-admin","circle","gate","verify","reshoot","cards","certificate","legal"];
+const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","admin","summer-admin","club-admin","circle","gate","verify","reshoot","cards","certificate","legal"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
@@ -26,6 +26,7 @@ const PAGE_META = {
   certificate:{ title: "Service certificate · NGG",                   desc: "A verifiable Next Generation Genius volunteer service certificate." },
   legal:      { title: "Legal & data protection · NGG",               desc: "Privacy, terms, safeguarding, parental consent, cookies and your data rights under the NDPA/NDPR." },
   mentors:    { title: "The mentors · NGG",                           desc: "The Afrovanguard Street-To-Stardom volunteers who show up every Saturday." },
+  mentor:     { title: "Mentor Portal · NGG",                         desc: "" },
   join:       { title: "Apply · Summer 2026 · NGG",                   desc: "Four short steps. About six minutes. Pause and come back — we save as you go." },
   blog:       { title: "The Journal · NGG",                           desc: "Long-form writing from mentors, members and the editorial team." },
   contact:    { title: "Contact · NGG",                               desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
@@ -192,7 +193,7 @@ function App() {
     const ogu = document.querySelector('meta[property="og:url"]');
     if (ogu && PAGE_IDS.includes(page)) ogu.setAttribute("content", canonicalUrl);
     // Deep pages that are personal/operational surfaces stay out of the index.
-    const noindexPages = ["dashboard", "profile", "admin", "summer-admin", "club-admin", "gate", "verify", "circle"];
+    const noindexPages = ["dashboard", "profile", "admin", "summer-admin", "club-admin", "gate", "verify", "circle", "mentor"];
     let rob = document.querySelector('meta[name="robots"]');
     if (rob) rob.setAttribute("content", noindexPages.includes(page) ? "noindex, nofollow" : "index, follow, max-image-preview:large");
     // Announce route change for assistive tech via a polite live region.
@@ -243,6 +244,7 @@ function App() {
     "summer-admin": <SummerAdminPortal setPage={setPage}/>,
     "club-admin":   <ClubAdminPortal   setPage={setPage}/>,
     circle:     <CirclePortal   setPage={setPage}/>,
+    mentor:     <MentorPortal/>,
     gate:       <GatePage/>,
     verify:     <ParentVerifyPage/>,
     reshoot:    <ReshootPage/>,
@@ -253,7 +255,7 @@ function App() {
 
   // The staff console/portals, the guardian Circle portal, the gate desk and
   // the parent verification page use their own chrome — no topnav/footer.
-  if (page === "admin" || page === "summer-admin" || page === "club-admin" || page === "circle" || page === "gate" || page === "verify" || page === "reshoot" || page === "cards" || page === "certificate") {
+  if (page === "admin" || page === "summer-admin" || page === "club-admin" || page === "circle" || page === "mentor" || page === "gate" || page === "verify" || page === "reshoot" || page === "cards" || page === "certificate") {
     return (
       <div className="app-shell app-shell-admin">
         <SkipLink/>

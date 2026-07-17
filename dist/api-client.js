@@ -135,6 +135,8 @@
     member: {
       dashboard:     () => request('/member/dashboard.php'),
       anchor:        () => request('/member/anchor.php'),
+      mentorRoster:  () => request('/member/mentor.php'),
+      starGive:      (subjectId, stars, category, note) => request('/member/mentor.php', { body: { action: 'star', subjectId, stars, category, note } }),
       submitMission: (data) => request('/member/mission.php', { body: data }),
       journal:       () => request('/member/journal.php'),
       journalCreate: (data) => request('/member/journal.php', { body: data }),

@@ -3270,6 +3270,99 @@ function CardStudio() {
   </>);
 }
 
+/* =================== MENTOR PORTAL (/mentor) ================================
+   A signed-in mentor's class for today. Award 1–3 behaviour stars per student
+   (one rating per student per day). Grouped by the mentor's centre/department. */
+function MentorPortal() {
+  const auth = (window.useAuth || (() => null))();
+  const [data, setData] = React.useState(null);
+  const [state, setState] = React.useState("loading"); // loading | need-auth | not-mentor | ready | error
+  const [sheet, setSheet] = React.useState(null);       // student being rated
+  const navy = "#16223e", gold = "#ffce54";
+  const load = React.useCallback(() => {
+    setState("loading");
+    NGGApi.member.mentorRoster().then(r => { setData(r); setState("ready"); })
+      .catch(e => { const c = e.code || e.message; setState(c === "unauthorized" ? "need-auth" : c === "not_a_mentor" ? "not-mentor" : "error"); });
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(); }, [auth && auth.isSignedIn]);
+
+  const shell = (ch) => (
+    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 18px 90px" }}>
+      <div style={{ maxWidth: 760, margin: "0 auto" }}>{ch}</div>
+    </div>
+  );
+  if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
+  if (state === "need-auth") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>Mentor sign-in</h1><p style={{ color: "rgba(230,238,255,.6)", margin: "8px 0 16px" }}>Sign in with your mentor email to see your class.</p><button onClick={() => auth && auth.openSignIn()} style={{ padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>Sign in →</button></div>);
+  if (state === "not-mentor") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>Not a mentor account</h1><p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>This portal is for approved mentors. If that's you, make sure you're signed in with the email on your mentor record.</p></div>);
+  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load your class</h1><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
+
+  const m = data.mentor || {}, students = data.students || [];
+  const done = students.filter(s => s.starredToday).length;
+  return shell(<>
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>MENTOR PORTAL</div>
+      <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{m.name || "Your class"}</h1>
+      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>{m.centre || "All centres"}{m.department ? " · " + m.department : ""} · {students.length} student{students.length === 1 ? "" : "s"} · {done} starred today</p>
+    </div>
+    {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No students in your class yet.</p>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {students.map(s => (
+        <div key={s.studentId} style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, padding: "10px 14px" }}>
+          <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb,#8fbb3f)", flex: "none" }}>{s.photoUrl ? <img src={s.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{s.fullName}</div>
+            <div style={{ fontSize: 12, color: "rgba(230,238,255,.55)" }}>{s.track || ""}</div>
+          </div>
+          {s.starredToday
+            ? <span title={s.note} style={{ color: gold, fontWeight: 800, fontSize: 16 }}>{"★".repeat(s.starredToday)}<span style={{ color: "rgba(230,238,255,.45)", fontSize: 11, fontWeight: 500, marginLeft: 6 }}>today</span></span>
+            : <button onClick={() => setSheet(s)} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid " + gold, background: "transparent", color: gold, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Give stars</button>}
+        </div>
+      ))}
+    </div>
+    {sheet && <MentorStarSheet student={sheet} categories={data.categories || []} onClose={() => setSheet(null)} onDone={() => { setSheet(null); load(); }}/>}
+  </>);
+}
+
+function MentorStarSheet({ student, categories, onClose, onDone }) {
+  const [stars, setStars] = React.useState(3);
+  const [category, setCategory] = React.useState("");
+  const [note, setNote] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const gold = "#ffce54";
+  const submit = async () => {
+    setBusy(true); setErr("");
+    try { await NGGApi.member.starGive(student.studentId, stars, category, note.trim()); onDone(); }
+    catch (e) { setErr(e.code === "already_starred_today" ? "This student already has a rating for today." : e.code === "not_your_centre" ? "That student isn't in your class." : (e.code || e.message)); setBusy(false); }
+  };
+  return (
+    <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(4,8,20,.72)", display: "grid", placeItems: "end center", padding: 0 }}>
+      <div style={{ width: "100%", maxWidth: 520, background: "#101a33", color: "#eef2fb", borderRadius: "18px 18px 0 0", padding: "20px 20px calc(20px + env(safe-area-inset-bottom,0px))", border: "1px solid rgba(255,255,255,.14)" }}>
+        <h2 style={{ margin: "0 0 4px", fontSize: 19 }}>Stars for {student.fullName}</h2>
+        <p style={{ margin: "0 0 14px", fontSize: 13, color: "rgba(230,238,255,.6)" }}>One rating per student per day. Reward the behaviour you want to see more of.</p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", margin: "6px 0 16px" }}>
+          {[1, 2, 3].map(n => (
+            <button key={n} onClick={() => setStars(n)} aria-label={n + " stars"} style={{ fontSize: 34, background: "none", border: "none", cursor: "pointer", color: n <= stars ? gold : "rgba(255,255,255,.25)" }}>★</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+          {categories.map(c => (
+            <button key={c} onClick={() => setCategory(category === c ? "" : c)} style={{ padding: "6px 12px", borderRadius: 99, border: "1px solid " + (category === c ? gold : "rgba(255,255,255,.2)"), background: category === c ? gold : "transparent", color: category === c ? "#2b2100" : "#eef2fb", fontSize: 12.5, fontWeight: 600, cursor: "pointer", textTransform: "capitalize" }}>{c}</button>
+          ))}
+        </div>
+        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={300} placeholder="Optional note — what did they do well?" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontSize: 14, resize: "vertical" }}/>
+        {err && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "8px 0 0" }}>{err}</p>}
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button onClick={submit} disabled={busy} style={{ flex: 1, padding: "13px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "Saving…" : "Give " + stars + " ★"}</button>
+          <button onClick={onClose} disabled={busy} style={{ padding: "13px 18px", borderRadius: 12, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* =================== LEGAL & DATA PROTECTION (public, /legal) ===============
    NDPA/NDPR-aligned. Six documents in one page with an anchored side-nav.
    Written for parents and volunteers of a Nigerian youth organisation, not
@@ -3417,4 +3510,4 @@ function LegalPage({ setPage }) {
   );
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, InstructorRoster, CertificatePage, LegalPage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio });
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, InstructorRoster, CertificatePage, LegalPage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio, MentorPortal });

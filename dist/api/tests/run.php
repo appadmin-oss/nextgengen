@@ -37,7 +37,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/webcron.php';
 
@@ -1589,6 +1589,27 @@ chk('scoped admin members list is centre-limited', (function () use ($SCOPED) {
     foreach ($r['members'] as $m) if (($m['centre'] ?? '') !== 'Egbeda') return false;
     return true;
 })());
+
+// ── Mentor Portal + stars ───────────────────────────────────────────────────
+db_insert('members', ['memberId' => 'NGG-2025-0500', 'fullName' => 'Mia Mentor', 'email' => 'mentor@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('mentors', ['mentorId' => 'MEN-1', 'fullName' => 'Mia Mentor', 'email' => 'mentor@example.com', 'status' => 'active', 'centre' => 'Egbeda', 'createdAt' => now_iso()]);
+chk('mentor roster lists their centre class only', (function () {
+    $r = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0500']);
+    if (empty($r['ok'])) return false;
+    $ids = array_map(fn($s) => $s['studentId'], $r['students']);
+    return in_array('SUM-R-1', $ids, true) && !in_array('SUM-AY-1', $ids, true);
+})());
+chk('mentor awards 1-3 stars + mirrors to behaviour log', (function () {
+    $r = backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-1', 'stars' => 3, 'category' => 'discipline', 'note' => 'Great focus']);
+    if (empty($r['ok'])) return false;
+    $ms = db_row("SELECT stars FROM member_stars WHERE subjectId='SUM-R-1' AND date=?", [gmdate('Y-m-d')]);
+    $bl = db_row("SELECT id FROM behaviour_logs WHERE subjectId='SUM-R-1' AND severity='positive' ORDER BY id DESC LIMIT 1");
+    return (int)($ms['stars'] ?? 0) === 3 && $bl;
+})());
+chk('one rating per student per day', backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-1', 'stars' => 2])['error'] === 'already_starred_today');
+chk('mentor cannot star a student in another centre', backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-AY-1', 'stars' => 2])['error'] === 'not_your_centre');
+chk('star count clamped to 1-3', backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-2', 'stars' => 5])['error'] === 'bad_stars');
+chk('non-mentor blocked from the portal', backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0001'])['error'] === 'not_a_mentor');
 
 // ── Mission proof-review queue (M13: verify was built but unreachable) ────────
 $pmid = backend_dispatch('admin.missions.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['week' => 2, 'order' => 1, 'theme' => 'Proof', 'title' => 'Show your work', 'prompt' => 'Upload a photo', 'type' => 'Do', 'proof' => 'photo', 'xp' => 90, 'isActive' => true]])['missionId'];
