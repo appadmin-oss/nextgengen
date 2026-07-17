@@ -132,6 +132,29 @@ function role_has_cap($role, string $cap): bool {
     return in_array($cap, admin_role_caps($role), true);
 }
 
+/**
+ * Scoped admins — a staff member's `centreScope` is a JSON array of centreIds
+ * they're limited to (empty = unscoped = every centre, today's behaviour).
+ * Returns the CENTRE NAMES in scope, or null when unscoped. Names are what the
+ * free-text `centre` columns store, so callers filter with a simple IN (names).
+ */
+function admin_centre_names_in_scope(array $requester): ?array {
+    $scope = safe_json((string)($requester['centreScope'] ?? ''));
+    if (!is_array($scope) || empty($scope)) return null;
+    $scope = array_values(array_filter(array_map('strval', $scope)));
+    if (!$scope) return null;
+    $ph = implode(',', array_fill(0, count($scope), '?'));
+    $rows = db_all("SELECT name FROM centres WHERE centreId IN ($ph)", $scope);
+    return array_map(fn($r) => (string)$r['name'], $rows);
+}
+
+/** Is a given centre name within a requester's scope? Unscoped ⇒ always true. */
+function admin_centre_allowed(array $requester, ?string $centreName): bool {
+    $names = admin_centre_names_in_scope($requester);
+    if ($names === null) return true;
+    return $centreName !== null && $centreName !== '' && in_array($centreName, $names, true);
+}
+
 /** All capabilities of a member row: role caps + any per-member extras (RBAC
  *  editor). Extras only augment an existing staff member; they never make a
  *  plain member into staff (is_admin_role still gates console access by role). */
@@ -390,6 +413,7 @@ function public_member(array $m): array {
         'hasPassword' => !empty($m['passwordHash']),
         'caps' => member_effective_caps($m),
         'capsExtra' => is_array(safe_json($m['capsExtra'] ?? null)) ? safe_json($m['capsExtra']) : [],
+        'centreScope' => is_array(safe_json($m['centreScope'] ?? null)) ? safe_json($m['centreScope']) : [],
         'needsTotp' => is_admin_role($m['role']) && empty($m['totpSecret']),
     ];
 }

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 35;
+const NGG_SCHEMA_TARGET = 37;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -870,6 +870,33 @@ function db_migrate(PDO $db): void {
         35 => "
             ALTER TABLE attendance ADD COLUMN status TEXT DEFAULT '';
             ALTER TABLE attendance ADD COLUMN lateMinutes INTEGER DEFAULT 0;
+        ",
+
+        // Scoped admins: a JSON array of centreIds a staff member is limited to
+        // (empty/NULL = unscoped, i.e. all centres — today's behaviour). Plus a
+        // mentor-department tag so summer mentors can be grouped by department.
+        36 => "
+            ALTER TABLE members ADD COLUMN centreScope TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN department TEXT DEFAULT '';
+        ",
+
+        // Mentor stars — behaviour recognition ledger. 1..3 stars, one rating
+        // per subject per day (application-guarded, like volunteer_points).
+        37 => "
+            CREATE TABLE member_stars (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              subjectType TEXT NOT NULL DEFAULT 'student',
+              givenById TEXT NOT NULL,
+              stars INTEGER NOT NULL,
+              category TEXT DEFAULT '',
+              note TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              date TEXT NOT NULL,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_stars_subject_date ON member_stars(subjectId, date);
+            CREATE INDEX idx_stars_centre_date ON member_stars(centre, date);
         ",
     ];
 

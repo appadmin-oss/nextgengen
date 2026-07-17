@@ -58,6 +58,13 @@ function admin_members_list(array $p): array {
     }
     // Staff-only view powers the Access & roles roster.
     if (!empty($p['staff'])) { $where[] = "role IN ('editor','summer_admin','club_admin','audit','admin','super_admin')"; }
+    // Scoped admins only see members in their centres (unscoped ⇒ all).
+    $scopeNames = admin_centre_names_in_scope($g['requester']);
+    if ($scopeNames !== null) {
+        if (!$scopeNames) return ['ok' => true, 'total' => 0, 'members' => []];
+        $where[] = 'centre IN (' . implode(',', array_fill(0, count($scopeNames), '?')) . ')';
+        foreach ($scopeNames as $nm) $params[] = $nm;
+    }
     $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
     // Accurate total for the filtered set, computed before paging so the client
     // can render "N–M of T" and page controls without loading every row.
@@ -154,9 +161,21 @@ function admin_member_caps_set(array $p): array {
     $in = is_array($p['caps'] ?? null) ? $p['caps'] : [];
     // Store only extras that the role doesn't already grant.
     $extra = array_values(array_unique(array_filter(array_map('strval', $in), fn($c) => in_array($c, $valid, true) && !in_array($c, $roleCaps, true))));
-    db_update('members', ['capsExtra' => json_encode($extra, JSON_UNESCAPED_SLASHES), 'updatedAt' => now_iso()], ['id' => $m['id']]);
-    audit('admin.member.caps', (string)($p['requesterId'] ?? ''), $mid, ['extra' => $extra], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'capsExtra' => $extra];
+    $patch = ['capsExtra' => json_encode($extra, JSON_UNESCAPED_SLASHES), 'updatedAt' => now_iso()];
+    // Centre scope — validated against real centreIds; empty array = unscoped.
+    $scopeOut = null;
+    if (array_key_exists('centreScope', $p)) {
+        $want = is_array($p['centreScope']) ? array_values(array_filter(array_map('strval', $p['centreScope']))) : [];
+        if ($want) {
+            $ph = implode(',', array_fill(0, count($want), '?'));
+            $real = array_map(fn($r) => (string)$r['centreId'], db_all("SELECT centreId FROM centres WHERE centreId IN ($ph)", $want));
+            $scopeOut = array_values(array_intersect($want, $real));
+        } else { $scopeOut = []; }
+        $patch['centreScope'] = json_encode($scopeOut, JSON_UNESCAPED_SLASHES);
+    }
+    db_update('members', $patch, ['id' => $m['id']]);
+    audit('admin.member.caps', (string)($p['requesterId'] ?? ''), $mid, ['extra' => $extra, 'centreScope' => $scopeOut], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'capsExtra' => $extra, 'centreScope' => $scopeOut];
 }
 
 /** Email a newly-granted staff member their onboarding invite (sign-in link). */

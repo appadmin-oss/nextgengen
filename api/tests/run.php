@@ -1570,6 +1570,26 @@ chk('dashboard readable by the M&E audit role', (function () {
 })());
 chk('dashboard gated from non-admin', backend_dispatch('admin.dashboard.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 
+// ── Scoped admins (centre allow-list) ───────────────────────────────────────
+db_insert('centres', ['centreId' => 'CEN-AY', 'name' => 'Ayobo', 'code' => 'AY', 'color' => '#123456', 'status' => 'active', 'createdAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-AY-1', 'cohortId' => 'RC1', 'centre' => 'Ayobo', 'track' => 'Tech', 'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Scoped Admin', 'email' => 'sc@example.com', 'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'admin']]);
+$SCOPED = db_row("SELECT memberId FROM members WHERE email='sc@example.com'")['memberId'];
+chk('caps op stores a validated centre scope', (function () use ($SCOPED) {
+    $r = backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => $SCOPED, 'caps' => [], 'centreScope' => ['CEN-EG', 'BOGUS']]);
+    return !empty($r['ok']) && $r['centreScope'] === ['CEN-EG']; // bogus id dropped
+})());
+chk('scoped admin dashboard shows only their centre', (function () use ($SCOPED) {
+    $r = backend_dispatch('admin.dashboard.overview', ['requesterId' => $SCOPED]);
+    $names = array_map(fn($c) => $c['name'], $r['dashboard']['byCentre']);
+    return in_array('Egbeda', $names, true) && !in_array('Ayobo', $names, true);
+})());
+chk('scoped admin members list is centre-limited', (function () use ($SCOPED) {
+    $r = backend_dispatch('admin.members.list', ['requesterId' => $SCOPED, 'all' => 1]);
+    foreach ($r['members'] as $m) if (($m['centre'] ?? '') !== 'Egbeda') return false;
+    return true;
+})());
+
 // ── Mission proof-review queue (M13: verify was built but unreachable) ────────
 $pmid = backend_dispatch('admin.missions.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['week' => 2, 'order' => 1, 'theme' => 'Proof', 'title' => 'Show your work', 'prompt' => 'Upload a photo', 'type' => 'Do', 'proof' => 'photo', 'xp' => 90, 'isActive' => true]])['missionId'];
 chk('proof mission submit ⇒ submitted (not auto-verified)', backend_dispatch('anchor.mission.submit', ['memberId' => 'NGG-2025-0001', 'missionId' => $pmid, 'proofUrl' => 'https://example.org/p.jpg'])['status'] === 'submitted');

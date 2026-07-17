@@ -616,3 +616,27 @@ ALTER TABLE attendance ADD COLUMN status VARCHAR(16) DEFAULT '';
 ALTER TABLE attendance ADD COLUMN lateMinutes INT DEFAULT 0;
 
 INSERT INTO schema_version (version) VALUES (35) ON DUPLICATE KEY UPDATE version = version;
+
+-- 36: scoped admins (centre allow-list) + mentor department tag
+ALTER TABLE members ADD COLUMN centreScope TEXT;
+ALTER TABLE mentors ADD COLUMN department VARCHAR(80) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (36) ON DUPLICATE KEY UPDATE version = version;
+
+-- 37: mentor stars (behaviour recognition ledger)
+CREATE TABLE IF NOT EXISTS member_stars (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectType VARCHAR(24) NOT NULL DEFAULT 'student',
+  givenById VARCHAR(64) NOT NULL,
+  stars INT NOT NULL,
+  category VARCHAR(48) DEFAULT '',
+  note TEXT,
+  centre VARCHAR(80) DEFAULT '',
+  date VARCHAR(16) NOT NULL,
+  createdAt VARCHAR(40),
+  UNIQUE KEY uniq_stars_subject_date (subjectId, date),
+  INDEX idx_stars_centre_date (centre, date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (37) ON DUPLICATE KEY UPDATE version = version;

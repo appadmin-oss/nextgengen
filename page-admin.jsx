@@ -2088,11 +2088,15 @@ const ALL_CAPS = ["content", "people", "inbox", "settings", "rbac", "summer", "c
 function MemberCapsEditor({ member }) {
   const roleCaps = ROLE_CAPS[member.role] || [];
   const [extra, setExtra] = React.useState(() => new Set(member.capsExtra || []));
+  const [scope, setScope] = React.useState(() => new Set(member.centreScope || []));
+  const [centres, setCentres] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => { NGGApi.admin.registration.centres().then(r => setCentres(r.centres || [])).catch(() => {}); }, []);
   const toggle = (c) => setExtra(s => { const n = new Set(s); n.has(c) ? n.delete(c) : n.add(c); return n; });
+  const toggleScope = (id) => setScope(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const save = async () => {
     setBusy(true);
-    try { await NGGApi.admin.members.setCaps(member.memberId, Array.from(extra)); toast.success("Capabilities updated.", "Access"); }
+    try { await NGGApi.admin.members.setCaps(member.memberId, Array.from(extra), Array.from(scope)); toast.success("Access updated.", "Access"); }
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
   return (
@@ -2106,7 +2110,17 @@ function MemberCapsEditor({ member }) {
           </label>;
         })}
       </div>
-      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save capabilities"}</button>
+      <span className="admin-label">Centre scope {scope.size === 0 ? "(all centres)" : "(" + scope.size + " selected)"}</span>
+      <p className="admin-hint" style={{ margin: "2px 0 6px" }}>Leave empty for full access. Selecting centres limits this admin's members, roster and dashboard to those centres only.</p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 8px" }}>
+        {centres.map(c => (
+          <label key={c.centreId} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13 }}>
+            <input type="checkbox" checked={scope.has(c.centreId)} onChange={() => toggleScope(c.centreId)}/> {c.name}
+          </label>
+        ))}
+        {!centres.length && <span className="mono" style={{ fontSize: 12, color: "var(--ink-500)" }}>No centres configured yet.</span>}
+      </div>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save access"}</button>
     </div>
   );
 }

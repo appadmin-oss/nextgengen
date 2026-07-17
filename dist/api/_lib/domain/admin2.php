@@ -19,7 +19,16 @@ function admin_dashboard_overview(array $p): array {
     $today = gmdate('Y-m-d');
     $since = gmdate('Y-m-d', time() - 13 * 86400); // 14-day window
 
-    $centres = db_all("SELECT centreId, name, code, color FROM centres WHERE status = 'active' ORDER BY name");
+    // Scoped admins see only their centres; unscoped (super_admin/admin) see all.
+    $scopeNames = admin_centre_names_in_scope($g['requester']);
+    $centreWhere = "status = 'active'";
+    $centreArgs = [];
+    if ($scopeNames !== null) {
+        if (!$scopeNames) return ['ok' => true, 'dashboard' => ['today' => $today, 'kpis' => ['centres' => 0, 'enrolled' => 0, 'presentToday' => 0, 'attendanceRate' => 0, 'lateToday' => 0, 'activeVolunteers' => 0, 'presentVolToday' => 0], 'byCentre' => [], 'trend' => []]];
+        $centreWhere .= ' AND name IN (' . implode(',', array_fill(0, count($scopeNames), '?')) . ')';
+        $centreArgs = $scopeNames;
+    }
+    $centres = db_all("SELECT centreId, name, code, color FROM centres WHERE $centreWhere ORDER BY name", $centreArgs);
     $byCentre = [];
     foreach ($centres as $c) {
         $name = (string)$c['name'];
@@ -32,10 +41,19 @@ function admin_dashboard_overview(array $p): array {
             'rate' => $enrolled ? (int)round($present / $enrolled * 100) : 0,
         ];
     }
-    // 14-day attendance trend across all centres.
-    $trend = db_all("SELECT date, COUNT(DISTINCT studentId) present, SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) late FROM attendance WHERE date >= ? GROUP BY date ORDER BY date", [$since]);
-    $enrolledTotal = $one("SELECT COUNT(*) c FROM summer_students WHERE status = 'active'");
-    $presentToday  = $one("SELECT COUNT(DISTINCT studentId) c FROM attendance WHERE date = ?", [$today]);
+    // KPI + trend queries respect the same scope (join students → centre).
+    $inClause = ''; $inArgs = [];
+    if ($scopeNames !== null) { $inClause = ' AND s.centre IN (' . implode(',', array_fill(0, count($scopeNames), '?')) . ')'; $inArgs = $scopeNames; }
+    $trend = db_all("SELECT a.date date, COUNT(DISTINCT a.studentId) present, SUM(CASE WHEN a.status = 'late' THEN 1 ELSE 0 END) late FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.date >= ?$inClause GROUP BY a.date ORDER BY a.date", array_merge([$since], $inArgs));
+    $enrolledTotal = $scopeNames !== null
+        ? $one("SELECT COUNT(*) c FROM summer_students s WHERE s.status = 'active'$inClause", $inArgs)
+        : $one("SELECT COUNT(*) c FROM summer_students WHERE status = 'active'");
+    $presentToday  = $scopeNames !== null
+        ? $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.date = ?$inClause", array_merge([$today], $inArgs))
+        : $one("SELECT COUNT(DISTINCT studentId) c FROM attendance WHERE date = ?", [$today]);
+    $lateToday = $scopeNames !== null
+        ? $one("SELECT COUNT(*) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.date = ? AND a.status = 'late'$inClause", array_merge([$today], $inArgs))
+        : $one("SELECT COUNT(*) c FROM attendance WHERE date = ? AND status = 'late'", [$today]);
 
     return ['ok' => true, 'dashboard' => [
         'today' => $today,
@@ -44,7 +62,7 @@ function admin_dashboard_overview(array $p): array {
             'enrolled'         => $enrolledTotal,
             'presentToday'     => $presentToday,
             'attendanceRate'   => $enrolledTotal ? (int)round($presentToday / $enrolledTotal * 100) : 0,
-            'lateToday'        => $one("SELECT COUNT(*) c FROM attendance WHERE date = ? AND status = 'late'", [$today]),
+            'lateToday'        => $lateToday,
             'activeVolunteers' => $one("SELECT COUNT(*) c FROM volunteers WHERE status = 'active'"),
             'presentVolToday'  => $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN volunteers v ON v.volunteerId = a.studentId WHERE a.date = ?", [$today]),
         ],
