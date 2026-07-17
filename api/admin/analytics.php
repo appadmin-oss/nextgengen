@@ -10,6 +10,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $res = gs_call('analytics.drilldown', array_merge($in, ['requesterId' => $s['mid']]));
     } elseif ($action === 'activity.add') {
         $res = gs_call('analytics.activity.add', array_merge($in, ['requesterId' => $s['mid']]));
+    } elseif ($action === 'champions.mint') {
+        $res = gs_call('admin.champions.mint', ['requesterId' => $s['mid'], 'period' => $in['period'] ?? '', 'ip' => client_ip()]);
     } else {
         json_error('unknown_action', 400);
     }

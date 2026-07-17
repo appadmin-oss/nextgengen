@@ -422,6 +422,12 @@ function AnalyticsWorkspace() {
   };
   const showEvidence = (a) => setDrill({ open: true, title: a.title + " — evidence", loading: false,
     rows: (a.evidence || []).map(e => ({ type: e.type, label: e.label || "", link: e.url || "" })) });
+  const [minting, setMinting] = useState(false);
+  const mintChampions = () => {
+    setMinting(true);
+    api.admin.championsMint(ws && ws.rankings && ws.rankings.v3 ? ws.rankings.v3.period : "")
+      .then(() => load(filters)).catch(() => {}).finally(() => setMinting(false));
+  };
 
   const onExport = (kind) => {
     if (!ws) return;
@@ -633,6 +639,40 @@ function AnalyticsWorkspace() {
         </div>
       </div>
     </section>
+
+    {/* V3 Champions (Verbal · Vocal · Visual) */}
+    {rk.v3 && <section className="an-sec">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div className="an-eyebrow">Recognition · {rk.v3.period}</div>
+          <h2 className="an-h">V3 Champions.</h2>
+        </div>
+        {rk.v3.canMint && rk.v3.rated > 0 && <button className="btn btn-primary" disabled={minting} onClick={mintChampions}>{minting ? "Minting…" : (rk.v3.minted > 0 ? "Re-mint champions" : "Mint champions →")}</button>}
+      </div>
+      <p className="an-sub">Top Verbal·Vocal·Visual composite (out of 15) this week — the mentor's weekly read on each student. {rk.v3.minted > 0 ? rk.v3.minted + " award(s) minted." : "Mint to record non-monetary champion awards."}</p>
+      {rk.v3.rated === 0 ? <div className="an-card"><div className="an-empty">No V3 ratings this week yet — mentors rate from the Mentor Portal.</div></div>
+        : <div className="an-grid an-two">
+          <div className="an-card">
+            <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>🏆 Overall leaders</h3>
+            {rk.v3.overall.map((s, i) => <div key={i} className="an-rank">
+              <span className="n">{i + 1}</span>
+              <div style={{ flex: 1 }}><b>{s.name}</b><div style={{ fontSize: 11, color: "var(--ink-400)" }}>{s.centre}</div></div>
+              <span className="an-pill" style={{ background: "rgba(76,111,255,.12)", color: AN_TONE.info }}>{s.total}/15</span>
+            </div>)}
+          </div>
+          <div className="an-card">
+            <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>By centre</h3>
+            {Object.keys(rk.v3.byCentre).length === 0 ? <div className="an-empty">—</div> : Object.keys(rk.v3.byCentre).map(cn => {
+              const champ = rk.v3.byCentre[cn][0];
+              return <div key={cn} className="an-rank">
+                <span style={{ fontSize: 16 }}>🥇</span>
+                <div style={{ flex: 1 }}><b>{champ.name}</b><div style={{ fontSize: 11, color: "var(--ink-400)" }}>{cn} · V {champ.verbal} · Vo {champ.vocal} · Vi {champ.visual}</div></div>
+                <span className="an-pill" style={{ background: "var(--cream-100)", color: "var(--ink-700)" }}>{champ.total}/15</span>
+              </div>;
+            })}
+          </div>
+        </div>}
+    </section>}
 
     {/* Weekly awards */}
     <section className="an-sec">

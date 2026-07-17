@@ -294,6 +294,17 @@ function analytics_workspace(array $p): array {
         return ['name' => (string)$a['name'], 'subject' => $s['fullName'] ?? (string)$a['subjectId'], 'tier' => (int)$a['tier'], 'centre' => (string)$a['centre'], 'period' => (string)$a['period']];
     }, $awardRows);
 
+    // V3 (Verbal·Vocal·Visual) champions for the current ISO week — a per-centre
+    // leaderboard the Governing Council can mint into non-monetary awards.
+    $period = iso_week_period();
+    $v3 = function_exists('v3_leaderboard') ? v3_leaderboard($period) : ['period' => $period, 'byCentre' => [], 'overall' => [], 'rated' => 0];
+    if ($cNames) {
+        foreach (array_keys($v3['byCentre']) as $cn) if (!in_array($cn, $cNames, true)) unset($v3['byCentre'][$cn]);
+        $v3['overall'] = array_values(array_filter($v3['overall'], fn($x) => in_array($x['centre'], $cNames, true)));
+    }
+    $v3Minted = (int)(db_row("SELECT COUNT(*) c FROM awards WHERE period = ? AND name LIKE 'V3 Champion%'", [$period])['c'] ?? 0);
+    $canMint = (bool)array_intersect(['people'], member_effective_caps($requester)) || strtolower((string)($requester['role'] ?? '')) === 'super_admin';
+
     // ── today's programme timeline ───────────────────────────────────────────
     $timeline = [];
     foreach (db_all('SELECT title, category, centre, facilitatorName FROM activities WHERE date = ? ORDER BY createdAt', [$today]) as $a) {
@@ -350,7 +361,8 @@ function analytics_workspace(array $p): array {
             'stats' => $statSummary,
         ],
         'evidence' => ['byType' => $byTypeArr, 'gallery' => $gallery, 'total' => array_sum(array_column($byTypeArr, 'count'))],
-        'rankings' => ['centres' => $ranking, 'topStudents' => array_slice($topStudents, 0, 5), 'awards' => $weeklyAwards],
+        'rankings' => ['centres' => $ranking, 'topStudents' => array_slice($topStudents, 0, 5), 'awards' => $weeklyAwards,
+            'v3' => ['period' => $period, 'overall' => $v3['overall'], 'byCentre' => $v3['byCentre'], 'rated' => $v3['rated'], 'minted' => $v3Minted, 'canMint' => $canMint]],
         'timeline' => $timeline,
     ]];
 }

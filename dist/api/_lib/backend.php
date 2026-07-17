@@ -43,6 +43,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'anchor.mission.verify'   => 'anchor_mission_verify',
             'member.mentor.roster'    => 'mentor_roster',
             'behaviour.star.give'     => 'mentor_star_give',
+            'member.mentor.v3.rate'   => 'mentor_v3_rate',
+            'admin.champions.board'   => 'admin_champions_board',
+            'admin.champions.mint'    => 'admin_champions_mint',
             'anchor.journal.create'   => 'anchor_journal_create',
             'anchor.journal.list'     => 'anchor_journal_list',
             // Assignments

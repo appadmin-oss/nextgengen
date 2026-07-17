@@ -3310,7 +3310,8 @@ function MentorPortal() {
   const auth = (window.useAuth || (() => null))();
   const [data, setData] = React.useState(null);
   const [state, setState] = React.useState("loading"); // loading | need-auth | not-mentor | ready | error
-  const [sheet, setSheet] = React.useState(null);       // student being rated
+  const [sheet, setSheet] = React.useState(null);       // student being starred
+  const [v3sheet, setV3sheet] = React.useState(null);   // student getting a V3 rating
   const navy = "#16223e", gold = "#ffce54";
   const load = React.useCallback(() => {
     setState("loading");
@@ -3345,16 +3346,69 @@ function MentorPortal() {
           <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb,#8fbb3f)", flex: "none" }}>{s.photoUrl ? <img src={s.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>{s.fullName}</div>
-            <div style={{ fontSize: 12, color: "rgba(230,238,255,.55)" }}>{s.track || ""}</div>
+            <div style={{ fontSize: 12, color: "rgba(230,238,255,.55)" }}>{s.track || ""}{s.v3 ? " · V3 " + (s.v3.verbal + s.v3.vocal + s.v3.visual) + "/15" : ""}</div>
           </div>
-          {s.starredToday
-            ? <span title={s.note} style={{ color: gold, fontWeight: 800, fontSize: 16 }}>{"★".repeat(s.starredToday)}<span style={{ color: "rgba(230,238,255,.45)", fontSize: 11, fontWeight: 500, marginLeft: 6 }}>today</span></span>
-            : <button onClick={() => setSheet(s)} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid " + gold, background: "transparent", color: gold, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Give stars</button>}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
+            {s.starredToday
+              ? <span title={s.note} style={{ color: gold, fontWeight: 800, fontSize: 16 }}>{"★".repeat(s.starredToday)}</span>
+              : <button onClick={() => setSheet(s)} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid " + gold, background: "transparent", color: gold, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>★ Stars</button>}
+            <button onClick={() => setV3sheet(s)} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid " + (s.v3 ? "#7fd1a6" : "rgba(255,255,255,.28)"), background: s.v3 ? "rgba(127,209,166,.14)" : "transparent", color: s.v3 ? "#a7e8c6" : "#cdd6ea", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{s.v3 ? "V3 ✓" : "V3"}</button>
+          </div>
         </div>
       ))}
     </div>
     {sheet && <MentorStarSheet student={sheet} categories={data.categories || []} onClose={() => setSheet(null)} onDone={() => { setSheet(null); load(); }}/>}
+    {v3sheet && <MentorV3Sheet student={v3sheet} period={data.period} onClose={() => setV3sheet(null)} onDone={() => { setV3sheet(null); load(); }}/>}
   </>);
+}
+
+/* V3 weekly rating — Verbal · Vocal · Visual, each 1..5, one row per ISO week. */
+function MentorV3Sheet({ student, period, onClose, onDone }) {
+  const init = student.v3 || {};
+  const [v, setV] = React.useState({ verbal: init.verbal || 3, vocal: init.vocal || 3, visual: init.visual || 3 });
+  const [note, setNote] = React.useState(init.note || "");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const gold = "#ffce54", green = "#7fd1a6";
+  const total = v.verbal + v.vocal + v.visual;
+  const dims = [["verbal", "Verbal", "How they express ideas in words"], ["vocal", "Vocal", "Voice, delivery, confidence"], ["visual", "Visual", "Presence, body language, craft"]];
+  const submit = async () => {
+    setBusy(true); setErr("");
+    try { await NGGApi.member.v3Rate(student.studentId, v.verbal, v.vocal, v.visual, note.trim()); onDone(); }
+    catch (e) { setErr(e.code === "not_your_centre" ? "That student isn't in your class." : (e.code || e.message)); setBusy(false); }
+  };
+  return (
+    <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(4,8,20,.72)", display: "grid", placeItems: "end center" }}>
+      <div style={{ width: "100%", maxWidth: 520, background: "#101a33", color: "#eef2fb", borderRadius: "18px 18px 0 0", padding: "20px 20px calc(20px + env(safe-area-inset-bottom,0px))", border: "1px solid rgba(255,255,255,.14)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <h2 style={{ margin: "0 0 4px", fontSize: 19 }}>V3 rating · {student.fullName}</h2>
+          <span style={{ color: green, fontWeight: 800, fontSize: 18 }}>{total}<span style={{ color: "rgba(230,238,255,.45)", fontSize: 12, fontWeight: 500 }}>/15</span></span>
+        </div>
+        <p style={{ margin: "0 0 16px", fontSize: 13, color: "rgba(230,238,255,.6)" }}>Verbal · Vocal · Visual — this week{period ? " (" + period + ")" : ""}. One rating per student per week; you can refine it any time.</p>
+        {dims.map(([key, label, hint]) => (
+          <div key={key} style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>{label}</span>
+              <span style={{ fontSize: 11, color: "rgba(230,238,255,.5)" }}>{hint}</span>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              {[1, 2, 3, 4, 5].map(n => (
+                <button key={n} onClick={() => setV(s => ({ ...s, [key]: n }))} aria-label={label + " " + n}
+                  style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid " + (n <= v[key] ? green : "rgba(255,255,255,.18)"), background: n <= v[key] ? "rgba(127,209,166,.18)" : "transparent", color: n <= v[key] ? "#d7f6e6" : "rgba(230,238,255,.5)", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{n}</button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={300} placeholder="Optional note — what stood out this week?" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontSize: 14, resize: "vertical" }}/>
+        {err && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "8px 0 0" }}>{err}</p>}
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button onClick={submit} disabled={busy} style={{ flex: 1, padding: "13px", borderRadius: 12, border: "none", background: green, color: "#08301f", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "Saving…" : "Save V3 · " + total + "/15"}</button>
+          <button onClick={onClose} disabled={busy} style={{ padding: "13px 18px", borderRadius: 12, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function MentorStarSheet({ student, categories, onClose, onDone }) {

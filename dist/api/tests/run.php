@@ -1652,6 +1652,44 @@ chk('mentor cannot star a student in another centre', backend_dispatch('behaviou
 chk('star count clamped to 1-3', backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-2', 'stars' => 5])['error'] === 'bad_stars');
 chk('non-mentor blocked from the portal', backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0001'])['error'] === 'not_a_mentor');
 
+// ── V3 (Verbal·Vocal·Visual) weekly rating + Champions ──
+$v3p = iso_week_period();
+chk('mentor rates V3 (1-5 each) for the week', (function () use ($v3p) {
+    $r = backend_dispatch('member.mentor.v3.rate', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-1', 'verbal' => 5, 'vocal' => 4, 'visual' => 3, 'note' => 'Strong week']);
+    if (empty($r['ok']) || $r['total'] !== 12) return false;
+    $row = db_row("SELECT verbal,vocal,visual FROM v3_scores WHERE subjectId='SUM-R-1' AND period=?", [$v3p]);
+    return $row && (int)$row['verbal'] === 5 && (int)$row['visual'] === 3;
+})());
+chk('V3 re-rate upserts (one row per period)', (function () use ($v3p) {
+    backend_dispatch('member.mentor.v3.rate', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-1', 'verbal' => 4, 'vocal' => 4, 'visual' => 4]);
+    return (int)db_row("SELECT COUNT(*) c FROM v3_scores WHERE subjectId='SUM-R-1' AND period=?", [$v3p])['c'] === 1;
+})());
+chk('V3 rejects out-of-range scores', backend_dispatch('member.mentor.v3.rate', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-1', 'verbal' => 6, 'vocal' => 1, 'visual' => 1])['error'] === 'bad_score');
+chk('V3 rejects a student in another centre', backend_dispatch('member.mentor.v3.rate', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-AY-1', 'verbal' => 3, 'vocal' => 3, 'visual' => 3])['error'] === 'not_your_centre');
+backend_dispatch('member.mentor.v3.rate', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-2', 'verbal' => 3, 'vocal' => 3, 'visual' => 3]); // total 9
+chk('roster carries the current-period V3', (function () {
+    $r = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0500']);
+    $s = null; foreach ($r['students'] as $x) if ($x['studentId'] === 'SUM-R-1') $s = $x;
+    return $s && $s['v3'] && (int)$s['v3']['verbal'] === 4;
+})());
+chk('champions board leads with the top composite', (function () use ($v3p) {
+    $b = backend_dispatch('admin.champions.board', ['requesterId' => 'NGG-2025-0099', 'period' => $v3p]);
+    return !empty($b['ok']) && $b['board']['overall'][0]['studentId'] === 'SUM-R-1' && $b['board']['overall'][0]['total'] === 12;
+})());
+chk('champions mint is gated to people cap', backend_dispatch('admin.champions.mint', ['requesterId' => 'NGG-2025-0001', 'period' => $v3p])['error'] === 'forbidden');
+chk('champions mint creates non-monetary awards', (function () use ($v3p) {
+    $r = backend_dispatch('admin.champions.mint', ['requesterId' => 'NGG-2025-0099', 'period' => $v3p]);
+    if (empty($r['ok']) || !count($r['minted'])) return false;
+    $aw = db_row("SELECT valueNaira FROM awards WHERE subjectId='SUM-R-1' AND period=? AND name LIKE 'V3 Champion%' LIMIT 1", [$v3p]);
+    return $aw && (int)$aw['valueNaira'] === 0;
+})());
+chk('champions mint is idempotent per period', (function () use ($v3p) {
+    $before = (int)db_row("SELECT COUNT(*) c FROM awards WHERE period=? AND name LIKE 'V3 Champion%'", [$v3p])['c'];
+    backend_dispatch('admin.champions.mint', ['requesterId' => 'NGG-2025-0099', 'period' => $v3p]);
+    $after = (int)db_row("SELECT COUNT(*) c FROM awards WHERE period=? AND name LIKE 'V3 Champion%'", [$v3p])['c'];
+    return $before === $after && $before > 0;
+})());
+
 // ── Public status board (no auth, PII-free) ─────────────────────────────────
 chk('public status: no-auth, aggregates present, no PII', (function () {
     $r = backend_dispatch('public.status', []); // no requester at all

@@ -18,6 +18,16 @@ if ($method === 'GET') {
             'note'        => $b['note'] ?? '',
             'ip'          => client_ip(),
         ]);
+    } elseif ((string)($b['action'] ?? '') === 'v3') {
+        $res = gs_call('member.mentor.v3.rate', [
+            'requesterId' => $s['mid'],
+            'subjectId'   => $b['subjectId'] ?? '',
+            'verbal'      => $b['verbal'] ?? 0,
+            'vocal'       => $b['vocal'] ?? 0,
+            'visual'      => $b['visual'] ?? 0,
+            'note'        => $b['note'] ?? '',
+            'ip'          => client_ip(),
+        ]);
     } else { json_error('unknown_action', 400); }
 } else {
     json_error('method_not_allowed', 405);

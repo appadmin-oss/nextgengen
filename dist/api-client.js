@@ -137,6 +137,7 @@
       anchor:        () => request('/member/anchor.php'),
       mentorRoster:  () => request('/member/mentor.php'),
       starGive:      (subjectId, stars, category, note) => request('/member/mentor.php', { body: { action: 'star', subjectId, stars, category, note } }),
+      v3Rate:        (subjectId, verbal, vocal, visual, note) => request('/member/mentor.php', { body: { action: 'v3', subjectId, verbal, vocal, visual, note } }),
       submitMission: (data) => request('/member/mission.php', { body: data }),
       journal:       () => request('/member/journal.php'),
       journalCreate: (data) => request('/member/journal.php', { body: data }),
@@ -280,6 +281,7 @@
       analytics:    (filters) => request('/admin/analytics.php' + qs(filters || {})),
       analyticsDrill: (metric, filters) => request('/admin/analytics.php', { body: { action: 'drilldown', metric, ...(filters || {}) } }),
       activityAdd:  (data) => request('/admin/analytics.php', { body: { action: 'activity.add', ...data } }),
+      championsMint: (period) => request('/admin/analytics.php', { body: { action: 'champions.mint', period: period || '' } }),
       memberDetail: (memberId) => request('/admin/member-detail.php' + qs({ memberId })),
       assignMentor: (data) => request('/admin/assign-mentor.php', { body: data }),
       applications: {
