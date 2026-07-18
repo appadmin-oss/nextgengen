@@ -2039,4 +2039,20 @@ class AJErrorBoundary extends React.Component {
 }
 
 ReactDOM.createRoot(document.getElementById("aj-root")).render(<AJErrorBoundary><App/></AJErrorBoundary>);
-if ("serviceWorker" in navigator && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") { window.addEventListener("load", () => navigator.serviceWorker.register("/journal/sw.js", { scope: "/journal/" }).catch(() => {})); }
+// Register the Journal PWA service worker with the same update discipline as
+// the main app: never cache the SW script (updateViaCache:'none'), check for a
+// newer one every load, and reload once when a new build takes control so a
+// deploy self-refreshes instead of pinning the old shell.
+if ("serviceWorker" in navigator && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+  var ajHadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", function () {
+    if (!ajHadController || window.__ajReloaded) return;
+    window.__ajReloaded = true;
+    location.reload();
+  });
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("/journal/sw.js", { scope: "/journal/", updateViaCache: "none" })
+      .then(function (reg) { reg.update(); })
+      .catch(function () {});
+  });
+}

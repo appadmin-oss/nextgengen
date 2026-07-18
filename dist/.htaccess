@@ -92,11 +92,15 @@ base-uri 'self'; \
 form-action 'self'; \
 object-src 'none'"
 
-  # JSX files: we still want them treated as scripts (text/babel)
+  # JSX files: treated as scripts (text/babel) in the dev/root deploy. They
+  # keep the SAME name across deploys, so they must revalidate every load or a
+  # source edit wouldn't show for days. Cheap 304s when unchanged.
   <FilesMatch "\.jsx$">
-    Header set Cache-Control "public, max-age=604800, must-revalidate"
+    Header set Cache-Control "no-cache, must-revalidate"
+    Header unset Expires
   </FilesMatch>
-  # JS and CSS — must-revalidate so fixes ship without waiting for cache.
+  # Vendored / hashless libraries and any other JS/CSS — safe to cache a while
+  # (they change rarely), but still revalidate once stale.
   <FilesMatch "\.(js|css)$">
     Header set Cache-Control "public, max-age=604800, must-revalidate"
   </FilesMatch>
@@ -104,11 +108,24 @@ object-src 'none'"
   <FilesMatch "\.(png|jpe?g|webp|avif|svg|ico|woff2?|ttf)$">
     Header set Cache-Control "public, max-age=2592000, immutable"
   </FilesMatch>
-  # Service worker: MUST come last so it wins over the generic .js rule above.
-  # Never cache the SW script itself — a new deploy is then always picked up on
-  # the next visit, and the SW refreshes the running app (see index.html).
-  <FilesMatch "^service-worker\.js$">
+  # Entry files that keep a FIXED name across every deploy (the app bundle,
+  # client, content, styles, shell HTML, manifest). A long fresh window here is
+  # exactly what makes "my changes aren't showing" happen — a returning or
+  # SW-less browser keeps serving the old copy. Force revalidation so a deploy
+  # is always picked up; the service worker still gives instant repeat loads.
+  # MUST come after the generic .js/.css rules so it wins for these names.
+  # (Basenames also match the Journal PWA's copies under /journal/ — app.min.js,
+  # app.css, index.html, manifest.webmanifest.)
+  <FilesMatch "^(index\.html|app\.min\.js|app\.css|api-client\.js|data\.js|photos\.js|styles\.css|styles-app\.css|manifest\.webmanifest)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+    Header unset Expires
+  </FilesMatch>
+  # Service workers: MUST come last. Never cache the SW scripts themselves — a
+  # new deploy is then always picked up on the next visit, and the SW refreshes
+  # the running app (main app: service-worker.js; Journal PWA: journal/sw.js).
+  <FilesMatch "^(service-worker|sw)\.js$">
     Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header unset Expires
   </FilesMatch>
 </IfModule>
 
