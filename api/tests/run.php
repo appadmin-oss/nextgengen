@@ -1916,5 +1916,54 @@ chk('sitemap generator lists /s-status and /v-status', is_string($sm) && str_con
 $smStatic = @file_get_contents(dirname($ROOT) . '/sitemap.xml');
 chk('static sitemap lists both status boards', is_string($smStatic) && str_contains($smStatic, '/s-status') && str_contains($smStatic, '/v-status'));
 
+// ── Data management: edit + delete student / volunteer / application records ──
+// Members + mentors already had upsert; these close the gap for the three
+// program records that previously only supported status changes.
+
+// Student — enrol a throwaway, edit real fields, then delete (frees the QR).
+$dmQ = backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 1]);
+$dmTok = $dmQ['tokens'][0];
+$dmSid = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Edit Me', 'age' => 11, 'centre' => 'Egbeda', 'track' => 'Tech', 'token' => $dmTok]])['studentId'];
+chk('student update edits real fields', (function () use ($dmSid) {
+    if (empty(backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $dmSid, 'data' => ['fullName' => 'Edited Kid', 'age' => 13, 'centre' => 'Ikeja', 'guardianPhone' => '08030000001']])['ok'])) return false;
+    $s = db_row('SELECT fullName, age, centre, guardianPhone FROM summer_students WHERE studentId = ?', [$dmSid]);
+    return $s['fullName'] === 'Edited Kid' && (int)$s['age'] === 13 && $s['centre'] === 'Ikeja' && $s['guardianPhone'] === '08030000001';
+})());
+chk('student update rejects a bad age', backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $dmSid, 'data' => ['age' => 99]])['error'] === 'bad_age');
+chk('student update rejects a malformed parent email', backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $dmSid, 'data' => ['parentEmail' => 'nope']])['error'] === 'bad_email');
+chk('a non-admin cannot edit a student', backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0001', 'studentId' => $dmSid, 'data' => ['age' => 12]])['error'] === 'forbidden');
+chk('student delete removes the record and frees the QR', (function () use ($dmSid, $dmTok) {
+    if (empty(backend_dispatch('admin.summer.student.delete', ['requesterId' => 'NGG-2025-0099', 'studentId' => $dmSid])['ok'])) return false;
+    return !db_row('SELECT id FROM summer_students WHERE studentId = ?', [$dmSid]) && db_row('SELECT status FROM qr_codes WHERE token = ?', [$dmTok])['status'] === 'blank';
+})());
+
+// Volunteer — throwaway active record, edit, delete.
+db_insert('volunteers', ['volunteerId' => 'VOL-DM-1', 'fullName' => 'Vol Edit', 'firstName' => 'Vol', 'lastName' => 'Edit', 'email' => 'voledit@example.com', 'phone' => '08030000002', 'role' => 'mentor', 'centre' => 'Egbeda', 'faculty' => 'STEM', 'courses' => '[]', 'token' => 'VOLQR-DMDM', 'status' => 'active', 'visibilityConsent' => 0, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('qr_codes', ['token' => 'VOLQR-DMDM', 'batch' => 'VOL', 'status' => 'assigned', 'studentId' => 'VOL-DM-1', 'assignedName' => 'Vol Edit', 'createdAt' => now_iso()]);
+chk('volunteer update edits role + courses + consent', (function () {
+    if (empty(backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1', 'data' => ['role' => 'instructor', 'courses' => ['Python', 'Web'], 'visibilityConsent' => 1, 'phone' => '08030000009']])['ok'])) return false;
+    $v = db_row('SELECT role, courses, visibilityConsent, phone FROM volunteers WHERE volunteerId = ?', ['VOL-DM-1']);
+    return $v['role'] === 'instructor' && json_decode($v['courses'], true) === ['Python', 'Web'] && (int)$v['visibilityConsent'] === 1 && $v['phone'] === '08030000009';
+})());
+chk('volunteer update rejects an unknown role', backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1', 'data' => ['role' => 'chef']])['error'] === 'bad_role');
+chk('volunteer update rejects a bad email', backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1', 'data' => ['email' => 'nope']])['error'] === 'bad_email');
+chk('volunteer delete removes the record and its QR', (function () {
+    return !empty(backend_dispatch('admin.volunteers.delete', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1'])['ok'])
+        && !db_row('SELECT id FROM volunteers WHERE volunteerId = ?', ['VOL-DM-1']) && !db_row('SELECT id FROM qr_codes WHERE token = ?', ['VOLQR-DMDM']);
+})());
+
+// Application — throwaway pending row, edit, delete.
+db_insert('applications', ['kind' => 'teen', 'name' => 'App Edit', 'age' => 15, 'centre' => 'Egbeda', 'email' => 'appedit@example.com', 'status' => 'new', 'createdAt' => now_iso()]);
+$dmAid = (int)db_row("SELECT id FROM applications WHERE email = 'appedit@example.com'")['id'];
+chk('application update corrects fields', (function () use ($dmAid) {
+    if (empty(backend_dispatch('admin.application.update', ['requesterId' => 'NGG-2025-0099', 'id' => $dmAid, 'data' => ['name' => 'App Edited', 'centre' => 'Yaba', 'phone' => '08030000003']])['ok'])) return false;
+    $a = db_row('SELECT name, centre, phone FROM applications WHERE id = ?', [$dmAid]);
+    return $a['name'] === 'App Edited' && $a['centre'] === 'Yaba' && $a['phone'] === '08030000003';
+})());
+chk('application update rejects a bad email', backend_dispatch('admin.application.update', ['requesterId' => 'NGG-2025-0099', 'id' => $dmAid, 'data' => ['email' => 'nope']])['error'] === 'bad_email');
+chk('application delete removes the row', (function () use ($dmAid) {
+    return !empty(backend_dispatch('admin.application.delete', ['requesterId' => 'NGG-2025-0099', 'id' => $dmAid])['ok']) && !db_row('SELECT id FROM applications WHERE id = ?', [$dmAid]);
+})());
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

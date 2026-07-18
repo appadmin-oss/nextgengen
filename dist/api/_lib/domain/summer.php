@@ -252,6 +252,56 @@ function admin_summer_student_status(array $p): array {
     return ['ok' => true, 'cert' => $cert];
 }
 
+/** Edit an enrolled student's actual data — name, age, centre, track, guardian
+ *  contact, photo, public handle, status. Only supplied fields change; each is
+ *  validated the same way enrolment validates them. */
+function admin_summer_student_update(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $studentId = (string)($p['studentId'] ?? '');
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
+    if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    $d = is_array($p['data'] ?? null) ? $p['data'] : [];
+    $row = ['updatedAt' => now_iso()];
+    if (array_key_exists('fullName', $d)) { $name = trim((string)$d['fullName']); if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name']; $row['fullName'] = substr($name, 0, 120); }
+    if (array_key_exists('age', $d)) { $age = (int)$d['age']; if ($age < 5 || $age > 19) return ['ok' => false, 'error' => 'bad_age']; $row['age'] = $age; }
+    foreach (['centre' => 48, 'track' => 64, 'guardianName' => 255, 'guardianPhone' => 48, 'photoUrl' => 512, 'notes' => 2000] as $f => $max) {
+        if (array_key_exists($f, $d)) $row[$f] = substr(trim((string)$d[$f]), 0, $max);
+    }
+    if (array_key_exists('parentEmail', $d)) {
+        $em = trim((string)$d['parentEmail']);
+        if ($em !== '' && !filter_var($em, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
+        $row['parentEmail'] = substr($em, 0, 160);
+    }
+    if (array_key_exists('status', $d)) {
+        if (!in_array((string)$d['status'], ['active', 'withdrawn', 'graduated', 'promoted', 'waitlisted'], true)) return ['ok' => false, 'error' => 'bad_status'];
+        $row['status'] = (string)$d['status'];
+    }
+    if (array_key_exists('handle', $d)) {   // public identity — keep it slug-safe + unique
+        $h = summer_slug((string)$d['handle']);
+        if ($h === '') return ['ok' => false, 'error' => 'bad_handle'];
+        if (db_row('SELECT id FROM summer_students WHERE handle = ? AND studentId != ? LIMIT 1', [$h, $studentId])) return ['ok' => false, 'error' => 'handle_taken'];
+        $row['handle'] = $h;
+    }
+    db_update('summer_students', $row, ['studentId' => $studentId]);
+    audit('summer.student.update', $g['requester']['memberId'], $studentId, ['fields' => array_keys($row)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'studentId' => $studentId];
+}
+
+/** Delete an enrolled student. Frees their QR back to the blank pool so it can
+ *  be reassigned, and clears their attendance rows. History for other students
+ *  is untouched. */
+function admin_summer_student_delete(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $studentId = (string)($p['studentId'] ?? '');
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
+    if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    if (!empty($s['token'])) db_update('qr_codes', ['status' => 'blank', 'studentId' => '', 'assignedName' => '', 'assignedAt' => null], ['token' => (string)$s['token']]);
+    db_exec('DELETE FROM attendance WHERE studentId = ?', [$studentId]);
+    db_exec('DELETE FROM summer_students WHERE studentId = ?', [$studentId]);
+    audit('summer.student.delete', $g['requester']['memberId'], $studentId, ['name' => (string)$s['fullName']], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
 // ── Check-in state emails ────────────────────────────────────────────────────
 // On a NEW check-in we send the person a note about where they stand — a nudge
 // when they're building the habit, an award-focused message when they're doing

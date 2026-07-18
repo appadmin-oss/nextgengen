@@ -425,6 +425,46 @@ function admin_application_convert(array $p): array {
     return ['ok' => true, 'memberId' => $newId];
 }
 
+/** Correct a pending application's data before converting/approving it. Only
+ *  supplied fields change. */
+function admin_application_update(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $id = (int)($p['id'] ?? 0);
+    $a = db_row('SELECT id FROM applications WHERE id = ? LIMIT 1', [$id]);
+    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    $d = is_array($p['data'] ?? null) ? $p['data'] : [];
+    $row = [];
+    if (array_key_exists('name', $d)) { $name = trim((string)$d['name']); if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name']; $row['name'] = substr($name, 0, 120); }
+    if (array_key_exists('email', $d)) {
+        $em = trim((string)$d['email']);
+        if ($em !== '' && !filter_var($em, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
+        $row['email'] = substr($em, 0, 160);
+    }
+    if (array_key_exists('age', $d)) { $age = (int)$d['age']; if ($age !== 0 && ($age < 5 || $age > 100)) return ['ok' => false, 'error' => 'bad_age']; $row['age'] = $age; }
+    foreach (['phone' => 48, 'centre' => 48, 'track' => 64, 'faculty' => 80, 'program' => 32, 'role' => 32, 'why' => 4000, 'firstName' => 80, 'lastName' => 80, 'otherName' => 80, 'sex' => 16, 'dob' => 16, 'photoUrl' => 512] as $f => $max) {
+        if (array_key_exists($f, $d)) $row[$f] = substr(trim((string)$d[$f]), 0, $max);
+    }
+    if (array_key_exists('courses', $d)) {
+        $courses = is_array($d['courses']) ? array_values(array_filter(array_map(fn($c) => substr(trim((string)$c), 0, 80), $d['courses']))) : [];
+        $row['courses'] = json_encode(array_slice($courses, 0, 20));
+    }
+    if (!$row) return ['ok' => true, 'id' => $id];
+    db_update('applications', $row, ['id' => $id]);
+    audit('admin.application.update', $g['requester']['memberId'], (string)$id, ['fields' => array_keys($row)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'id' => $id];
+}
+
+/** Delete an application outright (spam, duplicate, test entry). */
+function admin_application_delete(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $id = (int)($p['id'] ?? 0);
+    $a = db_row('SELECT id, name FROM applications WHERE id = ? LIMIT 1', [$id]);
+    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    db_exec('DELETE FROM applications WHERE id = ?', [$id]);
+    audit('admin.application.delete', $g['requester']['memberId'], (string)$id, ['name' => (string)$a['name']], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
 // ── Newsletter ──────────────────────────────────────────────────────────────
 function admin_newsletter_list(array $p): array {
     $g = admin_cap_gate($p, 'inbox'); if (!$g['ok']) return $g;

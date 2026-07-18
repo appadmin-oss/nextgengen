@@ -7,8 +7,13 @@ if ($method === 'GET') {
     $res = gs_call('admin.applications.list', ['requesterId' => $s['mid'], 'kind' => $_GET['kind'] ?? '', 'status' => $_GET['status'] ?? '']);
 } elseif ($method === 'POST') {
     $b = read_json_body();
-    if (($b['action'] ?? '') === 'convert') {
+    $act = (string)($b['action'] ?? '');
+    if ($act === 'convert') {
         $res = gs_call('admin.application.convert', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'ip' => client_ip()]);
+    } elseif ($act === 'update') {
+        $res = gs_call('admin.application.update', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'data' => $b['data'] ?? [], 'ip' => client_ip()]);
+    } elseif ($act === 'delete') {
+        $res = gs_call('admin.application.delete', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'ip' => client_ip()]);
     } else {
         $res = gs_call('admin.applications.status', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'status' => $b['status'] ?? '', 'ip' => client_ip()]);
     }

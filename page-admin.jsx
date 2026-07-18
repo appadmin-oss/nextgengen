@@ -1515,9 +1515,14 @@ function SummerQR({ onChange }) {
 function SummerRoster({ cohortId }) {
   const [list, setList] = React.useState(null);
   const [q, setQ] = React.useState("");
+  const [openId, setOpenId] = React.useState("");
   const load = () => NGGApi.admin.summer.students(q, cohortId).then(r => setList(r.students || [])).catch(() => setList([]));
   React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q]);
   const setStatus = async (studentId, status) => { try { await NGGApi.admin.summer.studentStatus(studentId, status); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const remove = async (s) => {
+    if (!(await dialog.confirm({ title: "Delete " + s.fullName + "?", body: "This permanently removes the student record and their attendance, and frees their QR card for reuse. This can't be undone.", cta: "Delete", danger: true }))) return;
+    try { await NGGApi.admin.summer.studentDelete(s.studentId); toast.success("Student deleted."); setOpenId(""); load(); } catch (e) { toast.error(e.code || e.message); }
+  };
   return (
     <div>
       <div className="admin-filters">
@@ -1527,20 +1532,77 @@ function SummerRoster({ cohortId }) {
       {list === null ? <div className="dash-spinner"/> :
         list.length === 0 ? <div className="admin-empty">No students enrolled yet.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>ID</th><th>Name</th><th>Handle</th><th>Centre</th><th>Track</th><th>Present</th><th>Status</th><th>Profile</th></tr></thead>
+          <thead><tr><th>ID</th><th>Name</th><th>Handle</th><th>Centre</th><th>Track</th><th>Present</th><th>Status</th><th>Profile</th><th></th></tr></thead>
           <tbody>{list.map(s => (
-            <tr key={s.studentId}>
+            <React.Fragment key={s.studentId}>
+            <tr>
               <td className="mono">{s.studentId}</td>
               <td>{s.fullName}</td>
               <td className="mono">{s.handle}</td>
               <td>{s.centre}</td><td>{s.track}</td>
               <td className="mono">{s.attendanceCount}</td>
-              <td><select className="admin-select" value={s.status} onChange={e => setStatus(s.studentId, e.target.value)}><option value="active">active</option><option value="withdrawn">withdrawn</option><option value="graduated">graduated</option><option value="promoted">promoted</option></select></td>
+              <td><select className="admin-select" value={s.status} onChange={e => setStatus(s.studentId, e.target.value)}><option value="active">active</option><option value="withdrawn">withdrawn</option><option value="graduated">graduated</option><option value="promoted">promoted</option><option value="waitlisted">waitlisted</option></select></td>
               <td><a className="mono" href={"/s/" + s.handle} target="_blank" rel="noopener noreferrer">/s/{s.handle}</a></td>
+              <td style={{ whiteSpace: "nowrap", textAlign: "right" }}><button className="btn btn-ghost btn-sm" onClick={() => setOpenId(openId === s.studentId ? "" : s.studentId)}>{openId === s.studentId ? "Close" : "Edit"}</button></td>
             </tr>
+            {openId === s.studentId && <tr><td colSpan={9} style={{ background: "rgba(12,20,50,0.03)" }}><StudentEditor s={s} onSaved={() => { setOpenId(""); load(); }} onDelete={() => remove(s)}/></td></tr>}
+            </React.Fragment>
           ))}</tbody>
         </table></div>
       }
+    </div>
+  );
+}
+
+/* Edit an enrolled student's actual data — name, age, handle, centre, track,
+   guardian contact, photo, status. Mirrors admin.summer.student.update. */
+function StudentEditor({ s, onSaved, onDelete }) {
+  const [f, setF] = React.useState({
+    fullName: s.fullName || "", age: s.age != null ? String(s.age) : "", handle: s.handle || "",
+    centre: s.centre || "", track: s.track || "", guardianName: s.guardianName || "",
+    guardianPhone: s.guardianPhone || "", parentEmail: s.parentEmail || "", photoUrl: s.photoUrl || "", notes: s.notes || "",
+  });
+  const [busy, setBusy] = React.useState(false);
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const save = async () => {
+    if (f.fullName.trim().length < 2) { toast.error("Name needs at least 2 characters."); return; }
+    setBusy(true);
+    try {
+      await NGGApi.admin.summer.studentUpdate(s.studentId, { ...f, age: f.age === "" ? s.age : parseInt(f.age, 10) || 0 });
+      toast.success("Student saved."); onSaved();
+    } catch (e) { toast.error(e.code === "bad_age" ? "Age must be 5–19." : e.code === "bad_email" ? "That parent email isn't valid." : e.code === "handle_taken" ? "That handle is already used." : (e.code || e.message)); }
+    finally { setBusy(false); }
+  };
+  const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
+  const fld = (key, label, opts = {}) => (
+    <div style={{ flex: opts.grow ? "1 1 100%" : "1 1 180px", minWidth: opts.min || 150 }}>
+      <span style={lbl}>{label}</span>
+      <input className="admin-input" style={{ width: "100%" }} type={opts.type || "text"} value={f[key]} onChange={e => set(key, e.target.value)} placeholder={opts.ph || ""}/>
+    </div>
+  );
+  return (
+    <div style={{ padding: "16px 4px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div><span style={lbl}>Photo</span><PhotoCapture value={f.photoUrl} onChange={v => set("photoUrl", v)} size={80} label="Student photo"/></div>
+        <div style={{ flex: 1, minWidth: 260, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+          {fld("fullName", "Full name", { min: 200 })}
+          {fld("age", "Age", { type: "number" })}
+          {fld("handle", "Public handle", { ph: "auto-slug" })}
+          {fld("centre", "Centre")}
+          {fld("track", "Track / faculty")}
+        </div>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+        {fld("guardianName", "Guardian name", { min: 180 })}
+        {fld("guardianPhone", "Guardian phone")}
+        {fld("parentEmail", "Parent email", { type: "email", min: 200 })}
+      </div>
+      <div><span style={lbl}>Notes</span><textarea className="admin-input" rows={2} value={f.notes} onChange={e => set("notes", e.target.value)} style={{ width: "100%", resize: "vertical" }}/></div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save student"}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onSaved}>Cancel</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onDelete} style={{ color: "#b03535", marginLeft: "auto" }}>Delete student</button>
+      </div>
     </div>
   );
 }
@@ -3017,6 +3079,57 @@ function ApplicantDetail({ a }) {
   );
 }
 
+/* Correct a pending application's data before converting/approving it.
+   Mirrors admin.application.update. */
+function ApplicationEditor({ a, onSaved, onDelete }) {
+  const [f, setF] = React.useState({
+    name: a.name || "", email: a.email || "", phone: a.phone || "", age: a.age != null ? String(a.age) : "",
+    centre: a.centre || "", track: a.track || "", role: a.role || "", faculty: a.faculty || "",
+    program: a.program || "", courses: (a.courses || []).join(", "), why: a.why || "", photoUrl: a.photoUrl || "",
+  });
+  const [busy, setBusy] = React.useState(false);
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const save = async () => {
+    if (f.name.trim().length < 2) { toast.error("Name needs at least 2 characters."); return; }
+    setBusy(true);
+    try {
+      await NGGApi.admin.applications.update(a.id, { ...f, age: f.age === "" ? 0 : parseInt(f.age, 10) || 0, courses: f.courses.split(",").map(c => c.trim()).filter(Boolean) });
+      toast.success("Application saved."); onSaved();
+    } catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : e.code === "bad_age" ? "Age looks off." : (e.code || e.message)); }
+    finally { setBusy(false); }
+  };
+  const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
+  const fld = (key, label, opts = {}) => (
+    <div style={{ flex: "1 1 170px", minWidth: opts.min || 140 }}>
+      <span style={lbl}>{label}</span>
+      <input className="admin-input" style={{ width: "100%" }} type={opts.type || "text"} value={f[key]} onChange={e => set(key, e.target.value)} placeholder={opts.ph || ""}/>
+    </div>
+  );
+  return (
+    <div style={{ padding: "14px 2px", display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid #eef0f4", marginTop: 12 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+        {fld("name", "Full name", { min: 200 })}
+        {fld("email", "Email", { type: "email", min: 200 })}
+        {fld("phone", "Phone")}
+        {fld("age", "Age", { type: "number" })}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+        {fld("centre", "Centre")}
+        {fld("track", "Track")}
+        {fld("role", "Role")}
+        {fld("faculty", "Faculty")}
+        {fld("courses", "Courses (comma-separated)", { min: 200 })}
+      </div>
+      <div><span style={lbl}>Why / message</span><textarea className="admin-input" rows={2} value={f.why} onChange={e => set("why", e.target.value)} style={{ width: "100%", resize: "vertical" }}/></div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save application"}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onSaved}>Cancel</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onDelete} style={{ color: "#b03535", marginLeft: "auto" }}>Delete application</button>
+      </div>
+    </div>
+  );
+}
+
 function AdminApplications() {
   const [list, setList] = React.useState(null);
   const [filter, setFilter] = React.useState({ kind: "", status: "" });
@@ -3049,6 +3162,11 @@ function AdminApplications() {
     const ok = await dialog.confirm({ title: "Convert to member?", body: "This creates an active member account from this application.", cta: "Create member" });
     if (!ok) return;
     try { const r = await NGGApi.admin.applications.convert(id); toast.success("Member created: " + r.memberId); load(); } catch (e) { toast.error(e.code || e.message); }
+  };
+  const [editId, setEditId] = React.useState(0);
+  const removeApp = async (a) => {
+    if (!(await dialog.confirm({ title: "Delete this application?", body: "Permanently removes " + a.name + "'s application. Use this for spam, duplicates or test entries. This can't be undone.", cta: "Delete", danger: true }))) return;
+    try { await NGGApi.admin.applications.remove(a.id); toast.success("Application deleted."); setEditId(0); load(); } catch (e) { toast.error(e.code || e.message); }
   };
   return (
     <div className="admin-section">
@@ -3094,8 +3212,10 @@ function AdminApplications() {
               </div>
               {!expanded.has(a.id) && a.why && <p className="admin-app-why">{a.why}</p>}
               {expanded.has(a.id) && <ApplicantDetail a={a}/>}
+              {editId === a.id && <ApplicationEditor a={a} onSaved={() => { setEditId(0); load(); }} onDelete={() => removeApp(a)}/>}
               <div className="admin-app-actions">
                 <button className="btn btn-ghost btn-sm" aria-expanded={expanded.has(a.id)} onClick={() => toggleExpand(a.id)}>{expanded.has(a.id) ? "Hide details ▴" : "View details ▾"}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === a.id ? 0 : a.id)}>{editId === a.id ? "Close editor" : "Edit"}</button>
                 <select className="admin-select admin-app-status" value={a.status} onChange={e => setStatus(a.id, e.target.value)}>
                   <option value="new">New</option><option value="reviewing">Reviewing</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option><option value="waitlist">Waitlist</option>
                 </select>
@@ -3403,6 +3523,67 @@ function VolunteerNeedsEditor() {
   );
 }
 
+/* Edit an active volunteer's data — name, contact, role, centre, faculty,
+   courses, visibility consent, status, photo. Mirrors admin.volunteers.update. */
+function VolunteerEditor({ v, onSaved, onDelete }) {
+  const [f, setF] = React.useState({
+    fullName: v.fullName || "", firstName: v.firstName || "", lastName: v.lastName || "",
+    email: v.email || "", phone: v.phone || "", role: v.role || "mentor",
+    centre: v.centre || "", faculty: v.faculty || "", courses: (v.courses || []).join(", "),
+    visibilityConsent: !!v.visibilityConsent, status: v.status || "active", photoUrl: v.photoUrl || "",
+  });
+  const [busy, setBusy] = React.useState(false);
+  const set = (k, val) => setF(x => ({ ...x, [k]: val }));
+  const save = async () => {
+    if (f.fullName.trim().length < 2) { toast.error("Name needs at least 2 characters."); return; }
+    setBusy(true);
+    try {
+      await NGGApi.admin.volunteers.update(v.volunteerId, {
+        ...f, courses: f.courses.split(",").map(c => c.trim()).filter(Boolean), visibilityConsent: f.visibilityConsent ? 1 : 0,
+      });
+      toast.success("Volunteer saved."); onSaved();
+    } catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : e.code === "bad_role" ? "Pick a valid role." : (e.code || e.message)); }
+    finally { setBusy(false); }
+  };
+  const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
+  const fld = (key, label, opts = {}) => (
+    <div style={{ flex: "1 1 180px", minWidth: opts.min || 150 }}>
+      <span style={lbl}>{label}</span>
+      <input className="admin-input" style={{ width: "100%" }} type={opts.type || "text"} value={f[key]} onChange={e => set(key, e.target.value)} placeholder={opts.ph || ""}/>
+    </div>
+  );
+  return (
+    <div style={{ padding: "16px 4px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div><span style={lbl}>Photo</span><PhotoCapture value={f.photoUrl} onChange={val => set("photoUrl", val)} size={80} label="Volunteer photo"/></div>
+        <div style={{ flex: 1, minWidth: 260, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+          {fld("fullName", "Full name", { min: 200 })}
+          {fld("email", "Email", { type: "email", min: 200 })}
+          {fld("phone", "Phone")}
+          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Role</span><select className="admin-select" value={f.role} onChange={e => set("role", e.target.value)}><option value="admin">Admin / Ops</option><option value="mentor">Mentor</option><option value="instructor">Instructor</option></select></div>
+          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Status</span><select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option><option value="archived">Archived</option></select></div>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+        {fld("firstName", "First name")}
+        {fld("lastName", "Last name")}
+        {fld("centre", "Centre")}
+        {fld("faculty", "Faculty")}
+        {fld("courses", "Courses (comma-separated)", { min: 220 })}
+      </div>
+      <label style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 13.5, fontWeight: 600 }}>
+        <input type="checkbox" checked={f.visibilityConsent} onChange={e => set("visibilityConsent", e.target.checked)}/>
+        Consented to be featured (photo + first name) on the public site &amp; boards
+      </label>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save volunteer"}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onSaved}>Cancel</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onDelete} style={{ color: "#b03535", marginLeft: "auto" }}>Delete volunteer</button>
+      </div>
+    </div>
+  );
+}
+
 function AdminVolunteers() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -3436,6 +3617,11 @@ function AdminVolunteers() {
     try { await NGGApi.admin.volunteers.safeguard(v.volunteerId, status); toast.success(status === "cleared" ? "Marked screened." : "Set to pending."); load(); }
     catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(""); }
+  };
+  const [editId, setEditId] = React.useState("");
+  const removeVol = async (v) => {
+    if (!(await dialog.confirm({ title: "Delete " + v.fullName + "?", body: "This permanently removes the volunteer record and their check-in QR. This can't be undone.", cta: "Delete", danger: true }))) return;
+    try { await NGGApi.admin.volunteers.remove(v.volunteerId); toast.success("Volunteer deleted."); setEditId(""); load(); } catch (e) { toast.error(e.code || e.message); }
   };
 
   const roleChip = (r) => <span className={"chip " + (r === "instructor" ? "chip-gold" : r === "mentor" ? "chip-lime" : "chip-navy")}>{r}</span>;
@@ -3498,7 +3684,8 @@ function AdminVolunteers() {
                 <thead><tr><th>Volunteer</th><th>Role</th><th>Centre</th><th>Faculty / Courses</th><th>Safeguarding</th><th>ID</th><th></th></tr></thead>
                 <tbody>
                   {roster.map(v => (
-                    <tr key={v.volunteerId}>
+                    <React.Fragment key={v.volunteerId}>
+                    <tr>
                       <td><div className="admin-cell-name">{v.fullName}</div><div className="mono admin-cell-sub">{v.volunteerId} · {v.email}</div></td>
                       <td>{roleChip(v.role)}</td>
                       <td className="mono" style={{ fontSize: 12 }}>{v.centre || "—"}</td>
@@ -3510,11 +3697,14 @@ function AdminVolunteers() {
                       </td>
                       <td className="mono" style={{ fontSize: 12 }}><a href={"/q/" + v.token} target="_blank" rel="noreferrer">/q/{(v.token || "").slice(0, 10)}…</a></td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === v.volunteerId ? "" : v.volunteerId)}>{editId === v.volunteerId ? "Close" : "Edit"}</button>
                         {v.safeguarding === "cleared"
                           ? <button className="btn btn-ghost btn-sm" disabled={busy === "s" + v.volunteerId} onClick={() => setSafeguard(v, "pending")}>Un-clear</button>
                           : <button className="btn btn-primary btn-sm" disabled={busy === "s" + v.volunteerId} onClick={() => setSafeguard(v, "cleared")}>{busy === "s" + v.volunteerId ? "…" : "Mark screened"}</button>}
                       </td>
                     </tr>
+                    {editId === v.volunteerId && <tr><td colSpan={7} style={{ background: "rgba(12,20,50,0.03)" }}><VolunteerEditor v={v} onSaved={() => { setEditId(""); load(); }} onDelete={() => removeVol(v)}/></td></tr>}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>

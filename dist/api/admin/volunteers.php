@@ -16,6 +16,8 @@ if ($method === 'GET') {
     if ($action === 'approve')      $res = gs_call('admin.volunteers.approve', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'ip' => $ip]);
     elseif ($action === 'decline')  $res = gs_call('admin.volunteers.decline', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'reason' => $b['reason'] ?? '', 'ip' => $ip]);
     elseif ($action === 'safeguard') $res = gs_call('admin.volunteers.safeguard', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'status' => $b['status'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'update')   $res = gs_call('admin.volunteers.update', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'data' => $b['data'] ?? [], 'ip' => $ip]);
+    elseif ($action === 'delete')   $res = gs_call('admin.volunteers.delete', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'need_upsert') $res = gs_call('admin.volunteers.needs.upsert', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'role' => $b['role'] ?? '', 'faculty' => $b['faculty'] ?? '', 'needCount' => $b['needCount'] ?? 0, 'ip' => $ip]);
     elseif ($action === 'need_delete') $res = gs_call('admin.volunteers.needs.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'role' => $b['role'] ?? '', 'faculty' => $b['faculty'] ?? '', 'ip' => $ip]);
     else json_error('unknown_action', 400);

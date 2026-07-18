@@ -498,10 +498,58 @@ function admin_volunteers_list(array $p): array {
         $a['dobAge'] = !empty($a['dob']) && function_exists('dob_age') ? dob_age((string)$a['dob']) : null;
     }
     unset($a);
-    $roster = db_all('SELECT volunteerId, fullName, email, phone, role, courses, centre, faculty, visibilityConsent, token, status, safeguarding, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
+    $roster = db_all('SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, visibilityConsent, token, status, safeguarding, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
     foreach ($roster as &$v) $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
     unset($v);
     return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster];
+}
+
+/** Edit an active volunteer's data — name, contact, role, centre, faculty,
+ *  courses, site-visibility consent, status. Only supplied fields change. */
+function admin_volunteer_update(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $volunteerId = (string)($p['volunteerId'] ?? '');
+    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
+    if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    $d = is_array($p['data'] ?? null) ? $p['data'] : [];
+    $row = ['updatedAt' => now_iso()];
+    if (array_key_exists('fullName', $d)) { $name = trim((string)$d['fullName']); if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name']; $row['fullName'] = substr($name, 0, 120); }
+    foreach (['firstName' => 80, 'lastName' => 80, 'phone' => 48, 'centre' => 48, 'faculty' => 80, 'photoUrl' => 512] as $f => $max) {
+        if (array_key_exists($f, $d)) $row[$f] = substr(trim((string)$d[$f]), 0, $max);
+    }
+    if (array_key_exists('email', $d)) {
+        $em = trim((string)$d['email']);
+        if ($em === '' || !filter_var($em, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
+        $row['email'] = substr($em, 0, 160);
+    }
+    if (array_key_exists('role', $d)) {
+        if (!in_array((string)$d['role'], VOL_ROLES, true)) return ['ok' => false, 'error' => 'bad_role'];
+        $row['role'] = (string)$d['role'];
+    }
+    if (array_key_exists('courses', $d)) {
+        $courses = is_array($d['courses']) ? array_values(array_filter(array_map(fn($c) => substr(trim((string)$c), 0, 80), $d['courses']))) : [];
+        $row['courses'] = json_encode(array_slice($courses, 0, 20));
+    }
+    if (array_key_exists('visibilityConsent', $d)) $row['visibilityConsent'] = !empty($d['visibilityConsent']) ? 1 : 0;
+    if (array_key_exists('status', $d)) {
+        if (!in_array((string)$d['status'], ['active', 'inactive', 'archived'], true)) return ['ok' => false, 'error' => 'bad_status'];
+        $row['status'] = (string)$d['status'];
+    }
+    db_update('volunteers', $row, ['volunteerId' => $volunteerId]);
+    audit('volunteer.update', $g['requester']['memberId'], $volunteerId, ['fields' => array_keys($row)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'volunteerId' => $volunteerId];
+}
+
+/** Delete a volunteer record and release its check-in QR token. */
+function admin_volunteer_delete(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $volunteerId = (string)($p['volunteerId'] ?? '');
+    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
+    if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    if (!empty($v['token'])) db_exec('DELETE FROM qr_codes WHERE token = ?', [(string)$v['token']]);
+    db_exec('DELETE FROM volunteers WHERE volunteerId = ?', [$volunteerId]);
+    audit('volunteer.delete', $g['requester']['memberId'], $volunteerId, ['name' => (string)$v['fullName']], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
 }
 
 function admin_volunteer_approve(array $p): array {

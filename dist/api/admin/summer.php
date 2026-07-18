@@ -22,6 +22,8 @@ if ($method === 'GET') {
         'enroll'       => 'admin.summer.enroll',
         'cohort'       => 'admin.summer.cohort.upsert',
         'studentStatus'=> 'admin.summer.student.status',
+        'studentUpdate'=> 'admin.summer.student.update',
+        'studentDelete'=> 'admin.summer.student.delete',
         'checkin'      => 'admin.summer.checkin',
         'archive'      => 'admin.summer.cohort.archive',
         'issueCerts'   => 'admin.summer.certs.issue',
