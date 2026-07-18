@@ -1517,6 +1517,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
       roleHint: roleFilter === "All" ? "Showing all roles" : "Filtered to " + VS_ROLE_META[roleFilter].label,
       roleChips, byRole, showFaculty, hasFaculty: byFaculty.length > 0, facEmpty: showFaculty && byFaculty.length === 0, byFaculty,
       showCourses, hasCourses: byCourse.length > 0, courseEmpty: showCourses && byCourse.length === 0, byCourse,
+      items: (dc.items || []),
     };
   }
   const showCentreGrid = view === "centres" && !dc;
@@ -1677,6 +1678,11 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                     <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: volTone(c.fulfillmentRate) }}>{volLabel(c.fulfillmentRate)}</span>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'Inter'", fontSize: 13, fontWeight: 600, color: c.gap > 0 ? "#a07400" : "#2f9e44" }}>{c.gap > 0 ? c.gap + " needed" : "Fully staffed"} <i className="ph ph-arrow-right"/></span>
                   </div>
+                  {(c.items || []).length > 0 && (() => { const openItems = (c.items || []).filter(x => (x.gap || 0) > 0).length; return (
+                    <div style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.04em", color: openItems ? "#a07400" : "#2f9e44" }}>
+                      <i className="ph ph-package"/>{openItems ? openItems + " item" + (openItems === 1 ? "" : "s") + " needed" : "items met ✓"}
+                    </div>
+                  ); })()}
                 </button>
               ))}
             </div>
@@ -1736,6 +1742,26 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
               {detail.hasCourses
                 ? <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "6px 22px" }}>{detail.byCourse.map((c, i) => <div key={i} className="course-row"><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.04em", color: c.color, textTransform: "uppercase" }}>{c.faculty}</span><span style={{ fontFamily: "'Sora'", fontWeight: 600, fontSize: 15, color: "#0a1130" }}>{c.course}</span><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#5a6488", textAlign: "right" }}>{c.filledLabel}</span></div>)}</div>
                 : <div style={{ border: "1px dashed #d9d2c0", borderRadius: 14, padding: 20, textAlign: "center", color: "#8088a6", fontSize: 13.5 }}>No instructors have signed up for a course here yet.</div>}
+            </>}
+            {detail.items.length > 0 && <>
+              <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>Items needed <span style={{ fontFamily: "'Inter'", fontWeight: 500, fontSize: 14, color: "#8088a6" }}>— materials this centre is asking for</span></h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 12 }}>
+                {detail.items.map((it, i) => {
+                  const pct = Math.min(100, it.fulfillmentRate || 0);
+                  const barColor = it.tone === "met" ? "#2f9e44" : it.tone === "watch" ? "#e8a92b" : "#e03131";
+                  return (
+                    <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 14, padding: "14px 16px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                        <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}>{it.item}</b>
+                        <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#5a6488" }}>{it.filled}/{it.need}{it.unit ? " " + it.unit : ""}</span>
+                      </div>
+                      <div style={{ height: 7, borderRadius: 999, background: "#eef0f4", margin: "10px 0 6px", overflow: "hidden" }}><div style={{ height: "100%", width: pct + "%", background: barColor, borderRadius: 999 }}/></div>
+                      <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: it.gap > 0 ? "#a07400" : "#2f9e44" }}>{it.gap > 0 ? it.gap + " still needed" : "fully met ✓"}</span>
+                      {it.note ? <p style={{ fontSize: 12.5, color: "#8088a6", margin: "6px 0 0", lineHeight: 1.4 }}>{it.note}</p> : null}
+                    </div>
+                  );
+                })}
+              </div>
             </>}
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 32 }}>
               <button onClick={() => setPage && setPage("volunteer")} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#0c1432", border: "none", background: "linear-gradient(135deg,#ffc34d,#f5b026)", boxShadow: "0 12px 26px -12px rgba(176,124,18,0.7)", display: "inline-flex", alignItems: "center", gap: 8 }}>Volunteer at {detail.name} <i className="ph ph-arrow-right"/></button>

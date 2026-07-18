@@ -414,10 +414,35 @@ chk('v-status zero-filled role reports 0%', $admRow['need'] === 2 && $admRow['fi
 chk('v-status by-course lists the instructor courses', count(array_filter($tv['byCourse'], fn($x) => $x['course'] === 'Practical Coding' && $x['filled'] === 1)) === 1);
 chk('v-status global fulfilment math', $vs['status']['kpis']['totalNeed'] === 5 && $vs['status']['kpis']['totalFilled'] === 1 && $vs['status']['kpis']['fulfillmentRate'] === 20);
 chk('v-status exposes no volunteer PII', !str_contains(json_encode($vs['status']), 'vol-teach@example.com') && !str_contains(json_encode($vs['status']), 'Vol Teach'));
+
+// ── Material (item) needs — non-headcount needs a centre asks for ──
+chk('item needs CRUD gated from non-permitted roles', backend_dispatch('admin.items.needs.upsert', ['requesterId' => 'NGG-2025-0001', 'centreId' => 'CEN-VOL', 'item' => 'Laptops', 'needCount' => 5])['error'] === 'forbidden');
+chk('item upsert rejects a blank item name', backend_dispatch('admin.items.needs.upsert', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'item' => '  ', 'needCount' => 5])['error'] === 'bad_item');
+chk('item upsert rejects an invalid centre', backend_dispatch('admin.items.needs.upsert', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'NOPE', 'item' => 'Laptops', 'needCount' => 5])['error'] === 'invalid_centre');
+chk('admin adds an item need', !empty(backend_dispatch('admin.items.needs.upsert', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'item' => 'Laptops', 'needCount' => 10, 'filledCount' => 4, 'unit' => 'units'])['ok']));
+backend_dispatch('admin.items.needs.upsert', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'item' => 'Data bundles', 'needCount' => 5, 'filledCount' => 5]);
+$vneeds2 = backend_dispatch('admin.volunteers.needs.list', ['requesterId' => 'NGG-2025-0099']);
+chk('needs list carries item rows', count(array_filter($vneeds2['items'], fn($x) => $x['centreId'] === 'CEN-VOL' && $x['item'] === 'Laptops' && (int)$x['needCount'] === 10)) === 1);
+$vs2 = backend_dispatch('public.volunteer.status', []);
+$tv2 = null; foreach ($vs2['status']['byCentre'] as $c) if ($c['centreId'] === 'CEN-VOL') $tv2 = $c;
+$lap = null; foreach (($tv2['items'] ?? []) as $it) if ($it['item'] === 'Laptops') $lap = $it;
+chk('v-status per-centre item math (need/filled/gap/tone)', $lap && $lap['need'] === 10 && $lap['filled'] === 4 && $lap['gap'] === 6 && $lap['tone'] === 'urgent');
+$dat = null; foreach (($tv2['items'] ?? []) as $it) if ($it['item'] === 'Data bundles') $dat = $it;
+chk('v-status met item reports full', $dat && $dat['gap'] === 0 && $dat['tone'] === 'met');
+chk('v-status item KPIs sum across centres', ($vs2['status']['kpis']['itemNeed'] ?? 0) === 15 && ($vs2['status']['kpis']['itemFilled'] ?? 0) === 9 && ($vs2['status']['kpis']['itemGap'] ?? 0) === 6);
+chk('item upsert dedupes by (centre,item)', (function () {
+    backend_dispatch('admin.items.needs.upsert', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'item' => 'Laptops', 'needCount' => 12, 'filledCount' => 4]);
+    $rows = array_filter(backend_dispatch('admin.volunteers.needs.list', ['requesterId' => 'NGG-2025-0099'])['items'], fn($x) => $x['centreId'] === 'CEN-VOL' && $x['item'] === 'Laptops');
+    return count($rows) === 1 && (int)reset($rows)['needCount'] === 12;
+})());
+chk('item delete removes the row', !empty(backend_dispatch('admin.items.needs.delete', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'item' => 'Data bundles'])['ok'])
+    && backend_dispatch('admin.items.needs.delete', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'item' => 'Nonexistent'])['error'] === 'not_found');
+
 chk('need delete removes the row', !empty(backend_dispatch('admin.volunteers.needs.delete', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'role' => 'admin', 'faculty' => ''])['ok']));
 // Return the catalogue to a clean slate for the later centre-management tests.
 db_exec("DELETE FROM centres WHERE centreId = 'CEN-VOL'");
 db_exec("DELETE FROM volunteer_needs WHERE centreId = 'CEN-VOL'");
+db_exec("DELETE FROM item_needs WHERE centreId = 'CEN-VOL'");
 
 // ── Service ledger + milestone certificates ──
 $volProfile = backend_dispatch('public.summerProfile', ['token' => $volTok])['profile'];

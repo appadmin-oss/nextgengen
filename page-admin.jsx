@@ -3484,14 +3484,62 @@ function AdminStatusPages() {
 /* Volunteer needs editor — the admin sets target headcount per centre × role
    (and optionally per faculty), with live filled counts so they never edit
    blind. Feeds the public /v-status fulfilment board. */
+/* One editable material-need row: item name (fixed), received / needed counts,
+ * unit. Saves on blur; local state seeded from props so a reload refreshes it. */
+function ItemNeedRow({ it, busy, onSave, onRemove }) {
+  const [need, setNeed] = React.useState(String(it.needCount ?? 0));
+  const [filled, setFilled] = React.useState(String(it.filledCount ?? 0));
+  const needN = parseInt(need || "0", 10) || 0;
+  const filledN = parseInt(filled || "0", 10) || 0;
+  const gap = Math.max(0, needN - filledN);
+  const save = () => { if (needN !== (it.needCount ?? 0) || filledN !== (it.filledCount ?? 0)) onSave(it.item, need, filled, it.unit, it.note); };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <span style={{ fontSize: 13, fontWeight: 600, flex: "1 1 120px", minWidth: 100 }}>{it.item}{it.unit ? <span className="mono" style={{ fontSize: 10, color: "var(--ink-400)", marginLeft: 4 }}>{it.unit}</span> : null}</span>
+      <input className="admin-input" type="number" min="0" style={{ width: 62 }} value={filled} onChange={e => setFilled(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }} aria-label={"received " + it.item}/>
+      <span className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>/</span>
+      <input className="admin-input" type="number" min="0" style={{ width: 62 }} value={need} onChange={e => setNeed(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }} aria-label={"needed " + it.item}/>
+      <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)", minWidth: 54 }}>
+        {busy ? "saving…" : (needN > 0 ? (gap > 0 ? <b style={{ color: "#c0851a" }}>{gap} gap</b> : <b style={{ color: "#2f9e44" }}>met ✓</b>) : "—")}
+      </span>
+      <button className="btn btn-ghost btn-sm" onClick={() => onRemove(it.item)} title="Remove item" style={{ padding: "2px 8px" }}>✕</button>
+    </div>
+  );
+}
+
 function VolunteerNeedsEditor() {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [draft, setDraft] = React.useState({});
   const [saving, setSaving] = React.useState("");
   const [facOpen, setFacOpen] = React.useState(() => new Set());
+  const [itemOpen, setItemOpen] = React.useState(() => new Set());
+  const [newItem, setNewItem] = React.useState({});   // centreId -> {item, needCount, filledCount, unit}
+  const [itemBusy, setItemBusy] = React.useState("");
   const load = () => NGGApi.admin.volunteers.needsList().then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
+
+  const itemsByCentre = {};
+  (d ? (d.items || []) : []).forEach(it => { (itemsByCentre[it.centreId] = itemsByCentre[it.centreId] || []).push(it); });
+  const toggleItems = (cid) => setItemOpen(s => { const n = new Set(s); n.has(cid) ? n.delete(cid) : n.add(cid); return n; });
+  const saveItem = async (centreId, item, needCount, filledCount, unit, note) => {
+    const nm = String(item || "").trim();
+    if (!nm) { toast.error("Give the item a name."); return; }
+    setItemBusy(centreId + "|" + nm);
+    try { await NGGApi.admin.volunteers.itemUpsert(centreId, nm, Math.max(0, parseInt(needCount || "0", 10) || 0), Math.max(0, parseInt(filledCount || "0", 10) || 0), unit || "", note || ""); }
+    catch (e) { toast.error(e.code || e.message); }
+    setItemBusy(""); load();
+  };
+  const addItem = async (centreId) => {
+    const n = newItem[centreId] || {};
+    if (!String(n.item || "").trim()) { toast.error("Give the item a name."); return; }
+    await saveItem(centreId, n.item, n.needCount, n.filledCount, n.unit, "");
+    setNewItem(s => ({ ...s, [centreId]: {} }));
+  };
+  const removeItem = async (centreId, item) => {
+    if (!(await dialog.confirm({ title: "Remove \"" + item + "\"?", body: "This item need stops showing on the board.", cta: "Remove" }))) return;
+    try { await NGGApi.admin.volunteers.itemDelete(centreId, item); load(); } catch (e) { toast.error(e.code || e.message); }
+  };
 
   const needMap = {};
   (d ? d.needs : []).forEach(n => { needMap[n.centreId + "|" + n.role + "|" + (n.faculty || "")] = n.needCount; });
@@ -3535,7 +3583,7 @@ function VolunteerNeedsEditor() {
 
   return (
     <div>
-      <p className="admin-hint" style={{ marginTop: 0 }}>Set how many volunteers each centre needs per role. Live counts show how many have already signed up. These targets drive the public <b>/v-status</b> board. Optionally set finer per-faculty targets.</p>
+      <p className="admin-hint" style={{ marginTop: 0 }}>Set how many volunteers each centre needs per role (live counts show who's already signed up), and the <b>items</b> a centre needs — laptops, keyboards, chairs, data — with how many have come in. Both drive the public <b>/v-status</b> board. Optionally set finer per-faculty targets.</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
         {d.centres.map(c => (
           <div key={c.centreId} className="card" style={{ padding: 18, borderTop: "4px solid " + (c.color || "#5a3fb0") }}>
@@ -3569,6 +3617,30 @@ function VolunteerNeedsEditor() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+            <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => toggleItems(c.centreId)} aria-expanded={itemOpen.has(c.centreId)}>
+              {itemOpen.has(c.centreId) ? "Hide items needed ▴" : "Items needed" + ((itemsByCentre[c.centreId] || []).length ? " · " + itemsByCentre[c.centreId].length : "") + " ▾"}
+            </button>
+            {itemOpen.has(c.centreId) && (
+              <div style={{ marginTop: 12, borderTop: "1px solid var(--line-cool-soft,#eef0f4)", paddingTop: 12 }}>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>Materials · received / needed</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {(itemsByCentre[c.centreId] || []).map(it => (
+                    <ItemNeedRow key={it.item} it={it} busy={itemBusy === c.centreId + "|" + it.item}
+                      onSave={(item, need, filled, unit, note) => saveItem(c.centreId, item, need, filled, unit, note)}
+                      onRemove={(item) => removeItem(c.centreId, item)}/>
+                  ))}
+                  {!(itemsByCentre[c.centreId] || []).length && <div className="admin-cell-sub" style={{ fontSize: 12 }}>No items yet — add one below (e.g. Laptops, Keyboards, Chairs, Data).</div>}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
+                  <input className="admin-input" placeholder="Item (e.g. Laptops)" value={(newItem[c.centreId] || {}).item || ""} onChange={e => setNewItem(s => ({ ...s, [c.centreId]: { ...s[c.centreId], item: e.target.value } }))} style={{ flex: "1 1 130px", minWidth: 110 }}/>
+                  <input className="admin-input" type="number" min="0" placeholder="have" value={(newItem[c.centreId] || {}).filledCount || ""} onChange={e => setNewItem(s => ({ ...s, [c.centreId]: { ...s[c.centreId], filledCount: e.target.value } }))} style={{ width: 58 }} aria-label="received"/>
+                  <span className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>/</span>
+                  <input className="admin-input" type="number" min="0" placeholder="need" value={(newItem[c.centreId] || {}).needCount || ""} onChange={e => setNewItem(s => ({ ...s, [c.centreId]: { ...s[c.centreId], needCount: e.target.value } }))} style={{ width: 58 }} aria-label="needed"/>
+                  <input className="admin-input" placeholder="unit" value={(newItem[c.centreId] || {}).unit || ""} onChange={e => setNewItem(s => ({ ...s, [c.centreId]: { ...s[c.centreId], unit: e.target.value } }))} style={{ width: 66 }} aria-label="unit"/>
+                  <button className="btn btn-primary btn-sm" onClick={() => addItem(c.centreId)}>+ Add</button>
+                </div>
               </div>
             )}
           </div>

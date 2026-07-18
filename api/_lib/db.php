@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 42;
+const NGG_SCHEMA_TARGET = 43;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1127,6 +1127,26 @@ function db_migrate(PDO $db): void {
             ALTER TABLE centres ADD COLUMN meetDays TEXT DEFAULT '';
             ALTER TABLE centres ADD COLUMN meetTime TEXT DEFAULT '';
             ALTER TABLE centres ADD COLUMN notes TEXT DEFAULT '';
+        ",
+
+        // Material (item) needs — a centre's non-headcount needs: laptops,
+        // instruments, chairs, data, etc. Unlike volunteer needs (filled from
+        // the live roster), items have no roster, so the received count is
+        // tracked directly. Powers the /v-status materials-needed section.
+        43 => "
+            CREATE TABLE item_needs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              centreId TEXT NOT NULL,
+              item TEXT NOT NULL,
+              needCount INTEGER DEFAULT 0,
+              filledCount INTEGER DEFAULT 0,
+              unit TEXT DEFAULT '',
+              note TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT (datetime('now')),
+              updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_ineeds_unique ON item_needs(centreId, item);
+            CREATE INDEX idx_ineeds_centre ON item_needs(centreId);
         ",
     ];
 

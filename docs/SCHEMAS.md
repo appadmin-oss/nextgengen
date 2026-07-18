@@ -439,5 +439,26 @@ These live in SQLite/MySQL only (never in the legacy Sheet). Managed via
 
 UNIQUE(`centreId`,`role`,`faculty`). Read by `public.volunteer.status` (the
 public `/v-status` board) and edited via `admin.volunteers.needs.*`. The
-faculty **catalogue** is Form-Builder-driven (volunteer form, `faculty` field),
-mirroring how the instructor `course` catalogue already works.
+faculty **catalogue** is now the admin-editable `academy_catalogue` setting
+(Registration → Academy catalogue), a faculty→courses map that also drives the
+volunteer form's per-faculty instructor course picker (`coursesByFaculty` in
+`public.volunteer.context`); the Form-Builder `faculty`/`course` fields stay
+authoritative for their own flat lists.
+
+### `item_needs` (migration 43) — material (non-headcount) needs
+| field         | type      | notes |
+|---------------|-----------|-------|
+| `id`          | int PK    | |
+| `centreId`    | text      | FK → `centres.centreId` |
+| `item`        | text      | e.g. Laptops, Keyboards, Chairs, Data |
+| `needCount`   | int       | How many the centre needs |
+| `filledCount` | int       | How many have come in (tracked directly — no roster) |
+| `unit`        | text      | Optional (units, GB, sets, …) |
+| `note`        | text      | Optional public note |
+| `updatedAt`   | timestamp | |
+| `updatedBy`   | text      | admin memberId |
+
+UNIQUE(`centreId`,`item`). Edited via `admin.items.needs.upsert|delete` in the
+Volunteer → Needs editor; surfaced per-centre and as `itemNeed/itemFilled/itemGap`
+KPIs on the `/v-status` board. Unlike volunteer needs (filled from the live
+roster), items have no roster so the received count is entered by an admin.

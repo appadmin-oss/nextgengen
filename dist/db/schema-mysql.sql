@@ -736,3 +736,21 @@ ALTER TABLE centres ADD COLUMN meetTime VARCHAR(60) DEFAULT '';
 ALTER TABLE centres ADD COLUMN notes VARCHAR(400) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (42) ON DUPLICATE KEY UPDATE version = version;
+
+-- 43: material (item) needs — a centre's non-headcount needs (laptops, chairs,
+-- instruments, data, …). Received count is tracked directly (no roster).
+CREATE TABLE IF NOT EXISTS item_needs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  centreId VARCHAR(48) NOT NULL,
+  item VARCHAR(80) NOT NULL,
+  needCount INT DEFAULT 0,
+  filledCount INT DEFAULT 0,
+  unit VARCHAR(24) DEFAULT '',
+  note VARCHAR(240) DEFAULT '',
+  updatedAt VARCHAR(40),
+  updatedBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY idx_ineeds_unique (centreId, item),
+  INDEX idx_ineeds_centre (centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (43) ON DUPLICATE KEY UPDATE version = version;

@@ -20,6 +20,8 @@ if ($method === 'GET') {
     elseif ($action === 'delete')   $res = gs_call('admin.volunteers.delete', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'need_upsert') $res = gs_call('admin.volunteers.needs.upsert', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'role' => $b['role'] ?? '', 'faculty' => $b['faculty'] ?? '', 'needCount' => $b['needCount'] ?? 0, 'ip' => $ip]);
     elseif ($action === 'need_delete') $res = gs_call('admin.volunteers.needs.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'role' => $b['role'] ?? '', 'faculty' => $b['faculty'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'item_upsert') $res = gs_call('admin.items.needs.upsert', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'item' => $b['item'] ?? '', 'needCount' => $b['needCount'] ?? 0, 'filledCount' => $b['filledCount'] ?? 0, 'unit' => $b['unit'] ?? '', 'note' => $b['note'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'item_delete') $res = gs_call('admin.items.needs.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'item' => $b['item'] ?? '', 'ip' => $ip]);
     else json_error('unknown_action', 400);
 } else {
     json_error('method_not_allowed', 405);

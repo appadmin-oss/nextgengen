@@ -700,6 +700,7 @@ function volunteer_status_compute(): array {
         else { $facNeed[$cid . '|' . $r . '|' . $f] = (int)$n['needCount']; $facNeed['sum|' . $cid . '|' . $r] = ($facNeed['sum|' . $cid . '|' . $r] ?? 0) + (int)$n['needCount']; }
     }
     $filled = volunteer_filled_index();
+    $items = item_needs_compute();
 
     $byCentre = []; $tNeed = 0; $tFilled = 0;
     foreach ($centres as $c) {
@@ -734,6 +735,7 @@ function volunteer_status_compute(): array {
             'need' => $cNeed, 'filled' => $cFilled, 'gap' => max(0, $cNeed - $cFilled),
             'fulfillmentRate' => $rate, 'tone' => volunteer_tone($rate),
             'byRole' => $byRole, 'byFaculty' => $facs, 'byCourse' => $courses,
+            'items' => $items['byCentre'][$name] ?? [],
         ] + centre_public_meta($c);
         $tNeed += $cNeed; $tFilled += $cFilled;
     }
@@ -746,6 +748,7 @@ function volunteer_status_compute(): array {
             'centres' => count($centres),
             'totalNeed' => $tNeed, 'totalFilled' => $tFilled, 'totalGap' => max(0, $tNeed - $tFilled),
             'fulfillmentRate' => $globalRate, 'tone' => volunteer_tone($globalRate),
+            'itemNeed' => $items['totalNeed'], 'itemFilled' => $items['totalFilled'], 'itemGap' => $items['totalGap'],
         ],
         'byCentre' => $byCentre,
     ];
@@ -812,7 +815,9 @@ function admin_volunteer_needs_list(array $p): array {
         foreach (VOL_ROLES as $r) $filledOut['role'][$cid . '|' . $r] = $filled['role'][$name . '|' . $r] ?? 0;
         foreach (volunteer_faculty_options() as $f) { $v = $filled['faculty'][$name . '|' . $f] ?? 0; if ($v) $filledOut['faculty'][$cid . '|' . $f] = $v; }
     }
-    return ['ok' => true, 'centres' => $centres, 'roles' => VOL_ROLES, 'faculties' => volunteer_faculty_options(), 'needs' => $needs, 'filled' => $filledOut];
+    // Item (material) needs, grouped per centre for the editor.
+    $items = db_all('SELECT centreId, item, needCount, filledCount, unit, note, updatedAt FROM item_needs ORDER BY centreId, item');
+    return ['ok' => true, 'centres' => $centres, 'roles' => VOL_ROLES, 'faculties' => volunteer_faculty_options(), 'needs' => $needs, 'filled' => $filledOut, 'items' => $items];
 }
 
 function admin_volunteer_need_upsert(array $p): array {
@@ -839,5 +844,59 @@ function admin_volunteer_need_delete(array $p): array {
     $n = db_exec('DELETE FROM volunteer_needs WHERE centreId = ? AND role = ? AND faculty = ?', [$centreId, $role, $faculty]);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('volunteer.need.delete', $g['requester']['memberId'], $centreId, ['role' => $role, 'faculty' => $faculty], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/* ── Material (item) needs ──────────────────────────────────────────────────
+   Non-headcount needs a centre is asking for — laptops, keyboards, chairs,
+   data bundles, etc. There's no roster to fill these from, so the received
+   count is tracked directly. Keyed by (centre, item); need/filled/unit/note. */
+
+/** Per-centre item-need rows + programme totals, keyed by centre NAME so the
+ *  board can attach them next to the volunteer figures. */
+function item_needs_compute(): array {
+    $rows = db_all('SELECT n.centreId, c.name AS centreName, n.item, n.needCount, n.filledCount, n.unit, n.note
+                    FROM item_needs n JOIN centres c ON c.centreId = n.centreId
+                    WHERE c.status = \'active\' ORDER BY c.name, n.item');
+    $byCentre = []; $tNeed = 0; $tFilled = 0;
+    foreach ($rows as $r) {
+        $name = (string)$r['centreName'];
+        $need = (int)$r['needCount']; $fl = (int)$r['filledCount'];
+        $tNeed += $need; $tFilled += $fl;
+        $byCentre[$name] = $byCentre[$name] ?? [];
+        $byCentre[$name][] = [
+            'item' => (string)$r['item'], 'need' => $need, 'filled' => $fl,
+            'gap' => max(0, $need - $fl), 'unit' => (string)$r['unit'], 'note' => (string)$r['note'],
+            'fulfillmentRate' => volunteer_rate($fl, $need), 'tone' => volunteer_tone(volunteer_rate($fl, $need)),
+        ];
+    }
+    return ['byCentre' => $byCentre, 'totalNeed' => $tNeed, 'totalFilled' => $tFilled, 'totalGap' => max(0, $tNeed - $tFilled)];
+}
+
+function admin_item_needs_upsert(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $centreId = trim((string)($p['centreId'] ?? ''));
+    $item = substr(trim((string)($p['item'] ?? '')), 0, 80);
+    if ($item === '') return ['ok' => false, 'error' => 'bad_item'];
+    if (!db_row('SELECT id FROM centres WHERE centreId = ? LIMIT 1', [$centreId])) return ['ok' => false, 'error' => 'invalid_centre'];
+    $need = max(0, min(999999, (int)($p['needCount'] ?? 0)));
+    $filled = max(0, min(999999, (int)($p['filledCount'] ?? 0)));
+    $unit = substr(trim((string)($p['unit'] ?? '')), 0, 24);
+    $note = substr(trim((string)($p['note'] ?? '')), 0, 240);
+    $existing = db_row('SELECT id FROM item_needs WHERE centreId = ? AND item = ? LIMIT 1', [$centreId, $item]);
+    $data = ['needCount' => $need, 'filledCount' => $filled, 'unit' => $unit, 'note' => $note, 'updatedAt' => now_iso(), 'updatedBy' => (string)$g['requester']['memberId']];
+    if ($existing) db_update('item_needs', $data, ['id' => (int)$existing['id']]);
+    else db_insert('item_needs', $data + ['centreId' => $centreId, 'item' => $item]);
+    audit('item.need.upsert', $g['requester']['memberId'], $centreId, ['item' => $item, 'need' => $need, 'filled' => $filled], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+function admin_item_needs_delete(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $centreId = trim((string)($p['centreId'] ?? ''));
+    $item = substr(trim((string)($p['item'] ?? '')), 0, 80);
+    $n = db_exec('DELETE FROM item_needs WHERE centreId = ? AND item = ?', [$centreId, $item]);
+    if (!$n) return ['ok' => false, 'error' => 'not_found'];
+    audit('item.need.delete', $g['requester']['memberId'], $centreId, ['item' => $item], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
