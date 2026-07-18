@@ -71,10 +71,78 @@ function admin_dashboard_overview(array $p): array {
     ]];
 }
 
+// ── Status-page management ───────────────────────────────────────────────────
+// Both public boards (/s-status attendance, /v-status volunteer) carry an admin-
+// editable editorial layer + a publish toggle, stored as one `status_pages`
+// setting. The public ops read this to render copy and to hide a board that's
+// been unpublished.
+function status_pages_defaults(): array {
+    return [
+        'attendance' => [
+            'published' => true,
+            'title' => 'Summer School',
+            'tagline' => 'A live, public view of attendance and participation across every centre.',
+            'transparencyTitle' => 'Numbers, not names.',
+            'transparencyBody' => "This board updates live and shows only aggregate figures — how many students attended, at which centres, and how participation is trending. A child's name, photo, or record never appears here. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy.",
+            'ctaLabel' => 'Apply for a place →',
+            'ctaPage' => 'join',
+        ],
+        'volunteer' => [
+            'published' => true,
+            'title' => 'Build the team.',
+            'tagline' => 'A live, public view of volunteer needs across every centre.',
+            'transparencyTitle' => 'Roles, not people.',
+            'transparencyBody' => "This board shows only how many volunteers each centre needs and how many have stepped up — by role, faculty and course. A volunteer's name, photo or contact detail never appears here.",
+            'ctaLabel' => 'Volunteer with us →',
+            'ctaPage' => 'volunteer',
+        ],
+    ];
+}
+
+/** Merge the stored config over the defaults (per board, per key). */
+function status_pages_config(): array {
+    $def = status_pages_defaults();
+    $stored = safe_json((string)(setting_raw('status_pages') ?? '')) ?: [];
+    foreach ($def as $board => $fields) {
+        if (!is_array($stored[$board] ?? null)) continue;
+        foreach ($fields as $k => $v) {
+            if (!array_key_exists($k, $stored[$board])) continue;
+            $def[$board][$k] = $k === 'published' ? (bool)$stored[$board][$k] : (string)$stored[$board][$k];
+        }
+    }
+    return $def;
+}
+
+function admin_status_pages_get(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    return ['ok' => true, 'statusPages' => status_pages_config()];
+}
+
+function admin_status_pages_set(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $in = is_array($p['data'] ?? null) ? $p['data'] : [];
+    $def = status_pages_defaults();
+    $out = status_pages_config(); // start from current (so a partial save is safe)
+    foreach ($def as $board => $fields) {
+        if (!is_array($in[$board] ?? null)) continue;
+        foreach ($fields as $k => $v) {
+            if (!array_key_exists($k, $in[$board])) continue;
+            if ($k === 'published') { $out[$board][$k] = !empty($in[$board][$k]); }
+            elseif ($k === 'ctaPage') { $out[$board][$k] = preg_replace('/[^a-z0-9-]/', '', strtolower((string)$in[$board][$k])) ?: $v; }
+            else { $out[$board][$k] = substr(trim((string)$in[$board][$k]), 0, 600); }
+        }
+    }
+    setting_set('status_pages', $out, (string)($g['requester']['memberId'] ?? ''));
+    audit('status.pages.set', (string)($g['requester']['memberId'] ?? ''), 'status_pages', ['attendance' => $out['attendance']['published'], 'volunteer' => $out['volunteer']['published']], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'statusPages' => $out];
+}
+
 // ── Public status board (no auth, PII-free aggregates only) ──────────────────
-// Powers the public /status transparency page. Deliberately exposes ONLY
+// Powers the public /s-status transparency page. Deliberately exposes ONLY
 // centre-level aggregate counts — never a child's name, photo or record.
 function public_status(array $p): array {
+    $page = status_pages_config()['attendance'];
+    if (empty($page['published'])) return ['ok' => true, 'status' => ['page' => $page, 'generatedAt' => now_iso()]];
     $one = fn($sql, $a = []) => (int)(db_row($sql, $a)['c'] ?? 0);
     $today = gmdate('Y-m-d');
     $since = gmdate('Y-m-d', time() - 13 * 86400);
@@ -99,7 +167,8 @@ function public_status(array $p): array {
     return ['ok' => true, 'status' => [
         'today' => $today,
         'generatedAt' => now_iso(),
-        'program' => ['name' => 'Summer School', 'year' => (int)gmdate('Y'), 'week' => $week],
+        'page' => $page,
+        'program' => ['name' => $page['title'] ?: 'Summer School', 'year' => (int)gmdate('Y'), 'week' => $week],
         'kpis' => [
             'centres'          => count($centres),
             'enrolled'         => $enrolledTotal,

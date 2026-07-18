@@ -278,6 +278,8 @@
       },
       overview:     () => request('/admin/overview.php'),
       dashboard:    () => request('/admin/dashboard.php'),
+      statusPages:  () => request('/admin/status-pages.php'),
+      statusPagesSet: (data) => request('/admin/status-pages.php', { body: { data } }),
       analytics:    (filters) => request('/admin/analytics.php' + qs(filters || {})),
       analyticsDrill: (metric, filters) => request('/admin/analytics.php', { body: { action: 'drilldown', metric, ...(filters || {}) } }),
       activityAdd:  (data) => request('/admin/analytics.php', { body: { action: 'activity.add', ...data } }),

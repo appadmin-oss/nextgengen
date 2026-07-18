@@ -704,9 +704,12 @@ function volunteer_status_compute(): array {
 
 /** Public, PII-free volunteer fulfilment board (powers /v-status). */
 function public_volunteer_status(array $p): array {
+    $page = status_pages_config()['volunteer'];
+    if (empty($page['published'])) return ['ok' => true, 'status' => ['page' => $page, 'generatedAt' => now_iso()]];
     $s = volunteer_status_compute();
     return ['ok' => true, 'status' => [
         'generatedAt' => now_iso(),
+        'page' => $page,
         'program' => ['name' => 'Next Generation Genius', 'year' => (int)gmdate('Y')],
         'kpis' => $s['kpis'],
         'byCentre' => $s['byCentre'],

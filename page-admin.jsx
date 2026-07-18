@@ -65,6 +65,7 @@ const ADMIN_SECTIONS = [
   { id: "broadcast",   group: "Content",  label: "Announce",     title: "Announcements",       icon: "📣", cap: "content" },
   { id: "forms",       group: "Content",  label: "Forms",        title: "Forms",               icon: "▤", cap: "content" },
   { id: "site",        group: "Content",  label: "Site content", title: "Site content",        icon: "◧", cap: "settings" },
+  { id: "status-pages",group: "Content",  label: "Status pages", title: "Public status pages",  icon: "◉", cap: "content" },
   { id: "newsletter",  group: "Inbox",    label: "Newsletter",   title: "Newsletter",          icon: "✧", cap: "inbox" },
   { id: "messages",    group: "Inbox",    label: "Messages",     title: "Messages",            icon: "✆", cap: "inbox" },
   { id: "access",      group: "System",   label: "Access & roles", title: "Access & roles",    icon: "⚿", cap: "rbac" },
@@ -139,6 +140,7 @@ function AdminPage({ setPage }) {
           {view === "settings" && <AdminSettings/>}
           {view === "forms" && <AdminForms/>}
           {view === "site" && <AdminSite/>}
+          {view === "status-pages" && <AdminStatusPages/>}
           {view === "sessions" && <AdminSessions/>}
           {view === "missions" && <AdminMissions/>}
           {view === "anchor" && <AdminAnchor/>}
@@ -3111,6 +3113,90 @@ function AdminApplications() {
 // ============================================================================
 // Volunteers — review desk + approved roster + safeguarding
 // ============================================================================
+
+/* Public status pages manager — publish/unpublish each board (/s-status,
+   /v-status) and edit its editorial copy. Backed by the `status_pages` setting;
+   the public boards read this live. */
+const STATUS_BOARDS = [
+  { key: "attendance", name: "Summer School attendance", route: "/s-status", desc: "Live per-centre attendance & participation — PII-free aggregates." },
+  { key: "volunteer", name: "Volunteer status", route: "/v-status", desc: "Live volunteer needs vs filled, by centre / role / faculty / course." },
+];
+const STATUS_FIELDS = [
+  ["title", "Headline title", "input", "The big hero heading."],
+  ["tagline", "Sub-line", "input", "The line under the heading."],
+  ["transparencyTitle", "Transparency heading", "input", ""],
+  ["transparencyBody", "Transparency body", "textarea", "The privacy/safeguarding explainer."],
+  ["ctaLabel", "Button label", "input", ""],
+  ["ctaPage", "Button target page", "input", "A page id, e.g. join, volunteer, home."],
+];
+function AdminStatusPages() {
+  const [cfg, setCfg] = React.useState(null);
+  const [orig, setOrig] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.admin.statusPages().then(r => { setCfg(r.statusPages); setOrig(JSON.stringify(r.statusPages)); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  const dirty = cfg && orig && JSON.stringify(cfg) !== orig;
+  const set = (board, key, val) => setCfg(c => ({ ...c, [board]: { ...c[board], [key]: val } }));
+  const save = async () => {
+    setBusy(true);
+    try { const r = await NGGApi.admin.statusPagesSet(cfg); setCfg(r.statusPages); setOrig(JSON.stringify(r.statusPages)); toast.success("Status pages updated."); }
+    catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(false); }
+  };
+
+  if (err) return <ErrorState title="Couldn't load status pages" code={err} onRetry={load}/>;
+  if (!cfg) return <div className="dash-spinner"/>;
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Public status pages</h2>
+        <div className="admin-section-actions">
+          <button className="btn btn-primary btn-sm" disabled={!dirty || busy} onClick={save}>{busy ? "Saving…" : dirty ? "Save changes" : "Saved"}</button>
+        </div>
+      </div>
+      <p className="admin-hint" style={{ marginTop: 0 }}>Publish or hide each live board, and edit the copy visitors see. Changes go live immediately — the boards read this on their next refresh. Numbers stay aggregate-only and PII-free; you control the wrapper, not the data.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(360px,1fr))", gap: 18 }}>
+        {STATUS_BOARDS.map(b => {
+          const c = cfg[b.key] || {};
+          const on = !!c.published;
+          return (
+            <div key={b.key} className="card" style={{ padding: 20, borderTop: "4px solid " + (b.key === "attendance" ? "#16a34a" : "#5a3fb0") }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div>
+                  <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 17 }}>{b.name}</div>
+                  <div className="mono" style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 2 }}>{b.route}</div>
+                  <p style={{ fontSize: 13, color: "var(--ink-500)", margin: "8px 0 0", maxWidth: 320 }}>{b.desc}</p>
+                </div>
+                <a className="btn btn-ghost btn-sm" href={b.route} target="_blank" rel="noreferrer">View live ↗</a>
+              </div>
+              <button type="button" onClick={() => set(b.key, "published", !on)}
+                style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 6px", padding: "10px 12px", borderRadius: 12, width: "100%", cursor: "pointer",
+                  border: "1px solid " + (on ? "rgba(22,163,74,.4)" : "var(--line-cool,#e5e8ee)"), background: on ? "rgba(22,163,74,.08)" : "var(--cream-50,#faf7ef)" }}>
+                <span style={{ width: 40, height: 22, borderRadius: 99, background: on ? "#16a34a" : "#c4cad8", position: "relative", flex: "none", transition: "background .15s" }}>
+                  <span style={{ position: "absolute", top: 2, left: on ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .15s" }}/>
+                </span>
+                <span style={{ fontWeight: 700, fontSize: 14, color: on ? "#15803d" : "var(--ink-500)" }}>{on ? "Published — live to the public" : "Unpublished — hidden with an “offline” notice"}</span>
+              </button>
+              <div style={{ display: "grid", gap: 12, marginTop: 12, opacity: on ? 1 : 0.6 }}>
+                {STATUS_FIELDS.map(([key, label, type, hint]) => (
+                  <div key={key} className="field">
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>{label}</label>
+                    {type === "textarea"
+                      ? <textarea className="admin-input" rows={3} value={c[key] || ""} onChange={e => set(b.key, key, e.target.value)} style={{ resize: "vertical" }}/>
+                      : <input className="admin-input" value={c[key] || ""} onChange={e => set(b.key, key, e.target.value)}/>}
+                    {hint && <div style={{ fontSize: 11, color: "var(--ink-400)", marginTop: 3 }}>{hint}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /* Volunteer needs editor — the admin sets target headcount per centre × role
    (and optionally per faculty), with live filled counts so they never edit

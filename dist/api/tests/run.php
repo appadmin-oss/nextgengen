@@ -1703,6 +1703,28 @@ chk('public status: no-auth, aggregates present, no PII', (function () {
     return $s['kpis']['presentToday'] >= 1; // SUM-R-1 checked in today (dashboard test)
 })());
 
+// ── Status-page management (publish toggle + editorial copy) ──
+chk('status pages get returns both boards with defaults', (function () {
+    $r = backend_dispatch('admin.status.pages.get', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && $r['statusPages']['attendance']['published'] === true && isset($r['statusPages']['volunteer']['tagline']);
+})());
+chk('status pages management gated from non-content roles', backend_dispatch('admin.status.pages.get', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+chk('status pages set edits copy + publish toggle', (function () {
+    $r = backend_dispatch('admin.status.pages.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['attendance' => ['title' => 'Impact Live', 'published' => true], 'volunteer' => ['published' => false]]]);
+    if (empty($r['ok'])) return false;
+    return $r['statusPages']['attendance']['title'] === 'Impact Live' && $r['statusPages']['volunteer']['published'] === false;
+})());
+chk('public attendance board carries the edited copy', backend_dispatch('public.status', [])['status']['page']['title'] === 'Impact Live');
+chk('unpublished volunteer board hides its data', (function () {
+    $r = backend_dispatch('public.volunteer.status', []);
+    return !empty($r['ok']) && ($r['status']['page']['published'] ?? null) === false && !isset($r['status']['byCentre']);
+})());
+chk('republishing restores the volunteer board data', (function () {
+    backend_dispatch('admin.status.pages.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['volunteer' => ['published' => true]]]);
+    $r = backend_dispatch('public.volunteer.status', []);
+    return isset($r['status']['byCentre']) && ($r['status']['page']['published'] ?? null) === true;
+})());
+
 // ── Mission proof-review queue (M13: verify was built but unreachable) ────────
 $pmid = backend_dispatch('admin.missions.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['week' => 2, 'order' => 1, 'theme' => 'Proof', 'title' => 'Show your work', 'prompt' => 'Upload a photo', 'type' => 'Do', 'proof' => 'photo', 'xp' => 90, 'isActive' => true]])['missionId'];
 chk('proof mission submit ⇒ submitted (not auto-verified)', backend_dispatch('anchor.mission.submit', ['memberId' => 'NGG-2025-0001', 'missionId' => $pmid, 'proofUrl' => 'https://example.org/p.jpg'])['status'] === 'submitted');

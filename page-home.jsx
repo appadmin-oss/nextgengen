@@ -744,6 +744,19 @@ function StatusPage({ setPage }) {
   const trend = (d && d.trend) || [];
   const maxTrend = Math.max(1, ...trend.map(t => t.present || 0));
   const prog = (d && d.program) || {};
+  const page = (d && d.page) || {};
+  if (d && d.page && d.page.published === false) return (
+    <div className="page" data-screen-label="Live status">
+      <section className="section" style={{ padding: "120px 0", textAlign: "center" }}>
+        <div className="container" style={{ maxWidth: 560 }}>
+          <div className="eyebrow">LIVE STATUS</div>
+          <h1 className="display" style={{ fontSize: "clamp(32px,5vw,56px)", margin: "12px 0 10px" }}>This board is offline.</h1>
+          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>The live attendance board isn't published right now. Check back soon.</p>
+          <button className="btn btn-primary mt-24" onClick={() => setPage && setPage("home")}>Back to home →</button>
+        </div>
+      </section>
+    </div>
+  );
 
   const kpiCard = (icon, n, label, tone) => (
     <div className="status-kpi" style={{ background: "var(--paper, #fff)", border: "1px solid rgba(12,20,50,0.08)", borderRadius: 16, padding: "20px 20px 18px", boxShadow: "0 1px 0 rgba(12,20,50,0.03)" }}>
@@ -764,7 +777,7 @@ function StatusPage({ setPage }) {
           </div>
           <h1 className="display" style={{ fontSize: "clamp(38px,6vw,72px)", margin: "18px 0 6px", lineHeight: 0.98 }}>{prog.name || "Summer School"} {prog.year || ""}</h1>
           <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 16, margin: 0 }}>
-            {prog.week ? "Week " + prog.week + " · " : ""}A live, public view of attendance and participation across every centre.
+            {prog.week ? "Week " + prog.week + " · " : ""}{page.tagline || "A live, public view of attendance and participation across every centre."}
             {d ? <span style={{ marginLeft: 10, opacity: 0.7 }}>Updated {relAgo(d.generatedAt)}</span> : null}
           </p>
           {err && <p style={{ color: "#ffb4b4", marginTop: 16 }}>Couldn't load the board — <button onClick={load} style={{ background: "none", border: "none", color: "#fff", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</p>}
@@ -851,12 +864,12 @@ function StatusPage({ setPage }) {
           <section className="section" style={{ background: "var(--navy-900)", color: "#fff", paddingTop: 44, paddingBottom: 52 }}>
             <div className="container" style={{ maxWidth: 760 }}>
               <span className="chip chip-on-dark"><span className="dot dot-lime"/> TRANSPARENCY</span>
-              <h2 className="display" style={{ fontSize: "clamp(26px,3.5vw,40px)", margin: "12px 0 10px", color: "#fff" }}>Numbers, not names.</h2>
+              <h2 className="display" style={{ fontSize: "clamp(26px,3.5vw,40px)", margin: "12px 0 10px", color: "#fff" }}>{page.transparencyTitle || "Numbers, not names."}</h2>
               <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 15.5, lineHeight: 1.7, margin: "0 0 20px" }}>
-                This board updates live and shows only aggregate figures — how many students attended, at which centres, and how participation is trending. A child's name, photo, or record <b>never</b> appears here. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy.
+                {page.transparencyBody || "This board updates live and shows only aggregate figures — how many students attended, at which centres, and how participation is trending. A child's name, photo, or record never appears here. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy."}
               </p>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <button className="btn btn-primary" onClick={() => setPage && setPage("join")}>Apply for a place →</button>
+                <button className="btn btn-primary" onClick={() => setPage && setPage(page.ctaPage || "join")}>{page.ctaLabel || "Apply for a place →"}</button>
                 <button className="btn btn-ghost btn-on-dark" onClick={() => setPage && setPage("home")}>Back to home</button>
               </div>
               <p className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 22 }}>Auto-refreshes every 45s · {d ? "last updated " + relAgo(d.generatedAt) : ""}</p>
@@ -902,7 +915,20 @@ function VolunteerStatusPage({ setPage }) {
   const k = (d && d.kpis) || {};
   const centres = (d && d.byCentre) || [];
   const prog = (d && d.program) || {};
+  const page = (d && d.page) || {};
   const detail = open ? centres.find(c => c.centreId === open) : null;
+  if (d && d.page && d.page.published === false) return (
+    <div className="page" data-screen-label="Volunteer status">
+      <section className="section" style={{ padding: "120px 0", textAlign: "center" }}>
+        <div className="container" style={{ maxWidth: 560 }}>
+          <div className="eyebrow">VOLUNTEER STATUS</div>
+          <h1 className="display" style={{ fontSize: "clamp(32px,5vw,56px)", margin: "12px 0 10px" }}>This board is offline.</h1>
+          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>The live volunteer board isn't published right now. Want to help? You can still register.</p>
+          <button className="btn btn-primary mt-24" onClick={() => setPage && setPage("volunteer")}>Volunteer with us →</button>
+        </div>
+      </section>
+    </div>
+  );
 
   const kpiCard = (icon, n, label, tone, suffix) => (
     <div style={{ background: "var(--paper,#fff)", border: "1px solid rgba(12,20,50,0.08)", borderRadius: 16, padding: "20px 20px 18px", boxShadow: "0 1px 0 rgba(12,20,50,0.03)" }}>
@@ -922,9 +948,9 @@ function VolunteerStatusPage({ setPage }) {
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#d0ff3a", animation: "volpulse 1.8s infinite" }}/>
             <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#e8ffb0" }}>LIVE · VOLUNTEER STATUS</span>
           </div>
-          <h1 className="display" style={{ fontSize: "clamp(38px,6vw,72px)", margin: "18px 0 6px", lineHeight: 0.98 }}>Build the team.</h1>
+          <h1 className="display" style={{ fontSize: "clamp(38px,6vw,72px)", margin: "18px 0 6px", lineHeight: 0.98 }}>{page.title || "Build the team."}</h1>
           <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 16, margin: 0 }}>
-            A live, public view of volunteer needs across every centre.
+            {page.tagline || "A live, public view of volunteer needs across every centre."}
             {d ? <span style={{ marginLeft: 10, opacity: 0.7 }}>Updated {relAgo(d.generatedAt)}</span> : null}
           </p>
           {err && <p style={{ color: "#ffb4b4", marginTop: 16 }}>Couldn't load the board — <button onClick={load} style={{ background: "none", border: "none", color: "#fff", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</p>}
@@ -942,7 +968,7 @@ function VolunteerStatusPage({ setPage }) {
           )}
           {d && !err && (
             <div style={{ marginTop: 24 }}>
-              <button className="btn btn-gold btn-lg" onClick={() => setPage && setPage("volunteer")}>Volunteer with us →</button>
+              <button className="btn btn-gold btn-lg" onClick={() => setPage && setPage(page.ctaPage || "volunteer")}>{page.ctaLabel || "Volunteer with us →"}</button>
             </div>
           )}
         </div>

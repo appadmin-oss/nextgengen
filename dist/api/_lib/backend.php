@@ -212,6 +212,8 @@ function backend_dispatch(string $op, array $args = []): array {
             // Public (cached by PHP)
             'public.stats'            => 'public_stats',
             'public.status'           => 'public_status',
+            'admin.status.pages.get'  => 'admin_status_pages_get',
+            'admin.status.pages.set'  => 'admin_status_pages_set',
             'public.leaderboard'      => 'public_leaderboard',
             'public.events'           => 'public_events',
             'public.posts'            => 'public_posts',
