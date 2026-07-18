@@ -711,12 +711,41 @@ function public_volunteer_status(array $p): array {
     // Admin can limit which centres appear (empty = all). KPIs stay programme-wide.
     $only = is_array($page['centres'] ?? null) ? $page['centres'] : [];
     $byCentre = $only ? array_values(array_filter($s['byCentre'], fn($c) => in_array((string)$c['name'], $only, true))) : $s['byCentre'];
+
+    // Public volunteer directory — shown by HANDLE. A volunteer's face and first
+    // name appear ONLY when they granted the site-visibility consent; everyone
+    // else shows an anonymous handle and a role initial. Never a surname, email
+    // or phone.
+    $colorByCentre = []; foreach ($byCentre as $c) $colorByCentre[(string)$c['name']] = (string)$c['color'];
+    $directory = [];
+    foreach (db_all("SELECT volunteerId, fullName, firstName, lastName, role, centre, faculty, courses, photoUrl, visibilityConsent, createdAt FROM volunteers WHERE status = 'active' ORDER BY id") as $v) {
+        if ($only && !in_array((string)$v['centre'], $only, true)) continue;
+        $consent = (int)($v['visibilityConsent'] ?? 0) === 1;
+        $first = trim((string)($v['firstName'] ?? '')); if ($first === '') $first = explode(' ', (string)$v['fullName'])[0] ?? 'Volunteer';
+        $lastInit = strtolower(substr(trim((string)($v['lastName'] ?? '')), 0, 1));
+        $handle = $consent
+            ? ('@' . strtolower(preg_replace('/[^a-z]/i', '', $first)) . ($lastInit ? '.' . $lastInit : ''))
+            : ('@vol-' . substr(md5((string)$v['volunteerId']), 0, 4));
+        $courses = json_decode((string)($v['courses'] ?? ''), true) ?: [];
+        $wk = 1; if (!empty($v['createdAt'])) { $days = (int)floor((time() - strtotime((string)$v['createdAt'])) / 86400); $wk = max(1, (int)floor($days / 7) + 1); }
+        $directory[] = [
+            'handle' => $handle,
+            'initial' => strtoupper(substr($consent ? $first : (string)$v['role'], 0, 1)),
+            'role' => (string)$v['role'], 'centre' => (string)$v['centre'], 'color' => $colorByCentre[(string)$v['centre']] ?? '#7c4dff',
+            'faculty' => (string)($v['faculty'] ?? ''), 'course' => (string)($courses[0] ?? ''),
+            'face' => $consent ? (string)($v['photoUrl'] ?? '') : '',
+            'sessions' => (int)(db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = ?", [(string)$v['volunteerId']])['c'] ?? 0),
+            'sinceWk' => $wk,
+        ];
+    }
+
     return ['ok' => true, 'status' => [
         'generatedAt' => now_iso(),
         'page' => $page,
         'program' => ['name' => 'Next Generation Genius', 'year' => (int)gmdate('Y')],
         'kpis' => $s['kpis'],
         'byCentre' => $byCentre,
+        'directory' => $directory,
     ]];
 }
 

@@ -1308,37 +1308,45 @@ function LbRow({ m }) {
    ============================================================================ */
 function volTone(r) { return r >= 100 ? "#2f9e44" : r >= 60 ? "#e8a92b" : "#e03131"; }
 function volLabel(r) { return r >= 100 ? "Fully staffed" : r >= 60 ? "Needs volunteers" : "Urgent need"; }
-const VOL_ROLE_META = { admin: { label: "Admin / Ops", icon: "🗂" }, mentor: { label: "Mentor", icon: "🧭" }, instructor: { label: "Instructor", icon: "🎓" } };
+const VS_ROLES = ["admin", "mentor", "instructor"];
+const VS_ROLE_META = {
+  admin: { label: "Admin / Ops", icon: "ph-clipboard-text", color: "#3b5bdb", tintBg: "rgba(59,91,219,0.12)", blurb: "Front desk, logistics" },
+  mentor: { label: "Mentor", icon: "ph-compass", color: "#7c4dff", tintBg: "rgba(124,77,255,0.13)", blurb: "Guides & role models" },
+  instructor: { label: "Instructor", icon: "ph-chalkboard-teacher", color: "#a07400", tintBg: "rgba(160,116,0,0.13)", blurb: "Teach a course" },
+};
+const VS_FAC_PALETTE = ["#2f9e44", "#6a3fc0", "#3b5bdb", "#0e7c8c", "#a07400", "#e8654a", "#17a2b8"];
+function vsFacColor(f) { let h = 0; for (let i = 0; i < (f || "").length; i++) h = (h * 31 + f.charCodeAt(i)) >>> 0; return VS_FAC_PALETTE[h % VS_FAC_PALETTE.length]; }
+function vsJoin(arr) { return arr.length <= 1 ? (arr[0] || "") : arr.length === 2 ? arr[0] + " & " + arr[1] : arr.slice(0, -1).join(", ") + " & " + arr[arr.length - 1]; }
 
 function VolunteerStatusPage({ setPage, previewConfig }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
-  const [open, setOpen] = React.useState(null); // centreId of the open detail
   const [, setTick] = React.useState(0);
-  const load = React.useCallback(() => {
-    NGGApi.public.volunteerStatus().then(r => { setD(r.status || r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  const [t, setT] = React.useState(1);
+  const [view, setView] = React.useState("overview");
+  const [openCentre, setOpenCentre] = React.useState(null);
+  const [sortKey, setSortKey] = React.useState("gap");
+  const [roleFilter, setRoleFilter] = React.useState("All");
+  const [volRole, setVolRole] = React.useState("All");
+  const [volCentre, setVolCentre] = React.useState("All");
+  const [updatedAt, setUpdatedAt] = React.useState(Date.now());
+  const animRef = React.useRef(null);
+
+  const startCount = React.useCallback(() => {
+    clearInterval(animRef.current); const t0 = Date.now();
+    animRef.current = setInterval(() => { const p = Math.min(1, (Date.now() - t0) / 900); setT(1 - Math.pow(1 - p, 3)); if (p >= 1) clearInterval(animRef.current); }, 40);
   }, []);
+  const load = React.useCallback(() => {
+    NGGApi.public.volunteerStatus().then(r => { setD(r.status || r); setErr(""); setUpdatedAt(Date.now()); startCount(); }).catch(e => setErr(e.code || e.message));
+  }, [startCount]);
   React.useEffect(() => {
     load();
     const poll = setInterval(() => { if (!document.hidden) load(); }, 45000);
-    const clock = setInterval(() => setTick(t => t + 1), 1000);
-    return () => { clearInterval(poll); clearInterval(clock); };
+    const clock = setInterval(() => setTick(x => x + 1), 1000);
+    return () => { clearInterval(poll); clearInterval(clock); clearInterval(animRef.current); };
   }, [load]);
-  React.useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => { if (e.key === "Escape") setOpen(null); };
-    document.addEventListener("keydown", onKey); return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
 
-  const k = (d && d.kpis) || {};
-  const centres = (d && d.byCentre) || [];
-  const prog = (d && d.program) || {};
   const page = previewConfig || (d && d.page) || {};
-  const sec = page.sections || {};
-  const kpiOn = page.kpis || {};
-  const accent = page.accent || "#d0ff3a";
-  const banner = page.banner || {};
-  const detail = open ? centres.find(c => c.centreId === open) : null;
   if (!previewConfig && d && d.page && d.page.published === false) return (
     <div className="page" data-screen-label="Volunteer status">
       <section className="section" style={{ padding: "120px 0", textAlign: "center" }}>
@@ -1352,203 +1360,419 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
     </div>
   );
 
-  const kpiCard = (icon, n, label, tone, suffix) => (
-    <div style={{ background: "var(--paper,#fff)", border: "1px solid rgba(12,20,50,0.08)", borderRadius: 16, padding: "20px 20px 18px", boxShadow: "0 1px 0 rgba(12,20,50,0.03)" }}>
-      <div style={{ fontSize: 20, marginBottom: 10 }} aria-hidden="true">{icon}</div>
-      <div className="display" style={{ fontSize: 36, lineHeight: 1, color: tone || "var(--navy-900)", fontWeight: 800 }}>{typeof n === "number" ? <CountUp to={n}/> : n}{suffix || ""}</div>
-      <div className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-500)", marginTop: 8 }}>{label}</div>
-    </div>
-  );
+  const accent = page.accent || "#d0ff3a";
+  const banner = page.banner || {};
+  const ci = (n) => Math.round((n || 0) * t);
+  const k = (d && d.kpis) || {};
+  const byCentre = (d && d.byCentre) || [];
+  const directory = (d && d.directory) || [];
+  const rate = k.fulfillmentRate || 0;
+  const totNeed = k.totalNeed || 0, totFilled = k.totalFilled || 0, totGap = k.totalGap || 0;
+
+  const secAgo = Math.max(0, Math.floor((Date.now() - updatedAt) / 1000));
+  const updatedAgo = secAgo < 60 ? secAgo + "s ago" : Math.floor(secAgo / 60) + "m ago";
+
+  const perRoleTot = { admin: [0, 0], mentor: [0, 0], instructor: [0, 0] };
+  byCentre.forEach(c => (c.byRole || []).forEach(r => { if (perRoleTot[r.role]) { perRoleTot[r.role][0] += r.need; perRoleTot[r.role][1] += r.filled; } }));
+
+  const tabBase = { fontFamily: "'Inter',sans-serif", fontSize: 14.5, fontWeight: 600, padding: "14px 6px", border: "none", background: "none", cursor: "pointer", borderBottom: "2.5px solid transparent", marginBottom: -1, display: "inline-flex", alignItems: "center", marginRight: 6 };
+  const tabStyle = (kk) => ({ ...tabBase, color: view === kk ? "#fff" : "rgba(255,255,255,0.55)", borderBottomColor: view === kk ? "#d0ff3a" : "transparent" });
+  const tabs = [["overview", "Overview", "ph-chart-bar"], ["centres", "Centres", "ph-buildings"], ["volunteers", "Volunteers", "ph-identification-card"], ["roles", "Roles", "ph-users-three"]];
+  const heroSub = view === "overview" ? (page.tagline || "A live, public view of volunteer needs across every centre — by role, faculty and course.")
+    : view === "centres" ? "Six centres, one team. Explore each centre's roles, faculties and courses."
+    : view === "volunteers" ? "The people giving their time across the programme — shown by handle to protect their privacy."
+    : "Every role we run across the programme — and exactly where we still need hands.";
+
+  const kpis = [
+    { icon: "ph-users-three", tintBg: "rgba(124,77,255,0.13)", iconColor: "#6a3fc0", value: ci(k.totalVolunteers), label: "Total volunteers", valueColor: "#0a1130" },
+    { icon: "ph-check-circle", tintBg: "rgba(47,158,68,0.14)", iconColor: "#2f9e44", value: ci(k.activeVolunteers), label: "Active now", valueColor: "#0a1130" },
+    { icon: "ph-buildings", tintBg: "rgba(28,42,94,0.08)", iconColor: "#1c2a5e", value: ci(k.centres), label: "Centres", valueColor: "#0a1130" },
+    { icon: "ph-target", tintBg: "rgba(59,91,219,0.13)", iconColor: "#3b5bdb", value: ci(totNeed), label: "Total need", valueColor: "#0a1130" },
+    { icon: "ph-user-check", tintBg: "rgba(47,158,68,0.12)", iconColor: "#2f9e44", value: ci(totFilled), label: "Slots filled", valueColor: "#2f9e44" },
+    { icon: "ph-puzzle-piece", tintBg: "rgba(232,169,43,0.16)", iconColor: "#a07400", value: ci(totGap), label: "Open slots", valueColor: totGap > 0 ? "#a07400" : "#2f9e44" },
+  ];
+
+  const sorted = [...byCentre].sort((a, b) => sortKey === "name" ? a.name.localeCompare(b.name) : sortKey === "rate" ? (b.fulfillmentRate - a.fulfillmentRate) : (b.gap - a.gap));
+  const segBase = { fontFamily: "'Inter',sans-serif", fontSize: 13, fontWeight: 600, padding: "7px 15px", border: "none", cursor: "pointer", borderRadius: 999 };
+  const segStyle = (on) => ({ ...segBase, background: on ? "#4a2da0" : "transparent", color: on ? "#fff" : "#2a335c" });
+
+  const urgent = byCentre.filter(c => c.fulfillmentRate < 60);
+  const full = byCentre.filter(c => c.fulfillmentRate >= 100);
+  const gapByRole = VS_ROLES.map(r => ({ r, gap: perRoleTot[r][0] - perRoleTot[r][1] })).sort((a, b) => b.gap - a.gap);
+  const topGapRole = gapByRole[0] || { r: "mentor", gap: 0 };
+  const insightsSummary = "We've filled " + rate + "% of volunteer slots — but " + totGap + " roles are still open" + (urgent.length ? ", and " + vsJoin(urgent.map(c => c.name)) + (urgent.length === 1 ? " needs" : " need") + " urgent help." : ".");
+  const insights = [
+    { col: totGap > 0 ? "#a07400" : "#2f9e44", edge: "#e8a92b", tintBg: "rgba(232,169,43,0.16)", icon: "ph-puzzle-piece", title: "Open slots", stat: String(totGap), note: "volunteer roles still unfilled across the programme — every one is a child better served." },
+    { col: "#6a3fc0", edge: "#7c4dff", tintBg: "rgba(124,77,255,0.13)", icon: VS_ROLE_META[topGapRole.r].icon, title: "Biggest need", stat: VS_ROLE_META[topGapRole.r].label, note: topGapRole.gap + " open " + VS_ROLE_META[topGapRole.r].label.toLowerCase() + " slots — our most-wanted role right now." },
+    urgent.length
+      ? { col: "#c0361c", edge: "#e03131", tintBg: "rgba(224,49,49,0.10)", icon: "ph-warning-circle", title: "Urgent centres", stat: String(urgent.length), note: vsJoin(urgent.map(c => c.name)) + " are below 60% staffed. A single sign-up moves the needle." }
+      : { col: "#2f9e44", edge: "#2f9e44", tintBg: "rgba(47,158,68,0.12)", icon: "ph-check-circle", title: "All steady", stat: "0", note: "no centre is in urgent need today. Thank you, volunteers." },
+    { col: "#2f9e44", edge: "#2f9e44", tintBg: "rgba(47,158,68,0.12)", icon: "ph-seal-check", title: "Fully staffed", stat: full.length + " / " + byCentre.length, note: (full.length ? vsJoin(full.map(c => c.name)) + " reached 100%." : "no centre is fully staffed yet — be the one who tips a centre over.") },
+  ];
+
+  const roleCards = VS_ROLES.map(r => {
+    const meta = VS_ROLE_META[r], need = perRoleTot[r][0], filled = perRoleTot[r][1], gap = need - filled;
+    const rr = need ? Math.round(filled / need * 100) : 100;
+    const centresList = byCentre.map(c => { const cr = (c.byRole || []).find(x => x.role === r) || { need: 0, filled: 0 }; const pct = cr.need ? Math.round(cr.filled / cr.need * 100) : 100; return { name: c.name, frac: (Math.min(100, pct) / 100).toFixed(3), tone: volTone(pct), label: cr.filled + "/" + cr.need }; });
+    return { role: r, label: meta.label, icon: meta.icon, color: meta.color, tintBg: meta.tintBg, blurb: meta.blurb, rate: rr, filled, need, frac: (Math.min(100, rr) / 100).toFixed(3), tone: volTone(rr), gapText: gap > 0 ? gap + " open across " + byCentre.length + " centres" : "Fully staffed everywhere", gapColor: gap > 0 ? "#a07400" : "#2f9e44", centres: centresList };
+  });
+
+  // Directory filtered
+  const dirByRole = (r) => directory.filter(v => (volCentre === "All" || v.centre === volCentre) && (r === "All" || v.role === r));
+  const volRoleChips = [{ label: "All", roleKey: "All", color: "#4a2da0", tint: "rgba(74,45,160,0.12)", icon: "ph-stack" }].concat(VS_ROLES.map(r => ({ label: VS_ROLE_META[r].label, roleKey: r, color: VS_ROLE_META[r].color, tint: VS_ROLE_META[r].tintBg, icon: VS_ROLE_META[r].icon })));
+  const dirList = directory.filter(v => (volCentre === "All" || v.centre === volCentre) && (volRole === "All" || v.role === volRole));
+  const centreOpts = ["All", ...byCentre.map(c => c.name)];
+
+  // Centre detail
+  const dc = openCentre ? byCentre.find(c => c.centreId === openCentre) : null;
+  let detail = null;
+  if (dc) {
+    const chipBase = { display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "'Inter',sans-serif", fontSize: 13.5, fontWeight: 600, padding: "8px 15px", borderRadius: 999, cursor: "pointer", border: "1.5px solid" };
+    const mkChip = (label, roleKey, count, color, tint, icon) => { const sel = roleFilter === roleKey; return { label, icon, count, roleKey, style: { ...chipBase, background: sel ? tint : "#fff", borderColor: sel ? color : "#e5e8ee", color: sel ? color : "#2a335c" }, badgeStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontWeight: 700, minWidth: 18, textAlign: "center", padding: "1px 6px", borderRadius: 999, background: sel ? color : "rgba(28,42,94,0.08)", color: sel ? "#fff" : "#5a6488", marginLeft: 2 } }; };
+    const roleChips = [mkChip("All roles", "All", dc.filled, "#4a2da0", "rgba(74,45,160,0.12)", "ph-stack")].concat(VS_ROLES.map(r => { const rr = (dc.byRole || []).find(x => x.role === r) || { filled: 0 }; return mkChip(VS_ROLE_META[r].label, r, rr.filled, VS_ROLE_META[r].color, VS_ROLE_META[r].tintBg, VS_ROLE_META[r].icon); }));
+    const rolesToShow = roleFilter === "All" ? VS_ROLES : [roleFilter];
+    const byRole = rolesToShow.map(r => { const meta = VS_ROLE_META[r], rr = (dc.byRole || []).find(x => x.role === r) || { need: 0, filled: 0, gap: 0, fulfillmentRate: 100 }; return { label: meta.label, icon: meta.icon, color: meta.color, tintBg: meta.tintBg, countLabel: rr.filled + " / " + rr.need + " filled", gapLabel: rr.gap > 0 ? rr.gap + " open" : "full", frac: (Math.min(100, rr.fulfillmentRate) * t / 100).toFixed(3), tone: volTone(rr.fulfillmentRate) }; });
+    const showFaculty = roleFilter !== "admin";
+    const byFaculty = (dc.byFaculty || []).map(f => ({ faculty: f.faculty, count: f.filled, color: vsFacColor(f.faculty) }));
+    const showCourses = roleFilter === "All" || roleFilter === "instructor";
+    const byCourse = (dc.byCourse || []).map(c => ({ faculty: c.faculty, course: c.course, color: vsFacColor(c.faculty), filledLabel: c.filled + (c.filled === 1 ? " instructor" : " instructors") })).sort((a, b) => (a.faculty || "").localeCompare(b.faculty || ""));
+    detail = {
+      name: dc.name, code: dc.code, color: dc.color, rate: dc.fulfillmentRate, filled: dc.filled, need: dc.need, gap: dc.gap,
+      tone: volTone(dc.fulfillmentRate), statusBg: (dc.fulfillmentRate >= 100 ? "rgba(47,158,68,0.12)" : dc.fulfillmentRate >= 60 ? "rgba(232,169,43,0.16)" : "rgba(224,49,49,0.12)"), statusLabel: volLabel(dc.fulfillmentRate), gapColor: dc.gap > 0 ? "#a07400" : "#2f9e44",
+      roleHint: roleFilter === "All" ? "Showing all roles" : "Filtered to " + VS_ROLE_META[roleFilter].label,
+      roleChips, byRole, showFaculty, hasFaculty: byFaculty.length > 0, facEmpty: showFaculty && byFaculty.length === 0, byFaculty,
+      showCourses, hasCourses: byCourse.length > 0, courseEmpty: showCourses && byCourse.length === 0, byCourse,
+    };
+  }
+  const showCentreGrid = view === "centres" && !dc;
+  const isOverview = view === "overview" && !dc, isRoles = view === "roles" && !dc, isVolunteers = view === "volunteers" && !dc;
 
   return (
     <div className="page" data-screen-label="Volunteer status">
       {banner.text ? <div style={{ background: banner.tone === "warn" ? "#7a2e2e" : banner.tone === "success" ? "#1c5138" : "#2c1a63", color: "#fff", textAlign: "center", padding: "10px 16px", fontSize: 14, fontWeight: 600 }}>{banner.text}</div> : null}
-      {/* Hero — violet identity, distinct from the green attendance board */}
-      <section style={{ background: "linear-gradient(155deg,#140a2e 0%,#2c1a63 55%,#4a2da0 100%)", color: "#fff", padding: "72px 0 56px", position: "relative", overflow: "hidden" }}>
-        <div aria-hidden="true" style={{ position: "absolute", right: -90, top: -90, width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle,rgba(245,176,38,0.30),transparent 70%)" }}/>
-        <div className="container" style={{ position: "relative" }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(208,255,58,0.12)", border: "1px solid rgba(208,255,58,0.4)" }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#d0ff3a", animation: "volpulse 1.8s infinite" }}/>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#e8ffb0" }}>LIVE · VOLUNTEER STATUS</span>
+
+      <section style={{ background: "linear-gradient(155deg,#140a2e 0%,#2c1a63 55%,#4a2da0 100%)", color: "#fff", position: "relative", overflow: "hidden" }}>
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(46% 44% at 92% 2%,rgba(245,176,38,0.22),transparent 62%),radial-gradient(44% 48% at 8% 98%,rgba(208,255,58,0.12),transparent 60%)" }}/>
+        <div style={{ maxWidth: 1320, margin: "0 auto", padding: "28px 28px 0", position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "#c8b6f0", display: "flex", alignItems: "center", gap: 8 }}><i className="ph ph-hand-heart"/> Volunteer transparency</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "rgba(255,255,255,0.55)", display: "inline-flex", alignItems: "center", gap: 6 }}><i className="ph ph-clock-countdown"/> Updated {updatedAgo}</span>
+              <button onClick={load} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 13, padding: "8px 15px", borderRadius: 999, cursor: "pointer", color: "#fff", background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.18)", display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-arrow-clockwise"/> Refresh</button>
+            </div>
           </div>
-          <h1 className="display" style={{ fontSize: "clamp(38px,6vw,72px)", margin: "18px 0 6px", lineHeight: 0.98 }}>{page.title || "Build the team."}</h1>
-          <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 16, margin: 0 }}>
-            {page.tagline || "A live, public view of volunteer needs across every centre."}
-            {d ? <span style={{ marginLeft: 10, opacity: 0.7 }}>Updated {relAgo(d.generatedAt)}</span> : null}
-          </p>
-          {err && <p style={{ color: "#ffb4b4", marginTop: 16 }}>Couldn't load the board — <button onClick={load} style={{ background: "none", border: "none", color: "#fff", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</p>}
-          {d && !err && (
-            <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginTop: 34, flexWrap: "wrap" }}>
+
+          <div className="hero-cols" style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 44, alignItems: "center", marginTop: 26 }}>
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(208,255,58,0.12)", border: "1px solid rgba(208,255,58,0.4)" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#d0ff3a", animation: "volpulse 1.8s infinite" }}/>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", color: "#e8ffb0" }}>LIVE · VOLUNTEER STATUS</span>
+              </div>
+              <h1 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(34px,5vw,58px)", letterSpacing: "-0.035em", lineHeight: 0.98, margin: "18px 0 10px" }}>{page.title || "Build the team."}</h1>
+              <p style={{ color: "rgba(255,255,255,0.68)", fontSize: 15.5, maxWidth: 520, margin: "0 0 24px", lineHeight: 1.55 }}>{heroSub}</p>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <button onClick={() => setPage && setPage(page.ctaPage || "volunteer")} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#0c1432", border: "none", background: "linear-gradient(135deg,#ffc34d,#f5b026)", boxShadow: "0 12px 26px -12px rgba(176,124,18,0.7)", display: "inline-flex", alignItems: "center", gap: 8 }}>{page.ctaLabel || "Volunteer with us"} <i className="ph ph-arrow-right"/></button>
+                <button onClick={() => setPage && setPage("s-status")} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#fff", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.2)", display: "inline-flex", alignItems: "center", gap: 8 }}>Summer School board</button>
+              </div>
+            </div>
+
+            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "26px 28px", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Needs filled</span>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: accent }}>{k.centres || 0} centres</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 12, margin: "10px 0 4px" }}>
+                <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(56px,8vw,86px)", lineHeight: 0.82, letterSpacing: "-0.04em", color: accent, fontVariantNumeric: "tabular-nums" }}>{ci(rate)}%</span>
+                <span style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "rgba(255,255,255,0.8)", paddingBottom: 10 }}>{ci(totFilled)} / {totNeed} slots</span>
+              </div>
+              <div style={{ display: "flex", height: 12, borderRadius: 99, overflow: "hidden", background: "rgba(255,255,255,0.12)", marginTop: 14 }}>
+                <div style={{ width: Math.min(100, rate) + "%", background: "linear-gradient(90deg,#d0ff3a,#a6e814)", transition: "width .8s cubic-bezier(.2,.7,.2,1)" }}/>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginTop: 22 }}>
+                <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{ci(totFilled)}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>On board</div></div>
+                <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#ffd18a", fontVariantNumeric: "tabular-nums" }}>{totGap}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Open</div></div>
+                <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{totNeed}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Total need</div></div>
+              </div>
+              {totGap > 0 && <div style={{ marginTop: 20, padding: "12px 14px", borderRadius: 12, background: "rgba(245,176,38,0.14)", border: "1px solid rgba(245,176,38,0.32)", fontSize: 13.5, color: "#ffe0ad", lineHeight: 1.4 }}><i className="ph ph-hand-waving" style={{ marginRight: 6 }}/>We still need <b>{totGap}</b> more volunteers — could that be you?</div>}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 6, marginTop: 30, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+            {tabs.map(([kk, label, icon]) => <button key={kk} onClick={() => { setView(kk); setOpenCentre(null); }} style={tabStyle(kk)}><i className={"ph " + icon} style={{ marginRight: 7 }}/>{label}</button>)}
+          </div>
+        </div>
+      </section>
+
+      {isOverview && <div className="view">
+        <section style={{ padding: "44px 0 8px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em", margin: "0 0 20px" }}>Volunteering at a glance</h2>
+            <div className="kpi-grid">
+              {kpis.map((kp, i) => (
+                <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "20px 20px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+                  <span style={{ width: 42, height: 42, borderRadius: 12, display: "grid", placeItems: "center", fontSize: 22, background: kp.tintBg, color: kp.iconColor }}><i className={"ph " + kp.icon}/></span>
+                  <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 40, lineHeight: 1, letterSpacing: "-0.03em", marginTop: 16, fontVariantNumeric: "tabular-nums", color: kp.valueColor }}>{kp.value}</div>
+                  <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488", marginTop: 8 }}>{kp.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section style={{ padding: "48px 0 44px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
               <div>
-                <div className="display" style={{ fontSize: "clamp(56px,10vw,110px)", lineHeight: 0.9, color: accent, fontWeight: 800 }}><CountUp to={k.fulfillmentRate || 0} suffix="%"/></div>
-                <div className="mono" style={{ fontSize: 12, letterSpacing: "0.15em", color: "rgba(255,255,255,0.6)", marginTop: 6 }}>OF VOLUNTEER NEEDS FILLED</div>
+                <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#7c4dff" }}>Need by centre</div>
+                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Where the gaps are</h2>
               </div>
-              <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 18, paddingBottom: 18 }}>
-                <b><CountUp to={k.totalFilled || 0}/></b> of <b><CountUp to={k.totalNeed || 0}/></b> slots filled across <b>{k.centres || 0}</b> centre{(k.centres || 0) === 1 ? "" : "s"}.
-                {(k.totalGap || 0) > 0 && <span style={{ display: "block", marginTop: 6, color: "#ffd18a", fontSize: 15 }}>We still need <b>{k.totalGap}</b> more volunteer{k.totalGap === 1 ? "" : "s"} — could that be you?</span>}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6" }}>Sort</span>
+                <div style={{ display: "flex", gap: 4, background: "#efe8f7", padding: 4, borderRadius: 999 }}>
+                  {[["gap", "Open"], ["rate", "Filled %"], ["name", "Name"]].map(([kk, label]) => <button key={kk} onClick={() => setSortKey(kk)} style={segStyle(sortKey === kk)}>{label}</button>)}
+                </div>
               </div>
             </div>
-          )}
-          {d && !err && (
-            <div style={{ marginTop: 24 }}>
-              <button className="btn btn-gold btn-lg" onClick={() => setPage && setPage(page.ctaPage || "volunteer")}>{page.ctaLabel || "Volunteer with us →"}</button>
+            <div style={{ border: "1px solid #e5e8ee", borderRadius: 18, overflow: "hidden", background: "#fff", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+              <div className="centre-head">
+                {["#", "Centre", "Filled", "Fulfillment", "Rate", "Status"].map((h, i) => <span key={i} style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6", textAlign: i >= 4 ? "right" : "left" }}>{h}</span>)}
+              </div>
+              {sorted.map((c, i) => (
+                <div key={c.centreId} className="centre-row">
+                  <span className="c-rank" style={{ width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 13, color: "#fff", background: c.color }}>{i + 1}</span>
+                  <span className="c-name" style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+                    <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16, color: "#0a1130" }}>{c.name}</b>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.06em", color: "#8088a6", marginTop: 3 }}>{c.code}</span>
+                  </span>
+                  <span className="c-present" style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: "#2a335c", fontVariantNumeric: "tabular-nums" }}>{ci(c.filled)} / {c.need}</span>
+                  <span className="c-bar" style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}>
+                    <span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transition: "transform .8s cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + (Math.min(100, c.fulfillmentRate) * t / 100).toFixed(3) + ")", background: volTone(c.fulfillmentRate) }}/>
+                  </span>
+                  <span className="c-rate" style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, textAlign: "right", fontVariantNumeric: "tabular-nums", color: volTone(c.fulfillmentRate) }}>{ci(c.fulfillmentRate)}%</span>
+                  <span className="c-status" style={{ justifySelf: "end", display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 10.5, fontWeight: 600, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: detailStatusBg(c.fulfillmentRate), color: volTone(c.fulfillmentRate) }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: volTone(c.fulfillmentRate) }}/>{volLabel(c.fulfillmentRate)}</span>
+                </div>
+              ))}
             </div>
-          )}
+          </div>
+        </section>
+
+        <section style={{ padding: "0 0 52px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#7c4dff", display: "flex", alignItems: "center", gap: 8 }}><i className="ph ph-sparkle"/> Smart insights</div>
+              <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>What the board is telling us</h2>
+            </div>
+            <p style={{ fontFamily: "'Sora'", fontWeight: 600, fontSize: 19, lineHeight: 1.45, letterSpacing: "-0.01em", color: "#2a335c", maxWidth: 740, margin: "14px 0 26px" }}>{insightsSummary}</p>
+            <div className="insight-grid">
+              {insights.map((ins, i) => (
+                <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderLeft: "4px solid " + ins.edge, borderRadius: 14, padding: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ width: 34, height: 34, borderRadius: 10, display: "grid", placeItems: "center", fontSize: 18, background: ins.tintBg, color: ins.col }}><i className={"ph " + ins.icon}/></span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488" }}>{ins.title}</span>
+                  </div>
+                  <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 34, lineHeight: 1, letterSpacing: "-0.03em", margin: "16px 0 8px", fontVariantNumeric: "tabular-nums", color: ins.col }}>{ins.stat}</div>
+                  <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "#2a335c" }}>{ins.note}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>}
+
+      {showCentreGrid && <div className="view">
+        <section style={{ padding: "44px 0 56px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px" }}>Every centre</h2>
+            <p style={{ color: "#5a6488", fontSize: 14.5, margin: "0 0 26px" }}>Tap a centre for its full role, faculty and course breakdown.</p>
+            <div className="centre-cards">
+              {byCentre.map(c => (
+                <button key={c.centreId} onClick={() => { setOpenCentre(c.centreId); setRoleFilter("All"); }} style={{ textAlign: "left", cursor: "pointer", background: "#fff", border: "1px solid #e5e8ee", borderTop: "4px solid " + c.color, borderRadius: 16, padding: 22, boxShadow: "0 1px 2px rgba(12,20,50,0.05)", fontFamily: "inherit" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <span style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 20, color: "#0a1130" }}>{c.name}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{c.code}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "16px 0 6px" }}>
+                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 38, lineHeight: 1, color: volTone(c.fulfillmentRate), fontVariantNumeric: "tabular-nums" }}>{c.fulfillmentRate}%</span>
+                    <span style={{ fontSize: 13, color: "#5a6488" }}>{c.filled} / {c.need} filled</span>
+                  </div>
+                  <span style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden", marginTop: 6 }}>
+                    <span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transform: "scaleX(" + (Math.min(100, c.fulfillmentRate) / 100).toFixed(3) + ")", background: volTone(c.fulfillmentRate) }}/>
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 16, paddingTop: 14, borderTop: "1px solid #eef0f4" }}>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: volTone(c.fulfillmentRate) }}>{volLabel(c.fulfillmentRate)}</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'Inter'", fontSize: 13, fontWeight: 600, color: c.gap > 0 ? "#a07400" : "#2f9e44" }}>{c.gap > 0 ? c.gap + " needed" : "Fully staffed"} <i className="ph ph-arrow-right"/></span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>}
+
+      {detail && <div className="view">
+        <section style={{ padding: "32px 0 56px" }}>
+          <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px" }}>
+            <button onClick={() => setOpenCentre(null)} style={{ fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, color: "#5a3fb0", background: "none", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, padding: 0, marginBottom: 22 }}><i className="ph ph-arrow-left"/> All centres</button>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <span style={{ width: 20, height: 56, borderRadius: 8, background: detail.color, display: "block" }}/>
+                <div>
+                  <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 34, letterSpacing: "-0.025em", margin: 0 }}>{detail.name}</h2>
+                  <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#8088a6" }}>{detail.code} · volunteer needs</span>
+                </div>
+              </div>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", padding: "7px 13px", borderRadius: 999, background: detail.statusBg, color: detail.tone }}><span style={{ width: 7, height: 7, borderRadius: "50%", background: detail.tone }}/>{detail.statusLabel}</span>
+            </div>
+            <div className="detail-stats" style={{ marginTop: 24 }}>
+              {[[detail.rate + "%", "Filled", detail.tone], [detail.filled, "On board", "#0a1130"], [detail.need, "Needed", "#0a1130"], [detail.gap, "Open slots", detail.gapColor]].map((s, i) => (
+                <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 14, padding: 18 }}><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 30, color: s[2], fontVariantNumeric: "tabular-nums" }}>{s[0]}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488", marginTop: 6 }}>{s[1]}</div></div>
+              ))}
+            </div>
+            <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: 22, marginTop: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488" }}><i className="ph ph-funnel" style={{ marginRight: 6 }}/>Filter by role</span>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{detail.roleHint}</span>
+              </div>
+              <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+                {detail.roleChips.map((r, i) => <button key={i} onClick={() => setRoleFilter(r.roleKey)} style={r.style}><i className={"ph " + r.icon} style={{ marginRight: 2 }}/>{r.label}<span style={r.badgeStyle}>{r.count}</span></button>)}
+              </div>
+            </div>
+            <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>Needs by role</h3>
+            <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: 22, display: "grid", gap: 18 }}>
+              {detail.byRole.map((r, i) => (
+                <div key={i}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 9, fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}><span style={{ width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", fontSize: 16, background: r.tintBg, color: r.color }}><i className={"ph " + r.icon}/></span>{r.label}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#5a6488" }}>{r.countLabel} · {r.gapLabel}</span>
+                  </div>
+                  <span style={{ display: "block", height: 10, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transition: "transform .7s cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + r.frac + ")", background: r.tone }}/></span>
+                </div>
+              ))}
+            </div>
+            {detail.showFaculty && <>
+              <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>By faculty <span style={{ fontFamily: "'Inter'", fontWeight: 500, fontSize: 14, color: "#8088a6" }}>— mentors &amp; instructors</span></h3>
+              {detail.hasFaculty
+                ? <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>{detail.byFaculty.map((f, i) => <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "10px 15px", borderRadius: 12, background: "#fff", border: "1px solid #e5e8ee" }}><span style={{ width: 9, height: 9, borderRadius: 3, background: f.color }}/><b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 14, color: "#0a1130" }}>{f.faculty}</b><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#5a6488" }}>{f.count}</span></span>)}</div>
+                : <div style={{ border: "1px dashed #d9d2c0", borderRadius: 14, padding: 20, textAlign: "center", color: "#8088a6", fontSize: 13.5 }}>No mentors or instructors on board for this filter yet.</div>}
+            </>}
+            {detail.showCourses && <>
+              <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: "34px 0 14px" }}>Instructors by course</h3>
+              {detail.hasCourses
+                ? <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "6px 22px" }}>{detail.byCourse.map((c, i) => <div key={i} className="course-row"><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.04em", color: c.color, textTransform: "uppercase" }}>{c.faculty}</span><span style={{ fontFamily: "'Sora'", fontWeight: 600, fontSize: 15, color: "#0a1130" }}>{c.course}</span><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#5a6488", textAlign: "right" }}>{c.filledLabel}</span></div>)}</div>
+                : <div style={{ border: "1px dashed #d9d2c0", borderRadius: 14, padding: 20, textAlign: "center", color: "#8088a6", fontSize: 13.5 }}>No instructors have signed up for a course here yet.</div>}
+            </>}
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 32 }}>
+              <button onClick={() => setPage && setPage("volunteer")} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#0c1432", border: "none", background: "linear-gradient(135deg,#ffc34d,#f5b026)", boxShadow: "0 12px 26px -12px rgba(176,124,18,0.7)", display: "inline-flex", alignItems: "center", gap: 8 }}>Volunteer at {detail.name} <i className="ph ph-arrow-right"/></button>
+            </div>
+          </div>
+        </section>
+      </div>}
+
+      {isRoles && <div className="view">
+        <section style={{ padding: "44px 0 24px" }}>
+          <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px" }}>
+            <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px" }}>Roles across the programme</h2>
+            <p style={{ color: "#5a6488", fontSize: 14.5, margin: "0 0 26px" }}>Every role we run, how many have stepped up, and where the open slots are.</p>
+            <div className="role-grid">
+              {roleCards.map((r, i) => (
+                <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderTop: "4px solid " + r.color, borderRadius: 18, padding: 24, boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ width: 46, height: 46, borderRadius: 13, display: "grid", placeItems: "center", fontSize: 24, background: r.tintBg, color: r.color }}><i className={"ph " + r.icon}/></span>
+                    <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 19, color: "#0a1130" }}>{r.label}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6", marginTop: 2 }}>{r.blurb}</div></div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "20px 0 8px" }}>
+                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 40, lineHeight: 1, color: r.tone, fontVariantNumeric: "tabular-nums" }}>{r.rate}%</span>
+                    <span style={{ fontSize: 13, color: "#5a6488" }}>{r.filled}/{r.need} filled</span>
+                  </div>
+                  <span style={{ display: "block", height: 10, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transform: "scaleX(" + r.frac + ")", background: r.tone }}/></span>
+                  <div style={{ marginTop: 8, fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: r.gapColor }}>{r.gapText}</div>
+                  <div style={{ height: 1, background: "#eef0f4", margin: "18px 0 14px" }}/>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {r.centres.map((c, j) => (
+                      <div key={j} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ width: 70, fontSize: 13, fontWeight: 600, color: "#2a335c", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
+                        <span style={{ flex: 1, height: 7, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transform: "scaleX(" + c.frac + ")", background: c.tone }}/></span>
+                        <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#5a6488", width: 52, textAlign: "right" }}>{c.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>}
+
+      {isVolunteers && <div className="view">
+        <section style={{ padding: "40px 0 56px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 6, flexWrap: "wrap" }}>
+              <div>
+                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: 0 }}>All volunteers</h2>
+                <p style={{ color: "#5a6488", fontSize: 14.5, margin: "6px 0 0" }}>{dirList.length} people giving their time · shown by handle only</p>
+              </div>
+              <select value={volCentre} onChange={e => setVolCentre(e.target.value)} style={{ fontSize: 13, fontWeight: 600, padding: "9px 13px", borderRadius: 10, border: "1px solid #d9d2c0", background: "#fff", color: "#2a335c", cursor: "pointer" }}>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}</select>
+            </div>
+            <div style={{ display: "flex", gap: 9, flexWrap: "wrap", margin: "18px 0 24px" }}>
+              {volRoleChips.map((r, i) => { const sel = volRole === r.roleKey; return <button key={i} onClick={() => setVolRole(r.roleKey)} style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "'Inter',sans-serif", fontSize: 13.5, fontWeight: 600, padding: "8px 15px", borderRadius: 999, cursor: "pointer", border: "1.5px solid " + (sel ? r.color : "#e5e8ee"), background: sel ? r.tint : "#fff", color: sel ? r.color : "#2a335c" }}><i className={"ph " + r.icon} style={{ marginRight: 2 }}/>{r.label}<span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontWeight: 700, minWidth: 18, textAlign: "center", padding: "1px 6px", borderRadius: 999, background: sel ? r.color : "rgba(28,42,94,0.08)", color: sel ? "#fff" : "#5a6488", marginLeft: 2 }}>{dirByRole(r.roleKey).length}</span></button>; })}
+            </div>
+            {dirList.length === 0
+              ? <div style={{ border: "1px dashed #d9d2c0", borderRadius: 16, padding: 32, textAlign: "center", color: "#8088a6", fontSize: 14 }}>No volunteers match this filter.</div>
+              : <div className="vol-grid">
+                {dirList.map((v, i) => { const meta = VS_ROLE_META[v.role] || VS_ROLE_META.admin; const focus = v.role === "instructor" ? (v.faculty + (v.course ? " · " + v.course : "")) : v.role === "mentor" ? (v.faculty + " mentor") : "Admin & operations"; return (
+                  <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "22px 18px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 6 }}>
+                    <div style={{ width: 104, height: 104, borderRadius: "50%", padding: 4, background: v.color, boxShadow: "0 8px 20px -10px rgba(12,20,50,0.4)" }}>
+                      <div style={{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden", background: v.color, position: "relative" }}>
+                        <span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 36, color: "rgba(255,255,255,0.9)" }}>{v.initial}</span>
+                        {v.face && <img src={v.face} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}/>}
+                      </div>
+                    </div>
+                    <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16, color: "#0a1130", marginTop: 12, maxWidth: "100%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.handle}</b>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "'JetBrains Mono'", fontSize: 10.5, fontWeight: 600, letterSpacing: "0.04em", padding: "4px 11px", borderRadius: 999, background: meta.tintBg, color: meta.color }}><i className={"ph " + meta.icon}/>{meta.label}</span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 12.5, color: "#5a6488", borderTop: "1px solid #eef0f4", paddingTop: 14, marginTop: 12, width: "100%", textAlign: "left" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-map-pin" style={{ color: v.color }}/>{v.centre}</span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-stack"/>{focus}</span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-calendar-check"/>{v.sessions} sessions · joined Wk {v.sinceWk}</span>
+                    </div>
+                  </div>
+                ); })}
+              </div>}
+            <p style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6", marginTop: 20, display: "flex", alignItems: "center", gap: 7 }}><i className="ph ph-camera"/>Volunteer faces and handles are shown with consent — student names and photos never appear.</p>
+          </div>
+        </section>
+      </div>}
+
+      <section style={{ background: "#140a2e", color: "#fff", padding: "56px 0 60px" }}>
+        <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 28px" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(255,255,255,0.08)", fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em" }}><span style={{ width: 7, height: 7, borderRadius: "50%", background: "#d0ff3a" }}/>TRANSPARENCY</span>
+          <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(28px,3.6vw,42px)", letterSpacing: "-0.02em", margin: "16px 0 12px" }}>{page.transparencyTitle || "Roles, not people."}</h2>
+          <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 15.5, lineHeight: 1.75, margin: "0 0 24px" }}>{page.transparencyBody || "This board shows only how many volunteers each centre needs and how many have stepped up — by role, faculty and course. A volunteer's name, photo or contact detail never appears here unless they've given consent. It's how we stay accountable while protecting everyone who gives their time."}</p>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button onClick={() => setPage && setPage(page.ctaPage || "volunteer")} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#0c1432", border: "none", background: "linear-gradient(135deg,#ffc34d,#f5b026)", boxShadow: "0 12px 26px -12px rgba(176,124,18,0.7)", display: "inline-flex", alignItems: "center", gap: 8 }}>{page.ctaLabel || "Volunteer with us"} <i className="ph ph-arrow-right"/></button>
+            <button onClick={() => setPage && setPage("s-status")} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#fff", background: "transparent", border: "1.5px solid rgba(255,255,255,0.25)" }}>See the Summer School board</button>
+          </div>
+          <p style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "rgba(255,255,255,0.42)", marginTop: 24 }}>Auto-refreshes every 45s · last updated {updatedAgo}</p>
         </div>
       </section>
 
       {!d && !err && <div className="container" style={{ padding: "60px 0", textAlign: "center" }}><div className="dash-spinner"/></div>}
-
-      {d && (
-        <React.Fragment>
-          {/* KPI grid */}
-          {sec.kpis !== false && (() => {
-            const vk = [
-              ["totalVolunteers", "🤝", k.totalVolunteers || 0, "Total volunteers"],
-              ["activeVolunteers", "✅", k.activeVolunteers || 0, "Active now"],
-              ["centres", "🏫", k.centres || 0, "Centres"],
-              ["totalNeed", "🎯", k.totalNeed || 0, "Total need"],
-              ["totalFilled", "🟢", k.totalFilled || 0, "Slots filled", "#2f9e44"],
-              ["totalGap", "🧩", k.totalGap || 0, "Open slots", (k.totalGap || 0) > 0 ? "#e8a92b" : "#2f9e44"],
-            ].filter(x => kpiOn[x[0]] !== false);
-            return vk.length ? <section className="section" style={{ paddingTop: 44 }}>
-              <div className="container">
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16 }}>
-                  {vk.map(x => <React.Fragment key={x[0]}>{kpiCard(x[1], x[2], x[3], x[4])}</React.Fragment>)}
-                </div>
-              </div>
-            </section> : null;
-          })()}
-
-          {/* Per-centre cards */}
-          {sec.centres !== false && <section className="section" style={{ background: "var(--cream-50)", paddingTop: 44, paddingBottom: 44 }}>
-            <div className="container">
-              <SectionHead eyebrow="NEED BY CENTRE" title="Where the gaps are." sub="Volunteer needs vs filled at each centre. Tap a centre for the full role, faculty and course breakdown." />
-              {!centres.length ? <p style={{ color: "var(--ink-500)" }}>No centres are reporting volunteer needs yet.</p> :
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 16 }}>
-                  {centres.map(c => (
-                    <button key={c.centreId} className="card" onClick={() => setOpen(c.centreId)}
-                      style={{ padding: 20, borderTop: "4px solid " + (c.color || "#5a3fb0"), textAlign: "left", cursor: "pointer", border: "1px solid rgba(12,20,50,0.08)", borderTopWidth: 4, borderTopColor: c.color || "#5a3fb0", background: "var(--paper,#fff)", transition: "transform .12s, box-shadow .12s" }}
-                      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 12px 24px -12px rgba(12,20,50,0.25)"; }}
-                      onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 19 }}>{c.name}</div>
-                        <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{c.code}</span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "14px 0 4px" }}>
-                        <span className="display" style={{ fontSize: 34, fontWeight: 800, color: volTone(c.fulfillmentRate) }}>{c.fulfillmentRate}%</span>
-                        <span style={{ fontSize: 13, color: "var(--ink-500)" }}>{c.filled}/{c.need || 0} filled</span>
-                      </div>
-                      <div style={{ height: 8, borderRadius: 99, background: "rgba(12,20,50,0.08)", overflow: "hidden", marginTop: 8 }}>
-                        <div style={{ width: Math.min(100, c.fulfillmentRate) + "%", height: "100%", background: volTone(c.fulfillmentRate), borderRadius: 99, transition: "width .6s ease" }}/>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
-                        <span className="mono" style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: volTone(c.fulfillmentRate) }}>{volLabel(c.fulfillmentRate)}</span>
-                        {c.gap > 0 ? <span className="mono" style={{ fontSize: 10, color: "var(--ink-500)" }}>{c.gap} needed →</span> : <span className="mono" style={{ fontSize: 10, color: "#2f9e44" }}>full →</span>}
-                      </div>
-                    </button>
-                  ))}
-                </div>}
-            </div>
-          </section>}
-
-          {/* Transparency + CTA */}
-          {sec.transparency !== false && <section className="section" style={{ background: "var(--navy-900)", color: "#fff", paddingTop: 44, paddingBottom: 52 }}>
-            <div className="container" style={{ maxWidth: 760 }}>
-              <span className="chip chip-on-dark"><span className="dot dot-lime"/> TRANSPARENCY</span>
-              <h2 className="display" style={{ fontSize: "clamp(26px,3.5vw,40px)", margin: "12px 0 10px", color: "#fff" }}>{page.transparencyTitle || "Roles, not people."}</h2>
-              <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 15.5, lineHeight: 1.7, margin: "0 0 20px" }}>
-                {page.transparencyBody || "This board shows only how many volunteers each centre needs and how many have stepped up — by role, faculty and course. A volunteer's name, photo or contact detail never appears here."}
-              </p>
-              {sec.cta !== false && <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <button className="btn btn-primary" onClick={() => setPage && setPage(page.ctaPage || "volunteer")}>{page.ctaLabel || "Volunteer with us →"}</button>
-                <button className="btn btn-ghost btn-on-dark" onClick={() => setPage && setPage("s-status")}>See the Summer School board</button>
-              </div>}
-              <p className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 22 }}>Auto-refreshes every 45s · {d ? "last updated " + relAgo(d.generatedAt) : ""}</p>
-            </div>
-          </section>}
-        </React.Fragment>
-      )}
-
-      {/* Per-centre detail modal */}
-      {detail && (
-        <div onMouseDown={() => setOpen(null)} style={{ position: "fixed", inset: 0, zIndex: 120, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "5vh 16px", overflowY: "auto", background: "rgba(12,20,50,0.5)", backdropFilter: "blur(3px)" }}>
-          <div onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={detail.name + " volunteer breakdown"}
-            style={{ background: "var(--paper,#fbf7ed)", borderRadius: 20, maxWidth: 640, width: "100%", boxShadow: "0 32px 64px -24px rgba(0,0,0,0.5)", overflow: "hidden" }}>
-            <div style={{ padding: "22px 24px", background: "#fff", borderBottom: "1px solid var(--line-cool,#e5e8ee)", borderTop: "5px solid " + (detail.color || "#5a3fb0") }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span style={{ width: 16, height: 16, borderRadius: 5, background: detail.color || "#5a3fb0", display: "inline-block" }}/>
-                  <div>
-                    <h3 className="display" style={{ margin: 0, fontSize: 24 }}>{detail.name}</h3>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{detail.code}</span>
-                  </div>
-                </div>
-                <button className="btn btn-ghost" onClick={() => setOpen(null)} style={{ padding: "6px 12px" }}>Close ✕</button>
-              </div>
-              <div style={{ display: "flex", gap: 22, marginTop: 16, flexWrap: "wrap" }}>
-                <div><div className="display" style={{ fontSize: 28, fontWeight: 800, color: volTone(detail.fulfillmentRate) }}>{detail.fulfillmentRate}%</div><div className="mono" style={{ fontSize: 10, color: "var(--ink-500)", letterSpacing: ".1em" }}>FILLED</div></div>
-                <div><div className="display" style={{ fontSize: 28, fontWeight: 800 }}>{detail.filled}</div><div className="mono" style={{ fontSize: 10, color: "var(--ink-500)", letterSpacing: ".1em" }}>ON BOARD</div></div>
-                <div><div className="display" style={{ fontSize: 28, fontWeight: 800 }}>{detail.need || 0}</div><div className="mono" style={{ fontSize: 10, color: "var(--ink-500)", letterSpacing: ".1em" }}>NEEDED</div></div>
-                <div><div className="display" style={{ fontSize: 28, fontWeight: 800, color: detail.gap > 0 ? "#e8a92b" : "#2f9e44" }}>{detail.gap}</div><div className="mono" style={{ fontSize: 10, color: "var(--ink-500)", letterSpacing: ".1em" }}>OPEN</div></div>
-              </div>
-            </div>
-            <div style={{ padding: "20px 24px", display: "grid", gap: 22 }}>
-              {/* By role */}
-              <div>
-                <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: "var(--ink-400)", textTransform: "uppercase", marginBottom: 10 }}>By role</div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {detail.byRole.map(r => (
-                    <div key={r.role} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <span style={{ width: 118, fontSize: 14, fontWeight: 600 }}>{(VOL_ROLE_META[r.role] || {}).icon} {(VOL_ROLE_META[r.role] || {}).label || r.role}</span>
-                      <div style={{ flex: 1, height: 8, borderRadius: 99, background: "rgba(12,20,50,0.08)", overflow: "hidden" }}>
-                        <div style={{ width: Math.min(100, r.fulfillmentRate) + "%", height: "100%", background: volTone(r.fulfillmentRate), borderRadius: 99 }}/>
-                      </div>
-                      <span className="mono" style={{ fontSize: 12, width: 92, textAlign: "right", color: "var(--ink-600,#444)" }}>{r.filled}/{r.need} · {r.gap > 0 ? r.gap + " gap" : "full"}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {/* By faculty */}
-              <div>
-                <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: "var(--ink-400)", textTransform: "uppercase", marginBottom: 10 }}>By faculty (mentors + instructors)</div>
-                {!detail.byFaculty.length ? <p style={{ color: "var(--ink-500)", fontSize: 13, margin: 0 }}>No mentors or instructors on board here yet.</p> :
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {detail.byFaculty.map(f => (
-                      <span key={f.faculty} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 12px", borderRadius: 10, background: "#fff", border: "1px solid var(--line-cool,#e5e8ee)", fontSize: 13 }}>
-                        <b>{f.faculty}</b>
-                        <span style={{ color: "var(--ink-500)" }}>{f.filled}{f.need ? " / " + f.need : ""}</span>
-                      </span>
-                    ))}
-                  </div>}
-              </div>
-              {/* By faculty → course (instructors) */}
-              <div>
-                <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: "var(--ink-400)", textTransform: "uppercase", marginBottom: 10 }}>Instructors by course</div>
-                {!detail.byCourse.length ? <p style={{ color: "var(--ink-500)", fontSize: 13, margin: 0 }}>No instructors have signed up for a course here yet.</p> :
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <tbody>
-                      {detail.byCourse.map((c, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid var(--line-cool-soft,#eef0f4)" }}>
-                          <td style={{ padding: "8px 6px", color: "var(--ink-500)" }}>{c.faculty || "—"}</td>
-                          <td style={{ padding: "8px 6px", fontWeight: 600 }}>{c.course}</td>
-                          <td style={{ padding: "8px 6px", textAlign: "right" }} className="mono">{c.filled} instructor{c.filled === 1 ? "" : "s"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>}
-              </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button className="btn btn-primary" onClick={() => setPage && setPage("volunteer")}>Volunteer at {detail.name} →</button>
-                <button className="btn btn-ghost" onClick={() => setOpen(null)}>← Back to overview</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      <style>{`@keyframes volpulse{0%{box-shadow:0 0 0 0 rgba(208,255,58,0.6)}70%{box-shadow:0 0 0 9px rgba(208,255,58,0)}100%{box-shadow:0 0 0 0 rgba(208,255,58,0)}}`}</style>
+      {err && <div className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={load} style={{ background: "none", border: "none", color: "#5a3fb0", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
+      <style>{`@keyframes volpulse{0%{box-shadow:0 0 0 0 rgba(208,255,58,0.6)}70%{box-shadow:0 0 0 8px rgba(208,255,58,0)}100%{box-shadow:0 0 0 0 rgba(208,255,58,0)}}
+.kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:920px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.kpi-grid{grid-template-columns:1fr}}
+.insight-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}@media(max-width:1000px){.insight-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.insight-grid{grid-template-columns:1fr}}
+.centre-head,.centre-row{display:grid;grid-template-columns:46px 1.5fr 96px 2.3fr 66px 140px;align-items:center;gap:16px;padding:0 20px}
+.centre-head{height:46px;background:#faf6ec;border-bottom:1px solid #e5e8ee}.centre-row{min-height:66px;border-bottom:1px solid #eef0f4}.centre-row:last-child{border-bottom:none}
+@media(max-width:820px){.centre-head{display:none}.centre-row{grid-template-columns:38px 1fr auto;grid-template-areas:"rank name rate" "rank present status" "bar bar bar";row-gap:10px;padding:16px 18px;min-height:0}.c-rank{grid-area:rank}.c-name{grid-area:name}.c-present{grid-area:present;justify-self:start}.c-bar{grid-area:bar}.c-rate{grid-area:rate;justify-self:end}.c-status{grid-area:status;justify-self:end}}
+.centre-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:900px){.centre-cards{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.centre-cards{grid-template-columns:1fr}}
+.detail-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}@media(max-width:640px){.detail-stats{grid-template-columns:repeat(2,1fr)}}
+.role-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}@media(max-width:900px){.role-grid{grid-template-columns:1fr}}
+.vol-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.course-row{display:grid;grid-template-columns:120px 1fr auto;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid #eef0f4}.course-row:last-child{border-bottom:none}
+@media(max-width:560px){.course-row{grid-template-columns:1fr auto}.course-row>span:first-child{grid-column:1/-1}}`}</style>
     </div>
   );
 }
+function detailStatusBg(r) { return r >= 100 ? "rgba(47,158,68,0.12)" : r >= 60 ? "rgba(232,169,43,0.16)" : "rgba(224,49,49,0.12)"; }
 
 Object.assign(window, { HomePage, EventsBand, StatusPage, VolunteerStatusPage });
+
