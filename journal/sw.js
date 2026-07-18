@@ -48,11 +48,20 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(k => !k.startsWith(CACHE_VERSION)).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    const stale = keys.filter(k => !k.startsWith(CACHE_VERSION));
+    await Promise.all(stale.map(k => caches.delete(k)));
+    await self.clients.claim();
+    if (stale.length > 0) {
+      const clients = await self.clients.matchAll({ type: 'window' });
+      for (const c of clients) { try { await c.navigate(c.url); } catch (_) {} }
+    }
+  })());
 });
+
+// Fixed-name journal bundles — always revalidated so a deploy shows immediately.
+const AJ_NETWORK_FIRST = /\/journal\/(index\.html|app\.min\.js|app\.css)$/;
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
@@ -61,13 +70,23 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return;   // let CDN fonts pass through
   if (url.pathname.startsWith('/api/')) return;        // never cache live data
 
-  // Navigations → network-first, fall back to the cached app shell offline.
-  if (req.mode === 'navigate') {
-    e.respondWith(fetch(req).catch(() => caches.match('/journal/index.html').then(r => r || caches.match('/journal/'))));
+  // Network-first for navigations AND the fixed-name bundles; cache is the
+  // offline fallback only.
+  const isNav = req.mode === 'navigate';
+  if (isNav || AJ_NETWORK_FIRST.test(url.pathname)) {
+    e.respondWith(
+      fetch(req).then(res => {
+        if (res && res.status === 200 && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(SHELL).then(c => c.put(req, copy));
+        }
+        return res;
+      }).catch(() => caches.match(req).then(r => r || (isNav ? caches.match('/journal/index.html').then(x => x || caches.match('/journal/')) : undefined)))
+    );
     return;
   }
 
-  // Shell assets → cache-first, then network (and cache the result).
+  // Immutable shell assets → cache-first, then network.
   e.respondWith(
     caches.match(req).then(hit => hit || fetch(req).then(res => {
       if (res && res.status === 200 && res.type === 'basic') {

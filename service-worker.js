@@ -1,14 +1,21 @@
 /* ================================================================
    NGG — service worker.
-   - Network-first for HTML (so deploys go live without forced refresh)
-   - Cache-first for hashable assets (CSS, JS, fonts, images)
-   - Skip /api/ entirely — auth and live data must never be cached
-   - Bumping CACHE_VERSION invalidates everything on next visit
+   - Network-first for HTML AND the app's fixed-name bundles (app.min.js,
+     api-client.js, data.js, photos.js, styles). They keep the same name across
+     deploys, so caching them first is exactly what makes "my changes aren't
+     showing" happen. Online → always fresh; offline → last-good from cache.
+   - Cache-first ONLY for truly immutable assets (vendored libs, fonts, images).
+   - Skip /api/ entirely — auth and live data must never be cached.
+   - On a new build, delete old caches AND reload open tabs so the fresh app
+     runs immediately (no stale admin).
    ================================================================ */
 
 const CACHE_VERSION = 'ngg-v1';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
+
+// Fixed-name entry bundles — always revalidated against the network.
+const NETWORK_FIRST = /\/(index\.html|app\.min\.js|api-client\.js|data\.js|photos\.js|styles\.css|styles-app\.css)$/;
 
 const PRECACHE = [
   '/',
@@ -35,11 +42,20 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) => Promise.all(
-      keys.filter(k => !k.startsWith(CACHE_VERSION)).map(k => caches.delete(k))
-    )).then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    const stale = keys.filter(k => !k.startsWith(CACHE_VERSION));
+    await Promise.all(stale.map(k => caches.delete(k)));
+    await self.clients.claim();
+    // If this activation REPLACED a previous build (old caches existed), reload
+    // every open tab so it runs the new bundle right away — this is what makes
+    // a deploy actually show without the user hunting for a hard-refresh. On a
+    // first-ever install there are no old caches, so nothing is disturbed.
+    if (stale.length > 0) {
+      const clients = await self.clients.matchAll({ type: 'window' });
+      for (const c of clients) { try { await c.navigate(c.url); } catch (_) {} }
+    }
+  })());
 });
 
 self.addEventListener('fetch', (event) => {
@@ -52,22 +68,25 @@ self.addEventListener('fetch', (event) => {
   // Skip cross-origin (fonts, unsplash) — let the browser handle them
   if (url.origin !== self.location.origin) return;
 
-  // HTML: network-first, fall back to cache when offline
-  if (req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')) {
+  // Network-first for HTML navigations AND the fixed-name app bundles: always
+  // try the network, fall back to cache only when offline.
+  const isNav = req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');
+  if (isNav || NETWORK_FIRST.test(url.pathname)) {
     event.respondWith(
       fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(RUNTIME_CACHE).then(c => c.put(req, copy));
+        if (res && res.status === 200 && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(RUNTIME_CACHE).then(c => c.put(req, copy));
+        }
         return res;
-      }).catch(() => caches.match(req).then(r => r || caches.match('/index.html')))
+      }).catch(() => caches.match(req).then(r => r || (isNav ? caches.match('/index.html') : undefined)))
     );
     return;
   }
 
-  // Hashable assets: cache-first, then network
+  // Everything else (vendored libs, fonts, images) is immutable → cache-first.
   event.respondWith(
     caches.match(req).then(hit => hit || fetch(req).then(res => {
-      // Only cache successful responses
       if (res && res.status === 200 && res.type === 'basic') {
         const copy = res.clone();
         caches.open(RUNTIME_CACHE).then(c => c.put(req, copy));
