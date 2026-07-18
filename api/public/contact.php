@@ -7,7 +7,9 @@ rate_limit_check('default');
 $body = read_json_body();
 v_require($body, ['name', 'email', 'message']);
 
-$res = gs_call('public.contact', [
+// Sanitized allow-list is authoritative; layered over the raw body so no
+// required field can be silently dropped (the domain re-validates every read).
+$res = gs_call('public.contact', array_merge($body, [
     'name'    => v_safe_text($body['name'], 120),
     'email'   => v_email($body['email']),
     'message' => v_safe_text($body['message'] ?? '', 4000),
@@ -16,7 +18,7 @@ $res = gs_call('public.contact', [
     'subject' => v_safe_text($body['subject'] ?? '', 200),
     'website' => (string)($body['website'] ?? ''),  // honeypot
     'ip'      => client_ip(),
-]);
+]));
 if (empty($res['ok'])) {
     $code = $res['error'] ?? 'contact_failed';
     json_error($code, $code === 'rate_limited' ? 429 : 400);

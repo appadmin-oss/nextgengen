@@ -57,7 +57,12 @@ if ($kind === 'teen') {
     $payload['role'] = v_safe_text($body['role'] ?? '', 60);
 }
 
-$res = gs_call('public.apply', $payload);
+// Forward the sanitized allow-list as the authoritative payload, but layer it
+// over the raw body so a field the domain requires (e.g. sex) can never be
+// silently dropped by an incomplete allow-list — the sanitized values win, the
+// raw body only backfills anything the list forgot. The domain re-validates
+// every field it reads, so untrusted extras in $body are harmless.
+$res = gs_call('public.apply', array_merge($body, $payload));
 if (empty($res['ok'])) {
     $code = $res['error'] ?? 'apply_failed';
     json_error($code, $code === 'rate_limited' ? 429 : 400);
