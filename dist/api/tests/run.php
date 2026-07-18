@@ -62,6 +62,85 @@ function chk(string $label, bool $cond): void {
 db_conn();
 chk('schema at target', (int)db_row('SELECT MAX(version) v FROM schema_version')['v'] === NGG_SCHEMA_TARGET);
 
+// ── Proper migrator: ladder integrity, idempotency, SQLite⇄MySQL parity ──
+// The three ways migrations go wrong: a duplicate array key / forgotten target
+// bump (ladder), a clash on re-run over an existing DB (idempotency), and dev
+// (SQLite) drifting from prod (MySQL mirror). Each is guarded here.
+
+chk('migrator: ladder guard accepts a contiguous 1..N ladder',
+    (function () { try { db_assert_migration_ladder(array_fill(1, NGG_SCHEMA_TARGET, 'x')); return true; } catch (Throwable $e) { return false; } })());
+chk('migrator: ladder guard rejects a gap in versions',
+    (function () { try { db_assert_migration_ladder([1 => 'a', 3 => 'c']); return false; } catch (Throwable $e) { return true; } })());
+chk('migrator: ladder guard rejects a count/target mismatch (forgotten bump)',
+    (function () { try { db_assert_migration_ladder([1 => 'a', 2 => 'b']); return false; } catch (Throwable $e) { return true; } })());
+
+chk('migrator: re-running migrations on a current DB is a clean no-op',
+    (function () { $db = db_conn(); $b = (int)$db->query('SELECT MAX(version) FROM schema_version')->fetchColumn();
+        try { db_migrate($db); } catch (Throwable $e) { return false; }
+        return (int)$db->query('SELECT MAX(version) FROM schema_version')->fetchColumn() === $b && $b === NGG_SCHEMA_TARGET; })());
+
+chk('migrator: full replay over a populated schema self-heals (no clash, no dup seeds)',
+    (function () {
+        $tmp = sys_get_temp_dir() . '/ngg-selfheal-' . bin2hex(random_bytes(3)) . '.db';
+        $p = new PDO('sqlite:' . $tmp, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+        try {
+            db_migrate($p);                          // fresh: full migrate incl. seed rows
+            $p->exec('DELETE FROM schema_version');   // bookkeeping lost, data remains
+            db_migrate($p);                           // replay over existing tables + seeds
+            $v = (int)$p->query('SELECT MAX(version) FROM schema_version')->fetchColumn();
+            $dupes = (int)$p->query('SELECT COUNT(*) - COUNT(DISTINCT code) FROM vol_tiers')->fetchColumn();
+            return $v === NGG_SCHEMA_TARGET && $dupes === 0;
+        } catch (Throwable $e) { return false; }
+        finally { @unlink($tmp); }
+    })());
+
+chk('migrator: idempotent DDL helpers report existence correctly',
+    (function () { $db = db_conn();
+        return db_table_exists($db, 'centres') && !db_table_exists($db, 'no_such_table_xyz')
+            && db_column_exists($db, 'centres', 'address') && !db_column_exists($db, 'centres', 'no_such_col_xyz'); })());
+
+// SQLite⇄MySQL parity: every table + column the code relies on in SQLite must
+// also exist in db/schema-mysql.sql, or prod silently lacks a column dev has.
+function ngg_split_top_commas(string $s): array {
+    $out = []; $depth = 0; $cur = ''; $n = strlen($s);
+    for ($i = 0; $i < $n; $i++) { $c = $s[$i];
+        if ($c === '(') $depth++; elseif ($c === ')') $depth--;
+        if ($c === ',' && $depth === 0) { $out[] = $cur; $cur = ''; } else $cur .= $c;
+    }
+    if (trim($cur) !== '') $out[] = $cur;
+    return $out;
+}
+function ngg_parse_mysql_schema(string $sql): array {
+    $tables = [];
+    foreach (db_split_sql($sql) as $stmt) {
+        if (preg_match('/^CREATE TABLE(?:\s+IF NOT EXISTS)?\s+`?(\w+)`?\s*\((.*)\)[^)]*$/is', $stmt, $m)) {
+            $cols = [];
+            foreach (ngg_split_top_commas($m[2]) as $frag) {
+                $frag = trim($frag);
+                if ($frag === '' || preg_match('/^(PRIMARY|UNIQUE|KEY|INDEX|CONSTRAINT|FOREIGN|FULLTEXT|CHECK)\b/i', $frag)) continue;
+                if (preg_match('/^`?(\w+)`?/', $frag, $cm)) $cols[] = $cm[1];
+            }
+            $tables[$m[1]] = $cols;
+        } elseif (preg_match('/^ALTER TABLE\s+`?(\w+)`?\s+(.*)$/is', $stmt, $m) && preg_match_all('/ADD COLUMN\s+`?(\w+)`?/i', $m[2], $am)) {
+            foreach ($am[1] as $c) $tables[$m[1]][] = $c;
+        }
+    }
+    return $tables;
+}
+$mysqlSchema = ngg_parse_mysql_schema((string)@file_get_contents(dirname($ROOT) . '/db/schema-mysql.sql'));
+$parityDb = db_conn();
+$drift = [];
+foreach ($parityDb->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'") as $tr) {
+    $t = (string)$tr['name'];
+    if (in_array($t, ['schema_version', 'schema_meta'], true)) continue;
+    if (!isset($mysqlSchema[$t])) { $drift[] = "MISSING TABLE $t"; continue; }
+    foreach ($parityDb->query("PRAGMA table_info(\"$t\")") as $ci) {
+        $col = (string)$ci['name'];
+        if (!in_array($col, $mysqlSchema[$t], true)) $drift[] = "$t.$col";
+    }
+}
+chk('migrator: SQLite⇄MySQL mirror parity — every table+column present' . ($drift ? ' [DRIFT: ' . implode(', ', array_slice($drift, 0, 15)) . ']' : ''), empty($drift));
+
 // ── Seed ──
 db_insert('members', ['memberId' => 'NGG-2025-0099', 'fullName' => 'Admin User', 'email' => 'admin@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 db_insert('members', ['memberId' => 'NGG-2025-0001', 'fullName' => 'Tunde Okonkwo', 'email' => 'tunde@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'Tech', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);

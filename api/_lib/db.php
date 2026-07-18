@@ -88,25 +88,20 @@ function db_apply_mysql_schema(PDO $db): void {
         error_log('[db] schema_meta check: ' . $e->getMessage()); // fall through and try to apply
     }
 
-    // Strip comments, split on ';', run additive structural DDL AND the seed
-    // INSERTs. The mirror's INSERTs are all idempotent (ON DUPLICATE KEY UPDATE),
-    // so replaying them is safe — excluding them previously meant no-SSH MySQL
-    // hosts never got the seed rows (e.g. vol_tiers) the SQLite path installs.
-    $clean = preg_replace('#/\*.*?\*/#s', '', $sql);
-    $clean = preg_replace('#--[^\n]*#', '', (string)$clean);
+    // Run additive structural DDL AND the seed INSERTs. The mirror's INSERTs are
+    // all idempotent (ON DUPLICATE KEY UPDATE), so replaying them is safe —
+    // excluding them previously meant no-SSH MySQL hosts never got the seed rows
+    // (e.g. vol_tiers) the SQLite path installs. Statement splitting and the
+    // "already applied" test are shared with the SQLite migrator (see below).
     $allOk = true;
-    foreach (explode(';', (string)$clean) as $stmt) {
-        $stmt = trim($stmt);
-        if ($stmt === '' || !preg_match('/^(CREATE TABLE|CREATE INDEX|CREATE UNIQUE INDEX|ALTER TABLE|INSERT)\b/i', $stmt)) continue;
+    foreach (db_split_sql($sql) as $stmt) {
+        if (!preg_match('/^(CREATE TABLE|CREATE INDEX|CREATE UNIQUE INDEX|ALTER TABLE|INSERT)\b/i', $stmt)) continue;
         try {
             $db->exec($stmt);
         } catch (Throwable $e) {
-            // 1050 table exists · 1060 dup column · 1061 dup key · 1062 dup entry
-            // · 1091 no such column · 1826 dup FK — all "already applied", benign.
-            $code = (int)($e->errorInfo[1] ?? 0);
-            if (!in_array($code, [1050, 1060, 1061, 1062, 1091, 1826], true)) {
+            if (!db_ddl_already_applied($db, $e)) {
                 $allOk = false;
-                error_log('[db] mysql schema stmt failed (' . $code . '): ' . substr($stmt, 0, 100) . ' — ' . $e->getMessage());
+                error_log('[db] mysql schema stmt failed (' . (int)($e->errorInfo[1] ?? 0) . '): ' . substr($stmt, 0, 100) . ' — ' . $e->getMessage());
             }
         }
     }
@@ -123,6 +118,101 @@ function db_apply_mysql_schema(PDO $db): void {
         error_log('[db] schema_meta write: ' . $e->getMessage());
     }
     if (!$allOk) error_log('[db] mysql schema applied with errors — see log; marked "partial" in schema_meta.');
+}
+
+// ── Migration engine: shared, driver-aware, idempotent ────────────────────
+//
+// One set of primitives powers BOTH the SQLite auto-migrator and the MySQL
+// mirror replay, so "already applied" is handled identically everywhere and a
+// re-run can never error. Everything here is additive DDL only — nothing drops
+// or rewrites data.
+
+/** Split a SQL script into individual statements. Comments are stripped and
+ *  blank fragments dropped. Our migrations contain no semicolons inside string
+ *  literals or trigger bodies (verified), so a plain split on ';' is correct
+ *  and keeps the splitter dependency-free. */
+function db_split_sql(string $sql): array {
+    $sql = preg_replace('#/\*.*?\*/#s', '', $sql);        // block comments
+    $sql = preg_replace('#--[^\n]*#', '', (string)$sql);   // line comments
+    $out = [];
+    foreach (explode(';', (string)$sql) as $stmt) {
+        $stmt = trim($stmt);
+        if ($stmt !== '') $out[] = $stmt;
+    }
+    return $out;
+}
+
+/** True when a DDL error just means "this change is already in place" — the
+ *  benign re-run of an additive migration, not a real failure. Recognises both
+ *  MySQL numeric codes and SQLite's message text so the two drivers behave the
+ *  same. */
+function db_ddl_already_applied(PDO $db, Throwable $e): bool {
+    if ($db->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+        // 1050 table exists · 1060 dup column · 1061 dup key · 1062 dup entry
+        // · 1091 no such column/key to drop · 1826 dup FK.
+        return in_array((int)($e->errorInfo[1] ?? 0), [1050, 1060, 1061, 1062, 1091, 1826], true);
+    }
+    // SQLite reports these as message text. "unique constraint failed" covers a
+    // seed INSERT whose row is already present — the exact analogue of MySQL's
+    // 1062 (dup entry) above, so a migration that also seeds rows replays clean.
+    $m = strtolower($e->getMessage());
+    foreach (['duplicate column name', 'already exists', 'unique constraint failed'] as $frag) {
+        if (strpos($m, $frag) !== false) return true;
+    }
+    return false;
+}
+
+/** Does a column already exist? Powers the idempotent DDL helpers below so a
+ *  new migration can guard its own ALTERs. Identifiers come from our own
+ *  migrations (never user input) but are validated regardless. */
+function db_column_exists(PDO $db, string $table, string $col): bool {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) return false;
+    if ($db->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+        foreach ($db->query("PRAGMA table_info(\"$table\")") as $r) if (($r['name'] ?? '') === $col) return true;
+        return false;
+    }
+    $st = $db->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ? LIMIT 1");
+    $st->execute([$table, $col]);
+    return (bool)$st->fetchColumn();
+}
+
+/** Does a table already exist? */
+function db_table_exists(PDO $db, string $table): bool {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) return false;
+    if ($db->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+        $st = $db->prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1");
+    } else {
+        $st = $db->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1");
+    }
+    $st->execute([$table]);
+    return (bool)$st->fetchColumn();
+}
+
+/** Add a column only if it isn't already there — the clean primitive for future
+ *  migrations. Self-healing whether the DB is fresh, half-migrated or already
+ *  current. $def is the definition minus the name (e.g. "TEXT DEFAULT ''"). */
+function db_add_column(PDO $db, string $table, string $col, string $def): void {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table) || !preg_match('/^[A-Za-z0-9_]+$/', $col)) {
+        throw new InvalidArgumentException("db_add_column: bad identifier ($table.$col)");
+    }
+    if (db_column_exists($db, $table, $col)) return;
+    $db->exec("ALTER TABLE $table ADD COLUMN $col $def");
+}
+
+/** Fail fast on a malformed migration ladder: keys must be a contiguous 1..N
+ *  and N must equal NGG_SCHEMA_TARGET. Catches the two classic mistakes — a
+ *  duplicate array key silently dropping a migration, and forgetting to bump
+ *  the target after adding one. Loud in dev/CLI/tests; logged in prod so a live
+ *  site degrades gracefully instead of 500ing on a mismatched constant. */
+function db_assert_migration_ladder(array $migrations): void {
+    global $CONFIG;
+    $keys = array_keys($migrations);
+    $n = count($keys);
+    if ($keys === range(1, max(1, $n)) && $n === NGG_SCHEMA_TARGET) return;
+    $msg = '[db] invalid migration ladder: keys=[' . implode(',', $keys) . '] count=' . $n
+         . ' target=' . NGG_SCHEMA_TARGET . ' — keys must be contiguous 1..N and N must equal NGG_SCHEMA_TARGET.';
+    if (!empty($CONFIG['debug']) || PHP_SAPI === 'cli') throw new RuntimeException($msg);
+    error_log($msg);
 }
 
 function db_migrate(PDO $db): void {
@@ -1015,16 +1105,29 @@ function db_migrate(PDO $db): void {
         ",
     ];
 
+    // Guard the ladder before touching the DB (contiguous keys, target matches).
+    db_assert_migration_ladder($migrations);
+
     foreach ($migrations as $v => $sql) {
         if ($v <= $current) continue;
+        // SQLite has transactional DDL, so a migration applies all-or-nothing:
+        // an interrupted run rolls back and simply replays next time. Each
+        // statement tolerates "already applied", so a partially-applied or
+        // pre-existing schema self-heals instead of throwing.
         $db->beginTransaction();
         try {
-            $db->exec($sql);
-            $db->exec("INSERT INTO schema_version (version) VALUES ($v)");
+            foreach (db_split_sql($sql) as $stmt) {
+                try {
+                    $db->exec($stmt);
+                } catch (Throwable $e) {
+                    if (!db_ddl_already_applied($db, $e)) throw $e; // real error → bubble
+                }
+            }
+            $db->exec("INSERT OR IGNORE INTO schema_version (version) VALUES ($v)");
             $db->commit();
         } catch (Throwable $e) {
-            $db->rollBack();
-            throw $e;
+            if ($db->inTransaction()) $db->rollBack();
+            throw new RuntimeException("migration $v failed: " . $e->getMessage(), (int)$e->getCode(), $e);
         }
     }
 }
