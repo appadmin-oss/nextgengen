@@ -81,7 +81,7 @@ function status_pages_defaults(): array {
         'attendance' => [
             'published' => true,
             'title' => 'Summer School',
-            'tagline' => 'A live, public view of attendance and participation across every centre.',
+            'tagline' => 'A public, PII-free view of attendance and participation across every centre.',
             'accent' => '#d0ff3a',
             'banner' => ['text' => '', 'tone' => 'info'],
             'sections' => ['kpis' => true, 'centres' => true, 'trend' => true, 'transparency' => true, 'cta' => true],
@@ -170,20 +170,79 @@ function public_status(array $p): array {
     $only = is_array($page['centres'] ?? null) ? $page['centres'] : [];
     $centres = db_all("SELECT name, code, color FROM centres WHERE status = 'active' ORDER BY name");
     if ($only) $centres = array_values(array_filter($centres, fn($c) => in_array((string)$c['name'], $only, true)));
+    $cNames = array_map(fn($c) => (string)$c['name'], $centres);
+    $yesterday = gmdate('Y-m-d', time() - 86400);
     $byCentre = [];
     foreach ($centres as $c) {
         $name = (string)$c['name'];
         $enrolled = $one("SELECT COUNT(*) c FROM summer_students WHERE centre = ? AND status = 'active'", [$name]);
         $present  = $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE s.centre = ? AND a.date = ?", [$name, $today]);
-        $byCentre[] = ['name' => $name, 'code' => $c['code'], 'color' => $c['color'], 'present' => $present, 'rate' => $enrolled ? (int)round($present / $enrolled * 100) : 0];
+        $byCentre[] = ['name' => $name, 'code' => (string)$c['code'], 'color' => (string)$c['color'], 'enrolled' => $enrolled, 'present' => $present, 'rate' => $enrolled ? (int)round($present / $enrolled * 100) : 0];
     }
     $enrolledTotal = $one("SELECT COUNT(*) c FROM summer_students WHERE status = 'active'");
     $presentToday  = $one("SELECT COUNT(DISTINCT studentId) c FROM attendance WHERE date = ?", [$today]);
+    $presentYest   = $one("SELECT COUNT(DISTINCT studentId) c FROM attendance WHERE date = ?", [$yesterday]);
     $trend = db_all("SELECT date, COUNT(DISTINCT studentId) present FROM attendance WHERE date >= ? GROUP BY date ORDER BY date", [$since]);
     // Session week number (best-effort from the active session start).
     $sess = db_row("SELECT startDate FROM sessions WHERE isActive = 1 ORDER BY id DESC LIMIT 1");
     $week = 0;
     if ($sess && !empty($sess['startDate'])) { $d = (int)floor((time() - strtotime((string)$sess['startDate'])) / 86400); if ($d >= 0) $week = (int)floor($d / 7) + 1; }
+
+    $activeVol = $one("SELECT COUNT(*) c FROM volunteers WHERE status = 'active'");
+    $starsWeek = $one("SELECT COUNT(*) c FROM member_stars WHERE date >= ?", [$weekAgo]);
+    $rateToday = $enrolledTotal ? (int)round($presentToday / $enrolledTotal * 100) : 0;
+    $rateYest  = $enrolledTotal ? (int)round($presentYest / $enrolledTotal * 100) : 0;
+    $deltas = [
+        'enrolledNew' => $one("SELECT COUNT(*) c FROM summer_students WHERE status='active' AND substr(enrolledAt,1,10) = ?", [$today]),
+        'presentDelta' => $presentToday - $presentYest,
+        'rateDelta' => $rateToday - $rateYest,
+        'volNew' => $one("SELECT COUNT(*) c FROM volunteers WHERE status='active' AND substr(createdAt,1,10) = ?", [$today]),
+        'starsToday' => $one("SELECT COUNT(*) c FROM member_stars WHERE date = ?", [$today]),
+    ];
+
+    // PII-free student leaderboard — handle only, never a name or photo.
+    $palette = ['#f5b026', '#b07cff', '#2f9e44', '#3b5bdb', '#ff5a3c', '#17a2b8', '#e8a92b', '#6a3fc0'];
+    $cIn = $cNames ? ('(' . implode(',', array_fill(0, count($cNames), '?')) . ')') : '';
+    $studs = $cNames ? db_all("SELECT studentId, handle, centre, track FROM summer_students WHERE status='active' AND centre IN $cIn", $cNames) : [];
+    $starAgg = []; foreach (db_all("SELECT subjectId, SUM(stars) s, SUM(CASE WHEN date >= ? THEN stars ELSE 0 END) w FROM member_stars GROUP BY subjectId", [$weekAgo]) as $r) $starAgg[(string)$r['subjectId']] = ['s' => (int)$r['s'], 'w' => (int)$r['w']];
+    $attAgg = []; foreach (db_all("SELECT studentId, COUNT(DISTINCT date) c FROM attendance WHERE date >= ? GROUP BY studentId", [$since]) as $r) $attAgg[(string)$r['studentId']] = (int)$r['c'];
+    $schoolDays = max(1, (int)(db_row("SELECT COUNT(DISTINCT date) c FROM attendance WHERE date >= ?", [$since])['c'] ?? 1));
+    $members = [];
+    foreach ($studs as $i => $s) {
+        $sid = (string)$s['studentId'];
+        $st = $starAgg[$sid] ?? ['s' => 0, 'w' => 0];
+        $days = $attAgg[$sid] ?? 0;
+        $handle = (string)$s['handle']; if ($handle === '') $handle = 'ngg' . substr($sid, -4);
+        $members[] = [
+            'handle' => $handle, 'centre' => (string)$s['centre'], 'faculty' => ((string)$s['track']) ?: 'General',
+            'color' => $palette[abs(crc32($handle)) % count($palette)],
+            'points' => $st['s'] * 40 + $days * 8, 'weekPoints' => $st['w'] * 40 + min($days, 5) * 8,
+            'stars' => $st['s'], 'attendance' => (int)round($days / $schoolDays * 100), 'streak' => min($days, 14), 'move' => 0,
+        ];
+    }
+    $faculties = array_values(array_unique(array_filter(array_map(fn($m) => $m['faculty'], $members))));
+
+    // Real activities per centre (with a photo from the evidence, if any) +
+    // real present-by-weekday (the most recent occurrence of each weekday).
+    $activitiesByCentre = []; $daysByCentre = [];
+    $weekKeys = ['Mon' => 1, 'Tue' => 2, 'Wed' => 3, 'Thu' => 4, 'Fri' => 5, 'Sat' => 6];
+    foreach ($centres as $c) {
+        $rows = db_all("SELECT title, category, department, notes, date, evidence FROM activities WHERE centre = ? ORDER BY date DESC, id DESC LIMIT 8", [(string)$c['name']]);
+        $list = [];
+        foreach ($rows as $r) {
+            $ev = safe_json((string)($r['evidence'] ?? '[]')); $photo = '';
+            if (is_array($ev)) foreach ($ev as $e) { if (($e['type'] ?? '') === 'photo' && !empty($e['url'])) { $photo = (string)$e['url']; break; } }
+            $t = strtotime((string)$r['date']);
+            $list[] = ['faculty' => ((string)$r['department']) ?: ((string)$r['category']) ?: 'Activity', 'title' => (string)$r['title'], 'cap' => (string)$r['notes'], 'day' => $t ? gmdate('D', $t) : '', 'photoUrl' => $photo];
+        }
+        $activitiesByCentre[(string)$c['code']] = $list;
+        $days = [];
+        foreach ($weekKeys as $k => $dow) {
+            $date = ''; for ($back = 0; $back <= 20; $back++) { $ts = time() - $back * 86400; if ((int)gmdate('N', $ts) === $dow) { $date = gmdate('Y-m-d', $ts); break; } }
+            $days[] = ['key' => $k, 'present' => $date ? $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE s.centre = ? AND a.date = ?", [(string)$c['name'], $date]) : 0];
+        }
+        $daysByCentre[(string)$c['code']] = $days;
+    }
 
     return ['ok' => true, 'status' => [
         'today' => $today,
@@ -194,12 +253,17 @@ function public_status(array $p): array {
             'centres'          => count($centres),
             'enrolled'         => $enrolledTotal,
             'presentToday'     => $presentToday,
-            'attendanceRate'   => $enrolledTotal ? (int)round($presentToday / $enrolledTotal * 100) : 0,
-            'activeVolunteers' => $one("SELECT COUNT(*) c FROM volunteers WHERE status = 'active'"),
-            'starsThisWeek'    => $one("SELECT COUNT(*) c FROM member_stars WHERE date >= ?", [$weekAgo]),
+            'attendanceRate'   => $rateToday,
+            'activeVolunteers' => $activeVol,
+            'starsThisWeek'    => $starsWeek,
         ],
+        'deltas'   => $deltas,
         'byCentre' => $byCentre,
         'trend'    => $trend,
+        'members'  => $members,
+        'faculties'=> $faculties,
+        'activitiesByCentre' => $activitiesByCentre,
+        'daysByCentre' => $daysByCentre,
     ]];
 }
 

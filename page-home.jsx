@@ -725,30 +725,44 @@ function relAgo(iso) {
 }
 function rateTone(r) { return r >= 85 ? "#2f9e44" : r >= 60 ? "#e8a92b" : "#e03131"; }
 
+function statusBg(r) { return r >= 85 ? "rgba(47,158,68,0.12)" : r >= 60 ? "rgba(232,169,43,0.16)" : "rgba(224,49,49,0.12)"; }
+function statusLabel(r) { return r >= 85 ? "On track" : r >= 60 ? "Watch" : "Needs attention"; }
+function sFmt(n) { return (n == null ? 0 : n).toLocaleString("en-US"); }
+function joinNames(arr) { return arr.length <= 1 ? (arr[0] || "") : arr.length === 2 ? arr[0] + " & " + arr[1] : arr.slice(0, -1).join(", ") + " & " + arr[arr.length - 1]; }
+
 function StatusPage({ setPage, previewConfig }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [, setTick] = React.useState(0);
-  const load = React.useCallback(() => {
-    NGGApi.public.status().then(r => { setD(r.status || r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  const [t, setT] = React.useState(1);
+  const [view, setView] = React.useState("overview");
+  const [sortKey, setSortKey] = React.useState("rate");
+  const [openCentre, setOpenCentre] = React.useState(null);
+  const [tf, setTf] = React.useState("week");
+  const [facFilter, setFacFilter] = React.useState("All");
+  const [centreFilter, setCentreFilter] = React.useState("All");
+  const [daySel, setDaySel] = React.useState("Fri");
+  const [updatedAt, setUpdatedAt] = React.useState(Date.now());
+  const animRef = React.useRef(null);
+
+  const startCount = React.useCallback(() => {
+    clearInterval(animRef.current); const t0 = Date.now();
+    animRef.current = setInterval(() => {
+      const p = Math.min(1, (Date.now() - t0) / 900); setT(1 - Math.pow(1 - p, 3));
+      if (p >= 1) clearInterval(animRef.current);
+    }, 40);
   }, []);
+  const load = React.useCallback(() => {
+    NGGApi.public.status().then(r => { setD(r.status || r); setErr(""); setUpdatedAt(Date.now()); startCount(); }).catch(e => setErr(e.code || e.message));
+  }, [startCount]);
   React.useEffect(() => {
     load();
-    const poll = setInterval(() => { if (!document.hidden) load(); }, 45000);
-    const clock = setInterval(() => setTick(t => t + 1), 1000); // keep "updated Xs ago" fresh
-    return () => { clearInterval(poll); clearInterval(clock); };
+    const poll = setInterval(() => { if (!document.hidden) load(); }, 30000);
+    const clock = setInterval(() => setTick(x => x + 1), 1000);
+    return () => { clearInterval(poll); clearInterval(clock); clearInterval(animRef.current); };
   }, [load]);
 
-  const k = (d && d.kpis) || {};
-  const centres = (d && d.byCentre) || [];
-  const trend = (d && d.trend) || [];
-  const maxTrend = Math.max(1, ...trend.map(t => t.present || 0));
-  const prog = (d && d.program) || {};
   const page = previewConfig || (d && d.page) || {};
-  const sec = page.sections || {};
-  const kpiOn = page.kpis || {};
-  const accent = page.accent || "#d0ff3a";
-  const banner = page.banner || {};
   if (!previewConfig && d && d.page && d.page.published === false) return (
     <div className="page" data-screen-label="Live status">
       <section className="section" style={{ padding: "120px 0", textAlign: "center" }}>
@@ -761,131 +775,527 @@ function StatusPage({ setPage, previewConfig }) {
       </section>
     </div>
   );
-  const kpiDefs = [
-    ["centres", "🏫", k.centres || 0, "Centres running"],
-    ["enrolled", "🎓", k.enrolled || 0, "Students enrolled"],
-    ["presentToday", "✅", k.presentToday || 0, "Present today"],
-    ["attendanceRate", "📈", (k.attendanceRate || 0) + "%", "Attendance rate", rateTone(k.attendanceRate || 0)],
-    ["activeVolunteers", "🤝", k.activeVolunteers || 0, "Active volunteers"],
-    ["starsThisWeek", "⭐", k.starsThisWeek || 0, "Stars this week"],
-  ].filter(x => kpiOn[x[0]] !== false);
 
-  const kpiCard = (icon, n, label, tone) => (
-    <div className="status-kpi" style={{ background: "var(--paper, #fff)", border: "1px solid rgba(12,20,50,0.08)", borderRadius: 16, padding: "20px 20px 18px", boxShadow: "0 1px 0 rgba(12,20,50,0.03)" }}>
-      <div style={{ fontSize: 20, marginBottom: 10 }} aria-hidden="true">{icon}</div>
-      <div className="display" style={{ fontSize: 38, lineHeight: 1, color: tone || "var(--navy-900)", fontWeight: 800 }}>{typeof n === "number" ? <CountUp to={n}/> : n}</div>
-      <div className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-500)", marginTop: 8 }}>{label}</div>
-    </div>
-  );
+  const accent = page.accent || "#d0ff3a";
+  const banner = page.banner || {};
+  const ci = (n) => Math.round((n || 0) * t);
+  const k = (d && d.kpis) || {}, dl = (d && d.deltas) || {};
+  const centresRaw = (d && d.byCentre) || [];
+  const members = (d && d.members) || [];
+  const week = (d && d.program && d.program.week) || 0;
+  const yearName = (page.title || (d && d.program && d.program.name) || "Summer School") + " " + ((d && d.program && d.program.year) || new Date().getFullYear());
+
+  const enrolled = centresRaw.reduce((s, c) => s + (c.enrolled || 0), 0);
+  const present = centresRaw.reduce((s, c) => s + (c.present || 0), 0);
+  const rate = enrolled ? Math.round(present / enrolled * 100) : 0;
+  const metric = tf === "week" ? "weekPoints" : "points";
+  const tfLabel = tf === "week" ? "this week" : "all time";
+
+  const secAgo = Math.max(0, Math.floor((Date.now() - updatedAt) / 1000));
+  const updatedAgo = secAgo < 60 ? secAgo + "s ago" : Math.floor(secAgo / 60) + "m ago";
+
+  const tabBase = { fontFamily: "'Inter',sans-serif", fontSize: 14.5, fontWeight: 600, padding: "14px 6px", border: "none", background: "none", cursor: "pointer", borderBottom: "2.5px solid transparent", marginBottom: -1, display: "inline-flex", alignItems: "center", marginRight: 6 };
+  const tabStyle = (kk) => ({ ...tabBase, color: view === kk ? "#fff" : "rgba(255,255,255,0.55)", borderBottomColor: view === kk ? "#f5b026" : "transparent" });
+  const tabs = [["overview", "Overview", "ph-chart-bar"], ["centres", "Centres", "ph-buildings"], ["leaderboard", "Leaderboard", "ph-trophy"]];
+  const heroSub = view === "overview"
+    ? ("Week " + week + " · " + (page.tagline || "A public, PII-free view of attendance and participation across every centre."))
+    : view === "centres"
+    ? "Six centres, one mission. Explore each centre's activities, faculties and member leaderboard."
+    : "The students showing up and leading the way — ranked by points earned across every centre.";
+
+  // KPI deltas
+  const dUp = (txt) => ({ deltaBg: "rgba(47,158,68,0.12)", deltaColor: "#2f9e44", deltaIcon: "ph-arrow-up", deltaText: txt });
+  const dDown = (txt) => ({ deltaBg: "rgba(224,49,49,0.10)", deltaColor: "#e03131", deltaIcon: "ph-arrow-down", deltaText: txt });
+  const dFlat = (txt) => ({ deltaBg: "rgba(28,42,94,0.06)", deltaColor: "#5a6488", deltaIcon: "ph-minus", deltaText: txt });
+  const dd = (v, unit) => v > 0 ? dUp("+" + v + unit) : v < 0 ? dDown(v + unit) : dFlat("no change");
+  const kpis = [
+    { icon: "ph-buildings", tintBg: "rgba(28,42,94,0.08)", iconColor: "#1c2a5e", value: sFmt(ci(k.centres)), label: "Centres running", valueColor: "#0a1130", ...dFlat("no change") },
+    { icon: "ph-graduation-cap", tintBg: "rgba(176,124,255,0.15)", iconColor: "#6a3fc0", value: sFmt(ci(k.enrolled)), label: "Students enrolled", valueColor: "#0a1130", ...dd(dl.enrolledNew || 0, " today") },
+    { icon: "ph-check-circle", tintBg: "rgba(47,158,68,0.14)", iconColor: "#2f9e44", value: sFmt(ci(k.presentToday)), label: "Present today", valueColor: "#0a1130", ...dd(dl.presentDelta || 0, " today") },
+    { icon: "ph-chart-line-up", tintBg: "rgba(245,176,38,0.16)", iconColor: "#a07400", value: ci(k.attendanceRate) + "%", label: "Attendance rate", valueColor: rateTone(k.attendanceRate || 0), ...dd(dl.rateDelta || 0, " pts") },
+    { icon: "ph-handshake", tintBg: "rgba(59,91,219,0.14)", iconColor: "#3b5bdb", value: sFmt(ci(k.activeVolunteers)), label: "Active volunteers", valueColor: "#0a1130", ...dd(dl.volNew || 0, " today") },
+    { icon: "ph-star", tintBg: "rgba(245,176,38,0.16)", iconColor: "#a07400", value: sFmt(ci(k.starsThisWeek)), label: "Stars this week", valueColor: "#0a1130", ...dd(dl.starsToday || 0, " today") },
+  ];
+
+  // Centre table (sorted)
+  const sorted = [...centresRaw].sort((a, b) => sortKey === "name" ? a.name.localeCompare(b.name) : sortKey === "present" ? (b.present - a.present) : (b.rate - a.rate));
+  const segBase = { fontFamily: "'Inter',sans-serif", fontSize: 13, fontWeight: 600, padding: "7px 15px", border: "none", cursor: "pointer", borderRadius: 999, transition: "all .15s ease" };
+  const segStyle = (on) => ({ ...segBase, background: on ? "#0c1432" : "transparent", color: on ? "#fff" : "#2a335c" });
+
+  // Trend
+  const trendArr = ((d && d.trend) || []).slice(-14);
+  const maxTrend = Math.max(1, ...trendArr.map(x => x.present || 0));
+  const avg = trendArr.length ? Math.round(trendArr.reduce((s, x) => s + (x.present || 0), 0) / trendArr.length) : 0;
+  const avgBottom = Math.round(avg / maxTrend * 150);
+  const momentumDiff = trendArr.length >= 4 ? (trendArr[trendArr.length - 1].present - trendArr[trendArr.length - 4].present) : 0;
+
+  // Insights
+  const absent = enrolled - present;
+  const split = { present, absent, total: enrolled, presentLabel: present + " present", absentLabel: absent + " absent", pctLabel: rate + "% present · " + (100 - rate) + "% absent" };
+  const atRisk = centresRaw.filter(c => c.rate < 75);
+  const atRiskAbsent = atRisk.reduce((s, c) => s + ((c.enrolled || 0) - (c.present || 0)), 0);
+  const rates = centresRaw.map(c => c.rate);
+  const spread = rates.length ? Math.max(...rates) - Math.min(...rates) : 0;
+  const best = [...centresRaw].sort((a, b) => b.rate - a.rate)[0] || { name: "—", rate: 0 };
+  const insightsSummary = "Attendance is holding at " + rate + "% " + (momentumDiff >= 0 ? "and trending up week-on-week — " : "— ") + (atRisk.length ? atRisk.length + (atRisk.length === 1 ? " centre needs" : " centres need") + " a closer look before Friday." : "and every centre is on track.");
+  const insights = [
+    { col: "#2f9e44", edge: "#2f9e44", tintBg: "rgba(47,158,68,0.12)", icon: "ph-trend-up", title: "Momentum", stat: (momentumDiff >= 0 ? "+" : "") + momentumDiff, note: "more students present than three sessions ago — the strongest run this fortnight." },
+    { col: "#a07400", edge: "#f5b026", tintBg: "rgba(245,176,38,0.16)", icon: "ph-trophy", title: "Top centre", stat: best.rate + "%", note: best.name + " leads every centre today. A good model for the others." },
+    atRisk.length
+      ? { col: "#b26f00", edge: "#e8a92b", tintBg: "rgba(232,169,43,0.16)", icon: "ph-warning-circle", title: "Needs attention", stat: String(atRisk.length), note: atRiskAbsent + " students absent across " + joinNames(atRisk.map(c => c.name)) + ". Worth a follow-up call." }
+      : { col: "#2f9e44", edge: "#2f9e44", tintBg: "rgba(47,158,68,0.12)", icon: "ph-check-circle", title: "All clear", stat: "0", note: "every centre is above 75% today." },
+    { col: "#1c2a5e", edge: "#1c2a5e", tintBg: "rgba(28,42,94,0.08)", icon: "ph-arrows-horizontal", title: "Spread", stat: spread + " pts", note: "between the strongest and weakest centre — tighten this to lift the average." },
+  ];
+
+  // Leaderboard helpers
+  const decorate = (m, rank) => {
+    const dir = m.move > 0 ? "up" : m.move < 0 ? "down" : "same";
+    const medal = rank === 1 ? "#f5b026" : rank === 2 ? "#c3ccdb" : rank === 3 ? "#cd8a4e" : null;
+    return {
+      rank, handle: "@" + m.handle, initial: (m.handle[0] || "?").toUpperCase(), color: m.color, faculty: m.faculty, centre: m.centre,
+      stars: m.stars, streak: m.streak, scoreLabel: sFmt(metric === "weekPoints" ? m.weekPoints : m.points),
+      metaLine: m.faculty + " · " + m.centre + " · " + m.streak + "d streak",
+      moveIcon: dir === "up" ? "ph-caret-up" : dir === "down" ? "ph-caret-down" : "ph-minus",
+      moveColor: dir === "up" ? "#2f9e44" : dir === "down" ? "#e03131" : "#8088a6",
+      moveText: m.move === 0 ? "–" : String(Math.abs(m.move)),
+      rankBg: medal || "rgba(28,42,94,0.07)", rankColor: medal ? "#0c1432" : "#2a335c",
+    };
+  };
+  const facultyOpts = ["All", ...((d && d.faculties) || [])];
+  const centreOpts = ["All", ...centresRaw.map(c => c.name)];
+  let lbPool = [...members];
+  if (centreFilter !== "All") lbPool = lbPool.filter(m => m.centre === centreFilter);
+  if (facFilter !== "All") lbPool = lbPool.filter(m => m.faculty === facFilter);
+  lbPool.sort((a, b) => b[metric] - a[metric]);
+  const lbCount = lbPool.length;
+  const leaderboard = lbPool.slice(0, 25).map((m, i) => decorate(m, i + 1));
+  const podium = [leaderboard[1], leaderboard[0], leaderboard[2]].filter(Boolean).map(p => ({
+    ...p, avatarSize: p.rank === 1 ? 74 : 58, podiumHeight: p.rank === 1 ? 132 : p.rank === 2 ? 104 : 88,
+    medalColor: p.rank === 1 ? "#f5b026" : p.rank === 2 ? "#c3ccdb" : "#cd8a4e",
+  }));
+
+  // Centre detail
+  const dc = openCentre ? centresRaw.find(c => c.code === openCentre) : null;
+  let detail = null;
+  if (dc) {
+    const allMem = members.filter(m => m.centre === dc.name);
+    const facSet = [...new Set(allMem.map(m => m.faculty))];
+    const avgStars = allMem.length ? Math.round(allMem.reduce((s, m) => s + m.stars, 0) / allMem.length) : 0;
+    const chipBase = { display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "'Inter',sans-serif", fontSize: 13.5, fontWeight: 600, padding: "8px 15px", borderRadius: 999, cursor: "pointer", border: "1.5px solid", transition: "all .15s ease" };
+    const mkChip = (label, count) => {
+      const sel = facFilter === label;
+      return { label, count, style: { ...chipBase, background: sel ? "rgba(28,42,94,0.10)" : "#fff", borderColor: sel ? "#0c1432" : "#e5e8ee", color: sel ? "#0c1432" : "#2a335c" },
+        badgeStyle: { fontFamily: "'JetBrains Mono',monospace", fontSize: 10.5, fontWeight: 700, minWidth: 18, textAlign: "center", padding: "1px 6px", borderRadius: 999, background: sel ? "#0c1432" : "rgba(28,42,94,0.08)", color: sel ? "#fff" : "#5a6488", marginLeft: 8 } };
+    };
+    const facultyChips = [mkChip("All", allMem.length), ...facSet.map(f => mkChip(f, allMem.filter(m => m.faculty === f).length))];
+    const days = ((d.daysByCentre && d.daysByCentre[dc.code]) || []).map(x => x);
+    let activities = ((d.activitiesByCentre && d.activitiesByCentre[dc.code]) || []);
+    if (facFilter !== "All") activities = activities.filter(a => a.faculty === facFilter);
+    let mem = [...allMem]; if (facFilter !== "All") mem = mem.filter(m => m.faculty === facFilter);
+    mem.sort((a, b) => b[metric] - a[metric]);
+    const detLeaderboard = mem.slice(0, 10).map((m, i) => decorate(m, i + 1));
+    detail = {
+      name: dc.name, code: dc.code, color: dc.color, rate: dc.rate, tone: rateTone(dc.rate), statusBg: statusBg(dc.rate), statusLabel: statusLabel(dc.rate),
+      presentLabel: dc.present + " / " + dc.enrolled, memberCount: allMem.length, facCount: facSet.length, avgStars, weekLabel: "Week " + week,
+      facHint: facFilter === "All" ? "Showing all " + allMem.length + " members" : "Filtered to " + facFilter,
+      days, facultyChips, activities, activitiesLabel: (facFilter === "All" ? "All activities" : facFilter + " activities") + " · " + activities.length + (activities.length === 1 ? " session" : " sessions"),
+      leaderboard: detLeaderboard, hasMembers: detLeaderboard.length > 0, lbCount: detLeaderboard.length,
+    };
+  }
+  const showCentreGrid = view === "centres" && !dc;
+  const isOverview = view === "overview" && !dc;
+  const isLeaderboard = view === "leaderboard" && !dc;
 
   return (
     <div className="page" data-screen-label="Live status">
       {banner.text ? <div style={{ background: banner.tone === "warn" ? "#7a2e2e" : banner.tone === "success" ? "#1c5138" : "#1c2a5e", color: "#fff", textAlign: "center", padding: "10px 16px", fontSize: 14, fontWeight: 600 }}>{banner.text}</div> : null}
-      {/* Hero */}
-      <section style={{ background: "linear-gradient(160deg,#0c1432 0%,#16224e 60%,#1d2c63 100%)", color: "#fff", padding: "72px 0 56px" }}>
-        <div className="container">
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 999, background: "rgba(111,220,157,0.14)", border: "1px solid rgba(111,220,157,0.4)" }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#6fdc9d", boxShadow: "0 0 0 0 rgba(111,220,157,0.7)", animation: "statuspulse 1.8s infinite" }}/>
-            <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#bff3d4" }}>LIVE STATUS</span>
-          </div>
-          <h1 className="display" style={{ fontSize: "clamp(38px,6vw,72px)", margin: "18px 0 6px", lineHeight: 0.98 }}>{prog.name || "Summer School"} {prog.year || ""}</h1>
-          <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 16, margin: 0 }}>
-            {prog.week ? "Week " + prog.week + " · " : ""}{page.tagline || "A live, public view of attendance and participation across every centre."}
-            {d ? <span style={{ marginLeft: 10, opacity: 0.7 }}>Updated {relAgo(d.generatedAt)}</span> : null}
-          </p>
-          {err && <p style={{ color: "#ffb4b4", marginTop: 16 }}>Couldn't load the board — <button onClick={load} style={{ background: "none", border: "none", color: "#fff", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</p>}
 
-          {/* Headline attendance number */}
-          {d && !err && (
-            <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginTop: 34, flexWrap: "wrap" }}>
-              <div>
-                <div className="display" style={{ fontSize: "clamp(56px,10vw,110px)", lineHeight: 0.9, color: accent, fontWeight: 800 }}><CountUp to={k.attendanceRate || 0} suffix="%"/></div>
-                <div className="mono" style={{ fontSize: 12, letterSpacing: "0.15em", color: "rgba(255,255,255,0.6)", marginTop: 6 }}>ATTENDANCE TODAY</div>
+      <section style={{ background: "linear-gradient(158deg,#0c1432 0%,#16224e 58%,#1d2c63 100%)", color: "#fff", position: "relative", overflow: "hidden" }}>
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(52% 42% at 90% 4%,rgba(245,176,38,0.22),transparent 62%),radial-gradient(44% 48% at 12% 96%,rgba(208,255,58,0.10),transparent 60%)" }}/>
+        <div style={{ maxWidth: 1320, margin: "0 auto", padding: "30px 28px 0", position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
+            <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "#8ea0d8", display: "flex", alignItems: "center", gap: 8 }}><i className="ph ph-shield-check"/> Transparency board</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "rgba(255,255,255,0.55)", display: "inline-flex", alignItems: "center", gap: 6 }}><i className="ph ph-clock-countdown"/> Updated {updatedAgo}</span>
+              <button onClick={load} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 13, padding: "8px 15px", borderRadius: 999, cursor: "pointer", color: "#fff", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.16)", display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-arrow-clockwise"/> Refresh</button>
+            </div>
+          </div>
+
+          <div className="hero-cols" style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 44, alignItems: "center", marginTop: 26 }}>
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(111,220,157,0.14)", border: "1px solid rgba(111,220,157,0.4)" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#6fdc9d", animation: "statuspulse 1.8s infinite" }}/>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", color: "#bff3d4" }}>LIVE{week ? " · WEEK " + week : ""}</span>
               </div>
-              <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 18, paddingBottom: 18 }}>
-                <b><CountUp to={k.presentToday || 0}/></b> of <b><CountUp to={k.enrolled || 0}/></b> students present across <b>{k.centres || 0}</b> centre{(k.centres || 0) === 1 ? "" : "s"}.
+              <h1 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(34px,5vw,58px)", letterSpacing: "-0.035em", lineHeight: 0.98, margin: "18px 0 10px" }}>{yearName}</h1>
+              <p style={{ color: "rgba(255,255,255,0.68)", fontSize: 15.5, maxWidth: 520, margin: "0 0 24px", lineHeight: 1.55 }}>{heroSub}</p>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <button onClick={() => setPage && setPage(page.ctaPage || "join")} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#0c1432", border: "none", background: "linear-gradient(135deg,#ffc34d,#f5b026)", boxShadow: "0 12px 26px -12px rgba(176,124,18,0.7)", display: "inline-flex", alignItems: "center", gap: 8 }}>{page.ctaLabel || "Apply for a place"} <i className="ph ph-arrow-right"/></button>
+                <button onClick={() => setPage && setPage("v-status")} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#fff", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.2)", display: "inline-flex", alignItems: "center", gap: 8 }}>Volunteer status board</button>
               </div>
             </div>
-          )}
+
+            <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: "26px 28px", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Attendance today</span>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: accent }}>{k.centres || 0} centres</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 12, margin: "10px 0 4px" }}>
+                <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(56px,8vw,86px)", lineHeight: 0.82, letterSpacing: "-0.04em", color: accent, fontVariantNumeric: "tabular-nums" }}>{ci(rate)}%</span>
+                <span style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "rgba(255,255,255,0.8)", paddingBottom: 10 }}>{sFmt(ci(present))} / {sFmt(enrolled)} present</span>
+              </div>
+              <div style={{ display: "flex", height: 12, borderRadius: 99, overflow: "hidden", background: "rgba(255,255,255,0.12)", marginTop: 14 }}>
+                <div style={{ width: rate + "%", background: "linear-gradient(90deg,#6fdc9d,#3fb873)", transition: "width .8s cubic-bezier(.2,.7,.2,1)" }}/>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginTop: 22 }}>
+                <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#6fdc9d", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(present))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Present</div></div>
+                <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#ffd18a", fontVariantNumeric: "tabular-nums" }}>{sFmt(enrolled - ci(present))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Absent</div></div>
+                <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{sFmt(enrolled)}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Enrolled</div></div>
+              </div>
+              <div style={{ marginTop: 20, padding: "12px 14px", borderRadius: 12, background: "rgba(111,220,157,0.12)", border: "1px solid rgba(111,220,157,0.3)", fontSize: 13.5, color: "#bff3d4", lineHeight: 1.4 }}><i className="ph ph-trend-up" style={{ marginRight: 6 }}/>{momentumDiff >= 0 ? "Up " + momentumDiff + " students vs. three sessions ago" : momentumDiff + " students vs. three sessions ago"}</div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 6, marginTop: 30, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+            {tabs.map(([kk, label, icon]) => (
+              <button key={kk} onClick={() => { setView(kk); setOpenCentre(null); }} style={tabStyle(kk)}><i className={"ph " + icon} style={{ marginRight: 7 }}/>{label}</button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {isOverview && <div className="view">
+        <section style={{ padding: "44px 0 8px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
+              <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em", margin: 0 }}>Today at a glance</h2>
+              <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6" }}>▲ deltas vs. yesterday</span>
+            </div>
+            <div className="kpi-grid">
+              {kpis.map((kp, i) => (
+                <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "20px 20px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <span style={{ width: 42, height: 42, borderRadius: 12, display: "grid", placeItems: "center", fontSize: 22, background: kp.tintBg, color: kp.iconColor }}><i className={"ph " + kp.icon}/></span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, padding: "4px 9px", borderRadius: 999, background: kp.deltaBg, color: kp.deltaColor }}><i className={"ph " + kp.deltaIcon}/>{kp.deltaText}</span>
+                  </div>
+                  <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 40, lineHeight: 1, letterSpacing: "-0.03em", marginTop: 16, fontVariantNumeric: "tabular-nums", color: kp.valueColor }}>{kp.value}</div>
+                  <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488", marginTop: 8 }}>{kp.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section style={{ padding: "48px 0 44px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#a07400" }}>Across the centres</div>
+                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Centre by centre</h2>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6" }}>Sort</span>
+                <div style={{ display: "flex", gap: 4, background: "#f3ecdb", padding: 4, borderRadius: 999 }}>
+                  {[["rate", "Rate"], ["present", "Present"], ["name", "Name"]].map(([kk, label]) => (
+                    <button key={kk} onClick={() => setSortKey(kk)} style={segStyle(sortKey === kk)}>{label}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ border: "1px solid #e5e8ee", borderRadius: 18, overflow: "hidden", background: "#fff", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+              <div className="centre-head">
+                {["#", "Centre", "Present", "Attendance", "Rate", "Status"].map((h, i) => <span key={i} style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6", textAlign: i >= 4 ? "right" : "left" }}>{h}</span>)}
+              </div>
+              {sorted.map((c, i) => (
+                <div key={c.code} className="centre-row">
+                  <span className="c-rank" style={{ width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 13, color: "#fff", background: c.color }}>{i + 1}</span>
+                  <span className="c-name" style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+                    <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16, color: "#0a1130" }}>{c.name}</b>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.06em", color: "#8088a6", marginTop: 3 }}>{c.code}</span>
+                  </span>
+                  <span className="c-present" style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: "#2a335c", fontVariantNumeric: "tabular-nums" }}>{ci(c.present)} / {c.enrolled}</span>
+                  <span className="c-bar" style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}>
+                    <span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transition: "transform .8s cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + (c.rate * t / 100).toFixed(3) + ")", background: rateTone(c.rate) }}/>
+                  </span>
+                  <span className="c-rate" style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, textAlign: "right", fontVariantNumeric: "tabular-nums", color: rateTone(c.rate) }}>{ci(c.rate)}%</span>
+                  <span className="c-status" style={{ justifySelf: "end", display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 10.5, fontWeight: 600, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: statusBg(c.rate), color: rateTone(c.rate) }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: rateTone(c.rate) }}/>{statusLabel(c.rate)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section style={{ background: "#faf6ec", borderTop: "1px solid #e8dec6", borderBottom: "1px solid #e8dec6", padding: "48px 0" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 22, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#a07400" }}>The last two weeks</div>
+                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Attendance trend</h2>
+              </div>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#5a6488" }}><span style={{ width: 18, borderTop: "1.5px dashed #f5b026", display: "inline-block" }}/>avg {avg} present</span>
+            </div>
+            <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, padding: "24px 24px 18px", overflowX: "auto" }}>
+              <div style={{ minWidth: 520 }}>
+                <div style={{ position: "relative", height: 176 }}>
+                  {[0, 50, 100, 150].map(b => <div key={b} style={{ position: "absolute", left: 0, right: 0, bottom: b, borderTop: "1px solid #eef0f4" }}/>)}
+                  <div style={{ position: "absolute", left: 0, right: 0, bottom: avgBottom, borderTop: "1.5px dashed #f5b026", zIndex: 2 }}/>
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-end", gap: 3 }}>
+                    {trendArr.map((b, i) => {
+                      const isToday = i === trendArr.length - 1;
+                      return <div key={i} title={b.date + " · " + b.present + " present"} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", height: "100%" }}>
+                        <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: "#8088a6", marginBottom: 4 }}>{b.present}</span>
+                        <div style={{ width: "100%", maxWidth: 24, borderRadius: "5px 5px 0 0", background: isToday ? "linear-gradient(180deg,#f5b026,#ffcf6b)" : "linear-gradient(180deg,#16224e,#3b5bdb)", height: Math.round((b.present || 0) / maxTrend * 150 * t) + "px", transition: "height .8s cubic-bezier(.2,.7,.2,1)" }}/>
+                      </div>;
+                    })}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 3, marginTop: 10 }}>
+                  {trendArr.map((b, i) => { const isToday = i === trendArr.length - 1; return <div key={i} style={{ flex: 1, textAlign: "center", fontFamily: "'JetBrains Mono'", fontSize: 9.5, color: isToday ? "#a07400" : "#8088a6", fontWeight: isToday ? 700 : 400 }}>{String(b.date).slice(5)}</div>; })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section style={{ padding: "52px 0" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#a07400", display: "flex", alignItems: "center", gap: 8 }}><i className="ph ph-sparkle"/> Smart insights</div>
+              <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>What the numbers are saying</h2>
+            </div>
+            <p style={{ fontFamily: "'Sora'", fontWeight: 600, fontSize: 19, lineHeight: 1.45, letterSpacing: "-0.01em", color: "#2a335c", maxWidth: 720, margin: "14px 0 26px" }}>{insightsSummary}</p>
+            <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "20px 22px", marginBottom: 20, boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488" }}>Today's split · {split.total} enrolled</span>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{split.pctLabel}</span>
+              </div>
+              <div style={{ display: "flex", height: 36, borderRadius: 10, overflow: "hidden", border: "1px solid #e5e8ee" }}>
+                <div style={{ flex: Math.max(1, split.present), background: "#2f9e44", display: "flex", alignItems: "center", padding: "0 14px", color: "#fff", fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", minWidth: 0 }}><i className="ph ph-check" style={{ marginRight: 6 }}/>{split.presentLabel}</div>
+                <div style={{ flex: Math.max(1, split.absent), background: "#f3ecdb", display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 14px", color: "#7a5300", fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", minWidth: 0 }}>{split.absentLabel}</div>
+              </div>
+            </div>
+            <div className="insight-grid">
+              {insights.map((ins, i) => (
+                <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderLeft: "4px solid " + ins.edge, borderRadius: 14, padding: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ width: 34, height: 34, borderRadius: 10, display: "grid", placeItems: "center", fontSize: 18, background: ins.tintBg, color: ins.col }}><i className={"ph " + ins.icon}/></span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488" }}>{ins.title}</span>
+                  </div>
+                  <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 34, lineHeight: 1, letterSpacing: "-0.03em", margin: "16px 0 8px", fontVariantNumeric: "tabular-nums", color: ins.col }}>{ins.stat}</div>
+                  <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "#2a335c" }}>{ins.note}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>}
+
+      {showCentreGrid && <div className="view">
+        <section style={{ padding: "44px 0 56px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "0 0 6px" }}>Every centre</h2>
+            <p style={{ color: "#5a6488", fontSize: 14.5, margin: "0 0 26px" }}>Tap a centre for its activities, faculties and member leaderboard.</p>
+            <div className="centre-cards">
+              {centresRaw.map(c => {
+                const mem = members.filter(m => m.centre === c.name);
+                return <button key={c.code} onClick={() => setOpenCentre(c.code)} style={{ textAlign: "left", cursor: "pointer", background: "#fff", border: "1px solid #e5e8ee", borderTop: "4px solid " + c.color, borderRadius: 16, padding: 22, boxShadow: "0 1px 2px rgba(12,20,50,0.05)", fontFamily: "inherit" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <span style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 20, color: "#0a1130" }}>{c.name}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{c.code}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "16px 0 6px" }}>
+                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 38, lineHeight: 1, color: rateTone(c.rate), fontVariantNumeric: "tabular-nums" }}>{c.rate}%</span>
+                    <span style={{ fontSize: 13, color: "#5a6488" }}>{c.present} / {c.enrolled} present</span>
+                  </div>
+                  <span style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden", marginTop: 6 }}>
+                    <span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transform: "scaleX(" + (c.rate / 100).toFixed(3) + ")", background: rateTone(c.rate) }}/>
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 16, paddingTop: 14, borderTop: "1px solid #eef0f4" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 14, fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "#5a6488" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><i className="ph ph-users-three"/>{mem.length}</span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><i className="ph ph-stack"/>{new Set(mem.map(m => m.faculty)).size} faculties</span>
+                    </span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'Inter'", fontSize: 13, fontWeight: 600, color: "#1c2a5e" }}>View <i className="ph ph-arrow-right"/></span>
+                  </div>
+                </button>;
+              })}
+            </div>
+          </div>
+        </section>
+      </div>}
+
+      {detail && <div className="view">
+        <section style={{ padding: "32px 0 56px" }}>
+          <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px" }}>
+            <button onClick={() => setOpenCentre(null)} style={{ fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, color: "#1c2a5e", background: "none", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, padding: 0, marginBottom: 22 }}><i className="ph ph-arrow-left"/> All centres</button>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <span style={{ width: 20, height: 56, borderRadius: 8, background: detail.color, display: "block" }}/>
+                <div>
+                  <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 34, letterSpacing: "-0.025em", margin: 0 }}>{detail.name}</h2>
+                  <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#8088a6" }}>{detail.code} · {detail.weekLabel}</span>
+                </div>
+              </div>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", padding: "7px 13px", borderRadius: 999, background: detail.statusBg, color: detail.tone }}><span style={{ width: 7, height: 7, borderRadius: "50%", background: detail.tone }}/>{detail.statusLabel}</span>
+            </div>
+            <div className="detail-stats" style={{ marginTop: 24 }}>
+              {[[detail.rate + "%", "Attendance", detail.tone], [detail.presentLabel, "Present today", "#0a1130"], [detail.memberCount, "Members", "#0a1130"], [detail.avgStars + "★", "Avg stars", "#a07400"]].map((s, i) => (
+                <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 14, padding: 18 }}><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 30, color: s[2], fontVariantNumeric: "tabular-nums" }}>{s[0]}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488", marginTop: 6 }}>{s[1]}</div></div>
+              ))}
+            </div>
+            <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: 22, marginTop: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488" }}><i className="ph ph-funnel" style={{ marginRight: 6 }}/>Filter by faculty</span>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{detail.facHint}</span>
+              </div>
+              <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+                {detail.facultyChips.map((f, i) => <button key={i} onClick={() => setFacFilter(f.label)} style={f.style}>{f.label}<span style={f.badgeStyle}>{f.count}</span></button>)}
+              </div>
+              <div style={{ height: 1, background: "#eef0f4", margin: "20px 0" }}/>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488" }}><i className="ph ph-calendar-blank" style={{ marginRight: 6 }}/>Attendance by day</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+                {detail.days.map((dy, i) => { const sel = daySel === dy.key; return <button key={i} onClick={() => setDaySel(dy.key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "10px 16px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", minWidth: 64, border: "1.5px solid " + (sel ? "#0c1432" : "#e5e8ee"), background: sel ? "#0c1432" : "#fff", color: sel ? "#fff" : "#2a335c" }}>
+                  <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.08em" }}>{dy.key}</span>
+                  <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 18, lineHeight: 1, marginTop: 4, color: sel ? "#fff" : "#0a1130" }}>{dy.present}</span>
+                  <span style={{ fontSize: 9.5, color: sel ? "rgba(255,255,255,0.6)" : "#8088a6" }}>present</span>
+                </button>; })}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, margin: "36px 0 16px", flexWrap: "wrap" }}>
+              <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: 0 }}>{detail.activitiesLabel}</h3>
+            </div>
+            {detail.activities.length === 0
+              ? <div style={{ border: "1px dashed #d9d2c0", borderRadius: 16, padding: 28, textAlign: "center", color: "#8088a6", fontSize: 14 }}>No activities logged for {detail.name} yet.</div>
+              : <div className="activity-grid">
+                {detail.activities.map((a, i) => (
+                  <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                    <div style={{ height: 4, background: "#3b5bdb" }}/>
+                    <div style={{ aspectRatio: "16/10", position: "relative", background: "#f3ecdb", display: "grid", placeItems: "center" }}>
+                      {a.photoUrl ? <img src={a.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : <i className="ph ph-image-square" style={{ fontSize: 30, color: "#c9bfa4" }}/>}
+                    </div>
+                    <div style={{ padding: "15px 16px 16px", display: "flex", flexDirection: "column", flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", fontFamily: "'JetBrains Mono'", fontSize: 9.5, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", padding: "3px 9px", borderRadius: 6, background: "rgba(59,91,219,0.12)", color: "#3b5bdb" }}>{a.faculty}</span>
+                        {a.day && <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6", display: "inline-flex", alignItems: "center", gap: 5 }}><i className="ph ph-calendar-dot"/>{a.day}</span>}
+                      </div>
+                      <div style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16.5, margin: "11px 0 5px", color: "#0a1130" }}>{a.title}</div>
+                      {a.cap && <div style={{ fontSize: 13, color: "#5a6488", lineHeight: 1.45 }}>{a.cap}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>}
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, margin: "36px 0 14px", flexWrap: "wrap" }}>
+              <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em", margin: 0 }}><i className="ph-fill ph-trophy" style={{ color: "#f5b026", marginRight: 8 }}/>{detail.name} leaderboard</h3>
+              <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{detail.lbCount} students · {tfLabel}</span>
+            </div>
+            {!detail.hasMembers
+              ? <div style={{ border: "1px dashed #d9d2c0", borderRadius: 16, padding: 28, textAlign: "center", color: "#8088a6", fontSize: 14 }}>No students in this faculty at {detail.name} yet.</div>
+              : <div style={{ border: "1px solid #e5e8ee", borderRadius: 16, overflow: "hidden", background: "#fff" }}>
+                {detail.leaderboard.map((m, i) => <LbRow key={i} m={m}/>)}
+              </div>}
+          </div>
+        </section>
+      </div>}
+
+      {isLeaderboard && <div className="view">
+        <section style={{ padding: "40px 0 24px" }}>
+          <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px" }}>
+            <div className="filter-bar" style={{ justifyContent: "space-between", marginBottom: 6 }}>
+              <div>
+                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: 0 }}>Student leaderboard</h2>
+                <p style={{ color: "#5a6488", fontSize: 14, margin: "6px 0 0" }}>{lbCount} students ranked by points · {tfLabel}</p>
+              </div>
+              <div className="filter-bar">
+                <div style={{ display: "flex", gap: 4, background: "#f3ecdb", padding: 4, borderRadius: 999 }}>
+                  {[["week", "This week"], ["all", "All time"]].map(([kk, label]) => <button key={kk} onClick={() => setTf(kk)} style={segStyle(tf === kk)}>{label}</button>)}
+                </div>
+                <select value={centreFilter} onChange={e => setCentreFilter(e.target.value)} style={{ fontSize: 13, fontWeight: 500, padding: "8px 12px", borderRadius: 10, border: "1px solid #d9d2c0", background: "#fff", color: "#2a335c", cursor: "pointer" }}>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                <select value={facFilter} onChange={e => setFacFilter(e.target.value)} style={{ fontSize: 13, fontWeight: 500, padding: "8px 12px", borderRadius: 10, border: "1px solid #d9d2c0", background: "#fff", color: "#2a335c", cursor: "pointer" }}>{facultyOpts.map(f => <option key={f} value={f}>{f}</option>)}</select>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section style={{ background: "linear-gradient(180deg,#0c1432,#16224e)", padding: "40px 0 48px" }}>
+          <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px" }}>
+            <div className="podium">
+              {podium.map((p, i) => (
+                <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 160, maxWidth: "40vw" }}>
+                  <span style={{ width: p.avatarSize, height: p.avatarSize, borderRadius: "50%", display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 22, color: "#fff", background: p.color, border: "3px solid " + p.medalColor, boxShadow: "0 0 0 4px rgba(255,255,255,0.06)" }}>{p.initial}</span>
+                  <span style={{ marginTop: 10, fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#fff" }}>{p.handle}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>{p.faculty} · {p.centre}</span>
+                  <div style={{ marginTop: 12, width: "100%", height: p.podiumHeight, borderRadius: "12px 12px 0 0", background: "linear-gradient(180deg," + p.medalColor + ",rgba(255,255,255,0.04))", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: 12 }}>
+                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, color: "#0c1432" }}>{p.rank}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, color: "rgba(12,20,50,0.7)", marginTop: 4 }}>{p.scoreLabel}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section style={{ padding: "28px 0 56px" }}>
+          <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px" }}>
+            <div style={{ border: "1px solid #e5e8ee", borderRadius: 16, overflow: "hidden", background: "#fff", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+              <div className="lb-head">
+                {["Rank", "Student", "Faculty", "Streak", "Stars", "Points", "±"].map((h, i) => <span key={i} style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6", textAlign: i >= 5 ? "right" : "left" }}>{h}</span>)}
+              </div>
+              {leaderboard.map((m, i) => <LbRow key={i} m={m}/>)}
+            </div>
+            <p style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6", marginTop: 16, display: "flex", alignItems: "center", gap: 7 }}><i className="ph ph-lock-simple"/>Students appear by handle only — never a full name or photo, in line with our safeguarding policy.</p>
+          </div>
+        </section>
+      </div>}
+
+      <section style={{ background: "#0c1432", color: "#fff", padding: "56px 0 60px" }}>
+        <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 28px" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(255,255,255,0.08)", fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em" }}><span style={{ width: 7, height: 7, borderRadius: "50%", background: "#d0ff3a" }}/>TRANSPARENCY</span>
+          <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(28px,3.6vw,42px)", letterSpacing: "-0.02em", margin: "16px 0 12px" }}>{page.transparencyTitle || "Numbers, not names."}</h2>
+          <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 15.5, lineHeight: 1.75, margin: "0 0 24px" }}>{page.transparencyBody || "This board updates live and shows only aggregate figures and student handles — how many attended, at which centres, and how participation is trending. A child's full name, photo, or record never appears here. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy."}</p>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <button onClick={() => setPage && setPage(page.ctaPage || "join")} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#0c1432", border: "none", background: "linear-gradient(135deg,#ffc34d,#f5b026)", boxShadow: "0 12px 26px -12px rgba(176,124,18,0.7)", display: "inline-flex", alignItems: "center", gap: 8 }}>{page.ctaLabel || "Apply for a place"} <i className="ph ph-arrow-right"/></button>
+            <button onClick={() => setPage && setPage("v-status")} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#fff", background: "transparent", border: "1.5px solid rgba(255,255,255,0.25)" }}>Volunteer status board</button>
+          </div>
+          <p style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "rgba(255,255,255,0.42)", marginTop: 24 }}>Auto-refreshes every 30s · last updated {updatedAgo}</p>
         </div>
       </section>
 
       {!d && !err && <div className="container" style={{ padding: "60px 0", textAlign: "center" }}><div className="dash-spinner"/></div>}
+      {err && <div className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={load} style={{ background: "none", border: "none", color: "#1c2a5e", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
+      <style>{`@keyframes statuspulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,0.55)}70%{box-shadow:0 0 0 8px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}
+.hero-cols{display:grid}@media(max-width:860px){.hero-cols{grid-template-columns:1fr!important;gap:28px!important}}
+.kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:920px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.kpi-grid{grid-template-columns:1fr}}
+.insight-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}@media(max-width:1000px){.insight-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.insight-grid{grid-template-columns:1fr}}
+.centre-head,.centre-row{display:grid;grid-template-columns:46px 1.5fr 96px 2.3fr 66px 140px;align-items:center;gap:16px;padding:0 20px}
+.centre-head{height:46px;background:#faf6ec;border-bottom:1px solid #e5e8ee}.centre-row{min-height:66px;border-bottom:1px solid #eef0f4}.centre-row:last-child{border-bottom:none}
+@media(max-width:820px){.centre-head{display:none}.centre-row{grid-template-columns:38px 1fr auto;grid-template-areas:"rank name rate" "rank present status" "bar bar bar";row-gap:10px;padding:16px 18px;min-height:0}.c-rank{grid-area:rank}.c-name{grid-area:name}.c-present{grid-area:present;justify-self:start}.c-bar{grid-area:bar}.c-rate{grid-area:rate;justify-self:end}.c-status{grid-area:status;justify-self:end}}
+.centre-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:900px){.centre-cards{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.centre-cards{grid-template-columns:1fr}}
+.activity-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}@media(max-width:820px){.activity-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:520px){.activity-grid{grid-template-columns:1fr}}
+.detail-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}@media(max-width:640px){.detail-stats{grid-template-columns:repeat(2,1fr)}}
+.lb-head,.lb-row{display:grid;grid-template-columns:54px 1fr 118px 64px 66px 98px 52px;align-items:center;gap:14px;padding:0 18px}
+.lb-head{height:42px;background:#faf6ec;border-bottom:1px solid #e5e8ee}.lb-row{min-height:60px;border-bottom:1px solid #eef0f4}.lb-row:last-child{border-bottom:none}
+@media(max-width:820px){.lb-head{display:none}.lb-row{grid-template-columns:46px 1fr auto;grid-template-areas:"rank id score";padding:13px 16px;min-height:0}.lb-rank{grid-area:rank}.lb-id{grid-area:id}.lb-score{grid-area:score;justify-self:end}.lb-fac,.lb-streak,.lb-stars,.lb-move{display:none}}
+.podium{display:flex;align-items:flex-end;justify-content:center;gap:16px;flex-wrap:wrap}.filter-bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center}`}</style>
+    </div>
+  );
+}
 
-      {d && (
-        <React.Fragment>
-          {/* KPI grid */}
-          {sec.kpis !== false && kpiDefs.length > 0 && <section className="section" style={{ paddingTop: 44 }}>
-            <div className="container">
-              <div className="status-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16 }}>
-                {kpiDefs.map(x => <React.Fragment key={x[0]}>{kpiCard(x[1], x[2], x[3], x[4])}</React.Fragment>)}
-              </div>
-            </div>
-          </section>}
-
-          {/* Per-centre performance */}
-          {sec.centres !== false && <section className="section" style={{ background: "var(--cream-50)", paddingTop: 44, paddingBottom: 44 }}>
-            <div className="container">
-              <SectionHead eyebrow="ACROSS THE CENTRES" title="Today, centre by centre." sub="Live attendance for each active centre. Green is on track; amber and red flag where the day needs attention." />
-              {!centres.length ? <p style={{ color: "var(--ink-500)" }}>No active centres reporting yet today.</p> :
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 16 }}>
-                  {centres.map(c => (
-                    <div key={c.name} className="card" style={{ padding: 20, borderTop: "4px solid " + (c.color || "#76B043") }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 19 }}>{c.name}</div>
-                        <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{c.code}</span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "14px 0 4px" }}>
-                        <span className="display" style={{ fontSize: 34, fontWeight: 800, color: rateTone(c.rate) }}>{c.rate}%</span>
-                        <span style={{ fontSize: 13, color: "var(--ink-500)" }}>{c.present} present</span>
-                      </div>
-                      <div style={{ height: 8, borderRadius: 99, background: "rgba(12,20,50,0.08)", overflow: "hidden", marginTop: 8 }}>
-                        <div style={{ width: Math.min(100, c.rate) + "%", height: "100%", background: rateTone(c.rate), borderRadius: 99, transition: "width .6s ease" }}/>
-                      </div>
-                      <div className="mono" style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: rateTone(c.rate), marginTop: 10 }}>
-                        {c.rate >= 85 ? "On track" : c.rate >= 60 ? "Watch" : "Needs attention"}
-                      </div>
-                    </div>
-                  ))}
-                </div>}
-            </div>
-          </section>}
-
-          {/* Attendance trend */}
-          {sec.trend !== false && <section className="section" style={{ paddingTop: 44 }}>
-            <div className="container">
-              <SectionHead eyebrow="OVER TIME" title="Attendance trend." sub={"Distinct students present each day over the last " + (trend.length || (page.trendDays || 14)) + " days."} />
-              {!trend.length ? <p style={{ color: "var(--ink-500)" }}>No check-ins recorded yet.</p> :
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 180, padding: "0 2px", overflowX: "auto" }}>
-                  {trend.map(t => (
-                    <div key={t.date} title={t.date + " · " + t.present + " present"} style={{ flex: "1 0 22px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                      <span className="mono" style={{ fontSize: 10, color: "var(--ink-500)" }}>{t.present}</span>
-                      <div style={{ width: "100%", maxWidth: 30, height: Math.max(3, Math.round((t.present || 0) / maxTrend * 140)), background: "linear-gradient(180deg,var(--navy-900),#3b5bdb)", borderRadius: "5px 5px 0 0" }}/>
-                      <span className="mono" style={{ fontSize: 9, color: "var(--ink-400,#93939a)", whiteSpace: "nowrap" }}>{String(t.date).slice(5)}</span>
-                    </div>
-                  ))}
-                </div>}
-            </div>
-          </section>}
-
-          {/* Transparency + CTA */}
-          {sec.transparency !== false && <section className="section" style={{ background: "var(--navy-900)", color: "#fff", paddingTop: 44, paddingBottom: 52 }}>
-            <div className="container" style={{ maxWidth: 760 }}>
-              <span className="chip chip-on-dark"><span className="dot dot-lime"/> TRANSPARENCY</span>
-              <h2 className="display" style={{ fontSize: "clamp(26px,3.5vw,40px)", margin: "12px 0 10px", color: "#fff" }}>{page.transparencyTitle || "Numbers, not names."}</h2>
-              <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 15.5, lineHeight: 1.7, margin: "0 0 20px" }}>
-                {page.transparencyBody || "This board updates live and shows only aggregate figures — how many students attended, at which centres, and how participation is trending. A child's name, photo, or record never appears here. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy."}
-              </p>
-              {sec.cta !== false && <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <button className="btn btn-primary" onClick={() => setPage && setPage(page.ctaPage || "join")}>{page.ctaLabel || "Apply for a place →"}</button>
-                <button className="btn btn-ghost btn-on-dark" onClick={() => setPage && setPage("home")}>Back to home</button>
-              </div>}
-              <p className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 22 }}>Auto-refreshes every 45s · {d ? "last updated " + relAgo(d.generatedAt) : ""}</p>
-            </div>
-          </section>}
-        </React.Fragment>
-      )}
-      <style>{`@keyframes statuspulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,0.6)}70%{box-shadow:0 0 0 9px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}`}</style>
+function LbRow({ m }) {
+  return (
+    <div className="lb-row">
+      <span className="lb-rank" style={{ width: 34, height: 34, borderRadius: 10, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 14, background: m.rankBg, color: m.rankColor }}>{m.rank}</span>
+      <span className="lb-id" style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <span style={{ width: 38, height: 38, flexShrink: 0, borderRadius: "50%", display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 15, color: "#fff", background: m.color }}>{m.initial}</span>
+        <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}>{m.handle}</b>
+          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.metaLine}</span>
+        </span>
+      </span>
+      <span className="lb-fac"><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, fontWeight: 600, padding: "4px 10px", borderRadius: 999, background: "rgba(28,42,94,0.06)", color: "#2a335c" }}>{m.faculty}</span></span>
+      <span className="lb-streak" style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#e8654a", display: "inline-flex", alignItems: "center", gap: 4 }}><i className="ph-fill ph-flame"/>{m.streak}</span>
+      <span className="lb-stars" style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#a07400", display: "inline-flex", alignItems: "center", gap: 4 }}><i className="ph-fill ph-star"/>{m.stars}</span>
+      <span className="lb-score" style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 16, textAlign: "right", color: "#0a1130", fontVariantNumeric: "tabular-nums" }}>{m.scoreLabel}</span>
+      <span className="lb-move" style={{ justifySelf: "end", fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: m.moveColor, display: "inline-flex", alignItems: "center", gap: 2 }}><i className={"ph " + m.moveIcon}/>{m.moveText}</span>
     </div>
   );
 }
