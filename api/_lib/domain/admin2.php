@@ -168,7 +168,7 @@ function public_status(array $p): array {
 
     // Admin can limit which centres appear on the board (empty = all active).
     $only = is_array($page['centres'] ?? null) ? $page['centres'] : [];
-    $centres = db_all("SELECT name, code, color FROM centres WHERE status = 'active' ORDER BY name");
+    $centres = db_all("SELECT name, code, color, address, area, leadVolunteerId, meetDays, meetTime FROM centres WHERE status = 'active' ORDER BY name");
     if ($only) $centres = array_values(array_filter($centres, fn($c) => in_array((string)$c['name'], $only, true)));
     $cNames = array_map(fn($c) => (string)$c['name'], $centres);
     $yesterday = gmdate('Y-m-d', time() - 86400);
@@ -177,7 +177,7 @@ function public_status(array $p): array {
         $name = (string)$c['name'];
         $enrolled = $one("SELECT COUNT(*) c FROM summer_students WHERE centre = ? AND status = 'active'", [$name]);
         $present  = $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE s.centre = ? AND a.date = ?", [$name, $today]);
-        $byCentre[] = ['name' => $name, 'code' => (string)$c['code'], 'color' => (string)$c['color'], 'enrolled' => $enrolled, 'present' => $present, 'rate' => $enrolled ? (int)round($present / $enrolled * 100) : 0];
+        $byCentre[] = ['name' => $name, 'code' => (string)$c['code'], 'color' => (string)$c['color'], 'enrolled' => $enrolled, 'present' => $present, 'rate' => $enrolled ? (int)round($present / $enrolled * 100) : 0] + centre_public_meta($c);
     }
     $enrolledTotal = $one("SELECT COUNT(*) c FROM summer_students WHERE status = 'active'");
     $presentToday  = $one("SELECT COUNT(DISTINCT studentId) c FROM attendance WHERE date = ?", [$today]);

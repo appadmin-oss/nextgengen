@@ -1257,6 +1257,30 @@ chk('geo: a lone lat with no lng is rejected', backend_dispatch('admin.centres.u
 chk('geo: a device inside the fence matches its centre', (function () { $m = geo_match_centre(6.6000, 3.3000); return $m && $m['inFence'] === true && $m['centre']['code'] === 'AYB'; })());
 chk('geo: a device ~500m out is the nearest fence but out of range', (function () { $m = geo_match_centre(6.6045, 3.3000); return $m && $m['inFence'] === false && $m['distanceM'] > 400; })());
 
+// ── Centre management: operational detail (address, area, lead, contacts) ──
+db_insert('volunteers', ['volunteerId' => 'VOL-LEAD-1', 'fullName' => 'Lead Person', 'firstName' => 'Lead', 'lastName' => 'Person', 'email' => 'lead@e.org', 'role' => 'mentor', 'status' => 'active', 'centre' => 'Ayobo Hub', 'visibilityConsent' => 1, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+$cMgmt = backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'address' => '5 Ayobo Rd', 'area' => 'Ayobo · Lagos', 'leadVolunteerId' => 'VOL-LEAD-1', 'phone' => '+234 800', 'email' => 'ayobo@ngg.org', 'meetDays' => 'Saturdays', 'meetTime' => '09:00 – 13:00', 'notes' => 'test note']]);
+chk('centre: operational detail (address/area/lead/contacts) saves', !empty($cMgmt['ok']));
+chk('centre: a malformed email is rejected', backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'email' => 'not-an-email']])['error'] === 'bad_email');
+chk('centre: an unknown lead volunteer is rejected', backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'leadVolunteerId' => 'VOL-NOPE']])['error'] === 'bad_lead');
+chk('centre: list resolves lead name + returns leadOptions', (function () {
+    $cl = backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-2025-0099']);
+    if (empty($cl['leadOptions'])) return false;
+    foreach ($cl['centres'] as $c) if ($c['name'] === 'Ayobo Hub') return $c['area'] === 'Ayobo · Lagos' && $c['address'] === '5 Ayobo Rd' && $c['leadVolunteerId'] === 'VOL-LEAD-1' && $c['leadName'] === 'Lead Person';
+    return false;
+})());
+chk('centre: public meta exposes a PII-safe lead (consented → first name only)', (function () {
+    $m = centre_public_meta(['area' => 'A', 'address' => 'B', 'meetDays' => 'Sat', 'meetTime' => '9', 'leadVolunteerId' => 'VOL-LEAD-1']);
+    return $m['lead'] && $m['lead']['name'] === 'Lead' && strpos($m['lead']['handle'], '@lead') === 0 && $m['area'] === 'A';
+})());
+chk('centre: without consent the lead shows an anonymous handle, no name', (function () {
+    db_update('volunteers', ['visibilityConsent' => 0], ['volunteerId' => 'VOL-LEAD-1']);
+    $m = centre_public_meta(['leadVolunteerId' => 'VOL-LEAD-1']);
+    $ok = $m['lead'] && $m['lead']['name'] === '' && strpos($m['lead']['handle'], '@vol-') === 0;
+    db_update('volunteers', ['visibilityConsent' => 1], ['volunteerId' => 'VOL-LEAD-1']);
+    return $ok;
+})());
+
 setting_set('geofence_enabled', '1', 'system');
 $geoGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Geo desk']);
 chk('geo: registration is blocked with no location when the fence is on',

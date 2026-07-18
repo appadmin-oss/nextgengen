@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta name="ngg-build" content="f33cfcd571"/>
+<meta name="ngg-build" content="d0123cb043"/>
 <meta charset="utf-8"/>
 <!-- Resolve every relative asset from the site root so deep clean-URL paths
      (e.g. /q/<token>, /s/<handle>) still load app.jsx / styles.css correctly. -->
@@ -151,11 +151,26 @@
 
   // Register service worker for instant repeat visits + offline.
   // Disabled on localhost so dev edits aren't cached aggressively.
+  //
+  // Update discipline (so deploys go live without a manual hard-refresh):
+  //  - updateViaCache:'none' — the SW script itself is never served from the
+  //    HTTP cache, so a new build's service-worker.js is always noticed.
+  //  - reg.update() on load — actively check for a newer SW every visit.
+  //  - controllerchange → reload ONCE — when a new SW (new build) takes
+  //    control, swap the running app for the fresh one. Guarded so the very
+  //    first install (no prior controller) never triggers a reload loop.
   if ('serviceWorker' in navigator
       && location.hostname !== 'localhost'
       && location.hostname !== '127.0.0.1') {
+    var hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController || window.__nggReloaded) return;
+      window.__nggReloaded = true;
+      location.reload();
+    });
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('/service-worker.js')
+      navigator.serviceWorker.register('/service-worker.js', { updateViaCache: 'none' })
+        .then(function (reg) { reg.update(); })
         .catch(function () { /* ignore registration failures */ });
     });
   }

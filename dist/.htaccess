@@ -104,6 +104,12 @@ object-src 'none'"
   <FilesMatch "\.(png|jpe?g|webp|avif|svg|ico|woff2?|ttf)$">
     Header set Cache-Control "public, max-age=2592000, immutable"
   </FilesMatch>
+  # Service worker: MUST come last so it wins over the generic .js rule above.
+  # Never cache the SW script itself — a new deploy is then always picked up on
+  # the next visit, and the SW refreshes the running app (see index.html).
+  <FilesMatch "^service-worker\.js$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </FilesMatch>
 </IfModule>
 
 # ---------------------------------------------------------------

@@ -723,3 +723,16 @@ ALTER TABLE applications ADD COLUMN visibilityConsent TINYINT DEFAULT 0;
 ALTER TABLE volunteers ADD COLUMN visibilityConsent TINYINT DEFAULT 0;
 
 INSERT INTO schema_version (version) VALUES (41) ON DUPLICATE KEY UPDATE version = version;
+
+-- 42: real centre management — address, area, lead volunteer, contacts,
+-- meeting schedule, notes. Also feeds the public "find us" board cards.
+ALTER TABLE centres ADD COLUMN address VARCHAR(240) DEFAULT '';
+ALTER TABLE centres ADD COLUMN area VARCHAR(120) DEFAULT '';
+ALTER TABLE centres ADD COLUMN leadVolunteerId VARCHAR(32) DEFAULT '';
+ALTER TABLE centres ADD COLUMN phone VARCHAR(40) DEFAULT '';
+ALTER TABLE centres ADD COLUMN email VARCHAR(160) DEFAULT '';
+ALTER TABLE centres ADD COLUMN meetDays VARCHAR(120) DEFAULT '';
+ALTER TABLE centres ADD COLUMN meetTime VARCHAR(60) DEFAULT '';
+ALTER TABLE centres ADD COLUMN notes VARCHAR(400) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (42) ON DUPLICATE KEY UPDATE version = version;

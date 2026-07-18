@@ -727,6 +727,47 @@ function rateTone(r) { return r >= 85 ? "#2f9e44" : r >= 60 ? "#e8a92b" : "#e031
 
 function statusBg(r) { return r >= 85 ? "rgba(47,158,68,0.12)" : r >= 60 ? "rgba(232,169,43,0.16)" : "rgba(224,49,49,0.12)"; }
 function statusLabel(r) { return r >= 85 ? "On track" : r >= 60 ? "Watch" : "Needs attention"; }
+
+// Shared "find us" card for a centre-detail view — location, meeting schedule
+// and the centre lead. The lead is PII-safe (first name only with consent, else
+// an anonymous handle + role initial), exactly as the backend supplies it.
+const CENTRE_LEAD_ROLE = { admin: "Admin / Ops lead", mentor: "Lead mentor", instructor: "Lead instructor" };
+function CentreFindUs({ meta, accent }) {
+  if (!meta) return null;
+  const area = meta.area || "", address = meta.address || "", meetDays = meta.meetDays || "", meetTime = meta.meetTime || "", lead = meta.lead || null;
+  if (!area && !address && !meetDays && !meetTime && !lead) return null;
+  const a = accent || "#3b5bdb";
+  const eyebrow = { fontFamily: "'JetBrains Mono'", fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8088a6", marginBottom: 8 };
+  const sub = { fontSize: 12.5, color: "#5a6488", marginTop: 3, lineHeight: 1.4 };
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: 22, marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 22 }}>
+      {(area || address) && <div>
+        <div style={eyebrow}>Find us</div>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+          <i className="ph ph-map-pin" style={{ color: a, fontSize: 18, marginTop: 1 }}/>
+          <div><b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}>{area || address}</b>{area && address ? <div style={sub}>{address}</div> : null}</div>
+        </div>
+      </div>}
+      {(meetDays || meetTime) && <div>
+        <div style={eyebrow}>When we meet</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <i className="ph ph-calendar-check" style={{ color: a, fontSize: 18 }}/>
+          <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}>{[meetDays, meetTime].filter(Boolean).join(" · ")}</b>
+        </div>
+      </div>}
+      {lead && <div>
+        <div style={eyebrow}>Centre lead</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", background: a, position: "relative", overflow: "hidden", flex: "0 0 auto", display: "grid", placeItems: "center" }}>
+            <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 16, color: "rgba(255,255,255,0.92)" }}>{lead.initial}</span>
+            {lead.face ? <img src={lead.face} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}/> : null}
+          </div>
+          <div><b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}>{lead.name || lead.handle}</b><div style={sub}>{CENTRE_LEAD_ROLE[lead.role] || "Centre lead"}</div></div>
+        </div>
+      </div>}
+    </div>
+  );
+}
 function sFmt(n) { return (n == null ? 0 : n).toLocaleString("en-US"); }
 function joinNames(arr) { return arr.length <= 1 ? (arr[0] || "") : arr.length === 2 ? arr[0] + " & " + arr[1] : arr.slice(0, -1).join(", ") + " & " + arr[arr.length - 1]; }
 
@@ -1143,6 +1184,7 @@ function StatusPage({ setPage, previewConfig }) {
                 <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 14, padding: 18 }}><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 30, color: s[2], fontVariantNumeric: "tabular-nums" }}>{s[0]}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488", marginTop: 6 }}>{s[1]}</div></div>
               ))}
             </div>
+            <CentreFindUs meta={dc} accent={dc.color}/>
             <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: 22, marginTop: 20 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488" }}><i className="ph ph-funnel" style={{ marginRight: 6 }}/>Filter by faculty</span>
@@ -1628,6 +1670,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                 <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 14, padding: 18 }}><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 30, color: s[2], fontVariantNumeric: "tabular-nums" }}>{s[0]}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488", marginTop: 6 }}>{s[1]}</div></div>
               ))}
             </div>
+            <CentreFindUs meta={dc} accent={dc.color}/>
             <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: 22, marginTop: 20 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488" }}><i className="ph ph-funnel" style={{ marginRight: 6 }}/>Filter by role</span>

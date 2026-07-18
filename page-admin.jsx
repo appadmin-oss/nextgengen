@@ -3882,25 +3882,27 @@ function SummerCertificates() {
  * sign-ups when the global fence toggle is on). */
 function SummerCentres() {
   const [centres, setCentres] = React.useState(null);
+  const [leadOptions, setLeadOptions] = React.useState([]);
   const [err, setErr] = React.useState("");
   const [d, setD] = React.useState({ name: "", code: "", color: "#76B043", capacity: "" });
   const [busy, setBusy] = React.useState(false);
-  const [mapId, setMapId] = React.useState("");
-  const load = () => NGGApi.admin.registration.centres().then(r => { setCentres(r.centres || []); setErr(""); }).catch(e => setErr(e.code || e.message));
+  const [openId, setOpenId] = React.useState("");   // "" | "<id>:edit" | "<id>:map"
+  const load = () => NGGApi.admin.registration.centres().then(r => { setCentres(r.centres || []); setLeadOptions(r.leadOptions || []); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const add = async (e) => {
     e && e.preventDefault();
     setBusy(true);
-    try { await NGGApi.admin.registration.centreUpsert({ ...d, capacity: d.capacity === "" ? 0 : parseInt(d.capacity, 10) || 0 }); setD({ name: "", code: "", color: "#76B043", capacity: "" }); toast.success("Centre saved."); load(); }
+    try { await NGGApi.admin.registration.centreUpsert({ ...d, capacity: d.capacity === "" ? 0 : parseInt(d.capacity, 10) || 0 }); setD({ name: "", code: "", color: "#76B043", capacity: "" }); toast.success("Centre added — open Edit to add its address, lead and contacts."); load(); }
     catch (e2) { toast.error(e2.code === "code_taken" ? "That code is already used." : "Check the name (2+) and code (1–4 letters)."); }
     finally { setBusy(false); }
   };
   const remove = async (c) => { if (!(await dialog.confirm({ title: "Remove " + c.name + "?", body: "Existing students keep their IDs; the centre just stops being offered.", cta: "Remove" }))) return; try { await NGGApi.admin.registration.centreDelete(c.centreId); load(); } catch (e) { toast.error(e.code || e.message); } };
   const geoLabel = (c) => c.lat == null ? <span className="chip status-archived">— unmapped</span> : c.geofence ? <span className="chip chip-lime">🟢 fence on · {c.radiusM || 150}m</span> : <span className="chip">mapped · off</span>;
+  const toggle = (c, mode) => setOpenId(openId === c.centreId + ":" + mode ? "" : c.centreId + ":" + mode);
   if (err) return <ErrorState title="Couldn't load centres" code={err} onRetry={load}/>;
   return (
     <div>
-      <p className="admin-hint">Each centre has a 1–4 letter code (the printed ID prefix, e.g. <span className="mono">IJ-26-001</span>) and a colour that drives its ID card accent. <b>Map</b> a centre to draw its geo-fence — with the global fence on (Settings), walk-ups are auto-assigned to the centre they're physically at.</p>
+      <p className="admin-hint">Each centre has a 1–4 letter code (the printed ID prefix, e.g. <span className="mono">IJ-26-001</span>) and a colour that drives its ID card accent. Quick-add below, then <b>Edit</b> to set its address, centre lead, contacts and meeting times — these appear on the public status boards. <b>Map</b> draws its geo-fence.</p>
       <form onSubmit={add} className="admin-filters" style={{ alignItems: "center" }}>
         <input className="admin-input" placeholder="Centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
         <input className="admin-input" placeholder="CODE" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
@@ -3911,24 +3913,120 @@ function SummerCentres() {
       {centres === null ? <div className="dash-spinner"/> :
         centres.length === 0 ? <div className="admin-empty">No centres yet — add your first above.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Centre</th><th>Code</th><th>Colour</th><th>Capacity</th><th>Geo-fence</th><th></th></tr></thead>
+          <thead><tr><th>Centre</th><th>Location</th><th>Lead</th><th>Capacity</th><th>Geo-fence</th><th></th></tr></thead>
           <tbody>{centres.map(c => (
             <React.Fragment key={c.centreId}>
             <tr>
-              <td><b>{c.name}</b></td>
-              <td className="mono">{c.code}</td>
-              <td><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 18, height: 18, borderRadius: 5, background: c.color, border: "1px solid rgba(0,0,0,0.1)" }}/><span className="mono" style={{ fontSize: 12 }}>{c.color}</span></span></td>
+              <td>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 12, height: 12, borderRadius: 4, background: c.color, border: "1px solid rgba(0,0,0,0.1)", flex: "0 0 auto" }}/><b>{c.name}</b> <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>{c.code}</span></span>
+                {c.status === "archived" && <span className="chip status-archived" style={{ marginLeft: 8 }}>archived</span>}
+              </td>
+              <td>{c.area || c.address ? <span style={{ lineHeight: 1.3 }}><b style={{ fontWeight: 600 }}>{c.area || "—"}</b>{c.address ? <><br/><span className="admin-cell-sub" style={{ fontSize: 12 }}>{c.address}</span></> : null}</span> : <span className="admin-cell-sub">—</span>}</td>
+              <td>{c.leadName ? <span className="chip chip-lime">{c.leadName}</span> : <span className="admin-cell-sub">—</span>}</td>
               <td>{(c.capacity || 0) > 0 ? <span className={c.full ? "chip chip-crimson" : ""}>{c.enrolled || 0}/{c.capacity}{c.full ? " full" : ""}{c.waitlisted ? " · " + c.waitlisted + " waitlisted" : ""}</span> : <span className="mono" style={{ color: "var(--ink-500)" }}>∞ {c.enrolled ? "· " + c.enrolled : ""}</span>}</td>
               <td>{geoLabel(c)}</td>
               <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                <button className="btn btn-ghost btn-sm" onClick={() => setMapId(mapId === c.centreId ? "" : c.centreId)}>{mapId === c.centreId ? "Close" : "Map"}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => toggle(c, "edit")}>{openId === c.centreId + ":edit" ? "Close" : "Edit"}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => toggle(c, "map")}>{openId === c.centreId + ":map" ? "Close" : "Map"}</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button>
               </td>
             </tr>
-            {mapId === c.centreId && <tr><td colSpan={6} style={{ background: "rgba(12,20,50,0.03)" }}><CentreGeoEditor c={c} onSaved={() => { setMapId(""); load(); }}/></td></tr>}
+            {openId === c.centreId + ":edit" && <tr><td colSpan={6} style={{ background: "rgba(12,20,50,0.03)" }}><CentreDetailsEditor c={c} leadOptions={leadOptions} onSaved={() => { setOpenId(""); load(); }}/></td></tr>}
+            {openId === c.centreId + ":map" && <tr><td colSpan={6} style={{ background: "rgba(12,20,50,0.03)" }}><CentreGeoEditor c={c} onSaved={() => { setOpenId(""); load(); }}/></td></tr>}
             </React.Fragment>
           ))}</tbody>
         </table></div>}
+    </div>
+  );
+}
+
+/* Full centre editor — the operational record: identity (name/code/colour/
+ * status/capacity), where it is (address/area), who leads it (a volunteer),
+ * how to reach it (phone/email), and when it meets. Address, area, schedule
+ * and the lead surface on the public status boards' "find us" cards. */
+function CentreDetailsEditor({ c, leadOptions, onSaved }) {
+  const [f, setF] = React.useState({
+    name: c.name || "", code: c.code || "", color: c.color || "#76B043",
+    status: c.status || "active", capacity: c.capacity != null ? String(c.capacity) : "",
+    address: c.address || "", area: c.area || "", leadVolunteerId: c.leadVolunteerId || "",
+    phone: c.phone || "", email: c.email || "", meetDays: c.meetDays || "", meetTime: c.meetTime || "", notes: c.notes || "",
+  });
+  const [busy, setBusy] = React.useState(false);
+  const set = (k, v) => setF(s => ({ ...s, [k]: v }));
+  // Volunteers based at this centre float to the top of the lead picker.
+  const leads = React.useMemo(() => {
+    const opts = leadOptions || [];
+    const here = opts.filter(o => o.centre === c.name);
+    const rest = opts.filter(o => o.centre !== c.name);
+    return here.concat(rest);
+  }, [leadOptions, c.name]);
+  const save = async () => {
+    if (f.name.trim().length < 2) { toast.error("Centre name needs at least 2 characters."); return; }
+    if (!f.code.trim()) { toast.error("Add a 1–4 letter code."); return; }
+    setBusy(true);
+    try {
+      await NGGApi.admin.registration.centreUpsert({
+        centreId: c.centreId, name: f.name.trim(), code: f.code.trim().toUpperCase(), color: f.color,
+        status: f.status, capacity: f.capacity === "" ? 0 : parseInt(f.capacity, 10) || 0,
+        address: f.address, area: f.area, leadVolunteerId: f.leadVolunteerId,
+        phone: f.phone, email: f.email, meetDays: f.meetDays, meetTime: f.meetTime, notes: f.notes,
+      });
+      toast.success("Centre saved."); onSaved();
+    } catch (e) {
+      toast.error(e.code === "code_taken" ? "That code is already used." : e.code === "bad_email" ? "That email address isn't valid." : e.code === "bad_lead" ? "Pick a current volunteer as lead." : e.code === "bad_color" ? "Pick a valid colour." : (e.code || e.message));
+    } finally { setBusy(false); }
+  };
+  const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
+  const field = (key, label, opts = {}) => (
+    <div style={{ flex: opts.grow ? "1 1 100%" : "1 1 200px", minWidth: opts.min || 160 }}>
+      <span style={lbl}>{label}</span>
+      <input className="admin-input" style={{ width: "100%" }} value={f[key]} maxLength={opts.max} placeholder={opts.ph || ""} type={opts.type || "text"} min={opts.type === "number" ? 0 : undefined} onChange={e => set(key, opts.upper ? e.target.value.toUpperCase() : e.target.value)}/>
+    </div>
+  );
+  return (
+    <div style={{ padding: "16px 4px", display: "flex", flexDirection: "column", gap: 16 }}>
+      <div>
+        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 8 }}>IDENTITY</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end" }}>
+          {field("name", "Centre name", { max: 80, min: 200 })}
+          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Code</span><input className="admin-input" value={f.code} maxLength={4} onChange={e => set("code", e.target.value.toUpperCase())} style={{ width: 90 }}/></div>
+          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Colour</span><input type="color" value={f.color} onChange={e => set("color", e.target.value)} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/></div>
+          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Status</span><select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}><option value="active">Active</option><option value="archived">Archived</option></select></div>
+          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Capacity</span><input className="admin-input" type="number" min="0" placeholder="0 = ∞" value={f.capacity} onChange={e => set("capacity", e.target.value)} style={{ width: 120 }}/></div>
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 8 }}>LOCATION &amp; LEAD</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end" }}>
+          {field("area", "Area / city", { max: 120, ph: "e.g. Alimosho · Lagos" })}
+          {field("address", "Street address", { max: 240, grow: true, min: 260, ph: "Building, street, landmark" })}
+          <div style={{ flex: "1 1 240px", minWidth: 200 }}>
+            <span style={lbl}>Centre lead (volunteer)</span>
+            <select className="admin-select" style={{ width: "100%" }} value={f.leadVolunteerId} onChange={e => set("leadVolunteerId", e.target.value)}>
+              <option value="">— none —</option>
+              {leads.map(o => <option key={o.volunteerId} value={o.volunteerId}>{o.name}{o.role ? " · " + o.role : ""}{o.centre && o.centre !== c.name ? " (" + o.centre + ")" : ""}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 8 }}>CONTACT &amp; SCHEDULE</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end" }}>
+          {field("phone", "Phone", { max: 40, ph: "+234 …" })}
+          {field("email", "Email", { max: 160, type: "email", ph: "centre@afrovanguard.org.ng" })}
+          {field("meetDays", "Meeting days", { max: 120, ph: "e.g. Saturdays" })}
+          {field("meetTime", "Meeting time", { max: 60, ph: "e.g. 09:00 – 13:00" })}
+        </div>
+      </div>
+      <div>
+        <span style={lbl}>Notes (internal)</span>
+        <textarea className="admin-input" value={f.notes} maxLength={400} onChange={e => set("notes", e.target.value)} rows={2} style={{ width: "100%", resize: "vertical" }} placeholder="Anything the ops team should know about this centre."/>
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save centre"}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onSaved}>Cancel</button>
+        <span className="admin-hint" style={{ margin: 0 }}>Area, address, meeting times and the lead show on the public status boards.</span>
+      </div>
     </div>
   );
 }

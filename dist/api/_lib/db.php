@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 41;
+const NGG_SCHEMA_TARGET = 42;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -996,6 +996,22 @@ function db_migrate(PDO $db): void {
         41 => "
             ALTER TABLE applications ADD COLUMN visibilityConsent INTEGER DEFAULT 0;
             ALTER TABLE volunteers ADD COLUMN visibilityConsent INTEGER DEFAULT 0;
+        ",
+
+        // Real centre management — the admin-facing detail an operator needs to
+        // run a centre: where it is (address/area), who leads it (a volunteer),
+        // how to reach it (phone/email), when it meets, and free-form notes.
+        // Address + area + schedule also feed the public status boards' "find
+        // us" cards; the lead shows PII-safe (handle unless they consented).
+        42 => "
+            ALTER TABLE centres ADD COLUMN address TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN area TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN leadVolunteerId TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN phone TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN email TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN meetDays TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN meetTime TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN notes TEXT DEFAULT '';
         ",
     ];
 

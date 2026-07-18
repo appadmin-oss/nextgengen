@@ -797,14 +797,60 @@ function geo_match_centre(float $lat, float $lng): ?array {
 function admin_centres_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT centreId, name, code, color, status, capacity, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt FROM centres ORDER BY name");
+    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt FROM centres ORDER BY name");
+    // Volunteers available to lead a centre — active only, labelled for the picker.
+    $vols = db_all("SELECT volunteerId, fullName, firstName, role, centre FROM volunteers WHERE status = 'active' ORDER BY fullName");
+    $volById = [];
+    $leadOptions = [];
+    foreach ($vols as $v) {
+        $vid = (string)$v['volunteerId'];
+        $nm = trim((string)$v['fullName']) !== '' ? (string)$v['fullName'] : trim((string)$v['firstName']);
+        $volById[$vid] = $nm;
+        $leadOptions[] = ['volunteerId' => $vid, 'name' => $nm, 'role' => (string)$v['role'], 'centre' => (string)$v['centre']];
+    }
     foreach ($rows as &$r) {
         $r['enrolled'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
         $r['waitlisted'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'waitlisted'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
         $r['full'] = ((int)$r['capacity'] > 0 && $r['enrolled'] >= (int)$r['capacity']);
+        $lid = (string)($r['leadVolunteerId'] ?? '');
+        $r['leadName'] = $lid !== '' ? ($volById[$lid] ?? db_row('SELECT fullName FROM volunteers WHERE volunteerId = ?', [$lid])['fullName'] ?? '') : '';
     }
     unset($r);
-    return ['ok' => true, 'centres' => $rows, 'geofenceEnabled' => geofence_enabled()];
+    return ['ok' => true, 'centres' => $rows, 'leadOptions' => $leadOptions, 'geofenceEnabled' => geofence_enabled()];
+}
+
+/**
+ * PII-safe public metadata for a centre row — its location, meeting schedule
+ * and lead. The lead volunteer shows by FIRST NAME only when they granted the
+ * site-visibility consent; otherwise an anonymous handle and a role initial.
+ * A surname, email or phone of the lead never leaves the server. Pass a centre
+ * row that already includes area/address/leadVolunteerId/meetDays/meetTime.
+ */
+function centre_public_meta(array $c): array {
+    $lead = null;
+    $lid = (string)($c['leadVolunteerId'] ?? '');
+    if ($lid !== '') {
+        $v = db_row("SELECT fullName, firstName, lastName, role, visibilityConsent, photoUrl FROM volunteers WHERE volunteerId = ?", [$lid]);
+        if ($v) {
+            $consent = (int)($v['visibilityConsent'] ?? 0) === 1;
+            $first = trim((string)($v['firstName'] ?? '')); if ($first === '') $first = explode(' ', (string)$v['fullName'])[0] ?? 'Lead';
+            $lastInit = strtolower(substr(trim((string)($v['lastName'] ?? '')), 0, 1));
+            $lead = [
+                'name'    => $consent ? $first : '',
+                'handle'  => $consent ? ('@' . strtolower(preg_replace('/[^a-z]/i', '', $first)) . ($lastInit ? '.' . $lastInit : '')) : ('@vol-' . substr(md5($lid), 0, 4)),
+                'role'    => (string)$v['role'],
+                'face'    => $consent ? (string)($v['photoUrl'] ?? '') : '',
+                'initial' => strtoupper(substr($consent ? $first : (string)$v['role'], 0, 1)),
+            ];
+        }
+    }
+    return [
+        'area'     => (string)($c['area'] ?? ''),
+        'address'  => (string)($c['address'] ?? ''),
+        'meetDays' => (string)($c['meetDays'] ?? ''),
+        'meetTime' => (string)($c['meetTime'] ?? ''),
+        'lead'     => $lead,
+    ];
 }
 
 /** Is a centre (by NAME) at/over capacity for the active cohort? capacity 0 = unlimited. */
@@ -834,6 +880,29 @@ function admin_centres_upsert(array $p): array {
         'status' => in_array((string)($d['status'] ?? 'active'), ['active', 'archived'], true) ? (string)($d['status'] ?? 'active') : 'active',
         'updatedAt' => now_iso()];
     if (array_key_exists('capacity', $d)) $row['capacity'] = max(0, (int)$d['capacity']);
+
+    // Operational detail — where the centre is, who leads it, how to reach it,
+    // when it meets. Each is optional and only written when the key is present,
+    // so a partial save (e.g. the geo editor) never wipes contact fields.
+    $textFields = [
+        'address' => 240, 'area' => 120, 'phone' => 40, 'email' => 160,
+        'meetDays' => 120, 'meetTime' => 60, 'notes' => 400,
+    ];
+    foreach ($textFields as $f => $max) {
+        if (array_key_exists($f, $d)) $row[$f] = substr(trim((string)$d[$f]), 0, $max);
+    }
+    if (array_key_exists('email', $row) && $row['email'] !== '' && !filter_var($row['email'], FILTER_VALIDATE_EMAIL)) {
+        return ['ok' => false, 'error' => 'bad_email'];
+    }
+    // Centre lead — a volunteer. Empty clears it; otherwise it must resolve to a
+    // real volunteer (any status, so an archived lead still shows for history).
+    if (array_key_exists('leadVolunteerId', $d)) {
+        $lead = trim((string)$d['leadVolunteerId']);
+        if ($lead !== '' && !db_row('SELECT id FROM volunteers WHERE volunteerId = ?', [$lead])) {
+            return ['ok' => false, 'error' => 'bad_lead'];
+        }
+        $row['leadVolunteerId'] = $lead;
+    }
 
     // Optional geo-mapping. Partial updates preserve any existing point: lat/lng
     // are only written when BOTH are supplied and valid; the fence flag only

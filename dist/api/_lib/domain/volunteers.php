@@ -642,7 +642,7 @@ function volunteer_rate(int $filled, int $need): int { return $need > 0 ? (int)r
 
 /** Full per-centre + global fulfilment structure (shared by public board). */
 function volunteer_status_compute(): array {
-    $centres = db_all("SELECT centreId, name, code, color FROM centres WHERE status = 'active' ORDER BY name");
+    $centres = db_all("SELECT centreId, name, code, color, address, area, leadVolunteerId, meetDays, meetTime FROM centres WHERE status = 'active' ORDER BY name");
     $needsRows = db_all('SELECT centreId, role, faculty, needCount FROM volunteer_needs');
     // Index needs: role-level (faculty='') and faculty-level.
     $roleNeed = []; $facNeed = [];
@@ -686,7 +686,7 @@ function volunteer_status_compute(): array {
             'need' => $cNeed, 'filled' => $cFilled, 'gap' => max(0, $cNeed - $cFilled),
             'fulfillmentRate' => $rate, 'tone' => volunteer_tone($rate),
             'byRole' => $byRole, 'byFaculty' => $facs, 'byCourse' => $courses,
-        ];
+        ] + centre_public_meta($c);
         $tNeed += $cNeed; $tFilled += $cFilled;
     }
     $totalActive = (int)(db_row("SELECT COUNT(*) c FROM volunteers WHERE status = 'active'")['c'] ?? 0);
