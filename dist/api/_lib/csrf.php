@@ -51,6 +51,12 @@ function csrf_require(): void {
     // Anonymous intake — no session privileges to ride; IP rate-limited,
     // validated server-side, and reachable cross-origin from sister sites.
     if (preg_match('#/api/public/apply\\.php$#', $path))          return;
+    // Public headshot signer — used on those SAME anonymous intake surfaces
+    // (apply, gate registration, guardian reshoot), including cross-origin
+    // embeds where no ngg_csrf cookie exists. It only returns a short-lived
+    // Cloudinary signature for the fixed `headshot` folder and is IP
+    // rate-limited, so it carries no privilege to protect against CSRF.
+    if (preg_match('#/api/public/upload-headshot-sign\\.php$#', $path)) return;
 
     $cookie = $_COOKIE[csrf_cookie_name()] ?? '';
     $header = $_SERVER['HTTP_X_NGG_CSRF'] ?? '';

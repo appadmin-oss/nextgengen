@@ -1050,11 +1050,31 @@ function PhotoCompare({ url, radius = "0", onError }) {
   );
 }
 
+/* Full-screen image viewer — a headshot is impossible to judge inside a 64px
+   circle. Tap the thumbnail (or the ⤢ control) to see it big; click the
+   backdrop, press Esc, or hit ✕ to close. Reused wherever a photo is shown. */
+function ImageLightbox({ url, alt, onClose }) {
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow; document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+  if (!url) return null;
+  return (
+    <div onClick={onClose} role="dialog" aria-modal="true" aria-label={alt || "Photo"} style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(6,9,20,0.86)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "grid", placeItems: "center", padding: 24 }}>
+      <button type="button" onClick={onClose} aria-label="Close" style={{ position: "absolute", top: 18, right: 18, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: 22, cursor: "pointer", lineHeight: 1 }}>✕</button>
+      <img src={url} alt={alt || "Photo"} onClick={e => e.stopPropagation()} style={{ maxWidth: "min(92vw, 620px)", maxHeight: "88vh", width: "auto", height: "auto", objectFit: "contain", borderRadius: 14, boxShadow: "0 30px 80px -20px rgba(0,0,0,0.7)" }}/>
+    </div>
+  );
+}
+
 function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   const [mode, setMode] = React.useState("idle"); // idle | camera | link
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
   const [linkVal, setLinkVal] = React.useState("");
+  const [zoom, setZoom] = React.useState(false);  // full-screen photo viewer
   const videoRef = React.useRef(null);
   const streamRef = React.useRef(null);
   const fileRef = React.useRef(null);
@@ -1081,7 +1101,14 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
       onChange(cldEnhance(up.url));
       stop(); setMode("idle");
     } catch (e) {
-      setErr((e.code || /upload/.test(e.message || "")) ? "Uploads aren't configured on this server — paste an image link instead." : "Couldn't upload — check the connection and try again.");
+      const code = e.code || "";
+      setErr(
+        code === "uploads_disabled" ? "Photo uploads aren't switched on for this site yet — paste an image link instead."
+        : code === "csrf_failed" ? "Your session expired — refresh the page, then try the photo again."
+        : code === "rate_limited" ? "Too many tries in a row — wait a moment and try again."
+        : /network/.test(e.message || "") ? "Network hiccup uploading the photo — check the connection and try again."
+        : "Couldn't upload that photo — try again, or paste an image link instead."
+      );
     } finally { setBusy(false); }
   };
 
@@ -1134,20 +1161,35 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     }
   };
 
+  // CAMERA MODE — a large portrait frame (not the tiny circle) so you can
+  // actually see yourself and line up. Live preview is mirrored; a dashed oval
+  // guides framing to match the face-centred 4:5 crop we capture.
+  if (mode === "camera") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
+        <div style={{ position: "relative", width: "100%", maxWidth: 300, aspectRatio: "4 / 5", borderRadius: 16, overflow: "hidden", background: "#0b1020", border: "1px solid rgba(12,20,50,0.18)" }}>
+          <video ref={videoRef} playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
+          <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "43%", transform: "translate(-50%,-50%)", width: "62%", height: "72%", border: "2px dashed rgba(255,255,255,0.6)", borderRadius: "50%" }}/>
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "10px", fontSize: 11.5, color: "#fff", background: "linear-gradient(transparent, rgba(0,0,0,0.6))", textAlign: "center" }}>Line your face up with the oval</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={capture}>{busy ? "Saving…" : "📸 Capture"}</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { stop(); setMode("idle"); }}>Cancel</button>
+        </div>
+        {err && <div className="mono" style={{ fontSize: 11, color: "var(--coral)" }}>{err}</div>}
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-      <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flex: "0 0 auto", background: "var(--bg-sunken, #f4f4f0)", border: "1px solid rgba(12,20,50,0.14)", display: "grid", placeItems: "center", fontSize: size / 3, color: "var(--ink-400, #93939a)" }}>
-        {mode === "camera"
-          ? <video ref={videoRef} playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
-          : value ? <PhotoCompare url={value} onError={e => { e.target.style.display = "none"; }}/> : "📷"}
-      </div>
+      <button type="button" onClick={() => value ? setZoom(true) : startCamera()} title={value ? "View photo" : "Take a photo"}
+        style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flex: "0 0 auto", background: "var(--bg-sunken, #f4f4f0)", border: "1px solid rgba(12,20,50,0.14)", display: "grid", placeItems: "center", fontSize: size / 3, color: "var(--ink-400, #93939a)", padding: 0, cursor: "pointer", position: "relative" }}>
+        {value ? <PhotoCompare url={value} onError={e => { e.target.style.display = "none"; }}/> : "📷"}
+        {value && <span aria-hidden="true" style={{ position: "absolute", right: 2, bottom: 2, width: 22, height: 22, borderRadius: "50%", background: "rgba(10,17,48,0.82)", color: "#fff", fontSize: 11, display: "grid", placeItems: "center" }}>⤢</span>}
+      </button>
       <div style={{ flex: 1, minWidth: 0 }}>
-        {mode === "camera" ? (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={capture}>{busy ? "Saving…" : "📸 Capture"}</button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { stop(); setMode("idle"); }}>Cancel</button>
-          </div>
-        ) : mode === "link" ? (
+        {mode === "link" ? (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <input className="admin-input" style={{ flex: "1 1 180px" }} placeholder="https://…/photo.jpg (direct image link)" value={linkVal} onChange={e => setLinkVal(e.target.value)}/>
             <button type="button" className="btn btn-primary btn-sm" disabled={!linkVal.trim() || busy} onClick={useLink}>{busy ? "Checking…" : "Use"}</button>
@@ -1157,15 +1199,17 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={startCamera}>{value ? "Re-take" : "Take photo"}</button>
             <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy ? "Uploading…" : "Upload"}</button>
+            {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setZoom(true)}>View</button>}
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode("link")}>Paste link</button>
             {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange("")}>Remove</button>}
             <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) uploadPicked(f); e.target.value = ""; }}/>
           </div>
         )}
         <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)", marginTop: 8 }}>
-          {err ? <span style={{ color: "var(--coral)" }}>{err}</span> : (label + " — the site takes the picture; upload or link are optional. Face-centred & brightened automatically.")}
+          {err ? <span style={{ color: "var(--coral)" }}>{err}</span> : (label + " — the site takes the picture; upload or link are optional. Tap the photo to view it larger.")}
         </div>
       </div>
+      {zoom && value && <ImageLightbox url={value} alt={label} onClose={() => setZoom(false)}/>}
     </div>
   );
 }
@@ -1427,5 +1471,5 @@ Object.assign(window, {
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart,
-  Uploader, AccessibilityWidget, PhotoEditor,
+  Uploader, AccessibilityWidget, PhotoEditor, PhotoCapture, ImageLightbox,
 });
