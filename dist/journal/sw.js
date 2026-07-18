@@ -5,7 +5,7 @@
    the build id by build.js so each deploy invalidates the old shell.
    ============================================================================ */
 
-const CACHE_VERSION = 'aj-fb2db02926';
+const CACHE_VERSION = 'aj-5715108bf7';
 const SHELL = CACHE_VERSION + '-shell';
 
 const PRECACHE = [

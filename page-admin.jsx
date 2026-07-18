@@ -3484,13 +3484,15 @@ function AdminStatusPages() {
 /* Volunteer needs editor — the admin sets target headcount per centre × role
    (and optionally per faculty), with live filled counts so they never edit
    blind. Feeds the public /v-status fulfilment board. */
-/* One editable material-need row: item name (fixed), received / needed counts,
- * unit. Saves on blur; local state seeded from props so a reload refreshes it. */
+/* One editable material-need row: item name (fixed), received count, and an
+ * OPTIONAL needed target (blank = open-ended request, no specific amount).
+ * Saves on blur; local state seeded from props so a reload refreshes it. */
 function ItemNeedRow({ it, busy, onSave, onRemove }) {
-  const [need, setNeed] = React.useState(String(it.needCount ?? 0));
+  const [need, setNeed] = React.useState((it.needCount ?? 0) ? String(it.needCount) : "");
   const [filled, setFilled] = React.useState(String(it.filledCount ?? 0));
   const needN = parseInt(need || "0", 10) || 0;
   const filledN = parseInt(filled || "0", 10) || 0;
+  const open = needN === 0;
   const gap = Math.max(0, needN - filledN);
   const save = () => { if (needN !== (it.needCount ?? 0) || filledN !== (it.filledCount ?? 0)) onSave(it.item, need, filled, it.unit, it.note); };
   return (
@@ -3498,9 +3500,9 @@ function ItemNeedRow({ it, busy, onSave, onRemove }) {
       <span style={{ fontSize: 13, fontWeight: 600, flex: "1 1 120px", minWidth: 100 }}>{it.item}{it.unit ? <span className="mono" style={{ fontSize: 10, color: "var(--ink-400)", marginLeft: 4 }}>{it.unit}</span> : null}</span>
       <input className="admin-input" type="number" min="0" style={{ width: 62 }} value={filled} onChange={e => setFilled(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }} aria-label={"received " + it.item}/>
       <span className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>/</span>
-      <input className="admin-input" type="number" min="0" style={{ width: 62 }} value={need} onChange={e => setNeed(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }} aria-label={"needed " + it.item}/>
+      <input className="admin-input" type="number" min="0" style={{ width: 62 }} value={need} placeholder="any" onChange={e => setNeed(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }} aria-label={"needed " + it.item + " (blank = no set amount)"}/>
       <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)", minWidth: 54 }}>
-        {busy ? "saving…" : (needN > 0 ? (gap > 0 ? <b style={{ color: "#c0851a" }}>{gap} gap</b> : <b style={{ color: "#2f9e44" }}>met ✓</b>) : "—")}
+        {busy ? "saving…" : (open ? <b style={{ color: "#7a6cff" }}>open</b> : (gap > 0 ? <b style={{ color: "#c0851a" }}>{gap} gap</b> : <b style={{ color: "#2f9e44" }}>met ✓</b>))}
       </span>
       <button className="btn btn-ghost btn-sm" onClick={() => onRemove(it.item)} title="Remove item" style={{ padding: "2px 8px" }}>✕</button>
     </div>
@@ -3624,7 +3626,7 @@ function VolunteerNeedsEditor() {
             </button>
             {itemOpen.has(c.centreId) && (
               <div style={{ marginTop: 12, borderTop: "1px solid var(--line-cool-soft,#eef0f4)", paddingTop: 12 }}>
-                <div className="mono" style={{ fontSize: 10, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>Materials · received / needed</div>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>Materials · received / needed <span style={{ textTransform: "none", letterSpacing: 0 }}>(leave needed blank for an open request)</span></div>
                 <div style={{ display: "grid", gap: 8 }}>
                   {(itemsByCentre[c.centreId] || []).map(it => (
                     <ItemNeedRow key={it.item} it={it} busy={itemBusy === c.centreId + "|" + it.item}
@@ -3637,7 +3639,7 @@ function VolunteerNeedsEditor() {
                   <input className="admin-input" placeholder="Item (e.g. Laptops)" value={(newItem[c.centreId] || {}).item || ""} onChange={e => setNewItem(s => ({ ...s, [c.centreId]: { ...s[c.centreId], item: e.target.value } }))} style={{ flex: "1 1 130px", minWidth: 110 }}/>
                   <input className="admin-input" type="number" min="0" placeholder="have" value={(newItem[c.centreId] || {}).filledCount || ""} onChange={e => setNewItem(s => ({ ...s, [c.centreId]: { ...s[c.centreId], filledCount: e.target.value } }))} style={{ width: 58 }} aria-label="received"/>
                   <span className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>/</span>
-                  <input className="admin-input" type="number" min="0" placeholder="need" value={(newItem[c.centreId] || {}).needCount || ""} onChange={e => setNewItem(s => ({ ...s, [c.centreId]: { ...s[c.centreId], needCount: e.target.value } }))} style={{ width: 58 }} aria-label="needed"/>
+                  <input className="admin-input" type="number" min="0" placeholder="any" value={(newItem[c.centreId] || {}).needCount || ""} onChange={e => setNewItem(s => ({ ...s, [c.centreId]: { ...s[c.centreId], needCount: e.target.value } }))} style={{ width: 58 }} aria-label="needed (blank = no set amount)"/>
                   <input className="admin-input" placeholder="unit" value={(newItem[c.centreId] || {}).unit || ""} onChange={e => setNewItem(s => ({ ...s, [c.centreId]: { ...s[c.centreId], unit: e.target.value } }))} style={{ width: 66 }} aria-label="unit"/>
                   <button className="btn btn-primary btn-sm" onClick={() => addItem(c.centreId)}>+ Add</button>
                 </div>

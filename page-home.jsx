@@ -1450,6 +1450,19 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
   const perRoleTot = { admin: [0, 0], mentor: [0, 0], instructor: [0, 0] };
   byCentre.forEach(c => (c.byRole || []).forEach(r => { if (perRoleTot[r.role]) { perRoleTot[r.role][0] += r.need; perRoleTot[r.role][1] += r.filled; } }));
 
+  // Material (item) needs, rolled up across centres for the overview. Group by
+  // item name; sum received + target; an item is "open" if any centre asks with
+  // no set amount, "wanted" if any centre still needs it.
+  const itemAggMap = {};
+  byCentre.forEach(c => (c.items || []).forEach(it => {
+    const a = itemAggMap[it.item] || (itemAggMap[it.item] = { item: it.item, unit: it.unit || "", need: 0, filled: 0, open: false, wantedCentres: 0, centres: 0 });
+    a.need += it.need || 0; a.filled += it.filled || 0; a.centres += 1;
+    if (it.open) a.open = true;
+    if (it.wanted) a.wantedCentres += 1;
+  }));
+  const itemsAgg = Object.values(itemAggMap).sort((a, b) => (b.wantedCentres - a.wantedCentres) || a.item.localeCompare(b.item));
+  const itemStillNeeded = k.itemStillNeeded || 0;
+
   const tabBase = { fontFamily: "'Inter',sans-serif", fontSize: 14.5, fontWeight: 600, padding: "14px 6px", border: "none", background: "none", cursor: "pointer", borderBottom: "2.5px solid transparent", marginBottom: -1, display: "inline-flex", alignItems: "center", marginRight: 6 };
   const tabStyle = (kk) => ({ ...tabBase, color: view === kk ? "#fff" : "rgba(255,255,255,0.55)", borderBottomColor: view === kk ? "#d0ff3a" : "transparent" });
   const tabs = [["overview", "Overview", "ph-chart-bar"], ["centres", "Centres", "ph-buildings"], ["volunteers", "Volunteers", "ph-identification-card"], ["roles", "Roles", "ph-users-three"]];
@@ -1466,6 +1479,9 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
     { icon: "ph-user-check", tintBg: "rgba(47,158,68,0.12)", iconColor: "#2f9e44", value: ci(totFilled), label: "Slots filled", valueColor: "#2f9e44" },
     { icon: "ph-puzzle-piece", tintBg: "rgba(232,169,43,0.16)", iconColor: "#a07400", value: ci(totGap), label: "Open slots", valueColor: totGap > 0 ? "#a07400" : "#2f9e44" },
   ];
+  if ((k.itemTypes || 0) > 0) kpis.push(
+    { icon: "ph-package", tintBg: "rgba(124,77,255,0.13)", iconColor: "#6a3fc0", value: ci(itemStillNeeded), label: "Items needed", valueColor: itemStillNeeded > 0 ? "#6a3fc0" : "#2f9e44" }
+  );
 
   const sorted = [...byCentre].sort((a, b) => sortKey === "name" ? a.name.localeCompare(b.name) : sortKey === "rate" ? (b.fulfillmentRate - a.fulfillmentRate) : (b.gap - a.gap));
   const segBase = { fontFamily: "'Inter',sans-serif", fontSize: 13, fontWeight: 600, padding: "7px 15px", border: "none", cursor: "pointer", borderRadius: 999 };
@@ -1632,9 +1648,37 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
           </div>
         </section>
 
+        {itemsAgg.length > 0 && <section style={{ padding: "0 0 8px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#7c4dff", display: "flex", alignItems: "center", gap: 8 }}><i className="ph ph-package"/> Materials needed</div>
+              <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Items that keep the centres running</h2>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 14 }}>
+              {itemsAgg.map((it, i) => {
+                const pct = it.need > 0 ? Math.min(100, Math.round(it.filled / it.need * 100)) : 0;
+                const done = !it.open && it.need > 0 && it.filled >= it.need;
+                const barColor = done ? "#2f9e44" : pct >= 60 ? "#e8a92b" : "#e03131";
+                return (
+                  <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 14, padding: "16px 18px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                      <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16, color: "#0a1130" }}>{it.item}</b>
+                      <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#5a6488" }}>{it.open ? (it.filled > 0 ? it.filled + (it.unit ? " " + it.unit : "") + " in" : "") : it.filled + "/" + it.need + (it.unit ? " " + it.unit : "")}</span>
+                    </div>
+                    {it.open
+                      ? <div style={{ margin: "10px 0 8px" }}><span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 10.5, fontWeight: 600, letterSpacing: "0.04em", padding: "4px 10px", borderRadius: 999, background: "rgba(124,108,255,0.12)", color: "#5a3fb0" }}><i className="ph ph-hand-heart"/> Any amount welcome</span></div>
+                      : <div style={{ height: 7, borderRadius: 999, background: "#eef0f4", margin: "10px 0 8px", overflow: "hidden" }}><div style={{ height: "100%", width: pct + "%", background: barColor, borderRadius: 999 }}/></div>}
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.04em", color: "#8088a6" }}>{it.wantedCentres > 0 ? it.wantedCentres + " centre" + (it.wantedCentres === 1 ? "" : "s") + " asking" : "fully met ✓"}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>}
+
         <section style={{ padding: "0 0 52px" }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
-            <div style={{ marginBottom: 8 }}>
+            <div style={{ marginBottom: 8, marginTop: itemsAgg.length > 0 ? 40 : 0 }}>
               <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#7c4dff", display: "flex", alignItems: "center", gap: 8 }}><i className="ph ph-sparkle"/> Smart insights</div>
               <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>What the board is telling us</h2>
             </div>
@@ -1678,7 +1722,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                     <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: volTone(c.fulfillmentRate) }}>{volLabel(c.fulfillmentRate)}</span>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'Inter'", fontSize: 13, fontWeight: 600, color: c.gap > 0 ? "#a07400" : "#2f9e44" }}>{c.gap > 0 ? c.gap + " needed" : "Fully staffed"} <i className="ph ph-arrow-right"/></span>
                   </div>
-                  {(c.items || []).length > 0 && (() => { const openItems = (c.items || []).filter(x => (x.gap || 0) > 0).length; return (
+                  {(c.items || []).length > 0 && (() => { const openItems = (c.items || []).filter(x => x.wanted).length; return (
                     <div style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.04em", color: openItems ? "#a07400" : "#2f9e44" }}>
                       <i className="ph ph-package"/>{openItems ? openItems + " item" + (openItems === 1 ? "" : "s") + " needed" : "items met ✓"}
                     </div>
@@ -1753,10 +1797,16 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                     <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 14, padding: "14px 16px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
                         <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}>{it.item}</b>
-                        <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#5a6488" }}>{it.filled}/{it.need}{it.unit ? " " + it.unit : ""}</span>
+                        <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#5a6488" }}>{it.open ? (it.filled > 0 ? it.filled + (it.unit ? " " + it.unit : "") + " in" : "") : it.filled + "/" + it.need + (it.unit ? " " + it.unit : "")}</span>
                       </div>
-                      <div style={{ height: 7, borderRadius: 999, background: "#eef0f4", margin: "10px 0 6px", overflow: "hidden" }}><div style={{ height: "100%", width: pct + "%", background: barColor, borderRadius: 999 }}/></div>
-                      <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: it.gap > 0 ? "#a07400" : "#2f9e44" }}>{it.gap > 0 ? it.gap + " still needed" : "fully met ✓"}</span>
+                      {it.open ? (
+                        <div style={{ margin: "10px 0 6px" }}><span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", padding: "4px 10px", borderRadius: 999, background: "rgba(124,108,255,0.12)", color: "#5a3fb0" }}><i className="ph ph-hand-heart"/> Any amount welcome</span></div>
+                      ) : (
+                        <>
+                          <div style={{ height: 7, borderRadius: 999, background: "#eef0f4", margin: "10px 0 6px", overflow: "hidden" }}><div style={{ height: "100%", width: pct + "%", background: barColor, borderRadius: 999 }}/></div>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: it.gap > 0 ? "#a07400" : "#2f9e44" }}>{it.gap > 0 ? it.gap + " still needed" : "fully met ✓"}</span>
+                        </>
+                      )}
                       {it.note ? <p style={{ fontSize: 12.5, color: "#8088a6", margin: "6px 0 0", lineHeight: 1.4 }}>{it.note}</p> : null}
                     </div>
                   );

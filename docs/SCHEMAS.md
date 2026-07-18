@@ -451,7 +451,7 @@ authoritative for their own flat lists.
 | `id`          | int PK    | |
 | `centreId`    | text      | FK → `centres.centreId` |
 | `item`        | text      | e.g. Laptops, Keyboards, Chairs, Data |
-| `needCount`   | int       | How many the centre needs |
+| `needCount`   | int       | How many the centre needs; **0 = open request** (no set amount — never reads as "met") |
 | `filledCount` | int       | How many have come in (tracked directly — no roster) |
 | `unit`        | text      | Optional (units, GB, sets, …) |
 | `note`        | text      | Optional public note |
@@ -459,6 +459,10 @@ authoritative for their own flat lists.
 | `updatedBy`   | text      | admin memberId |
 
 UNIQUE(`centreId`,`item`). Edited via `admin.items.needs.upsert|delete` in the
-Volunteer → Needs editor; surfaced per-centre and as `itemNeed/itemFilled/itemGap`
-KPIs on the `/v-status` board. Unlike volunteer needs (filled from the live
-roster), items have no roster so the received count is entered by an admin.
+Volunteer → Needs editor; surfaced per-centre, on the `/v-status` **overview**
+(a "Materials needed" roll-up + an "Items needed" KPI), and as
+`itemNeed/itemFilled/itemGap/itemTypes/itemStillNeeded/itemOpen` KPIs. Unlike
+volunteer needs (filled from the live roster), items have no roster so the
+received count is entered by an admin. An **open** item (`needCount` 0) is a
+standing request: it shows the running received count, reads as "any amount
+welcome", and always counts as still-wanted.

@@ -430,6 +430,16 @@ chk('v-status per-centre item math (need/filled/gap/tone)', $lap && $lap['need']
 $dat = null; foreach (($tv2['items'] ?? []) as $it) if ($it['item'] === 'Data bundles') $dat = $it;
 chk('v-status met item reports full', $dat && $dat['gap'] === 0 && $dat['tone'] === 'met');
 chk('v-status item KPIs sum across centres', ($vs2['status']['kpis']['itemNeed'] ?? 0) === 15 && ($vs2['status']['kpis']['itemFilled'] ?? 0) === 9 && ($vs2['status']['kpis']['itemGap'] ?? 0) === 6);
+chk('v-status item KPIs count types + still-needed', ($vs2['status']['kpis']['itemTypes'] ?? 0) === 2 && ($vs2['status']['kpis']['itemStillNeeded'] ?? 0) === 1 && ($vs2['status']['kpis']['itemOpen'] ?? 0) === 0);
+// An OPEN item — no specific target (needCount omitted / 0). It never reads as
+// "met"; it's a standing request that counts as still-wanted.
+backend_dispatch('admin.items.needs.upsert', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'item' => 'Story books', 'filledCount' => 3]);
+$vs3 = backend_dispatch('public.volunteer.status', []);
+$tv3 = null; foreach ($vs3['status']['byCentre'] as $c) if ($c['centreId'] === 'CEN-VOL') $tv3 = $c;
+$open = null; foreach (($tv3['items'] ?? []) as $it) if ($it['item'] === 'Story books') $open = $it;
+chk('open item: no target, still wanted, not met', $open && $open['open'] === true && $open['need'] === 0 && $open['gap'] === 0 && $open['wanted'] === true && $open['tone'] === 'open' && $open['fulfillmentRate'] === null);
+chk('open item counts toward itemOpen + itemStillNeeded, not itemNeed', ($vs3['status']['kpis']['itemOpen'] ?? 0) === 1 && ($vs3['status']['kpis']['itemStillNeeded'] ?? 0) === 2 && ($vs3['status']['kpis']['itemNeed'] ?? 0) === 15);
+backend_dispatch('admin.items.needs.delete', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'item' => 'Story books']);
 chk('item upsert dedupes by (centre,item)', (function () {
     backend_dispatch('admin.items.needs.upsert', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'item' => 'Laptops', 'needCount' => 12, 'filledCount' => 4]);
     $rows = array_filter(backend_dispatch('admin.volunteers.needs.list', ['requesterId' => 'NGG-2025-0099'])['items'], fn($x) => $x['centreId'] === 'CEN-VOL' && $x['item'] === 'Laptops');

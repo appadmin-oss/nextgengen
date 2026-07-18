@@ -749,6 +749,7 @@ function volunteer_status_compute(): array {
             'totalNeed' => $tNeed, 'totalFilled' => $tFilled, 'totalGap' => max(0, $tNeed - $tFilled),
             'fulfillmentRate' => $globalRate, 'tone' => volunteer_tone($globalRate),
             'itemNeed' => $items['totalNeed'], 'itemFilled' => $items['totalFilled'], 'itemGap' => $items['totalGap'],
+            'itemTypes' => $items['types'], 'itemStillNeeded' => $items['stillNeeded'], 'itemOpen' => $items['open'],
         ],
         'byCentre' => $byCentre,
     ];
@@ -858,19 +859,35 @@ function item_needs_compute(): array {
     $rows = db_all('SELECT n.centreId, c.name AS centreName, n.item, n.needCount, n.filledCount, n.unit, n.note
                     FROM item_needs n JOIN centres c ON c.centreId = n.centreId
                     WHERE c.status = \'active\' ORDER BY c.name, n.item');
-    $byCentre = []; $tNeed = 0; $tFilled = 0;
+    // An item need may be OPEN — no specific target amount (needCount 0). Those
+    // are standing requests: they never read as "fully met", they just show the
+    // running received count and count as still-wanted. Items WITH a target get
+    // the usual filled/need/gap math.
+    $byCentre = []; $tNeed = 0; $tFilled = 0; $types = 0; $stillNeeded = 0; $open = 0;
     foreach ($rows as $r) {
         $name = (string)$r['centreName'];
-        $need = (int)$r['needCount']; $fl = (int)$r['filledCount'];
-        $tNeed += $need; $tFilled += $fl;
+        $need = max(0, (int)$r['needCount']); $fl = max(0, (int)$r['filledCount']);
+        $isOpen = $need === 0;
+        $gap = $isOpen ? 0 : max(0, $need - $fl);
+        $rate = $isOpen ? null : volunteer_rate($fl, $need);
+        $tone = $isOpen ? 'open' : volunteer_tone($rate);
+        $wanted = $isOpen || $gap > 0;   // still-needed for the "open items" tallies
+        $tNeed += $need; $tFilled += $fl; $types++;
+        if ($isOpen) $open++;
+        if ($wanted) $stillNeeded++;
         $byCentre[$name] = $byCentre[$name] ?? [];
         $byCentre[$name][] = [
             'item' => (string)$r['item'], 'need' => $need, 'filled' => $fl,
-            'gap' => max(0, $need - $fl), 'unit' => (string)$r['unit'], 'note' => (string)$r['note'],
-            'fulfillmentRate' => volunteer_rate($fl, $need), 'tone' => volunteer_tone(volunteer_rate($fl, $need)),
+            'gap' => $gap, 'open' => $isOpen, 'wanted' => $wanted,
+            'unit' => (string)$r['unit'], 'note' => (string)$r['note'],
+            'fulfillmentRate' => $rate, 'tone' => $tone,
         ];
     }
-    return ['byCentre' => $byCentre, 'totalNeed' => $tNeed, 'totalFilled' => $tFilled, 'totalGap' => max(0, $tNeed - $tFilled)];
+    return [
+        'byCentre' => $byCentre, 'totalNeed' => $tNeed, 'totalFilled' => $tFilled,
+        'totalGap' => max(0, $tNeed - $tFilled), 'types' => $types,
+        'stillNeeded' => $stillNeeded, 'open' => $open,
+    ];
 }
 
 function admin_item_needs_upsert(array $p): array {
