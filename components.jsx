@@ -1075,12 +1075,19 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   const [err, setErr] = React.useState("");
   const [linkVal, setLinkVal] = React.useState("");
   const [zoom, setZoom] = React.useState(false);  // full-screen photo viewer
+  const [shot, setShot] = React.useState(null);   // captured still awaiting confirm: {url, blob}
   const videoRef = React.useRef(null);
   const streamRef = React.useRef(null);
   const fileRef = React.useRef(null);
 
   const stop = () => { if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } };
   React.useEffect(() => stop, []);
+  // Lock body scroll while the full-screen camera overlay is open.
+  React.useEffect(() => {
+    if (mode !== "camera") return;
+    const prev = document.body.style.overflow; document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [mode]);
 
   const startCamera = async () => {
     setErr(""); setMode("camera");
@@ -1112,6 +1119,9 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     } finally { setBusy(false); }
   };
 
+  // Grab a still from the live video and FREEZE it for review — no upload yet.
+  // The user then presses "Use photo" (accept) or "Retake". The camera keeps
+  // running behind the frozen still so retake is instant.
   const capture = async () => {
     const v = videoRef.current; if (!v) return;
     const c = document.createElement("canvas");
@@ -1124,10 +1134,16 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     ctx.drawImage(v, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
     setBusy(true); setErr("");
     const check = await validateHeadshot(c, c.width, c.height);
-    if (!check.ok) { setErr(check.reason); setBusy(false); return; }
+    setBusy(false);
+    if (!check.ok) { setErr(check.reason); return; }   // stay live so they can reframe
     const blob = await canvasToBlob(c, "image/jpeg", 0.9);
-    if (blob) uploadBlob(blob); else setBusy(false);
+    if (!blob) { setErr("Couldn't capture that frame — try again."); return; }
+    setShot({ url: c.toDataURL("image/jpeg", 0.9), blob });
   };
+  // Accept the reviewed still → upload it. On success uploadBlob stops the
+  // camera and returns to idle; on failure the review stays put with the error.
+  const acceptShot = async () => { if (shot) { await uploadBlob(shot.blob, "headshot.jpg"); setShot(null); } };
+  const closeCamera = () => { stop(); setShot(null); setMode("idle"); setErr(""); };
 
   // Upload a chosen file — validate it first, then send.
   const uploadPicked = async (file) => {
@@ -1161,22 +1177,34 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     }
   };
 
-  // CAMERA MODE — a large portrait frame (not the tiny circle) so you can
-  // actually see yourself and line up. Live preview is mirrored; a dashed oval
-  // guides framing to match the face-centred 4:5 crop we capture.
+  // CAMERA MODE — a full-screen overlay (not a cramped inline frame). Capture
+  // freezes the shot for review; nothing is saved until "Use photo" is pressed,
+  // so it never jumps straight to the little circle.
   if (mode === "camera") {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
-        <div style={{ position: "relative", width: "100%", maxWidth: 300, aspectRatio: "4 / 5", borderRadius: 16, overflow: "hidden", background: "#0b1020", border: "1px solid rgba(12,20,50,0.18)" }}>
-          <video ref={videoRef} playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
-          <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "43%", transform: "translate(-50%,-50%)", width: "62%", height: "72%", border: "2px dashed rgba(255,255,255,0.6)", borderRadius: "50%" }}/>
-          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "10px", fontSize: 11.5, color: "#fff", background: "linear-gradient(transparent, rgba(0,0,0,0.6))", textAlign: "center" }}>Line your face up with the oval</div>
+      <div role="dialog" aria-modal="true" aria-label="Take a photo" style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(6,9,20,0.94)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20, gap: 16 }}>
+        <button type="button" onClick={closeCamera} aria-label="Close" style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: 22, lineHeight: 1, cursor: "pointer" }}>✕</button>
+        <div style={{ color: "#fff", fontFamily: "'Sora',sans-serif", fontWeight: 700, fontSize: 18 }}>{shot ? "Use this photo?" : "Take your photo"}</div>
+        <div style={{ position: "relative", width: "100%", maxWidth: 360, aspectRatio: "4 / 5", borderRadius: 18, overflow: "hidden", background: "#0b1020", boxShadow: "0 24px 70px -24px rgba(0,0,0,0.75)" }}>
+          <video ref={videoRef} playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", display: shot ? "none" : "block" }}/>
+          {shot && <img src={shot.url} alt="Captured photo" style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>}
+          {!shot && <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "43%", transform: "translate(-50%,-50%)", width: "62%", height: "72%", border: "2px dashed rgba(255,255,255,0.65)", borderRadius: "50%" }}/>}
+          {!shot && <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: 12, fontSize: 12.5, color: "#fff", background: "linear-gradient(transparent, rgba(0,0,0,0.65))", textAlign: "center" }}>Line your face up with the oval, then press Capture.</div>}
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={capture}>{busy ? "Saving…" : "📸 Capture"}</button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { stop(); setMode("idle"); }}>Cancel</button>
+        {err && <div style={{ fontSize: 13, color: "#ffb0b0", maxWidth: 360, textAlign: "center", lineHeight: 1.4 }}>{err}</div>}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+          {shot ? (
+            <>
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={acceptShot}>{busy ? "Saving…" : "✓ Use photo"}</button>
+              <button type="button" className="btn" disabled={busy} onClick={() => { setShot(null); setErr(""); }} style={{ color: "#fff", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)" }}>↺ Retake</button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={capture}>{busy ? "Checking…" : "📸 Capture"}</button>
+              <button type="button" className="btn" onClick={closeCamera} style={{ color: "#fff", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)" }}>Cancel</button>
+            </>
+          )}
         </div>
-        {err && <div className="mono" style={{ fontSize: 11, color: "var(--coral)" }}>{err}</div>}
       </div>
     );
   }
