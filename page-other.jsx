@@ -631,12 +631,15 @@ function JoinPage({ setPage }) {
       const code = e.code || e.message;
       const map = {
         rate_limited: "Too many submissions from this connection — wait a few minutes and try again.",
+        applications_closed: "Applications are closed right now. Check back soon.",
         bad_email: "That parent email doesn't look right.",
         bad_age: "Applicants must be between 10 and 17 years old.",
         bad_dob: "Select a valid date of birth.",
+        bad_sex: "Select the applicant's sex.",
         phone_required: "A parent or guardian phone number is required.",
         bad_firstName: "Enter the applicant's first name.",
         bad_lastName: "Enter the applicant's last name.",
+        bad_name: "Enter the applicant's full name.",
         upstream_unreachable: "We couldn't reach the server. Your draft is saved — try again in a moment.",
       };
       const text = map[code] || "Couldn't submit your application. Your draft is saved — try again.";

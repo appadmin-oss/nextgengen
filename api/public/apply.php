@@ -14,6 +14,9 @@ $other = v_safe_text(v_max(trim((string)($body['otherName'] ?? '')), 60), 60);
 $name  = trim($first . ($other !== '' ? ' ' . $other : '') . ' ' . $last);
 $email = v_email($body['email']);
 $phone = v_safe_text(v_max(trim((string)$body['phone']), 32), 32);
+// Sex is standardised (male/female) and required on every intake; the domain
+// layer validates/normalises it — forward the raw choice so it isn't dropped.
+$sex   = v_safe_text(v_max(trim((string)($body['sex'] ?? '')), 16), 16);
 // Teens are 10–17; mentors/volunteers are adults (16+ minimum).
 $dob   = v_dob($body['dob'], $kind === 'teen' ? 10 : 16, $kind === 'teen' ? 17 : 100);
 $why   = v_safe_text($body['why'] ?? '', 2000);
@@ -26,6 +29,7 @@ $payload = [
     'name'      => $name,
     'email'     => $email,
     'phone'     => $phone,
+    'sex'       => $sex,
     'dob'       => $dob,
     'why'       => $why,
     'ip'        => client_ip(),
@@ -40,6 +44,12 @@ if ($kind === 'teen') {
     v_require($body, ['role']);
     $payload['role']    = v_safe_text($body['role'] ?? '', 24);
     $payload['photoUrl'] = v_safe_text($body['photoUrl'] ?? '', 512);
+    // Home centre is required; mentors/instructors also pick a faculty. Forward
+    // both (plus the optional public-visibility opt-in) so the domain can
+    // validate against the live centre/faculty catalogues.
+    $payload['centre']  = v_safe_text($body['centre'] ?? '', 80);
+    $payload['faculty'] = v_safe_text($body['faculty'] ?? '', 80);
+    $payload['visibilityConsent'] = !empty($body['visibilityConsent']) ? 1 : 0;
     $payload['courses'] = is_array($body['courses'] ?? null)
         ? array_slice(array_map(fn($c) => v_safe_text((string)$c, 60), $body['courses']), 0, 8)
         : [];

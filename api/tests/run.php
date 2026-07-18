@@ -292,6 +292,15 @@ chk('structured name + dob stored on application', (function () { $r = db_row("S
 chk('apply rejects a malformed dob', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Dob', 'email' => 'baddob@example.com', 'phone' => '08031110099', 'dob' => 'not-a-date'])['error'] === 'bad_dob');
 chk('apply rejects an under-16 volunteer', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Too', 'lastName' => 'Young', 'email' => 'young@example.com', 'phone' => '08031110098', 'dob' => '2015-01-01'])['error'] === 'dob_too_young');
 chk('apply requires a first name', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'lastName' => 'Only', 'email' => 'nofirst@example.com', 'phone' => '08031110097', 'dob' => '1990-01-01'])['error'] === 'bad_firstName');
+// The HTTP endpoint builds the gs_call payload from the request body; the
+// domain tests above dispatch straight to public.apply and so never catch a
+// field the endpoint forgets to forward. `sex` is required on every intake and
+// a volunteer needs `centre`/`faculty` — a dropped field is a silent 400 in
+// production. Guard the endpoint source so those forwards can't regress.
+$applySrc = (string)@file_get_contents($ROOT . '/public/apply.php');
+chk('apply endpoint forwards sex to the domain', (bool)preg_match("/'sex'\\s*=>/", $applySrc));
+chk('apply endpoint forwards volunteer centre', (bool)preg_match("/\\\$payload\\['centre'\\]\\s*=/", $applySrc));
+chk('apply endpoint forwards volunteer faculty', (bool)preg_match("/\\\$payload\\['faculty'\\]\\s*=/", $applySrc));
 // ── Multi-form builder (registration + volunteer + contact) ──
 $fl = backend_dispatch('admin.forms.list', ['requesterId' => 'NGG-2025-0099']);
 chk('forms list has all three forms', count($fl['forms']) === 3 && in_array('volunteer', array_column($fl['forms'], 'formId'), true) && in_array('contact', array_column($fl['forms'], 'formId'), true));
