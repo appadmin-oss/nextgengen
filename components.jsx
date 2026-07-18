@@ -1191,7 +1191,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         {mode === "link" ? (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <input className="admin-input" style={{ flex: "1 1 180px" }} placeholder="https://…/photo.jpg (direct image link)" value={linkVal} onChange={e => setLinkVal(e.target.value)}/>
+            <input className="admin-input" style={{ flex: "1 1 180px" }} aria-label="Direct image link" placeholder="https://…/photo.jpg (direct image link)" value={linkVal} onChange={e => setLinkVal(e.target.value)}/>
             <button type="button" className="btn btn-primary btn-sm" disabled={!linkVal.trim() || busy} onClick={useLink}>{busy ? "Checking…" : "Use"}</button>
             <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setMode("idle")}>Cancel</button>
           </div>

@@ -529,7 +529,10 @@ function AdminAttendanceDuty() {
   React.useEffect(() => { setData(null); load(date); /* eslint-disable-next-line */ }, [date]);
   const vols = (data && data.volunteers) || [];
   const setTaker = async (centre, volunteerId) => { if (!volunteerId) return; setBusy(centre); try { const r = await NGGApi.admin.attendance.set(date, centre, volunteerId); setData(r); toast.success("Duty updated"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
-  const closeRoll = async (centre, volunteerId) => { setBusy(centre); try { const r = await NGGApi.admin.attendance.complete(date, centre, volunteerId); toast.success(r.message || "Roll closed"); await load(date); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  const closeRoll = async (centre, volunteerId) => {
+    if (!(await dialog.confirm({ title: "Close the roll for " + centre + "?", body: "This finalises today's attendance for " + centre + " and awards the duty volunteer their service points. It can't be reopened here.", cta: "Close roll" }))) return;
+    setBusy(centre); try { const r = await NGGApi.admin.attendance.complete(date, centre, volunteerId); toast.success(r.message || "Roll closed"); await load(date); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
+  };
   const [board, setBoard] = React.useState(null);
   const loadBoard = () => NGGApi.admin.attendance.leaderboard().then(r => setBoard(r.leaderboard || [])).catch(() => setBoard([]));
   React.useEffect(() => { loadBoard(); }, []);
@@ -584,6 +587,7 @@ function AdminAttendanceDuty() {
 function AdminMembers() {
   const [list, setList] = React.useState(null);
   const [err, setErr] = React.useState("");
+  const centreOpts = useCentreOptions();
   const [filters, setFilters] = React.useState({ q: "", centre: "", status: "", type: "" });
   const [page, setPage] = React.useState(1);
   const [meta, setMeta] = React.useState({ total: 0, pageSize: 50 });
@@ -622,7 +626,7 @@ function AdminMembers() {
       <div className="admin-filters">
         <input className="admin-input" placeholder="Search name, ID, email…" value={filters.q} onChange={(e) => setFilters(f => ({...f, q: e.target.value}))}/>
         <select className="admin-select" value={filters.centre} onChange={(e) => setFilters(f => ({...f, centre: e.target.value}))}>
-          <option value="">All centres</option><option value="Egbeda">Egbeda</option><option value="Ayobo">Ayobo</option>
+          <option value="">All centres</option>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <select className="admin-select" value={filters.type} onChange={(e) => setFilters(f => ({...f, type: e.target.value}))}>
           <option value="">All types</option><option value="NGG">NGG</option><option value="Summer">Summer</option>
@@ -731,7 +735,7 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
           <Field label="Phone"     value={d.phone||""}    onChange={v => set("phone", v)}/>
           <div className="admin-fields-row">
             <FieldSelect label="Type" value={d.type||"NGG"} onChange={v => set("type", v)} options={["NGG","Summer"]}/>
-            <FieldSelect label="Centre" value={d.centre||"Egbeda"} onChange={v => set("centre", v)} options={["Egbeda","Ayobo"]}/>
+            <FieldCentre value={d.centre} onChange={v => set("centre", v)}/>
           </div>
           <div className="admin-fields-row">
             <FieldSelect label="Status" value={d.status||"active"} onChange={v => set("status", v)} options={MEMBER_STATUS_OPTS}/>
@@ -763,7 +767,7 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
                 }}>View as member</button>
                 <button type="button" className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={async () => {
                   if (!confirm("Delete & anonymise this member? Their PII and journal are scrubbed and sessions revoked. This cannot be undone.")) return;
-                  try { await NGGApi.admin.members.remove(d.memberId); toast.success("Member deleted & anonymised.", "Done"); close && close(); } catch (e) { toast.error(e.code || e.message); }
+                  try { await NGGApi.admin.members.remove(d.memberId); toast.success("Member deleted & anonymised.", "Done"); (onSaved || onClose)(); } catch (e) { toast.error(e.code || e.message); }
                 }}>Delete member</button>
               </div>
             </div>
@@ -839,7 +843,7 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
           <Field label="Email" value={d.email||""} onChange={v => set("email", v)} required type="email"/>
           <Field label="Phone" value={d.phone||""} onChange={v => set("phone", v)}/>
           <Field label="Tracks (comma separated)" value={d.tracks||""} onChange={v => set("tracks", v)} placeholder="Music, Tech, Leadership"/>
-          <FieldSelect label="Centre" value={d.centre||"Egbeda"} onChange={v => set("centre", v)} options={["Egbeda","Ayobo","Both"]}/>
+          <FieldCentre value={d.centre} onChange={v => set("centre", v)} extra={["Both"]}/>
           <FieldSelect label="Status" value={d.status||"pending-checks"} onChange={v => set("status", v)} options={["active","pending-checks","on-break","retired"]}/>
           <Field label="Max mentees" value={d.maxMentees||"8"} onChange={v => set("maxMentees", v)} type="number"/>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
@@ -1406,7 +1410,7 @@ function SummerEnroll({ cohort, blank, onDone }) {
         <Field label="Full name" value={d.fullName} onChange={v => set("fullName", v)} required/>
         <div className="admin-fields-row">
           <Field label="Age" value={d.age} onChange={v => set("age", v)} type="number"/>
-          <FieldSelect label="Centre" value={d.centre} onChange={v => set("centre", v)} options={["Egbeda", "Ayobo"]}/>
+          <FieldCentre value={d.centre} onChange={v => set("centre", v)}/>
           <Field label="Track" value={d.track} onChange={v => set("track", v)} placeholder="Music, Tech…"/>
         </div>
         <div className="admin-fields-row">
@@ -1506,7 +1510,9 @@ function SummerQR({ onChange }) {
               </td>
             </tr>
           ))}</tbody>
-        </table></div>
+        </table>
+        {shown.length > 400 && <p className="admin-hint" style={{ marginTop: 10 }}>Showing the first 400 of {shown.length} matching cards — refine the search to narrow the list.</p>}
+        </div>
       }
     </div>
   );
@@ -1518,7 +1524,15 @@ function SummerRoster({ cohortId }) {
   const [openId, setOpenId] = React.useState("");
   const load = () => NGGApi.admin.summer.students(q, cohortId).then(r => setList(r.students || [])).catch(() => setList([]));
   React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q]);
-  const setStatus = async (studentId, status) => { try { await NGGApi.admin.summer.studentStatus(studentId, status); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const setStatus = async (studentId, status) => {
+    // Destructive / credential-issuing transitions need a confirm — a stray
+    // pick shouldn't withdraw a student or mint a real graduation certificate.
+    if (["withdrawn", "graduated", "promoted"].includes(status)) {
+      const body = status === "graduated" ? "Graduating issues the student's verifiable completion certificate." : "This changes the student's standing. You can set it back later.";
+      if (!(await dialog.confirm({ title: "Set status to " + status + "?", body, cta: "Set " + status, danger: status !== "graduated" }))) { load(); return; }
+    }
+    try { await NGGApi.admin.summer.studentStatus(studentId, status); load(); } catch (e) { toast.error(e.code || e.message); }
+  };
   const remove = async (s) => {
     if (!(await dialog.confirm({ title: "Delete " + s.fullName + "?", body: "This permanently removes the student record and their attendance, and frees their QR card for reuse. This can't be undone.", cta: "Delete", danger: true }))) return;
     try { await NGGApi.admin.summer.studentDelete(s.studentId); toast.success("Student deleted."); setOpenId(""); load(); } catch (e) { toast.error(e.code || e.message); }
@@ -1557,6 +1571,7 @@ function SummerRoster({ cohortId }) {
 /* Edit an enrolled student's actual data — name, age, handle, centre, track,
    guardian contact, photo, status. Mirrors admin.summer.student.update. */
 function StudentEditor({ s, onSaved, onDelete }) {
+  const centreOpts = useCentreOptions();
   const [f, setF] = React.useState({
     fullName: s.fullName || "", age: s.age != null ? String(s.age) : "", handle: s.handle || "",
     centre: s.centre || "", track: s.track || "", guardianName: s.guardianName || "",
@@ -1588,7 +1603,12 @@ function StudentEditor({ s, onSaved, onDelete }) {
           {fld("fullName", "Full name", { min: 200 })}
           {fld("age", "Age", { type: "number" })}
           {fld("handle", "Public handle", { ph: "auto-slug" })}
-          {fld("centre", "Centre")}
+          <div style={{ flex: "1 1 180px", minWidth: 150 }}><span style={lbl}>Centre</span>
+          <select className="admin-input" style={{ width: "100%" }} value={f.centre || ""} onChange={e => set("centre", e.target.value)}>
+            <option value="">— select —</option>
+            {((f.centre && !centreOpts.includes(f.centre)) ? [f.centre, ...centreOpts] : centreOpts).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
           {fld("track", "Track / faculty")}
         </div>
       </div>
@@ -1615,7 +1635,7 @@ function AdminSessions() {
   const [year, setYear] = React.useState(new Date().getFullYear());
   const [list, setList] = React.useState(null);
   const [editing, setEditing] = React.useState(null);
-  const load = () => NGGApi.admin.sessions.list(year).then(r => setList(r.sessions || []));
+  const load = () => NGGApi.admin.sessions.list(year).then(r => setList(r.sessions || [])).catch(e => { toast.error(e.code || e.message); setList([]); });
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [year]);
   return (
     <div className="admin-section">
@@ -1734,7 +1754,7 @@ function AdminMissionQueue() {
 function AdminMissions() {
   const [list, setList] = React.useState(null);
   const [editing, setEditing] = React.useState(null);
-  const load = () => NGGApi.admin.missions.list().then(r => setList(r.missions || []));
+  const load = () => NGGApi.admin.missions.list().then(r => setList(r.missions || [])).catch(e => { toast.error(e.code || e.message); setList([]); });
   React.useEffect(() => { load(); }, []);
   return (
     <div className="admin-section">
@@ -1882,7 +1902,7 @@ function AdminEventEditor({ data, onClose, onSaved }) {
           <Field label="Title" value={d.title||""} onChange={v => set("title", v)} required/>
           <div className="admin-fields-row">
             <FieldSelect label="Kind"   value={d.kind} onChange={v => set("kind", v)} options={["session","showcase","parent-meet","community","online"]}/>
-            <FieldSelect label="Centre" value={d.centre} onChange={v => set("centre", v)} options={["Egbeda","Ayobo","Both","Online"]}/>
+            <FieldCentre value={d.centre} onChange={v => set("centre", v)} extra={["Both","Online"]}/>
           </div>
           <div className="admin-fields-row">
             <Field label="Start" value={d.startAt||""} onChange={v => set("startAt", v)} type="datetime-local"/>
@@ -2254,7 +2274,7 @@ function AdminComments() {
               <div className="admin-app-actions">
                 {c.status !== "approved" && <button className="btn btn-ghost btn-sm" onClick={() => act(c.commentId, "approve")}>Approve</button>}
                 {c.status !== "rejected" && <button className="btn btn-ghost btn-sm" onClick={() => act(c.commentId, "reject")}>Reject</button>}
-                <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={() => act(c.commentId, "delete")}>Delete</button>
+                <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={async () => { if (await dialog.confirm({ title: "Delete this comment?", body: "Permanently removes the comment. This can't be undone.", cta: "Delete", danger: true })) act(c.commentId, "delete"); }}>Delete</button>
               </div>
             </div>
           ))}
@@ -2520,7 +2540,7 @@ function AdminAnchor() {
         setC(r.content || {}); setDefaults(r.defaults || null);
         try { const raw = localStorage.getItem(DRAFT_KEY); if (raw) { const d = JSON.parse(raw); if (d && d.savedAt) setDraft(d); } } catch (_) {}
       })
-      .catch(e => toast.error(e.code || e.message));
+      .catch(e => { toast.error(e.code || e.message); setC({}); });
   }, []);
   // Autosave every edit to localStorage so a refresh / crash never loses work.
   React.useEffect(() => {
@@ -2827,7 +2847,7 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
           <Field label="Title" value={d.title||""} onChange={v => set("title", v)} required/>
           <FieldTextarea label="Instructions" value={d.instructions||""} onChange={v => set("instructions", v)} rows={6}/>
           <div className="admin-fields-row">
-            <FieldSelect label="Centre" value={d.centre||""} onChange={v => set("centre", v)} options={["","Egbeda","Ayobo","Both"]}/>
+            <FieldCentre value={d.centre} onChange={v => set("centre", v)} extra={["Both"]} blank="Any centre"/>
             <Field label="Track (blank = all)" value={d.track||""} onChange={v => set("track", v)} placeholder="Tech, Music…"/>
             <Field label="Week" value={d.week||""} onChange={v => set("week", Number(v) || "")} type="number"/>
           </div>
@@ -3082,6 +3102,7 @@ function ApplicantDetail({ a }) {
 /* Correct a pending application's data before converting/approving it.
    Mirrors admin.application.update. */
 function ApplicationEditor({ a, onSaved, onDelete }) {
+  const centreOpts = useCentreOptions();
   const [f, setF] = React.useState({
     name: a.name || "", email: a.email || "", phone: a.phone || "", age: a.age != null ? String(a.age) : "",
     centre: a.centre || "", track: a.track || "", role: a.role || "", faculty: a.faculty || "",
@@ -3114,7 +3135,12 @@ function ApplicationEditor({ a, onSaved, onDelete }) {
         {fld("age", "Age", { type: "number" })}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-        {fld("centre", "Centre")}
+        <div style={{ flex: "1 1 180px", minWidth: 150 }}><span style={lbl}>Centre</span>
+          <select className="admin-input" style={{ width: "100%" }} value={f.centre || ""} onChange={e => set("centre", e.target.value)}>
+            <option value="">— select —</option>
+            {((f.centre && !centreOpts.includes(f.centre)) ? [f.centre, ...centreOpts] : centreOpts).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
         {fld("track", "Track")}
         {fld("role", "Role")}
         {fld("faculty", "Faculty")}
@@ -3164,12 +3190,14 @@ function AdminApplications() {
     try { const r = await NGGApi.admin.applications.convert(id); toast.success("Member created: " + r.memberId); load(); } catch (e) { toast.error(e.code || e.message); }
   };
   const [editId, setEditId] = React.useState(0);
+  const [zoomUrl, setZoomUrl] = React.useState("");
   const removeApp = async (a) => {
     if (!(await dialog.confirm({ title: "Delete this application?", body: "Permanently removes " + a.name + "'s application. Use this for spam, duplicates or test entries. This can't be undone.", cta: "Delete", danger: true }))) return;
     try { await NGGApi.admin.applications.remove(a.id); toast.success("Application deleted."); setEditId(0); load(); } catch (e) { toast.error(e.code || e.message); }
   };
   return (
     <div className="admin-section">
+      {zoomUrl && <ImageLightbox url={zoomUrl} alt="Applicant photo" onClose={() => setZoomUrl("")}/>}
       <div className="admin-section-head">
         <h2 className="admin-h2">Applications</h2>
         <div className="admin-section-actions">
@@ -3202,7 +3230,7 @@ function AdminApplications() {
               <div className="admin-app-top">
                 <div style={{display:"flex", gap:12, alignItems:"center"}}>
                   <input type="checkbox" checked={sel.has(a.id)} onChange={() => toggle(a.id)} aria-label={"Select " + a.name} style={{flex:"0 0 auto", width:18, height:18}}/>
-                  {a.photoUrl && <img src={a.photoUrl} alt="" style={{width:40, height:40, borderRadius:"50%", objectFit:"cover", flex:"0 0 auto"}} onError={e => { e.target.style.display = "none"; }}/>}
+                  {a.photoUrl && <img src={a.photoUrl} alt="" title="View photo" onClick={() => setZoomUrl(a.photoUrl)} style={{width:40, height:40, borderRadius:"50%", objectFit:"cover", flex:"0 0 auto", cursor:"zoom-in"}} onError={e => { e.target.style.display = "none"; }}/>}
                   <div>
                     <div className="admin-cell-name">{a.name} <span className="chip">{a.kind}</span>{a.program ? <span className={"chip " + (a.program === "summer" ? "chip-gold" : "chip-navy")}>{a.program}</span> : null}</div>
                     <div className="mono admin-cell-sub">{a.email}{a.age ? " · age " + a.age : ""}{a.centre ? " · " + a.centre : ""}{a.track ? " · " + a.track : ""}{a.role ? " · " + a.role : ""} · {fmtDate(a.createdAt)}</div>
@@ -3526,6 +3554,7 @@ function VolunteerNeedsEditor() {
 /* Edit an active volunteer's data — name, contact, role, centre, faculty,
    courses, visibility consent, status, photo. Mirrors admin.volunteers.update. */
 function VolunteerEditor({ v, onSaved, onDelete }) {
+  const centreOpts = useCentreOptions();
   const [f, setF] = React.useState({
     fullName: v.fullName || "", firstName: v.firstName || "", lastName: v.lastName || "",
     email: v.email || "", phone: v.phone || "", role: v.role || "mentor",
@@ -3567,7 +3596,12 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
         {fld("firstName", "First name")}
         {fld("lastName", "Last name")}
-        {fld("centre", "Centre")}
+        <div style={{ flex: "1 1 180px", minWidth: 150 }}><span style={lbl}>Centre</span>
+          <select className="admin-input" style={{ width: "100%" }} value={f.centre || ""} onChange={e => set("centre", e.target.value)}>
+            <option value="">— select —</option>
+            {((f.centre && !centreOpts.includes(f.centre)) ? [f.centre, ...centreOpts] : centreOpts).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
         {fld("faculty", "Faculty")}
         {fld("courses", "Courses (comma-separated)", { min: 220 })}
       </div>
@@ -3851,7 +3885,7 @@ function AdminSettings() {
   const [busy, setBusy] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
   React.useEffect(() => {
-    NGGApi.admin.settings.get().then(r => setS(r.settings)).catch(e => toast.error(e.code || e.message));
+    NGGApi.admin.settings.get().then(r => setS(r.settings)).catch(e => { toast.error(e.code || e.message); setS({}); });
     NGGApi.admin.sessions.list(new Date().getFullYear()).then(r => setSessions(r.sessions || [])).catch(() => {});
   }, []);
   const save = async () => { setBusy(true); try { await NGGApi.admin.settings.set(s); setSaved(true); setTimeout(() => setSaved(false), 2200); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
@@ -4286,6 +4320,7 @@ function AdminPhotos() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busyId, setBusyId] = React.useState("");
+  const [zoom, setZoom] = React.useState("");
   const load = () => NGGApi.admin.photos.queue().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
 
@@ -4315,14 +4350,15 @@ function AdminPhotos() {
   const shot = (url, label, tone) => (
     <div style={{ flex: "1 1 160px" }}>
       <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 5 }}>{label}</div>
-      <div style={{ aspectRatio: "4/5", borderRadius: 10, overflow: "hidden", background: "rgba(12,20,50,0.05)", border: "1px solid " + (tone || "rgba(12,20,50,0.12)"), display: "grid", placeItems: "center" }}>
+      <button type="button" onClick={() => url && setZoom(url)} title={url ? "View full size" : ""} style={{ display: "grid", placeItems: "center", width: "100%", aspectRatio: "4/5", borderRadius: 10, overflow: "hidden", background: "rgba(12,20,50,0.05)", border: "1px solid " + (tone || "rgba(12,20,50,0.12)"), padding: 0, cursor: url ? "zoom-in" : "default" }}>
         {url ? <img src={url} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : <span style={{ color: "var(--ink-400)", fontSize: 12 }}>—</span>}
-      </div>
+      </button>
     </div>
   );
 
   return (
     <div className="admin-section">
+      {zoom && <ImageLightbox url={zoom} alt="Headshot" onClose={() => setZoom("")}/>}
       <div className="admin-section-head">
         <h2 className="admin-h2">Photo review {data && data.pending ? <span className="chip chip-lime">{data.pending} waiting</span> : null}</h2>
         <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
@@ -4408,7 +4444,7 @@ function AdminSite() {
   const [c, setC] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
-  const load = () => NGGApi.admin.settings.get().then(r => setC({ ...(r.settings.site_content || {}) })).catch(e => toast.error(e.code || e.message));
+  const load = () => NGGApi.admin.settings.get().then(r => setC({ ...(r.settings.site_content || {}) })).catch(e => { toast.error(e.code || e.message); setC({}); });
   React.useEffect(() => { load(); }, []);
   const set = (k) => (v) => setC(o => ({ ...o, [k]: v }));
   const save = async () => { setBusy(true); try { await NGGApi.admin.settings.set({ site_content: c }); setSaved(true); setTimeout(() => setSaved(false), 2200); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
@@ -4490,6 +4526,32 @@ function FieldTextarea({ label, value, onChange, rows }) {
     </label>
   );
 }
+// Live centre options, cached across the whole admin so every form reflects the
+// centres an admin actually configured — not a hard-coded pair. A newly added
+// centre becomes selectable everywhere immediately.
+let _centreOptCache = null;
+function useCentreOptions() {
+  const [names, setNames] = React.useState(_centreOptCache || []);
+  React.useEffect(() => {
+    let live = true;
+    if (_centreOptCache) { setNames(_centreOptCache); return; }
+    NGGApi.admin.registration.centres().then(r => { _centreOptCache = (r.centres || []).map(c => c.name).filter(Boolean); if (live) setNames(_centreOptCache); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  return names;
+}
+// Labeled centre <select> populated from the live centres list. Keeps the
+// current value selectable even if the centre was renamed/removed, supports
+// extra fixed options (e.g. "Both", "Online") and an optional blank label.
+function FieldCentre({ label = "Centre", value, onChange, extra = [], blank }) {
+  const names = useCentreOptions();
+  const opts = names.slice();
+  extra.forEach(x => { if (x && !opts.includes(x)) opts.push(x); });
+  if (value && !opts.includes(value)) opts.unshift(value);
+  const all = (blank !== undefined ? [{ value: "", label: blank }] : (value ? [] : [{ value: "", label: "— select centre —" }])).concat(opts);
+  return <FieldSelect label={label} value={value || ""} onChange={onChange} options={all}/>;
+}
+
 function FieldSelect({ label, value, onChange, options }) {
   // options may be plain strings OR { value, label } objects so machine enums
   // (e.g. "graduated-vanguard") can render as human labels ("Graduated · Vanguard").

@@ -533,6 +533,7 @@ const JOIN_DRAFT_KEY = "ngg.join.draft";
 function JoinPage({ setPage }) {
   // Restore a saved draft so "we save as you go" is true.
   const [step, setStep] = useState(0);
+  const [appRef, setAppRef] = useState("");
   // Which program the applicant chose (set by the Summer page before it routes
   // here). 'summer' = 6-week on-ramp, 'anchor' = flagship 12-week NGG. Captured
   // once on mount so navigating away and back via the generic Apply link resets.
@@ -607,7 +608,7 @@ function JoinPage({ setPage }) {
     // Final step — actually submit the application.
     setBusy(true);
     try {
-      await NGGApi.public.apply({
+      const r = await NGGApi.public.apply({
         kind: "teen",
         program: program,
         firstName: data.firstName.trim(),
@@ -622,6 +623,7 @@ function JoinPage({ setPage }) {
         phone: data.parentPhone.trim(),
         photoUrl: data.photoUrl || "",
       });
+      setAppRef((r && r.ref) || "");
       try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {}
       setStep(4);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -663,7 +665,7 @@ function JoinPage({ setPage }) {
           {restored && (
             <div role="status" style={{display:"flex", alignItems:"center", gap:12, justifyContent:"space-between", marginBottom:20, padding:"12px 16px", borderRadius:12, background:"rgba(245,176,38,0.14)", border:"1px solid rgba(245,176,38,0.4)", fontSize:14, color:"var(--ink-900)"}}>
               <span>↩︎ We saved your progress — pick up where you left off.</span>
-              <button type="button" onClick={() => { try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {} setData({ firstName: "", lastName: "", otherName: "", dob: "", city: "Egbeda", track: "Music", why: "", parentEmail: "", parentPhone: "", photoUrl: "" }); setStep(0); setRestored(false); }} className="mono" style={{background:"none", border:"none", cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--ink-500)", fontWeight:600}}>Start fresh</button>
+              <button type="button" onClick={() => { try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {} setData({ firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "Egbeda", track: "Music", why: "", parentEmail: "", parentPhone: "", photoUrl: "" }); setStep(0); setRestored(false); }} className="mono" style={{background:"none", border:"none", cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--ink-500)", fontWeight:600}}>Start fresh</button>
             </div>
           )}
 
@@ -808,10 +810,20 @@ function JoinPage({ setPage }) {
               <div style={{textAlign:"center", padding:"32px 0"}}>
                 <div className="badge-pin unlocked" style={{width:96, height:96, fontSize:48, margin:"0 auto"}}>✓</div>
                 <h2 className="display" style={{fontSize:56, margin:"24px 0 12px"}}>Application received.</h2>
+                {appRef && (
+                  <div style={{ margin: "0 auto 16px", maxWidth: 360, padding: "14px 16px", borderRadius: 14, background: "var(--bg-sunken, #f4f4f0)", border: "1px solid rgba(12,20,50,0.1)" }}>
+                    <div className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-500)" }}>Your reference</div>
+                    <div className="mono" style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{appRef}</div>
+                    <div style={{ fontSize: 12.5, color: "var(--ink-500)", marginTop: 6 }}>Save this — you can check your status any time with this reference and your email.</div>
+                  </div>
+                )}
                 <p style={{fontSize:17, color:"var(--ink-500)", maxWidth:480, margin:"0 auto", lineHeight:1.5}}>
                   We will write back within 5 working days. In the meantime — follow Genius FM and start your streak.
                 </p>
-                <button className="btn btn-primary btn-lg mt-32" onClick={() => setPage("home")}>Back to home</button>
+                <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 32 }}>
+                  {appRef && <button className="btn btn-ghost btn-lg" onClick={() => setPage("contact")}>Check application status</button>}
+                  <button className="btn btn-primary btn-lg" onClick={() => setPage("home")}>Back to home</button>
+                </div>
               </div>
             )}
           </div>
@@ -2047,7 +2059,7 @@ function ParentVerifyPage() {
       await NGGApi.public.verify.submit(t, consents, actorName.trim(), feedback.trim());
       setState("success");
     } catch (e) {
-      setErr(e.code === "consent_required" ? "Please tick all three required boxes — the registration can't complete without them." : "Couldn't save just now — check your connection and try again. Nothing you entered was lost.");
+      setErr(e.code === "consent_required" ? ("Please tick all " + p0.length + " required boxes — the registration can't complete without them.") : "Couldn't save just now — check your connection and try again. Nothing you entered was lost.");
     } finally { setBusy(false); }
   };
 
@@ -2078,7 +2090,7 @@ function ParentVerifyPage() {
       <div><div style={{ fontWeight: 800, fontSize: 17 }}>{ctx.student.name}</div><div style={{ fontSize: 13, color: "#777" }}>{ctx.student.course || "Summer program"}</div></div>
     </div>
 
-    <div style={{ fontSize: 11, letterSpacing: ".14em", fontWeight: 700, color: "#8a8a80", margin: "18px 0 8px", textTransform: "uppercase" }}>Required — please tick all three</div>
+    <div style={{ fontSize: 11, letterSpacing: ".14em", fontWeight: 700, color: "#8a8a80", margin: "18px 0 8px", textTransform: "uppercase" }}>Required — please tick all {p0.length}</div>
     {p0.map(k => (
       <label key={k} style={{ ...card, display: "flex", gap: 12, alignItems: "flex-start", padding: 14, marginBottom: 8, cursor: "pointer", borderColor: consents[k] ? "#9fbc3b" : "#e6e6e0" }}>
         <input type="checkbox" checked={!!consents[k]} onChange={e => setConsents(c => ({ ...c, [k]: e.target.checked }))} style={{ width: 19, height: 19, marginTop: 1, accentColor: "#7a9c1e" }}/>
@@ -2093,12 +2105,15 @@ function ParentVerifyPage() {
       </label>
     ))}
 
-    <div style={{ margin: "18px 0 8px", fontSize: 11, letterSpacing: ".14em", fontWeight: 700, color: "#8a8a80", textTransform: "uppercase" }}>You</div>
-    <input value={actorName} onChange={e => setActorName(e.target.value)} placeholder="Your full name" maxLength={120}
+    <div style={{ margin: "18px 0 8px", fontSize: 11, letterSpacing: ".14em", fontWeight: 700, color: "#8a8a80", textTransform: "uppercase" }}>You <span style={{ color: "#b03535" }}>*</span></div>
+    <input value={actorName} onChange={e => setActorName(e.target.value)} placeholder="Your full name (required)" maxLength={120} aria-required="true"
       style={{ width: "100%", padding: "13px 15px", borderRadius: 12, border: "1px solid #dcdcd4", fontSize: 16, background: "#fff" }}/>
     <textarea value={feedback} onChange={e => setFeedback(e.target.value)} placeholder={"Anything we should know about " + first + "? (allergies, pickup, concerns — optional)"} maxLength={1000}
       style={{ width: "100%", marginTop: 8, minHeight: 84, padding: "13px 15px", borderRadius: 12, border: "1px solid #dcdcd4", fontSize: 15, background: "#fff", resize: "vertical", fontFamily: "inherit" }}/>
     {err && <p style={{ color: "#b03535", fontSize: 13.5, margin: "10px 0 0" }}>{err}</p>}
+    {!busy && !err && (!p0Done || actorName.trim().length < 2) && (
+      <p style={{ color: "#8a7a2e", fontSize: 13, margin: "10px 0 0" }}>{!p0Done ? "Tick all the required boxes above to confirm." : "Add your name above to confirm."}</p>
+    )}
     <button onClick={submit} disabled={!p0Done || busy || actorName.trim().length < 2}
       style={{ width: "100%", marginTop: 14, padding: 16, borderRadius: 14, border: "none", cursor: p0Done ? "pointer" : "default", fontWeight: 800, fontSize: 16, background: p0Done ? "#c9f24e" : "#e8e8e0", color: p0Done ? "#243300" : "#9a9a90" }}>
       {busy ? "Saving…" : "Confirm & consent"}

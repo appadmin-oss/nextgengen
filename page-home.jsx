@@ -27,9 +27,15 @@ function PromoBanner({ setPage }) {
   const [dismissed, setDismissed] = React.useState(false);
   React.useEffect(() => {
     let alive = true;
-    NGGApi.public.siteContent().then(r => { if (alive && r && r.promo && r.promo.text) setPromo(r.promo); }).catch(() => {});
+    NGGApi.public.siteContent().then(r => {
+      if (!alive || !(r && r.promo && r.promo.text)) return;
+      setPromo(r.promo);
+      // Stay dismissed across visits — until the promo text actually changes.
+      try { if (localStorage.getItem("ngg_promo_dismissed") === r.promo.text) setDismissed(true); } catch (_) {}
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
+  const dismiss = () => { setDismissed(true); try { if (promo) localStorage.setItem("ngg_promo_dismissed", promo.text); } catch (_) {} };
   if (!promo || dismissed) return null;
   const go = (e) => {
     if (!promo.ctaUrl) return;
@@ -42,7 +48,7 @@ function PromoBanner({ setPage }) {
     <div style={{ background: "var(--navy-900, #00225F)", color: "#fff", padding: "10px 16px", textAlign: "center", position: "relative", fontSize: 14 }}>
       <span>{promo.text}</span>
       {promo.ctaLabel && promo.ctaUrl ? <a href={/^https?:\/\//.test(promo.ctaUrl) ? promo.ctaUrl : "#"} onClick={go} style={{ color: "var(--gold-400, #F5B026)", fontWeight: 700, marginLeft: 12, textDecoration: "underline" }}>{promo.ctaLabel} →</a> : null}
-      <button aria-label="Dismiss" onClick={() => setDismissed(true)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+      <button aria-label="Dismiss" onClick={dismiss} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
     </div>
   );
 }
@@ -816,6 +822,20 @@ function StatusPage({ setPage, previewConfig }) {
       </section>
     </div>
   );
+  // Don't render a zero-filled board on a fetch error — that reads as a dead
+  // program. Show a clear retry instead until data arrives.
+  if (!previewConfig && err && !d) return (
+    <div className="page" data-screen-label="Live status">
+      <section className="section" style={{ padding: "110px 0", textAlign: "center" }}>
+        <div className="container" style={{ maxWidth: 520 }}>
+          <div className="eyebrow">LIVE STATUS</div>
+          <h1 className="display" style={{ fontSize: "clamp(28px,4vw,46px)", margin: "12px 0 10px" }}>We couldn't load the board.</h1>
+          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>A quick hiccup reaching the live numbers — give it another try.</p>
+          <button className="btn btn-primary mt-24" onClick={load}>Retry</button>
+        </div>
+      </section>
+    </div>
+  );
 
   const accent = page.accent || "#d0ff3a";
   const banner = page.banner || {};
@@ -1397,6 +1417,19 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
           <h1 className="display" style={{ fontSize: "clamp(32px,5vw,56px)", margin: "12px 0 10px" }}>This board is offline.</h1>
           <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>The live volunteer board isn't published right now. Want to help? You can still register.</p>
           <button className="btn btn-primary mt-24" onClick={() => setPage && setPage("volunteer")}>Volunteer with us →</button>
+        </div>
+      </section>
+    </div>
+  );
+  // Don't render a zero-filled board on a fetch error.
+  if (!previewConfig && err && !d) return (
+    <div className="page" data-screen-label="Volunteer status">
+      <section className="section" style={{ padding: "110px 0", textAlign: "center" }}>
+        <div className="container" style={{ maxWidth: 520 }}>
+          <div className="eyebrow">VOLUNTEER STATUS</div>
+          <h1 className="display" style={{ fontSize: "clamp(28px,4vw,46px)", margin: "12px 0 10px" }}>We couldn't load the board.</h1>
+          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>A quick hiccup reaching the live numbers — give it another try.</p>
+          <button className="btn btn-primary mt-24" onClick={load}>Retry</button>
         </div>
       </section>
     </div>
