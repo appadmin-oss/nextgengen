@@ -77,6 +77,22 @@ const ADMIN_SECTIONS = [
 // Which capability each admin section needs (null = any staff) — derived.
 const SECTION_CAP = ADMIN_SECTIONS.reduce((m, s) => { m[s.id] = s.cap; return m; }, {});
 
+// Cross-section deep-link: jump the console to another section (and optionally a
+// specific sub-tab). window.__adminSection is exposed by AdminPage; a section
+// that supports tabs reads the pending tab on mount. Lets one screen point an
+// admin straight at where a piece of data is actually edited.
+let _pendingAdminTab = "";
+function adminJump(sectionId, tab) {
+  if (tab) _pendingAdminTab = tab;
+  if (window.__adminSection) window.__adminSection(sectionId);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function takePendingAdminTab(fallback) {
+  const t = _pendingAdminTab || fallback;
+  _pendingAdminTab = "";
+  return t;
+}
+
 function AdminPage({ setPage }) {
   const { member, isAdmin, adminOk, loading, openSignIn, setAdminOk, hasCap } = useAuth();
   const [section, setSection] = React.useState("home");
@@ -3326,7 +3342,17 @@ function AdminStatusPages() {
           <button className="btn btn-primary btn-sm" disabled={!dirty || busy} onClick={save}>{busy ? "Saving…" : dirty ? "Save changes" : "Saved"}</button>
         </div>
       </div>
-      <p className="admin-hint" style={{ marginTop: 0 }}>Full control of each live board — publish, copy, which sections and KPI tiles show, accent colour, trend window, which centres appear, and an announcement banner. Numbers stay aggregate-only and PII-free; you control the wrapper, not the data.</p>
+      <p className="admin-hint" style={{ marginTop: 0 }}>Full control of each live board — publish, copy, which sections and KPI tiles show, accent colour, trend window, which centres appear, and an announcement banner. Numbers stay aggregate-only and PII-free; you control the wrapper here, and edit the underlying data in the places below.</p>
+      <div className="card" style={{ padding: 16, margin: "0 0 18px", background: "var(--bg-sunken, #f7f7f4)" }}>
+        <div className="mono" style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-500)", marginBottom: 8 }}>Where the board's data is edited</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => adminJump("registration", "centres")}>🏫 Centres — name, address, lead, meeting times →</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => adminJump("volunteers", "needs")}>◈ Volunteer needs (the /v-status targets) →</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => adminJump("registration", "gates")}>❑ Students (enrolment & records) →</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => adminJump("volunteers", "roster")}>◈ Volunteers (roster) →</button>
+        </div>
+        <p className="admin-hint" style={{ margin: "10px 0 0" }}>The live KPIs (attendance %, present today, leaderboard) are computed from real attendance, stars and activity records — they update automatically as those are logged; there's nothing to type here.</p>
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(400px,1fr))", gap: 18 }}>
         {STATUS_BOARDS.map(b => {
           const c = cfg[b.key] || {};
@@ -3622,7 +3648,7 @@ function AdminVolunteers() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState("");
-  const [tab, setTab] = React.useState("pending");
+  const [tab, setTab] = React.useState(() => takePendingAdminTab("pending"));
   const [q, setQ] = React.useState("");
   const [expanded, setExpanded] = React.useState(() => new Set());
   const toggleExpand = (id) => setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -3994,7 +4020,7 @@ function AdminSettings() {
 // Registration — first-class page: gate links, pending queue, centres
 // ============================================================================
 function AdminRegistration() {
-  const [tab, setTab] = React.useState("gates");
+  const [tab, setTab] = React.useState(() => takePendingAdminTab("gates"));
   return (
     <div className="admin-section">
       <div className="admin-section-head"><h2 className="admin-h2">Registration</h2></div>
