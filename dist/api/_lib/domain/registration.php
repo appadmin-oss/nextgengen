@@ -56,7 +56,7 @@ function form_default_fields(): array {
     return [
         ['key' => 'fullName', 'label' => 'Full name', 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'age', 'label' => 'Age', 'type' => 'number', 'required' => true, 'min' => 5, 'max' => 19, 'locked' => true],
-        ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => academy_courses()],
+        ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => academy_courses(), 'help' => 'The course catalogue — edit these options freely (add/rename/remove). Drives student sign-up and the /v-status by-course breakdown.'],
         ['key' => 'centre', 'label' => 'Centre', 'type' => 'choice', 'required' => true, 'options' => ['Main'], 'help' => 'Options come from Admin → Centres; drives the ID prefix and card colour.'],
         ['key' => 'parentName', 'label' => "Parent / guardian's name", 'type' => 'text', 'required' => true],
         ['key' => 'parentPhone', 'label' => "Parent's phone", 'type' => 'phone', 'required' => false, 'help' => 'Either phone or email is required — both is best.', 'locked' => true],
@@ -78,7 +78,7 @@ function volunteer_default_fields(): array {
         // Faculty is the teaching group mentors & instructors belong to. Locked
         // key (the /v-status board + validation read it), but its OPTIONS are
         // admin-editable here — the single source of truth for the catalogue.
-        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => false, 'locked' => true, 'options' => academy_faculties(), 'help' => 'Required for mentors & instructors — enforced at submit. Drives the /v-status faculty breakdown.'],
+        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => false, 'locked' => true, 'options' => academy_faculties(), 'help' => 'The academy / faculty catalogue — edit these options freely (add/rename/remove). Required for mentors & instructors; drives the /v-status faculty breakdown.'],
         ['key' => 'why', 'label' => 'Why you', 'type' => 'longtext', 'required' => false, 'locked' => true],
     ];
 }

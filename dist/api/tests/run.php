@@ -1971,6 +1971,12 @@ chk('catalogue: courses are the flattened academy courses', count(academy_course
     && in_array('Tie & Dye', academy_courses(), true) && in_array('Talking Drums', academy_courses(), true) && in_array('Google Workspace', academy_courses(), true));
 chk('catalogue: leadership faculty + its courses are excluded', !in_array('Leadership', academy_faculties(), true)
     && !in_array('V3 Fixer', academy_courses(), true) && !in_array('Anchor Journal', academy_courses(), true));
+// Courses are just as editable — an admin edit to the summer-reg Course field
+// round-trips to the public context (no code change; not hard-coded). Run late,
+// after the other summer-reg form tests, so publishing doesn't disturb them.
+$srf2 = array_map(function ($f) { if (($f['key'] ?? '') === 'course') $f['options'] = ['Practical Coding', 'Robotics Lab', 'Chess Club']; return $f; }, backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg'])['form']['fields']);
+backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg', 'fields' => $srf2]);
+chk('course catalogue edit round-trips to the public context', backend_dispatch('public.volunteer.context', [])['courses'] === ['Practical Coding', 'Robotics Lab', 'Chess Club']);
 chk('seed: refreshes a stale auto-generated form, preserves a human-published one', (function () {
     $db = db_conn();
     $db->exec("DELETE FROM form_defs WHERE formId IN ('volunteer', 'summer-reg')");
