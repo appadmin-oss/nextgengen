@@ -31,11 +31,32 @@ const CONSENT_TYPES = [
 const FORM_FIELD_TYPES = ['text', 'longtext', 'email', 'phone', 'number', 'date', 'choice', 'multi', 'yesno', 'file', 'section', 'info'];
 
 /** The seed form — created on first read; 'locked' fields cannot be removed. */
+/**
+ * The programme's academies (faculties) and the courses within each — the
+ * seeded catalogue that drives the volunteer Faculty options and the student
+ * course catalogue. Admins can still edit these in the Form Builder afterwards;
+ * this is only the starting point. The Leadership academy is intentionally
+ * excluded from the public catalogue.
+ */
+function academy_catalogue(): array {
+    return [
+        'AI & Technology'  => ['Practical Coding', 'AI Tools Application', 'Digital Problem-Solving'],
+        'Entrepreneurship' => ['Data Appreciation', 'Google Workspace'],
+        'Media'            => ['Graphics', 'Video', 'Editing', 'Content Management'],
+        'Creative Arts'    => ['Tie & Dye', 'Dance', 'Acting', 'Catering', 'Visual Design', 'Drawing', 'High-Impact Artistic Expressions'],
+        'Music'            => ['Talking Drums', 'Piano', 'Guitar', 'Drums'],
+    ];
+}
+/** Academy (faculty) names, in catalogue order. */
+function academy_faculties(): array { return array_keys(academy_catalogue()); }
+/** Every course across all academies, flattened, in catalogue order. */
+function academy_courses(): array { $out = []; foreach (academy_catalogue() as $courses) foreach ($courses as $c) $out[] = $c; return $out; }
+
 function form_default_fields(): array {
     return [
         ['key' => 'fullName', 'label' => 'Full name', 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'age', 'label' => 'Age', 'type' => 'number', 'required' => true, 'min' => 5, 'max' => 19, 'locked' => true],
-        ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => ['Coding & Robotics', 'Design & Media', 'Public Speaking', 'Chess & Strategy']],
+        ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => academy_courses()],
         ['key' => 'centre', 'label' => 'Centre', 'type' => 'choice', 'required' => true, 'options' => ['Main'], 'help' => 'Options come from Admin → Centres; drives the ID prefix and card colour.'],
         ['key' => 'parentName', 'label' => "Parent / guardian's name", 'type' => 'text', 'required' => true],
         ['key' => 'parentPhone', 'label' => "Parent's phone", 'type' => 'phone', 'required' => false, 'help' => 'Either phone or email is required — both is best.', 'locked' => true],
@@ -57,7 +78,7 @@ function volunteer_default_fields(): array {
         // Faculty is the teaching group mentors & instructors belong to. Locked
         // key (the /v-status board + validation read it), but its OPTIONS are
         // admin-editable here — the single source of truth for the catalogue.
-        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => false, 'locked' => true, 'options' => ['STEM', 'Arts & Media', 'Literacy & Languages', 'Leadership & Life Skills', 'Sports & Wellbeing'], 'help' => 'Required for mentors & instructors — enforced at submit. Drives the /v-status faculty breakdown.'],
+        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => false, 'locked' => true, 'options' => academy_faculties(), 'help' => 'Required for mentors & instructors — enforced at submit. Drives the /v-status faculty breakdown.'],
         ['key' => 'why', 'label' => 'Why you', 'type' => 'longtext', 'required' => false, 'locked' => true],
     ];
 }

@@ -38,6 +38,7 @@ function db_conn(): PDO {
             $pdo->exec("SET NAMES utf8mb4");
             $pdo->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'");
             db_apply_mysql_schema($pdo);
+            db_run_seeds($pdo);
         }
         return $pdo;
     }
@@ -51,6 +52,7 @@ function db_conn(): PDO {
     $pdo->exec('PRAGMA foreign_keys = ON');
     $pdo->exec('PRAGMA synchronous = NORMAL');
     db_migrate($pdo);
+    db_run_seeds($pdo);
     return $pdo;
 }
 
@@ -213,6 +215,29 @@ function db_assert_migration_ladder(array $migrations): void {
          . ' target=' . NGG_SCHEMA_TARGET . ' — keys must be contiguous 1..N and N must equal NGG_SCHEMA_TARGET.';
     if (!empty($CONFIG['debug']) || PHP_SAPI === 'cli') throw new RuntimeException($msg);
     error_log($msg);
+}
+
+/**
+ * One-time, driver-agnostic DATA seeds — settings-gated so each runs once per
+ * database, on both SQLite and MySQL (the schema DDL paths only do structural
+ * changes; this touches data). Kept tiny, idempotent and non-fatal.
+ *
+ * Seed `academy_v1`: drop the auto-generated (never human-edited) public forms
+ * so they re-create from the CURRENT code defaults on next use. This is how a
+ * refreshed course/faculty catalogue reaches a deployment whose forms were
+ * already lazily initialised from the old defaults. Admin-published forms
+ * (publishedBy != 'system') are untouched.
+ */
+function db_run_seeds(PDO $db): void {
+    try {
+        if (!function_exists('setting_raw') || !db_table_exists($db, 'form_defs') || !db_table_exists($db, 'settings')) return;
+        if (setting_raw('seed_academy_v1') !== '1') {
+            $db->exec("DELETE FROM form_defs WHERE status = 'live' AND publishedBy = 'system' AND formId IN ('summer-reg', 'volunteer')");
+            setting_set('seed_academy_v1', '1', 'system');
+        }
+    } catch (Throwable $e) {
+        error_log('[db] seed: ' . $e->getMessage());
+    }
 }
 
 function db_migrate(PDO $db): void {

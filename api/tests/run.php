@@ -267,7 +267,7 @@ chk('apply validates age', backend_dispatch('public.apply', ['kind' => 'teen', '
 // ── Volunteer registration (public taxonomy: admin | mentor | instructor) ──
 $vctx = backend_dispatch('public.volunteer.context', []);
 chk('volunteer context lists roles', $vctx['roles'] === ['admin', 'mentor', 'instructor']);
-chk('volunteer context serves the course catalogue', in_array('Coding & Robotics', $vctx['courses'], true));
+chk('volunteer context serves the course catalogue', in_array('Practical Coding', $vctx['courses'], true));
 chk('volunteer context serves the faculty catalogue', is_array($vctx['faculties']) && count($vctx['faculties']) >= 1);
 // An active centre must exist for volunteer intake (centre is now required).
 db_insert('centres', ['centreId' => 'CEN-VOL', 'name' => 'Testville', 'code' => 'TVL', 'color' => '#4C6FFF', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
@@ -276,15 +276,15 @@ chk('volunteer apply rejects unknown role', backend_dispatch('public.apply', ['k
 chk('volunteer apply rejects a missing centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'No', 'lastName' => 'Centre', 'email' => 'nocentre@example.com', 'phone' => '08031110077', 'dob' => '1990-01-01'])['error'] === 'centre_required');
 chk('volunteer apply rejects an invalid centre', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Centre', 'email' => 'badcentre@example.com', 'phone' => '08031110078', 'dob' => '1990-01-01', 'centre' => 'Nowhere'])['error'] === 'invalid_centre');
 chk('mentor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'No', 'lastName' => 'Fac', 'email' => 'nofac@example.com', 'phone' => '08031110076', 'dob' => '1990-01-01', 'centre' => 'Testville'])['error'] === 'faculty_required');
-chk('instructor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Fac2', 'email' => 'nofac2@example.com', 'phone' => '08031110075', 'dob' => '1990-01-01', 'centre' => 'Testville', 'courses' => ['Coding & Robotics']])['error'] === 'faculty_required');
+chk('instructor without a faculty is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Fac2', 'email' => 'nofac2@example.com', 'phone' => '08031110075', 'dob' => '1990-01-01', 'centre' => 'Testville', 'courses' => ['Practical Coding']])['error'] === 'faculty_required');
 chk('instructor without a course is rejected', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'One', 'email' => 'vol1@example.com', 'phone' => '08031110001', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Basket Weaving']])['error'] === 'course_required');
 chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['ok'] === true);
 chk('volunteer centre stored on application', db_row("SELECT centre FROM applications WHERE email = 'vol-admin@example.com'")['centre'] === 'Testville');
 chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications WHERE email = 'vol-admin@example.com'")['phone'] === '+2348031234567');
-chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Coding & Robotics', 'Chess & Strategy', 'Basket Weaving'], 'visibilityConsent' => true])['ok'] === true);
+chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Practical Coding', 'Piano', 'Basket Weaving'], 'visibilityConsent' => true])['ok'] === true);
 chk('instructor faculty stored on application', db_row("SELECT faculty FROM applications WHERE email = 'vol-teach@example.com'")['faculty'] === $vFac);
 chk('volunteer visibility consent stored on application', (int)db_row("SELECT visibilityConsent FROM applications WHERE email = 'vol-teach@example.com'")['visibilityConsent'] === 1);
-chk('instructor courses stored filtered to catalogue', json_decode((string)db_row("SELECT courses FROM applications WHERE email = 'vol-teach@example.com'")['courses'], true) === ['Coding & Robotics', 'Chess & Strategy']);
+chk('instructor courses stored filtered to catalogue', json_decode((string)db_row("SELECT courses FROM applications WHERE email = 'vol-teach@example.com'")['courses'], true) === ['Practical Coding', 'Piano']);
 chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['duplicate'] === true);
 chk('volunteer.applied event queued for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.applied'")['c'] === 2);
 // Standardised intake: structured name + DOB stored; legacy `name` composed.
@@ -306,7 +306,7 @@ chk('editing one form does not touch another', form_live('summer-reg')['version'
 // Faculty catalogue is Form-Builder-driven: an admin edit round-trips to the
 // public volunteer context (brief §5.4).
 $vform = backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'volunteer'])['form']['fields'];
-$vform2 = array_map(function ($f) { if (($f['key'] ?? '') === 'faculty') $f['options'] = ['STEM', 'Design Lab', 'Wordsmiths']; return $f; }, $vform);
+$vform2 = array_map(function ($f) use ($vFac) { if (($f['key'] ?? '') === 'faculty') $f['options'] = [$vFac, 'Design Lab', 'Wordsmiths']; return $f; }, $vform);
 backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'volunteer', 'fields' => $vform2]);
 chk('faculty catalogue edit round-trips to public context', in_array('Design Lab', backend_dispatch('public.volunteer.context', [])['faculties'], true));
 
@@ -323,7 +323,7 @@ chk('old card freed on reassign', db_row('SELECT status FROM qr_codes WHERE toke
 chk('void retires a card + detaches student', backend_dispatch('admin.summer.qr.void', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok])['ok'] === true && db_row('SELECT status FROM qr_codes WHERE token = ?', [$qtok])['status'] === 'void' && db_row('SELECT token FROM summer_students WHERE studentId = ?', [$qrKid])['token'] === '');
 chk('void card cannot be reassigned', backend_dispatch('admin.summer.qr.reassign', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok, 'studentId' => $qrKid])['error'] === 'card_void');
 
-chk('phone is required on volunteer intake', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Phone', 'email' => 'nophone@example.com', 'dob' => '1990-01-01', 'courses' => ['Coding & Robotics']])['error'] === 'phone_required');
+chk('phone is required on volunteer intake', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'No', 'lastName' => 'Phone', 'email' => 'nophone@example.com', 'dob' => '1990-01-01', 'courses' => ['Practical Coding']])['error'] === 'phone_required');
 
 // ── Volunteer review desk: approve → ID + QR + profile; decline ──
 $volAppId = (int)db_row("SELECT id FROM applications WHERE email = 'vol-teach@example.com'")['id'];
@@ -402,7 +402,7 @@ $mentRow = null; foreach ($tv['byRole'] as $r) if ($r['role'] === 'mentor') $men
 chk('v-status zero-need role does not divide by zero', $mentRow['need'] === 0 && $mentRow['fulfillmentRate'] === 100);
 $admRow = null; foreach ($tv['byRole'] as $r) if ($r['role'] === 'admin') $admRow = $r;
 chk('v-status zero-filled role reports 0%', $admRow['need'] === 2 && $admRow['filled'] === 0 && $admRow['fulfillmentRate'] === 0);
-chk('v-status by-course lists the instructor courses', count(array_filter($tv['byCourse'], fn($x) => $x['course'] === 'Coding & Robotics' && $x['filled'] === 1)) === 1);
+chk('v-status by-course lists the instructor courses', count(array_filter($tv['byCourse'], fn($x) => $x['course'] === 'Practical Coding' && $x['filled'] === 1)) === 1);
 chk('v-status global fulfilment math', $vs['status']['kpis']['totalNeed'] === 5 && $vs['status']['kpis']['totalFilled'] === 1 && $vs['status']['kpis']['fulfillmentRate'] === 20);
 chk('v-status exposes no volunteer PII', !str_contains(json_encode($vs['status']), 'vol-teach@example.com') && !str_contains(json_encode($vs['status']), 'Vol Teach'));
 chk('need delete removes the row', !empty(backend_dispatch('admin.volunteers.needs.delete', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-VOL', 'role' => 'admin', 'faculty' => ''])['ok']));
@@ -436,7 +436,7 @@ chk('scanner payload carries safeguarding', backend_dispatch('admin.summer.check
 // ── Instructor roster view (token + email gate) ──
 chk('roster refuses a wrong email', backend_dispatch('public.instructorRoster', ['token' => $volTok, 'email' => 'wrong@example.com'])['error'] === 'not_authorised');
 $roster = backend_dispatch('public.instructorRoster', ['token' => $volTok, 'email' => 'VOL-TEACH@example.com']);
-chk('roster opens with token + registered email', $roster['ok'] === true && $roster['courses'] === ['Coding & Robotics', 'Chess & Strategy'] && is_array($roster['students']));
+chk('roster opens with token + registered email', $roster['ok'] === true && $roster['courses'] === ['Practical Coding', 'Piano'] && is_array($roster['students']));
 chk('roster rows carry first names only', !array_filter($roster['students'], fn($r) => str_contains((string)$r['firstName'], ' ')));
 
 // ── Overview + upcoming sessions ──
@@ -1074,7 +1074,7 @@ chk('form: publish is super_admin only; locked fields can\'t be dropped; version
     $noLocked = array_values(array_filter(form_default_fields(), fn($f) => $f['key'] !== 'fullName'));
     if (backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'fields' => $noLocked])['error'] !== 'locked_field_missing') return false;
     $plus = form_default_fields();
-    $plus[] = ['key' => 'hasLaptop', 'label' => 'Has a laptop?', 'type' => 'yesno', 'showIf' => ['key' => 'course', 'value' => 'Coding & Robotics']];
+    $plus[] = ['key' => 'hasLaptop', 'label' => 'Has a laptop?', 'type' => 'yesno', 'showIf' => ['key' => 'course', 'value' => 'Practical Coding']];
     $r = backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'fields' => $plus]);
     return !empty($r['ok']) && $r['version'] === 2 && form_live()['version'] == 2;
 })());
@@ -1087,17 +1087,17 @@ chk('gate: created with URL, context serves live form', (function () use ($GATE)
 chk('gate: register validates fields and requires a parent channel', (function () use ($GATE) {
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'K', 'age' => 3, 'course' => 'Nope']]);
     if (empty($r['errors'])) return false;
-    $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'centre' => 'Main', 'parentName' => 'Mrs Okafor']]);
+    $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor']]);
     return !empty($r2['errors']['parentPhone']);
 })());
-$REG = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567', 'parentEmail' => 'okafor@example.com', 'allergies' => 'Peanuts']]);
+$REG = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567', 'parentEmail' => 'okafor@example.com', 'allergies' => 'Peanuts']]);
 chk('gate: registration lands parent_pending with normalised phone + no QR yet', (function () use ($REG) {
     if (empty($REG['ok']) || $REG['regStatus'] !== 'parent_pending') return false;
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ?', [$REG['studentId']]);
     return $s['guardianPhone'] === '+2348031234567' && ($s['token'] ?? '') === '' && !empty($s['verifyToken']);
 })());
 chk('gate: duplicate guard flags same child + parent, force overrides', (function () use ($GATE) {
-    $d = ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Coding & Robotics', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567'];
+    $d = ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567'];
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => $d]);
     if (($r['error'] ?? '') !== 'duplicate_suspect' || empty($r['existing']['studentId'])) return false;
     $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => $d, 'force' => true]);
@@ -1363,20 +1363,20 @@ chk('centre: without consent the lead shows an anonymous handle, no name', (func
 setting_set('geofence_enabled', '1', 'system');
 $geoGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Geo desk']);
 chk('geo: registration is blocked with no location when the fence is on',
-    backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid One', 'age' => 12, 'course' => 'Coding & Robotics', 'parentName' => 'P', 'parentPhone' => '08030000001']])['error'] === 'geo_unavailable');
-$gi = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Two', 'age' => 12, 'course' => 'Coding & Robotics', 'parentName' => 'P', 'parentPhone' => '08030000002'], 'lat' => 6.6000, 'lng' => 3.3000]);
+    backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid One', 'age' => 12, 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000001']])['error'] === 'geo_unavailable');
+$gi = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Two', 'age' => 12, 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000002'], 'lat' => 6.6000, 'lng' => 3.3000]);
 chk('geo: an in-fence registration auto-selects the fenced centre', !empty($gi['ok']) && ($gi['geo']['autoCentre'] ?? '') === 'Ayobo Hub' && $gi['geo']['ok'] === 1);
 chk('geo: the student row records the fence pass + captured location', (function () use ($gi) { $s = db_row("SELECT regGeoOk, regLat, centre FROM summer_students WHERE studentId=?", [$gi['studentId']]); return (int)$s['regGeoOk'] === 1 && $s['centre'] === 'Ayobo Hub' && abs((float)$s['regLat'] - 6.6) < 0.0001; })());
-$go = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Three', 'age' => 12, 'course' => 'Coding & Robotics', 'parentName' => 'P', 'parentPhone' => '08030000003'], 'lat' => 6.6045, 'lng' => 3.3000]);
+$go = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Three', 'age' => 12, 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000003'], 'lat' => 6.6045, 'lng' => 3.3000]);
 chk('geo: an out-of-fence registration is blocked with the nearest distance', ($go['error'] ?? '') === 'geo_out_of_fence' && ($go['nearest']['distanceM'] ?? 0) > 400);
-$gov = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Four', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000004'], 'lat' => 6.6045, 'lng' => 3.3000, 'isAdmin' => true, 'geoOverride' => true]);
+$gov = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Four', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000004'], 'lat' => 6.6045, 'lng' => 3.3000, 'isAdmin' => true, 'geoOverride' => true]);
 chk('geo: a full admin may override an out-of-fence registration', !empty($gov['ok']) && $gov['geo']['ok'] === 0);
 setting_set('geofence_enabled', '0', 'system');
-chk('geo: with the fence off, no location is required', !empty(backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Five', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000005']])['ok']));
+chk('geo: with the fence off, no location is required', !empty(backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Five', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000005']])['ok']));
 
 // Photo pipeline wiring: gate registration ingests the headshot end-to-end.
 $GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 90, 'issues' => [], 'flags' => [], 'recommend' => ['crop' => true]]];
-$rp = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Photo Reg Kid', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000009'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+$rp = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Photo Reg Kid', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000009'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
 chk('gate register ingests the headshot into the photo pipeline', !empty($rp['ok']) && photo_approved_for('student', $rp['studentId']) === true);
 chk('an approved headshot is written back to the student record', strpos((string)(db_row("SELECT photoUrl FROM summer_students WHERE studentId=?", [$rp['studentId']])['photoUrl'] ?? ''), '/upload/') !== false);
 unset($GLOBALS['__ai_photo_mock']);
@@ -1409,7 +1409,7 @@ $issGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-00
 setting_set('photo_gate_issuance', '1', 'system');
 // A flagged photo → pending_review, so the ID is held until an editor approves.
 $GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 40, 'issues' => ['dark'], 'flags' => ['too_dark'], 'recommend' => ['crop' => true, 'brighten' => true]]];
-$ir = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Gate Hold Kid', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'hold@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+$ir = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Gate Hold Kid', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'hold@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
 chk('issuance gate: registration ok with a photo queued for review', !empty($ir['ok']));
 $vtHold = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$ir['studentId']])['verifyToken'];
 $pvh = backend_dispatch('parent.verify.submit', ['t' => $vtHold, 'consents' => ['participation' => true, 'medical' => true, 'data' => true], 'actorName' => 'P']);
@@ -1420,7 +1420,7 @@ backend_dispatch('admin.photo.approve', ['requesterId' => 'NGG-2025-0099', 'asse
 chk('issuance gate: approving the photo issues the ID', (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$ir['studentId']])['token']) !== '');
 unset($GLOBALS['__ai_photo_mock']);
 // A registration with NO photo is never blocked by the gate.
-$np = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'No Photo Kid', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'nophoto@example.com']]);
+$np = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'No Photo Kid', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'nophoto@example.com']]);
 $vtNp = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$np['studentId']])['verifyToken'];
 $pvn = backend_dispatch('parent.verify.submit', ['t' => $vtNp, 'consents' => ['participation' => true, 'medical' => true, 'data' => true], 'actorName' => 'P']);
 chk('issuance gate: a photo-less registration still issues immediately', !empty($pvn['idIssued']) && (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$np['studentId']])['token']) !== '');
@@ -1428,7 +1428,7 @@ setting_set('photo_gate_issuance', '0', 'system');
 
 // Guardian re-shoot after a retake.
 $GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 88, 'issues' => [], 'flags' => [], 'recommend' => ['crop' => true]]];
-$rsReg = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Reshoot Kid', 'age' => 12, 'course' => 'Coding & Robotics', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'reshoot@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+$rsReg = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Reshoot Kid', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'reshoot@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
 $rsAsset = db_row("SELECT assetId FROM photo_assets WHERE subjectType='student' AND subjectId=? ORDER BY version DESC LIMIT 1", [$rsReg['studentId']])['assetId'];
 $GLOBALS['__mail_sink'] = [];
 backend_dispatch('admin.photo.retake', ['requesterId' => 'NGG-2025-0099', 'assetId' => $rsAsset, 'reason' => 'Please use a plain background.']);
@@ -1963,6 +1963,23 @@ chk('application update corrects fields', (function () use ($dmAid) {
 chk('application update rejects a bad email', backend_dispatch('admin.application.update', ['requesterId' => 'NGG-2025-0099', 'id' => $dmAid, 'data' => ['email' => 'nope']])['error'] === 'bad_email');
 chk('application delete removes the row', (function () use ($dmAid) {
     return !empty(backend_dispatch('admin.application.delete', ['requesterId' => 'NGG-2025-0099', 'id' => $dmAid])['ok']) && !db_row('SELECT id FROM applications WHERE id = ?', [$dmAid]);
+})());
+
+// ── Academy catalogue: faculties + courses seeded (Leadership excluded) ──
+chk('catalogue: faculties are the 5 academies (no Leadership)', academy_faculties() === ['AI & Technology', 'Entrepreneurship', 'Media', 'Creative Arts', 'Music']);
+chk('catalogue: courses are the flattened academy courses', count(academy_courses()) === 20
+    && in_array('Tie & Dye', academy_courses(), true) && in_array('Talking Drums', academy_courses(), true) && in_array('Google Workspace', academy_courses(), true));
+chk('catalogue: leadership faculty + its courses are excluded', !in_array('Leadership', academy_faculties(), true)
+    && !in_array('V3 Fixer', academy_courses(), true) && !in_array('Anchor Journal', academy_courses(), true));
+chk('seed: refreshes a stale auto-generated form, preserves a human-published one', (function () {
+    $db = db_conn();
+    $db->exec("DELETE FROM form_defs WHERE formId IN ('volunteer', 'summer-reg')");
+    db_insert('form_defs', ['formId' => 'volunteer', 'version' => 1, 'name' => 'Volunteer', 'fields' => json_encode([['key' => 'faculty', 'type' => 'choice', 'options' => ['STEM', 'Old Faculty']]]), 'status' => 'live', 'publishedBy' => 'system', 'createdAt' => now_iso()]);
+    db_insert('form_defs', ['formId' => 'summer-reg', 'version' => 1, 'name' => 'Summer', 'fields' => json_encode([['key' => 'course', 'type' => 'choice', 'options' => ['Custom Course Kept']]]), 'status' => 'live', 'publishedBy' => 'NGG-2025-0099', 'createdAt' => now_iso()]);
+    setting_set('seed_academy_v1', '0', 'system');
+    db_run_seeds($db);
+    return volunteer_faculty_options() === academy_faculties()   // system form re-seeded from defaults
+        && volunteer_course_options() === ['Custom Course Kept']; // human form untouched
 })());
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

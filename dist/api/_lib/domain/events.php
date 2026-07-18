@@ -587,7 +587,7 @@ function volunteer_course_options(): array {
             return array_values(array_map('strval', $f['options']));
         }
     }
-    return ['Coding & Robotics', 'Design & Media', 'Public Speaking', 'Chess & Strategy'];
+    return academy_courses();
 }
 
 /** The faculties (teaching groups) mentors & instructors belong to — sourced
@@ -601,7 +601,7 @@ function volunteer_faculty_options(): array {
             return array_values(array_map('strval', $f['options']));
         }
     }
-    return ['STEM', 'Arts & Media', 'Literacy & Languages', 'Leadership & Life Skills', 'Sports & Wellbeing'];
+    return academy_faculties();
 }
 
 /** Public-safe centre catalogue for the volunteer form (no PII, active only). */
