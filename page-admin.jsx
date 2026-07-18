@@ -3118,8 +3118,8 @@ function AdminApplications() {
    /v-status) and edit its editorial copy. Backed by the `status_pages` setting;
    the public boards read this live. */
 const STATUS_BOARDS = [
-  { key: "attendance", name: "Summer School attendance", route: "/s-status", desc: "Live per-centre attendance & participation — PII-free aggregates." },
-  { key: "volunteer", name: "Volunteer status", route: "/v-status", desc: "Live volunteer needs vs filled, by centre / role / faculty / course." },
+  { key: "attendance", name: "Summer School attendance", route: "/s-status", accent: "#16a34a", desc: "Live per-centre attendance & participation — PII-free aggregates." },
+  { key: "volunteer", name: "Volunteer status", route: "/v-status", accent: "#5a3fb0", desc: "Live volunteer needs vs filled, by centre / role / faculty / course." },
 ];
 const STATUS_FIELDS = [
   ["title", "Headline title", "input", "The big hero heading."],
@@ -3129,15 +3129,36 @@ const STATUS_FIELDS = [
   ["ctaLabel", "Button label", "input", ""],
   ["ctaPage", "Button target page", "input", "A page id, e.g. join, volunteer, home."],
 ];
+const STATUS_SECTION_LABELS = { kpis: "KPI tiles", centres: "Per-centre cards", trend: "Trend chart", transparency: "Transparency section", cta: "Call-to-action buttons" };
+const STATUS_KPI_LABELS = { centres: "Centres", enrolled: "Students enrolled", presentToday: "Present today", attendanceRate: "Attendance rate", activeVolunteers: "Active volunteers", starsThisWeek: "Stars this week", totalVolunteers: "Total volunteers", totalNeed: "Total need", totalFilled: "Slots filled", totalGap: "Open slots" };
+function StatusGroup({ label, children }) {
+  return <div style={{ marginTop: 16 }}>
+    <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>{label}</div>
+    {children}
+  </div>;
+}
 function AdminStatusPages() {
   const [cfg, setCfg] = React.useState(null);
   const [orig, setOrig] = React.useState(null);
+  const [meta, setMeta] = React.useState({ defaults: {}, centres: [] });
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState(false);
-  const load = () => NGGApi.admin.statusPages().then(r => { setCfg(r.statusPages); setOrig(JSON.stringify(r.statusPages)); setErr(""); }).catch(e => setErr(e.code || e.message));
+  const [preview, setPreview] = React.useState(null);
+  const load = () => NGGApi.admin.statusPages().then(r => { setCfg(r.statusPages); setOrig(JSON.stringify(r.statusPages)); setMeta({ defaults: r.defaults || {}, centres: r.centreOptions || [] }); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const dirty = cfg && orig && JSON.stringify(cfg) !== orig;
   const set = (board, key, val) => setCfg(c => ({ ...c, [board]: { ...c[board], [key]: val } }));
+  const setSub = (board, key, sub, val) => setCfg(c => ({ ...c, [board]: { ...c[board], [key]: { ...c[board][key], [sub]: val } } }));
+  const toggleCentre = (board, name) => setCfg(c => {
+    const all = meta.centres.map(x => x.name);
+    let cur = (c[board].centres && c[board].centres.length) ? [...c[board].centres] : all.slice();
+    cur = cur.includes(name) ? cur.filter(x => x !== name) : [...cur, name];
+    return { ...c, [board]: { ...c[board], centres: cur.length === all.length ? [] : cur } };
+  });
+  const reset = async (board) => {
+    const ok = await dialog.confirm({ title: "Reset to defaults?", body: "This restores the built-in copy, sections and settings for this board. You can still Save or discard afterwards.", cta: "Reset" });
+    if (ok && meta.defaults[board]) setCfg(c => ({ ...c, [board]: JSON.parse(JSON.stringify(meta.defaults[board])) }));
+  };
   const save = async () => {
     setBusy(true);
     try { const r = await NGGApi.admin.statusPagesSet(cfg); setCfg(r.statusPages); setOrig(JSON.stringify(r.statusPages)); toast.success("Status pages updated."); }
@@ -3153,47 +3174,134 @@ function AdminStatusPages() {
       <div className="admin-section-head">
         <h2 className="admin-h2">Public status pages</h2>
         <div className="admin-section-actions">
+          {dirty && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { setCfg(JSON.parse(orig)); }}>Discard</button>}
           <button className="btn btn-primary btn-sm" disabled={!dirty || busy} onClick={save}>{busy ? "Saving…" : dirty ? "Save changes" : "Saved"}</button>
         </div>
       </div>
-      <p className="admin-hint" style={{ marginTop: 0 }}>Publish or hide each live board, and edit the copy visitors see. Changes go live immediately — the boards read this on their next refresh. Numbers stay aggregate-only and PII-free; you control the wrapper, not the data.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(360px,1fr))", gap: 18 }}>
+      <p className="admin-hint" style={{ marginTop: 0 }}>Full control of each live board — publish, copy, which sections and KPI tiles show, accent colour, trend window, which centres appear, and an announcement banner. Numbers stay aggregate-only and PII-free; you control the wrapper, not the data.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(400px,1fr))", gap: 18 }}>
         {STATUS_BOARDS.map(b => {
           const c = cfg[b.key] || {};
           const on = !!c.published;
+          const shownAll = !c.centres || c.centres.length === 0;
           return (
-            <div key={b.key} className="card" style={{ padding: 20, borderTop: "4px solid " + (b.key === "attendance" ? "#16a34a" : "#5a3fb0") }}>
+            <div key={b.key} className="card" style={{ padding: 20, borderTop: "4px solid " + b.accent }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div>
                   <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 17 }}>{b.name}</div>
                   <div className="mono" style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 2 }}>{b.route}</div>
-                  <p style={{ fontSize: 13, color: "var(--ink-500)", margin: "8px 0 0", maxWidth: 320 }}>{b.desc}</p>
                 </div>
-                <a className="btn btn-ghost btn-sm" href={b.route} target="_blank" rel="noreferrer">View live ↗</a>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setPreview(preview === b.key ? null : b.key)}>{preview === b.key ? "Hide preview" : "Preview"}</button>
+                  <a className="btn btn-ghost btn-sm" href={b.route} target="_blank" rel="noreferrer">Live ↗</a>
+                </div>
               </div>
+
               <button type="button" onClick={() => set(b.key, "published", !on)}
-                style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 6px", padding: "10px 12px", borderRadius: 12, width: "100%", cursor: "pointer",
+                style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 0", padding: "10px 12px", borderRadius: 12, width: "100%", cursor: "pointer",
                   border: "1px solid " + (on ? "rgba(22,163,74,.4)" : "var(--line-cool,#e5e8ee)"), background: on ? "rgba(22,163,74,.08)" : "var(--cream-50,#faf7ef)" }}>
                 <span style={{ width: 40, height: 22, borderRadius: 99, background: on ? "#16a34a" : "#c4cad8", position: "relative", flex: "none", transition: "background .15s" }}>
                   <span style={{ position: "absolute", top: 2, left: on ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .15s" }}/>
                 </span>
                 <span style={{ fontWeight: 700, fontSize: 14, color: on ? "#15803d" : "var(--ink-500)" }}>{on ? "Published — live to the public" : "Unpublished — hidden with an “offline” notice"}</span>
               </button>
-              <div style={{ display: "grid", gap: 12, marginTop: 12, opacity: on ? 1 : 0.6 }}>
-                {STATUS_FIELDS.map(([key, label, type, hint]) => (
-                  <div key={key} className="field">
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>{label}</label>
-                    {type === "textarea"
-                      ? <textarea className="admin-input" rows={3} value={c[key] || ""} onChange={e => set(b.key, key, e.target.value)} style={{ resize: "vertical" }}/>
-                      : <input className="admin-input" value={c[key] || ""} onChange={e => set(b.key, key, e.target.value)}/>}
-                    {hint && <div style={{ fontSize: 11, color: "var(--ink-400)", marginTop: 3 }}>{hint}</div>}
+
+              <div style={{ opacity: on ? 1 : 0.55, pointerEvents: on ? "auto" : "none" }}>
+                <StatusGroup label="Copy">
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {STATUS_FIELDS.map(([key, label, type, hint]) => (
+                      <div key={key} className="field">
+                        <label style={{ fontSize: 12, fontWeight: 600 }}>{label}</label>
+                        {type === "textarea"
+                          ? <textarea className="admin-input" rows={3} value={c[key] || ""} onChange={e => set(b.key, key, e.target.value)} style={{ resize: "vertical" }}/>
+                          : <input className="admin-input" value={c[key] || ""} onChange={e => set(b.key, key, e.target.value)}/>}
+                        {hint && <div style={{ fontSize: 11, color: "var(--ink-400)", marginTop: 3 }}>{hint}</div>}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </StatusGroup>
+
+                <StatusGroup label="Sections shown">
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {Object.keys(c.sections || {}).map(sk => (
+                      <label key={sk} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                        <input type="checkbox" checked={c.sections[sk] !== false} onChange={e => setSub(b.key, "sections", sk, e.target.checked)}/> {STATUS_SECTION_LABELS[sk] || sk}
+                      </label>
+                    ))}
+                  </div>
+                </StatusGroup>
+
+                <StatusGroup label="KPI tiles">
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                    {Object.keys(c.kpis || {}).map(kk => (
+                      <label key={kk} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                        <input type="checkbox" checked={c.kpis[kk] !== false} onChange={e => setSub(b.key, "kpis", kk, e.target.checked)}/> {STATUS_KPI_LABELS[kk] || kk}
+                      </label>
+                    ))}
+                  </div>
+                </StatusGroup>
+
+                <StatusGroup label="Appearance">
+                  <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                      Accent <input type="color" value={c.accent || "#d0ff3a"} onChange={e => set(b.key, "accent", e.target.value)} style={{ width: 40, height: 30, border: "1px solid var(--line-cool)", borderRadius: 8, background: "none", cursor: "pointer" }}/>
+                    </label>
+                    {"trendDays" in c && (
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                        Trend window
+                        <select className="admin-input" style={{ width: "auto" }} value={c.trendDays} onChange={e => set(b.key, "trendDays", parseInt(e.target.value, 10))}>
+                          <option value={7}>7 days</option><option value={14}>14 days</option><option value={30}>30 days</option>
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                </StatusGroup>
+
+                <StatusGroup label={"Centres shown" + (shownAll ? " · all" : " · " + c.centres.length + " selected")}>
+                  {meta.centres.length === 0 ? <div style={{ fontSize: 12, color: "var(--ink-400)" }}>No active centres yet.</div>
+                    : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                      {meta.centres.map(ct => (
+                        <label key={ct.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                          <input type="checkbox" checked={shownAll || c.centres.includes(ct.name)} onChange={() => toggleCentre(b.key, ct.name)}/>
+                          <span style={{ width: 9, height: 9, borderRadius: 2, background: ct.color || "#999", display: "inline-block" }}/> {ct.name}
+                        </label>
+                      ))}
+                    </div>}
+                  <div style={{ fontSize: 11, color: "var(--ink-400)", marginTop: 4 }}>Uncheck to hide a centre from the public board. All checked = show every centre.</div>
+                </StatusGroup>
+
+                <StatusGroup label="Announcement banner">
+                  <input className="admin-input" placeholder="Optional banner text (leave blank for none)" value={(c.banner && c.banner.text) || ""} onChange={e => setSub(b.key, "banner", "text", e.target.value)}/>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    {["info", "success", "warn"].map(t => (
+                      <button key={t} type="button" onClick={() => setSub(b.key, "banner", "tone", t)}
+                        className={"chip" + ((c.banner && c.banner.tone) === t ? " chip-navy" : "")}
+                        style={{ textTransform: "capitalize", cursor: "pointer" }}>{t}</button>
+                    ))}
+                  </div>
+                </StatusGroup>
+
+                <button className="btn btn-ghost btn-sm" style={{ marginTop: 16 }} onClick={() => reset(b.key)}>↺ Reset to defaults</button>
               </div>
             </div>
           );
         })}
       </div>
+
+      {preview && (
+        <div className="card" style={{ marginTop: 18, padding: 0, overflow: "hidden" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: "1px solid var(--line-cool,#e5e8ee)", flexWrap: "wrap" }}>
+            <b>Live preview — {(STATUS_BOARDS.find(x => x.key === preview) || {}).name}</b>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 12, color: "var(--ink-500)" }}>Copy, sections, KPIs, accent &amp; banner update as you edit · centre &amp; trend filters apply after saving</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => setPreview(null)}>Close</button>
+            </div>
+          </div>
+          <div style={{ maxHeight: 680, overflow: "auto", background: "var(--paper,#fbf7ed)" }}>
+            {preview === "attendance" ? <StatusPage previewConfig={cfg.attendance}/> : <VolunteerStatusPage previewConfig={cfg.volunteer}/>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

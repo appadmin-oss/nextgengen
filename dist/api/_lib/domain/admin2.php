@@ -82,6 +82,12 @@ function status_pages_defaults(): array {
             'published' => true,
             'title' => 'Summer School',
             'tagline' => 'A live, public view of attendance and participation across every centre.',
+            'accent' => '#d0ff3a',
+            'banner' => ['text' => '', 'tone' => 'info'],
+            'sections' => ['kpis' => true, 'centres' => true, 'trend' => true, 'transparency' => true, 'cta' => true],
+            'kpis' => ['centres' => true, 'enrolled' => true, 'presentToday' => true, 'attendanceRate' => true, 'activeVolunteers' => true, 'starsThisWeek' => true],
+            'trendDays' => 14,
+            'centres' => [],
             'transparencyTitle' => 'Numbers, not names.',
             'transparencyBody' => "This board updates live and shows only aggregate figures — how many students attended, at which centres, and how participation is trending. A child's name, photo, or record never appears here. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy.",
             'ctaLabel' => 'Apply for a place →',
@@ -91,6 +97,11 @@ function status_pages_defaults(): array {
             'published' => true,
             'title' => 'Build the team.',
             'tagline' => 'A live, public view of volunteer needs across every centre.',
+            'accent' => '#d0ff3a',
+            'banner' => ['text' => '', 'tone' => 'info'],
+            'sections' => ['kpis' => true, 'centres' => true, 'transparency' => true, 'cta' => true],
+            'kpis' => ['totalVolunteers' => true, 'activeVolunteers' => true, 'centres' => true, 'totalNeed' => true, 'totalFilled' => true, 'totalGap' => true],
+            'centres' => [],
             'transparencyTitle' => 'Roles, not people.',
             'transparencyBody' => "This board shows only how many volunteers each centre needs and how many have stepped up — by role, faculty and course. A volunteer's name, photo or contact detail never appears here.",
             'ctaLabel' => 'Volunteer with us →',
@@ -99,39 +110,45 @@ function status_pages_defaults(): array {
     ];
 }
 
-/** Merge the stored config over the defaults (per board, per key). */
-function status_pages_config(): array {
-    $def = status_pages_defaults();
-    $stored = safe_json((string)(setting_raw('status_pages') ?? '')) ?: [];
-    foreach ($def as $board => $fields) {
-        if (!is_array($stored[$board] ?? null)) continue;
-        foreach ($fields as $k => $v) {
-            if (!array_key_exists($k, $stored[$board])) continue;
-            $def[$board][$k] = $k === 'published' ? (bool)$stored[$board][$k] : (string)$stored[$board][$k];
+/** Overlay `$over` onto `$base` per the known schema, validating each field by
+ *  the shape of its default. Shared by config() (stored over defaults) and
+ *  set() (request over current). */
+function status_pages_merge(array $base, array $over): array {
+    $out = $base;
+    foreach ($base as $board => $fields) {
+        if (!is_array($over[$board] ?? null)) continue;
+        $o = $over[$board];
+        foreach ($fields as $k => $dv) {
+            if (!array_key_exists($k, $o)) continue;
+            $ov = $o[$k];
+            if (is_bool($dv)) { $out[$board][$k] = (bool)$ov; }
+            elseif (is_int($dv)) { $out[$board][$k] = max(7, min(60, (int)$ov)); }
+            elseif ($k === 'centres') { $out[$board][$k] = array_values(array_slice(array_filter(array_map(fn($x) => substr(trim((string)$x), 0, 80), (array)$ov)), 0, 50)); }
+            elseif ($k === 'banner') { $out[$board][$k] = ['text' => substr(trim((string)($ov['text'] ?? $dv['text'])), 0, 200), 'tone' => in_array(($ov['tone'] ?? ''), ['info', 'success', 'warn'], true) ? (string)$ov['tone'] : (string)$dv['tone']]; }
+            elseif (is_array($dv)) { $m = $dv; foreach ($dv as $sk => $sv) if (array_key_exists($sk, (array)$ov)) $m[$sk] = !empty($ov[$sk]); $out[$board][$k] = $m; }
+            elseif ($k === 'accent') { $out[$board][$k] = preg_match('/^#[0-9a-fA-F]{6}$/', (string)$ov) ? (string)$ov : $dv; }
+            elseif ($k === 'ctaPage') { $out[$board][$k] = preg_replace('/[^a-z0-9-]/', '', strtolower((string)$ov)) ?: $dv; }
+            else { $out[$board][$k] = substr(trim((string)$ov), 0, 600); }
         }
     }
-    return $def;
+    return $out;
+}
+
+/** Full config = stored overlaid on defaults. */
+function status_pages_config(): array {
+    return status_pages_merge(status_pages_defaults(), safe_json((string)(setting_raw('status_pages') ?? '')) ?: []);
 }
 
 function admin_status_pages_get(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
-    return ['ok' => true, 'statusPages' => status_pages_config()];
+    $centres = array_map(fn($r) => ['name' => (string)$r['name'], 'code' => (string)$r['code'], 'color' => (string)$r['color']], db_all("SELECT name, code, color FROM centres WHERE status = 'active' ORDER BY name"));
+    return ['ok' => true, 'statusPages' => status_pages_config(), 'defaults' => status_pages_defaults(), 'centreOptions' => $centres];
 }
 
 function admin_status_pages_set(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
     $in = is_array($p['data'] ?? null) ? $p['data'] : [];
-    $def = status_pages_defaults();
-    $out = status_pages_config(); // start from current (so a partial save is safe)
-    foreach ($def as $board => $fields) {
-        if (!is_array($in[$board] ?? null)) continue;
-        foreach ($fields as $k => $v) {
-            if (!array_key_exists($k, $in[$board])) continue;
-            if ($k === 'published') { $out[$board][$k] = !empty($in[$board][$k]); }
-            elseif ($k === 'ctaPage') { $out[$board][$k] = preg_replace('/[^a-z0-9-]/', '', strtolower((string)$in[$board][$k])) ?: $v; }
-            else { $out[$board][$k] = substr(trim((string)$in[$board][$k]), 0, 600); }
-        }
-    }
+    $out = status_pages_merge(status_pages_config(), $in); // partial-save safe
     setting_set('status_pages', $out, (string)($g['requester']['memberId'] ?? ''));
     audit('status.pages.set', (string)($g['requester']['memberId'] ?? ''), 'status_pages', ['attendance' => $out['attendance']['published'], 'volunteer' => $out['volunteer']['published']], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'statusPages' => $out];
@@ -145,10 +162,14 @@ function public_status(array $p): array {
     if (empty($page['published'])) return ['ok' => true, 'status' => ['page' => $page, 'generatedAt' => now_iso()]];
     $one = fn($sql, $a = []) => (int)(db_row($sql, $a)['c'] ?? 0);
     $today = gmdate('Y-m-d');
-    $since = gmdate('Y-m-d', time() - 13 * 86400);
+    $trendDays = max(7, min(60, (int)($page['trendDays'] ?? 14)));
+    $since = gmdate('Y-m-d', time() - ($trendDays - 1) * 86400);
     $weekAgo = gmdate('Y-m-d', time() - 6 * 86400);
 
+    // Admin can limit which centres appear on the board (empty = all active).
+    $only = is_array($page['centres'] ?? null) ? $page['centres'] : [];
     $centres = db_all("SELECT name, code, color FROM centres WHERE status = 'active' ORDER BY name");
+    if ($only) $centres = array_values(array_filter($centres, fn($c) => in_array((string)$c['name'], $only, true)));
     $byCentre = [];
     foreach ($centres as $c) {
         $name = (string)$c['name'];

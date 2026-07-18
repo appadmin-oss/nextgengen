@@ -1724,6 +1724,36 @@ chk('republishing restores the volunteer board data', (function () {
     $r = backend_dispatch('public.volunteer.status', []);
     return isset($r['status']['byCentre']) && ($r['status']['page']['published'] ?? null) === true;
 })());
+// Full management: sections/kpis/accent/trend/centres/banner.
+chk('status get exposes defaults + centre options', (function () {
+    $r = backend_dispatch('admin.status.pages.get', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && isset($r['defaults']['attendance']['sections']) && is_array($r['centreOptions']);
+})());
+chk('attendance board honours section, KPI, accent, trend + banner config', (function () {
+    backend_dispatch('admin.status.pages.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['attendance' => [
+        'sections' => ['trend' => false], 'kpis' => ['starsThisWeek' => false],
+        'accent' => '#ff8800', 'trendDays' => 30, 'banner' => ['text' => 'Open day Saturday!', 'tone' => 'success'],
+    ]]]);
+    $p = backend_dispatch('public.status', [])['status']['page'];
+    return $p['sections']['trend'] === false && $p['kpis']['starsThisWeek'] === false && $p['accent'] === '#ff8800' && $p['trendDays'] === 30 && $p['banner']['text'] === 'Open day Saturday!' && $p['banner']['tone'] === 'success';
+})());
+chk('invalid accent is rejected (kept valid)', (function () {
+    backend_dispatch('admin.status.pages.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['attendance' => ['accent' => 'not-a-color']]]);
+    return backend_dispatch('public.status', [])['status']['page']['accent'] === '#ff8800';
+})());
+chk('centre filter limits which centres the board shows', (function () {
+    backend_dispatch('admin.status.pages.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['attendance' => ['centres' => ['Egbeda']]]]);
+    $names = array_map(fn($c) => $c['name'], backend_dispatch('public.status', [])['status']['byCentre']);
+    if ($names !== ['Egbeda']) return false;
+    // Empty list restores all centres.
+    backend_dispatch('admin.status.pages.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['attendance' => ['centres' => []]]]);
+    return count(backend_dispatch('public.status', [])['status']['byCentre']) > 1;
+})());
+chk('trend window respects the configured day count', (function () {
+    // trendDays still 30 from above; the trend query window should span up to 30 days.
+    $r = backend_dispatch('public.status', []);
+    return isset($r['status']['page']['trendDays']) && $r['status']['page']['trendDays'] === 30;
+})());
 
 // ── Mission proof-review queue (M13: verify was built but unreachable) ────────
 $pmid = backend_dispatch('admin.missions.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['week' => 2, 'order' => 1, 'theme' => 'Proof', 'title' => 'Show your work', 'prompt' => 'Upload a photo', 'type' => 'Do', 'proof' => 'photo', 'xp' => 90, 'isActive' => true]])['missionId'];

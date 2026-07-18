@@ -707,12 +707,15 @@ function public_volunteer_status(array $p): array {
     $page = status_pages_config()['volunteer'];
     if (empty($page['published'])) return ['ok' => true, 'status' => ['page' => $page, 'generatedAt' => now_iso()]];
     $s = volunteer_status_compute();
+    // Admin can limit which centres appear (empty = all). KPIs stay programme-wide.
+    $only = is_array($page['centres'] ?? null) ? $page['centres'] : [];
+    $byCentre = $only ? array_values(array_filter($s['byCentre'], fn($c) => in_array((string)$c['name'], $only, true))) : $s['byCentre'];
     return ['ok' => true, 'status' => [
         'generatedAt' => now_iso(),
         'page' => $page,
         'program' => ['name' => 'Next Generation Genius', 'year' => (int)gmdate('Y')],
         'kpis' => $s['kpis'],
-        'byCentre' => $s['byCentre'],
+        'byCentre' => $byCentre,
     ]];
 }
 

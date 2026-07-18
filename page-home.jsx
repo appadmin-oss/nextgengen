@@ -725,7 +725,7 @@ function relAgo(iso) {
 }
 function rateTone(r) { return r >= 85 ? "#2f9e44" : r >= 60 ? "#e8a92b" : "#e03131"; }
 
-function StatusPage({ setPage }) {
+function StatusPage({ setPage, previewConfig }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [, setTick] = React.useState(0);
@@ -744,8 +744,12 @@ function StatusPage({ setPage }) {
   const trend = (d && d.trend) || [];
   const maxTrend = Math.max(1, ...trend.map(t => t.present || 0));
   const prog = (d && d.program) || {};
-  const page = (d && d.page) || {};
-  if (d && d.page && d.page.published === false) return (
+  const page = previewConfig || (d && d.page) || {};
+  const sec = page.sections || {};
+  const kpiOn = page.kpis || {};
+  const accent = page.accent || "#d0ff3a";
+  const banner = page.banner || {};
+  if (!previewConfig && d && d.page && d.page.published === false) return (
     <div className="page" data-screen-label="Live status">
       <section className="section" style={{ padding: "120px 0", textAlign: "center" }}>
         <div className="container" style={{ maxWidth: 560 }}>
@@ -757,6 +761,14 @@ function StatusPage({ setPage }) {
       </section>
     </div>
   );
+  const kpiDefs = [
+    ["centres", "🏫", k.centres || 0, "Centres running"],
+    ["enrolled", "🎓", k.enrolled || 0, "Students enrolled"],
+    ["presentToday", "✅", k.presentToday || 0, "Present today"],
+    ["attendanceRate", "📈", (k.attendanceRate || 0) + "%", "Attendance rate", rateTone(k.attendanceRate || 0)],
+    ["activeVolunteers", "🤝", k.activeVolunteers || 0, "Active volunteers"],
+    ["starsThisWeek", "⭐", k.starsThisWeek || 0, "Stars this week"],
+  ].filter(x => kpiOn[x[0]] !== false);
 
   const kpiCard = (icon, n, label, tone) => (
     <div className="status-kpi" style={{ background: "var(--paper, #fff)", border: "1px solid rgba(12,20,50,0.08)", borderRadius: 16, padding: "20px 20px 18px", boxShadow: "0 1px 0 rgba(12,20,50,0.03)" }}>
@@ -768,6 +780,7 @@ function StatusPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="Live status">
+      {banner.text ? <div style={{ background: banner.tone === "warn" ? "#7a2e2e" : banner.tone === "success" ? "#1c5138" : "#1c2a5e", color: "#fff", textAlign: "center", padding: "10px 16px", fontSize: 14, fontWeight: 600 }}>{banner.text}</div> : null}
       {/* Hero */}
       <section style={{ background: "linear-gradient(160deg,#0c1432 0%,#16224e 60%,#1d2c63 100%)", color: "#fff", padding: "72px 0 56px" }}>
         <div className="container">
@@ -786,7 +799,7 @@ function StatusPage({ setPage }) {
           {d && !err && (
             <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginTop: 34, flexWrap: "wrap" }}>
               <div>
-                <div className="display" style={{ fontSize: "clamp(56px,10vw,110px)", lineHeight: 0.9, color: "#d0ff3a", fontWeight: 800 }}><CountUp to={k.attendanceRate || 0} suffix="%"/></div>
+                <div className="display" style={{ fontSize: "clamp(56px,10vw,110px)", lineHeight: 0.9, color: accent, fontWeight: 800 }}><CountUp to={k.attendanceRate || 0} suffix="%"/></div>
                 <div className="mono" style={{ fontSize: 12, letterSpacing: "0.15em", color: "rgba(255,255,255,0.6)", marginTop: 6 }}>ATTENDANCE TODAY</div>
               </div>
               <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 18, paddingBottom: 18 }}>
@@ -802,21 +815,16 @@ function StatusPage({ setPage }) {
       {d && (
         <React.Fragment>
           {/* KPI grid */}
-          <section className="section" style={{ paddingTop: 44 }}>
+          {sec.kpis !== false && kpiDefs.length > 0 && <section className="section" style={{ paddingTop: 44 }}>
             <div className="container">
               <div className="status-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16 }}>
-                {kpiCard("🏫", k.centres || 0, "Centres running")}
-                {kpiCard("🎓", k.enrolled || 0, "Students enrolled")}
-                {kpiCard("✅", k.presentToday || 0, "Present today")}
-                {kpiCard("📈", (k.attendanceRate || 0) + "%", "Attendance rate", rateTone(k.attendanceRate || 0))}
-                {kpiCard("🤝", k.activeVolunteers || 0, "Active volunteers")}
-                {kpiCard("⭐", k.starsThisWeek || 0, "Stars this week")}
+                {kpiDefs.map(x => <React.Fragment key={x[0]}>{kpiCard(x[1], x[2], x[3], x[4])}</React.Fragment>)}
               </div>
             </div>
-          </section>
+          </section>}
 
           {/* Per-centre performance */}
-          <section className="section" style={{ background: "var(--cream-50)", paddingTop: 44, paddingBottom: 44 }}>
+          {sec.centres !== false && <section className="section" style={{ background: "var(--cream-50)", paddingTop: 44, paddingBottom: 44 }}>
             <div className="container">
               <SectionHead eyebrow="ACROSS THE CENTRES" title="Today, centre by centre." sub="Live attendance for each active centre. Green is on track; amber and red flag where the day needs attention." />
               {!centres.length ? <p style={{ color: "var(--ink-500)" }}>No active centres reporting yet today.</p> :
@@ -841,12 +849,12 @@ function StatusPage({ setPage }) {
                   ))}
                 </div>}
             </div>
-          </section>
+          </section>}
 
-          {/* 14-day trend */}
-          <section className="section" style={{ paddingTop: 44 }}>
+          {/* Attendance trend */}
+          {sec.trend !== false && <section className="section" style={{ paddingTop: 44 }}>
             <div className="container">
-              <SectionHead eyebrow="THE LAST TWO WEEKS" title="Attendance trend." sub="Distinct students present each day over the last 14 days." />
+              <SectionHead eyebrow="OVER TIME" title="Attendance trend." sub={"Distinct students present each day over the last " + (trend.length || (page.trendDays || 14)) + " days."} />
               {!trend.length ? <p style={{ color: "var(--ink-500)" }}>No check-ins recorded yet.</p> :
                 <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 180, padding: "0 2px", overflowX: "auto" }}>
                   {trend.map(t => (
@@ -858,23 +866,23 @@ function StatusPage({ setPage }) {
                   ))}
                 </div>}
             </div>
-          </section>
+          </section>}
 
           {/* Transparency + CTA */}
-          <section className="section" style={{ background: "var(--navy-900)", color: "#fff", paddingTop: 44, paddingBottom: 52 }}>
+          {sec.transparency !== false && <section className="section" style={{ background: "var(--navy-900)", color: "#fff", paddingTop: 44, paddingBottom: 52 }}>
             <div className="container" style={{ maxWidth: 760 }}>
               <span className="chip chip-on-dark"><span className="dot dot-lime"/> TRANSPARENCY</span>
               <h2 className="display" style={{ fontSize: "clamp(26px,3.5vw,40px)", margin: "12px 0 10px", color: "#fff" }}>{page.transparencyTitle || "Numbers, not names."}</h2>
               <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 15.5, lineHeight: 1.7, margin: "0 0 20px" }}>
                 {page.transparencyBody || "This board updates live and shows only aggregate figures — how many students attended, at which centres, and how participation is trending. A child's name, photo, or record never appears here. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy."}
               </p>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {sec.cta !== false && <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <button className="btn btn-primary" onClick={() => setPage && setPage(page.ctaPage || "join")}>{page.ctaLabel || "Apply for a place →"}</button>
                 <button className="btn btn-ghost btn-on-dark" onClick={() => setPage && setPage("home")}>Back to home</button>
-              </div>
+              </div>}
               <p className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 22 }}>Auto-refreshes every 45s · {d ? "last updated " + relAgo(d.generatedAt) : ""}</p>
             </div>
-          </section>
+          </section>}
         </React.Fragment>
       )}
       <style>{`@keyframes statuspulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,0.6)}70%{box-shadow:0 0 0 9px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}`}</style>
@@ -892,7 +900,7 @@ function volTone(r) { return r >= 100 ? "#2f9e44" : r >= 60 ? "#e8a92b" : "#e031
 function volLabel(r) { return r >= 100 ? "Fully staffed" : r >= 60 ? "Needs volunteers" : "Urgent need"; }
 const VOL_ROLE_META = { admin: { label: "Admin / Ops", icon: "🗂" }, mentor: { label: "Mentor", icon: "🧭" }, instructor: { label: "Instructor", icon: "🎓" } };
 
-function VolunteerStatusPage({ setPage }) {
+function VolunteerStatusPage({ setPage, previewConfig }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [open, setOpen] = React.useState(null); // centreId of the open detail
@@ -915,9 +923,13 @@ function VolunteerStatusPage({ setPage }) {
   const k = (d && d.kpis) || {};
   const centres = (d && d.byCentre) || [];
   const prog = (d && d.program) || {};
-  const page = (d && d.page) || {};
+  const page = previewConfig || (d && d.page) || {};
+  const sec = page.sections || {};
+  const kpiOn = page.kpis || {};
+  const accent = page.accent || "#d0ff3a";
+  const banner = page.banner || {};
   const detail = open ? centres.find(c => c.centreId === open) : null;
-  if (d && d.page && d.page.published === false) return (
+  if (!previewConfig && d && d.page && d.page.published === false) return (
     <div className="page" data-screen-label="Volunteer status">
       <section className="section" style={{ padding: "120px 0", textAlign: "center" }}>
         <div className="container" style={{ maxWidth: 560 }}>
@@ -940,6 +952,7 @@ function VolunteerStatusPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="Volunteer status">
+      {banner.text ? <div style={{ background: banner.tone === "warn" ? "#7a2e2e" : banner.tone === "success" ? "#1c5138" : "#2c1a63", color: "#fff", textAlign: "center", padding: "10px 16px", fontSize: 14, fontWeight: 600 }}>{banner.text}</div> : null}
       {/* Hero — violet identity, distinct from the green attendance board */}
       <section style={{ background: "linear-gradient(155deg,#140a2e 0%,#2c1a63 55%,#4a2da0 100%)", color: "#fff", padding: "72px 0 56px", position: "relative", overflow: "hidden" }}>
         <div aria-hidden="true" style={{ position: "absolute", right: -90, top: -90, width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle,rgba(245,176,38,0.30),transparent 70%)" }}/>
@@ -957,7 +970,7 @@ function VolunteerStatusPage({ setPage }) {
           {d && !err && (
             <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginTop: 34, flexWrap: "wrap" }}>
               <div>
-                <div className="display" style={{ fontSize: "clamp(56px,10vw,110px)", lineHeight: 0.9, color: "#d0ff3a", fontWeight: 800 }}><CountUp to={k.fulfillmentRate || 0} suffix="%"/></div>
+                <div className="display" style={{ fontSize: "clamp(56px,10vw,110px)", lineHeight: 0.9, color: accent, fontWeight: 800 }}><CountUp to={k.fulfillmentRate || 0} suffix="%"/></div>
                 <div className="mono" style={{ fontSize: 12, letterSpacing: "0.15em", color: "rgba(255,255,255,0.6)", marginTop: 6 }}>OF VOLUNTEER NEEDS FILLED</div>
               </div>
               <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 18, paddingBottom: 18 }}>
@@ -979,21 +992,26 @@ function VolunteerStatusPage({ setPage }) {
       {d && (
         <React.Fragment>
           {/* KPI grid */}
-          <section className="section" style={{ paddingTop: 44 }}>
-            <div className="container">
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16 }}>
-                {kpiCard("🤝", k.totalVolunteers || 0, "Total volunteers")}
-                {kpiCard("✅", k.activeVolunteers || 0, "Active now")}
-                {kpiCard("🏫", k.centres || 0, "Centres")}
-                {kpiCard("🎯", k.totalNeed || 0, "Total need")}
-                {kpiCard("🟢", k.totalFilled || 0, "Slots filled", "#2f9e44")}
-                {kpiCard("🧩", k.totalGap || 0, "Open slots", (k.totalGap || 0) > 0 ? "#e8a92b" : "#2f9e44")}
+          {sec.kpis !== false && (() => {
+            const vk = [
+              ["totalVolunteers", "🤝", k.totalVolunteers || 0, "Total volunteers"],
+              ["activeVolunteers", "✅", k.activeVolunteers || 0, "Active now"],
+              ["centres", "🏫", k.centres || 0, "Centres"],
+              ["totalNeed", "🎯", k.totalNeed || 0, "Total need"],
+              ["totalFilled", "🟢", k.totalFilled || 0, "Slots filled", "#2f9e44"],
+              ["totalGap", "🧩", k.totalGap || 0, "Open slots", (k.totalGap || 0) > 0 ? "#e8a92b" : "#2f9e44"],
+            ].filter(x => kpiOn[x[0]] !== false);
+            return vk.length ? <section className="section" style={{ paddingTop: 44 }}>
+              <div className="container">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16 }}>
+                  {vk.map(x => <React.Fragment key={x[0]}>{kpiCard(x[1], x[2], x[3], x[4])}</React.Fragment>)}
+                </div>
               </div>
-            </div>
-          </section>
+            </section> : null;
+          })()}
 
           {/* Per-centre cards */}
-          <section className="section" style={{ background: "var(--cream-50)", paddingTop: 44, paddingBottom: 44 }}>
+          {sec.centres !== false && <section className="section" style={{ background: "var(--cream-50)", paddingTop: 44, paddingBottom: 44 }}>
             <div className="container">
               <SectionHead eyebrow="NEED BY CENTRE" title="Where the gaps are." sub="Volunteer needs vs filled at each centre. Tap a centre for the full role, faculty and course breakdown." />
               {!centres.length ? <p style={{ color: "var(--ink-500)" }}>No centres are reporting volunteer needs yet.</p> :
@@ -1022,23 +1040,23 @@ function VolunteerStatusPage({ setPage }) {
                   ))}
                 </div>}
             </div>
-          </section>
+          </section>}
 
           {/* Transparency + CTA */}
-          <section className="section" style={{ background: "var(--navy-900)", color: "#fff", paddingTop: 44, paddingBottom: 52 }}>
+          {sec.transparency !== false && <section className="section" style={{ background: "var(--navy-900)", color: "#fff", paddingTop: 44, paddingBottom: 52 }}>
             <div className="container" style={{ maxWidth: 760 }}>
               <span className="chip chip-on-dark"><span className="dot dot-lime"/> TRANSPARENCY</span>
-              <h2 className="display" style={{ fontSize: "clamp(26px,3.5vw,40px)", margin: "12px 0 10px", color: "#fff" }}>Roles, not people.</h2>
+              <h2 className="display" style={{ fontSize: "clamp(26px,3.5vw,40px)", margin: "12px 0 10px", color: "#fff" }}>{page.transparencyTitle || "Roles, not people."}</h2>
               <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 15.5, lineHeight: 1.7, margin: "0 0 20px" }}>
-                This board shows only how many volunteers each centre needs and how many have stepped up — by role, faculty and course. A volunteer's name, photo or contact detail <b>never</b> appears here.
+                {page.transparencyBody || "This board shows only how many volunteers each centre needs and how many have stepped up — by role, faculty and course. A volunteer's name, photo or contact detail never appears here."}
               </p>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <button className="btn btn-primary" onClick={() => setPage && setPage("volunteer")}>Volunteer with us →</button>
+              {sec.cta !== false && <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <button className="btn btn-primary" onClick={() => setPage && setPage(page.ctaPage || "volunteer")}>{page.ctaLabel || "Volunteer with us →"}</button>
                 <button className="btn btn-ghost btn-on-dark" onClick={() => setPage && setPage("s-status")}>See the Summer School board</button>
-              </div>
+              </div>}
               <p className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 22 }}>Auto-refreshes every 45s · {d ? "last updated " + relAgo(d.generatedAt) : ""}</p>
             </div>
-          </section>
+          </section>}
         </React.Fragment>
       )}
 
