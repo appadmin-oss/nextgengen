@@ -24,6 +24,7 @@ const CONSENT_TYPES = [
     'medical'       => ['p' => 0, 'label' => 'Emergency medical care'],
     'data'          => ['p' => 0, 'label' => 'Data processing (NDPR)'],
     'media'         => ['p' => 1, 'label' => 'Photos & media'],
+    'site_visibility' => ['p' => 1, 'label' => 'Feature on our website'],
     'trips'         => ['p' => 2, 'label' => 'Off-site activities'],
     'comms'         => ['p' => 2, 'label' => 'Program updates by SMS/email'],
 ];

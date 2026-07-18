@@ -717,3 +717,9 @@ CREATE TABLE IF NOT EXISTS volunteer_needs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (40) ON DUPLICATE KEY UPDATE version = version;
+
+-- 41: site-visibility consent (feature photo + first name publicly).
+ALTER TABLE applications ADD COLUMN visibilityConsent TINYINT DEFAULT 0;
+ALTER TABLE volunteers ADD COLUMN visibilityConsent TINYINT DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (41) ON DUPLICATE KEY UPDATE version = version;

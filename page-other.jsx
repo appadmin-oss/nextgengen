@@ -1497,6 +1497,7 @@ function VolunteerRegisterPage({ setPage }) {
   const [courses, setCourses] = React.useState([]);
   const [centre, setCentre] = React.useState("");
   const [faculty, setFaculty] = React.useState("");
+  const [visibilityConsent, setVisibilityConsent] = React.useState(false);
   const [d, setD] = React.useState({ firstName: "", lastName: "", otherName: "", sex: "", email: "", phone: "", dob: "", why: "", photoUrl: "" });
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
@@ -1545,7 +1546,7 @@ function VolunteerRegisterPage({ setPage }) {
         sex: d.sex,
         email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         why: d.why.trim(), photoUrl: d.photoUrl || "", courses: role === "instructor" ? courses : [],
-        centre, faculty: needsFaculty ? faculty : "",
+        centre, faculty: needsFaculty ? faculty : "", visibilityConsent,
       });
       setDone(r && r.ref ? r.ref : true);
       if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Registration received");
@@ -1709,6 +1710,10 @@ function VolunteerRegisterPage({ setPage }) {
                     <textarea id="vol-why" rows={3} value={d.why} onChange={set("why")} placeholder="A line or two — craft, experience, or simply why this matters to you."/></div>
                   <div className="field" style={{ gridColumn: "1 / -1" }}><label>Photo · optional</label>
                     <PhotoCapture value={d.photoUrl} onChange={(url) => { setD({ ...d, photoUrl: url }); if (err) setErr(""); }} size={72} label="Used on your volunteer ID once approved (optional)"/></div>
+                  <label className="field" style={{ gridColumn: "1 / -1", display: "flex", gap: 12, alignItems: "flex-start", cursor: "pointer", background: visibilityConsent ? "rgba(159,188,59,0.10)" : "var(--paper-100,#f4f1e8)", border: "1px solid " + (visibilityConsent ? "#9fbc3b" : "rgba(12,20,50,0.10)"), borderRadius: 12, padding: "14px 16px" }}>
+                    <input type="checkbox" checked={visibilityConsent} onChange={e => { setVisibilityConsent(e.target.checked); if (err) setErr(""); }} style={{ width: 19, height: 19, marginTop: 1, accentColor: "#7a9c1e", flex: "none" }}/>
+                    <span style={{ fontSize: 13.5, lineHeight: 1.5, color: "var(--ink-700)" }}><b>Feature me on the website</b> — I agree that Next Generation Genius may show my photo and first name publicly on its website and status boards to celebrate the team. Optional, and you can withdraw it any time by contacting us.</span>
+                  </label>
                 </div>
               </div>
 
@@ -2031,6 +2036,7 @@ function ParentVerifyPage() {
     medical: "staff may seek medical help for them in an emergency.",
     data: "we may store the registration details you provided, protected under the NDPR, and use them only to run the program.",
     media: "may appear in program photos and media (optional).",
+    site_visibility: "may be featured — with their photo and first name — on our website and public status boards (optional).",
     trips: "may join supervised off-site activities (optional).",
     comms: "send me program updates by SMS or email (optional).",
   };

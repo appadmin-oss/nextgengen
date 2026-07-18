@@ -454,7 +454,7 @@ function public_apply(array $p): array {
     // Adults only for mentor/volunteer; the teen branch enforces 10–17 below.
     if ($kind !== 'teen' && $dobAge < 16) return ['ok' => false, 'error' => 'dob_too_young'];
 
-    $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $courses = []; $faculty = '';
+    $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $courses = []; $faculty = ''; $visibilityConsent = 0;
     // A short URL to a headshot uploaded (unsigned) to Cloudinary. Optional —
     // only trusted if it points at the configured Cloudinary CDN host.
     $photoUrl = trim((string)($p['photoUrl'] ?? ''));
@@ -493,6 +493,8 @@ function public_apply(array $p): array {
             }
             if (!$courses) return ['ok' => false, 'error' => 'course_required'];
         }
+        // Optional opt-in to be featured (photo + first name) on the public site.
+        $visibilityConsent = !empty($p['visibilityConsent']) ? 1 : 0;
     } else {
         $role = substr(trim((string)($p['role'] ?? '')), 0, 60);
     }
@@ -510,6 +512,7 @@ function public_apply(array $p): array {
         'kind' => $kind, 'name' => $name,
         'firstName' => $first, 'lastName' => $last, 'otherName' => $other, 'dob' => $dob, 'sex' => $sex,
         'age' => $age ?: null, 'centre' => $centre, 'track' => $track, 'faculty' => $faculty,
+        'visibilityConsent' => $visibilityConsent,
         'role' => $role, 'why' => $why, 'email' => $email, 'program' => $program, 'photoUrl' => $photoUrl,
         'phone' => $phone, 'courses' => $courses ? json_encode($courses, JSON_UNESCAPED_SLASHES) : '',
         'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),

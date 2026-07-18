@@ -202,8 +202,9 @@ chk('instructor without a course is rejected', backend_dispatch('public.apply', 
 chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['ok'] === true);
 chk('volunteer centre stored on application', db_row("SELECT centre FROM applications WHERE email = 'vol-admin@example.com'")['centre'] === 'Testville');
 chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications WHERE email = 'vol-admin@example.com'")['phone'] === '+2348031234567');
-chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Coding & Robotics', 'Chess & Strategy', 'Basket Weaving']])['ok'] === true);
+chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Coding & Robotics', 'Chess & Strategy', 'Basket Weaving'], 'visibilityConsent' => true])['ok'] === true);
 chk('instructor faculty stored on application', db_row("SELECT faculty FROM applications WHERE email = 'vol-teach@example.com'")['faculty'] === $vFac);
+chk('volunteer visibility consent stored on application', (int)db_row("SELECT visibilityConsent FROM applications WHERE email = 'vol-teach@example.com'")['visibilityConsent'] === 1);
 chk('instructor courses stored filtered to catalogue', json_decode((string)db_row("SELECT courses FROM applications WHERE email = 'vol-teach@example.com'")['courses'], true) === ['Coding & Robotics', 'Chess & Strategy']);
 chk('volunteer duplicate within 24h flagged', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['duplicate'] === true);
 chk('volunteer.applied event queued for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.applied'")['c'] === 2);
@@ -253,6 +254,7 @@ $appr = backend_dispatch('admin.volunteers.approve', ['requesterId' => 'NGG-2025
 chk('approval mints a VOL-CODE display id', preg_match('/^VOL-[A-Z]{2,4}-\d{2}-\d{3}$/', $appr['volunteer']['volunteerId']) === 1);
 chk('instructor id carries the INS tier code', str_starts_with((string)$appr['volunteer']['volunteerId'], 'VOL-INS-'));
 chk('approval binds a check-in token', str_starts_with((string)$appr['volunteer']['token'], 'VOLQR-'));
+chk('approval carries the volunteer visibility consent', (int)db_row("SELECT visibilityConsent FROM volunteers WHERE volunteerId = ?", [$appr['volunteer']['volunteerId']])['visibilityConsent'] === 1);
 chk('approval marks the application accepted', db_row('SELECT status FROM applications WHERE id = ?', [$volAppId])['status'] === 'accepted');
 chk('approval queues volunteer.approved for the bus', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'volunteer.approved'")['c'] === 1);
 chk('re-approving is idempotent', backend_dispatch('admin.volunteers.approve', ['requesterId' => 'NGG-2025-0099', 'id' => $volAppId])['already'] === true);
@@ -1030,14 +1032,20 @@ chk('parent: context via token; P0 consents enforced; verify binds a QR', (funct
     if (empty($ctx['ok']) || $ctx['done'] !== false || $ctx['student']['name'] !== 'Chidi Okafor') return false;
     $bad = backend_dispatch('parent.verify.submit', ['t' => $vt, 'consents' => ['participation' => true, 'medical' => true]]);
     if (($bad['error'] ?? '') !== 'consent_required') return false;
-    $ok = backend_dispatch('parent.verify.submit', ['t' => $vt, 'consents' => ['participation' => true, 'medical' => true, 'data' => true, 'media' => false], 'actorName' => 'Mrs Okafor', 'feedback' => 'Please watch his peanut allergy.']);
+    $ok = backend_dispatch('parent.verify.submit', ['t' => $vt, 'consents' => ['participation' => true, 'medical' => true, 'data' => true, 'media' => false, 'site_visibility' => true], 'actorName' => 'Mrs Okafor', 'feedback' => 'Please watch his peanut allergy.']);
     if (empty($ok['ok'])) return false;
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ?', [$REG['studentId']]);
     if ($s['regStatus'] !== 'verified' || empty($s['token'])) return false;
     $qr = db_row('SELECT status, studentId FROM qr_codes WHERE token = ?', [$s['token']]);
     $media = db_row("SELECT status FROM consents WHERE studentId = ? AND type = 'media'", [$REG['studentId']]);
     $p0 = db_row("SELECT status FROM consents WHERE studentId = ? AND type = 'participation'", [$REG['studentId']]);
-    return $qr['status'] === 'assigned' && $qr['studentId'] === $REG['studentId'] && $media['status'] === 'declined' && $p0['status'] === 'granted';
+    $vis = db_row("SELECT status FROM consents WHERE studentId = ? AND type = 'site_visibility'", [$REG['studentId']]);
+    return $qr['status'] === 'assigned' && $qr['studentId'] === $REG['studentId'] && $media['status'] === 'declined' && $p0['status'] === 'granted' && ($vis['status'] ?? '') === 'granted';
+})());
+chk('site_visibility consent is offered in the parent verify context', (function () use ($REG) {
+    $vt = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$REG['studentId']])['verifyToken'];
+    // context is 'done' now (verified) — assert the type exists in the catalogue instead.
+    return array_key_exists('site_visibility', CONSENT_TYPES) && CONSENT_TYPES['site_visibility']['p'] === 1;
 })());
 chk('parent: verified link answers done, resubmit is already', (function () use ($REG) {
     $vt = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$REG['studentId']])['verifyToken'];

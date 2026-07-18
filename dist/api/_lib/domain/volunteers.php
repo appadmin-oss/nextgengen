@@ -491,14 +491,14 @@ function public_instructor_roster(array $p): array {
 
 function admin_volunteers_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-    $pending = db_all("SELECT id, name, firstName, lastName, otherName, dob, sex, email, phone, role, courses, centre, faculty, why, photoUrl, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing') ORDER BY id DESC LIMIT 200");
+    $pending = db_all("SELECT id, name, firstName, lastName, otherName, dob, sex, email, phone, role, courses, centre, faculty, visibilityConsent, why, photoUrl, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing') ORDER BY id DESC LIMIT 200");
     foreach ($pending as &$a) {
         $a['courses'] = json_decode((string)($a['courses'] ?? ''), true) ?: [];
         $a['ref'] = function_exists('intake_reference') ? intake_reference('volunteer', (int)$a['id']) : '';
         $a['dobAge'] = !empty($a['dob']) && function_exists('dob_age') ? dob_age((string)$a['dob']) : null;
     }
     unset($a);
-    $roster = db_all('SELECT volunteerId, fullName, email, phone, role, courses, centre, faculty, token, status, safeguarding, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
+    $roster = db_all('SELECT volunteerId, fullName, email, phone, role, courses, centre, faculty, visibilityConsent, token, status, safeguarding, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
     foreach ($roster as &$v) $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
     unset($v);
     return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster];
@@ -540,6 +540,7 @@ function admin_volunteer_approve(array $p): array {
         'sex' => (string)($a['sex'] ?? ''),
         'role' => (string)$a['role'], 'courses' => (string)($a['courses'] ?? ''),
         'centre' => (string)($a['centre'] ?? ''), 'faculty' => (string)($a['faculty'] ?? ''),
+        'visibilityConsent' => (int)($a['visibilityConsent'] ?? 0),
         'token' => $token, 'photoUrl' => (string)($a['photoUrl'] ?? ''),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);

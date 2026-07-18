@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 40;
+const NGG_SCHEMA_TARGET = 41;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -987,6 +987,15 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX idx_vneeds_unique ON volunteer_needs(centreId, role, faculty);
             CREATE INDEX idx_vneeds_centre ON volunteer_needs(centreId);
+        ",
+
+        // Site-visibility consent — explicit opt-in to feature a person's photo +
+        // first name publicly (the status boards / website). For students this is
+        // recorded in the `consents` ledger (type 'site_visibility') via the parent
+        // verification flow; for volunteers it's a flag on the intake + roster.
+        41 => "
+            ALTER TABLE applications ADD COLUMN visibilityConsent INTEGER DEFAULT 0;
+            ALTER TABLE volunteers ADD COLUMN visibilityConsent INTEGER DEFAULT 0;
         ",
     ];
 
