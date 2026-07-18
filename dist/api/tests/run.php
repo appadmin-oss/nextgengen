@@ -292,6 +292,15 @@ chk('structured name + dob stored on application', (function () { $r = db_row("S
 chk('apply rejects a malformed dob', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Bad', 'lastName' => 'Dob', 'email' => 'baddob@example.com', 'phone' => '08031110099', 'dob' => 'not-a-date'])['error'] === 'bad_dob');
 chk('apply rejects an under-16 volunteer', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Too', 'lastName' => 'Young', 'email' => 'young@example.com', 'phone' => '08031110098', 'dob' => '2015-01-01'])['error'] === 'dob_too_young');
 chk('apply requires a first name', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'lastName' => 'Only', 'email' => 'nofirst@example.com', 'phone' => '08031110097', 'dob' => '1990-01-01'])['error'] === 'bad_firstName');
+// The HTTP endpoint builds the gs_call payload from the request body; the
+// domain tests above dispatch straight to public.apply and so never catch a
+// field the endpoint forgets to forward. `sex` is required on every intake and
+// a volunteer needs `centre`/`faculty` — a dropped field is a silent 400 in
+// production. Guard the endpoint source so those forwards can't regress.
+$applySrc = (string)@file_get_contents($ROOT . '/public/apply.php');
+chk('apply endpoint forwards sex to the domain', (bool)preg_match("/'sex'\\s*=>/", $applySrc));
+chk('apply endpoint forwards volunteer centre', (bool)preg_match("/\\\$payload\\['centre'\\]\\s*=/", $applySrc));
+chk('apply endpoint forwards volunteer faculty', (bool)preg_match("/\\\$payload\\['faculty'\\]\\s*=/", $applySrc));
 // ── Multi-form builder (registration + volunteer + contact) ──
 $fl = backend_dispatch('admin.forms.list', ['requesterId' => 'NGG-2025-0099']);
 chk('forms list has all three forms', count($fl['forms']) === 3 && in_array('volunteer', array_column($fl['forms'], 'formId'), true) && in_array('contact', array_column($fl['forms'], 'formId'), true));
@@ -1977,6 +1986,29 @@ chk('catalogue: leadership faculty + its courses are excluded', !in_array('Leade
 $srf2 = array_map(function ($f) { if (($f['key'] ?? '') === 'course') $f['options'] = ['Practical Coding', 'Robotics Lab', 'Chess Club']; return $f; }, backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg'])['form']['fields']);
 backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg', 'fields' => $srf2]);
 chk('course catalogue edit round-trips to the public context', backend_dispatch('public.volunteer.context', [])['courses'] === ['Practical Coding', 'Robotics Lab', 'Chess Club']);
+
+// ── Academy catalogue: per-faculty mapping (setting-backed, admin-editable) ──
+chk('academy_courses_for returns a faculty\'s courses', academy_courses_for('Music') === ['Talking Drums', 'Piano', 'Guitar', 'Drums'] && academy_courses_for('Nope') === []);
+$vctxBF = backend_dispatch('public.volunteer.context', []);
+chk('volunteer context exposes a coursesByFaculty map', isset($vctxBF['coursesByFaculty']) && ($vctxBF['coursesByFaculty']['AI & Technology'] ?? null) === ['Practical Coding', 'AI Tools Application', 'Digital Problem-Solving']);
+// Admin get: seeded default until customised.
+$catG = backend_dispatch('admin.academy.catalogue.get', ['requesterId' => 'NGG-2025-0099']);
+chk('catalogue get returns the seeded default (not yet customised)', $catG['customised'] === false && $catG['catalogue'][0]['faculty'] === 'AI & Technology' && count($catG['catalogue']) === 5);
+chk('catalogue set is cap-gated', backend_dispatch('admin.academy.catalogue.set', ['requesterId' => 'NGG-2025-0001', 'catalogue' => [['faculty' => 'X', 'courses' => ['Y']]]])['error'] === 'forbidden');
+chk('catalogue set rejects an empty catalogue', backend_dispatch('admin.academy.catalogue.set', ['requesterId' => 'NGG-2025-0099', 'catalogue' => [['faculty' => '', 'courses' => []]]])['error'] === 'catalogue_empty');
+// Save a custom map (list-of-rows form) and confirm it drives every reader.
+backend_dispatch('admin.academy.catalogue.set', ['requesterId' => 'NGG-2025-0099', 'catalogue' => [['faculty' => 'Robotics', 'courses' => ['Line Follower', 'Line Follower', 'Sumo Bot']], ['faculty' => 'Empty', 'courses' => []]]]);
+chk('catalogue set cleans + dedupes and drives academy_catalogue', academy_catalogue() === ['Robotics' => ['Line Follower', 'Sumo Bot']]);
+chk('catalogue set drives academy_courses_for + coursesByFaculty', academy_courses_for('Robotics') === ['Line Follower', 'Sumo Bot']
+    && (backend_dispatch('public.volunteer.context', [])['coursesByFaculty']['Robotics'] ?? null) === ['Line Follower', 'Sumo Bot']);
+chk('catalogue get reports customised after a save', backend_dispatch('admin.academy.catalogue.get', ['requesterId' => 'NGG-2025-0099'])['customised'] === true);
+// An instructor can pick a catalogue course even when the summer-reg Course
+// field (the flat validation list) doesn't include it.
+chk('instructor may submit a catalogue-only course', in_array('Sumo Bot', volunteer_courses_accepted(), true));
+// Reset reverts to the seeded default.
+backend_dispatch('admin.academy.catalogue.set', ['requesterId' => 'NGG-2025-0099', 'reset' => true]);
+chk('catalogue reset reverts to the seeded default', academy_catalogue() === academy_catalogue_default() && backend_dispatch('admin.academy.catalogue.get', ['requesterId' => 'NGG-2025-0099'])['customised'] === false);
+
 chk('seed: refreshes a stale auto-generated form, preserves a human-published one', (function () {
     $db = db_conn();
     $db->exec("DELETE FROM form_defs WHERE formId IN ('volunteer', 'summer-reg')");

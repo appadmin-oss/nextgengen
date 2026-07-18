@@ -38,7 +38,8 @@ const FORM_FIELD_TYPES = ['text', 'longtext', 'email', 'phone', 'number', 'date'
  * this is only the starting point. The Leadership academy is intentionally
  * excluded from the public catalogue.
  */
-function academy_catalogue(): array {
+/** The built-in starting catalogue — used until an admin edits it. */
+function academy_catalogue_default(): array {
     return [
         'AI & Technology'  => ['Practical Coding', 'AI Tools Application', 'Digital Problem-Solving'],
         'Entrepreneurship' => ['Data Appreciation', 'Google Workspace'],
@@ -47,10 +48,47 @@ function academy_catalogue(): array {
         'Music'            => ['Talking Drums', 'Piano', 'Guitar', 'Drums'],
     ];
 }
+
+/** Normalise a raw faculty→courses structure into an ordered map of
+ *  clean strings: trims names, drops blanks/dupes, and keeps only faculties
+ *  that have at least one course. Returns [] if nothing usable survives. */
+function academy_catalogue_clean($raw): array {
+    if (!is_array($raw)) return [];
+    $out = [];
+    foreach ($raw as $fac => $courses) {
+        $fac = trim((string)$fac);
+        if ($fac === '' || mb_strlen($fac) > 80) continue;
+        if (!is_array($courses)) continue;
+        $seen = [];
+        foreach ($courses as $c) {
+            $c = trim((string)$c);
+            if ($c === '' || mb_strlen($c) > 80) continue;
+            if (!in_array($c, $seen, true)) $seen[] = $c;
+        }
+        if ($seen && !isset($out[$fac])) $out[$fac] = $seen;
+    }
+    return $out;
+}
+
+/**
+ * The live academy catalogue — the admin-editable faculty→courses map. Stored
+ * in the `academy_catalogue` setting; falls back to the built-in default until
+ * an admin saves their own. The Leadership academy is intentionally excluded.
+ */
+function academy_catalogue(): array {
+    $saved = academy_catalogue_clean(setting_get('academy_catalogue'));
+    return $saved ?: academy_catalogue_default();
+}
 /** Academy (faculty) names, in catalogue order. */
 function academy_faculties(): array { return array_keys(academy_catalogue()); }
 /** Every course across all academies, flattened, in catalogue order. */
 function academy_courses(): array { $out = []; foreach (academy_catalogue() as $courses) foreach ($courses as $c) $out[] = $c; return $out; }
+/** The courses that belong to a single faculty (empty if the faculty is
+ *  unknown). Powers the "courses under the chosen faculty" instructor picker. */
+function academy_courses_for(string $faculty): array {
+    $cat = academy_catalogue();
+    return array_values($cat[trim($faculty)] ?? []);
+}
 
 function form_default_fields(): array {
     return [
@@ -956,6 +994,59 @@ function admin_centres_delete(array $p): array {
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('centre.delete', $g['requester']['memberId'], (string)$p['centreId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true];
+}
+
+/**
+ * The academy catalogue editor. Returns the live faculty→courses map (whatever
+ * an admin has saved, or the built-in default) plus the default so the UI can
+ * offer a "reset" and a flag telling whether the current map is customised.
+ */
+function admin_academy_catalogue_get(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $saved = academy_catalogue_clean(setting_get('academy_catalogue'));
+    // Emit as an ordered list of {faculty, courses} so JSON key order is stable.
+    $emit = function (array $map): array {
+        $out = [];
+        foreach ($map as $fac => $courses) $out[] = ['faculty' => $fac, 'courses' => array_values($courses)];
+        return $out;
+    };
+    return [
+        'ok' => true,
+        'customised' => (bool)$saved,
+        'catalogue' => $emit($saved ?: academy_catalogue_default()),
+        'defaults' => $emit(academy_catalogue_default()),
+    ];
+}
+
+/**
+ * Save the academy catalogue (faculty→courses). Accepts either a plain
+ * faculty→[courses] map or a list of {faculty, courses}. Cleans/dedupes and
+ * requires at least one faculty with one course. Passing an empty map (or the
+ * `reset` flag) clears the setting, reverting to the built-in default.
+ */
+function admin_academy_catalogue_set(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    if (!empty($p['reset'])) {
+        setting_set('academy_catalogue', '', $g['requester']['memberId']);
+        audit('academy.catalogue.reset', $g['requester']['memberId'], null, [], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'reset' => true];
+    }
+    // Normalise a {faculty, courses} list into a plain map first.
+    $raw = $p['catalogue'] ?? null;
+    if (is_array($raw) && $raw && isset($raw[0]) && is_array($raw[0])) {
+        $map = [];
+        foreach ($raw as $row) {
+            if (!is_array($row)) continue;
+            $map[(string)($row['faculty'] ?? '')] = is_array($row['courses'] ?? null) ? $row['courses'] : [];
+        }
+        $raw = $map;
+    }
+    $clean = academy_catalogue_clean($raw);
+    if (!$clean) return ['ok' => false, 'error' => 'catalogue_empty'];
+    if (count($clean) > 40) return ['ok' => false, 'error' => 'too_many_faculties'];
+    setting_set('academy_catalogue', $clean, $g['requester']['memberId']);
+    audit('academy.catalogue.set', $g['requester']['memberId'], null, ['faculties' => count($clean)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'faculties' => count($clean)];
 }
 
 /**

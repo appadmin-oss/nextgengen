@@ -3347,6 +3347,7 @@ function AdminStatusPages() {
         <div className="mono" style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-500)", marginBottom: 8 }}>Where the board's data is edited</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
           <button className="btn btn-ghost btn-sm" onClick={() => adminJump("registration", "centres")}>🏫 Centres — name, address, lead, meeting times →</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => adminJump("registration", "catalogue")}>🎓 Academy catalogue — faculties &amp; their courses →</button>
           <button className="btn btn-ghost btn-sm" onClick={() => adminJump("volunteers", "needs")}>◈ Volunteer needs (the /v-status targets) →</button>
           <button className="btn btn-ghost btn-sm" onClick={() => adminJump("registration", "gates")}>❑ Students (enrolment & records) →</button>
           <button className="btn btn-ghost btn-sm" onClick={() => adminJump("volunteers", "roster")}>◈ Volunteers (roster) →</button>
@@ -4019,6 +4020,93 @@ function AdminSettings() {
 // ============================================================================
 // Registration — first-class page: gate links, pending queue, centres
 // ============================================================================
+/* Academy catalogue editor — the faculty→courses map that drives the volunteer
+ * form (instructors pick courses UNDER their chosen faculty), the student course
+ * list, and the /v-status faculty/course breakdowns. Fully editable; "Reset"
+ * reverts to the seeded default. */
+function AcademyCatalogue() {
+  const [rows, setRows] = React.useState(null);   // [{faculty, courses:[]}]
+  const [customised, setCustomised] = React.useState(false);
+  const [orig, setOrig] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [draftCourse, setDraftCourse] = React.useState({});   // facultyIndex -> input text
+
+  const norm = (cat) => (cat || []).map(r => ({ faculty: String(r.faculty || ""), courses: (r.courses || []).map(String) }));
+  const load = () => NGGApi.admin.registration.catalogue()
+    .then(r => { const n = norm(r.catalogue); setRows(n); setCustomised(!!r.customised); setOrig(JSON.stringify(n)); setErr(""); })
+    .catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+
+  const dirty = rows !== null && JSON.stringify(rows) !== orig;
+  const setFacultyName = (i, v) => setRows(rs => rs.map((r, j) => j === i ? { ...r, faculty: v } : r));
+  const removeFaculty = (i) => setRows(rs => rs.filter((_, j) => j !== i));
+  const addFaculty = () => setRows(rs => [...rs, { faculty: "", courses: [] }]);
+  const removeCourse = (i, c) => setRows(rs => rs.map((r, j) => j === i ? { ...r, courses: r.courses.filter(x => x !== c) } : r));
+  const addCourse = (i) => {
+    const v = String(draftCourse[i] || "").trim();
+    if (!v) return;
+    setRows(rs => rs.map((r, j) => j === i ? (r.courses.includes(v) ? r : { ...r, courses: [...r.courses, v] }) : r));
+    setDraftCourse(d => ({ ...d, [i]: "" }));
+  };
+
+  const save = async () => {
+    // Mirror the server's cleaning so the admin sees the same result they'll get.
+    const clean = rows
+      .map(r => ({ faculty: r.faculty.trim(), courses: r.courses.map(c => c.trim()).filter(Boolean) }))
+      .filter(r => r.faculty !== "" && r.courses.length > 0);
+    if (!clean.length) { toast.error("Add at least one faculty with one course."); return; }
+    setBusy(true);
+    try { const r = await NGGApi.admin.registration.catalogueSet(clean); toast.success("Catalogue saved — " + (r.faculties || clean.length) + " faculties live now."); load(); }
+    catch (e) { toast.error(e.code === "catalogue_empty" ? "Add at least one faculty with one course." : (e.code || e.message)); }
+    finally { setBusy(false); }
+  };
+  const reset = async () => {
+    if (!(await dialog.confirm({ title: "Reset to the seeded catalogue?", body: "Your custom faculties and courses will be replaced by the built-in default.", cta: "Reset" }))) return;
+    setBusy(true);
+    try { await NGGApi.admin.registration.catalogueReset(); toast.success("Reverted to the seeded catalogue."); load(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+
+  if (err) return <ErrorState title="Couldn't load the catalogue" code={err} onRetry={load}/>;
+  if (rows === null) return <div className="dash-spinner"/>;
+  return (
+    <div>
+      <p className="admin-hint">The academies (faculties) and the courses within each. This is the single source that drives the <b>volunteer form</b> — instructors pick courses <b>under</b> the faculty they choose — plus the student course list and the /v-status breakdowns. {customised ? <span className="chip chip-lime">customised</span> : <span className="chip">seeded default</span>}</p>
+      <div style={{ display: "grid", gap: 16 }}>
+        {rows.map((r, i) => (
+          <div key={i} className="admin-card" style={{ padding: 16, border: "1px solid rgba(12,20,50,0.12)", borderRadius: 12 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+              <input className="admin-input" value={r.faculty} placeholder="Faculty name (e.g. Music)" onChange={e => setFacultyName(i, e.target.value)} style={{ fontWeight: 700, flex: 1, minWidth: 180 }}/>
+              <button className="btn btn-ghost btn-sm" onClick={() => removeFaculty(i)} title="Remove this faculty">✕ Faculty</button>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+              {r.courses.length === 0 ? <span className="admin-cell-sub" style={{ fontSize: 12.5 }}>No courses yet — add the first below.</span> :
+                r.courses.map(c => (
+                  <span key={c} className="chip" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    {c}<button onClick={() => removeCourse(i, c)} title="Remove" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--ink-500)", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
+                  </span>
+                ))}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input className="admin-input" placeholder="Add a course…" value={draftCourse[i] || ""}
+                onChange={e => setDraftCourse(d => ({ ...d, [i]: e.target.value }))}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCourse(i); } }} style={{ flex: 1, minWidth: 160 }}/>
+              <button className="btn btn-ghost btn-sm" onClick={() => addCourse(i)}>+ Course</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
+        <button className="btn btn-ghost btn-sm" onClick={addFaculty}>+ Add faculty</button>
+        <div style={{ flex: 1 }}/>
+        {customised && <button className="btn btn-ghost btn-sm" onClick={reset} disabled={busy}>Reset to default</button>}
+        <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !dirty}>{busy ? "Saving…" : dirty ? "Save catalogue" : "Saved"}</button>
+      </div>
+    </div>
+  );
+}
+
 function AdminRegistration() {
   const [tab, setTab] = React.useState(() => takePendingAdminTab("gates"));
   return (
@@ -4026,13 +4114,14 @@ function AdminRegistration() {
       <div className="admin-section-head"><h2 className="admin-h2">Registration</h2></div>
       <p className="admin-hint">Run the gated public sign-up: hand out desk links, review parent-pending sign-ups, and manage the centres that drive ID prefixes and card colours. The form itself lives under <b>Forms</b>.</p>
       <div className="admin-anchor-tabs">
-        {[["gates", "Gate links"], ["pending", "Pending sign-ups"], ["centres", "Centres"], ["import", "Bulk import"], ["certs", "Certificates"]].map(([id, l]) => (
+        {[["gates", "Gate links"], ["pending", "Pending sign-ups"], ["centres", "Centres"], ["catalogue", "Academy catalogue"], ["import", "Bulk import"], ["certs", "Certificates"]].map(([id, l]) => (
           <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{l}</button>
         ))}
       </div>
       {tab === "gates" && <SummerGates/>}
       {tab === "pending" && <SummerPending/>}
       {tab === "centres" && <SummerCentres/>}
+      {tab === "catalogue" && <AcademyCatalogue/>}
       {tab === "certs" && <SummerCertificates/>}
       {tab === "import" && <SummerImport/>}
     </div>

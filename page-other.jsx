@@ -1532,6 +1532,20 @@ function VolunteerRegisterPage({ setPage }) {
   const dobOk = d.dob !== "" && dobAge >= 16 && dobAge <= 100;
   const phoneOk = d.phone.trim().length >= 7;
   const needsFaculty = role === "mentor" || role === "instructor";
+  // The courses an instructor can teach are the ones under the faculty they
+  // picked. Fall back to the full flat list only if the catalogue has no
+  // mapping for that faculty (or none is chosen yet).
+  const byFaculty = (ctx && ctx.coursesByFaculty) || null;
+  const courseOptions = (needsFaculty && faculty && byFaculty && byFaculty[faculty])
+    ? byFaculty[faculty]
+    : ((ctx && ctx.courses) || []);
+  // Changing faculty re-scopes the picker; drop any picked course that isn't in
+  // the new faculty so we never submit a course from the wrong academy.
+  const chooseFaculty = (f) => {
+    setFaculty(f);
+    if (byFaculty && byFaculty[f]) setCourses(cs => cs.filter(c => byFaculty[f].includes(c)));
+    if (err) setErr("");
+  };
   const ready = role !== "" && centre !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== "" && d.sex !== "" && emailOk
     && phoneOk && dobOk
     && (!needsFaculty || faculty !== "")
@@ -1673,7 +1687,7 @@ function VolunteerRegisterPage({ setPage }) {
                       </select></div>
                     {needsFaculty && (
                       <div className="field"><label htmlFor="vol-faculty">Faculty</label>
-                        <select id="vol-faculty" value={faculty} onChange={(e) => { setFaculty(e.target.value); if (err) setErr(""); }}>
+                        <select id="vol-faculty" value={faculty} onChange={(e) => chooseFaculty(e.target.value)}>
                           <option value="" disabled>Select a faculty…</option>
                           {(ctx && ctx.faculties ? ctx.faculties : []).map(f => (
                             <option key={f} value={f}>{f}</option>
@@ -1684,16 +1698,26 @@ function VolunteerRegisterPage({ setPage }) {
                   {role === "instructor" && (
                     <div className="mt-24">
                       <p className="mono" style={{ fontSize: 11, color: "var(--ink-500)", letterSpacing: "0.08em", margin: "0 0 10px" }}>
-                        WHICH COURSES CAN YOU TEACH? PICK EVERY ONE — WE MATCH BY DEMAND.
+                        {faculty
+                          ? "COURSES IN " + faculty.toUpperCase() + " — PICK EVERY ONE YOU CAN TEACH."
+                          : "WHICH COURSES CAN YOU TEACH? PICK YOUR FACULTY FIRST."}
                       </p>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                        {(ctx ? ctx.courses : []).map(c => (
-                          <button type="button" key={c}
-                            className={"vol-chip" + (courses.includes(c) ? " is-active" : "")}
-                            aria-pressed={courses.includes(c)}
-                            onClick={() => toggleCourse(c)}>{c}</button>
-                        ))}
-                      </div>
+                      {faculty ? (
+                        courseOptions.length ? (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                            {courseOptions.map(c => (
+                              <button type="button" key={c}
+                                className={"vol-chip" + (courses.includes(c) ? " is-active" : "")}
+                                aria-pressed={courses.includes(c)}
+                                onClick={() => toggleCourse(c)}>{c}</button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: 13, color: "var(--ink-500)", margin: 0 }}>No courses are listed under this faculty yet.</p>
+                        )
+                      ) : (
+                        <p style={{ fontSize: 13, color: "var(--ink-500)", margin: 0 }}>Choose your faculty above to see the courses it offers.</p>
+                      )}
                     </div>
                   )}
                 </div>

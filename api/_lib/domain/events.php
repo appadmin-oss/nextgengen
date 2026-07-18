@@ -486,7 +486,7 @@ function public_apply(array $p): array {
             if (!in_array($faculty, volunteer_faculty_options(), true)) return ['ok' => false, 'error' => 'invalid_faculty'];
         }
         if ($role === 'instructor') {
-            $offered = volunteer_course_options();
+            $offered = volunteer_courses_accepted();
             foreach ((is_array($p['courses'] ?? null) ? $p['courses'] : []) as $c) {
                 $c = (string)$c;
                 if (in_array($c, $offered, true) && !in_array($c, $courses, true)) $courses[] = $c;
@@ -590,6 +590,15 @@ function volunteer_course_options(): array {
     return academy_courses();
 }
 
+/** The full set of courses accepted on an instructor's intake: the flat form
+ *  options AND every course in the academy catalogue (the volunteer form offers
+ *  the catalogue's per-faculty courses, so those must validate too). */
+function volunteer_courses_accepted(): array {
+    $out = volunteer_course_options();
+    foreach (academy_courses() as $c) { if (!in_array($c, $out, true)) $out[] = $c; }
+    return $out;
+}
+
 /** The faculties (teaching groups) mentors & instructors belong to — sourced
  *  from the live Form Builder exactly like `volunteer_course_options()`, so the
  *  admin's form is the single source of truth. Falls back to a small sane list
@@ -611,11 +620,16 @@ function public_centre_options(): array {
 }
 
 function public_volunteer_context(): array {
+    // The courses an instructor may pick are filtered by the faculty they
+    // choose. Give the form the full catalogue map (faculty→courses); the form
+    // looks up the chosen faculty and falls back to the flat `courses` list for
+    // any offered faculty the catalogue doesn't map.
     return [
         'ok' => true,
         'open' => setting_raw('volunteer_applications_open') !== '0',
         'roles' => ['admin', 'mentor', 'instructor'],
         'courses' => volunteer_course_options(),
+        'coursesByFaculty' => academy_catalogue(),
         'faculties' => volunteer_faculty_options(),
         'centres' => public_centre_options(),
     ];

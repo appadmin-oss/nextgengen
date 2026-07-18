@@ -11,6 +11,7 @@ if ($method === 'GET') {
     elseif ($view === 'gates')       $res = gs_call('admin.gates.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'registrations') $res = gs_call('admin.registrations.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'centres')     $res = gs_call('admin.centres.list', ['requesterId' => $s['mid']]);
+    elseif ($view === 'catalogue')   $res = gs_call('admin.academy.catalogue.get', ['requesterId' => $s['mid']]);
     elseif ($view === 'cards')       $res = gs_call('admin.cards.data', ['requesterId' => $s['mid'], 'studentId' => (string)($_GET['studentId'] ?? '')]);
     elseif ($view === 'hierarchy')   $res = gs_call('admin.hierarchy.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'vcards')      $res = gs_call('admin.vcards.data', ['requesterId' => $s['mid'], 'volunteerId' => (string)($_GET['volunteerId'] ?? '')]);
@@ -27,6 +28,7 @@ if ($method === 'GET') {
     elseif ($action === 'resend_id')   { rate_limit_check('id.resend'); $res = gs_call('admin.id.resend', ['requesterId' => $s['mid'], 'kind' => $b['kind'] ?? 'student', 'id' => $b['id'] ?? '', 'qrPng' => $b['qrPng'] ?? '', 'ip' => $ip]); }
     elseif ($action === 'centre_upsert') $res = gs_call('admin.centres.upsert', ['requesterId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => $ip]);
     elseif ($action === 'centre_delete') $res = gs_call('admin.centres.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'catalogue_set') $res = gs_call('admin.academy.catalogue.set', ['requesterId' => $s['mid'], 'catalogue' => $b['catalogue'] ?? null, 'reset' => !empty($b['reset']), 'ip' => $ip]);
     elseif ($action === 'hierarchy_upsert') $res = gs_call('admin.hierarchy.upsert', ['requesterId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => $ip]);
     elseif ($action === 'hierarchy_delete') $res = gs_call('admin.hierarchy.delete', ['requesterId' => $s['mid'], 'tierId' => $b['tierId'] ?? '', 'ip' => $ip]);
     else json_error('unknown_action', 400);
