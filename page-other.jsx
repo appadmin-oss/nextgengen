@@ -534,6 +534,7 @@ function JoinPage({ setPage }) {
   // Restore a saved draft so "we save as you go" is true.
   const [step, setStep] = useState(0);
   const [appRef, setAppRef] = useState("");
+  const [appWa, setAppWa] = useState("");
   // Which program the applicant chose (set by the Summer page before it routes
   // here). 'summer' = 6-week on-ramp, 'anchor' = flagship 12-week NGG. Captured
   // once on mount so navigating away and back via the generic Apply link resets.
@@ -624,6 +625,7 @@ function JoinPage({ setPage }) {
         photoUrl: data.photoUrl || "",
       });
       setAppRef((r && r.ref) || "");
+      setAppWa((r && r.whatsapp) || "");
       try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {}
       setStep(4);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -818,6 +820,18 @@ function JoinPage({ setPage }) {
                     <div className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-500)" }}>Your reference</div>
                     <div className="mono" style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{appRef}</div>
                     <div style={{ fontSize: 12.5, color: "var(--ink-500)", marginTop: 6 }}>Save this — you can check your status any time with this reference and your email.</div>
+                  </div>
+                )}
+                {appWa && (
+                  <div style={{ margin: "0 auto 20px", maxWidth: 440, padding: "18px 18px 20px", borderRadius: 16, background: "rgba(37,211,102,0.10)", border: "1px solid rgba(37,211,102,0.4)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 6 }}>
+                      <i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 26, color: "#128C3E" }}/>
+                      <span style={{ fontWeight: 800, fontSize: 17, color: "var(--ink-900)" }}>Join your centre's WhatsApp group</span>
+                    </div>
+                    <p style={{ fontSize: 13.5, color: "var(--ink-600, #47506e)", margin: "0 0 14px", lineHeight: 1.5 }}>{data.city ? "This is the group for " + data.city + "." : "Your centre's group."} It's where we share timetables, reminders and updates.</p>
+                    <a href={appWa} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "#04331b", fontWeight: 800, fontSize: 15, padding: "12px 22px", borderRadius: 999, textDecoration: "none" }}>
+                      <i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 20 }}/> Join the group →
+                    </a>
                   </div>
                 )}
                 <p style={{fontSize:17, color:"var(--ink-500)", maxWidth:480, margin:"0 auto", lineHeight:1.5}}>
@@ -1516,6 +1530,7 @@ function VolunteerRegisterPage({ setPage }) {
   const [d, setD] = React.useState({ firstName: "", lastName: "", otherName: "", sex: "", email: "", phone: "", dob: "", why: "", photoUrl: "" });
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
+  const [doneWa, setDoneWa] = React.useState("");
   const [err, setErr] = React.useState("");
 
   React.useEffect(() => {
@@ -1578,6 +1593,7 @@ function VolunteerRegisterPage({ setPage }) {
         centre, faculty: needsFaculty ? faculty : "", visibilityConsent,
       });
       setDone(r && r.ref ? r.ref : true);
+      setDoneWa((r && r.whatsapp) || "");
       if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Registration received");
     } catch (e2) {
       const code = e2.code || e2.message;
@@ -1627,6 +1643,18 @@ function VolunteerRegisterPage({ setPage }) {
           <p style={{ color: "var(--ink-500)", fontSize: 13, lineHeight: 1.6, margin: "14px 0 0" }}>
             We've emailed a copy to <b>{d.email.trim()}</b>, along with the Operations Manual. Keep your reference for any follow-up.
           </p>
+          {doneWa && (
+            <div style={{ margin: "22px auto 0", maxWidth: 440, padding: "18px 18px 20px", borderRadius: 16, background: "rgba(37,211,102,0.10)", border: "1px solid rgba(37,211,102,0.4)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 6 }}>
+                <i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 26, color: "#128C3E" }}/>
+                <span style={{ fontWeight: 800, fontSize: 17, color: "var(--navy-900)" }}>Join {centre || "your centre"}'s WhatsApp group</span>
+              </div>
+              <p style={{ fontSize: 13.5, color: "var(--ink-500)", margin: "0 0 14px", lineHeight: 1.5 }}>Meet the team and get timetables, reminders and updates.</p>
+              <a href={doneWa} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "#04331b", fontWeight: 800, fontSize: 15, padding: "12px 22px", borderRadius: 999, textDecoration: "none" }}>
+                <i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 20 }}/> Join the group →
+              </a>
+            </div>
+          )}
           <div style={{ marginTop: 26, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
             <a className="btn btn-gold btn-lg" href={NGG_HANDBOOK_URL} target="_blank" rel="noopener noreferrer">Read the Operations Manual (PDF) ↗</a>
             <button className="btn btn-ghost btn-lg" onClick={() => setPage("home")}>Back to home →</button>

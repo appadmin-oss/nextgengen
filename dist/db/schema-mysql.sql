@@ -754,3 +754,8 @@ CREATE TABLE IF NOT EXISTS item_needs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (43) ON DUPLICATE KEY UPDATE version = version;
+
+-- 44: per-centre WhatsApp group invite link (shown after submission).
+ALTER TABLE centres ADD COLUMN whatsappUrl VARCHAR(240) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (44) ON DUPLICATE KEY UPDATE version = version;

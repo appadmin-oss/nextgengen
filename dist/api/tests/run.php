@@ -1392,6 +1392,16 @@ chk('centre: list resolves lead name + returns leadOptions', (function () {
     foreach ($cl['centres'] as $c) if ($c['name'] === 'Ayobo Hub') return $c['area'] === 'Ayobo · Lagos' && $c['address'] === '5 Ayobo Rd' && $c['leadVolunteerId'] === 'VOL-LEAD-1' && $c['leadName'] === 'Lead Person';
     return false;
 })());
+// Per-centre WhatsApp group link — saved on the centre, echoed back on apply.
+backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'whatsappUrl' => 'https://chat.whatsapp.com/ABC123']]);
+chk('centre: whatsapp link saves + lists', (function () use ($cA) {
+    foreach (backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-2025-0099'])['centres'] as $c) if ($c['centreId'] === $cA['centreId']) return ($c['whatsappUrl'] ?? '') === 'https://chat.whatsapp.com/ABC123';
+    return false;
+})());
+chk('centre: a non-https whatsapp link is rejected', backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'whatsappUrl' => 'wa.me/123']])['error'] === 'bad_whatsapp');
+setting_set('volunteer_applications_open', '1', 'system');
+$waApply = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Wa', 'lastName' => 'Joiner', 'email' => 'wa-join@example.com', 'phone' => '08031119009', 'dob' => '1990-01-01', 'centre' => 'Ayobo Hub']);
+chk('apply returns the selected centre whatsapp link', ($waApply['whatsapp'] ?? '') === 'https://chat.whatsapp.com/ABC123');
 chk('centre: public meta exposes a PII-safe lead (consented → first name only)', (function () {
     $m = centre_public_meta(['area' => 'A', 'address' => 'B', 'meetDays' => 'Sat', 'meetTime' => '9', 'leadVolunteerId' => 'VOL-LEAD-1']);
     return $m['lead'] && $m['lead']['name'] === 'Lead' && strpos($m['lead']['handle'], '@lead') === 0 && $m['area'] === 'A';

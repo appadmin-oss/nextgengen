@@ -502,11 +502,16 @@ function public_apply(array $p): array {
     // Standardised intake: dedupe → persist → reference → notify + acknowledge.
     // Every path returns { ok, ref, duplicate } so the client + admin queue
     // and the applicant's inbox all speak the same reference.
+    // The WhatsApp group invite for the centre the applicant picked — shown on
+    // the success screen so they can join their centre's group immediately.
+    $waRow = $centre !== '' ? db_row("SELECT whatsappUrl FROM centres WHERE name = ? AND status = 'active' LIMIT 1", [$centre]) : null;
+    $whatsapp = $waRow ? (string)($waRow['whatsappUrl'] ?? '') : '';
+
     $cutoff = gmdate('Y-m-d\TH:i:s\Z', time() - 24 * 3600);
     $dupe = db_row('SELECT id FROM applications WHERE lower(email) = ? AND kind = ? AND createdAt > ? LIMIT 1', [$email, $kind, $cutoff]);
     if ($dupe) {
         audit('apply.' . $kind, null, $email, ['name' => $name, 'duplicate' => true], (string)($p['ip'] ?? ''));
-        return ['ok' => true, 'ref' => intake_reference($kind, (int)$dupe['id']), 'duplicate' => true];
+        return ['ok' => true, 'ref' => intake_reference($kind, (int)$dupe['id']), 'duplicate' => true, 'whatsapp' => $whatsapp];
     }
     $appId = db_insert('applications', [
         'kind' => $kind, 'name' => $name,
@@ -572,7 +577,7 @@ function public_apply(array $p): array {
         ]);
     }
     audit('apply.' . $kind, null, $email, ['name' => $name, 'ref' => $ref, 'track' => $track ?: $role, 'program' => $program], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'ref' => $ref, 'duplicate' => false];
+    return ['ok' => true, 'ref' => $ref, 'duplicate' => false, 'whatsapp' => $whatsapp];
 }
 
 /* ── Volunteer registration (public) ──────────────────────────────────────── */

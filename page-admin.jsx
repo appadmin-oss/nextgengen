@@ -4363,6 +4363,7 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
     status: c.status || "active", capacity: c.capacity != null ? String(c.capacity) : "",
     address: c.address || "", area: c.area || "", leadVolunteerId: c.leadVolunteerId || "",
     phone: c.phone || "", email: c.email || "", meetDays: c.meetDays || "", meetTime: c.meetTime || "", notes: c.notes || "",
+    whatsappUrl: c.whatsappUrl || "",
   });
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setF(s => ({ ...s, [k]: v }));
@@ -4383,10 +4384,11 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
         status: f.status, capacity: f.capacity === "" ? 0 : parseInt(f.capacity, 10) || 0,
         address: f.address, area: f.area, leadVolunteerId: f.leadVolunteerId,
         phone: f.phone, email: f.email, meetDays: f.meetDays, meetTime: f.meetTime, notes: f.notes,
+        whatsappUrl: f.whatsappUrl.trim(),
       });
       toast.success("Centre saved."); onSaved();
     } catch (e) {
-      toast.error(e.code === "code_taken" ? "That code is already used." : e.code === "bad_email" ? "That email address isn't valid." : e.code === "bad_lead" ? "Pick a current volunteer as lead." : e.code === "bad_color" ? "Pick a valid colour." : (e.code || e.message));
+      toast.error(e.code === "code_taken" ? "That code is already used." : e.code === "bad_email" ? "That email address isn't valid." : e.code === "bad_whatsapp" ? "The WhatsApp link must start with https://" : e.code === "bad_lead" ? "Pick a current volunteer as lead." : e.code === "bad_color" ? "Pick a valid colour." : (e.code || e.message));
     } finally { setBusy(false); }
   };
   const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
@@ -4429,7 +4431,9 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
           {field("email", "Email", { max: 160, type: "email", ph: "centre@afrovanguard.org.ng" })}
           {field("meetDays", "Meeting days", { max: 120, ph: "e.g. Saturdays" })}
           {field("meetTime", "Meeting time", { max: 60, ph: "e.g. 09:00 – 13:00" })}
+          {field("whatsappUrl", "WhatsApp group link", { max: 240, grow: true, min: 260, ph: "https://chat.whatsapp.com/…" })}
         </div>
+        <p className="admin-hint" style={{ margin: "6px 0 0" }}>Shown to an applicant right after they submit — matched to the centre they picked. Paste the group's <b>Invite to Group via Link</b> URL.</p>
       </div>
       <div>
         <span style={lbl}>Notes (internal)</span>

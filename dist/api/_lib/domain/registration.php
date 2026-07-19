@@ -856,7 +856,7 @@ function geo_match_centre(float $lat, float $lng): ?array {
 function admin_centres_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt FROM centres ORDER BY name");
+    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt FROM centres ORDER BY name");
     // Volunteers available to lead a centre — active only, labelled for the picker.
     $vols = db_all("SELECT volunteerId, fullName, firstName, role, centre FROM volunteers WHERE status = 'active' ORDER BY fullName");
     $volById = [];
@@ -952,6 +952,13 @@ function admin_centres_upsert(array $p): array {
     }
     if (array_key_exists('email', $row) && $row['email'] !== '' && !filter_var($row['email'], FILTER_VALIDATE_EMAIL)) {
         return ['ok' => false, 'error' => 'bad_email'];
+    }
+    // WhatsApp group invite link — optional. If set it must be a real https URL
+    // (we accept any https link, but nudge toward chat.whatsapp.com invites).
+    if (array_key_exists('whatsappUrl', $d)) {
+        $wa = substr(trim((string)$d['whatsappUrl']), 0, 240);
+        if ($wa !== '' && !preg_match('#^https://#i', $wa)) return ['ok' => false, 'error' => 'bad_whatsapp'];
+        $row['whatsappUrl'] = $wa;
     }
     // Centre lead — a volunteer. Empty clears it; otherwise it must resolve to a
     // real volunteer (any status, so an archived lead still shows for history).

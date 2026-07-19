@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 43;
+const NGG_SCHEMA_TARGET = 44;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1148,6 +1148,10 @@ function db_migrate(PDO $db): void {
             CREATE UNIQUE INDEX idx_ineeds_unique ON item_needs(centreId, item);
             CREATE INDEX idx_ineeds_centre ON item_needs(centreId);
         ",
+
+        // Per-centre WhatsApp group invite link — shown to an applicant right
+        // after they submit, matched to the centre they picked.
+        44 => "ALTER TABLE centres ADD COLUMN whatsappUrl TEXT DEFAULT '';",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
