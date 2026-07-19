@@ -86,11 +86,13 @@ function admin_volunteer_cards_data(array $p): array {
     $cards = [];
     foreach ($rows as $v) {
         $tier = vol_tier_for((string)$v['role']);
+        // Two names only on the printed ID: first given name + surname.
         $names = preg_split('/\s+/', trim((string)$v['fullName'])) ?: [''];
         $first = array_shift($names);
+        $surname = $names ? (string)array_pop($names) : '';
         $cards[] = [
             'volunteerId' => $v['volunteerId'],
-            'firstName' => $first, 'surname' => implode(' ', $names),
+            'firstName' => $first, 'surname' => $surname,
             'role' => (string)$v['role'],
             'tier' => ['name' => $tier['name'], 'code' => $tier['code'], 'color' => $tier['color']],
             'displayId' => (string)$v['volunteerId'],

@@ -2941,6 +2941,22 @@ function CardQR({ token, size }) {
   return src ? <img className="card-qr" src={src} alt={"QR " + token} style={{ width: size, height: size, imageRendering: "pixelated" }}/> : <div style={{ width: size, height: size, background: "#f2f2f2" }}/>;
 }
 
+// Adaptive name sizing: a long name shrinks to stay on one line inside the
+// card, so the layout is context-aware instead of clipping. `base` is the
+// comfortable size; past `maxChars` it scales down proportionally (floored so
+// it never gets illegibly small).
+function nameFontPx(text, base, maxChars) {
+  const n = ((text || "").trim().length) || 1;
+  return n > maxChars ? Math.max(base * 0.62, base * maxChars / n) : base;
+}
+// Bake a face-aware fill crop into the Cloudinary URL at the frame's aspect
+// ratio, so the delivered image already IS the frame shape — it can't sit
+// off-frame even in a rasteriser that ignores CSS object-fit. Non-Cloudinary
+// URLs pass through unchanged (CSS object-fit still covers them).
+function cardFacePhoto(url, w, h) {
+  return (typeof cldWith === "function") ? cldWith(url, "c_fill,g_face,w_" + w + ",h_" + h + ",f_auto,q_auto:good,e_improve:30") : url;
+}
+
 function CardFront({ card, program, S }) {
   const px = (n) => n * S;
   const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
@@ -2948,11 +2964,11 @@ function CardFront({ card, program, S }) {
     <div className="idcard" style={{ width: px(590), height: px(1004), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
       <img src={lockup} alt="Programme lockup" style={{ position: "absolute", top: px(58), left: "50%", transform: "translateX(-50%)", width: px(290) }}/>
       <div style={{ position: "absolute", top: px(182), left: "50%", transform: "translateX(-50%)", width: px(372), height: px(372), borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", boxShadow: `0 ${px(16)}px ${px(38)}px rgba(27,43,107,.16)` }}>
-        {card.photoUrl && <img src={card.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>}
+        {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 900)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
       </div>
       <div style={{ position: "absolute", top: px(588), left: "50%", transform: "translateX(-50%)", width: px(30), height: px(6), borderRadius: px(3), background: "#8FA3C8" }}/>
-      <div style={{ position: "absolute", top: px(614), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(52), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1) }}>{card.firstName}</div>
-      <div style={{ position: "absolute", top: px(668), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(56), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding: `0 ${px(16)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
+      <div style={{ position: "absolute", top: px(620), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), padding: "0 " + px(20) + "px", whiteSpace: "nowrap" }}>{card.firstName}</div>
+      <div style={{ position: "absolute", top: px(666), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding:`0 ${px(16)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
       <div style={{ position: "absolute", top: px(732), left: 0, right: 0, textAlign: "center", fontWeight: 500, fontSize: px(22), color: "#111", textTransform: "uppercase", letterSpacing: px(1.4) }}>
         {(() => {
           // "Arts • Tye & Dye" → bold category, dot, regular course (v3 design).
@@ -2992,11 +3008,11 @@ function VolunteerCardFront({ card, S }) {
       </div>
       {/* Headshot / illustration panel. */}
       <div style={{ position: "absolute", top: px(140), left: px(70), width: px(450), height: px(354), borderRadius: px(22), overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)", boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)` }}>
-        {card.photoUrl && <img src={card.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>}
+        {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
       </div>
-      {/* Name — crimson first, navy surname (TT Firs Neue). */}
-      <div style={{ position: "absolute", top: px(548), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(52), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1) }}>{card.firstName}</div>
-      <div style={{ position: "absolute", top: px(602), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(56), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding: `0 ${px(24)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
+      {/* Name — crimson first, navy surname (TT Firs Neue). Adaptive size. */}
+      <div style={{ position: "absolute", top: px(552), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), padding: "0 " + px(24) + "px", whiteSpace: "nowrap" }}>{card.firstName}</div>
+      <div style={{ position: "absolute", top: px(600), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding:`0 ${px(24)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
       <div style={{ position: "absolute", top: px(690), left: "50%", transform: "translateX(-50%)", width: px(360), height: 1, background: "#E4E4E4" }}/>
       {/* Check-in QR. */}
       <div style={{ position: "absolute", top: px(722), left: "50%", transform: "translateX(-50%)", border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff" }}>

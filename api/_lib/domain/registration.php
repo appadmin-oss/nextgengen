@@ -1084,11 +1084,14 @@ function admin_cards_data(array $p): array {
     $cards = [];
     foreach ($rows as $s) {
         $ctr = $centres[strtolower((string)$s['centre'])] ?? null;
+        // The printed ID carries exactly TWO names: first given name + surname.
+        // Middle names are dropped so the card never crowds or overflows.
         $names = preg_split('/\s+/', trim((string)$s['fullName'])) ?: [''];
         $first = array_shift($names);
+        $surname = $names ? (string)array_pop($names) : '';
         $cards[] = [
             'studentId' => $s['studentId'],
-            'firstName' => $first, 'surname' => implode(' ', $names),
+            'firstName' => $first, 'surname' => $surname,
             'track' => (string)$s['track'],
             'centre' => ['name' => $ctr['name'] ?? (string)$s['centre'], 'code' => $ctr['code'] ?? 'ST', 'color' => $ctr['color'] ?? '#76B043'],
             'displayId' => card_display_id($s),
