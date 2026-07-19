@@ -72,7 +72,31 @@
   --space-7: 48px;
   --space-8: 64px;
   --space-9: 88px;
+
+  /* ── 2026 homepage design tokens ──────────────────────────────────────────
+     The new hero + sections use a navy gradient with warm/lime glows and a
+     couple of accents the base palette didn't name. Added as tokens so the
+     look stays consistent and adjustable in one place. */
+  --navy-hero-mid: #16224e;   /* hero gradient mid stop */
+  --navy-hero-end: #1d2c63;   /* hero gradient end / dark inset panels */
+  --mint: #6fdc9d;            /* "live" pulse + positive dot */
+  --crimson: #c0361c;         /* vanguard / emphasis accent (AA on cream) */
+  --gold-600: #a07400;        /* brighter dark-gold for eyebrows on cream */
+  --grad-hero: linear-gradient(158deg, var(--navy-900) 0%, var(--navy-hero-mid) 58%, var(--navy-hero-end) 100%);
+  --grad-hero-glow: radial-gradient(52% 42% at 90% 4%, rgba(245,176,38,0.22), transparent 62%), radial-gradient(44% 48% at 12% 96%, rgba(208,255,58,0.10), transparent 60%);
+  --grad-gold: linear-gradient(135deg, var(--gold-400), var(--gold-500));
+  --shadow-gold: 0 12px 26px -12px rgba(176,124,18,0.7);
 }
+@keyframes ngg-live-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(111,220,157,0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(111,220,157,0); }
+  100% { box-shadow: 0 0 0 0 rgba(111,220,157,0); }
+}
+/* Homepage hero KPI strip — 4 across, collapsing to 2 then 1. */
+.home-kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
+@media (max-width: 760px) { .home-kpi-strip { grid-template-columns: repeat(2, 1fr); gap: 20px; } }
+.home-hero-cols { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 48px; align-items: center; }
+@media (max-width: 900px) { .home-hero-cols { grid-template-columns: 1fr; gap: 32px; } }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }

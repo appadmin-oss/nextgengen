@@ -7,7 +7,8 @@ function HomePage({ setPage }) {
     <div className="page" data-screen-label="01 Home">
       <PromoBanner setPage={setPage} />
       <Hero setPage={setPage} />
-      <StatBar />
+      {/* The hero now carries the KPI strip (per the 2026 design), so the
+          standalone StatBar is retired to avoid showing the same numbers twice. */}
       <ProgressionSystem setPage={setPage} />
       <FlagshipCallout setPage={setPage} />
       <ManifestoMarquee />
@@ -69,126 +70,66 @@ function Hero({ setPage }) {
       : daysToStart > 0
         ? sessionLabel(session, "Next cohort") + " · starts in " + daysToStart + (daysToStart === 1 ? " day" : " days")
         : "Applications open · " + sessionLabel(session, "next cohort");
-  const memberCount = stats && stats.activeMembers > 0 ? stats.activeMembers + "+" : "500+";
+  // Hero KPI strip — 4 tiles, real numbers when we have them, evergreen copy
+  // as the fallback so the strip never reads as an empty movement.
+  const kpiN = (key, evergreen, pad) => {
+    if (!stats || !(stats[key] > 0)) return evergreen;
+    return pad ? String(stats[key]).padStart(2, "0") : stats[key].toLocaleString() + "+";
+  };
+  const heroKpis = [
+    { value: kpiN("activeMembers", "500+"), label: "Teen creators in motion", gold: false },
+    { value: kpiN("missionsVerified", "1,200+"), label: "Anchor missions verified", gold: false },
+    { value: kpiN("mentors", "60+"), label: "Volunteer mentors", gold: false },
+    { value: kpiN("centres", "02", true), label: "Centres · Alimosho, Lagos", gold: true },
+  ];
+  const gotwName = site.heroGotwName || "Zara · Voice of Influence";
 
   return (
-    <section className="hero" style={{minHeight:720, paddingBottom:80}}>
-      <div className="hero-grid" />
-      {/* Background hero image with deep gradient */}
-      <div style={{position:"absolute", inset:0, zIndex:-1}}>
-        <img src={scene("heroMain", 2000)} alt="" style={{width:"100%", height:"100%", objectFit:"cover", opacity:0.35}}/>
-        <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, rgba(10,17,48,0.72) 0%, rgba(10,17,48,0.9) 55%, rgba(8,13,36,0.97) 100%)"}}/>
-      </div>
-
-      <div className="container" style={{padding:"112px 28px 96px"}}>
-        <div style={{display:"grid", gridTemplateColumns:"1.45fr 1fr", gap:64, alignItems:"center", minHeight:560}}>
+    <section style={{ background: "var(--grad-hero)", color: "#fff", position: "relative", overflow: "hidden" }}>
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "var(--grad-hero-glow)" }}/>
+      <div className="container" style={{ maxWidth: 1320, padding: "56px 28px 0", position: "relative" }}>
+        <div className="home-hero-cols">
           <div>
-            <div data-reveal className="reveal" style={{display:"inline-flex", alignItems:"center", gap:10, marginBottom:30, flexWrap:"wrap", padding:"8px 16px", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.14)", borderRadius:999, backdropFilter:"blur(12px)", WebkitBackdropFilter:"blur(12px)"}}>
-              <span className="live-dot"/>
-              <span className="mono" style={{fontSize:11, letterSpacing:"0.16em", textTransform:"uppercase", color:"rgba(255,255,255,0.9)"}}>
-                {badge}
-              </span>
+            <div data-reveal className="reveal" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(111,220,157,0.14)", border: "1px solid rgba(111,220,157,0.4)" }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--mint)", animation: "ngg-live-pulse 1.8s infinite" }}/>
+              <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#bff3d4" }}>{badge}</span>
             </div>
-            <h1 className="display" style={{fontSize:"clamp(52px, 6.4vw, 108px)", margin:0, color:"white", lineHeight:0.94}}>
-              <Kinetic as="span" text={site.heroTitle1 || "Africa's next geniuses"} by="word"/><br/>
-              <Kinetic as="span" text={(site.heroTitle2 || "are") + " "} by="word" delay={300}/>
-              <em className="shimmer-gold" style={{fontStyle:"normal", fontFamily:"var(--font-marker)", fontWeight:700, fontSize:"1.14em", lineHeight:0.9, display:"inline-block"}}>
-                <Kinetic as="span" text={site.heroEmphasis || "not waiting"} by="word" delay={420}/>
-              </em>
-              <Kinetic as="span" text="." by="word" delay={620}/>
+            <h1 className="display" style={{ fontWeight: 800, fontSize: "clamp(38px, 5.6vw, 68px)", letterSpacing: "-0.035em", lineHeight: 0.98, margin: "20px 0 14px", color: "#fff" }}>
+              {(site.heroTitle1 || "Africa's next geniuses") + " " + (site.heroTitle2 || "are") + " "}
+              <span style={{ color: "var(--gold-500)" }}>{site.heroEmphasis || "not waiting"}</span>.
             </h1>
-            <p data-reveal className="reveal" style={{fontSize:19, lineHeight:1.55, color:"rgba(255,255,255,0.82)", maxWidth:560, marginTop:28, "--reveal-delay":"500ms"}}>
+            <p data-reveal className="reveal" style={{ color: "rgba(255,255,255,0.7)", fontSize: 16, maxWidth: 520, margin: "0 0 28px", lineHeight: 1.6 }}>
               {site.heroSubhead || "A twelve-week growth journey for teenagers, 10–17. From summer student to vanguard leader — by mission, mentorship and the discipline of public work."}
             </p>
-            <div data-reveal className="reveal" style={{display:"flex", gap:12, marginTop:40, flexWrap:"wrap", "--reveal-delay":"650ms"}}>
-              <Magnetic>
-                <button className="btn btn-gold btn-lg" onClick={() => setPage("summer")}>
-                  {site.heroCtaPrimary || "Join the Summer Program"} →
-                </button>
-              </Magnetic>
+            <div data-reveal className="reveal" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <button className="btn btn-gold btn-lg" onClick={() => setPage("summer")} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                {site.heroCtaPrimary || "Join the Summer Programme"} <i className="ph ph-arrow-right"/>
+              </button>
               <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("anchor")}>
                 {site.heroCtaSecondary || "Explore Anchor 12"}
               </button>
             </div>
-            <div style={{display:"flex", gap:24, marginTop:52, color:"rgba(255,255,255,0.7)", fontSize:13, alignItems:"center", flexWrap:"wrap"}}>
-              {/* Avatar cluster + social proof */}
-              <div style={{display:"flex", alignItems:"center", gap:14}}>
-                <div style={{display:"flex"}}>
-                  {[1,2,3,4,5].map(i => (
-                    <div key={i} style={{marginLeft: i === 1 ? 0 : -10, border:"2px solid var(--navy-900)", borderRadius:"50%"}}>
-                      <Avatar seed={i+8} size={36}/>
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <div style={{color:"white", fontWeight:600, fontSize:14}}>{memberCount} teen creators in motion</div>
-                  <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.66)", marginTop:2}}>
-                    {stats ? "UPDATED LIVE" : "TWO CENTRES"} · Alimosho, Lagos
-                  </div>
-                </div>
-              </div>
-              {/* Live KPI strip — real numbers only. A zero here reads as
-                  "this movement is empty", so unstarted KPIs stay hidden. */}
-              {(() => {
-                const kpis = [
-                  ["missionsVerified", "Missions verified", "1,200+"],
-                  ["graduates", "Graduates", "60+"],
-                  ["centres", "Centres", "02"],
-                ].map(([key, label, evergreen]) => {
-                  if (!stats) return [evergreen, label];
-                  if (!(stats[key] > 0)) return null;
-                  const n = key === "centres" ? String(stats[key]).padStart(2, "0") : stats[key].toLocaleString();
-                  return [n, label];
-                }).filter(Boolean);
-                if (!kpis.length) return null;
-                return (
-                  <div style={{display:"flex", gap:28, paddingLeft:24, borderLeft:"1px solid rgba(255,255,255,0.16)"}}>
-                    {kpis.map(([n, l], i) => (
-                      <div key={i}>
-                        <div style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:26, color:"white", lineHeight:1}}>{n}</div>
-                        <div className="mono" style={{fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase", color:"rgba(255,255,255,0.6)", marginTop:5}}>{l}</div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
           </div>
 
-          {/* Right: photo composition — one anchor image with satellites in
-              its corners, plus a tidy bottom row. Class-driven so the mobile
-              layout is deliberate, not attribute-selector patchwork. */}
-          <div className="hero-visual reveal" data-reveal>
-            <Photo name="speaker" ratio="auto" style={{flex:"1 1 auto", minHeight:0}} overlay eager>
-              <div style={{position:"absolute", top:16, left:16}}>
-                <span className="chip chip-on-dark" style={{background:"rgba(12,20,50,0.55)", color:"white"}}>NGGC · WK 07</span>
-              </div>
-              <div style={{position:"absolute", bottom:16, left:16, right:"40%", color:"white"}}>
-                <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", color:"var(--gold-400)"}}>FROM THE COHORT</div>
-                <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:21, lineHeight:1.05, marginTop:4}}>Zara — Voice of Influence</div>
-              </div>
-              <div className="hero-theme-card">
-                <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", textTransform:"uppercase", fontWeight:600}}>This week's theme</div>
-                <div style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:24, lineHeight:1, marginTop:2}}>Discipline.</div>
-              </div>
-            </Photo>
-            <div className="hero-visual-row">
-              <Photo name="studio" ratio="auto" style={{width:"56%"}}/>
-              <div className="hero-live-card">
-                <div style={{display:"flex", alignItems:"center", gap:8}}>
-                  <span className="dot dot-lime"/>
-                  <span className="mono" style={{fontSize:10, letterSpacing:"0.15em", textTransform:"uppercase", color:"rgba(255,255,255,0.75)"}}>GENIUS OF THE WEEK · SAMPLE</span>
-                </div>
-                <div style={{display:"flex", alignItems:"center", gap:12}}>
-                  <Avatar seed="ngg-you" name="You" size={42} ring/>
-                  <div>
-                    <div style={{fontWeight:600, fontSize:15}}>This could be you</div>
-                    <div style={{fontSize:11, color:"rgba(255,255,255,0.7)", marginTop:2}}>Earn XP every week you show up</div>
-                  </div>
-                </div>
-              </div>
+          {/* Right: a glass card framing the cohort photo + Genius of the Week. */}
+          <div className="reveal" data-reveal style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 22, padding: 24, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+            <div style={{ aspectRatio: "4 / 3", borderRadius: 16, overflow: "hidden", position: "relative", background: "var(--navy-hero-end)" }}>
+              <img src={scene("heroMain", 1400)} alt="Current cohort" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 16 }}>
+              <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 10.5, letterSpacing: "0.12em", color: "rgba(255,255,255,0.6)" }}><span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--lime)" }}/>GENIUS OF THE WEEK</span>
+              <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "#fff" }}>{gotwName}</span>
             </div>
           </div>
+        </div>
+
+        <div className="home-kpi-strip" style={{ marginTop: 52, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+          {heroKpis.map((k, i) => (
+            <div key={i} style={{ padding: "24px 8px 24px 0", borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.1)", paddingLeft: i === 0 ? 0 : 20 }}>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "clamp(30px, 4vw, 44px)", lineHeight: 1, color: k.gold ? "var(--gold-500)" : "#fff" }}>{k.value}</div>
+              <div className="mono" style={{ fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.62)", marginTop: 10 }}>{k.label}</div>
+            </div>
+          ))}
         </div>
       </div>
     </section>
