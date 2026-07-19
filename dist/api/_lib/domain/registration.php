@@ -953,11 +953,18 @@ function admin_centres_upsert(array $p): array {
     if (array_key_exists('email', $row) && $row['email'] !== '' && !filter_var($row['email'], FILTER_VALIDATE_EMAIL)) {
         return ['ok' => false, 'error' => 'bad_email'];
     }
-    // WhatsApp group invite link — optional. If set it must be a real https URL
-    // (we accept any https link, but nudge toward chat.whatsapp.com invites).
+    // Group join link — optional. Accepts a chat.whatsapp.com invite, a wa.me
+    // link, or a form link (Google Forms, etc.). A bare host (no scheme) gets
+    // https:// prepended; anything that isn't https after that is rejected.
     if (array_key_exists('whatsappUrl', $d)) {
-        $wa = substr(trim((string)$d['whatsappUrl']), 0, 240);
-        if ($wa !== '' && !preg_match('#^https://#i', $wa)) return ['ok' => false, 'error' => 'bad_whatsapp'];
+        $wa = trim((string)$d['whatsappUrl']);
+        if ($wa !== '') {
+            if (!preg_match('#^[a-z][a-z0-9+.-]*://#i', $wa) && preg_match('#^[a-z0-9.-]+\.[a-z]{2,}(/|$)#i', $wa)) {
+                $wa = 'https://' . $wa;
+            }
+            $wa = substr($wa, 0, 240);
+            if (!preg_match('#^https://#i', $wa)) return ['ok' => false, 'error' => 'bad_whatsapp'];
+        }
         $row['whatsappUrl'] = $wa;
     }
     // Centre lead — a volunteer. Empty clears it; otherwise it must resolve to a

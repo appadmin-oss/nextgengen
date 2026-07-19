@@ -1398,7 +1398,17 @@ chk('centre: whatsapp link saves + lists', (function () use ($cA) {
     foreach (backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-2025-0099'])['centres'] as $c) if ($c['centreId'] === $cA['centreId']) return ($c['whatsappUrl'] ?? '') === 'https://chat.whatsapp.com/ABC123';
     return false;
 })());
-chk('centre: a non-https whatsapp link is rejected', backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'whatsappUrl' => 'wa.me/123']])['error'] === 'bad_whatsapp');
+chk('centre: a bare wa.me link is normalised to https', (function () use ($cA) {
+    backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'whatsappUrl' => 'wa.me/2348001234']]);
+    foreach (backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-2025-0099'])['centres'] as $c) if ($c['centreId'] === $cA['centreId']) return ($c['whatsappUrl'] ?? '') === 'https://wa.me/2348001234';
+    return false;
+})());
+chk('centre: a form link is accepted', (function () use ($cA) {
+    return !empty(backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'whatsappUrl' => 'https://forms.gle/abc123']])['ok']);
+})());
+chk('centre: an insecure (non-https) link is rejected', backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'whatsappUrl' => 'http://insecure.example']])['error'] === 'bad_whatsapp');
+// Restore the chat.whatsapp.com invite for the apply-echo assertion below.
+backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'whatsappUrl' => 'https://chat.whatsapp.com/ABC123']]);
 setting_set('volunteer_applications_open', '1', 'system');
 $waApply = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Wa', 'lastName' => 'Joiner', 'email' => 'wa-join@example.com', 'phone' => '08031119009', 'dob' => '1990-01-01', 'centre' => 'Ayobo Hub']);
 chk('apply returns the selected centre whatsapp link', ($waApply['whatsapp'] ?? '') === 'https://chat.whatsapp.com/ABC123');

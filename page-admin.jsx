@@ -4431,9 +4431,9 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
           {field("email", "Email", { max: 160, type: "email", ph: "centre@afrovanguard.org.ng" })}
           {field("meetDays", "Meeting days", { max: 120, ph: "e.g. Saturdays" })}
           {field("meetTime", "Meeting time", { max: 60, ph: "e.g. 09:00 – 13:00" })}
-          {field("whatsappUrl", "WhatsApp group link", { max: 240, grow: true, min: 260, ph: "https://chat.whatsapp.com/…" })}
+          {field("whatsappUrl", "Group / join link", { max: 240, grow: true, min: 260, ph: "chat.whatsapp.com/… · wa.me/… · forms.gle/…" })}
         </div>
-        <p className="admin-hint" style={{ margin: "6px 0 0" }}>Shown to an applicant right after they submit — matched to the centre they picked. Paste the group's <b>Invite to Group via Link</b> URL.</p>
+        <p className="admin-hint" style={{ margin: "6px 0 0" }}>Shown to an applicant right after they submit — matched to the centre they picked. Works with a WhatsApp <b>Invite via Link</b>, a <b>wa.me</b> number link, or a <b>form</b> link. You can paste it without <span className="mono">https://</span>.</p>
       </div>
       <div>
         <span style={lbl}>Notes (internal)</span>

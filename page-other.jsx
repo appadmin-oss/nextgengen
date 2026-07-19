@@ -530,6 +530,85 @@ function MentorApplySection() {
 /* =================== JOIN / APPLICATION =================== */
 const JOIN_DRAFT_KEY = "ngg.join.draft";
 
+/* Shared post-submission success card (students + volunteers). Adapts the
+   attached "Success" design: accent bar, pulsing check badge, kicker pill,
+   reference row, an optional centre WhatsApp/join block, a "what happens next"
+   step grid and two CTAs. `actions` is [{label, onClick|href, primary, external}]. */
+function ApplySuccessCard({ variant = "application", refCode, whatsapp, centreName, actions = [], footNote }) {
+  const cfg = variant === "volunteer" ? {
+    kicker: "VOLUNTEER SIGN-UP RECEIVED", title: "Thank you for stepping up.",
+    subtitle: "Your registration is in. We'll match you to a centre and role based on the current need, and reply within a week.",
+    accent: "#7c4dff", kickerColor: "#5a3fb0", kickerBg: "rgba(124,77,255,0.13)",
+    steps: [
+      { n: 1, title: "Screening", desc: "A quick safeguarding check, as with every volunteer.", color: "#7c4dff" },
+      { n: 2, title: "Placement", desc: "We match you to a centre with the most open need.", color: "#3b5bdb" },
+      { n: 3, title: "Welcome call", desc: "A short call to walk through your first session.", color: "#2f9e44" },
+    ],
+  } : {
+    kicker: "APPLICATION RECEIVED", title: "You're in the queue!",
+    subtitle: "Thanks for applying. We've received your form and will review it within 5 working days.",
+    accent: "#f5b026", kickerColor: "#a07400", kickerBg: "rgba(245,176,38,0.14)",
+    steps: [
+      { n: 1, title: "Review", desc: "Our team checks eligibility and centre capacity.", color: "#3b5bdb" },
+      { n: 2, title: "Confirmation", desc: "You'll get an email with your centre and start date.", color: "#2f9e44" },
+      { n: 3, title: "Orientation", desc: "A short welcome session before it all begins.", color: "#a07400" },
+    ],
+  };
+  const sora = "'Sora','Inter',sans-serif", mono = "'JetBrains Mono',ui-monospace,monospace";
+  const btnStyle = (primary) => ({ flex: "1 1 180px", textAlign: "center", fontFamily: "inherit", fontWeight: primary ? 700 : 600, fontSize: 14, padding: "13px 20px", borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", textDecoration: "none", border: primary ? "none" : "1.5px solid rgba(12,20,50,0.16)", color: primary ? "#0c1432" : "#0a1130", background: primary ? "linear-gradient(135deg,#ffc34d,#f5b026)" : "#fff", boxShadow: primary ? "0 12px 26px -12px rgba(176,124,18,0.7)" : "none" });
+  return (
+    <div style={{ maxWidth: 560, width: "100%", margin: "0 auto", background: "#fff", border: "1px solid #e5e8ee", borderRadius: 24, padding: "44px 40px 40px", boxShadow: "0 24px 60px -30px rgba(12,20,50,0.28)", position: "relative", textAlign: "left" }}>
+      <style>{"@keyframes ascPop{0%{opacity:0;transform:scale(.7)}70%{transform:scale(1.06)}100%{opacity:1;transform:scale(1)}}@keyframes ascPulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,.5)}70%{box-shadow:0 0 0 14px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}.asc-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}@media(max-width:620px){.asc-steps{grid-template-columns:1fr}}"}</style>
+      <div style={{ height: 5, width: 64, borderRadius: 3, background: cfg.accent, margin: "0 auto 28px" }}/>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <div style={{ width: 84, height: 84, borderRadius: "50%", background: "#e9f7ee", display: "grid", placeItems: "center", animation: "ascPop .5s cubic-bezier(.2,.8,.2,1), ascPulse 2.4s ease-in-out .5s infinite" }}>
+          <i className="ph-fill ph-check-circle" style={{ fontSize: 46, color: "#2f9e44" }}/>
+        </div>
+      </div>
+      <div style={{ textAlign: "center", marginTop: 24 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontFamily: mono, fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: cfg.kickerColor, background: cfg.kickerBg, padding: "5px 12px", borderRadius: 999 }}>{cfg.kicker}</span>
+        <h1 style={{ fontFamily: sora, fontWeight: 800, fontSize: "clamp(24px,4vw,32px)", letterSpacing: "-0.02em", lineHeight: 1.15, margin: "16px 0 10px", color: "#0a1130" }}>{cfg.title}</h1>
+        <p style={{ color: "#5a6488", fontSize: 15, lineHeight: 1.6, margin: "0 auto", maxWidth: 420 }}>{cfg.subtitle}</p>
+      </div>
+      {refCode ? (
+        <div style={{ background: "#faf6ec", border: "1px solid #e8dec6", borderRadius: 14, padding: "16px 18px", marginTop: 28, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.06em", color: "#8088a6" }}>REFERENCE</span>
+          <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 600, color: "#0a1130" }}>{refCode}</span>
+        </div>
+      ) : null}
+      {whatsapp ? (
+        <div style={{ marginTop: 14, background: "rgba(37,211,102,0.10)", border: "1px solid rgba(37,211,102,0.4)", borderRadius: 14, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+            <i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 30, color: "#128C3E", flex: "none" }}/>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: sora, fontWeight: 700, fontSize: 14.5, color: "#0a1130" }}>Join {centreName ? centreName + "'s" : "your centre's"} group</div>
+              <div style={{ fontSize: 12.5, color: "#5a6488", marginTop: 1 }}>Timetables, reminders and updates.</div>
+            </div>
+          </div>
+          <a href={whatsapp} target="_blank" rel="noopener noreferrer" style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "#04331b", fontWeight: 800, fontSize: 13.5, padding: "10px 18px", borderRadius: 999, textDecoration: "none" }}><i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 17 }}/> Join</a>
+        </div>
+      ) : null}
+      <h2 style={{ fontFamily: sora, fontWeight: 700, letterSpacing: "0.06em", margin: "30px 0 14px", textTransform: "uppercase", fontSize: 11.5, color: "#5a6488" }}>What happens next</h2>
+      <div className="asc-steps">
+        {cfg.steps.map(s => (
+          <div key={s.n} style={{ border: "1px solid #eef0f4", borderRadius: 14, padding: "16px 14px", textAlign: "left" }}>
+            <span style={{ width: 30, height: 30, borderRadius: 9, display: "inline-grid", placeItems: "center", fontFamily: sora, fontWeight: 800, fontSize: 13, color: "#fff", background: s.color }}>{s.n}</span>
+            <div style={{ fontFamily: sora, fontWeight: 700, fontSize: 14, color: "#0a1130", marginTop: 12 }}>{s.title}</div>
+            <div style={{ fontSize: 12.5, color: "#5a6488", lineHeight: 1.45, marginTop: 5 }}>{s.desc}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 30 }}>
+        {actions.map((a, i) => a.href
+          ? <a key={i} href={a.href} target={a.external ? "_blank" : undefined} rel={a.external ? "noopener noreferrer" : undefined} style={btnStyle(a.primary)}>{a.label}{a.primary ? <i className="ph ph-arrow-right"/> : null}</a>
+          : <button key={i} type="button" onClick={a.onClick} style={btnStyle(a.primary)}>{a.label}{a.primary ? <i className="ph ph-arrow-right"/> : null}</button>
+        )}
+      </div>
+      {footNote ? <p style={{ textAlign: "center", fontFamily: mono, fontSize: 11, color: "#8088a6", margin: "22px 0 0" }}>{footNote}</p> : null}
+    </div>
+  );
+}
+
 function JoinPage({ setPage }) {
   // Restore a saved draft so "we save as you go" is true.
   const [step, setStep] = useState(0);
@@ -812,35 +891,18 @@ function JoinPage({ setPage }) {
               </div>
             )}
             {step === 4 && (
-              <div style={{textAlign:"center", padding:"32px 0"}}>
-                <div className="badge-pin unlocked" style={{width:96, height:96, fontSize:48, margin:"0 auto"}}>✓</div>
-                <h2 className="display" style={{fontSize:56, margin:"24px 0 12px"}}>Application received.</h2>
-                {appRef && (
-                  <div style={{ margin: "0 auto 16px", maxWidth: 360, padding: "14px 16px", borderRadius: 14, background: "var(--bg-sunken, #f4f4f0)", border: "1px solid rgba(12,20,50,0.1)" }}>
-                    <div className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-500)" }}>Your reference</div>
-                    <div className="mono" style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{appRef}</div>
-                    <div style={{ fontSize: 12.5, color: "var(--ink-500)", marginTop: 6 }}>Save this — you can check your status any time with this reference and your email.</div>
-                  </div>
-                )}
-                {appWa && (
-                  <div style={{ margin: "0 auto 20px", maxWidth: 440, padding: "18px 18px 20px", borderRadius: 16, background: "rgba(37,211,102,0.10)", border: "1px solid rgba(37,211,102,0.4)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 6 }}>
-                      <i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 26, color: "#128C3E" }}/>
-                      <span style={{ fontWeight: 800, fontSize: 17, color: "var(--ink-900)" }}>Join your centre's WhatsApp group</span>
-                    </div>
-                    <p style={{ fontSize: 13.5, color: "var(--ink-600, #47506e)", margin: "0 0 14px", lineHeight: 1.5 }}>{data.city ? "This is the group for " + data.city + "." : "Your centre's group."} It's where we share timetables, reminders and updates.</p>
-                    <a href={appWa} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "#04331b", fontWeight: 800, fontSize: 15, padding: "12px 22px", borderRadius: 999, textDecoration: "none" }}>
-                      <i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 20 }}/> Join the group →
-                    </a>
-                  </div>
-                )}
-                <p style={{fontSize:17, color:"var(--ink-500)", maxWidth:480, margin:"0 auto", lineHeight:1.5}}>
-                  We will write back within 5 working days. In the meantime — follow Genius FM and start your streak.
-                </p>
-                <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 32 }}>
-                  {appRef && <button className="btn btn-ghost btn-lg" onClick={() => setPage("contact")}>Check application status</button>}
-                  <button className="btn btn-primary btn-lg" onClick={() => setPage("home")}>Back to home</button>
-                </div>
+              <div style={{ padding: "20px 0 8px" }}>
+                <ApplySuccessCard
+                  variant="application"
+                  refCode={appRef}
+                  whatsapp={appWa}
+                  centreName={data.city}
+                  footNote="A confirmation has been sent to your parent/guardian's email."
+                  actions={[
+                    ...(appRef ? [{ label: "Check application status", onClick: () => setPage("contact"), primary: true }] : []),
+                    { label: "Back to home", onClick: () => setPage("home") },
+                  ]}
+                />
               </div>
             )}
           </div>
@@ -1624,42 +1686,18 @@ function VolunteerRegisterPage({ setPage }) {
 
   if (done) return (
     <div className="page" data-screen-label="Volunteer · done">
-      <section className="section"><div className="container" style={{ maxWidth: 620 }}>
-        <div className="card reveal is-visible" style={{ padding: "48px 40px", textAlign: "center" }}>
-          <div style={{ width: 64, height: 64, margin: "0 auto 20px", borderRadius: "50%", background: "var(--lime)", display: "grid", placeItems: "center", fontSize: 30, color: "var(--navy-900)" }}>✓</div>
-          <h1 className="display" style={{ fontSize: "clamp(32px,4vw,44px)", margin: "0 0 12px" }}>You're in the pipeline.</h1>
-          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6, margin: "0 0 8px" }}>
-            Thank you, {d.firstName.trim() || "friend"}. We review every registration by hand and reply within a week.
-          </p>
-          <p style={{ color: "var(--ink-500)", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
-            Volunteers who work directly with teenagers complete safeguarding screening before their first session.
-          </p>
-          {typeof done === "string" && (
-            <div style={{ marginTop: 22, display: "inline-flex", alignItems: "center", gap: 10, padding: "10px 16px", borderRadius: 12, background: "var(--paper-100, #f4f1e8)", border: "1px solid rgba(12,20,50,0.10)" }}>
-              <span className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", color: "var(--ink-500)" }}>YOUR REFERENCE</span>
-              <span className="mono" style={{ fontSize: 15, fontWeight: 700, color: "var(--navy-900)" }}>{done}</span>
-            </div>
-          )}
-          <p style={{ color: "var(--ink-500)", fontSize: 13, lineHeight: 1.6, margin: "14px 0 0" }}>
-            We've emailed a copy to <b>{d.email.trim()}</b>, along with the Operations Manual. Keep your reference for any follow-up.
-          </p>
-          {doneWa && (
-            <div style={{ margin: "22px auto 0", maxWidth: 440, padding: "18px 18px 20px", borderRadius: 16, background: "rgba(37,211,102,0.10)", border: "1px solid rgba(37,211,102,0.4)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginBottom: 6 }}>
-                <i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 26, color: "#128C3E" }}/>
-                <span style={{ fontWeight: 800, fontSize: 17, color: "var(--navy-900)" }}>Join {centre || "your centre"}'s WhatsApp group</span>
-              </div>
-              <p style={{ fontSize: 13.5, color: "var(--ink-500)", margin: "0 0 14px", lineHeight: 1.5 }}>Meet the team and get timetables, reminders and updates.</p>
-              <a href={doneWa} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "#04331b", fontWeight: 800, fontSize: 15, padding: "12px 22px", borderRadius: 999, textDecoration: "none" }}>
-                <i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 20 }}/> Join the group →
-              </a>
-            </div>
-          )}
-          <div style={{ marginTop: 26, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-            <a className="btn btn-gold btn-lg" href={NGG_HANDBOOK_URL} target="_blank" rel="noopener noreferrer">Read the Operations Manual (PDF) ↗</a>
-            <button className="btn btn-ghost btn-lg" onClick={() => setPage("home")}>Back to home →</button>
-          </div>
-        </div>
+      <section className="section" style={{ padding: "56px 24px" }}><div className="container" style={{ maxWidth: 620 }}>
+        <ApplySuccessCard
+          variant="volunteer"
+          refCode={typeof done === "string" ? done : ""}
+          whatsapp={doneWa}
+          centreName={centre}
+          footNote={"We've emailed a copy to " + (d.email.trim() || "you") + ", with the Operations Manual."}
+          actions={[
+            { label: "Read the Operations Manual (PDF)", href: NGG_HANDBOOK_URL, external: true, primary: true },
+            { label: "Back to home", onClick: () => setPage("home") },
+          ]}
+        />
       </div></section>
     </div>
   );
