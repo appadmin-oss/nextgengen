@@ -1628,7 +1628,7 @@ function VolunteerRegisterPage({ setPage }) {
   // Every field on the volunteer form is required (new fields added later may
   // opt out individually). Consent checkboxes stay optional by nature.
   const ready = role !== "" && centre !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== ""
-    && d.otherName.trim() !== "" && d.sex !== "" && emailOk
+    && d.sex !== "" && emailOk
     && phoneOk && dobOk && d.photoUrl !== "" && d.why.trim() !== ""
     && (!needsFaculty || faculty !== "")
     && (role !== "instructor" || courses.length > 0);
@@ -1639,7 +1639,6 @@ function VolunteerRegisterPage({ setPage }) {
   if (needsFaculty && faculty === "") missing.push("your faculty");
   if (d.firstName.trim() === "") missing.push("first name");
   if (d.lastName.trim() === "") missing.push("last name");
-  if (d.otherName.trim() === "") missing.push("middle name");
   if (!emailOk) missing.push("a valid email");
   if (!phoneOk) missing.push("a phone number");
   if (d.dob === "") missing.push("date of birth");
@@ -1806,7 +1805,7 @@ function VolunteerRegisterPage({ setPage }) {
                     <input id="vol-first" value={d.firstName} onChange={set("firstName")} autoComplete="given-name" placeholder="e.g. Adaeze"/></div>
                   <div className="field"><label htmlFor="vol-last">Last name</label>
                     <input id="vol-last" value={d.lastName} onChange={set("lastName")} autoComplete="family-name" placeholder="e.g. Okafor"/></div>
-                  <div className="field"><label htmlFor="vol-other">Other name</label>
+                  <div className="field"><label htmlFor="vol-other">Other name · optional</label>
                     <input id="vol-other" value={d.otherName} onChange={set("otherName")} autoComplete="additional-name" placeholder="Middle name(s)"/></div>
                   <div className="field"><label htmlFor="vol-dob">Date of birth</label>
                     <input id="vol-dob" type="date" value={d.dob} onChange={set("dob")} max={todayISO} autoComplete="bday"/></div>
@@ -3030,7 +3029,30 @@ function nameFontPx(text, base, maxChars) {
 // off-frame even in a rasteriser that ignores CSS object-fit. Non-Cloudinary
 // URLs pass through unchanged (CSS object-fit still covers them).
 function cardFacePhoto(url, w, h) {
-  return (typeof cldWith === "function") ? cldWith(url, "c_fill,g_face,w_" + w + ",h_" + h + ",f_auto,q_auto:good,e_improve:30") : url;
+  if (!url || url.indexOf("/upload/") === -1) return url;
+  const i = url.indexOf("/upload/");
+  let tail = url.slice(i + 8);                       // "<transform>/v123/id" or "v123/id"
+  const slash = tail.indexOf("/");
+  const seg = slash === -1 ? "" : tail.slice(0, slash);
+  const hasTransform = seg && !/^v\d+$/.test(seg) && /[,_]/.test(seg);
+  const rest = hasTransform ? tail.slice(slash + 1) : tail;
+  let params;
+  if (hasTransform) {
+    // Preserve the admin's edit (gravity, zoom, brighten, sharpen, background) —
+    // only retarget the crop to this frame's aspect so the delivered pixels ARE
+    // the box shape (html2canvas ignores object-fit, so a mismatched aspect
+    // would distort). Drop the stored sizing/crop/aspect; keep everything else.
+    params = seg.split(",").filter(p => p && !/^(w_|h_|c_|ar_|dpr_)/.test(p));
+    if (!params.some(p => /^g_/.test(p))) params.unshift("g_face");
+    params.unshift("c_fill");
+    params.push("w_" + w, "h_" + h);
+    if (!params.some(p => /^f_/.test(p))) params.push("f_auto");
+    if (!params.some(p => /^q_/.test(p))) params.push("q_auto:good");
+  } else {
+    // Raw upload with no transform yet — face-crop to the frame with a light enhance.
+    params = ["c_fill", "g_face", "w_" + w, "h_" + h, "f_auto", "q_auto:good", "e_improve:30"];
+  }
+  return url.slice(0, i + 8) + params.join(",") + "/" + rest;
 }
 
 function CardFront({ card, program, S }) {
