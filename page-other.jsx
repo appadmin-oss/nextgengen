@@ -1299,6 +1299,20 @@ function SummerProfilePage({ setPage }) {
         { label: "Centre", value: m.centre || "—", hint: "Home base" },
         { label: "Cohort", value: m.cohortId || "—", hint: "Class" },
       ];
+  // Milestones — REAL, earned achievements derived from attendance + (for
+  // volunteers) the service game. Only earned badges are shown, so the grid is
+  // always factual; nothing is fabricated.
+  const ac = m.attendanceCount || 0;
+  const milestones = [];
+  if (ac >= 1) milestones.push({ icon: "ph-flag-checkered", color: "#2f9e44", bg: "rgba(47,158,68,0.13)", label: "First check-in" });
+  if (ac >= 5) milestones.push({ icon: "ph-calendar-check", color: "#3b5bdb", bg: "rgba(59,91,219,0.13)", label: "5 " + (isVol ? "sessions" : "days") });
+  if (ac >= 10) milestones.push({ icon: "ph-medal", color: "#a07400", bg: "rgba(245,176,38,0.16)", label: "10 " + (isVol ? "sessions" : "days") });
+  if (ac >= 20) milestones.push({ icon: "ph-trophy", color: "#c0361c", bg: "rgba(224,49,49,0.11)", label: "20 " + (isVol ? "sessions" : "days") });
+  if (isVol && m.game) {
+    if ((m.game.streak || 0) >= 5) milestones.push({ icon: "ph-fire", color: "#c0361c", bg: "rgba(224,49,49,0.11)", label: m.game.streak + "-day streak" });
+    if ((m.game.level || 0) >= 3) milestones.push({ icon: "ph-star", color: "#6a3fc0", bg: "rgba(106,63,192,0.13)", label: "Level " + m.game.level });
+    (m.game.awards || []).forEach(a => milestones.push({ icon: "ph-seal-check", color: "#7c4dff", bg: "rgba(124,77,255,0.13)", label: a.name }));
+  }
   return (
     <div className="page" data-screen-label="Summer profile">
       <section className="section" style={{ paddingTop: 24, paddingBottom: 8 }}>
@@ -1366,6 +1380,22 @@ function SummerProfilePage({ setPage }) {
                   {att.map((a, i) => <span key={i} className="chip chip-lime" title={a.checkInAt}>{a.date}</span>)}
                 </div>}
           </div>
+
+          {/* Milestones — real, earned achievements (attendance + service game). */}
+          {milestones.length > 0 && (
+            <div className="card" style={{ padding: 28, marginTop: 20 }}>
+              <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-500)" }}>Milestones · {milestones.length}</div>
+              <h2 className="display" style={{ fontSize: 22, margin: "8px 0 20px" }}>Earned along the way.</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(96px,1fr))", gap: 14 }}>
+                {milestones.map((b, i) => (
+                  <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, textAlign: "center" }}>
+                    <span style={{ width: 52, height: 52, borderRadius: 14, display: "grid", placeItems: "center", fontSize: 24, background: b.bg, color: b.color }}><i className={"ph-fill " + b.icon}/></span>
+                    <span className="mono" style={{ fontSize: 10, color: "var(--ink-500)", lineHeight: 1.3 }}>{b.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Gamified attendance standing — the in-app award surface (levels,
               points, streak, awards). Mirrors the emailed awards. */}
