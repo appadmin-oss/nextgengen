@@ -1278,32 +1278,78 @@ function SummerProfilePage({ setPage }) {
 
   const m = state.profile;
   const att = m.attendance || [];
+  const isVol = m.kind === "volunteer";
+  const initials = (m.fullName || "?").trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  const title = isVol ? (m.role ? m.role.charAt(0).toUpperCase() + m.role.slice(1) : "Volunteer") : (m.track ? m.track : "Summer student");
+  const chips = [];
+  if (!isVol && m.track) chips.push(m.track);
+  if (isVol && m.faculty) chips.push(m.faculty);
+  (m.courses || []).forEach(c => chips.push(c));
+  if (m.cohortId && !isVol) chips.push(m.cohortId);
+  const tiles = isVol
+    ? [
+        { label: "Sessions", value: m.attendanceCount || 0, hint: "Checked in" },
+        { label: "Hours", value: typeof m.hours === "number" ? m.hours : "—", hint: "Service" },
+        { label: "Level", value: m.game ? m.game.level : "—", hint: m.game ? m.game.levelName : "Standing" },
+        { label: "Streak", value: m.game ? m.game.streak + "d" : "—", hint: "Daily" },
+      ]
+    : [
+        { label: "Days present", value: m.attendanceCount || 0, hint: "This cohort" },
+        { label: "Track", value: m.track || "—", hint: "Craft" },
+        { label: "Centre", value: m.centre || "—", hint: "Home base" },
+        { label: "Cohort", value: m.cohortId || "—", hint: "Class" },
+      ];
   return (
     <div className="page" data-screen-label="Summer profile">
-      <section className="page-hero page-hero-dark" style={{ background: "var(--navy-900)", color: "white", padding: "64px 0 48px" }}>
-        <div className="container" style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
-          {m.photoUrl
-            ? <img src={m.photoUrl} alt="" style={{ width: 96, height: 96, borderRadius: "50%", objectFit: "cover", border: "3px solid var(--gold-500)" }} onError={e => { e.target.style.display = "none"; }}/>
-            : /* No stand-in portraits here — this page represents a real child. */
-              <div aria-hidden="true" style={{ width: 96, height: 96, borderRadius: "50%", background: "var(--navy-700)", border: "3px solid var(--gold-500)", display: "grid", placeItems: "center", fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 34, color: "var(--gold-500)", flexShrink: 0 }}>
-                {(m.fullName || "?").trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase()}
-              </div>}
-          <div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <span className="chip chip-on-dark"><span className="dot dot-gold"/> {m.kind === "volunteer" ? "VOLUNTEER" + (m.role ? " · " + m.role.toUpperCase() : "") : "SUMMER SCHOOL · " + m.cohortId}</span>
-              {m.kind === "volunteer" && (m.safeguardingCleared
+      <section className="section" style={{ paddingTop: 24, paddingBottom: 8 }}>
+        <div className="container" style={{ maxWidth: 900 }}>
+          {/* Cover banner */}
+          <div style={{ height: 150, borderRadius: 18, background: "var(--grad-hero, linear-gradient(158deg,#0c1432,#16224e 58%,#1d2c63))", position: "relative", overflow: "hidden" }}>
+            <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "var(--grad-hero-glow, radial-gradient(46% 60% at 88% 6%, rgba(245,176,38,0.22), transparent 62%))" }}/>
+          </div>
+          {/* Avatar + identity, overlapping the cover */}
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, flexWrap: "wrap", marginTop: -46, padding: "0 8px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 18 }}>
+              <div style={{ width: 104, height: 104, borderRadius: "50%", overflow: "hidden", border: "4px solid #fff", boxShadow: "0 6px 16px -8px rgba(12,20,50,0.35)", flexShrink: 0, background: "var(--navy-700)", display: "grid", placeItems: "center" }}>
+                {m.photoUrl
+                  ? <img src={m.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/>
+                  : <span aria-hidden="true" className="display" style={{ fontWeight: 800, fontSize: 34, color: "var(--gold-500)" }}>{initials}</span>}
+              </div>
+              <div style={{ paddingBottom: 8 }}>
+                <h1 className="display" style={{ fontSize: "clamp(24px,4vw,32px)", letterSpacing: "-0.02em", margin: 0, color: "var(--ink-900)" }}>{m.fullName}</h1>
+                <div className="mono" style={{ fontSize: 12.5, color: "var(--ink-500)", marginTop: 4 }}>{m.handle ? "@" + m.handle + " · " : ""}{m.centre || (isVol ? "Volunteer" : "Summer School")}</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", paddingBottom: 8 }}>
+              <span className="chip"><span className="dot dot-gold"/> {isVol ? "VOLUNTEER" + (m.role ? " · " + m.role.toUpperCase() : "") : "SUMMER SCHOOL"}</span>
+              {isVol && (m.safeguardingCleared
                 ? <span className="chip chip-lime">✓ SAFEGUARDING CLEARED</span>
-                : <span className="chip" style={{ background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.8)" }}>SCREENING PENDING</span>)}
+                : <span className="chip">SCREENING PENDING</span>)}
             </div>
-            <h1 className="display" style={{ fontSize: "clamp(40px,6vw,76px)", margin: "12px 0 6px", color: "white", lineHeight: 0.95 }}>{m.fullName}</h1>
-            <div className="mono" style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.1em" }}>
-              {m.studentId}{m.track ? " · " + m.track : ""}{(m.courses || []).length ? " · " + m.courses.join(" · ") : ""}{m.centre ? " · CACENTRE " + m.centre : ""}{m.handle ? " · @" + m.handle : ""}
-            </div>
+          </div>
+          {/* Title + chips */}
+          <div style={{ padding: "0 8px" }}>
+            <div style={{ fontSize: 15, color: "var(--crimson, #c0361c)", fontWeight: 600, marginTop: 16 }}>{title}</div>
+            {chips.length > 0 && (
+              <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                {chips.map((c, i) => <span key={i} className="mono" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: "rgba(28,42,94,0.06)", color: "var(--ink-700)" }}>{c}</span>)}
+              </div>
+            )}
+          </div>
+          {/* Real stat tiles */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 14, marginTop: 24 }}>
+            {tiles.map((t, i) => (
+              <div key={i} className="card" style={{ padding: 20 }}>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-400)" }}>{t.label}</div>
+                <div className="display" style={{ fontWeight: 800, fontSize: 34, lineHeight: 1, marginTop: 8, color: "var(--ink-900)" }}>{t.value}</div>
+                <div style={{ fontSize: 11.5, color: "var(--ink-500)", marginTop: 6 }}>{t.hint}</div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
-      <section className="section">
-        <div className="container" style={{ maxWidth: 720 }}>
+      <section className="section" style={{ paddingTop: 24 }}>
+        <div className="container" style={{ maxWidth: 900 }}>
           {auth && auth.isSignedIn && (auth.isAdmin || (auth.hasCap && (auth.hasCap("summer") || auth.hasCap("people")))) && state.token
             ? <ProfileCheckin token={state.token} name={m.fullName}/> : null}
           <div className="card" style={{ padding: 28 }}>
