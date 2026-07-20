@@ -466,6 +466,12 @@ function gate_register(array $p): array {
     $pEmail = (string)($d['parentEmail'] ?? '');
     if ($pPhone === '' && $pEmail === '') return ['ok' => false, 'errors' => ['parentPhone' => 'Add a parent phone or email — we need one to get consent.']];
 
+    // A headshot is required by default (same gate as the public apply forms) —
+    // the ID card and roster depend on it. Admin can relax via intake_photo_required.
+    if (intake_photo_required() && trim((string)($p['photoUrl'] ?? '')) === '') {
+        return ['ok' => false, 'error' => 'photo_required'];
+    }
+
     // Duplicate guard: same child name + same parent contact in this cohort.
     $c = summer_ensure_cohort();
     if (empty($p['force'])) {

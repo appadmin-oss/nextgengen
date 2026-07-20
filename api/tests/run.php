@@ -259,10 +259,20 @@ chk('logout revokes the current device session server-side', (function () {
 })());
 
 // ── Posts / newsletter / apply ──
+// Headshots are required on intake by default; the bulk apply/gate tests below
+// don't submit a photo, so relax the gate here and assert the requirement in a
+// dedicated block further down.
+setting_set('intake_photo_required', '0', 'test');
 chk('post publishes with slug', !empty(backend_dispatch('admin.posts.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['kind' => 'blog', 'title' => 'First Post', 'body' => 'Hi', 'status' => 'published']])['slug']));
 chk('public reads published post', count(backend_dispatch('public.posts', ['kind' => 'blog'])['posts']) === 1);
 chk('newsletter idempotent', backend_dispatch('public.newsletter', ['email' => 'sub@example.com'])['ok'] && backend_dispatch('public.newsletter', ['email' => 'sub@example.com'])['ok']);
 chk('apply validates age', backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Kid', 'lastName' => 'Test', 'email' => 'k@example.com', 'phone' => '08031234000', 'dob' => '1985-01-01'])['error'] === 'bad_age');
+// Headshot required on intake (teen + volunteer) when the gate is on (default).
+setting_set('intake_photo_required', '1', 'test');
+chk('apply requires a headshot when the gate is on', backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'No', 'lastName' => 'Photo', 'email' => 'nophoto@example.com', 'phone' => '08031234111', 'dob' => '2012-01-01'])['error'] === 'photo_required');
+chk('apply passes with a valid cloudinary headshot', !empty(backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'With', 'lastName' => 'Photo', 'email' => 'withphoto@example.com', 'phone' => '08031234112', 'dob' => '2012-01-01', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg'])['ok']));
+setting_set('intake_photo_required', '0', 'test');
+chk('apply skips the headshot gate when disabled', !empty(backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Gate', 'lastName' => 'Off', 'email' => 'gateoff@example.com', 'phone' => '08031234113', 'dob' => '2012-01-01'])['ok']));
 
 // ── Volunteer registration (public taxonomy: admin | mentor | instructor) ──
 $vctx = backend_dispatch('public.volunteer.context', []);

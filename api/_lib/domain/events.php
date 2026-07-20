@@ -416,6 +416,12 @@ function volunteer_handbook_url(): string {
     return $origin . '/assets/docs/lcasp-operations-manual-2026.pdf';
 }
 
+/** Is a headshot mandatory on the public intake forms? On by default; an admin
+ *  can turn it off by setting `intake_photo_required` to '0'. */
+function intake_photo_required(): bool {
+    return setting_raw('intake_photo_required') !== '0';
+}
+
 function public_apply(array $p): array {
     $kind = (string)($p['kind'] ?? 'teen');
     if (!in_array($kind, ['teen', 'mentor', 'volunteer'], true)) return ['ok' => false, 'error' => 'bad_kind'];
@@ -497,6 +503,13 @@ function public_apply(array $p): array {
         $visibilityConsent = !empty($p['visibilityConsent']) ? 1 : 0;
     } else {
         $role = substr(trim((string)($p['role'] ?? '')), 0, 60);
+    }
+
+    // A headshot is required on the public intake forms (teen + volunteer) by
+    // default — the ID card, the roster and the status directory all depend on
+    // it. An admin can relax this via the `intake_photo_required` setting.
+    if (in_array($kind, ['teen', 'volunteer'], true) && intake_photo_required() && $photoUrl === '') {
+        return ['ok' => false, 'error' => 'photo_required'];
     }
 
     // Standardised intake: dedupe → persist → reference → notify + acknowledge.

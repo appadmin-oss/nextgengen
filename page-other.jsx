@@ -667,6 +667,7 @@ function JoinPage({ setPage }) {
       const age = dobToAge(data.dob);
       if (age < 10 || age > 17) return "Applicants must be between 10 and 17 years old.";
       if (!data.sex) return "Select the applicant's sex.";
+      if (!data.photoUrl) return "Add a headshot — take or upload a photo to continue.";
     }
     if (s === 2 && data.why.trim().length < 20) {
       return "Give us at least a sentence or two — 20 characters minimum.";
@@ -717,6 +718,7 @@ function JoinPage({ setPage }) {
         bad_age: "Applicants must be between 10 and 17 years old.",
         bad_dob: "Select a valid date of birth.",
         bad_sex: "Select the applicant's sex.",
+        photo_required: "A headshot is required — add a photo and try again.",
         phone_required: "A parent or guardian phone number is required.",
         bad_firstName: "Enter the applicant's first name.",
         bad_lastName: "Enter the applicant's last name.",
@@ -829,7 +831,7 @@ function JoinPage({ setPage }) {
                 {/* Headshot — the site takes the picture (camera-first), with
                     upload + paste-link as fallbacks. Optional at application. */}
                 <div style={{marginTop:6}}>
-                  <PhotoCapture value={data.photoUrl} onChange={(url) => setData(d => ({ ...d, photoUrl: url }))} size={64} label="A friendly headshot (optional)"/>
+                  <PhotoCapture value={data.photoUrl} onChange={(url) => setData(d => ({ ...d, photoUrl: url }))} size={64} label="A friendly headshot (required)"/>
                 </div>
               </div>
             )}
@@ -1623,8 +1625,11 @@ function VolunteerRegisterPage({ setPage }) {
     if (byFaculty && byFaculty[f]) setCourses(cs => cs.filter(c => byFaculty[f].includes(c)));
     if (err) setErr("");
   };
-  const ready = role !== "" && centre !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== "" && d.sex !== "" && emailOk
-    && phoneOk && dobOk
+  // Every field on the volunteer form is required (new fields added later may
+  // opt out individually). Consent checkboxes stay optional by nature.
+  const ready = role !== "" && centre !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== ""
+    && d.otherName.trim() !== "" && d.sex !== "" && emailOk
+    && phoneOk && dobOk && d.photoUrl !== "" && d.why.trim() !== ""
     && (!needsFaculty || faculty !== "")
     && (role !== "instructor" || courses.length > 0);
   // Tell the applicant WHY the button is disabled instead of greying silently.
@@ -1634,11 +1639,14 @@ function VolunteerRegisterPage({ setPage }) {
   if (needsFaculty && faculty === "") missing.push("your faculty");
   if (d.firstName.trim() === "") missing.push("first name");
   if (d.lastName.trim() === "") missing.push("last name");
+  if (d.otherName.trim() === "") missing.push("middle name");
   if (!emailOk) missing.push("a valid email");
   if (!phoneOk) missing.push("a phone number");
   if (d.dob === "") missing.push("date of birth");
   else if (!dobOk) missing.push("volunteers must be 16 or older");
   if (d.sex === "") missing.push("sex");
+  if (d.photoUrl === "") missing.push("a headshot");
+  if (d.why.trim() === "") missing.push("why you");
   if (role === "instructor" && courses.length === 0) missing.push("at least one course");
 
   const submit = async (e) => {
@@ -1668,6 +1676,7 @@ function VolunteerRegisterPage({ setPage }) {
         faculty_required: "Choose your faculty.",
         invalid_faculty: "That faculty isn't available — pick one from the list.",
         phone_required: "A phone number is required — add your number.",
+        photo_required: "A headshot is required — add a photo and try again.",
         bad_email: "That email doesn't look right.",
         bad_dob: "Enter a valid date of birth.",
         dob_too_young: "Volunteers must be at least 16 years old.",
@@ -1797,7 +1806,7 @@ function VolunteerRegisterPage({ setPage }) {
                     <input id="vol-first" value={d.firstName} onChange={set("firstName")} autoComplete="given-name" placeholder="e.g. Adaeze"/></div>
                   <div className="field"><label htmlFor="vol-last">Last name</label>
                     <input id="vol-last" value={d.lastName} onChange={set("lastName")} autoComplete="family-name" placeholder="e.g. Okafor"/></div>
-                  <div className="field"><label htmlFor="vol-other">Other name · optional</label>
+                  <div className="field"><label htmlFor="vol-other">Other name</label>
                     <input id="vol-other" value={d.otherName} onChange={set("otherName")} autoComplete="additional-name" placeholder="Middle name(s)"/></div>
                   <div className="field"><label htmlFor="vol-dob">Date of birth</label>
                     <input id="vol-dob" type="date" value={d.dob} onChange={set("dob")} max={todayISO} autoComplete="bday"/></div>
@@ -1811,10 +1820,10 @@ function VolunteerRegisterPage({ setPage }) {
                     <input id="vol-email" type="email" value={d.email} onChange={set("email")} autoComplete="email" placeholder="you@example.com"/></div>
                   <div className="field"><label htmlFor="vol-phone">Phone</label>
                     <input id="vol-phone" type="tel" value={d.phone} onChange={set("phone")} autoComplete="tel" placeholder="0803 000 0000"/></div>
-                  <div className="field" style={{ gridColumn: "1 / -1" }}><label htmlFor="vol-why">Why you · optional</label>
+                  <div className="field" style={{ gridColumn: "1 / -1" }}><label htmlFor="vol-why">Why you</label>
                     <textarea id="vol-why" rows={3} value={d.why} onChange={set("why")} placeholder="A line or two — craft, experience, or simply why this matters to you."/></div>
-                  <div className="field" style={{ gridColumn: "1 / -1" }}><label>Photo · optional</label>
-                    <PhotoCapture value={d.photoUrl} onChange={(url) => { setD({ ...d, photoUrl: url }); if (err) setErr(""); }} size={72} label="Used on your volunteer ID once approved (optional)"/></div>
+                  <div className="field" style={{ gridColumn: "1 / -1" }}><label>Photo</label>
+                    <PhotoCapture value={d.photoUrl} onChange={(url) => { setD({ ...d, photoUrl: url }); if (err) setErr(""); }} size={72} label="Used on your volunteer ID once approved (required)"/></div>
                   <label className="field" style={{ gridColumn: "1 / -1", display: "flex", gap: 12, alignItems: "flex-start", cursor: "pointer", background: visibilityConsent ? "rgba(159,188,59,0.10)" : "var(--paper-100,#f4f1e8)", border: "1px solid " + (visibilityConsent ? "#9fbc3b" : "rgba(12,20,50,0.10)"), borderRadius: 12, padding: "14px 16px" }}>
                     <input type="checkbox" checked={visibilityConsent} onChange={e => { setVisibilityConsent(e.target.checked); if (err) setErr(""); }} style={{ width: 19, height: 19, marginTop: 1, accentColor: "#7a9c1e", flex: "none" }}/>
                     <span style={{ fontSize: 13.5, lineHeight: 1.5, color: "var(--ink-700)" }}><b>Feature me on the website</b> — I agree that Next Generation Genius may show my photo and first name publicly on its website and status boards to celebrate the team. Optional, and you can withdraw it any time by contacting us.</span>
@@ -2369,6 +2378,7 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
     } catch (e) {
       const c = e.code || (e.detail && e.detail.error);
       if (c === "duplicate_suspect" || (e.detail && e.detail.existing)) { setDupe((e.detail && e.detail.existing) || {}); }
+      else if (c === "photo_required") { setErrors({ _: "A headshot is required — take or upload a photo to register." }); setStep(1); }
       else if (c === "geo_unavailable") { setErrors({ _: "This desk needs your location to register. Allow location access and try again." }); setStep(0); }
       else if (c === "geo_out_of_fence") { const n = (e.detail && e.detail.nearest) || {}; setErrors({ _: "You're outside every registration centre's area" + (n.name ? " — nearest is " + n.name + ", about " + n.distanceM + "m away" : "") + ". Registration is only allowed on-site." }); setStep(0); }
       else if (e.errors || (e.detail && e.detail.errors)) { setErrors(e.errors || e.detail.errors); setStep(0); }
@@ -2588,7 +2598,7 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
         {photoUrl
           ? <button onClick={() => setPhotoUrl("")} style={{ flex: 1, padding: 13, borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Retake</button>
           : <button onClick={openCam} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>{busy ? "Uploading…" : "Open camera"}</button>}
-        <button onClick={onNext} style={{ flex: 1, padding: 13, borderRadius: 12, border: photoUrl ? "none" : "1px solid rgba(255,255,255,.25)", background: photoUrl ? gold : "transparent", color: photoUrl ? goldInk : "#fff", fontWeight: 800, cursor: "pointer" }}>{photoUrl ? "Use photo →" : "Skip for now →"}</button>
+        <button onClick={onNext} disabled={!photoUrl} title={photoUrl ? "" : "A headshot is required"} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: photoUrl ? gold : "rgba(255,255,255,.14)", color: photoUrl ? goldInk : "rgba(255,255,255,.5)", fontWeight: 800, cursor: photoUrl ? "pointer" : "not-allowed" }}>Use photo →</button>
       </div>
       {camOpen && (
         <CameraOverlay
