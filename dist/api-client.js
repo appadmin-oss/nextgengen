@@ -396,9 +396,10 @@
       profiles: {
         extras:       (subjectType, subjectId) => request('/admin/profiles.php' + qs({ subjectType, subjectId })),
         projectUpsert: (data) => request('/admin/profiles.php', { body: Object.assign({ action: 'project_upsert' }, data) }),
-        projectDelete: (id) => request('/admin/profiles.php', { body: { action: 'project_delete', id } }),
+        // Delete is scoped to the subject server-side, so pass the subject too.
+        projectDelete: (subjectType, subjectId, id) => request('/admin/profiles.php', { body: { action: 'project_delete', subjectType, subjectId, id } }),
         noteUpsert:   (data) => request('/admin/profiles.php', { body: Object.assign({ action: 'note_upsert' }, data) }),
-        noteDelete:   (id) => request('/admin/profiles.php', { body: { action: 'note_delete', id } }),
+        noteDelete:   (subjectType, subjectId, id) => request('/admin/profiles.php', { body: { action: 'note_delete', subjectType, subjectId, id } }),
       },
       integrations: {
         list:     () => request('/admin/integrations.php'),

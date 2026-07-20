@@ -426,7 +426,9 @@ function AnalyticsWorkspace() {
   const mintChampions = () => {
     setMinting(true);
     api.admin.championsMint(ws && ws.rankings && ws.rankings.v3 ? ws.rankings.v3.period : "")
-      .then(() => load(filters)).catch(() => {}).finally(() => setMinting(false));
+      .then(() => { toast.success("Champions minted."); load(filters); })
+      .catch(e => toast.error(e.code || e.message || "Couldn't mint champions."))
+      .finally(() => setMinting(false));
   };
 
   const onExport = (kind) => {

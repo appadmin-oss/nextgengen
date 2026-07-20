@@ -2,7 +2,7 @@
 /** Public contact / enquiry form. Stores the message + notifies admins. */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 require_method('POST');
-rate_limit_check('default');
+rate_limit_check('contact');  // each send notifies admins — tighter than default
 
 $body = read_json_body();
 v_require($body, ['name', 'email', 'message']);

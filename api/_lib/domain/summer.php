@@ -54,7 +54,7 @@ function summer_student_public(array $s, bool $withAttendance = false): array {
         $out['attendance'] = $rows;
         $out['attendanceCount'] = count($rows);
         // Curated projects + public mentor notes (real records, admin-managed).
-        if (function_exists('profile_public_extras')) $out += profile_public_extras('student', (string)$s['studentId']);
+        if (function_exists('profile_public_extras')) $out = array_merge($out, profile_public_extras('student', (string)$s['studentId']));
     }
     return $out;
 }

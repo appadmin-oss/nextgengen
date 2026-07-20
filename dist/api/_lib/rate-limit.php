@@ -6,9 +6,33 @@ declare(strict_types=1);
  * without Redis. One file per (key, window).
  */
 
+/**
+ * Code-level safety floors for security-critical buckets. Config.php values
+ * always win; these guarantee a sane throttle exists even on a deployment whose
+ * config predates a new bucket — without them a missing key silently falls back
+ * to the loose 'default' (60/min), which for mail-sending or minor-PII lookups
+ * is a spam-relay / enumeration hazard.
+ */
+function rate_limit_default(string $op): ?array {
+    static $d = [
+        'apply'              => ['max' => 6,  'window' => 60],    // sends an acknowledgement email to a client-supplied address
+        'apply.hour'         => ['max' => 30, 'window' => 3600],  // mail-amplification ceiling per IP
+        'contact'            => ['max' => 5,  'window' => 60],    // notifies admins on every send
+        'donate'             => ['max' => 10, 'window' => 60],    // inserts a row + outbound Paystack call
+        'application.status' => ['max' => 20, 'window' => 300],   // (ref,email) brute-force lookup
+        'summer.profile'     => ['max' => 12, 'window' => 300],   // a minor's name + photo + attendance, by guessable handle
+    ];
+    return $d[$op] ?? null;
+}
+
 function rate_limit_check(string $op): void {
     global $CONFIG;
-    $cfg = $CONFIG['rate_limits'][$op] ?? $CONFIG['rate_limits']['default'];
+    // Config wins; then a hardcoded safety floor; then the loose default; then a
+    // last-resort literal so a missing 'rate_limits' block can never fatal.
+    $cfg = $CONFIG['rate_limits'][$op]
+        ?? rate_limit_default($op)
+        ?? $CONFIG['rate_limits']['default']
+        ?? ['max' => 60, 'window' => 60];
     $max = (int)$cfg['max'];
     $window = (int)$cfg['window'];
     $ip = client_ip();

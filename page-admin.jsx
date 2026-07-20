@@ -1588,27 +1588,33 @@ function SummerRoster({ cohortId }) {
    guardian contact, photo, status. Mirrors admin.summer.student.update. */
 /* One editable project row — seeded from props, saves on demand. */
 function ProjRow({ p, subjectType, subjectId, onChanged }) {
-  const [f, setF] = React.useState({ title: p.title || "", kind: p.kind || "", url: p.url || "", imageUrl: p.imageUrl || "" });
+  const [f, setF] = React.useState({ title: p.title || "", kind: p.kind || "", url: p.url || "", imageUrl: p.imageUrl || "", sortOrder: p.sortOrder || 0 });
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setF(s => ({ ...s, [k]: v }));
   const save = async () => {
     if (f.title.trim() === "") { toast.error("Give the project a title."); return; }
     setBusy(true);
-    try { await NGGApi.admin.profiles.projectUpsert({ subjectType, subjectId, id: p.id, ...f, sortOrder: p.sortOrder || 0 }); onChanged(); }
+    try { await NGGApi.admin.profiles.projectUpsert({ subjectType, subjectId, id: p.id, ...f, sortOrder: Number(f.sortOrder) || 0 }); onChanged(); }
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
-  const del = async () => { try { await NGGApi.admin.profiles.projectDelete(p.id); onChanged(); } catch (e) { toast.error(e.code || e.message); } };
+  const del = async () => {
+    if (!window.confirm("Remove this project from the member's profile? This can't be undone.")) return;
+    setBusy(true);
+    try { await NGGApi.admin.profiles.projectDelete(subjectType, subjectId, p.id); onChanged(); }
+    catch (e) { toast.error(e.code || e.message); setBusy(false); }
+  };
   return (
     <div style={{ border: "1px solid var(--line-cool-soft,#eef0f4)", borderRadius: 10, padding: 10, display: "grid", gap: 6 }}>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        <input className="admin-input" placeholder="Title" value={f.title} onChange={e => set("title", e.target.value)} style={{ flex: "2 1 160px" }}/>
-        <input className="admin-input" placeholder="Label (e.g. CODE · CIVIC)" value={f.kind} onChange={e => set("kind", e.target.value)} style={{ flex: "1 1 120px" }}/>
+        <input className="admin-input" aria-label="Project title" placeholder="Title" value={f.title} onChange={e => set("title", e.target.value)} style={{ flex: "2 1 160px" }}/>
+        <input className="admin-input" aria-label="Project label" placeholder="Label (e.g. CODE · CIVIC)" value={f.kind} onChange={e => set("kind", e.target.value)} style={{ flex: "1 1 120px" }}/>
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <input className="admin-input" placeholder="Link (https://…)" value={f.url} onChange={e => set("url", e.target.value)} style={{ flex: "1 1 150px" }}/>
-        <input className="admin-input" placeholder="Image URL (https://…)" value={f.imageUrl} onChange={e => set("imageUrl", e.target.value)} style={{ flex: "1 1 150px" }}/>
+        <input className="admin-input" aria-label="Project link URL" placeholder="Link (https://…)" value={f.url} onChange={e => set("url", e.target.value)} style={{ flex: "1 1 150px" }}/>
+        <input className="admin-input" aria-label="Project image URL" placeholder="Image URL (https://…)" value={f.imageUrl} onChange={e => set("imageUrl", e.target.value)} style={{ flex: "1 1 150px" }}/>
+        <input className="admin-input" type="number" aria-label="Sort order (lower shows first)" title="Sort order — lower shows first" placeholder="Sort" value={f.sortOrder} onChange={e => set("sortOrder", e.target.value)} style={{ flex: "0 0 68px" }}/>
         <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? "…" : "Save"}</button>
-        <button className="btn btn-ghost btn-sm" onClick={del} title="Remove" style={{ color: "#b03535" }}>✕</button>
+        <button className="btn btn-ghost btn-sm" onClick={del} disabled={busy} title="Remove" aria-label="Remove project" style={{ color: "#b03535" }}>✕</button>
       </div>
     </div>
   );
@@ -1623,11 +1629,16 @@ function NoteRow({ n, subjectType, subjectId, onChanged }) {
     try { await NGGApi.admin.profiles.noteUpsert({ subjectType, subjectId, id: n.id, author: f.author, note: f.note, isPublic: f.isPublic }); onChanged(); }
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
-  const del = async () => { try { await NGGApi.admin.profiles.noteDelete(n.id); onChanged(); } catch (e) { toast.error(e.code || e.message); } };
+  const del = async () => {
+    if (!window.confirm("Delete this mentor note? This can't be undone.")) return;
+    setBusy(true);
+    try { await NGGApi.admin.profiles.noteDelete(subjectType, subjectId, n.id); onChanged(); }
+    catch (e) { toast.error(e.code || e.message); setBusy(false); }
+  };
   return (
     <div style={{ border: "1px solid var(--line-cool-soft,#eef0f4)", borderRadius: 10, padding: 10, display: "grid", gap: 6 }}>
-      <input className="admin-input" placeholder="Author (mentor name)" value={f.author} onChange={e => setF(s => ({ ...s, author: e.target.value }))}/>
-      <textarea className="admin-input" rows={2} placeholder="Note…" value={f.note} onChange={e => setF(s => ({ ...s, note: e.target.value }))} style={{ resize: "vertical" }}/>
+      <input className="admin-input" aria-label="Note author" placeholder="Author (mentor name)" value={f.author} onChange={e => setF(s => ({ ...s, author: e.target.value }))}/>
+      <textarea className="admin-input" rows={2} aria-label="Mentor note" placeholder="Note…" value={f.note} onChange={e => setF(s => ({ ...s, note: e.target.value }))} style={{ resize: "vertical" }}/>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: f.isPublic ? "#2f9e44" : "var(--ink-500)" }}>
           <input type="checkbox" checked={f.isPublic} onChange={e => setF(s => ({ ...s, isPublic: e.target.checked }))} style={{ width: 16, height: 16 }}/>
@@ -1635,7 +1646,7 @@ function NoteRow({ n, subjectType, subjectId, onChanged }) {
         </label>
         <span style={{ flex: 1 }}/>
         <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? "…" : "Save"}</button>
-        <button className="btn btn-ghost btn-sm" onClick={del} title="Remove" style={{ color: "#b03535" }}>✕</button>
+        <button className="btn btn-ghost btn-sm" onClick={del} disabled={busy} title="Remove" aria-label="Delete note" style={{ color: "#b03535" }}>✕</button>
       </div>
     </div>
   );
@@ -1646,24 +1657,35 @@ function ProfileExtrasEditor({ subjectType, subjectId }) {
   const [open, setOpen] = React.useState(false);
   const [np, setNp] = React.useState({ title: "", kind: "", url: "", imageUrl: "" });
   const [nn, setNn] = React.useState({ author: "", note: "", isPublic: true });
-  const load = () => NGGApi.admin.profiles.extras(subjectType, subjectId).then(setD).catch(() => setD({ projects: [], notes: [] }));
+  const [addingP, setAddingP] = React.useState(false);
+  const [addingN, setAddingN] = React.useState(false);
+  // Distinguish a real load failure from a genuinely empty profile so the panel
+  // never shows a fake "No projects yet." when the data simply didn't load.
+  const load = () => NGGApi.admin.profiles.extras(subjectType, subjectId).then(setD).catch(() => setD({ error: true }));
   React.useEffect(() => { if (open && !d) load(); }, [open]);
   const addProj = async () => {
     if (np.title.trim() === "") { toast.error("Give the project a title."); return; }
+    setAddingP(true);
     try { await NGGApi.admin.profiles.projectUpsert({ subjectType, subjectId, ...np }); setNp({ title: "", kind: "", url: "", imageUrl: "" }); load(); }
-    catch (e) { toast.error(e.code || e.message); }
+    catch (e) { toast.error(e.code || e.message); } finally { setAddingP(false); }
   };
   const addNote = async () => {
     if (nn.note.trim() === "") { toast.error("Write the note first."); return; }
+    setAddingN(true);
     try { await NGGApi.admin.profiles.noteUpsert({ subjectType, subjectId, ...nn }); setNn({ author: "", note: "", isPublic: true }); load(); }
-    catch (e) { toast.error(e.code || e.message); }
+    catch (e) { toast.error(e.code || e.message); } finally { setAddingN(false); }
   };
   return (
     <div style={{ marginTop: 14, borderTop: "1px solid var(--line-cool-soft,#eef0f4)", paddingTop: 12 }}>
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)} aria-expanded={open}>
         {open ? "Hide profile projects & notes ▴" : "Profile projects & mentor notes ▾"}
       </button>
-      {open && (d === null ? <div className="dash-spinner" style={{ margin: "16px auto" }}/> : (
+      {open && (d === null ? <div className="dash-spinner" style={{ margin: "16px auto" }}/> : d.error ? (
+        <div style={{ marginTop: 12, fontSize: 13, color: "var(--ink-500)", display: "flex", alignItems: "center", gap: 10 }}>
+          Couldn't load projects &amp; notes.
+          <button className="btn btn-ghost btn-sm" onClick={() => { setD(null); load(); }}>Retry</button>
+        </div>
+      ) : (
         <div style={{ marginTop: 12, display: "grid", gap: 18 }}>
           <div>
             <div className="mono" style={{ fontSize: 10.5, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>Public projects · shown on the member's profile</div>
@@ -1672,10 +1694,10 @@ function ProfileExtrasEditor({ subjectType, subjectId }) {
               {!(d.projects || []).length && <div className="admin-cell-sub" style={{ fontSize: 12 }}>No projects yet.</div>}
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
-              <input className="admin-input" placeholder="New project title" value={np.title} onChange={e => setNp(s => ({ ...s, title: e.target.value }))} style={{ flex: "2 1 150px" }}/>
-              <input className="admin-input" placeholder="Label" value={np.kind} onChange={e => setNp(s => ({ ...s, kind: e.target.value }))} style={{ flex: "1 1 100px" }}/>
-              <input className="admin-input" placeholder="Link (optional)" value={np.url} onChange={e => setNp(s => ({ ...s, url: e.target.value }))} style={{ flex: "1 1 120px" }}/>
-              <button className="btn btn-primary btn-sm" onClick={addProj}>+ Add</button>
+              <input className="admin-input" aria-label="New project title" placeholder="New project title" value={np.title} onChange={e => setNp(s => ({ ...s, title: e.target.value }))} style={{ flex: "2 1 150px" }}/>
+              <input className="admin-input" aria-label="New project label" placeholder="Label" value={np.kind} onChange={e => setNp(s => ({ ...s, kind: e.target.value }))} style={{ flex: "1 1 100px" }}/>
+              <input className="admin-input" aria-label="New project link" placeholder="Link (optional)" value={np.url} onChange={e => setNp(s => ({ ...s, url: e.target.value }))} style={{ flex: "1 1 120px" }}/>
+              <button className="btn btn-primary btn-sm" onClick={addProj} disabled={addingP}>{addingP ? "…" : "+ Add"}</button>
             </div>
           </div>
           <div>
@@ -1685,12 +1707,12 @@ function ProfileExtrasEditor({ subjectType, subjectId }) {
               {!(d.notes || []).length && <div className="admin-cell-sub" style={{ fontSize: 12 }}>No notes yet.</div>}
             </div>
             <div style={{ border: "1px dashed var(--cream-200,#d9d2c0)", borderRadius: 10, padding: 10, marginTop: 8, display: "grid", gap: 6 }}>
-              <input className="admin-input" placeholder="Author (defaults to you)" value={nn.author} onChange={e => setNn(s => ({ ...s, author: e.target.value }))}/>
-              <textarea className="admin-input" rows={2} placeholder="Add a mentor note…" value={nn.note} onChange={e => setNn(s => ({ ...s, note: e.target.value }))} style={{ resize: "vertical" }}/>
+              <input className="admin-input" aria-label="New note author" placeholder="Author (defaults to you)" value={nn.author} onChange={e => setNn(s => ({ ...s, author: e.target.value }))}/>
+              <textarea className="admin-input" rows={2} aria-label="New mentor note" placeholder="Add a mentor note…" value={nn.note} onChange={e => setNn(s => ({ ...s, note: e.target.value }))} style={{ resize: "vertical" }}/>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600 }}><input type="checkbox" checked={nn.isPublic} onChange={e => setNn(s => ({ ...s, isPublic: e.target.checked }))} style={{ width: 16, height: 16 }}/>Public on profile</label>
                 <span style={{ flex: 1 }}/>
-                <button className="btn btn-primary btn-sm" onClick={addNote}>+ Add note</button>
+                <button className="btn btn-primary btn-sm" onClick={addNote} disabled={addingN}>{addingN ? "…" : "+ Add note"}</button>
               </div>
             </div>
           </div>
@@ -1999,7 +2021,7 @@ function AdminEvents() {
               </div>
               <div>
                 <div className="admin-event-title">{ev.title}</div>
-                <div className="mono admin-event-meta">{ev.kind} · CACENTRE {ev.centre} · {ev.location || ""}</div>
+                <div className="mono admin-event-meta">{ev.kind} · {ev.centre} · {ev.location || ""}</div>
               </div>
               <span className={"chip status-" + (ev.status || "draft")} style={{marginLeft:"auto"}}>{ev.status || "draft"}{ev.isPublic ? "" : " · internal"}</span>
             </button>
@@ -3005,17 +3027,19 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
 function AdminSubmissions({ assignment, onClose }) {
   const { panelRef, close, onInput } = useAdminDrawer(onClose, false);
   const [data, setData] = React.useState(null);
-  const load = () => NGGApi.admin.assignments.submissions(assignment.assignmentId)
-    .then(setData).catch(e => toast.error(e.code || e.message));
+  const [err, setErr] = React.useState("");
+  const load = () => { setErr(""); return NGGApi.admin.assignments.submissions(assignment.assignmentId)
+    .then(setData).catch(e => { setErr(e.code || e.message || "load_failed"); }); };
   React.useEffect(() => { load(); }, []);
   return (
     <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
           <h3>Submissions · {assignment.title}</h3>
-          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close} aria-label="Close">✕</button>
         </div>
-        {!data ? <div className="dash-spinner"/> :
+        {err ? <div className="admin-empty">Couldn't load submissions. <button className="btn btn-ghost btn-sm" onClick={() => { setData(null); load(); }}>Retry</button></div> :
+          !data ? <div className="dash-spinner"/> :
           data.submissions.length === 0 ? <div className="admin-empty">No submissions yet.</div> :
           <div className="admin-sub-list">
             {data.submissions.map(s => (
@@ -3084,9 +3108,10 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
 function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
   const { panelRef, close, onInput } = useAdminDrawer(onClose, false);
   const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
   const [mentors, setMentors] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
-  const load = () => NGGApi.admin.memberDetail(memberId).then(r => setD(r.detail)).catch(e => toast.error(e.code || e.message));
+  const load = () => { setErr(""); return NGGApi.admin.memberDetail(memberId).then(r => setD(r.detail)).catch(e => { setErr(e.code || e.message || "load_failed"); }); };
   React.useEffect(() => { load(); NGGApi.admin.mentors.list().then(r => setMentors(r.mentors || [])).catch(() => {}); /* eslint-disable-next-line */ }, [memberId]);
   const STATUS_LABEL = { active: "Activate", suspended: "Suspend", "graduated-ngg": "Graduate from NGG", "graduated-vanguard": "Graduate as Vanguard", inactive: "Deactivate" };
   const setStatus = async (status) => {
@@ -3106,9 +3131,10 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
           <h3>{m ? m.fullName : "Member"}</h3>
-          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
+          <button type="button" className="admin-drawer-close" onClick={close} aria-label="Close">✕</button>
         </div>
-        {!d ? <div className="dash-spinner"/> : (
+        {err ? <div className="admin-empty">Couldn't load this member. <button className="btn btn-ghost btn-sm" onClick={() => { setD(null); load(); }}>Retry</button></div> :
+         !d ? <div className="dash-spinner"/> : (
           <div className="admin-detail">
             <div className="admin-detail-top">
               <div>
@@ -3116,7 +3142,7 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
                 <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                   <span className={"chip status-" + m.status}>{m.status}</span>
                   <span className="chip">{m.type}</span>
-                  <span className="chip">CACENTRE {m.centre}</span>
+                  <span className="chip">{m.centre}</span>
                   {m.track && <span className="chip">{m.track}</span>}
                   {m.role && m.role !== "member" && <span className="chip chip-gold">{m.role}</span>}
                 </div>
@@ -3125,11 +3151,11 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
             </div>
 
             <div className="admin-detail-stats">
-              <div><b>{d.stats.level}</b><span>Level</span></div>
-              <div><b>{d.stats.streak}</b><span>Streak</span></div>
-              <div><b>{d.stats.xp}</b><span>XP</span></div>
-              <div><b>{d.progress.verified}/{d.progress.total}</b><span>Missions</span></div>
-              <div><b>{d.journal.length}</b><span>Journals</span></div>
+              <div><b>{(d.stats || {}).level ?? "—"}</b><span>Level</span></div>
+              <div><b>{(d.stats || {}).streak ?? "—"}</b><span>Streak</span></div>
+              <div><b>{(d.stats || {}).xp ?? "—"}</b><span>XP</span></div>
+              <div><b>{(d.progress || {}).verified ?? 0}/{(d.progress || {}).total ?? 0}</b><span>Missions</span></div>
+              <div><b>{(d.journal || []).length}</b><span>Journals</span></div>
             </div>
 
             <div className="admin-detail-section">
@@ -4423,11 +4449,11 @@ function SummerCentres() {
   const add = async (e) => {
     e && e.preventDefault();
     setBusy(true);
-    try { await NGGApi.admin.registration.centreUpsert({ ...d, capacity: d.capacity === "" ? 0 : parseInt(d.capacity, 10) || 0 }); setD({ name: "", code: "", color: "#76B043", capacity: "" }); toast.success("Centre added — open Edit to add its address, lead and contacts."); load(); }
+    try { await NGGApi.admin.registration.centreUpsert({ ...d, capacity: d.capacity === "" ? 0 : parseInt(d.capacity, 10) || 0 }); invalidateCentreOptCache(); setD({ name: "", code: "", color: "#76B043", capacity: "" }); toast.success("Centre added — open Edit to add its address, lead and contacts."); load(); }
     catch (e2) { toast.error(e2.code === "code_taken" ? "That code is already used." : "Check the name (2+) and code (1–4 letters)."); }
     finally { setBusy(false); }
   };
-  const remove = async (c) => { if (!(await dialog.confirm({ title: "Remove " + c.name + "?", body: "Existing students keep their IDs; the centre just stops being offered.", cta: "Remove" }))) return; try { await NGGApi.admin.registration.centreDelete(c.centreId); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const remove = async (c) => { if (!(await dialog.confirm({ title: "Remove " + c.name + "?", body: "Existing students keep their IDs; the centre just stops being offered.", cta: "Remove" }))) return; try { await NGGApi.admin.registration.centreDelete(c.centreId); invalidateCentreOptCache(); load(); } catch (e) { toast.error(e.code || e.message); } };
   const geoLabel = (c) => c.lat == null ? <span className="chip status-archived">— unmapped</span> : c.geofence ? <span className="chip chip-lime">🟢 fence on · {c.radiusM || 150}m</span> : <span className="chip">mapped · off</span>;
   const toggle = (c, mode) => setOpenId(openId === c.centreId + ":" + mode ? "" : c.centreId + ":" + mode);
   if (err) return <ErrorState title="Couldn't load centres" code={err} onRetry={load}/>;
@@ -4504,6 +4530,7 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
         phone: f.phone, email: f.email, meetDays: f.meetDays, meetTime: f.meetTime, notes: f.notes,
         whatsappUrl: f.whatsappUrl.trim(),
       });
+      invalidateCentreOptCache();
       toast.success("Centre saved."); onSaved();
     } catch (e) {
       toast.error(e.code === "code_taken" ? "That code is already used." : e.code === "bad_email" ? "That email address isn't valid." : e.code === "bad_whatsapp" ? "The WhatsApp link must start with https://" : e.code === "bad_lead" ? "Pick a current volunteer as lead." : e.code === "bad_color" ? "Pick a valid colour." : (e.code || e.message));
@@ -4841,6 +4868,10 @@ function FieldTextarea({ label, value, onChange, rows }) {
 // centres an admin actually configured — not a hard-coded pair. A newly added
 // centre becomes selectable everywhere immediately.
 let _centreOptCache = null;
+// Called after any centre is added/edited/removed so every cached <select>
+// refetches the live list on next mount (otherwise new centres stay invisible
+// until a full reload). Hoisted, so the editor handlers above can call it.
+function invalidateCentreOptCache() { _centreOptCache = null; }
 function useCentreOptions() {
   const [names, setNames] = React.useState(_centreOptCache || []);
   React.useEffect(() => {

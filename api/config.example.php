@@ -259,6 +259,12 @@ return [
         'circle.lookup'=> ['max' => 6,   'window' => 300], // guardian invite-code lookup: safeguarding throttle (a 6-digit code → a child's name)
         'circle.connect'=> ['max' => 5,  'window' => 600], // guardian pairing: consumes a code, tighter still
         'id.resend'    => ['max' => 60,  'window' => 300], // admin resend-ID: guards against accidental mass re-send
+        'apply'        => ['max' => 6,   'window' => 60],  // intake: sends an acknowledgement email to a client-supplied address
+        'apply.hour'   => ['max' => 30,  'window' => 3600],// intake: mail-amplification ceiling per IP (checked alongside 'apply')
+        'contact'      => ['max' => 5,   'window' => 60],  // contact form: notifies admins on every send
+        'donate'       => ['max' => 10,  'window' => 60],  // donation init: inserts a row + outbound Paystack call
+        'application.status' => ['max' => 20, 'window' => 300], // self-service status: throttle (ref,email) brute-force
+        'summer.profile' => ['max' => 12, 'window' => 300],// public student profile: minor PII by guessable handle
         'qr'           => ['max' => 240, 'window' => 60],  // public QR image (referenced by emails; high because clients refetch)
         'hook'         => ['max' => 120, 'window' => 60],  // inbound webhook bursts
         'default'      => ['max' => 60,  'window' => 60],

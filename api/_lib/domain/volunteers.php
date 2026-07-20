@@ -121,7 +121,7 @@ function volunteer_public(array $v, bool $withAttendance = false): array {
         $out['attendanceCount'] = count($rows);
         $out += volunteer_ledger((string)$v['volunteerId']);
         // Curated projects + public mentor notes (real records, admin-managed).
-        if (function_exists('profile_public_extras')) $out += profile_public_extras('volunteer', (string)$v['volunteerId']);
+        if (function_exists('profile_public_extras')) $out = array_merge($out, profile_public_extras('volunteer', (string)$v['volunteerId']));
     }
     return $out;
 }

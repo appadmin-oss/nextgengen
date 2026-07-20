@@ -1,6 +1,8 @@
 <?php
 /** Paystack redirects here after payment — verify + show a thank-you page. */
 require_once __DIR__ . '/../_lib/bootstrap.php';
+require_method('GET');  // Paystack redirects here via GET
+rate_limit_check('default');  // stop reference enumeration / repeat verify calls
 $ref = (string)($_GET['reference'] ?? $_GET['trxref'] ?? '');
 $r = $ref !== '' ? donation_verify($ref) : ['status' => ''];
 $paid = ($r['status'] ?? '') === 'paid';

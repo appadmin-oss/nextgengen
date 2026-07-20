@@ -58,13 +58,20 @@ function profile_public_extras(string $type, string $id): array {
 }
 
 /* ── Admin: manage projects + notes ─────────────────────────────────────────
-   Cap-gated on 'people' (the same surface that edits members/volunteers). */
+   Cap-gated per subject: students sit under the summer programme, volunteers
+   under people management — mirroring the sibling editors these panels live in,
+   so a summer_admin editing a student isn't locked out by a 'people'-only gate. */
+
+/** Capability that owns a subject's profile extras. */
+function profile_cap_for(string $type): string {
+    return $type === 'student' ? 'summer' : 'people';
+}
 
 function admin_profile_extras_get(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $type = (string)($p['subjectType'] ?? '');
     $id = (string)($p['subjectId'] ?? '');
     if (!in_array($type, PROFILE_SUBJECT_TYPES, true)) return ['ok' => false, 'error' => 'bad_subject'];
+    $g = admin_cap_gate($p, profile_cap_for($type)); if (!$g['ok']) return $g;
     $projects = db_all('SELECT id, title, kind, url, imageUrl, sortOrder FROM profile_projects WHERE subjectType = ? AND subjectId = ? ORDER BY sortOrder ASC, id ASC', [$type, $id]);
     $notes = db_all('SELECT id, author, note, isPublic, createdAt FROM profile_notes WHERE subjectType = ? AND subjectId = ? ORDER BY id DESC', [$type, $id]);
     return ['ok' => true, 'projects' => array_map(fn($r) => [
@@ -77,10 +84,10 @@ function admin_profile_extras_get(array $p): array {
 }
 
 function admin_profile_project_upsert(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $type = (string)($p['subjectType'] ?? '');
     $id = (string)($p['subjectId'] ?? '');
     if (!in_array($type, PROFILE_SUBJECT_TYPES, true) || !profile_subject_exists($type, $id)) return ['ok' => false, 'error' => 'bad_subject'];
+    $g = admin_cap_gate($p, profile_cap_for($type)); if (!$g['ok']) return $g;
     $title = substr(trim((string)($p['title'] ?? '')), 0, 120);
     if ($title === '') return ['ok' => false, 'error' => 'title_required'];
     $kind = substr(trim((string)($p['kind'] ?? '')), 0, 48);
@@ -99,18 +106,23 @@ function admin_profile_project_upsert(array $p): array {
 }
 
 function admin_profile_project_delete(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-    $n = db_exec('DELETE FROM profile_projects WHERE id = ?', [(int)($p['id'] ?? 0)]);
+    $type = (string)($p['subjectType'] ?? '');
+    $id = (string)($p['subjectId'] ?? '');
+    if (!in_array($type, PROFILE_SUBJECT_TYPES, true)) return ['ok' => false, 'error' => 'bad_subject'];
+    $g = admin_cap_gate($p, profile_cap_for($type)); if (!$g['ok']) return $g;
+    // Scope the delete to the (subjectType,subjectId) shown in the editor so an
+    // admin can never destroy a row by id alone (matches the upsert ownership check).
+    $n = db_exec('DELETE FROM profile_projects WHERE id = ? AND subjectType = ? AND subjectId = ?', [(int)($p['id'] ?? 0), $type, $id]);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
-    audit('profile.project.delete', $g['requester']['memberId'], (string)($p['id'] ?? ''), [], (string)($p['ip'] ?? ''));
+    audit('profile.project.delete', $g['requester']['memberId'], $type . ':' . $id, ['id' => (int)($p['id'] ?? 0)], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
 
 function admin_profile_note_upsert(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $type = (string)($p['subjectType'] ?? '');
     $id = (string)($p['subjectId'] ?? '');
     if (!in_array($type, PROFILE_SUBJECT_TYPES, true) || !profile_subject_exists($type, $id)) return ['ok' => false, 'error' => 'bad_subject'];
+    $g = admin_cap_gate($p, profile_cap_for($type)); if (!$g['ok']) return $g;
     $note = substr(trim((string)($p['note'] ?? '')), 0, 2000);
     if ($note === '') return ['ok' => false, 'error' => 'note_required'];
     // Author defaults to the acting admin's name when left blank.
@@ -128,9 +140,12 @@ function admin_profile_note_upsert(array $p): array {
 }
 
 function admin_profile_note_delete(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-    $n = db_exec('DELETE FROM profile_notes WHERE id = ?', [(int)($p['id'] ?? 0)]);
+    $type = (string)($p['subjectType'] ?? '');
+    $id = (string)($p['subjectId'] ?? '');
+    if (!in_array($type, PROFILE_SUBJECT_TYPES, true)) return ['ok' => false, 'error' => 'bad_subject'];
+    $g = admin_cap_gate($p, profile_cap_for($type)); if (!$g['ok']) return $g;
+    $n = db_exec('DELETE FROM profile_notes WHERE id = ? AND subjectType = ? AND subjectId = ?', [(int)($p['id'] ?? 0), $type, $id]);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
-    audit('profile.note.delete', $g['requester']['memberId'], (string)($p['id'] ?? ''), [], (string)($p['ip'] ?? ''));
+    audit('profile.note.delete', $g['requester']['memberId'], $type . ':' . $id, ['id' => (int)($p['id'] ?? 0)], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }

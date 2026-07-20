@@ -1,7 +1,11 @@
 <?php
 require_once __DIR__ . '/../_lib/bootstrap.php';
 require_method('POST');
-rate_limit_check('default');
+// Each accepted apply sends an acknowledgement email to a client-supplied
+// address plus an admin alert, and the dedup guard is per-email — so a tight
+// per-minute AND per-hour cap is needed to stop this becoming a spam relay.
+rate_limit_check('apply');
+rate_limit_check('apply.hour');
 
 $body = read_json_body();
 // Standardised intake: structured name, required phone, required DOB.

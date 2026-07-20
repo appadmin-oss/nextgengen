@@ -1481,7 +1481,9 @@ function SummerProfilePage({ setPage }) {
 
           {/* Instructor's own class roster — token + registered email gate */}
           {m.kind === "volunteer" && m.role === "instructor" && (m.courses || []).length > 0 && (
-            <InstructorRoster token={(window.location.pathname.split("/").filter(Boolean)[1]) || ""}/>
+            /* Use the resolved check-in token, not the URL segment — on /s/<handle>
+               routes the segment is the handle, which the roster gate rejects. */
+            <InstructorRoster token={state.token}/>
           )}
         </div>
       </section>
@@ -1694,6 +1696,7 @@ function HandbookSummary() {
 
 function VolunteerRegisterPage({ setPage }) {
   const [ctx, setCtx] = React.useState(null);
+  const [ctxErr, setCtxErr] = React.useState(false);
   const [role, setRole] = React.useState(() => {
     const r = new URLSearchParams(window.location.search).get("role") || "";
     return VOL_LANES.some(l => l.key === r) ? r : "";
@@ -1708,11 +1711,16 @@ function VolunteerRegisterPage({ setPage }) {
   const [doneWa, setDoneWa] = React.useState("");
   const [err, setErr] = React.useState("");
 
-  React.useEffect(() => {
+  const loadCtx = React.useCallback(() => {
+    setCtxErr(false);
     NGGApi.public.volunteer.context()
-      .then(setCtx)
-      .catch(() => setCtx({ open: true, courses: ["Coding & Robotics", "Design & Media", "Public Speaking", "Chess & Strategy"], faculties: ["STEM", "Arts & Media", "Literacy & Languages", "Leadership & Life Skills", "Sports & Wellbeing"], centres: [] }));
+      .then(r => { setCtx(r); if (!(r && r.centres && r.centres.length)) setCtxErr(true); })
+      // Centres are validated server-side against the live catalogue, so we can't
+      // safely fake them on failure — mark an error and let the applicant retry
+      // rather than stranding them at an empty, unsubmittable centre dropdown.
+      .catch(() => { setCtx({ open: true, courses: [], faculties: [], centres: [] }); setCtxErr(true); });
   }, []);
+  React.useEffect(() => { loadCtx(); }, [loadCtx]);
 
   const set = (k) => (e) => { setD({ ...d, [k]: e.target.value }); if (err) setErr(""); };
   const toggleCourse = (c) => setCourses(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]);
@@ -1864,12 +1872,19 @@ function VolunteerRegisterPage({ setPage }) {
                   {stepNo("02", "Where you'll serve")}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }} className="vol-fields">
                     <div className="field"><label htmlFor="vol-centre">Centre</label>
-                      <select id="vol-centre" value={centre} onChange={(e) => { setCentre(e.target.value); if (err) setErr(""); }}>
-                        <option value="" disabled>Select a centre…</option>
-                        {(ctx && ctx.centres ? ctx.centres : []).map(c => (
-                          <option key={c.name} value={c.name}>{c.name}{c.code ? " · " + c.code : ""}</option>
-                        ))}
-                      </select></div>
+                      {ctxErr ? (
+                        <div style={{ fontSize: 13.5, color: "var(--ink-500)", display: "flex", alignItems: "center", gap: 10, padding: "10px 0" }}>
+                          Couldn't load centres.
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={loadCtx}>Retry</button>
+                        </div>
+                      ) : (
+                        <select id="vol-centre" value={centre} onChange={(e) => { setCentre(e.target.value); if (err) setErr(""); }}>
+                          <option value="" disabled>Select a centre…</option>
+                          {(ctx && ctx.centres ? ctx.centres : []).map(c => (
+                            <option key={c.name} value={c.name}>{c.name}{c.code ? " · " + c.code : ""}</option>
+                          ))}
+                        </select>
+                      )}</div>
                     {needsFaculty && (
                       <div className="field"><label htmlFor="vol-faculty">Faculty</label>
                         <select id="vol-faculty" value={faculty} onChange={(e) => chooseFaculty(e.target.value)}>
@@ -2014,7 +2029,7 @@ function CirclePortal({ setPage }) {
           if (rest.length) { try { localStorage.setItem(CIRCLE_TOKEN_KEY, rest[0]); } catch (_) {} setToken(rest[0]); return loadDash(rest[0]); }
           try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {}
           setToken(""); setDash(null); setStep("role");
-        } else setErr(e.code || e.message);
+        } else setErr(humanizeError(e.message, e.code));
       })
       .finally(() => setBusy(false));
   }, []);
@@ -2043,7 +2058,7 @@ function CirclePortal({ setPage }) {
   const submitCode = async () => {
     setBusy(true); setErr("");
     try { const r = await NGGApi.public.circle.lookup(code); setStudent(r.student); setStep("verify"); }
-    catch (e) { setErr((e.code === "not_found") ? "No student found for that code. Check the digits and try again." : (e.code || e.message)); }
+    catch (e) { setErr((e.code === "not_found") ? "No student found for that code. Check the digits and try again." : humanizeError(e.message, e.code)); }
     finally { setBusy(false); }
   };
   const connect = async () => {
@@ -2053,7 +2068,7 @@ function CirclePortal({ setPage }) {
       try { localStorage.setItem(CIRCLE_TOKEN_KEY, r.token); } catch (_) {}
       circleTokens.add(r.token);
       setToken(r.token); await loadDash(r.token); flash("Connected securely ✓");
-    } catch (e) { setErr(e.code || e.message); } finally { setBusy(false); }
+    } catch (e) { setErr(humanizeError(e.message, e.code)); } finally { setBusy(false); }
   };
   const unlink = () => { try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {} circleTokens.save([]); setCohort(null); setToken(""); setDash(null); setRole(null); setCode(""); setConsent(false); setStep("role"); flash("Signed out of this device"); };
   const weekDates = () => { const out = []; const base = dash && dash.weekStart ? new Date(dash.weekStart + "T00:00:00Z") : new Date(); for (let i = 0; i < 7; i++) { const d = new Date(base); d.setUTCDate(d.getUTCDate() + i); out.push(d.toISOString().slice(0, 10)); } return out; };

@@ -479,11 +479,23 @@ chk('admin extras.get returns projects + all notes', count($pe['projects']) === 
 $pubProf = backend_dispatch('public.summerProfile', ['handle' => 'prof-stu'])['profile'];
 chk('public profile shows projects', count($pubProf['projects'] ?? []) === 1 && $pubProf['projects'][0]['title'] === 'Lagos Bus Tracker' && ($pubProf['projects'][0]['imageUrl'] ?? 'x') === '');
 chk('public profile shows ONLY public notes', count($pubProf['notes'] ?? []) === 1 && $pubProf['notes'][0]['note'] === 'Public praise here');
-chk('profile project delete works', !empty(backend_dispatch('admin.profile.project.delete', ['requesterId' => 'NGG-2025-0099', 'id' => $prj['id']])['ok'])
+// Delete is scoped to the subject: a mismatched (subjectType,subjectId) can't
+// destroy the row by id alone — guards against cross-subject IDOR.
+chk('profile project delete rejects a mismatched subject', backend_dispatch('admin.profile.project.delete', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'volunteer', 'subjectId' => 'PROF-STU-1', 'id' => $prj['id']])['error'] === 'not_found'
+    && count(backend_dispatch('admin.profile.extras.get', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'PROF-STU-1'])['projects']) === 1);
+chk('profile project delete works', !empty(backend_dispatch('admin.profile.project.delete', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'PROF-STU-1', 'id' => $prj['id']])['ok'])
     && count(backend_dispatch('admin.profile.extras.get', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'PROF-STU-1'])['projects']) === 0);
 db_exec("DELETE FROM summer_students WHERE studentId = 'PROF-STU-1'");
 db_exec("DELETE FROM profile_projects WHERE subjectId = 'PROF-STU-1'");
 db_exec("DELETE FROM profile_notes WHERE subjectId = 'PROF-STU-1'");
+
+// Volunteer subject: extras go through the volunteer->people cap path and must
+// surface on the public volunteer profile (guards the array_merge extras join).
+$volPrj = backend_dispatch('admin.profile.project.upsert', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'volunteer', 'subjectId' => $volId, 'title' => 'Mentor Toolkit']);
+chk('volunteer profile project saves', !empty($volPrj['ok']));
+$volPubExtras = backend_dispatch('public.summerProfile', ['token' => $volTok])['profile'];
+chk('public volunteer profile surfaces projects', ($volPubExtras['projects'][0]['title'] ?? '') === 'Mentor Toolkit');
+backend_dispatch('admin.profile.project.delete', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'volunteer', 'subjectId' => $volId, 'id' => $volPrj['id']]);
 
 // ── Service ledger + milestone certificates ──
 $volProfile = backend_dispatch('public.summerProfile', ['token' => $volTok])['profile'];
