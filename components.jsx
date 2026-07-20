@@ -317,7 +317,8 @@ function TopNav({ page, setPage }) {
       { id: "club",    label: "NGGC",             desc: "Identity society",         icon: "◐" },
       { id: "book",    label: "The Anchor book", desc: "Field manual",              icon: "▢" },
     ]},
-    { id: "stay", kind: "mega", label: "The room", match: ["blog","media","volunteers","parents","contact"], items: [
+    { id: "stay", kind: "mega", label: "The room", match: ["community","blog","media","volunteers","parents","contact"], items: [
+      { id: "community",  label: "Community",        desc: "The movement, live",      icon: "◈" },
       { id: "blog",       label: "The Journal",     desc: "Stories + essays",        icon: "✎" },
       { id: "media",      label: "Media room",      desc: "Films · podcast · reels", icon: "▶" },
       { id: "mentors",    label: "The mentors",     desc: "Meet the mentor circle",  icon: "◐" },

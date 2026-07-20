@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","club","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","verify","reshoot","cards","certificate","legal"];
+const PAGE_IDS = ["home","summer","club","community","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","verify","reshoot","cards","certificate","legal"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
@@ -15,6 +15,7 @@ const PAGE_META = {
   home:       { title: "Next Generation Genius · Afrovanguard",      desc: "A twelve-week growth journey for African teenagers, 10–17. From summer student to vanguard leader." },
   summer:     { title: "Summer Students · NGG",                       desc: "Six weeks, eight tracks, one bold move. The on-ramp into the Next Generation Genius movement." },
   club:       { title: "NGGC · The Genius Club",                      desc: "A teen society with Genius IDs, weekly missions, public skill badges and a leaderboard." },
+  community:  { title: "Community · NGG",                             desc: "Every centre, every track, one movement — the Next Generation Genius community." },
   anchor:     { title: "Anchor 12 · The Flagship · NGG",              desc: "Twelve weeks. Fifty missions. One identity, rebuilt in public." },
   profile:    { title: "Member profile · NGG",                        desc: "An NGG member's public profile — work, badges, mentor notes." },
   dashboard:  { title: "My dashboard · NGG",                          desc: "Your missions, mentor, streak and journal — the member dashboard." },
@@ -233,6 +234,7 @@ function App() {
     home:      <HomePage      setPage={setPage}/>,
     summer:    <SummerPage    setPage={setPage}/>,
     club:      <ClubPage      setPage={setPage}/>,
+    community:  <CommunityPage setPage={setPage}/>,
     anchor:    <AnchorPage    setPage={setPage}/>,
     profile:   <ProfilePage   setPage={setPage}/>,
     dashboard: <DashboardPage setPage={setPage}/>,
