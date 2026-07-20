@@ -2535,8 +2535,10 @@ function AdminIntegrations() {
   const test = async (id) => { setBusy("t" + id); try { const r = await NGGApi.admin.integrations.test(id); r.delivered ? toast.success("Test delivered.", "OK") : toast.error(r.error || "No detail", "Test failed"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
   const remove = async (id) => { if (!confirm("Delete this integration?")) return; try { await NGGApi.admin.integrations.remove(id); load(); } catch (e) { toast.error(e.code || e.message); } };
   const dispatch = async () => { setBusy("disp"); try { const r = await NGGApi.admin.integrations.dispatch(); toast.success("Attempted " + (r.attempted || 0) + ", delivered " + (r.delivered || 0) + ", failed " + (r.failed || 0) + ".", "Queue drained"); load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  const retry = async (id = "") => { setBusy("r" + id); try { const r = await NGGApi.admin.integrations.retry(id); const dsp = r.dispatch || {}; toast.success("Requeued " + (r.requeued || 0) + " · delivered " + (dsp.delivered || 0) + ", failed " + (dsp.failed || 0) + ".", "Retry"); load(); } catch (e) { toast.error(e.code || e.message, "Retry failed"); } finally { setBusy(""); } };
   const syncMembers = async () => { setBusy("sync"); try { const r = await NGGApi.admin.integrations.syncMembers(); toast.success("Sent " + (r.chunksSent || 0) + " chunk(s), " + (r.total || 0) + " members.", "Sheets sync"); } catch (e) { toast.error(e.code || e.message, "Sync failed"); } finally { setBusy(""); } };
   const items = d ? d.integrations : null;
+  const health = (d && d.health) || {};
   const log = (d && d.log) || [];
   const pending = log.filter(x => x.status === "pending" || x.status === "failed").length;
   const kindHint = { gchat: "https://chat.googleapis.com/…", sheets: "https://script.google.com/…", webhook: "https://your-endpoint.example/…" }[form.kind];
@@ -2569,21 +2571,30 @@ function AdminIntegrations() {
         <>
           {items.length === 0 ? <div className="admin-empty">No integrations yet.</div> :
             <div className="admin-app-list">
-              {items.map(i => (
+              {items.map(i => { const h = health[i.integrationId] || {}; const stuck = (h.pending || 0) + (h.dead || 0); return (
                 <div className="admin-app" key={i.integrationId}>
                   <div className="admin-app-top">
                     <div>
                       <div className="admin-cell-name">{i.name} <span className="chip chip-navy">{i.kind}</span> {i.status === "paused" ? <span className="chip status-draft">paused</span> : null}</div>
                       <div className="mono admin-cell-sub">{i.url}{i.hasSecret ? " · secret " + i.secretHint : ""} · {(i.events || []).join(", ")}</div>
+                      {/* Delivery health — the at-a-glance answer to "is the mirror actually receiving events?" */}
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6, alignItems: "center" }}>
+                        <span className="chip chip-lime" style={{ fontSize: 11 }}>{h.ok || 0} delivered</span>
+                        {h.pending ? <span className="chip status-draft" style={{ fontSize: 11 }}>{h.pending} pending</span> : null}
+                        {h.dead ? <span className="chip status-archived" style={{ fontSize: 11 }}>{h.dead} dead</span> : null}
+                        {h.lastOkAt ? <span className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>last OK {fmtDate(h.lastOkAt)}</span> : null}
+                      </div>
+                      {h.lastError ? <div className="mono" style={{ fontSize: 11.5, color: "#b03535", marginTop: 4, maxWidth: 480, overflow: "hidden", textOverflow: "ellipsis" }}>Last error: {h.lastError}</div> : null}
                     </div>
                   </div>
                   <div className="admin-app-actions">
                     <button className="btn btn-ghost btn-sm" disabled={busy === "t" + i.integrationId} onClick={() => test(i.integrationId)}>{busy === "t" + i.integrationId ? "Testing…" : "Send test"}</button>
+                    {stuck ? <button className="btn btn-ghost btn-sm" disabled={busy === "r" + i.integrationId} onClick={() => retry(i.integrationId)} style={{ color: "var(--gold-600,#a07400)" }}>{busy === "r" + i.integrationId ? "Retrying…" : "Retry " + stuck + " stuck"}</button> : null}
                     <button className="btn btn-ghost btn-sm" onClick={() => edit(i)}>Edit</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => remove(i.integrationId)}>Delete</button>
                   </div>
                 </div>
-              ))}
+              ); })}
             </div>}
           <div className="admin-fields-h" style={{ marginTop: 18, fontWeight: 700 }}>Recent deliveries</div>
           {log.length === 0 ? <div className="admin-empty">No deliveries yet.</div> :

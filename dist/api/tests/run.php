@@ -1095,6 +1095,20 @@ chk('bus: failures back off then die; secrets never listed in full', (function (
     $GLOBALS['__bus_http_mock'] = fn($u, $b, $h) => ['ok' => true, 'body' => '{}'];
     return true;
 })());
+chk('bus: retry requeues stalled deliveries + health rollup surfaces counts', (function () {
+    $GLOBALS['__bus_http_mock'] = fn($u, $b, $h) => ['ok' => true, 'body' => '{}'];
+    // The prior test left ≥1 dead/failed delivery for a still-active destination.
+    $before = (int)db_row("SELECT COUNT(*) c FROM deliveries WHERE status IN ('failed','dead')")['c'];
+    if ($before < 1) return false;
+    $list = backend_dispatch('admin.integrations.list', ['requesterId' => 'NGG-2025-0099']);
+    if (!isset($list['health']) || !is_array($list['health'])) return false;
+    $r = backend_dispatch('admin.integrations.retry', ['requesterId' => 'NGG-2025-0099']);
+    if (empty($r['ok']) || (int)$r['requeued'] < $before) return false;
+    // Requeued then dispatched against a success mock — none should still be stuck.
+    $after = (int)db_row("SELECT COUNT(*) c FROM deliveries WHERE status IN ('failed','dead')")['c'];
+    unset($GLOBALS['__bus_http_mock']);
+    return $after === 0;
+})());
 chk('bus: sheets member snapshot chunks through the bridge', (function () {
     $seen = 0;
     $GLOBALS['__bus_http_mock'] = function ($url, $body, $h) use (&$seen) {

@@ -407,6 +407,7 @@
         remove:   (integrationId) => request('/admin/integrations.php', { body: { action: 'delete', integrationId } }),
         test:     (integrationId) => request('/admin/integrations.php', { body: { action: 'test', integrationId } }),
         dispatch: () => request('/admin/integrations.php', { body: { action: 'dispatch' } }),
+        retry:    (integrationId = "") => request('/admin/integrations.php', { body: { action: 'retry', integrationId } }),
         syncMembers: () => request('/admin/integrations.php', { body: { action: 'sync_members' } }),
       },
       settings: {

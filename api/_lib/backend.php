@@ -139,6 +139,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.integrations.delete'   => 'admin_integrations_delete',
             'admin.integrations.test'     => 'admin_integrations_test',
             'admin.integrations.dispatch' => 'admin_integrations_dispatch',
+            'admin.integrations.retry'    => 'admin_integrations_retry',
             'admin.sheets.syncMembers'    => 'admin_sheets_sync_members',
             'member.email.changeRequest'  => 'member_request_email_change',
             'member.email.confirm'        => 'member_confirm_email_change',

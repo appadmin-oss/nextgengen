@@ -14,6 +14,7 @@ if ($method === 'GET') {
     elseif ($action === 'delete')    $res = gs_call('admin.integrations.delete', ['requesterId' => $s['mid'], 'integrationId' => $b['integrationId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'test')      $res = gs_call('admin.integrations.test', ['requesterId' => $s['mid'], 'integrationId' => $b['integrationId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'dispatch')  $res = gs_call('admin.integrations.dispatch', ['requesterId' => $s['mid']]);
+    elseif ($action === 'retry')     $res = gs_call('admin.integrations.retry', ['requesterId' => $s['mid'], 'integrationId' => $b['integrationId'] ?? '', 'ip' => client_ip()]);
     elseif ($action === 'sync_members') $res = gs_call('admin.sheets.syncMembers', ['requesterId' => $s['mid'], 'ip' => $ip]);
     else json_error('unknown_action', 400);
 } else {

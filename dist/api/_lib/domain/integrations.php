@@ -27,7 +27,42 @@ function admin_integrations_list(array $p): array {
     $log = db_all("SELECT d.eventId, d.integrationId, d.status, d.attempts, d.lastError, d.deliveredAt, d.nextAttemptAt, o.kind
                    FROM deliveries d LEFT JOIN outbox o ON o.eventId = d.eventId
                    ORDER BY d.id DESC LIMIT 40");
-    return ['ok' => true, 'integrations' => array_map('integration_public', $rows), 'log' => $log];
+    // Per-destination delivery health, so an admin can see at a glance whether
+    // the mirror is actually receiving events (and why not).
+    $health = [];
+    foreach ($rows as $r) {
+        $id = (string)$r['integrationId'];
+        $c = db_row("SELECT
+              SUM(status='ok') ok,
+              SUM(status IN ('pending','failed')) pending,
+              SUM(status='dead') dead,
+              MAX(deliveredAt) lastOkAt
+            FROM deliveries WHERE integrationId = ?", [$id]);
+        $lastErr = db_row("SELECT lastError, nextAttemptAt FROM deliveries WHERE integrationId = ? AND status IN ('failed','dead') AND lastError <> '' ORDER BY id DESC LIMIT 1", [$id]);
+        $health[$id] = [
+            'ok'        => (int)($c['ok'] ?? 0),
+            'pending'   => (int)($c['pending'] ?? 0),
+            'dead'      => (int)($c['dead'] ?? 0),
+            'lastOkAt'  => (string)($c['lastOkAt'] ?? ''),
+            'lastError' => (string)($lastErr['lastError'] ?? ''),
+        ];
+    }
+    return ['ok' => true, 'integrations' => array_map('integration_public', $rows), 'log' => $log, 'health' => $health];
+}
+
+/** Requeue stalled deliveries (failed + dead) so a fixed URL/secret can re-push
+ *  immediately instead of waiting on backoff. Optionally scoped to one dest. */
+function admin_integrations_retry(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $id = trim((string)($p['integrationId'] ?? ''));
+    $where = "status IN ('failed','dead')";
+    $args = [];
+    if ($id !== '') { $where .= ' AND integrationId = ?'; $args[] = $id; }
+    $n = db_exec("UPDATE deliveries SET status='pending', attempts=0, nextAttemptAt=? WHERE $where", array_merge([now_iso()], $args));
+    audit('integration.retry', (string)$p['requesterId'], $id, ['requeued' => $n], (string)($p['ip'] ?? ''));
+    // Flush straight away so the admin sees the result without waiting on cron.
+    $res = function_exists('deliveries_dispatch') ? deliveries_dispatch(25) : [];
+    return ['ok' => true, 'requeued' => $n, 'dispatch' => $res];
 }
 
 function admin_integrations_upsert(array $p): array {
