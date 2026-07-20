@@ -759,3 +759,34 @@ INSERT INTO schema_version (version) VALUES (43) ON DUPLICATE KEY UPDATE version
 ALTER TABLE centres ADD COLUMN whatsappUrl VARCHAR(240) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (44) ON DUPLICATE KEY UPDATE version = version;
+
+-- 45: public profile enrichment — member projects + mentor notes (isPublic gates
+-- what leaves the server). Keyed by (subjectType, subjectId) for students + volunteers.
+CREATE TABLE IF NOT EXISTS profile_projects (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(48) NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  kind VARCHAR(48) DEFAULT '',
+  url VARCHAR(400) DEFAULT '',
+  imageUrl VARCHAR(400) DEFAULT '',
+  sortOrder INT DEFAULT 0,
+  createdBy VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40),
+  updatedAt VARCHAR(40),
+  INDEX idx_pproj_subject (subjectType, subjectId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS profile_notes (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(48) NOT NULL,
+  author VARCHAR(80) DEFAULT '',
+  note VARCHAR(2000) NOT NULL,
+  isPublic TINYINT DEFAULT 0,
+  createdBy VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40),
+  INDEX idx_pnote_subject (subjectType, subjectId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (45) ON DUPLICATE KEY UPDATE version = version;

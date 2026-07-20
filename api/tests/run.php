@@ -37,7 +37,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'analytics'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'analytics', 'profiles'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/webcron.php';
 
@@ -463,6 +463,27 @@ chk('need delete removes the row', !empty(backend_dispatch('admin.volunteers.nee
 db_exec("DELETE FROM centres WHERE centreId = 'CEN-VOL'");
 db_exec("DELETE FROM volunteer_needs WHERE centreId = 'CEN-VOL'");
 db_exec("DELETE FROM item_needs WHERE centreId = 'CEN-VOL'");
+
+// ── Public-profile enrichment: projects + mentor notes ──
+db_insert('summer_students', ['studentId' => 'PROF-STU-1', 'cohortId' => 'PROF-C', 'handle' => 'prof-stu', 'fullName' => 'Proj Kid', 'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+chk('profile extras gated from non-permitted roles', backend_dispatch('admin.profile.project.upsert', ['requesterId' => 'NGG-2025-0001', 'subjectType' => 'student', 'subjectId' => 'PROF-STU-1', 'title' => 'X'])['error'] === 'forbidden');
+chk('profile project rejects a bad subject', backend_dispatch('admin.profile.project.upsert', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'NOPE', 'title' => 'X'])['error'] === 'bad_subject');
+chk('profile project requires a title', backend_dispatch('admin.profile.project.upsert', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'PROF-STU-1', 'title' => '  '])['error'] === 'title_required');
+$prj = backend_dispatch('admin.profile.project.upsert', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'PROF-STU-1', 'title' => 'Lagos Bus Tracker', 'kind' => 'CODE · CIVIC', 'url' => 'https://example.com/bus', 'imageUrl' => 'http://insecure/x.png']);
+chk('profile project saves + strips non-https image', !empty($prj['ok']) && $prj['id'] > 0);
+chk('profile note requires text', backend_dispatch('admin.profile.note.upsert', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'PROF-STU-1', 'note' => ''])['error'] === 'note_required');
+backend_dispatch('admin.profile.note.upsert', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'PROF-STU-1', 'author' => 'Dr. Ade', 'note' => 'Public praise here', 'isPublic' => true]);
+backend_dispatch('admin.profile.note.upsert', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'PROF-STU-1', 'author' => 'Staff', 'note' => 'Private staff note', 'isPublic' => false]);
+$pe = backend_dispatch('admin.profile.extras.get', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'PROF-STU-1']);
+chk('admin extras.get returns projects + all notes', count($pe['projects']) === 1 && count($pe['notes']) === 2);
+$pubProf = backend_dispatch('public.summerProfile', ['handle' => 'prof-stu'])['profile'];
+chk('public profile shows projects', count($pubProf['projects'] ?? []) === 1 && $pubProf['projects'][0]['title'] === 'Lagos Bus Tracker' && ($pubProf['projects'][0]['imageUrl'] ?? 'x') === '');
+chk('public profile shows ONLY public notes', count($pubProf['notes'] ?? []) === 1 && $pubProf['notes'][0]['note'] === 'Public praise here');
+chk('profile project delete works', !empty(backend_dispatch('admin.profile.project.delete', ['requesterId' => 'NGG-2025-0099', 'id' => $prj['id']])['ok'])
+    && count(backend_dispatch('admin.profile.extras.get', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'PROF-STU-1'])['projects']) === 0);
+db_exec("DELETE FROM summer_students WHERE studentId = 'PROF-STU-1'");
+db_exec("DELETE FROM profile_projects WHERE subjectId = 'PROF-STU-1'");
+db_exec("DELETE FROM profile_notes WHERE subjectId = 'PROF-STU-1'");
 
 // ── Service ledger + milestone certificates ──
 $volProfile = backend_dispatch('public.summerProfile', ['token' => $volTok])['profile'];

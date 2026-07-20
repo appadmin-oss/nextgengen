@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 44;
+const NGG_SCHEMA_TARGET = 45;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1152,6 +1152,38 @@ function db_migrate(PDO $db): void {
         // Per-centre WhatsApp group invite link — shown to an applicant right
         // after they submit, matched to the centre they picked.
         44 => "ALTER TABLE centres ADD COLUMN whatsappUrl TEXT DEFAULT '';",
+
+        // Public profile enrichment: member projects (work put into the world)
+        // and mentor notes (only isPublic=1 ever leaves the server). Keyed by
+        // (subjectType, subjectId) so one model serves students AND volunteers.
+        45 => "
+            CREATE TABLE profile_projects (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectType TEXT NOT NULL,
+              subjectId TEXT NOT NULL,
+              title TEXT NOT NULL,
+              kind TEXT DEFAULT '',
+              url TEXT DEFAULT '',
+              imageUrl TEXT DEFAULT '',
+              sortOrder INTEGER DEFAULT 0,
+              createdBy TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now')),
+              updatedAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_pproj_subject ON profile_projects(subjectType, subjectId);
+
+            CREATE TABLE profile_notes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectType TEXT NOT NULL,
+              subjectId TEXT NOT NULL,
+              author TEXT DEFAULT '',
+              note TEXT NOT NULL,
+              isPublic INTEGER DEFAULT 0,
+              createdBy TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_pnote_subject ON profile_notes(subjectType, subjectId);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

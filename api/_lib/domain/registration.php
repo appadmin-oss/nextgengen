@@ -1048,7 +1048,7 @@ function admin_academy_catalogue_set(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     if (!empty($p['reset'])) {
         setting_set('academy_catalogue', '', $g['requester']['memberId']);
-        audit('academy.catalogue.reset', $g['requester']['memberId'], null, [], (string)($p['ip'] ?? ''));
+        audit('academy.catalogue.reset', $g['requester']['memberId'], '', [], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'reset' => true];
     }
     // Normalise a {faculty, courses} list into a plain map first.
@@ -1065,7 +1065,7 @@ function admin_academy_catalogue_set(array $p): array {
     if (!$clean) return ['ok' => false, 'error' => 'catalogue_empty'];
     if (count($clean) > 40) return ['ok' => false, 'error' => 'too_many_faculties'];
     setting_set('academy_catalogue', $clean, $g['requester']['memberId']);
-    audit('academy.catalogue.set', $g['requester']['memberId'], null, ['faculties' => count($clean)], (string)($p['ip'] ?? ''));
+    audit('academy.catalogue.set', $g['requester']['memberId'], '', ['faculties' => count($clean)], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'faculties' => count($clean)];
 }
 

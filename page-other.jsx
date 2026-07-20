@@ -1397,6 +1397,41 @@ function SummerProfilePage({ setPage }) {
             </div>
           )}
 
+          {/* Public projects — curated, real work (admin-managed). */}
+          {(m.projects || []).length > 0 && (
+            <div className="card" style={{ padding: 28, marginTop: 20 }}>
+              <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-500)" }}>Public projects · {m.projects.length}</div>
+              <h2 className="display" style={{ fontSize: 22, margin: "8px 0 20px" }}>What I've put into the world.</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 16 }}>
+                {m.projects.map(pr => {
+                  const inner = (<>
+                    {pr.imageUrl ? <div style={{ aspectRatio: "4 / 3", borderRadius: 12, overflow: "hidden", background: "var(--cream-100, #f3ecdb)" }}><img src={pr.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/></div> : null}
+                    <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14.5, color: "var(--ink-900)", marginTop: pr.imageUrl ? 10 : 0, display: "flex", alignItems: "center", gap: 6 }}>{pr.title}{pr.url ? <i className="ph ph-arrow-up-right" style={{ fontSize: 12, color: "var(--ink-400)" }}/> : null}</div>
+                    {pr.kind ? <div className="mono" style={{ fontSize: 10, letterSpacing: "0.06em", color: "var(--ink-400)", marginTop: 3 }}>{pr.kind}</div> : null}
+                  </>);
+                  return pr.url
+                    ? <a key={pr.id} href={pr.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", color: "inherit", display: "block" }}>{inner}</a>
+                    : <div key={pr.id}>{inner}</div>;
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Mentor notes — only notes an admin marked public reach this page. */}
+          {(m.notes || []).length > 0 && (
+            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "none" }}>
+              <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--gold-400)" }}>Mentor notes</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 18 }}>
+                {m.notes.map((n, i) => (
+                  <div key={i} style={{ paddingLeft: 14, borderLeft: "2px solid var(--gold-500)" }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}><b style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14.5 }}>{n.author || "Mentor"}</b>{n.when ? <span className="mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{n.when}</span> : null}</div>
+                    <p style={{ fontSize: 13.5, color: "rgba(255,255,255,0.78)", margin: "6px 0 0", lineHeight: 1.55 }}>{n.note}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Gamified attendance standing — the in-app award surface (levels,
               points, streak, awards). Mirrors the emailed awards. */}
           {m.kind === "volunteer" && m.game && (

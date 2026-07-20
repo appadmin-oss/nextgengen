@@ -53,6 +53,8 @@ function summer_student_public(array $s, bool $withAttendance = false): array {
         $rows = db_all('SELECT date, checkInAt, method FROM attendance WHERE studentId = ? ORDER BY date DESC LIMIT 60', [$s['studentId']]);
         $out['attendance'] = $rows;
         $out['attendanceCount'] = count($rows);
+        // Curated projects + public mentor notes (real records, admin-managed).
+        if (function_exists('profile_public_extras')) $out += profile_public_extras('student', (string)$s['studentId']);
     }
     return $out;
 }

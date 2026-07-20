@@ -1586,6 +1586,120 @@ function SummerRoster({ cohortId }) {
 
 /* Edit an enrolled student's actual data — name, age, handle, centre, track,
    guardian contact, photo, status. Mirrors admin.summer.student.update. */
+/* One editable project row — seeded from props, saves on demand. */
+function ProjRow({ p, subjectType, subjectId, onChanged }) {
+  const [f, setF] = React.useState({ title: p.title || "", kind: p.kind || "", url: p.url || "", imageUrl: p.imageUrl || "" });
+  const [busy, setBusy] = React.useState(false);
+  const set = (k, v) => setF(s => ({ ...s, [k]: v }));
+  const save = async () => {
+    if (f.title.trim() === "") { toast.error("Give the project a title."); return; }
+    setBusy(true);
+    try { await NGGApi.admin.profiles.projectUpsert({ subjectType, subjectId, id: p.id, ...f, sortOrder: p.sortOrder || 0 }); onChanged(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  const del = async () => { try { await NGGApi.admin.profiles.projectDelete(p.id); onChanged(); } catch (e) { toast.error(e.code || e.message); } };
+  return (
+    <div style={{ border: "1px solid var(--line-cool-soft,#eef0f4)", borderRadius: 10, padding: 10, display: "grid", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <input className="admin-input" placeholder="Title" value={f.title} onChange={e => set("title", e.target.value)} style={{ flex: "2 1 160px" }}/>
+        <input className="admin-input" placeholder="Label (e.g. CODE · CIVIC)" value={f.kind} onChange={e => set("kind", e.target.value)} style={{ flex: "1 1 120px" }}/>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <input className="admin-input" placeholder="Link (https://…)" value={f.url} onChange={e => set("url", e.target.value)} style={{ flex: "1 1 150px" }}/>
+        <input className="admin-input" placeholder="Image URL (https://…)" value={f.imageUrl} onChange={e => set("imageUrl", e.target.value)} style={{ flex: "1 1 150px" }}/>
+        <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? "…" : "Save"}</button>
+        <button className="btn btn-ghost btn-sm" onClick={del} title="Remove" style={{ color: "#b03535" }}>✕</button>
+      </div>
+    </div>
+  );
+}
+/* One editable mentor-note row. */
+function NoteRow({ n, subjectType, subjectId, onChanged }) {
+  const [f, setF] = React.useState({ author: n.author || "", note: n.note || "", isPublic: !!n.isPublic });
+  const [busy, setBusy] = React.useState(false);
+  const save = async () => {
+    if (f.note.trim() === "") { toast.error("Write the note first."); return; }
+    setBusy(true);
+    try { await NGGApi.admin.profiles.noteUpsert({ subjectType, subjectId, id: n.id, author: f.author, note: f.note, isPublic: f.isPublic }); onChanged(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  const del = async () => { try { await NGGApi.admin.profiles.noteDelete(n.id); onChanged(); } catch (e) { toast.error(e.code || e.message); } };
+  return (
+    <div style={{ border: "1px solid var(--line-cool-soft,#eef0f4)", borderRadius: 10, padding: 10, display: "grid", gap: 6 }}>
+      <input className="admin-input" placeholder="Author (mentor name)" value={f.author} onChange={e => setF(s => ({ ...s, author: e.target.value }))}/>
+      <textarea className="admin-input" rows={2} placeholder="Note…" value={f.note} onChange={e => setF(s => ({ ...s, note: e.target.value }))} style={{ resize: "vertical" }}/>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: f.isPublic ? "#2f9e44" : "var(--ink-500)" }}>
+          <input type="checkbox" checked={f.isPublic} onChange={e => setF(s => ({ ...s, isPublic: e.target.checked }))} style={{ width: 16, height: 16 }}/>
+          {f.isPublic ? "Shown on public profile" : "Private (staff only)"}
+        </label>
+        <span style={{ flex: 1 }}/>
+        <button className="btn btn-primary btn-sm" onClick={save} disabled={busy}>{busy ? "…" : "Save"}</button>
+        <button className="btn btn-ghost btn-sm" onClick={del} title="Remove" style={{ color: "#b03535" }}>✕</button>
+      </div>
+    </div>
+  );
+}
+/* Shared: manage a member's public projects + mentor notes. */
+function ProfileExtrasEditor({ subjectType, subjectId }) {
+  const [d, setD] = React.useState(null);
+  const [open, setOpen] = React.useState(false);
+  const [np, setNp] = React.useState({ title: "", kind: "", url: "", imageUrl: "" });
+  const [nn, setNn] = React.useState({ author: "", note: "", isPublic: true });
+  const load = () => NGGApi.admin.profiles.extras(subjectType, subjectId).then(setD).catch(() => setD({ projects: [], notes: [] }));
+  React.useEffect(() => { if (open && !d) load(); }, [open]);
+  const addProj = async () => {
+    if (np.title.trim() === "") { toast.error("Give the project a title."); return; }
+    try { await NGGApi.admin.profiles.projectUpsert({ subjectType, subjectId, ...np }); setNp({ title: "", kind: "", url: "", imageUrl: "" }); load(); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
+  const addNote = async () => {
+    if (nn.note.trim() === "") { toast.error("Write the note first."); return; }
+    try { await NGGApi.admin.profiles.noteUpsert({ subjectType, subjectId, ...nn }); setNn({ author: "", note: "", isPublic: true }); load(); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
+  return (
+    <div style={{ marginTop: 14, borderTop: "1px solid var(--line-cool-soft,#eef0f4)", paddingTop: 12 }}>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        {open ? "Hide profile projects & notes ▴" : "Profile projects & mentor notes ▾"}
+      </button>
+      {open && (d === null ? <div className="dash-spinner" style={{ margin: "16px auto" }}/> : (
+        <div style={{ marginTop: 12, display: "grid", gap: 18 }}>
+          <div>
+            <div className="mono" style={{ fontSize: 10.5, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>Public projects · shown on the member's profile</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {(d.projects || []).map(p => <ProjRow key={p.id} p={p} subjectType={subjectType} subjectId={subjectId} onChanged={load}/>)}
+              {!(d.projects || []).length && <div className="admin-cell-sub" style={{ fontSize: 12 }}>No projects yet.</div>}
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
+              <input className="admin-input" placeholder="New project title" value={np.title} onChange={e => setNp(s => ({ ...s, title: e.target.value }))} style={{ flex: "2 1 150px" }}/>
+              <input className="admin-input" placeholder="Label" value={np.kind} onChange={e => setNp(s => ({ ...s, kind: e.target.value }))} style={{ flex: "1 1 100px" }}/>
+              <input className="admin-input" placeholder="Link (optional)" value={np.url} onChange={e => setNp(s => ({ ...s, url: e.target.value }))} style={{ flex: "1 1 120px" }}/>
+              <button className="btn btn-primary btn-sm" onClick={addProj}>+ Add</button>
+            </div>
+          </div>
+          <div>
+            <div className="mono" style={{ fontSize: 10.5, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>Mentor notes · only public ones appear on the profile</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {(d.notes || []).map(n => <NoteRow key={n.id} n={n} subjectType={subjectType} subjectId={subjectId} onChanged={load}/>)}
+              {!(d.notes || []).length && <div className="admin-cell-sub" style={{ fontSize: 12 }}>No notes yet.</div>}
+            </div>
+            <div style={{ border: "1px dashed var(--cream-200,#d9d2c0)", borderRadius: 10, padding: 10, marginTop: 8, display: "grid", gap: 6 }}>
+              <input className="admin-input" placeholder="Author (defaults to you)" value={nn.author} onChange={e => setNn(s => ({ ...s, author: e.target.value }))}/>
+              <textarea className="admin-input" rows={2} placeholder="Add a mentor note…" value={nn.note} onChange={e => setNn(s => ({ ...s, note: e.target.value }))} style={{ resize: "vertical" }}/>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600 }}><input type="checkbox" checked={nn.isPublic} onChange={e => setNn(s => ({ ...s, isPublic: e.target.checked }))} style={{ width: 16, height: 16 }}/>Public on profile</label>
+                <span style={{ flex: 1 }}/>
+                <button className="btn btn-primary btn-sm" onClick={addNote}>+ Add note</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StudentEditor({ s, onSaved, onDelete }) {
   const centreOpts = useCentreOptions();
   const [f, setF] = React.useState({
@@ -1634,6 +1748,7 @@ function StudentEditor({ s, onSaved, onDelete }) {
         {fld("parentEmail", "Parent email", { type: "email", min: 200 })}
       </div>
       <div><span style={lbl}>Notes</span><textarea className="admin-input" rows={2} value={f.notes} onChange={e => set("notes", e.target.value)} style={{ width: "100%", resize: "vertical" }}/></div>
+      <ProfileExtrasEditor subjectType="student" subjectId={s.studentId}/>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save student"}</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={onSaved}>Cancel</button>
@@ -3710,6 +3825,7 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
         <input type="checkbox" checked={f.visibilityConsent} onChange={e => set("visibilityConsent", e.target.checked)}/>
         Consented to be featured (photo + first name) on the public site &amp; boards
       </label>
+      <ProfileExtrasEditor subjectType="volunteer" subjectId={v.volunteerId}/>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save volunteer"}</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={onSaved}>Cancel</button>

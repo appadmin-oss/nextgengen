@@ -392,6 +392,14 @@
         // the scannable QR via the hosted /api/public/qr.php image.
         resendId:    (kind, id, qrPng) => request('/admin/registration.php', { body: { action: 'resend_id', kind, id, qrPng } }),
       },
+      // A member's public projects + mentor notes (subjectType: student|volunteer).
+      profiles: {
+        extras:       (subjectType, subjectId) => request('/admin/profiles.php' + qs({ subjectType, subjectId })),
+        projectUpsert: (data) => request('/admin/profiles.php', { body: Object.assign({ action: 'project_upsert' }, data) }),
+        projectDelete: (id) => request('/admin/profiles.php', { body: { action: 'project_delete', id } }),
+        noteUpsert:   (data) => request('/admin/profiles.php', { body: Object.assign({ action: 'note_upsert' }, data) }),
+        noteDelete:   (id) => request('/admin/profiles.php', { body: { action: 'note_delete', id } }),
+      },
       integrations: {
         list:     () => request('/admin/integrations.php'),
         upsert:   (data) => request('/admin/integrations.php', { body: { action: 'upsert', data } }),

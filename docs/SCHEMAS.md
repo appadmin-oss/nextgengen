@@ -466,3 +466,20 @@ volunteer needs (filled from the live roster), items have no roster so the
 received count is entered by an admin. An **open** item (`needCount` 0) is a
 standing request: it shows the running received count, reads as "any amount
 welcome", and always counts as still-wanted.
+
+### `profile_projects` / `profile_notes` (migration 45) — public profile enrichment
+Both keyed by (`subjectType` ∈ `student`|`volunteer`, `subjectId`), so one model
+serves every profile.
+
+**`profile_projects`** — a member's public work: `title`, `kind` (label, e.g.
+`CODE · CIVIC`), `url`, `imageUrl` (both https-only on output), `sortOrder`.
+Curated by admins; always public.
+
+**`profile_notes`** — mentor notes: `author`, `note`, `isPublic`. **Private by
+default — only `isPublic=1` notes are ever returned to the public profile.**
+
+Edited via `admin.profile.{extras.get, project.upsert, project.delete,
+note.upsert, note.delete}` (cap `people`), surfaced in the admin Student/Volunteer
+editors ("Profile projects & mentor notes"). `public.summerProfile` embeds
+`projects` (all) + `notes` (public only) into the profile payload, rendered on
+the `/q/<token>` · `/s/<handle>` profile page.
