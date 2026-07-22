@@ -675,6 +675,17 @@ function NewsletterForm({ source = "footer" }) {
 /* ---- Footer ---- */
 function Footer({ setPage }) {
   const go = (id) => () => setPage(id);
+  // Deep-link into a centre's public page (/centres/<slug>). Pushes the clean
+  // URL, then hands off to the centres page (which reads the slug from the
+  // path); the synthetic popstate re-parses it even if we're already there.
+  const goCentre = (slug) => (e) => {
+    if (e) e.preventDefault();
+    const path = "/centres/" + slug;
+    if (window.location.pathname !== path) history.pushState({ page: "centres" }, "", path);
+    setPage("centres");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    window.scrollTo({ top: 0, behavior: "instant" });
+  };
   const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false, member: null };
   const session = useSession();
   const site = useSiteContent();
@@ -841,12 +852,15 @@ function Footer({ setPage }) {
               <ul className="footer-centres">
                 {CENTRES.map(c => (
                   <li key={c.id} className="footer-centre">
-                    <div className="footer-centre-head">
-                      <span className="footer-centre-dot"/>
-                      <span className="footer-centre-name">{c.name}</span>
-                    </div>
-                    <div className="footer-centre-meta">{c.lga}</div>
-                    <div className="mono footer-centre-line">{c.line}</div>
+                    <a href={"/centres/" + c.id} className="footer-centre-link" onClick={goCentre(c.id)}>
+                      <div className="footer-centre-head">
+                        <span className="footer-centre-dot"/>
+                        <span className="footer-centre-name">{c.name}</span>
+                        <span className="footer-centre-go" aria-hidden="true">→</span>
+                      </div>
+                      <div className="footer-centre-meta">{c.lga}</div>
+                      <div className="mono footer-centre-line">{c.line}</div>
+                    </a>
                   </li>
                 ))}
               </ul>

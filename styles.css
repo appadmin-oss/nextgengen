@@ -1981,3 +1981,10 @@ img { background-color: rgba(12,20,50,0.04); }
   .centre-find-inner { grid-template-columns: 1fr; gap: 28px; }
   .centres-intro { padding: 72px 0 52px; }
 }
+
+/* Footer "Find us" centres — now deep-link into each centre's public page. */
+.footer-centre-link { display: block; text-decoration: none; color: inherit; border-radius: 10px; padding: 4px 6px; margin: -4px -6px; transition: background .18s ease; }
+.footer-centre-link:hover { background: rgba(255,255,255,0.06); }
+.footer-centre-go { margin-left: auto; opacity: 0; transform: translateX(-4px); transition: opacity .18s ease, transform .18s ease; color: var(--gold-400, #ffc34d); font-weight: 700; }
+.footer-centre-head { display: flex; align-items: center; gap: 8px; }
+.footer-centre-link:hover .footer-centre-go { opacity: 1; transform: translateX(0); }
