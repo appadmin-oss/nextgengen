@@ -279,6 +279,12 @@ function CentreDetail({ slug, go, setPage }) {
         </div>
       </section>
 
+      {/* ---- Mobile CTA band (navy, below the hero — matches the mobile design) ---- */}
+      <section className="centre-hero-cta">
+        <button className="btn btn-lg centre-btn-accent" onClick={() => setPage("join")}>Apply to this centre →</button>
+        {hasWa && <a className="btn btn-lg centre-btn-outline-light" href={c.whatsappUrl} target="_blank" rel="noopener noreferrer">Join the group</a>}
+      </section>
+
       {/* ---- Live stat strip (no meeting days) ---- */}
       <section className="centre-stats">
         <div className="container centre-stats-row">
