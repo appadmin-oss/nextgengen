@@ -268,7 +268,7 @@ function CentreDetail({ slug, go, setPage }) {
             <div className="centre-hero-underline" aria-hidden="true"/>
             <div className="centre-hero-name">
               <span className="centre-hero-code mono">{c.code}</span>
-              <span>{c.name}{c.area ? " · " + c.area : ""}</span>
+              <span>{c.name}</span>
             </div>
             <div className="centre-hero-actions">
               <button className="btn btn-lg centre-btn-ink" onClick={() => setPage("join")}>Apply to this centre →</button>
