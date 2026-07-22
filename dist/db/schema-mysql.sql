@@ -805,3 +805,8 @@ ALTER TABLE centres ADD COLUMN pageUpdatedAt VARCHAR(40) DEFAULT '';
 CREATE INDEX idx_centres_slug ON centres (slug);
 
 INSERT INTO schema_version (version) VALUES (46) ON DUPLICATE KEY UPDATE version = version;
+
+-- 47: hero image focal position for the public centre page (CSS object-position).
+ALTER TABLE centres ADD COLUMN heroPosition VARCHAR(32) DEFAULT 'center bottom';
+
+INSERT INTO schema_version (version) VALUES (47) ON DUPLICATE KEY UPDATE version = version;

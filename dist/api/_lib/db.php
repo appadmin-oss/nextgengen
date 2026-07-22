@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 46;
+const NGG_SCHEMA_TARGET = 47;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1201,6 +1201,11 @@ function db_migrate(PDO $db): void {
             ALTER TABLE centres ADD COLUMN pageUpdatedAt TEXT DEFAULT '';
             CREATE INDEX idx_centres_slug ON centres(slug);
         ",
+
+        // Hero image focal position for the public centre page — a CSS
+        // object-position string ('center bottom', '50% 20%', …) so admins can
+        // position the giant hero image directly from the site.
+        47 => "ALTER TABLE centres ADD COLUMN heroPosition TEXT DEFAULT 'center bottom';",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

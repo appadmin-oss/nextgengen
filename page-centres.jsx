@@ -4,24 +4,57 @@
    Public, immersive landing pages for each Summer School centre.
 
      /centres            → the directory of published centres
-     /centres/<slug>     → one centre's immersive page (giant hero
-                           model image, story, centre lead, top
-                           students, gallery, what the centre needs,
-                           find-us)
+     /centres/<slug>     → one centre's immersive page
 
-   The centres page owns its URL subtree: app.jsx resolves any
-   /centres* path to page id "centres" and skips the address-bar
-   rewrite so a deep-linked slug survives refresh + sharing. This
-   component reads the slug from the pathname, navigates internally
-   via pushState, and reacts to back/forward through popstate.
+   The centre's colour code (centres.color) drives the hero
+   background; the hero text colour is derived from it at render
+   time (highest-contrast of ink/paper — see centreInk) so a centre
+   can switch to any accent and the copy stays readable. (The native
+   CSS contrast-color() isn't safely baseline across our build
+   targets yet, so we compute it in JS where we already hold the hex.)
 
-   Note: meeting days/times are deliberately NOT shown on the public
-   centre page (a safeguarding choice — we don't broadcast exactly
-   when children gather). Admins still manage them for the internal
-   status boards.
+   Signed-in admins can add + position the giant hero image directly
+   from the page (upload, drag to set the focal point, save).
+
+   Meeting days/times are intentionally never shown here (a
+   safeguarding choice); admins still manage them for status boards.
    ================================================================ */
 
 const CENTRES_BASE = "/centres";
+const ILU_EKO = "ÌLÚ Ẹ̀KÒ";     // the campaign motif shown as the hero watermark
+
+/* ---- Contrast helpers: pick a readable ink for a dynamic bg ---- */
+function centreHexToRgb(h) {
+  h = String(h || "").trim().replace(/^#/, "");
+  if (h.length === 3) h = h.split("").map(c => c + c).join("");
+  const n = parseInt(h || "000000", 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+function centreRelLum(c) {
+  const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+}
+function centreContrast(a, b) {
+  const L1 = centreRelLum(centreHexToRgb(a)), L2 = centreRelLum(centreHexToRgb(b));
+  const hi = Math.max(L1, L2), lo = Math.min(L1, L2);
+  return (hi + 0.05) / (lo + 0.05);
+}
+// Returns the CSS custom properties that theme the hero for a given accent.
+function centreInk(accent) {
+  const DARK = "#0c1432", LIGHT = "#fbf7ed";
+  const bgLight = centreContrast(accent, DARK) >= centreContrast(accent, LIGHT);
+  const base = bgLight ? "12,20,50" : "251,247,237";
+  return {
+    "--centre-accent": accent,
+    "--centre-ink": bgLight ? DARK : LIGHT,
+    "--centre-on-ink": bgLight ? "#ffffff" : "#0c1432",
+    "--centre-ink-soft": "rgba(" + base + ",0.74)",
+    "--centre-ink-line": "rgba(" + base + ",0.34)",
+    "--centre-ink-ring": "rgba(" + base + ",0.3)",
+    "--centre-back-bg": "rgba(" + base + ",0.12)",
+    "--centre-orb": bgLight ? "#0c1432" : "rgba(" + base + ",0.14)",
+  };
+}
 
 function parseCentrePath() {
   const parts = (window.location.pathname || "").split("/").filter(Boolean);
@@ -31,19 +64,16 @@ function parseCentrePath() {
 
 function CentresPage({ setPage }) {
   const [route, setRoute] = React.useState(parseCentrePath);
-
   React.useEffect(() => {
     const onPop = () => setRoute(parseCentrePath());
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
-
   const go = React.useCallback((path) => {
     if (window.location.pathname !== path) history.pushState({ page: "centres" }, "", path);
     setRoute(parseCentrePath());
     window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
-
   return (
     <div className="page centre-page">
       {route.view === "detail"
@@ -63,9 +93,7 @@ function CentresIndex({ go, setPage }) {
       .catch(() => { if (alive) setState({ loading: false, centres: [], err: true }); });
     return () => { alive = false; };
   }, []);
-
   const { loading, centres, err } = state;
-
   return (
     <React.Fragment>
       <section className="centres-intro" data-screen-label="Summer School centres">
@@ -84,9 +112,7 @@ function CentresIndex({ go, setPage }) {
       <section className="centres-list-wrap">
         <div className="container">
           {loading ? (
-            <div className="centres-grid" aria-hidden="true">
-              {[0, 1, 2].map(i => <div key={i} className="centre-card centre-card-skeleton"/>)}
-            </div>
+            <div className="centres-grid" aria-hidden="true">{[0, 1, 2].map(i => <div key={i} className="centre-card centre-card-skeleton"/>)}</div>
           ) : err ? (
             <div className="centres-empty">
               <p>We couldn't load the centres just now. Please try again in a moment.</p>
@@ -111,7 +137,6 @@ function CentresIndex({ go, setPage }) {
               </div>
             </div>
           )}
-
           <div className="centres-cta-band">
             <div>
               <h2 className="display centres-cta-h">Not sure which room is yours?</h2>
@@ -128,12 +153,11 @@ function CentresIndex({ go, setPage }) {
 function CentreCard({ c, go }) {
   const accent = c.color || "#76B043";
   const href = CENTRES_BASE + "/" + c.slug;
-  const onClick = (e) => { e.preventDefault(); go(href); };
   return (
-    <a href={href} className="centre-card" onClick={onClick} style={{ "--centre-accent": accent }}>
+    <a href={href} className="centre-card" onClick={(e) => { e.preventDefault(); go(href); }} style={{ "--centre-accent": accent }}>
       <div className="centre-card-media">
         {c.heroImageUrl
-          ? <img src={c.heroImageUrl} alt={"A student at the " + c.name + " centre"} loading="lazy"/>
+          ? <img src={c.heroImageUrl} alt={"A student at the " + c.name + " centre"} loading="lazy" style={{ objectPosition: c.heroPosition || "bottom center" }}/>
           : <div className="centre-card-media-fallback" aria-hidden="true">{(c.code || c.name || "•").slice(0, 3)}</div>}
         <span className="centre-card-badge mono">{c.code}</span>
       </div>
@@ -153,6 +177,8 @@ function CentreCard({ c, go }) {
 /* ---- Detail: one centre's immersive page ---- */
 function CentreDetail({ slug, go, setPage }) {
   const [state, setState] = React.useState({ loading: true, centre: null, notFound: false });
+  const auth = (typeof useAuth === "function") ? useAuth() : null;
+  const canEdit = !!(auth && auth.isSignedIn && (auth.isAdmin || (auth.hasCap && auth.hasCap("summer"))));
 
   React.useEffect(() => {
     let alive = true;
@@ -197,6 +223,7 @@ function CentreDetail({ slug, go, setPage }) {
   }
 
   const c = state.centre;
+  const patch = (fields) => setState(s => ({ ...s, centre: { ...s.centre, ...fields } }));
   const accent = c.color || "#76B043";
   const paras = String(c.story || "").split(/\n{2,}|\n/).map(s => s.trim()).filter(Boolean);
   const hasWa = /^https:\/\//i.test(c.whatsappUrl || "");
@@ -205,12 +232,13 @@ function CentreDetail({ slug, go, setPage }) {
   const top = c.topStudents || [];
   const needs = c.needs || { volunteers: [], materials: [] };
   const hasNeeds = (needs.volunteers || []).length > 0 || (needs.materials || []).length > 0;
-  const wm = ((c.name || "ÌLÚ Ẹ̀KÒ") + " · ").repeat(8);
+  const wm = (ILU_EKO + " · ").repeat(8);
   const avatarTones = ["linear-gradient(135deg,#a8d91a,#1c2a5e)", "linear-gradient(135deg,#f5b026,#ff5a3c)", "linear-gradient(135deg,#b07cff,#1c2a5e)", "linear-gradient(135deg,#d0ff3a,#1c2a5e)"];
   const rankColors = ["#e4032b", "#c0361c", "#8088a6", "#b8bfd6"];
+  const rootStyle = { ...centreInk(accent) };
 
   return (
-    <article className="centre-immersive" style={{ "--centre-accent": accent }}>
+    <article className="centre-immersive" style={rootStyle}>
       {/* ---- Giant hero ---- */}
       <section className="centre-hero" data-screen-label={c.name + " centre"}>
         <div className="centre-hero-bg" aria-hidden="true">
@@ -237,13 +265,7 @@ function CentreDetail({ slug, go, setPage }) {
               {hasWa && <a className="btn btn-lg centre-btn-outline-ink" href={c.whatsappUrl} target="_blank" rel="noopener noreferrer">Join the group</a>}
             </div>
           </div>
-          <div className="centre-hero-figure">
-            <div className="centre-hero-figure-ring" aria-hidden="true"/>
-            <div className="centre-hero-sts" aria-hidden="true">STREET TO<br/>STARDOM</div>
-            {c.heroImageUrl
-              ? <img className="centre-hero-img" src={c.heroImageUrl} alt={"A student of the " + c.name + " centre"}/>
-              : <div className="centre-hero-img centre-hero-img-fallback" aria-hidden="true">{(c.code || "•")}</div>}
-          </div>
+          <CentreHeroFigure c={c} canEdit={canEdit} onSaved={patch}/>
         </div>
       </section>
 
@@ -336,9 +358,7 @@ function CentreDetail({ slug, go, setPage }) {
             <div className="mono centre-section-eyebrow">IN THE ROOM</div>
             <div className="centre-gallery-grid">
               {c.gallery.map((src, i) => (
-                <figure key={i} className="centre-gallery-item">
-                  <img src={src} alt={c.name + " — moment " + (i + 1)} loading="lazy"/>
-                </figure>
+                <figure key={i} className="centre-gallery-item"><img src={src} alt={c.name + " — moment " + (i + 1)} loading="lazy"/></figure>
               ))}
             </div>
           </div>
@@ -364,10 +384,7 @@ function CentreDetail({ slug, go, setPage }) {
                   <div className="mono centre-needs-label">People needed</div>
                   <ul className="centre-needs-list">
                     {needs.volunteers.map((v, i) => (
-                      <li key={i} className="centre-need-row">
-                        <span className="centre-need-name">{cap(v.role)}s</span>
-                        <span className="centre-need-gap">{v.gap} needed</span>
-                      </li>
+                      <li key={i} className="centre-need-row"><span className="centre-need-name">{cap(v.role)}s</span><span className="centre-need-gap">{v.gap} needed</span></li>
                     ))}
                   </ul>
                 </div>
@@ -377,10 +394,7 @@ function CentreDetail({ slug, go, setPage }) {
                   <div className="mono centre-needs-label">Materials needed</div>
                   <ul className="centre-needs-list">
                     {needs.materials.map((m, i) => (
-                      <li key={i} className="centre-need-row">
-                        <span className="centre-need-name">{m.item}</span>
-                        <span className="centre-need-gap">{m.open ? (m.filled > 0 ? m.filled + " so far" : "Any welcome") : m.gap + (m.unit ? " " + m.unit : "") + " to go"}</span>
-                      </li>
+                      <li key={i} className="centre-need-row"><span className="centre-need-name">{m.item}</span><span className="centre-need-gap">{m.open ? (m.filled > 0 ? m.filled + " so far" : "Any welcome") : m.gap + (m.unit ? " " + m.unit : "") + " to go"}</span></li>
                     ))}
                   </ul>
                 </div>
@@ -415,7 +429,92 @@ function CentreDetail({ slug, go, setPage }) {
   );
 }
 
+/* ---- Hero figure — the giant model image + (admin) inline add/position ---- */
+function CentreHeroFigure({ c, canEdit, onSaved }) {
+  const [editing, setEditing] = React.useState(false);
+  const [url, setUrl] = React.useState(c.heroImageUrl || "");
+  const [pos, setPos] = React.useState(c.heroPosition || "center bottom");
+  const [centreId, setCentreId] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [drag, setDrag] = React.useState(false);
+  const boxRef = React.useRef(null);
+
+  React.useEffect(() => { setUrl(c.heroImageUrl || ""); setPos(c.heroPosition || "center bottom"); }, [c.heroImageUrl, c.heroPosition]);
+
+  const enterEdit = async () => {
+    if (!centreId) {
+      try {
+        const r = await NGGApi.admin.registration.centres();
+        const match = (r.centres || []).find(x => x.slug === c.slug || x.name === c.name);
+        if (!match) { toast.error("Couldn't find this centre in the admin list."); return; }
+        setCentreId(match.centreId);
+      } catch (e) { toast.error("Sign in to the Control Room first."); return; }
+    }
+    setEditing(true);
+  };
+
+  // Drag anywhere on the image to set the focal point (object-position %).
+  const onMove = (clientX, clientY) => {
+    const el = boxRef.current; if (!el) return;
+    const b = el.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, Math.round((clientX - b.left) / b.width * 100)));
+    const y = Math.max(0, Math.min(100, Math.round((clientY - b.top) / b.height * 100)));
+    setPos(x + "% " + y + "%");
+  };
+  const onDown = (e) => { if (!editing) return; setDrag(true); const t = e.touches ? e.touches[0] : e; onMove(t.clientX, t.clientY); };
+  const onDragMove = (e) => { if (!drag) return; const t = e.touches ? e.touches[0] : e; onMove(t.clientX, t.clientY); e.preventDefault && e.preventDefault(); };
+  const onUp = () => setDrag(false);
+
+  const save = async () => {
+    if (!centreId) return;
+    setSaving(true);
+    try {
+      await NGGApi.admin.registration.centreUpsert({ centreId, name: c.name, code: c.code, color: c.color, heroImageUrl: url.trim(), heroPosition: pos });
+      toast.success("Hero image saved.");
+      onSaved({ heroImageUrl: url.trim(), heroPosition: pos });
+      setEditing(false);
+    } catch (e) { toast.error(e.code === "bad_image" ? "Image links must start with https://" : (e.code || e.message)); }
+    finally { setSaving(false); }
+  };
+  const cancel = () => { setUrl(c.heroImageUrl || ""); setPos(c.heroPosition || "center bottom"); setEditing(false); };
+
+  return (
+    <div
+      className={"centre-hero-figure" + (editing ? " is-editing" : "")}
+      ref={boxRef}
+      onMouseMove={onDragMove} onMouseUp={onUp} onMouseLeave={onUp}
+      onTouchMove={onDragMove} onTouchEnd={onUp}
+    >
+      <div className="centre-hero-figure-ring" aria-hidden="true"/>
+      <div className="centre-hero-sts" aria-hidden="true">STREET TO<br/>STARDOM</div>
+      {url
+        ? <img className="centre-hero-img" src={url} alt={"A student of the " + c.name + " centre"} style={{ objectPosition: pos, cursor: editing ? (drag ? "grabbing" : "grab") : "default" }} onMouseDown={onDown} onTouchStart={onDown} draggable={false}/>
+        : <div className="centre-hero-img centre-hero-img-fallback" aria-hidden="true">{(c.code || "•")}</div>}
+
+      {canEdit && !editing && (
+        <button className="centre-edit-fab" onClick={enterEdit}>✎ {url ? "Edit hero image" : "Add hero image"}</button>
+      )}
+      {canEdit && editing && (
+        <div className="centre-edit-panel" onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
+          <div className="centre-edit-title mono">HERO IMAGE</div>
+          <div className="centre-edit-row">
+            <Uploader kind="cover" accept="image/*" compact onUploaded={(u) => setUrl(u)}/>
+            <span className="centre-edit-hint">or paste a URL:</span>
+          </div>
+          <input className="centre-edit-input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…"/>
+          <div className="centre-edit-hint">Drag the image to set its focal point. <b>{pos}</b></div>
+          <div className="centre-edit-actions">
+            <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save"}</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setPos("center bottom")}>Reset position</button>
+            <button className="btn btn-ghost btn-sm" onClick={cancel}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Capitalise a role/word for display ("mentor" → "Mentor").
 function cap(s) { s = String(s || ""); return s ? s.charAt(0).toUpperCase() + s.slice(1) : ""; }
 
-Object.assign(window, { CentresPage, CentresIndex, CentreCard, CentreDetail });
+Object.assign(window, { CentresPage, CentresIndex, CentreCard, CentreDetail, CentreHeroFigure });

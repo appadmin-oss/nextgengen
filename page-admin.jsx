@@ -4531,6 +4531,7 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
     slug: c.slug || "", pageStatus: c.pageStatus || "draft",
     tagline: c.tagline || "", headline: c.headline || "",
     heroImageUrl: c.heroImageUrl || "", heroImageMobileUrl: c.heroImageMobileUrl || "",
+    heroPosition: c.heroPosition || "center bottom",
     story: c.story || "", gallery: Array.isArray(c.gallery) ? c.gallery : [],
   });
   const [busy, setBusy] = React.useState(false);
@@ -4560,6 +4561,7 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
         slug: f.slug.trim(), pageStatus: f.pageStatus,
         tagline: f.tagline, headline: f.headline,
         heroImageUrl: f.heroImageUrl.trim(), heroImageMobileUrl: f.heroImageMobileUrl.trim(),
+        heroPosition: f.heroPosition,
         story: f.story, gallery: (f.gallery || []).map(s => (s || "").trim()).filter(Boolean),
       });
       invalidateCentreOptCache();
@@ -4638,6 +4640,21 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
           <div style={{ flex: "1 1 260px", minWidth: 220 }}>
             <FieldUpload label="Hero image — mobile (optional)" value={f.heroImageMobileUrl} onChange={v => set("heroImageMobileUrl", v)} kind="cover" placeholder="Optional alternate for small screens"/>
           </div>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end", marginTop: 10 }}>
+          <div style={{ flex: "0 0 auto" }}>
+            <span style={lbl}>Hero focal position</span>
+            <select className="admin-select" value={f.heroPosition} onChange={e => set("heroPosition", e.target.value)}>
+              <option value="center bottom">Bottom · centre</option>
+              <option value="center center">Centre</option>
+              <option value="center top">Top · centre</option>
+              <option value="left bottom">Bottom · left</option>
+              <option value="right bottom">Bottom · right</option>
+              <option value="left center">Centre · left</option>
+              <option value="right center">Centre · right</option>
+            </select>
+          </div>
+          <p className="admin-hint" style={{ margin: 0, flex: "1 1 240px" }}>Where the giant hero image sits. Admins can also <b>drag to position</b> it directly on the live centre page.</p>
         </div>
         <div style={{ marginTop: 12 }}>
           <span style={lbl}>Story</span>

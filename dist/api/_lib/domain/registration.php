@@ -862,7 +862,7 @@ function geo_match_centre(float $lat, float $lng): ?array {
 function admin_centres_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, story, gallery, pageUpdatedAt FROM centres ORDER BY name");
+    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt FROM centres ORDER BY name");
     // Volunteers available to lead a centre — active only, labelled for the picker.
     $vols = db_all("SELECT volunteerId, fullName, firstName, role, centre FROM volunteers WHERE status = 'active' ORDER BY fullName");
     $volById = [];
@@ -1017,6 +1017,14 @@ function admin_centres_upsert(array $p): array {
             $row[$f] = mb_substr($u, 0, 500); $pageTouched = true;
         }
     }
+    // Hero focal position — a safe CSS object-position (keywords or two
+    // percentages), used to position the giant hero image on the page.
+    if (array_key_exists('heroPosition', $d)) {
+        $hp = strtolower(trim((string)$d['heroPosition']));
+        $tok = '(left|right|center|top|bottom|-?\d{1,3}(\.\d+)?%)';
+        $row['heroPosition'] = ($hp !== '' && preg_match('/^' . $tok . '( ' . $tok . ')?$/', $hp)) ? mb_substr($hp, 0, 32) : 'center bottom';
+        $pageTouched = true;
+    }
     if (array_key_exists('gallery', $d)) {
         $g = is_array($d['gallery']) ? $d['gallery'] : [];
         $clean = [];
@@ -1096,6 +1104,7 @@ function centre_page_public(array $c): array {
         'story'     => (string)($c['story'] ?? ''),
         'heroImageUrl'       => (string)($c['heroImageUrl'] ?? ''),
         'heroImageMobileUrl' => (string)($c['heroImageMobileUrl'] ?? ''),
+        'heroPosition'       => (string)($c['heroPosition'] ?? '') ?: 'center bottom',
         'gallery'   => $gallery,
         'area'      => $meta['area'],
         'address'   => $meta['address'],
@@ -1108,7 +1117,7 @@ function centre_page_public(array $c): array {
 
 /** Public: the directory of published Summer School centres (for /centres). */
 function public_centres_list(): array {
-    $rows = db_all("SELECT centreId, name, code, color, slug, tagline, headline, heroImageUrl, area, address, meetDays, meetTime, capacity, leadVolunteerId, whatsappUrl
+    $rows = db_all("SELECT centreId, name, code, color, slug, tagline, headline, heroImageUrl, heroPosition, area, address, meetDays, meetTime, capacity, leadVolunteerId, whatsappUrl
                     FROM centres WHERE status = 'active' AND pageStatus = 'published' AND slug <> '' ORDER BY name");
     $c = summer_ensure_cohort();
     $centres = [];
@@ -1123,6 +1132,7 @@ function public_centres_list(): array {
             'tagline' => (string)$r['tagline'],
             'headline'=> (string)$r['headline'],
             'heroImageUrl' => (string)$r['heroImageUrl'],
+            'heroPosition' => (string)($r['heroPosition'] ?? '') ?: 'center bottom',
             'area'    => $meta['area'],
             'meetDays'=> $meta['meetDays'],
             'meetTime'=> $meta['meetTime'],
