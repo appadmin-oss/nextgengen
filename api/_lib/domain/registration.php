@@ -899,7 +899,7 @@ function centre_public_meta(array $c): array {
     $lead = null;
     $lid = (string)($c['leadVolunteerId'] ?? '');
     if ($lid !== '') {
-        $v = db_row("SELECT fullName, firstName, lastName, role, visibilityConsent, photoUrl FROM volunteers WHERE volunteerId = ?", [$lid]);
+        $v = db_row("SELECT fullName, firstName, lastName, role, faculty, visibilityConsent, photoUrl FROM volunteers WHERE volunteerId = ?", [$lid]);
         if ($v) {
             $consent = (int)($v['visibilityConsent'] ?? 0) === 1;
             $first = trim((string)($v['firstName'] ?? '')); if ($first === '') $first = explode(' ', (string)$v['fullName'])[0] ?? 'Lead';
@@ -908,6 +908,7 @@ function centre_public_meta(array $c): array {
                 'name'    => $consent ? $first : '',
                 'handle'  => $consent ? ('@' . strtolower(preg_replace('/[^a-z]/i', '', $first)) . ($lastInit ? '.' . $lastInit : '')) : ('@vol-' . substr(md5($lid), 0, 4)),
                 'role'    => (string)$v['role'],
+                'faculty' => $consent ? (string)($v['faculty'] ?? '') : '',
                 'face'    => $consent ? (string)($v['photoUrl'] ?? '') : '',
                 'initial' => strtoupper(substr($consent ? $first : (string)$v['role'], 0, 1)),
             ];
@@ -1143,7 +1144,60 @@ function public_centre_page(array $p): array {
     $page = centre_page_public($c);
     $page['enrolled'] = $enrolled;
     $page['capacity'] = (int)($c['capacity'] ?? 0);
+    $page['topStudents'] = centre_top_students((string)$c['name']);
+    $page['needs'] = centre_needs((string)$c['name']);
     return ['ok' => true, 'centre' => $page];
+}
+
+/**
+ * Top members at a centre, ranked by XP — PII-safe (first name + last initial
+ * only, never a surname). Powers the centre page's "Top students" board.
+ */
+function centre_top_students(string $centreName, int $limit = 4): array {
+    if ($centreName === '') return [];
+    $rows = db_all("SELECT m.memberId, m.fullName, m.track, COALESCE(s.xpTotal,0) xp, COALESCE(s.level,1) level, COALESCE(s.badgeCount,0) badges, COALESCE(s.streak,0) streak
+                    FROM members m LEFT JOIN member_stats s ON s.memberId = m.memberId
+                    WHERE m.status = 'active' AND m.centre = ?
+                    ORDER BY xp DESC, m.fullName ASC LIMIT " . max(1, min(10, $limit)), [$centreName]);
+    $out = []; $rank = 0;
+    foreach ($rows as $r) {
+        if ((int)$r['xp'] <= 0) continue; // only rank members who've actually earned XP
+        $rank++;
+        $parts = preg_split('/\s+/', trim((string)$r['fullName'])) ?: [];
+        $first = $parts[0] ?? 'Member';
+        $initial = count($parts) > 1 ? strtoupper(substr((string)end($parts), 0, 1)) . '.' : '';
+        $out[] = [
+            'rank' => $rank, 'first' => $first, 'initial' => $initial, 'track' => (string)($r['track'] ?? ''),
+            'xp' => (int)$r['xp'], 'level' => (int)$r['level'], 'badges' => (int)$r['badges'], 'streak' => (int)$r['streak'],
+        ];
+    }
+    return $out;
+}
+
+/**
+ * What a centre still needs — the public, actionable slice of the volunteer +
+ * material fulfilment board (see volunteer_status_compute). Only unmet needs
+ * (gap > 0, or open standing item requests) are surfaced.
+ */
+function centre_needs(string $centreName): array {
+    $out = ['volunteers' => [], 'materials' => [], 'volunteerGap' => 0];
+    if ($centreName === '' || !function_exists('volunteer_status_compute')) return $out;
+    $mine = null;
+    foreach (volunteer_status_compute()['byCentre'] as $b) {
+        if ((string)$b['name'] === $centreName) { $mine = $b; break; }
+    }
+    if (!$mine) return $out;
+    foreach (($mine['byRole'] ?? []) as $r) {
+        if ((int)$r['gap'] > 0) $out['volunteers'][] = ['role' => (string)$r['role'], 'gap' => (int)$r['gap']];
+    }
+    foreach (($mine['items'] ?? []) as $it) {
+        if (!empty($it['wanted'])) $out['materials'][] = [
+            'item' => (string)$it['item'], 'gap' => (int)$it['gap'], 'open' => !empty($it['open']),
+            'unit' => (string)($it['unit'] ?? ''), 'filled' => (int)$it['filled'], 'need' => (int)$it['need'],
+        ];
+    }
+    $out['volunteerGap'] = (int)($mine['gap'] ?? 0);
+    return $out;
 }
 
 /**
