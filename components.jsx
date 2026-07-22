@@ -689,6 +689,7 @@ function Footer({ setPage }) {
       h: "Programs",
       links: [
         { label: "Summer Students", page: "summer" },
+        { label: "Find your centre", page: "centres" },
         { label: "NGGC · Identity society", page: "club" },
         { label: "Anchor 12", page: "anchor", badge: "LIVE" },
         { label: "Vanguard track", page: "anchor" },

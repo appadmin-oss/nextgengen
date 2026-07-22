@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 45;
+const NGG_SCHEMA_TARGET = 46;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1183,6 +1183,23 @@ function db_migrate(PDO $db): void {
               createdAt TEXT DEFAULT (datetime('now'))
             );
             CREATE INDEX idx_pnote_subject ON profile_notes(subjectType, subjectId);
+        ",
+
+        // Public centre pages — the immersive, publicly-addressable landing
+        // page for each Summer School centre (/centres/<slug>). slug drives the
+        // URL; pageStatus gates public visibility; the rest is page content: a
+        // giant hero image of a model, a tagline/headline, a story, a gallery.
+        46 => "
+            ALTER TABLE centres ADD COLUMN slug TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN pageStatus TEXT DEFAULT 'draft';
+            ALTER TABLE centres ADD COLUMN tagline TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN headline TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN heroImageUrl TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN heroImageMobileUrl TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN story TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN gallery TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN pageUpdatedAt TEXT DEFAULT '';
+            CREATE INDEX idx_centres_slug ON centres(slug);
         ",
     ];
 

@@ -789,4 +789,19 @@ CREATE TABLE IF NOT EXISTS profile_notes (
   INDEX idx_pnote_subject (subjectType, subjectId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO schema_version (version) VALUES (45) ON DUPLICATE KEY UPDATE version = version;
+-- 46: public centre pages — the immersive, publicly-addressable landing page
+-- for each Summer School centre (/centres/<slug>). slug drives the URL;
+-- pageStatus gates public visibility; the rest is page content (a giant hero
+-- image of a model, a tagline/headline, a story, and an image gallery).
+ALTER TABLE centres ADD COLUMN slug VARCHAR(64) DEFAULT '';
+ALTER TABLE centres ADD COLUMN pageStatus VARCHAR(16) DEFAULT 'draft';
+ALTER TABLE centres ADD COLUMN tagline VARCHAR(200) DEFAULT '';
+ALTER TABLE centres ADD COLUMN headline VARCHAR(200) DEFAULT '';
+ALTER TABLE centres ADD COLUMN heroImageUrl TEXT;
+ALTER TABLE centres ADD COLUMN heroImageMobileUrl TEXT;
+ALTER TABLE centres ADD COLUMN story TEXT;
+ALTER TABLE centres ADD COLUMN gallery TEXT;
+ALTER TABLE centres ADD COLUMN pageUpdatedAt VARCHAR(40) DEFAULT '';
+CREATE INDEX idx_centres_slug ON centres (slug);
+
+INSERT INTO schema_version (version) VALUES (46) ON DUPLICATE KEY UPDATE version = version;

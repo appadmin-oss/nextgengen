@@ -4470,7 +4470,7 @@ function SummerCentres() {
   if (err) return <ErrorState title="Couldn't load centres" code={err} onRetry={load}/>;
   return (
     <div>
-      <p className="admin-hint">Each centre has a 1–4 letter code (the printed ID prefix, e.g. <span className="mono">IJ-26-001</span>) and a colour that drives its ID card accent. Quick-add below, then <b>Edit</b> to set its address, centre lead, contacts and meeting times — these appear on the public status boards. <b>Map</b> draws its geo-fence.</p>
+      <p className="admin-hint">Each centre has a 1–4 letter code (the printed ID prefix, e.g. <span className="mono">IJ-26-001</span>) and a colour that drives its ID card accent. Quick-add below, then <b>Edit</b> to set its address, centre lead, contacts and meeting times — these appear on the public status boards — plus the <b>public page</b> (hero image, tagline, story) shown at <span className="mono">/centres/&lt;slug&gt;</span>. <b>Map</b> draws its geo-fence.</p>
       <form onSubmit={add} className="admin-filters" style={{ alignItems: "center" }}>
         <input className="admin-input" placeholder="Centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
         <input className="admin-input" placeholder="CODE" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
@@ -4488,6 +4488,9 @@ function SummerCentres() {
               <td>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 12, height: 12, borderRadius: 4, background: c.color, border: "1px solid rgba(0,0,0,0.1)", flex: "0 0 auto" }}/><b>{c.name}</b> <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>{c.code}</span></span>
                 {c.status === "archived" && <span className="chip status-archived" style={{ marginLeft: 8 }}>archived</span>}
+                {c.pageStatus === "published"
+                  ? <a className="chip chip-lime" href={"/centres/" + (c.slug || "")} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, textDecoration: "none" }}>page live ↗</a>
+                  : <span className="chip" style={{ marginLeft: 8, opacity: 0.7 }}>page draft</span>}
               </td>
               <td>{c.area || c.address ? <span style={{ lineHeight: 1.3 }}><b style={{ fontWeight: 600 }}>{c.area || "—"}</b>{c.address ? <><br/><span className="admin-cell-sub" style={{ fontSize: 12 }}>{c.address}</span></> : null}</span> : <span className="admin-cell-sub">—</span>}</td>
               <td>{c.leadName ? <span className="chip chip-lime">{c.leadName}</span> : <span className="admin-cell-sub">—</span>}</td>
@@ -4512,6 +4515,12 @@ function SummerCentres() {
  * status/capacity), where it is (address/area), who leads it (a volunteer),
  * how to reach it (phone/email), and when it meets. Address, area, schedule
  * and the lead surface on the public status boards' "find us" cards. */
+// Mirror of the server's centre_slugify() for the live URL preview.
+function centreSlugify(s) {
+  return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+} // (NFD + combining-mark strip mirrors iconv//TRANSLIT on the server)
+
 function CentreDetailsEditor({ c, leadOptions, onSaved }) {
   const [f, setF] = React.useState({
     name: c.name || "", code: c.code || "", color: c.color || "#76B043",
@@ -4519,9 +4528,17 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
     address: c.address || "", area: c.area || "", leadVolunteerId: c.leadVolunteerId || "",
     phone: c.phone || "", email: c.email || "", meetDays: c.meetDays || "", meetTime: c.meetTime || "", notes: c.notes || "",
     whatsappUrl: c.whatsappUrl || "",
+    slug: c.slug || "", pageStatus: c.pageStatus || "draft",
+    tagline: c.tagline || "", headline: c.headline || "",
+    heroImageUrl: c.heroImageUrl || "", heroImageMobileUrl: c.heroImageMobileUrl || "",
+    story: c.story || "", gallery: Array.isArray(c.gallery) ? c.gallery : [],
   });
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setF(s => ({ ...s, [k]: v }));
+  const galleryAdd = () => set("gallery", [...(f.gallery || []), ""]);
+  const gallerySet = (i, v) => set("gallery", (f.gallery || []).map((x, j) => (j === i ? v : x)));
+  const galleryRemove = (i) => set("gallery", (f.gallery || []).filter((_, j) => j !== i));
+  const effectiveSlug = (f.slug && f.slug.trim()) ? centreSlugify(f.slug) : centreSlugify(f.name);
   // Volunteers based at this centre float to the top of the lead picker.
   const leads = React.useMemo(() => {
     const opts = leadOptions || [];
@@ -4540,11 +4557,15 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
         address: f.address, area: f.area, leadVolunteerId: f.leadVolunteerId,
         phone: f.phone, email: f.email, meetDays: f.meetDays, meetTime: f.meetTime, notes: f.notes,
         whatsappUrl: f.whatsappUrl.trim(),
+        slug: f.slug.trim(), pageStatus: f.pageStatus,
+        tagline: f.tagline, headline: f.headline,
+        heroImageUrl: f.heroImageUrl.trim(), heroImageMobileUrl: f.heroImageMobileUrl.trim(),
+        story: f.story, gallery: (f.gallery || []).map(s => (s || "").trim()).filter(Boolean),
       });
       invalidateCentreOptCache();
       toast.success("Centre saved."); onSaved();
     } catch (e) {
-      toast.error(e.code === "code_taken" ? "That code is already used." : e.code === "bad_email" ? "That email address isn't valid." : e.code === "bad_whatsapp" ? "The WhatsApp link must start with https://" : e.code === "bad_lead" ? "Pick a current volunteer as lead." : e.code === "bad_color" ? "Pick a valid colour." : (e.code || e.message));
+      toast.error(e.code === "code_taken" ? "That code is already used." : e.code === "bad_email" ? "That email address isn't valid." : e.code === "bad_whatsapp" ? "The WhatsApp link must start with https://" : e.code === "bad_lead" ? "Pick a current volunteer as lead." : e.code === "bad_color" ? "Pick a valid colour." : e.code === "bad_image" ? "Image links must start with https://" : (e.code || e.message));
     } finally { setBusy(false); }
   };
   const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
@@ -4590,6 +4611,50 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
           {field("whatsappUrl", "Group / join link", { max: 240, grow: true, min: 260, ph: "chat.whatsapp.com/… · wa.me/… · forms.gle/…" })}
         </div>
         <p className="admin-hint" style={{ margin: "6px 0 0" }}>Shown to an applicant right after they submit — matched to the centre they picked. Works with a WhatsApp <b>Invite via Link</b>, a <b>wa.me</b> number link, or a <b>form</b> link. You can paste it without <span className="mono">https://</span>.</p>
+      </div>
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)" }}>PUBLIC PAGE</span>
+          <select className="admin-select" value={f.pageStatus} onChange={e => set("pageStatus", e.target.value)} style={{ padding: "3px 8px" }}>
+            <option value="draft">Draft — hidden</option>
+            <option value="published">Published — live</option>
+          </select>
+          {effectiveSlug ? (
+            <a className="mono" href={"/centres/" + effectiveSlug} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "var(--ink-500)", textDecoration: "none" }}>
+              next.afrovanguard.org.ng/centres/<b style={{ color: "var(--ink-800, #0a1130)" }}>{effectiveSlug}</b> ↗
+            </a>
+          ) : null}
+        </div>
+        <p className="admin-hint" style={{ marginTop: 0 }}>The immersive centre landing page at <span className="mono">/centres/&lt;slug&gt;</span> — a giant hero image, a tagline and a story. Publish to make it live; the directory at <span className="mono">/centres</span> lists every published centre.</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end" }}>
+          {field("slug", "URL slug", { max: 64, ph: effectiveSlug || "auto from name" })}
+          {field("tagline", "Tagline (hero eyebrow)", { max: 200, grow: true, min: 260, ph: "e.g. LCASP 2026 · ÌLÚ Ẹ̀KÒ · EMPOWERED 360°" })}
+          {field("headline", "Headline (big display)", { max: 200, grow: true, min: 260, ph: "e.g. No dey settle for less." })}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 12 }}>
+          <div style={{ flex: "1 1 260px", minWidth: 220 }}>
+            <FieldUpload label="Hero image (giant model — portrait works best)" value={f.heroImageUrl} onChange={v => set("heroImageUrl", v)} kind="cover" placeholder="Paste an https:// image URL or upload →"/>
+          </div>
+          <div style={{ flex: "1 1 260px", minWidth: 220 }}>
+            <FieldUpload label="Hero image — mobile (optional)" value={f.heroImageMobileUrl} onChange={v => set("heroImageMobileUrl", v)} kind="cover" placeholder="Optional alternate for small screens"/>
+          </div>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <span style={lbl}>Story</span>
+          <textarea className="admin-input" value={f.story} maxLength={6000} onChange={e => set("story", e.target.value)} rows={5} style={{ width: "100%", resize: "vertical" }} placeholder="What happens at this centre, who it's for, what a Saturday feels like. One blank line starts a new paragraph."/>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <span style={lbl}>Gallery ({(f.gallery || []).length})</span>
+          {(f.gallery || []).map((url, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <FieldUpload label={""} value={url} onChange={v => gallerySet(i, v)} kind="cover" placeholder="Paste an https:// image URL or upload →"/>
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => galleryRemove(i)} style={{ color: "#b03535", marginTop: 2 }}>Remove</button>
+            </div>
+          ))}
+          {(f.gallery || []).length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={galleryAdd}>+ Add gallery image</button>}
+        </div>
       </div>
       <div>
         <span style={lbl}>Notes (internal)</span>

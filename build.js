@@ -45,6 +45,7 @@ const ORDER = [
   'page-club.jsx',
   'page-anchor.jsx',
   'page-other.jsx',
+  'page-centres.jsx',
   'page-blog.jsx',
   'page-dashboard.jsx',
   'page-book.jsx',

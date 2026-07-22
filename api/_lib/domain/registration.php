@@ -862,7 +862,7 @@ function geo_match_centre(float $lat, float $lng): ?array {
 function admin_centres_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt FROM centres ORDER BY name");
+    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, story, gallery, pageUpdatedAt FROM centres ORDER BY name");
     // Volunteers available to lead a centre — active only, labelled for the picker.
     $vols = db_all("SELECT volunteerId, fullName, firstName, role, centre FROM volunteers WHERE status = 'active' ORDER BY fullName");
     $volById = [];
@@ -879,6 +879,10 @@ function admin_centres_list(array $p): array {
         $r['full'] = ((int)$r['capacity'] > 0 && $r['enrolled'] >= (int)$r['capacity']);
         $lid = (string)($r['leadVolunteerId'] ?? '');
         $r['leadName'] = $lid !== '' ? ($volById[$lid] ?? db_row('SELECT fullName FROM volunteers WHERE volunteerId = ?', [$lid])['fullName'] ?? '') : '';
+        // gallery is stored as a JSON array of image URLs — hand the editor an array.
+        $g2 = json_decode((string)($r['gallery'] ?? ''), true);
+        $r['gallery'] = is_array($g2) ? array_values(array_filter(array_map('strval', $g2))) : [];
+        if (($r['slug'] ?? '') === '') $r['slug'] = centre_slugify((string)$r['name']);
     }
     unset($r);
     return ['ok' => true, 'centres' => $rows, 'leadOptions' => $leadOptions, 'geofenceEnabled' => geofence_enabled()];
@@ -983,6 +987,49 @@ function admin_centres_upsert(array $p): array {
         $row['leadVolunteerId'] = $lead;
     }
 
+    // ── Public centre-page content (the immersive /centres/<slug> landing) ──
+    // Each field is optional and only written when its key is present, so a
+    // partial save (identity, geo, contacts) never wipes page content.
+    if (array_key_exists('pageStatus', $d)) {
+        $row['pageStatus'] = in_array((string)$d['pageStatus'], ['published', 'draft'], true) ? (string)$d['pageStatus'] : 'draft';
+    }
+    // Slug — the URL segment. Explicit value is sanitised; a blank one is
+    // derived from the name. Kept unique across centres (append -2, -3, …).
+    if (array_key_exists('slug', $d) || (!$existing && !array_key_exists('slug', $d))) {
+        $want = centre_slugify((string)($d['slug'] ?? '') !== '' ? (string)$d['slug'] : $name);
+        if ($want === '') $want = 'centre';
+        $slug = $want; $n = 2;
+        while (db_row('SELECT centreId FROM centres WHERE slug = ? AND centreId <> ? LIMIT 1', [$slug, $id ?: '—'])) {
+            $slug = $want . '-' . $n; $n++;
+        }
+        $row['slug'] = $slug;
+    }
+    $pageTouched = false;
+    $pageText = ['tagline' => 200, 'headline' => 200, 'story' => 6000];
+    foreach ($pageText as $f => $max) {
+        if (array_key_exists($f, $d)) { $row[$f] = mb_substr(trim((string)$d[$f]), 0, $max); $pageTouched = true; }
+    }
+    foreach (['heroImageUrl', 'heroImageMobileUrl'] as $f) {
+        if (array_key_exists($f, $d)) {
+            $u = trim((string)$d[$f]);
+            if ($u !== '' && !preg_match('#^https://#i', $u)) return ['ok' => false, 'error' => 'bad_image'];
+            $row[$f] = mb_substr($u, 0, 500); $pageTouched = true;
+        }
+    }
+    if (array_key_exists('gallery', $d)) {
+        $g = is_array($d['gallery']) ? $d['gallery'] : [];
+        $clean = [];
+        foreach ($g as $u) {
+            $u = trim((string)$u);
+            if ($u === '' || !preg_match('#^https://#i', $u)) continue; // drop blanks / non-https
+            $clean[] = mb_substr($u, 0, 500);
+            if (count($clean) >= 12) break;
+        }
+        $row['gallery'] = json_encode($clean, JSON_UNESCAPED_SLASHES);
+        $pageTouched = true;
+    }
+    if ($pageTouched || array_key_exists('pageStatus', $d)) $row['pageUpdatedAt'] = now_iso();
+
     // Optional geo-mapping. Partial updates preserve any existing point: lat/lng
     // are only written when BOTH are supplied and valid; the fence flag only
     // when explicitly present. mapSource distinguishes an on-site GPS capture
@@ -1014,6 +1061,89 @@ function admin_centres_delete(array $p): array {
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('centre.delete', $g['requester']['memberId'], (string)$p['centreId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true];
+}
+
+/** URL-safe slug from a centre name: lowercase, accents stripped, spaces → "-". */
+function centre_slugify(string $s): string {
+    $s = trim($s);
+    // Best-effort transliteration of accented Latin (Yorùbá diacritics, etc.).
+    if (function_exists('iconv')) {
+        $t = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s);
+        if ($t !== false) $s = $t;
+    }
+    $s = strtolower($s);
+    $s = preg_replace('/[^a-z0-9]+/', '-', $s);
+    return trim((string)$s, '-');
+}
+
+/**
+ * Public projection of a centre's page — everything the immersive /centres
+ * page renders, and nothing that isn't safe to publish. Reuses
+ * centre_public_meta() for the PII-safe lead + location/schedule.
+ */
+function centre_page_public(array $c): array {
+    $gallery = json_decode((string)($c['gallery'] ?? ''), true);
+    $gallery = is_array($gallery) ? array_values(array_filter(array_map('strval', $gallery))) : [];
+    $meta = centre_public_meta($c);
+    return [
+        'slug'      => (string)($c['slug'] ?? ''),
+        'name'      => (string)($c['name'] ?? ''),
+        'code'      => (string)($c['code'] ?? ''),
+        'color'     => (string)($c['color'] ?? '#76B043'),
+        'tagline'   => (string)($c['tagline'] ?? ''),
+        'headline'  => (string)($c['headline'] ?? ''),
+        'story'     => (string)($c['story'] ?? ''),
+        'heroImageUrl'       => (string)($c['heroImageUrl'] ?? ''),
+        'heroImageMobileUrl' => (string)($c['heroImageMobileUrl'] ?? ''),
+        'gallery'   => $gallery,
+        'area'      => $meta['area'],
+        'address'   => $meta['address'],
+        'meetDays'  => $meta['meetDays'],
+        'meetTime'  => $meta['meetTime'],
+        'lead'      => $meta['lead'],
+        'whatsappUrl' => (string)($c['whatsappUrl'] ?? ''),
+    ];
+}
+
+/** Public: the directory of published Summer School centres (for /centres). */
+function public_centres_list(): array {
+    $rows = db_all("SELECT centreId, name, code, color, slug, tagline, headline, heroImageUrl, area, address, meetDays, meetTime, capacity, leadVolunteerId, whatsappUrl
+                    FROM centres WHERE status = 'active' AND pageStatus = 'published' AND slug <> '' ORDER BY name");
+    $c = summer_ensure_cohort();
+    $centres = [];
+    foreach ($rows as $r) {
+        $enrolled = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $meta = centre_public_meta($r);
+        $centres[] = [
+            'slug'    => (string)$r['slug'],
+            'name'    => (string)$r['name'],
+            'code'    => (string)$r['code'],
+            'color'   => (string)$r['color'],
+            'tagline' => (string)$r['tagline'],
+            'headline'=> (string)$r['headline'],
+            'heroImageUrl' => (string)$r['heroImageUrl'],
+            'area'    => $meta['area'],
+            'meetDays'=> $meta['meetDays'],
+            'meetTime'=> $meta['meetTime'],
+            'lead'    => $meta['lead'],
+            'enrolled'=> $enrolled,
+        ];
+    }
+    return ['ok' => true, 'centres' => $centres];
+}
+
+/** Public: one published centre's full immersive page, by slug. */
+function public_centre_page(array $p): array {
+    $slug = centre_slugify((string)($p['slug'] ?? ''));
+    if ($slug === '') return ['ok' => false, 'error' => 'not_found'];
+    $c = db_row("SELECT * FROM centres WHERE slug = ? AND status = 'active' AND pageStatus = 'published' LIMIT 1", [$slug]);
+    if (!$c) return ['ok' => false, 'error' => 'not_found'];
+    $cohort = summer_ensure_cohort();
+    $enrolled = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$cohort['cohortId'], (string)$c['name']])['c'] ?? 0);
+    $page = centre_page_public($c);
+    $page['enrolled'] = $enrolled;
+    $page['capacity'] = (int)($c['capacity'] ?? 0);
+    return ['ok' => true, 'centre' => $page];
 }
 
 /**

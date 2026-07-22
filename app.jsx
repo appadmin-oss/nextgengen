@@ -7,13 +7,14 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","club","community","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","verify","reshoot","cards","certificate","legal"];
+const PAGE_IDS = ["home","summer","centres","club","community","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","verify","reshoot","cards","certificate","legal"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
 const PAGE_META = {
   home:       { title: "Next Generation Genius · Afrovanguard",      desc: "A twelve-week growth journey for African teenagers, 10–17. From summer student to vanguard leader." },
   summer:     { title: "Summer Students · NGG",                       desc: "Six weeks, eight tracks, one bold move. The on-ramp into the Next Generation Genius movement." },
+  centres:    { title: "Summer School centres · NGG",                 desc: "Every LCASP 2026 Summer School centre — find yours, meet the crew, see what's next." },
   club:       { title: "NGGC · The Genius Club",                      desc: "A teen society with Genius IDs, weekly missions, public skill badges and a leaderboard." },
   community:  { title: "Community · NGG",                             desc: "Every centre, every track, one movement — the Next Generation Genius community." },
   anchor:     { title: "Anchor 12 · The Flagship · NGG",              desc: "Twelve weeks. Fifty missions. One identity, rebuilt in public." },
@@ -177,7 +178,10 @@ function App() {
     window.scrollTo({ top: 0, behavior: "instant" });
     // Reflect the current page as a clean path so refresh + share work.
     // Skip the 404 sentinel + deep-linked profile URLs so they stay as-typed.
-    if (page !== "_notfound" && page !== "summerprofile" && page !== "certificate" && window.location.pathname !== pathForPage(page)) {
+    // The centres page owns a URL subtree (/centres and /centres/<slug>); don't
+    // clobber a deep-linked slug by rewriting it back to the index path.
+    const inCentresSubtree = page === "centres" && (window.location.pathname || "").replace(/\/+$/, "").startsWith("/centres");
+    if (page !== "_notfound" && page !== "summerprofile" && page !== "certificate" && !inCentresSubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.
@@ -233,6 +237,7 @@ function App() {
   const pages = {
     home:      <HomePage      setPage={setPage}/>,
     summer:    <SummerPage    setPage={setPage}/>,
+    centres:   <CentresPage   setPage={setPage}/>,
     club:      <ClubPage      setPage={setPage}/>,
     community:  <CommunityPage setPage={setPage}/>,
     anchor:    <AnchorPage    setPage={setPage}/>,

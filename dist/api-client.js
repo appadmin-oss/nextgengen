@@ -178,6 +178,8 @@
       anchorContent: () => request('/public/anchor-content.php'),
       mentors:    () => request('/public/mentors.php'),
       summerProfile: (q) => request('/public/summer-profile.php' + qs(q || {})),
+      centres:    () => request('/public/centres.php'),
+      centre:     (slug) => request('/public/centre.php' + qs({ slug })),
       newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
       apply:      (data) => request('/public/apply.php', { body: data }),
       volunteer:  { context: () => request('/public/volunteer.php') },
