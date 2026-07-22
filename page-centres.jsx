@@ -388,7 +388,7 @@ function CentreDetail({ slug, go, setPage }) {
             <div className="centre-needs-copy">
               <div className="mono centre-section-eyebrow centre-needs-eyebrow">HOW YOU CAN HELP</div>
               <h2 className="display centre-needs-h">This centre needs a hand.</h2>
-              <p className="centre-needs-p">Every Saturday runs on volunteers and kit. Here's what {c.name} is short on right now — step in where you can.</p>
+              <p className="centre-needs-p">Every session runs on volunteers and kit. Here's what {c.name} is short on right now — step in where you can.</p>
               <div className="centre-needs-actions">
                 <button className="btn btn-primary btn-lg" onClick={() => setPage("volunteer")}>Volunteer at this centre →</button>
                 <button className="btn btn-ghost btn-lg" onClick={() => setPage("v-status")}>See the full board</button>

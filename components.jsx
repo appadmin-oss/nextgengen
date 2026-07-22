@@ -690,10 +690,15 @@ function Footer({ setPage }) {
   const session = useSession();
   const site = useSiteContent();
 
-  const CENTRES = [
-    { id: "egbeda", name: "CACENTRE Egbeda", lga: "Alimosho · Lagos", line: "Saturdays · 09:00 – 13:00", note: "Main hub" },
-    { id: "ayobo",  name: "CACENTRE Ayobo",  lga: "Alimosho · Lagos", line: "Saturdays · 09:00 – 13:00", note: "Sister centre" },
-  ];
+  // Live, published centres — never hardcoded. Empty until data lands / if none.
+  const [centres, setCentres] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.public.centres()
+      .then(r => { if (alive) setCentres(r.centres || []); })
+      .catch(() => { if (alive) setCentres([]); });
+    return () => { alive = false; };
+  }, []);
 
   const columns = [
     {
@@ -743,7 +748,7 @@ function Footer({ setPage }) {
               <span className="prefooter-h-em">Are you in?</span>
             </h2>
             <p className="prefooter-p">
-              Two centres. Four sessions a year. One generation showing up.
+              Neighbourhood centres. Four sessions a year. One generation showing up.
               Apply now or send a mentor — both move the needle.
             </p>
           </div>
@@ -849,21 +854,26 @@ function Footer({ setPage }) {
 
             <div className="footer-col footer-col-centres">
               <h4>Find us</h4>
-              <ul className="footer-centres">
-                {CENTRES.map(c => (
-                  <li key={c.id} className="footer-centre">
-                    <a href={"/centres/" + c.id} className="footer-centre-link" onClick={goCentre(c.id)}>
-                      <div className="footer-centre-head">
-                        <span className="footer-centre-dot"/>
-                        <span className="footer-centre-name">{c.name}</span>
-                        <span className="footer-centre-go" aria-hidden="true">→</span>
-                      </div>
-                      <div className="footer-centre-meta">{c.lga}</div>
-                      <div className="mono footer-centre-line">{c.line}</div>
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              {centres && centres.length > 0 ? (
+                <ul className="footer-centres">
+                  {centres.map(c => (
+                    <li key={c.slug} className="footer-centre">
+                      <a href={"/centres/" + c.slug} className="footer-centre-link" onClick={goCentre(c.slug)}>
+                        <div className="footer-centre-head">
+                          <span className="footer-centre-dot"/>
+                          <span className="footer-centre-name">{c.name}</span>
+                          <span className="footer-centre-go" aria-hidden="true">→</span>
+                        </div>
+                        {c.area && <div className="footer-centre-meta">{c.area}</div>}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <ul>
+                  <li><button className="footer-link" onClick={() => setPage("centres")}>Find your centre →</button></li>
+                </ul>
+              )}
             </div>
           </div>
 
