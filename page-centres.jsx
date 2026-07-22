@@ -44,15 +44,20 @@ function centreInk(accent) {
   const DARK = "#0c1432", LIGHT = "#fbf7ed";
   const bgLight = centreContrast(accent, DARK) >= centreContrast(accent, LIGHT);
   const base = bgLight ? "12,20,50" : "251,247,237";
+  // The decorative circle behind the model is a SOLID navy almost always — a
+  // fixed brand element, not tinted by the accent. It only flips to paper when
+  // the accent sits so close to navy the two would cancel out (a rare case);
+  // the ring then takes the opposite so it always reads against the orb.
+  const orbNavyReads = centreContrast(accent, DARK) >= 1.6;
   return {
     "--centre-accent": accent,
     "--centre-ink": bgLight ? DARK : LIGHT,
     "--centre-on-ink": bgLight ? "#ffffff" : "#0c1432",
     "--centre-ink-soft": "rgba(" + base + ",0.74)",
     "--centre-ink-line": "rgba(" + base + ",0.34)",
-    "--centre-ink-ring": "rgba(" + base + ",0.3)",
     "--centre-back-bg": "rgba(" + base + ",0.12)",
-    "--centre-orb": bgLight ? "#0c1432" : "rgba(" + base + ",0.14)",
+    "--centre-orb": orbNavyReads ? DARK : LIGHT,
+    "--centre-ring": orbNavyReads ? LIGHT : DARK,
   };
 }
 
@@ -232,7 +237,8 @@ function CentreDetail({ slug, go, setPage }) {
   const top = c.topStudents || [];
   const needs = c.needs || { volunteers: [], materials: [] };
   const hasNeeds = (needs.volunteers || []).length > 0 || (needs.materials || []).length > 0;
-  const wm = (ILU_EKO + " · ").repeat(8);
+  const wmLine = (ILU_EKO + " · ").repeat(12);
+  const wmLines = 7; // fill the hero densely
   const avatarTones = ["linear-gradient(135deg,#a8d91a,#1c2a5e)", "linear-gradient(135deg,#f5b026,#ff5a3c)", "linear-gradient(135deg,#b07cff,#1c2a5e)", "linear-gradient(135deg,#d0ff3a,#1c2a5e)"];
   const rankColors = ["#e4032b", "#c0361c", "#8088a6", "#b8bfd6"];
   const rootStyle = { ...centreInk(accent) };
@@ -245,7 +251,11 @@ function CentreDetail({ slug, go, setPage }) {
           <div className="centre-hero-wash"/>
           <div className="centre-hero-orb"/>
           <div className="centre-hero-ring"/>
-          <div className="centre-hero-watermark">{wm}<br/>{wm}<br/>{wm}</div>
+          <div className="centre-hero-watermark">
+            {Array.from({ length: wmLines }).map((_, i) => (
+              <span key={i} className="centre-hero-wm-line">{wmLine}</span>
+            ))}
+          </div>
         </div>
         <div className="container centre-hero-inner">
           <div className="centre-hero-copy">
