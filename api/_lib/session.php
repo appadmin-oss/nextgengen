@@ -11,17 +11,21 @@ declare(strict_types=1);
  * predating sid remain valid until natural expiry, just unmanaged.
  */
 
-function session_issue(array $member, bool $adminOk = false, string $impBy = ''): string {
+/** 30 days — the "stay signed in" window offered at sign-in. */
+const SESSION_REMEMBER_TTL = 2592000;
+
+function session_issue(array $member, bool $adminOk = false, string $impBy = '', bool $remember = false): string {
     global $CONFIG;
     $now = time();
     $sid = rand_hex(20);
+    $ttl = $remember ? SESSION_REMEMBER_TTL : (int)$CONFIG['session_ttl'];
     $payload = [
         'mid'     => $member['memberId'] ?? '',
         'role'    => $member['role'] ?? 'member',
         'type'    => $member['type'] ?? '',
         'status'  => $member['status'] ?? '',
         'iat'     => $now,
-        'exp'     => $now + (int)$CONFIG['session_ttl'],
+        'exp'     => $now + $ttl,
         'adminOk' => $adminOk,
         'sid'     => $sid,
     ];
@@ -117,10 +121,12 @@ function session_issue_kiosk(array $gate): string {
  * role 'student' (non-staff → require_session treats it leniently). The `mid`
  * IS the studentId, so community attribution/reactions key off a real id.
  */
-function session_issue_student(array $student): string {
+function session_issue_student(array $student, bool $remember = false): string {
     global $CONFIG;
     $now = time();
-    $exp = $now + (int)($CONFIG['kiosk_ttl'] ?? 43200); // ~12h, like the kiosk
+    // Default is a short, kiosk-like window (shared devices at a centre); a
+    // student who opts to "stay signed in" gets the same 30-day window as members.
+    $exp = $now + ($remember ? SESSION_REMEMBER_TTL : (int)($CONFIG['kiosk_ttl'] ?? 43200));
     $payload = [
         'mid'    => (string)($student['studentId'] ?? ''),
         'role'   => 'student', 'type' => 'SUMMER', 'status' => 'active',

@@ -124,7 +124,7 @@
     auth: {
       gateway: (identifier) => request('/auth/gateway.php', { body: { identifier } }),
       request: (identifier) => request('/auth/request.php', { body: { identifier } }),
-      login:   (identifier, password) => request('/auth/login.php', { body: { identifier, password } }),
+      login:   (identifier, password, remember) => request('/auth/login.php', { body: { identifier, password, remember: !!remember } }),
       resetRequest: (identifier) => request('/auth/reset-request.php', { body: { identifier } }),
       resetConfirm: (creds) => request('/auth/reset-confirm.php', { body: creds }),
       setPassword: (password, current) => request('/auth/set-password.php', { body: { password, current: current || '' } }),
@@ -173,6 +173,7 @@
         vote:     (postId, choice) => request('/member/community.php', { body: { action: 'vote', postId, choice } }),
         mentions: (q) => request('/member/community.php' + qs({ view: 'mention', q })),
         search:   (q, channel) => request('/member/community.php' + qs({ view: 'search', q, channel: channel || 'all' })),
+        members:  (channel) => request('/member/community.php' + qs({ view: 'members', channel })),
         markRead: (channel) => request('/member/community.php', { body: { action: 'markRead', channel } }),
       },
       changeEmail:         (email) => request('/member/account.php', { body: { action: 'change_email', email } }),

@@ -158,6 +158,7 @@ function SignInModal({ seed, onClose, onVerified }) {
   const [masked, setMasked] = React.useState("");
   const [deliveryOk, setDeliveryOk] = React.useState(true); // false ⇒ mail relay hiccup
   const [busy, setBusy] = React.useState(false);
+  const [remember, setRemember] = React.useState(true); // "stay signed in for 30 days"
   const [cooldown, setCooldown] = React.useState(0); // seconds until a code can be resent
   // Tick the resend cooldown down to zero.
   React.useEffect(() => {
@@ -218,7 +219,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (e) e.preventDefault();
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.login(identifier.trim(), password);
+      const r = await NGGApi.auth.login(identifier.trim(), password, remember);
       onVerified(r.member);
     } catch (e) {
       const code = e.code || e.message;
@@ -293,7 +294,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (e) e.preventDefault();
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.verify({ memberId: identifier.trim(), otp: otp.replace(/\s+/g, "") });
+      const r = await NGGApi.auth.verify({ memberId: identifier.trim(), otp: otp.replace(/\s+/g, ""), remember });
       onVerified(r.member);
     } catch (e) {
       setErr(humanizeAuthError(e.code || e.message));
@@ -394,6 +395,10 @@ function SignInModal({ seed, onClose, onVerified }) {
               >{showPw ? "HIDE" : "SHOW"}</button>
             </div>
             {err && <div className="signin-err">{err}</div>}
+            <label className="signin-remember">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}/>
+              <span>Stay signed in for 30 days</span>
+            </label>
             <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || !identifier.trim() || !password}>
               {busy ? "Signing in…" : "Sign in →"}
             </button>
@@ -448,6 +453,10 @@ function SignInModal({ seed, onClose, onVerified }) {
               required
             />
             {err && <div className="signin-err">{err}</div>}
+            <label className="signin-remember">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}/>
+              <span>Stay signed in for 30 days</span>
+            </label>
             <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || otp.replace(/\s/g, "").length !== 6}>
               {busy ? "Verifying…" : "Sign in →"}
             </button>

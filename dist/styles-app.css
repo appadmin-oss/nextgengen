@@ -649,6 +649,8 @@ html { scroll-behavior: smooth; }
   padding: 10px 12px;
 }
 .signin-submit { margin-top: 6px; }
+.signin-remember { display: flex; align-items: center; gap: 9px; margin: 4px 0 2px; font-size: 13.5px; color: var(--ink-700, #46506e); cursor: pointer; user-select: none; }
+.signin-remember input { width: 17px; height: 17px; accent-color: var(--navy-900, #0c1432); cursor: pointer; flex: none; }
 .signin-link {
   background: transparent; border: none;
   font-family: inherit; font-size: 13px;

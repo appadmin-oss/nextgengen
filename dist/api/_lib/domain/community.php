@@ -124,6 +124,27 @@ function community_mark_read(array $p): array {
     return ['ok' => true];
 }
 
+/** Who's active in a channel — distinct authors (PII-safe names), most recent
+ *  first, with their post count. Powers the channel members rail. */
+function community_channel_members(array $p): array {
+    $slug = (string)($p['channel'] ?? '');
+    $ch = db_row("SELECT channelId, name FROM community_channels WHERE slug = ? LIMIT 1", [$slug]);
+    if (!$ch) return ['ok' => true, 'members' => [], 'count' => 0];
+    $rows = db_all(
+        "SELECT authorId, authorName, authorCentre, COUNT(*) posts, MAX(createdAt) last
+         FROM community_posts WHERE channelId = ? AND status = 'published'
+         GROUP BY authorId ORDER BY last DESC LIMIT 60", [(string)$ch['channelId']]);
+    $members = [];
+    foreach ($rows as $r) {
+        // Tag staff (mentors/admins) so the rail can group them.
+        $mm = db_row("SELECT role FROM members WHERE memberId = ? LIMIT 1", [(string)$r['authorId']]);
+        $role = strtolower((string)($mm['role'] ?? ''));
+        $staff = $mm && ($role === 'mentor' || $role === 'staff' || $role === 'coordinator' || is_admin_role($role));
+        $members[] = ['name' => (string)$r['authorName'], 'centre' => (string)$r['authorCentre'], 'posts' => (int)$r['posts'], 'staff' => $staff];
+    }
+    return ['ok' => true, 'members' => $members, 'count' => count($members)];
+}
+
 /** Search published posts by text (whole community or one channel). */
 function community_search(array $p): array {
     $viewer = (string)($p['memberId'] ?? '');
@@ -179,15 +200,71 @@ function community_screen(string $text): array {
     return ['verdict' => $v, 'reason' => is_array($r) ? substr((string)($r['reason'] ?? ''), 0, 120) : '', 'crisis' => false];
 }
 
-/** Drop a notification for a member (skips self-notifications). */
-function community_notify(string $memberId, string $actorId, string $kind, string $title, string $body): void {
+/** Drop a notification for a member (skips self-notifications). Members with an
+ *  email on file also get an email (students have none → in-app only). */
+function community_notify(string $memberId, string $actorId, string $kind, string $title, string $body, bool $email = true): void {
     if ($memberId === '' || $memberId === $actorId) return;
     // Recipients may be full members OR summer students (the community serves both).
-    $exists = db_row("SELECT memberId FROM members WHERE memberId = ? LIMIT 1", [$memberId])
-        || db_row("SELECT studentId FROM summer_students WHERE studentId = ? LIMIT 1", [$memberId]);
-    if (!$exists) return;
+    $member = db_row("SELECT memberId, fullName, email FROM members WHERE memberId = ? LIMIT 1", [$memberId]);
+    if (!$member && !db_row("SELECT studentId FROM summer_students WHERE studentId = ? LIMIT 1", [$memberId])) return;
     db_insert('notifications', ['notifId' => 'NT-' . strtoupper(rand_hex(6)), 'memberId' => $memberId, 'kind' => $kind,
         'title' => mb_substr($title, 0, 160), 'body' => mb_substr($body, 0, 400), 'linkPage' => 'community', 'createdAt' => now_iso()]);
+    if ($email && $member && !empty($member['email'])) {
+        community_send_notify_email((string)$member['email'], (string)($member['fullName'] ?? ''), $title, $body);
+    }
+}
+
+/** Email a member that they were tagged / replied to. Best-effort. */
+function community_send_notify_email(string $to, string $fullName, string $title, string $body): void {
+    if ($to === '' || !function_exists('send_mail') || !function_exists('email_template')) return;
+    try {
+        global $CONFIG;
+        $first = explode(' ', trim($fullName))[0] ?? '';
+        $link = rtrim((string)($CONFIG['app_origin'] ?? ''), '/') . '/community';
+        $html = email_template([
+            'title' => $title,
+            'intro' => 'Hi ' . ($first ?: 'there') . ', you have activity waiting in the NGG Community.',
+            'bodyHtml' => '<p style="margin:0 0 14px;font-size:15px;line-height:1.55">' . esc_html(mb_substr($body, 0, 240)) . '</p>'
+                . '<p style="margin:0"><a href="' . esc_html($link) . '" style="display:inline-block;background:#0c1432;color:#fff;text-decoration:none;padding:11px 22px;border-radius:999px;font-weight:700">Open the community →</a></p>',
+        ]);
+        send_mail($to, $title, $html);
+    } catch (Throwable $e) { /* email is best-effort — never break a post */ }
+}
+
+/** A community handle for a member: first name + last initial, slugified
+ *  (e.g. "Ada Obi" → "ada-o"). Deterministic, so @mentions resolve without a
+ *  stored column. Falls back to the first name alone when there's no surname. */
+function community_member_handle(string $fullName): string {
+    $parts = preg_split('/\s+/', trim($fullName)) ?: [];
+    $first = $parts[0] ?? '';
+    $li = isset($parts[1]) && $parts[1] !== '' ? mb_substr($parts[1], 0, 1) : '';
+    $raw = strtolower($first . ($li ? '-' . $li : ''));
+    $h = preg_replace('/[^a-z0-9._-]+/', '', $raw);
+    return trim((string)$h, '-._');
+}
+
+/** Resolve an @handle to its recipients: a summer student (by stored handle)
+ *  and/or members (by derived handle). Returns rows: id, kind, name. */
+function community_resolve_handle(string $handle): array {
+    $handle = strtolower(trim($handle));
+    if ($handle === '') return [];
+    $out = [];
+    $s = db_row("SELECT studentId, fullName FROM summer_students WHERE handle = ? AND status = 'active' LIMIT 1", [$handle]);
+    if ($s) $out[] = ['id' => (string)$s['studentId'], 'kind' => 'student', 'name' => (string)$s['fullName']];
+    $first = explode('-', $handle)[0] ?? $handle;
+    foreach (db_all("SELECT memberId, fullName FROM members WHERE status = 'active' AND lower(fullName) LIKE ? LIMIT 40", [$first . '%']) as $m) {
+        if (community_member_handle((string)$m['fullName']) === $handle) $out[] = ['id' => (string)$m['memberId'], 'kind' => 'member', 'name' => (string)$m['fullName']];
+    }
+    return $out;
+}
+
+/** Is this actor a mentor/admin (allowed to @all / @channel)? Students and
+ *  plain members can only mention individuals. */
+function community_actor_is_staff(string $actorId): bool {
+    $m = db_row("SELECT role FROM members WHERE memberId = ? LIMIT 1", [$actorId]);
+    if (!$m) return false;
+    $role = strtolower((string)$m['role']);
+    return $role !== 'member' && ($role === 'mentor' || $role === 'staff' || $role === 'coordinator' || is_admin_role($role));
 }
 
 /**
@@ -238,14 +315,35 @@ function community_mentions(string $body): array {
     return array_values(array_unique(array_map('strtolower', $m[1])));
 }
 
-/** Autocomplete for @mentions — matches summer student handles/first names. */
+/** Autocomplete for @mentions — students (by handle) + members (by derived
+ *  handle), plus a staff-only "@all" to tag a whole channel. */
 function community_mention_search(array $p): array {
     $q = trim((string)($p['q'] ?? ''));
+    $viewer = (string)($p['memberId'] ?? '');
     if (mb_strlen($q) < 1) return ['ok' => true, 'people' => []];
+    $ql = strtolower($q);
     $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
-    $rows = db_all("SELECT handle, fullName, centre FROM summer_students WHERE status = 'active' AND handle <> '' AND (handle LIKE ? OR fullName LIKE ?) ORDER BY handle LIMIT 8", [$like, $like]);
-    $people = array_map(fn($r) => ['handle' => (string)$r['handle'], 'name' => explode(' ', trim((string)$r['fullName']))[0] ?? '', 'centre' => (string)($r['centre'] ?? '')], $rows);
-    return ['ok' => true, 'people' => $people];
+    $people = [];
+    // Staff can tag the whole channel. Surfaced only to mentors/admins.
+    if (community_actor_is_staff($viewer)) {
+        foreach ([['all', 'Everyone in this channel'], ['channel', 'Notify the channel']] as $opt) {
+            if (strpos($opt[0], $ql) === 0) $people[] = ['handle' => $opt[0], 'name' => $opt[1], 'centre' => '', 'kind' => 'all'];
+        }
+    }
+    foreach (db_all("SELECT handle, fullName, centre FROM summer_students WHERE status = 'active' AND handle <> '' AND (handle LIKE ? OR fullName LIKE ?) ORDER BY handle LIMIT 6", [$like, $like]) as $r) {
+        $people[] = ['handle' => (string)$r['handle'], 'name' => explode(' ', trim((string)$r['fullName']))[0] ?? '', 'centre' => (string)($r['centre'] ?? ''), 'kind' => 'student'];
+    }
+    foreach (db_all("SELECT fullName, centre, role FROM members WHERE status = 'active' AND fullName LIKE ? ORDER BY fullName LIMIT 6", [$like]) as $r) {
+        $h = community_member_handle((string)$r['fullName']);
+        if ($h === '') continue;
+        $role = strtolower((string)($r['role'] ?? ''));
+        $kind = ($role === 'mentor' || is_admin_role($role)) ? 'mentor' : 'member';
+        $people[] = ['handle' => $h, 'name' => explode(' ', trim((string)$r['fullName']))[0] ?? '', 'centre' => (string)($r['centre'] ?? ''), 'kind' => $kind];
+    }
+    // De-dupe by handle, cap the menu.
+    $seen = []; $uniq = [];
+    foreach ($people as $pp) { if (isset($seen[$pp['handle']])) continue; $seen[$pp['handle']] = 1; $uniq[] = $pp; }
+    return ['ok' => true, 'people' => array_slice($uniq, 0, 10)];
 }
 
 /* ── Posts ────────────────────────────────────────────────────────────── */
@@ -397,17 +495,43 @@ function community_post_create(array $p): array {
         'viewCount' => 0, 'createdAt' => $now, 'updatedAt' => $now,
     ]);
     audit('community.post', $viewer, $id, ['channel' => $chSlug, 'status' => $status, 'media' => $mediaType, 'kind' => $kind], (string)($p['ip'] ?? ''));
-    if ($status === 'published') community_notify_mentions($body, $viewer, $author['name'], $id);
+    if ($status === 'published') community_notify_mentions($body, $viewer, $author['name'], $id, (string)$ch['channelId']);
     $row = db_row("SELECT * FROM community_posts WHERE postId = ?", [$id]);
     return ['ok' => true, 'post' => community_post_shape($row, $viewer), 'queued' => $status !== 'published'];
 }
 
 /** Notify mentioned students (@handle) — best-effort, PII-safe. */
-function community_notify_mentions(string $body, string $actorId, string $actorName, string $postId): void {
-    foreach (community_mentions($body) as $h) {
-        $s = db_row("SELECT studentId FROM summer_students WHERE handle = ? LIMIT 1", [$h]);
-        if ($s) community_notify((string)$s['studentId'], $actorId, 'community.mention', $actorName . ' mentioned you', mb_substr($body, 0, 120));
+function community_notify_mentions(string $body, string $actorId, string $actorName, string $postId, string $channelId = ''): void {
+    $handles = community_mentions($body);
+    if (!$handles) return;
+    $tagAll = (bool)array_intersect($handles, ['all', 'everyone', 'channel', 'here']);
+    $done = [];
+    foreach ($handles as $h) {
+        if (in_array($h, ['all', 'everyone', 'channel', 'here'], true)) continue;
+        foreach (community_resolve_handle($h) as $r) {
+            if (isset($done[$r['id']])) continue; $done[$r['id']] = 1;
+            community_notify($r['id'], $actorId, 'community.mention', $actorName . ' mentioned you', mb_substr($body, 0, 160));
+        }
     }
+    // @all / @channel — mentors & admins only, and only within a real channel.
+    if ($tagAll && $channelId !== '' && community_actor_is_staff($actorId)) {
+        community_notify_channel($channelId, $actorId, $actorName, mb_substr($body, 0, 160), $done);
+    }
+}
+
+/** Tag-all: notify everyone who has posted in a channel (excluding the actor
+ *  and anyone already individually notified). Members with email also get an
+ *  email; capped so a single post can't fan out without bound. */
+function community_notify_channel(string $channelId, string $actorId, string $actorName, string $body, array $skip = []): void {
+    $rows = db_all("SELECT DISTINCT authorId FROM community_posts WHERE channelId = ? AND status = 'published' AND authorId <> ? LIMIT 500", [$channelId, $actorId]);
+    $n = 0;
+    foreach ($rows as $r) {
+        $id = (string)$r['authorId'];
+        if ($id === '' || isset($skip[$id])) continue;
+        community_notify($id, $actorId, 'community.tagall', $actorName . ' tagged the channel', $body);
+        if (++$n >= 500) break;
+    }
+    audit('community.tagall', $actorId, $channelId, ['recipients' => $n], '');
 }
 
 /** Vote in a poll (one ballot per member; changing your vote is allowed). */
@@ -494,8 +618,10 @@ function community_comment_create(array $p): array {
     ]);
     audit('community.comment', $viewer, $id, ['postId' => $pid, 'status' => $status], (string)($p['ip'] ?? ''));
     if ($status === 'published') {
-        $owner = db_row("SELECT authorId FROM community_posts WHERE postId = ? LIMIT 1", [$pid]);
-        if ($owner) community_notify((string)$owner['authorId'], $viewer, 'community.reply', $author['name'] . ' replied to your post', mb_substr($body, 0, 120));
+        $post = db_row("SELECT authorId, channelId FROM community_posts WHERE postId = ? LIMIT 1", [$pid]);
+        if ($post) community_notify((string)$post['authorId'], $viewer, 'community.reply', $author['name'] . ' replied to your post', mb_substr($body, 0, 120));
+        // @mentions inside a reply notify (and email) too.
+        community_notify_mentions($body, $viewer, $author['name'], $pid, $post ? (string)$post['channelId'] : '');
     }
     return ['ok' => true, 'queued' => $status !== 'published', 'comment' => [
         'commentId' => $id, 'name' => $author['name'] . ($author['initial'] ? ' ' . $author['initial'] : ''), 'body' => $body,

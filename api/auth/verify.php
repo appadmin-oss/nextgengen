@@ -36,7 +36,7 @@ if (empty($res['ok'])) {
 }
 
 $member = $res['member'] ?? [];
-session_issue($member, false);
+session_issue($member, false, '', !empty($body['remember']));
 $csrf = csrf_issue();
 
 json_ok(['member' => $member, 'csrf' => $csrf]);

@@ -254,6 +254,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'community.mentionSearch' => 'community_mention_search',
             'community.markRead'      => 'community_mark_read',
             'community.search'        => 'community_search',
+            'community.channelMembers'=> 'community_channel_members',
             'student.communityLogin'  => 'student_community_login',
             'admin.community.overview'      => 'admin_community_overview',
             'admin.community.channel.upsert'=> 'admin_community_channel_upsert',

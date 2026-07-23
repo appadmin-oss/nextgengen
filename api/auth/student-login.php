@@ -12,7 +12,7 @@ $res = gs_call('student.communityLogin', [
 ]);
 if (empty($res['ok'])) json_error($res['error'] ?? 'bad_credentials', 401);
 $stu = $res['student'];
-session_issue_student($stu);
+session_issue_student($stu, !empty($b['remember']));
 $csrf = csrf_issue();
 audit('student.login', (string)$stu['studentId'], (string)$stu['studentId'], [], client_ip());
 json_ok(['member' => [

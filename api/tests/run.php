@@ -2193,6 +2193,28 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     db_insert('summer_students', ['studentId' => 'CM-STU-1', 'cohortId' => 'CM-C0', 'handle' => 'zuri-mention', 'fullName' => 'Zuri Mensah', 'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
     backend_dispatch('community.post', ['memberId' => 'CM-C', 'data' => ['channel' => 'commons', 'body' => 'Nice work @zuri-mention — showcase this!'], 'ip' => '1.1.1.1']);
     chk('community: mentioning a student notifies them', (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'CM-STU-1' AND kind = 'community.mention'")['c'] ?? 0) === 1);
+
+    // Members are mentionable by a derived handle (first name + last initial).
+    chk('community: a member\'s handle derives as first-lastinitial', community_member_handle('Ada Njoku') === 'ada-n');
+    db_insert('members', ['memberId' => 'CM-D', 'fullName' => 'Diedre Wole', 'email' => 'd@ex.co', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    backend_dispatch('community.post', ['memberId' => 'CM-D', 'data' => ['channel' => 'commons', 'body' => 'Great job @ada-n 👏'], 'ip' => '1.1.1.1']);
+    chk('community: mentioning a member notifies them', (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'CM-A' AND kind = 'community.mention'")['c'] ?? 0) === 1);
+
+    // @all is staff-only. A plain member's @all fans out to nobody.
+    db_insert('members', ['memberId' => 'CM-E', 'fullName' => 'Eze Musa', 'email' => 'e@ex.co', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    backend_dispatch('community.post', ['memberId' => 'CM-E', 'data' => ['channel' => 'commons', 'body' => '@all please read'], 'ip' => '1.1.1.1']);
+    chk('community: a non-staff @all notifies nobody', (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE kind = 'community.tagall'")['c'] ?? 0) === 0);
+    // A super-admin's @all reaches the channel's other participants.
+    backend_dispatch('community.post', ['memberId' => 'NGG-2025-0099', 'data' => ['channel' => 'commons', 'body' => '@all showcase brief is up'], 'ip' => '1.1.1.1']);
+    chk('community: a staff @all tags the channel', (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE kind = 'community.tagall'")['c'] ?? 0) >= 2);
+    chk('community: staff see the @all option in mention search', (function () {
+        $r = backend_dispatch('community.mentionSearch', ['q' => 'all', 'memberId' => 'NGG-2025-0099']);
+        foreach ($r['people'] as $pp) if ($pp['handle'] === 'all') return true; return false;
+    })());
+    chk('community: students do NOT see the @all option', (function () {
+        $r = backend_dispatch('community.mentionSearch', ['q' => 'all', 'memberId' => 'CM-E']);
+        foreach ($r['people'] as $pp) if ($pp['kind'] === 'all') return false; return true;
+    })());
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

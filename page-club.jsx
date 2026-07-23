@@ -397,33 +397,25 @@ function cmColor(seed) { const p = ["#e4032b", "#f5b026", "#2f9e44", "#b07cff", 
 
 function CommunityPage({ setPage }) {
   const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false };
-  if (!auth.isSignedIn) return <CommunityTeaser setPage={setPage} auth={auth}/>;
+  if (!auth.isSignedIn) return <CommunityPublic setPage={setPage} auth={auth}/>;
   return <CommunityApp setPage={setPage} auth={auth}/>;
 }
 
-/* ---- Signed-out teaser ---- */
-function CommunityTeaser({ setPage, auth }) {
-  const [channels, setChannels] = React.useState([]);
-  const [showcase, setShowcase] = React.useState([]);
-  const [stu, setStu] = React.useState(false); // student sign-in form open
+/* ---- Student ID sign-in panel (ID + guardian phone, or QR scan) ---- */
+function CmStudentSignIn({ compact }) {
   const [sid, setSid] = React.useState("");
   const [phone, setPhone] = React.useState("");
+  const [remember, setRemember] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
-  const [scan, setScan] = React.useState(false); // camera scanner open
-  React.useEffect(() => {
-    let a = true;
-    NGGApi.public.communityChannels().then(r => { if (a) setChannels(r.channels || []); }).catch(() => {});
-    NGGApi.public.communityShowcase().then(r => { if (a) setShowcase(r.showcase || []); }).catch(() => {});
-    return () => { a = false; };
-  }, []);
-  const doLogin = async (creds, tooManyMsg) => {
+  const [scan, setScan] = React.useState(false);
+  const doLogin = async (creds, failMsg) => {
     setBusy(true); setErr("");
     try {
-      await NGGApi.auth.studentLogin(creds);
+      await NGGApi.auth.studentLogin({ ...creds, remember });
       window.location.href = "/community"; // reboot auth → community unlocks
     } catch (e) {
-      setErr(e.code === "rate_limited" ? "Too many tries — wait a few minutes." : tooManyMsg);
+      setErr(e.code === "rate_limited" ? "Too many tries — wait a few minutes." : failMsg);
       setBusy(false);
     }
   };
@@ -431,87 +423,236 @@ function CommunityTeaser({ setPage, auth }) {
     if (!sid.trim() || phone.replace(/\D/g, "").length < 7) { setErr("Enter your student ID and your parent/guardian's phone number."); return; }
     doLogin({ displayId: sid.trim(), guardianPhone: phone.trim() }, "We couldn't match that ID and phone number. Check your ID card.");
   };
-  // Load the QR decoder (shared vendor lib), then open the camera scanner.
   const openScan = () => {
     setErr("");
     if (typeof window.jsQR === "function") { setScan(true); return; }
     let sc = document.getElementById("ngg-jsqr");
     if (!sc) { sc = document.createElement("script"); sc.id = "ngg-jsqr"; sc.src = "/vendor/jsQR.min.js"; document.head.appendChild(sc); }
     sc.addEventListener("load", () => setScan(true), { once: true });
-    setScan(true); // QRScanner shows a graceful "loading" state until jsQR is ready
+    setScan(true);
   };
   const onScanToken = (token) => { if (busy) return; doLogin({ token }, "That card didn't match. Try again or type your ID below."); };
   return (
+    <div className="cm-stu-signin">
+      <div className="mono cm-stu-title">SIGN IN WITH YOUR ID CARD</div>
+      <p className="cm-stu-hint">Scan your card's QR with the camera — or enter the ID on your card and your parent/guardian's phone number.</p>
+      {scan ? (
+        <>
+          <div className="cm-scan-box">
+            {typeof QRScanner === "function" ? <QRScanner onToken={onScanToken} gold="#ffce54"/> : <div style={{ padding: 24, color: "rgba(255,255,255,.7)", fontSize: 13, textAlign: "center" }}>Loading scanner…</div>}
+            <div className="cm-scan-frame" aria-hidden="true"/>
+          </div>
+          <div className="cm-scan-hint">Hold your Genius ID up to the camera. {busy && "Signing you in…"}</div>
+          <button className="cm-scan-btn" onClick={() => setScan(false)}>⌨ Type my ID instead</button>
+        </>
+      ) : (
+        <>
+          <button className="cm-scan-btn" onClick={openScan}>📷 Scan my card</button>
+          <div className="cm-stu-row" style={{ marginTop: 12 }}>
+            <input className="cm-stu-input" value={sid} onChange={e => setSid(e.target.value)} placeholder="Student ID (e.g. AY-26-001)" autoCapitalize="characters"/>
+            <input className="cm-stu-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Guardian phone" inputMode="tel"/>
+            <button className="btn btn-gold" disabled={busy} onClick={studentLogin}>{busy ? "…" : "Enter →"}</button>
+          </div>
+        </>
+      )}
+      <label className="cm-stu-remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}/><span>Stay signed in for 30 days</span></label>
+      {err && <div className="cm-stu-err">{err}</div>}
+    </div>
+  );
+}
+
+/* ---- Signed-out / public community: the movement at a glance (real, PII-safe
+   data) + a sign-in door. The interactive channels live behind ID sign-in. ---- */
+function CommunityPublic({ setPage, auth }) {
+  const [members, setMembers] = React.useState(null);
+  const [stats, setStats] = React.useState(null);
+  const [showcase, setShowcase] = React.useState([]);
+  const [view, setView] = React.useState("members");   // members | centres | leaders
+  const [q, setQ] = React.useState("");
+  const [centre, setCentre] = React.useState("All");
+  const [panel, setPanel] = React.useState(null);
+  const [stu, setStu] = React.useState(false);
+  const [err, setErr] = React.useState(false);
+
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.public.leaderboard(60).then(r => { if (alive) setMembers(r.leaderboard || []); }).catch(() => { if (alive) setErr(true); });
+    NGGApi.public.stats().then(r => { if (alive) setStats(r.stats || {}); }).catch(() => {});
+    NGGApi.public.communityShowcase().then(r => { if (alive) setShowcase(r.showcase || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const PALETTE = ["#f5b026", "#b07cff", "#2f9e44", "#3b5bdb", "#ff5a3c", "#17a2b8", "#e8a92b", "#6a3fc0"];
+  const colorFor = (s) => PALETTE[(String(s).charCodeAt(0) || 0) % PALETTE.length];
+  const nameOf = (m) => (m.first + (m.initial ? " " + m.initial : "")).trim();
+
+  const all = members || [];
+  const centres = React.useMemo(() => {
+    const map = {};
+    all.forEach(m => { const c = m.centre || "Unassigned"; map[c] = (map[c] || 0) + 1; });
+    return Object.keys(map).sort().map(name => ({ name, count: map[name] }));
+  }, [members]);
+  const centreOpts = ["All"].concat(centres.map(c => c.name));
+  const ql = q.trim().toLowerCase();
+  const filtered = all.filter(m =>
+    (centre === "All" || m.centre === centre) &&
+    (!ql || nameOf(m).toLowerCase().includes(ql) || (m.centre || "").toLowerCase().includes(ql)));
+  const leaders = [...all].sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 8);
+
+  const kpis = [
+    { value: stats && stats.activeMembers > 0 ? stats.activeMembers.toLocaleString() : (all.length ? String(all.length) : "—"), label: "Active members", color: "#fff" },
+    { value: stats && stats.missionsVerified > 0 ? stats.missionsVerified.toLocaleString() : "—", label: "Missions verified", color: "#fff" },
+    { value: stats && stats.mentors > 0 ? String(stats.mentors) : "—", label: "Volunteer mentors", color: "#d0ff3a" },
+    { value: stats && stats.centres > 0 ? String(stats.centres).padStart(2, "0") : (centres.length ? String(centres.length).padStart(2, "0") : "—"), label: "Centres live", color: "#f5b026" },
+  ];
+  const tabBtn = (k, label, icon) => (
+    <button key={k} onClick={() => { setView(k); setPanel(null); }}
+      style={{ fontFamily: "var(--font-body)", fontSize: 13.5, fontWeight: 600, padding: "12px 6px", border: "none", background: "none", cursor: "pointer", borderBottom: "2.5px solid " + (view === k ? "var(--gold-500)" : "transparent"), color: view === k ? "#fff" : "rgba(255,255,255,0.55)", display: "inline-flex", alignItems: "center", gap: 7 }}>
+      <i className={"ph " + icon}/>{label}
+    </button>
+  );
+
+  return (
     <div className="page cm-page" data-screen-label="Community">
-      <section className="cm-teaser">
-        <div className="cm-teaser-glow" aria-hidden="true"/>
-        <div className="container cm-teaser-inner">
-          <div className="mono cm-eyebrow"><span className="cm-live-dot"/>THE COMMUNITY · MEMBERS ONLY</div>
-          <h1 className="display cm-teaser-h">Where the crew<br/>shows its work.</h1>
-          <p className="cm-teaser-p">Share what you're building, drop a photo or a clip, cheer each other on — organised by your course channels. A safe, mentor-watched space for NGG members.</p>
-          <div className="cm-teaser-actions">
+      <style>{"@keyframes ngg-panel-in{from{transform:translateX(100%)}to{transform:none}}@keyframes ngg-fade{from{opacity:0}to{opacity:1}}"}</style>
+
+      <section style={{ background: "var(--grad-hero, linear-gradient(158deg,#0c1432,#16224e 58%,#1d2c63))", color: "#fff", position: "relative", overflow: "hidden", paddingTop: 40 }}>
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(46% 42% at 90% 4%, rgba(245,176,38,0.22), transparent 62%)" }}/>
+        <div className="container" style={{ maxWidth: 1320, position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+            <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, letterSpacing: "0.14em", padding: "6px 13px", borderRadius: 999, background: "rgba(208,255,58,0.12)", border: "1px solid rgba(208,255,58,0.4)", color: "#e8ffb0" }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--lime,#d0ff3a)" }}/>{all.length ? all.length + " GENIUSES ON THE BOARD" : "THE MOVEMENT"}
+            </span>
+            <div style={{ position: "relative", width: 260, maxWidth: "44vw" }}>
+              <i className="ph ph-magnifying-glass" style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.5)", fontSize: 15 }}/>
+              <input value={q} onChange={e => { setQ(e.target.value); if (e.target.value) setView("members"); }} placeholder="Search members…" style={{ width: "100%", fontFamily: "inherit", fontSize: 13, padding: "9px 12px 9px 34px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.08)", color: "#fff", outline: "none" }}/>
+            </div>
+          </div>
+          <h1 className="display" style={{ fontWeight: 800, fontSize: "clamp(30px,4.6vw,48px)", letterSpacing: "-0.03em", lineHeight: 1, margin: "18px 0 10px" }}>The Genius community.</h1>
+          <p style={{ color: "rgba(255,255,255,0.68)", fontSize: 15, maxWidth: 560, margin: "0 0 20px" }}>Every centre, every track, one movement. The live chat, channels and showcase are a private, members-only space — sign in to join.</p>
+
+          <div className="cm-pub-doors">
             <button className="btn btn-gold btn-lg" onClick={() => auth.openSignIn && auth.openSignIn()}>Sign in to join →</button>
             <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setStu(s => !s)}>I'm a summer student</button>
           </div>
-          {stu && (
-            <div className="cm-stu-signin">
-              <div className="mono cm-stu-title">SIGN IN WITH YOUR ID CARD</div>
-              <p className="cm-stu-hint">Scan your card's QR with the camera — or enter the ID on your card and your parent/guardian's phone number.</p>
-              {scan ? (
-                <>
-                  <div className="cm-scan-box">
-                    {typeof QRScanner === "function" ? <QRScanner onToken={onScanToken} gold="#ffce54"/> : <div style={{ padding: 24, color: "rgba(255,255,255,.7)", fontSize: 13, textAlign: "center" }}>Loading scanner…</div>}
-                    <div className="cm-scan-frame" aria-hidden="true"/>
-                  </div>
-                  <div className="cm-scan-hint">Hold your Genius ID up to the camera. {busy && "Signing you in…"}</div>
-                  <button className="cm-scan-btn" onClick={() => setScan(false)}>⌨ Type my ID instead</button>
-                </>
-              ) : (
-                <>
-                  <button className="cm-scan-btn" onClick={openScan}>📷 Scan my card</button>
-                  <div className="cm-stu-row" style={{ marginTop: 12 }}>
-                    <input className="cm-stu-input" value={sid} onChange={e => setSid(e.target.value)} placeholder="Student ID (e.g. AY-26-001)" autoCapitalize="characters"/>
-                    <input className="cm-stu-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Guardian phone" inputMode="tel"/>
-                    <button className="btn btn-gold" disabled={busy} onClick={studentLogin}>{busy ? "…" : "Enter →"}</button>
-                  </div>
-                </>
-              )}
-              {err && <div className="cm-stu-err">{err}</div>}
-            </div>
+          {stu && <CmStudentSignIn/>}
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginTop: 22, borderTop: "1px solid rgba(255,255,255,0.12)" }} className="home-kpi-strip">
+            {kpis.map((k, i) => (
+              <div key={i} style={{ borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.14)", padding: "20px 0 20px " + (i === 0 ? "0" : "16px") }}>
+                <div className="display" style={{ fontWeight: 800, fontSize: "clamp(24px,3.2vw,32px)", color: k.color, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", marginTop: 6 }}>{k.label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 20, borderTop: "1px solid rgba(255,255,255,0.12)" }}>
+            {tabBtn("members", "Members", "ph-users-three")}
+            {tabBtn("centres", "Centres", "ph-buildings")}
+            {tabBtn("leaders", "Leaderboard", "ph-trophy")}
+          </div>
+        </div>
+      </section>
+
+      <section className="section" style={{ paddingTop: 32 }}>
+        <div className="container" style={{ maxWidth: 1320 }}>
+          {err ? <div style={{ textAlign: "center", padding: 40, color: "var(--ink-500)" }}>Couldn't load the community right now — try again shortly.</div>
+           : members === null ? <div className="dash-spinner" style={{ margin: "60px auto" }}/>
+           : all.length === 0 ? <div style={{ textAlign: "center", padding: "60px 0", color: "var(--ink-500)" }}>The board fills up as members earn XP. Check back soon.</div>
+           : view === "centres" ? (
+            <>
+              <h2 className="display" style={{ fontSize: 22, margin: "0 0 18px" }}>Centres &amp; groups</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 14 }}>
+                {centres.map(c => (
+                  <button key={c.name} onClick={() => { setCentre(c.name); setView("members"); }} style={{ textAlign: "left", cursor: "pointer", fontFamily: "inherit", background: "#fff", border: "1px solid var(--line-cool,#e5e8ee)", borderTop: "4px solid " + colorFor(c.name), borderRadius: 14, padding: 18, color: "var(--ink-900)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <b className="display" style={{ fontWeight: 700, fontSize: 16 }}>{c.name}</b>
+                      <span className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>{c.count} member{c.count === 1 ? "" : "s"}</span>
+                    </div>
+                    <div style={{ marginTop: 12, fontSize: 12.5, fontWeight: 600, color: colorFor(c.name), display: "inline-flex", alignItems: "center", gap: 5 }}>View members <i className="ph ph-arrow-right"/></div>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : view === "leaders" ? (
+            <>
+              <h2 className="display" style={{ fontSize: 22, margin: "0 0 18px" }}>Top of the board</h2>
+              <div style={{ background: "#fff", border: "1px solid var(--line-cool,#e5e8ee)", borderRadius: 16, overflow: "hidden", maxWidth: 640 }}>
+                {leaders.map((m, i) => (
+                  <button key={m.memberId || i} onClick={() => setPanel(m)} style={{ width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", border: "none", borderBottom: i < leaders.length - 1 ? "1px solid var(--line-cool-soft,#eef0f4)" : "none", background: "none" }}>
+                    <span className="display" style={{ width: 24, fontWeight: 800, fontSize: 15, color: i < 3 ? "var(--gold-600,#a07400)" : "var(--ink-400)" }}>{i + 1}</span>
+                    <span className="display" style={{ width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 15, color: "#fff", background: colorFor(m.first), flex: "none" }}>{(m.first[0] || "?").toUpperCase()}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}><b className="display" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink-900)" }}>{nameOf(m)}</b><span className="mono" style={{ display: "block", fontSize: 10.5, color: "var(--ink-400)", marginTop: 2 }}>{m.centre || "—"} · LVL {m.level}</span></span>
+                    <span className="mono" style={{ fontSize: 12.5, color: "var(--gold-600,#a07400)", fontWeight: 600 }}>{(m.xp || 0).toLocaleString()} XP</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+                <div>
+                  <h2 className="display" style={{ fontSize: 22, margin: 0 }}>Members</h2>
+                  <p style={{ color: "var(--ink-500)", fontSize: 13.5, margin: "6px 0 0" }}>{filtered.length} showing{ql ? ' for "' + q + '"' : ""}{centre !== "All" ? " · " + centre : ""}</p>
+                </div>
+                <select value={centre} onChange={e => setCentre(e.target.value)} style={{ fontSize: 13, fontWeight: 600, padding: "9px 13px", borderRadius: 10, border: "1px solid var(--cream-200,#d9d2c0)", background: "#fff", cursor: "pointer" }}>
+                  {centreOpts.map(c => <option key={c} value={c}>{c === "All" ? "All centres" : c}</option>)}
+                </select>
+              </div>
+              {filtered.length === 0 ? <div style={{ border: "1px dashed var(--cream-200,#d9d2c0)", borderRadius: 16, padding: 32, textAlign: "center", color: "var(--ink-400)" }}>No members match.</div> :
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>
+                {filtered.map((m, i) => (
+                  <button key={m.memberId || i} onClick={() => setPanel(m)} style={{ textAlign: "left", cursor: "pointer", fontFamily: "inherit", background: "#fff", border: "1px solid var(--line-cool,#e5e8ee)", borderRadius: 14, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
+                    <span className="display" style={{ width: 44, height: 44, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 16, color: "#fff", background: colorFor(m.first) }}>{(m.first[0] || "?").toUpperCase()}</span>
+                    <span style={{ minWidth: 0 }}>
+                      <b className="display" style={{ fontWeight: 700, fontSize: 14.5, color: "var(--ink-900)", display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nameOf(m)}</b>
+                      <span className="mono" style={{ fontSize: 10, color: "var(--ink-400)" }}>{m.centre || "—"} · LVL {m.level}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>}
+            </>
           )}
-          {channels.length > 0 && (
-            <div className="cm-teaser-chips">
-              {channels.slice(0, 10).map(c => <span key={c.slug} className="cm-chip" style={{ "--cm": c.color }}>{c.icon} {c.name}</span>)}
+
+          {showcase.length > 0 && (
+            <div style={{ marginTop: 44 }}>
+              <div className="mono cm-showcase-eyebrow">✨ FROM THE SHOWCASE</div>
+              <h2 className="display cm-showcase-h">What the crew is making</h2>
+              <p className="cm-showcase-sub">A handful of mentor-picked highlights from inside the members-only community.</p>
+              <div className="cm-showcase-grid">
+                {showcase.map(s => (
+                  <figure key={s.postId} className="cm-show-card">
+                    {s.mediaType === "image" && s.mediaUrl && <img src={cmOpt(s.mediaUrl, 700)} alt={s.altText || ""} loading="lazy"/>}
+                    {s.mediaType === "video" && (s.mediaPoster || s.mediaUrl) && <div className="cm-show-video"><img src={s.mediaPoster || cmPoster(s.mediaUrl)} alt=""/><span className="cm-show-play">▶</span></div>}
+                    <figcaption>
+                      <span className="cm-show-chan" style={{ color: s.channel.color }}>{s.channel.icon} {s.channel.name}</span>
+                      {s.body && <p className="cm-show-body">{s.body.length > 140 ? s.body.slice(0, 140) + "…" : s.body}</p>}
+                      <span className="cm-show-author">— {s.author}</span>
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
             </div>
           )}
         </div>
       </section>
 
-      {showcase.length > 0 && (
-        <section className="cm-showcase">
-          <div className="container">
-            <div className="mono cm-showcase-eyebrow">✨ FROM THE SHOWCASE</div>
-            <h2 className="display cm-showcase-h">What the crew is making</h2>
-            <p className="cm-showcase-sub">A handful of mentor-picked highlights. The full community is a private, members-only space.</p>
-            <div className="cm-showcase-grid">
-              {showcase.map(s => (
-                <figure key={s.postId} className="cm-show-card">
-                  {s.mediaType === "image" && s.mediaUrl && <img src={cmOpt(s.mediaUrl, 700)} alt={s.altText || ""} loading="lazy"/>}
-                  {s.mediaType === "video" && (s.mediaPoster || s.mediaUrl) && <div className="cm-show-video"><img src={s.mediaPoster || cmPoster(s.mediaUrl)} alt=""/><span className="cm-show-play">▶</span></div>}
-                  <figcaption>
-                    <span className="cm-show-chan" style={{ color: s.channel.color }}>{s.channel.icon} {s.channel.name}</span>
-                    {s.body && <p className="cm-show-body">{s.body.length > 140 ? s.body.slice(0, 140) + "…" : s.body}</p>}
-                    <span className="cm-show-author">— {s.author}</span>
-                  </figcaption>
-                </figure>
-              ))}
+      {panel && (<>
+        <div onClick={() => setPanel(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,20,50,0.45)", zIndex: 50, animation: "ngg-fade .2s ease" }}/>
+        <div style={{ position: "fixed", top: 0, right: 0, height: "100%", width: 360, maxWidth: "92vw", background: "#fff", zIndex: 51, boxShadow: "-16px 0 40px rgba(12,20,50,0.25)", animation: "ngg-panel-in .25s cubic-bezier(.2,.8,.2,1)", overflowY: "auto" }}>
+          <div style={{ padding: "20px 20px 0", display: "flex", justifyContent: "flex-end" }}><button onClick={() => setPanel(null)} style={{ border: "none", background: "var(--cream-100,#f3ecdb)", width: 32, height: 32, borderRadius: "50%", cursor: "pointer", fontSize: 16, color: "var(--ink-500)" }}><i className="ph ph-x"/></button></div>
+          <div style={{ padding: "8px 28px 28px", textAlign: "center" }}>
+            <span className="display" style={{ width: 84, height: 84, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 30, color: "#fff", background: colorFor(panel.first), margin: "0 auto" }}>{(panel.first[0] || "?").toUpperCase()}</span>
+            <h3 className="display" style={{ fontWeight: 800, fontSize: 20, margin: "14px 0 3px" }}>{nameOf(panel)}</h3>
+            <div className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>{panel.centre || "—"} · Level {panel.level}</div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 8, margin: "16px 0" }}>
+              <span className="mono" style={{ fontSize: 11.5, background: "var(--cream-50,#faf6ec)", border: "1px solid var(--cream-200,#e8dec6)", borderRadius: 999, padding: "5px 12px" }}>{(panel.xp || 0).toLocaleString()} XP</span>
+              <span className="mono" style={{ fontSize: 11.5, background: "var(--cream-50,#faf6ec)", border: "1px solid var(--cream-200,#e8dec6)", borderRadius: 999, padding: "5px 12px" }}>{panel.streak || 0}d streak</span>
+              <span className="mono" style={{ fontSize: 11.5, background: "var(--cream-50,#faf6ec)", border: "1px solid var(--cream-200,#e8dec6)", borderRadius: 999, padding: "5px 12px" }}>Wk {panel.week || 1}</span>
             </div>
-            <div className="cm-showcase-cta">
-              <button className="btn btn-primary btn-lg" onClick={() => auth.openSignIn && auth.openSignIn()}>Sign in to see it all →</button>
-            </div>
+            <button className="btn btn-primary btn-lg" style={{ width: "100%", marginTop: 6 }} onClick={() => auth.openSignIn && auth.openSignIn()}>Sign in to connect →</button>
           </div>
-        </section>
-      )}
+        </div>
+      </>)}
     </div>
   );
 }
@@ -538,7 +679,11 @@ function CommunityApp({ setPage, auth }) {
   const [results, setResults] = React.useState(null);     // search results (null = not searching)
   const [searching, setSearching] = React.useState(false);
   const [info, setInfo] = React.useState(false);          // channel-details pane
+  const [chMembers, setChMembers] = React.useState(null); // members rail (chat view)
   const me = (auth.member && auth.member.fullName) || "You";
+  // A specific channel = chat layout (compact rows, members rail, oldest→newest);
+  // All activity / Saved / search = a media-forward card feed (newest first).
+  const isChat = active !== "all" && active !== "bookmarks" && results === null;
   const postsRef = React.useRef([]);
   const streamRef = React.useRef(null);
   const atBottomRef = React.useRef(true);
@@ -549,19 +694,43 @@ function CommunityApp({ setPage, auth }) {
   }, []);
   React.useEffect(() => { reloadChannels(); }, [reloadChannels]);
 
+  // The full-height app pane sits below the sticky site nav, whose height varies
+  // (the brand wraps on narrow screens). Measure it so the composer docks at the
+  // real viewport bottom instead of guessing.
+  React.useEffect(() => {
+    const sync = () => {
+      const nav = document.querySelector(".topnav");
+      const h = nav ? Math.round(nav.getBoundingClientRect().height) : 64;
+      document.documentElement.style.setProperty("--cm-nav", h + "px");
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    const t = setTimeout(sync, 300); // after fonts/logo settle
+    return () => { window.removeEventListener("resize", sync); clearTimeout(t); document.documentElement.style.removeProperty("--cm-nav"); };
+  }, []);
+
   const scrollBottom = (smooth) => {
     const el = streamRef.current; if (!el) return;
     requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); });
   };
 
   const loadFeed = React.useCallback((ch, so, pg, append) => {
+    const chat = ch !== "all" && ch !== "bookmarks";
     NGGApi.member.community.feed(ch, so, pg).then(r => {
       setHasMore(!!r.hasMore);
       setPosts(prev => append && prev ? prev.concat(r.posts || []) : (r.posts || []));
       setLoadingMore(false);
-      if (!append) scrollBottom(false);
+      if (!append && chat) scrollBottom(false); // chat pins to the newest; feed stays at top
     }).catch(() => { setPosts(p => p || []); setLoadingMore(false); });
   }, []);
+
+  // Channel members rail (chat view only).
+  React.useEffect(() => {
+    if (active === "all" || active === "bookmarks") { setChMembers(null); return; }
+    let a = true; setChMembers(null);
+    NGGApi.member.community.members(active).then(r => { if (a) setChMembers(r.members || []); }).catch(() => { if (a) setChMembers([]); });
+    return () => { a = false; };
+  }, [active]);
 
   // Entering a channel: freeze its unread count (for the "New" divider), load
   // the feed, then mark it read so the sidebar badge clears.
@@ -604,7 +773,9 @@ function CommunityApp({ setPage, auth }) {
         const incoming = (r.posts || []);
         const news = incoming.filter(x => !have.has(x.postId));
         if (!news.length || !cur.length) return;
-        if (atBottomRef.current) { setPosts(incoming); scrollBottom(true); }
+        const chat = active !== "all" && active !== "bookmarks";
+        if (!chat) { setPosts(incoming); } // feed: newest slides in at the top, no scroll
+        else if (atBottomRef.current) { setPosts(incoming); scrollBottom(true); }
         else setFresh(incoming);
       }).catch(() => {});
     };
@@ -619,7 +790,10 @@ function CommunityApp({ setPage, auth }) {
     if (atBottomRef.current && fresh) { setPosts(fresh); setFresh(null); }
   };
 
-  const onPosted = (post) => { setPosts(p => (p || []).concat(post)); scrollBottom(true); };
+  const onPosted = (post) => {
+    if (isChat) { setPosts(p => (p || []).concat(post)); scrollBottom(true); }   // chat: newest at bottom
+    else setPosts(p => [post].concat(p || []));                                   // feed: newest at top
+  };
   const patchPost = (postId, patch) => {
     setPosts(p => (p || []).map(x => x.postId === postId ? { ...x, ...patch } : x));
     setThread(t => t && t.postId === postId ? { ...t, ...patch } : t);
@@ -697,17 +871,21 @@ function CommunityApp({ setPage, auth }) {
 
         {/* ── Main column ─────────────────────────────────────────── */}
         <main className="cm-col">
-          <header className="cm-hd">
+          <header className={"cm-hd" + (isChat ? " cm-hd-chat" : "")}>
             <button className="cm-hd-burger" onClick={() => setSbOpen(true)} aria-label="Channels">☰</button>
+            {isChat && activeChannel && <span className="cm-hd-badge" style={{ background: activeChannel.color }}>{activeChannel.icon}</span>}
             <div className="cm-hd-title">
-              <span className="cm-hd-ic" style={{ color: activeChannel ? activeChannel.color : "var(--ink-500)" }}>{headIcon}</span>
-              <span className="cm-hd-name">{headTitle}</span>
+              <div className="cm-hd-line">
+                {!isChat && <span className="cm-hd-ic">{headIcon}</span>}
+                <span className="cm-hd-name">{headTitle}</span>
+                {isChat && chMembers && <span className="cm-hd-count">· {chMembers.length} {chMembers.length === 1 ? "member" : "members"}</span>}
+              </div>
               {activeChannel && <span className="cm-hd-topic">{activeChannel.description}</span>}
             </div>
             <div className="cm-hd-actions">
               {active !== "bookmarks" && !results && (
                 <div className="cm-hd-sort">
-                  {[["latest", "Newest"], ["trending", "Hot"]].map(([v, l]) => <button key={v} className={"cm-hd-sortbtn" + (sort === v ? " is-active" : "")} onClick={() => setSort(v)}>{l}</button>)}
+                  {[["latest", isChat ? "Newest" : "New"], ["trending", "Hot"]].map(([v, l]) => <button key={v} className={"cm-hd-sortbtn" + (sort === v ? " is-active" : "")} onClick={() => setSort(v)}>{l}</button>)}
                 </div>
               )}
               <button className="cm-hd-btn" onClick={catchMeUp} title="AI catch-up">✨</button>
@@ -715,22 +893,26 @@ function CommunityApp({ setPage, auth }) {
             </div>
           </header>
 
-          <div className="cm-stream" ref={streamRef} onScroll={onStreamScroll}>
+          <div className={"cm-stream" + (isChat ? " is-chat" : " is-feed")} ref={streamRef} onScroll={onStreamScroll}>
+            {/* Pinned brief for a channel (its description) */}
+            {isChat && activeChannel && activeChannel.description && (
+              <div className="cm-brief"><span className="cm-brief-ic">📌</span><div className="cm-brief-txt"><b>{activeChannel.name}</b> — {activeChannel.description}</div></div>
+            )}
             {results !== null ? (
-              <div className="cm-search-results">
+              <div className="cm-cardfeed">
                 <div className="cm-search-head">{searching ? "Searching…" : (results.length + " result" + (results.length === 1 ? "" : "s") + " for “" + query.trim() + "”")}</div>
-                {results.map(p => <CmMessage key={p.postId} post={p} prev={null} me={me} onPatch={patchPost} onRemove={removePost} onOpenThread={setThread} standalone/>)}
+                {results.map(p => <CmCard key={p.postId} post={p} me={me} onPatch={patchPost} onRemove={removePost} onOpenThread={setThread} showChannel/>)}
                 {!searching && results.length === 0 && <div className="cm-empty"><div className="cm-empty-ic">🔍</div><p>No messages match that search.</p></div>}
               </div>
             ) : posts === null ? (
-              <div className="cm-skeletons">{[0, 1, 2, 3].map(i => <div key={i} className="cm-msg-skel"/>)}</div>
-            ) : chrono.length === 0 ? (
+              <div className="cm-skeletons">{[0, 1, 2, 3].map(i => <div key={i} className={isChat ? "cm-msg-skel" : "cm-card-skel"}/>)}</div>
+            ) : (isChat ? chrono : posts).length === 0 ? (
               <div className="cm-empty">
                 <div className="cm-empty-ic">{active === "bookmarks" ? "🔖" : (headIcon || "💬")}</div>
                 <h3>{active === "bookmarks" ? "Nothing saved yet" : ("Welcome to " + headTitle)}</h3>
-                <p>{active === "bookmarks" ? "Hover a message and tap Save to keep it here." : "This is the very beginning of the channel. Say hello 👋"}</p>
+                <p>{active === "bookmarks" ? "Hover a card and tap Save to keep it here." : isChat ? "This is the very beginning of the channel. Say hello 👋" : "Nothing here yet. Be the first to share something today."}</p>
               </div>
-            ) : (
+            ) : isChat ? (
               <div className="cm-msgs">
                 {hasMore && <button className="cm-load-older" disabled={loadingMore} onClick={more}>{loadingMore ? "Loading…" : "↑ Load earlier messages"}</button>}
                 {chrono.map((p, i) => (
@@ -740,19 +922,26 @@ function CommunityApp({ setPage, auth }) {
                   </React.Fragment>
                 ))}
               </div>
+            ) : (
+              <div className="cm-cardfeed">
+                {posts.map(p => <CmCard key={p.postId} post={p} me={me} onPatch={patchPost} onRemove={removePost} onOpenThread={setThread} showChannel/>)}
+                {hasMore && <button className="cm-more" disabled={loadingMore} onClick={more}>{loadingMore ? "Loading…" : "Load more"}</button>}
+              </div>
             )}
             {fresh && <button className="cm-fresh" onClick={showFresh}>↓ New messages — jump to latest</button>}
           </div>
 
           {active !== "bookmarks" && !results && (
             <div className="cm-dock">
-              <CmComposer channels={channels} active={active} me={me} onPosted={onPosted} enterToSend/>
+              <CmComposer channels={channels} active={active} me={me} onPosted={onPosted} enterToSend={isChat}/>
             </div>
           )}
         </main>
 
-        {/* ── Details pane ────────────────────────────────────────── */}
-        {info && (
+        {/* ── Right column: thread > details > channel members ─────── */}
+        {thread ? (
+          <CmThread post={thread} me={me} channels={channels} onClose={() => setThread(null)} onPatch={patchPost} onRemove={removePost}/>
+        ) : info ? (
           <aside className="cm-info">
             <div className="cm-info-head"><span>Details</span><button onClick={() => setInfo(false)} aria-label="Close">✕</button></div>
             {activeChannel ? (
@@ -762,7 +951,7 @@ function CommunityApp({ setPage, auth }) {
                 <p className="cm-info-desc">{activeChannel.description}</p>
                 <div className="cm-info-stat">{activeChannel.posts} message{activeChannel.posts === 1 ? "" : "s"}</div>
               </>
-            ) : <p className="cm-info-desc">{active === "all" ? "Everything from every channel, newest at the bottom." : "Messages you've saved for later."}</p>}
+            ) : <p className="cm-info-desc">{active === "all" ? "Everything from every channel, newest first." : "Messages you've saved for later."}</p>}
             <div className="cm-info-rules">
               <div className="cm-info-rules-h">House rules</div>
               <ul>
@@ -773,10 +962,9 @@ function CommunityApp({ setPage, auth }) {
               </ul>
             </div>
           </aside>
-        )}
-
-        {/* ── Thread pane ─────────────────────────────────────────── */}
-        {thread && <CmThread post={thread} me={me} channels={channels} onClose={() => setThread(null)} onPatch={patchPost} onRemove={removePost}/>}
+        ) : isChat ? (
+          <CmMembersRail members={chMembers}/>
+        ) : null}
       </div>
 
       {digest && <CmDigest digest={digest} onClose={() => setDigest(null)}/>}
@@ -1077,6 +1265,77 @@ function CmMessage({ post, prev, me, onPatch, onRemove, onOpenThread, standalone
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---- Card post (All activity / Saved / search — media-forward feed) ---- */
+function CmCard({ post, me, onPatch, onRemove, onOpenThread, showChannel }) {
+  const [picker, setPicker] = React.useState(false);
+  const [menu, setMenu] = React.useState(false);
+  const act = useCmActions(post, onPatch, onRemove);
+  const react = (e) => { setPicker(false); act.react(e); };
+  const replies = post.commentCount || 0;
+  return (
+    <article className={"cm-card" + (post.status !== "published" ? " is-pending" : "")}>
+      <div className="cm-card-head">
+        <span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }}>{cmInitial(post.author.name)}</span>
+        <div className="cm-card-meta">
+          <span className="cm-card-author">{post.author.name}{post.author.isMe && <span className="cm-you">you</span>}</span>
+          <span className="cm-card-sub">{cmAgo(post.createdAt)}{post.author.centre ? " · " + post.author.centre : ""}</span>
+        </div>
+        {showChannel && <span className="cm-card-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span>}
+        {post.featured && <span className="cm-featured" title="On the public Showcase">✨</span>}
+      </div>
+      <CmBodyBlock post={post} onVote={act.vote}/>
+      <div className="cm-card-bar">
+        <div className="cm-card-reacts">
+          <CmReactChips post={post} onReact={react}/>
+          <div className="cm-tool-wrap">
+            <button className={"cm-react-add" + (post.myReaction ? " is-on" : "")} onClick={() => setPicker(p => !p)}>{post.myReaction || "😊"} <span>React</span></button>
+            {picker && <div className="cm-picker" onMouseLeave={() => setPicker(false)}>{CM_REACTIONS.map(e => <button key={e} className={"cm-picker-e" + (post.myReaction === e ? " is-on" : "")} onClick={() => react(e)}>{e}</button>)}</div>}
+          </div>
+        </div>
+        <button className="cm-card-reply" onClick={() => onOpenThread && onOpenThread(post)}>💬 {replies ? (replies + (replies === 1 ? " reply" : " replies")) : "Reply"}</button>
+        <button className={"cm-pill-ic" + (post.bookmarked ? " is-on" : "")} onClick={act.bookmark} title={post.bookmarked ? "Saved" : "Save"}>{post.bookmarked ? "🔖" : "🏷️"}</button>
+        <button className="cm-pill-ic" onClick={act.share} title="Share">↗</button>
+        <div className="cm-tool-wrap">
+          <button className="cm-pill-ic" onClick={() => setMenu(m => !m)} title="More">⋯</button>
+          {menu && (
+            <div className="cm-menu" onMouseLeave={() => setMenu(false)}>
+              {post.author.isMe
+                ? <button className="cm-menu-item cm-menu-danger" onClick={() => { setMenu(false); act.del(); }}>Delete post</button>
+                : <button className="cm-menu-item" onClick={() => { setMenu(false); act.report(); }}>🚩 Report to a mentor</button>}
+            </div>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/* ---- Channel members rail (chat view) ---- */
+function CmMembersRail({ members }) {
+  if (members === null) return <aside className="cm-rail2"><div className="cm-rail2-load">Loading…</div></aside>;
+  const staff = members.filter(m => m.staff);
+  const rest = members.filter(m => !m.staff);
+  const row = (m, i) => (
+    <div key={i} className="cm-rail2-row">
+      <span className="cm-avatar cm-avatar-sm" style={{ background: cmColor(m.name) }}>{cmInitial(m.name)}</span>
+      <div className="cm-rail2-info"><div className="cm-rail2-name">{m.name}</div><div className="cm-rail2-sub">{m.centre || "—"}{m.posts ? " · " + m.posts + " post" + (m.posts === 1 ? "" : "s") : ""}</div></div>
+    </div>
+  );
+  return (
+    <aside className="cm-rail2">
+      {members.length === 0 ? (
+        <div className="cm-rail2-empty">No one has posted here yet — be the first.</div>
+      ) : (
+        <>
+          {staff.length > 0 && <><div className="cm-rail2-h">Mentors · {staff.length}</div>{staff.map(row)}</>}
+          <div className="cm-rail2-h">In this channel · {rest.length}</div>
+          {rest.map(row)}
+        </>
+      )}
+    </aside>
   );
 }
 
