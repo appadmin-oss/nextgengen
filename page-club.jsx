@@ -377,17 +377,38 @@ function cmAgo(iso) {
   if (s < 604800) return Math.floor(s / 86400) + "d";
   return Math.floor(s / 604800) + "w";
 }
-// Body → nodes: preserve line breaks, linkify URLs, highlight @mentions + #tags.
+// Whitespace-split tokens → linkify URLs, highlight @mentions + #tags.
+function cmEntities(text, kp) {
+  const out = [];
+  String(text).split(/(\s+)/).forEach((p, i) => {
+    if (/^https?:\/\/\S+$/.test(p)) out.push(<a key={kp + "u" + i} href={p} target="_blank" rel="noopener noreferrer" className="cm-link">{p.replace(/^https?:\/\//, "")}</a>);
+    else if (/^@[\w.-]+$/.test(p)) out.push(<a key={kp + "m" + i} href={"/s/" + p.slice(1).toLowerCase()} className="cm-mention">{p}</a>);
+    else if (/^#[\w]+$/.test(p)) out.push(<b key={kp + "t" + i} className="cm-tag">{p}</b>);
+    else if (p) out.push(<React.Fragment key={kp + "x" + i}>{p}</React.Fragment>);
+  });
+  return out;
+}
+// One line → Slack-style inline formatting (`code`, *bold*, _italic_, ~strike~)
+// wrapped around the entity pass. Code spans win first so their contents stay literal.
+function cmInline(line, kp) {
+  const out = []; let last = 0, idx = 0, m;
+  const re = /`([^`\n]+)`|\*([^*\n]+)\*|_([^_\n]+)_|~([^~\n]+)~/g;
+  while ((m = re.exec(line))) {
+    if (m.index > last) out.push(...cmEntities(line.slice(last, m.index), kp + "e" + (idx++)));
+    if (m[1] != null) out.push(<code key={kp + "c" + (idx++)} className="cm-code">{m[1]}</code>);
+    else if (m[2] != null) out.push(<b key={kp + "b" + (idx++)}>{cmEntities(m[2], kp + "bb" + idx)}</b>);
+    else if (m[3] != null) out.push(<em key={kp + "i" + (idx++)}>{cmEntities(m[3], kp + "ii" + idx)}</em>);
+    else out.push(<s key={kp + "s" + (idx++)}>{cmEntities(m[4], kp + "ss" + idx)}</s>);
+    last = re.lastIndex;
+  }
+  if (last < line.length) out.push(...cmEntities(line.slice(last), kp + "e" + (idx++)));
+  return out;
+}
+// Body → nodes: preserve line breaks + inline formatting + entities.
 function cmBody(text) {
   const out = []; const lines = String(text || "").split("\n");
   lines.forEach((line, li) => {
-    const parts = line.split(/(\s+)/);
-    parts.forEach((p, i) => {
-      if (/^https?:\/\/\S+$/.test(p)) out.push(<a key={li + "-" + i} href={p} target="_blank" rel="noopener noreferrer" className="cm-link">{p.replace(/^https?:\/\//, "")}</a>);
-      else if (/^@[\w.]+$/.test(p)) out.push(<a key={li + "-" + i} href={"/s/" + p.slice(1).toLowerCase()} className="cm-mention">{p}</a>);
-      else if (/^#[\w]+$/.test(p)) out.push(<b key={li + "-" + i} className="cm-tag">{p}</b>);
-      else out.push(p);
-    });
+    out.push(...cmInline(line, "l" + li + "-"));
     if (li < lines.length - 1) out.push(<br key={"br" + li}/>);
   });
   return out;
@@ -987,6 +1008,30 @@ function cmVideoMeta(file) {
   });
 }
 const CM_VIDEO_MAX_MB = 80, CM_VIDEO_MAX_SECS = 180, CM_IMAGE_MAX_MB = 15;
+const CM_EMOJI = ["😀", "😂", "🥹", "😍", "😎", "🤔", "😅", "🙌", "👏", "🔥", "❤️", "💡", "🎉", "🚀", "💪", "🙏", "👀", "✅", "✨", "⭐", "🎬", "🎵", "🎨", "💻", "📷", "📊", "🏆", "🥳", "😴", "🤝", "👋", "💯"];
+const CM_SLASH = [
+  { cmd: "poll", icon: "📊", label: "Create a poll", hint: "Ask the crew a question" },
+  { cmd: "media", icon: "📷", label: "Add photo or video", hint: "Upload from your device" },
+  { cmd: "shrug", icon: "🤷", label: "Shrug", hint: "¯\\_(ツ)_/¯" },
+];
+
+// Insert text at the caret / wrap the current selection, keeping focus + caret sane.
+function cmTa(ta) { return ta; }
+function cmInsertAt(ta, text, setBody) {
+  if (!ta) return;
+  const s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+  const nv = v.slice(0, s) + text + v.slice(e);
+  setBody(nv);
+  requestAnimationFrame(() => { try { ta.focus(); ta.selectionStart = ta.selectionEnd = s + text.length; } catch (_) {} });
+}
+function cmWrapSel(ta, mark, setBody) {
+  if (!ta) return;
+  const s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+  const sel = v.slice(s, e) || "text";
+  const nv = v.slice(0, s) + mark + sel + mark + v.slice(e);
+  setBody(nv);
+  requestAnimationFrame(() => { try { ta.focus(); ta.selectionStart = s + mark.length; ta.selectionEnd = s + mark.length + sel.length; } catch (_) {} });
+}
 
 function CmComposer({ channels, active, me, onPosted, enterToSend }) {
   const [body, setBody] = React.useState("");
@@ -996,45 +1041,97 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
   const [busy, setBusy] = React.useState(false);
   const [poll, setPoll] = React.useState(null); // null | [opt, opt, ...]
   const [ment, setMent] = React.useState(null); // {q, start, items}
+  const [mentIdx, setMentIdx] = React.useState(0);
+  const [emoji, setEmoji] = React.useState(false);
+  const [drag, setDrag] = React.useState(false);
   const fileRef = React.useRef(null);
   const taRef = React.useRef(null);
+  const draftKey = "ngg.cm.draft." + ch;
+
   React.useEffect(() => { if (active !== "all" && active !== "bookmarks") setCh(active); }, [active]);
 
-  const pick = async (e) => {
-    const f = e.target.files && e.target.files[0]; if (!f) return;
+  // Draft autosave per channel — switching channels swaps drafts; a sent/blank
+  // message clears its draft. Survives reloads.
+  React.useEffect(() => {
+    try { setBody(localStorage.getItem("ngg.cm.draft." + ch) || ""); } catch (_) {}
+    setMent(null); setEmoji(false);
+  }, [ch]);
+  React.useEffect(() => {
+    try { if (body) localStorage.setItem(draftKey, body); else localStorage.removeItem(draftKey); } catch (_) {}
+  }, [body, draftKey]);
+
+  // Auto-grow the textarea with its content (1 line → ~8).
+  const grow = React.useCallback(() => {
+    const ta = taRef.current; if (!ta) return;
+    ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 168) + "px";
+  }, []);
+  React.useEffect(() => { grow(); }, [body, media, poll, grow]);
+
+  const uploadFile = async (f) => {
+    if (!f) return;
     const isVid = /^video\//.test(f.type);
     const mb = f.size / 1024 / 1024;
-    if (isVid && mb > CM_VIDEO_MAX_MB) { toast.error("That video is " + mb.toFixed(0) + "MB — keep clips under " + CM_VIDEO_MAX_MB + "MB."); if (fileRef.current) fileRef.current.value = ""; return; }
-    if (!isVid && mb > CM_IMAGE_MAX_MB) { toast.error("That image is too large — keep it under " + CM_IMAGE_MAX_MB + "MB."); if (fileRef.current) fileRef.current.value = ""; return; }
+    if (isVid && mb > CM_VIDEO_MAX_MB) { toast.error("That video is " + mb.toFixed(0) + "MB — keep clips under " + CM_VIDEO_MAX_MB + "MB."); return; }
+    if (!isVid && mb > CM_IMAGE_MAX_MB) { toast.error("That image is too large — keep it under " + CM_IMAGE_MAX_MB + "MB."); return; }
     let duration = 0;
     if (isVid) {
       const meta = await cmVideoMeta(f); duration = Math.round(meta.duration || 0);
-      if (duration > CM_VIDEO_MAX_SECS) { toast.error("That clip is " + Math.round(duration / 60) + " min — keep it under 3 minutes."); if (fileRef.current) fileRef.current.value = ""; return; }
+      if (duration > CM_VIDEO_MAX_SECS) { toast.error("That clip is " + Math.round(duration / 60) + " min — keep it under 3 minutes."); return; }
     }
-    setUp(1);
+    setPoll(null); setUp(1);
     try {
       const r = await NGGApi.uploadFile(f, "post", pct => setUp(Math.max(1, pct)));
       const type = (r.resourceType === "video" || isVid) ? "video" : "image";
       setMedia({ type, url: r.url, poster: type === "video" ? cmPoster(r.url) : "", bytes: f.size, duration });
     } catch (_) { toast.error("Upload failed — try again."); }
-    finally { setUp(0); if (fileRef.current) fileRef.current.value = ""; }
+    finally { setUp(0); }
+  };
+  const pick = async (e) => { const f = e.target.files && e.target.files[0]; await uploadFile(f); if (fileRef.current) fileRef.current.value = ""; };
+  const openFile = () => fileRef.current && fileRef.current.click();
+
+  // Paste an image straight from the clipboard → upload.
+  const onPaste = (e) => {
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    for (const it of items) {
+      if (it.kind === "file") { const f = it.getAsFile(); if (f && (/^image\//.test(f.type) || /^video\//.test(f.type))) { e.preventDefault(); uploadFile(f); return; } }
+    }
+  };
+  // Drag & drop a file onto the composer.
+  const onDrop = (e) => {
+    e.preventDefault(); setDrag(false);
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) uploadFile(f);
   };
 
   // @mention autocomplete: watch the token before the caret.
   const onBody = (e) => {
     const val = e.target.value; setBody(val);
     const caret = e.target.selectionStart || val.length;
-    const m = val.slice(0, caret).match(/@([a-z0-9._-]{1,20})$/i);
+    const m = val.slice(0, caret).match(/@([a-z0-9._-]{0,20})$/i);
     if (m) {
       const start = caret - m[0].length;
-      NGGApi.member.community.mentions(m[1]).then(r => setMent({ q: m[1], start, items: r.people || [] })).catch(() => {});
+      NGGApi.member.community.mentions(m[1] || "").then(r => { setMent({ q: m[1] || "", start, items: r.people || [] }); setMentIdx(0); }).catch(() => {});
     } else setMent(null);
   };
   const pickMention = (handle) => {
-    if (!ment) return;
-    const before = body.slice(0, ment.start), after = body.slice(ment.start + ment.q.length + 1);
-    setBody(before + "@" + handle + " " + after); setMent(null);
-    if (taRef.current) taRef.current.focus();
+    const ta = taRef.current;
+    if (!ment || !ta) return;
+    const before = body.slice(0, ment.start), after = body.slice(ta.selectionStart || (ment.start + ment.q.length + 1));
+    const nv = before + "@" + handle + " " + after;
+    setBody(nv); setMent(null);
+    requestAnimationFrame(() => { try { ta.focus(); const pos = before.length + handle.length + 2; ta.selectionStart = ta.selectionEnd = pos; } catch (_) {} });
+  };
+
+  // Slash menu — appears when the box holds just "/word".
+  const slashQ = /^\/(\w*)$/.exec(body.trim());
+  const slashItems = slashQ ? CM_SLASH.filter(s => s.cmd.startsWith(slashQ[1].toLowerCase())) : [];
+  const slashOpen = !!slashQ && slashItems.length > 0 && !media;
+  const runSlash = (cmd) => {
+    setBody("");
+    if (cmd === "poll") setPoll(["", ""]);
+    else if (cmd === "media") openFile();
+    else if (cmd === "shrug") setBody("¯\\_(ツ)_/¯ ");
+    requestAnimationFrame(() => taRef.current && taRef.current.focus());
   };
 
   const pollAdd = () => setPoll(p => (p && p.length < 4 ? p.concat("") : p));
@@ -1050,7 +1147,8 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
         ? { channel: ch, body: body.trim(), kind: "poll", pollOptions: poll.map(o => o.trim()).filter(Boolean) }
         : { channel: ch, body: body.trim(), mediaType: media ? media.type : "none", mediaUrl: media ? media.url : "", mediaPoster: media ? media.poster : "", mediaBytes: media ? media.bytes : 0, mediaDuration: media ? media.duration : 0 };
       const r = await NGGApi.member.community.post(payload);
-      setBody(""); setMedia(null); setPoll(null);
+      setBody(""); setMedia(null); setPoll(null); setEmoji(false);
+      try { localStorage.removeItem(draftKey); } catch (_) {}
       if (r.queued) toast.success("Posted — a mentor will approve it shortly.");
       else toast.success("Posted ✓");
       if (r.post) onPosted && onPosted(r.post);
@@ -1062,22 +1160,73 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
   const remaining = 2000 - body.length;
   const canPost = poll ? (body.trim() && poll.filter(o => o.trim()).length >= 2) : (body.trim() || media);
   const onKey = (e) => {
-    if (ment && ment.items.length) return; // let the mention menu keep the keys
+    // Mention menu keyboard navigation.
+    if (ment && ment.items.length) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setMentIdx(i => (i + 1) % ment.items.length); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setMentIdx(i => (i - 1 + ment.items.length) % ment.items.length); return; }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pickMention(ment.items[mentIdx].handle); return; }
+      if (e.key === "Escape") { e.preventDefault(); setMent(null); return; }
+    }
+    if (slashOpen) {
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); runSlash(slashItems[0].cmd); return; }
+      if (e.key === "Escape") { e.preventDefault(); setBody(""); return; }
+    }
+    // Formatting shortcuts.
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey) {
+      const k = e.key.toLowerCase();
+      if (k === "b") { e.preventDefault(); cmWrapSel(taRef.current, "*", setBody); return; }
+      if (k === "i") { e.preventDefault(); cmWrapSel(taRef.current, "_", setBody); return; }
+      if (k === "e") { e.preventDefault(); cmWrapSel(taRef.current, "`", setBody); return; }
+    }
     if (enterToSend && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!busy && up === 0 && canPost) submit(); }
   };
   const chName = (channels.find(c => c.slug === ch) || {}).name || "the channel";
   return (
-    <div className="cm-composer">
+    <div className={"cm-composer" + (drag ? " is-drag" : "")}
+      onDragOver={e => { e.preventDefault(); if (!drag) setDrag(true); }}
+      onDragLeave={e => { if (e.currentTarget === e.target) setDrag(false); }}
+      onDrop={onDrop}>
+      {drag && <div className="cm-drop">Drop a photo or video to share</div>}
+
+      {/* Formatting toolbar */}
+      <div className="cm-fmt">
+        <button className="cm-fmt-btn" title="Bold (Ctrl/⌘+B)" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "*", setBody)}><b>B</b></button>
+        <button className="cm-fmt-btn" title="Italic (Ctrl/⌘+I)" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "_", setBody)}><i>i</i></button>
+        <button className="cm-fmt-btn" title="Strikethrough" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "~", setBody)}><s>S</s></button>
+        <button className="cm-fmt-btn cm-fmt-code" title="Code (Ctrl/⌘+E)" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "`", setBody)}>{"</>"}</button>
+        <span className="cm-fmt-sep"/>
+        <div className="cm-emoji-wrap">
+          <button className={"cm-fmt-btn" + (emoji ? " is-on" : "")} title="Emoji" onMouseDown={e => e.preventDefault()} onClick={() => setEmoji(v => !v)}>😊</button>
+          {emoji && (
+            <div className="cm-emoji-pop" onMouseLeave={() => setEmoji(false)}>
+              {CM_EMOJI.map(em => <button key={em} className="cm-emoji-e" onMouseDown={e => e.preventDefault()} onClick={() => { cmInsertAt(taRef.current, em, setBody); }}>{em}</button>)}
+            </div>
+          )}
+        </div>
+        <button className="cm-fmt-btn" title="Mention someone" onMouseDown={e => e.preventDefault()} onClick={() => cmInsertAt(taRef.current, "@", setBody)}>@</button>
+      </div>
+
       <div className="cm-composer-top">
         <span className="cm-avatar" style={{ background: cmColor(me) }}>{cmInitial(me)}</span>
         <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
-          <textarea ref={taRef} className="cm-input" rows={media || poll ? 2 : 1} maxLength={2000} value={body} onChange={onBody} onKeyDown={onKey} placeholder={poll ? "Ask the crew a question…" : ("Message " + (active !== "all" ? "#" + chName : "the crew") + "…  (@ to mention)")}/>
+          <textarea ref={taRef} className="cm-input" rows={1} maxLength={2000} value={body} onChange={onBody} onKeyDown={onKey} onPaste={onPaste}
+            placeholder={poll ? "Ask the crew a question…" : ("Message " + (active !== "all" ? "#" + chName : "the crew") + "…   (@ mention · / commands)")}/>
+          {slashOpen && (
+            <div className="cm-mention-menu cm-slash-menu">
+              {slashItems.map((s, i) => (
+                <button key={s.cmd} className={"cm-mention-item" + (i === 0 ? " is-active" : "")} onMouseDown={e => e.preventDefault()} onClick={() => runSlash(s.cmd)}>
+                  <span className="cm-slash-ic">{s.icon}</span>
+                  <span><b>/{s.cmd}</b> <span className="cm-slash-hint">{s.hint}</span></span>
+                </button>
+              ))}
+            </div>
+          )}
           {ment && ment.items.length > 0 && (
             <div className="cm-mention-menu">
-              {ment.items.map(pp => (
-                <button key={pp.handle} className="cm-mention-item" onClick={() => pickMention(pp.handle)}>
-                  <span className="cm-avatar cm-avatar-sm" style={{ background: cmColor(pp.handle) }}>{cmInitial(pp.name || pp.handle)}</span>
-                  <span><b>@{pp.handle}</b>{pp.name ? " · " + pp.name : ""}{pp.centre ? " · " + pp.centre : ""}</span>
+              {ment.items.map((pp, i) => (
+                <button key={pp.handle} className={"cm-mention-item" + (i === mentIdx ? " is-active" : "")} onMouseDown={e => e.preventDefault()} onMouseEnter={() => setMentIdx(i)} onClick={() => pickMention(pp.handle)}>
+                  <span className={"cm-avatar cm-avatar-sm" + (pp.kind === "all" ? " cm-avatar-all" : "")} style={pp.kind === "all" ? {} : { background: cmColor(pp.handle) }}>{pp.kind === "all" ? "📣" : cmInitial(pp.name || pp.handle)}</span>
+                  <span><b>@{pp.handle}</b>{pp.name ? " · " + pp.name : ""}{pp.centre ? " · " + pp.centre : ""}{pp.kind === "mentor" ? <span className="cm-ment-badge">mentor</span> : null}</span>
                 </button>
               ))}
             </div>
@@ -1099,14 +1248,14 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
 
       {media && (
         <div className="cm-media-preview">
-          {media.type === "video" ? <video src={cmOpt(media.url)} poster={media.poster} controls className="cm-media"/> : <img src={cmOpt(media.url, 900)} alt="" className="cm-media"/>}
+          {media.type === "video" ? <video src={cmOpt(media.url, 1280)} poster={media.poster} controls className="cm-media"/> : <img src={cmOpt(media.url, 900)} alt="" className="cm-media"/>}
           <button className="cm-media-x" onClick={() => setMedia(null)} aria-label="Remove media">✕</button>
         </div>
       )}
       {up > 0 && <div className="cm-progress"><span style={{ width: up + "%" }}/></div>}
       <div className="cm-composer-bar">
         <div className="cm-composer-left">
-          {!poll && <button className="cm-icon-btn" onClick={() => fileRef.current && fileRef.current.click()} disabled={up > 0} title="Add photo or video">📷 Media</button>}
+          {!poll && <button className="cm-icon-btn" onClick={openFile} disabled={up > 0} title="Add photo or video">📷 Media</button>}
           <input ref={fileRef} type="file" accept="image/*,video/*" onChange={pick} style={{ display: "none" }}/>
           {!media && <button className={"cm-icon-btn" + (poll ? " is-on" : "")} onClick={() => setPoll(p => p ? null : ["", ""])} title="Create a poll">📊 Poll</button>}
           <select className="cm-chan-select" value={ch} onChange={e => setCh(e.target.value)}>
@@ -1114,6 +1263,7 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
           </select>
         </div>
         <div className="cm-composer-right">
+          <span className="cm-kbd-hint">{enterToSend ? <><b>Enter</b> to send · <b>Shift+Enter</b> newline</> : <><b>Enter</b> for a new line</>}</span>
           {body.length > 1600 && <span className={"cm-count" + (remaining < 0 ? " over" : "")}>{remaining}</span>}
           <button className="btn btn-primary btn-sm" disabled={busy || up > 0 || !canPost} onClick={submit}>{busy ? "Posting…" : poll ? "Ask" : "Post"}</button>
         </div>
