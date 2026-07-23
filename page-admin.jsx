@@ -62,6 +62,7 @@ const ADMIN_SECTIONS = [
   { id: "posts",       group: "Content",  label: "Posts",        title: "Posts",               icon: "✎", cap: "content" },
   { id: "photos",      group: "Content",  label: "Photo review", title: "Photo review",        icon: "◲", cap: "content" },
   { id: "comments",    group: "Content",  label: "Comments",     title: "Comment moderation",  icon: "💬", cap: "content" },
+  { id: "community",   group: "Content",  label: "Community",    title: "Community",           icon: "❖", cap: "content" },
   { id: "broadcast",   group: "Content",  label: "Announce",     title: "Announcements",       icon: "📣", cap: "content" },
   { id: "forms",       group: "Content",  label: "Forms",        title: "Forms",               icon: "▤", cap: "content" },
   { id: "site",        group: "Content",  label: "Site content", title: "Site content",        icon: "◧", cap: "settings" },
@@ -171,6 +172,7 @@ function AdminPage({ setPage }) {
           {view === "behaviour" && <AdminBehaviour/>}
           {view === "integrations" && <AdminIntegrations/>}
           {view === "comments" && <AdminComments/>}
+          {view === "community" && <AdminCommunity/>}
           {view === "donations" && <AdminDonations/>}
         </main>
       </div>
@@ -2394,6 +2396,142 @@ function AdminDonations() {
 // ============================================================================
 // Comment moderation — approve/reject member comments before they go public
 // ============================================================================
+
+/* ── Community 2.0 — moderation queue + channel management ─────────────── */
+function AdminCommunity() {
+  const [tab, setTab] = React.useState("moderation");
+  const [pending, setPending] = React.useState(null);
+  const loadPending = () => NGGApi.admin.community.overview().then(r => setPending(r.pending)).catch(() => {});
+  React.useEffect(() => { loadPending(); }, []);
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Community {pending && (pending.posts + pending.comments) > 0 ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{pending.posts + pending.comments} to review</span> : null}</h2>
+      </div>
+      <p className="admin-hint">The members' social feed. Posts &amp; comments are AI-screened on submit; video and anything flagged waits here for your approval. Channels mirror the summer courses — add or archive them below.</p>
+      <div className="admin-filters">
+        <button className={"btn btn-sm " + (tab === "moderation" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("moderation")}>Moderation</button>
+        <button className={"btn btn-sm " + (tab === "channels" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("channels")}>Channels</button>
+      </div>
+      {tab === "moderation" ? <AdminCommunityQueue onChange={loadPending}/> : <AdminCommunityChannels/>}
+    </div>
+  );
+}
+
+function AdminCommunityQueue({ onChange }) {
+  const [status, setStatus] = React.useState("pending");
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.community.queue(status).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [status]);
+  const act = async (kind, id, a) => { try { await NGGApi.admin.community.moderate(kind, id, a); load(); onChange && onChange(); } catch (e) { toast.error(e.code || e.message); } };
+  return (
+    <div>
+      <div className="admin-filters">
+        <select className="admin-select" value={status} onChange={e => setStatus(e.target.value)}>
+          <option value="pending">Pending review</option><option value="published">Published</option><option value="hidden">Hidden</option><option value="removed">Removed</option><option value="all">All (live)</option>
+        </select>
+      </div>
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        d === null ? <div className="dash-spinner"/> :
+        (d.posts.length === 0 && d.comments.length === 0) ? <div className="admin-empty">Nothing to review.</div> :
+        <div>
+          {d.posts.length > 0 && <div className="mono" style={{ fontSize: 11, letterSpacing: ".1em", color: "var(--ink-500)", margin: "6px 0 10px" }}>POSTS</div>}
+          <div className="admin-app-list">
+            {d.posts.map(p => (
+              <div className="admin-app" key={p.postId}>
+                <div className="admin-app-top">
+                  <div><div className="admin-cell-name">{p.author} <span className="chip" style={{ background: p.color, color: "#fff" }}>{p.channel}</span> {p.pinned && <span className="chip chip-lime">📌 pinned</span>}</div>
+                    <div className="mono admin-cell-sub">{fmtDate(p.createdAt)}{p.centre ? " · " + p.centre : ""}{p.mediaType !== "none" ? " · " + p.mediaType : ""}</div></div>
+                  <span className={"chip status-" + (p.status === "published" ? "published" : p.status === "removed" ? "archived" : "draft")}>{p.status}</span>
+                </div>
+                {p.body && <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{p.body}</p>}
+                {p.mediaType === "image" && p.mediaUrl && <img src={p.mediaUrl} alt="" style={{ maxWidth: 220, borderRadius: 10, marginBottom: 8 }}/>}
+                {p.mediaType === "video" && p.mediaUrl && <video src={p.mediaUrl} poster={p.mediaPoster} controls style={{ maxWidth: 260, borderRadius: 10, marginBottom: 8 }}/>}
+                {p.moderation && p.moderation.reason && <div className="mono admin-cell-sub" style={{ marginBottom: 8 }}>AI: {p.moderation.verdict} · {p.moderation.reason}</div>}
+                <div className="admin-app-actions">
+                  {p.status !== "published" && <button className="btn btn-primary btn-sm" onClick={() => act("post", p.postId, "approve")}>Approve</button>}
+                  {p.status !== "hidden" && <button className="btn btn-ghost btn-sm" onClick={() => act("post", p.postId, "hide")}>Hide</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={() => act("post", p.postId, p.pinned ? "unpin" : "pin")}>{p.pinned ? "Unpin" : "Pin"}</button>
+                  <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={() => act("post", p.postId, "remove")}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {d.comments.length > 0 && <div className="mono" style={{ fontSize: 11, letterSpacing: ".1em", color: "var(--ink-500)", margin: "18px 0 10px" }}>COMMENTS</div>}
+          <div className="admin-app-list">
+            {d.comments.map(c => (
+              <div className="admin-app" key={c.commentId}>
+                <div className="admin-app-top">
+                  <div className="admin-cell-name">{c.name}</div>
+                  <span className={"chip status-" + (c.status === "published" ? "published" : c.status === "removed" ? "archived" : "draft")}>{c.status}</span>
+                </div>
+                <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{c.body}</p>
+                <div className="admin-app-actions">
+                  {c.status !== "published" && <button className="btn btn-primary btn-sm" onClick={() => act("comment", c.commentId, "approve")}>Approve</button>}
+                  {c.status !== "hidden" && <button className="btn btn-ghost btn-sm" onClick={() => act("comment", c.commentId, "hide")}>Hide</button>}
+                  <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={() => act("comment", c.commentId, "remove")}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>}
+    </div>
+  );
+}
+
+function AdminCommunityChannels() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const blank = { channelId: "", name: "", icon: "", color: "#3b5bdb", kind: "topic", faculty: "", description: "", pinned: false, status: "active", sortOrder: 0 };
+  const [f, setF] = React.useState(blank);
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.admin.community.overview().then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); }, []);
+  const set = (k, v) => setF(s => ({ ...s, [k]: v }));
+  const edit = (c) => setF({ channelId: c.channelId, name: c.name, icon: c.icon, color: c.color, kind: c.kind, faculty: c.faculty || "", description: c.description || "", pinned: !!c.pinned, status: c.status, sortOrder: c.sortOrder || 0 });
+  const save = async () => {
+    if (f.name.trim().length < 2) { toast.error("Give the channel a name."); return; }
+    setBusy(true);
+    try { await NGGApi.admin.community.channelUpsert(f); toast.success("Channel saved."); setF(blank); load(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600,#47506e)", marginBottom: 3 };
+  return (
+    <div>
+      <div style={{ background: "rgba(12,20,50,0.03)", borderRadius: 12, padding: 16, marginBottom: 18 }}>
+        <div className="mono" style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 10 }}>{f.channelId ? "EDIT CHANNEL" : "ADD A CHANNEL"}</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+          <div style={{ flex: "1 1 200px" }}><span style={lbl}>Name</span><input className="admin-input" style={{ width: "100%" }} value={f.name} maxLength={120} onChange={e => set("name", e.target.value)}/></div>
+          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Icon</span><input className="admin-input" value={f.icon} maxLength={4} onChange={e => set("icon", e.target.value)} style={{ width: 64 }} placeholder="💻"/></div>
+          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Colour</span><input type="color" value={f.color} onChange={e => set("color", e.target.value)} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/></div>
+          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Kind</span><select className="admin-select" value={f.kind} onChange={e => set("kind", e.target.value)}><option value="course">Course</option><option value="topic">Topic</option><option value="centre">Centre</option><option value="commons">Commons</option></select></div>
+          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Status</span><select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}><option value="active">Active</option><option value="archived">Archived</option></select></div>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}><input type="checkbox" checked={f.pinned} onChange={e => set("pinned", e.target.checked)}/> Pinned</label>
+        </div>
+        <div style={{ marginTop: 10 }}><span style={lbl}>Description</span><input className="admin-input" style={{ width: "100%" }} value={f.description} maxLength={400} onChange={e => set("description", e.target.value)}/></div>
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : (f.channelId ? "Save channel" : "Add channel")}</button>
+          {f.channelId && <button className="btn btn-ghost btn-sm" onClick={() => setF(blank)}>Cancel edit</button>}
+        </div>
+      </div>
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        d === null ? <div className="dash-spinner"/> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Channel</th><th>Kind</th><th>Posts</th><th>Status</th><th></th></tr></thead>
+          <tbody>{d.channels.map(c => (
+            <tr key={c.channelId}>
+              <td><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 22, height: 22, borderRadius: 6, display: "grid", placeItems: "center", background: c.color, color: "#fff", fontSize: 12 }}>{c.icon || "#"}</span><b>{c.name}</b>{c.pinned && <span className="chip chip-lime">pinned</span>}</span></td>
+              <td className="mono admin-cell-sub">{c.kind}</td>
+              <td>{c.total || 0}</td>
+              <td>{c.status === "active" ? <span className="chip chip-lime">active</span> : <span className="chip status-archived">archived</span>}</td>
+              <td style={{ textAlign: "right" }}><button className="btn btn-ghost btn-sm" onClick={() => edit(c)}>Edit</button></td>
+            </tr>
+          ))}</tbody>
+        </table></div>}
+    </div>
+  );
+}
 
 function AdminComments() {
   const [status, setStatus] = React.useState("pending");

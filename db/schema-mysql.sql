@@ -810,3 +810,77 @@ INSERT INTO schema_version (version) VALUES (46) ON DUPLICATE KEY UPDATE version
 ALTER TABLE centres ADD COLUMN heroPosition VARCHAR(32) DEFAULT 'center bottom';
 
 INSERT INTO schema_version (version) VALUES (47) ON DUPLICATE KEY UPDATE version = version;
+
+-- 48: Community 2.0 — social feed with channels (courses + Commons), media,
+-- reactions, moderated comments, bookmarks. All UGC AI-screened + moderatable.
+CREATE TABLE IF NOT EXISTS community_channels (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  channelId VARCHAR(48) UNIQUE NOT NULL,
+  slug VARCHAR(64) UNIQUE NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  kind VARCHAR(16) DEFAULT 'course',
+  faculty VARCHAR(120) DEFAULT '',
+  icon VARCHAR(16) DEFAULT '',
+  color VARCHAR(16) DEFAULT '#3b5bdb',
+  description VARCHAR(400) DEFAULT '',
+  sortOrder INT DEFAULT 0,
+  pinned TINYINT DEFAULT 0,
+  status VARCHAR(16) DEFAULT 'active',
+  createdAt VARCHAR(40), updatedAt VARCHAR(40),
+  INDEX idx_cchan_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS community_posts (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  postId VARCHAR(48) UNIQUE NOT NULL,
+  channelId VARCHAR(48) NOT NULL,
+  authorId VARCHAR(48) NOT NULL,
+  authorName VARCHAR(120) DEFAULT '',
+  authorCentre VARCHAR(80) DEFAULT '',
+  body TEXT,
+  mediaType VARCHAR(16) DEFAULT 'none',
+  mediaUrl VARCHAR(512) DEFAULT '',
+  mediaPoster VARCHAR(512) DEFAULT '',
+  altText VARCHAR(400) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'published',
+  pinned TINYINT DEFAULT 0,
+  moderation TEXT,
+  viewCount INT DEFAULT 0,
+  createdAt VARCHAR(40), updatedAt VARCHAR(40),
+  INDEX idx_cpost_chan (channelId, status),
+  INDEX idx_cpost_author (authorId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS community_reactions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  postId VARCHAR(48) NOT NULL,
+  memberId VARCHAR(48) NOT NULL,
+  emoji VARCHAR(16) NOT NULL,
+  createdAt VARCHAR(40),
+  UNIQUE KEY idx_creact_unique (postId, memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS community_comments (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  commentId VARCHAR(48) UNIQUE NOT NULL,
+  postId VARCHAR(48) NOT NULL,
+  memberId VARCHAR(48) NOT NULL,
+  memberName VARCHAR(120) DEFAULT '',
+  body VARCHAR(1200) NOT NULL,
+  status VARCHAR(16) DEFAULT 'published',
+  moderation TEXT,
+  createdAt VARCHAR(40),
+  moderatedBy VARCHAR(48) DEFAULT '',
+  moderatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_ccomment_post (postId, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS community_bookmarks (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  postId VARCHAR(48) NOT NULL,
+  memberId VARCHAR(48) NOT NULL,
+  createdAt VARCHAR(40),
+  UNIQUE KEY idx_cbook_unique (postId, memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (48) ON DUPLICATE KEY UPDATE version = version;

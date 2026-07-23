@@ -1,0 +1,34 @@
+<?php
+/** Member: the community feed — channels, posts, reactions, comments, bookmarks. */
+require_once __DIR__ . '/../_lib/bootstrap.php';
+$s = require_session();
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+if ($method === 'GET') {
+    $view = (string)($_GET['view'] ?? 'feed');
+    if ($view === 'channels')      $res = gs_call('community.channels', ['memberId' => $s['mid']]);
+    elseif ($view === 'comments')  $res = gs_call('community.comments', ['memberId' => $s['mid'], 'postId' => $_GET['postId'] ?? '']);
+    elseif ($view === 'digest')    $res = gs_call('community.digest', ['channel' => $_GET['channel'] ?? 'all']);
+    else                           $res = gs_call('community.feed', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? 'all', 'sort' => $_GET['sort'] ?? 'latest', 'page' => (int)($_GET['page'] ?? 0)]);
+} elseif ($method === 'POST') {
+    $b = read_json_body();
+    $action = (string)($b['action'] ?? '');
+    if ($action === 'post') {
+        rate_limit_check('community.post');
+        $res = gs_call('community.post', ['memberId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => client_ip()]);
+    } elseif ($action === 'react') {
+        $res = gs_call('community.react', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'emoji' => $b['emoji'] ?? '']);
+    } elseif ($action === 'comment') {
+        rate_limit_check('community.post');
+        $res = gs_call('community.comment', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'body' => $b['body'] ?? '', 'ip' => client_ip()]);
+    } elseif ($action === 'bookmark') {
+        $res = gs_call('community.bookmark', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '']);
+    } else {
+        json_error('unknown_action', 400);
+    }
+} else {
+    json_error('method_not_allowed', 405);
+}
+if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400, $res['message'] ?? null);
+unset($res['ok']);
+json_ok($res);

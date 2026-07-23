@@ -38,6 +38,10 @@ $kinds = $cfg['kinds'] ?? [];
 // The kind is strictly sanitised first so it can never escape the base folder.
 if (isset($kinds[$kind])) {
     $spec = $kinds[$kind];
+} elseif ($kind === 'post') {
+    // Community feed media — image OR video. Built-in so a community can post
+    // video even on a host whose config.php predates this kind.
+    $spec = ['resource_type' => 'auto', 'folder' => 'community'];
 } elseif (preg_match('/^[a-z][a-z0-9_-]{1,30}$/', $kind)) {
     $spec = ['resource_type' => 'image', 'folder' => $kind];
 } else {

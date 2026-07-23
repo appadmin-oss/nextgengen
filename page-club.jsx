@@ -353,184 +353,379 @@ function BadgePin({ badge }) {
   return <div className={"badge-pin " + m.cls}>{m.icon}</div>;
 }
 
-/* =================== COMMUNITY =================== */
-/* A public, PII-safe community hub — the movement at a glance. Wired to real
-   data: KPIs from public.stats, the member directory + leaderboard from
-   public.leaderboard (first name + last initial only), and centres/groups
-   derived from those members. No fabricated activity feed — everything shown
-   is a real record. Adapts the attached Community design. */
+/* ================================================================
+   Community 2.0 — a social feed organised into channels (summer
+   academy courses + the Commons). Members-only + AI-moderated for
+   safeguarding; signed-out visitors get a teaser.
+   ================================================================ */
+
+// Cloudinary optimized delivery: auto format/quality + width cap.
+function cmOpt(url, w) {
+  if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return url;
+  return url.replace("/upload/", "/upload/f_auto,q_auto" + (w ? ",w_" + w + ",c_limit" : "") + "/");
+}
+function cmPoster(url) {
+  if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return "";
+  return url.replace("/upload/", "/upload/so_0,f_jpg,q_auto,w_900,c_limit/").replace(/\.(mp4|mov|webm|m4v|avi)(\?.*)?$/i, ".jpg");
+}
+function cmAgo(iso) {
+  if (!iso) return "";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso.replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? "" : "Z")).getTime()) / 1000));
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m";
+  if (s < 86400) return Math.floor(s / 3600) + "h";
+  if (s < 604800) return Math.floor(s / 86400) + "d";
+  return Math.floor(s / 604800) + "w";
+}
+// Body → nodes: preserve line breaks, linkify URLs, highlight @mentions + #tags.
+function cmBody(text) {
+  const out = []; const lines = String(text || "").split("\n");
+  lines.forEach((line, li) => {
+    const parts = line.split(/(\s+)/);
+    parts.forEach((p, i) => {
+      if (/^https?:\/\/\S+$/.test(p)) out.push(<a key={li + "-" + i} href={p} target="_blank" rel="noopener noreferrer" className="cm-link">{p.replace(/^https?:\/\//, "")}</a>);
+      else if (/^@[\w.]+$/.test(p)) out.push(<b key={li + "-" + i} className="cm-mention">{p}</b>);
+      else if (/^#[\w]+$/.test(p)) out.push(<b key={li + "-" + i} className="cm-tag">{p}</b>);
+      else out.push(p);
+    });
+    if (li < lines.length - 1) out.push(<br key={"br" + li}/>);
+  });
+  return out;
+}
+function cmInitial(name) { return (String(name || "•").trim()[0] || "•").toUpperCase(); }
+function cmColor(seed) { const p = ["#e4032b", "#f5b026", "#2f9e44", "#b07cff", "#3b5bdb", "#ff5a3c", "#17a2b8"]; let h = 0; for (const c of String(seed || "")) h = (h * 31 + c.charCodeAt(0)) >>> 0; return p[h % p.length]; }
+
 function CommunityPage({ setPage }) {
-  const [members, setMembers] = React.useState(null);
-  const [stats, setStats] = React.useState(null);
-  const [view, setView] = React.useState("members");   // members | centres | leaders
-  const [q, setQ] = React.useState("");
-  const [centre, setCentre] = React.useState("All");
-  const [panel, setPanel] = React.useState(null);
-  const [err, setErr] = React.useState(false);
+  const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false };
+  if (!auth.isSignedIn) return <CommunityTeaser setPage={setPage} auth={auth}/>;
+  return <CommunityApp setPage={setPage} auth={auth}/>;
+}
 
-  // Close the member detail panel on Escape (keyboard users can't reach the ✕).
-  React.useEffect(() => {
-    if (!panel) return;
-    const onKey = (e) => { if (e.key === "Escape") setPanel(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [panel]);
-
-  React.useEffect(() => {
-    let alive = true;
-    NGGApi.public.leaderboard(60).then(r => { if (alive) setMembers(r.leaderboard || []); }).catch(() => { if (alive) setErr(true); });
-    NGGApi.public.stats().then(r => { if (alive) setStats(r.stats || {}); }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-
-  const PALETTE = ["#f5b026", "#b07cff", "#2f9e44", "#3b5bdb", "#ff5a3c", "#17a2b8", "#e8a92b", "#6a3fc0"];
-  const colorFor = (s) => PALETTE[(String(s).charCodeAt(0) || 0) % PALETTE.length];
-  const nameOf = (m) => (m.first + (m.initial ? " " + m.initial : "")).trim();
-
-  const all = members || [];
-  const centres = React.useMemo(() => {
-    const map = {};
-    all.forEach(m => { const c = m.centre || "Unassigned"; map[c] = (map[c] || 0) + 1; });
-    return Object.keys(map).sort().map(name => ({ name, count: map[name] }));
-  }, [members]);
-  const centreOpts = ["All"].concat(centres.map(c => c.name));
-
-  const ql = q.trim().toLowerCase();
-  const filtered = all.filter(m =>
-    (centre === "All" || m.centre === centre) &&
-    (!ql || nameOf(m).toLowerCase().includes(ql) || (m.centre || "").toLowerCase().includes(ql))
-  );
-  const leaders = [...all].sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 8);
-
-  const kpis = [
-    { value: stats && stats.activeMembers > 0 ? stats.activeMembers.toLocaleString() : (all.length ? String(all.length) : "—"), label: "Active members", color: "#fff" },
-    { value: stats && stats.missionsVerified > 0 ? stats.missionsVerified.toLocaleString() : "—", label: "Missions verified", color: "#fff" },
-    { value: stats && stats.mentors > 0 ? String(stats.mentors) : "—", label: "Volunteer mentors", color: "#d0ff3a" },
-    { value: stats && stats.centres > 0 ? String(stats.centres).padStart(2, "0") : (centres.length ? String(centres.length).padStart(2, "0") : "—"), label: "Centres live", color: "#f5b026" },
-  ];
-
-  const tabBtn = (k, label, icon) => (
-    <button key={k} onClick={() => { setView(k); setPanel(null); }} className="mono"
-      style={{ fontFamily: "var(--font-body)", fontSize: 13.5, fontWeight: 600, padding: "12px 6px", border: "none", background: "none", cursor: "pointer", borderBottom: "2.5px solid " + (view === k ? "var(--gold-500)" : "transparent"), color: view === k ? "#fff" : "rgba(255,255,255,0.55)", display: "inline-flex", alignItems: "center", gap: 7 }}>
-      <i className={"ph " + icon}/>{label}
-    </button>
-  );
-
+/* ---- Signed-out teaser ---- */
+function CommunityTeaser({ setPage, auth }) {
+  const [channels, setChannels] = React.useState([]);
+  React.useEffect(() => { let a = true; NGGApi.public.communityChannels().then(r => { if (a) setChannels(r.channels || []); }).catch(() => {}); return () => { a = false; }; }, []);
   return (
-    <div className="page" data-screen-label="Community">
-      <style>{"@keyframes ngg-panel-in{from{transform:translateX(100%)}to{transform:none}}@keyframes ngg-fade{from{opacity:0}to{opacity:1}}"}</style>
-
-      <section style={{ background: "var(--grad-hero, linear-gradient(158deg,#0c1432,#16224e 58%,#1d2c63))", color: "#fff", position: "relative", overflow: "hidden", paddingTop: 40 }}>
-        <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(46% 42% at 90% 4%, rgba(245,176,38,0.22), transparent 62%)" }}/>
-        <div className="container" style={{ maxWidth: 1320, position: "relative" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-            <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, letterSpacing: "0.14em", padding: "6px 13px", borderRadius: 999, background: "rgba(208,255,58,0.12)", border: "1px solid rgba(208,255,58,0.4)", color: "#e8ffb0" }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--lime,#d0ff3a)" }}/>{all.length ? all.length + " GENIUSES ON THE BOARD" : "THE MOVEMENT"}
-            </span>
-            <div style={{ position: "relative", width: 260, maxWidth: "44vw" }}>
-              <i className="ph ph-magnifying-glass" style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.5)", fontSize: 15 }}/>
-              <input value={q} onChange={e => { setQ(e.target.value); if (e.target.value) setView("members"); }} placeholder="Search members…" style={{ width: "100%", fontFamily: "inherit", fontSize: 13, padding: "9px 12px 9px 34px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.08)", color: "#fff", outline: "none" }}/>
+    <div className="page cm-page" data-screen-label="Community">
+      <section className="cm-teaser">
+        <div className="cm-teaser-glow" aria-hidden="true"/>
+        <div className="container cm-teaser-inner">
+          <div className="mono cm-eyebrow"><span className="cm-live-dot"/>THE COMMUNITY · MEMBERS ONLY</div>
+          <h1 className="display cm-teaser-h">Where the crew<br/>shows its work.</h1>
+          <p className="cm-teaser-p">Share what you're building, drop a photo or a clip, cheer each other on — organised by your course channels. A safe, mentor-watched space for NGG members.</p>
+          <div className="cm-teaser-actions">
+            <button className="btn btn-gold btn-lg" onClick={() => auth.openSignIn && auth.openSignIn()}>Sign in to join →</button>
+            <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("join")}>Become a member</button>
+          </div>
+          {channels.length > 0 && (
+            <div className="cm-teaser-chips">
+              {channels.slice(0, 10).map(c => <span key={c.slug} className="cm-chip" style={{ "--cm": c.color }}>{c.icon} {c.name}</span>)}
             </div>
-          </div>
-          <h1 className="display" style={{ fontWeight: 800, fontSize: "clamp(30px,4.6vw,48px)", letterSpacing: "-0.03em", lineHeight: 1, margin: "18px 0 10px" }}>The Genius community.</h1>
-          <p style={{ color: "rgba(255,255,255,0.68)", fontSize: 15, maxWidth: 600, margin: "0 0 22px" }}>Every centre, every track, one movement. Names are shown as first name + initial — numbers, not full names.</p>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.12)" }} className="home-kpi-strip">
-            {kpis.map((k, i) => (
-              <div key={i} style={{ borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.14)", padding: "20px 0 20px " + (i === 0 ? "0" : "16px") }}>
-                <div className="display" style={{ fontWeight: 800, fontSize: "clamp(24px,3.2vw,32px)", color: k.color, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
-                <div className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", marginTop: 6 }}>{k.label}</div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ display: "flex", gap: 6, marginTop: 24, borderTop: "1px solid rgba(255,255,255,0.12)" }}>
-            {tabBtn("members", "Members", "ph-users-three")}
-            {tabBtn("centres", "Centres", "ph-buildings")}
-            {tabBtn("leaders", "Leaderboard", "ph-trophy")}
-          </div>
-        </div>
-      </section>
-
-      <section className="section" style={{ paddingTop: 32 }}>
-        <div className="container" style={{ maxWidth: 1320 }}>
-          {err ? <div className="admin-empty" style={{ textAlign: "center", padding: 40, color: "var(--ink-500)" }}>Couldn't load the community right now — try again shortly.</div>
-           : members === null ? <div className="dash-spinner" style={{ margin: "60px auto" }}/>
-           : all.length === 0 ? <div style={{ textAlign: "center", padding: "60px 0", color: "var(--ink-500)" }}>The board fills up as members earn XP. Check back soon.</div>
-           : view === "centres" ? (
-            <>
-              <h2 className="display" style={{ fontSize: 22, margin: "0 0 18px" }}>Centres &amp; groups</h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 14 }}>
-                {centres.map(c => (
-                  <button key={c.name} onClick={() => { setCentre(c.name); setView("members"); }} style={{ textAlign: "left", cursor: "pointer", fontFamily: "inherit", background: "#fff", border: "1px solid var(--line-cool,#e5e8ee)", borderTop: "4px solid " + colorFor(c.name), borderRadius: 14, padding: 18, color: "var(--ink-900)" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <b className="display" style={{ fontWeight: 700, fontSize: 16 }}>{c.name}</b>
-                      <span className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>{c.count} member{c.count === 1 ? "" : "s"}</span>
-                    </div>
-                    <div style={{ marginTop: 12, fontSize: 12.5, fontWeight: 600, color: colorFor(c.name), display: "inline-flex", alignItems: "center", gap: 5 }}>View members <i className="ph ph-arrow-right"/></div>
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : view === "leaders" ? (
-            <>
-              <h2 className="display" style={{ fontSize: 22, margin: "0 0 18px" }}>Top of the board</h2>
-              <div style={{ background: "#fff", border: "1px solid var(--line-cool,#e5e8ee)", borderRadius: 16, overflow: "hidden", maxWidth: 640 }}>
-                {leaders.map((m, i) => (
-                  <button key={m.memberId || i} onClick={() => setPanel(m)} style={{ width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", border: "none", borderBottom: i < leaders.length - 1 ? "1px solid var(--line-cool-soft,#eef0f4)" : "none", background: "none" }}>
-                    <span className="display" style={{ width: 24, fontWeight: 800, fontSize: 15, color: i < 3 ? "var(--gold-600,#a07400)" : "var(--ink-400)" }}>{i + 1}</span>
-                    <span className="display" style={{ width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 15, color: "#fff", background: colorFor(m.first), flex: "none" }}>{(m.first[0] || "?").toUpperCase()}</span>
-                    <span style={{ flex: 1, minWidth: 0 }}><b className="display" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink-900)" }}>{nameOf(m)}</b><span className="mono" style={{ display: "block", fontSize: 10.5, color: "var(--ink-400)", marginTop: 2 }}>{m.centre || "—"} · LVL {m.level}</span></span>
-                    <span className="mono" style={{ fontSize: 12.5, color: "var(--gold-600,#a07400)", fontWeight: 600 }}>{(m.xp || 0).toLocaleString()} XP</span>
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
-                <div>
-                  <h2 className="display" style={{ fontSize: 22, margin: 0 }}>Members</h2>
-                  <p style={{ color: "var(--ink-500)", fontSize: 13.5, margin: "6px 0 0" }}>{filtered.length} showing{ql ? ' for "' + q + '"' : ""}{centre !== "All" ? " · " + centre : ""}</p>
-                </div>
-                <select value={centre} onChange={e => setCentre(e.target.value)} className="admin-select" style={{ fontSize: 13, fontWeight: 600, padding: "9px 13px", borderRadius: 10, border: "1px solid var(--cream-200,#d9d2c0)", background: "#fff", cursor: "pointer" }}>
-                  {centreOpts.map(c => <option key={c} value={c}>{c === "All" ? "All centres" : c}</option>)}
-                </select>
-              </div>
-              {filtered.length === 0 ? <div style={{ border: "1px dashed var(--cream-200,#d9d2c0)", borderRadius: 16, padding: 32, textAlign: "center", color: "var(--ink-400)" }}>No members match.</div> :
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>
-                {filtered.map((m, i) => (
-                  <button key={m.memberId || i} onClick={() => setPanel(m)} style={{ textAlign: "left", cursor: "pointer", fontFamily: "inherit", background: "#fff", border: "1px solid var(--line-cool,#e5e8ee)", borderRadius: 14, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
-                    <span className="display" style={{ width: 44, height: 44, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 16, color: "#fff", background: colorFor(m.first) }}>{(m.first[0] || "?").toUpperCase()}</span>
-                    <span style={{ minWidth: 0 }}>
-                      <b className="display" style={{ fontWeight: 700, fontSize: 14.5, color: "var(--ink-900)", display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nameOf(m)}</b>
-                      <span className="mono" style={{ fontSize: 10, color: "var(--ink-400)" }}>{m.centre || "—"} · LVL {m.level}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>}
-            </>
           )}
         </div>
       </section>
+    </div>
+  );
+}
 
-      {panel && (<>
-        <div onClick={() => setPanel(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,20,50,0.45)", zIndex: 50, animation: "ngg-fade .2s ease" }}/>
-        <div role="dialog" aria-modal="true" aria-label={"Member profile — " + nameOf(panel)} style={{ position: "fixed", top: 0, right: 0, height: "100%", width: 360, maxWidth: "92vw", background: "#fff", zIndex: 51, boxShadow: "-16px 0 40px rgba(12,20,50,0.25)", animation: "ngg-panel-in .25s cubic-bezier(.2,.8,.2,1)", overflowY: "auto" }}>
-          <div style={{ padding: "20px 20px 0", display: "flex", justifyContent: "flex-end" }}><button onClick={() => setPanel(null)} aria-label="Close profile" style={{ border: "none", background: "var(--cream-100,#f3ecdb)", width: 32, height: 32, borderRadius: "50%", cursor: "pointer", fontSize: 16, color: "var(--ink-500)" }}><i className="ph ph-x"/></button></div>
-          <div style={{ padding: "8px 28px 28px", textAlign: "center" }}>
-            <span className="display" style={{ width: 84, height: 84, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 30, color: "#fff", background: colorFor(panel.first), margin: "0 auto" }}>{(panel.first[0] || "?").toUpperCase()}</span>
-            <h3 className="display" style={{ fontWeight: 800, fontSize: 20, margin: "14px 0 3px" }}>{nameOf(panel)}</h3>
-            <div className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>{panel.centre || "—"} · Level {panel.level}</div>
-            <div style={{ display: "flex", justifyContent: "center", gap: 8, margin: "16px 0" }}>
-              <span className="mono" style={{ fontSize: 11.5, background: "var(--cream-50,#faf6ec)", border: "1px solid var(--cream-200,#e8dec6)", borderRadius: 999, padding: "5px 12px" }}>{(panel.xp || 0).toLocaleString()} XP</span>
-              <span className="mono" style={{ fontSize: 11.5, background: "var(--cream-50,#faf6ec)", border: "1px solid var(--cream-200,#e8dec6)", borderRadius: 999, padding: "5px 12px" }}>{panel.streak || 0}d streak</span>
-              <span className="mono" style={{ fontSize: 11.5, background: "var(--cream-50,#faf6ec)", border: "1px solid var(--cream-200,#e8dec6)", borderRadius: 999, padding: "5px 12px" }}>Wk {panel.week || 1}</span>
+/* ---- The feed ---- */
+function CommunityApp({ setPage, auth }) {
+  const [channels, setChannels] = React.useState([]);
+  const [active, setActive] = React.useState("all");
+  const [sort, setSort] = React.useState("latest");
+  const [posts, setPosts] = React.useState(null);
+  const [page, setPage2] = React.useState(0);
+  const [hasMore, setHasMore] = React.useState(false);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [digest, setDigest] = React.useState(null);
+  const me = (auth.member && auth.member.fullName) || "You";
+
+  React.useEffect(() => { let a = true; NGGApi.member.community.channels().then(r => { if (a) setChannels(r.channels || []); }).catch(() => {}); return () => { a = false; }; }, []);
+
+  const loadFeed = React.useCallback((ch, so, pg, append) => {
+    NGGApi.member.community.feed(ch, so, pg).then(r => {
+      setHasMore(!!r.hasMore);
+      setPosts(prev => append && prev ? prev.concat(r.posts || []) : (r.posts || []));
+      setLoadingMore(false);
+    }).catch(() => { setPosts(p => p || []); setLoadingMore(false); });
+  }, []);
+  React.useEffect(() => { setPosts(null); setPage2(0); loadFeed(active, sort, 0, false); }, [active, sort, loadFeed]);
+  const more = () => { if (loadingMore) return; setLoadingMore(true); const n = page + 1; setPage2(n); loadFeed(active, sort, n, true); };
+
+  const prependPost = (post) => setPosts(p => [post].concat(p || []));
+  const patchPost = (postId, patch) => setPosts(p => (p || []).map(x => x.postId === postId ? { ...x, ...patch } : x));
+
+  const activeChannel = channels.find(c => c.slug === active);
+  const catchMeUp = () => {
+    setDigest({ loading: true });
+    NGGApi.member.community.digest(active).then(r => setDigest({ text: r.digest, ai: r.ai, channel: activeChannel ? activeChannel.name : "the community" }))
+      .catch(() => setDigest({ text: "Couldn't summarise right now.", channel: "" }));
+  };
+
+  return (
+    <div className="page cm-page" data-screen-label="Community">
+      <div className="cm-shell container">
+        {/* Left: channels */}
+        <aside className="cm-rail cm-rail-left">
+          <div className="cm-rail-title mono">CHANNELS</div>
+          <button className={"cm-chan" + (active === "all" ? " is-active" : "")} onClick={() => setActive("all")}><span className="cm-chan-ic" style={{ background: "#0c1432" }}>✦</span><span className="cm-chan-name">All channels</span></button>
+          <button className={"cm-chan" + (active === "bookmarks" ? " is-active" : "")} onClick={() => setActive("bookmarks")}><span className="cm-chan-ic" style={{ background: "#a07400" }}>🔖</span><span className="cm-chan-name">Saved</span></button>
+          <div className="cm-rail-sep"/>
+          {channels.map(c => (
+            <button key={c.slug} className={"cm-chan" + (active === c.slug ? " is-active" : "")} onClick={() => setActive(c.slug)}>
+              <span className="cm-chan-ic" style={{ background: c.color }}>{c.icon || "#"}</span>
+              <span className="cm-chan-name">{c.name}</span>
+              {c.posts > 0 && <span className="cm-chan-count">{c.posts}</span>}
+            </button>
+          ))}
+        </aside>
+
+        {/* Center: composer + feed */}
+        <main className="cm-main">
+          <div className="cm-topbar">
+            <div className="cm-chan-tabs">
+              {["all", "bookmarks"].concat(channels.slice(0, 8).map(c => c.slug)).map(s => {
+                const c = channels.find(x => x.slug === s);
+                const label = s === "all" ? "All" : s === "bookmarks" ? "Saved" : (c ? c.name : s);
+                return <button key={s} className={"cm-tab" + (active === s ? " is-active" : "")} onClick={() => setActive(s)}>{label}</button>;
+              })}
             </div>
-            <p style={{ fontSize: 13, color: "var(--ink-500)", lineHeight: 1.55, margin: "18px 0 0" }}>A Next Generation Genius member at {panel.centre || "our programme"}, currently on week {panel.week || 1} of the journey.</p>
+            <div className="cm-sort">
+              {[["latest", "Latest"], ["trending", "Trending"]].map(([v, l]) => <button key={v} className={"cm-sortbtn" + (sort === v ? " is-active" : "")} onClick={() => setSort(v)}>{l}</button>)}
+            </div>
+          </div>
+
+          {active !== "bookmarks" && <CmComposer channels={channels} active={active} me={me} onPosted={prependPost}/>}
+
+          {posts === null ? (
+            <div className="cm-skeletons">{[0, 1, 2].map(i => <div key={i} className="cm-post cm-skel"/>)}</div>
+          ) : posts.length === 0 ? (
+            <div className="cm-empty">
+              <div className="cm-empty-ic">{active === "bookmarks" ? "🔖" : "💬"}</div>
+              <p>{active === "bookmarks" ? "No saved posts yet — tap the bookmark on any post to keep it here." : "Nothing here yet. Be the first to post something today."}</p>
+            </div>
+          ) : (
+            <div className="cm-feed">
+              {posts.map(p => <CmPost key={p.postId} post={p} onPatch={patchPost}/>)}
+              {hasMore && <button className="cm-more" disabled={loadingMore} onClick={more}>{loadingMore ? "Loading…" : "Load more"}</button>}
+            </div>
+          )}
+        </main>
+
+        {/* Right: about + AI catch-me-up */}
+        <aside className="cm-rail cm-rail-right">
+          <div className="cm-card cm-ai">
+            <div className="mono cm-card-eyebrow">✨ CATCH ME UP</div>
+            <p className="cm-ai-sub">A quick AI digest of {activeChannel ? activeChannel.name : "the community"}.</p>
+            <button className="btn btn-primary btn-sm" onClick={catchMeUp}>Summarise for me →</button>
+          </div>
+          {activeChannel && activeChannel.description && (
+            <div className="cm-card">
+              <div className="mono cm-card-eyebrow">ABOUT</div>
+              <div className="cm-about-name" style={{ color: activeChannel.color }}>{activeChannel.icon} {activeChannel.name}</div>
+              <p className="cm-about-desc">{activeChannel.description}</p>
+            </div>
+          )}
+          <div className="cm-card">
+            <div className="mono cm-card-eyebrow">HOUSE RULES</div>
+            <ul className="cm-rules">
+              <li>Be kind — this is a shared room.</li>
+              <li>No personal contact details.</li>
+              <li>Every post is mentor-watched + AI-checked.</li>
+              <li>Something wrong? Tell a mentor.</li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+
+      {digest && <CmDigest digest={digest} onClose={() => setDigest(null)}/>}
+    </div>
+  );
+}
+
+/* ---- Composer ---- */
+function CmComposer({ channels, active, me, onPosted }) {
+  const [body, setBody] = React.useState("");
+  const [media, setMedia] = React.useState(null); // {type,url,poster}
+  const [up, setUp] = React.useState(0); // 0 idle, 1-100 progress
+  const [ch, setCh] = React.useState(active !== "all" ? active : "commons");
+  const [busy, setBusy] = React.useState(false);
+  const fileRef = React.useRef(null);
+  React.useEffect(() => { if (active !== "all" && active !== "bookmarks") setCh(active); }, [active]);
+
+  const pick = async (e) => {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    if (f.size > 60 * 1024 * 1024) { toast.error("That file is over 60MB — please trim it."); return; }
+    setUp(1);
+    try {
+      const r = await NGGApi.uploadFile(f, "post", pct => setUp(Math.max(1, pct)));
+      const type = (r.resourceType === "video" || /^video\//.test(f.type)) ? "video" : "image";
+      setMedia({ type, url: r.url, poster: type === "video" ? cmPoster(r.url) : "" });
+    } catch (_) { toast.error("Upload failed — try again."); }
+    finally { setUp(0); if (fileRef.current) fileRef.current.value = ""; }
+  };
+
+  const submit = async () => {
+    if (!body.trim() && !media) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.community.post({ channel: ch, body: body.trim(), mediaType: media ? media.type : "none", mediaUrl: media ? media.url : "", mediaPoster: media ? media.poster : "" });
+      setBody(""); setMedia(null);
+      if (r.queued) toast.success("Posted — a mentor will approve it shortly.");
+      else { toast.success("Posted ✓"); onPosted && onPosted(r.post); }
+      if (r.queued && r.post) onPosted && onPosted(r.post);
+    } catch (e) {
+      toast.error(e.detail || (e.code === "crisis" ? "Please talk to a trusted adult now." : e.code === "blocked" ? "That can't be shared here." : "Couldn't post — try again."));
+    } finally { setBusy(false); }
+  };
+
+  const remaining = 2000 - body.length;
+  return (
+    <div className="cm-composer">
+      <div className="cm-composer-top">
+        <span className="cm-avatar" style={{ background: cmColor(me) }}>{cmInitial(me)}</span>
+        <textarea className="cm-input" rows={media ? 2 : 1} maxLength={2000} value={body} onChange={e => setBody(e.target.value)} placeholder="Share something with the crew…"/>
+      </div>
+      {media && (
+        <div className="cm-media-preview">
+          {media.type === "video" ? <video src={cmOpt(media.url)} poster={media.poster} controls className="cm-media"/> : <img src={cmOpt(media.url, 900)} alt="" className="cm-media"/>}
+          <button className="cm-media-x" onClick={() => setMedia(null)} aria-label="Remove media">✕</button>
+        </div>
+      )}
+      {up > 0 && <div className="cm-progress"><span style={{ width: up + "%" }}/></div>}
+      <div className="cm-composer-bar">
+        <div className="cm-composer-left">
+          <button className="cm-icon-btn" onClick={() => fileRef.current && fileRef.current.click()} disabled={up > 0} title="Add photo or video">📷 Media</button>
+          <input ref={fileRef} type="file" accept="image/*,video/*" onChange={pick} style={{ display: "none" }}/>
+          <select className="cm-chan-select" value={ch} onChange={e => setCh(e.target.value)}>
+            {channels.filter(c => c.slug !== "bookmarks").map(c => <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>)}
+          </select>
+        </div>
+        <div className="cm-composer-right">
+          {body.length > 1600 && <span className={"cm-count" + (remaining < 0 ? " over" : "")}>{remaining}</span>}
+          <button className="btn btn-primary btn-sm" disabled={busy || up > 0 || (!body.trim() && !media)} onClick={submit}>{busy ? "Posting…" : "Post"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Post card ---- */
+function CmPost({ post, onPatch }) {
+  const [showComments, setShowComments] = React.useState(false);
+  const [picker, setPicker] = React.useState(false);
+  const reactionSet = ["👏", "❤️", "🔥", "💡", "🎉", "🙌"];
+  const totalReacts = Object.values(post.reactions || {}).reduce((s, n) => s + n, 0);
+
+  const react = async (emoji) => {
+    setPicker(false);
+    // optimistic
+    const prev = { reactions: post.reactions, myReaction: post.myReaction };
+    const next = { ...(post.reactions || {}) };
+    if (post.myReaction) next[post.myReaction] = Math.max(0, (next[post.myReaction] || 1) - 1);
+    let mine = emoji;
+    if (post.myReaction === emoji) { mine = ""; } else { next[emoji] = (next[emoji] || 0) + 1; }
+    Object.keys(next).forEach(k => { if (!next[k]) delete next[k]; });
+    onPatch(post.postId, { reactions: next, myReaction: mine });
+    try { const r = await NGGApi.member.community.react(post.postId, emoji); onPatch(post.postId, { reactions: r.reactions, myReaction: r.myReaction }); }
+    catch (_) { onPatch(post.postId, prev); }
+  };
+  const bookmark = async () => {
+    const nv = !post.bookmarked; onPatch(post.postId, { bookmarked: nv });
+    try { const r = await NGGApi.member.community.bookmark(post.postId); onPatch(post.postId, { bookmarked: r.bookmarked }); } catch (_) { onPatch(post.postId, { bookmarked: !nv }); }
+  };
+  const share = async () => {
+    const txt = post.body || (post.channel.name + " on NGG Community");
+    try { if (navigator.share) await navigator.share({ title: "NGG Community", text: txt }); else { await navigator.clipboard.writeText(txt); toast.success("Copied to clipboard"); } } catch (_) {}
+  };
+
+  return (
+    <article className={"cm-post" + (post.status !== "published" ? " is-pending" : "")}>
+      <div className="cm-post-head">
+        <span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }}>{cmInitial(post.author.name)}</span>
+        <div className="cm-post-meta">
+          <div className="cm-post-author">{post.author.name}{post.author.isMe && <span className="cm-you">you</span>}</div>
+          <div className="cm-post-sub">
+            <span className="cm-post-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span>
+            <span className="cm-dot">·</span><span>{cmAgo(post.createdAt)}</span>
+            {post.author.centre && <><span className="cm-dot">·</span><span>{post.author.centre}</span></>}
           </div>
         </div>
-      </>)}
+        {post.pinned && <span className="cm-pin" title="Pinned">📌</span>}
+      </div>
+
+      {post.moderationNote && <div className="cm-modnote">{post.moderationNote}</div>}
+      {post.body && <div className="cm-post-body">{cmBody(post.body)}</div>}
+      {post.mediaType === "image" && post.mediaUrl && <div className="cm-post-media"><img src={cmOpt(post.mediaUrl, 1000)} alt={post.altText || ""} loading="lazy"/></div>}
+      {post.mediaType === "video" && post.mediaUrl && <div className="cm-post-media"><video src={cmOpt(post.mediaUrl)} poster={post.mediaPoster} controls preload="metadata"/></div>}
+
+      {totalReacts > 0 && (
+        <div className="cm-react-summary">
+          {Object.entries(post.reactions).filter(([, n]) => n > 0).slice(0, 4).map(([e]) => <span key={e}>{e}</span>)}
+          <span className="cm-react-count">{totalReacts}</span>
+        </div>
+      )}
+
+      <div className="cm-actions">
+        <div className="cm-react-wrap">
+          <button className={"cm-act" + (post.myReaction ? " is-on" : "")} onClick={() => setPicker(p => !p)}>{post.myReaction || "👏"} <span>React</span></button>
+          {picker && <div className="cm-picker" onMouseLeave={() => setPicker(false)}>{reactionSet.map(e => <button key={e} className={"cm-picker-e" + (post.myReaction === e ? " is-on" : "")} onClick={() => react(e)}>{e}</button>)}</div>}
+        </div>
+        <button className="cm-act" onClick={() => setShowComments(s => !s)}>💬 <span>{post.commentCount || 0}</span></button>
+        <button className={"cm-act" + (post.bookmarked ? " is-on" : "")} onClick={bookmark}>{post.bookmarked ? "🔖" : "🏷️"} <span>Save</span></button>
+        <button className="cm-act" onClick={share}>↗ <span>Share</span></button>
+      </div>
+
+      {showComments && <CmComments post={post} onCount={n => onPatch(post.postId, { commentCount: n })}/>}
+    </article>
+  );
+}
+
+/* ---- Comment thread ---- */
+function CmComments({ post, onCount }) {
+  const [comments, setComments] = React.useState(null);
+  const [body, setBody] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => { let a = true; NGGApi.member.community.comments(post.postId).then(r => { if (a) setComments(r.comments || []); }).catch(() => { if (a) setComments([]); }); return () => { a = false; }; }, [post.postId]);
+  const send = async () => {
+    if (!body.trim()) return; setBusy(true);
+    try {
+      const r = await NGGApi.member.community.comment(post.postId, body.trim());
+      setBody(""); setComments(c => (c || []).concat(r.comment));
+      if (r.queued) toast.success("Comment in review — a mentor will approve it.");
+      else onCount && onCount((post.commentCount || 0) + 1);
+    } catch (e) { toast.error(e.detail || "Couldn't comment — try again."); } finally { setBusy(false); }
+  };
+  return (
+    <div className="cm-comments">
+      {comments === null ? <div className="cm-comment-load">Loading…</div> : comments.map(c => (
+        <div key={c.commentId} className={"cm-comment" + (c.status !== "published" ? " is-pending" : "")}>
+          <span className="cm-avatar cm-avatar-sm" style={{ background: cmColor(c.name) }}>{cmInitial(c.name)}</span>
+          <div className="cm-comment-body">
+            <b>{c.name}</b> <span className="cm-comment-ago">{cmAgo(c.createdAt)}</span>
+            <div>{cmBody(c.body)}</div>
+            {c.note && <div className="cm-comment-note">{c.note}</div>}
+          </div>
+        </div>
+      ))}
+      <div className="cm-comment-compose">
+        <input className="cm-comment-input" value={body} maxLength={1000} placeholder="Write a comment…" onChange={e => setBody(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}/>
+        <button className="btn btn-primary btn-sm" disabled={busy || !body.trim()} onClick={send}>{busy ? "…" : "Reply"}</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---- AI digest modal ---- */
+function CmDigest({ digest, onClose }) {
+  return (
+    <div className="cm-modal-back" onClick={onClose}>
+      <div className="cm-modal" onClick={e => e.stopPropagation()}>
+        <div className="mono cm-card-eyebrow">✨ CATCH ME UP{digest.channel ? " · " + digest.channel : ""}</div>
+        {digest.loading ? <p className="cm-digest-body">Summarising…</p> : <p className="cm-digest-body">{digest.text}</p>}
+        {digest.ai === false && !digest.loading && <p className="cm-digest-foot">Live AI summaries turn on when the community gets busier.</p>}
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
+      </div>
     </div>
   );
 }

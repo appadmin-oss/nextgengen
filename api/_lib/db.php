@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 47;
+const NGG_SCHEMA_TARGET = 48;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1206,6 +1206,84 @@ function db_migrate(PDO $db): void {
         // object-position string ('center bottom', '50% 20%', …) so admins can
         // position the giant hero image directly from the site.
         47 => "ALTER TABLE centres ADD COLUMN heroPosition TEXT DEFAULT 'center bottom';",
+
+        // Community 2.0 — a social feed organised into channels (summer academy
+        // courses + a Commons). Members post text with an optional image/video;
+        // reactions, threaded comments, bookmarks. All UGC is AI-screened +
+        // admin-moderatable (safeguarding for minors).
+        48 => "
+            CREATE TABLE community_channels (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              channelId TEXT UNIQUE NOT NULL,
+              slug TEXT UNIQUE NOT NULL,
+              name TEXT NOT NULL,
+              kind TEXT DEFAULT 'course',
+              faculty TEXT DEFAULT '',
+              icon TEXT DEFAULT '',
+              color TEXT DEFAULT '#3b5bdb',
+              description TEXT DEFAULT '',
+              sortOrder INTEGER DEFAULT 0,
+              pinned INTEGER DEFAULT 0,
+              status TEXT DEFAULT 'active',
+              createdAt TEXT DEFAULT (datetime('now')),
+              updatedAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_cchan_status ON community_channels(status);
+
+            CREATE TABLE community_posts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              postId TEXT UNIQUE NOT NULL,
+              channelId TEXT NOT NULL,
+              authorId TEXT NOT NULL,
+              authorName TEXT DEFAULT '',
+              authorCentre TEXT DEFAULT '',
+              body TEXT DEFAULT '',
+              mediaType TEXT DEFAULT 'none',
+              mediaUrl TEXT DEFAULT '',
+              mediaPoster TEXT DEFAULT '',
+              altText TEXT DEFAULT '',
+              status TEXT DEFAULT 'published',
+              pinned INTEGER DEFAULT 0,
+              moderation TEXT DEFAULT '',
+              viewCount INTEGER DEFAULT 0,
+              createdAt TEXT DEFAULT (datetime('now')),
+              updatedAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_cpost_chan ON community_posts(channelId, status);
+            CREATE INDEX idx_cpost_author ON community_posts(authorId);
+
+            CREATE TABLE community_reactions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              postId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              emoji TEXT NOT NULL,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_creact_unique ON community_reactions(postId, memberId);
+
+            CREATE TABLE community_comments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              commentId TEXT UNIQUE NOT NULL,
+              postId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              memberName TEXT DEFAULT '',
+              body TEXT NOT NULL,
+              status TEXT DEFAULT 'published',
+              moderation TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now')),
+              moderatedBy TEXT DEFAULT '',
+              moderatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_ccomment_post ON community_comments(postId, status);
+
+            CREATE TABLE community_bookmarks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              postId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_cbook_unique ON community_bookmarks(postId, memberId);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
