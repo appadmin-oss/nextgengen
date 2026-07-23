@@ -9,6 +9,7 @@ if ($method === 'GET') {
     if ($view === 'channels')      $res = gs_call('community.channels', ['memberId' => $s['mid']]);
     elseif ($view === 'comments')  $res = gs_call('community.comments', ['memberId' => $s['mid'], 'postId' => $_GET['postId'] ?? '']);
     elseif ($view === 'digest')    $res = gs_call('community.digest', ['channel' => $_GET['channel'] ?? 'all']);
+    elseif ($view === 'mention')   $res = gs_call('community.mentionSearch', ['q' => $_GET['q'] ?? '']);
     else                           $res = gs_call('community.feed', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? 'all', 'sort' => $_GET['sort'] ?? 'latest', 'page' => (int)($_GET['page'] ?? 0)]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -23,6 +24,8 @@ if ($method === 'GET') {
         $res = gs_call('community.comment', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'body' => $b['body'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'bookmark') {
         $res = gs_call('community.bookmark', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '']);
+    } elseif ($action === 'vote') {
+        $res = gs_call('community.pollVote', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'choice' => $b['choice'] ?? -1]);
     } elseif ($action === 'report') {
         $res = gs_call('community.report', ['memberId' => $s['mid'], 'targetType' => $b['targetType'] ?? 'post', 'targetId' => $b['targetId'] ?? '', 'reason' => $b['reason'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'delete') {

@@ -21,6 +21,8 @@ function rate_limit_default(string $op): ?array {
         'donate'             => ['max' => 10, 'window' => 60],    // inserts a row + outbound Paystack call
         'application.status' => ['max' => 20, 'window' => 300],   // (ref,email) brute-force lookup
         'summer.profile'     => ['max' => 12, 'window' => 300],   // a minor's name + photo + attendance, by guessable handle
+        'student.login'      => ['max' => 8,  'window' => 300],   // ID-card credential check — brute-force ceiling
+        'community.post'     => ['max' => 12, 'window' => 60],    // feed post/comment write rate
     ];
     return $d[$op] ?? null;
 }

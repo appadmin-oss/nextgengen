@@ -19,6 +19,36 @@ declare(strict_types=1);
 const COMMUNITY_REACTIONS = ['👏', '❤️', '🔥', '💡', '🎉', '🙌'];
 const COMMUNITY_PAGE = 15;
 
+/* ── Student sign-in (ID card → scoped session) ───────────────────────── */
+
+/**
+ * Verify a summer student's ID-card credentials. Two paths:
+ *  - QR token (the card's secret) — strongest; from the /q/<token> profile CTA.
+ *  - Display ID + guardian phone — for typing in by hand.
+ * Returns the student row for the route to mint a session; never the session.
+ */
+function student_community_login(array $p): array {
+    $token = trim((string)($p['token'] ?? ''));
+    $idIn = trim((string)($p['displayId'] ?? ''));
+    $phone = preg_replace('/\D/', '', (string)($p['guardianPhone'] ?? ''));
+    $stu = null;
+    if ($token !== '') {
+        $q = db_row("SELECT studentId FROM qr_codes WHERE token = ? LIMIT 1", [$token]);
+        $sid = (string)($q['studentId'] ?? '');
+        if ($sid !== '') $stu = db_row("SELECT * FROM summer_students WHERE studentId = ? AND status = 'active' LIMIT 1", [$sid]);
+        if (!$stu) $stu = db_row("SELECT * FROM summer_students WHERE token = ? AND status = 'active' LIMIT 1", [$token]);
+    } elseif ($idIn !== '' && strlen($phone) >= 7) {
+        $cand = db_row("SELECT * FROM summer_students WHERE (displayId = ? OR studentId = ?) AND status = 'active' LIMIT 1", [$idIn, $idIn]);
+        if ($cand) {
+            $g = preg_replace('/\D/', '', (string)($cand['guardianPhone'] ?? ''));
+            $tail = fn($a, $b) => strlen($a) >= 7 && strlen($b) >= 7 && (substr($a, -7) === substr($b, -7));
+            if ($g !== '' && $tail($g, $phone)) $stu = $cand;
+        }
+    }
+    if (!$stu) return ['ok' => false, 'error' => 'bad_credentials'];
+    return ['ok' => true, 'student' => $stu];
+}
+
 /* ── Channels ─────────────────────────────────────────────────────────── */
 
 /** Seed a Commons channel + one channel per academy course (idempotent). */
@@ -71,6 +101,7 @@ function community_channels(array $p): array {
 
 function community_author(string $memberId): array {
     $m = db_row("SELECT fullName, centre FROM members WHERE memberId = ? LIMIT 1", [$memberId]);
+    if (!$m) $m = db_row("SELECT fullName, centre FROM summer_students WHERE studentId = ? LIMIT 1", [$memberId]); // student sessions
     $full = trim((string)($m['fullName'] ?? '')) ?: 'Member';
     $parts = preg_split('/\s+/', $full) ?: [];
     $first = $parts[0] ?? 'Member';
@@ -113,6 +144,64 @@ function community_notify(string $memberId, string $actorId, string $kind, strin
         'title' => mb_substr($title, 0, 160), 'body' => mb_substr($body, 0, 400), 'linkPage' => 'community', 'createdAt' => now_iso()]);
 }
 
+/**
+ * Anti-spam: throttle rapid-fire + duplicate posts per author. Returns an
+ * error code or null. (rate_limit_check on the route is the coarse guard;
+ * this is the per-author behaviour guard.)
+ */
+function community_spam_check(string $memberId, string $body): ?string {
+    $recent = db_all("SELECT createdAt, body FROM community_posts WHERE authorId = ? ORDER BY createdAt DESC LIMIT 20", [$memberId]);
+    if (!$recent) return null;
+    $now = time();
+    $lastTs = strtotime((string)$recent[0]['createdAt']);
+    if ($lastTs && $now - $lastTs < 15) return 'too_fast';
+    $hour = 0; $b = trim(mb_strtolower($body));
+    foreach ($recent as $r) {
+        $ts = strtotime((string)$r['createdAt']);
+        if ($ts && $now - $ts < 3600) $hour++;
+        if ($b !== '' && $ts && $now - $ts < 600 && trim(mb_strtolower((string)$r['body'])) === $b) return 'duplicate';
+    }
+    if ($hour >= 15) return 'slow_down';
+    return null;
+}
+
+/** A Cloudinary still frame from a video, for AI screening. */
+function community_video_frame(string $url): string {
+    if (!preg_match('#res\.cloudinary\.com#', $url) || strpos($url, '/upload/') === false) return '';
+    $f = str_replace('/upload/', '/upload/so_1,f_jpg,q_auto,w_640,c_limit/', $url);
+    return preg_replace('/\.(mp4|mov|webm|m4v|avi)(\?.*)?$/i', '.jpg', $f);
+}
+
+/**
+ * Best-effort AI moderation of a video via a sampled frame — uses the FREE
+ * Gemini vision profile only (one call), so it degrades gracefully to
+ * human review when no free key is set. Only ever escalates to 'block'.
+ */
+function community_screen_video(string $url): string {
+    if (!function_exists('ai_enabled') || !ai_enabled('photo')) return 'ok';
+    $frame = community_video_frame($url);
+    if ($frame === '' || !function_exists('ai_photo_review')) return 'ok';
+    $r = ai_photo_review($frame);
+    $flags = is_array($r) && isset($r['flags']) && is_array($r['flags']) ? $r['flags'] : [];
+    return in_array('inappropriate', $flags, true) ? 'block' : 'ok';
+}
+
+/** Extract @handles from text (unique, lowercased). */
+function community_mentions(string $body): array {
+    if (!preg_match_all('/@([a-z0-9][a-z0-9._-]{1,30})/i', $body, $m)) return [];
+    return array_values(array_unique(array_map('strtolower', $m[1])));
+}
+
+/** Autocomplete for @mentions — matches summer student handles/first names. */
+function community_mention_search(array $p): array {
+    $q = trim((string)($p['q'] ?? ''));
+    if (mb_strlen($q) < 1) return ['ok' => true, 'people' => []];
+    $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
+    $rows = db_all("SELECT handle, fullName, centre FROM summer_students WHERE status = 'active' AND handle <> '' AND (handle LIKE ? OR fullName LIKE ?) ORDER BY handle LIMIT 8", [$like, $like]);
+    $people = array_map(fn($r) => ['handle' => (string)$r['handle'], 'name' => explode(' ', trim((string)$r['fullName']))[0] ?? '', 'centre' => (string)($r['centre'] ?? '')], $rows);
+    return ['ok' => true, 'people' => $people];
+}
+
 /* ── Posts ────────────────────────────────────────────────────────────── */
 
 /** Build the client shape of a post for a given viewer. */
@@ -127,8 +216,11 @@ function community_post_shape(array $row, string $viewerId): array {
     $booked = $viewerId !== '' && db_row("SELECT id FROM community_bookmarks WHERE postId = ? AND memberId = ?", [$pid, $viewerId]);
     $isMe = (string)$row['authorId'] === $viewerId;
     $ch = db_row("SELECT slug, name, color, icon FROM community_channels WHERE channelId = ? LIMIT 1", [(string)$row['channelId']]);
+    $kind = (string)($row['kind'] ?? 'post');
+    $poll = null;
+    if ($kind === 'poll') { $opts = json_decode((string)($row['pollOptions'] ?? ''), true) ?: []; $poll = community_poll_shape($pid, $opts, $viewerId); }
     return [
-        'postId' => $pid,
+        'postId' => $pid, 'kind' => $kind, 'poll' => $poll,
         'channel' => ['slug' => (string)($ch['slug'] ?? ''), 'name' => (string)($ch['name'] ?? 'Channel'), 'color' => (string)($ch['color'] ?? '#3b5bdb'), 'icon' => (string)($ch['icon'] ?? '')],
         'author' => ['name' => (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'], 'isMe' => $isMe],
         'body' => (string)$row['body'],
@@ -193,27 +285,56 @@ function community_post_create(array $p): array {
     if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
     community_ensure_channels();
     $d = is_array($p['data'] ?? null) ? $p['data'] : [];
-    $body = trim((string)($d['body'] ?? ''));
+    $body = mb_substr(trim((string)($d['body'] ?? '')), 0, 2000);
+    $kind = (string)($d['kind'] ?? 'post') === 'poll' ? 'poll' : 'post';
     $mediaType = in_array((string)($d['mediaType'] ?? 'none'), ['none', 'image', 'video'], true) ? (string)($d['mediaType'] ?? 'none') : 'none';
     $mediaUrl = trim((string)($d['mediaUrl'] ?? ''));
     if ($mediaUrl !== '' && !preg_match('#^https://#i', $mediaUrl)) return ['ok' => false, 'error' => 'bad_media'];
     if ($mediaUrl === '') $mediaType = 'none';
-    $body = mb_substr($body, 0, 2000);
-    if ($body === '' && $mediaType === 'none') return ['ok' => false, 'error' => 'empty'];
+
+    // Poll: a question (body) + 2-4 short options; no media.
+    $pollOptions = [];
+    if ($kind === 'poll') {
+        $mediaType = 'none'; $mediaUrl = '';
+        foreach ((array)($d['pollOptions'] ?? []) as $o) { $o = mb_substr(trim((string)$o), 0, 80); if ($o !== '') $pollOptions[] = $o; if (count($pollOptions) >= 4) break; }
+        if ($body === '') return ['ok' => false, 'error' => 'empty', 'message' => 'A poll needs a question.'];
+        if (count($pollOptions) < 2) return ['ok' => false, 'error' => 'poll_options', 'message' => 'A poll needs at least two options.'];
+    }
+    if ($body === '' && $mediaType === 'none' && $kind !== 'poll') return ['ok' => false, 'error' => 'empty'];
+
+    // Video guards: size + duration caps (defence-in-depth; the client enforces
+    // them too before upload). Cloudinary delivers a web-optimized f_auto/q_auto
+    // stream, so the stored original just needs to be within sane bounds.
+    if ($mediaType === 'video') {
+        $bytes = (int)($d['mediaBytes'] ?? 0);
+        $secs = (int)($d['mediaDuration'] ?? 0);
+        if ($bytes > 80 * 1024 * 1024) return ['ok' => false, 'error' => 'video_too_big', 'message' => 'That video is too large — keep clips under 80MB.'];
+        if ($secs > 180) return ['ok' => false, 'error' => 'video_too_long', 'message' => 'Keep clips under 3 minutes.'];
+    }
+
+    // Anti-spam: per-author throttle + duplicate guard.
+    $spam = community_spam_check($viewer, $body);
+    if ($spam) return ['ok' => false, 'error' => $spam, 'message' => $spam === 'too_fast' ? 'Slow down a moment before posting again.' : ($spam === 'duplicate' ? 'You just posted that.' : 'You\'ve posted a lot recently — take a short break.')];
 
     $chSlug = (string)($d['channel'] ?? 'commons');
     $ch = db_row("SELECT channelId FROM community_channels WHERE slug = ? AND status = 'active' LIMIT 1", [$chSlug]);
     if (!$ch) $ch = db_row("SELECT channelId FROM community_channels WHERE slug = 'commons' LIMIT 1");
     if (!$ch) return ['ok' => false, 'error' => 'no_channel'];
 
-    // Safeguarding screen (text) → status. Video always queues for human review.
-    $screen = community_screen($body);
+    // Safeguarding screen — text (question + poll options), then image/video.
+    $screenText = trim($body . ' ' . implode(' ', $pollOptions));
+    $screen = community_screen($screenText);
     if ($screen['verdict'] === 'block') {
         return ['ok' => false, 'error' => $screen['crisis'] ? 'crisis' : 'blocked',
             'message' => $screen['crisis'] ? coach_crisis_reply() : 'That post can\'t be shared here — it looks unsafe for this community. A mentor can help if this is a mistake.'];
     }
     $status = $screen['verdict'] === 'review' ? 'pending' : 'published';
-    if ($mediaType === 'video') $status = 'pending'; // frames can't be auto-screened
+    if ($mediaType === 'video') {
+        // Best-effort free-tier AI frame check; a bad frame blocks, otherwise it
+        // still waits for a mentor (frames aren't the whole clip).
+        if (community_screen_video($mediaUrl) === 'block') return ['ok' => false, 'error' => 'blocked', 'message' => 'That video can\'t be shared here.'];
+        $status = 'pending';
+    }
 
     $author = community_author($viewer);
     $alt = $mediaType === 'image' ? ($body !== '' ? mb_substr($body, 0, 160) : ('Photo shared by ' . $author['name'] . ($author['centre'] ? ' · ' . $author['centre'] : ''))) : '';
@@ -222,13 +343,51 @@ function community_post_create(array $p): array {
     db_insert('community_posts', [
         'postId' => $id, 'channelId' => (string)$ch['channelId'], 'authorId' => $viewer,
         'authorName' => $author['name'] . ($author['initial'] ? ' ' . $author['initial'] : ''), 'authorCentre' => $author['centre'],
-        'body' => $body, 'mediaType' => $mediaType, 'mediaUrl' => $mediaUrl, 'mediaPoster' => trim((string)($d['mediaPoster'] ?? '')),
+        'body' => $body, 'kind' => $kind, 'pollOptions' => $kind === 'poll' ? json_encode($pollOptions, JSON_UNESCAPED_SLASHES) : '',
+        'mediaType' => $mediaType, 'mediaUrl' => $mediaUrl, 'mediaPoster' => trim((string)($d['mediaPoster'] ?? '')),
         'altText' => $alt, 'status' => $status, 'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason'], 'by' => 'ai', 'at' => $now], JSON_UNESCAPED_SLASHES),
         'viewCount' => 0, 'createdAt' => $now, 'updatedAt' => $now,
     ]);
-    audit('community.post', $viewer, $id, ['channel' => $chSlug, 'status' => $status, 'media' => $mediaType], (string)($p['ip'] ?? ''));
+    audit('community.post', $viewer, $id, ['channel' => $chSlug, 'status' => $status, 'media' => $mediaType, 'kind' => $kind], (string)($p['ip'] ?? ''));
+    if ($status === 'published') community_notify_mentions($body, $viewer, $author['name'], $id);
     $row = db_row("SELECT * FROM community_posts WHERE postId = ?", [$id]);
     return ['ok' => true, 'post' => community_post_shape($row, $viewer), 'queued' => $status !== 'published'];
+}
+
+/** Notify mentioned students (@handle) — best-effort, PII-safe. */
+function community_notify_mentions(string $body, string $actorId, string $actorName, string $postId): void {
+    foreach (community_mentions($body) as $h) {
+        $s = db_row("SELECT studentId FROM summer_students WHERE handle = ? LIMIT 1", [$h]);
+        if ($s) community_notify((string)$s['studentId'], $actorId, 'community.mention', $actorName . ' mentioned you', mb_substr($body, 0, 120));
+    }
+}
+
+/** Vote in a poll (one ballot per member; changing your vote is allowed). */
+function community_poll_vote(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
+    $pid = (string)($p['postId'] ?? '');
+    $choice = (int)($p['choice'] ?? -1);
+    $row = db_row("SELECT pollOptions, kind FROM community_posts WHERE postId = ? AND kind = 'poll'", [$pid]);
+    if (!$row) return ['ok' => false, 'error' => 'not_found'];
+    $opts = json_decode((string)$row['pollOptions'], true) ?: [];
+    if ($choice < 0 || $choice >= count($opts)) return ['ok' => false, 'error' => 'bad_choice'];
+    if (db_row("SELECT id FROM community_poll_votes WHERE postId = ? AND memberId = ?", [$pid, $viewer])) db_update('community_poll_votes', ['choice' => $choice], ['postId' => $pid, 'memberId' => $viewer]);
+    else db_insert('community_poll_votes', ['postId' => $pid, 'memberId' => $viewer, 'choice' => $choice, 'createdAt' => now_iso()]);
+    return ['ok' => true, 'poll' => community_poll_shape($pid, $opts, $viewer)];
+}
+
+/** Poll tallies + this member's vote. */
+function community_poll_shape(string $postId, array $opts, string $viewer): array {
+    $counts = array_fill(0, count($opts), 0);
+    foreach (db_all("SELECT choice, COUNT(*) c FROM community_poll_votes WHERE postId = ? GROUP BY choice", [$postId]) as $r) {
+        $i = (int)$r['choice']; if ($i >= 0 && $i < count($counts)) $counts[$i] = (int)$r['c'];
+    }
+    $total = array_sum($counts);
+    $my = $viewer !== '' ? db_row("SELECT choice FROM community_poll_votes WHERE postId = ? AND memberId = ?", [$postId, $viewer]) : null;
+    $options = [];
+    foreach ($opts as $i => $t) $options[] = ['text' => (string)$t, 'votes' => $counts[$i], 'pct' => $total ? (int)round($counts[$i] / $total * 100) : 0];
+    return ['options' => $options, 'totalVotes' => $total, 'myVote' => $my ? (int)$my['choice'] : -1];
 }
 
 function community_react(array $p): array {

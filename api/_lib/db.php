@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 49;
+const NGG_SCHEMA_TARGET = 50;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1298,6 +1298,20 @@ function db_migrate(PDO $db): void {
               createdAt TEXT DEFAULT (datetime('now'))
             );
             CREATE INDEX idx_creport_target ON community_reports(targetType, targetId);
+        ",
+
+        // Community: polls (a post kind) + one-vote-per-member ballots.
+        50 => "
+            ALTER TABLE community_posts ADD COLUMN kind TEXT DEFAULT 'post';
+            ALTER TABLE community_posts ADD COLUMN pollOptions TEXT DEFAULT '';
+            CREATE TABLE community_poll_votes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              postId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              choice INTEGER NOT NULL,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_cpoll_unique ON community_poll_votes(postId, memberId);
         ",
     ];
 

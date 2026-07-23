@@ -111,6 +111,32 @@ function session_issue_kiosk(array $gate): string {
     return $token;
 }
 
+/**
+ * A scoped session for a summer student signing in with their ID card. Modeled
+ * on the kiosk session: a signed cookie, no device_sessions row, short TTL,
+ * role 'student' (non-staff → require_session treats it leniently). The `mid`
+ * IS the studentId, so community attribution/reactions key off a real id.
+ */
+function session_issue_student(array $student): string {
+    global $CONFIG;
+    $now = time();
+    $exp = $now + (int)($CONFIG['kiosk_ttl'] ?? 43200); // ~12h, like the kiosk
+    $payload = [
+        'mid'    => (string)($student['studentId'] ?? ''),
+        'role'   => 'student', 'type' => 'SUMMER', 'status' => 'active',
+        'stu'    => (string)($student['studentId'] ?? ''),
+        'iat'    => $now, 'exp' => $exp, 'adminOk' => false,
+    ];
+    $body = b64url(json_encode($payload, JSON_UNESCAPED_SLASHES));
+    $sig  = b64url(hash_hmac('sha256', $body, $CONFIG['cookie_secret'], true));
+    $token = $body . '.' . $sig;
+    setcookie($CONFIG['cookie_name'], $token, [
+        'expires'  => $exp, 'path' => '/', 'domain' => $CONFIG['cookie_domain'] ?: '',
+        'secure'   => (bool)$CONFIG['cookie_secure'], 'httponly' => true, 'samesite' => $CONFIG['cookie_samesite'],
+    ]);
+    return $token;
+}
+
 function session_clear(): void {
     global $CONFIG;
     setcookie($CONFIG['cookie_name'], '', [

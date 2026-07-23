@@ -372,9 +372,17 @@ function member_sessions_revoke(array $p): array {
 }
 
 function auth_me(array $p): array {
-    $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
-    if (!$member) return ['ok' => false, 'error' => 'not_found'];
-    return ['ok' => true, 'member' => public_member($member)];
+    $mid = (string)($p['memberId'] ?? '');
+    $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if ($member) return ['ok' => true, 'member' => public_member($member)];
+    // Summer-student session (signed in with an ID card) — a minimal member
+    // shape with no caps, so the app unlocks the Community but nothing else.
+    $stu = db_row("SELECT studentId, fullName, centre, photoUrl, track FROM summer_students WHERE studentId = ? AND status = 'active' LIMIT 1", [$mid]);
+    if ($stu) return ['ok' => true, 'member' => [
+        'memberId' => (string)$stu['studentId'], 'fullName' => (string)$stu['fullName'], 'type' => 'SUMMER', 'role' => 'student',
+        'caps' => [], 'centre' => (string)($stu['centre'] ?? ''), 'track' => (string)($stu['track'] ?? ''), 'photoUrl' => (string)($stu['photoUrl'] ?? ''),
+    ]];
+    return ['ok' => false, 'error' => 'not_found'];
 }
 
 function auth_logout(array $p): array {

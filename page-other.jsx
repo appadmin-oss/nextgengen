@@ -1228,6 +1228,27 @@ function MentorsPage({ setPage }) {
 // Staff-only "mark present" on a person's page. This is what makes the QR aid
 // attendance even when a normal phone camera (an unconfigured device) opens the
 // profile URL instead of the kiosk scanner: a signed-in staffer taps once here.
+/* Scanned your own ID card? Jump straight into the Community with the QR
+   token as the credential (no password needed). */
+function ProfileCommunityCTA({ token, name }) {
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const enter = async () => {
+    setBusy(true); setErr("");
+    try { await NGGApi.auth.studentLogin({ token }); window.location.href = "/community"; }
+    catch (e) { setErr("Couldn't sign you in from this card."); setBusy(false); }
+  };
+  return (
+    <div className="card" style={{ padding: 20, marginBottom: 20, background: "var(--navy-900,#0c1432)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+      <div>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18 }}>Enter the Community</div>
+        <div style={{ fontSize: 13.5, color: "rgba(255,255,255,0.72)", marginTop: 2 }}>Signed in as {name} · from your ID card. {err && <span style={{ color: "#ffb3b3" }}>{err}</span>}</div>
+      </div>
+      <button className="btn btn-gold" disabled={busy} onClick={enter}>{busy ? "…" : "Enter →"}</button>
+    </div>
+  );
+}
+
 function ProfileCheckin({ token, name }) {
   const [busy, setBusy] = React.useState(false);
   const [res, setRes] = React.useState(null);
@@ -1366,6 +1387,8 @@ function SummerProfilePage({ setPage }) {
         <div className="container" style={{ maxWidth: 900 }}>
           {auth && auth.isSignedIn && (auth.isAdmin || (auth.hasCap && (auth.hasCap("summer") || auth.hasCap("people")))) && state.token
             ? <ProfileCheckin token={state.token} name={m.fullName}/> : null}
+          {!isVol && state.token && !(auth && auth.isSignedIn)
+            ? <ProfileCommunityCTA token={state.token} name={m.fullName}/> : null}
           <div className="card" style={{ padding: 28 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
               <h2 className="display" style={{ fontSize: 28, margin: 0 }}>Attendance</h2>

@@ -384,7 +384,7 @@ function cmBody(text) {
     const parts = line.split(/(\s+)/);
     parts.forEach((p, i) => {
       if (/^https?:\/\/\S+$/.test(p)) out.push(<a key={li + "-" + i} href={p} target="_blank" rel="noopener noreferrer" className="cm-link">{p.replace(/^https?:\/\//, "")}</a>);
-      else if (/^@[\w.]+$/.test(p)) out.push(<b key={li + "-" + i} className="cm-mention">{p}</b>);
+      else if (/^@[\w.]+$/.test(p)) out.push(<a key={li + "-" + i} href={"/s/" + p.slice(1).toLowerCase()} className="cm-mention">{p}</a>);
       else if (/^#[\w]+$/.test(p)) out.push(<b key={li + "-" + i} className="cm-tag">{p}</b>);
       else out.push(p);
     });
@@ -405,12 +405,25 @@ function CommunityPage({ setPage }) {
 function CommunityTeaser({ setPage, auth }) {
   const [channels, setChannels] = React.useState([]);
   const [showcase, setShowcase] = React.useState([]);
+  const [stu, setStu] = React.useState(false); // student sign-in form open
+  const [sid, setSid] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
   React.useEffect(() => {
     let a = true;
     NGGApi.public.communityChannels().then(r => { if (a) setChannels(r.channels || []); }).catch(() => {});
     NGGApi.public.communityShowcase().then(r => { if (a) setShowcase(r.showcase || []); }).catch(() => {});
     return () => { a = false; };
   }, []);
+  const studentLogin = async () => {
+    if (!sid.trim() || phone.replace(/\D/g, "").length < 7) { setErr("Enter your student ID and your parent/guardian's phone number."); return; }
+    setBusy(true); setErr("");
+    try {
+      await NGGApi.auth.studentLogin({ displayId: sid.trim(), guardianPhone: phone.trim() });
+      window.location.href = "/community"; // reboot auth → community unlocks
+    } catch (e) { setErr(e.code === "rate_limited" ? "Too many tries — wait a few minutes." : "We couldn't match that ID and phone number. Check your ID card."); setBusy(false); }
+  };
   return (
     <div className="page cm-page" data-screen-label="Community">
       <section className="cm-teaser">
@@ -421,8 +434,20 @@ function CommunityTeaser({ setPage, auth }) {
           <p className="cm-teaser-p">Share what you're building, drop a photo or a clip, cheer each other on — organised by your course channels. A safe, mentor-watched space for NGG members.</p>
           <div className="cm-teaser-actions">
             <button className="btn btn-gold btn-lg" onClick={() => auth.openSignIn && auth.openSignIn()}>Sign in to join →</button>
-            <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("join")}>Become a member</button>
+            <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setStu(s => !s)}>I'm a summer student</button>
           </div>
+          {stu && (
+            <div className="cm-stu-signin">
+              <div className="mono cm-stu-title">SIGN IN WITH YOUR ID CARD</div>
+              <p className="cm-stu-hint">Enter the ID on your card and your parent/guardian's phone number. Or scan your card's QR code and tap “Enter the community”.</p>
+              <div className="cm-stu-row">
+                <input className="cm-stu-input" value={sid} onChange={e => setSid(e.target.value)} placeholder="Student ID (e.g. AY-26-001)" autoCapitalize="characters"/>
+                <input className="cm-stu-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Guardian phone" inputMode="tel"/>
+                <button className="btn btn-gold" disabled={busy} onClick={studentLogin}>{busy ? "…" : "Enter →"}</button>
+              </div>
+              {err && <div className="cm-stu-err">{err}</div>}
+            </div>
+          )}
           {channels.length > 0 && (
             <div className="cm-teaser-chips">
               {channels.slice(0, 10).map(c => <span key={c.slug} className="cm-chip" style={{ "--cm": c.color }}>{c.icon} {c.name}</span>)}
@@ -470,7 +495,10 @@ function CommunityApp({ setPage, auth }) {
   const [hasMore, setHasMore] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [digest, setDigest] = React.useState(null);
+  const [fresh, setFresh] = React.useState(null); // {count, posts} — new posts found by polling
   const me = (auth.member && auth.member.fullName) || "You";
+  const postsRef = React.useRef([]);
+  React.useEffect(() => { postsRef.current = posts || []; }, [posts]);
 
   React.useEffect(() => { let a = true; NGGApi.member.community.channels().then(r => { if (a) setChannels(r.channels || []); }).catch(() => {}); return () => { a = false; }; }, []);
 
@@ -481,8 +509,26 @@ function CommunityApp({ setPage, auth }) {
       setLoadingMore(false);
     }).catch(() => { setPosts(p => p || []); setLoadingMore(false); });
   }, []);
-  React.useEffect(() => { setPosts(null); setPage2(0); loadFeed(active, sort, 0, false); }, [active, sort, loadFeed]);
+  React.useEffect(() => { setPosts(null); setPage2(0); setFresh(null); loadFeed(active, sort, 0, false); }, [active, sort, loadFeed]);
   const more = () => { if (loadingMore) return; setLoadingMore(true); const n = page + 1; setPage2(n); loadFeed(active, sort, n, true); };
+
+  // Near-real-time: poll page 0 for posts newer than the current top and offer
+  // a "new posts" pill rather than yanking the feed out from under the reader.
+  React.useEffect(() => {
+    if (active === "bookmarks") return;
+    const tick = () => {
+      if (document.hidden) return;
+      NGGApi.member.community.feed(active, sort, 0).then(r => {
+        const cur = postsRef.current; const have = new Set(cur.map(x => x.postId));
+        const incoming = (r.posts || []);
+        const news = incoming.filter(x => !have.has(x.postId) && !x.author.isMe);
+        if (news.length && cur.length) setFresh({ count: news.length, posts: incoming });
+      }).catch(() => {});
+    };
+    const id = setInterval(tick, 25000);
+    return () => clearInterval(id);
+  }, [active, sort]);
+  const showFresh = () => { if (fresh) { setPosts(fresh.posts); setPage2(0); setFresh(null); window.scrollTo({ top: 0, behavior: "smooth" }); } };
 
   const prependPost = (post) => setPosts(p => [post].concat(p || []));
   const patchPost = (postId, patch) => setPosts(p => (p || []).map(x => x.postId === postId ? { ...x, ...patch } : x));
@@ -529,6 +575,8 @@ function CommunityApp({ setPage, auth }) {
           </div>
 
           {active !== "bookmarks" && <CmComposer channels={channels} active={active} me={me} onPosted={prependPost}/>}
+
+          {fresh && <button className="cm-fresh" onClick={showFresh}>↑ {fresh.count} new post{fresh.count === 1 ? "" : "s"} — tap to show</button>}
 
           {posts === null ? (
             <div className="cm-skeletons">{[0, 1, 2].map(i => <div key={i} className="cm-post cm-skel"/>)}</div>
@@ -577,48 +625,125 @@ function CommunityApp({ setPage, auth }) {
 }
 
 /* ---- Composer ---- */
+// Read a video file's duration (seconds) from its metadata, client-side.
+function cmVideoMeta(file) {
+  return new Promise(res => {
+    try {
+      const url = URL.createObjectURL(file);
+      const v = document.createElement("video");
+      v.preload = "metadata";
+      v.onloadedmetadata = () => { URL.revokeObjectURL(url); res({ duration: v.duration || 0 }); };
+      v.onerror = () => { URL.revokeObjectURL(url); res({ duration: 0 }); };
+      v.src = url;
+    } catch (_) { res({ duration: 0 }); }
+  });
+}
+const CM_VIDEO_MAX_MB = 80, CM_VIDEO_MAX_SECS = 180, CM_IMAGE_MAX_MB = 15;
+
 function CmComposer({ channels, active, me, onPosted }) {
   const [body, setBody] = React.useState("");
-  const [media, setMedia] = React.useState(null); // {type,url,poster}
-  const [up, setUp] = React.useState(0); // 0 idle, 1-100 progress
+  const [media, setMedia] = React.useState(null); // {type,url,poster,bytes,duration}
+  const [up, setUp] = React.useState(0);
   const [ch, setCh] = React.useState(active !== "all" ? active : "commons");
   const [busy, setBusy] = React.useState(false);
+  const [poll, setPoll] = React.useState(null); // null | [opt, opt, ...]
+  const [ment, setMent] = React.useState(null); // {q, start, items}
   const fileRef = React.useRef(null);
+  const taRef = React.useRef(null);
   React.useEffect(() => { if (active !== "all" && active !== "bookmarks") setCh(active); }, [active]);
 
   const pick = async (e) => {
     const f = e.target.files && e.target.files[0]; if (!f) return;
-    if (f.size > 60 * 1024 * 1024) { toast.error("That file is over 60MB — please trim it."); return; }
+    const isVid = /^video\//.test(f.type);
+    const mb = f.size / 1024 / 1024;
+    if (isVid && mb > CM_VIDEO_MAX_MB) { toast.error("That video is " + mb.toFixed(0) + "MB — keep clips under " + CM_VIDEO_MAX_MB + "MB."); if (fileRef.current) fileRef.current.value = ""; return; }
+    if (!isVid && mb > CM_IMAGE_MAX_MB) { toast.error("That image is too large — keep it under " + CM_IMAGE_MAX_MB + "MB."); if (fileRef.current) fileRef.current.value = ""; return; }
+    let duration = 0;
+    if (isVid) {
+      const meta = await cmVideoMeta(f); duration = Math.round(meta.duration || 0);
+      if (duration > CM_VIDEO_MAX_SECS) { toast.error("That clip is " + Math.round(duration / 60) + " min — keep it under 3 minutes."); if (fileRef.current) fileRef.current.value = ""; return; }
+    }
     setUp(1);
     try {
       const r = await NGGApi.uploadFile(f, "post", pct => setUp(Math.max(1, pct)));
-      const type = (r.resourceType === "video" || /^video\//.test(f.type)) ? "video" : "image";
-      setMedia({ type, url: r.url, poster: type === "video" ? cmPoster(r.url) : "" });
+      const type = (r.resourceType === "video" || isVid) ? "video" : "image";
+      setMedia({ type, url: r.url, poster: type === "video" ? cmPoster(r.url) : "", bytes: f.size, duration });
     } catch (_) { toast.error("Upload failed — try again."); }
     finally { setUp(0); if (fileRef.current) fileRef.current.value = ""; }
   };
 
+  // @mention autocomplete: watch the token before the caret.
+  const onBody = (e) => {
+    const val = e.target.value; setBody(val);
+    const caret = e.target.selectionStart || val.length;
+    const m = val.slice(0, caret).match(/@([a-z0-9._-]{1,20})$/i);
+    if (m) {
+      const start = caret - m[0].length;
+      NGGApi.member.community.mentions(m[1]).then(r => setMent({ q: m[1], start, items: r.people || [] })).catch(() => {});
+    } else setMent(null);
+  };
+  const pickMention = (handle) => {
+    if (!ment) return;
+    const before = body.slice(0, ment.start), after = body.slice(ment.start + ment.q.length + 1);
+    setBody(before + "@" + handle + " " + after); setMent(null);
+    if (taRef.current) taRef.current.focus();
+  };
+
+  const pollAdd = () => setPoll(p => (p && p.length < 4 ? p.concat("") : p));
+  const pollSet = (i, v) => setPoll(p => p.map((x, j) => j === i ? v : x));
+  const pollDel = (i) => setPoll(p => { const n = p.filter((_, j) => j !== i); return n.length < 2 ? n.concat(Array(2 - n.length).fill("")) : n; });
+
   const submit = async () => {
-    if (!body.trim() && !media) return;
+    const isPoll = !!poll;
+    if (isPoll ? (!body.trim() || poll.filter(o => o.trim()).length < 2) : (!body.trim() && !media)) return;
     setBusy(true);
     try {
-      const r = await NGGApi.member.community.post({ channel: ch, body: body.trim(), mediaType: media ? media.type : "none", mediaUrl: media ? media.url : "", mediaPoster: media ? media.poster : "" });
-      setBody(""); setMedia(null);
+      const payload = isPoll
+        ? { channel: ch, body: body.trim(), kind: "poll", pollOptions: poll.map(o => o.trim()).filter(Boolean) }
+        : { channel: ch, body: body.trim(), mediaType: media ? media.type : "none", mediaUrl: media ? media.url : "", mediaPoster: media ? media.poster : "", mediaBytes: media ? media.bytes : 0, mediaDuration: media ? media.duration : 0 };
+      const r = await NGGApi.member.community.post(payload);
+      setBody(""); setMedia(null); setPoll(null);
       if (r.queued) toast.success("Posted — a mentor will approve it shortly.");
-      else { toast.success("Posted ✓"); onPosted && onPosted(r.post); }
-      if (r.queued && r.post) onPosted && onPosted(r.post);
+      else toast.success("Posted ✓");
+      if (r.post) onPosted && onPosted(r.post);
     } catch (e) {
-      toast.error(e.detail || (e.code === "crisis" ? "Please talk to a trusted adult now." : e.code === "blocked" ? "That can't be shared here." : "Couldn't post — try again."));
+      toast.error(e.detail || (e.code === "crisis" ? "Please talk to a trusted adult now." : "Couldn't post — try again."));
     } finally { setBusy(false); }
   };
 
   const remaining = 2000 - body.length;
+  const canPost = poll ? (body.trim() && poll.filter(o => o.trim()).length >= 2) : (body.trim() || media);
   return (
     <div className="cm-composer">
       <div className="cm-composer-top">
         <span className="cm-avatar" style={{ background: cmColor(me) }}>{cmInitial(me)}</span>
-        <textarea className="cm-input" rows={media ? 2 : 1} maxLength={2000} value={body} onChange={e => setBody(e.target.value)} placeholder="Share something with the crew…"/>
+        <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+          <textarea ref={taRef} className="cm-input" rows={media || poll ? 2 : 1} maxLength={2000} value={body} onChange={onBody} placeholder={poll ? "Ask the crew a question…" : "Share something with the crew…  (@ to mention)"}/>
+          {ment && ment.items.length > 0 && (
+            <div className="cm-mention-menu">
+              {ment.items.map(pp => (
+                <button key={pp.handle} className="cm-mention-item" onClick={() => pickMention(pp.handle)}>
+                  <span className="cm-avatar cm-avatar-sm" style={{ background: cmColor(pp.handle) }}>{cmInitial(pp.name || pp.handle)}</span>
+                  <span><b>@{pp.handle}</b>{pp.name ? " · " + pp.name : ""}{pp.centre ? " · " + pp.centre : ""}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+
+      {poll && (
+        <div className="cm-poll-edit">
+          {poll.map((o, i) => (
+            <div key={i} className="cm-poll-opt">
+              <input className="cm-poll-input" value={o} maxLength={80} placeholder={"Option " + (i + 1)} onChange={e => pollSet(i, e.target.value)}/>
+              {poll.length > 2 && <button className="cm-poll-x" onClick={() => pollDel(i)} aria-label="Remove option">✕</button>}
+            </div>
+          ))}
+          {poll.length < 4 && <button className="cm-poll-add" onClick={pollAdd}>+ Add option</button>}
+        </div>
+      )}
+
       {media && (
         <div className="cm-media-preview">
           {media.type === "video" ? <video src={cmOpt(media.url)} poster={media.poster} controls className="cm-media"/> : <img src={cmOpt(media.url, 900)} alt="" className="cm-media"/>}
@@ -628,15 +753,16 @@ function CmComposer({ channels, active, me, onPosted }) {
       {up > 0 && <div className="cm-progress"><span style={{ width: up + "%" }}/></div>}
       <div className="cm-composer-bar">
         <div className="cm-composer-left">
-          <button className="cm-icon-btn" onClick={() => fileRef.current && fileRef.current.click()} disabled={up > 0} title="Add photo or video">📷 Media</button>
+          {!poll && <button className="cm-icon-btn" onClick={() => fileRef.current && fileRef.current.click()} disabled={up > 0} title="Add photo or video">📷 Media</button>}
           <input ref={fileRef} type="file" accept="image/*,video/*" onChange={pick} style={{ display: "none" }}/>
+          {!media && <button className={"cm-icon-btn" + (poll ? " is-on" : "")} onClick={() => setPoll(p => p ? null : ["", ""])} title="Create a poll">📊 Poll</button>}
           <select className="cm-chan-select" value={ch} onChange={e => setCh(e.target.value)}>
             {channels.filter(c => c.slug !== "bookmarks").map(c => <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>)}
           </select>
         </div>
         <div className="cm-composer-right">
           {body.length > 1600 && <span className={"cm-count" + (remaining < 0 ? " over" : "")}>{remaining}</span>}
-          <button className="btn btn-primary btn-sm" disabled={busy || up > 0 || (!body.trim() && !media)} onClick={submit}>{busy ? "Posting…" : "Post"}</button>
+          <button className="btn btn-primary btn-sm" disabled={busy || up > 0 || !canPost} onClick={submit}>{busy ? "Posting…" : poll ? "Ask" : "Post"}</button>
         </div>
       </div>
     </div>
@@ -679,6 +805,9 @@ function CmPost({ post, onPatch, onRemove }) {
     const nv = !post.bookmarked; onPatch(post.postId, { bookmarked: nv });
     try { const r = await NGGApi.member.community.bookmark(post.postId); onPatch(post.postId, { bookmarked: r.bookmarked }); } catch (_) { onPatch(post.postId, { bookmarked: !nv }); }
   };
+  const vote = async (i) => {
+    try { const r = await NGGApi.member.community.vote(post.postId, i); onPatch(post.postId, { poll: r.poll }); } catch (_) { toast.error("Couldn't record your vote."); }
+  };
   const share = async () => {
     const txt = post.body || (post.channel.name + " on NGG Community");
     try { if (navigator.share) await navigator.share({ title: "NGG Community", text: txt }); else { await navigator.clipboard.writeText(txt); toast.success("Copied to clipboard"); } } catch (_) {}
@@ -711,7 +840,23 @@ function CmPost({ post, onPatch, onRemove }) {
       </div>
 
       {post.moderationNote && <div className="cm-modnote">{post.moderationNote}</div>}
-      {post.body && <div className="cm-post-body">{cmBody(post.body)}</div>}
+      {post.body && <div className={"cm-post-body" + (post.kind === "poll" ? " cm-poll-q" : "")}>{cmBody(post.body)}</div>}
+      {post.kind === "poll" && post.poll && (
+        <div className="cm-poll">
+          {post.poll.options.map((o, i) => {
+            const voted = post.poll.myVote >= 0;
+            const mine = post.poll.myVote === i;
+            return (
+              <button key={i} className={"cm-poll-row" + (voted ? " voted" : "") + (mine ? " mine" : "")} onClick={() => !voted && vote(i)} disabled={voted}>
+                {voted && <span className="cm-poll-bar" style={{ width: o.pct + "%" }}/>}
+                <span className="cm-poll-text">{mine ? "✓ " : ""}{o.text}</span>
+                {voted && <span className="cm-poll-pct">{o.pct}%</span>}
+              </button>
+            );
+          })}
+          <div className="cm-poll-total">{post.poll.totalVotes} vote{post.poll.totalVotes === 1 ? "" : "s"}{post.poll.myVote < 0 ? " · tap to vote" : ""}</div>
+        </div>
+      )}
       {post.mediaType === "image" && post.mediaUrl && <div className="cm-post-media"><img src={cmOpt(post.mediaUrl, 1000)} alt={post.altText || ""} loading="lazy"/></div>}
       {post.mediaType === "video" && post.mediaUrl && <div className="cm-post-media"><video src={cmOpt(post.mediaUrl)} poster={post.mediaPoster} controls preload="metadata"/></div>}
 

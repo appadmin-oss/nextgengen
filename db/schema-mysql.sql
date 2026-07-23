@@ -899,3 +899,17 @@ CREATE TABLE IF NOT EXISTS community_reports (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (49) ON DUPLICATE KEY UPDATE version = version;
+
+-- 50: Community polls (a post kind) + one-vote-per-member ballots.
+ALTER TABLE community_posts ADD COLUMN kind VARCHAR(16) DEFAULT 'post';
+ALTER TABLE community_posts ADD COLUMN pollOptions TEXT;
+CREATE TABLE IF NOT EXISTS community_poll_votes (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  postId VARCHAR(48) NOT NULL,
+  memberId VARCHAR(48) NOT NULL,
+  choice INT NOT NULL,
+  createdAt VARCHAR(40),
+  UNIQUE KEY idx_cpoll_unique (postId, memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (50) ON DUPLICATE KEY UPDATE version = version;
