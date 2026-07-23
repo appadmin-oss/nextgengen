@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 48;
+const NGG_SCHEMA_TARGET = 49;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1283,6 +1283,21 @@ function db_migrate(PDO $db): void {
               createdAt TEXT DEFAULT (datetime('now'))
             );
             CREATE UNIQUE INDEX idx_cbook_unique ON community_bookmarks(postId, memberId);
+        ",
+
+        // Community: public Showcase (admin-featured posts) + member reporting.
+        49 => "
+            ALTER TABLE community_posts ADD COLUMN featured INTEGER DEFAULT 0;
+            ALTER TABLE community_posts ADD COLUMN reportCount INTEGER DEFAULT 0;
+            CREATE TABLE community_reports (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              targetType TEXT DEFAULT 'post',
+              targetId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              reason TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_creport_target ON community_reports(targetType, targetId);
         ",
     ];
 

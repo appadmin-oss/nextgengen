@@ -404,7 +404,13 @@ function CommunityPage({ setPage }) {
 /* ---- Signed-out teaser ---- */
 function CommunityTeaser({ setPage, auth }) {
   const [channels, setChannels] = React.useState([]);
-  React.useEffect(() => { let a = true; NGGApi.public.communityChannels().then(r => { if (a) setChannels(r.channels || []); }).catch(() => {}); return () => { a = false; }; }, []);
+  const [showcase, setShowcase] = React.useState([]);
+  React.useEffect(() => {
+    let a = true;
+    NGGApi.public.communityChannels().then(r => { if (a) setChannels(r.channels || []); }).catch(() => {});
+    NGGApi.public.communityShowcase().then(r => { if (a) setShowcase(r.showcase || []); }).catch(() => {});
+    return () => { a = false; };
+  }, []);
   return (
     <div className="page cm-page" data-screen-label="Community">
       <section className="cm-teaser">
@@ -424,6 +430,32 @@ function CommunityTeaser({ setPage, auth }) {
           )}
         </div>
       </section>
+
+      {showcase.length > 0 && (
+        <section className="cm-showcase">
+          <div className="container">
+            <div className="mono cm-showcase-eyebrow">✨ FROM THE SHOWCASE</div>
+            <h2 className="display cm-showcase-h">What the crew is making</h2>
+            <p className="cm-showcase-sub">A handful of mentor-picked highlights. The full community is a private, members-only space.</p>
+            <div className="cm-showcase-grid">
+              {showcase.map(s => (
+                <figure key={s.postId} className="cm-show-card">
+                  {s.mediaType === "image" && s.mediaUrl && <img src={cmOpt(s.mediaUrl, 700)} alt={s.altText || ""} loading="lazy"/>}
+                  {s.mediaType === "video" && (s.mediaPoster || s.mediaUrl) && <div className="cm-show-video"><img src={s.mediaPoster || cmPoster(s.mediaUrl)} alt=""/><span className="cm-show-play">▶</span></div>}
+                  <figcaption>
+                    <span className="cm-show-chan" style={{ color: s.channel.color }}>{s.channel.icon} {s.channel.name}</span>
+                    {s.body && <p className="cm-show-body">{s.body.length > 140 ? s.body.slice(0, 140) + "…" : s.body}</p>}
+                    <span className="cm-show-author">— {s.author}</span>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+            <div className="cm-showcase-cta">
+              <button className="btn btn-primary btn-lg" onClick={() => auth.openSignIn && auth.openSignIn()}>Sign in to see it all →</button>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -454,6 +486,7 @@ function CommunityApp({ setPage, auth }) {
 
   const prependPost = (post) => setPosts(p => [post].concat(p || []));
   const patchPost = (postId, patch) => setPosts(p => (p || []).map(x => x.postId === postId ? { ...x, ...patch } : x));
+  const removePost = (postId) => setPosts(p => (p || []).filter(x => x.postId !== postId));
 
   const activeChannel = channels.find(c => c.slug === active);
   const catchMeUp = () => {
@@ -506,7 +539,7 @@ function CommunityApp({ setPage, auth }) {
             </div>
           ) : (
             <div className="cm-feed">
-              {posts.map(p => <CmPost key={p.postId} post={p} onPatch={patchPost}/>)}
+              {posts.map(p => <CmPost key={p.postId} post={p} onPatch={patchPost} onRemove={removePost}/>)}
               {hasMore && <button className="cm-more" disabled={loadingMore} onClick={more}>{loadingMore ? "Loading…" : "Load more"}</button>}
             </div>
           )}
@@ -611,9 +644,21 @@ function CmComposer({ channels, active, me, onPosted }) {
 }
 
 /* ---- Post card ---- */
-function CmPost({ post, onPatch }) {
+function CmPost({ post, onPatch, onRemove }) {
   const [showComments, setShowComments] = React.useState(false);
   const [picker, setPicker] = React.useState(false);
+  const [menu, setMenu] = React.useState(false);
+  const report = async () => {
+    setMenu(false);
+    try { await NGGApi.member.community.report("post", post.postId); toast.success("Reported to mentors. Thank you for keeping this space safe."); }
+    catch (_) { toast.error("Couldn't report — try again."); }
+  };
+  const del = async () => {
+    setMenu(false);
+    if (!(await dialog.confirm({ title: "Delete this post?", body: "This removes it for everyone. This can't be undone.", cta: "Delete" }))) return;
+    try { await NGGApi.member.community.remove("post", post.postId); onRemove && onRemove(post.postId); toast.success("Deleted."); }
+    catch (_) { toast.error("Couldn't delete — try again."); }
+  };
   const reactionSet = ["👏", "❤️", "🔥", "💡", "🎉", "🙌"];
   const totalReacts = Object.values(post.reactions || {}).reduce((s, n) => s + n, 0);
 
@@ -651,7 +696,18 @@ function CmPost({ post, onPatch }) {
             {post.author.centre && <><span className="cm-dot">·</span><span>{post.author.centre}</span></>}
           </div>
         </div>
+        {post.featured && <span className="cm-featured" title="On the public Showcase">✨</span>}
         {post.pinned && <span className="cm-pin" title="Pinned">📌</span>}
+        <div className="cm-menu-wrap">
+          <button className="cm-menu-btn" onClick={() => setMenu(m => !m)} aria-label="More">⋯</button>
+          {menu && (
+            <div className="cm-menu" onMouseLeave={() => setMenu(false)}>
+              {post.author.isMe
+                ? <button className="cm-menu-item cm-menu-danger" onClick={del}>Delete post</button>
+                : <button className="cm-menu-item" onClick={report}>🚩 Report to a mentor</button>}
+            </div>
+          )}
+        </div>
       </div>
 
       {post.moderationNote && <div className="cm-modnote">{post.moderationNote}</div>}

@@ -2406,7 +2406,7 @@ function AdminCommunity() {
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Community {pending && (pending.posts + pending.comments) > 0 ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{pending.posts + pending.comments} to review</span> : null}</h2>
+        <h2 className="admin-h2">Community {pending && (pending.posts + pending.comments + (pending.reported || 0)) > 0 ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{pending.posts + pending.comments + (pending.reported || 0)} to review</span> : null}</h2>
       </div>
       <p className="admin-hint">The members' social feed. Posts &amp; comments are AI-screened on submit; video and anything flagged waits here for your approval. Channels mirror the summer courses — add or archive them below.</p>
       <div className="admin-filters">
@@ -2429,7 +2429,7 @@ function AdminCommunityQueue({ onChange }) {
     <div>
       <div className="admin-filters">
         <select className="admin-select" value={status} onChange={e => setStatus(e.target.value)}>
-          <option value="pending">Pending review</option><option value="published">Published</option><option value="hidden">Hidden</option><option value="removed">Removed</option><option value="all">All (live)</option>
+          <option value="pending">Pending review</option><option value="reported">Reported</option><option value="published">Published</option><option value="hidden">Hidden</option><option value="removed">Removed</option><option value="all">All (live)</option>
         </select>
       </div>
       {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
@@ -2441,7 +2441,7 @@ function AdminCommunityQueue({ onChange }) {
             {d.posts.map(p => (
               <div className="admin-app" key={p.postId}>
                 <div className="admin-app-top">
-                  <div><div className="admin-cell-name">{p.author} <span className="chip" style={{ background: p.color, color: "#fff" }}>{p.channel}</span> {p.pinned && <span className="chip chip-lime">📌 pinned</span>}</div>
+                  <div><div className="admin-cell-name">{p.author} <span className="chip" style={{ background: p.color, color: "#fff" }}>{p.channel}</span> {p.pinned && <span className="chip chip-lime">📌 pinned</span>} {p.featured && <span className="chip chip-lime">✨ showcase</span>} {p.reportCount > 0 && <span className="chip chip-crimson">🚩 {p.reportCount}</span>}</div>
                     <div className="mono admin-cell-sub">{fmtDate(p.createdAt)}{p.centre ? " · " + p.centre : ""}{p.mediaType !== "none" ? " · " + p.mediaType : ""}</div></div>
                   <span className={"chip status-" + (p.status === "published" ? "published" : p.status === "removed" ? "archived" : "draft")}>{p.status}</span>
                 </div>
@@ -2453,6 +2453,7 @@ function AdminCommunityQueue({ onChange }) {
                   {p.status !== "published" && <button className="btn btn-primary btn-sm" onClick={() => act("post", p.postId, "approve")}>Approve</button>}
                   {p.status !== "hidden" && <button className="btn btn-ghost btn-sm" onClick={() => act("post", p.postId, "hide")}>Hide</button>}
                   <button className="btn btn-ghost btn-sm" onClick={() => act("post", p.postId, p.pinned ? "unpin" : "pin")}>{p.pinned ? "Unpin" : "Pin"}</button>
+                  {p.status === "published" && <button className="btn btn-ghost btn-sm" onClick={() => act("post", p.postId, p.featured ? "unfeature" : "feature")}>{p.featured ? "Unfeature" : "✨ Feature"}</button>}
                   <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={() => act("post", p.postId, "remove")}>Remove</button>
                 </div>
               </div>

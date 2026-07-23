@@ -105,6 +105,14 @@ function community_screen(string $text): array {
     return ['verdict' => $v, 'reason' => is_array($r) ? substr((string)($r['reason'] ?? ''), 0, 120) : '', 'crisis' => false];
 }
 
+/** Drop a notification for a member (skips self-notifications). */
+function community_notify(string $memberId, string $actorId, string $kind, string $title, string $body): void {
+    if ($memberId === '' || $memberId === $actorId) return;
+    if (!db_row("SELECT memberId FROM members WHERE memberId = ? LIMIT 1", [$memberId])) return;
+    db_insert('notifications', ['notifId' => 'NT-' . strtoupper(rand_hex(6)), 'memberId' => $memberId, 'kind' => $kind,
+        'title' => mb_substr($title, 0, 160), 'body' => mb_substr($body, 0, 400), 'linkPage' => 'community', 'createdAt' => now_iso()]);
+}
+
 /* ── Posts ────────────────────────────────────────────────────────────── */
 
 /** Build the client shape of a post for a given viewer. */
@@ -125,7 +133,7 @@ function community_post_shape(array $row, string $viewerId): array {
         'author' => ['name' => (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'], 'isMe' => $isMe],
         'body' => (string)$row['body'],
         'mediaType' => (string)$row['mediaType'], 'mediaUrl' => (string)$row['mediaUrl'], 'mediaPoster' => (string)$row['mediaPoster'], 'altText' => (string)$row['altText'],
-        'status' => (string)$row['status'], 'pinned' => (int)$row['pinned'] === 1,
+        'status' => (string)$row['status'], 'pinned' => (int)$row['pinned'] === 1, 'featured' => (int)($row['featured'] ?? 0) === 1,
         'reactions' => $reacts, 'myReaction' => (string)$mine, 'commentCount' => $comments,
         'bookmarked' => (bool)$booked, 'viewCount' => (int)$row['viewCount'],
         'createdAt' => (string)$row['createdAt'],
@@ -278,6 +286,10 @@ function community_comment_create(array $p): array {
         'body' => $body, 'status' => $status, 'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason']], JSON_UNESCAPED_SLASHES), 'createdAt' => $now,
     ]);
     audit('community.comment', $viewer, $id, ['postId' => $pid, 'status' => $status], (string)($p['ip'] ?? ''));
+    if ($status === 'published') {
+        $owner = db_row("SELECT authorId FROM community_posts WHERE postId = ? LIMIT 1", [$pid]);
+        if ($owner) community_notify((string)$owner['authorId'], $viewer, 'community.reply', $author['name'] . ' replied to your post', mb_substr($body, 0, 120));
+    }
     return ['ok' => true, 'queued' => $status !== 'published', 'comment' => [
         'commentId' => $id, 'name' => $author['name'] . ($author['initial'] ? ' ' . $author['initial'] : ''), 'body' => $body,
         'status' => $status, 'createdAt' => $now, 'isMe' => true, 'note' => $status !== 'published' ? community_status_note($status) : '',
@@ -292,6 +304,64 @@ function community_bookmark(array $p): array {
     if ($existing) { db_exec("DELETE FROM community_bookmarks WHERE postId = ? AND memberId = ?", [$pid, $viewer]); return ['ok' => true, 'bookmarked' => false]; }
     db_insert('community_bookmarks', ['postId' => $pid, 'memberId' => $viewer, 'createdAt' => now_iso()]);
     return ['ok' => true, 'bookmarked' => true];
+}
+
+/** A member reports a post or comment → surfaces in the admin queue. */
+function community_report(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
+    $type = (string)($p['targetType'] ?? 'post') === 'comment' ? 'comment' : 'post';
+    $id = (string)($p['targetId'] ?? '');
+    $table = $type === 'comment' ? 'community_comments' : 'community_posts';
+    $col = $type === 'comment' ? 'commentId' : 'postId';
+    if (!db_row("SELECT id FROM $table WHERE $col = ?", [$id])) return ['ok' => false, 'error' => 'not_found'];
+    if (db_row("SELECT id FROM community_reports WHERE targetType = ? AND targetId = ? AND memberId = ?", [$type, $id, $viewer])) return ['ok' => true, 'already' => true];
+    db_insert('community_reports', ['targetType' => $type, 'targetId' => $id, 'memberId' => $viewer, 'reason' => mb_substr(trim((string)($p['reason'] ?? '')), 0, 400), 'createdAt' => now_iso()]);
+    if ($type === 'post') db_exec("UPDATE community_posts SET reportCount = reportCount + 1 WHERE postId = ?", [$id]);
+    audit('community.report', $viewer, $id, ['type' => $type], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/** Author deletes their own post (and its children) or comment. */
+function community_delete(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
+    $type = (string)($p['targetType'] ?? 'post') === 'comment' ? 'comment' : 'post';
+    $id = (string)($p['targetId'] ?? '');
+    if ($type === 'comment') {
+        $c = db_row("SELECT memberId FROM community_comments WHERE commentId = ?", [$id]);
+        if (!$c || (string)$c['memberId'] !== $viewer) return ['ok' => false, 'error' => 'forbidden'];
+        db_exec("DELETE FROM community_comments WHERE commentId = ?", [$id]);
+    } else {
+        $pr = db_row("SELECT authorId FROM community_posts WHERE postId = ?", [$id]);
+        if (!$pr || (string)$pr['authorId'] !== $viewer) return ['ok' => false, 'error' => 'forbidden'];
+        db_exec("DELETE FROM community_posts WHERE postId = ?", [$id]);
+        db_exec("DELETE FROM community_reactions WHERE postId = ?", [$id]);
+        db_exec("DELETE FROM community_comments WHERE postId = ?", [$id]);
+        db_exec("DELETE FROM community_bookmarks WHERE postId = ?", [$id]);
+    }
+    audit('community.delete', $viewer, $id, ['type' => $type], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/** Public Showcase — mentor-featured, published posts only. Read-only,
+ *  PII-safe (first name only), no comments, no interaction. This is the ONLY
+ *  community content that ever leaves the members' walled garden. */
+function community_showcase(array $p): array {
+    community_ensure_channels();
+    $rows = db_all("SELECT * FROM community_posts WHERE featured = 1 AND status = 'published' ORDER BY updatedAt DESC LIMIT 12");
+    $out = [];
+    foreach ($rows as $r) {
+        $ch = db_row("SELECT name, color, icon FROM community_channels WHERE channelId = ? LIMIT 1", [(string)$r['channelId']]);
+        $first = explode(' ', trim((string)$r['authorName']))[0] ?? 'A member';
+        $out[] = [
+            'postId' => (string)$r['postId'],
+            'channel' => ['name' => (string)($ch['name'] ?? ''), 'color' => (string)($ch['color'] ?? '#3b5bdb'), 'icon' => (string)($ch['icon'] ?? '')],
+            'author' => $first, 'body' => (string)$r['body'],
+            'mediaType' => (string)$r['mediaType'], 'mediaUrl' => (string)$r['mediaUrl'], 'mediaPoster' => (string)$r['mediaPoster'], 'altText' => (string)$r['altText'],
+        ];
+    }
+    return ['ok' => true, 'showcase' => $out];
 }
 
 /** AI "Catch me up" — a short digest of a channel's recent activity. */
@@ -335,7 +405,8 @@ function admin_community_overview(array $p): array {
     }, $rows);
     $pendingPosts = (int)(db_row("SELECT COUNT(*) c FROM community_posts WHERE status = 'pending'")['c'] ?? 0);
     $pendingComments = (int)(db_row("SELECT COUNT(*) c FROM community_comments WHERE status = 'pending'")['c'] ?? 0);
-    return ['ok' => true, 'channels' => $channels, 'pending' => ['posts' => $pendingPosts, 'comments' => $pendingComments]];
+    $reported = (int)(db_row("SELECT COUNT(*) c FROM community_posts WHERE reportCount > 0 AND status <> 'removed'")['c'] ?? 0);
+    return ['ok' => true, 'channels' => $channels, 'pending' => ['posts' => $pendingPosts, 'comments' => $pendingComments, 'reported' => $reported]];
 }
 
 function admin_community_channel_upsert(array $p): array {
@@ -368,19 +439,21 @@ function admin_community_channel_upsert(array $p): array {
 function admin_community_queue(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
     $filter = (string)($p['status'] ?? 'pending');
-    $st = in_array($filter, ['pending', 'published', 'hidden', 'removed', 'all'], true) ? $filter : 'pending';
-    $postWhere = $st === 'all' ? "status <> 'removed'" : "status = ?";
-    $postArgs = $st === 'all' ? [] : [$st];
+    $st = in_array($filter, ['pending', 'published', 'hidden', 'removed', 'reported', 'all'], true) ? $filter : 'pending';
+    if ($st === 'reported') { $postWhere = "reportCount > 0 AND status <> 'removed'"; $postArgs = []; }
+    elseif ($st === 'all') { $postWhere = "status <> 'removed'"; $postArgs = []; }
+    else { $postWhere = "status = ?"; $postArgs = [$st]; }
     $posts = array_map(function ($r) {
         $ch = db_row("SELECT name, color FROM community_channels WHERE channelId = ? LIMIT 1", [(string)$r['channelId']]);
         return [
             'postId' => (string)$r['postId'], 'author' => (string)$r['authorName'], 'centre' => (string)$r['authorCentre'],
             'channel' => (string)($ch['name'] ?? ''), 'color' => (string)($ch['color'] ?? '#3b5bdb'),
             'body' => (string)$r['body'], 'mediaType' => (string)$r['mediaType'], 'mediaUrl' => (string)$r['mediaUrl'], 'mediaPoster' => (string)$r['mediaPoster'],
-            'status' => (string)$r['status'], 'pinned' => (int)$r['pinned'] === 1, 'createdAt' => (string)$r['createdAt'],
+            'status' => (string)$r['status'], 'pinned' => (int)$r['pinned'] === 1, 'featured' => (int)($r['featured'] ?? 0) === 1,
+            'reportCount' => (int)($r['reportCount'] ?? 0), 'createdAt' => (string)$r['createdAt'],
             'moderation' => json_decode((string)($r['moderation'] ?? ''), true) ?: null,
         ];
-    }, db_all("SELECT * FROM community_posts WHERE $postWhere ORDER BY createdAt DESC LIMIT 100", $postArgs));
+    }, db_all("SELECT * FROM community_posts WHERE $postWhere ORDER BY reportCount DESC, createdAt DESC LIMIT 100", $postArgs));
     $comments = array_map(fn($r) => [
         'commentId' => (string)$r['commentId'], 'postId' => (string)$r['postId'], 'name' => (string)$r['memberName'],
         'body' => (string)$r['body'], 'status' => (string)$r['status'], 'createdAt' => (string)$r['createdAt'],
@@ -405,6 +478,9 @@ function admin_community_moderate(array $p): array {
     $pid = (string)($p['id'] ?? '');
     if ($act === 'pin' || $act === 'unpin') {
         db_update('community_posts', ['pinned' => $act === 'pin' ? 1 : 0, 'updatedAt' => $now], ['postId' => $pid]);
+    } elseif ($act === 'feature' || $act === 'unfeature') {
+        db_update('community_posts', ['featured' => $act === 'feature' ? 1 : 0, 'updatedAt' => $now], ['postId' => $pid]);
+        if ($act === 'feature') { $o = db_row("SELECT authorId FROM community_posts WHERE postId = ?", [$pid]); if ($o) community_notify((string)$o['authorId'], $by, 'community.featured', 'Your post is on the public Showcase ✨', 'A mentor featured your post — it now shines on the public NGG Showcase.'); }
     } else {
         $map = ['approve' => 'published', 'hide' => 'hidden', 'remove' => 'removed'];
         if (!isset($map[$act])) return ['ok' => false, 'error' => 'bad_action'];

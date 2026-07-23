@@ -884,3 +884,18 @@ CREATE TABLE IF NOT EXISTS community_bookmarks (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (48) ON DUPLICATE KEY UPDATE version = version;
+
+-- 49: Community public Showcase (admin-featured posts) + member reporting.
+ALTER TABLE community_posts ADD COLUMN featured TINYINT DEFAULT 0;
+ALTER TABLE community_posts ADD COLUMN reportCount INT DEFAULT 0;
+CREATE TABLE IF NOT EXISTS community_reports (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  targetType VARCHAR(16) DEFAULT 'post',
+  targetId VARCHAR(48) NOT NULL,
+  memberId VARCHAR(48) NOT NULL,
+  reason VARCHAR(400) DEFAULT '',
+  createdAt VARCHAR(40),
+  INDEX idx_creport_target (targetType, targetId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (49) ON DUPLICATE KEY UPDATE version = version;

@@ -23,6 +23,10 @@ if ($method === 'GET') {
         $res = gs_call('community.comment', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'body' => $b['body'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'bookmark') {
         $res = gs_call('community.bookmark', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '']);
+    } elseif ($action === 'report') {
+        $res = gs_call('community.report', ['memberId' => $s['mid'], 'targetType' => $b['targetType'] ?? 'post', 'targetId' => $b['targetId'] ?? '', 'reason' => $b['reason'] ?? '', 'ip' => client_ip()]);
+    } elseif ($action === 'delete') {
+        $res = gs_call('community.delete', ['memberId' => $s['mid'], 'targetType' => $b['targetType'] ?? 'post', 'targetId' => $b['targetId'] ?? '', 'ip' => client_ip()]);
     } else {
         json_error('unknown_action', 400);
     }
