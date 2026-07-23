@@ -789,6 +789,8 @@ function StatusPage({ setPage, previewConfig }) {
 
   const enrolled = centresRaw.reduce((s, c) => s + (c.enrolled || 0), 0);
   const present = centresRaw.reduce((s, c) => s + (c.present || 0), 0);
+  const late = centresRaw.reduce((s, c) => s + (c.late || 0), 0);
+  const onTime = Math.max(0, present - late);
   const rate = enrolled ? Math.round(present / enrolled * 100) : 0;
   const metric = tf === "week" ? "weekPoints" : "points";
   const tfLabel = tf === "week" ? "this week" : "all time";
@@ -814,6 +816,7 @@ function StatusPage({ setPage, previewConfig }) {
     { icon: "ph-buildings", tintBg: "rgba(28,42,94,0.08)", iconColor: "#1c2a5e", value: sFmt(ci(k.centres)), label: "Centres running", valueColor: "#0a1130", ...dFlat("no change") },
     { icon: "ph-graduation-cap", tintBg: "rgba(176,124,255,0.15)", iconColor: "#6a3fc0", value: sFmt(ci(k.enrolled)), label: "Students enrolled", valueColor: "#0a1130", ...dd(dl.enrolledNew || 0, " today") },
     { icon: "ph-check-circle", tintBg: "rgba(47,158,68,0.14)", iconColor: "#2f9e44", value: sFmt(ci(k.presentToday)), label: "Present today", valueColor: "#0a1130", ...dd(dl.presentDelta || 0, " today") },
+    { icon: "ph-alarm", tintBg: "rgba(245,176,38,0.16)", iconColor: "#a07400", value: sFmt(ci(onTime)), label: "On time today", valueColor: "#0a1130", deltaBg: late > 0 ? "rgba(224,49,49,0.10)" : "rgba(47,158,68,0.12)", deltaColor: late > 0 ? "#e03131" : "#2f9e44", deltaIcon: late > 0 ? "ph-timer" : "ph-check", deltaText: late > 0 ? ci(late) + " late" : "all on time" },
     { icon: "ph-chart-line-up", tintBg: "rgba(245,176,38,0.16)", iconColor: "#a07400", value: ci(k.attendanceRate) + "%", label: "Attendance rate", valueColor: rateTone(k.attendanceRate || 0), ...dd(dl.rateDelta || 0, " pts") },
     { icon: "ph-handshake", tintBg: "rgba(59,91,219,0.14)", iconColor: "#3b5bdb", value: sFmt(ci(k.activeVolunteers)), label: "Active volunteers", valueColor: "#0a1130", ...dd(dl.volNew || 0, " today") },
     { icon: "ph-star", tintBg: "rgba(245,176,38,0.16)", iconColor: "#a07400", value: sFmt(ci(k.starsThisWeek)), label: "Stars this week", valueColor: "#0a1130", ...dd(dl.starsToday || 0, " today") },
@@ -833,7 +836,7 @@ function StatusPage({ setPage, previewConfig }) {
 
   // Insights
   const absent = enrolled - present;
-  const split = { present, absent, total: enrolled, presentLabel: present + " present", absentLabel: absent + " absent", pctLabel: rate + "% present · " + (100 - rate) + "% absent" };
+  const split = { present, onTime, late, absent, total: enrolled, presentLabel: present + " present", absentLabel: absent + " absent", pctLabel: rate + "% present · " + (100 - rate) + "% absent" };
   const atRisk = centresRaw.filter(c => c.rate < 75);
   const atRiskAbsent = atRisk.reduce((s, c) => s + ((c.enrolled || 0) - (c.present || 0)), 0);
   const rates = centresRaw.map(c => c.rate);
@@ -949,8 +952,9 @@ function StatusPage({ setPage, previewConfig }) {
               <div style={{ display: "flex", height: 12, borderRadius: 99, overflow: "hidden", background: "rgba(255,255,255,0.12)", marginTop: 14 }}>
                 <div style={{ width: rate + "%", background: "linear-gradient(90deg,#6fdc9d,#3fb873)", transition: "width .8s cubic-bezier(.2,.7,.2,1)" }}/>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginTop: 22 }}>
-                <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#6fdc9d", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(present))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Present</div></div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginTop: 22 }}>
+                <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#6fdc9d", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(onTime))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>On time</div></div>
+                <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#f5b026", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(late))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Late</div></div>
                 <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#ffd18a", fontVariantNumeric: "tabular-nums" }}>{sFmt(enrolled - ci(present))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Absent</div></div>
                 <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{sFmt(enrolled)}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Enrolled</div></div>
               </div>
@@ -1015,7 +1019,10 @@ function StatusPage({ setPage, previewConfig }) {
                     <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16, color: "#0a1130" }}>{c.name}</b>
                     <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.06em", color: "#8088a6", marginTop: 3 }}>{c.code}</span>
                   </span>
-                  <span className="c-present" style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: "#2a335c", fontVariantNumeric: "tabular-nums" }}>{ci(c.present)} / {c.enrolled}</span>
+                  <span className="c-present" style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, fontFamily: "'JetBrains Mono'", fontSize: 13, color: "#2a335c", fontVariantNumeric: "tabular-nums" }}>
+                    <span>{ci(c.present)} / {c.enrolled}</span>
+                    <span style={{ fontSize: 10, marginTop: 3, color: (c.late || 0) > 0 ? "#a07400" : "#2f9e44" }}>{(c.late || 0) > 0 ? (c.onTime || 0) + " on time · " + c.late + " late" : "all on time"}</span>
+                  </span>
                   <span className="c-bar" style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}>
                     <span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transition: "transform .8s cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + (c.rate * t / 100).toFixed(3) + ")", background: rateTone(c.rate) }}/>
                   </span>
@@ -1069,10 +1076,11 @@ function StatusPage({ setPage, previewConfig }) {
             <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "20px 22px", marginBottom: 20, boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488" }}>Today's split · {split.total} enrolled</span>
-                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{split.pctLabel}</span>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{split.onTime} on time · {split.late} late · {split.absent} absent</span>
               </div>
               <div style={{ display: "flex", height: 36, borderRadius: 10, overflow: "hidden", border: "1px solid #e5e8ee" }}>
-                <div style={{ flex: Math.max(1, split.present), background: "#2f9e44", display: "flex", alignItems: "center", padding: "0 14px", color: "#fff", fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", minWidth: 0 }}><i className="ph ph-check" style={{ marginRight: 6 }}/>{split.presentLabel}</div>
+                <div style={{ flex: Math.max(0.0001, split.onTime), background: "#2f9e44", display: split.onTime ? "flex" : "none", alignItems: "center", padding: "0 14px", color: "#fff", fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", minWidth: 0 }}><i className="ph ph-check" style={{ marginRight: 6 }}/>{split.onTime} on time</div>
+                <div style={{ flex: Math.max(0.0001, split.late), background: "#f5b026", display: split.late ? "flex" : "none", alignItems: "center", padding: "0 14px", color: "#5a3d00", fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", minWidth: 0 }}><i className="ph ph-timer" style={{ marginRight: 6 }}/>{split.late} late</div>
                 <div style={{ flex: Math.max(1, split.absent), background: "#f3ecdb", display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 14px", color: "#7a5300", fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", minWidth: 0 }}>{split.absentLabel}</div>
               </div>
             </div>
@@ -1384,6 +1392,9 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
   const directory = (d && d.directory) || [];
   const rate = k.fulfillmentRate || 0;
   const totNeed = k.totalNeed || 0, totFilled = k.totalFilled || 0, totGap = k.totalGap || 0;
+  // Attendance today (volunteers share the same roll as students).
+  const vPresent = k.presentToday || 0, vLate = k.lateToday || 0;
+  const vOnTime = k.onTimeToday != null ? k.onTimeToday : Math.max(0, vPresent - vLate);
 
   const secAgo = Math.max(0, Math.floor((Date.now() - updatedAt) / 1000));
   const updatedAgo = secAgo < 60 ? secAgo + "s ago" : Math.floor(secAgo / 60) + "m ago";
@@ -1415,6 +1426,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
   const kpis = [
     { icon: "ph-users-three", tintBg: "rgba(124,77,255,0.13)", iconColor: "#6a3fc0", value: ci(k.totalVolunteers), label: "Total volunteers", valueColor: "#0a1130" },
     { icon: "ph-check-circle", tintBg: "rgba(47,158,68,0.14)", iconColor: "#2f9e44", value: ci(k.activeVolunteers), label: "Active now", valueColor: "#0a1130" },
+    { icon: "ph-alarm", tintBg: "rgba(245,176,38,0.16)", iconColor: "#a07400", value: ci(vPresent), label: "Present today", valueColor: "#0a1130", foot: vPresent ? (ci(vOnTime) + " on time · " + ci(vLate) + " late") : "roll not taken yet", footColor: vLate > 0 ? "#a07400" : "#2f9e44" },
     { icon: "ph-buildings", tintBg: "rgba(28,42,94,0.08)", iconColor: "#1c2a5e", value: ci(k.centres), label: "Centres", valueColor: "#0a1130" },
     { icon: "ph-target", tintBg: "rgba(59,91,219,0.13)", iconColor: "#3b5bdb", value: ci(totNeed), label: "Total need", valueColor: "#0a1130" },
     { icon: "ph-user-check", tintBg: "rgba(47,158,68,0.12)", iconColor: "#2f9e44", value: ci(totFilled), label: "Slots filled", valueColor: "#2f9e44" },
@@ -1546,6 +1558,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                   <span style={{ width: 42, height: 42, borderRadius: 12, display: "grid", placeItems: "center", fontSize: 22, background: kp.tintBg, color: kp.iconColor }}><i className={"ph " + kp.icon}/></span>
                   <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 40, lineHeight: 1, letterSpacing: "-0.03em", marginTop: 16, fontVariantNumeric: "tabular-nums", color: kp.valueColor }}>{kp.value}</div>
                   <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488", marginTop: 8 }}>{kp.label}</div>
+                  {kp.foot && <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: kp.footColor || "#8088a6", marginTop: 6 }}>{kp.foot}</div>}
                 </div>
               ))}
             </div>
@@ -1577,7 +1590,10 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                     <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16, color: "#0a1130" }}>{c.name}</b>
                     <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.06em", color: "#8088a6", marginTop: 3 }}>{c.code}</span>
                   </span>
-                  <span className="c-present" style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: "#2a335c", fontVariantNumeric: "tabular-nums" }}>{ci(c.filled)} / {c.need}</span>
+                  <span className="c-present" style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, fontFamily: "'JetBrains Mono'", fontSize: 13, color: "#2a335c", fontVariantNumeric: "tabular-nums" }}>
+                    <span>{ci(c.filled)} / {c.need}</span>
+                    {c.attendance && <span style={{ fontSize: 10, marginTop: 3, color: (c.attendance.late || 0) > 0 ? "#a07400" : (c.attendance.present || 0) > 0 ? "#2f9e44" : "#8088a6" }}>{(c.attendance.present || 0) > 0 ? c.attendance.present + " in" + ((c.attendance.late || 0) > 0 ? " · " + c.attendance.late + " late" : " · on time") : "—"}</span>}
+                  </span>
                   <span className="c-bar" style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}>
                     <span style={{ display: "block", height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left", transition: "transform .8s cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + (Math.min(100, c.fulfillmentRate) * t / 100).toFixed(3) + ")", background: volTone(c.fulfillmentRate) }}/>
                   </span>

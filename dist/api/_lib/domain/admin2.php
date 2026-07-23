@@ -177,12 +177,16 @@ function public_status(array $p): array {
         $name = (string)$c['name'];
         $enrolled = $one("SELECT COUNT(*) c FROM summer_students WHERE centre = ? AND status = 'active'", [$name]);
         $present  = $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE s.centre = ? AND a.date = ?", [$name, $today]);
-        $byCentre[] = ['name' => $name, 'code' => (string)$c['code'], 'color' => (string)$c['color'], 'enrolled' => $enrolled, 'present' => $present, 'rate' => $enrolled ? (int)round($present / $enrolled * 100) : 0] + centre_public_meta($c);
+        $late     = $one("SELECT COUNT(*) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE s.centre = ? AND a.date = ? AND a.status = 'late'", [$name, $today]);
+        $byCentre[] = ['name' => $name, 'code' => (string)$c['code'], 'color' => (string)$c['color'], 'enrolled' => $enrolled, 'present' => $present, 'late' => $late, 'onTime' => max(0, $present - $late), 'rate' => $enrolled ? (int)round($present / $enrolled * 100) : 0] + centre_public_meta($c);
     }
+    // Student board — scope attendance to summer students (volunteers share the
+    // same roll table, so an unscoped count would inflate the student figures).
     $enrolledTotal = $one("SELECT COUNT(*) c FROM summer_students WHERE status = 'active'");
-    $presentToday  = $one("SELECT COUNT(DISTINCT studentId) c FROM attendance WHERE date = ?", [$today]);
-    $presentYest   = $one("SELECT COUNT(DISTINCT studentId) c FROM attendance WHERE date = ?", [$yesterday]);
-    $trend = db_all("SELECT date, COUNT(DISTINCT studentId) present FROM attendance WHERE date >= ? GROUP BY date ORDER BY date", [$since]);
+    $presentToday  = $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.date = ?", [$today]);
+    $lateTodayS    = $one("SELECT COUNT(*) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.date = ? AND a.status = 'late'", [$today]);
+    $presentYest   = $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.date = ?", [$yesterday]);
+    $trend = db_all("SELECT a.date date, COUNT(DISTINCT a.studentId) present FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.date >= ? GROUP BY a.date ORDER BY a.date", [$since]);
     // Session week number (best-effort from the active session start).
     $sess = db_row("SELECT startDate FROM sessions WHERE isActive = 1 ORDER BY id DESC LIMIT 1");
     $week = 0;
@@ -253,6 +257,8 @@ function public_status(array $p): array {
             'centres'          => count($centres),
             'enrolled'         => $enrolledTotal,
             'presentToday'     => $presentToday,
+            'lateToday'        => $lateTodayS,
+            'onTimeToday'      => max(0, $presentToday - $lateTodayS),
             'attendanceRate'   => $rateToday,
             'activeVolunteers' => $activeVol,
             'starsThisWeek'    => $starsWeek,

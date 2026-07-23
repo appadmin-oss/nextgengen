@@ -768,6 +768,29 @@ function public_volunteer_status(array $p): array {
     $only = is_array($page['centres'] ?? null) ? $page['centres'] : [];
     $byCentre = $only ? array_values(array_filter($s['byCentre'], fn($c) => in_array((string)$c['name'], $only, true))) : $s['byCentre'];
 
+    // Attendance today — volunteers check into the same roll as students, so
+    // the board reflects who turned up and who ran late. present = on-time +
+    // late; on-time counts an early/punctual check-in against the resumption
+    // time (see attendance_punctuality).
+    $today = gmdate('Y-m-d');
+    $attByCentre = [];
+    foreach (db_all("SELECT v.centre AS centre, a.status AS st, COUNT(DISTINCT a.studentId) c
+                     FROM attendance a JOIN volunteers v ON v.volunteerId = a.studentId
+                     WHERE a.date = ? AND v.status = 'active' GROUP BY v.centre, a.status", [$today]) as $r) {
+        $cn = (string)$r['centre'];
+        $attByCentre[$cn] = $attByCentre[$cn] ?? ['present' => 0, 'late' => 0];
+        $attByCentre[$cn]['present'] += (int)$r['c'];
+        if ((string)$r['st'] === 'late') $attByCentre[$cn]['late'] += (int)$r['c'];
+    }
+    $vPresent = 0; $vLate = 0;
+    foreach ($byCentre as &$bc) {
+        $a = $attByCentre[(string)$bc['name']] ?? ['present' => 0, 'late' => 0];
+        $bc['attendance'] = ['present' => $a['present'], 'late' => $a['late'], 'onTime' => max(0, $a['present'] - $a['late']), 'active' => (int)($bc['filled'] ?? 0)];
+        $vPresent += $a['present']; $vLate += $a['late'];
+    }
+    unset($bc);
+    $kpis = $s['kpis'] + ['presentToday' => $vPresent, 'lateToday' => $vLate, 'onTimeToday' => max(0, $vPresent - $vLate)];
+
     // Public volunteer directory — shown by HANDLE. A volunteer's face and first
     // name appear ONLY when they granted the site-visibility consent; everyone
     // else shows an anonymous handle and a role initial. Never a surname, email
@@ -799,7 +822,7 @@ function public_volunteer_status(array $p): array {
         'generatedAt' => now_iso(),
         'page' => $page,
         'program' => ['name' => 'Next Generation Genius', 'year' => (int)gmdate('Y')],
-        'kpis' => $s['kpis'],
+        'kpis' => $kpis,
         'byCentre' => $byCentre,
         'directory' => $directory,
     ]];
