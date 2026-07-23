@@ -37,7 +37,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'analytics', 'profiles'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'analytics', 'profiles', 'community'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/webcron.php';
 
@@ -2131,6 +2131,69 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     return volunteer_faculty_options() === academy_faculties()   // system form re-seeded from defaults
         && volunteer_course_options() === ['Custom Course Kept']; // human form untouched
 })());
+
+/* ── Community 2.0 (channels · posts · reactions · polls · Slack unreads) ── */
+(function () {
+    global $CONFIG;
+    // Two members so we can post rapidly without tripping the 15s anti-spam floor.
+    db_insert('members', ['memberId' => 'CM-A', 'fullName' => 'Ada Njoku', 'email' => 'ada@ex.co', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'CM-B', 'fullName' => 'Bem Kato', 'email' => 'bem@ex.co', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Ikeja', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    $ch = backend_dispatch('community.channels', ['memberId' => 'CM-A']);
+    chk('community: channels seed a pinned Commons + carry an unread counter', $ch['ok'] && $ch['channels'][0]['slug'] === 'commons' && $ch['channels'][0]['pinned'] === true && array_key_exists('unread', $ch['channels'][0]));
+
+    $post = backend_dispatch('community.post', ['memberId' => 'CM-B', 'data' => ['channel' => 'commons', 'body' => 'Kicked off my capstone today — feeling the zebra energy.'], 'ip' => '1.1.1.1']);
+    chk('community: a clean post publishes immediately', $post['ok'] && $post['post']['status'] === 'published' && $post['queued'] === false);
+    $pid = $post['post']['postId'];
+
+    $feed = backend_dispatch('community.feed', ['memberId' => 'CM-A', 'channel' => 'commons']);
+    chk('community: the feed returns the published post', $feed['ok'] && count(array_filter($feed['posts'], fn($p) => $p['postId'] === $pid)) === 1);
+
+    // B's post is unread for A until A marks the channel read.
+    $before = 0; foreach (backend_dispatch('community.channels', ['memberId' => 'CM-A'])['channels'] as $c) if ($c['slug'] === 'commons') $before = $c['unread'];
+    chk('community: another member\'s post shows as unread', $before >= 1);
+    chk('community: markRead is accepted', backend_dispatch('community.markRead', ['memberId' => 'CM-A', 'channel' => 'commons'])['ok']);
+    $after = 0; foreach (backend_dispatch('community.channels', ['memberId' => 'CM-A'])['channels'] as $c) if ($c['slug'] === 'commons') $after = $c['unread'];
+    chk('community: markRead clears the unread counter', $after === 0);
+
+    // Reactions toggle.
+    $r1 = backend_dispatch('community.react', ['memberId' => 'CM-A', 'postId' => $pid, 'emoji' => '🔥']);
+    chk('community: a reaction registers', $r1['ok'] && $r1['myReaction'] === '🔥');
+    $r2 = backend_dispatch('community.react', ['memberId' => 'CM-A', 'postId' => $pid, 'emoji' => '🔥']);
+    chk('community: reacting again toggles it off', $r2['ok'] && $r2['myReaction'] === '');
+    chk('community: an unknown emoji is rejected', backend_dispatch('community.react', ['memberId' => 'CM-A', 'postId' => $pid, 'emoji' => '🦄'])['error'] === 'bad_emoji');
+
+    // Search finds the post by body; a miss returns nothing.
+    chk('community: search finds a post by body text', count(backend_dispatch('community.search', ['memberId' => 'CM-A', 'q' => 'zebra'])['posts']) === 1);
+    chk('community: search misses cleanly', backend_dispatch('community.search', ['memberId' => 'CM-A', 'q' => 'qwxzynonsense'])['posts'] === []);
+    chk('community: search ignores 1-char queries', backend_dispatch('community.search', ['memberId' => 'CM-A', 'q' => 'z'])['posts'] === []);
+
+    // Poll: create + vote + revote keeps one ballot.
+    $poll = backend_dispatch('community.post', ['memberId' => 'CM-A', 'data' => ['channel' => 'commons', 'kind' => 'poll', 'body' => 'Best build night?', 'pollOptions' => ['Friday', 'Saturday']], 'ip' => '1.1.1.1']);
+    chk('community: a poll needs two options to publish', $poll['ok'] && $poll['post']['kind'] === 'poll' && count($poll['post']['poll']['options']) === 2);
+    $ppid = $poll['post']['postId'];
+    chk('community: a bad poll choice is rejected', backend_dispatch('community.pollVote', ['memberId' => 'CM-B', 'postId' => $ppid, 'choice' => 9])['error'] === 'bad_choice');
+    backend_dispatch('community.pollVote', ['memberId' => 'CM-B', 'postId' => $ppid, 'choice' => 0]);
+    $pv = backend_dispatch('community.pollVote', ['memberId' => 'CM-B', 'postId' => $ppid, 'choice' => 1]);
+    chk('community: revoting keeps the ballot count at one', $pv['ok'] && $pv['poll']['totalVotes'] === 1 && $pv['poll']['myVote'] === 1);
+
+    // A poll with fewer than two options is refused.
+    chk('community: a poll with one option is refused', backend_dispatch('community.post', ['memberId' => 'CM-B', 'data' => ['channel' => 'commons', 'kind' => 'poll', 'body' => 'One?', 'pollOptions' => ['Only']], 'ip' => '1.1.1.1'])['error'] === 'poll_options');
+
+    // Empty posts and oversized/overlong video are refused.
+    chk('community: an empty post is refused', backend_dispatch('community.post', ['memberId' => 'CM-A', 'data' => ['channel' => 'commons', 'body' => ''], 'ip' => '1.1.1.1'])['error'] === 'empty');
+    chk('community: a >80MB video is refused', backend_dispatch('community.post', ['memberId' => 'CM-B', 'data' => ['channel' => 'commons', 'mediaType' => 'video', 'mediaUrl' => 'https://x/v.mp4', 'mediaBytes' => 90 * 1024 * 1024], 'ip' => '1.1.1.1'])['error'] === 'video_too_big');
+
+    // Non-https media is refused (defence in depth against data: / http URLs).
+    chk('community: non-https media is refused', backend_dispatch('community.post', ['memberId' => 'CM-A', 'data' => ['channel' => 'commons', 'body' => 'hi', 'mediaType' => 'image', 'mediaUrl' => 'http://x/p.png'], 'ip' => '1.1.1.1'])['error'] === 'bad_media');
+
+    // @mention of a SUMMER STUDENT notifies them (regression: community_notify
+    // used to reject recipients that live in summer_students, not members).
+    db_insert('members', ['memberId' => 'CM-C', 'fullName' => 'Ola Diallo', 'email' => 'ola@ex.co', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('summer_students', ['studentId' => 'CM-STU-1', 'cohortId' => 'CM-C0', 'handle' => 'zuri-mention', 'fullName' => 'Zuri Mensah', 'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+    backend_dispatch('community.post', ['memberId' => 'CM-C', 'data' => ['channel' => 'commons', 'body' => 'Nice work @zuri-mention — showcase this!'], 'ip' => '1.1.1.1']);
+    chk('community: mentioning a student notifies them', (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'CM-STU-1' AND kind = 'community.mention'")['c'] ?? 0) === 1);
+})();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

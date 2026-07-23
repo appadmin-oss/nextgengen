@@ -10,6 +10,7 @@ if ($method === 'GET') {
     elseif ($view === 'comments')  $res = gs_call('community.comments', ['memberId' => $s['mid'], 'postId' => $_GET['postId'] ?? '']);
     elseif ($view === 'digest')    $res = gs_call('community.digest', ['channel' => $_GET['channel'] ?? 'all']);
     elseif ($view === 'mention')   $res = gs_call('community.mentionSearch', ['q' => $_GET['q'] ?? '']);
+    elseif ($view === 'search')    $res = gs_call('community.search', ['memberId' => $s['mid'], 'q' => $_GET['q'] ?? '', 'channel' => $_GET['channel'] ?? '']);
     else                           $res = gs_call('community.feed', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? 'all', 'sort' => $_GET['sort'] ?? 'latest', 'page' => (int)($_GET['page'] ?? 0)]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -30,6 +31,8 @@ if ($method === 'GET') {
         $res = gs_call('community.report', ['memberId' => $s['mid'], 'targetType' => $b['targetType'] ?? 'post', 'targetId' => $b['targetId'] ?? '', 'reason' => $b['reason'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'delete') {
         $res = gs_call('community.delete', ['memberId' => $s['mid'], 'targetType' => $b['targetType'] ?? 'post', 'targetId' => $b['targetId'] ?? '', 'ip' => client_ip()]);
+    } elseif ($action === 'markRead') {
+        $res = gs_call('community.markRead', ['memberId' => $s['mid'], 'channel' => $b['channel'] ?? '']);
     } else {
         json_error('unknown_action', 400);
     }

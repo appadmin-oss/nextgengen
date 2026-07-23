@@ -305,6 +305,88 @@ function NavAuthSlot({ setPage }) {
   );
 }
 
+/* ---- Notifications bell ---- */
+function cmBellAgo(iso) {
+  if (!iso) return "";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(String(iso).replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? "" : "Z")).getTime()) / 1000));
+  if (s < 60) return "now";
+  if (s < 3600) return Math.floor(s / 60) + "m";
+  if (s < 86400) return Math.floor(s / 3600) + "h";
+  if (s < 604800) return Math.floor(s / 86400) + "d";
+  return Math.floor(s / 604800) + "w";
+}
+function NavBell({ setPage }) {
+  const { isSignedIn } = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false };
+  const [items, setItems] = React.useState([]);
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  const load = React.useCallback(() => {
+    if (!isSignedIn) return;
+    NGGApi.member.notifications().then(r => setItems(r.notifications || [])).catch(() => {});
+  }, [isSignedIn]);
+  React.useEffect(() => {
+    if (!isSignedIn) { setItems([]); return; }
+    load();
+    const id = setInterval(() => { if (!document.hidden) load(); }, 30000);
+    return () => clearInterval(id);
+  }, [isSignedIn, load]);
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  if (!isSignedIn) return null;
+  const unread = items.filter(n => !n.readAt).length;
+  const markRead = async (n) => {
+    if (n.readAt) return;
+    setItems(list => list.map(x => x.notifId === n.notifId ? { ...x, readAt: "1" } : x));
+    try { await NGGApi.member.markRead(n.notifId); } catch (_) {}
+  };
+  const openItem = async (n) => {
+    await markRead(n);
+    setOpen(false);
+    if (n.linkPage) setPage(n.linkPage);
+  };
+  const markAll = async () => {
+    const un = items.filter(n => !n.readAt);
+    setItems(list => list.map(x => ({ ...x, readAt: x.readAt || "1" })));
+    for (const n of un) { try { await NGGApi.member.markRead(n.notifId); } catch (_) {} }
+  };
+  const icon = (kind) => kind && kind.indexOf("mention") >= 0 ? "@" : kind && kind.indexOf("comment") >= 0 ? "💬" : kind && kind.indexOf("community") >= 0 ? "◈" : "•";
+  return (
+    <div className="nav-bell" ref={ref}>
+      <button className="nav-bell-btn" onClick={() => { setOpen(o => !o); if (!open) load(); }} aria-label={"Notifications" + (unread ? " (" + unread + " unread)" : "")} aria-expanded={open}>
+        <span aria-hidden="true">🔔</span>
+        {unread > 0 && <span className="nav-bell-badge">{unread > 9 ? "9+" : unread}</span>}
+      </button>
+      {open && (
+        <div className="nav-bell-menu" role="menu">
+          <div className="nav-bell-head">
+            <span>Notifications</span>
+            {unread > 0 && <button className="nav-bell-all" onClick={markAll}>Mark all read</button>}
+          </div>
+          <div className="nav-bell-list">
+            {items.length === 0 ? (
+              <div className="nav-bell-empty">You're all caught up ✨</div>
+            ) : items.slice(0, 20).map(n => (
+              <button key={n.notifId} className={"nav-bell-item" + (n.readAt ? "" : " is-unread")} onClick={() => openItem(n)}>
+                <span className="nav-bell-ic">{icon(n.kind)}</span>
+                <span className="nav-bell-body">
+                  <span className="nav-bell-title">{n.title}</span>
+                  {n.body && <span className="nav-bell-text">{n.body}</span>}
+                  <span className="nav-bell-ago">{cmBellAgo(n.createdAt)}</span>
+                </span>
+                {!n.readAt && <span className="nav-bell-dot" aria-hidden="true"/>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---- Top nav ---- */
 function TopNav({ page, setPage }) {
   // Primary nav structure — 4 top-level entries plus the right-rail.
@@ -445,6 +527,7 @@ function TopNav({ page, setPage }) {
           </nav>
 
           <div className="nav-right">
+            <NavBell setPage={setPage}/>
             <NavAuthSlot setPage={setPage}/>
             <Magnetic strength={6}>
               <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("join")}>Apply →</button>

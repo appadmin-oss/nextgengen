@@ -913,3 +913,15 @@ CREATE TABLE IF NOT EXISTS community_poll_votes (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (50) ON DUPLICATE KEY UPDATE version = version;
+
+-- 51: Community per-member per-channel read state (Slack-style unreads).
+CREATE TABLE IF NOT EXISTS community_reads (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  memberId VARCHAR(48) NOT NULL,
+  channelId VARCHAR(48) NOT NULL,
+  lastReadAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40),
+  UNIQUE KEY idx_cread_unique (memberId, channelId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (51) ON DUPLICATE KEY UPDATE version = version;

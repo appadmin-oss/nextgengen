@@ -728,6 +728,26 @@ html { scroll-behavior: smooth; }
 .nav-auth-menu-divider { height: 1px; background: rgba(12,20,50,0.06); margin: 6px 0; }
 .nav-auth-menu-danger { color: var(--coral); }
 
+/* Notifications bell */
+.nav-bell { position: relative; }
+.nav-bell-btn { position: relative; width: 38px; height: 38px; border-radius: 50%; border: 1.5px solid rgba(12,20,50,0.12); background: transparent; cursor: pointer; font-size: 16px; line-height: 1; display: grid; place-items: center; transition: border-color .16s ease, background .16s ease; }
+.nav-bell-btn:hover { border-color: var(--navy-900); background: rgba(12,20,50,0.04); }
+.nav-bell-badge { position: absolute; top: -3px; right: -3px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--coral,#e4032b); color: #fff; font-size: 10px; font-weight: 800; display: grid; place-items: center; border: 2px solid var(--paper,#fbf7ed); box-sizing: border-box; }
+.nav-bell-menu { position: absolute; top: calc(100% + 8px); right: 0; width: 340px; max-width: 90vw; background: #fff; border-radius: 14px; box-shadow: 0 18px 50px -12px rgba(12,20,50,0.3); border: 1px solid rgba(12,20,50,0.06); z-index: 60; animation: menu-in 0.18s ease; overflow: hidden; }
+.nav-bell-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid rgba(12,20,50,0.07); font-family: var(--font-display); font-weight: 800; font-size: 15px; color: var(--ink-900,#0a1130); }
+.nav-bell-all { background: none; border: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; color: #3b5bdb; }
+.nav-bell-list { max-height: 420px; overflow-y: auto; }
+.nav-bell-empty { padding: 34px 20px; text-align: center; color: var(--ink-500,#8088a6); font-size: 14px; }
+.nav-bell-item { position: relative; display: flex; gap: 11px; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid rgba(12,20,50,0.05); cursor: pointer; padding: 12px 16px; font: inherit; }
+.nav-bell-item:hover { background: rgba(12,20,50,0.04); }
+.nav-bell-item.is-unread { background: rgba(59,91,219,0.05); }
+.nav-bell-ic { width: 30px; height: 30px; flex: none; border-radius: 8px; background: rgba(12,20,50,0.06); display: grid; place-items: center; font-size: 14px; font-weight: 800; color: #3b5bdb; }
+.nav-bell-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nav-bell-title { font-size: 13.5px; font-weight: 700; color: var(--ink-900,#0a1130); }
+.nav-bell-text { font-size: 12.5px; color: var(--ink-500,#5a6488); line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.nav-bell-ago { font-family: var(--font-mono); font-size: 10.5px; color: #a0a6bd; margin-top: 2px; }
+.nav-bell-dot { position: absolute; top: 15px; right: 14px; width: 8px; height: 8px; border-radius: 50%; background: var(--coral,#e4032b); }
+
 /* Mobile drawer auth */
 .drawer-auth {
   display: flex; align-items: center; gap: 12px;

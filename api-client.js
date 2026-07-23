@@ -70,6 +70,8 @@
       fd.append('timestamp', sig.timestamp);
       fd.append('signature', sig.signature);
       fd.append('folder', sig.folder);
+      // Eager web-optimized derivative (signed server-side; must match exactly).
+      if (sig.eager) { fd.append('eager', sig.eager); if (sig.eagerAsync) fd.append('eager_async', 'true'); }
       const xhr = new XMLHttpRequest();
       xhr.open('POST', sig.uploadUrl);
       if (onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
@@ -170,6 +172,8 @@
         remove:   (targetType, targetId) => request('/member/community.php', { body: { action: 'delete', targetType, targetId } }),
         vote:     (postId, choice) => request('/member/community.php', { body: { action: 'vote', postId, choice } }),
         mentions: (q) => request('/member/community.php' + qs({ view: 'mention', q })),
+        search:   (q, channel) => request('/member/community.php' + qs({ view: 'search', q, channel: channel || 'all' })),
+        markRead: (channel) => request('/member/community.php', { body: { action: 'markRead', channel } }),
       },
       changeEmail:         (email) => request('/member/account.php', { body: { action: 'change_email', email } }),
       exportData:          () => request('/member/account.php'),

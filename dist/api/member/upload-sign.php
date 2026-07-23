@@ -68,6 +68,21 @@ $signParams = [
     'folder'    => $folder,
     'timestamp' => $timestamp,
 ];
+
+// Community media (`post`) is eagerly transcoded to a web-optimized 720p
+// derivative the moment it lands, so a phone video doesn't stream the heavy
+// original on first play. Async so the upload response returns immediately;
+// delivery-time f_auto/q_auto still covers the gap before the eager job runs.
+// The transform is generic enough to apply to both images and video (the
+// `post` kind is resource_type=auto). Any signed param must be echoed back so
+// the client appends it to the FormData — keep the two in lockstep.
+$eager = '';
+if ($kind === 'post') {
+    $eager = 'f_auto,q_auto,w_1280,c_limit';
+    $signParams['eager'] = $eager;
+    $signParams['eager_async'] = 'true';
+}
+
 ksort($signParams);
 $toSign = [];
 foreach ($signParams as $k => $v) {
@@ -82,6 +97,8 @@ json_ok([
     'signature'    => $signature,
     'folder'       => $folder,
     'resourceType' => $resourceType,
+    'eager'        => $eager,
+    'eagerAsync'   => $eager !== '',
     'uploadUrl'    => 'https://api.cloudinary.com/v1_1/' . $cfg['cloud_name'] . '/' . $resourceType . '/upload',
     'maxBytes'     => (int)($cfg['max_bytes'] ?? (25 * 1024 * 1024)),
 ]);

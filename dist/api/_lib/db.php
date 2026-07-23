@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 50;
+const NGG_SCHEMA_TARGET = 51;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1312,6 +1312,18 @@ function db_migrate(PDO $db): void {
               createdAt TEXT DEFAULT (datetime('now'))
             );
             CREATE UNIQUE INDEX idx_cpoll_unique ON community_poll_votes(postId, memberId);
+        ",
+
+        // Community: per-member per-channel read state (Slack-style unreads).
+        51 => "
+            CREATE TABLE community_reads (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              channelId TEXT NOT NULL,
+              lastReadAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_cread_unique ON community_reads(memberId, channelId);
         ",
     ];
 

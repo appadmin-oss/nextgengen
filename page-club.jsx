@@ -410,20 +410,37 @@ function CommunityTeaser({ setPage, auth }) {
   const [phone, setPhone] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
+  const [scan, setScan] = React.useState(false); // camera scanner open
   React.useEffect(() => {
     let a = true;
     NGGApi.public.communityChannels().then(r => { if (a) setChannels(r.channels || []); }).catch(() => {});
     NGGApi.public.communityShowcase().then(r => { if (a) setShowcase(r.showcase || []); }).catch(() => {});
     return () => { a = false; };
   }, []);
-  const studentLogin = async () => {
-    if (!sid.trim() || phone.replace(/\D/g, "").length < 7) { setErr("Enter your student ID and your parent/guardian's phone number."); return; }
+  const doLogin = async (creds, tooManyMsg) => {
     setBusy(true); setErr("");
     try {
-      await NGGApi.auth.studentLogin({ displayId: sid.trim(), guardianPhone: phone.trim() });
+      await NGGApi.auth.studentLogin(creds);
       window.location.href = "/community"; // reboot auth → community unlocks
-    } catch (e) { setErr(e.code === "rate_limited" ? "Too many tries — wait a few minutes." : "We couldn't match that ID and phone number. Check your ID card."); setBusy(false); }
+    } catch (e) {
+      setErr(e.code === "rate_limited" ? "Too many tries — wait a few minutes." : tooManyMsg);
+      setBusy(false);
+    }
   };
+  const studentLogin = () => {
+    if (!sid.trim() || phone.replace(/\D/g, "").length < 7) { setErr("Enter your student ID and your parent/guardian's phone number."); return; }
+    doLogin({ displayId: sid.trim(), guardianPhone: phone.trim() }, "We couldn't match that ID and phone number. Check your ID card.");
+  };
+  // Load the QR decoder (shared vendor lib), then open the camera scanner.
+  const openScan = () => {
+    setErr("");
+    if (typeof window.jsQR === "function") { setScan(true); return; }
+    let sc = document.getElementById("ngg-jsqr");
+    if (!sc) { sc = document.createElement("script"); sc.id = "ngg-jsqr"; sc.src = "/vendor/jsQR.min.js"; document.head.appendChild(sc); }
+    sc.addEventListener("load", () => setScan(true), { once: true });
+    setScan(true); // QRScanner shows a graceful "loading" state until jsQR is ready
+  };
+  const onScanToken = (token) => { if (busy) return; doLogin({ token }, "That card didn't match. Try again or type your ID below."); };
   return (
     <div className="page cm-page" data-screen-label="Community">
       <section className="cm-teaser">
@@ -439,12 +456,26 @@ function CommunityTeaser({ setPage, auth }) {
           {stu && (
             <div className="cm-stu-signin">
               <div className="mono cm-stu-title">SIGN IN WITH YOUR ID CARD</div>
-              <p className="cm-stu-hint">Enter the ID on your card and your parent/guardian's phone number. Or scan your card's QR code and tap “Enter the community”.</p>
-              <div className="cm-stu-row">
-                <input className="cm-stu-input" value={sid} onChange={e => setSid(e.target.value)} placeholder="Student ID (e.g. AY-26-001)" autoCapitalize="characters"/>
-                <input className="cm-stu-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Guardian phone" inputMode="tel"/>
-                <button className="btn btn-gold" disabled={busy} onClick={studentLogin}>{busy ? "…" : "Enter →"}</button>
-              </div>
+              <p className="cm-stu-hint">Scan your card's QR with the camera — or enter the ID on your card and your parent/guardian's phone number.</p>
+              {scan ? (
+                <>
+                  <div className="cm-scan-box">
+                    {typeof QRScanner === "function" ? <QRScanner onToken={onScanToken} gold="#ffce54"/> : <div style={{ padding: 24, color: "rgba(255,255,255,.7)", fontSize: 13, textAlign: "center" }}>Loading scanner…</div>}
+                    <div className="cm-scan-frame" aria-hidden="true"/>
+                  </div>
+                  <div className="cm-scan-hint">Hold your Genius ID up to the camera. {busy && "Signing you in…"}</div>
+                  <button className="cm-scan-btn" onClick={() => setScan(false)}>⌨ Type my ID instead</button>
+                </>
+              ) : (
+                <>
+                  <button className="cm-scan-btn" onClick={openScan}>📷 Scan my card</button>
+                  <div className="cm-stu-row" style={{ marginTop: 12 }}>
+                    <input className="cm-stu-input" value={sid} onChange={e => setSid(e.target.value)} placeholder="Student ID (e.g. AY-26-001)" autoCapitalize="characters"/>
+                    <input className="cm-stu-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Guardian phone" inputMode="tel"/>
+                    <button className="btn btn-gold" disabled={busy} onClick={studentLogin}>{busy ? "…" : "Enter →"}</button>
+                  </div>
+                </>
+              )}
               {err && <div className="cm-stu-err">{err}</div>}
             </div>
           )}
@@ -485,7 +516,11 @@ function CommunityTeaser({ setPage, auth }) {
   );
 }
 
-/* ---- The feed ---- */
+/* ---- The workspace (Slack-style) ----
+   Sidebar of channels with unread badges + search · a channel header with the
+   topic · a chronological message stream (oldest→newest) grouped by author
+   with a hover toolbar · a composer docked at the bottom (Enter to send) ·
+   threads in a right-hand pane · mark-as-read on view. */
 function CommunityApp({ setPage, auth }) {
   const [channels, setChannels] = React.useState([]);
   const [active, setActive] = React.useState("all");
@@ -495,44 +530,101 @@ function CommunityApp({ setPage, auth }) {
   const [hasMore, setHasMore] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [digest, setDigest] = React.useState(null);
-  const [fresh, setFresh] = React.useState(null); // {count, posts} — new posts found by polling
+  const [fresh, setFresh] = React.useState(null);   // newest-first array found by polling
+  const [thread, setThread] = React.useState(null); // open post (thread pane)
+  const [unreadMark, setUnreadMark] = React.useState(0); // #unread frozen at channel entry
+  const [sbOpen, setSbOpen] = React.useState(false);      // mobile sidebar drawer
+  const [query, setQuery] = React.useState("");
+  const [results, setResults] = React.useState(null);     // search results (null = not searching)
+  const [searching, setSearching] = React.useState(false);
+  const [info, setInfo] = React.useState(false);          // channel-details pane
   const me = (auth.member && auth.member.fullName) || "You";
   const postsRef = React.useRef([]);
+  const streamRef = React.useRef(null);
+  const atBottomRef = React.useRef(true);
   React.useEffect(() => { postsRef.current = posts || []; }, [posts]);
 
-  React.useEffect(() => { let a = true; NGGApi.member.community.channels().then(r => { if (a) setChannels(r.channels || []); }).catch(() => {}); return () => { a = false; }; }, []);
+  const reloadChannels = React.useCallback(() => {
+    NGGApi.member.community.channels().then(r => setChannels(r.channels || [])).catch(() => {});
+  }, []);
+  React.useEffect(() => { reloadChannels(); }, [reloadChannels]);
+
+  const scrollBottom = (smooth) => {
+    const el = streamRef.current; if (!el) return;
+    requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); });
+  };
 
   const loadFeed = React.useCallback((ch, so, pg, append) => {
     NGGApi.member.community.feed(ch, so, pg).then(r => {
       setHasMore(!!r.hasMore);
       setPosts(prev => append && prev ? prev.concat(r.posts || []) : (r.posts || []));
       setLoadingMore(false);
+      if (!append) scrollBottom(false);
     }).catch(() => { setPosts(p => p || []); setLoadingMore(false); });
   }, []);
-  React.useEffect(() => { setPosts(null); setPage2(0); setFresh(null); loadFeed(active, sort, 0, false); }, [active, sort, loadFeed]);
-  const more = () => { if (loadingMore) return; setLoadingMore(true); const n = page + 1; setPage2(n); loadFeed(active, sort, n, true); };
 
-  // Near-real-time: poll page 0 for posts newer than the current top and offer
-  // a "new posts" pill rather than yanking the feed out from under the reader.
+  // Entering a channel: freeze its unread count (for the "New" divider), load
+  // the feed, then mark it read so the sidebar badge clears.
   React.useEffect(() => {
-    if (active === "bookmarks") return;
+    setPosts(null); setPage2(0); setFresh(null); setThread(null);
+    const chObj = channels.find(c => c.slug === active);
+    setUnreadMark(chObj ? (chObj.unread || 0) : 0);
+    loadFeed(active, sort, 0, false);
+    if (active !== "all" && active !== "bookmarks") {
+      const t = setTimeout(() => {
+        NGGApi.member.community.markRead(active).then(() => {
+          setChannels(cs => cs.map(c => c.slug === active ? { ...c, unread: 0 } : c));
+        }).catch(() => {});
+      }, 1200);
+      return () => clearTimeout(t);
+    }
+  }, [active, sort, loadFeed]); // eslint-disable-line
+
+  const more = () => {
+    if (loadingMore) return; setLoadingMore(true);
+    const el = streamRef.current; const prevH = el ? el.scrollHeight : 0;
+    const n = page + 1; setPage2(n);
+    NGGApi.member.community.feed(active, sort, n).then(r => {
+      setHasMore(!!r.hasMore);
+      setPosts(prev => (prev || []).concat(r.posts || []));
+      setLoadingMore(false);
+      // keep the reader's position when older messages prepend at the top
+      requestAnimationFrame(() => { if (el) el.scrollTop = el.scrollHeight - prevH + el.scrollTop; });
+    }).catch(() => setLoadingMore(false));
+  };
+
+  // Near-real-time polling. If the reader is at the bottom, splice new messages
+  // straight in (Slack-style); otherwise surface an unobtrusive pill.
+  React.useEffect(() => {
+    if (active === "bookmarks" || results !== null) return;
     const tick = () => {
       if (document.hidden) return;
       NGGApi.member.community.feed(active, sort, 0).then(r => {
         const cur = postsRef.current; const have = new Set(cur.map(x => x.postId));
         const incoming = (r.posts || []);
-        const news = incoming.filter(x => !have.has(x.postId) && !x.author.isMe);
-        if (news.length && cur.length) setFresh({ count: news.length, posts: incoming });
+        const news = incoming.filter(x => !have.has(x.postId));
+        if (!news.length || !cur.length) return;
+        if (atBottomRef.current) { setPosts(incoming); scrollBottom(true); }
+        else setFresh(incoming);
       }).catch(() => {});
     };
-    const id = setInterval(tick, 25000);
+    const id = setInterval(tick, 20000);
     return () => clearInterval(id);
-  }, [active, sort]);
-  const showFresh = () => { if (fresh) { setPosts(fresh.posts); setPage2(0); setFresh(null); window.scrollTo({ top: 0, behavior: "smooth" }); } };
+  }, [active, sort, results]);
+  const showFresh = () => { if (fresh) { setPosts(fresh); setFresh(null); scrollBottom(true); } };
 
-  const prependPost = (post) => setPosts(p => [post].concat(p || []));
-  const patchPost = (postId, patch) => setPosts(p => (p || []).map(x => x.postId === postId ? { ...x, ...patch } : x));
-  const removePost = (postId) => setPosts(p => (p || []).filter(x => x.postId !== postId));
+  const onStreamScroll = (e) => {
+    const el = e.currentTarget;
+    atBottomRef.current = (el.scrollHeight - el.scrollTop - el.clientHeight) < 120;
+    if (atBottomRef.current && fresh) { setPosts(fresh); setFresh(null); }
+  };
+
+  const onPosted = (post) => { setPosts(p => (p || []).concat(post)); scrollBottom(true); };
+  const patchPost = (postId, patch) => {
+    setPosts(p => (p || []).map(x => x.postId === postId ? { ...x, ...patch } : x));
+    setThread(t => t && t.postId === postId ? { ...t, ...patch } : t);
+  };
+  const removePost = (postId) => { setPosts(p => (p || []).filter(x => x.postId !== postId)); setThread(t => t && t.postId === postId ? null : t); };
 
   const activeChannel = channels.find(c => c.slug === active);
   const catchMeUp = () => {
@@ -541,82 +633,150 @@ function CommunityApp({ setPage, auth }) {
       .catch(() => setDigest({ text: "Couldn't summarise right now.", channel: "" }));
   };
 
-  return (
-    <div className="page cm-page" data-screen-label="Community">
-      <div className="cm-shell container">
-        {/* Left: channels */}
-        <aside className="cm-rail cm-rail-left">
-          <div className="cm-rail-title mono">CHANNELS</div>
-          <button className={"cm-chan" + (active === "all" ? " is-active" : "")} onClick={() => setActive("all")}><span className="cm-chan-ic" style={{ background: "#0c1432" }}>✦</span><span className="cm-chan-name">All channels</span></button>
-          <button className={"cm-chan" + (active === "bookmarks" ? " is-active" : "")} onClick={() => setActive("bookmarks")}><span className="cm-chan-ic" style={{ background: "#a07400" }}>🔖</span><span className="cm-chan-name">Saved</span></button>
-          <div className="cm-rail-sep"/>
-          {channels.map(c => (
-            <button key={c.slug} className={"cm-chan" + (active === c.slug ? " is-active" : "")} onClick={() => setActive(c.slug)}>
-              <span className="cm-chan-ic" style={{ background: c.color }}>{c.icon || "#"}</span>
-              <span className="cm-chan-name">{c.name}</span>
-              {c.posts > 0 && <span className="cm-chan-count">{c.posts}</span>}
-            </button>
-          ))}
-        </aside>
+  // Search (debounced) — shows results in place of the stream.
+  React.useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) { setResults(null); setSearching(false); return; }
+    setSearching(true);
+    const t = setTimeout(() => {
+      NGGApi.member.community.search(q, active === "bookmarks" ? "all" : active)
+        .then(r => { setResults(r.posts || []); setSearching(false); })
+        .catch(() => { setResults([]); setSearching(false); });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query, active]);
 
-        {/* Center: composer + feed */}
-        <main className="cm-main">
-          <div className="cm-topbar">
-            <div className="cm-chan-tabs">
-              {["all", "bookmarks"].concat(channels.slice(0, 8).map(c => c.slug)).map(s => {
-                const c = channels.find(x => x.slug === s);
-                const label = s === "all" ? "All" : s === "bookmarks" ? "Saved" : (c ? c.name : s);
-                return <button key={s} className={"cm-tab" + (active === s ? " is-active" : "")} onClick={() => setActive(s)}>{label}</button>;
-              })}
+  const totalUnread = channels.reduce((s, c) => s + (c.unread || 0), 0);
+  const go = (slug) => { setActive(slug); setSbOpen(false); setQuery(""); setResults(null); };
+
+  // Chronological (oldest→newest) render order with author grouping.
+  const chrono = React.useMemo(() => (posts ? [...posts].reverse() : posts), [posts]);
+  const dividerIdx = (!results && chrono && unreadMark > 0) ? Math.max(0, chrono.length - unreadMark) : -1;
+  const headTitle = active === "all" ? "All activity" : active === "bookmarks" ? "Saved items" : (activeChannel ? activeChannel.name : active);
+  const headIcon = active === "all" ? "✦" : active === "bookmarks" ? "🔖" : (activeChannel ? activeChannel.icon : "#");
+
+  return (
+    <div className="page cm-slack-page" data-screen-label="Community">
+      <div className={"cm-slack" + (sbOpen ? " sb-open" : "") + (thread ? " thread-open" : "")}>
+        {/* ── Sidebar ─────────────────────────────────────────────── */}
+        <aside className="cm-sb">
+          <div className="cm-sb-head">
+            <div className="cm-sb-ws">
+              <span className="cm-sb-ws-badge">NGG</span>
+              <div><div className="cm-sb-ws-name">The Community</div><div className="cm-sb-ws-sub">{me}</div></div>
             </div>
-            <div className="cm-sort">
-              {[["latest", "Latest"], ["trending", "Trending"]].map(([v, l]) => <button key={v} className={"cm-sortbtn" + (sort === v ? " is-active" : "")} onClick={() => setSort(v)}>{l}</button>)}
+            <button className="cm-sb-x" onClick={() => setSbOpen(false)} aria-label="Close">✕</button>
+          </div>
+          <div className="cm-sb-search">
+            <span className="cm-sb-search-ic">🔍</span>
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search messages" aria-label="Search messages"/>
+            {query && <button className="cm-sb-search-x" onClick={() => setQuery("")} aria-label="Clear">✕</button>}
+          </div>
+          <nav className="cm-sb-nav">
+            <button className={"cm-sb-item" + (active === "all" ? " is-active" : "")} onClick={() => go("all")}>
+              <span className="cm-sb-ic">✦</span><span className="cm-sb-name">All activity</span>
+              {totalUnread > 0 && <span className="cm-sb-badge">{totalUnread}</span>}
+            </button>
+            <button className={"cm-sb-item" + (active === "bookmarks" ? " is-active" : "")} onClick={() => go("bookmarks")}>
+              <span className="cm-sb-ic">🔖</span><span className="cm-sb-name">Saved items</span>
+            </button>
+            <div className="cm-sb-section">Channels</div>
+            {channels.map(c => (
+              <button key={c.slug} className={"cm-sb-item cm-sb-chan" + (active === c.slug ? " is-active" : "") + (c.unread > 0 ? " has-unread" : "")} onClick={() => go(c.slug)}>
+                <span className="cm-sb-ic" style={{ color: c.color }}>{c.icon || "#"}</span>
+                <span className="cm-sb-name">{c.name}</span>
+                {c.unread > 0 && <span className="cm-sb-badge">{c.unread}</span>}
+              </button>
+            ))}
+          </nav>
+          <div className="cm-sb-foot">
+            <button className="cm-sb-foot-btn" onClick={catchMeUp}>✨ Catch me up</button>
+          </div>
+        </aside>
+        <div className="cm-sb-scrim" onClick={() => setSbOpen(false)}/>
+
+        {/* ── Main column ─────────────────────────────────────────── */}
+        <main className="cm-col">
+          <header className="cm-hd">
+            <button className="cm-hd-burger" onClick={() => setSbOpen(true)} aria-label="Channels">☰</button>
+            <div className="cm-hd-title">
+              <span className="cm-hd-ic" style={{ color: activeChannel ? activeChannel.color : "var(--ink-500)" }}>{headIcon}</span>
+              <span className="cm-hd-name">{headTitle}</span>
+              {activeChannel && <span className="cm-hd-topic">{activeChannel.description}</span>}
             </div>
+            <div className="cm-hd-actions">
+              {active !== "bookmarks" && !results && (
+                <div className="cm-hd-sort">
+                  {[["latest", "Newest"], ["trending", "Hot"]].map(([v, l]) => <button key={v} className={"cm-hd-sortbtn" + (sort === v ? " is-active" : "")} onClick={() => setSort(v)}>{l}</button>)}
+                </div>
+              )}
+              <button className="cm-hd-btn" onClick={catchMeUp} title="AI catch-up">✨</button>
+              <button className={"cm-hd-btn" + (info ? " is-on" : "")} onClick={() => setInfo(v => !v)} title="Details">ⓘ</button>
+            </div>
+          </header>
+
+          <div className="cm-stream" ref={streamRef} onScroll={onStreamScroll}>
+            {results !== null ? (
+              <div className="cm-search-results">
+                <div className="cm-search-head">{searching ? "Searching…" : (results.length + " result" + (results.length === 1 ? "" : "s") + " for “" + query.trim() + "”")}</div>
+                {results.map(p => <CmMessage key={p.postId} post={p} prev={null} me={me} onPatch={patchPost} onRemove={removePost} onOpenThread={setThread} standalone/>)}
+                {!searching && results.length === 0 && <div className="cm-empty"><div className="cm-empty-ic">🔍</div><p>No messages match that search.</p></div>}
+              </div>
+            ) : posts === null ? (
+              <div className="cm-skeletons">{[0, 1, 2, 3].map(i => <div key={i} className="cm-msg-skel"/>)}</div>
+            ) : chrono.length === 0 ? (
+              <div className="cm-empty">
+                <div className="cm-empty-ic">{active === "bookmarks" ? "🔖" : (headIcon || "💬")}</div>
+                <h3>{active === "bookmarks" ? "Nothing saved yet" : ("Welcome to " + headTitle)}</h3>
+                <p>{active === "bookmarks" ? "Hover a message and tap Save to keep it here." : "This is the very beginning of the channel. Say hello 👋"}</p>
+              </div>
+            ) : (
+              <div className="cm-msgs">
+                {hasMore && <button className="cm-load-older" disabled={loadingMore} onClick={more}>{loadingMore ? "Loading…" : "↑ Load earlier messages"}</button>}
+                {chrono.map((p, i) => (
+                  <React.Fragment key={p.postId}>
+                    {i === dividerIdx && <div className="cm-new-divider"><span>New</span></div>}
+                    <CmMessage post={p} prev={i > 0 ? chrono[i - 1] : null} me={me} onPatch={patchPost} onRemove={removePost} onOpenThread={setThread}/>
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
+            {fresh && <button className="cm-fresh" onClick={showFresh}>↓ New messages — jump to latest</button>}
           </div>
 
-          {active !== "bookmarks" && <CmComposer channels={channels} active={active} me={me} onPosted={prependPost}/>}
-
-          {fresh && <button className="cm-fresh" onClick={showFresh}>↑ {fresh.count} new post{fresh.count === 1 ? "" : "s"} — tap to show</button>}
-
-          {posts === null ? (
-            <div className="cm-skeletons">{[0, 1, 2].map(i => <div key={i} className="cm-post cm-skel"/>)}</div>
-          ) : posts.length === 0 ? (
-            <div className="cm-empty">
-              <div className="cm-empty-ic">{active === "bookmarks" ? "🔖" : "💬"}</div>
-              <p>{active === "bookmarks" ? "No saved posts yet — tap the bookmark on any post to keep it here." : "Nothing here yet. Be the first to post something today."}</p>
-            </div>
-          ) : (
-            <div className="cm-feed">
-              {posts.map(p => <CmPost key={p.postId} post={p} onPatch={patchPost} onRemove={removePost}/>)}
-              {hasMore && <button className="cm-more" disabled={loadingMore} onClick={more}>{loadingMore ? "Loading…" : "Load more"}</button>}
+          {active !== "bookmarks" && !results && (
+            <div className="cm-dock">
+              <CmComposer channels={channels} active={active} me={me} onPosted={onPosted} enterToSend/>
             </div>
           )}
         </main>
 
-        {/* Right: about + AI catch-me-up */}
-        <aside className="cm-rail cm-rail-right">
-          <div className="cm-card cm-ai">
-            <div className="mono cm-card-eyebrow">✨ CATCH ME UP</div>
-            <p className="cm-ai-sub">A quick AI digest of {activeChannel ? activeChannel.name : "the community"}.</p>
-            <button className="btn btn-primary btn-sm" onClick={catchMeUp}>Summarise for me →</button>
-          </div>
-          {activeChannel && activeChannel.description && (
-            <div className="cm-card">
-              <div className="mono cm-card-eyebrow">ABOUT</div>
-              <div className="cm-about-name" style={{ color: activeChannel.color }}>{activeChannel.icon} {activeChannel.name}</div>
-              <p className="cm-about-desc">{activeChannel.description}</p>
+        {/* ── Details pane ────────────────────────────────────────── */}
+        {info && (
+          <aside className="cm-info">
+            <div className="cm-info-head"><span>Details</span><button onClick={() => setInfo(false)} aria-label="Close">✕</button></div>
+            {activeChannel ? (
+              <>
+                <div className="cm-info-name" style={{ color: activeChannel.color }}>{activeChannel.icon} {activeChannel.name}</div>
+                {activeChannel.faculty && <div className="cm-info-faculty">{activeChannel.faculty}</div>}
+                <p className="cm-info-desc">{activeChannel.description}</p>
+                <div className="cm-info-stat">{activeChannel.posts} message{activeChannel.posts === 1 ? "" : "s"}</div>
+              </>
+            ) : <p className="cm-info-desc">{active === "all" ? "Everything from every channel, newest at the bottom." : "Messages you've saved for later."}</p>}
+            <div className="cm-info-rules">
+              <div className="cm-info-rules-h">House rules</div>
+              <ul>
+                <li>Be kind — this is a shared room.</li>
+                <li>No personal contact details.</li>
+                <li>Every message is mentor-watched + AI-checked.</li>
+                <li>Something wrong? Report it to a mentor.</li>
+              </ul>
             </div>
-          )}
-          <div className="cm-card">
-            <div className="mono cm-card-eyebrow">HOUSE RULES</div>
-            <ul className="cm-rules">
-              <li>Be kind — this is a shared room.</li>
-              <li>No personal contact details.</li>
-              <li>Every post is mentor-watched + AI-checked.</li>
-              <li>Something wrong? Tell a mentor.</li>
-            </ul>
-          </div>
-        </aside>
+          </aside>
+        )}
+
+        {/* ── Thread pane ─────────────────────────────────────────── */}
+        {thread && <CmThread post={thread} me={me} channels={channels} onClose={() => setThread(null)} onPatch={patchPost} onRemove={removePost}/>}
       </div>
 
       {digest && <CmDigest digest={digest} onClose={() => setDigest(null)}/>}
@@ -640,7 +800,7 @@ function cmVideoMeta(file) {
 }
 const CM_VIDEO_MAX_MB = 80, CM_VIDEO_MAX_SECS = 180, CM_IMAGE_MAX_MB = 15;
 
-function CmComposer({ channels, active, me, onPosted }) {
+function CmComposer({ channels, active, me, onPosted, enterToSend }) {
   const [body, setBody] = React.useState("");
   const [media, setMedia] = React.useState(null); // {type,url,poster,bytes,duration}
   const [up, setUp] = React.useState(0);
@@ -713,12 +873,17 @@ function CmComposer({ channels, active, me, onPosted }) {
 
   const remaining = 2000 - body.length;
   const canPost = poll ? (body.trim() && poll.filter(o => o.trim()).length >= 2) : (body.trim() || media);
+  const onKey = (e) => {
+    if (ment && ment.items.length) return; // let the mention menu keep the keys
+    if (enterToSend && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!busy && up === 0 && canPost) submit(); }
+  };
+  const chName = (channels.find(c => c.slug === ch) || {}).name || "the channel";
   return (
     <div className="cm-composer">
       <div className="cm-composer-top">
         <span className="cm-avatar" style={{ background: cmColor(me) }}>{cmInitial(me)}</span>
         <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
-          <textarea ref={taRef} className="cm-input" rows={media || poll ? 2 : 1} maxLength={2000} value={body} onChange={onBody} placeholder={poll ? "Ask the crew a question…" : "Share something with the crew…  (@ to mention)"}/>
+          <textarea ref={taRef} className="cm-input" rows={media || poll ? 2 : 1} maxLength={2000} value={body} onChange={onBody} onKeyDown={onKey} placeholder={poll ? "Ask the crew a question…" : ("Message " + (active !== "all" ? "#" + chName : "the crew") + "…  (@ to mention)")}/>
           {ment && ment.items.length > 0 && (
             <div className="cm-mention-menu">
               {ment.items.map(pp => (
@@ -769,28 +934,9 @@ function CmComposer({ channels, active, me, onPosted }) {
   );
 }
 
-/* ---- Post card ---- */
-function CmPost({ post, onPatch, onRemove }) {
-  const [showComments, setShowComments] = React.useState(false);
-  const [picker, setPicker] = React.useState(false);
-  const [menu, setMenu] = React.useState(false);
-  const report = async () => {
-    setMenu(false);
-    try { await NGGApi.member.community.report("post", post.postId); toast.success("Reported to mentors. Thank you for keeping this space safe."); }
-    catch (_) { toast.error("Couldn't report — try again."); }
-  };
-  const del = async () => {
-    setMenu(false);
-    if (!(await dialog.confirm({ title: "Delete this post?", body: "This removes it for everyone. This can't be undone.", cta: "Delete" }))) return;
-    try { await NGGApi.member.community.remove("post", post.postId); onRemove && onRemove(post.postId); toast.success("Deleted."); }
-    catch (_) { toast.error("Couldn't delete — try again."); }
-  };
-  const reactionSet = ["👏", "❤️", "🔥", "💡", "🎉", "🙌"];
-  const totalReacts = Object.values(post.reactions || {}).reduce((s, n) => s + n, 0);
-
+/* ---- Shared message actions (react / bookmark / vote / share / report / delete) ---- */
+function useCmActions(post, onPatch, onRemove) {
   const react = async (emoji) => {
-    setPicker(false);
-    // optimistic
     const prev = { reactions: post.reactions, myReaction: post.myReaction };
     const next = { ...(post.reactions || {}) };
     if (post.myReaction) next[post.myReaction] = Math.max(0, (next[post.myReaction] || 1) - 1);
@@ -812,42 +958,33 @@ function CmPost({ post, onPatch, onRemove }) {
     const txt = post.body || (post.channel.name + " on NGG Community");
     try { if (navigator.share) await navigator.share({ title: "NGG Community", text: txt }); else { await navigator.clipboard.writeText(txt); toast.success("Copied to clipboard"); } } catch (_) {}
   };
+  const report = async () => {
+    try { await NGGApi.member.community.report("post", post.postId); toast.success("Reported to mentors. Thank you for keeping this space safe."); }
+    catch (_) { toast.error("Couldn't report — try again."); }
+  };
+  const del = async () => {
+    if (!(await dialog.confirm({ title: "Delete this message?", body: "This removes it for everyone. This can't be undone.", cta: "Delete" }))) return;
+    try { await NGGApi.member.community.remove("post", post.postId); onRemove && onRemove(post.postId); toast.success("Deleted."); }
+    catch (_) { toast.error("Couldn't delete — try again."); }
+  };
+  return { react, bookmark, vote, share, report, del };
+}
 
+const CM_REACTIONS = ["👏", "❤️", "🔥", "💡", "🎉", "🙌"];
+
+/* ---- Message body (poll + media, shared by row + thread root) ---- */
+function CmBodyBlock({ post, onVote }) {
   return (
-    <article className={"cm-post" + (post.status !== "published" ? " is-pending" : "")}>
-      <div className="cm-post-head">
-        <span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }}>{cmInitial(post.author.name)}</span>
-        <div className="cm-post-meta">
-          <div className="cm-post-author">{post.author.name}{post.author.isMe && <span className="cm-you">you</span>}</div>
-          <div className="cm-post-sub">
-            <span className="cm-post-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span>
-            <span className="cm-dot">·</span><span>{cmAgo(post.createdAt)}</span>
-            {post.author.centre && <><span className="cm-dot">·</span><span>{post.author.centre}</span></>}
-          </div>
-        </div>
-        {post.featured && <span className="cm-featured" title="On the public Showcase">✨</span>}
-        {post.pinned && <span className="cm-pin" title="Pinned">📌</span>}
-        <div className="cm-menu-wrap">
-          <button className="cm-menu-btn" onClick={() => setMenu(m => !m)} aria-label="More">⋯</button>
-          {menu && (
-            <div className="cm-menu" onMouseLeave={() => setMenu(false)}>
-              {post.author.isMe
-                ? <button className="cm-menu-item cm-menu-danger" onClick={del}>Delete post</button>
-                : <button className="cm-menu-item" onClick={report}>🚩 Report to a mentor</button>}
-            </div>
-          )}
-        </div>
-      </div>
-
+    <>
       {post.moderationNote && <div className="cm-modnote">{post.moderationNote}</div>}
-      {post.body && <div className={"cm-post-body" + (post.kind === "poll" ? " cm-poll-q" : "")}>{cmBody(post.body)}</div>}
+      {post.body && <div className={"cm-msg-text" + (post.kind === "poll" ? " cm-poll-q" : "")}>{cmBody(post.body)}</div>}
       {post.kind === "poll" && post.poll && (
         <div className="cm-poll">
           {post.poll.options.map((o, i) => {
             const voted = post.poll.myVote >= 0;
             const mine = post.poll.myVote === i;
             return (
-              <button key={i} className={"cm-poll-row" + (voted ? " voted" : "") + (mine ? " mine" : "")} onClick={() => !voted && vote(i)} disabled={voted}>
+              <button key={i} className={"cm-poll-row" + (voted ? " voted" : "") + (mine ? " mine" : "")} onClick={() => !voted && onVote(i)} disabled={voted}>
                 {voted && <span className="cm-poll-bar" style={{ width: o.pct + "%" }}/>}
                 <span className="cm-poll-text">{mine ? "✓ " : ""}{o.text}</span>
                 {voted && <span className="cm-poll-pct">{o.pct}%</span>}
@@ -857,63 +994,153 @@ function CmPost({ post, onPatch, onRemove }) {
           <div className="cm-poll-total">{post.poll.totalVotes} vote{post.poll.totalVotes === 1 ? "" : "s"}{post.poll.myVote < 0 ? " · tap to vote" : ""}</div>
         </div>
       )}
-      {post.mediaType === "image" && post.mediaUrl && <div className="cm-post-media"><img src={cmOpt(post.mediaUrl, 1000)} alt={post.altText || ""} loading="lazy"/></div>}
-      {post.mediaType === "video" && post.mediaUrl && <div className="cm-post-media"><video src={cmOpt(post.mediaUrl)} poster={post.mediaPoster} controls preload="metadata"/></div>}
-
-      {totalReacts > 0 && (
-        <div className="cm-react-summary">
-          {Object.entries(post.reactions).filter(([, n]) => n > 0).slice(0, 4).map(([e]) => <span key={e}>{e}</span>)}
-          <span className="cm-react-count">{totalReacts}</span>
-        </div>
-      )}
-
-      <div className="cm-actions">
-        <div className="cm-react-wrap">
-          <button className={"cm-act" + (post.myReaction ? " is-on" : "")} onClick={() => setPicker(p => !p)}>{post.myReaction || "👏"} <span>React</span></button>
-          {picker && <div className="cm-picker" onMouseLeave={() => setPicker(false)}>{reactionSet.map(e => <button key={e} className={"cm-picker-e" + (post.myReaction === e ? " is-on" : "")} onClick={() => react(e)}>{e}</button>)}</div>}
-        </div>
-        <button className="cm-act" onClick={() => setShowComments(s => !s)}>💬 <span>{post.commentCount || 0}</span></button>
-        <button className={"cm-act" + (post.bookmarked ? " is-on" : "")} onClick={bookmark}>{post.bookmarked ? "🔖" : "🏷️"} <span>Save</span></button>
-        <button className="cm-act" onClick={share}>↗ <span>Share</span></button>
-      </div>
-
-      {showComments && <CmComments post={post} onCount={n => onPatch(post.postId, { commentCount: n })}/>}
-    </article>
+      {post.mediaType === "image" && post.mediaUrl && <div className="cm-msg-media"><img src={cmOpt(post.mediaUrl, 1000)} alt={post.altText || ""} loading="lazy"/></div>}
+      {post.mediaType === "video" && post.mediaUrl && <div className="cm-msg-media"><video src={cmOpt(post.mediaUrl, 1280)} poster={post.mediaPoster} controls preload="metadata"/></div>}
+    </>
   );
 }
 
-/* ---- Comment thread ---- */
-function CmComments({ post, onCount }) {
+/* ---- Reaction chips (click to toggle) ---- */
+function CmReactChips({ post, onReact }) {
+  const entries = Object.entries(post.reactions || {}).filter(([, n]) => n > 0);
+  if (!entries.length) return null;
+  return (
+    <div className="cm-chips">
+      {entries.map(([e, n]) => (
+        <button key={e} className={"cm-chip-react" + (post.myReaction === e ? " mine" : "")} onClick={() => onReact(e)}>
+          <span>{e}</span><b>{n}</b>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ---- One message row in the stream (Slack-style, grouped by author) ---- */
+function CmMessage({ post, prev, me, onPatch, onRemove, onOpenThread, standalone }) {
+  const [picker, setPicker] = React.useState(false);
+  const [menu, setMenu] = React.useState(false);
+  const act = useCmActions(post, onPatch, onRemove);
+  const grouped = !standalone && prev && prev.author && post.author && prev.author.name === post.author.name
+    && prev.kind !== "poll" && post.kind !== "poll"
+    && (new Date((post.createdAt || "").replace(" ", "T")) - new Date((prev.createdAt || "").replace(" ", "T"))) < 5 * 60 * 1000;
+  const react = (e) => { setPicker(false); act.react(e); };
+
+  return (
+    <div className={"cm-msg" + (grouped ? " grouped" : "") + (post.status !== "published" ? " is-pending" : "")}>
+      <div className="cm-msg-gutter">
+        {grouped
+          ? <span className="cm-msg-tinytime">{cmAgo(post.createdAt)}</span>
+          : <span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }}>{cmInitial(post.author.name)}</span>}
+      </div>
+      <div className="cm-msg-main">
+        {!grouped && (
+          <div className="cm-msg-head">
+            <span className="cm-msg-author">{post.author.name}</span>
+            {post.author.isMe && <span className="cm-you">you</span>}
+            {standalone && <span className="cm-msg-in" style={{ color: post.channel.color }}>in {post.channel.icon} {post.channel.name}</span>}
+            <span className="cm-msg-time">{cmAgo(post.createdAt)}</span>
+            {post.author.centre && <span className="cm-msg-centre">{post.author.centre}</span>}
+            {post.featured && <span className="cm-featured" title="On the public Showcase">✨</span>}
+            {post.pinned && <span className="cm-pin" title="Pinned">📌</span>}
+          </div>
+        )}
+        <CmBodyBlock post={post} onVote={act.vote}/>
+        <CmReactChips post={post} onReact={react}/>
+        {post.commentCount > 0 && (
+          <button className="cm-thread-link" onClick={() => onOpenThread && onOpenThread(post)}>
+            💬 {post.commentCount} repl{post.commentCount === 1 ? "y" : "ies"}
+            {post.lastCommentAt && <span className="cm-thread-ago">Last reply {cmAgo(post.lastCommentAt)}</span>}
+          </button>
+        )}
+      </div>
+
+      {/* Hover toolbar */}
+      <div className="cm-msg-tools">
+        <div className="cm-tool-wrap">
+          <button className="cm-tool" onClick={() => setPicker(p => !p)} title="React">😊</button>
+          {picker && <div className="cm-picker" onMouseLeave={() => setPicker(false)}>{CM_REACTIONS.map(e => <button key={e} className={"cm-picker-e" + (post.myReaction === e ? " is-on" : "")} onClick={() => react(e)}>{e}</button>)}</div>}
+        </div>
+        <button className="cm-tool" onClick={() => onOpenThread && onOpenThread(post)} title="Reply in thread">💬</button>
+        <button className={"cm-tool" + (post.bookmarked ? " is-on" : "")} onClick={act.bookmark} title={post.bookmarked ? "Saved" : "Save"}>{post.bookmarked ? "🔖" : "🏷️"}</button>
+        <button className="cm-tool" onClick={act.share} title="Share">↗</button>
+        <div className="cm-tool-wrap">
+          <button className="cm-tool" onClick={() => setMenu(m => !m)} title="More">⋯</button>
+          {menu && (
+            <div className="cm-menu" onMouseLeave={() => setMenu(false)}>
+              <button className="cm-menu-item" onClick={() => { setMenu(false); onOpenThread && onOpenThread(post); }}>💬 Reply in thread</button>
+              <button className="cm-menu-item" onClick={() => { setMenu(false); act.bookmark(); }}>{post.bookmarked ? "Remove from saved" : "🔖 Save message"}</button>
+              {post.author.isMe
+                ? <button className="cm-menu-item cm-menu-danger" onClick={() => { setMenu(false); act.del(); }}>Delete message</button>
+                : <button className="cm-menu-item" onClick={() => { setMenu(false); act.report(); }}>🚩 Report to a mentor</button>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Thread pane (root message + replies + reply composer) ---- */
+function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
   const [comments, setComments] = React.useState(null);
   const [body, setBody] = React.useState("");
   const [busy, setBusy] = React.useState(false);
-  React.useEffect(() => { let a = true; NGGApi.member.community.comments(post.postId).then(r => { if (a) setComments(r.comments || []); }).catch(() => { if (a) setComments([]); }); return () => { a = false; }; }, [post.postId]);
+  const act = useCmActions(post, onPatch, onRemove);
+  const endRef = React.useRef(null);
+  React.useEffect(() => {
+    let a = true; setComments(null);
+    NGGApi.member.community.comments(post.postId).then(r => { if (a) setComments(r.comments || []); }).catch(() => { if (a) setComments([]); });
+    return () => { a = false; };
+  }, [post.postId]);
+  React.useEffect(() => { if (endRef.current) endRef.current.scrollIntoView({ block: "end" }); }, [comments]);
   const send = async () => {
     if (!body.trim()) return; setBusy(true);
     try {
       const r = await NGGApi.member.community.comment(post.postId, body.trim());
       setBody(""); setComments(c => (c || []).concat(r.comment));
-      if (r.queued) toast.success("Comment in review — a mentor will approve it.");
-      else onCount && onCount((post.commentCount || 0) + 1);
-    } catch (e) { toast.error(e.detail || "Couldn't comment — try again."); } finally { setBusy(false); }
+      if (r.queued) toast.success("Reply in review — a mentor will approve it.");
+      else onPatch(post.postId, { commentCount: (post.commentCount || 0) + 1 });
+    } catch (e) { toast.error(e.detail || "Couldn't reply — try again."); } finally { setBusy(false); }
   };
   return (
-    <div className="cm-comments">
-      {comments === null ? <div className="cm-comment-load">Loading…</div> : comments.map(c => (
-        <div key={c.commentId} className={"cm-comment" + (c.status !== "published" ? " is-pending" : "")}>
-          <span className="cm-avatar cm-avatar-sm" style={{ background: cmColor(c.name) }}>{cmInitial(c.name)}</span>
-          <div className="cm-comment-body">
-            <b>{c.name}</b> <span className="cm-comment-ago">{cmAgo(c.createdAt)}</span>
-            <div>{cmBody(c.body)}</div>
-            {c.note && <div className="cm-comment-note">{c.note}</div>}
+    <aside className="cm-thread">
+      <div className="cm-thread-head">
+        <div><span className="cm-thread-title">Thread</span><span className="cm-thread-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span></div>
+        <button className="cm-thread-x" onClick={onClose} aria-label="Close thread">✕</button>
+      </div>
+      <div className="cm-thread-body">
+        <div className="cm-thread-root">
+          <div className="cm-msg-gutter"><span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }}>{cmInitial(post.author.name)}</span></div>
+          <div className="cm-msg-main">
+            <div className="cm-msg-head">
+              <span className="cm-msg-author">{post.author.name}</span>
+              {post.author.isMe && <span className="cm-you">you</span>}
+              <span className="cm-msg-time">{cmAgo(post.createdAt)}</span>
+            </div>
+            <CmBodyBlock post={post} onVote={act.vote}/>
+            <CmReactChips post={post} onReact={act.react}/>
           </div>
         </div>
-      ))}
-      <div className="cm-comment-compose">
-        <input className="cm-comment-input" value={body} maxLength={1000} placeholder="Write a comment…" onChange={e => setBody(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}/>
+        <div className="cm-thread-count">{comments === null ? "…" : (comments.length + " repl" + (comments.length === 1 ? "y" : "ies"))}</div>
+        <div className="cm-thread-replies">
+          {comments === null ? <div className="cm-comment-load">Loading…</div> : comments.map(c => (
+            <div key={c.commentId} className={"cm-reply" + (c.status !== "published" ? " is-pending" : "")}>
+              <span className="cm-avatar cm-avatar-sm" style={{ background: cmColor(c.name) }}>{cmInitial(c.name)}</span>
+              <div className="cm-reply-body">
+                <div className="cm-reply-head"><b>{c.name}</b> <span className="cm-reply-ago">{cmAgo(c.createdAt)}</span></div>
+                <div>{cmBody(c.body)}</div>
+                {c.note && <div className="cm-comment-note">{c.note}</div>}
+              </div>
+            </div>
+          ))}
+          <div ref={endRef}/>
+        </div>
+      </div>
+      <div className="cm-thread-compose">
+        <textarea className="cm-comment-input" value={body} maxLength={1000} rows={1} placeholder="Reply…" onChange={e => setBody(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}/>
         <button className="btn btn-primary btn-sm" disabled={busy || !body.trim()} onClick={send}>{busy ? "…" : "Reply"}</button>
       </div>
-    </div>
+    </aside>
   );
 }
 

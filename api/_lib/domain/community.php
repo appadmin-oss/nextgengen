@@ -91,10 +91,53 @@ function community_channel_public(array $c): array {
     ];
 }
 
+/** Unread published posts in a channel for a viewer (excludes their own). */
+function community_channel_unread(string $channelId, string $viewer): int {
+    if ($viewer === '') return 0;
+    $r = db_row("SELECT lastReadAt FROM community_reads WHERE memberId = ? AND channelId = ?", [$viewer, $channelId]);
+    $since = (string)($r['lastReadAt'] ?? '');
+    if ($since === '') $since = '1970-01-01T00:00:00Z';
+    return (int)(db_row("SELECT COUNT(*) c FROM community_posts WHERE channelId = ? AND status = 'published' AND authorId <> ? AND createdAt > ?", [$channelId, $viewer, $since])['c'] ?? 0);
+}
+
 function community_channels(array $p): array {
     community_ensure_channels();
+    $viewer = (string)($p['memberId'] ?? '');
     $rows = db_all("SELECT * FROM community_channels WHERE status = 'active' ORDER BY pinned DESC, sortOrder ASC, name ASC");
-    return ['ok' => true, 'channels' => array_map('community_channel_public', $rows)];
+    $channels = array_map(function ($c) use ($viewer) {
+        $base = community_channel_public($c);
+        $base['unread'] = community_channel_unread((string)$c['channelId'], $viewer);
+        return $base;
+    }, $rows);
+    return ['ok' => true, 'channels' => $channels];
+}
+
+/** Mark a channel read up to now (Slack-style). */
+function community_mark_read(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
+    $ch = db_row("SELECT channelId FROM community_channels WHERE slug = ? LIMIT 1", [(string)($p['channel'] ?? '')]);
+    if (!$ch) return ['ok' => true];
+    $cid = (string)$ch['channelId']; $now = now_iso();
+    if (db_row("SELECT id FROM community_reads WHERE memberId = ? AND channelId = ?", [$viewer, $cid])) db_update('community_reads', ['lastReadAt' => $now, 'updatedAt' => $now], ['memberId' => $viewer, 'channelId' => $cid]);
+    else db_insert('community_reads', ['memberId' => $viewer, 'channelId' => $cid, 'lastReadAt' => $now, 'updatedAt' => $now]);
+    return ['ok' => true];
+}
+
+/** Search published posts by text (whole community or one channel). */
+function community_search(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    $q = trim((string)($p['q'] ?? ''));
+    if (mb_strlen($q) < 2) return ['ok' => true, 'posts' => []];
+    $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
+    $args = [$like]; $where = "status = 'published' AND body LIKE ?";
+    $chSlug = (string)($p['channel'] ?? 'all');
+    if ($chSlug !== 'all' && $chSlug !== '' && $chSlug !== 'bookmarks') {
+        $ch = db_row("SELECT channelId FROM community_channels WHERE slug = ? LIMIT 1", [$chSlug]);
+        if ($ch) { $where .= " AND channelId = ?"; $args[] = (string)$ch['channelId']; }
+    }
+    $rows = db_all("SELECT * FROM community_posts WHERE $where ORDER BY createdAt DESC LIMIT 30", $args);
+    return ['ok' => true, 'posts' => array_map(fn($r) => community_post_shape($r, $viewer), $rows)];
 }
 
 /* ── Attribution (PII-safe: first name + last initial only) ───────────── */
@@ -139,7 +182,10 @@ function community_screen(string $text): array {
 /** Drop a notification for a member (skips self-notifications). */
 function community_notify(string $memberId, string $actorId, string $kind, string $title, string $body): void {
     if ($memberId === '' || $memberId === $actorId) return;
-    if (!db_row("SELECT memberId FROM members WHERE memberId = ? LIMIT 1", [$memberId])) return;
+    // Recipients may be full members OR summer students (the community serves both).
+    $exists = db_row("SELECT memberId FROM members WHERE memberId = ? LIMIT 1", [$memberId])
+        || db_row("SELECT studentId FROM summer_students WHERE studentId = ? LIMIT 1", [$memberId]);
+    if (!$exists) return;
     db_insert('notifications', ['notifId' => 'NT-' . strtoupper(rand_hex(6)), 'memberId' => $memberId, 'kind' => $kind,
         'title' => mb_substr($title, 0, 160), 'body' => mb_substr($body, 0, 400), 'linkPage' => 'community', 'createdAt' => now_iso()]);
 }
@@ -212,7 +258,9 @@ function community_post_shape(array $row, string $viewerId): array {
         $reacts[(string)$r['emoji']] = (int)$r['c'];
     }
     $mine = $viewerId !== '' ? (db_row("SELECT emoji FROM community_reactions WHERE postId = ? AND memberId = ?", [$pid, $viewerId])['emoji'] ?? '') : '';
-    $comments = (int)(db_row("SELECT COUNT(*) c FROM community_comments WHERE postId = ? AND status = 'published'", [$pid])['c'] ?? 0);
+    $cAgg = db_row("SELECT COUNT(*) c, MAX(createdAt) last FROM community_comments WHERE postId = ? AND status = 'published'", [$pid]);
+    $comments = (int)($cAgg['c'] ?? 0);
+    $lastComment = (string)($cAgg['last'] ?? '');
     $booked = $viewerId !== '' && db_row("SELECT id FROM community_bookmarks WHERE postId = ? AND memberId = ?", [$pid, $viewerId]);
     $isMe = (string)$row['authorId'] === $viewerId;
     $ch = db_row("SELECT slug, name, color, icon FROM community_channels WHERE channelId = ? LIMIT 1", [(string)$row['channelId']]);
@@ -226,7 +274,7 @@ function community_post_shape(array $row, string $viewerId): array {
         'body' => (string)$row['body'],
         'mediaType' => (string)$row['mediaType'], 'mediaUrl' => (string)$row['mediaUrl'], 'mediaPoster' => (string)$row['mediaPoster'], 'altText' => (string)$row['altText'],
         'status' => (string)$row['status'], 'pinned' => (int)$row['pinned'] === 1, 'featured' => (int)($row['featured'] ?? 0) === 1,
-        'reactions' => $reacts, 'myReaction' => (string)$mine, 'commentCount' => $comments,
+        'reactions' => $reacts, 'myReaction' => (string)$mine, 'commentCount' => $comments, 'lastCommentAt' => $lastComment,
         'bookmarked' => (bool)$booked, 'viewCount' => (int)$row['viewCount'],
         'createdAt' => (string)$row['createdAt'],
         'moderationNote' => ((string)$row['status'] !== 'published' && $isMe) ? community_status_note((string)$row['status']) : '',
