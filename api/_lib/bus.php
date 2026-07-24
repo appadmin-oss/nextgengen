@@ -48,7 +48,7 @@ function bus_subscribed(string $eventsJson, string $kind): bool {
 
 /* ── HTTP (https-only, private ranges blocked — admin-entered URLs) ───────── */
 
-function bus_http_post(string $url, string $body, array $headers = []): array {
+function bus_http_post(string $url, string $body, array $headers = [], bool $follow = false): array {
     // Test hook: the suite injects a mock so no network happens in CI.
     if (isset($GLOBALS['__bus_http_mock']) && is_callable($GLOBALS['__bus_http_mock'])) {
         return ($GLOBALS['__bus_http_mock'])($url, $body, $headers);
@@ -69,16 +69,28 @@ function bus_http_post(string $url, string $body, array $headers = []): array {
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => 15,
         CURLOPT_CONNECTTIMEOUT => 6,
-        CURLOPT_FOLLOWLOCATION => false,
+        // Apps Script answers a POST with a 302 to script.googleusercontent.com
+        // where the script's output (and side effects) actually resolve — so we
+        // MUST follow it to know whether it truly ran. Restricted deployments
+        // instead redirect to a Google login page, which we detect below.
+        CURLOPT_FOLLOWLOCATION => $follow,
+        CURLOPT_MAXREDIRS => 5,
         CURLOPT_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2,
+        CURLOPT_REDIR_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2,
     ]);
     $out = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $eff = (string)curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
     $err = curl_error($ch);
     curl_close($ch);
     if ($out === false) return ['ok' => false, 'error' => 'network', 'detail' => $err];
-    // Apps Script answers 302 to a googleusercontent result URL on success.
-    if ($code >= 300 && $code < 400 && strpos($url, 'script.google.com') !== false) return ['ok' => true, 'body' => ''];
+    // A redirect to a Google sign-in page means the web app isn't shared with
+    // "Anyone" — the classic reason the mirror silently never posts.
+    if (stripos($eff, 'accounts.google.com') !== false || (stripos((string)$out, '<title>Sign in') !== false && strpos($url, 'script.google.com') !== false)) {
+        return ['ok' => false, 'error' => 'not_public', 'detail' => 'The Apps Script web app redirected to a Google sign-in — redeploy it with access set to “Anyone”.'];
+    }
+    // Not following (webhooks): a 302 from Apps Script still means it ran.
+    if (!$follow && $code >= 300 && $code < 400 && strpos($url, 'script.google.com') !== false) return ['ok' => true, 'body' => ''];
     if ($code < 200 || $code >= 300) return ['ok' => false, 'error' => 'http_' . $code, 'detail' => substr((string)$out, 0, 300)];
     return ['ok' => true, 'body' => (string)$out];
 }
@@ -99,7 +111,11 @@ function bus_deliver_one(array $integration, array $event): array {
         return bus_http_post($url, json_encode($msg, JSON_UNESCAPED_SLASHES));
     }
 
-    if ($kind === 'webhook') {
+    // webhook + drive share the signed-JSON-POST shape. `drive` is just a
+    // webhook aimed at a document sink — an Apps Script that files into Google
+    // Drive, or a Zapier/Make hook into Dropbox/OneDrive/S3. Cross-compatible:
+    // any endpoint that accepts a signed JSON POST works.
+    if ($kind === 'webhook' || $kind === 'drive') {
         $url = (string)($cfg['url'] ?? '');
         $secret = (string)($cfg['secret'] ?? '');
         $body = json_encode([
@@ -108,12 +124,14 @@ function bus_deliver_one(array $integration, array $event): array {
         ], JSON_UNESCAPED_SLASHES);
         $ts = (string)time();
         $sig = hash_hmac('sha256', $ts . '.' . $body, $secret);
+        // Apps Script drive sinks (script.google.com) need redirect-following.
+        $follow = strpos($url, 'script.google.com') !== false;
         return bus_http_post($url, $body, [
             'X-NGG-Event: ' . $event['kind'],
             'X-NGG-Delivery: ' . $event['eventId'],
             'X-NGG-Timestamp: ' . $ts,
             'X-NGG-Signature: sha256=' . $sig,
-        ]);
+        ], $follow);
     }
 
     if ($kind === 'sheets') {
@@ -124,7 +142,7 @@ function bus_deliver_one(array $integration, array $event): array {
             'event' => $event['kind'], 'id' => $event['eventId'],
             'createdAt' => $event['createdAt'], 'data' => bus_strip_internal($payload),
         ], JSON_UNESCAPED_SLASHES);
-        return bus_http_post($url, $body);
+        return bus_http_post($url, $body, [], true); // follow the 302 → detect misconfig
     }
 
     return ['ok' => false, 'error' => 'unknown_kind'];

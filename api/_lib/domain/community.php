@@ -374,6 +374,7 @@ function community_post_shape(array $row, string $viewerId): array {
         'author' => ['name' => (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'], 'isMe' => $isMe],
         'body' => (string)$row['body'],
         'mediaType' => (string)$row['mediaType'], 'mediaUrl' => (string)$row['mediaUrl'], 'mediaPoster' => (string)$row['mediaPoster'], 'altText' => (string)$row['altText'],
+        'linkPreview' => (($lp = json_decode((string)($row['linkPreview'] ?? ''), true)) && is_array($lp) && !empty($lp['title'])) ? $lp : null,
         'status' => (string)$row['status'], 'pinned' => (int)$row['pinned'] === 1, 'featured' => (int)($row['featured'] ?? 0) === 1,
         'reactions' => $reacts, 'myReaction' => (string)$mine, 'commentCount' => $comments, 'lastCommentAt' => $lastComment,
         'stars' => $stars, 'starred' => (bool)$starred, 'canStar' => community_actor_is_staff($viewerId),
@@ -430,6 +431,88 @@ function community_feed(array $p): array {
     return ['ok' => true, 'posts' => $posts, 'hasMore' => $hasMore, 'reactionSet' => COMMUNITY_REACTIONS];
 }
 
+/* ── Link previews (server-side unfurl, SSRF-guarded + cached) ─────────── */
+
+function community_extract_url(string $body): string {
+    if (preg_match('#\bhttps://[^\s<>"\'\]]+#i', $body, $m)) return rtrim($m[0], '.,;:)]}\'"');
+    return '';
+}
+/** Block private / loopback / link-local hosts so the unfurl can't be pointed
+ *  at internal services (SSRF). */
+function community_host_is_private(string $host): bool {
+    $host = strtolower(trim($host, '.'));
+    if ($host === '' || $host === 'localhost') return true;
+    if (preg_match('/\.(local|internal|localhost|lan|home|corp|test|invalid|example)$/', $host)) return true;
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        if (!filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) return true;
+    }
+    return false;
+}
+/** Fetch a URL and pull Open Graph / title metadata. Best-effort; returns []
+ *  on any failure. Cached for 7 days under the cache dir. */
+function community_unfurl(string $url): array {
+    $url = trim($url);
+    if (!preg_match('#^https://#i', $url) || mb_strlen($url) > 2048) return [];
+    $parts = parse_url($url);
+    $host = (string)($parts['host'] ?? '');
+    if ($host === '' || community_host_is_private($host)) return [];
+    if (isset($parts['port']) && !in_array((int)$parts['port'], [80, 443], true)) return [];
+
+    global $CONFIG;
+    $dir = rtrim((string)($CONFIG['cache_dir'] ?? sys_get_temp_dir()), '/') . '/unfurl';
+    @mkdir($dir, 0700, true);
+    $cf = $dir . '/' . sha1($url) . '.json';
+    if (is_file($cf) && (time() - (int)@filemtime($cf) < 7 * 86400)) {
+        $c = json_decode((string)@file_get_contents($cf), true);
+        return is_array($c) ? $c : [];
+    }
+    if (!function_exists('curl_init')) return [];
+    $buf = '';
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 5, CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
+        CURLOPT_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2,
+        CURLOPT_REDIR_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2,
+        CURLOPT_USERAGENT => 'NGG-LinkPreview/1.0 (+https://next.afrovanguard.org.ng)',
+        CURLOPT_HTTPHEADER => ['Accept: text/html,application/xhtml+xml'],
+        CURLOPT_WRITEFUNCTION => function ($c, $data) use (&$buf) { $buf .= $data; return strlen($buf) > 524288 ? -1 : strlen($data); },
+    ]);
+    curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $ctype = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+    $finalUrl = (string)curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+    curl_close($ch);
+    // A redirect could land on a private host — discard if so.
+    $fh = (string)(parse_url($finalUrl, PHP_URL_HOST) ?: '');
+    if ($fh !== '' && community_host_is_private($fh)) return [];
+    if ($code < 200 || $code >= 400 || stripos($ctype, 'text/html') === false) { @file_put_contents($cf, '[]'); return []; }
+    $og = community_parse_og($buf, $finalUrl ?: $url, $host);
+    @file_put_contents($cf, json_encode($og, JSON_UNESCAPED_SLASHES));
+    return $og;
+}
+function community_og_tag(string $html, string $prop): string {
+    if (preg_match('#<meta[^>]+(?:property|name)=["\']' . preg_quote($prop, '#') . '["\'][^>]*content=["\']([^"\']*)["\']#i', $html, $m)) return html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    if (preg_match('#<meta[^>]+content=["\']([^"\']*)["\'][^>]*(?:property|name)=["\']' . preg_quote($prop, '#') . '["\']#i', $html, $m)) return html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    return '';
+}
+function community_parse_og(string $html, string $url, string $host): array {
+    $title = community_og_tag($html, 'og:title');
+    if ($title === '' && preg_match('#<title[^>]*>(.*?)</title>#is', $html, $m)) $title = html_entity_decode(trim($m[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    if ($title === '') return [];
+    $desc = community_og_tag($html, 'og:description') ?: community_og_tag($html, 'description');
+    $img = community_og_tag($html, 'og:image');
+    if ($img !== '' && !preg_match('#^https://#i', $img)) $img = ''; // only serve https images
+    $site = community_og_tag($html, 'og:site_name') ?: preg_replace('/^www\./', '', $host);
+    return [
+        'url' => $url,
+        'title' => mb_substr(trim($title), 0, 200),
+        'description' => mb_substr(trim($desc), 0, 240),
+        'image' => mb_substr($img, 0, 1024),
+        'site' => mb_substr(trim($site), 0, 80),
+    ];
+}
+
 function community_post_create(array $p): array {
     $viewer = (string)($p['memberId'] ?? '');
     if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
@@ -437,10 +520,11 @@ function community_post_create(array $p): array {
     $d = is_array($p['data'] ?? null) ? $p['data'] : [];
     $body = mb_substr(trim((string)($d['body'] ?? '')), 0, 2000);
     $kind = (string)($d['kind'] ?? 'post') === 'poll' ? 'poll' : 'post';
-    $mediaType = in_array((string)($d['mediaType'] ?? 'none'), ['none', 'image', 'video'], true) ? (string)($d['mediaType'] ?? 'none') : 'none';
+    $mediaType = in_array((string)($d['mediaType'] ?? 'none'), ['none', 'image', 'video', 'doc'], true) ? (string)($d['mediaType'] ?? 'none') : 'none';
     $mediaUrl = trim((string)($d['mediaUrl'] ?? ''));
     if ($mediaUrl !== '' && !preg_match('#^https://#i', $mediaUrl)) return ['ok' => false, 'error' => 'bad_media'];
     if ($mediaUrl === '') $mediaType = 'none';
+    $docName = mb_substr(trim((string)($d['mediaName'] ?? '')), 0, 160);
 
     // Poll: a question (body) + 2-4 short options; no media.
     $pollOptions = [];
@@ -487,7 +571,10 @@ function community_post_create(array $p): array {
     }
 
     $author = community_author($viewer);
-    $alt = $mediaType === 'image' ? ($body !== '' ? mb_substr($body, 0, 160) : ('Photo shared by ' . $author['name'] . ($author['centre'] ? ' · ' . $author['centre'] : ''))) : '';
+    $alt = $mediaType === 'doc' ? ($docName ?: 'Document')
+        : ($mediaType === 'image' ? ($body !== '' ? mb_substr($body, 0, 160) : ('Photo shared by ' . $author['name'] . ($author['centre'] ? ' · ' . $author['centre'] : ''))) : '');
+    // Link preview — only when there's no other attachment and the post is live.
+    $preview = ($mediaType === 'none' && $kind === 'post' && $status === 'published') ? community_unfurl(community_extract_url($body)) : [];
     $id = 'CP-' . strtoupper(rand_hex(6));
     $now = now_iso();
     db_insert('community_posts', [
@@ -496,10 +583,16 @@ function community_post_create(array $p): array {
         'body' => $body, 'kind' => $kind, 'pollOptions' => $kind === 'poll' ? json_encode($pollOptions, JSON_UNESCAPED_SLASHES) : '',
         'mediaType' => $mediaType, 'mediaUrl' => $mediaUrl, 'mediaPoster' => trim((string)($d['mediaPoster'] ?? '')),
         'altText' => $alt, 'status' => $status, 'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason'], 'by' => 'ai', 'at' => $now], JSON_UNESCAPED_SLASHES),
+        'linkPreview' => $preview ? json_encode($preview, JSON_UNESCAPED_SLASHES) : '',
         'viewCount' => 0, 'createdAt' => $now, 'updatedAt' => $now,
     ]);
     audit('community.post', $viewer, $id, ['channel' => $chSlug, 'status' => $status, 'media' => $mediaType, 'kind' => $kind], (string)($p['ip'] ?? ''));
     if ($status === 'published') community_notify_mentions($body, $viewer, $author['name'], $id, (string)$ch['channelId']);
+    // Mirror shared documents to a configured Drive integration (any drive:
+    // Google Drive, Dropbox, OneDrive… via its webhook). Best-effort.
+    if ($status === 'published' && $mediaType === 'doc' && function_exists('event_emit')) {
+        event_emit('community.document', ['postId' => $id, 'name' => $alt, 'url' => $mediaUrl, 'channel' => $chSlug, 'author' => $author['name'], 'bytes' => (int)($d['mediaBytes'] ?? 0)]);
+    }
     $row = db_row("SELECT * FROM community_posts WHERE postId = ?", [$id]);
     return ['ok' => true, 'post' => community_post_shape($row, $viewer), 'queued' => $status !== 'published'];
 }

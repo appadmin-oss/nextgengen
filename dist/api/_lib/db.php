@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 53;
+const NGG_SCHEMA_TARGET = 54;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1336,6 +1336,9 @@ function db_migrate(PDO $db): void {
               createdAt TEXT DEFAULT (datetime('now'))
             );
             CREATE UNIQUE INDEX idx_cstar_unique ON community_stars(postId, memberId);
+        ",
+        54 => "
+            ALTER TABLE community_posts ADD COLUMN linkPreview TEXT DEFAULT '';
         ",
     ];
 

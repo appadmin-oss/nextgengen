@@ -124,27 +124,39 @@ function CommandPalette() {
 }
 
 function CommandHint() {
-  // Floating bottom-left hint, dismissible.
-  const [dismissed, setDismissed] = React.useState(
-    typeof localStorage !== "undefined" && localStorage.getItem("ngg.cmdk.dismissed") === "1"
+  // A gentle, self-retiring hint — never a permanent floater. It:
+  //  · stays hidden inside full-screen app chrome (community/admin) where it
+  //    would overlap the UI (a `cm-app`/`admin` body class marks those),
+  //  · auto-hides after ~14s so it never lingers over content,
+  //  · shows at most a few times ever, then bows out for good,
+  //  · is fully dismissible.
+  const appChrome = () => typeof document !== "undefined" && (document.body.classList.contains("cm-app") || /^\/(community|nextadmin|admin)/.test(location.pathname));
+  const seen = () => { try { return parseInt(localStorage.getItem("ngg.cmdk.seen") || "0", 10); } catch (_) { return 0; } };
+  const [hidden, setHidden] = React.useState(
+    (typeof localStorage !== "undefined" && localStorage.getItem("ngg.cmdk.dismissed") === "1") || seen() >= 3 || appChrome()
   );
-  if (dismissed) return null;
+  React.useEffect(() => {
+    if (hidden) return;
+    try { localStorage.setItem("ngg.cmdk.seen", String(seen() + 1)); } catch (_) {}
+    const t = setTimeout(() => setHidden(true), 14000);
+    const onNav = () => { if (appChrome()) setHidden(true); };
+    window.addEventListener("popstate", onNav);
+    return () => { clearTimeout(t); window.removeEventListener("popstate", onNav); };
+  }, [hidden]);
+  if (hidden) return null;
   return (
     <button
       className="cmdk-hint"
-      onClick={() => {
-        const evt = new KeyboardEvent("keydown", { key: "k", metaKey: true });
-        window.dispatchEvent(evt);
-      }}
-      aria-label="Open command palette"
+      onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+      aria-label="Open quick navigation (Command or Control + K)"
     >
-      <span><kbd>⌘</kbd><kbd>K</kbd></span>
+      <span aria-hidden="true"><kbd>⌘</kbd><kbd>K</kbd></span>
       <span className="cmdk-hint-text">Quick nav</span>
       <span
-        className="cmdk-hint-x"
+        className="cmdk-hint-x" role="button" aria-label="Dismiss"
         onClick={(e) => {
           e.stopPropagation();
-          setDismissed(true);
+          setHidden(true);
           try { localStorage.setItem("ngg.cmdk.dismissed", "1"); } catch (_) {}
         }}
       >✕</span>

@@ -715,6 +715,14 @@ function CommunityApp({ setPage, auth }) {
   }, []);
   React.useEffect(() => { reloadChannels(); }, [reloadChannels]);
 
+  // Mark the body while the full-height community app is mounted — the global
+  // floats (quick-nav hint, a11y FAB, back-to-top) reposition/hide so they
+  // never overlap the workspace chrome.
+  React.useEffect(() => {
+    document.body.classList.add("cm-app");
+    return () => document.body.classList.remove("cm-app");
+  }, []);
+
   // The full-height app pane sits below the sticky site nav, whose height varies
   // (the brand wraps on narrow screens). Measure it so the composer docks at the
   // real viewport bottom instead of guessing.
@@ -866,20 +874,23 @@ function CommunityApp({ setPage, auth }) {
             <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search messages" aria-label="Search messages"/>
             {query && <button className="cm-sb-search-x" onClick={() => setQuery("")} aria-label="Clear">✕</button>}
           </div>
-          <nav className="cm-sb-nav">
-            <button className={"cm-sb-item" + (active === "all" ? " is-active" : "")} onClick={() => go("all")}>
-              <span className="cm-sb-ic">✦</span><span className="cm-sb-name">All activity</span>
-              {totalUnread > 0 && <span className="cm-sb-badge">{totalUnread}</span>}
+          <nav className="cm-sb-nav" aria-label="Community channels">
+            <button className={"cm-sb-item" + (active === "all" ? " is-active" : "")} aria-current={active === "all" ? "page" : undefined} onClick={() => go("all")}
+              aria-label={"All activity" + (totalUnread > 0 ? ", " + totalUnread + " unread" : "")}>
+              <span className="cm-sb-ic" aria-hidden="true">✦</span><span className="cm-sb-name">All activity</span>
+              {totalUnread > 0 && <span className="cm-sb-badge" aria-hidden="true">{totalUnread}</span>}
             </button>
-            <button className={"cm-sb-item" + (active === "bookmarks" ? " is-active" : "")} onClick={() => go("bookmarks")}>
-              <span className="cm-sb-ic">🔖</span><span className="cm-sb-name">Saved items</span>
+            <button className={"cm-sb-item" + (active === "bookmarks" ? " is-active" : "")} aria-current={active === "bookmarks" ? "page" : undefined} onClick={() => go("bookmarks")}>
+              <span className="cm-sb-ic" aria-hidden="true">🔖</span><span className="cm-sb-name">Saved items</span>
             </button>
-            <div className="cm-sb-section">Channels</div>
+            <div className="cm-sb-section" role="heading" aria-level={2}>Channels</div>
             {channels.map(c => (
-              <button key={c.slug} className={"cm-sb-item cm-sb-chan" + (active === c.slug ? " is-active" : "") + (c.unread > 0 ? " has-unread" : "")} onClick={() => go(c.slug)}>
-                <span className="cm-sb-ic" style={{ color: c.color }}>{c.icon || "#"}</span>
+              <button key={c.slug} className={"cm-sb-item cm-sb-chan" + (active === c.slug ? " is-active" : "") + (c.unread > 0 ? " has-unread" : "")} onClick={() => go(c.slug)}
+                aria-current={active === c.slug ? "page" : undefined}
+                aria-label={c.name + (c.unread > 0 ? ", " + c.unread + " unread" : "")}>
+                <span className="cm-sb-ic" style={{ color: c.color }} aria-hidden="true">{c.icon || "#"}</span>
                 <span className="cm-sb-name">{c.name}</span>
-                {c.unread > 0 && <span className="cm-sb-badge">{c.unread}</span>}
+                {c.unread > 0 && <span className="cm-sb-badge" aria-hidden="true">{c.unread}</span>}
               </button>
             ))}
           </nav>
@@ -892,28 +903,29 @@ function CommunityApp({ setPage, auth }) {
         {/* ── Main column ─────────────────────────────────────────── */}
         <main className="cm-col">
           <header className={"cm-hd" + (isChat ? " cm-hd-chat" : "")}>
-            <button className="cm-hd-burger" onClick={() => setSbOpen(true)} aria-label="Channels">☰</button>
-            {isChat && activeChannel && <span className="cm-hd-badge" style={{ background: activeChannel.color }}>{activeChannel.icon}</span>}
+            <button className="cm-hd-burger" onClick={() => setSbOpen(true)} aria-label="Open channels" aria-expanded={sbOpen}>☰</button>
+            {isChat && activeChannel && <span className="cm-hd-badge" style={{ background: activeChannel.color }} aria-hidden="true">{activeChannel.icon}</span>}
             <div className="cm-hd-title">
               <div className="cm-hd-line">
-                {!isChat && <span className="cm-hd-ic">{headIcon}</span>}
-                <span className="cm-hd-name">{headTitle}</span>
+                {!isChat && <span className="cm-hd-ic" aria-hidden="true">{headIcon}</span>}
+                <span className="cm-hd-name" role="heading" aria-level={1}>{headTitle}</span>
                 {isChat && chMembers && <span className="cm-hd-count">· {chMembers.length} {chMembers.length === 1 ? "member" : "members"}</span>}
               </div>
               {activeChannel && <span className="cm-hd-topic">{activeChannel.description}</span>}
             </div>
             <div className="cm-hd-actions">
               {active !== "bookmarks" && !results && (
-                <div className="cm-hd-sort">
-                  {[["latest", isChat ? "Newest" : "New"], ["trending", "Hot"]].map(([v, l]) => <button key={v} className={"cm-hd-sortbtn" + (sort === v ? " is-active" : "")} onClick={() => setSort(v)}>{l}</button>)}
+                <div className="cm-hd-sort" role="group" aria-label="Sort messages">
+                  {[["latest", isChat ? "Newest" : "New"], ["trending", "Hot"]].map(([v, l]) => <button key={v} className={"cm-hd-sortbtn" + (sort === v ? " is-active" : "")} aria-pressed={sort === v} onClick={() => setSort(v)}>{l}</button>)}
                 </div>
               )}
-              <button className="cm-hd-btn" onClick={catchMeUp} title="AI catch-up">✨</button>
-              <button className={"cm-hd-btn" + (info ? " is-on" : "")} onClick={() => setInfo(v => !v)} title="Details">ⓘ</button>
+              <button className="cm-hd-btn" onClick={catchMeUp} aria-label="AI catch-up summary" title="AI catch-up">✨</button>
+              <button className={"cm-hd-btn" + (info ? " is-on" : "")} onClick={() => setInfo(v => !v)} aria-label="Channel details" aria-expanded={info} title="Details">ⓘ</button>
             </div>
           </header>
 
-          <div className={"cm-stream" + (isChat ? " is-chat" : " is-feed")} ref={streamRef} onScroll={onStreamScroll}>
+          <div className={"cm-stream" + (isChat ? " is-chat" : " is-feed")} ref={streamRef} onScroll={onStreamScroll}
+            role={isChat ? "log" : "feed"} aria-label={headTitle + " messages"} aria-busy={posts === null} {...(isChat ? { "aria-live": "polite", "aria-relevant": "additions" } : {})}>
             {/* Pinned brief for a channel (its description) */}
             {isChat && activeChannel && activeChannel.description && (
               <div className="cm-brief"><span className="cm-brief-ic">📌</span><div className="cm-brief-txt"><b>{activeChannel.name}</b> — {activeChannel.description}</div></div>
@@ -1010,7 +1022,7 @@ function cmVideoMeta(file) {
     } catch (_) { res({ duration: 0 }); }
   });
 }
-const CM_VIDEO_MAX_MB = 80, CM_VIDEO_MAX_SECS = 180, CM_IMAGE_MAX_MB = 15;
+const CM_VIDEO_MAX_MB = 80, CM_VIDEO_MAX_SECS = 180, CM_IMAGE_MAX_MB = 15, CM_DOC_MAX_MB = 25;
 const CM_EMOJI = ["😀", "😂", "🥹", "😍", "😎", "🤔", "😅", "🙌", "👏", "🔥", "❤️", "💡", "🎉", "🚀", "💪", "🙏", "👀", "✅", "✨", "⭐", "🎬", "🎵", "🎨", "💻", "📷", "📊", "🏆", "🥳", "😴", "🤝", "👋", "💯"];
 const CM_SLASH = [
   { cmd: "poll", icon: "📊", label: "Create a poll", hint: "Ask the crew a question" },
@@ -1047,7 +1059,9 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
   const [mentIdx, setMentIdx] = React.useState(0);
   const [emoji, setEmoji] = React.useState(false);
   const [drag, setDrag] = React.useState(false);
+  const [showFmt, setShowFmt] = React.useState(false); // format tools revealed on demand
   const fileRef = React.useRef(null);
+  const docRef = React.useRef(null);
   const taRef = React.useRef(null);
   const draftKey = "ngg.cm.draft." + ch;
 
@@ -1073,9 +1087,12 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
   const uploadFile = async (f) => {
     if (!f) return;
     const isVid = /^video\//.test(f.type);
+    const isImg = /^image\//.test(f.type);
+    const isDoc = !isVid && !isImg;
     const mb = f.size / 1024 / 1024;
     if (isVid && mb > CM_VIDEO_MAX_MB) { toast.error("That video is " + mb.toFixed(0) + "MB — keep clips under " + CM_VIDEO_MAX_MB + "MB."); return; }
-    if (!isVid && mb > CM_IMAGE_MAX_MB) { toast.error("That image is too large — keep it under " + CM_IMAGE_MAX_MB + "MB."); return; }
+    if (isImg && mb > CM_IMAGE_MAX_MB) { toast.error("That image is too large — keep it under " + CM_IMAGE_MAX_MB + "MB."); return; }
+    if (isDoc && mb > CM_DOC_MAX_MB) { toast.error("That file is too large — keep documents under " + CM_DOC_MAX_MB + "MB."); return; }
     let duration = 0;
     if (isVid) {
       const meta = await cmVideoMeta(f); duration = Math.round(meta.duration || 0);
@@ -1084,13 +1101,15 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
     setPoll(null); setUp(1);
     try {
       const r = await NGGApi.uploadFile(f, "post", pct => setUp(Math.max(1, pct)));
-      const type = (r.resourceType === "video" || isVid) ? "video" : "image";
-      setMedia({ type, url: r.url, poster: type === "video" ? cmPoster(r.url) : "", bytes: f.size, duration });
+      const type = isDoc ? "doc" : ((r.resourceType === "video" || isVid) ? "video" : "image");
+      setMedia({ type, url: r.url, poster: type === "video" ? cmPoster(r.url) : "", bytes: f.size, duration, name: f.name || "document" });
     } catch (_) { toast.error("Upload failed — try again."); }
     finally { setUp(0); }
   };
   const pick = async (e) => { const f = e.target.files && e.target.files[0]; await uploadFile(f); if (fileRef.current) fileRef.current.value = ""; };
+  const pickDoc = async (e) => { const f = e.target.files && e.target.files[0]; await uploadFile(f); if (docRef.current) docRef.current.value = ""; };
   const openFile = () => fileRef.current && fileRef.current.click();
+  const openDoc = () => docRef.current && docRef.current.click();
 
   // Paste an image straight from the clipboard → upload.
   const onPaste = (e) => {
@@ -1148,7 +1167,7 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
     try {
       const payload = isPoll
         ? { channel: ch, body: body.trim(), kind: "poll", pollOptions: poll.map(o => o.trim()).filter(Boolean) }
-        : { channel: ch, body: body.trim(), mediaType: media ? media.type : "none", mediaUrl: media ? media.url : "", mediaPoster: media ? media.poster : "", mediaBytes: media ? media.bytes : 0, mediaDuration: media ? media.duration : 0 };
+        : { channel: ch, body: body.trim(), mediaType: media ? media.type : "none", mediaUrl: media ? media.url : "", mediaPoster: media ? media.poster : "", mediaName: media && media.type === "doc" ? media.name : "", mediaBytes: media ? media.bytes : 0, mediaDuration: media ? media.duration : 0 };
       const r = await NGGApi.member.community.post(payload);
       setBody(""); setMedia(null); setPoll(null); setEmoji(false);
       try { localStorage.removeItem(draftKey); } catch (_) {}
@@ -1184,63 +1203,32 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
     if (enterToSend && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!busy && up === 0 && canPost) submit(); }
   };
   const chName = (channels.find(c => c.slug === ch) || {}).name || "the channel";
+  const iconBtn = (icon, label, onClick, extra) => (
+    <button type="button" className={"cm-dock-ic" + (extra || "")} onClick={onClick} disabled={up > 0} aria-label={label} title={label} onMouseDown={e => e.preventDefault()}>{icon}</button>
+  );
   return (
     <div className={"cm-composer" + (drag ? " is-drag" : "")}
       onDragOver={e => { e.preventDefault(); if (!drag) setDrag(true); }}
       onDragLeave={e => { if (e.currentTarget === e.target) setDrag(false); }}
-      onDrop={onDrop}>
-      {drag && <div className="cm-drop">Drop a photo or video to share</div>}
+      onDrop={onDrop}
+      role="group" aria-label={"Write a message to " + (active !== "all" ? "#" + chName : "the community")}>
+      {drag && <div className="cm-drop" aria-hidden="true">Drop a photo, video or document to share</div>}
 
-      {/* Formatting toolbar */}
-      <div className="cm-fmt">
-        <button className="cm-fmt-btn" title="Bold (Ctrl/⌘+B)" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "*", setBody)}><b>B</b></button>
-        <button className="cm-fmt-btn" title="Italic (Ctrl/⌘+I)" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "_", setBody)}><i>i</i></button>
-        <button className="cm-fmt-btn" title="Strikethrough" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "~", setBody)}><s>S</s></button>
-        <button className="cm-fmt-btn cm-fmt-code" title="Code (Ctrl/⌘+E)" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "`", setBody)}>{"</>"}</button>
-        <span className="cm-fmt-sep"/>
-        <div className="cm-emoji-wrap">
-          <button className={"cm-fmt-btn" + (emoji ? " is-on" : "")} title="Emoji" onMouseDown={e => e.preventDefault()} onClick={() => setEmoji(v => !v)}>😊</button>
-          {emoji && (
-            <div className="cm-emoji-pop" onMouseLeave={() => setEmoji(false)}>
-              {CM_EMOJI.map(em => <button key={em} className="cm-emoji-e" onMouseDown={e => e.preventDefault()} onClick={() => { cmInsertAt(taRef.current, em, setBody); }}>{em}</button>)}
-            </div>
-          )}
+      {/* Format tools — revealed on demand, never permanent. */}
+      {showFmt && (
+        <div className="cm-fmt" role="toolbar" aria-label="Text formatting">
+          <button type="button" className="cm-fmt-btn" aria-label="Bold (Ctrl or Cmd + B)" title="Bold (Ctrl/⌘+B)" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "*", setBody)}><b>B</b></button>
+          <button type="button" className="cm-fmt-btn" aria-label="Italic (Ctrl or Cmd + I)" title="Italic (Ctrl/⌘+I)" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "_", setBody)}><i>i</i></button>
+          <button type="button" className="cm-fmt-btn" aria-label="Strikethrough" title="Strikethrough" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "~", setBody)}><s>S</s></button>
+          <button type="button" className="cm-fmt-btn cm-fmt-code" aria-label="Code (Ctrl or Cmd + E)" title="Code (Ctrl/⌘+E)" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "`", setBody)}>{"</>"}</button>
         </div>
-        <button className="cm-fmt-btn" title="Mention someone" onMouseDown={e => e.preventDefault()} onClick={() => cmInsertAt(taRef.current, "@", setBody)}>@</button>
-      </div>
-
-      <div className="cm-composer-top">
-        <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
-          <textarea ref={taRef} className="cm-input" rows={1} maxLength={2000} value={body} onChange={onBody} onKeyDown={onKey} onPaste={onPaste}
-            placeholder={poll ? "Ask the crew a question…" : ("Message " + (active !== "all" ? "#" + chName : "the crew") + "…   (@ mention · / commands)")}/>
-          {slashOpen && (
-            <div className="cm-mention-menu cm-slash-menu">
-              {slashItems.map((s, i) => (
-                <button key={s.cmd} className={"cm-mention-item" + (i === 0 ? " is-active" : "")} onMouseDown={e => e.preventDefault()} onClick={() => runSlash(s.cmd)}>
-                  <span className="cm-slash-ic">{s.icon}</span>
-                  <span><b>/{s.cmd}</b> <span className="cm-slash-hint">{s.hint}</span></span>
-                </button>
-              ))}
-            </div>
-          )}
-          {ment && ment.items.length > 0 && (
-            <div className="cm-mention-menu">
-              {ment.items.map((pp, i) => (
-                <button key={pp.handle} className={"cm-mention-item" + (i === mentIdx ? " is-active" : "")} onMouseDown={e => e.preventDefault()} onMouseEnter={() => setMentIdx(i)} onClick={() => pickMention(pp.handle)}>
-                  <span className={"cm-avatar cm-avatar-sm" + (pp.kind === "all" ? " cm-avatar-all" : "")} style={pp.kind === "all" ? {} : { background: cmColor(pp.handle) }}>{pp.kind === "all" ? "📣" : cmInitial(pp.name || pp.handle)}</span>
-                  <span><b>@{pp.handle}</b>{pp.name ? " · " + pp.name : ""}{pp.centre ? " · " + pp.centre : ""}{pp.kind === "mentor" ? <span className="cm-ment-badge">mentor</span> : null}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      )}
 
       {poll && (
         <div className="cm-poll-edit">
           {poll.map((o, i) => (
             <div key={i} className="cm-poll-opt">
-              <input className="cm-poll-input" value={o} maxLength={80} placeholder={"Option " + (i + 1)} onChange={e => pollSet(i, e.target.value)}/>
+              <input className="cm-poll-input" value={o} maxLength={80} placeholder={"Option " + (i + 1)} aria-label={"Poll option " + (i + 1)} onChange={e => pollSet(i, e.target.value)}/>
               {poll.length > 2 && <button className="cm-poll-x" onClick={() => pollDel(i)} aria-label="Remove option">✕</button>}
             </div>
           ))}
@@ -1250,28 +1238,76 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
 
       {media && (
         <div className="cm-media-preview">
-          {media.type === "video" ? <video src={cmOpt(media.url, 1280)} poster={media.poster} controls className="cm-media"/> : <img src={cmOpt(media.url, 900)} alt="" className="cm-media"/>}
-          <button className="cm-media-x" onClick={() => setMedia(null)} aria-label="Remove media">✕</button>
+          {media.type === "video" ? <video src={cmOpt(media.url, 1280)} poster={media.poster} controls className="cm-media"/>
+            : media.type === "doc" ? <div className="cm-doc-chip"><span className="cm-doc-ic" aria-hidden="true">📄</span><span className="cm-doc-name">{media.name}</span></div>
+            : <img src={cmOpt(media.url, 900)} alt="" className="cm-media"/>}
+          <button className="cm-media-x" onClick={() => setMedia(null)} aria-label="Remove attachment">✕</button>
         </div>
       )}
-      {up > 0 && <div className="cm-progress"><span style={{ width: up + "%" }}/></div>}
-      <div className="cm-composer-bar">
-        <div className="cm-composer-left">
-          {!poll && <button className="cm-icon-btn" onClick={openFile} disabled={up > 0} title="Add photo or video">📷 Media</button>}
-          <input ref={fileRef} type="file" accept="image/*,video/*" onChange={pick} style={{ display: "none" }}/>
-          {!media && <button className={"cm-icon-btn" + (poll ? " is-on" : "")} onClick={() => setPoll(p => p ? null : ["", ""])} title="Create a poll">📊 Poll</button>}
-          <select className="cm-chan-select" value={ch} onChange={e => setCh(e.target.value)}>
-            {channels.filter(c => c.slug !== "bookmarks").map(c => <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>)}
-          </select>
+      {up > 0 && <div className="cm-progress" role="progressbar" aria-label="Uploading"><span style={{ width: up + "%" }}/></div>}
+
+      {/* Single-row dock */}
+      <div className="cm-dockrow">
+        <span className="cm-avatar cm-dock-avatar" style={{ background: cmColor(me) }} aria-hidden="true">{cmInitial(me)}</span>
+        <div className="cm-dock-field">
+          <label className="sr-only" htmlFor="cm-input-box">Message {active !== "all" ? "#" + chName : "the community"}</label>
+          <textarea id="cm-input-box" ref={taRef} className="cm-input" rows={1} maxLength={2000} value={body} onChange={onBody} onKeyDown={onKey} onPaste={onPaste}
+            aria-label={"Message " + (active !== "all" ? "#" + chName : "the community")}
+            placeholder={poll ? "Ask the crew a question…" : ("Message " + (active !== "all" ? "#" + chName : "the crew") + "…")}/>
+          {slashOpen && (
+            <div className="cm-mention-menu cm-slash-menu" role="listbox" aria-label="Commands">
+              {slashItems.map((s, i) => (
+                <button key={s.cmd} role="option" aria-selected={i === 0} className={"cm-mention-item" + (i === 0 ? " is-active" : "")} onMouseDown={e => e.preventDefault()} onClick={() => runSlash(s.cmd)}>
+                  <span className="cm-slash-ic" aria-hidden="true">{s.icon}</span>
+                  <span><b>/{s.cmd}</b> <span className="cm-slash-hint">{s.hint}</span></span>
+                </button>
+              ))}
+            </div>
+          )}
+          {ment && ment.items.length > 0 && (
+            <div className="cm-mention-menu" role="listbox" aria-label="People to mention">
+              {ment.items.map((pp, i) => (
+                <button key={pp.handle} role="option" aria-selected={i === mentIdx} className={"cm-mention-item" + (i === mentIdx ? " is-active" : "")} onMouseDown={e => e.preventDefault()} onMouseEnter={() => setMentIdx(i)} onClick={() => pickMention(pp.handle)}>
+                  <span className={"cm-avatar cm-avatar-sm" + (pp.kind === "all" ? " cm-avatar-all" : "")} style={pp.kind === "all" ? {} : { background: cmColor(pp.handle) }} aria-hidden="true">{pp.kind === "all" ? "📣" : cmInitial(pp.name || pp.handle)}</span>
+                  <span><b>@{pp.handle}</b>{pp.name ? " · " + pp.name : ""}{pp.centre ? " · " + pp.centre : ""}{pp.kind === "mentor" ? <span className="cm-ment-badge">mentor</span> : null}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="cm-composer-right">
-          {body.length > 1600 && <span className={"cm-count" + (remaining < 0 ? " over" : "")}>{remaining}</span>}
+        <div className="cm-dock-actions">
+          <input ref={fileRef} type="file" accept="image/*,video/*" onChange={pick} className="sr-only" tabIndex={-1} aria-hidden="true"/>
+          <input ref={docRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.zip,application/pdf" onChange={pickDoc} className="sr-only" tabIndex={-1} aria-hidden="true"/>
+          {iconBtn("🖼️", "Add a photo or video", openFile)}
+          {iconBtn("📎", "Attach a document", openDoc)}
+          {iconBtn("📊", "Create a poll", () => setPoll(p => p ? null : ["", ""]), poll ? " is-on" : "")}
+          <div className="cm-emoji-wrap">
+            {iconBtn("😊", "Emoji", () => setEmoji(v => !v), emoji ? " is-on" : "")}
+            {emoji && (
+              <div className="cm-emoji-pop" role="menu" aria-label="Emoji" onMouseLeave={() => setEmoji(false)}>
+                {CM_EMOJI.map(em => <button key={em} type="button" className="cm-emoji-e" aria-label={"Insert " + em} onMouseDown={e => e.preventDefault()} onClick={() => cmInsertAt(taRef.current, em, setBody)}>{em}</button>)}
+              </div>
+            )}
+          </div>
+          {iconBtn("Aa", "Formatting", () => setShowFmt(v => !v), showFmt ? " is-on" : "")}
           <span className="cm-send-wrap">
-            <button className="btn btn-primary btn-sm" disabled={busy || up > 0 || !canPost} onClick={submit}>{busy ? "Posting…" : poll ? "Ask" : "Post"}</button>
-            <span className="cm-send-tip" role="tooltip">{enterToSend ? <><b>Enter</b> to send · <b>Shift + Enter</b> for a new line</> : <>Press <b>Post</b> to share · <b>Shift + Enter</b> for a new line</>}</span>
+            <button className="cm-send-btn" disabled={busy || up > 0 || !canPost} onClick={submit} aria-label={poll ? "Post poll" : "Send message"}>{busy ? "…" : poll ? "Ask" : "Send"}</button>
+            <span className="cm-send-tip" role="tooltip">{enterToSend ? <><b>Enter</b> to send · <b>Shift + Enter</b> for a new line</> : <>Press <b>Send</b> to share · <b>Shift + Enter</b> for a new line</>}</span>
           </span>
         </div>
       </div>
+
+      {/* Channel target — only when posting from an aggregate view. */}
+      {(active === "all" || active === "bookmarks") && (
+        <div className="cm-dock-target">
+          <label className="sr-only" htmlFor="cm-chan-select">Post to channel</label>
+          <span aria-hidden="true">Posting to</span>
+          <select id="cm-chan-select" className="cm-chan-select" value={ch} onChange={e => setCh(e.target.value)}>
+            {channels.filter(c => c.slug !== "bookmarks").map(c => <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>)}
+          </select>
+          {body.length > 1600 && <span className={"cm-count" + (remaining < 0 ? " over" : "")}>{remaining}</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -1352,8 +1388,30 @@ function CmBodyBlock({ post, onVote }) {
       )}
       {post.mediaType === "image" && post.mediaUrl && <div className="cm-msg-media"><img src={cmOpt(post.mediaUrl, 1000)} alt={post.altText || ""} loading="lazy"/></div>}
       {post.mediaType === "video" && post.mediaUrl && <div className="cm-msg-media"><video src={cmOpt(post.mediaUrl, 1280)} poster={post.mediaPoster} controls preload="metadata"/></div>}
+      {post.mediaType === "doc" && post.mediaUrl && (
+        <a className="cm-doc-card" href={post.mediaUrl} target="_blank" rel="noopener noreferrer">
+          <span className="cm-doc-card-ic" aria-hidden="true">📄</span>
+          <span className="cm-doc-card-body"><span className="cm-doc-card-name">{post.altText || "Document"}</span><span className="cm-doc-card-sub">{cmDocExt(post.mediaUrl)} · opens in a new tab</span></span>
+          <span className="cm-doc-card-dl" aria-hidden="true">↗</span>
+        </a>
+      )}
+      {post.linkPreview && post.linkPreview.title && (
+        <a className="cm-link-card" href={post.linkPreview.url} target="_blank" rel="noopener noreferrer">
+          {post.linkPreview.image && <span className="cm-link-thumb" style={{ backgroundImage: "url(" + post.linkPreview.image + ")" }} aria-hidden="true"/>}
+          <span className="cm-link-body">
+            {post.linkPreview.site && <span className="cm-link-site">{post.linkPreview.site}</span>}
+            <span className="cm-link-title">{post.linkPreview.title}</span>
+            {post.linkPreview.description && <span className="cm-link-desc">{post.linkPreview.description}</span>}
+          </span>
+        </a>
+      )}
     </>
   );
+}
+// File extension label for a doc card.
+function cmDocExt(url) {
+  const m = /\.([a-z0-9]{1,5})(?:\?|#|$)/i.exec(String(url || ""));
+  return m ? m[1].toUpperCase() : "FILE";
 }
 
 /* ---- Reaction chips (click to toggle) ---- */
@@ -1361,10 +1419,10 @@ function CmReactChips({ post, onReact }) {
   const entries = Object.entries(post.reactions || {}).filter(([, n]) => n > 0);
   if (!entries.length) return null;
   return (
-    <div className="cm-chips">
+    <div className="cm-chips" role="group" aria-label="Reactions">
       {entries.map(([e, n]) => (
-        <button key={e} className={"cm-chip-react" + (post.myReaction === e ? " mine" : "")} onClick={() => onReact(e)}>
-          <span>{e}</span><b>{n}</b>
+        <button key={e} className={"cm-chip-react" + (post.myReaction === e ? " mine" : "")} aria-pressed={post.myReaction === e} aria-label={n + " " + e + " reaction" + (n === 1 ? "" : "s") + (post.myReaction === e ? ", including yours" : "")} onClick={() => onReact(e)}>
+          <span aria-hidden="true">{e}</span><b aria-hidden="true">{n}</b>
         </button>
       ))}
     </div>
@@ -1382,11 +1440,12 @@ function CmMessage({ post, prev, me, onPatch, onRemove, onOpenThread, standalone
   const react = (e) => { setPicker(false); act.react(e); };
 
   return (
-    <div className={"cm-msg" + (grouped ? " grouped" : "") + (post.status !== "published" ? " is-pending" : "")}>
+    <div className={"cm-msg" + (grouped ? " grouped" : "") + (post.status !== "published" ? " is-pending" : "")}
+      role="article" aria-label={post.author.name + (post.author.isMe ? " (you)" : "") + " · " + cmAgo(post.createdAt)}>
       <div className="cm-msg-gutter">
         {grouped
-          ? <span className="cm-msg-tinytime">{cmAgo(post.createdAt)}</span>
-          : <span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }}>{cmInitial(post.author.name)}</span>}
+          ? <span className="cm-msg-tinytime" aria-hidden="true">{cmAgo(post.createdAt)}</span>
+          : <span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }} aria-hidden="true">{cmInitial(post.author.name)}</span>}
       </div>
       <div className="cm-msg-main">
         {!grouped && (
@@ -1411,17 +1470,17 @@ function CmMessage({ post, prev, me, onPatch, onRemove, onOpenThread, standalone
       </div>
 
       {/* Hover toolbar */}
-      <div className="cm-msg-tools">
+      <div className="cm-msg-tools" role="group" aria-label="Message actions">
         <div className="cm-tool-wrap">
-          <button className="cm-tool" onClick={() => setPicker(p => !p)} title="React">😊</button>
-          {picker && <div className="cm-picker" onMouseLeave={() => setPicker(false)}>{CM_REACTIONS.map(e => <button key={e} className={"cm-picker-e" + (post.myReaction === e ? " is-on" : "")} onClick={() => react(e)}>{e}</button>)}</div>}
+          <button className="cm-tool" onClick={() => setPicker(p => !p)} aria-label="Add a reaction" aria-expanded={picker} title="React">😊</button>
+          {picker && <div className="cm-picker" role="menu" aria-label="Pick a reaction" onMouseLeave={() => setPicker(false)}>{CM_REACTIONS.map(e => <button key={e} className={"cm-picker-e" + (post.myReaction === e ? " is-on" : "")} aria-label={"React " + e} onClick={() => react(e)}>{e}</button>)}</div>}
         </div>
-        <button className="cm-tool" onClick={() => onOpenThread && onOpenThread(post)} title="Reply in thread">💬</button>
-        {post.canStar && <button className={"cm-tool" + (post.starred ? " is-star" : "")} onClick={act.star} title={post.starred ? "Remove Genius Star" : "Give a Genius Star"}>⭐</button>}
-        <button className={"cm-tool" + (post.bookmarked ? " is-on" : "")} onClick={act.bookmark} title={post.bookmarked ? "Saved" : "Save"}>{post.bookmarked ? "🔖" : "🏷️"}</button>
-        <button className="cm-tool" onClick={act.share} title="Share">↗</button>
+        <button className="cm-tool" onClick={() => onOpenThread && onOpenThread(post)} aria-label={"Reply in thread" + (post.commentCount ? " (" + post.commentCount + " replies)" : "")} title="Reply in thread">💬</button>
+        {post.canStar && <button className={"cm-tool" + (post.starred ? " is-star" : "")} onClick={act.star} aria-pressed={post.starred} aria-label={post.starred ? "Remove Genius Star" : "Give a Genius Star"} title={post.starred ? "Remove Genius Star" : "Give a Genius Star"}>⭐</button>}
+        <button className={"cm-tool" + (post.bookmarked ? " is-on" : "")} onClick={act.bookmark} aria-pressed={post.bookmarked} aria-label={post.bookmarked ? "Remove from saved" : "Save message"} title={post.bookmarked ? "Saved" : "Save"}>{post.bookmarked ? "🔖" : "🏷️"}</button>
+        <button className="cm-tool" onClick={act.share} aria-label="Share message" title="Share">↗</button>
         <div className="cm-tool-wrap">
-          <button className="cm-tool" onClick={() => setMenu(m => !m)} title="More">⋯</button>
+          <button className="cm-tool" onClick={() => setMenu(m => !m)} aria-label="More actions" aria-expanded={menu} title="More">⋯</button>
           {menu && (
             <div className="cm-menu" onMouseLeave={() => setMenu(false)}>
               <button className="cm-menu-item" onClick={() => { setMenu(false); onOpenThread && onOpenThread(post); }}>💬 Reply in thread</button>
@@ -1445,15 +1504,15 @@ function CmCard({ post, me, onPatch, onRemove, onOpenThread, showChannel }) {
   const react = (e) => { setPicker(false); act.react(e); };
   const replies = post.commentCount || 0;
   return (
-    <article className={"cm-card" + (post.status !== "published" ? " is-pending" : "")}>
+    <article className={"cm-card" + (post.status !== "published" ? " is-pending" : "")} aria-label={post.author.name + (post.author.isMe ? " (you)" : "") + " in " + post.channel.name + " · " + cmAgo(post.createdAt)}>
       <div className="cm-card-head">
-        <span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }}>{cmInitial(post.author.name)}</span>
+        <span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }} aria-hidden="true">{cmInitial(post.author.name)}</span>
         <div className="cm-card-meta">
           <span className="cm-card-author">{post.author.name}{post.author.isMe && <span className="cm-you">you</span>}</span>
           <span className="cm-card-sub">{cmAgo(post.createdAt)}{post.author.centre ? " · " + post.author.centre : ""}</span>
         </div>
         {showChannel && <span className="cm-card-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span>}
-        {post.featured && <span className="cm-featured" title="On the public Showcase">✨</span>}
+        {post.featured && <span className="cm-featured" title="On the public Showcase" aria-label="Featured on the public Showcase">✨</span>}
       </div>
       <CmBodyBlock post={post} onVote={act.vote}/>
       <div className="cm-card-bar">
@@ -1461,15 +1520,15 @@ function CmCard({ post, me, onPatch, onRemove, onOpenThread, showChannel }) {
           <CmStar post={post} onStar={act.star}/>
           <CmReactChips post={post} onReact={react}/>
           <div className="cm-tool-wrap">
-            <button className={"cm-react-add" + (post.myReaction ? " is-on" : "")} onClick={() => setPicker(p => !p)}>{post.myReaction || "😊"} <span>React</span></button>
-            {picker && <div className="cm-picker" onMouseLeave={() => setPicker(false)}>{CM_REACTIONS.map(e => <button key={e} className={"cm-picker-e" + (post.myReaction === e ? " is-on" : "")} onClick={() => react(e)}>{e}</button>)}</div>}
+            <button className={"cm-react-add" + (post.myReaction ? " is-on" : "")} onClick={() => setPicker(p => !p)} aria-label="Add a reaction" aria-expanded={picker}>{post.myReaction || "😊"} <span>React</span></button>
+            {picker && <div className="cm-picker" role="menu" aria-label="Pick a reaction" onMouseLeave={() => setPicker(false)}>{CM_REACTIONS.map(e => <button key={e} className={"cm-picker-e" + (post.myReaction === e ? " is-on" : "")} aria-label={"React " + e} onClick={() => react(e)}>{e}</button>)}</div>}
           </div>
         </div>
-        <button className="cm-card-reply" onClick={() => onOpenThread && onOpenThread(post)}>💬 {replies ? (replies + (replies === 1 ? " reply" : " replies")) : "Reply"}</button>
-        <button className={"cm-pill-ic" + (post.bookmarked ? " is-on" : "")} onClick={act.bookmark} title={post.bookmarked ? "Saved" : "Save"}>{post.bookmarked ? "🔖" : "🏷️"}</button>
-        <button className="cm-pill-ic" onClick={act.share} title="Share">↗</button>
+        <button className="cm-card-reply" onClick={() => onOpenThread && onOpenThread(post)} aria-label={replies ? "Open thread, " + replies + (replies === 1 ? " reply" : " replies") : "Reply in a thread"}>💬 {replies ? (replies + (replies === 1 ? " reply" : " replies")) : "Reply"}</button>
+        <button className={"cm-pill-ic" + (post.bookmarked ? " is-on" : "")} onClick={act.bookmark} aria-pressed={post.bookmarked} aria-label={post.bookmarked ? "Remove from saved" : "Save post"} title={post.bookmarked ? "Saved" : "Save"}>{post.bookmarked ? "🔖" : "🏷️"}</button>
+        <button className="cm-pill-ic" onClick={act.share} aria-label="Share post" title="Share">↗</button>
         <div className="cm-tool-wrap">
-          <button className="cm-pill-ic" onClick={() => setMenu(m => !m)} title="More">⋯</button>
+          <button className="cm-pill-ic" onClick={() => setMenu(m => !m)} aria-label="More actions" aria-expanded={menu} title="More">⋯</button>
           {menu && (
             <div className="cm-menu" onMouseLeave={() => setMenu(false)}>
               {post.author.isMe
@@ -1522,6 +1581,14 @@ function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
     return () => { a = false; };
   }, [post.postId]);
   React.useEffect(() => { if (endRef.current) endRef.current.scrollIntoView({ block: "end" }); }, [comments]);
+  // Focus the pane on open + close on Escape (dialog semantics).
+  const paneRef = React.useRef(null);
+  React.useEffect(() => {
+    const el = paneRef.current; if (el) { const c = el.querySelector(".cm-thread-x"); if (c) try { c.focus(); } catch (_) {} }
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   const send = async () => {
     if (!body.trim()) return; setBusy(true);
     try {
@@ -1532,9 +1599,9 @@ function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
     } catch (e) { toast.error(e.detail || "Couldn't reply — try again."); } finally { setBusy(false); }
   };
   return (
-    <aside className="cm-thread">
+    <aside className="cm-thread" ref={paneRef} role="dialog" aria-label={"Thread in " + post.channel.name}>
       <div className="cm-thread-head">
-        <div><span className="cm-thread-title">Thread</span><span className="cm-thread-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span></div>
+        <div><span className="cm-thread-title" role="heading" aria-level={2}>Thread</span><span className="cm-thread-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span></div>
         <button className="cm-thread-x" onClick={onClose} aria-label="Close thread">✕</button>
       </div>
       <div className="cm-thread-body">

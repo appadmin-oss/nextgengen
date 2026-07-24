@@ -7,7 +7,7 @@ declare(strict_types=1);
  * the delivery log. Gated on the 'settings' capability.
  */
 
-const INTEGRATION_KINDS = ['gchat', 'webhook', 'sheets'];
+const INTEGRATION_KINDS = ['gchat', 'webhook', 'sheets', 'drive'];
 
 function integration_public(array $r): array {
     $cfg = json_decode((string)$r['config'], true) ?: [];
@@ -74,6 +74,7 @@ function admin_integrations_upsert(array $p): array {
     if ($kind === 'gchat' && strpos($url, 'https://chat.googleapis.com/') !== 0) return ['ok' => false, 'error' => 'bad_gchat_url'];
     if ($kind === 'sheets' && strpos($url, 'https://script.google.com/') !== 0) return ['ok' => false, 'error' => 'bad_script_url'];
     if ($kind === 'webhook' && strpos($url, 'https://') !== 0) return ['ok' => false, 'error' => 'bad_url'];
+    if ($kind === 'drive' && strpos($url, 'https://') !== 0) return ['ok' => false, 'error' => 'bad_url'];
 
     $events = is_array($d['events'] ?? null) ? array_values(array_filter(array_map('strval', $d['events']))) : ['*'];
     if (!$events) $events = ['*'];

@@ -468,8 +468,10 @@ html { scroll-behavior: smooth; }
 /* Floating hint */
 .cmdk-hint {
   position: fixed;
-  left: 20px; bottom: 20px;
+  /* Sit ABOVE the accessibility FAB (bottom-left) so the two never overlap. */
+  left: 20px; bottom: 84px;
   z-index: 90;
+  animation: cmdk-hint-in .3s ease both;
   background: white;
   border: 1px solid rgba(12, 20, 50, 0.08);
   border-radius: 999px;
@@ -497,6 +499,11 @@ html { scroll-behavior: smooth; }
 .cmdk-hint-x { color: var(--ink-500); opacity: 0.55; padding: 0 4px; cursor: pointer; }
 .cmdk-hint-x:hover { opacity: 1; }
 @media (hover: none) { .cmdk-hint { display: none; } }
+@keyframes cmdk-hint-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* Full-height app chrome (community): keep the corners clear. */
+body.cm-app .cmdk-hint { display: none; }
+body.cm-app .a11y-fab { left: auto; right: 18px; bottom: 88px; }
+body.cm-app .fab-top { display: none; }
 
 /* ============================================================
    1. MOTION PRIMITIVES — used by motion.jsx
@@ -1448,6 +1455,18 @@ html { scroll-behavior: smooth; }
 .admin-session-chip { font-family: var(--font-mono, monospace); font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
 .admin-session-chip.warn { color: #ffd7a1; background: rgba(245,176,38,0.16); border-color: rgba(245,176,38,0.4); }
 .admin-gate-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+
+/* Integration setup guide */
+.admin-guide { margin: 4px 0 2px; }
+.admin-guide-toggle { background: none; border: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; color: var(--navy-700, #1c2a5e); padding: 4px 0; }
+.admin-guide-body { margin-top: 8px; background: rgba(12,20,50,0.03); border: 1px solid rgba(12,20,50,0.08); border-radius: 12px; padding: 14px 16px; font-size: 13.5px; line-height: 1.6; color: var(--ink-700, #46506e); }
+.admin-guide-body ol { margin: 0; padding-left: 20px; }
+.admin-guide-body li { margin-bottom: 6px; }
+.admin-guide-body code { font-family: var(--font-mono, monospace); font-size: 12px; background: rgba(12,20,50,0.07); padding: 1px 5px; border-radius: 4px; }
+.admin-guide-code { margin-top: 12px; border: 1px solid rgba(12,20,50,0.1); border-radius: 10px; overflow: hidden; }
+.admin-guide-code-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; background: rgba(12,20,50,0.05); font-size: 12px; font-weight: 700; color: var(--ink-600, #47506e); }
+.admin-guide-code pre { margin: 0; padding: 14px 16px; background: #0c1432; color: #e8ecfb; font-family: var(--font-mono, monospace); font-size: 12px; line-height: 1.55; overflow-x: auto; }
+.admin-guide-note { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-500, #5a6488); }
 
 .admin-shell {
   display: grid;

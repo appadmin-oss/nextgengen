@@ -2674,6 +2674,73 @@ function AdminBehaviour() {
 // Integrations & delivery — bus destinations, delivery log, manual dispatch
 // ============================================================================
 
+// Step-by-step setup for each integration type — the piece that was missing
+// (the Sheets mirror "didn't post" because the Apps Script wasn't deployed for
+// "Anyone" access, or the doPost didn't match our payload).
+const APPS_SCRIPT_SHEETS = `function doPost(e) {
+  var body = JSON.parse(e.postData.contents);
+  // Optional shared-secret check (matches the "Signing secret" you saved):
+  // if (body.secret !== 'PASTE_SECRET') return ok('bad secret');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(body.event) || ss.insertSheet(body.event);
+  var rows = [].concat(body.data.members || [body.data]);
+  rows.forEach(function (r) { sheet.appendRow([new Date(), JSON.stringify(r)]); });
+  return ok('ok');
+}
+function ok(msg){ return ContentService.createTextOutput(msg); }`;
+const APPS_SCRIPT_DRIVE = `function doPost(e) {
+  var body = JSON.parse(e.postData.contents);
+  var d = body.data;                       // { name, url, channel, author }
+  var file = UrlFetchApp.fetch(d.url).getBlob().setName(d.name || 'document');
+  var folder = DriveApp.getFoldersByName('NGG Community Docs').hasNext()
+    ? DriveApp.getFoldersByName('NGG Community Docs').next()
+    : DriveApp.createFolder('NGG Community Docs');
+  folder.createFile(file);
+  return ContentService.createTextOutput('ok');
+}`;
+function AdminIntegrationGuide({ kind }) {
+  const [open, setOpen] = React.useState(false);
+  const isScript = kind === "sheets" || kind === "drive";
+  const code = kind === "drive" ? APPS_SCRIPT_DRIVE : APPS_SCRIPT_SHEETS;
+  return (
+    <div className="admin-guide">
+      <button type="button" className="admin-guide-toggle" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        {open ? "▾" : "▸"} Setup guide — {kind === "gchat" ? "Google Chat" : kind === "webhook" ? "signed webhook" : kind === "drive" ? "Drive (any provider)" : "Google Sheets"}
+      </button>
+      {open && (
+        <div className="admin-guide-body">
+          {kind === "gchat" && (
+            <ol><li>In your Google Chat space → <b>Apps & integrations → Manage webhooks</b>.</li>
+              <li>Create a webhook, copy its URL (starts with <code>https://chat.googleapis.com/</code>).</li>
+              <li>Paste it above, choose the events, save. Use <b>Send test</b> to confirm.</li></ol>
+          )}
+          {kind === "webhook" && (
+            <ol><li>Point the URL at your HTTPS endpoint.</li>
+              <li>We sign every POST: header <code>X-NGG-Signature: sha256=HMAC(timestamp + "." + body, secret)</code>. Verify it with the signing secret shown once on save.</li>
+              <li>Respond <code>2xx</code> within 15s. Non-2xx retries with backoff (8 tries → dead).</li></ol>
+          )}
+          {isScript && (
+            <>
+              <ol>
+                <li>Open <a href="https://sheets.new" target="_blank" rel="noopener noreferrer">a Google Sheet</a>{kind === "drive" ? " (any Google account with Drive)" : ""} → <b>Extensions → Apps Script</b>.</li>
+                <li>Delete the sample and paste the code below. Save.</li>
+                <li><b>Deploy → New deployment → Web app.</b> Set <b>Execute as: Me</b> and <b>Who has access: Anyone</b>. <em>(This is the step that's usually missed — without “Anyone”, Google shows a sign-in page and nothing is written.)</em></li>
+                <li>Copy the <b>/exec</b> Web app URL, paste it above, save, then <b>Send test</b>.</li>
+                {kind === "drive" && <li>Set events to <code>community.document</code> so shared docs are filed to your Drive automatically.</li>}
+              </ol>
+              <div className="admin-guide-code">
+                <div className="admin-guide-code-h"><span>Apps Script — paste into the editor</span><button type="button" className="btn btn-ghost btn-sm" onClick={() => { try { navigator.clipboard.writeText(code); toast.success("Copied"); } catch (_) {} }}>Copy</button></div>
+                <pre>{code}</pre>
+              </div>
+              <p className="admin-guide-note">Cross-compatible: for Dropbox / OneDrive / S3, point the URL at a Zapier / Make webhook (or your own endpoint) instead — it receives the same signed JSON, so any drive works.</p>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminIntegrations() {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -2702,7 +2769,7 @@ function AdminIntegrations() {
   const health = (d && d.health) || {};
   const log = (d && d.log) || [];
   const pending = log.filter(x => x.status === "pending" || x.status === "failed").length;
-  const kindHint = { gchat: "https://chat.googleapis.com/…", sheets: "https://script.google.com/…", webhook: "https://your-endpoint.example/…" }[form.kind];
+  const kindHint = { gchat: "https://chat.googleapis.com/…", sheets: "https://script.google.com/macros/s/…/exec", webhook: "https://your-endpoint.example/…", drive: "https://script.google.com/macros/s/…/exec  (or any drive webhook)" }[form.kind];
   return (
     <div className="admin-section">
       <div className="admin-section-head">
@@ -2712,16 +2779,17 @@ function AdminIntegrations() {
           <button className="btn btn-ghost btn-sm" disabled={busy === "sync"} onClick={syncMembers}>{busy === "sync" ? "Syncing…" : "Sync members → Sheets"}</button>
         </div>
       </div>
-      <p className="admin-hint">Send events (registrations, attendance, awards, wellbeing flags) to Google Chat, a signed webhook, or the Sheets mirror. Delivery runs automatically via web-cron; use "Run delivery queue now" to flush immediately.</p>
+      <p className="admin-hint">Send events (registrations, attendance, awards, wellbeing flags, shared documents) to Google Chat, a signed webhook, the Sheets mirror, or a Drive sink. Pick a type below for a step-by-step setup guide. Delivery runs automatically via web-cron; use "Run delivery queue now" to flush immediately.</p>
       <form onSubmit={save} className="admin-fields" style={{ maxWidth: 640, marginBottom: 18 }}>
         <div className="admin-fields-row">
-          <FieldSelect label="Type" value={form.kind} onChange={v => setForm(o => ({ ...o, kind: v }))} options={["gchat", "webhook", "sheets"]}/>
+          <FieldSelect label="Type" value={form.kind} onChange={v => setForm(o => ({ ...o, kind: v }))} options={["gchat", "webhook", "sheets", "drive"]}/>
           <Field label="Name" value={form.name} onChange={v => setForm(o => ({ ...o, name: v }))}/>
           <FieldSelect label="Status" value={form.status} onChange={v => setForm(o => ({ ...o, status: v }))} options={["active", "paused"]}/>
         </div>
         <Field label={"Destination URL"} value={form.url} onChange={v => setForm(o => ({ ...o, url: v }))} placeholder={kindHint}/>
-        <Field label="Events (comma-separated; * = all, prefix.* matches)" value={form.events} onChange={v => setForm(o => ({ ...o, events: v }))} placeholder="* or attendance.*, registration.created"/>
+        <Field label="Events (comma-separated; * = all, prefix.* matches)" value={form.events} onChange={v => setForm(o => ({ ...o, events: v }))} placeholder={form.kind === "drive" ? "community.document" : "* or attendance.*, registration.created"}/>
         {form.kind !== "gchat" && <Field label={"Signing secret " + (form.integrationId ? "(blank = keep current)" : "(blank = auto-generate)")} value={form.secret} onChange={v => setForm(o => ({ ...o, secret: v }))}/>}
+        <AdminIntegrationGuide kind={form.kind}/>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn btn-primary btn-sm" disabled={busy === "save" || !form.url}>{form.integrationId ? "Update" : "Add integration"}</button>
           {form.integrationId ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => setForm(blank)}>Cancel</button> : null}
