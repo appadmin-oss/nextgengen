@@ -883,18 +883,18 @@ function CommunityApp({ setPage, auth }) {
           <nav className="cm-sb-nav" aria-label="Community channels">
             <button className={"cm-sb-item" + (active === "all" ? " is-active" : "")} aria-current={active === "all" ? "page" : undefined} onClick={() => go("all")}
               aria-label={"All activity" + (totalUnread > 0 ? ", " + totalUnread + " unread" : "")}>
-              <span className="cm-sb-ic" aria-hidden="true">✦</span><span className="cm-sb-name">All activity</span>
+              <span className="cm-sb-ic" aria-hidden="true">{cmNavIcon("all")}</span><span className="cm-sb-name">All activity</span>
               {totalUnread > 0 && <span className="cm-sb-badge" aria-hidden="true">{totalUnread}</span>}
             </button>
             <button className={"cm-sb-item" + (active === "bookmarks" ? " is-active" : "")} aria-current={active === "bookmarks" ? "page" : undefined} onClick={() => go("bookmarks")}>
-              <span className="cm-sb-ic" aria-hidden="true">🔖</span><span className="cm-sb-name">Saved items</span>
+              <span className="cm-sb-ic" aria-hidden="true">{cmNavIcon("saved")}</span><span className="cm-sb-name">Saved items</span>
             </button>
             <div className="cm-sb-section" role="heading" aria-level={2}>Channels</div>
             {channels.map(c => (
               <button key={c.slug} className={"cm-sb-item cm-sb-chan" + (active === c.slug ? " is-active" : "") + (c.unread > 0 ? " has-unread" : "")} onClick={() => go(c.slug)}
                 aria-current={active === c.slug ? "page" : undefined}
                 aria-label={c.name + (c.unread > 0 ? ", " + c.unread + " unread" : "")}>
-                <span className="cm-sb-ic" style={{ color: c.color }} aria-hidden="true">{c.icon || "#"}</span>
+                <span className="cm-sb-hash" style={{ color: c.color }} aria-hidden="true">#</span>
                 <span className="cm-sb-name">{c.name}</span>
                 {c.unread > 0 && <span className="cm-sb-badge" aria-hidden="true">{c.unread}</span>}
               </button>
@@ -1035,6 +1035,15 @@ const CM_SLASH = [
   { cmd: "media", icon: "📷", label: "Add photo or video", hint: "Upload from your device" },
   { cmd: "shrug", icon: "🤷", label: "Shrug", hint: "¯\\_(ツ)_/¯" },
 ];
+
+// Monochrome nav icons (sidebar) — currentColor line art, no emoji.
+function cmNavIcon(name) {
+  const P = { fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round" };
+  const wrap = (kids) => <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">{kids}</svg>;
+  if (name === "all") return wrap(<path d="M4 13h4l2 5 4-12 2 6h4" {...P}/>);      // activity pulse
+  if (name === "saved") return wrap(<path d="M6 3.5h12a1 1 0 0 1 1 1V21l-7-4-7 4V4.5a1 1 0 0 1 1-1Z" {...P}/>); // bookmark
+  return null;
+}
 
 // Line-SVG icons for the dock (no emoji).
 function cmIcon(name) {

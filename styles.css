@@ -2424,16 +2424,21 @@ button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
 .cm-sb-nav { flex: 1; overflow-y: auto; padding: 8px 8px 16px; }
 .cm-sb-nav::-webkit-scrollbar { width: 8px; }
 .cm-sb-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
-.cm-sb-section { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(215,219,240,0.5); margin: 14px 10px 4px; }
-.cm-sb-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 7px 10px; border-radius: 8px; font: inherit; color: rgba(215,219,240,0.85); transition: background .12s; }
-.cm-sb-item:hover { background: rgba(255,255,255,0.06); }
-.cm-sb-item.is-active { background: var(--gold-500,#e8a92b); color: #10132b; }
-.cm-sb-item.is-active .cm-sb-ic { color: #10132b !important; }
-.cm-sb-ic { width: 20px; text-align: center; font-size: 15px; flex: none; }
-.cm-sb-name { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-sb-section { font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(215,219,240,0.42); margin: 16px 12px 6px; }
+.cm-sb-item { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 6px 12px; border-radius: 7px; font: inherit; color: rgba(215,219,240,0.72); transition: background .12s, color .12s; }
+.cm-sb-item:hover { background: rgba(255,255,255,0.055); color: #eef1fb; }
+/* Professional selected state: a quiet raised surface + a gold accent rail,
+   not a loud full-gold fill. */
+.cm-sb-item.is-active { background: rgba(255,255,255,0.1); color: #fff; }
+.cm-sb-item.is-active::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 0 3px 3px 0; background: var(--gold-500,#e8a92b); }
+.cm-sb-item.is-active .cm-sb-name { font-weight: 700; }
+.cm-sb-ic { width: 20px; flex: none; display: grid; place-items: center; color: rgba(215,219,240,0.6); }
+.cm-sb-item.is-active .cm-sb-ic, .cm-sb-item:hover .cm-sb-ic { color: inherit; }
+.cm-sb-hash { width: 20px; flex: none; text-align: center; font-family: var(--font-mono, monospace); font-weight: 700; font-size: 16px; opacity: 0.85; }
+.cm-sb-name { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 500; letter-spacing: -0.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-sb-item.has-unread { color: #fff; }
 .cm-sb-item.has-unread .cm-sb-name { color: #fff; font-weight: 700; }
-.cm-sb-badge { flex: none; background: #e4032b; color: #fff; font-size: 11px; font-weight: 800; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: grid; place-items: center; }
-.cm-sb-item.is-active .cm-sb-badge { background: #10132b; color: #fff; }
+.cm-sb-badge { flex: none; background: #e4032b; color: #fff; font-size: 10.5px; font-weight: 700; font-family: var(--font-mono, monospace); min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px; display: grid; place-items: center; }
 .cm-sb-foot { padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.08); }
 .cm-sb-foot-btn { width: 100%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; border-radius: 9px; padding: 10px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
 .cm-sb-foot-btn:hover { background: rgba(255,255,255,0.14); }
