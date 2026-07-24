@@ -721,6 +721,7 @@ function community_comments(array $p): array {
     $out = array_map(fn($r) => [
         'commentId' => (string)$r['commentId'], 'name' => (string)$r['memberName'], 'body' => (string)$r['body'],
         'status' => (string)$r['status'], 'createdAt' => (string)$r['createdAt'], 'isMe' => (string)$r['memberId'] === $viewer,
+        'photo' => community_photo_for((string)$r['memberId']),
         'note' => ((string)$r['status'] !== 'published' && (string)$r['memberId'] === $viewer) ? community_status_note((string)$r['status']) : '',
     ], $rows);
     return ['ok' => true, 'comments' => $out];
@@ -755,7 +756,8 @@ function community_comment_create(array $p): array {
     }
     return ['ok' => true, 'queued' => $status !== 'published', 'comment' => [
         'commentId' => $id, 'name' => $author['name'] . ($author['initial'] ? ' ' . $author['initial'] : ''), 'body' => $body,
-        'status' => $status, 'createdAt' => $now, 'isMe' => true, 'note' => $status !== 'published' ? community_status_note($status) : '',
+        'status' => $status, 'createdAt' => $now, 'isMe' => true, 'photo' => community_photo_for($viewer),
+        'note' => $status !== 'published' ? community_status_note($status) : '',
     ]];
 }
 

@@ -713,6 +713,7 @@ function CommunityApp({ setPage, auth }) {
   const isChat = active !== "all" && active !== "bookmarks" && results === null;
   const postsRef = React.useRef([]);
   const streamRef = React.useRef(null);
+  const searchRef = React.useRef(null);
   const atBottomRef = React.useRef(true);
   React.useEffect(() => { postsRef.current = posts || []; }, [posts]);
 
@@ -720,6 +721,18 @@ function CommunityApp({ setPage, auth }) {
     NGGApi.member.community.channels().then(r => setChannels(r.channels || [])).catch(() => {});
   }, []);
   React.useEffect(() => { reloadChannels(); }, [reloadChannels]);
+
+  // ⌘K / Ctrl-K focuses the sidebar search (matching the hint chip).
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault(); setSbOpen(true);
+        requestAnimationFrame(() => { const el = searchRef.current; if (el) { el.focus(); el.select(); } });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Mark the body while the full-height community app is mounted — the global
   // floats (quick-nav hint, a11y FAB, back-to-top) reposition/hide so they
@@ -864,21 +877,35 @@ function CommunityApp({ setPage, auth }) {
   const headTitle = active === "all" ? "All activity" : active === "bookmarks" ? "Saved items" : (activeChannel ? activeChannel.name : active);
   const headIcon = active === "all" ? "✦" : active === "bookmarks" ? "🔖" : (activeChannel ? activeChannel.icon : "#");
 
+  // Sidebar mentors: the staff of the channel currently open (no fabricated
+  // presence — we only surface who is actually a mentor here).
+  const sbMentors = (chMembers || []).filter(m => m.staff);
+  const mem = auth.member || {};
+  const meSub = [mem.centre, mem.track].filter(Boolean).join(" · ") || "Member";
+
   return (
     <div className="page cm-slack-page" data-screen-label="Community">
       <div className={"cm-slack" + (sbOpen ? " sb-open" : "") + (thread ? " thread-open" : "")}>
         {/* ── Sidebar ─────────────────────────────────────────────── */}
         <aside className="cm-sb">
+          {/* Workspace card + mobile close */}
           <div className="cm-sb-head">
             <div className="cm-sb-ws">
-              <div><div className="cm-sb-ws-name">The Community</div><div className="cm-sb-ws-sub">{me}</div></div>
+              <div className="cm-sb-ws-txt">
+                <div className="cm-sb-ws-name">The Community</div>
+                <div className="cm-sb-ws-sub">{channels.length} {channels.length === 1 ? "channel" : "channels"} · NGG</div>
+              </div>
+              <span className="cm-sb-ws-switch" aria-hidden="true">{cmNavIcon("switch")}</span>
             </div>
             <button className="cm-sb-x" onClick={() => setSbOpen(false)} aria-label="Close">✕</button>
           </div>
           <div className="cm-sb-search">
-            <span className="cm-sb-search-ic">🔍</span>
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search messages" aria-label="Search messages"/>
-            {query && <button className="cm-sb-search-x" onClick={() => setQuery("")} aria-label="Clear">✕</button>}
+            <span className="cm-sb-search-ic" aria-hidden="true">{cmNavIcon("search")}</span>
+            <input ref={searchRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search messages" aria-label="Search messages"
+              aria-keyshortcuts="Meta+K Control+K"/>
+            {query
+              ? <button className="cm-sb-search-x" onClick={() => setQuery("")} aria-label="Clear search">✕</button>
+              : <span className="cm-sb-kbd" aria-hidden="true">⌘K</span>}
           </div>
           <nav className="cm-sb-nav" aria-label="Community channels">
             <button className={"cm-sb-item" + (active === "all" ? " is-active" : "")} aria-current={active === "all" ? "page" : undefined} onClick={() => go("all")}
@@ -889,19 +916,46 @@ function CommunityApp({ setPage, auth }) {
             <button className={"cm-sb-item" + (active === "bookmarks" ? " is-active" : "")} aria-current={active === "bookmarks" ? "page" : undefined} onClick={() => go("bookmarks")}>
               <span className="cm-sb-ic" aria-hidden="true">{cmNavIcon("saved")}</span><span className="cm-sb-name">Saved items</span>
             </button>
-            <div className="cm-sb-section" role="heading" aria-level={2}>Channels</div>
+            <div className="cm-sb-section" role="heading" aria-level={2}>
+              <span>Channels</span>
+              {auth.isAdmin && <button className="cm-sb-add" onClick={() => setPage("admin")} aria-label="Add a channel" title="Add a channel">{cmNavIcon("plus")}</button>}
+            </div>
             {channels.map(c => (
               <button key={c.slug} className={"cm-sb-item cm-sb-chan" + (active === c.slug ? " is-active" : "") + (c.unread > 0 ? " has-unread" : "")} onClick={() => go(c.slug)}
                 aria-current={active === c.slug ? "page" : undefined}
                 aria-label={c.name + (c.unread > 0 ? ", " + c.unread + " unread" : "")}>
-                <span className="cm-sb-hash" style={{ color: c.color }} aria-hidden="true">#</span>
+                <span className="cm-sb-hash" aria-hidden="true">#</span>
                 <span className="cm-sb-name">{c.name}</span>
                 {c.unread > 0 && <span className="cm-sb-badge" aria-hidden="true">{c.unread}</span>}
               </button>
             ))}
+            {sbMentors.length > 0 && (
+              <>
+                <div className="cm-sb-section" role="heading" aria-level={2}>Mentors</div>
+                {sbMentors.map(m => (
+                  <div key={m.name} className="cm-sb-item cm-sb-mentor">
+                    {cmAvatar(m.name, m.name, m.photo, "cm-avatar-xs")}
+                    <span className="cm-sb-name">{m.name}</span>
+                  </div>
+                ))}
+              </>
+            )}
           </nav>
           <div className="cm-sb-foot">
-            <button className="cm-sb-foot-btn" onClick={catchMeUp}>✨ Catch me up</button>
+            <button className="cm-sb-foot-btn" onClick={catchMeUp}>
+              <span className="cm-sb-star" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 14 8.5 20 10 14 11.5 12 17.5 10 11.5 4 10 10 8.5 12 2.5Z" fill="#d0ff3a"/></svg>
+              </span>
+              Catch me up
+            </button>
+            <div className="cm-sb-me">
+              {cmAvatar(me, me, mem.photoUrl, "cm-avatar-sm")}
+              <div className="cm-sb-me-txt">
+                <div className="cm-sb-me-name">{me}</div>
+                <div className="cm-sb-me-sub">{meSub}</div>
+              </div>
+              <button className="cm-sb-me-gear" onClick={() => setPage("profile")} aria-label="Your profile & settings" title="Profile & settings">{cmNavIcon("gear")}</button>
+            </div>
           </div>
         </aside>
         <div className="cm-sb-scrim" onClick={() => setSbOpen(false)}/>
@@ -1042,6 +1096,10 @@ function cmNavIcon(name) {
   const wrap = (kids) => <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">{kids}</svg>;
   if (name === "all") return wrap(<path d="M4 13h4l2 5 4-12 2 6h4" {...P}/>);      // activity pulse
   if (name === "saved") return wrap(<path d="M6 3.5h12a1 1 0 0 1 1 1V21l-7-4-7 4V4.5a1 1 0 0 1 1-1Z" {...P}/>); // bookmark
+  if (name === "search") return wrap(<><circle cx="11" cy="11" r="7" {...P}/><path d="m20 20-3.5-3.5" {...P}/></>);
+  if (name === "switch") return wrap(<path d="M7 10 12 5l5 5M7 14l5 5 5-5" {...P} strokeWidth={1.7}/>);
+  if (name === "plus") return wrap(<path d="M12 5v14M5 12h14" {...P} strokeWidth={2}/>);
+  if (name === "gear") return wrap(<><circle cx="12" cy="12" r="3" {...P}/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V19a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H1a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H7a1.7 1.7 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V7a1.7 1.7 0 0 0 1.5 1H23a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" {...P} strokeWidth={1.5}/></>);
   return null;
 }
 
@@ -1646,7 +1704,7 @@ function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
         <div className="cm-thread-replies">
           {comments === null ? <div className="cm-comment-load">Loading…</div> : comments.map(c => (
             <div key={c.commentId} className={"cm-reply" + (c.status !== "published" ? " is-pending" : "")}>
-              <span className="cm-avatar cm-avatar-sm" style={{ background: cmColor(c.name) }}>{cmInitial(c.name)}</span>
+              {cmAvatar(c.name, c.name, c.photo, "cm-avatar-sm")}
               <div className="cm-reply-body">
                 <div className="cm-reply-head"><b>{c.name}</b> <span className="cm-reply-ago">{cmAgo(c.createdAt)}</span></div>
                 <div>{cmBody(c.body)}</div>
