@@ -1330,15 +1330,32 @@ function idcard_program(): array {
         'website' => $siteHost, 'phone' => '+234 903 777 6318',
         'logoLockup' => '/assets/idcard/logo-lockup.png',
         'logoOkun' => '/assets/idcard/logo-okun.png',
+        'widthMm' => 54, 'heightMm' => 89,
     ];
+    // Physical print size (mm). Clamped to a range the fixed card artwork lays
+    // out cleanly within, so a stray value can never collapse the design.
+    $p['widthMm']  = idcard_clamp_mm($p['widthMm'], 50, 60, 54);
+    $p['heightMm'] = idcard_clamp_mm($p['heightMm'], 82, 96, 89);
     return $p;
+}
+
+/** Clamp a card dimension (mm) to [min,max], falling back to $def when unparseable. */
+function idcard_clamp_mm($v, float $min, float $max, float $def): float {
+    if (!is_numeric($v)) return $def;
+    return round(max($min, min($max, (float)$v)), 1);
 }
 
 // Validate + persist the ID-card branding block (called from admin.settings.set).
 function idcard_program_save(array $in, string $by): void {
-    $clean = [];
+    // Merge onto the stored blob so a partial update (e.g. just the card size
+    // from the ID studio) never wipes the branding fields, and vice-versa.
+    $cur = setting_get('idcard');
+    $clean = is_array($cur) ? $cur : [];
     foreach (['program', 'year', 'motto', 'website', 'phone', 'logoLockup', 'logoOkun'] as $k) {
         if (array_key_exists($k, $in)) $clean[$k] = substr(trim((string)$in[$k]), 0, 512);
     }
+    // Card proportions (mm) — validated to the same safe range as on read.
+    if (array_key_exists('widthMm', $in))  $clean['widthMm']  = idcard_clamp_mm($in['widthMm'], 50, 60, 54);
+    if (array_key_exists('heightMm', $in)) $clean['heightMm'] = idcard_clamp_mm($in['heightMm'], 82, 96, 89);
     setting_set('idcard', $clean, $by);
 }

@@ -3216,11 +3216,13 @@ function cardFacePhoto(url, w, h) {
   return url.slice(0, i + 8) + params.join(",") + "/" + rest;
 }
 
-function CardFront({ card, program, S }) {
+function CardFront({ card, program, S, H = 1004 }) {
   const px = (n) => n * S;
+  const vf = H / 1004;
   const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
   return (
-    <div className="idcard" style={{ width: px(590), height: px(1004), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
+    <div className="idcard" style={{ width: px(590), height: px(H), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
+     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(1004), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
       <img src={lockup} alt="Programme lockup" style={{ position: "absolute", top: px(58), left: "50%", transform: "translateX(-50%)", width: px(290) }}/>
       <div style={{ position: "absolute", top: px(182), left: "50%", transform: "translateX(-50%)", width: px(372), height: px(372), borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", boxShadow: `0 ${px(16)}px ${px(38)}px rgba(27,43,107,.16)` }}>
         {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 900)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
@@ -3242,6 +3244,7 @@ function CardFront({ card, program, S }) {
         <CardQR token={card.token} size={px(112)}/>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: card.centre.color }}/>
+     </div>
     </div>
   );
 }
@@ -3249,11 +3252,13 @@ function CardFront({ card, program, S }) {
 /* Volunteer front — the whole card is the hierarchy-tier colour, with a white
    inner panel. STS badge top, headshot/illustration, name, QR, VOLUNTEER|ROLE.
    Same 590×1004 canvas as the student card so both print at 54×92mm. */
-function VolunteerCardFront({ card, S }) {
+function VolunteerCardFront({ card, S, H = 1004 }) {
   const px = (n) => n * S;
+  const vf = H / 1004;
   const tint = card.tier.color || "#00225F";
   return (
-    <div className="idcard" style={{ width: px(590), height: px(1004), background: tint, position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
+    <div className="idcard" style={{ width: px(590), height: px(H), background: tint, position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
+     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(1004), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
       {/* White inner panel — the tier colour reads as a full-bleed border. */}
       <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), background: "#fff", borderRadius: px(30) }}/>
       {/* STS badge, straddling the top edge of the panel — the Street-To-Stardom
@@ -3283,12 +3288,14 @@ function VolunteerCardFront({ card, S }) {
         <span style={{ margin: `0 ${px(8)}px`, color: "#B9BFCB" }}>|</span>
         <span style={{ fontWeight: 500 }}>{card.role || card.tier.name}</span>
       </div>
+     </div>
     </div>
   );
 }
 
-function CardBack({ card, program, S }) {
+function CardBack({ card, program, S, H = 1004 }) {
   const px = (n) => n * S;
+  const vf = H / 1004;
   // The back is shared by students and volunteers; the 3rd row is a CENTRE
   // for students and the ROLE for volunteers (who have no centre).
   const isVol = !!card.tier;
@@ -3305,7 +3312,8 @@ function CardBack({ card, program, S }) {
   const wm = [];
   for (let i = 0; i < 9; i++) wm.push(<div key={i} style={{ fontFamily: '"Pagkaki", Georgia, serif', fontWeight: 800, fontSize: px(86), lineHeight: 1.28, color: "rgba(27,43,107,.045)", whiteSpace: "nowrap", textTransform: "uppercase", marginLeft: (i % 2 ? px(-70) : 0) }}>ÈKÓ ÌLÚ ÈKÓ ÌLÚ</div>);
   return (
-    <div className="idcard" style={{ width: px(590), height: px(1004), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
+    <div className="idcard" style={{ width: px(590), height: px(H), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
+     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(1004), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>{wm}</div>
       {/* Woven aso-oke trim across the top — stepped two-tone chevrons in
           muted blue-gray, matching the textile band on the printed design. */}
@@ -3344,6 +3352,7 @@ function CardBack({ card, program, S }) {
         <img src={(program && program.logoLockup) || "/assets/idcard/logo-lockup.png"} alt="Programme lockup" style={{ width: px(230) }}/>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: "#00225F" }}/>
+     </div>
     </div>
   );
 }
@@ -3359,6 +3368,9 @@ function CardStudio() {
   // Shared manager inputs (reused across centres + tiers).
   const [mName, setMName] = React.useState(""); const [mCode, setMCode] = React.useState(""); const [mColor, setMColor] = React.useState("#76B043");
   const [msg, setMsg] = React.useState("");
+  // Card proportion (mm) — admin-set, applies to preview, PNG/PDF export + print.
+  const [sizeW, setSizeW] = React.useState(54); const [sizeH, setSizeH] = React.useState(89);
+  const [sizeMsg, setSizeMsg] = React.useState("");
   const navy = "#16223e", gold = "#ffce54";
 
   const load = React.useCallback(() => {
@@ -3372,6 +3384,18 @@ function CardStudio() {
   }, []);
   React.useEffect(() => { load(); }, [load]);
   React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(); }, [auth && auth.isSignedIn]);
+  // Seed the size inputs from whichever dataset has loaded.
+  React.useEffect(() => {
+    const pr = (data && data.program) || (vdata && vdata.program);
+    if (pr) { setSizeW(Number(pr.widthMm) || 54); setSizeH(Number(pr.heightMm) || 89); }
+  }, [data, vdata]);
+  const saveSize = async () => {
+    setSizeMsg("");
+    const w = Math.max(50, Math.min(60, Number(sizeW) || 54));
+    const h = Math.max(82, Math.min(96, Number(sizeH) || 89));
+    try { await NGGApi.admin.settings.set({ idcard: { widthMm: w, heightMm: h } }); setSizeMsg("Saved · " + w + "×" + h + "mm"); load(); }
+    catch (e) { setSizeMsg("Couldn't save — need staff permission."); }
+  };
 
   const isVol = mode === "volunteers";
   const resetInputs = () => { setMName(""); setMCode(""); setMColor(isVol ? "#00225F" : "#76B043"); };
@@ -3512,7 +3536,7 @@ function CardStudio() {
       }
       setExp("Imposing sheets…");
       // Front sheets first, then back sheets — so a shop can duplex and cut.
-      const pdf = await CE.buildImpositionPDF(fronts.concat(backs), { sheet: "A4", trimW_mm: 54, trimH_mm: 92, marks: true });
+      const pdf = await CE.buildImpositionPDF(fronts.concat(backs), { sheet: "A4", trimW_mm: cardW, trimH_mm: cardH, marks: true });
       CE.download(pdf, setName() + "-print-cmyk.pdf", "application/pdf");
       setExp("");
     } catch (e) { setExp(""); setMsg("PDF export failed — try again."); }
@@ -3529,6 +3553,12 @@ function CardStudio() {
 
   const cards = (isVol ? (vdata && vdata.cards) : (data && data.cards)) || [];
   const program = ((isVol ? vdata : data) && (isVol ? vdata : data).program) || {};
+  // Physical card proportion (admin-set). The artwork's design canvas is 590×1004
+  // (≈54×92mm); we keep the 590px width and derive the canvas height from the
+  // configured aspect, so the whole studio + export + print reflect the size.
+  const cardW = Number(program.widthMm) || 54;
+  const cardH = Number(program.heightMm) || 89;
+  const CANVAS_H = Math.round(590 * cardH / cardW);
   const units = isVol ? tiers : centres;
   const tab = (m, label) => (
     <button onClick={() => switchMode(m)} style={{ padding: "9px 18px", borderRadius: 99, border: "1px solid " + (mode === m ? gold : "rgba(255,255,255,.18)"), background: mode === m ? gold : "transparent", color: mode === m ? "#2b2100" : "#eef2fb", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{label}</button>
@@ -3542,7 +3572,7 @@ function CardStudio() {
         body * { visibility: hidden; }
         .print-zone, .print-zone * { visibility: visible; }
         .print-zone { position: absolute; left: 0; top: 0; background: #fff; }
-        .idcard { width: 54mm !important; height: 92mm !important; page-break-inside: avoid; box-shadow: none !important; }
+        .idcard { width: ${cardW}mm !important; height: ${cardH}mm !important; page-break-inside: avoid; box-shadow: none !important; }
         .card-pair { gap: 4mm; margin: 3mm; page-break-inside: avoid; float: left; }
       }
     `}</style>
@@ -3550,7 +3580,7 @@ function CardStudio() {
       <div>
         <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>ID CARD STUDIO · {String(program.program || "")} {String(program.year || "")}</div>
         <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{cards.length} {isVol ? "volunteer" : "verified student"}{cards.length === 1 ? "" : "s"} ready</h1>
-        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0", maxWidth: 520 }}>{isVol ? "Cards render for active volunteers — the ID and QR bind at approval. Colour + code come from the hierarchy tier." : "Cards render for verified students only — the ID and QR bind at parent consent. Print uses true 54×92mm per card."}</p>
+        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0", maxWidth: 520 }}>{isVol ? "Cards render for active volunteers — the ID and QR bind at approval. Colour + code come from the hierarchy tier." : "Cards render for verified students only — the ID and QR bind at parent consent. Print uses a true " + cardW + "×" + cardH + "mm per card."}</p>
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         {notice && <span className="mono" style={{ fontSize: 12, color: "#6fdc9d" }}>{notice}</span>}
@@ -3566,7 +3596,7 @@ function CardStudio() {
       </div>
     </div>
     <p className="no-print" style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "-8px 0 18px", maxWidth: 640 }}>
-      The PDF imposes cards {"—"} auto-laid out N-up on A4 at an exact 54{"×"}92&nbsp;mm trim with crop &amp; registration marks and a CMYK (FOGRA39) output intent, front sheets then back sheets for duplex. Card artwork is embedded at ~300&nbsp;DPI; the press RIP separates it to CMYK against the intent. Everything renders in your browser {"—"} nothing is uploaded.
+      The PDF imposes cards {"—"} auto-laid out N-up on A4 at an exact {cardW}{"×"}{cardH}&nbsp;mm trim with crop &amp; registration marks and a CMYK (FOGRA39) output intent, front sheets then back sheets for duplex. Card artwork is embedded at ~300&nbsp;DPI; the press RIP separates it to CMYK against the intent. Everything renders in your browser {"—"} nothing is uploaded.
     </p>
 
     <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 26 }}>
@@ -3595,6 +3625,23 @@ function CardStudio() {
       {msg && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "10px 0 0" }}>{msg}</p>}
     </div>
 
+    <div className="no-print" style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, padding: 16, marginBottom: 30 }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 10 }}>CARD PROPORTION — PRINT SIZE (MM)</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>Width
+          <input type="number" min={50} max={60} step={1} value={sizeW} onChange={e => setSizeW(e.target.value)} style={{ width: 74, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
+        </label>
+        <span style={{ color: "rgba(230,238,255,.5)" }}>×</span>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>Height
+          <input type="number" min={82} max={96} step={1} value={sizeH} onChange={e => setSizeH(e.target.value)} style={{ width: 74, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
+        </label>
+        <span style={{ fontSize: 12, color: "rgba(230,238,255,.5)" }}>mm</span>
+        <button onClick={saveSize} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>Save size</button>
+        {sizeMsg && <span className="mono" style={{ fontSize: 12, color: sizeMsg[0] === "S" ? "#6fdc9d" : "#ff9a9a" }}>{sizeMsg}</span>}
+      </div>
+      <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "10px 0 0" }}>Default is 54 × 89&nbsp;mm. Width 50–60, height 82–96. Applies to the preview, the PNG/PDF export and print.</p>
+    </div>
+
     <div className="print-zone" ref={zoneRef} style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
       {cards.map((card, i) => (
         <div key={card.studentId || card.volunteerId} className="card-pair" style={{ position: "relative" }}>
@@ -3608,8 +3655,8 @@ function CardStudio() {
             <button onClick={() => exportPairPng(i)} disabled={!!exp} title="Download this card as PNG (front + back)"
               style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>↓</button>
           </div>
-          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} program={program} S={0.5}/> : <CardFront card={card} program={program} S={0.5}/>}</div>
-          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5}/></div>
+          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} program={program} S={0.5} H={CANVAS_H}/> : <CardFront card={card} program={program} S={0.5} H={CANVAS_H}/>}</div>
+          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5} H={CANVAS_H}/></div>
         </div>
       ))}
       {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>{isVol ? "No active volunteers yet — cards appear here the moment one is approved." : "No verified students yet — cards appear here the moment a parent consents."}</p>}

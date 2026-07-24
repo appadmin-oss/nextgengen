@@ -1382,7 +1382,9 @@ function buildEditTransform(spec) {
   if (spec.brighten) parts.push("e_brightness:18");
   if (spec.sharpen) parts.push("e_sharpen:80");
   let chain = parts.join(",");
-  if (spec.removeBg) chain += "/e_background_removal/b_rgb:ffffff";
+  // Soft neutral grey (mirrors ID_BG_GREY in photos.php) — a studio backdrop,
+  // not stark white, so the subject stands off the white card stock.
+  if (spec.removeBg) chain += "/e_background_removal/b_rgb:eceef2";
   return chain;
 }
 

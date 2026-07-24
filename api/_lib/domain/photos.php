@@ -20,6 +20,11 @@ declare(strict_types=1);
  * Issuance (QR + printed ID) is gated on an approved asset elsewhere.
  */
 
+/* Fill colour behind a background-removed headshot. A soft neutral grey (not
+ * stark white) so the subject reads as a studio portrait against the card
+ * rather than floating on the white card stock. Mirrored in components.jsx. */
+const ID_BG_GREY = 'eceef2';
+
 /* ── Cloudinary editing (delivery-URL transforms) ─────────────────────────── */
 
 /** Insert a transform chain right after /upload/ in a Cloudinary delivery URL. */
@@ -57,7 +62,7 @@ function cloudinary_edit(string $sourceUrl, array $rec, bool $creditsOk): array 
     if ($creditsOk) {
         // Background replacement isolates the subject against a clean studio
         // backdrop — it changes the environment, never the face. Identity safe.
-        if (!empty($rec['removeBackground'])) { $chain[] = 'e_background_removal'; $chain[] = 'b_rgb:ffffff'; $aiUsed = true; }
+        if (!empty($rec['removeBackground'])) { $chain[] = 'e_background_removal'; $chain[] = 'b_rgb:' . ID_BG_GREY; $aiUsed = true; }
     }
     $transforms = implode('/', $chain);
     return ['url' => cloudinary_apply($sourceUrl, $transforms), 'transforms' => $transforms, 'aiUsed' => $aiUsed];
@@ -93,7 +98,7 @@ function cloudinary_edit_manual(string $sourceUrl, array $spec): array {
     if (!empty($spec['brighten'])) $parts[] = 'e_brightness:18';
     if (!empty($spec['sharpen']))  $parts[] = 'e_sharpen:80';
     $chain = [implode(',', $parts)];
-    if (!empty($spec['removeBg']) && cloudinary_credits_ok()) { $chain[] = 'e_background_removal'; $chain[] = 'b_rgb:ffffff'; }
+    if (!empty($spec['removeBg']) && cloudinary_credits_ok()) { $chain[] = 'e_background_removal'; $chain[] = 'b_rgb:' . ID_BG_GREY; }
     $tf = implode('/', $chain);
     return ['url' => cloudinary_apply(cloudinary_base($sourceUrl), $tf), 'transforms' => $tf];
 }
@@ -403,8 +408,17 @@ function admin_photo_replace(array $p): array {
     $ing = photo_ingest($subjectType, $subjectId, $sourceUrl, $g['requester']['memberId']);
     if (empty($ing['ok'])) return $ing;
     $proc = photo_process($ing['assetId']);
-    audit('photo.replaced', $g['requester']['memberId'], ($subjectType . ':' . $subjectId), ['assetId' => $ing['assetId']], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'assetId' => $ing['assetId'], 'status' => $proc['status'] ?? 'captured', 'editedUrl' => $proc['editedUrl'] ?? ''];
+    // An admin-initiated replace is authoritative: apply it to the card/profile
+    // straight away even when analysis routed it to review. Adult volunteer
+    // photos in particular trip the child-headshot heuristic and would otherwise
+    // sit in the queue forever with the OLD photo still on the card. The asset
+    // still stays in the review queue for a post-hoc safeguarding look.
+    $applied = (string)($proc['editedUrl'] ?? '') ?: $sourceUrl;
+    if (($proc['status'] ?? '') !== 'approved' && $applied !== '') {
+        photo_apply_to_subject(['subjectType' => $subjectType, 'subjectId' => $subjectId, 'editedUrl' => $applied]);
+    }
+    audit('photo.replaced', $g['requester']['memberId'], ($subjectType . ':' . $subjectId), ['assetId' => $ing['assetId'], 'applied' => $applied], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'assetId' => $ing['assetId'], 'status' => $proc['status'] ?? 'captured', 'editedUrl' => $applied];
 }
 
 /** Push the approved (edited) image back onto the subject's record so the ID
