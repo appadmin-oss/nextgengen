@@ -1330,12 +1330,12 @@ function idcard_program(): array {
         'website' => $siteHost, 'phone' => '+234 903 777 6318',
         'logoLockup' => '/assets/idcard/logo-lockup.png',
         'logoOkun' => '/assets/idcard/logo-okun.png',
-        'widthMm' => 54, 'heightMm' => 89,
+        'widthMm' => 54, 'heightMm' => 75,
     ];
-    // Physical print size (mm). Clamped to a range the fixed card artwork lays
-    // out cleanly within, so a stray value can never collapse the design.
+    // Physical print size (mm). The card artwork reflows to any proportion in
+    // this range without distortion; the bounds just keep it legible.
     $p['widthMm']  = idcard_clamp_mm($p['widthMm'], 50, 60, 54);
-    $p['heightMm'] = idcard_clamp_mm($p['heightMm'], 82, 96, 89);
+    $p['heightMm'] = idcard_clamp_mm($p['heightMm'], 64, 100, 75);
     return $p;
 }
 
@@ -1356,6 +1356,6 @@ function idcard_program_save(array $in, string $by): void {
     }
     // Card proportions (mm) — validated to the same safe range as on read.
     if (array_key_exists('widthMm', $in))  $clean['widthMm']  = idcard_clamp_mm($in['widthMm'], 50, 60, 54);
-    if (array_key_exists('heightMm', $in)) $clean['heightMm'] = idcard_clamp_mm($in['heightMm'], 82, 96, 89);
+    if (array_key_exists('heightMm', $in)) $clean['heightMm'] = idcard_clamp_mm($in['heightMm'], 64, 100, 75);
     setting_set('idcard', $clean, $by);
 }

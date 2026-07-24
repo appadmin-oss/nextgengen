@@ -706,15 +706,15 @@ chk('idcard branding roundtrip (editable)', (function () {
     $id = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099'])['program'];
     return $id['website'] === 'next.afrovanguard.org.ng' && $id['logoLockup'] === '/assets/idcard/logo-lockup.png';
 })());
-chk('idcard default proportion is 54×89mm', (function () {
+chk('idcard default proportion is 54×75mm', (function () {
     $id = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099'])['program'];
-    return (float)$id['widthMm'] === 54.0 && (float)$id['heightMm'] === 89.0;
+    return (float)$id['widthMm'] === 54.0 && (float)$id['heightMm'] === 75.0;
 })());
 chk('idcard proportion is editable, clamped, and preserves branding', (function () {
     backend_dispatch('admin.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['idcard' => ['widthMm' => 55, 'heightMm' => 200]]]);
     $id = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099'])['program'];
     // height clamps into range, width persists, and the earlier motto survives the partial save (merge)
-    return (float)$id['widthMm'] === 55.0 && (float)$id['heightMm'] === 96.0 && $id['motto'] === 'EMPOWERED 360°';
+    return (float)$id['widthMm'] === 55.0 && (float)$id['heightMm'] === 100.0 && $id['motto'] === 'EMPOWERED 360°';
 })());
 chk('apply blocked when closed', backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'X', 'lastName' => 'Y', 'email' => 'x@example.com', 'phone' => '08031110050', 'dob' => '2011-01-01'])['error'] === 'applications_closed');
 chk('newsletter list works', is_array(backend_dispatch('admin.newsletter.list', ['requesterId' => 'NGG-2025-0099'])['subscribers']));

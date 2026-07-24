@@ -3223,19 +3223,22 @@ function cardFacePhoto(url, w, h) {
 
 function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
-  const vf = H / CARD_DESIGN_H;
   const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
+  // Reflow: every element scales UNIFORMLY (never stretched) and flexible
+  // spacers absorb the height difference, so any proportion renders without
+  // distortion. Photo caps at its design diameter, shrinks on short cards.
+  const photoD = Math.min(372, Math.max(150, Math.round(H * 0.40)));
   return (
-    <div className="idcard" style={{ width: px(590), height: px(H), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
-     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(CARD_DESIGN_H), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
-      <img src={lockup} alt="Programme lockup" style={{ position: "absolute", top: px(58), left: "50%", transform: "translateX(-50%)", width: px(290) }}/>
-      <div style={{ position: "absolute", top: px(182), left: "50%", transform: "translateX(-50%)", width: px(372), height: px(372), borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", boxShadow: `0 ${px(16)}px ${px(38)}px rgba(27,43,107,.16)` }}>
+    <div className="idcard" style={{ width: px(590), height: px(H), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none", display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box", padding: px(34) + "px " + px(24) + "px " + px(44) + "px" }}>
+      <img src={lockup} alt="Programme lockup" style={{ width: px(290), flex: "none" }}/>
+      <div style={{ flex: "1 1 0", minHeight: px(6) }}/>
+      <div style={{ width: px(photoD), height: px(photoD), borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", boxShadow: `0 ${px(14)}px ${px(34)}px rgba(27,43,107,.16)`, flex: "none" }}>
         {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 900)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
       </div>
-      <div style={{ position: "absolute", top: px(588), left: "50%", transform: "translateX(-50%)", width: px(30), height: px(6), borderRadius: px(3), background: "#8FA3C8" }}/>
-      <div style={{ position: "absolute", top: px(620), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), padding: "0 " + px(20) + "px", whiteSpace: "nowrap" }}>{card.firstName}</div>
-      <div style={{ position: "absolute", top: px(666), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding:`0 ${px(16)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
-      <div style={{ position: "absolute", top: px(732), left: 0, right: 0, textAlign: "center", fontWeight: 500, fontSize: px(22), color: "#111", textTransform: "uppercase", letterSpacing: px(1.4) }}>
+      <div style={{ width: px(30), height: px(6), borderRadius: px(3), background: "#8FA3C8", margin: px(15) + "px 0 " + px(9) + "px", flex: "none" }}/>
+      <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
+      <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding:`0 ${px(16)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
+      <div style={{ textAlign: "center", fontWeight: 500, fontSize: px(22), color: "#111", textTransform: "uppercase", letterSpacing: px(1.4), marginTop: px(9), flex: "none" }}>
         {(() => {
           // "Arts • Tye & Dye" → bold category, dot, regular course (v3 design).
           const parts = String(card.track || "").split(/\s*[•·]\s*/);
@@ -3244,12 +3247,12 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
             : <span style={{ fontWeight: 800, color: CARD_NAVY }}>{card.track}</span>;
         })()}
       </div>
-      <div style={{ position: "absolute", top: px(772), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#E4E4E4" }}/>
-      <div style={{ position: "absolute", top: px(802), left: "50%", transform: "translateX(-50%)", border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff" }}>
-        <CardQR token={card.token} size={px(108)}/>
+      <div style={{ flex: "1 1 0", minHeight: px(6) }}/>
+      <div style={{ width: px(400), maxWidth: "86%", height: 1, background: "#E4E4E4", flex: "none" }}/>
+      <div style={{ border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff", marginTop: px(13), flex: "none" }}>
+        <CardQR token={card.token} size={px(104)}/>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: card.centre.color }}/>
-     </div>
     </div>
   );
 }
@@ -3259,48 +3262,51 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
    Same 590×1004 canvas as the student card so both print at 54×92mm. */
 function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
-  const vf = H / CARD_DESIGN_H;
   const tint = card.tier.color || "#00225F";
+  // Headshot keeps its 450:354 aspect (never stretched) and scales with the card.
+  const hsH = Math.min(354, Math.max(150, Math.round(H * 0.34)));
+  const hsW = Math.round(hsH * 450 / 354);
   return (
     <div className="idcard" style={{ width: px(590), height: px(H), background: tint, position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
-     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(CARD_DESIGN_H), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
       {/* White inner panel — the tier colour reads as a full-bleed border. */}
       <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), background: "#fff", borderRadius: px(30) }}/>
-      {/* STS badge, straddling the top edge of the panel — the Street-To-Stardom
-          circular mark. A tier-tinted STS monogram shows only if it fails. */}
-      <div style={{ position: "absolute", top: px(2), left: "50%", transform: "translateX(-50%)", width: px(116), height: px(116) }}>
+      {/* STS badge, straddling the top edge of the panel. */}
+      <div style={{ position: "absolute", top: px(2), left: "50%", transform: "translateX(-50%)", width: px(116), height: px(116), zIndex: 2 }}>
         <div style={{ position: "absolute", inset: px(8), borderRadius: "50%", background: tint, boxShadow: `0 ${px(6)}px ${px(16)}px rgba(0,0,0,.18)`, display: "grid", placeItems: "center" }}>
           <span style={{ fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(34), letterSpacing: px(1), color: "#fff" }}>STS</span>
         </div>
         <img src="/assets/idcard/logo-sts.svg" alt="Street-To-Stardom" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
           onError={e => { e.target.style.display = "none"; }}/>
       </div>
-      {/* Headshot / illustration panel. */}
-      <div style={{ position: "absolute", top: px(140), left: px(70), width: px(450), height: px(354), borderRadius: px(22), overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)", boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)` }}>
-        {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
+      {/* Content column inside the panel — reflows to any card height. */}
+      <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box", padding: px(94) + "px " + px(40) + "px " + px(28) + "px" }}>
+        <div style={{ width: px(hsW), height: px(hsH), borderRadius: px(22), overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)", boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)`, flex: "none" }}>
+          {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
+        </div>
+        <div style={{ flex: "1 1 0", minHeight: px(6) }}/>
+        <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
+        <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.surname || " "}</div>
+        <div style={{ width: px(360), maxWidth: "92%", height: 1, background: "#E4E4E4", marginTop: px(12), flex: "none" }}/>
+        <div style={{ border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff", marginTop: px(14), flex: "none" }}>
+          <CardQR token={card.token} size={px(112)}/>
+        </div>
+        <div style={{ flex: "1 1 0", minHeight: px(6) }}/>
+        <div style={{ textAlign: "center", fontSize: px(24), letterSpacing: px(1.2), color: "#101010", textTransform: "uppercase", flex: "none" }}>
+          <span style={{ fontWeight: 800 }}>Volunteer</span>
+          <span style={{ margin: `0 ${px(8)}px`, color: "#B9BFCB" }}>|</span>
+          <span style={{ fontWeight: 500 }}>{card.role || card.tier.name}</span>
+        </div>
       </div>
-      {/* Name — crimson first, navy surname (TT Firs Neue). Adaptive size. */}
-      <div style={{ position: "absolute", top: px(552), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), padding: "0 " + px(24) + "px", whiteSpace: "nowrap" }}>{card.firstName}</div>
-      <div style={{ position: "absolute", top: px(600), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding:`0 ${px(24)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
-      <div style={{ position: "absolute", top: px(690), left: "50%", transform: "translateX(-50%)", width: px(360), height: 1, background: "#E4E4E4" }}/>
-      {/* Check-in QR. */}
-      <div style={{ position: "absolute", top: px(722), left: "50%", transform: "translateX(-50%)", border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff" }}>
-        <CardQR token={card.token} size={px(120)}/>
-      </div>
-      {/* VOLUNTEER | ROLE footer. */}
-      <div style={{ position: "absolute", top: px(902), left: 0, right: 0, textAlign: "center", fontSize: px(24), letterSpacing: px(1.2), color: "#101010", textTransform: "uppercase" }}>
-        <span style={{ fontWeight: 800 }}>Volunteer</span>
-        <span style={{ margin: `0 ${px(8)}px`, color: "#B9BFCB" }}>|</span>
-        <span style={{ fontWeight: 500 }}>{card.role || card.tier.name}</span>
-      </div>
-     </div>
     </div>
   );
 }
 
 function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
-  const vf = H / CARD_DESIGN_H;
+  // Vertical-position scaler: element SIZES stay fixed (px) so nothing is
+  // stretched; only the top offsets scale, so the back reflows to any height
+  // without distortion (the icon dots stay perfectly round).
+  const pt = (n) => n * S * (H / CARD_DESIGN_H);
   // The back is shared by students and volunteers; the 3rd row is a CENTRE
   // for students and the ROLE for volunteers (who have no centre).
   const isVol = !!card.tier;
@@ -3318,7 +3324,6 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
   for (let i = 0; i < 9; i++) wm.push(<div key={i} style={{ fontFamily: '"Pagkaki", Georgia, serif', fontWeight: 800, fontSize: px(86), lineHeight: 1.28, color: "rgba(27,43,107,.045)", whiteSpace: "nowrap", textTransform: "uppercase", marginLeft: (i % 2 ? px(-70) : 0) }}>ÈKÓ ÌLÚ ÈKÓ ÌLÚ</div>);
   return (
     <div className="idcard" style={{ width: px(590), height: px(H), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
-     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(CARD_DESIGN_H), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>{wm}</div>
       {/* Woven aso-oke trim across the top — stepped two-tone chevrons in
           muted blue-gray, matching the textile band on the printed design. */}
@@ -3331,12 +3336,12 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
         <rect width="590" height="26" fill={"url(#wv" + key + ")"}/>
         <rect y="24.4" width="590" height="1.6" fill="#9AA3BE" opacity="0.55"/>
       </svg>
-      <div style={{ position: "absolute", top: px(170), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(62), letterSpacing: px(-1) }}>
+      <div style={{ position: "absolute", top: pt(170), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(62), letterSpacing: px(-1) }}>
         <span style={{ color: CARD_CRIMSON }}>{program.program}</span> <span style={{ color: CARD_NAVY }}>{program.year}</span>
       </div>
-      <div style={{ position: "absolute", top: px(244), left: 0, right: 0, textAlign: "center", fontWeight: 800, fontSize: px(23), color: CARD_NAVY, letterSpacing: px(2) }}>{program.motto}</div>
-      <div style={{ position: "absolute", top: px(296), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#D9D9D9" }}/>
-      <div style={{ position: "absolute", top: px(342), left: px(155), display: "flex", flexDirection: "column", gap: px(28) }}>
+      <div style={{ position: "absolute", top: pt(244), left: 0, right: 0, textAlign: "center", fontWeight: 800, fontSize: px(23), color: CARD_NAVY, letterSpacing: px(2) }}>{program.motto}</div>
+      <div style={{ position: "absolute", top: pt(296), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#D9D9D9" }}/>
+      <div style={{ position: "absolute", top: pt(342), left: px(155), display: "flex", flexDirection: "column", gap: px(28) }}>
         {rows.map(([label, value, path]) => (
           <div key={label} style={{ display: "flex", alignItems: "center", gap: px(22) }}>
             <span style={{ width: px(46), height: px(46), borderRadius: "50%", background: "#101010", display: "grid", placeItems: "center", flex: "none" }}>
@@ -3349,15 +3354,14 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
           </div>
         ))}
       </div>
-      <div style={{ position: "absolute", top: px(714), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#D9D9D9" }}/>
-      <div style={{ position: "absolute", top: px(748), left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: px(14) }}>
+      <div style={{ position: "absolute", top: pt(714), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#D9D9D9" }}/>
+      <div style={{ position: "absolute", top: pt(748), left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: px(14) }}>
         <img src={(program && program.logoOkun) || "/assets/idcard/logo-okun.png"} alt="Okun Alimọsho" style={{ height: px(64) }}
           onError={e => { e.target.style.display = "none"; if (e.target.nextSibling) e.target.nextSibling.style.display = "none"; }}/>
         <span aria-hidden="true" style={{ width: 1.5, height: px(44), background: "#C9CDD8" }}/>
         <img src={(program && program.logoLockup) || "/assets/idcard/logo-lockup.png"} alt="Programme lockup" style={{ width: px(230) }}/>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: "#00225F" }}/>
-     </div>
     </div>
   );
 }
@@ -3374,7 +3378,7 @@ function CardStudio() {
   const [mName, setMName] = React.useState(""); const [mCode, setMCode] = React.useState(""); const [mColor, setMColor] = React.useState("#76B043");
   const [msg, setMsg] = React.useState("");
   // Card proportion (mm) — admin-set, applies to preview, PNG/PDF export + print.
-  const [sizeW, setSizeW] = React.useState(54); const [sizeH, setSizeH] = React.useState(89);
+  const [sizeW, setSizeW] = React.useState(54); const [sizeH, setSizeH] = React.useState(75);
   const [sizeMsg, setSizeMsg] = React.useState("");
   const navy = "#16223e", gold = "#ffce54";
 
@@ -3392,12 +3396,12 @@ function CardStudio() {
   // Seed the size inputs from whichever dataset has loaded.
   React.useEffect(() => {
     const pr = (data && data.program) || (vdata && vdata.program);
-    if (pr) { setSizeW(Number(pr.widthMm) || 54); setSizeH(Number(pr.heightMm) || 89); }
+    if (pr) { setSizeW(Number(pr.widthMm) || 54); setSizeH(Number(pr.heightMm) || 75); }
   }, [data, vdata]);
   const saveSize = async () => {
     setSizeMsg("");
     const w = Math.max(50, Math.min(60, Number(sizeW) || 54));
-    const h = Math.max(82, Math.min(96, Number(sizeH) || 89));
+    const h = Math.max(64, Math.min(100, Number(sizeH) || 75));
     try { await NGGApi.admin.settings.set({ idcard: { widthMm: w, heightMm: h } }); setSizeMsg("Saved · " + w + "×" + h + "mm"); load(); }
     catch (e) { setSizeMsg("Couldn't save — need staff permission."); }
   };
@@ -3501,9 +3505,9 @@ function CardStudio() {
     try {
       setExp("Rendering…");
       const CE = await ensureLib(); await waitReady(); const n = faceNodes();
-      const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 4, bg: "#fff" });
+      const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 6, bg: "#fff" });
       CE.download(f.bytes, cardName(cards[i]) + "-front.png", "image/png");
-      const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 4, bg: "#fff" });
+      const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 6, bg: "#fff" });
       CE.download(b.bytes, cardName(cards[i]) + "-back.png", "image/png");
       setExp("");
     } catch (e) { setExp(""); setMsg("Couldn't render that card — try again."); }
@@ -3516,9 +3520,9 @@ function CardStudio() {
       const CE = await ensureLib(); await waitReady(); const n = faceNodes(); const files = [];
       for (let i = 0; i < cards.length; i++) {
         setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
-        const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 4, bg: "#fff" });
+        const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 6, bg: "#fff" });
         files.push({ name: cardName(cards[i]) + "-front.png", bytes: f.bytes });
-        const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 4, bg: "#fff" });
+        const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 6, bg: "#fff" });
         files.push({ name: cardName(cards[i]) + "-back.png", bytes: b.bytes });
       }
       setExp("Packaging…");
@@ -3562,7 +3566,7 @@ function CardStudio() {
   // (≈54×92mm); we keep the 590px width and derive the canvas height from the
   // configured aspect, so the whole studio + export + print reflect the size.
   const cardW = Number(program.widthMm) || 54;
-  const cardH = Number(program.heightMm) || 89;
+  const cardH = Number(program.heightMm) || 75;
   const CANVAS_H = Math.round(590 * cardH / cardW);
   const units = isVol ? tiers : centres;
   const tab = (m, label) => (
@@ -3638,13 +3642,13 @@ function CardStudio() {
         </label>
         <span style={{ color: "rgba(230,238,255,.5)" }}>×</span>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>Height
-          <input type="number" min={82} max={96} step={1} value={sizeH} onChange={e => setSizeH(e.target.value)} style={{ width: 74, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
+          <input type="number" min={64} max={100} step={1} value={sizeH} onChange={e => setSizeH(e.target.value)} style={{ width: 74, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
         </label>
         <span style={{ fontSize: 12, color: "rgba(230,238,255,.5)" }}>mm</span>
         <button onClick={saveSize} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>Save size</button>
         {sizeMsg && <span className="mono" style={{ fontSize: 12, color: sizeMsg[0] === "S" ? "#6fdc9d" : "#ff9a9a" }}>{sizeMsg}</span>}
       </div>
-      <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "10px 0 0" }}>Default is 54 × 89&nbsp;mm. Width 50–60, height 82–96. Applies to the preview, the PNG/PDF export and print.</p>
+      <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "10px 0 0" }}>Default is 54 × 75&nbsp;mm. Width 50–60, height 64–100. The card reflows to any proportion without distortion — preview, PNG/PDF export and print all follow.</p>
     </div>
 
     <div className="print-zone" ref={zoneRef} style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
