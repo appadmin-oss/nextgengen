@@ -415,6 +415,12 @@ function cmBody(text) {
 }
 function cmInitial(name) { return (String(name || "•").trim()[0] || "•").toUpperCase(); }
 function cmColor(seed) { const p = ["#e4032b", "#f5b026", "#2f9e44", "#b07cff", "#3b5bdb", "#ff5a3c", "#17a2b8"]; let h = 0; for (const c of String(seed || "")) h = (h * 31 + c.charCodeAt(0)) >>> 0; return p[h % p.length]; }
+// A member's avatar — their profile photo when we have one, else a colour + initial.
+function cmAvatar(name, seed, photo, extraClass) {
+  const cls = "cm-avatar" + (extraClass ? " " + extraClass : "");
+  if (photo) return <span className={cls + " cm-avatar-photo"} aria-hidden="true"><img src={cmOpt(photo, 96)} alt="" loading="lazy"/></span>;
+  return <span className={cls} style={{ background: cmColor(seed) }} aria-hidden="true">{cmInitial(name)}</span>;
+}
 
 function CommunityPage({ setPage }) {
   const auth = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false };
@@ -1030,6 +1036,17 @@ const CM_SLASH = [
   { cmd: "shrug", icon: "🤷", label: "Shrug", hint: "¯\\_(ツ)_/¯" },
 ];
 
+// Line-SVG icons for the dock (no emoji).
+function cmIcon(name) {
+  const P = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" };
+  const wrap = (kids) => <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">{kids}</svg>;
+  if (name === "image") return wrap(<><rect x="3" y="5" width="18" height="14" rx="2.4" {...P}/><circle cx="8.5" cy="10" r="1.7" {...P}/><path d="m4 17 5-4 4 3 3-2 4 3" {...P}/></>);
+  if (name === "doc") return wrap(<path d="M8 4h11a1 1 0 0 1 1 1v9M4 8v11a1 1 0 0 0 1 1h11M9 9h3M9 13h6" {...P}/>);
+  if (name === "poll") return wrap(<path d="M5 20V11M12 20V4M19 20v-6" {...P} strokeWidth={2.2}/>);
+  if (name === "emoji") return wrap(<><circle cx="12" cy="12" r="9" {...P}/><path d="M8.5 14c.8 1 2 1.6 3.5 1.6S14.7 15 15.5 14" {...P}/><path d="M9 9.5h.01M15 9.5h.01" {...P}/></>);
+  return null;
+}
+
 // Insert text at the caret / wrap the current selection, keeping focus + caret sane.
 function cmTa(ta) { return ta; }
 function cmInsertAt(ta, text, setBody) {
@@ -1248,7 +1265,6 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
 
       {/* Single-row dock */}
       <div className="cm-dockrow">
-        <span className="cm-avatar cm-dock-avatar" style={{ background: cmColor(me) }} aria-hidden="true">{cmInitial(me)}</span>
         <div className="cm-dock-field">
           <label className="sr-only" htmlFor="cm-input-box">Message {active !== "all" ? "#" + chName : "the community"}</label>
           <textarea id="cm-input-box" ref={taRef} className="cm-input" rows={1} maxLength={2000} value={body} onChange={onBody} onKeyDown={onKey} onPaste={onPaste}
@@ -1278,11 +1294,11 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
         <div className="cm-dock-actions">
           <input ref={fileRef} type="file" accept="image/*,video/*" onChange={pick} className="sr-only" tabIndex={-1} aria-hidden="true"/>
           <input ref={docRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.zip,application/pdf" onChange={pickDoc} className="sr-only" tabIndex={-1} aria-hidden="true"/>
-          {iconBtn("🖼️", "Add a photo or video", openFile)}
-          {iconBtn("📎", "Attach a document", openDoc)}
-          {iconBtn("📊", "Create a poll", () => setPoll(p => p ? null : ["", ""]), poll ? " is-on" : "")}
+          {iconBtn(cmIcon("image"), "Add a photo or video", openFile)}
+          {iconBtn(cmIcon("doc"), "Attach a document", openDoc)}
+          {iconBtn(cmIcon("poll"), "Create a poll", () => setPoll(p => p ? null : ["", ""]), poll ? " is-on" : "")}
           <div className="cm-emoji-wrap">
-            {iconBtn("😊", "Emoji", () => setEmoji(v => !v), emoji ? " is-on" : "")}
+            {iconBtn(cmIcon("emoji"), "Emoji", () => setEmoji(v => !v), emoji ? " is-on" : "")}
             {emoji && (
               <div className="cm-emoji-pop" role="menu" aria-label="Emoji" onMouseLeave={() => setEmoji(false)}>
                 {CM_EMOJI.map(em => <button key={em} type="button" className="cm-emoji-e" aria-label={"Insert " + em} onMouseDown={e => e.preventDefault()} onClick={() => cmInsertAt(taRef.current, em, setBody)}>{em}</button>)}
@@ -1445,7 +1461,7 @@ function CmMessage({ post, prev, me, onPatch, onRemove, onOpenThread, standalone
       <div className="cm-msg-gutter">
         {grouped
           ? <span className="cm-msg-tinytime" aria-hidden="true">{cmAgo(post.createdAt)}</span>
-          : <span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }} aria-hidden="true">{cmInitial(post.author.name)}</span>}
+          : cmAvatar(post.author.name, post.author.name + post.author.centre, post.author.photo)}
       </div>
       <div className="cm-msg-main">
         {!grouped && (
@@ -1506,7 +1522,7 @@ function CmCard({ post, me, onPatch, onRemove, onOpenThread, showChannel }) {
   return (
     <article className={"cm-card" + (post.status !== "published" ? " is-pending" : "")} aria-label={post.author.name + (post.author.isMe ? " (you)" : "") + " in " + post.channel.name + " · " + cmAgo(post.createdAt)}>
       <div className="cm-card-head">
-        <span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }} aria-hidden="true">{cmInitial(post.author.name)}</span>
+        {cmAvatar(post.author.name, post.author.name + post.author.centre, post.author.photo)}
         <div className="cm-card-meta">
           <span className="cm-card-author">{post.author.name}{post.author.isMe && <span className="cm-you">you</span>}</span>
           <span className="cm-card-sub">{cmAgo(post.createdAt)}{post.author.centre ? " · " + post.author.centre : ""}</span>
@@ -1549,7 +1565,7 @@ function CmMembersRail({ members }) {
   const rest = members.filter(m => !m.staff);
   const row = (m, i) => (
     <div key={i} className="cm-rail2-row">
-      <span className="cm-avatar cm-avatar-sm" style={{ background: cmColor(m.name) }}>{cmInitial(m.name)}</span>
+      {cmAvatar(m.name, m.name, m.photo, "cm-avatar-sm")}
       <div className="cm-rail2-info"><div className="cm-rail2-name">{m.name}</div><div className="cm-rail2-sub">{m.centre || "—"}{m.posts ? " · " + m.posts + " post" + (m.posts === 1 ? "" : "s") : ""}</div></div>
     </div>
   );
@@ -1606,7 +1622,7 @@ function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
       </div>
       <div className="cm-thread-body">
         <div className="cm-thread-root">
-          <div className="cm-msg-gutter"><span className="cm-avatar" style={{ background: cmColor(post.author.name + post.author.centre) }}>{cmInitial(post.author.name)}</span></div>
+          <div className="cm-msg-gutter">{cmAvatar(post.author.name, post.author.name + post.author.centre, post.author.photo)}</div>
           <div className="cm-msg-main">
             <div className="cm-msg-head">
               <span className="cm-msg-author">{post.author.name}</span>

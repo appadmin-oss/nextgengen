@@ -141,7 +141,7 @@ function community_channel_members(array $p): array {
         $mm = db_row("SELECT role FROM members WHERE memberId = ? LIMIT 1", [(string)$r['authorId']]);
         $role = strtolower((string)($mm['role'] ?? ''));
         $staff = $mm && ($role === 'mentor' || $role === 'staff' || $role === 'coordinator' || is_admin_role($role));
-        $members[] = ['name' => (string)$r['authorName'], 'centre' => (string)$r['authorCentre'], 'posts' => (int)$r['posts'], 'staff' => $staff];
+        $members[] = ['name' => (string)$r['authorName'], 'centre' => (string)$r['authorCentre'], 'posts' => (int)$r['posts'], 'staff' => $staff, 'photo' => community_photo_for((string)$r['authorId'])];
     }
     return ['ok' => true, 'members' => $members, 'count' => count($members)];
 }
@@ -172,6 +172,14 @@ function community_author(string $memberId): array {
     $first = $parts[0] ?? 'Member';
     $initial = count($parts) > 1 ? strtoupper(substr((string)end($parts), 0, 1)) . '.' : '';
     return ['name' => $first, 'initial' => $initial, 'centre' => (string)($m['centre'] ?? '')];
+}
+
+/** A member's / student's profile photo URL (empty if none). */
+function community_photo_for(string $id): string {
+    if ($id === '') return '';
+    $r = db_row("SELECT photoUrl FROM members WHERE memberId = ? LIMIT 1", [$id]);
+    if (!$r) $r = db_row("SELECT photoUrl FROM summer_students WHERE studentId = ? LIMIT 1", [$id]);
+    return (string)($r['photoUrl'] ?? '');
 }
 
 /* ── Safeguarding screen ──────────────────────────────────────────────── */
@@ -371,7 +379,7 @@ function community_post_shape(array $row, string $viewerId): array {
     return [
         'postId' => $pid, 'kind' => $kind, 'poll' => $poll,
         'channel' => ['slug' => (string)($ch['slug'] ?? ''), 'name' => (string)($ch['name'] ?? 'Channel'), 'color' => (string)($ch['color'] ?? '#3b5bdb'), 'icon' => (string)($ch['icon'] ?? '')],
-        'author' => ['name' => (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'], 'isMe' => $isMe],
+        'author' => ['name' => (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'], 'isMe' => $isMe, 'photo' => community_photo_for((string)$row['authorId'])],
         'body' => (string)$row['body'],
         'mediaType' => (string)$row['mediaType'], 'mediaUrl' => (string)$row['mediaUrl'], 'mediaPoster' => (string)$row['mediaPoster'], 'altText' => (string)$row['altText'],
         'linkPreview' => (($lp = json_decode((string)($row['linkPreview'] ?? ''), true)) && is_array($lp) && !empty($lp['title'])) ? $lp : null,
