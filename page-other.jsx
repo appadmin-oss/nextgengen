@@ -3153,6 +3153,11 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
    bar colour and the CODE-YY-serial ID. Print = true 54×92mm per card.
    ============================================================================ */
 const CARD_CRIMSON = "#E4155F", CARD_NAVY = "#1B2B6B";
+// The card artwork is laid out in a 590-wide design grid. Its height is the
+// default 54×89 mm card at that width (590·89/54 ≈ 972), so the default prints
+// with NO scaling at all (vf = 1). A non-default admin proportion scales the
+// whole card vertically from this base — bounded and only when they deviate.
+const CARD_DESIGN_H = 972;
 
 function CardQR({ token, size }) {
   const [src, setSrc] = React.useState("");
@@ -3216,13 +3221,13 @@ function cardFacePhoto(url, w, h) {
   return url.slice(0, i + 8) + params.join(",") + "/" + rest;
 }
 
-function CardFront({ card, program, S, H = 1004 }) {
+function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
-  const vf = H / 1004;
+  const vf = H / CARD_DESIGN_H;
   const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
   return (
     <div className="idcard" style={{ width: px(590), height: px(H), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
-     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(1004), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
+     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(CARD_DESIGN_H), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
       <img src={lockup} alt="Programme lockup" style={{ position: "absolute", top: px(58), left: "50%", transform: "translateX(-50%)", width: px(290) }}/>
       <div style={{ position: "absolute", top: px(182), left: "50%", transform: "translateX(-50%)", width: px(372), height: px(372), borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", boxShadow: `0 ${px(16)}px ${px(38)}px rgba(27,43,107,.16)` }}>
         {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 900)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
@@ -3239,9 +3244,9 @@ function CardFront({ card, program, S, H = 1004 }) {
             : <span style={{ fontWeight: 800, color: CARD_NAVY }}>{card.track}</span>;
         })()}
       </div>
-      <div style={{ position: "absolute", top: px(776), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#E4E4E4" }}/>
-      <div style={{ position: "absolute", top: px(812), left: "50%", transform: "translateX(-50%)", border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff" }}>
-        <CardQR token={card.token} size={px(112)}/>
+      <div style={{ position: "absolute", top: px(772), left: "50%", transform: "translateX(-50%)", width: px(400), height: 1, background: "#E4E4E4" }}/>
+      <div style={{ position: "absolute", top: px(802), left: "50%", transform: "translateX(-50%)", border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff" }}>
+        <CardQR token={card.token} size={px(108)}/>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: card.centre.color }}/>
      </div>
@@ -3252,13 +3257,13 @@ function CardFront({ card, program, S, H = 1004 }) {
 /* Volunteer front — the whole card is the hierarchy-tier colour, with a white
    inner panel. STS badge top, headshot/illustration, name, QR, VOLUNTEER|ROLE.
    Same 590×1004 canvas as the student card so both print at 54×92mm. */
-function VolunteerCardFront({ card, S, H = 1004 }) {
+function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
-  const vf = H / 1004;
+  const vf = H / CARD_DESIGN_H;
   const tint = card.tier.color || "#00225F";
   return (
     <div className="idcard" style={{ width: px(590), height: px(H), background: tint, position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
-     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(1004), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
+     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(CARD_DESIGN_H), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
       {/* White inner panel — the tier colour reads as a full-bleed border. */}
       <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), background: "#fff", borderRadius: px(30) }}/>
       {/* STS badge, straddling the top edge of the panel — the Street-To-Stardom
@@ -3293,9 +3298,9 @@ function VolunteerCardFront({ card, S, H = 1004 }) {
   );
 }
 
-function CardBack({ card, program, S, H = 1004 }) {
+function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
-  const vf = H / 1004;
+  const vf = H / CARD_DESIGN_H;
   // The back is shared by students and volunteers; the 3rd row is a CENTRE
   // for students and the ROLE for volunteers (who have no centre).
   const isVol = !!card.tier;
@@ -3313,7 +3318,7 @@ function CardBack({ card, program, S, H = 1004 }) {
   for (let i = 0; i < 9; i++) wm.push(<div key={i} style={{ fontFamily: '"Pagkaki", Georgia, serif', fontWeight: 800, fontSize: px(86), lineHeight: 1.28, color: "rgba(27,43,107,.045)", whiteSpace: "nowrap", textTransform: "uppercase", marginLeft: (i % 2 ? px(-70) : 0) }}>ÈKÓ ÌLÚ ÈKÓ ÌLÚ</div>);
   return (
     <div className="idcard" style={{ width: px(590), height: px(H), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
-     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(1004), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
+     <div style={{ position: "absolute", top: 0, left: 0, width: px(590), height: px(CARD_DESIGN_H), transformOrigin: "top left", transform: vf === 1 ? undefined : "scaleY(" + vf + ")" }}>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>{wm}</div>
       {/* Woven aso-oke trim across the top — stepped two-tone chevrons in
           muted blue-gray, matching the textile band on the printed design. */}
