@@ -50,9 +50,16 @@
   function blobToDataURL(blob) {
     return new Promise(function (res) { var fr = new FileReader(); fr.onload = function () { res(fr.result); }; fr.onerror = function () { res(null); }; fr.readAsDataURL(blob); });
   }
+  // Cache by full URL so the shared logos aren't re-fetched for every card in a
+  // bulk export (the single biggest avoidable cost), and a re-fetch of the same
+  // photo is free. Cloudinary edit URLs are unique per edit, so this is safe.
+  var _dataUrlCache = {};
   async function fetchAsDataURL(src) {
-    try { var r = await fetch(src, { mode: 'cors', credentials: 'omit' }); if (r.ok) return await blobToDataURL(await r.blob()); } catch (e) {}
-    return null;
+    if (_dataUrlCache[src] !== undefined) return _dataUrlCache[src];
+    var out = null;
+    try { var r = await fetch(src, { mode: 'cors', credentials: 'omit' }); if (r.ok) out = await blobToDataURL(await r.blob()); } catch (e) {}
+    _dataUrlCache[src] = out;
+    return out;
   }
   /* Inline every <img> in the node as a same-origin data URI before rasterising.
    * Without this, html2canvas taints cross-origin photos (Cloudinary/external)
@@ -166,7 +173,9 @@
         if (ci >= cards.length) break;
         var col = idx % cols, row = Math.floor(idx / cols);
         var x = startX + col * (trimW + gutter), y = startY + row * (trimH + gutter);
-        doc.addImage(cards[ci].dataUrl, 'JPEG', x, y, trimW, trimH, undefined, 'SLOW');
+        // 'FAST' — the art is already JPEG-compressed; 'SLOW' re-encodes and is
+        // dramatically slower on a full mass-print run for no visible gain.
+        doc.addImage(cards[ci].dataUrl, 'JPEG', x, y, trimW, trimH, undefined, 'FAST');
         if (marks) cropMarks(x, y, trimW, trimH);
       }
       if (marks) {

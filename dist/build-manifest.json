@@ -1,10 +1,10 @@
 {
-  "buildId": "01771f7261",
-  "builtAt": "2026-07-24T19:35:03.801Z",
+  "buildId": "bd95db4514",
+  "builtAt": "2026-07-24T19:42:25.858Z",
   "bundle": {
     "file": "app.min.js",
-    "bytes": 1084369,
-    "gzipBytes": 258407,
+    "bytes": 1085204,
+    "gzipBytes": 258710,
     "files": 17
   },
   "node": "v22.22.2"

@@ -3227,7 +3227,7 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
   // Reflow: every element scales UNIFORMLY (never stretched) and flexible
   // spacers absorb the height difference, so any proportion renders without
   // distortion. Photo caps at its design diameter, shrinks on short cards.
-  const photoD = Math.min(372, Math.max(150, Math.round(H * 0.40)));
+  const photoD = Math.min(320, Math.max(150, Math.round(H * 0.34)));
   return (
     <div className="idcard" style={{ width: px(590), height: px(H), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none", display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box", padding: px(34) + "px " + px(24) + "px " + px(44) + "px" }}>
       <img src={lockup} alt="Programme lockup" style={{ width: px(290), flex: "none" }}/>
@@ -3517,37 +3517,62 @@ function CardStudio() {
     if (exp || !cards.length) return;
     try {
       setExp("Preparing…");
-      const CE = await ensureLib(); await waitReady(); const n = faceNodes(); const files = [];
+      const CE = await ensureLib(); await waitReady(); const n = faceNodes(); const files = []; const failed = [];
       for (let i = 0; i < cards.length; i++) {
         setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
-        const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 6, bg: "#fff" });
-        files.push({ name: cardName(cards[i]) + "-front.png", bytes: f.bytes });
-        const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 6, bg: "#fff" });
-        files.push({ name: cardName(cards[i]) + "-back.png", bytes: b.bytes });
+        try {
+          const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 5, bg: "#fff" });
+          files.push({ name: cardName(cards[i]) + "-front.png", bytes: f.bytes });
+          const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 5, bg: "#fff" });
+          files.push({ name: cardName(cards[i]) + "-back.png", bytes: b.bytes });
+        } catch (e) { failed.push(cardName(cards[i])); }
+        await nextFrame();
       }
-      setExp("Packaging…");
+      if (!files.length) { setExp(""); setMsg("Export failed — no cards could be rendered."); return; }
+      setExp("Packaging…"); await nextFrame();
       CE.download(await CE.zipStore(files), setName() + "-png.zip", "application/zip");
       setExp("");
+      setMsg(failed.length ? (failed.length + " card(s) couldn't render — retry: " + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : "")) : "");
     } catch (e) { setExp(""); setMsg("Export failed — try again."); }
   };
+
+  // Render a face at ~330 DPI for the actual trim size — enough for offset/press
+  // print, but far lighter than a fixed 4× (which is ~470 DPI and 2–3× slower).
+  // One retry + a frame yield so a single hiccup never kills a mass run and the
+  // tab stays responsive across hundreds of cards.
+  const renderFace = async (CE, node, scale) => {
+    for (let attempt = 0; ; attempt++) {
+      try { return await CE.nodeToImage(node, { type: "image/jpeg", scale, quality: 0.92, bg: "#fff" }); }
+      catch (e) { if (attempt >= 1) throw e; await new Promise(r => setTimeout(r, 250)); }
+    }
+  };
+  const nextFrame = () => new Promise(r => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => r()) : setTimeout(r, 0)));
 
   const exportPdf = async () => {
     if (exp || !cards.length) return;
     try {
       setExp("Preparing…");
-      const CE = await ensureLib(); await waitReady(); const n = faceNodes(); const fronts = [], backs = [];
+      const CE = await ensureLib(); await waitReady(); const n = faceNodes();
+      // Scale to hit ~330 DPI at the chosen trim width (card is 295 CSS px wide).
+      const pdfScale = Math.max(2, Math.min(3.2, Math.round((330 * (cardW / 25.4) / 295) * 100) / 100));
+      const fronts = [], backs = [], failed = [];
       for (let i = 0; i < cards.length; i++) {
         setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
-        const f = await CE.nodeToImage(n[2 * i], { type: "image/jpeg", scale: 4, quality: 0.94, bg: "#fff" });
-        fronts.push({ dataUrl: f.dataUrl });
-        const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/jpeg", scale: 4, quality: 0.94, bg: "#fff" });
-        backs.push({ dataUrl: b.dataUrl });
+        try {
+          const f = await renderFace(CE, n[2 * i], pdfScale);
+          const b = await renderFace(CE, n[2 * i + 1], pdfScale);
+          fronts.push({ dataUrl: f.dataUrl }); backs.push({ dataUrl: b.dataUrl });
+        } catch (e) { failed.push(cardName(cards[i])); }
+        await nextFrame(); // yield so the tab never locks up mid-run
       }
-      setExp("Imposing sheets…");
+      if (!fronts.length) { setExp(""); setMsg("PDF export failed — no cards could be rendered."); return; }
+      setExp("Imposing sheets…"); await nextFrame();
       // Front sheets first, then back sheets — so a shop can duplex and cut.
       const pdf = await CE.buildImpositionPDF(fronts.concat(backs), { sheet: "A4", trimW_mm: cardW, trimH_mm: cardH, marks: true });
       CE.download(pdf, setName() + "-print-cmyk.pdf", "application/pdf");
       setExp("");
+      setMsg(failed.length ? (failed.length + " card(s) couldn't render and were left out — retry the export: " + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : "")) : "");
+      if (!failed.length) setNotice("Print-ready PDF exported.");
     } catch (e) { setExp(""); setMsg("PDF export failed — try again."); }
   };
 

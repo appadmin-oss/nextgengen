@@ -10,7 +10,7 @@
      runs immediately (no stale admin).
    ================================================================ */
 
-const CACHE_VERSION = 'ngg-01771f7261';
+const CACHE_VERSION = 'ngg-bd95db4514';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
