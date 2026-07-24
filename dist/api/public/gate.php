@@ -53,7 +53,7 @@ if ($method === 'GET') {
         $centre = (string)($ctx['centre'] ?? '');
         $volId = (string)(($ctx['duty']['volunteerId'] ?? '') ?: '');
         if ($centre === '' || $volId === '') json_error('no_duty', 400);
-        $res = gs_call('attendance.duty.complete', ['date' => gmdate('Y-m-d'), 'centre' => $centre, 'volunteerId' => $volId, 'ip' => $ip]);
+        $res = gs_call('attendance.duty.complete', ['gateAuthorized' => true, 'date' => gmdate('Y-m-d'), 'centre' => $centre, 'volunteerId' => $volId, 'ip' => $ip]);
     } else {
         json_error('unknown_action', 400);
     }

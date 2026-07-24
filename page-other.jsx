@@ -2994,6 +2994,9 @@ function QRScanner({ onToken, gold }) {
 function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
   const [code, setCode] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  // The camera effect captures `mark` once (deps []), so its `busy` closure is
+  // frozen false — guard the in-flight state through a ref the closure can read live.
+  const busyRef = React.useRef(false);
   const [recent, setRecent] = React.useState([]);
   const [err, setErr] = React.useState("");
   const [typed, setTyped] = React.useState(false); // reveal the manual fallback
@@ -3011,20 +3014,27 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
   // A network/offline failure has no server error code/status; a real rejection
   // (qr_unassigned, student_not_found) does — only the former should queue.
   const isNetErr = (e) => (typeof navigator !== "undefined" && !navigator.onLine) || (e && !e.code && !e.status);
+  // Remove one token by re-reading storage first, so a scan enqueued during an
+  // in-flight sync is never clobbered by a stale in-memory copy of the queue.
+  const dequeue = (token) => { saveQ(loadQ().filter(x => x.token !== token)); };
   const flushQueue = async () => {
     if (flushing.current || (typeof navigator !== "undefined" && !navigator.onLine)) return;
-    let q = loadQ(); if (!q.length) return;
+    const snapshot = loadQ(); if (!snapshot.length) return;
     flushing.current = true;
     try {
-      for (const item of q.slice()) {
+      for (const item of snapshot) {
         try {
           const r = await NGGApi.public.gate.checkin(g, item.token);
-          q = q.filter(x => x.token !== item.token); saveQ(q);
+          dequeue(item.token);
           const st = r.student || {};
           setRecent(list => [{ name: st.fullName || item.token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), already: !!r.already, synced: true }, ...list].slice(0, 12));
         } catch (e) {
           if (isNetErr(e)) break;                       // still offline — stop, keep the rest
-          q = q.filter(x => x.token !== item.token); saveQ(q); // bad token — drop it
+          // The server rejected a banked scan (e.g. unassigned card). Drop it, but
+          // never silently: tell the operator and flag it so it can be re-scanned.
+          dequeue(item.token);
+          setErr("A saved scan couldn't be synced (" + (e.code === "qr_unassigned" ? "code not assigned" : e.code === "student_not_found" ? "no member for that code" : (e.code || "rejected")) + "). Please re-scan that card.");
+          setRecent(list => [{ name: item.token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), failed: true }, ...list].slice(0, 12));
         }
       }
     } finally { flushing.current = false; }
@@ -3052,8 +3062,8 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
   };
 
   const mark = async (raw) => {
-    const token = String(raw || "").trim(); if (!token || busy) return;
-    setBusy(true); setErr("");
+    const token = String(raw || "").trim(); if (!token || busyRef.current) return;
+    busyRef.current = true; setBusy(true); setErr("");
     try {
       const r = await NGGApi.public.gate.checkin(g, token);
       const st = r.student || {};
@@ -3080,7 +3090,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
         const c = e2.code || e2.message;
         setErr(c === "qr_unassigned" ? "That code isn't assigned to anyone yet." : c === "student_not_found" ? "No student or volunteer found for that code." : "Couldn't check in — try again.");
       }
-    } finally { setBusy(false); }
+    } finally { busyRef.current = false; setBusy(false); }
   };
 
   return (
@@ -3116,16 +3126,18 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
             <button disabled={busy || !code.trim()} style={{ padding: "0 20px", borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "…" : "✓"}</button>
           </form>
         )}
-      {err && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 13 }}>{err}</div>}
+      {err && <div role="alert" style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 13 }}>{err}</div>}
+      <div role="status" aria-live="polite" aria-label="Recent check-ins" style={{ display: "contents" }}>
       {recent.map((r, i) => (
-        <div key={i} style={{ ...card, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, border: r.warn ? "1px solid rgba(255,120,120,.5)" : (card.border || undefined) }}>
-          <span style={{ color: r.queued ? "#ffce54" : r.already ? "#ffce54" : "#6fdc9d", fontWeight: 800 }}>{r.queued ? "☁︎" : r.already ? "↻" : "✓"}</span>
-          <b style={{ flex: 1, fontSize: 14, fontFamily: r.queued ? "var(--font-mono, monospace)" : undefined }}>{r.name}{r.volunteer && <span style={{ marginLeft: 8, fontSize: 10, letterSpacing: ".1em", padding: "2px 7px", borderRadius: 6, background: "rgba(245,176,38,.18)", color: "#ffce54", fontWeight: 700 }}>{(r.role || "VOL").toUpperCase()}</span>}</b>
+        <div key={r.at + "|" + (r.name || "") + "|" + (r.failed ? "f" : r.synced ? "s" : r.queued ? "q" : r.already ? "a" : "n") + "|" + i} style={{ ...card, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, border: (r.warn || r.failed) ? "1px solid rgba(255,120,120,.5)" : (card.border || undefined) }}>
+          <span style={{ color: r.failed ? "#ff9a9a" : r.queued ? "#ffce54" : r.already ? "#ffce54" : "#6fdc9d", fontWeight: 800 }}>{r.failed ? "✕" : r.queued ? "☁︎" : r.already ? "↻" : "✓"}</span>
+          <b style={{ flex: 1, fontSize: 14, fontFamily: (r.queued || r.failed) ? "var(--font-mono, monospace)" : undefined }}>{r.name}{r.volunteer && <span style={{ marginLeft: 8, fontSize: 10, letterSpacing: ".1em", padding: "2px 7px", borderRadius: 6, background: "rgba(245,176,38,.18)", color: "#ffce54", fontWeight: 700 }}>{(r.role || "VOL").toUpperCase()}</span>}</b>
           {r.cert > 0 && <span title={r.cert + "-session certificate issued"} style={{ fontSize: 11, color: "#6fdc9d", fontWeight: 700 }}>🏅 {r.cert}</span>}
           {r.late > 0 && <span title={"Arrived " + r.late + " min after resumption"} style={{ fontSize: 10, letterSpacing: ".08em", padding: "2px 7px", borderRadius: 6, background: "rgba(255,120,120,.16)", color: "#ff9a9a", fontWeight: 700 }}>LATE · {r.late}m</span>}
-          <span style={{ color: "rgba(230,238,255,.6)", fontSize: 12 }}>{r.queued ? "saved offline · " : r.synced ? "synced · " : r.already ? "already in · " : ""}{r.at}</span>
+          <span style={{ color: "rgba(230,238,255,.6)", fontSize: 12 }}>{r.failed ? "failed — re-scan · " : r.queued ? "saved offline · " : r.synced ? "synced · " : r.already ? "already in · " : ""}{r.at}</span>
         </div>
       ))}
+      </div>
       {recent.some(r => r.warn) && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 12.5 }}>⚠ A volunteer above has not cleared safeguarding screening. They should not be unsupervised with young people.</div>}
       {!recent.length && <p style={{ color: "rgba(230,238,255,.45)", fontSize: 13, textAlign: "center", marginTop: 20 }}>Check-ins appear here as they happen.</p>}
     </div>

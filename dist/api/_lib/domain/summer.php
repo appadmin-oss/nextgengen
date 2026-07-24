@@ -502,6 +502,15 @@ function attendance_punctuality(string $type): array {
     return ['status' => $late > 0 ? 'late' : 'present', 'lateMinutes' => $late];
 }
 
+/** True when a DB exception is a unique/PK violation (duplicate row) rather than
+ *  some other failure — lets a concurrent double-scan resolve to "already" instead
+ *  of surfacing a generic error. Covers SQLite and MySQL. */
+function attendance_is_dup(\Throwable $e): bool {
+    if ((string)$e->getCode() === '23000') return true;
+    $m = strtolower($e->getMessage());
+    return strpos($m, 'unique') !== false || strpos($m, 'duplicate') !== false;
+}
+
 // ── Attendance check-in (scan a card) — used by the kiosk in Phase 2 ─────────
 function summer_checkin(array $p): array {
     // A desk-password KIOSK session has no staff member/cap — but the caller
@@ -523,12 +532,22 @@ function summer_checkin(array $p): array {
         $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$qr['studentId']]);
         if (!$v) return ['ok' => false, 'error' => 'student_not_found'];
         $today = gmdate('Y-m-d');
-        $existing = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$v['volunteerId'], $today]);
+        $existing = db_row('SELECT status, lateMinutes FROM attendance WHERE studentId = ? AND date = ?', [$v['volunteerId'], $today]);
         $already = (bool)$existing;
         $cert = null;
-        $punc = attendance_punctuality('volunteer');
+        // On re-scan, report what was actually stored at check-in — not a fresh
+        // punctuality reading against the current (later) time.
+        $punc = $already
+            ? ['status' => (string)($existing['status'] ?: 'present'), 'lateMinutes' => (int)($existing['lateMinutes'] ?? 0)]
+            : attendance_punctuality('volunteer');
         if (!$already) {
-            db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'createdAt' => now_iso()]);
+            try {
+                db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'createdAt' => now_iso()]);
+            } catch (\Throwable $e) {
+                if (!attendance_is_dup($e)) throw $e;      // concurrent duplicate scan → treat as already
+                $row = db_row('SELECT status, lateMinutes FROM attendance WHERE studentId = ? AND date = ?', [$v['volunteerId'], $today]);
+                return ['ok' => true, 'already' => true, 'student' => volunteer_public($v), 'certIssued' => null, 'status' => (string)($row['status'] ?? 'present'), 'lateMinutes' => (int)($row['lateMinutes'] ?? 0)];
+            }
             audit('volunteer.checkin', $byId, $v['volunteerId'], ['date' => $today, 'status' => $punc['status']], (string)($p['ip'] ?? ''));
             // Service ledger: a milestone day mints the certificate right here.
             $sessions = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$v['volunteerId']])['c'] ?? 0);
@@ -538,11 +557,19 @@ function summer_checkin(array $p): array {
         return ['ok' => true, 'already' => $already, 'student' => volunteer_public($v), 'certIssued' => $cert, 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes']];
     }
     $today = gmdate('Y-m-d');
-    $existing = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$s['studentId'], $today]);
+    $existing = db_row('SELECT status, lateMinutes FROM attendance WHERE studentId = ? AND date = ?', [$s['studentId'], $today]);
     $already = (bool)$existing;
-    $punc = attendance_punctuality('student');
+    $punc = $already
+        ? ['status' => (string)($existing['status'] ?: 'present'), 'lateMinutes' => (int)($existing['lateMinutes'] ?? 0)]
+        : attendance_punctuality('student');
     if (!$already) {
-        db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'createdAt' => now_iso()]);
+        try {
+            db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'createdAt' => now_iso()]);
+        } catch (\Throwable $e) {
+            if (!attendance_is_dup($e)) throw $e;          // concurrent duplicate scan → treat as already
+            $row = db_row('SELECT status, lateMinutes FROM attendance WHERE studentId = ? AND date = ?', [$s['studentId'], $today]);
+            return ['ok' => true, 'already' => true, 'student' => summer_student_public($s), 'status' => (string)($row['status'] ?? 'present'), 'lateMinutes' => (int)($row['lateMinutes'] ?? 0)];
+        }
         audit('summer.checkin', $byId, $s['studentId'], ['date' => $today, 'status' => $punc['status']], (string)($p['ip'] ?? ''));
         $days = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$s['studentId']])['c'] ?? 0);
         checkin_student_email($s, $days);
@@ -615,23 +642,26 @@ function admin_summer_attendance(array $p): array {
     $one = fn($sql, $a = []) => (int)(db_row($sql, $a)['c'] ?? 0);
 
     // Distinct days attendance was taken so far — the denominator for a rate.
-    $sessionDays = $one("SELECT COUNT(DISTINCT date) c FROM attendance WHERE cohortId = ?", [$cid]);
+    // All cohort counts JOIN summer_students so volunteer check-ins (which share
+    // the attendance table, keyed by volunteerId) never skew student figures.
+    $sessionDays = $one("SELECT COUNT(DISTINCT a.date) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ?", [$cid]);
     $activeStudents = $one("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND status = 'active'", [$cid]);
-    $presentToday = $one("SELECT COUNT(*) c FROM attendance WHERE cohortId = ? AND date = ?", [$cid, $today]);
+    $presentToday = $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ? AND a.date = ?", [$cid, $today]);
 
-    // Last 14 calendar days as a series (present count per day).
+    // Last 14 calendar days as a series (present count per day, students only).
     $days = [];
     for ($i = 13; $i >= 0; $i--) {
         $d = gmdate('Y-m-d', time() - $i * 86400);
-        $days[] = ['date' => $d, 'present' => $one("SELECT COUNT(*) c FROM attendance WHERE cohortId = ? AND date = ?", [$cid, $d])];
+        $days[] = ['date' => $d, 'present' => $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ? AND a.date = ?", [$cid, $d])];
     }
 
     // Per-student rollup: total present, last seen, attendance rate.
     $students = db_all("SELECT studentId, fullName, handle, track, centre FROM summer_students WHERE cohortId = ? AND status = 'active' ORDER BY fullName", [$cid]);
     $roster = [];
     foreach ($students as $s) {
-        $cnt = $one("SELECT COUNT(*) c FROM attendance WHERE studentId = ?", [$s['studentId']]);
-        $last = db_row("SELECT date FROM attendance WHERE studentId = ? ORDER BY date DESC LIMIT 1", [$s['studentId']]);
+        // Count distinct days for THIS cohort (numerator consistent with sessionDays).
+        $cnt = $one("SELECT COUNT(DISTINCT date) c FROM attendance WHERE studentId = ? AND cohortId = ?", [$s['studentId'], $cid]);
+        $last = db_row("SELECT date FROM attendance WHERE studentId = ? AND cohortId = ? ORDER BY date DESC LIMIT 1", [$s['studentId'], $cid]);
         $roster[] = [
             'studentId' => $s['studentId'], 'fullName' => $s['fullName'], 'handle' => $s['handle'],
             'track' => $s['track'], 'centre' => $s['centre'], 'present' => $cnt,
@@ -667,11 +697,22 @@ function admin_summer_cohort_archive(array $p): array {
     $c = db_row('SELECT * FROM summer_cohorts WHERE cohortId = ?', [$cohortId]);
     if (!$c) return ['ok' => false, 'error' => 'not_found'];
 
-    $sessionDays = (int)(db_row("SELECT COUNT(DISTINCT date) c FROM attendance WHERE cohortId = ?", [$cohortId])['c'] ?? 0);
     $students = db_all("SELECT studentId FROM summer_students WHERE cohortId = ?", [$cohortId]);
+    // How many student check-ins remain (the source the rollup reads). If a prior
+    // compress already purged them, re-running the rollup would overwrite the
+    // preserved per-student summary with zeros — so refuse when nothing's left.
+    $studentRows = (int)(db_row("SELECT COUNT(*) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ?", [$cohortId])['c'] ?? 0);
+    $archivedAlready = ((string)($c['status'] ?? '') === 'archived');
+    if ($archivedAlready && $studentRows === 0) {
+        return ['ok' => true, 'cohortId' => $cohortId, 'students' => count($students), 'alreadyArchived' => true, 'compressed' => false, 'purged' => 0,
+                'note' => 'Cohort already archived — the stored summary was left untouched.'];
+    }
+
+    // Student-only session days (volunteers share the table but must not skew rates).
+    $sessionDays = (int)(db_row("SELECT COUNT(DISTINCT a.date) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ?", [$cohortId])['c'] ?? 0);
     $now = now_iso();
     foreach ($students as $s) {
-        $r = db_row("SELECT COUNT(*) c, MIN(date) f, MAX(date) l FROM attendance WHERE studentId = ?", [$s['studentId']]);
+        $r = db_row("SELECT COUNT(DISTINCT date) c, MIN(date) f, MAX(date) l FROM attendance WHERE studentId = ? AND cohortId = ?", [$s['studentId'], $cohortId]);
         $cnt = (int)($r['c'] ?? 0);
         db_update('summer_students', [
             'daysPresent' => $cnt,
@@ -684,8 +725,10 @@ function admin_summer_cohort_archive(array $p): array {
 
     $purged = 0;
     if ($compress) {
-        $purged = (int)(db_row("SELECT COUNT(*) c FROM attendance WHERE cohortId = ?", [$cohortId])['c'] ?? 0);
-        db_exec("DELETE FROM attendance WHERE cohortId = ?", [$cohortId]);
+        // Purge only STUDENT check-ins. Volunteer rows stay: their service ledger
+        // (sessions/hours/milestone certs) is computed live from this table.
+        $purged = $studentRows;
+        db_exec("DELETE FROM attendance WHERE cohortId = ? AND studentId IN (SELECT studentId FROM summer_students WHERE cohortId = ?)", [$cohortId, $cohortId]);
     }
     audit('summer.cohort.archive', $g['requester']['memberId'], $cohortId, ['students' => count($students), 'sessionDays' => $sessionDays, 'compress' => $compress, 'purged' => $purged], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'cohortId' => $cohortId, 'students' => count($students), 'sessionDays' => $sessionDays, 'compressed' => $compress, 'purged' => $purged];

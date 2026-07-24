@@ -23,6 +23,8 @@ if ($method === 'GET') {
         'complete' => 'attendance.duty.complete',
     ];
     if (!isset($map[$action])) json_error('unknown_action', 400);
+    // Kiosk-only control flag: strip so it can't be injected to bypass the cap gate.
+    unset($b['gateAuthorized']);
     $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));
 } else {
     json_error('method_not_allowed', 405);

@@ -555,6 +555,9 @@ chk('completing the roll awards points + returns a value-driven response', $done
 $ptsAfter = volunteer_game_state('VOL-T-2')['points'];
 backend_dispatch('attendance.duty.complete', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-T-2']);
 chk('duty completion is idempotent (no double points)', volunteer_game_state('VOL-T-2')['points'] === $ptsAfter);
+chk('duty completion requires the summer cap (non-cap staff blocked)', backend_dispatch('attendance.duty.complete', ['requesterId' => 'NGG-2025-0001', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-T-2'])['error'] === 'forbidden');
+chk('duty completion refuses a volunteer not on duty for the centre', backend_dispatch('attendance.duty.complete', ['requesterId' => 'NGG-2025-0099', 'date' => $today, 'centre' => $centre0, 'volunteerId' => 'VOL-T-1'])['error'] === 'not_on_duty');
+chk('duty completion rejects a malformed date', backend_dispatch('attendance.duty.complete', ['requesterId' => 'NGG-2025-0099', 'date' => 'not-a-date', 'centre' => $centre0, 'volunteerId' => 'VOL-T-2'])['error'] === 'bad_date');
 chk('game state exposes level + level name', volunteer_game_state('VOL-T-2')['levelName'] === 'Recruit');
 chk('point-award milestone mints once + surfaces in-app', (function () {
     $v = db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-T-2'");
@@ -1006,12 +1009,22 @@ chk('re-promoting the same student is rejected', backend_dispatch('admin.club.pr
 $ins = backend_dispatch('admin.summer.insights', ['requesterId' => 'NGG-2025-0099']);
 chk('insights returns a rule-based summary when AI is off', !empty($ins['ok']) && $ins['aiConfigured'] === false && $ins['source'] === 'rules' && strlen($ins['insight']) > 10);
 $scoh = db_row("SELECT cohortId FROM summer_students WHERE studentId = ?", [$enr['studentId']])['cohortId'];
-$before = (int)(db_row("SELECT COUNT(*) c FROM attendance WHERE cohortId = ?", [$scoh])['c'] ?? 0);
+// Student check-ins vs volunteer check-ins share the attendance table; compress
+// purges only the former and must leave the volunteer service ledger intact.
+$studentBefore = (int)(db_row("SELECT COUNT(*) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ?", [$scoh])['c'] ?? 0);
+$volBefore = (int)(db_row("SELECT COUNT(*) c FROM attendance a WHERE a.cohortId = ? AND a.studentId NOT IN (SELECT studentId FROM summer_students WHERE cohortId = ?)", [$scoh, $scoh])['c'] ?? 0);
+$rolledDays = (int)(db_row("SELECT COUNT(DISTINCT date) c FROM attendance WHERE studentId = ? AND cohortId = ?", [$enr['studentId'], $scoh])['c'] ?? 0);
 $arch = backend_dispatch('admin.summer.cohort.archive', ['requesterId' => 'NGG-2025-0099', 'cohortId' => $scoh, 'compress' => true]);
-chk('archive summarizes + compresses the cohort', !empty($arch['ok']) && $arch['compressed'] === true && $arch['purged'] === $before);
+chk('archive summarizes + compresses student check-ins', !empty($arch['ok']) && $arch['compressed'] === true && $arch['purged'] === $studentBefore);
 chk('archived cohort is marked archived', db_row("SELECT status FROM summer_cohorts WHERE cohortId = ?", [$scoh])['status'] === 'archived');
-chk('granular attendance purged after compression', (int)(db_row("SELECT COUNT(*) c FROM attendance WHERE cohortId = ?", [$scoh])['c'] ?? 0) === 0);
+chk('student granular attendance purged after compression', (int)(db_row("SELECT COUNT(*) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ?", [$scoh])['c'] ?? 0) === 0);
+chk('volunteer service ledger preserved through compression', (int)(db_row("SELECT COUNT(*) c FROM attendance a WHERE a.cohortId = ? AND a.studentId NOT IN (SELECT studentId FROM summer_students WHERE cohortId = ?)", [$scoh, $scoh])['c'] ?? 0) === $volBefore);
 chk('per-student attendance rolled up onto the row', (int)(db_row("SELECT daysPresent FROM summer_students WHERE studentId = ?", [$enr['studentId']])['daysPresent'] ?? 0) >= 1);
+// Re-archiving a compressed cohort must NOT recompute the rollup from the (now
+// empty) table and zero the preserved summary.
+$rearch = backend_dispatch('admin.summer.cohort.archive', ['requesterId' => 'NGG-2025-0099', 'cohortId' => $scoh, 'compress' => true]);
+chk('re-archiving a compressed cohort is a no-op', !empty($rearch['ok']) && !empty($rearch['alreadyArchived']));
+chk('re-archiving preserves the rolled-up summary', (int)(db_row("SELECT daysPresent FROM summer_students WHERE studentId = ?", [$enr['studentId']])['daysPresent'] ?? 0) === $rolledDays);
 chk('archive gated from non-staff', backend_dispatch('admin.summer.cohort.archive', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 
 // ── Anchor Circle (consent-based guardian/mentor linking) ──

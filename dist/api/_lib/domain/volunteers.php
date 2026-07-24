@@ -297,12 +297,24 @@ function volunteer_check_point_awards(array $v, int $before, int $after): array 
 /** Complete the day's roll: award points/streak, check level-up + awards, and
  *  return a value-driven response the kiosk shows the volunteer. */
 function attendance_duty_complete(array $p): array {
+    // Dual auth (mirrors summer_checkin): the gate/kiosk route authorizes by the
+    // gate token (gateAuthorized); every other caller needs the 'summer' cap.
+    // Admin routes strip gateAuthorized, so it can only arrive from the gate route.
+    if (empty($p['gateAuthorized'])) {
+        $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    }
     $date = substr(trim((string)($p['date'] ?? gmdate('Y-m-d'))), 0, 12);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) return ['ok' => false, 'error' => 'bad_date'];
     $centre = trim((string)($p['centre'] ?? ''));
     $volunteerId = trim((string)($p['volunteerId'] ?? ''));
     if ($centre === '' || $volunteerId === '') return ['ok' => false, 'error' => 'missing_fields'];
     $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
     if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    // Only the volunteer actually on duty for this centre/date may close its roll
+    // (and earn the points). No duty row = nothing to close.
+    $duty = db_row('SELECT volunteerId FROM attendance_duty WHERE date = ? AND centre = ? LIMIT 1', [$date, $centre]);
+    if (!$duty) return ['ok' => false, 'error' => 'no_duty'];
+    if ((string)$duty['volunteerId'] !== $volunteerId) return ['ok' => false, 'error' => 'not_on_duty'];
     // How many students were checked in at this centre today (the work done).
     $taken = (int)(db_row("SELECT COUNT(*) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.date = ? AND s.centre = ?", [$date, $centre])['c'] ?? 0);
     $already = db_row('SELECT completedAt FROM attendance_duty WHERE date = ? AND centre = ? LIMIT 1', [$date, $centre]);

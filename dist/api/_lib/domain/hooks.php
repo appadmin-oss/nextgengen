@@ -53,11 +53,19 @@ function hooks_attendance(array $p): array {
 
         $dupe = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$sid, $date]);
         if ($dupe) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'already']; $already++; continue; }
-        db_insert('attendance', [
-            'cohortId' => $cohortId, 'studentId' => $sid, 'token' => $token,
-            'date' => $date, 'checkInAt' => now_iso(), 'method' => 'webhook',
-            'byId' => 'hook:' . $source, 'device' => substr($source, 0, 64), 'createdAt' => now_iso(),
-        ]);
+        try {
+            db_insert('attendance', [
+                'cohortId' => $cohortId, 'studentId' => $sid, 'token' => $token,
+                'date' => $date, 'checkInAt' => now_iso(), 'method' => 'webhook',
+                'byId' => 'hook:' . $source, 'device' => substr($source, 0, 64), 'createdAt' => now_iso(),
+            ]);
+        } catch (\Throwable $ex) {
+            // Concurrent duplicate delivery raced past the SELECT and hit the
+            // UNIQUE(studentId,date) guard — honour the documented idempotency.
+            $isDup = (string)$ex->getCode() === '23000' || stripos($ex->getMessage(), 'unique') !== false || stripos($ex->getMessage(), 'duplicate') !== false;
+            if (!$isDup) throw $ex;
+            $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'already']; $already++; continue;
+        }
         event_emit('attendance.marked', ['memberId' => $sid, 'name' => $name, 'date' => $date, 'source' => 'webhook:' . $source]);
         $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'marked'];
         $marked++;

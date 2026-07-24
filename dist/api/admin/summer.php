@@ -33,6 +33,11 @@ if ($method === 'GET') {
         'import'       => 'admin.summer.import',
     ];
     if (!isset($map[$action])) json_error('unknown_action', 400);
+    // Never let the client set kiosk-only control flags: `gateAuthorized` skips
+    // the per-op capability gate and `byId` stamps the roll-taker. Both are set
+    // only by trusted server code (the gate route). Stripping them here forces
+    // admin-console check-ins through admin_cap_gate() with a server-derived byId.
+    unset($b['gateAuthorized'], $b['byId']);
     $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));
 } else {
     json_error('method_not_allowed', 405);
