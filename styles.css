@@ -512,6 +512,13 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 /* ===============================================================
    Footer
    =============================================================== */
+/* Ultra-short footer for the signed-in Community app (minimal chrome). */
+.footer-mini { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 22px; background: #10132b; color: rgba(255,255,255,0.66); }
+.footer-mini-label { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
+.footer-mini-links { display: flex; gap: 16px; }
+.footer-mini-links a { color: rgba(255,255,255,0.7); font-size: 12.5px; }
+.footer-mini-links a:hover { color: #fff; }
+
 .footer {
   background: linear-gradient(180deg, var(--navy-900) 0%, #070d24 100%);
   color: white;
@@ -2139,10 +2146,23 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-composer-top { display: flex; gap: 12px; align-items: flex-start; }
 .cm-avatar { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-family: var(--font-display); font-weight: 800; font-size: 16px; flex: none; }
 .cm-avatar-sm { width: 30px; height: 30px; font-size: 13px; }
-.cm-input { flex: 1; border: none; resize: none; font: inherit; font-size: 16px; line-height: 1.5; padding: 8px 0; background: none; outline: none; color: #0a1130; max-height: 168px; overflow-y: auto; }
+.cm-input { flex: 1; border: none; resize: none; font: inherit; font-size: 16px; line-height: 1.5; padding: 8px 0; background: none; outline: none; color: #0a1130; max-height: 168px; overflow-y: auto; width: 100%; box-sizing: border-box; }
+/* The input is a persistent text field — the caret marks focus, so suppress the
+   global gold focus ring here (kept everywhere else for a11y). */
+.cm-input:focus, .cm-input:focus-visible { outline: none; box-shadow: none; }
 
 /* Smarter dock — formatting toolbar, emoji, slash, drag/drop, hint */
 .cm-composer { position: relative; }
+/* Full-width input across the whole dock (no avatar gutter). */
+.cm-composer-top { padding: 0; }
+.cm-fmt, .cm-composer-bar { padding-left: 0; }
+.cm-media-preview, .cm-poll-edit, .cm-progress { margin-left: 0; }
+/* Send button hover tooltip (replaces the always-on keyboard hint). */
+.cm-send-wrap { position: relative; display: inline-flex; }
+.cm-send-tip { position: absolute; bottom: calc(100% + 8px); right: 0; white-space: nowrap; background: #0c1432; color: #fff; font-size: 12px; padding: 7px 11px; border-radius: 8px; opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity .14s, transform .14s; pointer-events: none; box-shadow: 0 10px 24px -12px rgba(0,0,0,0.5); z-index: 10; }
+.cm-send-tip b { color: var(--gold-400,#ffc34d); font-weight: 700; }
+.cm-send-tip::after { content: ""; position: absolute; top: 100%; right: 18px; border: 5px solid transparent; border-top-color: #0c1432; }
+.cm-send-wrap:hover .cm-send-tip, .cm-send-wrap:focus-within .cm-send-tip { opacity: 1; visibility: visible; transform: none; }
 .cm-composer.is-drag { outline: 2px dashed var(--gold-500,#e8a92b); outline-offset: -4px; }
 .cm-drop { position: absolute; inset: 0; z-index: 6; background: rgba(251,247,237,0.94); border-radius: 14px; display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 15px; color: #0a1130; pointer-events: none; }
 .cm-fmt { display: flex; align-items: center; gap: 2px; padding: 0 0 8px 52px; }
@@ -2157,7 +2177,7 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-emoji-e:hover { background: #eef0f4; transform: scale(1.15); }
 .cm-kbd-hint { font-size: 11.5px; color: #a0a6bd; margin-right: 4px; }
 .cm-kbd-hint b { font-weight: 700; color: #8088a6; }
-@media (max-width: 600px) { .cm-kbd-hint { display: none; } .cm-fmt { padding-left: 52px; } }
+@media (max-width: 600px) { .cm-kbd-hint { display: none; } }
 .cm-slash-menu .cm-slash-ic { width: 26px; text-align: center; font-size: 16px; }
 .cm-slash-hint { color: #8088a6; font-size: 12.5px; }
 .cm-mention-item.is-active { background: rgba(59,91,219,0.1); }
@@ -2165,6 +2185,17 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-ment-badge { display: inline-block; margin-left: 6px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; background: rgba(12,20,50,0.08); color: #5a6488; padding: 1px 6px; border-radius: 999px; vertical-align: middle; }
 /* Inline code / formatting in rendered messages */
 .cm-code { font-family: var(--font-mono); font-size: 0.88em; background: rgba(12,20,50,0.07); border: 1px solid rgba(12,20,50,0.08); border-radius: 5px; padding: 1px 5px; }
+
+/* Genius Star — NGG-native mentor kudos */
+.cm-msg-chiprow { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.cm-msg-chiprow:empty { display: none; }
+.cm-star { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12.5px; font-weight: 800; border-radius: 999px; padding: 3px 11px; cursor: default; line-height: 1.7; border: 1px solid transparent; }
+.cm-star.has { background: linear-gradient(135deg, rgba(245,176,38,0.18), rgba(255,206,84,0.24)); border-color: rgba(224,138,0,0.35); color: #8a5a00; }
+button.cm-star { cursor: pointer; }
+button.cm-star:not(.has) { background: none; border: 1px dashed #d9c7a0; color: #a07400; font-weight: 700; }
+button.cm-star:not(.has):hover { background: rgba(245,176,38,0.12); border-style: solid; }
+button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
+.cm-tool.is-star { color: #e0a800; }
 .cm-media-preview { position: relative; margin: 10px 0 0 52px; border-radius: 12px; overflow: hidden; max-width: 420px; }
 .cm-media { display: block; width: 100%; max-height: 340px; object-fit: cover; background: #000; }
 .cm-media-x { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(12,20,50,0.7); color: #fff; cursor: pointer; font-size: 13px; }

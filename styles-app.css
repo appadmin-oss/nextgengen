@@ -1444,7 +1444,10 @@ html { scroll-behavior: smooth; }
 }
 .admin-topbar-l { display: flex; align-items: center; gap: 14px; }
 .admin-topbar-section { font-family: var(--font-display); font-weight: 700; font-size: 18px; }
-.admin-topbar-r { display: flex; align-items: center; gap: 16px; }
+.admin-topbar-r { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.admin-session-chip { font-family: var(--font-mono, monospace); font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
+.admin-session-chip.warn { color: #ffd7a1; background: rgba(245,176,38,0.16); border-color: rgba(245,176,38,0.4); }
+.admin-gate-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
 
 .admin-shell {
   display: grid;

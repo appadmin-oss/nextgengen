@@ -34,6 +34,8 @@ if ($method === 'GET') {
         $res = gs_call('community.delete', ['memberId' => $s['mid'], 'targetType' => $b['targetType'] ?? 'post', 'targetId' => $b['targetId'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'markRead') {
         $res = gs_call('community.markRead', ['memberId' => $s['mid'], 'channel' => $b['channel'] ?? '']);
+    } elseif ($action === 'star') {
+        $res = gs_call('community.star', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'ip' => client_ip()]);
     } else {
         json_error('unknown_action', 400);
     }

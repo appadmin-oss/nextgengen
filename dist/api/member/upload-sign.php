@@ -39,9 +39,10 @@ $kinds = $cfg['kinds'] ?? [];
 if (isset($kinds[$kind])) {
     $spec = $kinds[$kind];
 } elseif ($kind === 'post') {
-    // Community feed media — image OR video. Built-in so a community can post
-    // video even on a host whose config.php predates this kind.
-    $spec = ['resource_type' => 'auto', 'folder' => 'community'];
+    // Community feed media — image OR video. The client tells us which so we can
+    // pick the right resource type + storage strategy (below).
+    $mk = (string)($body['mediaKind'] ?? 'image');
+    $spec = ['resource_type' => $mk === 'video' ? 'video' : 'image', 'folder' => 'community'];
 } elseif (preg_match('/^[a-z][a-z0-9_-]{1,30}$/', $kind)) {
     $spec = ['resource_type' => 'image', 'folder' => $kind];
 } else {
@@ -69,18 +70,24 @@ $signParams = [
     'timestamp' => $timestamp,
 ];
 
-// Community media (`post`) is eagerly transcoded to a web-optimized 720p
-// derivative the moment it lands, so a phone video doesn't stream the heavy
-// original on first play. Async so the upload response returns immediately;
-// delivery-time f_auto/q_auto still covers the gap before the eager job runs.
-// The transform is generic enough to apply to both images and video (the
-// `post` kind is resource_type=auto). Any signed param must be echoed back so
-// the client appends it to the FormData — keep the two in lockstep.
-$eager = '';
+// Storage-lean community media. Any signed param must be echoed back so the
+// client appends it to the FormData — keep the two in lockstep.
+//
+//  · Images: an INCOMING transformation compresses the asset BEFORE it is
+//    stored (Cloudinary keeps the transformed version, not the raw phone photo)
+//    — capped to 1600px at q_auto:good. Genuine at-rest storage savings.
+//  · Video: an eager, async 720p web-optimized derivative for smooth playback;
+//    delivery-time f_auto/q_auto keeps bytes down until the eager job lands.
+$eager = ''; $incoming = '';
 if ($kind === 'post') {
-    $eager = 'f_auto,q_auto,w_1280,c_limit';
-    $signParams['eager'] = $eager;
-    $signParams['eager_async'] = 'true';
+    if (($body['mediaKind'] ?? 'image') === 'video') {
+        $eager = 'f_auto,q_auto:eco,w_1280,c_limit';
+        $signParams['eager'] = $eager;
+        $signParams['eager_async'] = 'true';
+    } else {
+        $incoming = 'c_limit,w_1600,q_auto:good,f_auto';
+        $signParams['transformation'] = $incoming;
+    }
 }
 
 ksort($signParams);
@@ -99,6 +106,7 @@ json_ok([
     'resourceType' => $resourceType,
     'eager'        => $eager,
     'eagerAsync'   => $eager !== '',
+    'transformation' => $incoming,
     'uploadUrl'    => 'https://api.cloudinary.com/v1_1/' . $cfg['cloud_name'] . '/' . $resourceType . '/upload',
     'maxBytes'     => (int)($cfg['max_bytes'] ?? (25 * 1024 * 1024)),
 ]);

@@ -60,9 +60,10 @@
     // Headshots are captured on PUBLIC surfaces (apply, gate registration, the
     // guardian reshoot page) where there is no session — so they sign through
     // the public headshot endpoint. Everything else uses the member endpoint.
+    const mediaKind = /^video\//.test(file.type || '') ? 'video' : 'image';
     const sig = kind === 'headshot'
       ? await request('/public/upload-headshot-sign.php', { body: {} })
-      : await request('/member/upload-sign.php', { body: { kind } });
+      : await request('/member/upload-sign.php', { body: { kind, mediaKind } });
     return await new Promise((resolve, reject) => {
       const fd = new FormData();
       fd.append('file', file);
@@ -70,8 +71,10 @@
       fd.append('timestamp', sig.timestamp);
       fd.append('signature', sig.signature);
       fd.append('folder', sig.folder);
-      // Eager web-optimized derivative (signed server-side; must match exactly).
+      // Eager web-optimized derivative + incoming compression (signed
+      // server-side; the FormData must match the signed params exactly).
       if (sig.eager) { fd.append('eager', sig.eager); if (sig.eagerAsync) fd.append('eager_async', 'true'); }
+      if (sig.transformation) fd.append('transformation', sig.transformation);
       const xhr = new XMLHttpRequest();
       xhr.open('POST', sig.uploadUrl);
       if (onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
@@ -171,6 +174,7 @@
         report:   (targetType, targetId, reason) => request('/member/community.php', { body: { action: 'report', targetType, targetId, reason: reason || '' } }),
         remove:   (targetType, targetId) => request('/member/community.php', { body: { action: 'delete', targetType, targetId } }),
         vote:     (postId, choice) => request('/member/community.php', { body: { action: 'vote', postId, choice } }),
+        star:     (postId) => request('/member/community.php', { body: { action: 'star', postId } }),
         mentions: (q) => request('/member/community.php' + qs({ view: 'mention', q })),
         search:   (q, channel) => request('/member/community.php' + qs({ view: 'search', q, channel: channel || 'all' })),
         members:  (channel) => request('/member/community.php' + qs({ view: 'members', channel })),

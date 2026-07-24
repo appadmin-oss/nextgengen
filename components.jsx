@@ -410,6 +410,7 @@ function TopNav({ page, setPage }) {
     ]},
   ];
 
+  const { isSignedIn } = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false };
   const [open, setOpen]       = React.useState(false);
   const [mega, setMega]       = React.useState(null);   // active mega panel id
   const [scrolled, setScroll] = React.useState(false);
@@ -529,8 +530,12 @@ function TopNav({ page, setPage }) {
           <div className="nav-right">
             <NavBell setPage={setPage}/>
             <NavAuthSlot setPage={setPage}/>
+            {/* Context-aware: signed-in members already belong — the public
+                "Apply" CTA gives way to their own dashboard. */}
             <Magnetic strength={6}>
-              <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("join")}>Apply →</button>
+              {isSignedIn
+                ? <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("dashboard")}>My dashboard →</button>
+                : <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("join")}>Apply →</button>}
             </Magnetic>
             <button
               ref={burgerRef}
@@ -756,7 +761,7 @@ function NewsletterForm({ source = "footer" }) {
 }
 
 /* ---- Footer ---- */
-function Footer({ setPage }) {
+function Footer({ setPage, page }) {
   const go = (id) => () => setPage(id);
   // Deep-link into a centre's public page (/centres/<slug>). Pushes the clean
   // URL, then hands off to the centres page (which reads the slug from the
@@ -818,6 +823,21 @@ function Footer({ setPage }) {
   const sessionLabel = session
     ? (session.code + " · " + session.year + " — " + (session.isActive ? "live" : "upcoming"))
     : "Session info loading…";
+
+  // Context-aware chrome: inside the signed-in Community workspace (a full-height
+  // app), the big marketing footer is just noise — collapse it to a hairline.
+  if (page === "community" && auth.isSignedIn) {
+    return (
+      <footer className="footer footer-mini" role="contentinfo">
+        <span className="mono footer-mini-label">NGG · Afrovanguard</span>
+        <span className="footer-mini-links">
+          <a href="#" onClick={e => { e.preventDefault(); setPage("legal"); }}>Privacy</a>
+          <a href="#" onClick={e => { e.preventDefault(); setPage("parents"); }}>Safeguarding</a>
+          <a href="#" onClick={e => { e.preventDefault(); setPage("contact"); }}>Contact</a>
+        </span>
+      </footer>
+    );
+  }
 
   return (
     <React.Fragment>

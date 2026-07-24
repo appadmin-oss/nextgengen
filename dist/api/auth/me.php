@@ -15,5 +15,6 @@ json_ok([
     'member'  => $res['member'],
     'adminOk' => (bool)($s['adminOk'] ?? false),
     'impersonating' => !empty($s['imp']) ? (string)$s['imp'] : null,
+    'sessionExp' => (int)($s['exp'] ?? 0),  // unix seconds — lets the UI show a friendly expiry
     'csrf'    => $csrf,
 ]);

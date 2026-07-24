@@ -185,6 +185,7 @@ function AdminPage({ setPage }) {
 // ============================================================================
 
 function AdminTotpGate({ onPass, member }) {
+  const gateAuth = (typeof useAuth === "function") ? useAuth() : null;
   const [code, setCode] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
@@ -251,7 +252,7 @@ function AdminTotpGate({ onPass, member }) {
               ) : <div className="dash-spinner"/>}
             </>
           ) : (
-            <p className="admin-gate-p">Open your authenticator app and enter the current 6-digit code for "NGG Admin".</p>
+            <p className="admin-gate-p">You're still signed in as <b>{member ? member.fullName : "staff"}</b> — just re-enter the current 6-digit code from your authenticator to re-open the Control Room. No need to sign out.</p>
           )}
           <form onSubmit={verify}>
             <input
@@ -269,6 +270,12 @@ function AdminTotpGate({ onPass, member }) {
               {busy ? "Verifying…" : "Unlock admin →"}
             </button>
           </form>
+          {!setupMode && gateAuth && (
+            <div className="admin-gate-foot">
+              <button type="button" className="signin-link" onClick={() => { if (window.__navigate) window.__navigate("home"); }}>← Back to the site</button>
+              <button type="button" className="signin-link" onClick={async () => { try { await gateAuth.signOut(); } catch (_) {} }}>Not you? Sign out</button>
+            </div>
+          )}
         </div>
       </section>
     </div>
@@ -279,7 +286,19 @@ function AdminTotpGate({ onPass, member }) {
 // Topbar + side nav
 // ============================================================================
 
+// "in 6 days" / "in 5 hours" / "in 40 minutes" from a unix-seconds expiry.
+function adminExpiryLabel(exp) {
+  if (!exp) return null;
+  const s = exp - Math.floor(Date.now() / 1000);
+  if (s <= 0) return { text: "expiring now", warn: true };
+  if (s < 3600) return { text: Math.max(1, Math.round(s / 60)) + "m left", warn: true };
+  if (s < 86400) return { text: Math.round(s / 3600) + "h left", warn: s < 2 * 3600 };
+  return { text: Math.round(s / 86400) + "d left", warn: false };
+}
+
 function AdminTopbar({ section, setSection, setPage, member }) {
+  const { sessionExp, lockAdmin } = (typeof useAuth === "function") ? useAuth() : {};
+  const exp = adminExpiryLabel(sessionExp);
   return (
     <div className="admin-topbar">
       <div className="admin-topbar-l">
@@ -291,12 +310,14 @@ function AdminTopbar({ section, setSection, setPage, member }) {
       </div>
       <div className="admin-topbar-r">
         <span className="mono" style={{color:"rgba(255,255,255,0.6)"}}>{member.fullName} · {member.role}</span>
+        {exp && <span className={"admin-session-chip" + (exp.warn ? " warn" : "")} title={sessionExp ? "Your sign-in ends " + new Date(sessionExp * 1000).toLocaleString() : ""}>🔑 {exp.text}</span>}
         {Array.isArray(member.caps) && member.caps.indexOf("summer") !== -1 && (
           <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("summer-admin")}>Summer ↗</button>
         )}
         {Array.isArray(member.caps) && member.caps.indexOf("club") !== -1 && (
           <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("club-admin")}>NGG Club ↗</button>
         )}
+        {lockAdmin && <button className="btn btn-on-dark-ghost btn-sm" title="Lock the Control Room — re-enter with just your 2FA code, no full sign-out" onClick={lockAdmin}>🔒 Lock</button>}
         <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("home")}>View site →</button>
       </div>
     </div>
@@ -2484,13 +2505,13 @@ function AdminCommunityQueue({ onChange }) {
 function AdminCommunityChannels() {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
-  const blank = { channelId: "", name: "", icon: "", color: "#3b5bdb", kind: "topic", faculty: "", description: "", pinned: false, status: "active", sortOrder: 0 };
+  const blank = { channelId: "", name: "", icon: "", color: "#3b5bdb", kind: "topic", faculty: "", description: "", rules: "", pinned: false, status: "active", sortOrder: 0 };
   const [f, setF] = React.useState(blank);
   const [busy, setBusy] = React.useState(false);
   const load = () => NGGApi.admin.community.overview().then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const set = (k, v) => setF(s => ({ ...s, [k]: v }));
-  const edit = (c) => setF({ channelId: c.channelId, name: c.name, icon: c.icon, color: c.color, kind: c.kind, faculty: c.faculty || "", description: c.description || "", pinned: !!c.pinned, status: c.status, sortOrder: c.sortOrder || 0 });
+  const edit = (c) => setF({ channelId: c.channelId, name: c.name, icon: c.icon, color: c.color, kind: c.kind, faculty: c.faculty || "", description: c.description || "", rules: c.rules || "", pinned: !!c.pinned, status: c.status, sortOrder: c.sortOrder || 0 });
   const save = async () => {
     if (f.name.trim().length < 2) { toast.error("Give the channel a name."); return; }
     setBusy(true);
@@ -2511,6 +2532,7 @@ function AdminCommunityChannels() {
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}><input type="checkbox" checked={f.pinned} onChange={e => set("pinned", e.target.checked)}/> Pinned</label>
         </div>
         <div style={{ marginTop: 10 }}><span style={lbl}>Description</span><input className="admin-input" style={{ width: "100%" }} value={f.description} maxLength={400} onChange={e => set("description", e.target.value)}/></div>
+        <div style={{ marginTop: 10 }}><span style={lbl}>Channel rules <span style={{ fontWeight: 400, color: "var(--ink-400)" }}>— shown to members in this channel. One rule per line.</span></span><textarea className="admin-input" style={{ width: "100%", minHeight: 84, resize: "vertical" }} value={f.rules} maxLength={1200} onChange={e => set("rules", e.target.value)} placeholder={"Be kind and specific with feedback.\nShip something every week.\nNo personal contact details."}/></div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : (f.channelId ? "Save channel" : "Add channel")}</button>
           {f.channelId && <button className="btn btn-ghost btn-sm" onClick={() => setF(blank)}>Cancel edit</button>}

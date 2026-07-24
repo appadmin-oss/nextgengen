@@ -173,6 +173,9 @@ function pathForPage(page) {
 function App() {
   const [page, setPage] = React.useState(pageFromPath);
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  // Context-aware chrome: the whole site knows when a member is signed in.
+  const { isSignedIn } = (typeof useAuth === "function") ? useAuth() : { isSignedIn: false };
+  React.useEffect(() => { document.body.classList.toggle("is-authed", !!isSignedIn); }, [isSignedIn]);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
@@ -297,7 +300,7 @@ function App() {
           {page === "_notfound" ? <NotFound setPage={setPage}/> : (pages[page] || <NotFound setPage={setPage}/>)}
         </PageTransition>
       </main>
-      <Footer setPage={setPage}/>
+      <Footer setPage={setPage} page={page}/>
       <BackToTop/>
       <ToastHost/>
       <DialogHost/>

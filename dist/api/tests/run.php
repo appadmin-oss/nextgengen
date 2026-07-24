@@ -2215,6 +2215,26 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
         $r = backend_dispatch('community.mentionSearch', ['q' => 'all', 'memberId' => 'CM-E']);
         foreach ($r['people'] as $pp) if ($pp['kind'] === 'all') return false; return true;
     })());
+
+    // Genius Stars — mentor/admin-only kudos, separate from reactions.
+    chk('community: a plain member cannot give a Genius Star', backend_dispatch('community.star', ['memberId' => 'CM-A', 'postId' => $pid])['error'] === 'forbidden');
+    $st = backend_dispatch('community.star', ['memberId' => 'NGG-2025-0099', 'postId' => $pid]);
+    chk('community: a mentor awards a Genius Star', $st['ok'] && $st['stars'] === 1 && $st['starred'] === true);
+    chk('community: the star notifies the post author', (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'CM-B' AND kind = 'community.star'")['c'] ?? 0) === 1);
+    chk('community: the post shape exposes stars + canStar', (function () use ($pid) {
+        $f = backend_dispatch('community.feed', ['memberId' => 'NGG-2025-0099', 'channel' => 'commons']);
+        foreach ($f['posts'] as $p) if ($p['postId'] === $pid) return $p['stars'] === 1 && $p['canStar'] === true && $p['starred'] === true;
+        return false;
+    })());
+    chk('community: staff can toggle the star back off', backend_dispatch('community.star', ['memberId' => 'NGG-2025-0099', 'postId' => $pid])['stars'] === 0);
+
+    // Admin-settable channel rules round-trip.
+    $up = backend_dispatch('admin.community.channel.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Robotics Crew', 'rules' => "Be kind.\nShip weekly."]]);
+    chk('community: admin can save channel rules', $up['ok'] && $up['channelId']);
+    chk('community: channels expose their rules', (function () {
+        foreach (backend_dispatch('community.channels', ['memberId' => 'CM-A'])['channels'] as $c) if ($c['slug'] === 'robotics-crew') return strpos($c['rules'], 'Ship weekly') !== false;
+        return false;
+    })());
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

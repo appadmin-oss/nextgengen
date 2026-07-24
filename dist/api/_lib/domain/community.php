@@ -87,6 +87,7 @@ function community_channel_public(array $c): array {
         'channelId' => (string)$c['channelId'], 'slug' => (string)$c['slug'], 'name' => (string)$c['name'],
         'kind' => (string)$c['kind'], 'faculty' => (string)($c['faculty'] ?? ''), 'icon' => (string)($c['icon'] ?? ''),
         'color' => (string)($c['color'] ?? '#3b5bdb'), 'description' => (string)($c['description'] ?? ''),
+        'rules' => (string)($c['rules'] ?? ''),
         'pinned' => (int)($c['pinned'] ?? 0) === 1, 'posts' => $posts,
     ];
 }
@@ -360,6 +361,8 @@ function community_post_shape(array $row, string $viewerId): array {
     $comments = (int)($cAgg['c'] ?? 0);
     $lastComment = (string)($cAgg['last'] ?? '');
     $booked = $viewerId !== '' && db_row("SELECT id FROM community_bookmarks WHERE postId = ? AND memberId = ?", [$pid, $viewerId]);
+    $stars = (int)(db_row("SELECT COUNT(*) c FROM community_stars WHERE postId = ?", [$pid])['c'] ?? 0);
+    $starred = $viewerId !== '' && db_row("SELECT id FROM community_stars WHERE postId = ? AND memberId = ?", [$pid, $viewerId]);
     $isMe = (string)$row['authorId'] === $viewerId;
     $ch = db_row("SELECT slug, name, color, icon FROM community_channels WHERE channelId = ? LIMIT 1", [(string)$row['channelId']]);
     $kind = (string)($row['kind'] ?? 'post');
@@ -373,6 +376,7 @@ function community_post_shape(array $row, string $viewerId): array {
         'mediaType' => (string)$row['mediaType'], 'mediaUrl' => (string)$row['mediaUrl'], 'mediaPoster' => (string)$row['mediaPoster'], 'altText' => (string)$row['altText'],
         'status' => (string)$row['status'], 'pinned' => (int)$row['pinned'] === 1, 'featured' => (int)($row['featured'] ?? 0) === 1,
         'reactions' => $reacts, 'myReaction' => (string)$mine, 'commentCount' => $comments, 'lastCommentAt' => $lastComment,
+        'stars' => $stars, 'starred' => (bool)$starred, 'canStar' => community_actor_is_staff($viewerId),
         'bookmarked' => (bool)$booked, 'viewCount' => (int)$row['viewCount'],
         'createdAt' => (string)$row['createdAt'],
         'moderationNote' => ((string)$row['status'] !== 'published' && $isMe) ? community_status_note((string)$row['status']) : '',
@@ -582,6 +586,31 @@ function community_react(array $p): array {
     return ['ok' => true, 'reactions' => $reacts, 'myReaction' => $mine];
 }
 
+/**
+ * Genius Star — an NGG-native mentor kudos. Only mentors/admins can award one;
+ * it's recognition the whole cohort can see (a gold star on the post), separate
+ * from ordinary reactions. Awarding one notifies + emails the author.
+ */
+function community_star(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
+    if (!community_actor_is_staff($viewer)) return ['ok' => false, 'error' => 'forbidden', 'message' => 'Only mentors can give a Genius Star.'];
+    $pid = (string)($p['postId'] ?? '');
+    $post = db_row("SELECT authorId FROM community_posts WHERE postId = ? LIMIT 1", [$pid]);
+    if (!$post) return ['ok' => false, 'error' => 'not_found'];
+    $ex = db_row("SELECT id FROM community_stars WHERE postId = ? AND memberId = ?", [$pid, $viewer]);
+    if ($ex) { db_exec("DELETE FROM community_stars WHERE postId = ? AND memberId = ?", [$pid, $viewer]); $starred = false; }
+    else {
+        db_insert('community_stars', ['postId' => $pid, 'memberId' => $viewer, 'createdAt' => now_iso()]);
+        $starred = true;
+        $actor = community_author($viewer);
+        community_notify((string)$post['authorId'], $viewer, 'community.star', '⭐ ' . $actor['name'] . ' gave your post a Genius Star', 'A mentor recognised your work in the community.');
+        audit('community.star', $viewer, $pid, [], (string)($p['ip'] ?? ''));
+    }
+    $stars = (int)(db_row("SELECT COUNT(*) c FROM community_stars WHERE postId = ?", [$pid])['c'] ?? 0);
+    return ['ok' => true, 'stars' => $stars, 'starred' => $starred];
+}
+
 function community_comments(array $p): array {
     $viewer = (string)($p['memberId'] ?? '');
     $pid = (string)($p['postId'] ?? '');
@@ -753,14 +782,16 @@ function admin_community_channel_upsert(array $p): array {
     $n = 2; $base = $slug;
     while (db_row("SELECT channelId FROM community_channels WHERE slug = ? AND channelId <> ?", [$slug, $id ?: '—'])) { $slug = $base . '-' . $n; $n++; }
     $color = preg_match('/^#[0-9a-fA-F]{6}$/', (string)($d['color'] ?? '')) ? (string)$d['color'] : '#3b5bdb';
+    $kind = (string)($d['kind'] ?? 'course'); if (!in_array($kind, ['course', 'commons', 'centre', 'topic'], true)) $kind = 'course';
+    $status = (string)($d['status'] ?? 'active'); if (!in_array($status, ['active', 'archived'], true)) $status = 'active';
     $row = [
-        'name' => $name, 'slug' => $slug, 'color' => $color,
-        'kind' => in_array((string)($d['kind'] ?? 'course'), ['course', 'commons', 'centre', 'topic'], true) ? (string)$d['kind'] : 'course',
+        'name' => $name, 'slug' => $slug, 'color' => $color, 'kind' => $kind,
         'faculty' => mb_substr(trim((string)($d['faculty'] ?? '')), 0, 120),
         'icon' => mb_substr(trim((string)($d['icon'] ?? '')), 0, 12),
         'description' => mb_substr(trim((string)($d['description'] ?? '')), 0, 400),
+        'rules' => mb_substr(trim((string)($d['rules'] ?? '')), 0, 1200),
         'sortOrder' => (int)($d['sortOrder'] ?? 0), 'pinned' => !empty($d['pinned']) ? 1 : 0,
-        'status' => in_array((string)($d['status'] ?? 'active'), ['active', 'archived'], true) ? (string)$d['status'] : 'active',
+        'status' => $status,
         'updatedAt' => now_iso(),
     ];
     if ($existing) db_update('community_channels', $row, ['channelId' => $id]);

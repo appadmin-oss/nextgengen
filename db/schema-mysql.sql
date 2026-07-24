@@ -823,6 +823,7 @@ CREATE TABLE IF NOT EXISTS community_channels (
   icon VARCHAR(16) DEFAULT '',
   color VARCHAR(16) DEFAULT '#3b5bdb',
   description VARCHAR(400) DEFAULT '',
+  rules TEXT,
   sortOrder INT DEFAULT 0,
   pinned TINYINT DEFAULT 0,
   status VARCHAR(16) DEFAULT 'active',
@@ -925,3 +926,13 @@ CREATE TABLE IF NOT EXISTS community_reads (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (51) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS community_stars (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  postId VARCHAR(48) NOT NULL,
+  memberId VARCHAR(48) NOT NULL,
+  createdAt VARCHAR(40),
+  UNIQUE KEY idx_cstar_unique (postId, memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (52) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (53) ON DUPLICATE KEY UPDATE version = version;

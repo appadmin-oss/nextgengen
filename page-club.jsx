@@ -857,7 +857,6 @@ function CommunityApp({ setPage, auth }) {
         <aside className="cm-sb">
           <div className="cm-sb-head">
             <div className="cm-sb-ws">
-              <span className="cm-sb-ws-badge">NGG</span>
               <div><div className="cm-sb-ws-name">The Community</div><div className="cm-sb-ws-sub">{me}</div></div>
             </div>
             <button className="cm-sb-x" onClick={() => setSbOpen(false)} aria-label="Close">✕</button>
@@ -974,12 +973,16 @@ function CommunityApp({ setPage, auth }) {
               </>
             ) : <p className="cm-info-desc">{active === "all" ? "Everything from every channel, newest first." : "Messages you've saved for later."}</p>}
             <div className="cm-info-rules">
-              <div className="cm-info-rules-h">House rules</div>
+              <div className="cm-info-rules-h">{activeChannel && activeChannel.rules ? "Channel rules" : "House rules"}</div>
               <ul>
-                <li>Be kind — this is a shared room.</li>
-                <li>No personal contact details.</li>
-                <li>Every message is mentor-watched + AI-checked.</li>
-                <li>Something wrong? Report it to a mentor.</li>
+                {activeChannel && activeChannel.rules
+                  ? activeChannel.rules.split("\n").map(r => r.trim()).filter(Boolean).map((r, i) => <li key={i}>{r}</li>)
+                  : <>
+                      <li>Be kind — this is a shared room.</li>
+                      <li>No personal contact details.</li>
+                      <li>Every message is mentor-watched + AI-checked.</li>
+                      <li>Something wrong? Report it to a mentor.</li>
+                    </>}
               </ul>
             </div>
           </aside>
@@ -1207,7 +1210,6 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
       </div>
 
       <div className="cm-composer-top">
-        <span className="cm-avatar" style={{ background: cmColor(me) }}>{cmInitial(me)}</span>
         <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
           <textarea ref={taRef} className="cm-input" rows={1} maxLength={2000} value={body} onChange={onBody} onKeyDown={onKey} onPaste={onPaste}
             placeholder={poll ? "Ask the crew a question…" : ("Message " + (active !== "all" ? "#" + chName : "the crew") + "…   (@ mention · / commands)")}/>
@@ -1263,9 +1265,11 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
           </select>
         </div>
         <div className="cm-composer-right">
-          <span className="cm-kbd-hint">{enterToSend ? <><b>Enter</b> to send · <b>Shift+Enter</b> newline</> : <><b>Enter</b> for a new line</>}</span>
           {body.length > 1600 && <span className={"cm-count" + (remaining < 0 ? " over" : "")}>{remaining}</span>}
-          <button className="btn btn-primary btn-sm" disabled={busy || up > 0 || !canPost} onClick={submit}>{busy ? "Posting…" : poll ? "Ask" : "Post"}</button>
+          <span className="cm-send-wrap">
+            <button className="btn btn-primary btn-sm" disabled={busy || up > 0 || !canPost} onClick={submit}>{busy ? "Posting…" : poll ? "Ask" : "Post"}</button>
+            <span className="cm-send-tip" role="tooltip">{enterToSend ? <><b>Enter</b> to send · <b>Shift + Enter</b> for a new line</> : <>Press <b>Post</b> to share · <b>Shift + Enter</b> for a new line</>}</span>
+          </span>
         </div>
       </div>
     </div>
@@ -1289,6 +1293,11 @@ function useCmActions(post, onPatch, onRemove) {
     const nv = !post.bookmarked; onPatch(post.postId, { bookmarked: nv });
     try { const r = await NGGApi.member.community.bookmark(post.postId); onPatch(post.postId, { bookmarked: r.bookmarked }); } catch (_) { onPatch(post.postId, { bookmarked: !nv }); }
   };
+  const star = async () => {
+    const nv = !post.starred; onPatch(post.postId, { starred: nv, stars: Math.max(0, (post.stars || 0) + (nv ? 1 : -1)) });
+    try { const r = await NGGApi.member.community.star(post.postId); onPatch(post.postId, { starred: r.starred, stars: r.stars }); if (r.starred) toast.success("Genius Star awarded ⭐"); }
+    catch (e) { onPatch(post.postId, { starred: !nv, stars: post.stars || 0 }); toast.error(e.message === "forbidden" ? "Only mentors can give a Genius Star." : "Couldn't award the star."); }
+  };
   const vote = async (i) => {
     try { const r = await NGGApi.member.community.vote(post.postId, i); onPatch(post.postId, { poll: r.poll }); } catch (_) { toast.error("Couldn't record your vote."); }
   };
@@ -1305,7 +1314,16 @@ function useCmActions(post, onPatch, onRemove) {
     try { await NGGApi.member.community.remove("post", post.postId); onRemove && onRemove(post.postId); toast.success("Deleted."); }
     catch (_) { toast.error("Couldn't delete — try again."); }
   };
-  return { react, bookmark, vote, share, report, del };
+  return { react, bookmark, vote, star, share, report, del };
+}
+
+/* ---- Genius Star badge/affordance (NGG-native mentor kudos) ---- */
+function CmStar({ post, onStar }) {
+  if (!post.stars && !post.canStar) return null;
+  const cls = "cm-star" + (post.stars ? " has" : "") + (post.starred ? " mine" : "");
+  const label = post.stars ? ("⭐ " + post.stars + (post.canStar ? "" : (post.stars === 1 ? " Genius Star" : " Genius Stars"))) : "⭐ Genius Star";
+  if (post.canStar) return <button className={cls} onClick={onStar} title={post.starred ? "Remove your Genius Star" : "Give a Genius Star"}>{label}</button>;
+  return <span className={cls} title="Recognised by a mentor">{label}</span>;
 }
 
 const CM_REACTIONS = ["👏", "❤️", "🔥", "💡", "🎉", "🙌"];
@@ -1383,7 +1401,7 @@ function CmMessage({ post, prev, me, onPatch, onRemove, onOpenThread, standalone
           </div>
         )}
         <CmBodyBlock post={post} onVote={act.vote}/>
-        <CmReactChips post={post} onReact={react}/>
+        <div className="cm-msg-chiprow"><CmStar post={post} onStar={act.star}/><CmReactChips post={post} onReact={react}/></div>
         {post.commentCount > 0 && (
           <button className="cm-thread-link" onClick={() => onOpenThread && onOpenThread(post)}>
             💬 {post.commentCount} repl{post.commentCount === 1 ? "y" : "ies"}
@@ -1399,6 +1417,7 @@ function CmMessage({ post, prev, me, onPatch, onRemove, onOpenThread, standalone
           {picker && <div className="cm-picker" onMouseLeave={() => setPicker(false)}>{CM_REACTIONS.map(e => <button key={e} className={"cm-picker-e" + (post.myReaction === e ? " is-on" : "")} onClick={() => react(e)}>{e}</button>)}</div>}
         </div>
         <button className="cm-tool" onClick={() => onOpenThread && onOpenThread(post)} title="Reply in thread">💬</button>
+        {post.canStar && <button className={"cm-tool" + (post.starred ? " is-star" : "")} onClick={act.star} title={post.starred ? "Remove Genius Star" : "Give a Genius Star"}>⭐</button>}
         <button className={"cm-tool" + (post.bookmarked ? " is-on" : "")} onClick={act.bookmark} title={post.bookmarked ? "Saved" : "Save"}>{post.bookmarked ? "🔖" : "🏷️"}</button>
         <button className="cm-tool" onClick={act.share} title="Share">↗</button>
         <div className="cm-tool-wrap">
@@ -1439,6 +1458,7 @@ function CmCard({ post, me, onPatch, onRemove, onOpenThread, showChannel }) {
       <CmBodyBlock post={post} onVote={act.vote}/>
       <div className="cm-card-bar">
         <div className="cm-card-reacts">
+          <CmStar post={post} onStar={act.star}/>
           <CmReactChips post={post} onReact={react}/>
           <div className="cm-tool-wrap">
             <button className={"cm-react-add" + (post.myReaction ? " is-on" : "")} onClick={() => setPicker(p => !p)}>{post.myReaction || "😊"} <span>React</span></button>

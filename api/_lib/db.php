@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 51;
+const NGG_SCHEMA_TARGET = 53;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1324,6 +1324,18 @@ function db_migrate(PDO $db): void {
               updatedAt TEXT DEFAULT (datetime('now'))
             );
             CREATE UNIQUE INDEX idx_cread_unique ON community_reads(memberId, channelId);
+        ",
+        52 => "
+            ALTER TABLE community_channels ADD COLUMN rules TEXT DEFAULT '';
+        ",
+        53 => "
+            CREATE TABLE community_stars (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              postId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_cstar_unique ON community_stars(postId, memberId);
         ",
     ];
 

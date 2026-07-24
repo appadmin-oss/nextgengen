@@ -24,6 +24,7 @@ const BOOT_WANTS_LOGIN = BOOT_PATH === "/login" || BOOT_PATH === "/signin";
 function AuthProvider({ children }) {
   const [member, setMember] = React.useState(null);
   const [adminOk, setAdminOk] = React.useState(false);
+  const [sessionExp, setSessionExp] = React.useState(0);
   const [impersonating, setImpersonating] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [signinOpen, setSigninOpen] = React.useState(false);
@@ -65,6 +66,7 @@ function AuthProvider({ children }) {
           const me = await NGGApi.auth.me();
           setMember(me.member || null);
           setAdminOk(Boolean(me.adminOk));
+          setSessionExp(me.sessionExp || 0);
           setImpersonating(me.impersonating || null);
           // Conventional /login (or /signin) entry point: open the sign-in
           // modal for guests, send signed-in members to their dashboard.
@@ -103,10 +105,12 @@ function AuthProvider({ children }) {
     closeSignIn: () => setSigninOpen(false),
     impersonating,
     stopImpersonating: async () => { try { await NGGApi.admin.members.stopImpersonate(); } catch (_) {} window.location.href = "/admin"; },
+    sessionExp,
     refresh: async () => {
       const me = await NGGApi.auth.me();
       setMember(me.member || null);
       setAdminOk(Boolean(me.adminOk));
+      setSessionExp(me.sessionExp || 0);
       setImpersonating(me.impersonating || null);
     },
     signOut: async () => {
@@ -117,6 +121,9 @@ function AuthProvider({ children }) {
       if (window.__navigate) window.__navigate("home");
     },
     setAdminOk: setAdminOk,
+    // Lock the Control Room without signing out — re-entry needs only a fresh
+    // 2FA code, not a full sign-in.
+    lockAdmin: () => setAdminOk(false),
     onVerified: (m) => { setMember(m); setSigninOpen(false); },
   };
 
