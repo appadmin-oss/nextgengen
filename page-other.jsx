@@ -3434,6 +3434,14 @@ function CardStudio() {
   const cancelRef = React.useRef(false);
   const [dpi, setDpi] = React.useState(350);        // 350 = 2× a 175 lpi screen
   const [oneUp, setOneUp] = React.useState(false);  // single-up prepress vs A4 gang-up
+  const [prog, setProg] = React.useState(null);     // {done,total,name,eta} during a run
+  const [query, setQuery] = React.useState("");     // roster search
+  const [page, setPage] = React.useState(0);        // preview page
+  // Cards per output file. One PDF of a thousand cards is ~200MB and jsPDF
+  // holds every image as base64 while it builds, which is enough to end the
+  // tab on a phone — and no print shop wants a single 200MB file either.
+  const [chunk, setChunk] = React.useState(250);
+  const PER_PAGE = 24;
   // Which way the press turns the sheet between sides. Long-edge (work-and-
   // turn) keeps the same gripper edge and registers best, so it's the default.
   const [duplex, setDuplex] = React.useState("long-edge");
@@ -3492,35 +3500,19 @@ function CardStudio() {
     sc.addEventListener("load", () => res(window.CardExport), { once: true });
     sc.addEventListener("error", () => rej(new Error("load_failed")), { once: true });
   });
-  // The print-zone renders each card as front then back, so DOM order is
-  // [c0-front, c0-back, c1-front, c1-back, …].
-  const faceNodes = () => Array.from(zoneRef.current ? zoneRef.current.querySelectorAll(".idcard") : []);
-  // The QR draws asynchronously (lazy vendor lib). Never rasterise a card before
-  // every QR + web-font is ready, or the export ships blank QR codes.
-  const waitReady = () => new Promise((res) => {
-    const want = cards.length, t0 = Date.now();
-    const tick = () => {
-      const qrs = zoneRef.current ? zoneRef.current.querySelectorAll("img.card-qr") : [];
-      const ready = qrs.length >= want && Array.from(qrs).every(im => im.complete && im.naturalWidth > 0);
-      if (ready || Date.now() - t0 > 9000) res();
-      else setTimeout(tick, 120);
-    };
-    tick();
-  });
   const cardName = (card) => (card.displayId || card.studentId || card.volunteerId || "card").replace(/[^\w.-]+/g, "-");
   const setName = () => (isVol ? "volunteer" : "student") + "-id-cards";
+  const cardId = (card) => card.studentId || card.volunteerId || card.displayId;
 
   /* ── Which cards go in the export ────────────────────────────────────────
-   * `sel` null means "everyone" — the common case, and it stays correct when
-   * the roster grows between loads. Every export and the browser print walk
-   * `chosen`, but the print zone still renders ALL cards so the face-node
-   * indices stay aligned with `cards`.
+   * `sel` null means "everyone" — the common case, and it stays right when the
+   * roster grows between loads. Selection is by id, so it survives searching
+   * and paging: tick people on page 1, filter, tick more, export the lot.
    *
    * `cards` is only bound further down the component, so these stay functions
    * rather than values — evaluating one here would throw before first paint. */
-  const cardId = (card) => card.studentId || card.volunteerId || card.displayId;
   const isOn = (card) => !sel || sel.has(cardId(card));
-  const chosenCards = () => cards.map((c, i) => ({ card: c, i: i })).filter(x => isOn(x.card));
+  const chosenCards = () => cards.filter(isOn).map((c) => ({ card: c }));
   const allOn = () => !sel || sel.size >= cards.length;
   const toggleCard = (card) => setSel(prev => {
     const next = new Set(prev || cards.map(cardId));
@@ -3530,105 +3522,206 @@ function CardStudio() {
   });
   const selectAll = () => setSel(null);
   const selectNone = () => setSel(new Set());
+  // Tick/untick exactly what the current search matches, so "all the Ijaiye
+  // students" is two clicks rather than forty.
+  const selectMatching = (list, on) => setSel(prev => {
+    const next = new Set(prev || cards.map(cardId));
+    list.forEach(c => { on ? next.add(cardId(c)) : next.delete(cardId(c)); });
+    return next;
+  });
   // A roster reload or a tab switch resets to "everyone" — a stale selection
   // of ids that are no longer on screen is worse than no selection.
-  React.useEffect(() => { setSel(null); }, [mode, data, vdata]);
+  React.useEffect(() => { setSel(null); setPage(0); }, [mode, data, vdata]);
+  React.useEffect(() => { setPage(0); }, [query]);
 
-  // PNG masters are lossless, so they go out at the chosen resolution with no
-  // JPEG generation loss — these are the files a designer re-lays out from.
-  const pngScale = (CE, node) => CE.scaleForDpi((node && node.offsetWidth) || 295, cardW, dpi);
-
-  const exportPairPng = async (i) => {
-    if (exp) return;
-    try {
-      setExp("Rendering…");
-      const CE = await ensureLib(); await waitReady(); const n = faceNodes();
-      const scale = pngScale(CE, n[0]);
-      const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale, bg: "#fff" });
-      CE.download(f.bytes, cardName(cards[i]) + "-front.png", "image/png");
-      const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale, bg: "#fff" });
-      CE.download(b.bytes, cardName(cards[i]) + "-back.png", "image/png");
-      setExp("");
-    } catch (e) { setExp(""); setMsg("Couldn't render that card — try again."); }
-  };
-
-  const exportZip = async () => {
-    const pick = chosenCards();
-    if (exp || !pick.length) return;
-    cancelRef.current = false;
-    try {
-      setExp("Preparing…");
-      const CE = await ensureLib(); await waitReady(); const n = faceNodes(); const files = []; const failed = [];
-      const scale = pngScale(CE, n[0]);
-      for (let k = 0; k < pick.length; k++) {
-        if (cancelRef.current) { setExp(""); setMsg("Export cancelled."); return; }
-        const i = pick[k].i;
-        setExp("Rendering " + (k + 1) + " / " + pick.length + "…");
-        try {
-          const f = await withBudget(CE.nodeToImage(n[2 * i], { type: "image/png", scale, bg: "#fff" }), FACE_BUDGET_MS);
-          files.push({ name: cardName(pick[k].card) + "-front.png", bytes: f.bytes });
-          const b = await withBudget(CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale, bg: "#fff" }), FACE_BUDGET_MS);
-          files.push({ name: cardName(pick[k].card) + "-back.png", bytes: b.bytes });
-        } catch (e) { failed.push(cardName(pick[k].card)); }
-        await nextFrame();
-      }
-      if (!files.length) { setExp(""); setMsg("Export failed — no cards could be rendered."); return; }
-      setExp("Packaging…"); await nextFrame();
-      CE.download(await CE.zipStore(files), setName() + "-png.zip", "application/zip");
-      setExp("");
-      setMsg(failed.length ? (failed.length + " card(s) couldn't render — retry: " + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : "")) : "");
-    } catch (e) { setExp(""); setMsg("Export failed — try again."); }
-  };
-
+  /* ── The render host ─────────────────────────────────────────────────────
+   * html2canvas clones the WHOLE document for every capture, so its cost is
+   * driven by how much is on the page rather than by the card being captured.
+   * Measured on this design: ~168ms per face with the card alone, 4.2s with
+   * 200 cards also in the DOM, 12s with 600 — the old studio rendered the
+   * entire roster and rasterised out of it, which is O(n²) and turns a
+   * thousand cards into hours.
+   *
+   * So the export renders ONE card at a time into a host that is the only
+   * card on the page, and the preview grid is unmounted for the duration.
+   * Cost per face becomes flat, and memory stops tracking the roster. */
+  const [hostCard, setHostCard] = React.useState(null);
+  const hostRef = React.useRef(null);
+  const hostResolve = React.useRef(null);
   const nextFrame = () => new Promise(r => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => r()) : setTimeout(r, 0)));
-  // Hard ceiling per face. Every network read inside the toolkit is already
-  // bounded, but a wedged rasteriser would still park the run forever with no
-  // way out but a reload — so one slow card is dropped, not fatal.
+
+  // Never rasterise before the QR and the photo have actually painted, or the
+  // export ships blank codes and empty frames.
+  const hostAssetsReady = async () => {
+    const t0 = Date.now();
+    for (;;) {
+      const el = hostRef.current;
+      if (el) {
+        const imgs = Array.from(el.querySelectorAll("img"));
+        // One QR per pair: it lives on the front, the back has none. Waiting
+        // for two never comes true and costs the whole timeout on every card.
+        //
+        // `complete` alone, deliberately: it is true once an image has either
+        // decoded OR failed, whereas naturalWidth stays 0 on a failure. The
+        // card back links a logo that may not be deployed, and testing
+        // naturalWidth made every single card wait out the full timeout.
+        const qrs = el.querySelectorAll("img.card-qr");
+        if (qrs.length >= 1 && imgs.length && imgs.every(im => im.complete)) return true;
+      }
+      if (Date.now() - t0 > 6000) return false;
+      await new Promise(r => setTimeout(r, 60));
+    }
+  };
+  React.useEffect(() => {
+    if (!hostCard || !hostResolve.current) return;
+    const done = hostResolve.current; hostResolve.current = null;
+    (async () => { await nextFrame(); await nextFrame(); await hostAssetsReady(); done(); })();
+  }, [hostCard]);
+  const stageCard = (card) => new Promise((resolve) => { hostResolve.current = resolve; setHostCard(card); });
+
   const FACE_BUDGET_MS = 30000;
   const withBudget = (p, ms) => Promise.race([
     p, new Promise((_, rej) => setTimeout(() => rej(new Error("face_timeout")), ms)),
   ]);
 
+  /* Walk the chosen cards, staging and rasterising each in turn. `onPair`
+   * receives the two rendered faces and is free to release them; nothing is
+   * accumulated here, so peak memory is one card regardless of roster size. */
+  const eachFace = async (CE, pick, render, onPair) => {
+    const failed = [];
+    const t0 = Date.now();
+    for (let k = 0; k < pick.length; k++) {
+      if (cancelRef.current) return { failed, cancelled: true };
+      const card = pick[k].card;
+      const rate = k / Math.max(1, (Date.now() - t0) / 1000);
+      const left = rate > 0 ? Math.round((pick.length - k) / rate) : 0;
+      setProg({ done: k, total: pick.length, name: card.firstName || cardName(card), eta: k > 2 ? left : 0 });
+      try {
+        await stageCard(card);
+        const nodes = Array.from(hostRef.current ? hostRef.current.querySelectorAll(".idcard") : []);
+        if (nodes.length < 2) throw new Error("host_not_ready");
+        const front = await withBudget(render(nodes[0]), FACE_BUDGET_MS);
+        const back = await withBudget(render(nodes[1]), FACE_BUDGET_MS);
+        await onPair(front, back, card, k);
+      } catch (e) { failed.push(cardName(card)); }
+      await nextFrame();
+    }
+    setProg({ done: pick.length, total: pick.length, name: "", eta: 0 });
+    return { failed, cancelled: false };
+  };
+
+  const startRun = (label) => { cancelRef.current = false; setMsg(""); setNotice(""); setExp(label); setProg({ done: 0, total: 0, name: "", eta: 0 }); };
+  const endRun = (failed, cancelled, okNote) => {
+    setExp(""); setHostCard(null); setProg(null);
+    try { if (window.CardExport && window.CardExport.clearImageCache) window.CardExport.clearImageCache(); } catch (e) {}
+    if (cancelled) { setMsg("Export cancelled — nothing further was downloaded."); return; }
+    setMsg(failed.length ? (failed.length + " card(s) couldn't render and were left out: " + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : "")) : "");
+    if (!failed.length && okNote) setNotice(okNote);
+  };
+
+  // PNG masters are lossless, so they go out at the chosen resolution with no
+  // JPEG generation loss — these are the files a designer re-lays out from.
+  const pngScale = (CE) => CE.scaleForDpi(295, cardW, dpi);
+
+  const exportPairPng = async (card) => {
+    if (exp) return;
+    startRun("Rendering…");
+    try {
+      const CE = await ensureLib();
+      const scale = pngScale(CE);
+      await stageCard(card);
+      const nodes = Array.from(hostRef.current.querySelectorAll(".idcard"));
+      const f = await CE.nodeToImage(nodes[0], { type: "image/png", scale, bg: "#fff" });
+      CE.download(f.bytes, cardName(card) + "-front.png", "image/png");
+      const b = await CE.nodeToImage(nodes[1], { type: "image/png", scale, bg: "#fff" });
+      CE.download(b.bytes, cardName(card) + "-back.png", "image/png");
+      endRun([], false, "");
+    } catch (e) { endRun([cardName(card)], false, ""); }
+  };
+
+  /* Chunking keeps both memory and the delivered files sane. A thousand cards
+   * in one PDF is ~200MB, and jsPDF holds every image as base64 while it
+   * builds — enough to end the tab on a phone. Each chunk is downloaded and
+   * released before the next starts, so peak memory is one chunk's worth, and
+   * a print shop gets files it can actually open. */
+  const chunksOf = (list, n) => {
+    const out = [];
+    for (let i = 0; i < list.length; i += n) out.push(list.slice(i, i + n));
+    return out;
+  };
+  const partName = (i, total, ext) =>
+    setName() + (total > 1 ? "-part" + (i + 1) + "of" + total : "") + ext;
+
   const exportPdf = async () => {
     const pick = chosenCards();
     if (exp || !pick.length) return;
-    cancelRef.current = false;
+    startRun("Preparing…");
     try {
-      setExp("Preparing…");
-      const CE = await ensureLib(); await waitReady(); const n = faceNodes();
-      // Rasterise at the chosen output resolution for the real trim size, then
-      // mirror 3mm of bleed onto every edge before the art reaches the PDF.
-      const face = (node) => withBudget(
-        CE.renderFace(node, { trimW_mm: cardW, dpi, bleed_mm: BLEED_MM, quality: 0.95, bg: "#fff" }),
-        FACE_BUDGET_MS);
-      const fronts = [], backs = [], failed = [];
-      for (let k = 0; k < pick.length; k++) {
-        if (cancelRef.current) { setExp(""); setMsg("Export cancelled."); return; }
-        const i = pick[k].i;
-        setExp("Rendering " + (k + 1) + " / " + pick.length + "…");
-        try {
-          const f = await face(n[2 * i]);
-          const b = await face(n[2 * i + 1]);
-          fronts.push(f); backs.push(b);
-        } catch (e) { failed.push(cardName(pick[k].card)); }
-        await nextFrame(); // yield so the tab never locks up mid-run
+      const CE = await ensureLib();
+      const groups = chunksOf(pick, chunk);
+      const allFailed = [];
+      let cancelled = false;
+      for (let g = 0; g < groups.length && !cancelled; g++) {
+        const fronts = [], backs = [];
+        setExp(groups.length > 1 ? "Batch " + (g + 1) + " of " + groups.length + "…" : "Rendering…");
+        const r = await eachFace(CE, groups[g],
+          (node) => CE.renderFace(node, { trimW_mm: cardW, dpi, bleed_mm: BLEED_MM, quality: 0.95, bg: "#fff" }),
+          (front, back) => { fronts.push(front); backs.push(back); });
+        allFailed.push.apply(allFailed, r.failed);
+        cancelled = r.cancelled;
+        if (!fronts.length) continue;
+        setExp(groups.length > 1 ? "Building file " + (g + 1) + "…" : (oneUp ? "Building pages…" : "Imposing sheets…"));
+        await nextFrame();
+        const pdf = await CE.buildImpositionPDF(fronts, {
+          backs, duplex,
+          layout: oneUp ? "single-up" : "imposed",
+          sheet: "A4", trimW_mm: cardW, trimH_mm: cardH,
+          bleed_mm: BLEED_MM, safe_mm: 3, marks: true, layers: true, intent: "FOGRA39",
+          jobName: [program.program, program.year, isVol ? "volunteers" : "students",
+                    groups.length > 1 ? "part " + (g + 1) + "/" + groups.length : ""].filter(Boolean).join(" "),
+          date: new Date().toISOString().slice(0, 10),
+        });
+        CE.download(pdf, partName(g, groups.length, (oneUp ? "-1up" : "-imposed") + "-print.pdf"), "application/pdf");
+        fronts.length = 0; backs.length = 0;      // release before the next batch
+        await new Promise(r => setTimeout(r, 400)); // let the download settle
       }
-      if (!fronts.length) { setExp(""); setMsg("PDF export failed — no cards could be rendered."); return; }
-      setExp(oneUp ? "Building pages…" : "Imposing sheets…"); await nextFrame();
-      const pdf = await CE.buildImpositionPDF(fronts, {
-        backs, duplex,               // interleaved + mirrored for the press's flip
-        layout: oneUp ? "single-up" : "imposed",
-        sheet: "A4", trimW_mm: cardW, trimH_mm: cardH,
-        bleed_mm: BLEED_MM, safe_mm: 3, marks: true, layers: true,
-        intent: "FOGRA39",
-        jobName: [program.program, program.year, isVol ? "volunteers" : "students"].filter(Boolean).join(" "),
-        date: new Date().toISOString().slice(0, 10),
-      });
-      CE.download(pdf, setName() + (oneUp ? "-1up" : "-imposed") + "-print.pdf", "application/pdf");
-      setExp("");
-      setMsg(failed.length ? (failed.length + " card(s) couldn't render and were left out — retry the export: " + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : "")) : "");
-      if (!failed.length) setNotice("Print-ready PDF exported.");
-    } catch (e) { setExp(""); setMsg("PDF export failed — try again."); }
+      endRun(allFailed, cancelled, groups.length > 1
+        ? ("Print-ready PDF exported in " + groups.length + " files.")
+        : "Print-ready PDF exported.");
+    } catch (e) { endRun([], false, ""); setMsg("PDF export failed — try again."); }
+  };
+
+  const exportZip = async () => {
+    const pick = chosenCards();
+    if (exp || !pick.length) return;
+    startRun("Preparing…");
+    try {
+      const CE = await ensureLib();
+      const scale = pngScale(CE);
+      const groups = chunksOf(pick, chunk);
+      const allFailed = [];
+      let cancelled = false;
+      for (let g = 0; g < groups.length && !cancelled; g++) {
+        let files = [];
+        setExp(groups.length > 1 ? "Batch " + (g + 1) + " of " + groups.length + "…" : "Rendering…");
+        const r = await eachFace(CE, groups[g],
+          (node) => CE.nodeToImage(node, { type: "image/png", scale, bg: "#fff" }),
+          (front, back, card) => {
+            files.push({ name: cardName(card) + "-front.png", bytes: front.bytes });
+            files.push({ name: cardName(card) + "-back.png", bytes: back.bytes });
+          });
+        allFailed.push.apply(allFailed, r.failed);
+        cancelled = r.cancelled;
+        if (!files.length) continue;
+        setExp("Packaging…"); await nextFrame();
+        CE.download(await CE.zipStore(files), partName(g, groups.length, "-png.zip"), "application/zip");
+        files = null;
+        await new Promise(r => setTimeout(r, 400));
+      }
+      endRun(allFailed, cancelled, groups.length > 1
+        ? ("PNG masters exported in " + groups.length + " zips.")
+        : "PNG masters exported.");
+    } catch (e) { endRun([], false, ""); setMsg("Export failed — try again."); }
   };
 
   const shell = (ch) => (
@@ -3648,6 +3741,20 @@ function CardStudio() {
   const cardW = Number(program.widthMm) || 54;
   const cardH = Number(program.heightMm) || 75;
   const CANVAS_H = Math.round(590 * cardH / cardW);
+  /* Roster views. The preview shows one page at a time and the export runs
+   * from an isolated host, so neither the DOM nor html2canvas ever sees the
+   * whole roster — that is what makes a thousand cards workable. */
+  const q = query.trim().toLowerCase();
+  const shownCards = q
+    ? cards.filter(c => [c.firstName, c.surname, c.displayId, c.studentId, c.volunteerId,
+        c.track, c.role, (c.centre && c.centre.name), (c.tier && c.tier.name)]
+        .some(v => String(v || "").toLowerCase().indexOf(q) !== -1))
+    : cards;
+  const pageCount = Math.max(1, Math.ceil(shownCards.length / PER_PAGE));
+  const pageNo = Math.min(page, pageCount - 1);
+  const pageCards = shownCards.slice(pageNo * PER_PAGE, pageNo * PER_PAGE + PER_PAGE);
+  const chosenCount = cards.filter(isOn).length;
+  const batches = Math.max(1, Math.ceil(chosenCount / chunk));
   const units = isVol ? tiers : centres;
   const tab = (m, label) => (
     <button onClick={() => switchMode(m)} style={{ padding: "9px 18px", borderRadius: 99, border: "1px solid " + (mode === m ? gold : "rgba(255,255,255,.18)"), background: mode === m ? gold : "transparent", color: mode === m ? "#2b2100" : "#eef2fb", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{label}</button>
@@ -3677,8 +3784,6 @@ function CardStudio() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         {notice && <span className="mono" style={{ fontSize: 12, color: "#6fdc9d" }}>{notice}</span>}
         {exp && <span className="mono" style={{ fontSize: 12, color: gold }}>{exp}</span>}
-        {exp && <button onClick={() => { cancelRef.current = true; }} title="Stop after the card in flight"
-          style={{ padding: "9px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.3)", background: "transparent", color: "#ffb4b4", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Cancel</button>}
         <button onClick={exportZip} disabled={!chosenCards().length || !!exp} title="High-resolution PNG of each selected card face, zipped"
           style={{ padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#eef2fb", fontWeight: 800, fontSize: 14, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
           ↓ PNG (all, .zip)
@@ -3699,7 +3804,11 @@ function CardStudio() {
         <button onClick={selectAll} disabled={!!exp || allOn()} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: allOn() ? "default" : "pointer", opacity: allOn() ? .45 : 1 }}>Select all</button>
         <button onClick={selectNone} disabled={!!exp || !chosenCards().length} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", opacity: chosenCards().length ? 1 : .45 }}>Clear</button>
       </span>
-      <span style={{ fontSize: 12, color: "rgba(230,238,255,.55)" }}>Tick a card to include just those {"—"} the PDF, the PNG zip and the browser print all follow this.</span>
+      <span style={{ fontSize: 12, color: "rgba(230,238,255,.55)" }}>
+        Tick a card to include just those {"—"} the PDF, the PNG zip and the browser print all follow this.
+        {batches > 1 && <> Exports as <strong>{batches} files</strong> of up to {chunk}.</>}
+        {chosenCount > 120 && <> Roughly {chosenCount * 2 * 0.2 < 60 ? Math.ceil(chosenCount * 2 * 0.2) + "s" : Math.ceil(chosenCount * 2 * 0.2 / 60) + " min"} to render.</>}
+      </span>
     </div>
     <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", margin: "-4px 0 12px" }}>
       <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Layout
@@ -3724,6 +3833,16 @@ function CardStudio() {
           <option value={300}>300 DPI — digital press minimum</option>
           <option value={350}>350 DPI — offset standard</option>
           <option value={600}>600 DPI — line-art / slow</option>
+        </select>
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Cards per file
+        <select value={chunk} onChange={e => setChunk(Number(e.target.value))} disabled={!!exp}
+          title="Big runs are split across files. Each is downloaded and released before the next starts, so memory stays flat."
+          style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
+          <option value={100}>100</option>
+          <option value={250}>250 — recommended</option>
+          <option value={500}>500</option>
+          <option value={100000}>All in one file</option>
         </select>
       </label>
     </div>
@@ -3783,8 +3902,51 @@ function CardStudio() {
       <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "10px 0 0" }}>Default is 54 × 75&nbsp;mm. Width 50–60, height 64–100. The card reflows to any proportion without distortion — preview, PNG/PDF export and print all follow.</p>
     </div>
 
+    {exp ? (
+      /* The grid is unmounted for the duration of a run. This is not cosmetic:
+         html2canvas clones the whole document per capture, so leaving a page
+         of cards mounted multiplies every face by their cost. */
+      <div className="no-print" style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, padding: 22, textAlign: "center" }}>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".18em", color: gold }}>{exp.toUpperCase()}</div>
+        {prog && prog.total > 0 && <>
+          <div style={{ fontSize: 26, fontWeight: 800, margin: "10px 0 4px" }}>{prog.done} / {prog.total}</div>
+          <div style={{ height: 8, borderRadius: 99, background: "rgba(255,255,255,.12)", overflow: "hidden", maxWidth: 460, margin: "10px auto" }}>
+            <div style={{ height: "100%", width: (prog.total ? Math.round(prog.done / prog.total * 100) : 0) + "%", background: gold, transition: "width .2s" }}/>
+          </div>
+          <div style={{ fontSize: 13, color: "rgba(230,238,255,.62)" }}>
+            {prog.name ? "Rendering " + prog.name + "…" : "Finishing…"}
+            {prog.eta > 0 && <> · about {prog.eta > 90 ? Math.ceil(prog.eta / 60) + " min" : prog.eta + "s"} left</>}
+          </div>
+        </>}
+        <p style={{ fontSize: 12, color: "rgba(230,238,255,.5)", maxWidth: 520, margin: "12px auto 0" }}>
+          Keep this tab open and in the foreground {"—"} browsers throttle background tabs, which stalls the render. You can cancel at any point; batches already downloaded are unaffected.
+        </p>
+        <button onClick={() => { cancelRef.current = true; }} style={{ marginTop: 14, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.3)", background: "transparent", color: "#ffb4b4", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Cancel</button>
+      </div>
+    ) : (
+    <>
+    <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginBottom: 14 }}>
+      <input value={query} onChange={e => setQuery(e.target.value)} placeholder={"Search " + cards.length + " " + (isVol ? "volunteers" : "students") + " — name, ID, centre, track"}
+        style={{ flex: "1 1 260px", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14 }}/>
+      {q && <>
+        <span style={{ fontSize: 13, color: "rgba(230,238,255,.62)" }}>{shownCards.length} match{shownCards.length === 1 ? "" : "es"}</span>
+        <button onClick={() => selectMatching(shownCards, true)} style={{ padding: "8px 13px", borderRadius: 9, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Tick these</button>
+        <button onClick={() => selectMatching(shownCards, false)} style={{ padding: "8px 13px", borderRadius: 9, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Untick these</button>
+        <button onClick={() => setQuery("")} style={{ padding: "8px 13px", borderRadius: 9, border: "none", background: "rgba(255,255,255,.1)", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Clear search</button>
+      </>}
+    </div>
+    {pageCount > 1 && (
+      <div className="no-print" style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+        <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={pageNo === 0} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 13, cursor: pageNo === 0 ? "default" : "pointer", opacity: pageNo === 0 ? .4 : 1 }}>← Prev</button>
+        <span style={{ fontSize: 13, color: "rgba(230,238,255,.7)" }}>
+          {pageNo * PER_PAGE + 1}–{Math.min(shownCards.length, (pageNo + 1) * PER_PAGE)} of {shownCards.length} · page {pageNo + 1}/{pageCount}
+        </span>
+        <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={pageNo >= pageCount - 1} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 13, cursor: pageNo >= pageCount - 1 ? "default" : "pointer", opacity: pageNo >= pageCount - 1 ? .4 : 1 }}>Next →</button>
+        <span style={{ fontSize: 12, color: "rgba(230,238,255,.45)" }}>Only this page is drawn; the export covers everything ticked.</span>
+      </div>
+    )}
     <div className="print-zone" ref={zoneRef} style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
-      {cards.map((card, i) => (
+      {pageCards.map((card, i) => (
         <div key={card.studentId || card.volunteerId} className="card-pair" data-sel={isOn(card) ? "1" : "0"} style={{ position: "relative", opacity: isOn(card) ? 1 : .38, transition: "opacity .15s" }}>
           <label className="no-print" title={isOn(card) ? "Included in the export" : "Excluded from the export"}
             style={{ position: "absolute", top: -12, left: -8, zIndex: 3, display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 8, background: isOn(card) ? gold : "#2f3f6b", boxShadow: "0 4px 12px rgba(0,0,0,.3)", cursor: "pointer" }}>
@@ -3799,7 +3961,7 @@ function CardStudio() {
               style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>
               {resending === (isVol ? card.volunteerId : card.studentId) ? "Sending…" : "Resend ID"}
             </button>
-            <button onClick={() => exportPairPng(i)} disabled={!!exp} title="Download this card as PNG (front + back)"
+            <button onClick={() => exportPairPng(card)} disabled={!!exp} title="Download this card as PNG (front + back)"
               style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>↓</button>
           </div>
           <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} program={program} S={0.5} H={CANVAS_H}/> : <CardFront card={card} program={program} S={0.5} H={CANVAS_H}/>}</div>
@@ -3807,6 +3969,23 @@ function CardStudio() {
         </div>
       ))}
       {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>{isVol ? "No active volunteers yet — cards appear here the moment one is approved." : "No verified students yet — cards appear here the moment a parent consents."}</p>}
+      {!!cards.length && !shownCards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>Nothing matches “{query}”.</p>}
+    </div>
+    </>
+    )}
+    {/* The export host — one card at a time, and the only card on the page
+        while a run is going. Off-screen rather than display:none, because a
+        hidden element has no layout for html2canvas to read. */}
+    <div ref={hostRef} aria-hidden="true" className="no-print"
+      style={{ position: "fixed", left: -100000, top: 0, width: 640, pointerEvents: "none", opacity: 0 }}>
+      {hostCard && (
+        <div className="card-pair">
+          {isVol
+            ? <VolunteerCardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
+            : <CardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>}
+          <CardBack card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
+        </div>
+      )}
     </div>
     {editPhoto && (
       <PhotoEditor

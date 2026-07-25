@@ -81,9 +81,12 @@ const STATUS = {
     });
   }
   var PROGRAM = { program: 'NGG', year: '2026', motto: 'GROW', website: 'x.org', phone: '+234', widthMm: 54, heightMm: 75 };
-  var ROSTER = { program: PROGRAM, cards: [1, 2, 3].map(function (n) {
-    return { studentId: 'SUM-' + n, displayId: 'NGG/26/000' + n, firstName: 'NAME' + n, surname: 'SUR' + n,
-             track: 'Arts', token: 'T' + n, photoUrl: '', centre: { name: 'Ijaiye', color: '#76B043' } };
+  var ROSTER = { program: PROGRAM, cards: Array.from({ length: 30 }, function (_, i) {
+    var n = i + 1;
+    return { studentId: 'SUM-' + n, displayId: 'NGG/26/' + ('000' + n).slice(-4),
+             firstName: (n === 7 ? 'ZEBRA' : 'NAME' + n), surname: 'SUR' + n,
+             track: 'Arts', token: 'T' + n, photoUrl: '',
+             centre: { name: n % 2 ? 'Ijaiye' : 'Egbeda', color: '#76B043' } };
   }) };
   window.NGGApi = deep({
     imageTools: function () {
@@ -130,7 +133,7 @@ const STATUS = {
     window.CardExport = {
       scaleForDpi: function () { return 2; },
       nodeToImage: function () { return Promise.resolve(face); },
-      renderFace: function () { return Promise.resolve(face); },
+      renderFace: function () { return new Promise(function (r) { setTimeout(function () { r(face); }, 25); }); },
       zipStore: function () { return Promise.resolve(new Uint8Array([80, 75])); },
       buildImpositionPDF: function (fronts, o) {
         window.__pdf.push({ fronts: fronts.length, backs: (o && o.backs || []).length });
@@ -225,31 +228,64 @@ const STATUS = {
     const copy = await studio.evaluate(() => document.body.innerText);
     ok('/cards explains the selected flip on the page', /work-and-turn/i.test(copy));
 
-    // ── choosing which cards to export ───────────────────────────────────
+    // ── paging keeps the roster out of the DOM ───────────────────────────
+    // html2canvas clones the whole document per capture, so what is mounted
+    // sets the price of every face. A 30-card roster must not all be drawn.
     const boxes = studio.locator('.card-pair input[type=checkbox]');
-    ok('/cards renders the roster with a tick per card', await boxes.count() === 3);
     const bar = () => studio.evaluate(() => document.body.innerText);
-    ok('/cards defaults to exporting everyone', /All 3 cards will export/.test(await bar()));
+    ok('/cards draws one page, not the whole roster (' + await boxes.count() + ' of 30)', await boxes.count() === 24);
+    ok('/cards shows the paging position', /1–24 of 30 · page 1\/2/.test(await bar()));
+    ok('/cards defaults to exporting everyone', /All 30 cards will export/.test(await bar()));
+
+    // ── search + bulk selection ──────────────────────────────────────────
+    await studio.locator('input[placeholder*="Search"]').fill('ZEBRA');
+    await studio.waitForTimeout(150);
+    ok('/cards search narrows the roster', await boxes.count() === 1 && /1 match/.test(await bar()));
+    await studio.getByRole('button', { name: 'Untick these' }).click();
+    ok('/cards can untick everything the search matched', /29 of 30 selected/.test(await bar()));
+    await studio.getByRole('button', { name: 'Tick these', exact: true }).click();
+    ok('/cards can tick everything the search matched', /All 30 cards will export/.test(await bar()));
+    await studio.getByRole('button', { name: 'Clear search' }).click();
+    await studio.waitForTimeout(150);
+
+    // ── selection survives paging ────────────────────────────────────────
     await boxes.nth(1).uncheck();
-    ok('/cards counts the selection after unticking', /2 of 3 selected/.test(await bar()));
-    const offCount = () => studio.locator('.card-pair[data-sel="0"]').count();
-    ok('/cards marks the excluded card so print skips it', await offCount() === 1);
-    ok('/cards shows the count on the PDF button', /Print-ready PDF \(2\)/.test(await bar()));
-    await studio.getByRole('button', { name: 'Clear' }).click();
-    ok('/cards can clear the whole selection', await offCount() === 3);
+    ok('/cards counts the selection after unticking', /29 of 30 selected/.test(await bar()));
+    await studio.getByRole('button', { name: /Next →/ }).click();
+    await studio.waitForTimeout(200);
+    ok('/cards page 2 holds the remainder', await boxes.count() === 6);
+    await boxes.nth(0).uncheck();
+    ok('/cards keeps a selection made on another page', /28 of 30 selected/.test(await bar()));
+    await studio.getByRole('button', { name: 'Clear', exact: true }).click();
     const disabled = await studio.evaluate(() =>
       Array.from(document.querySelectorAll('button')).filter(b => /Print-ready PDF|PNG \(all/.test(b.textContent || '')).every(b => b.disabled));
     ok('/cards disables both exports when nothing is selected', disabled);
     await studio.getByRole('button', { name: 'Select all' }).click();
-    ok('/cards restores everyone with Select all', /All 3 cards will export/.test(await bar()) && await offCount() === 0);
 
-    // The selection has to reach the exporter, not just the chrome.
-    await boxes.nth(0).uncheck();
+    // ── the run: isolated host, batched output ───────────────────────────
+    await studio.evaluate(() => {
+      const cps = Array.from(document.querySelectorAll('select'))
+        .find(x => Array.from(x.options).some(o => o.value === '100'));
+      const set = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+      set.call(cps, '100'); cps.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     await studio.getByRole('button', { name: /Print-ready PDF/ }).click();
-    await studio.waitForFunction(() => window.__pdf.length > 0, null, { timeout: 20000 }).catch(() => {});
+    await studio.waitForTimeout(400);
+    // Mid-run the preview grid must be gone — that is the whole point.
+    const midRun = await studio.evaluate(() => ({
+      zone: document.querySelectorAll('.print-zone').length,
+      pairs: document.querySelectorAll('.card-pair').length,
+      progress: /\d+ \/ \d+/.test(document.body.innerText),
+    }));
+    ok('the preview grid is unmounted while rendering (pairs in DOM: ' + midRun.pairs + ')',
+      midRun.zone === 0 && midRun.pairs <= 1);
+    ok('a run reports progress', midRun.progress);
+    await studio.waitForFunction(() => window.__pdf.length >= 1 && !/Rendering|Batch|Building|Preparing/.test(document.body.innerText), null, { timeout: 60000 }).catch(() => {});
     const built = await studio.evaluate(() => window.__pdf);
-    ok('/cards exports only the selected cards (' + JSON.stringify(built) + ')',
-      built.length === 1 && built[0].fronts === 2 && built[0].backs === 2);
+    ok('a 30-card run splits into batches of 100→one file, honouring the cap ('
+      + JSON.stringify(built) + ')', built.length === 1 && built[0].fronts === 30 && built[0].backs === 30);
+    await studio.waitForSelector('.print-zone', { timeout: 20000 }).catch(() => {});
+    ok('the grid comes back after the run', await studio.locator('.print-zone').count() === 1);
     await studio.close();
 
     // ── photo editor: zoom works, and previews without a round trip ──────

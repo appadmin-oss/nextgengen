@@ -8,7 +8,8 @@
 
      • html2canvas  — pixel-accurate rasterisation of the rendered card DOM
                       (fonts, gradients, images) → high-DPI PNG/JPEG.
-     • JSZip        — the bulk PNG download (a real .zip, streamed).
+     • fflate       — the bulk download (a real .zip, memory-lean at roster
+                      scale).
      • jsPDF        — the prepress PDF.
 
    ── What makes the PDF print-grade ────────────────────────────────────────
@@ -102,8 +103,7 @@
     if (_deps) return _deps;
     if (!root.html2canvas) await loadScript('/vendor/html2canvas.min.js');
     if (!(root.jspdf && root.jspdf.jsPDF)) await loadScript('/vendor/jspdf.umd.min.js');
-    if (!root.JSZip) await loadScript('/vendor/jszip.min.js');
-    _deps = { html2canvas: root.html2canvas, jsPDF: root.jspdf.jsPDF, JSZip: root.JSZip };
+    _deps = { html2canvas: root.html2canvas, jsPDF: root.jspdf.jsPDF };
     return _deps;
   }
 
@@ -146,16 +146,24 @@
   // bulk export (the single biggest avoidable cost), and a re-fetch of the same
   // photo is free. Cloudinary edit URLs are unique per edit, so this is safe.
   // Failures are cached as null too: one dead URL must not be retried 300 times.
-  var _dataUrlCache = {};
+  var _dataUrlCache = {}, _cacheKeys = [];
+  var CACHE_MAX = 60;   // entries
   async function fetchAsDataURL(src) {
     if (_dataUrlCache[src] !== undefined) return _dataUrlCache[src];
     var out = null;
     for (var attempt = 0; attempt < 2 && out === null; attempt++) {
       try { out = await blobToDataURL(await fetchOnce(src, FETCH_TIMEOUT)); } catch (e) { /* retry once, then give up */ }
     }
+    // Bounded, oldest-first. Photos are unique per card and a data URL runs to
+    // a few hundred KB, so an unbounded cache quietly accumulates hundreds of
+    // megabytes across a full roster; the shared logos are re-fetched from the
+    // HTTP cache for free when they fall out.
     _dataUrlCache[src] = out;
+    _cacheKeys.push(src);
+    while (_cacheKeys.length > CACHE_MAX) delete _dataUrlCache[_cacheKeys.shift()];
     return out;
   }
+  function clearImageCache() { _dataUrlCache = {}; _cacheKeys = []; }
   /* Inline every <img> in the node as a same-origin data URI before rasterising.
    * Without this, html2canvas taints cross-origin photos (Cloudinary/external)
    * and DROPS them — the on-screen edit "reverts" (vanishes) in the export. We
@@ -257,12 +265,33 @@
     return { dataUrl: bled.dataUrl, wPx: bled.wPx, hPx: bled.hPx, bleedPx: bled.bleedPx, trimWPx: img.wPx, trimHPx: img.hPx };
   }
 
-  /* Bulk download: a real .zip of the PNG faces, built with JSZip. */
-  async function zipStore(files) {
-    var d = await ensureDeps();
-    var zip = new d.JSZip();
-    for (var i = 0; i < files.length; i++) zip.file(files[i].name, files[i].bytes);
-    return await zip.generateAsync({ type: 'uint8array' });
+  /* Bulk download: a real .zip, built with fflate.
+   *
+   * fflate rather than JSZip because this has to survive a full roster: a
+   * thousand cards is two thousand PNGs and roughly a gigabyte, and JSZip
+   * holds every entry plus its output buffer in memory at once. fflate zips
+   * from a plain map and is several times quicker besides. The PNGs are
+   * already deflate-compressed internally, so entries go in STORED — running
+   * deflate over them again costs seconds per hundred cards and saves nothing.
+   *
+   * JSZip stays loaded for nothing else; ensureDeps no longer pulls it. */
+  var _fflate = null;
+  async function ensureZip() {
+    if (_fflate) return _fflate;
+    if (!root.fflate) await loadScript('/vendor/fflate.min.js');
+    _fflate = root.fflate;
+    return _fflate;
+  }
+  async function zipStore(files, onProgress) {
+    var z = await ensureZip();
+    var map = {};
+    for (var i = 0; i < files.length; i++) {
+      // Level 0 = stored. PNG/JPEG/PDF payloads are already compressed.
+      map[files[i].name] = [files[i].bytes, { level: 0 }];
+    }
+    return await new Promise(function (res, rej) {
+      z.zip(map, { level: 0 }, function (err, data) { err ? rej(err) : res(data); });
+    });
   }
 
   /* ── Printing conditions ──────────────────────────────────────────────────
@@ -736,8 +765,10 @@
   }
 
   root.CardExport = {
-    ensureDeps: ensureDeps, nodeToImage: nodeToImage, addBleed: addBleed, renderFace: renderFace,
-    scaleForDpi: scaleForDpi, zipStore: zipStore, buildImpositionPDF: buildImpositionPDF,
-    download: download, dataUrlToBytes: dataUrlToBytes, INTENTS: INTENTS, LAYERS: LAYERS, SHEETS: SHEETS, MM: MM,
+    ensureDeps: ensureDeps, ensureZip: ensureZip, nodeToImage: nodeToImage, addBleed: addBleed,
+    renderFace: renderFace, scaleForDpi: scaleForDpi, zipStore: zipStore,
+    buildImpositionPDF: buildImpositionPDF, download: download, dataUrlToBytes: dataUrlToBytes,
+    clearImageCache: clearImageCache,
+    INTENTS: INTENTS, LAYERS: LAYERS, SHEETS: SHEETS, MM: MM,
   };
 })(typeof window !== 'undefined' ? window : this);

@@ -1,4 +1,4 @@
-/* Library-backed ID-card export test (html2canvas + jsPDF + JSZip).
+/* Library-backed ID-card export test (html2canvas + jsPDF + fflate).
    Runs in real Chromium via Playwright, served by php -S so /vendor/* resolves.
    Skips with a pass if playwright-core isn't installed (like the kiosk E2E).
 
@@ -246,7 +246,7 @@ function loadChromium() {
     ok('artwork lands at 350 DPI for the trim size (got ' + r.dpi + ')', Math.abs(r.dpi - 350) <= 6);
     ok('bleed is mirrored outward, not stretched', r.mirrored);
     ok('face geometry is trim + 2×bleed (' + r.bleedPx + 'px each side)', r.bleedGeom && r.bleedPx > 20);
-    ok('JSZip produced a valid .zip', r.zipPk);
+    ok('fflate produced a valid .zip', r.zipPk);
     ok('jsPDF produced a valid PDF (%PDF … %%EOF, ' + r.pdfLen + ' bytes)', r.pdfHeader && r.pdfEof);
     ok('PDF carries a FOGRA39 CMYK OutputIntent', r.outputIntent);
     ok('marks drawn in DeviceCMYK (4-channel stroke operator)', r.cmyk);

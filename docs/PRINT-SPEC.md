@@ -145,6 +145,38 @@ resolutions and the only way a several-hundred-card run stays a sane file size.
 The **PNG (.zip)** export is lossless at the same resolution, for a designer
 re-laying the cards out by hand.
 
+## Running a full roster
+
+The studio is built to take a thousand cards without falling over, and the
+constraint that shapes it is html2canvas: it clones the **whole document** for
+every capture, so the price of each face is set by how much is mounted, not by
+the card being captured. Measured on this design:
+
+| Cards mounted | DOM nodes | ms per face |
+|---|---|---|
+| card alone | ~50 | **168** |
+| 200 | 14,833 | 4,164 |
+| 600 | 44,433 | 11,959 |
+
+Rendering the roster and rasterising out of it — which is what the studio used
+to do — is therefore O(n²), and a thousand cards is hours. Three things follow:
+
+- **The preview pages.** 24 cards at a time, with search across name, ID,
+  centre and track. Ticks are held by id, so they survive searching and paging:
+  filter, *Tick these*, filter again, export the lot.
+- **Rendering runs from an isolated host.** One card at a time, and the preview
+  grid is unmounted for the duration, so each face costs the same whether the
+  roster is 50 or 5,000. Measured flat at ~210–270 ms per face.
+- **Output is batched.** 250 cards per file by default. One PDF of a thousand
+  cards is ~200 MB and jsPDF holds every image as base64 while it builds —
+  enough to end the tab on a phone, and not a file any shop wants. Each batch
+  is downloaded and released before the next starts, so peak memory is one
+  batch. Expect the browser to ask once for permission to save several files.
+
+Roughly, for 1,000 cards: **7–8 minutes**, four PDFs of ~50 MB, flat memory.
+The tab must stay in the foreground — browsers throttle background timers,
+which stalls the render.
+
 ## Reliability on large runs
 
 Everything renders in the browser; nothing is uploaded. Across hundreds of
@@ -157,6 +189,8 @@ cards that means hundreds of image fetches, so every remote read is bounded:
 - each face gets a 30 s ceiling — a wedged rasteriser costs one card, not the
   export;
 - the run yields a frame per card so the tab stays responsive, and **Cancel**
-  stops it after the card in flight.
+  stops it after the card in flight — batches already downloaded are kept;
+- the inlined-image cache is capped, so a full roster of unique photos cannot
+  quietly accumulate hundreds of megabytes.
 
 Cards that fail are named in the studio afterwards so they can be retried.
