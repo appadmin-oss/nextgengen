@@ -1292,6 +1292,7 @@ function FormPreview({ fields, name }) {
 /* ── Gate links — create/revoke the staff-gated public registration links ── */
 const ROTATE_CHOICES = [[0, "Never"], [7, "Every week"], [30, "Every 30 days"], [90, "Every 90 days"]];
 const VALID_CHOICES = [[0, "No expiry"], [1, "Today only"], [7, "1 week"], [30, "30 days"], [90, "90 days"]];
+const PWEXP_CHOICES = [[0, "Never"], [7, "After 7 days"], [30, "After 30 days"], [90, "After 90 days"]];
 
 function SummerGates() {
   const [gates, setGates] = React.useState(null);
@@ -1301,6 +1302,7 @@ function SummerGates() {
   const [autoPw, setAutoPw] = React.useState(true);
   const [rotateDays, setRotateDays] = React.useState(30);
   const [validDays, setValidDays] = React.useState(0);
+  const [expiryDays, setExpiryDays] = React.useState(0);
   const [notify, setNotify] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   // A generated password exists in the clear exactly once — in this response.
@@ -1315,7 +1317,7 @@ function SummerGates() {
     try {
       const label = name || "Registration desk";
       const r = await NGGApi.admin.registration.gateCreate(label, "", autoPw ? "" : pw.trim(), "",
-        { generate: autoPw, rotateDays, notifyEmail: notify.trim(), validDays });
+        { generate: autoPw, rotateDays, notifyEmail: notify.trim(), validDays, expiryDays });
       setName(""); setPw(""); setNotify("");
       if (r.password) setReveal({ gateId: r.gateId, name: label, password: r.password });
       else toast.success(r.hasPassword ? "Kiosk gate created." : "Gate link created.");
@@ -1339,7 +1341,10 @@ function SummerGates() {
       if (got === null) return;
       email = got.trim();
     }
-    try { await NGGApi.admin.registration.gateRotation(g.gateId, n, email); toast.success(n ? ("Rotating every " + n + " days.") : "Rotation off."); load(); }
+    const exp = await dialog.prompt({ title: "Expire the password after how long?", body: "Days before the current desk password stops working — 0 never expires. Unlike rotation this fails CLOSED: the desk is locked until an admin issues a new one, which is the point. Setting it counts from when the password was last set, so switching it on retires an old password rather than giving it a fresh term.", cta: "Save", placeholder: "0", inputType: "number", value: String(g.expiryDays || 0), required: false });
+    if (exp === null) return;
+    const x = Math.max(0, Math.min(365, parseInt(exp, 10) || 0));
+    try { await NGGApi.admin.registration.gateRotation(g.gateId, n, email, x); toast.success("Password policy saved."); load(); }
     catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : (e.code || e.message)); }
   };
   const setValidity = async (g) => {
@@ -1364,6 +1369,11 @@ function SummerGates() {
     const d = g.expiresInDays;
     return d <= 1 ? "expires today" : "in " + d + "d";
   };
+  const pwExpiryLabel = (g) => {
+    if (!g.hasPassword || !g.expiryDays) return "—";
+    if (g.passExpired) return "EXPIRED — desk locked";
+    return "dies in " + g.passExpiresInDays + "d";
+  };
   const rotationLabel = (g) => {
     if (!g.hasPassword) return "—";
     if (!g.rotateDays) return "manual";
@@ -1381,7 +1391,7 @@ function SummerGates() {
   const linkFor = (g) => location.origin + "/gate?g=" + g.gateId;
   return (
     <div>
-      <p className="admin-hint">A gate link opens the public registration desk. Give it a <b>desk password</b> and field staff can run it without an admin login; otherwise a signed-in staff member must be present. Generated passwords are shown once and stored only as a hash. A gate set to rotate emails its new password on the day it rolls {"\u2014"} one with no email is flagged due instead, so a desk is never locked out mid-session.</p>
+      <p className="admin-hint">A gate link opens the public registration desk. Give it a <b>desk password</b> and field staff can run it without an admin login; otherwise a signed-in staff member must be present. Generated passwords are shown once and stored only as a hash. A gate set to rotate emails its new password on the day it rolls {"\u2014"} one with no email is flagged due instead, so a desk is never locked out mid-session. <b>Password expiry</b> is the opposite policy and fails closed: past its date the desk stops opening until someone issues a new password. Set both and expiry is the backstop for rotation silently not running.</p>
       <form onSubmit={create} className="admin-filters" style={{ flexWrap: "wrap" }}>
         <input className="admin-input" placeholder="Label (e.g. Egbeda desk · Sat)" value={name} onChange={e => setName(e.target.value)} style={{ minWidth: 220 }}/>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
@@ -1391,6 +1401,11 @@ function SummerGates() {
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>Valid for
           <select className="admin-input" value={validDays} onChange={e => setValidDays(Number(e.target.value))} style={{ minWidth: 120 }}>
             {VALID_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>Password dies
+          <select className="admin-input" value={expiryDays} onChange={e => setExpiryDays(Number(e.target.value))} style={{ minWidth: 130 }}>
+            {PWEXP_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>Rotate
@@ -1421,7 +1436,7 @@ function SummerGates() {
         gates === null ? <div className="dash-spinner"/> :
         gates.length === 0 ? <div className="admin-empty">No gate links yet.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Label</th><th>Link</th><th>Kiosk</th><th>Valid</th><th>Rotation</th><th>Used</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Label</th><th>Link</th><th>Kiosk</th><th>Valid</th><th>Password</th><th>Rotation</th><th>Used</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {gates.map(g => (
               <tr key={g.gateId}>
@@ -1432,6 +1447,11 @@ function SummerGates() {
                   {g.expired
                     ? <span className="chip" style={{ background: "#ffe4e4", color: "#a11" }}>expired</span>
                     : validityLabel(g)}
+                </td>
+                <td className="mono" style={{ fontSize: 12 }}>
+                  {g.passExpired
+                    ? <span className="chip" style={{ background: "#ffe4e4", color: "#a11" }}>{pwExpiryLabel(g)}</span>
+                    : pwExpiryLabel(g)}
                 </td>
                 <td className="mono" style={{ fontSize: 12 }}>
                   {g.rotationDue && !g.notifyEmail

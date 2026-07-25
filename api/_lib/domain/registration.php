@@ -334,12 +334,38 @@ function gate_password_new(): string {
     return $out;
 }
 
-/** Write a desk password (hash only) and stamp when it was set. */
+/**
+ * Write a desk password (hash only), stamp when it was set, and set the date
+ * it dies if this gate has an expiry policy.
+ *
+ * Expiry and rotation are different policies and are meant to be combinable.
+ * Rotation REPLACES a password on schedule and deliberately fails open — a
+ * desk is never locked out because nobody could be told the new one. Expiry
+ * KILLS a password on schedule and deliberately fails closed. Set both and
+ * the expiry is the backstop: if rotation is silently not running, the
+ * password still stops working instead of living forever.
+ */
 function gate_password_store(string $gateId, string $pw): void {
+    $days = (int)(db_row('SELECT passExpiryDays FROM gate_links WHERE gateId = ?', [$gateId])['passExpiryDays'] ?? 0);
     db_update('gate_links', [
         'passHash' => password_hash($pw, PASSWORD_DEFAULT),
         'passSetAt' => now_iso(),
+        'passExpiresAt' => $days > 0 ? gmdate('Y-m-d\TH:i:s\Z', time() + $days * 86400) : '',
     ], ['gateId' => $gateId]);
+}
+
+/** Has this desk's password passed its expiry date? */
+function gate_password_expired(array $gate): bool {
+    $exp = (string)($gate['passExpiresAt'] ?? '');
+    return $exp !== '' && $exp < now_iso();
+}
+
+/** Days until the password stops working, or null when it never does. */
+function gate_password_expires_in(array $gate): ?int {
+    $exp = (string)($gate['passExpiresAt'] ?? '');
+    if ($exp === '' || ($gate['passHash'] ?? '') === '') return null;
+    $t = strtotime($exp);
+    return $t ? (int)ceil(($t - time()) / 86400) : null;
 }
 
 /** Days until this gate is due to roll, or null when rotation is off. */
@@ -354,7 +380,7 @@ function gate_rotation_due_in(array $gate): ?int {
 
 function admin_gates_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    $rows = db_all('SELECT gateId, name, cohortId, centreId, status, createdBy, expiresAt, usedCount, createdAt, passHash, passSetAt, passRotateDays, passNotify FROM gate_links ORDER BY id DESC LIMIT 50');
+    $rows = db_all('SELECT gateId, name, cohortId, centreId, status, createdBy, expiresAt, usedCount, createdAt, passHash, passSetAt, passRotateDays, passNotify, passExpiryDays, passExpiresAt FROM gate_links ORDER BY id DESC LIMIT 50');
     foreach ($rows as &$r) {
         $r['hasPassword'] = ($r['passHash'] ?? '') !== '';
         $due = gate_rotation_due_in($r);
@@ -365,6 +391,10 @@ function admin_gates_list(array $p): array {
         $exp = gate_expires_in_days($r);
         $r['expiresInDays'] = $exp;                     // null when it never expires
         $r['expired'] = $exp !== null && (string)$r['expiresAt'] < now_iso();
+        $r['expiryDays'] = (int)($r['passExpiryDays'] ?? 0);
+        $r['passExpiresInDays'] = gate_password_expires_in($r);
+        $r['passExpired'] = $r['hasPassword'] && gate_password_expired($r);
+        unset($r['passExpiryDays'], $r['passExpiresAt']);
         unset($r['passHash'], $r['passRotateDays'], $r['passNotify']);
     }
     unset($r);
@@ -390,6 +420,7 @@ function admin_gates_create(array $p): array {
     $expiresAt = gate_expiry_normalise($p['expiresAt'] ?? '', $p['validDays'] ?? null);
     if ($expiresAt === null) return ['ok' => false, 'error' => 'bad_expiry'];
     $rotate = max(0, min(365, (int)($p['rotateDays'] ?? 0)));
+    $expiryDays = max(0, min(365, (int)($p['expiryDays'] ?? 0)));
     $notify = strtolower(trim((string)($p['notifyEmail'] ?? '')));
     if ($notify !== '' && !filter_var($notify, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
     db_insert('gate_links', [
@@ -398,6 +429,8 @@ function admin_gates_create(array $p): array {
         'createdBy' => $g['requester']['memberId'], 'passHash' => $passHash,
         'passSetAt' => $passHash !== '' ? now_iso() : '',
         'passRotateDays' => $rotate, 'passNotify' => $notify,
+        'passExpiryDays' => $expiryDays,
+        'passExpiresAt' => ($passHash !== '' && $expiryDays > 0) ? gmdate('Y-m-d\TH:i:s\Z', time() + $expiryDays * 86400) : '',
         'expiresAt' => $expiresAt, 'createdAt' => now_iso(),
     ]);
     audit('gate.create', $g['requester']['memberId'], $gateId, ['kiosk' => $passHash !== '', 'rotateDays' => $rotate], (string)($p['ip'] ?? ''));
@@ -445,11 +478,21 @@ function admin_gates_rotation(array $p): array {
     $gateId = (string)($p['gateId'] ?? '');
     if (!db_row('SELECT gateId FROM gate_links WHERE gateId = ?', [$gateId])) return ['ok' => false, 'error' => 'not_found'];
     $days = max(0, min(365, (int)($p['rotateDays'] ?? 0)));
+    $expiryDays = max(0, min(365, (int)($p['expiryDays'] ?? 0)));
     $notify = strtolower(trim((string)($p['notifyEmail'] ?? '')));
     if ($notify !== '' && !filter_var($notify, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
-    db_update('gate_links', ['passRotateDays' => $days, 'passNotify' => $notify], ['gateId' => $gateId]);
-    audit('gate.rotation_set', $g['requester']['memberId'], $gateId, ['rotateDays' => $days, 'notify' => $notify !== ''], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'rotateDays' => $days, 'notifyEmail' => $notify];
+    $fields = ['passRotateDays' => $days, 'passNotify' => $notify, 'passExpiryDays' => $expiryDays];
+    // Changing the expiry re-dates the CURRENT password from when it was set,
+    // so turning expiry on retires an old password instead of granting it a
+    // fresh full term.
+    $row = db_row('SELECT passHash, passSetAt FROM gate_links WHERE gateId = ?', [$gateId]);
+    if (($row['passHash'] ?? '') !== '') {
+        $from = strtotime((string)($row['passSetAt'] ?? '')) ?: time();
+        $fields['passExpiresAt'] = $expiryDays > 0 ? gmdate('Y-m-d\TH:i:s\Z', $from + $expiryDays * 86400) : '';
+    }
+    db_update('gate_links', $fields, ['gateId' => $gateId]);
+    audit('gate.rotation_set', $g['requester']['memberId'], $gateId, ['rotateDays' => $days, 'expiryDays' => $expiryDays, 'notify' => $notify !== ''], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'rotateDays' => $days, 'expiryDays' => $expiryDays, 'notifyEmail' => $notify];
 }
 
 /**
@@ -517,6 +560,12 @@ function gate_unlock(array $p): array {
     $gate = gate_resolve((string)($p['gate'] ?? ''));
     if (!$gate) return ['ok' => false, 'error' => 'gate_invalid'];
     if (($gate['passHash'] ?? '') === '') return ['ok' => false, 'error' => 'no_password'];
+    // Checked BEFORE the password is compared: an expired password must not be
+    // usable even by someone holding the correct one.
+    if (gate_password_expired($gate)) {
+        audit('gate.unlock_expired', 'kiosk', (string)$gate['gateId'], [], (string)($p['ip'] ?? ''));
+        return ['ok' => false, 'error' => 'password_expired'];
+    }
     $pw = (string)($p['password'] ?? '');
     if ($pw === '' || !password_verify($pw, (string)$gate['passHash'])) {
         audit('gate.unlock_fail', 'kiosk', (string)$gate['gateId'], [], (string)($p['ip'] ?? ''));

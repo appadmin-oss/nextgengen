@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 55;
+const NGG_SCHEMA_TARGET = 56;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1346,6 +1346,12 @@ function db_migrate(PDO $db): void {
             ALTER TABLE gate_links ADD COLUMN passSetAt TEXT DEFAULT '';
             ALTER TABLE gate_links ADD COLUMN passRotateDays INTEGER DEFAULT 0;
             ALTER TABLE gate_links ADD COLUMN passNotify TEXT DEFAULT '';
+        ",
+        // Password expiry is a different policy from rotation: rotation
+        // REPLACES a password on schedule, expiry KILLS it on schedule.
+        56 => "
+            ALTER TABLE gate_links ADD COLUMN passExpiryDays INTEGER DEFAULT 0;
+            ALTER TABLE gate_links ADD COLUMN passExpiresAt TEXT DEFAULT '';
         ",
     ];
 

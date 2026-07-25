@@ -2413,6 +2413,7 @@ function GatePage() {
     catch (err) {
       const c = err.code || err.message;
       setUnlockErr(c === "bad_password" ? "That desk password didn't match. Try again."
+        : c === "password_expired" ? "This desk password has expired. Ask an admin to issue a new one — the link itself is still fine."
         : c === "no_password" ? "This gate has no desk password — an admin must sign in, or set one first."
         : c === "gate_invalid" ? "This gate link has been closed or revoked."
         : "Couldn't unlock — check the connection and try again.");

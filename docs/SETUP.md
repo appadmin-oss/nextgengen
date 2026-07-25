@@ -187,3 +187,31 @@ Nothing reads from the Sheet — it's a one-way mirror.
 - **Real-time updates** — the dashboard polls every 60s (visible tabs only).
 - **Direct file storage on the host** — media lives in Cloudinary; the DB holds URLs.
 - **SMS OTP** — a `phone` column exists; only email OTP is wired.
+
+## Scheduled jobs (desk password rotation, reminders, maintenance)
+
+**You probably do not need to do anything.** The app carries a web-cron: ordinary
+traffic triggers throttled background work after the response has been flushed
+(`api/_lib/webcron.php`). It drains the integration outbox every 60s, sends
+verification reminders every 15 min, and runs daily maintenance — including
+**rolling any desk password that has reached its rotation interval** — hourly.
+That covers shared hosting with no SSH and no cron.
+
+A real cron is better if you have one, because it runs on a quiet site too:
+
+```
+0 2 * * * php /home/USER/public_html/api/tools/run-jobs.php >/dev/null 2>&1
+```
+
+Both paths are safe to run together. A gate is only rolled once its interval has
+elapsed, and rotating stamps `passSetAt`, so whichever runs second finds nothing
+due. If you wire the host cron you can switch the web-cron off in `config.php`:
+
+```php
+'webcron' => ['enabled' => false],
+```
+
+Note the one thing neither path can do: a gate set to rotate but with **no
+notification address** is never rolled unattended — it is reported as due and
+badged in Admin → Gate links for someone to rotate by hand. Rotating a desk
+nobody can be told about would lock out a field team mid-session.

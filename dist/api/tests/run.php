@@ -1869,6 +1869,122 @@ chk('admin.photo.edit re-crops a live student photo (no stacked transforms)', (f
     return strpos($now, 'g_center') !== false && strpos($now, 'c_crop,g_center,w_0.833') !== false && strpos($now, 'z_') === false
         && strpos($now, 'g_face,w_600,h_750/c_fill') === false && substr_count($now, '/upload/') === 1 && strpos($now, '/v17/') !== false;
 })());
+/* ── Desk password expiry (fails CLOSED, unlike rotation) ───────────────── */
+chk('an expired desk password is refused even when it is the right one', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Expiring desk', 'generate' => true, 'expiryDays' => 7]);
+    if (empty($c['ok'])) return false;
+    // correct password works while live
+    if (empty(gate_unlock(['gate' => $c['gateId'], 'password' => $c['password']])['ok'])) return false;
+    db_update('gate_links', ['passExpiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 60)], ['gateId' => $c['gateId']]);
+    $r = gate_unlock(['gate' => $c['gateId'], 'password' => $c['password']]);
+    return ($r['error'] ?? '') === 'password_expired';
+})());
+chk('expiry is checked before the password compare, so a wrong one cannot probe it', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Probe desk', 'generate' => true, 'expiryDays' => 7]);
+    db_update('gate_links', ['passExpiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 60)], ['gateId' => $c['gateId']]);
+    // A wrong password must give the SAME answer as the right one — otherwise
+    // the response distinguishes "right but expired" from "wrong".
+    return (gate_unlock(['gate' => $c['gateId'], 'password' => 'WRON-GPWD'])['error'] ?? '') === 'password_expired';
+})());
+chk('setting a new password clears the expiry and starts the clock again', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Reset desk', 'generate' => true, 'expiryDays' => 7]);
+    db_update('gate_links', ['passExpiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 60)], ['gateId' => $c['gateId']]);
+    $r = backend_dispatch('admin.gates.rotate', ['requesterId' => 'NGG-2025-0099', 'gateId' => $c['gateId']]);
+    $row = db_row('SELECT passExpiresAt FROM gate_links WHERE gateId = ?', [$c['gateId']]);
+    return !empty(gate_unlock(['gate' => $c['gateId'], 'password' => $r['password']])['ok'])
+        && (string)$row['passExpiresAt'] > now_iso();
+})());
+chk('no expiry policy means the password never dies', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Immortal desk', 'generate' => true]);
+    $row = db_row('SELECT passExpiresAt FROM gate_links WHERE gateId = ?', [$c['gateId']]);
+    return (string)$row['passExpiresAt'] === '' && !empty(gate_unlock(['gate' => $c['gateId'], 'password' => $c['password']])['ok']);
+})());
+chk('turning expiry on dates from when the password was SET, not from now', (function () {
+    // Otherwise switching the policy on hands a stale password a fresh term.
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Backdate desk', 'generate' => true]);
+    db_update('gate_links', ['passSetAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 20 * 86400)], ['gateId' => $c['gateId']]);
+    backend_dispatch('admin.gates.rotation', ['requesterId' => 'NGG-2025-0099', 'gateId' => $c['gateId'], 'rotateDays' => 0, 'expiryDays' => 7]);
+    // set 20 days ago + 7 day life = already dead
+    return (gate_unlock(['gate' => $c['gateId'], 'password' => $c['password']])['error'] ?? '') === 'password_expired';
+})());
+chk('expiry can be switched back off', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Off desk', 'generate' => true, 'expiryDays' => 7]);
+    backend_dispatch('admin.gates.rotation', ['requesterId' => 'NGG-2025-0099', 'gateId' => $c['gateId'], 'rotateDays' => 0, 'expiryDays' => 0]);
+    return (string)db_row('SELECT passExpiresAt FROM gate_links WHERE gateId = ?', [$c['gateId']])['passExpiresAt'] === ''
+        && !empty(gate_unlock(['gate' => $c['gateId'], 'password' => $c['password']])['ok']);
+})());
+chk('the list reports password expiry without leaking the hash', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Report desk', 'generate' => true, 'expiryDays' => 30]);
+    $row = array_values(array_filter(backend_dispatch('admin.gates.list', ['requesterId' => 'NGG-2025-0099'])['gates'],
+        fn($g) => $g['gateId'] === $c['gateId']))[0];
+    return $row['expiryDays'] === 30 && $row['passExpired'] === false
+        && $row['passExpiresInDays'] >= 29 && $row['passExpiresInDays'] <= 30
+        && !array_key_exists('passHash', $row) && !array_key_exists('passExpiresAt', $row);
+})());
+chk('the web-cron runs desk rotation, so a host with no shell still rotates', (function () {
+    // Rotation must not depend on api/tools/run-jobs.php being on a cron.
+    $src = file_get_contents(dirname(__DIR__) . '/_lib/webcron.php');
+    return strpos($src, 'gates_rotate_due') !== false && function_exists('gates_rotate_due');
+})());
+
+/* ── Gate link validity ─────────────────────────────────────────────────── */
+chk('validity is stored in the exact format gate_resolve compares against', (function () {
+    // gate_resolve does a STRING compare against now_iso(). A value in any
+    // other shape either never expires or expires instantly.
+    foreach ([['', 7], ['2026-08-31', null], ['2026-08-31T10:00:00Z', null]] as [$v, $d]) {
+        $out = gate_expiry_normalise($v, $d);
+        if ($out === null || $out === '') return false;
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $out)) return false;
+    }
+    return gate_expiry_normalise('', 0) === '' && gate_expiry_normalise('', null) === ''
+        && gate_expiry_normalise('not a date', null) === null
+        && gate_expiry_normalise('', 99999) === null;
+})());
+chk('a bare date means the END of that day, not its start', (function () {
+    // "valid until the 31st" must still work on the evening of the 31st.
+    return gate_expiry_normalise('2026-08-31', null) === '2026-08-31T23:59:59Z';
+})());
+chk('gate create accepts a validity in days and the link works while valid', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Weekend desk', 'validDays' => 7]);
+    if (empty($c['ok'])) return false;
+    return gate_resolve($c['gateId']) !== null;
+})());
+chk('an expired link stops resolving, so the desk itself refuses it', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Lapsed desk', 'generate' => true, 'validDays' => 1]);
+    db_update('gate_links', ['expiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 60)], ['gateId' => $c['gateId']]);
+    if (gate_resolve($c['gateId']) !== null) return false;
+    // and every public path built on it must refuse, not just the resolver
+    return (gate_context(['gate' => $c['gateId']])['error'] ?? '') === 'gate_invalid'
+        && (gate_unlock(['gate' => $c['gateId'], 'password' => $c['password']])['error'] ?? '') === 'gate_invalid';
+})());
+chk('validity can be extended on a link that already lapsed', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Extend desk', 'validDays' => 1]);
+    db_update('gate_links', ['expiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 60)], ['gateId' => $c['gateId']]);
+    $r = backend_dispatch('admin.gates.validity', ['requesterId' => 'NGG-2025-0099', 'gateId' => $c['gateId'], 'validDays' => 14]);
+    return !empty($r['ok']) && gate_resolve($c['gateId']) !== null;
+})());
+chk('validity can be cleared back to never expiring', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Forever desk', 'validDays' => 3]);
+    $r = backend_dispatch('admin.gates.validity', ['requesterId' => 'NGG-2025-0099', 'gateId' => $c['gateId'], 'validDays' => 0]);
+    return !empty($r['ok']) && $r['expiresAt'] === ''
+        && (string)db_row('SELECT expiresAt FROM gate_links WHERE gateId = ?', [$c['gateId']])['expiresAt'] === '';
+})());
+chk('the list reports expiry so the panel can show it', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Listed desk', 'validDays' => 5]);
+    $row = array_values(array_filter(backend_dispatch('admin.gates.list', ['requesterId' => 'NGG-2025-0099'])['gates'],
+        fn($g) => $g['gateId'] === $c['gateId']))[0];
+    return $row['expired'] === false && $row['expiresInDays'] >= 4 && $row['expiresInDays'] <= 5;
+})());
+chk('a nonsense validity is rejected rather than silently ignored', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Bad desk']);
+    return (backend_dispatch('admin.gates.validity', ['requesterId' => 'NGG-2025-0099', 'gateId' => $c['gateId'], 'expiresAt' => 'whenever'])['error'] ?? '') === 'bad_expiry'
+        && (backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'X', 'expiresAt' => 'soon'])['error'] ?? '') === 'bad_expiry';
+})());
+chk('gate validity is gated from non-staff', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Guard v desk']);
+    return (backend_dispatch('admin.gates.validity', ['requesterId' => 'NGG-2025-0001', 'gateId' => $c['gateId'], 'validDays' => 5])['error'] ?? '') === 'forbidden';
+})());
+
 /* ── Gate desk passwords: generation + rotation ─────────────────────────── */
 chk('gate_password_new avoids look-alike characters and does not repeat', (function () {
     $seen = [];

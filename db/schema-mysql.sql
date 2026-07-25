@@ -516,6 +516,8 @@ ALTER TABLE gate_links ADD COLUMN centreId VARCHAR(48) DEFAULT '';
 ALTER TABLE gate_links ADD COLUMN passSetAt VARCHAR(40) DEFAULT '';
 ALTER TABLE gate_links ADD COLUMN passRotateDays INT DEFAULT 0;
 ALTER TABLE gate_links ADD COLUMN passNotify VARCHAR(190) DEFAULT '';
+ALTER TABLE gate_links ADD COLUMN passExpiryDays INT DEFAULT 0;
+ALTER TABLE gate_links ADD COLUMN passExpiresAt VARCHAR(40) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (20) ON DUPLICATE KEY UPDATE version = version;
 
