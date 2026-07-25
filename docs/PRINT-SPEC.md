@@ -118,6 +118,26 @@ Technical layers carry a `/GTS_Metadata` dictionary with
 output through the OCG `/Usage` print state **and** an `/AS` auto-state in
 `/OCProperties`, so they cannot image even on a RIP that prints all layers.
 
+## Typefaces
+
+The card sets its display type in **Inter** (400–800, loaded with the rest of
+the site) and the Ìlú Èkó watermark on the back in **Georgia**.
+
+Two other faces used to be named in the card's font stacks — *TT Firs Neue*
+for the names and *Pagkaki* for the watermark — but neither file was ever in
+the repository, so every studio load fetched two 404s and the browser fell
+straight through to Inter and Georgia anyway. The stacks now say what actually
+renders. Nothing about the printed card changed.
+
+Inter is requested at weight 800 because the names are set at 800; without it
+the browser synthesises a faux bold, which smears noticeably at 350 DPI.
+
+One caveat worth knowing for print: Inter comes from Google Fonts, so if that
+is slow or blocked when an export runs, the faces rasterise in the system
+fallback instead — and cards exported in different sessions could differ.
+Self-hosting Inter beside the other vendored fonts in `assets/fonts/` would
+make the output deterministic.
+
 ## Colour
 
 Artwork is RGB raster at **350 DPI** by default (2 × a 175 lpi screen; the
