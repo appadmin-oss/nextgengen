@@ -350,7 +350,9 @@
     // starts inside the bleed prints on the finished card.
     var markLen = 4, markGap = 1.5, markW = 0.25 / MM;          // 0.25 pt hairline in mm
     var clearance = bleed + markGap + markLen;                   // margin a mark needs
-    var slugBand = (opts.slug === false ? 0 : 5);
+    // Reserve enough for a wrapped slug: a single-up page is only ~70mm wide,
+    // so the job line that fits on one line across A4 needs two or three there.
+    var slugBand = (opts.slug === false ? 0 : 7);
     var barBand = (opts.colourBar === false || oneUp) ? 0 : 9;
 
     var pageW, pageH, cols, rows, startX, startY, gut = 0;
@@ -531,11 +533,27 @@
         doc.rect(x0 + i * pw, y, pw, ph, i === 0 ? 'FD' : 'F');
       }
     }
-    function slugLine(text, y) {
+    /* Draw the job slug, wrapped and shrunk to fit the sheet. Sized off the
+     * real text metrics rather than a guess: the same line that sits happily
+     * across A4 runs off both edges of a single-up page. Bottom-aligned to
+     * `bandBottom` so the block grows upward into the reserved band. */
+    function drawSlug(text, bandBottom) {
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(5.5);
       doc.setTextColor(0, 0, 0, 1);
-      doc.text(text, pageW / 2, y, { align: 'center', baseline: 'middle' });
+      var width = pageW - 8, lines = null, size = 5.5;
+      var sizes = [5.5, 5, 4.5, 4];
+      for (var i = 0; i < sizes.length; i++) {
+        size = sizes[i];
+        doc.setFontSize(size);
+        lines = doc.splitTextToSize(text, width);
+        if (lines.length <= 3) break;
+      }
+      doc.setFontSize(size);
+      var lh = size / MM * 1.25;                     // line height in mm
+      var top = bandBottom - (lines.length - 1) * lh;
+      for (var j = 0; j < lines.length; j++) {
+        doc.text(lines[j], pageW / 2, top + j * lh, { align: 'center', baseline: 'middle' });
+      }
     }
     function guideRect(x, y, w, h, cmyk, dash) {
       stroke(cmyk, 0.1);
@@ -650,7 +668,7 @@
 
       if (slugBand) {
         layer('slug');
-        slugLine(job + ' · sheet ' + sh.sheet + '/' + nSheets + ' ' + sh.side.toUpperCase() +
+        drawSlug(job + ' · ' + (oneUp ? 'card ' : 'sheet ') + sh.sheet + '/' + nSheets + ' ' + sh.side.toUpperCase() +
           ' · ' + trimW + '\u00D7' + trimH + ' mm trim · ' + bleed + ' mm bleed · ' +
           (oneUp ? '1-up' : cols + '\u00D7' + rows + '-up') +
           // The flip axis is the one setting that silently ruins a whole run,
@@ -659,7 +677,7 @@
           (backs ? ' · duplex: ' + (duplex === 'none' ? 'NO flip (align by hand)'
             : duplex === 'short-edge' ? 'SHORT-edge flip (work-and-tumble)'
             : 'LONG-edge flip (work-and-turn)') : '') +
-          ' · ' + intent.id + (stamp ? ' · ' + stamp : ''), pageH - slugBand / 2 - 1);
+          ' · ' + intent.id + (stamp ? ' · ' + stamp : ''), pageH - 2);
       }
       endLayer();
 
