@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div>
+<script src="/dist/vendor/react.production.min.js"></script>
+<script src="/dist/vendor/react-dom.production.min.js"></script>
+<script src="/dist/data.js"></script><script src="/dist/photos.js"></script>
+<script>
+ var PH=(function(){var c=document.createElement('canvas');c.width=c.height=500;var x=c.getContext('2d');
+  x.fillStyle='#8fbb3f';x.fillRect(0,0,500,500);return c.toDataURL('image/png');})();
+ var P={program:'NGG',year:'2026',motto:'GROW',website:'a.org',phone:'+234',widthMm:54,heightMm:75};
+ var V={program:P,cards:Array.from({length:42},function(_,i){return {
+   volunteerId:'VOL-MEN-26-'+(1000+i),displayId:'VOL-MEN-26-'+(1000+i),firstName:'V'+i,surname:'L'+i,
+   role:'Mentor',token:'VT'+i,photoUrl:PH,tier:{name:'Mentor',code:'MEN',color:'#00225F'}};})};
+ function deep(o){return new Proxy(function(){return Promise.resolve({});},{
+  get:function(t,k){if(o&&Object.prototype.hasOwnProperty.call(o,k))return o[k];
+   if(k==='then'||typeof k==='symbol')return undefined;return deep();},
+  apply:function(){return Promise.resolve({});}});}
+ window.NGGApi=deep({admin:deep({registration:deep({
+  cards:function(){return Promise.resolve({program:P,cards:[]});},
+  volunteerCards:function(){return Promise.resolve(V);},
+  centres:function(){return Promise.resolve({centres:[]});},
+  hierarchy:function(){return Promise.resolve({tiers:[]});}})})});
+</script>
+<script src="/dist/app.min.js"></script>
+<script>ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(window.CardStudio,{}));</script>
+</body></html>
