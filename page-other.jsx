@@ -3447,6 +3447,10 @@ function CardStudio() {
   };
 
   // ── Export toolkit (PNG · bulk ZIP · print-ready CMYK PDF) ──────────────
+  const BLEED_MM = 3;
+  // Which way the press turns the sheet between sides. Long-edge
+  // (work-and-turn) keeps the same gripper edge and registers best.
+  const [duplex, setDuplex] = React.useState("long-edge");
   const zoneRef = React.useRef(null);
   const [exp, setExp] = React.useState("");   // progress/status text
   const [notice, setNotice] = React.useState("");  // transient success note
@@ -3602,7 +3606,8 @@ function CardStudio() {
   // tab stays responsive across hundreds of cards.
   const renderFace = async (CE, node, scale) => {
     for (let attempt = 0; ; attempt++) {
-      try { return await CE.nodeToImage(node, { type: "image/jpeg", scale, quality: 0.92, bg: "#fff" }); }
+      // renderFace (not nodeToImage) so the face carries 3mm of mirrored bleed.
+      try { return await CE.renderFace(node, { trimW_mm: cardW, scale, bleed_mm: BLEED_MM, quality: 0.95, bg: "#fff" }); }
       catch (e) { if (attempt >= 1) throw e; await new Promise(r => setTimeout(r, 250)); }
     }
   };
@@ -3623,15 +3628,25 @@ function CardStudio() {
           const n = hostFaces();
           const f = await withBudget(renderFace(CE, n[0], pdfScale), 30000);
           const b = await withBudget(renderFace(CE, n[1], pdfScale), 30000);
-          fronts.push({ dataUrl: f.dataUrl }); backs.push({ dataUrl: b.dataUrl });
+          fronts.push(f); backs.push(b);
         } catch (e) { failed.push(cardName(cards[i])); }
         await nextFrame(); // yield so the tab never locks up mid-run
       }
       setHostCard(null);
       if (!fronts.length) { setExp(""); setMsg("PDF export failed — no cards could be rendered."); return; }
       setExp("Imposing sheets…"); await nextFrame();
-      // Front sheets first, then back sheets — so a shop can duplex and cut.
-      const pdf = await CE.buildImpositionPDF(fronts.concat(backs), { sheet: "A4", trimW_mm: cardW, trimH_mm: cardH, marks: true });
+      /* Hand the backs over AS backs. Concatenating them onto the fronts — all
+       * fronts, then all backs — is what the builder sees as a single-sided
+       * job, so it does no mirroring and card 1's back lands on card N's
+       * front. With `backs` passed properly each back sheet follows its own
+       * front and is mirrored for the press's flip. */
+      const pdf = await CE.buildImpositionPDF(fronts, {
+        backs, duplex,
+        sheet: "A4", trimW_mm: cardW, trimH_mm: cardH,
+        bleed_mm: BLEED_MM, safe_mm: 3, marks: true, layers: true, intent: "FOGRA39",
+        jobName: [program.program, program.year, isVol ? "volunteers" : "students"].filter(Boolean).join(" "),
+        date: new Date().toISOString().slice(0, 10),
+      });
       CE.download(pdf, setName() + "-print-cmyk.pdf", "application/pdf");
       setExp("");
       setMsg(failed.length ? (failed.length + " card(s) couldn't render and were left out — retry the export: " + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : "")) : "");
@@ -3686,6 +3701,15 @@ function CardStudio() {
           style={{ padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#eef2fb", fontWeight: 800, fontSize: 14, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
           ↓ PNG (all, .zip)
         </button>
+        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Front/back flip
+          <select value={duplex} onChange={e => setDuplex(e.target.value)} disabled={!!exp}
+            title="How the press turns the sheet between sides — ask your printer. The wrong axis puts every back on the wrong front."
+            style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
+            <option value="long-edge">Long edge — work-and-turn</option>
+            <option value="short-edge">Short edge — work-and-tumble</option>
+            <option value="none">No flip — align by hand</option>
+          </select>
+        </label>
         <button onClick={exportPdf} disabled={!cards.length || !!exp} title="Print-ready, imposed, CMYK — hand this to a printer"
           style={{ padding: "13px 24px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
           ⎙ Print-ready PDF (CMYK)
