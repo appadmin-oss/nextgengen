@@ -135,7 +135,10 @@
   function fetchOnce(src, ms) {
     var ctl = typeof AbortController === 'function' ? new AbortController() : null;
     var timer = setTimeout(function () { if (ctl) ctl.abort(); }, ms);
-    var opts = { mode: 'cors', credentials: 'omit', cache: 'force-cache' };
+    // No cache mode override: forcing the HTTP cache can miss or fail against
+    // an entry the <img> tag already stored as a no-CORS (opaque) response,
+    // which loses photos that a plain fetch would have inlined fine.
+    var opts = { mode: 'cors', credentials: 'omit' };
     if (ctl) opts.signal = ctl.signal;
     return fetch(src, opts).then(function (r) {
       clearTimeout(timer);
@@ -166,8 +169,7 @@
     // Same-origin card furniture either answers at once or the site is down;
     // it does not deserve the patience a photo host gets, and that grace is
     // paid once per dead URL before the negative cache takes over.
-    var isLocal = src.charAt(0) === '/' || src.indexOf(location.origin) === 0;
-    var budget = isLocal ? LOCAL_TIMEOUT : FETCH_TIMEOUT;
+    var budget = isSameOrigin(src) ? LOCAL_TIMEOUT : FETCH_TIMEOUT;
     for (var attempt = 0; attempt < 2 && out === null; attempt++) {
       try { out = await blobToDataURL(await fetchOnce(src, budget)); }
       catch (e) {
@@ -190,6 +192,9 @@
    * Without this, html2canvas taints cross-origin photos (Cloudinary/external)
    * and DROPS them — the on-screen edit "reverts" (vanishes) in the export. We
    * swap src to a data URL, snapshot, then restore the originals. */
+  function isSameOrigin(src) {
+    return src.charAt(0) === '/' ? src.charAt(1) !== '/' : src.indexOf(location.origin + '/') === 0;
+  }
   var INLINE_BUDGET = 6000;   // ms for ALL of one face's images
   var BLANK_PX = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
   async function inlineImages(node) {
@@ -209,14 +214,17 @@
         im.setAttribute('src', data);
         // Ensure the swapped image is decoded before html2canvas snapshots.
         try { if (im.decode) await im.decode(); } catch (e) {}
-      } else {
-        /* Couldn't fetch it, so neutralise it rather than leave it pointing at
-         * a host that is not answering. Skipping alone is not enough:
-         * html2canvas would then wait out its OWN imageTimeout on the same
-         * dead URL, for every face, which is the difference between a roster
-         * that exports without its logos and one that never finishes. The
-         * original src is restored afterwards, so the on-screen card is
-         * untouched — it just prints without that asset. */
+      } else if (isSameOrigin(src)) {
+        /* Our own furniture, and it did not answer — neutralise it so
+         * html2canvas does not wait out its own imageTimeout on the same dead
+         * URL for every face. The original src is restored afterwards, so the
+         * on-screen card is untouched; it just prints without that asset.
+         *
+         * ONLY same-origin. A cross-origin photo that failed to inline is a
+         * very different case: html2canvas still has useCORS and will usually
+         * fetch it itself, so blanking it here turns "probably fine" into a
+         * guaranteed empty photo frame. Losing the subject's picture off an ID
+         * card is far worse than waiting on a logo. */
         restore.push([im, src]);
         im.setAttribute('src', BLANK_PX);
       }

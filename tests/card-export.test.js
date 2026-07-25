@@ -31,6 +31,7 @@ function loadChromium() {
     + '<div id="card" class="idcard" style="width:295px;height:410px;background:#fff;position:relative;font-family:Inter,sans-serif;overflow:hidden">'
     + '<div style="position:absolute;top:180px;left:0;right:0;text-align:center;font-weight:800;font-size:26px;color:#E4155F">ADAEZE</div>'
     + '<div style="position:absolute;left:0;right:0;bottom:0;height:14px;background:#B0143C"></div>'
+    + '<img id="xphoto" src="http://127.0.0.1:9411/xorigin-photo.png" style="position:absolute;top:20px;left:20px;width:80px;height:80px">'
     + '<img id="deadlogo" src="/assets/__never_answers/logo-a.png" style="width:40px">'
     + '<img src="/assets/__never_answers/logo-b.png" style="width:40px"></div>'
     + '<script src="/vendor/card-export.js"></script></body></html>');
@@ -45,6 +46,16 @@ function loadChromium() {
     // A host that accepts the connection and never answers — what the site's
     // own asset URLs look like when the origin is down.
     await page.route('**/__never_answers/**', () => {});
+    /* A cross-origin photo whose <img> loads but whose fetch() is refused —
+     * a host that serves images without an Access-Control-Allow-Origin the
+     * inliner can use. It must still reach the raster: html2canvas has useCORS
+     * of its own. Blanking these "so html2canvas doesn't wait" silently
+     * emptied the photo frame on every card. */
+    const MAGENTA = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z/C/HgAGgwJ/lK3Q6wAAAABJRU5ErkJggg==', 'base64');
+    await page.route('**/xorigin-photo.png', (route) => route.request().resourceType() === 'fetch'
+      ? route.abort()
+      : route.fulfill({ status: 200, contentType: 'image/png', body: MAGENTA,
+                        headers: { 'Access-Control-Allow-Origin': '*' } }));
     page.on('console', m => { if (m.type() === 'error') console.error('    page:', m.text()); });
     // Not 'networkidle': the deliberately-dead images never settle.
     await page.goto(BASE + '/tests/_export_fixture.html', { waitUntil: 'domcontentloaded' });
@@ -85,6 +96,15 @@ function loadChromium() {
       const deadT1 = performance.now();
       await CE.renderFace(node, { trimW_mm: TRIM_W, dpi: 150, bleed_mm: 1 });
       const laterDeadMs = performance.now() - deadT1;
+
+      // The photo frame must not come back empty.
+      const shot = await CE.nodeToImage(node, { scale: 1, type: 'image/png', bg: '#fff' });
+      const si = new Image(); si.src = shot.dataUrl; await si.decode();
+      const sc = document.createElement('canvas'); sc.width = si.width; sc.height = si.height;
+      sc.getContext('2d').drawImage(si, 0, 0);
+      const pd = sc.getContext('2d').getImageData(60, 60, 1, 1).data;
+      const photoKept = !(pd[0] > 250 && pd[1] > 250 && pd[2] > 250);
+      const photoSrc = document.getElementById('xphoto').getAttribute('src');
 
       // ── faces, with bleed, at a real print resolution ────────────────────
       const scale = CE.scaleForDpi(295, TRIM_W, 350);
@@ -233,6 +253,7 @@ function loadChromium() {
 
       return {
         firstDeadMs: Math.round(firstDeadMs), laterDeadMs: Math.round(laterDeadMs),
+        photoKept, photoSrcBlanked: photoSrc.indexOf('data:') === 0,
         jpg: front.dataUrl.indexOf('data:image/jpeg') === 0 && front.wPx > front.trimWPx,
         dpi: Math.round(dpiPx),
         scale,
@@ -265,6 +286,8 @@ function loadChromium() {
 
     ok('a card whose asset host never answers still renders (' + r.firstDeadMs + 'ms)', r.firstDeadMs < 25000);
     ok('and the dead URL is not re-tried on later faces (' + r.laterDeadMs + 'ms)', r.laterDeadMs < 1500);
+    ok('a cross-origin photo that cannot be inlined still reaches the card', r.photoKept);
+    ok('…and its src is left alone rather than blanked', !r.photoSrcBlanked);
     ok('renderFace produced a bled JPEG face', r.jpg);
     ok('artwork lands at 350 DPI for the trim size (got ' + r.dpi + ')', Math.abs(r.dpi - 350) <= 6);
     ok('bleed is mirrored outward, not stretched', r.mirrored);
