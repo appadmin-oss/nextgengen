@@ -3147,8 +3147,8 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
 /* ============================================================================
    ID Card Studio (/cards) — renders the 2026 Summer ID design exactly:
    590×1004 front (logo lockup · circular photo with soft shadow · crimson
-   first name / navy surname · track · QR of the check-in
-   token · centre-coloured bar) + back (Ìlú Èkó serif watermark · LCASP
+   first name / navy surname in TT Firs Neue · track · QR of the check-in
+   token · centre-coloured bar) + back (Ìlú Èkó Pagkaki watermark · LCASP
    year · program contacts · printed ID). Admin-managed centres drive the
    bar colour and the CODE-YY-serial ID. Print = true 54×92mm per card.
    ============================================================================ */
@@ -3224,8 +3224,10 @@ function cardFacePhoto(url, w, h) {
 function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
   const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
-  // A record with no centre used to throw here, and one throw blanked the
-  // whole studio. Never let missing data cost more than a default colour.
+  // A record with no centre used to throw here, and because nothing scoped the
+  // failure React tore down the tree and the whole studio rendered blank — not
+  // one bad card, an empty page. Missing data must never cost more than a
+  // default colour.
   const centre = card.centre || {};
   // Reflow: every element scales UNIFORMLY (never stretched) and flexible
   // spacers absorb the height difference, so any proportion renders without
@@ -3239,8 +3241,8 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
         {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 900)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
       </div>
       <div style={{ width: px(30), height: px(6), borderRadius: px(3), background: "#8FA3C8", margin: px(15) + "px 0 " + px(9) + "px", flex: "none" }}/>
-      <div style={{ textAlign: "center", fontFamily: '"Inter", system-ui, sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
-      <div style={{ textAlign: "center", fontFamily: '"Inter", system-ui, sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding:`0 ${px(16)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
+      <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
+      <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding:`0 ${px(16)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
       <div style={{ textAlign: "center", fontWeight: 500, fontSize: px(22), color: "#111", textTransform: "uppercase", letterSpacing: px(1.4), marginTop: px(9), flex: "none" }}>
         {(() => {
           // "Arts • Tye & Dye" → bold category, dot, regular course (v3 design).
@@ -3265,7 +3267,7 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
    Same 590×1004 canvas as the student card so both print at 54×92mm. */
 function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
-  const tier = card.tier || {};
+  const tier = card.tier || {};                 // same hazard as centre, above
   const tint = tier.color || "#00225F";
   // Headshot keeps its 450:354 aspect (never stretched) and scales with the card.
   const hsH = Math.min(354, Math.max(150, Math.round(H * 0.34)));
@@ -3277,7 +3279,7 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
       {/* STS badge, straddling the top edge of the panel. */}
       <div style={{ position: "absolute", top: px(2), left: "50%", transform: "translateX(-50%)", width: px(116), height: px(116), zIndex: 2 }}>
         <div style={{ position: "absolute", inset: px(8), borderRadius: "50%", background: tint, boxShadow: `0 ${px(6)}px ${px(16)}px rgba(0,0,0,.18)`, display: "grid", placeItems: "center" }}>
-          <span style={{ fontFamily: '"Inter", system-ui, sans-serif', fontWeight: 800, fontSize: px(34), letterSpacing: px(1), color: "#fff" }}>STS</span>
+          <span style={{ fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(34), letterSpacing: px(1), color: "#fff" }}>STS</span>
         </div>
         <img src="/assets/idcard/logo-sts.svg" alt="Street-To-Stardom" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
           onError={e => { e.target.style.display = "none"; }}/>
@@ -3288,8 +3290,8 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
           {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
         </div>
         <div style={{ flex: "1 1 0", minHeight: px(6) }}/>
-        <div style={{ textAlign: "center", fontFamily: '"Inter", system-ui, sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
-        <div style={{ textAlign: "center", fontFamily: '"Inter", system-ui, sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.surname || " "}</div>
+        <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
+        <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.surname || " "}</div>
         <div style={{ width: px(360), maxWidth: "92%", height: 1, background: "#E4E4E4", marginTop: px(12), flex: "none" }}/>
         <div style={{ border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff", marginTop: px(14), flex: "none" }}>
           <CardQR token={card.token} size={px(112)}/>
@@ -3325,7 +3327,7 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
     ["ID", card.displayId, "M4 5h16v14H4zM8 9.5a2 2 0 1 0 4 0 2 2 0 0 0-4 0ZM7 15c.7-1.8 2.2-2.5 3-2.5s2.3.7 3 2.5M15 10h3M15 13h3"],
   ];
   const wm = [];
-  for (let i = 0; i < 9; i++) wm.push(<div key={i} style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 800, fontSize: px(86), lineHeight: 1.28, color: "rgba(27,43,107,.045)", whiteSpace: "nowrap", textTransform: "uppercase", marginLeft: (i % 2 ? px(-70) : 0) }}>ÈKÓ ÌLÚ ÈKÓ ÌLÚ</div>);
+  for (let i = 0; i < 9; i++) wm.push(<div key={i} style={{ fontFamily: '"Pagkaki", Georgia, serif', fontWeight: 800, fontSize: px(86), lineHeight: 1.28, color: "rgba(27,43,107,.045)", whiteSpace: "nowrap", textTransform: "uppercase", marginLeft: (i % 2 ? px(-70) : 0) }}>ÈKÓ ÌLÚ ÈKÓ ÌLÚ</div>);
   return (
     <div className="idcard" style={{ width: px(590), height: px(H), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>{wm}</div>
@@ -3340,7 +3342,7 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
         <rect width="590" height="26" fill={"url(#wv" + key + ")"}/>
         <rect y="24.4" width="590" height="1.6" fill="#9AA3BE" opacity="0.55"/>
       </svg>
-      <div style={{ position: "absolute", top: pt(170), left: 0, right: 0, textAlign: "center", fontFamily: '"Inter", system-ui, sans-serif', fontWeight: 800, fontSize: px(62), letterSpacing: px(-1) }}>
+      <div style={{ position: "absolute", top: pt(170), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(62), letterSpacing: px(-1) }}>
         <span style={{ color: CARD_CRIMSON }}>{program.program}</span> <span style={{ color: CARD_NAVY }}>{program.year}</span>
       </div>
       <div style={{ position: "absolute", top: pt(244), left: 0, right: 0, textAlign: "center", fontWeight: 800, fontSize: px(23), color: CARD_NAVY, letterSpacing: px(2) }}>{program.motto}</div>
@@ -3370,16 +3372,16 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
   );
 }
 
-/* Stands in for a single card the renderer choked on, so the operator sees
-   exactly which record is bad instead of an empty screen. */
-function CardDrawFailed({ id, w, h }) {
+/* Stands in for one card the renderer choked on, naming the record, so a bad
+   row costs its own slot instead of the entire roster. */
+function CardDrawFailed({ id }) {
   return (
-    <div style={{ width: w, height: h, borderRadius: 6, border: "1px dashed rgba(255,154,154,.6)", background: "rgba(255,154,154,.08)",
+    <div style={{ width: 295, height: 240, borderRadius: 6, border: "1px dashed rgba(255,154,154,.6)", background: "rgba(255,154,154,.08)",
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 12, textAlign: "center", boxSizing: "border-box" }}>
       <span style={{ fontSize: 22 }} aria-hidden="true">⚠</span>
       <span style={{ fontSize: 12, fontWeight: 700, color: "#ffb4b4" }}>Couldn{"\u2019"}t draw this card</span>
       <span className="mono" style={{ fontSize: 11, color: "rgba(230,238,255,.6)", wordBreak: "break-all" }}>{id}</span>
-      <span style={{ fontSize: 11, color: "rgba(230,238,255,.5)" }}>Its record is missing something {"\u2014"} the other cards are unaffected.</span>
+      <span style={{ fontSize: 11, color: "rgba(230,238,255,.5)" }}>The other cards are unaffected.</span>
     </div>
   );
 }
@@ -3398,34 +3400,16 @@ function CardStudio() {
   // Card proportion (mm) — admin-set, applies to preview, PNG/PDF export + print.
   const [sizeW, setSizeW] = React.useState(54); const [sizeH, setSizeH] = React.useState(75);
   const [sizeMsg, setSizeMsg] = React.useState("");
-  const [loadErr, setLoadErr] = React.useState("");   // "" | code of a partial/total load failure
   const navy = "#16223e", gold = "#ffce54";
 
   const load = React.useCallback(() => {
     setState("loading");
-    /* Settle each call independently. Promise.all rejects on the first
-     * failure, which meant the whole studio went to an error screen and
-     * rendered no cards at all if any ONE of the four endpoints was unhappy —
-     * a hiccup fetching the volunteer tier list took the student roster down
-     * with it. Now whatever loaded is shown, and only losing both rosters is
-     * a hard error. */
-    const settle = (p) => p.then(v => ({ ok: true, v: v }), e => ({ ok: false, code: (e && (e.code || e.message)) || "error" }));
     Promise.all([
-      settle(NGGApi.admin.registration.cards()),
-      settle(NGGApi.admin.registration.centres()),
-      settle(NGGApi.admin.registration.volunteerCards()),
-      settle(NGGApi.admin.registration.hierarchy()),
-    ]).then(([c, ct, vc, h]) => {
-      const bad = [c, ct, vc, h].filter(r => !r.ok);
-      if (bad.some(r => r.code === "unauthorized")) { setState("need-auth"); return; }
-      if (c.ok) setData(c.v);
-      if (ct.ok) setCentres(ct.v.centres || []);
-      if (vc.ok) setVdata(vc.v);
-      if (h.ok) setTiers(h.v.tiers || []);
-      if (!c.ok && !vc.ok) { setLoadErr(bad[0].code); setState("error"); return; }
-      setLoadErr(bad.length ? bad[0].code : "");
-      setState("ready");
-    });
+      NGGApi.admin.registration.cards(), NGGApi.admin.registration.centres(),
+      NGGApi.admin.registration.volunteerCards(), NGGApi.admin.registration.hierarchy(),
+    ])
+      .then(([c, ct, vc, h]) => { setData(c); setCentres(ct.centres || []); setVdata(vc); setTiers(h.tiers || []); setState("ready"); })
+      .catch(e => setState((e.code || e.message) === "unauthorized" ? "need-auth" : "error"));
   }, []);
   React.useEffect(() => { load(); }, [load]);
   React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(); }, [auth && auth.isSignedIn]);
@@ -3463,24 +3447,8 @@ function CardStudio() {
   };
 
   // ── Export toolkit (PNG · bulk ZIP · print-ready CMYK PDF) ──────────────
-  // 3mm is the commercial bleed default; the prepress convention puts the
-  // BleedBox 3–5mm outside the TrimBox and the safe area 3mm inside it.
-  const BLEED_MM = 3;
   const zoneRef = React.useRef(null);
-  const cancelRef = React.useRef(false);
-  const [dpi, setDpi] = React.useState(350);        // 350 = 2× a 175 lpi screen
-  const [oneUp, setOneUp] = React.useState(false);  // single-up prepress vs A4 gang-up
-  const [prog, setProg] = React.useState(null);     // {done,total,name,eta} during a run
-  const [query, setQuery] = React.useState("");     // roster search
-  // Cards per output file. One PDF of a thousand cards is ~200MB and jsPDF
-  // holds every image as base64 while it builds, which is enough to end the
-  // tab on a phone — and no print shop wants a single 200MB file either.
-  const [chunk, setChunk] = React.useState(250);
-  // Which way the press turns the sheet between sides. Long-edge (work-and-
-  // turn) keeps the same gripper edge and registers best, so it's the default.
-  const [duplex, setDuplex] = React.useState("long-edge");
   const [exp, setExp] = React.useState("");   // progress/status text
-  const [sel, setSel] = React.useState(null); // Set of chosen card ids; null = all
   const [notice, setNotice] = React.useState("");  // transient success note
   const [resending, setResending] = React.useState("");  // id currently resending
   const [editPhoto, setEditPhoto] = React.useState(null);  // card whose photo is being edited
@@ -3534,236 +3502,98 @@ function CardStudio() {
     sc.addEventListener("load", () => res(window.CardExport), { once: true });
     sc.addEventListener("error", () => rej(new Error("load_failed")), { once: true });
   });
+  // The print-zone renders each card as front then back, so DOM order is
+  // [c0-front, c0-back, c1-front, c1-back, …].
+  const faceNodes = () => Array.from(zoneRef.current ? zoneRef.current.querySelectorAll(".idcard") : []);
+  // The QR draws asynchronously (lazy vendor lib). Never rasterise a card before
+  // every QR + web-font is ready, or the export ships blank QR codes.
+  const waitReady = () => new Promise((res) => {
+    const want = cards.length, t0 = Date.now();
+    const tick = () => {
+      const qrs = zoneRef.current ? zoneRef.current.querySelectorAll("img.card-qr") : [];
+      const ready = qrs.length >= want && Array.from(qrs).every(im => im.complete && im.naturalWidth > 0);
+      if (ready || Date.now() - t0 > 9000) res();
+      else setTimeout(tick, 120);
+    };
+    tick();
+  });
   const cardName = (card) => (card.displayId || card.studentId || card.volunteerId || "card").replace(/[^\w.-]+/g, "-");
   const setName = () => (isVol ? "volunteer" : "student") + "-id-cards";
-  const cardId = (card) => card.studentId || card.volunteerId || card.displayId;
 
-  /* ── Which cards go in the export ────────────────────────────────────────
-   * `sel` null means "everyone" — the common case, and it stays right when the
-   * roster grows between loads. Selection is by id, so it survives searching
-   * and paging: tick people on page 1, filter, tick more, export the lot.
-   *
-   * `cards` is only bound further down the component, so these stay functions
-   * rather than values — evaluating one here would throw before first paint. */
-  const isOn = (card) => !sel || sel.has(cardId(card));
-  const chosenCards = () => cards.filter(isOn).map((c) => ({ card: c }));
-  const allOn = () => !sel || sel.size >= cards.length;
-  const toggleCard = (card) => setSel(prev => {
-    const next = new Set(prev || cards.map(cardId));
-    const id = cardId(card);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
-  const selectAll = () => setSel(null);
-  const selectNone = () => setSel(new Set());
-  // Tick/untick exactly what the current search matches, so "all the Ijaiye
-  // students" is two clicks rather than forty.
-  const selectMatching = (list, on) => setSel(prev => {
-    const next = new Set(prev || cards.map(cardId));
-    list.forEach(c => { on ? next.add(cardId(c)) : next.delete(cardId(c)); });
-    return next;
-  });
-  // A roster reload or a tab switch resets to "everyone" — a stale selection
-  // of ids that are no longer on screen is worse than no selection.
-  React.useEffect(() => { setSel(null); }, [mode, data, vdata]);
-
-  /* ── The render host ─────────────────────────────────────────────────────
-   * html2canvas clones the WHOLE document for every capture, so its cost is
-   * driven by how much is on the page rather than by the card being captured.
-   * Measured on this design: ~168ms per face with the card alone, 4.2s with
-   * 200 cards also in the DOM, 12s with 600 — the old studio rendered the
-   * entire roster and rasterised out of it, which is O(n²) and turns a
-   * thousand cards into hours.
-   *
-   * So the export renders ONE card at a time into a host that is the only
-   * card on the page, and the preview grid is unmounted for the duration.
-   * Cost per face becomes flat, and memory stops tracking the roster. */
-  const [hostCard, setHostCard] = React.useState(null);
-  const hostRef = React.useRef(null);
-  const hostResolve = React.useRef(null);
-  const nextFrame = () => new Promise(r => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => r()) : setTimeout(r, 0)));
-
-  // Never rasterise before the QR and the photo have actually painted, or the
-  // export ships blank codes and empty frames.
-  /* Wait for the staged card to be paintable — but only as long as waiting is
-   * worth anything.
-   *
-   * The QR is generated on the device and always arrives, so it is a hard
-   * requirement: rasterising early ships a blank code. The logos and photo are
-   * remote, and when the site's own server is unreachable they NEVER settle —
-   * so they get a short grace and then we proceed. The rasteriser blanks any
-   * image it couldn't fetch, so a card missing its logo still prints, whereas
-   * waiting out a full timeout per asset per card never finishes at all.
-   *
-   * `complete` rather than naturalWidth: complete turns true once an image has
-   * decoded OR failed, while naturalWidth stays 0 on failure — and the card
-   * back links a logo that may not be deployed. */
-  const QR_WAIT_MS = 6000, IMG_GRACE_MS = 1200;
-  const hostAssetsReady = async () => {
-    const t0 = Date.now();
-    for (;;) {
-      const el = hostRef.current;
-      if (el) {
-        const imgs = Array.from(el.querySelectorAll("img"));
-        // One QR per pair: it is on the front, the back has none.
-        const haveQr = el.querySelectorAll("img.card-qr").length >= 1;
-        const settled = imgs.length > 0 && imgs.every(im => im.complete);
-        if (haveQr && (settled || Date.now() - t0 > IMG_GRACE_MS)) return true;
-      }
-      if (Date.now() - t0 > QR_WAIT_MS) return false;
-      await new Promise(r => setTimeout(r, 50));
-    }
-  };
-  React.useEffect(() => {
-    if (!hostCard || !hostResolve.current) return;
-    const done = hostResolve.current; hostResolve.current = null;
-    (async () => { await nextFrame(); await nextFrame(); await hostAssetsReady(); done(); })();
-  }, [hostCard]);
-  const stageCard = (card) => new Promise((resolve) => { hostResolve.current = resolve; setHostCard(card); });
-
-  const FACE_BUDGET_MS = 30000;
-  const withBudget = (p, ms) => Promise.race([
-    p, new Promise((_, rej) => setTimeout(() => rej(new Error("face_timeout")), ms)),
-  ]);
-
-  /* Walk the chosen cards, staging and rasterising each in turn. `onPair`
-   * receives the two rendered faces and is free to release them; nothing is
-   * accumulated here, so peak memory is one card regardless of roster size. */
-  const eachFace = async (CE, pick, render, onPair) => {
-    const failed = [];
-    const t0 = Date.now();
-    for (let k = 0; k < pick.length; k++) {
-      if (cancelRef.current) return { failed, cancelled: true };
-      const card = pick[k].card;
-      const rate = k / Math.max(1, (Date.now() - t0) / 1000);
-      const left = rate > 0 ? Math.round((pick.length - k) / rate) : 0;
-      setProg({ done: k, total: pick.length, name: card.firstName || cardName(card), eta: k > 2 ? left : 0 });
-      try {
-        await stageCard(card);
-        const nodes = Array.from(hostRef.current ? hostRef.current.querySelectorAll(".idcard") : []);
-        if (nodes.length < 2) throw new Error("host_not_ready");
-        const front = await withBudget(render(nodes[0]), FACE_BUDGET_MS);
-        const back = await withBudget(render(nodes[1]), FACE_BUDGET_MS);
-        await onPair(front, back, card, k);
-      } catch (e) { failed.push(cardName(card)); }
-      await nextFrame();
-    }
-    setProg({ done: pick.length, total: pick.length, name: "", eta: 0 });
-    return { failed, cancelled: false };
-  };
-
-  const startRun = (label) => { cancelRef.current = false; setMsg(""); setNotice(""); setExp(label); setProg({ done: 0, total: 0, name: "", eta: 0 }); };
-  const endRun = (failed, cancelled, okNote) => {
-    setExp(""); setHostCard(null); setProg(null);
-    try { if (window.CardExport && window.CardExport.clearImageCache) window.CardExport.clearImageCache(); } catch (e) {}
-    if (cancelled) { setMsg("Export cancelled — nothing further was downloaded."); return; }
-    setMsg(failed.length ? (failed.length + " card(s) couldn't render and were left out: " + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : "")) : "");
-    if (!failed.length && okNote) setNotice(okNote);
-  };
-
-  // PNG masters are lossless, so they go out at the chosen resolution with no
-  // JPEG generation loss — these are the files a designer re-lays out from.
-  const pngScale = (CE) => CE.scaleForDpi(295, cardW, dpi);
-
-  const exportPairPng = async (card) => {
+  const exportPairPng = async (i) => {
     if (exp) return;
-    startRun("Rendering…");
     try {
-      const CE = await ensureLib();
-      const scale = pngScale(CE);
-      await stageCard(card);
-      const nodes = Array.from(hostRef.current.querySelectorAll(".idcard"));
-      const f = await CE.nodeToImage(nodes[0], { type: "image/png", scale, bg: "#fff" });
-      CE.download(f.bytes, cardName(card) + "-front.png", "image/png");
-      const b = await CE.nodeToImage(nodes[1], { type: "image/png", scale, bg: "#fff" });
-      CE.download(b.bytes, cardName(card) + "-back.png", "image/png");
-      endRun([], false, "");
-    } catch (e) { endRun([cardName(card)], false, ""); }
-  };
-
-  /* Chunking keeps both memory and the delivered files sane. A thousand cards
-   * in one PDF is ~200MB, and jsPDF holds every image as base64 while it
-   * builds — enough to end the tab on a phone. Each chunk is downloaded and
-   * released before the next starts, so peak memory is one chunk's worth, and
-   * a print shop gets files it can actually open. */
-  const chunksOf = (list, n) => {
-    const out = [];
-    for (let i = 0; i < list.length; i += n) out.push(list.slice(i, i + n));
-    return out;
-  };
-  const partName = (i, total, ext) =>
-    setName() + (total > 1 ? "-part" + (i + 1) + "of" + total : "") + ext;
-
-  const exportPdf = async () => {
-    const pick = chosenCards();
-    if (exp || !pick.length) return;
-    startRun("Preparing…");
-    try {
-      const CE = await ensureLib();
-      const groups = chunksOf(pick, chunk);
-      const allFailed = [];
-      let cancelled = false;
-      for (let g = 0; g < groups.length && !cancelled; g++) {
-        const fronts = [], backs = [];
-        setExp(groups.length > 1 ? "Batch " + (g + 1) + " of " + groups.length + "…" : "Rendering…");
-        const r = await eachFace(CE, groups[g],
-          (node) => CE.renderFace(node, { trimW_mm: cardW, dpi, bleed_mm: BLEED_MM, quality: 0.95, bg: "#fff" }),
-          (front, back) => { fronts.push(front); backs.push(back); });
-        allFailed.push.apply(allFailed, r.failed);
-        cancelled = r.cancelled;
-        if (!fronts.length) continue;
-        setExp(groups.length > 1 ? "Building file " + (g + 1) + "…" : (oneUp ? "Building pages…" : "Imposing sheets…"));
-        await nextFrame();
-        const pdf = await CE.buildImpositionPDF(fronts, {
-          backs, duplex,
-          layout: oneUp ? "single-up" : "imposed",
-          sheet: "A4", trimW_mm: cardW, trimH_mm: cardH,
-          bleed_mm: BLEED_MM, safe_mm: 3, marks: true, layers: true, intent: "FOGRA39",
-          jobName: [program.program, program.year, isVol ? "volunteers" : "students",
-                    groups.length > 1 ? "part " + (g + 1) + "/" + groups.length : ""].filter(Boolean).join(" "),
-          date: new Date().toISOString().slice(0, 10),
-        });
-        CE.download(pdf, partName(g, groups.length, (oneUp ? "-1up" : "-imposed") + "-print.pdf"), "application/pdf");
-        fronts.length = 0; backs.length = 0;      // release before the next batch
-        await new Promise(r => setTimeout(r, 400)); // let the download settle
-      }
-      endRun(allFailed, cancelled, groups.length > 1
-        ? ("Print-ready PDF exported in " + groups.length + " files.")
-        : "Print-ready PDF exported.");
-    } catch (e) { endRun([], false, ""); setMsg("PDF export failed — try again."); }
+      setExp("Rendering…");
+      const CE = await ensureLib(); await waitReady(); const n = faceNodes();
+      const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 6, bg: "#fff" });
+      CE.download(f.bytes, cardName(cards[i]) + "-front.png", "image/png");
+      const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 6, bg: "#fff" });
+      CE.download(b.bytes, cardName(cards[i]) + "-back.png", "image/png");
+      setExp("");
+    } catch (e) { setExp(""); setMsg("Couldn't render that card — try again."); }
   };
 
   const exportZip = async () => {
-    const pick = chosenCards();
-    if (exp || !pick.length) return;
-    startRun("Preparing…");
+    if (exp || !cards.length) return;
     try {
-      const CE = await ensureLib();
-      const scale = pngScale(CE);
-      const groups = chunksOf(pick, chunk);
-      const allFailed = [];
-      let cancelled = false;
-      for (let g = 0; g < groups.length && !cancelled; g++) {
-        let files = [];
-        setExp(groups.length > 1 ? "Batch " + (g + 1) + " of " + groups.length + "…" : "Rendering…");
-        const r = await eachFace(CE, groups[g],
-          (node) => CE.nodeToImage(node, { type: "image/png", scale, bg: "#fff" }),
-          (front, back, card) => {
-            files.push({ name: cardName(card) + "-front.png", bytes: front.bytes });
-            files.push({ name: cardName(card) + "-back.png", bytes: back.bytes });
-          });
-        allFailed.push.apply(allFailed, r.failed);
-        cancelled = r.cancelled;
-        if (!files.length) continue;
-        setExp("Packaging…"); await nextFrame();
-        CE.download(await CE.zipStore(files), partName(g, groups.length, "-png.zip"), "application/zip");
-        files = null;
-        await new Promise(r => setTimeout(r, 400));
+      setExp("Preparing…");
+      const CE = await ensureLib(); await waitReady(); const n = faceNodes(); const files = []; const failed = [];
+      for (let i = 0; i < cards.length; i++) {
+        setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
+        try {
+          const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 5, bg: "#fff" });
+          files.push({ name: cardName(cards[i]) + "-front.png", bytes: f.bytes });
+          const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 5, bg: "#fff" });
+          files.push({ name: cardName(cards[i]) + "-back.png", bytes: b.bytes });
+        } catch (e) { failed.push(cardName(cards[i])); }
+        await nextFrame();
       }
-      endRun(allFailed, cancelled, groups.length > 1
-        ? ("PNG masters exported in " + groups.length + " zips.")
-        : "PNG masters exported.");
-    } catch (e) { endRun([], false, ""); setMsg("Export failed — try again."); }
+      if (!files.length) { setExp(""); setMsg("Export failed — no cards could be rendered."); return; }
+      setExp("Packaging…"); await nextFrame();
+      CE.download(await CE.zipStore(files), setName() + "-png.zip", "application/zip");
+      setExp("");
+      setMsg(failed.length ? (failed.length + " card(s) couldn't render — retry: " + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : "")) : "");
+    } catch (e) { setExp(""); setMsg("Export failed — try again."); }
+  };
+
+  // Render a face at ~330 DPI for the actual trim size — enough for offset/press
+  // print, but far lighter than a fixed 4× (which is ~470 DPI and 2–3× slower).
+  // One retry + a frame yield so a single hiccup never kills a mass run and the
+  // tab stays responsive across hundreds of cards.
+  const renderFace = async (CE, node, scale) => {
+    for (let attempt = 0; ; attempt++) {
+      try { return await CE.nodeToImage(node, { type: "image/jpeg", scale, quality: 0.92, bg: "#fff" }); }
+      catch (e) { if (attempt >= 1) throw e; await new Promise(r => setTimeout(r, 250)); }
+    }
+  };
+  const nextFrame = () => new Promise(r => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => r()) : setTimeout(r, 0)));
+
+  const exportPdf = async () => {
+    if (exp || !cards.length) return;
+    try {
+      setExp("Preparing…");
+      const CE = await ensureLib(); await waitReady(); const n = faceNodes();
+      // Scale to hit ~330 DPI at the chosen trim width (card is 295 CSS px wide).
+      const pdfScale = Math.max(2, Math.min(3.2, Math.round((330 * (cardW / 25.4) / 295) * 100) / 100));
+      const fronts = [], backs = [], failed = [];
+      for (let i = 0; i < cards.length; i++) {
+        setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
+        try {
+          const f = await renderFace(CE, n[2 * i], pdfScale);
+          const b = await renderFace(CE, n[2 * i + 1], pdfScale);
+          fronts.push({ dataUrl: f.dataUrl }); backs.push({ dataUrl: b.dataUrl });
+        } catch (e) { failed.push(cardName(cards[i])); }
+        await nextFrame(); // yield so the tab never locks up mid-run
+      }
+      if (!fronts.length) { setExp(""); setMsg("PDF export failed — no cards could be rendered."); return; }
+      setExp("Imposing sheets…"); await nextFrame();
+      // Front sheets first, then back sheets — so a shop can duplex and cut.
+      const pdf = await CE.buildImpositionPDF(fronts.concat(backs), { sheet: "A4", trimW_mm: cardW, trimH_mm: cardH, marks: true });
+      CE.download(pdf, setName() + "-print-cmyk.pdf", "application/pdf");
+      setExp("");
+      setMsg(failed.length ? (failed.length + " card(s) couldn't render and were left out — retry the export: " + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : "")) : "");
+      if (!failed.length) setNotice("Print-ready PDF exported.");
+    } catch (e) { setExp(""); setMsg("PDF export failed — try again."); }
   };
 
   const shell = (ch) => (
@@ -3773,18 +3603,7 @@ function CardStudio() {
   );
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
   if (state === "need-auth") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 22 }}>Staff sign-in required</h1><button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Sign in →</button></div>);
-  if (state === "error") {
-    const offline = loadErr === "timeout" || loadErr === "network";
-    return shell(<div style={{ textAlign: "center", padding: "80px 0", maxWidth: 520, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 20 }}>{offline ? "Can't reach the server" : "Couldn't load the studio"}</h1>
-      <p style={{ color: "rgba(230,238,255,.6)", fontSize: 14, lineHeight: 1.6, marginTop: 8 }}>
-        {offline
-          ? "The roster lives on the server, so no cards can be drawn until it answers. This isn't your device — nothing here is broken, and the studio picks up on its own once the server is back."
-          : "The roster didn't come back. Try again, and if it keeps failing check that you're signed in with a staff account."}
-      </p>
-      <button onClick={load} style={{ marginTop: 14, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button>
-    </div>);
-  }
+  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load the studio</h1><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
 
   const cards = (isVol ? (vdata && vdata.cards) : (data && data.cards)) || [];
   const program = ((isVol ? vdata : data) && (isVol ? vdata : data).program) || {};
@@ -3794,23 +3613,14 @@ function CardStudio() {
   const cardW = Number(program.widthMm) || 54;
   const cardH = Number(program.heightMm) || 75;
   const CANVAS_H = Math.round(590 * cardH / cardW);
-  /* Roster views. The preview shows one page at a time and the export runs
-   * from an isolated host, so neither the DOM nor html2canvas ever sees the
-   * whole roster — that is what makes a thousand cards workable. */
-  const q = query.trim().toLowerCase();
-  const shownCards = q
-    ? cards.filter(c => [c.firstName, c.surname, c.displayId, c.studentId, c.volunteerId,
-        c.track, c.role, (c.centre && c.centre.name), (c.tier && c.tier.name)]
-        .some(v => String(v || "").toLowerCase().indexOf(q) !== -1))
-    : cards;
-  const chosenCount = cards.filter(isOn).length;
-  const batches = Math.max(1, Math.ceil(chosenCount / chunk));
   const units = isVol ? tiers : centres;
   const tab = (m, label) => (
     <button onClick={() => switchMode(m)} style={{ padding: "9px 18px", borderRadius: 99, border: "1px solid " + (mode === m ? gold : "rgba(255,255,255,.18)"), background: mode === m ? gold : "transparent", color: mode === m ? "#2b2100" : "#eef2fb", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{label}</button>
   );
   return shell(<>
     <style>{`
+      @font-face { font-family: "TT Firs Neue"; src: url("/assets/fonts/tt-firs-neue-800.woff") format("woff"); font-weight: 700 900; font-display: swap; }
+      @font-face { font-family: "Pagkaki"; src: url("/assets/fonts/pagkaki.woff2") format("woff2"); font-display: swap; }
       .card-pair { display: flex; gap: 14px; }
       @media print {
         body * { visibility: hidden; }
@@ -3818,15 +3628,8 @@ function CardStudio() {
         .print-zone { position: absolute; left: 0; top: 0; background: #fff; }
         .idcard { width: ${cardW}mm !important; height: ${cardH}mm !important; page-break-inside: avoid; box-shadow: none !important; }
         .card-pair { gap: 4mm; margin: 3mm; page-break-inside: avoid; float: left; }
-        /* Unticked cards stay in the DOM so the export face-node indices keep
-           lining up, but they must not reach the paper. */
-        .card-pair[data-sel="0"] { display: none !important; }
       }
     `}</style>
-    {loadErr && <div className="no-print" style={{ background: "rgba(255,154,154,.12)", border: "1px solid rgba(255,154,154,.4)", borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 13 }}>
-      Part of the studio didn{"\u2019"}t load{loadErr === "timeout" || loadErr === "network" ? " — the server didn\u2019t answer" : ""}. The cards below are still correct; centres, tiers or the other roster may be missing.{" "}
-      <button onClick={load} style={{ background: "none", border: "none", color: gold, fontWeight: 700, cursor: "pointer", padding: 0, fontSize: 13 }}>Retry</button>
-    </div>}
     <div className="no-print" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 18, marginBottom: 18 }}>
       <div>
         <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>ID CARD STUDIO · {String(program.program || "")} {String(program.year || "")}</div>
@@ -3836,79 +3639,18 @@ function CardStudio() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         {notice && <span className="mono" style={{ fontSize: 12, color: "#6fdc9d" }}>{notice}</span>}
         {exp && <span className="mono" style={{ fontSize: 12, color: gold }}>{exp}</span>}
-        <button onClick={exportZip} disabled={!chosenCards().length || !!exp} title="High-resolution PNG of each selected card face, zipped"
+        <button onClick={exportZip} disabled={!cards.length || !!exp} title="High-resolution PNG of every card face, zipped"
           style={{ padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#eef2fb", fontWeight: 800, fontSize: 14, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
           ↓ PNG (all, .zip)
         </button>
-        <button onClick={exportPdf} disabled={!chosenCards().length || !!exp} title="Print-ready, imposed, CMYK — hand this to a printer"
-          style={{ padding: "13px 24px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: chosenCards().length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
-          ⎙ Print-ready PDF{allOn() ? "" : " (" + chosenCards().length + ")"}
+        <button onClick={exportPdf} disabled={!cards.length || !!exp} title="Print-ready, imposed, CMYK — hand this to a printer"
+          style={{ padding: "13px 24px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
+          ⎙ Print-ready PDF (CMYK)
         </button>
       </div>
     </div>
-    <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", margin: "0 0 12px", padding: "10px 14px", borderRadius: 12, background: allOn() ? "rgba(255,255,255,.05)" : "rgba(255,206,84,.12)", border: "1px solid " + (allOn() ? "rgba(255,255,255,.12)" : "rgba(255,206,84,.4)") }}>
-      <span style={{ fontSize: 13, fontWeight: 700 }}>
-        {allOn()
-          ? "All " + cards.length + " card" + (cards.length === 1 ? "" : "s") + " will export"
-          : chosenCards().length + " of " + cards.length + " selected"}
-      </span>
-      <span style={{ display: "flex", gap: 8 }}>
-        <button onClick={selectAll} disabled={!!exp || allOn()} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: allOn() ? "default" : "pointer", opacity: allOn() ? .45 : 1 }}>Select all</button>
-        <button onClick={selectNone} disabled={!!exp || !chosenCards().length} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", opacity: chosenCards().length ? 1 : .45 }}>Clear</button>
-      </span>
-      <span style={{ fontSize: 12, color: "rgba(230,238,255,.55)" }}>
-        Tick a card to include just those {"—"} the PDF, the PNG zip and the browser print all follow this.
-        {batches > 1 && <> Exports as <strong>{batches} files</strong> of up to {chunk}.</>}
-        {chosenCount > 120 && <> Roughly {chosenCount * 2 * 0.2 < 60 ? Math.ceil(chosenCount * 2 * 0.2) + "s" : Math.ceil(chosenCount * 2 * 0.2 / 60) + " min"} to render.</>}
-      </span>
-    </div>
-    <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", margin: "-4px 0 12px" }}>
-      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Layout
-        <select value={oneUp ? "1up" : "imposed"} onChange={e => setOneUp(e.target.value === "1up")} disabled={!!exp}
-          style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
-          <option value="imposed">Imposed on A4 (gang-up + cut)</option>
-          <option value="1up">Single-up (one card per page)</option>
-        </select>
-      </label>
-      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Front/back flip
-        <select value={duplex} onChange={e => setDuplex(e.target.value)} disabled={!!exp}
-          title="How the press turns the sheet between sides — ask your printer. The wrong axis puts every back on the wrong front."
-          style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
-          <option value="long-edge">Long edge — work-and-turn</option>
-          <option value="short-edge">Short edge — work-and-tumble</option>
-          <option value="none">No flip — align by hand</option>
-        </select>
-      </label>
-      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Resolution
-        <select value={dpi} onChange={e => setDpi(Number(e.target.value))} disabled={!!exp}
-          style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
-          <option value={300}>300 DPI — digital press minimum</option>
-          <option value={350}>350 DPI — offset standard</option>
-          <option value={600}>600 DPI — line-art / slow</option>
-        </select>
-      </label>
-      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Cards per file
-        <select value={chunk} onChange={e => setChunk(Number(e.target.value))} disabled={!!exp}
-          title="Big runs are split across files. Each is downloaded and released before the next starts, so memory stays flat."
-          style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
-          <option value={100}>100</option>
-          <option value={250}>250 — recommended</option>
-          <option value={500}>500</option>
-          <option value={100000}>All in one file</option>
-        </select>
-      </label>
-    </div>
-    <p className="no-print" style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "0 0 18px", maxWidth: 700 }}>
-      {oneUp
-        ? <>Single-up is the prepress handoff: one card per page at an exact {cardW}{"×"}{cardH}&nbsp;mm <strong>TrimBox</strong> with a {BLEED_MM}&nbsp;mm <strong>BleedBox</strong>, so the shop imposes it on their own press sheet. </>
-        : <>Imposed lays cards out N-up on A4 at an exact {cardW}{"×"}{cardH}&nbsp;mm trim, gutters set to two bleeds so neighbouring cards never cut into each other, with each back sheet following its front. </>}
-      {duplex === "none"
-        ? <><strong>No flip:</strong> backs sit exactly where the fronts do {"—"} for a card printer that turns the card itself, or hand alignment. </>
-        : duplex === "short-edge"
-          ? <><strong>Short-edge flip</strong> (work-and-tumble): backs are row-mirrored and turned 180°, because tumbling the sheet puts the card{"'"}s head at the sheet{"'"}s foot. The gripper edge changes between passes, so register is looser than long-edge. </>
-          : <><strong>Long-edge flip</strong> (work-and-turn): backs are column-mirrored, art upright, same gripper edge both passes {"—"} the tightest front-to-back register. </>}
-      The flip is printed on every sheet so your printer can check it against their press.{" "}
-      Artwork carries {BLEED_MM}&nbsp;mm of real bleed (mirrored outward from the design, so nothing is cropped or stretched) at {dpi}&nbsp;DPI. Crop and registration marks sit outside the bleed in registration colour, alongside a CMYK control strip and a job slug. Printer marks, cut lines (ISO&nbsp;19593-1), bleed and safe-area guides are separate switchable PDF layers {"—"} the guides are flagged non-printing. Colour target is declared as a FOGRA39 output intent. Everything renders in your browser {"—"} nothing is uploaded.
+    <p className="no-print" style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "-8px 0 18px", maxWidth: 640 }}>
+      The PDF imposes cards {"—"} auto-laid out N-up on A4 at an exact {cardW}{"×"}{cardH}&nbsp;mm trim with crop &amp; registration marks and a CMYK (FOGRA39) output intent, front sheets then back sheets for duplex. Card artwork is embedded at ~300&nbsp;DPI; the press RIP separates it to CMYK against the intent. Everything renders in your browser {"—"} nothing is uploaded.
     </p>
 
     <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 26 }}>
@@ -3954,48 +3696,9 @@ function CardStudio() {
       <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "10px 0 0" }}>Default is 54 × 75&nbsp;mm. Width 50–60, height 64–100. The card reflows to any proportion without distortion — preview, PNG/PDF export and print all follow.</p>
     </div>
 
-    {exp ? (
-      /* The grid is unmounted for the duration of a run. This is not cosmetic:
-         html2canvas clones the whole document per capture, so leaving a page
-         of cards mounted multiplies every face by their cost. */
-      <div className="no-print" style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, padding: 22, textAlign: "center" }}>
-        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".18em", color: gold }}>{exp.toUpperCase()}</div>
-        {prog && prog.total > 0 && <>
-          <div style={{ fontSize: 26, fontWeight: 800, margin: "10px 0 4px" }}>{prog.done} / {prog.total}</div>
-          <div style={{ height: 8, borderRadius: 99, background: "rgba(255,255,255,.12)", overflow: "hidden", maxWidth: 460, margin: "10px auto" }}>
-            <div style={{ height: "100%", width: (prog.total ? Math.round(prog.done / prog.total * 100) : 0) + "%", background: gold, transition: "width .2s" }}/>
-          </div>
-          <div style={{ fontSize: 13, color: "rgba(230,238,255,.62)" }}>
-            {prog.name ? "Rendering " + prog.name + "…" : "Finishing…"}
-            {prog.eta > 0 && <> · about {prog.eta > 90 ? Math.ceil(prog.eta / 60) + " min" : prog.eta + "s"} left</>}
-          </div>
-        </>}
-        <p style={{ fontSize: 12, color: "rgba(230,238,255,.5)", maxWidth: 520, margin: "12px auto 0" }}>
-          Keep this tab open and in the foreground {"—"} browsers throttle background tabs, which stalls the render. You can cancel at any point; batches already downloaded are unaffected.
-        </p>
-        <button onClick={() => { cancelRef.current = true; }} style={{ marginTop: 14, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.3)", background: "transparent", color: "#ffb4b4", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Cancel</button>
-      </div>
-    ) : (
-    <>
-    <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginBottom: 14 }}>
-      <input value={query} onChange={e => setQuery(e.target.value)} placeholder={"Search " + cards.length + " " + (isVol ? "volunteers" : "students") + " — name, ID, centre, track"}
-        style={{ flex: "1 1 260px", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14 }}/>
-      {q && <>
-        <span style={{ fontSize: 13, color: "rgba(230,238,255,.62)" }}>{shownCards.length} match{shownCards.length === 1 ? "" : "es"}</span>
-        <button onClick={() => selectMatching(shownCards, true)} style={{ padding: "8px 13px", borderRadius: 9, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Tick these</button>
-        <button onClick={() => selectMatching(shownCards, false)} style={{ padding: "8px 13px", borderRadius: 9, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Untick these</button>
-        <button onClick={() => setQuery("")} style={{ padding: "8px 13px", borderRadius: 9, border: "none", background: "rgba(255,255,255,.1)", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Clear search</button>
-      </>}
-    </div>
     <div className="print-zone" ref={zoneRef} style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
-      {shownCards.map((card, i) => (
-        <div key={card.studentId || card.volunteerId} className="card-pair" data-sel={isOn(card) ? "1" : "0"} style={{ position: "relative", opacity: isOn(card) ? 1 : .38, transition: "opacity .15s" }}>
-          <label className="no-print" title={isOn(card) ? "Included in the export" : "Excluded from the export"}
-            style={{ position: "absolute", top: -12, left: -8, zIndex: 3, display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 8, background: isOn(card) ? gold : "#2f3f6b", boxShadow: "0 4px 12px rgba(0,0,0,.3)", cursor: "pointer" }}>
-            <input type="checkbox" checked={isOn(card)} onChange={() => toggleCard(card)} disabled={!!exp}
-              aria-label={"Include " + (card.firstName || "") + " " + (card.surname || "") + " in the export"}
-              style={{ width: 15, height: 15, accentColor: "#2b2100", cursor: "pointer", margin: 0 }}/>
-          </label>
+      {cards.map((card, i) => (
+        <div key={card.studentId || card.volunteerId} className="card-pair" style={{ position: "relative" }}>
           <div className="no-print" style={{ position: "absolute", top: -12, right: -8, zIndex: 2, display: "flex", gap: 6 }}>
             <button onClick={() => setEditPhoto(card)} title="Re-crop, adjust or replace this photo"
               style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>Edit photo</button>
@@ -4003,37 +3706,18 @@ function CardStudio() {
               style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>
               {resending === (isVol ? card.volunteerId : card.studentId) ? "Sending…" : "Resend ID"}
             </button>
-            <button onClick={() => exportPairPng(card)} disabled={!!exp} title="Download this card as PNG (front + back)"
+            <button onClick={() => exportPairPng(i)} disabled={!!exp} title="Download this card as PNG (front + back)"
               style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>↓</button>
           </div>
-          <SafeBlock label={cardId(card)} fallback={<CardDrawFailed id={cardId(card)} w={295} h={CANVAS_H / 2}/>}>
+          <SafeBlock fallback={<CardDrawFailed id={card.displayId || card.studentId || card.volunteerId}/>}>
             <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} program={program} S={0.5} H={CANVAS_H}/> : <CardFront card={card} program={program} S={0.5} H={CANVAS_H}/>}</div>
           </SafeBlock>
-          <SafeBlock label={cardId(card) + " back"} fallback={<CardDrawFailed id={cardId(card)} w={295} h={CANVAS_H / 2}/>}>
+          <SafeBlock fallback={<CardDrawFailed id={card.displayId || card.studentId || card.volunteerId}/>}>
             <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5} H={CANVAS_H}/></div>
           </SafeBlock>
         </div>
       ))}
       {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>{isVol ? "No active volunteers yet — cards appear here the moment one is approved." : "No verified students yet — cards appear here the moment a parent consents."}</p>}
-      {!!cards.length && !shownCards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>Nothing matches “{query}”.</p>}
-    </div>
-    </>
-    )}
-    {/* The export host — one card at a time, and the only card on the page
-        while a run is going. Off-screen rather than display:none, because a
-        hidden element has no layout for html2canvas to read. */}
-    <div ref={hostRef} aria-hidden="true" className="no-print"
-      style={{ position: "fixed", left: -100000, top: 0, width: 640, pointerEvents: "none", opacity: 0 }}>
-      {hostCard && (
-        <SafeBlock label={"export " + cardId(hostCard)}>
-          <div className="card-pair">
-            {isVol
-              ? <VolunteerCardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
-              : <CardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>}
-            <CardBack card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
-          </div>
-        </SafeBlock>
-      )}
     </div>
     {editPhoto && (
       <PhotoEditor
