@@ -3427,7 +3427,13 @@ function CardStudio() {
   };
 
   // ── Export toolkit (PNG · bulk ZIP · print-ready CMYK PDF) ──────────────
+  // 3mm is the commercial bleed default; the prepress convention puts the
+  // BleedBox 3–5mm outside the TrimBox and the safe area 3mm inside it.
+  const BLEED_MM = 3;
   const zoneRef = React.useRef(null);
+  const cancelRef = React.useRef(false);
+  const [dpi, setDpi] = React.useState(350);        // 350 = 2× a 175 lpi screen
+  const [oneUp, setOneUp] = React.useState(false);  // single-up prepress vs A4 gang-up
   const [exp, setExp] = React.useState("");   // progress/status text
   const [notice, setNotice] = React.useState("");  // transient success note
   const [resending, setResending] = React.useState("");  // id currently resending
@@ -3500,14 +3506,19 @@ function CardStudio() {
   const cardName = (card) => (card.displayId || card.studentId || card.volunteerId || "card").replace(/[^\w.-]+/g, "-");
   const setName = () => (isVol ? "volunteer" : "student") + "-id-cards";
 
+  // PNG masters are lossless, so they go out at the chosen resolution with no
+  // JPEG generation loss — these are the files a designer re-lays out from.
+  const pngScale = (CE, node) => CE.scaleForDpi((node && node.offsetWidth) || 295, cardW, dpi);
+
   const exportPairPng = async (i) => {
     if (exp) return;
     try {
       setExp("Rendering…");
       const CE = await ensureLib(); await waitReady(); const n = faceNodes();
-      const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 6, bg: "#fff" });
+      const scale = pngScale(CE, n[0]);
+      const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale, bg: "#fff" });
       CE.download(f.bytes, cardName(cards[i]) + "-front.png", "image/png");
-      const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 6, bg: "#fff" });
+      const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale, bg: "#fff" });
       CE.download(b.bytes, cardName(cards[i]) + "-back.png", "image/png");
       setExp("");
     } catch (e) { setExp(""); setMsg("Couldn't render that card — try again."); }
@@ -3515,15 +3526,18 @@ function CardStudio() {
 
   const exportZip = async () => {
     if (exp || !cards.length) return;
+    cancelRef.current = false;
     try {
       setExp("Preparing…");
       const CE = await ensureLib(); await waitReady(); const n = faceNodes(); const files = []; const failed = [];
+      const scale = pngScale(CE, n[0]);
       for (let i = 0; i < cards.length; i++) {
+        if (cancelRef.current) { setExp(""); setMsg("Export cancelled."); return; }
         setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
         try {
-          const f = await CE.nodeToImage(n[2 * i], { type: "image/png", scale: 5, bg: "#fff" });
+          const f = await withBudget(CE.nodeToImage(n[2 * i], { type: "image/png", scale, bg: "#fff" }), FACE_BUDGET_MS);
           files.push({ name: cardName(cards[i]) + "-front.png", bytes: f.bytes });
-          const b = await CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale: 5, bg: "#fff" });
+          const b = await withBudget(CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale, bg: "#fff" }), FACE_BUDGET_MS);
           files.push({ name: cardName(cards[i]) + "-back.png", bytes: b.bytes });
         } catch (e) { failed.push(cardName(cards[i])); }
         await nextFrame();
@@ -3536,40 +3550,49 @@ function CardStudio() {
     } catch (e) { setExp(""); setMsg("Export failed — try again."); }
   };
 
-  // Render a face at ~330 DPI for the actual trim size — enough for offset/press
-  // print, but far lighter than a fixed 4× (which is ~470 DPI and 2–3× slower).
-  // One retry + a frame yield so a single hiccup never kills a mass run and the
-  // tab stays responsive across hundreds of cards.
-  const renderFace = async (CE, node, scale) => {
-    for (let attempt = 0; ; attempt++) {
-      try { return await CE.nodeToImage(node, { type: "image/jpeg", scale, quality: 0.92, bg: "#fff" }); }
-      catch (e) { if (attempt >= 1) throw e; await new Promise(r => setTimeout(r, 250)); }
-    }
-  };
   const nextFrame = () => new Promise(r => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => r()) : setTimeout(r, 0)));
+  // Hard ceiling per face. Every network read inside the toolkit is already
+  // bounded, but a wedged rasteriser would still park the run forever with no
+  // way out but a reload — so one slow card is dropped, not fatal.
+  const FACE_BUDGET_MS = 30000;
+  const withBudget = (p, ms) => Promise.race([
+    p, new Promise((_, rej) => setTimeout(() => rej(new Error("face_timeout")), ms)),
+  ]);
 
   const exportPdf = async () => {
     if (exp || !cards.length) return;
+    cancelRef.current = false;
     try {
       setExp("Preparing…");
       const CE = await ensureLib(); await waitReady(); const n = faceNodes();
-      // Scale to hit ~330 DPI at the chosen trim width (card is 295 CSS px wide).
-      const pdfScale = Math.max(2, Math.min(3.2, Math.round((330 * (cardW / 25.4) / 295) * 100) / 100));
+      // Rasterise at the chosen output resolution for the real trim size, then
+      // mirror 3mm of bleed onto every edge before the art reaches the PDF.
+      const face = (node) => withBudget(
+        CE.renderFace(node, { trimW_mm: cardW, dpi, bleed_mm: BLEED_MM, quality: 0.95, bg: "#fff" }),
+        FACE_BUDGET_MS);
       const fronts = [], backs = [], failed = [];
       for (let i = 0; i < cards.length; i++) {
+        if (cancelRef.current) { setExp(""); setMsg("Export cancelled."); return; }
         setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
         try {
-          const f = await renderFace(CE, n[2 * i], pdfScale);
-          const b = await renderFace(CE, n[2 * i + 1], pdfScale);
-          fronts.push({ dataUrl: f.dataUrl }); backs.push({ dataUrl: b.dataUrl });
+          const f = await face(n[2 * i]);
+          const b = await face(n[2 * i + 1]);
+          fronts.push(f); backs.push(b);
         } catch (e) { failed.push(cardName(cards[i])); }
         await nextFrame(); // yield so the tab never locks up mid-run
       }
       if (!fronts.length) { setExp(""); setMsg("PDF export failed — no cards could be rendered."); return; }
-      setExp("Imposing sheets…"); await nextFrame();
-      // Front sheets first, then back sheets — so a shop can duplex and cut.
-      const pdf = await CE.buildImpositionPDF(fronts.concat(backs), { sheet: "A4", trimW_mm: cardW, trimH_mm: cardH, marks: true });
-      CE.download(pdf, setName() + "-print-cmyk.pdf", "application/pdf");
+      setExp(oneUp ? "Building pages…" : "Imposing sheets…"); await nextFrame();
+      const pdf = await CE.buildImpositionPDF(fronts, {
+        backs,                       // interleaved + column-mirrored for duplex
+        layout: oneUp ? "single-up" : "imposed",
+        sheet: "A4", trimW_mm: cardW, trimH_mm: cardH,
+        bleed_mm: BLEED_MM, safe_mm: 3, marks: true, layers: true,
+        intent: "FOGRA39",
+        jobName: [program.program, program.year, isVol ? "volunteers" : "students"].filter(Boolean).join(" "),
+        date: new Date().toISOString().slice(0, 10),
+      });
+      CE.download(pdf, setName() + (oneUp ? "-1up" : "-imposed") + "-print.pdf", "application/pdf");
       setExp("");
       setMsg(failed.length ? (failed.length + " card(s) couldn't render and were left out — retry the export: " + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : "")) : "");
       if (!failed.length) setNotice("Print-ready PDF exported.");
@@ -3619,6 +3642,8 @@ function CardStudio() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         {notice && <span className="mono" style={{ fontSize: 12, color: "#6fdc9d" }}>{notice}</span>}
         {exp && <span className="mono" style={{ fontSize: 12, color: gold }}>{exp}</span>}
+        {exp && <button onClick={() => { cancelRef.current = true; }} title="Stop after the card in flight"
+          style={{ padding: "9px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.3)", background: "transparent", color: "#ffb4b4", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Cancel</button>}
         <button onClick={exportZip} disabled={!cards.length || !!exp} title="High-resolution PNG of every card face, zipped"
           style={{ padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#eef2fb", fontWeight: 800, fontSize: 14, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
           ↓ PNG (all, .zip)
@@ -3629,8 +3654,28 @@ function CardStudio() {
         </button>
       </div>
     </div>
-    <p className="no-print" style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "-8px 0 18px", maxWidth: 640 }}>
-      The PDF imposes cards {"—"} auto-laid out N-up on A4 at an exact {cardW}{"×"}{cardH}&nbsp;mm trim with crop &amp; registration marks and a CMYK (FOGRA39) output intent, front sheets then back sheets for duplex. Card artwork is embedded at ~300&nbsp;DPI; the press RIP separates it to CMYK against the intent. Everything renders in your browser {"—"} nothing is uploaded.
+    <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", margin: "-4px 0 12px" }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Layout
+        <select value={oneUp ? "1up" : "imposed"} onChange={e => setOneUp(e.target.value === "1up")} disabled={!!exp}
+          style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
+          <option value="imposed">Imposed on A4 (gang-up + cut)</option>
+          <option value="1up">Single-up (one card per page)</option>
+        </select>
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Resolution
+        <select value={dpi} onChange={e => setDpi(Number(e.target.value))} disabled={!!exp}
+          style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
+          <option value={300}>300 DPI — digital press minimum</option>
+          <option value={350}>350 DPI — offset standard</option>
+          <option value={600}>600 DPI — line-art / slow</option>
+        </select>
+      </label>
+    </div>
+    <p className="no-print" style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "0 0 18px", maxWidth: 700 }}>
+      {oneUp
+        ? <>Single-up is the prepress handoff: one card per page at an exact {cardW}{"×"}{cardH}&nbsp;mm <strong>TrimBox</strong> with a {BLEED_MM}&nbsp;mm <strong>BleedBox</strong>, so the shop imposes it on their own press sheet. </>
+        : <>Imposed lays cards out N-up on A4 at an exact {cardW}{"×"}{cardH}&nbsp;mm trim, gutters set to two bleeds so neighbouring cards never cut into each other, with each back sheet following its front and column-mirrored for a long-edge duplex flip. </>}
+      Artwork carries {BLEED_MM}&nbsp;mm of real bleed (mirrored outward from the design, so nothing is cropped or stretched) at {dpi}&nbsp;DPI. Crop and registration marks sit outside the bleed in registration colour, alongside a CMYK control strip and a job slug. Printer marks, cut lines (ISO&nbsp;19593-1), bleed and safe-area guides are separate switchable PDF layers {"—"} the guides are flagged non-printing. Colour target is declared as a FOGRA39 output intent. Everything renders in your browser {"—"} nothing is uploaded.
     </p>
 
     <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 26 }}>

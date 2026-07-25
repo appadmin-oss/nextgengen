@@ -9,23 +9,85 @@
      • html2canvas  — pixel-accurate rasterisation of the rendered card DOM
                       (fonts, gradients, images) → high-DPI PNG/JPEG.
      • JSZip        — the bulk PNG download (a real .zip, streamed).
-     • jsPDF        — the print-ready, N-up imposition PDF: exact 54×92 mm trim,
-                      crop marks (rich CMYK black) + registration targets
-                      (registration colour, all four plates), and a FOGRA39
-                      CMYK OutputIntent. Not a browser print — a prepress PDF.
+     • jsPDF        — the prepress PDF.
 
-   Public API (all async): nodeToImage, zipStore, buildImpositionPDF, download.
+   ── What makes the PDF print-grade ────────────────────────────────────────
+   The PDF is not a browser print. It is built to what a trade printer expects
+   to receive, and every choice below traces to a published standard:
+
+   1. BLEED. Artwork extends 3 mm past every trim edge (the near-universal
+      commercial default; ISO/GWG prepress guidance puts the BleedBox 3–5 mm
+      outside the TrimBox). The card designs have no bleed of their own, so we
+      *generate* it by mirroring the outermost 3 mm of pixels outward — the
+      same technique prepress tools (Enfocus PitStop, callas pdfToolbox) use to
+      rescue art supplied without bleed. Mirroring beats stretching because it
+      survives patterned edges (the aso-oke weave on the card back).
+
+   2. PAGE BOXES. Every page carries a MediaBox, BleedBox and TrimBox. This is
+      the single most important thing an imposition RIP reads, and it is what
+      the previous version of this file was missing. Single-up pages get
+      TrimBox = the card and BleedBox = card + bleed. Imposed sheets are press
+      sheets, so their TrimBox is the sheet itself and the individual card
+      trims are carried by the crop marks and the ISO 19593-1 cutting layer.
+
+   3. LAYERS (PDF optional content, "OCGs"). Artwork, printer marks, job slug,
+      cut lines, bleed guides and the safe-area guide each sit on their own
+      switchable layer, so the printer can turn the furniture off and look at
+      the art alone. The technical layers are tagged per ISO 19593-1:2018
+      ("Processing steps for packaging and labels") with a /GTS_Metadata
+      dictionary naming the processing-step group and type — /Structural
+      /Cutting for the die line, /Structural /Bleed for the bleed boundary,
+      /Legend for the slug, /Dimensions for the safe area. Guide layers are
+      marked non-printing via the OCG /Usage /Print state and an /AS auto-state
+      in /OCProperties, so they never image even if a RIP prints all layers.
+
+   4. MARKS. Crop marks sit in the sheet margin, aligned with every cut line,
+      never inside a bleed (a mark inside the bleed prints on the finished
+      card). They are drawn in registration colour — 100 % of every plate — so
+      they appear on all four separations, at 0.25 pt, the Illustrator/InDesign
+      default hairline. Four registration targets and a CMYK control strip
+      (solids, overprints and 75/50/25 tints) let the press operator verify
+      register and ink density on the sheet.
+
+   5. DUPLEX. Back sheets are interleaved after their front sheet and the
+      column order is mirrored, so a long-edge flip lands each back on its own
+      front. Emitting all fronts then all backs — as this did before — puts
+      card 1's back on card N's front on any duplexing device.
+
+   6. COLOUR. Artwork is RGB raster; the file declares the intended printing
+      condition with a GTS_PDFX OutputIntent (FOGRA39 by default) so the RIP
+      separates against a known target instead of guessing. We deliberately do
+      *not* stamp /GTS_PDFXVersion: without an embedded ICC profile the file is
+      not a conformant PDF/X, and claiming conformance a preflight check would
+      reject is worse than not claiming it.
+
+   Public API (all async unless noted): nodeToImage, addBleed, renderFace,
+   scaleForDpi, zipStore, buildImpositionPDF, download.
    ========================================================================== */
 (function (root) {
   'use strict';
   var MM = 72 / 25.4;
 
+  /* ── Network hygiene ──────────────────────────────────────────────────────
+   * Every remote read in this file is bounded. An export that walks hundreds
+   * of cards touches hundreds of URLs; one socket that opens and never answers
+   * used to hang the whole run with no way out but a reload. Nothing here
+   * waits forever, and every failure degrades to "carry on without it". */
+  var SCRIPT_TIMEOUT = 20000;   // ms — a vendored script is local; 20s is generous
+  var FETCH_TIMEOUT = 12000;    // ms per image fetch attempt
+  var IMAGE_TIMEOUT = 8000;     // ms — html2canvas; images are inlined by then
+
   function loadScript(src) {
     return new Promise(function (res, rej) {
       var have = Array.prototype.some.call(document.scripts, function (s) { return s.src && s.src.indexOf(src) !== -1; });
       if (have) return res();
+      var done = false;
+      var finish = function (err) { if (done) return; done = true; clearTimeout(timer); err ? rej(err) : res(); };
       var el = document.createElement('script');
-      el.src = src; el.onload = function () { res(); }; el.onerror = function () { rej(new Error('load ' + src)); };
+      var timer = setTimeout(function () { finish(new Error('timeout ' + src)); }, SCRIPT_TIMEOUT);
+      el.src = src;
+      el.onload = function () { finish(); };
+      el.onerror = function () { finish(new Error('load ' + src)); };
       document.head.appendChild(el);
     });
   }
@@ -50,14 +112,42 @@
   function blobToDataURL(blob) {
     return new Promise(function (res) { var fr = new FileReader(); fr.onload = function () { res(fr.result); }; fr.onerror = function () { res(null); }; fr.readAsDataURL(blob); });
   }
+  function loadImage(src) {
+    return new Promise(function (res, rej) {
+      var im = new Image();
+      var timer = setTimeout(function () { rej(new Error('decode timeout')); }, IMAGE_TIMEOUT);
+      im.onload = function () { clearTimeout(timer); res(im); };
+      im.onerror = function () { clearTimeout(timer); rej(new Error('decode failed')); };
+      im.src = src;
+    });
+  }
+
+  /* One bounded fetch attempt. AbortController is what actually frees the
+   * socket — a bare Promise.race leaves the request in flight and the browser's
+   * six-per-host connection pool fills up, which is how a slow photo host used
+   * to stall every later card in the run. */
+  function fetchOnce(src, ms) {
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, ms);
+    var opts = { mode: 'cors', credentials: 'omit', cache: 'force-cache' };
+    if (ctl) opts.signal = ctl.signal;
+    return fetch(src, opts).then(function (r) {
+      clearTimeout(timer);
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.blob();
+    }, function (e) { clearTimeout(timer); throw e; });
+  }
   // Cache by full URL so the shared logos aren't re-fetched for every card in a
   // bulk export (the single biggest avoidable cost), and a re-fetch of the same
   // photo is free. Cloudinary edit URLs are unique per edit, so this is safe.
+  // Failures are cached as null too: one dead URL must not be retried 300 times.
   var _dataUrlCache = {};
   async function fetchAsDataURL(src) {
     if (_dataUrlCache[src] !== undefined) return _dataUrlCache[src];
     var out = null;
-    try { var r = await fetch(src, { mode: 'cors', credentials: 'omit' }); if (r.ok) out = await blobToDataURL(await r.blob()); } catch (e) {}
+    for (var attempt = 0; attempt < 2 && out === null; attempt++) {
+      try { out = await blobToDataURL(await fetchOnce(src, FETCH_TIMEOUT)); } catch (e) { /* retry once, then give up */ }
+    }
     _dataUrlCache[src] = out;
     return out;
   }
@@ -93,12 +183,73 @@
         scale: o.scale || 3,
         backgroundColor: o.bg || '#ffffff',
         useCORS: true, allowTaint: false, logging: false,
-        imageTimeout: 15000,
+        imageTimeout: o.imageTimeout || IMAGE_TIMEOUT,
       });
       var type = o.type || 'image/png', q = o.quality || 0.95;
       var dataUrl = canvas.toDataURL(type, q);
       return { dataUrl: dataUrl, bytes: dataUrlToBytes(dataUrl), wPx: canvas.width, hPx: canvas.height };
     } finally { restore(); }
+  }
+
+  /* The html2canvas scale that lands a `cssW`-wide node on `trimW_mm` of paper
+   * at `dpi`. 350 dpi is the offset default (2× a 175 lpi screen); 300 is the
+   * digital-press floor. Anything above ~600 buys nothing a press can hold. */
+  function scaleForDpi(cssW, trimW_mm, dpi) {
+    var s = (dpi || 350) * (trimW_mm / 25.4) / cssW;
+    return Math.max(1, Math.round(s * 100) / 100);
+  }
+
+  /* Generate bleed by mirroring the outer `bleedPx` of the image outward on all
+   * four sides, so the art runs 3 mm past trim with no design distortion and no
+   * white slivers when the guillotine drifts. Returns the enlarged face plus
+   * the bleed it actually applied (in pixels), which the PDF builder needs to
+   * place the image against the BleedBox rather than the TrimBox. */
+  async function addBleed(dataUrl, bleedPx, o) {
+    o = o || {};
+    var b = Math.max(0, Math.round(bleedPx || 0));
+    var img = await loadImage(dataUrl);
+    var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    if (!b) return { dataUrl: dataUrl, wPx: w, hPx: h, bleedPx: 0 };
+    b = Math.min(b, Math.floor(Math.min(w, h) / 2));   // can't mirror more than half the art
+    var cv = document.createElement('canvas');
+    cv.width = w + 2 * b; cv.height = h + 2 * b;
+    var ctx = cv.getContext('2d');
+    ctx.drawImage(img, b, b);
+    // Each edge/corner: translate to the far side of the strip, flip, and draw
+    // the adjacent band of source pixels — a true reflection about the trim edge.
+    var mirror = function (tx, ty, sx_, sy_, sw, sh, dw, dh, fx, fy) {
+      ctx.save(); ctx.translate(tx, ty); ctx.scale(fx, fy);
+      ctx.drawImage(img, sx_, sy_, sw, sh, 0, 0, dw, dh);
+      ctx.restore();
+    };
+    mirror(b, b, 0, 0, w, b, w, b, 1, -1);                      // top
+    mirror(b, h + 2 * b, 0, h - b, w, b, w, b, 1, -1);          // bottom
+    mirror(b, b, 0, 0, b, h, b, h, -1, 1);                      // left
+    mirror(w + 2 * b, b, w - b, 0, b, h, b, h, -1, 1);          // right
+    mirror(b, b, 0, 0, b, b, b, b, -1, -1);                     // top-left
+    mirror(w + 2 * b, b, w - b, 0, b, b, b, b, -1, -1);         // top-right
+    mirror(b, h + 2 * b, 0, h - b, b, b, b, b, -1, -1);         // bottom-left
+    mirror(w + 2 * b, h + 2 * b, w - b, h - b, b, b, b, b, -1, -1); // bottom-right
+    var type = o.type || 'image/jpeg', q = o.quality || 0.95;
+    return { dataUrl: cv.toDataURL(type, q), wPx: cv.width, hPx: cv.height, bleedPx: b };
+  }
+
+  /* Rasterise + bleed in one call — what the studio uses per face.
+   *   opts: { trimW_mm, dpi, bleed_mm, type, quality, bg, retries } */
+  async function renderFace(node, opts) {
+    opts = opts || {};
+    var cssW = node.offsetWidth || 295;
+    var scale = opts.scale || scaleForDpi(cssW, opts.trimW_mm || 54, opts.dpi || 350);
+    var retries = opts.retries == null ? 1 : opts.retries;
+    var img = null;
+    for (var attempt = 0; ; attempt++) {
+      try { img = await nodeToImage(node, { scale: scale, type: 'image/png', bg: opts.bg || '#ffffff' }); break; }
+      catch (e) { if (attempt >= retries) throw e; await new Promise(function (r) { setTimeout(r, 250); }); }
+    }
+    var pxPerMm = img.wPx / (opts.trimW_mm || 54);
+    var bled = await addBleed(img.dataUrl, (opts.bleed_mm == null ? 3 : opts.bleed_mm) * pxPerMm,
+      { type: opts.type || 'image/jpeg', quality: opts.quality || 0.95 });
+    return { dataUrl: bled.dataUrl, wPx: bled.wPx, hPx: bled.hPx, bleedPx: bled.bleedPx, trimWPx: img.wPx, trimHPx: img.hPx };
   }
 
   /* Bulk download: a real .zip of the PNG faces, built with JSZip. */
@@ -109,83 +260,393 @@
     return await zip.generateAsync({ type: 'uint8array' });
   }
 
-  /* Print-ready imposition PDF via jsPDF.
-   *   cards: [{ dataUrl }]  — each a rendered card FACE (JPEG data URL).
-   *   opts : { sheet:'A4'|'Letter', trimW_mm, trimH_mm, gutter_mm, margin_mm, marks }
-   * Auto-lays out as many cards as fit per sheet, draws crop + registration
-   * marks in true DeviceCMYK, and tags the doc with a FOGRA39 CMYK OutputIntent.
+  /* ── Printing conditions ──────────────────────────────────────────────────
+   * OutputConditionIdentifier values are the ICC registry names
+   * (http://www.color.org/registry). A shop on a different target can pass its
+   * own via opts.intent. */
+  var INTENTS = {
+    FOGRA39: { id: 'FOGRA39', info: 'Coated FOGRA39 (ISO 12647-2:2004)', cond: 'Offset, coated stock, ISO 12647-2:2004, 330% TAC' },
+    FOGRA51: { id: 'FOGRA51', info: 'PSO Coated v3 (FOGRA51)', cond: 'Offset, coated stock, ISO 12647-2:2013, 300% TAC' },
+    GRACOL2013: { id: 'CGATS21-2-CRPC6', info: 'GRACoL 2013 (CGATS21-2-CRPC6)', cond: 'Offset, premium coated stock, 320% TAC' },
+    SWOP2013: { id: 'CGATS21-2-CRPC5', info: 'SWOP 2013 (CGATS21-2-CRPC5)', cond: 'Web offset, coated stock, 300% TAC' },
+  };
+
+  /* ── ISO 19593-1:2018 processing-step layers ──────────────────────────────
+   * `group`/`type` become the /GTS_Metadata dictionary on the OCG. Only the
+   * Structural group mandates a type. Layers with print:false are switched off
+   * for output through the OCG /Usage dictionary and the /AS auto-state, so
+   * guides can never image. */
+  var LAYERS = [
+    { key: 'art',   name: 'Artwork',            print: true,  view: true },
+    { key: 'marks', name: 'Printer marks',      print: true,  view: true },
+    { key: 'slug',  name: 'Job info',           print: true,  view: true, group: 'Legend' },
+    { key: 'cut',   name: 'Cut lines',          print: false, view: true, group: 'Structural', type: 'Cutting' },
+    { key: 'bleed', name: 'Bleed guide',        print: false, view: false, group: 'Structural', type: 'Bleed' },
+    { key: 'safe',  name: 'Safe area',          print: false, view: false, group: 'Dimensions' },
+  ];
+
+  var SHEETS = {
+    A4: [210, 297], LETTER: [215.9, 279.4], LEGAL: [215.9, 355.6],
+    A3: [297, 420], SRA3: [320, 450], TABLOID: [279.4, 431.8],
+  };
+
+  function pdfEscape(s) { return String(s == null ? '' : s).replace(/([\\()])/g, '\\$1').replace(/[\r\n]+/g, ' '); }
+
+  /* Print-ready PDF via jsPDF.
+   *
+   *   faces : [{ dataUrl, bleedPx, wPx }]      — front faces, bleed included
+   *   opts  : {
+   *     backs        : [{ … }]      matching back faces → duplex
+   *     layout       : 'imposed' | 'single-up'
+   *     sheet        : 'A4' | 'Letter' | 'A3' | 'SRA3' | 'Legal' | 'Tabloid'
+   *     trimW_mm, trimH_mm, bleed_mm, gutter_mm, margin_mm, safe_mm
+   *     marks, layers, colourBar, slug   (all boolean, default true)
+   *     intent       : 'FOGRA39' | 'FOGRA51' | 'GRACOL2013' | 'SWOP2013'
+   *     jobName      : string for the slug line
+   *   }
+   *
+   * Legacy call shape — a flat array of faces with no `backs` — still works and
+   * produces a single-sided imposition.
    */
-  async function buildImpositionPDF(cards, opts) {
+  async function buildImpositionPDF(faces, opts) {
     opts = opts || {};
     var d = await ensureDeps();
-    var isLetter = opts.sheet === 'Letter';
-    var pageW = isLetter ? 215.9 : 210, pageH = isLetter ? 279.4 : 297;
+    // First pass builds with layers. If the optional-content plumbing did not
+    // land in the file (a jsPDF change moving /XObject off the end of the
+    // resource dictionary would do it), rebuild flat rather than ship a PDF
+    // whose content references a property list that isn't there.
+    var out = compose(d, faces, opts, opts.layers !== false);
+    if (opts.layers !== false && !hasLayers(out)) out = compose(d, faces, opts, false);
+    return out;
+  }
+
+  function hasLayers(bytes) {
+    // The resource dictionaries, the OCG objects and the catalog are all
+    // written after the page streams and are never themselves compressed, so
+    // scanning the tail is a reliable structural check.
+    var start = Math.max(0, bytes.length - 4 * 1024 * 1024), probe = '';
+    for (var i = start; i < bytes.length; i += 8192) {
+      probe += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, bytes.length)));
+    }
+    return probe.indexOf('/OCProperties') !== -1 && probe.indexOf('/Properties') !== -1;
+  }
+
+  function compose(d, faces, opts, useLayers) {
+    faces = faces || [];
+    var backs = opts.backs || null;
+    var oneUp = opts.layout === 'single-up';
     var trimW = opts.trimW_mm || 54, trimH = opts.trimH_mm || 92;
-    var gutter = opts.gutter_mm != null ? opts.gutter_mm : 6;
-    var margin = opts.margin_mm != null ? opts.margin_mm : 8;
+    var bleed = opts.bleed_mm == null ? 3 : Math.max(0, opts.bleed_mm);
+    var safe = opts.safe_mm == null ? 3 : Math.max(0, opts.safe_mm);
     var marks = opts.marks !== false;
-    var cols = Math.max(1, Math.floor((pageW - 2 * margin + gutter) / (trimW + gutter)));
-    var rows = Math.max(1, Math.floor((pageH - 2 * margin + gutter) / (trimH + gutter)));
+    var intent = INTENTS[String(opts.intent || 'FOGRA39').toUpperCase()] || INTENTS.FOGRA39;
+
+    // Mark geometry. markGap keeps the mark clear of the bleed: a crop mark that
+    // starts inside the bleed prints on the finished card.
+    var markLen = 4, markGap = 1.5, markW = 0.25 / MM;          // 0.25 pt hairline in mm
+    var clearance = bleed + markGap + markLen;                   // margin a mark needs
+    var slugBand = (opts.slug === false ? 0 : 5);
+    var barBand = (opts.colourBar === false || oneUp) ? 0 : 9;
+
+    var pageW, pageH, cols, rows, startX, startY, gut = 0;
+    if (oneUp) {
+      // +1mm of slack all round so the outermost crop mark stops short of the
+      // MediaBox edge rather than sitting exactly on it, where a RIP's own
+      // clip can shave it off.
+      cols = rows = 1;
+      pageW = trimW + 2 * (clearance + 1);
+      pageH = trimH + 2 * (clearance + 1) + slugBand;
+      startX = clearance + 1; startY = clearance + 1;
+    } else {
+      var fmt = SHEETS[String(opts.sheet || 'A4').toUpperCase()] || SHEETS.A4;
+      pageW = fmt[0]; pageH = fmt[1];
+      // Gutter must be at least two bleeds wide or neighbouring cards' bleeds
+      // overlap and each cut destroys the card beside it.
+      var gutter = Math.max(opts.gutter_mm == null ? 2 * bleed : opts.gutter_mm, 2 * bleed);
+      var margin = Math.max(opts.margin_mm == null ? 10 : opts.margin_mm, clearance);
+      cols = Math.max(1, Math.floor((pageW - 2 * margin + gutter) / (trimW + gutter)));
+      rows = Math.max(1, Math.floor((pageH - 2 * margin + gutter) / (trimH + gutter)));
+      // Shrink the grid until the furniture (marks, control strip, slug) fits in
+      // the free margin the centred grid actually leaves.
+      while (cols > 1 && (pageW - (cols * trimW + (cols - 1) * gutter)) / 2 < clearance) cols--;
+      while (rows > 1 && (pageH - (rows * trimH + (rows - 1) * gutter)) / 2 < clearance + Math.max(slugBand, barBand)) rows--;
+      var gridW = cols * trimW + (cols - 1) * gutter, gridH = rows * trimH + (rows - 1) * gutter;
+      startX = (pageW - gridW) / 2; startY = (pageH - gridH) / 2;
+      gut = gutter;
+    }
     var perPage = cols * rows;
-    var gridW = cols * trimW + (cols - 1) * gutter, gridH = rows * trimH + (rows - 1) * gutter;
-    var startX = (pageW - gridW) / 2, startY = (pageH - gridH) / 2;
+    var colX = function (c) { return startX + c * (trimW + gut); };
+    var rowY = function (r) { return startY + r * (trimH + gut); };
 
-    var doc = new d.jsPDF({ unit: 'mm', format: isLetter ? 'letter' : 'a4', orientation: 'portrait', compress: true });
+    var doc = new d.jsPDF({
+      unit: 'mm', orientation: pageH >= pageW ? 'portrait' : 'landscape',
+      format: [pageW, pageH], compress: true,
+    });
 
-    // FOGRA39 CMYK OutputIntent — declares the press target so the RIP separates
-    // the RGB card art to CMYK against a known profile. Added via jsPDF's object
-    // hooks; guarded so a jsPDF version change can never corrupt the file.
+    /* ── Optional content plumbing ──────────────────────────────────────────
+     * Page content refers to a layer by resource *name* (/L0), so the OCG
+     * object numbers are only needed once the resource dictionaries are
+     * written. They must not be reserved any earlier: output() resets jsPDF's
+     * object counter before it lays the document out, so ids taken at
+     * construction time are handed out a second time to the page objects and
+     * the page tree ends up pointing at layer dictionaries.                    */
+    var ocgOrder = [];
+    if (useLayers) {
+      try {
+        LAYERS.forEach(function (L) { ocgOrder.push({ id: 0, def: L }); });
+        doc.internal.events.subscribe('putResources', function () {
+          ocgOrder.forEach(function (o) { o.id = doc.internal.newObjectDeferred(); });
+        });
+        doc.internal.events.subscribe('postPutResources', function () {
+          ocgOrder.forEach(function (o) {
+            var L = o.def;
+            doc.internal.newObjectDeferredBegin(o.id, true);
+            var s = '<< /Type /OCG /Name (' + pdfEscape(L.name) + ')';
+            if (L.group) {
+              s += ' /GTS_Metadata << /GTS_ProcStepsGroup /' + L.group;
+              if (L.type) s += ' /GTS_ProcStepsType /' + L.type;
+              s += ' >>';
+            }
+            s += ' /Usage << /Print << /PrintState /' + (L.print ? 'ON' : 'OFF') +
+                 ' /Subtype /' + (L.print ? 'Print' : 'Design') + ' >>' +
+                 ' /View << /ViewState /' + (L.view ? 'ON' : 'OFF') + ' >> >> >>';
+            doc.internal.out(s);
+            doc.internal.out('endobj');
+          });
+        });
+        doc.internal.events.subscribe('putCatalog', function () {
+          var all = ocgOrder.map(function (o) { return o.id + ' 0 R'; }).join(' ');
+          var off = ocgOrder.filter(function (o) { return !o.def.view; }).map(function (o) { return o.id + ' 0 R'; }).join(' ');
+          var noPrint = ocgOrder.filter(function (o) { return !o.def.print; }).map(function (o) { return o.id + ' 0 R'; }).join(' ');
+          doc.internal.out('/OCProperties << /OCGs [' + all + '] /D << /Order [' + all + ']' +
+            (off ? ' /OFF [' + off + ']' : '') +
+            ' /AS [ << /Event /View /Category [/View] /OCGs [' + all + '] >>' +
+            ' << /Event /Print /Category [/Print] /OCGs [' + all + '] >> ]' +
+            (noPrint ? ' /Intent [/View /Design]' : '') + ' >> >>');
+        });
+      } catch (e) { useLayers = false; ocgOrder = []; }
+    }
+    var layerIndex = {};
+    ocgOrder.forEach(function (o, i) { layerIndex[o.def.key] = i; });
+    var open = null;
+    function layer(key) {
+      if (!useLayers) return;
+      if (open === key) return;
+      if (open !== null) { doc.internal.write('EMC'); open = null; }
+      if (key != null && layerIndex[key] != null) { doc.internal.write('/OC /L' + layerIndex[key] + ' BDC'); open = key; }
+    }
+    function endLayer() { if (useLayers && open !== null) { doc.internal.write('EMC'); open = null; } }
+
+    /* Colour target for the OutputIntent. Declaring the printing condition is
+     * what lets the RIP separate the RGB art predictably. */
     try {
       var oiRef = null;
       doc.internal.events.subscribe('postPutResources', function () {
         oiRef = doc.internal.newObject();
-        doc.internal.out('<< /Type /OutputIntent /S /GTS_PDFX /OutputConditionIdentifier (FOGRA39) /Info (Coated FOGRA39 \\(ISO 12647-2:2004\\)) /RegistryName (http://www.color.org) >>');
+        doc.internal.out('<< /Type /OutputIntent /S /GTS_PDFX' +
+          ' /OutputConditionIdentifier (' + pdfEscape(intent.id) + ')' +
+          ' /OutputCondition (' + pdfEscape(intent.cond) + ')' +
+          ' /Info (' + pdfEscape(intent.info) + ')' +
+          ' /RegistryName (http://www.color.org) >>');
         doc.internal.out('endobj');
       });
       doc.internal.events.subscribe('putCatalog', function () {
         if (oiRef) doc.internal.out('/OutputIntents [' + oiRef + ' 0 R]');
       });
-    } catch (e) { /* CMYK marks still apply even without the intent tag */ }
+    } catch (e) { /* the marks and boxes still stand without the intent tag */ }
 
-    var cropLen = 3.2, cropOff = 1.4; // mm
-    function cropMarks(x, y, w, h) {
-      doc.setDrawColor(0, 0, 0, 1); // DeviceCMYK rich black — values 0..1 per the PDF K operator
-      doc.setLineWidth(0.18);
-      // top-left, top-right, bottom-left, bottom-right L-marks (y grows downward)
-      doc.line(x - cropOff, y, x - cropOff - cropLen, y);       doc.line(x, y - cropOff, x, y - cropOff - cropLen);
-      doc.line(x + w + cropOff, y, x + w + cropOff + cropLen, y); doc.line(x + w, y - cropOff, x + w, y - cropOff - cropLen);
-      doc.line(x - cropOff, y + h, x - cropOff - cropLen, y + h); doc.line(x, y + h + cropOff, x, y + h + cropOff + cropLen);
-      doc.line(x + w + cropOff, y + h, x + w + cropOff + cropLen, y + h); doc.line(x + w, y + h + cropOff, x + w, y + h + cropOff + cropLen);
+    /* ── Furniture ─────────────────────────────────────────────────────────── */
+    var REG = [1, 1, 1, 1];                    // registration: 100% of every plate
+    function stroke(cmyk, w) { doc.setDrawColor(cmyk[0], cmyk[1], cmyk[2], cmyk[3]); doc.setLineWidth(w); }
+
+    // Crop marks live in the sheet margin, in line with each cut, so a gang-up
+    // sheet is cut by lining the guillotine up on marks at the sheet edge.
+    function cropMarks() {
+      stroke(REG, markW);
+      var c, r, x, y;
+      for (c = 0; c < cols; c++) {
+        [colX(c), colX(c) + trimW].forEach(function (vx) {
+          doc.line(vx, startY - bleed - markGap, vx, startY - bleed - markGap - markLen);
+          var yb = rowY(rows - 1) + trimH + bleed + markGap;
+          doc.line(vx, yb, vx, yb + markLen);
+        });
+      }
+      for (r = 0; r < rows; r++) {
+        [rowY(r), rowY(r) + trimH].forEach(function (hy) {
+          doc.line(startX - bleed - markGap, hy, startX - bleed - markGap - markLen, hy);
+          var xr = colX(cols - 1) + trimW + bleed + markGap;
+          doc.line(xr, hy, xr + markLen, hy);
+        });
+      }
     }
     function regTarget(cx, cy) {
-      doc.setDrawColor(1, 1, 1, 1); // registration colour: 100% of every plate (DeviceCMYK 1 1 1 1)
-      doc.setLineWidth(0.15);
-      doc.circle(cx, cy, 2.2, 'S');
-      doc.line(cx - 3.4, cy, cx + 3.4, cy);
-      doc.line(cx, cy - 3.4, cx, cy + 3.4);
+      stroke(REG, 0.15);
+      doc.circle(cx, cy, 1.9, 'S');
+      doc.line(cx - 3.2, cy, cx + 3.2, cy);
+      doc.line(cx, cy - 3.2, cx, cy + 3.2);
+    }
+    // Control strip: solids, two-colour overprints, the three-colour overprint,
+    // K tints and paper. The operator reads ink density and trap off this.
+    var BAR = [
+      [0, 0, 0, 0], [1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1],
+      [1, 1, 0, 0], [1, 0, 1, 0], [0, 1, 1, 0], [1, 1, 1, 0], [1, 1, 1, 1],
+      [0, 0, 0, 0.75], [0, 0, 0, 0.5], [0, 0, 0, 0.25],
+      [0.75, 0, 0, 0], [0, 0.75, 0, 0], [0, 0, 0.75, 0],
+    ];
+    function colourBar(y) {
+      var pw = Math.min(5, (pageW - 2 * 8) / BAR.length), ph = 4;
+      var x0 = (pageW - pw * BAR.length) / 2;
+      doc.setLineWidth(0.1);
+      for (var i = 0; i < BAR.length; i++) {
+        var p = BAR[i];
+        doc.setFillColor(p[0], p[1], p[2], p[3]);
+        doc.setDrawColor(0, 0, 0, 1);
+        doc.rect(x0 + i * pw, y, pw, ph, i === 0 ? 'FD' : 'F');
+      }
+    }
+    function slugLine(text, y) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.5);
+      doc.setTextColor(0, 0, 0, 1);
+      doc.text(text, pageW / 2, y, { align: 'center', baseline: 'middle' });
+    }
+    function guideRect(x, y, w, h, cmyk, dash) {
+      stroke(cmyk, 0.1);
+      if (dash && doc.setLineDashPattern) doc.setLineDashPattern([0.8, 0.8], 0);
+      doc.rect(x, y, w, h, 'S');
+      if (dash && doc.setLineDashPattern) doc.setLineDashPattern([], 0);
     }
 
-    var pages = Math.max(1, Math.ceil(cards.length / perPage));
-    for (var pg = 0; pg < pages; pg++) {
-      if (pg > 0) doc.addPage();
+    /* ── Sheet assembly ────────────────────────────────────────────────────── */
+    var sheets = [];                                  // [{ items:[{face,col,row}], side }]
+    var nSheets = Math.max(1, Math.ceil(faces.length / perPage));
+    for (var s = 0; s < nSheets; s++) {
+      var front = [], back = [];
       for (var idx = 0; idx < perPage; idx++) {
-        var ci = pg * perPage + idx;
-        if (ci >= cards.length) break;
+        var ci = s * perPage + idx;
+        if (ci >= faces.length) break;
         var col = idx % cols, row = Math.floor(idx / cols);
-        var x = startX + col * (trimW + gutter), y = startY + row * (trimH + gutter);
+        front.push({ face: faces[ci], col: col, row: row, n: ci + 1 });
+        // Long-edge flip reverses column order; mirroring here is what makes a
+        // back land on its own front instead of the card at the other end.
+        if (backs && backs[ci]) back.push({ face: backs[ci], col: cols - 1 - col, row: row, n: ci + 1 });
+      }
+      sheets.push({ items: front, side: 'front', sheet: s + 1 });
+      if (backs) sheets.push({ items: back, side: 'back', sheet: s + 1 });
+    }
+
+    var job = opts.jobName || 'NGG ID cards';
+    var stamp = opts.date || '';
+    for (var pg = 0; pg < sheets.length; pg++) {
+      if (pg > 0) doc.addPage([pageW, pageH], pageH >= pageW ? 'portrait' : 'landscape');
+      var sh = sheets[pg];
+
+      layer('art');
+      for (var i = 0; i < sh.items.length; i++) {
+        var it = sh.items[i], x = colX(it.col), y = rowY(it.row);
+        // Place against the bleed box: the art is trim + 2×bleed and hangs
+        // `bleed` outside the trim on every side.
+        var fb = it.face.bleedPx && it.face.trimWPx ? bleed : 0;
+        var w = trimW + 2 * fb, h = trimH + 2 * fb;
         // 'FAST' — the art is already JPEG-compressed; 'SLOW' re-encodes and is
         // dramatically slower on a full mass-print run for no visible gain.
-        doc.addImage(cards[ci].dataUrl, 'JPEG', x, y, trimW, trimH, undefined, 'FAST');
-        if (marks) cropMarks(x, y, trimW, trimH);
+        doc.addImage(it.face.dataUrl, 'JPEG', x - fb, y - fb, w, h, undefined, 'FAST');
       }
+
       if (marks) {
-        regTarget(pageW / 2, margin / 2);
-        regTarget(pageW / 2, pageH - margin / 2);
-        regTarget(margin / 2, pageH / 2);
-        regTarget(pageW - margin / 2, pageH / 2);
+        layer('marks');
+        cropMarks();
+        // Registration targets need REG_R of clear paper each way. A target
+        // only goes down where the band outside the bleed can hold one whole —
+        // on a tight single-up page there is no such band, and crop marks alone
+        // are the convention there.
+        var REG_R = 3.4;
+        var topBand = startY - bleed, leftBand = startX - bleed;
+        var botBand = rowY(rows - 1) + trimH + bleed, rightBand = colX(cols - 1) + trimW + bleed;
+        if (topBand >= 2 * REG_R) regTarget(pageW / 2, topBand / 2);
+        if (leftBand >= 2 * REG_R) regTarget(leftBand / 2, pageH / 2);
+        if (pageW - rightBand >= 2 * REG_R) regTarget((rightBand + pageW) / 2, pageH / 2);
+        // The bottom band stacks: crop marks, control strip, registration
+        // target, slug — each only if what is left still clears the slug.
+        var cur = botBand + markGap + markLen + 1;
+        if (barBand && cur + 4 + slugBand <= pageH) { colourBar(cur); cur += 5.5; }
+        if (cur + 2 * REG_R + slugBand <= pageH) regTarget(pageW / 2, cur + REG_R);
+      }
+
+      // Guides exist only as switchable, non-printing layers. Without optional
+      // content there is nothing to switch them off with, so in the flat
+      // fallback they are omitted rather than imaged onto the card.
+      if (useLayers) {
+        var placed = function (c, r) { return sh.items.some(function (q) { return q.col === c && q.row === r; }); };
+        layer('cut');
+        for (var c2 = 0; c2 < cols; c2++) for (var r2 = 0; r2 < rows; r2++) {
+          if (placed(c2, r2)) guideRect(colX(c2), rowY(r2), trimW, trimH, REG, false);
+        }
+        if (bleed) {
+          layer('bleed');
+          for (var c3 = 0; c3 < cols; c3++) for (var r3 = 0; r3 < rows; r3++) {
+            if (placed(c3, r3)) guideRect(colX(c3) - bleed, rowY(r3) - bleed, trimW + 2 * bleed, trimH + 2 * bleed, [1, 0, 0, 0], true);
+          }
+        }
+        if (safe && trimW > 2 * safe && trimH > 2 * safe) {
+          layer('safe');
+          for (var c4 = 0; c4 < cols; c4++) for (var r4 = 0; r4 < rows; r4++) {
+            if (placed(c4, r4)) guideRect(colX(c4) + safe, rowY(r4) + safe, trimW - 2 * safe, trimH - 2 * safe, [0, 1, 0, 0], true);
+          }
+        }
+      }
+
+      if (slugBand) {
+        layer('slug');
+        slugLine(job + ' · sheet ' + sh.sheet + '/' + nSheets + ' ' + sh.side.toUpperCase() +
+          ' · ' + trimW + '\u00D7' + trimH + ' mm trim · ' + bleed + ' mm bleed · ' +
+          (oneUp ? '1-up' : cols + '\u00D7' + rows + '-up') + ' · ' + intent.id +
+          (stamp ? ' · ' + stamp : ''), pageH - slugBand / 2 - 1);
+      }
+      endLayer();
+
+      // Page boxes. A single-up page IS the card, so its TrimBox is the card and
+      // its BleedBox the card plus bleed. An imposed sheet is a press sheet: the
+      // sheet is what gets trimmed, and each card's trim is carried by the crop
+      // marks and the ISO 19593-1 cutting layer.
+      var info = doc.internal.getPageInfo(pg + 1);
+      if (info && info.pageContext) {
+        var box = function (x0, y0, x1, y1) {
+          return { bottomLeftX: x0 * MM, bottomLeftY: (pageH - y1) * MM, topRightX: x1 * MM, topRightY: (pageH - y0) * MM };
+        };
+        info.pageContext.mediaBox = box(0, 0, pageW, pageH);
+        if (oneUp) {
+          info.pageContext.trimBox = box(startX, startY, startX + trimW, startY + trimH);
+          info.pageContext.bleedBox = box(startX - bleed, startY - bleed, startX + trimW + bleed, startY + trimH + bleed);
+        } else {
+          info.pageContext.trimBox = box(0, 0, pageW, pageH);
+          info.pageContext.bleedBox = box(0, 0, pageW, pageH);
+        }
       }
     }
-    doc.setProperties({ title: 'NGG ID cards — print', creator: 'NGG Card Studio' });
+
+    /* Expose the layers to the page resources. /XObject is the last entry
+     * jsPDF writes into the resource dictionary, so closing it here and opening
+     * /Properties appends a sibling key that jsPDF's own ">>" then closes.
+     * This has to be the *last* putXobjectDict subscriber, or it would close
+     * /XObject before the addImage plugin has written the images into it —
+     * hence subscribing here rather than up with the other layer hooks.
+     * The result is checked structurally after output(). */
+    if (useLayers) {
+      try {
+        doc.internal.events.subscribe('putXobjectDict', function () {
+          doc.internal.out('>> /Properties <<');
+          ocgOrder.forEach(function (o, i) { doc.internal.out('/L' + i + ' ' + o.id + ' 0 R'); });
+        });
+      } catch (e) { /* the structural check downstream catches this */ }
+    }
+
+    doc.setProperties({
+      title: job + ' — print-ready',
+      subject: trimW + '\u00D7' + trimH + ' mm trim, ' + bleed + ' mm bleed, ' + intent.info,
+      keywords: 'prepress, ' + (oneUp ? 'single-up' : 'imposed') + ', bleed, crop marks, ' + intent.id,
+      creator: 'NGG Card Studio',
+    });
     return new Uint8Array(doc.output('arraybuffer'));
   }
 
@@ -199,7 +660,8 @@
   }
 
   root.CardExport = {
-    ensureDeps: ensureDeps, nodeToImage: nodeToImage, zipStore: zipStore,
-    buildImpositionPDF: buildImpositionPDF, download: download, dataUrlToBytes: dataUrlToBytes, MM: MM,
+    ensureDeps: ensureDeps, nodeToImage: nodeToImage, addBleed: addBleed, renderFace: renderFace,
+    scaleForDpi: scaleForDpi, zipStore: zipStore, buildImpositionPDF: buildImpositionPDF,
+    download: download, dataUrlToBytes: dataUrlToBytes, INTENTS: INTENTS, LAYERS: LAYERS, SHEETS: SHEETS, MM: MM,
   };
 })(typeof window !== 'undefined' ? window : this);

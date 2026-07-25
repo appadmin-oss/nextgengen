@@ -1,12 +1,18 @@
 /* Library-backed ID-card export test (html2canvas + jsPDF + JSZip).
    Runs in real Chromium via Playwright, served by php -S so /vendor/* resolves.
-   Skips with a pass if playwright-core isn't installed (like the kiosk E2E). */
+   Skips with a pass if playwright-core isn't installed (like the kiosk E2E).
+
+   Beyond "a PDF came out", this asserts the prepress properties a print shop
+   actually checks: page boxes, real bleed, optional-content layers with their
+   ISO 19593-1 processing-step metadata, marks in registration colour, and the
+   duplex page order. */
 const fs = require('fs'), path = require('path');
 const { spawn } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = 8196, BASE = 'http://127.0.0.1:' + PORT;
 const FIX = path.join(ROOT, 'tests', '_export_fixture.html');
+const MM = 72 / 25.4;
 
 function loadChromium() {
   for (const m of [process.env.PLAYWRIGHT_MODULE, 'playwright', 'playwright-core'].filter(Boolean)) {
@@ -22,8 +28,8 @@ function loadChromium() {
     || (fs.existsSync('/opt/pw-browsers/chromium-1194/chrome-linux/chrome') ? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' : undefined);
 
   fs.writeFileSync(FIX, '<!doctype html><html><body>'
-    + '<div id="card" class="idcard" style="width:295px;height:502px;background:#fff;position:relative;font-family:Inter,sans-serif;overflow:hidden">'
-    + '<div style="position:absolute;top:200px;left:0;right:0;text-align:center;font-weight:800;font-size:26px;color:#E4155F">ADAEZE</div>'
+    + '<div id="card" class="idcard" style="width:295px;height:410px;background:#fff;position:relative;font-family:Inter,sans-serif;overflow:hidden">'
+    + '<div style="position:absolute;top:180px;left:0;right:0;text-align:center;font-weight:800;font-size:26px;color:#E4155F">ADAEZE</div>'
     + '<div style="position:absolute;left:0;right:0;bottom:0;height:14px;background:#B0143C"></div></div>'
     + '<script src="/vendor/card-export.js"></script></body></html>');
 
@@ -36,32 +42,166 @@ function loadChromium() {
     const page = await browser.newPage();
     page.on('console', m => { if (m.type() === 'error') console.error('    page:', m.text()); });
     await page.goto(BASE + '/tests/_export_fixture.html', { waitUntil: 'networkidle' });
-    const r = await page.evaluate(async () => {
+    const r = await page.evaluate(async (MM) => {
       const CE = window.CardExport; await CE.ensureDeps();
       const node = document.getElementById('card');
-      const img = await CE.nodeToImage(node, { type: 'image/jpeg', scale: 3, quality: 0.94, bg: '#fff' });
+      const TRIM_W = 54, TRIM_H = 75, BLEED = 3;
+
+      // ── bleed generation: mirrored, not stretched ────────────────────────
+      const probe = document.createElement('canvas');
+      probe.width = 20; probe.height = 20;
+      const pc = probe.getContext('2d');
+      pc.fillStyle = '#ffffff'; pc.fillRect(0, 0, 20, 20);
+      pc.fillStyle = '#ff0000'; pc.fillRect(0, 0, 1, 20);   // 1px red stripe on the left edge
+      pc.fillStyle = '#0000ff'; pc.fillRect(1, 0, 1, 20);   // 1px blue stripe next to it
+      const bled = await CE.addBleed(probe.toDataURL('image/png'), 4, { type: 'image/png' });
+      const bi = new Image(); bi.src = bled.dataUrl;
+      await bi.decode();
+      const rc = document.createElement('canvas');
+      rc.width = bi.width; rc.height = bi.height;
+      rc.getContext('2d').drawImage(bi, 0, 0);
+      const px = (x, y) => { const d = rc.getContext('2d').getImageData(x, y, 1, 1).data; return d[0] + ',' + d[1] + ',' + d[2]; };
+      // With b=4 the left bleed spans x=0..3 and mirrors source columns 3,2,1,0
+      // → x=3 is source col 0 (red) and x=2 is source col 1 (blue). A *stretch*
+      // would paint the whole strip red, so this distinguishes the two.
+      const mirrored = px(3, 10) === '255,0,0' && px(2, 10) === '0,0,255';
+
+      // ── faces, with bleed, at a real print resolution ────────────────────
+      const scale = CE.scaleForDpi(295, TRIM_W, 350);
+      const front = await CE.renderFace(node, { trimW_mm: TRIM_W, dpi: 350, bleed_mm: BLEED, quality: 0.95 });
+      const back = await CE.renderFace(node, { trimW_mm: TRIM_W, dpi: 350, bleed_mm: BLEED, quality: 0.95 });
+      const dpiPx = front.trimWPx / (TRIM_W / 25.4);
+
       const png = await CE.nodeToImage(node, { scale: 2 });
       const zip = await CE.zipStore([{ name: 'a.png', bytes: png.bytes }]);
-      const pdf = await CE.buildImpositionPDF([{ dataUrl: img.dataUrl }, { dataUrl: img.dataUrl }], { sheet: 'A4', marks: true });
-      let latin = ''; for (let i = 0; i < pdf.length; i++) latin += String.fromCharCode(pdf[i]);
+
+      const decode = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, Math.min(i + 8192, u8.length))); return s; };
+
+      // Inflate the page content streams so the imposition geometry can be read
+      // back out of the finished file rather than trusted.
+      const contentStreams = async (u8) => {
+        const s = decode(u8), out = [];
+        for (let i = 0; (i = s.indexOf('\nstream', i)) !== -1;) {
+          const hdr = s.slice(Math.max(0, s.lastIndexOf(' obj', i)), i);
+          const len = /\/Length (\d+)/.exec(hdr);
+          let b = i + 7; if (s[b] === '\r') b++; if (s[b] === '\n') b++;
+          if (!len) { i = b; continue; }
+          const end = b + Number(len[1]);
+          if (hdr.indexOf('FlateDecode') !== -1) {
+            try {
+              const ds = new DecompressionStream('deflate');
+              const buf = await new Response(new Blob([u8.subarray(b, end)]).stream().pipeThrough(ds)).arrayBuffer();
+              const txt = decode(new Uint8Array(buf));
+              if (txt.indexOf(' cm') !== -1) out.push(txt);
+            } catch (_) {}
+          }
+          i = end;
+        }
+        return out;
+      };
+      // Image placements as {x,y} in mm, PDF origin bottom-left.
+      const placements = (txt) => (txt.match(/([-\d.]+) 0 0 ([-\d.]+) ([-\d.]+) ([-\d.]+) cm/g) || [])
+        .map((m) => m.split(' ').map(Number))
+        .filter((v) => v[0] > 100)
+        .map((v) => ({ x: Math.round(v[4] / MM * 100) / 100, y: Math.round(v[5] / MM * 100) / 100 }));
+
+      // ── imposed duplex sheet ─────────────────────────────────────────────
+      // Seven cards on a 3×3 grid: the ragged last row is what exposes a
+      // back sheet that hasn't been column-mirrored for the duplex flip.
+      const seven = [front, front, front, front, front, front, front];
+      const imposed = await CE.buildImpositionPDF(seven, {
+        backs: seven.map(() => back), layout: 'imposed', sheet: 'A4',
+        trimW_mm: TRIM_W, trimH_mm: TRIM_H, bleed_mm: BLEED, marks: true, layers: true,
+        jobName: 'NGG test', date: '2026-07-25',
+      });
+      const it = decode(imposed);
+
+      const streams = await contentStreams(imposed);
+      const fs_ = placements(streams[0] || ''), bs_ = placements(streams[1] || '');
+      const colXs = Array.from(new Set(fs_.map((p) => p.x))).sort((a, b) => a - b);
+      const mirror = (x) => colXs[colXs.length - 1 - colXs.indexOf(x)];
+      const key = (l) => l.map((p) => p.x + '@' + p.y).sort().join(' ');
+      const duplexMirrored = fs_.length === 7 && bs_.length === 7 && colXs.length === 3
+        && key(bs_) === key(fs_.map((p) => ({ x: mirror(p.x), y: p.y })))
+        && key(bs_) !== key(fs_);   // and it genuinely moved something
+
+      // Object numbers must be unique: handing a page's id to a layer
+      // dictionary leaves a file that opens with no pages at all.
+      const ids = (it.match(/(?:^|[\r\n])(\d+) 0 obj/g) || []).map((m) => m.trim().split(' ')[0]);
+      const uniqueIds = ids.length > 0 && new Set(ids).size === ids.length;
+      // …and the artwork must land in /XObject, not get swept into the
+      // /Properties list spliced in beside it.
+      const xobjectIntact = /\/XObject <<\s*(?:\/I\d+ \d+ 0 R\s*)+>> \/Properties <</.test(it);
+
+      // ── single-up prepress page ──────────────────────────────────────────
+      const oneUp = await CE.buildImpositionPDF([front], {
+        backs: [back], layout: 'single-up',
+        trimW_mm: TRIM_W, trimH_mm: TRIM_H, bleed_mm: BLEED, marks: true, layers: true,
+      });
+      const ot = decode(oneUp);
+      const boxOf = (t, name) => {
+        const m = new RegExp('/' + name + ' \\[([-\\d. ]+)\\]').exec(t);
+        if (!m) return null;
+        const v = m[1].trim().split(/\s+/).map(Number);
+        return { w: (v[2] - v[0]) / MM, h: (v[3] - v[1]) / MM };
+      };
+      const near = (a, b, tol) => a != null && Math.abs(a - b) <= (tol || 0.15);
+      const trim = boxOf(ot, 'TrimBox'), bleedBox = boxOf(ot, 'BleedBox');
+
       // Uncompressed probe: prove setDrawColor(4 args) emits a DeviceCMYK op.
       const jd = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' });
       jd.setDrawColor(0, 0, 0, 1); jd.line(10, 10, 40, 10);
-      const pu = new Uint8Array(jd.output('arraybuffer'));
-      let pl = ''; for (let i = 0; i < pu.length; i++) pl += String.fromCharCode(pu[i]);
+      const pl = decode(new Uint8Array(jd.output('arraybuffer')));
+
       return {
-        jpg: img.bytes[0] === 0xFF && img.bytes[1] === 0xD8 && img.bytes.length > 1500,
+        jpg: front.dataUrl.indexOf('data:image/jpeg') === 0 && front.wPx > front.trimWPx,
+        dpi: Math.round(dpiPx),
+        scale,
+        mirrored,
+        bleedPx: front.bleedPx,
+        bleedGeom: front.wPx === front.trimWPx + 2 * front.bleedPx && front.hPx === front.trimHPx + 2 * front.bleedPx,
         zipPk: zip[0] === 0x50 && zip[1] === 0x4b && zip.length > 100,
-        pdfHeader: latin.indexOf('%PDF') === 0, pdfEof: latin.trim().slice(-5) === '%%EOF', pdfLen: pdf.length,
-        outputIntent: latin.indexOf('OutputIntent') !== -1 && latin.indexOf('FOGRA39') !== -1,
+        pdfHeader: it.indexOf('%PDF') === 0, pdfEof: it.trim().slice(-5) === '%%EOF', pdfLen: imposed.length,
+        outputIntent: it.indexOf('OutputIntent') !== -1 && it.indexOf('FOGRA39') !== -1,
         cmyk: /(\d+\.?\d* ){4}K/.test(pl) && pl.indexOf(' 255. K') === -1, // 4-channel K op, in-range (0..1)
+        // layers
+        ocProps: it.indexOf('/OCProperties') !== -1 && it.indexOf('/Type /OCG') !== -1,
+        ocRefs: it.indexOf('/Properties <<') !== -1,
+        uniqueIds, xobjectIntact, duplexMirrored,
+        frontXs: fs_.map((p) => p.x).join(','), backXs: bs_.map((p) => p.x).join(','),
+        procSteps: it.indexOf('/GTS_ProcStepsGroup /Structural') !== -1 && it.indexOf('/GTS_ProcStepsType /Cutting') !== -1,
+        nonPrinting: it.indexOf('/PrintState /OFF') !== -1,
+        autoState: it.indexOf('/Event /Print') !== -1,
+        // page boxes + duplex ordering
+        imposedTrim: !!boxOf(it, 'TrimBox'),
+        pages: (it.match(/\/Type \/Page[^s]/g) || []).length,
+        oneUpTrimW: trim && trim.w, oneUpTrimH: trim && trim.h,
+        oneUpBoxes: near(trim && trim.w, TRIM_W) && near(trim && trim.h, TRIM_H)
+          && near(bleedBox && bleedBox.w, TRIM_W + 2 * BLEED) && near(bleedBox && bleedBox.h, TRIM_H + 2 * BLEED),
+        oneUpPages: (ot.match(/\/Type \/Page[^s]/g) || []).length,
+        slug: it.indexOf('/OutputIntents') !== -1,
       };
-    });
-    ok('html2canvas rasterised the card to JPEG', r.jpg);
+    }, MM);
+
+    ok('renderFace produced a bled JPEG face', r.jpg);
+    ok('artwork lands at 350 DPI for the trim size (got ' + r.dpi + ')', Math.abs(r.dpi - 350) <= 6);
+    ok('bleed is mirrored outward, not stretched', r.mirrored);
+    ok('face geometry is trim + 2×bleed (' + r.bleedPx + 'px each side)', r.bleedGeom && r.bleedPx > 20);
     ok('JSZip produced a valid .zip', r.zipPk);
     ok('jsPDF produced a valid PDF (%PDF … %%EOF, ' + r.pdfLen + ' bytes)', r.pdfHeader && r.pdfEof);
     ok('PDF carries a FOGRA39 CMYK OutputIntent', r.outputIntent);
     ok('marks drawn in DeviceCMYK (4-channel stroke operator)', r.cmyk);
+    ok('PDF declares optional-content layers (/OCProperties + /OCG)', r.ocProps);
+    ok('page resources expose the layers as a /Properties list', r.ocRefs);
+    ok('cut layer tagged per ISO 19593-1 (Structural / Cutting)', r.procSteps);
+    ok('guide layers are flagged non-printing (/PrintState /OFF + /AS print state)', r.nonPrinting && r.autoState);
+    ok('object numbers are unique (page tree not overwritten by layers)', r.uniqueIds);
+    ok('artwork stays in /XObject beside the spliced /Properties list', r.xobjectIntact);
+    ok('every page carries a TrimBox', r.imposedTrim);
+    ok('duplex interleaves a back sheet per front sheet (' + r.pages + ' pages)', r.pages === 2);
+    ok('back sheet is column-mirrored for a long-edge flip (front ' + r.frontXs + ' → back ' + r.backXs + ')', r.duplexMirrored);
+    ok('single-up TrimBox is the card (' + (r.oneUpTrimW || 0).toFixed(2) + '×' + (r.oneUpTrimH || 0).toFixed(2) + 'mm) inside a +3mm BleedBox', r.oneUpBoxes);
+    ok('single-up emits one page per face', r.oneUpPages === 2);
   } catch (e) { fail++; console.error('  ✗ harness error: ' + (e && e.message)); }
   finally { if (browser) await browser.close(); try { process.kill(-server.pid); } catch (_) {} try { fs.unlinkSync(FIX); } catch (_) {} }
 
