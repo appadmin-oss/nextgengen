@@ -91,13 +91,23 @@ function cloudinary_edit_manual(string $sourceUrl, array $spec): array {
     $g = (string)($spec['gravity'] ?? 'face');
     if (!in_array($g, ['face', 'faces', 'center', 'north', 'south', 'auto'], true)) $g = 'face';
     $parts = ['c_fill', 'g_' . $g, 'w_600', 'h_750', 'f_auto', 'q_auto:good', 'e_improve:30'];
-    if (isset($spec['zoom'])) {
-        $z = max(0.5, min(2.0, (float)$spec['zoom']));
-        if (abs($z - 1.0) > 0.001) $parts[] = 'z_' . rtrim(rtrim(number_format($z, 2, '.', ''), '0'), '.');
-    }
     if (!empty($spec['brighten'])) $parts[] = 'e_brightness:18';
     if (!empty($spec['sharpen']))  $parts[] = 'e_sharpen:80';
     $chain = [implode(',', $parts)];
+    // Zoom is a fractional crop CHAINED BEFORE the fill, not Cloudinary's z_.
+    // z_ is silently ignored here — verified against Cloudinary: c_fill with
+    // z_1.6 returns byte-identical output to no zoom, for g_face as well as
+    // the fixed gravities — so the slider moved and nothing happened. Cropping
+    // 1/zoom of the source about the same gravity and then filling gives the
+    // same framing z_ was meant to, and works for every gravity.
+    if (isset($spec['zoom'])) {
+        $z = max(1.0, min(2.5, (float)$spec['zoom']));
+        if ($z > 1.005) {
+            // Fractional w/h must stay below 1.0 or Cloudinary reads them as pixels.
+            $f = max(0.2, min(0.99, round(1.0 / $z, 3)));
+            array_unshift($chain, 'c_crop,g_' . $g . ',w_' . $f . ',h_' . $f);
+        }
+    }
     if (!empty($spec['removeBg']) && cloudinary_credits_ok()) { $chain[] = 'e_background_removal'; $chain[] = 'b_rgb:' . ID_BG_GREY; }
     $tf = implode('/', $chain);
     return ['url' => cloudinary_apply(cloudinary_base($sourceUrl), $tf), 'transforms' => $tf];

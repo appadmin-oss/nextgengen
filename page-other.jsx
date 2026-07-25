@@ -3438,6 +3438,7 @@ function CardStudio() {
   // turn) keeps the same gripper edge and registers best, so it's the default.
   const [duplex, setDuplex] = React.useState("long-edge");
   const [exp, setExp] = React.useState("");   // progress/status text
+  const [sel, setSel] = React.useState(null); // Set of chosen card ids; null = all
   const [notice, setNotice] = React.useState("");  // transient success note
   const [resending, setResending] = React.useState("");  // id currently resending
   const [editPhoto, setEditPhoto] = React.useState(null);  // card whose photo is being edited
@@ -3509,6 +3510,30 @@ function CardStudio() {
   const cardName = (card) => (card.displayId || card.studentId || card.volunteerId || "card").replace(/[^\w.-]+/g, "-");
   const setName = () => (isVol ? "volunteer" : "student") + "-id-cards";
 
+  /* ── Which cards go in the export ────────────────────────────────────────
+   * `sel` null means "everyone" — the common case, and it stays correct when
+   * the roster grows between loads. Every export and the browser print walk
+   * `chosen`, but the print zone still renders ALL cards so the face-node
+   * indices stay aligned with `cards`.
+   *
+   * `cards` is only bound further down the component, so these stay functions
+   * rather than values — evaluating one here would throw before first paint. */
+  const cardId = (card) => card.studentId || card.volunteerId || card.displayId;
+  const isOn = (card) => !sel || sel.has(cardId(card));
+  const chosenCards = () => cards.map((c, i) => ({ card: c, i: i })).filter(x => isOn(x.card));
+  const allOn = () => !sel || sel.size >= cards.length;
+  const toggleCard = (card) => setSel(prev => {
+    const next = new Set(prev || cards.map(cardId));
+    const id = cardId(card);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const selectAll = () => setSel(null);
+  const selectNone = () => setSel(new Set());
+  // A roster reload or a tab switch resets to "everyone" — a stale selection
+  // of ids that are no longer on screen is worse than no selection.
+  React.useEffect(() => { setSel(null); }, [mode, data, vdata]);
+
   // PNG masters are lossless, so they go out at the chosen resolution with no
   // JPEG generation loss — these are the files a designer re-lays out from.
   const pngScale = (CE, node) => CE.scaleForDpi((node && node.offsetWidth) || 295, cardW, dpi);
@@ -3528,21 +3553,23 @@ function CardStudio() {
   };
 
   const exportZip = async () => {
-    if (exp || !cards.length) return;
+    const pick = chosenCards();
+    if (exp || !pick.length) return;
     cancelRef.current = false;
     try {
       setExp("Preparing…");
       const CE = await ensureLib(); await waitReady(); const n = faceNodes(); const files = []; const failed = [];
       const scale = pngScale(CE, n[0]);
-      for (let i = 0; i < cards.length; i++) {
+      for (let k = 0; k < pick.length; k++) {
         if (cancelRef.current) { setExp(""); setMsg("Export cancelled."); return; }
-        setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
+        const i = pick[k].i;
+        setExp("Rendering " + (k + 1) + " / " + pick.length + "…");
         try {
           const f = await withBudget(CE.nodeToImage(n[2 * i], { type: "image/png", scale, bg: "#fff" }), FACE_BUDGET_MS);
-          files.push({ name: cardName(cards[i]) + "-front.png", bytes: f.bytes });
+          files.push({ name: cardName(pick[k].card) + "-front.png", bytes: f.bytes });
           const b = await withBudget(CE.nodeToImage(n[2 * i + 1], { type: "image/png", scale, bg: "#fff" }), FACE_BUDGET_MS);
-          files.push({ name: cardName(cards[i]) + "-back.png", bytes: b.bytes });
-        } catch (e) { failed.push(cardName(cards[i])); }
+          files.push({ name: cardName(pick[k].card) + "-back.png", bytes: b.bytes });
+        } catch (e) { failed.push(cardName(pick[k].card)); }
         await nextFrame();
       }
       if (!files.length) { setExp(""); setMsg("Export failed — no cards could be rendered."); return; }
@@ -3563,7 +3590,8 @@ function CardStudio() {
   ]);
 
   const exportPdf = async () => {
-    if (exp || !cards.length) return;
+    const pick = chosenCards();
+    if (exp || !pick.length) return;
     cancelRef.current = false;
     try {
       setExp("Preparing…");
@@ -3574,14 +3602,15 @@ function CardStudio() {
         CE.renderFace(node, { trimW_mm: cardW, dpi, bleed_mm: BLEED_MM, quality: 0.95, bg: "#fff" }),
         FACE_BUDGET_MS);
       const fronts = [], backs = [], failed = [];
-      for (let i = 0; i < cards.length; i++) {
+      for (let k = 0; k < pick.length; k++) {
         if (cancelRef.current) { setExp(""); setMsg("Export cancelled."); return; }
-        setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
+        const i = pick[k].i;
+        setExp("Rendering " + (k + 1) + " / " + pick.length + "…");
         try {
           const f = await face(n[2 * i]);
           const b = await face(n[2 * i + 1]);
           fronts.push(f); backs.push(b);
-        } catch (e) { failed.push(cardName(cards[i])); }
+        } catch (e) { failed.push(cardName(pick[k].card)); }
         await nextFrame(); // yield so the tab never locks up mid-run
       }
       if (!fronts.length) { setExp(""); setMsg("PDF export failed — no cards could be rendered."); return; }
@@ -3634,6 +3663,9 @@ function CardStudio() {
         .print-zone { position: absolute; left: 0; top: 0; background: #fff; }
         .idcard { width: ${cardW}mm !important; height: ${cardH}mm !important; page-break-inside: avoid; box-shadow: none !important; }
         .card-pair { gap: 4mm; margin: 3mm; page-break-inside: avoid; float: left; }
+        /* Unticked cards stay in the DOM so the export face-node indices keep
+           lining up, but they must not reach the paper. */
+        .card-pair[data-sel="0"] { display: none !important; }
       }
     `}</style>
     <div className="no-print" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 18, marginBottom: 18 }}>
@@ -3647,15 +3679,27 @@ function CardStudio() {
         {exp && <span className="mono" style={{ fontSize: 12, color: gold }}>{exp}</span>}
         {exp && <button onClick={() => { cancelRef.current = true; }} title="Stop after the card in flight"
           style={{ padding: "9px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,.3)", background: "transparent", color: "#ffb4b4", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Cancel</button>}
-        <button onClick={exportZip} disabled={!cards.length || !!exp} title="High-resolution PNG of every card face, zipped"
+        <button onClick={exportZip} disabled={!chosenCards().length || !!exp} title="High-resolution PNG of each selected card face, zipped"
           style={{ padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#eef2fb", fontWeight: 800, fontSize: 14, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
           ↓ PNG (all, .zip)
         </button>
-        <button onClick={exportPdf} disabled={!cards.length || !!exp} title="Print-ready, imposed, CMYK — hand this to a printer"
-          style={{ padding: "13px 24px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
-          ⎙ Print-ready PDF (CMYK)
+        <button onClick={exportPdf} disabled={!chosenCards().length || !!exp} title="Print-ready, imposed, CMYK — hand this to a printer"
+          style={{ padding: "13px 24px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: chosenCards().length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
+          ⎙ Print-ready PDF{allOn() ? "" : " (" + chosenCards().length + ")"}
         </button>
       </div>
+    </div>
+    <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", margin: "0 0 12px", padding: "10px 14px", borderRadius: 12, background: allOn() ? "rgba(255,255,255,.05)" : "rgba(255,206,84,.12)", border: "1px solid " + (allOn() ? "rgba(255,255,255,.12)" : "rgba(255,206,84,.4)") }}>
+      <span style={{ fontSize: 13, fontWeight: 700 }}>
+        {allOn()
+          ? "All " + cards.length + " card" + (cards.length === 1 ? "" : "s") + " will export"
+          : chosenCards().length + " of " + cards.length + " selected"}
+      </span>
+      <span style={{ display: "flex", gap: 8 }}>
+        <button onClick={selectAll} disabled={!!exp || allOn()} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: allOn() ? "default" : "pointer", opacity: allOn() ? .45 : 1 }}>Select all</button>
+        <button onClick={selectNone} disabled={!!exp || !chosenCards().length} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", opacity: chosenCards().length ? 1 : .45 }}>Clear</button>
+      </span>
+      <span style={{ fontSize: 12, color: "rgba(230,238,255,.55)" }}>Tick a card to include just those {"—"} the PDF, the PNG zip and the browser print all follow this.</span>
     </div>
     <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", margin: "-4px 0 12px" }}>
       <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Layout
@@ -3741,7 +3785,13 @@ function CardStudio() {
 
     <div className="print-zone" ref={zoneRef} style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
       {cards.map((card, i) => (
-        <div key={card.studentId || card.volunteerId} className="card-pair" style={{ position: "relative" }}>
+        <div key={card.studentId || card.volunteerId} className="card-pair" data-sel={isOn(card) ? "1" : "0"} style={{ position: "relative", opacity: isOn(card) ? 1 : .38, transition: "opacity .15s" }}>
+          <label className="no-print" title={isOn(card) ? "Included in the export" : "Excluded from the export"}
+            style={{ position: "absolute", top: -12, left: -8, zIndex: 3, display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 8, background: isOn(card) ? gold : "#2f3f6b", boxShadow: "0 4px 12px rgba(0,0,0,.3)", cursor: "pointer" }}>
+            <input type="checkbox" checked={isOn(card)} onChange={() => toggleCard(card)} disabled={!!exp}
+              aria-label={"Include " + (card.firstName || "") + " " + (card.surname || "") + " in the export"}
+              style={{ width: 15, height: 15, accentColor: "#2b2100", cursor: "pointer", margin: 0 }}/>
+          </label>
           <div className="no-print" style={{ position: "absolute", top: -12, right: -8, zIndex: 2, display: "flex", gap: 6 }}>
             <button onClick={() => setEditPhoto(card)} title="Re-crop, adjust or replace this photo"
               style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>Edit photo</button>

@@ -1839,13 +1839,35 @@ chk('cloudinary_edit_manual builds the requested transform', (function () {
     return strpos($e['transforms'], 'g_center') !== false && strpos($e['transforms'], 'e_brightness:18') !== false
         && strpos($e['url'], '/upload/c_fill,g_center') !== false && strpos($e['url'], '/v17/') !== false;
 })());
+// Zoom must be a fractional crop chained before the fill. Cloudinary silently
+// ignores z_ in this chain (c_fill + z_1.6 is byte-identical to no zoom, for
+// g_face too), so a z_ here means the slider does nothing.
+chk('cloudinary_edit_manual zooms by cropping, never with the no-op z_', (function () {
+    $src = 'https://res.cloudinary.com/x/image/upload/v17/ngg/headshot/abc.jpg';
+    $e = cloudinary_edit_manual($src, ['gravity' => 'center', 'zoom' => 1.25]);
+    $flat = cloudinary_edit_manual($src, ['gravity' => 'center', 'zoom' => 1.0]);
+    return strpos($e['transforms'], 'c_crop,g_center,w_0.8,h_0.8') === 0        // 1/1.25
+        && strpos($e['transforms'], 'c_fill,g_center') !== false
+        && strpos($e['transforms'], 'z_') === false
+        && $e['transforms'] !== $flat['transforms']                              // zoom changed something
+        && strpos($flat['transforms'], 'c_crop') === false;                      // 1x adds no crop
+})());
+chk('cloudinary_edit_manual keeps the crop fraction a ratio, not pixels', (function () {
+    // A fractional w/h of 1.0 or more would be read as pixels by Cloudinary.
+    foreach ([1.001, 1.01, 2.5, 9.0] as $z) {
+        $t = cloudinary_edit_manual('https://res.cloudinary.com/x/image/upload/v17/a.jpg', ['zoom' => $z])['transforms'];
+        if (preg_match('/c_crop,g_\w+,w_([\d.]+)/', $t, $m) && (float)$m[1] >= 1.0) return false;
+    }
+    return true;
+})());
 chk('admin.photo.edit re-crops a live student photo (no stacked transforms)', (function () {
     db_update('summer_students', ['photoUrl' => 'https://res.cloudinary.com/x/image/upload/c_fill,g_face,w_600,h_750/v17/ngg/headshot/abc.jpg'], ['studentId' => 'SUM-R-1']);
     $r = backend_dispatch('admin.photo.edit', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'student', 'subjectId' => 'SUM-R-1', 'spec' => ['gravity' => 'center', 'zoom' => 1.2]]);
     if (empty($r['ok'])) return false;
     $now = db_row('SELECT photoUrl FROM summer_students WHERE studentId=?', ['SUM-R-1'])['photoUrl'];
     // Applied the new crop, derived from the CLEAN base (only one transform seg, keeps /v17/).
-    return strpos($now, 'g_center') !== false && strpos($now, 'z_1.2') !== false && strpos($now, 'g_face,w_600,h_750/c_fill') === false && substr_count($now, '/upload/') === 1 && strpos($now, '/v17/') !== false;
+    return strpos($now, 'g_center') !== false && strpos($now, 'c_crop,g_center,w_0.833') !== false && strpos($now, 'z_') === false
+        && strpos($now, 'g_face,w_600,h_750/c_fill') === false && substr_count($now, '/upload/') === 1 && strpos($now, '/v17/') !== false;
 })());
 chk('admin.photo.edit gated from non-staff', backend_dispatch('admin.photo.edit', ['requesterId' => 'NGG-2025-0001', 'subjectType' => 'student', 'subjectId' => 'SUM-R-1', 'spec' => []])['error'] === 'forbidden');
 

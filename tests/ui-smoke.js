@@ -80,7 +80,19 @@ const STATUS = {
       apply: function () { return Promise.resolve({}); },
     });
   }
-  window.NGGApi = deep({ public: deep({
+  var PROGRAM = { program: 'NGG', year: '2026', motto: 'GROW', website: 'x.org', phone: '+234', widthMm: 54, heightMm: 75 };
+  var ROSTER = { program: PROGRAM, cards: [1, 2, 3].map(function (n) {
+    return { studentId: 'SUM-' + n, displayId: 'NGG/26/000' + n, firstName: 'NAME' + n, surname: 'SUR' + n,
+             track: 'Arts', token: 'T' + n, photoUrl: '', centre: { name: 'Ijaiye', color: '#76B043' } };
+  }) };
+  window.NGGApi = deep({
+    admin: deep({ registration: deep({
+      cards: function () { return Promise.resolve(ROSTER); },
+      volunteerCards: function () { return Promise.resolve({ program: PROGRAM, cards: [] }); },
+      centres: function () { return Promise.resolve({ centres: [] }); },
+      hierarchy: function () { return Promise.resolve({ tiers: [] }); },
+    }) }),
+    public: deep({
     status: stub('status', ${JSON.stringify(STATUS)}),
     volunteerStatus: stub('volunteerStatus', ${JSON.stringify(STATUS)}),
   }) });
@@ -90,10 +102,30 @@ const STATUS = {
 <script src="/dist/app.min.js"></script>
 <script>
   var b = new URLSearchParams(location.search).get('board');
-  var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'cards' ? 'CardStudio' : 'StatusPage';
+  var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'cards' ? 'CardStudio' : b === 'photo' ? 'PhotoEditor' : 'StatusPage';
+  var props = b === 'photo'
+    ? { target: { subjectType: 'student', subjectId: 'SUM-1' }, currentUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==',
+        title: 'Test', onSaved: function () {}, onClose: function () {} }
+    : { setPage: function () {} };
+  // Stand in for the export toolkit so a click can be traced all the way into
+  // buildImpositionPDF without rasterising anything.
+  if (b === 'cards') {
+    window.__pdf = [];
+    var face = { dataUrl: 'data:image/jpeg;base64,x', wPx: 10, hPx: 12, bleedPx: 1, trimWPx: 8, trimHPx: 10, bytes: new Uint8Array([1]) };
+    window.CardExport = {
+      scaleForDpi: function () { return 2; },
+      nodeToImage: function () { return Promise.resolve(face); },
+      renderFace: function () { return Promise.resolve(face); },
+      zipStore: function () { return Promise.resolve(new Uint8Array([80, 75])); },
+      buildImpositionPDF: function (fronts, o) {
+        window.__pdf.push({ fronts: fronts.length, backs: (o && o.backs || []).length });
+        return Promise.resolve(new Uint8Array([37, 80, 68, 70]));
+      },
+      download: function () {},
+    };
+  }
   try {
-    ReactDOM.createRoot(document.getElementById('root'))
-      .render(React.createElement(window[which], { setPage: function () {} }));
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(window[which], props));
   } catch (e) { window.__errors.push(String(e && e.message)); }
 </script></body></html>`);
 
@@ -174,7 +206,77 @@ const STATUS = {
       && opts.some(o => /300\|350\|600/.test(o)));
     const copy = await studio.evaluate(() => document.body.innerText);
     ok('/cards explains the selected flip on the page', /work-and-turn/i.test(copy));
+
+    // ── choosing which cards to export ───────────────────────────────────
+    const boxes = studio.locator('.card-pair input[type=checkbox]');
+    ok('/cards renders the roster with a tick per card', await boxes.count() === 3);
+    const bar = () => studio.evaluate(() => document.body.innerText);
+    ok('/cards defaults to exporting everyone', /All 3 cards will export/.test(await bar()));
+    await boxes.nth(1).uncheck();
+    ok('/cards counts the selection after unticking', /2 of 3 selected/.test(await bar()));
+    const offCount = () => studio.locator('.card-pair[data-sel="0"]').count();
+    ok('/cards marks the excluded card so print skips it', await offCount() === 1);
+    ok('/cards shows the count on the PDF button', /Print-ready PDF \(2\)/.test(await bar()));
+    await studio.getByRole('button', { name: 'Clear' }).click();
+    ok('/cards can clear the whole selection', await offCount() === 3);
+    const disabled = await studio.evaluate(() =>
+      Array.from(document.querySelectorAll('button')).filter(b => /Print-ready PDF|PNG \(all/.test(b.textContent || '')).every(b => b.disabled));
+    ok('/cards disables both exports when nothing is selected', disabled);
+    await studio.getByRole('button', { name: 'Select all' }).click();
+    ok('/cards restores everyone with Select all', /All 3 cards will export/.test(await bar()) && await offCount() === 0);
+
+    // The selection has to reach the exporter, not just the chrome.
+    await boxes.nth(0).uncheck();
+    await studio.getByRole('button', { name: /Print-ready PDF/ }).click();
+    await studio.waitForFunction(() => window.__pdf.length > 0, null, { timeout: 20000 }).catch(() => {});
+    const built = await studio.evaluate(() => window.__pdf);
+    ok('/cards exports only the selected cards (' + JSON.stringify(built) + ')',
+      built.length === 1 && built[0].fronts === 2 && built[0].backs === 2);
     await studio.close();
+
+    // ── photo editor: zoom works, and previews without a round trip ──────
+    const pe = await browser.newPage();
+    const peErrs = [];
+    pe.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) peErrs.push(m.text()); });
+    pe.on('pageerror', e => peErrs.push(String(e.message)));
+    await pe.goto(BASE + '/tests/_boards_fixture.html?board=photo&mode=ok', { waitUntil: 'networkidle' });
+    await pe.waitForTimeout(500);
+    ok('photo editor mounts with no script error', peErrs.length === 0);
+
+    const tf = await pe.evaluate(() => {
+      const f = window.buildEditTransform;
+      const at = (z, g) => f({ gravity: g || 'center', zoom: z }, false);
+      return {
+        z15: at(1.5), z10: at(1.0), face: at(2, 'face'),
+        baseSame: f({ gravity: 'center', zoom: 1 }, true) === f({ gravity: 'center', zoom: 2.4 }, true),
+        anyPixelFraction: [1.001, 1.01, 2.5, 9].some((z) => {
+          const m = /c_crop,g_\w+,w_([\d.]+)/.exec(at(z));
+          return m && parseFloat(m[1]) >= 1;
+        }),
+      };
+    });
+    // z_ is a silent no-op in this chain, verified against Cloudinary — a zoom
+    // built with it moves the slider and changes nothing.
+    ok('zoom crops instead of emitting the no-op z_', /^c_crop,g_center,w_0\.667,h_0\.667\//.test(tf.z15) && tf.z15.indexOf('z_') === -1);
+    ok('zoom 1x adds no crop', tf.z10.indexOf('c_crop') === -1);
+    ok('zoom works for a detected-object gravity too', /^c_crop,g_face,w_0\.5,h_0\.5\//.test(tf.face));
+    ok('crop fraction stays a ratio, never pixels', !tf.anyPixelFraction);
+    ok('the preview base excludes zoom, so the slider needs no refetch', tf.baseSame);
+
+    const slider = pe.locator('input[type=range]');
+    ok('zoom slider offers only the range that can act (1–2.5)',
+      await slider.getAttribute('min') === '1' && await slider.getAttribute('max') === '2.5');
+    const shot = () => pe.evaluate(() => {
+      const im = document.querySelector('img[alt=Preview]');
+      return im ? { src: im.getAttribute('src'), tr: im.style.transform, origin: im.style.transformOrigin } : null;
+    });
+    const before = await shot();
+    await slider.fill('1.8');
+    await pe.waitForTimeout(150);
+    const after = await shot();
+    ok('dragging zoom changes the preview immediately', before && after && before.tr !== after.tr && /scale\(1.8\)/.test(after.tr));
+    ok('…without swapping the image (no network round trip)', before.src === after.src);
+    await pe.close();
   } catch (e) { fail++; console.error('  ✗ harness error: ' + (e && e.message)); }
   finally { if (browser) await browser.close(); try { process.kill(-server.pid); } catch (_) {} try { fs.unlinkSync(FIX); } catch (_) {} }
 

@@ -1375,18 +1375,33 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
 }
 
 /* Build a Cloudinary delivery transform from an explicit edit spec — mirrors
-   the server's cloudinary_edit_manual so the live preview matches the save. */
-function buildEditTransform(spec) {
-  const parts = ["c_fill", "g_" + (spec.gravity || "face"), "w_600", "h_750", "f_auto", "q_auto:good", "e_improve:30"];
-  if (spec.zoom && Math.abs(spec.zoom - 1) > 0.001) parts.push("z_" + String(Math.round(spec.zoom * 100) / 100));
+   the server's cloudinary_edit_manual so the preview matches the save.
+   `omitZoom` returns the un-zoomed base, which the editor scales in CSS for a
+   live preview instead of fetching a new derivative on every slider tick. */
+function buildEditTransform(spec, omitZoom) {
+  const g = spec.gravity || "face";
+  const parts = ["c_fill", "g_" + g, "w_600", "h_750", "f_auto", "q_auto:good", "e_improve:30"];
   if (spec.brighten) parts.push("e_brightness:18");
   if (spec.sharpen) parts.push("e_sharpen:80");
   let chain = parts.join(",");
+  // Zoom is a fractional crop chained BEFORE the fill, not Cloudinary's z_.
+  // z_ is silently ignored in this chain — verified against Cloudinary:
+  // c_fill with z_1.6 returns byte-identical output to no zoom, for g_face as
+  // well as the fixed gravities. Cropping 1/zoom of the source about the same
+  // gravity and then filling gives the framing z_ was meant to, for every
+  // gravity, and it is what the CSS preview scale corresponds to.
+  if (!omitZoom && spec.zoom > 1.005) {
+    const f = Math.max(0.2, Math.min(0.99, Math.round(1000 / spec.zoom) / 1000));
+    chain = "c_crop,g_" + g + ",w_" + f + ",h_" + f + "/" + chain;
+  }
   // Soft neutral grey (mirrors ID_BG_GREY in photos.php) — a studio backdrop,
   // not stark white, so the subject stands off the white card stock.
   if (spec.removeBg) chain += "/e_background_removal/b_rgb:eceef2";
   return chain;
 }
+// Where the crop is anchored, as a CSS transform-origin — so scaling the base
+// preview zooms about the same point Cloudinary will crop about.
+const EDIT_ORIGIN = { face: "50% 50%", faces: "50% 50%", auto: "50% 50%", center: "50% 50%", north: "50% 0%", south: "50% 100%" };
 
 /* Admin photo editor — re-edit ANY image (card headshot, review-queue asset).
    Live client-side preview via cldWith; Save persists through the server which
@@ -1399,7 +1414,27 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
   const [err, setErr] = React.useState("");
   const fileRef = React.useRef(null);
   const set = (k, v) => setSpec(s => Object.assign({}, s, { [k]: v }));
-  const preview = currentUrl ? cldWith(currentUrl, buildEditTransform(spec)) : "";
+  /* The preview image is the UN-zoomed base. Zoom is applied as a CSS scale
+   * about the crop anchor, which is exactly what the fractional crop does on
+   * save — so dragging the slider is instant and costs no network, instead of
+   * requesting a freshly-generated Cloudinary derivative per tick and sitting
+   * on a blank frame while it renders. Only the discrete controls (focus,
+   * brighten, sharpen, backdrop) fetch a new base. */
+  const base = currentUrl ? cldWith(currentUrl, buildEditTransform(spec, true)) : "";
+  const [shown, setShown] = React.useState(base);   // last base that finished loading
+  const [loading, setLoading] = React.useState(false);
+  React.useEffect(() => {
+    if (!base) { setShown(""); return; }
+    if (base === shown) return;
+    let alive = true;
+    setLoading(true);
+    const im = new Image();
+    // Swap only once the new base has decoded, so the frame never goes blank.
+    im.onload = () => { if (alive) { setShown(base); setLoading(false); } };
+    im.onerror = () => { if (alive) setLoading(false); };
+    im.src = base;
+    return () => { alive = false; };
+  }, [base]);
 
   const save = async () => {
     setBusy("save"); setErr("");
@@ -1437,8 +1472,15 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
           <button onClick={() => !busy && onClose && onClose()} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: "#888" }}>×</button>
         </div>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ width: 168, height: 210, borderRadius: 12, overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", border: "1px solid rgba(12,20,50,.14)", flex: "0 0 auto" }}>
-            {preview ? <img src={preview} alt="Preview" style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : <div style={{ display: "grid", placeItems: "center", height: "100%", color: "#889" }}>No photo</div>}
+          <div style={{ position: "relative", width: 168, height: 210, borderRadius: 12, overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", border: "1px solid rgba(12,20,50,.14)", flex: "0 0 auto" }}>
+            {shown
+              ? <img src={shown} alt="Preview" style={{
+                  width: "100%", height: "100%", objectFit: "cover", display: "block",
+                  transform: "scale(" + spec.zoom + ")",
+                  transformOrigin: EDIT_ORIGIN[spec.gravity] || "50% 50%",
+                }}/>
+              : <div style={{ display: "grid", placeItems: "center", height: "100%", color: "#889" }}>{base ? "Loading…" : "No photo"}</div>}
+            {loading && shown && <span className="mono" style={{ position: "absolute", right: 6, bottom: 6, fontSize: 10, padding: "2px 6px", borderRadius: 6, background: "rgba(12,20,50,.62)", color: "#fff" }}>updating…</span>}
           </div>
           <div style={{ flex: 1, minWidth: 220, display: "flex", flexDirection: "column", gap: 12 }}>
             <div>
@@ -1446,8 +1488,15 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{chip("gravity", "face", "Face")}{chip("gravity", "center", "Centre")}{chip("gravity", "north", "Top")}{chip("gravity", "south", "Bottom")}</div>
             </div>
             <div>
-              <div className="mono" style={{ fontSize: 11, letterSpacing: ".1em", color: "#889", marginBottom: 6 }}>ZOOM · {spec.zoom.toFixed(2)}×</div>
-              <input type="range" min="0.6" max="1.8" step="0.05" value={spec.zoom} onChange={e => set("zoom", parseFloat(e.target.value))} style={{ width: "100%" }}/>
+              {/* 1× is already the widest framing the source allows — c_fill
+                  at 1× shows the full extent cropped to the card's 4:5 — so
+                  the slider only zooms in. It used to offer 0.6× and nothing
+                  below 1× could ever have had an effect. */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                <span className="mono" style={{ fontSize: 11, letterSpacing: ".1em", color: "#889" }}>ZOOM · {spec.zoom.toFixed(2)}×</span>
+                {spec.zoom > 1.005 && <button type="button" onClick={() => set("zoom", 1)} style={{ border: "none", background: "none", color: "#16223e", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: 0 }}>reset</button>}
+              </div>
+              <input type="range" min="1" max="2.5" step="0.05" value={spec.zoom} onChange={e => set("zoom", parseFloat(e.target.value))} style={{ width: "100%" }} aria-label="Zoom"/>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {toggle("brighten", "Brighten")}
@@ -1458,7 +1507,7 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
         </div>
         {err && <p style={{ color: "var(--coral, #ff5a3c)", fontSize: 13, margin: "12px 0 0" }}>{err}</p>}
         <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-          <button className="btn btn-primary btn-sm" disabled={!!busy || !preview} onClick={save}>{busy === "save" ? "Saving…" : "Save edit"}</button>
+          <button className="btn btn-primary btn-sm" disabled={!!busy || !base} onClick={save}>{busy === "save" ? "Saving…" : "Save edit"}</button>
           {target.subjectId && <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy === "replace" ? "Uploading…" : "Replace photo"}</button>}
           <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => onClose && onClose()}>Cancel</button>
           <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) replace(f); e.target.value = ""; }}/>
