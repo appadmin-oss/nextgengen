@@ -30,7 +30,9 @@ function loadChromium() {
   fs.writeFileSync(FIX, '<!doctype html><html><body>'
     + '<div id="card" class="idcard" style="width:295px;height:410px;background:#fff;position:relative;font-family:Inter,sans-serif;overflow:hidden">'
     + '<div style="position:absolute;top:180px;left:0;right:0;text-align:center;font-weight:800;font-size:26px;color:#E4155F">ADAEZE</div>'
-    + '<div style="position:absolute;left:0;right:0;bottom:0;height:14px;background:#B0143C"></div></div>'
+    + '<div style="position:absolute;left:0;right:0;bottom:0;height:14px;background:#B0143C"></div>'
+    + '<img id="deadlogo" src="/assets/__never_answers/logo-a.png" style="width:40px">'
+    + '<img src="/assets/__never_answers/logo-b.png" style="width:40px"></div>'
     + '<script src="/vendor/card-export.js"></script></body></html>');
 
   const server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
@@ -40,8 +42,13 @@ function loadChromium() {
   try {
     browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
     const page = await browser.newPage();
+    // A host that accepts the connection and never answers — what the site's
+    // own asset URLs look like when the origin is down.
+    await page.route('**/__never_answers/**', () => {});
     page.on('console', m => { if (m.type() === 'error') console.error('    page:', m.text()); });
-    await page.goto(BASE + '/tests/_export_fixture.html', { waitUntil: 'networkidle' });
+    // Not 'networkidle': the deliberately-dead images never settle.
+    await page.goto(BASE + '/tests/_export_fixture.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!window.CardExport, null, { timeout: 15000 });
     const r = await page.evaluate(async (MM) => {
       const CE = window.CardExport; await CE.ensureDeps();
       const node = document.getElementById('card');
@@ -65,6 +72,19 @@ function loadChromium() {
       // → x=3 is source col 0 (red) and x=2 is source col 1 (blue). A *stretch*
       // would paint the whole strip red, so this distinguishes the two.
       const mirrored = px(3, 10) === '255,0,0' && px(2, 10) === '0,0,255';
+
+      /* ── a dead asset host must not fail the card ────────────────────────
+       * The card logos are same-origin. When the site's own server stops
+       * answering, every face used to pay the fetch timeout twice over for
+       * each of them, blow the per-face budget and fail the entire roster
+       * with "couldn't render" and no download. Discovery costs one grace
+       * period; after that the URL is known-bad and faces are fast again. */
+      const deadT0 = performance.now();
+      await CE.renderFace(node, { trimW_mm: TRIM_W, dpi: 150, bleed_mm: 1 });
+      const firstDeadMs = performance.now() - deadT0;
+      const deadT1 = performance.now();
+      await CE.renderFace(node, { trimW_mm: TRIM_W, dpi: 150, bleed_mm: 1 });
+      const laterDeadMs = performance.now() - deadT1;
 
       // ── faces, with bleed, at a real print resolution ────────────────────
       const scale = CE.scaleForDpi(295, TRIM_W, 350);
@@ -212,6 +232,7 @@ function loadChromium() {
       const pl = decode(new Uint8Array(jd.output('arraybuffer')));
 
       return {
+        firstDeadMs: Math.round(firstDeadMs), laterDeadMs: Math.round(laterDeadMs),
         jpg: front.dataUrl.indexOf('data:image/jpeg') === 0 && front.wPx > front.trimWPx,
         dpi: Math.round(dpiPx),
         scale,
@@ -242,6 +263,8 @@ function loadChromium() {
       };
     }, MM);
 
+    ok('a card whose asset host never answers still renders (' + r.firstDeadMs + 'ms)', r.firstDeadMs < 25000);
+    ok('and the dead URL is not re-tried on later faces (' + r.laterDeadMs + 'ms)', r.laterDeadMs < 1500);
     ok('renderFace produced a bled JPEG face', r.jpg);
     ok('artwork lands at 350 DPI for the trim size (got ' + r.dpi + ')', Math.abs(r.dpi - 350) <= 6);
     ok('bleed is mirrored outward, not stretched', r.mirrored);

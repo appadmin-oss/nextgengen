@@ -3380,16 +3380,34 @@ function CardStudio() {
   // Card proportion (mm) — admin-set, applies to preview, PNG/PDF export + print.
   const [sizeW, setSizeW] = React.useState(54); const [sizeH, setSizeH] = React.useState(75);
   const [sizeMsg, setSizeMsg] = React.useState("");
+  const [loadErr, setLoadErr] = React.useState("");   // "" | code of a partial/total load failure
   const navy = "#16223e", gold = "#ffce54";
 
   const load = React.useCallback(() => {
     setState("loading");
+    /* Settle each call independently. Promise.all rejects on the first
+     * failure, which meant the whole studio went to an error screen and
+     * rendered no cards at all if any ONE of the four endpoints was unhappy —
+     * a hiccup fetching the volunteer tier list took the student roster down
+     * with it. Now whatever loaded is shown, and only losing both rosters is
+     * a hard error. */
+    const settle = (p) => p.then(v => ({ ok: true, v: v }), e => ({ ok: false, code: (e && (e.code || e.message)) || "error" }));
     Promise.all([
-      NGGApi.admin.registration.cards(), NGGApi.admin.registration.centres(),
-      NGGApi.admin.registration.volunteerCards(), NGGApi.admin.registration.hierarchy(),
-    ])
-      .then(([c, ct, vc, h]) => { setData(c); setCentres(ct.centres || []); setVdata(vc); setTiers(h.tiers || []); setState("ready"); })
-      .catch(e => setState((e.code || e.message) === "unauthorized" ? "need-auth" : "error"));
+      settle(NGGApi.admin.registration.cards()),
+      settle(NGGApi.admin.registration.centres()),
+      settle(NGGApi.admin.registration.volunteerCards()),
+      settle(NGGApi.admin.registration.hierarchy()),
+    ]).then(([c, ct, vc, h]) => {
+      const bad = [c, ct, vc, h].filter(r => !r.ok);
+      if (bad.some(r => r.code === "unauthorized")) { setState("need-auth"); return; }
+      if (c.ok) setData(c.v);
+      if (ct.ok) setCentres(ct.v.centres || []);
+      if (vc.ok) setVdata(vc.v);
+      if (h.ok) setTiers(h.v.tiers || []);
+      if (!c.ok && !vc.ok) { setLoadErr(bad[0].code); setState("error"); return; }
+      setLoadErr(bad.length ? bad[0].code : "");
+      setState("ready");
+    });
   }, []);
   React.useEffect(() => { load(); }, [load]);
   React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(); }, [auth && auth.isSignedIn]);
@@ -3552,24 +3570,33 @@ function CardStudio() {
 
   // Never rasterise before the QR and the photo have actually painted, or the
   // export ships blank codes and empty frames.
+  /* Wait for the staged card to be paintable — but only as long as waiting is
+   * worth anything.
+   *
+   * The QR is generated on the device and always arrives, so it is a hard
+   * requirement: rasterising early ships a blank code. The logos and photo are
+   * remote, and when the site's own server is unreachable they NEVER settle —
+   * so they get a short grace and then we proceed. The rasteriser blanks any
+   * image it couldn't fetch, so a card missing its logo still prints, whereas
+   * waiting out a full timeout per asset per card never finishes at all.
+   *
+   * `complete` rather than naturalWidth: complete turns true once an image has
+   * decoded OR failed, while naturalWidth stays 0 on failure — and the card
+   * back links a logo that may not be deployed. */
+  const QR_WAIT_MS = 6000, IMG_GRACE_MS = 1200;
   const hostAssetsReady = async () => {
     const t0 = Date.now();
     for (;;) {
       const el = hostRef.current;
       if (el) {
         const imgs = Array.from(el.querySelectorAll("img"));
-        // One QR per pair: it lives on the front, the back has none. Waiting
-        // for two never comes true and costs the whole timeout on every card.
-        //
-        // `complete` alone, deliberately: it is true once an image has either
-        // decoded OR failed, whereas naturalWidth stays 0 on a failure. The
-        // card back links a logo that may not be deployed, and testing
-        // naturalWidth made every single card wait out the full timeout.
-        const qrs = el.querySelectorAll("img.card-qr");
-        if (qrs.length >= 1 && imgs.length && imgs.every(im => im.complete)) return true;
+        // One QR per pair: it is on the front, the back has none.
+        const haveQr = el.querySelectorAll("img.card-qr").length >= 1;
+        const settled = imgs.length > 0 && imgs.every(im => im.complete);
+        if (haveQr && (settled || Date.now() - t0 > IMG_GRACE_MS)) return true;
       }
-      if (Date.now() - t0 > 6000) return false;
-      await new Promise(r => setTimeout(r, 60));
+      if (Date.now() - t0 > QR_WAIT_MS) return false;
+      await new Promise(r => setTimeout(r, 50));
     }
   };
   React.useEffect(() => {
@@ -3731,7 +3758,18 @@ function CardStudio() {
   );
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
   if (state === "need-auth") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 22 }}>Staff sign-in required</h1><button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Sign in →</button></div>);
-  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load the studio</h1><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
+  if (state === "error") {
+    const offline = loadErr === "timeout" || loadErr === "network";
+    return shell(<div style={{ textAlign: "center", padding: "80px 0", maxWidth: 520, margin: "0 auto" }}>
+      <h1 style={{ fontSize: 20 }}>{offline ? "Can't reach the server" : "Couldn't load the studio"}</h1>
+      <p style={{ color: "rgba(230,238,255,.6)", fontSize: 14, lineHeight: 1.6, marginTop: 8 }}>
+        {offline
+          ? "The roster lives on the server, so no cards can be drawn until it answers. This isn't your device — nothing here is broken, and the studio picks up on its own once the server is back."
+          : "The roster didn't come back. Try again, and if it keeps failing check that you're signed in with a staff account."}
+      </p>
+      <button onClick={load} style={{ marginTop: 14, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button>
+    </div>);
+  }
 
   const cards = (isVol ? (vdata && vdata.cards) : (data && data.cards)) || [];
   const program = ((isVol ? vdata : data) && (isVol ? vdata : data).program) || {};
@@ -3775,6 +3813,10 @@ function CardStudio() {
         .card-pair[data-sel="0"] { display: none !important; }
       }
     `}</style>
+    {loadErr && <div className="no-print" style={{ background: "rgba(255,154,154,.12)", border: "1px solid rgba(255,154,154,.4)", borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 13 }}>
+      Part of the studio didn{"\u2019"}t load{loadErr === "timeout" || loadErr === "network" ? " — the server didn\u2019t answer" : ""}. The cards below are still correct; centres, tiers or the other roster may be missing.{" "}
+      <button onClick={load} style={{ background: "none", border: "none", color: gold, fontWeight: 700, cursor: "pointer", padding: 0, fontSize: 13 }}>Retry</button>
+    </div>}
     <div className="no-print" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 18, marginBottom: 18 }}>
       <div>
         <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>ID CARD STUDIO · {String(program.program || "")} {String(program.year || "")}</div>

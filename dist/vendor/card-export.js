@@ -80,7 +80,8 @@
    * used to hang the whole run with no way out but a reload. Nothing here
    * waits forever, and every failure degrades to "carry on without it". */
   var SCRIPT_TIMEOUT = 20000;   // ms — a vendored script is local; 20s is generous
-  var FETCH_TIMEOUT = 12000;    // ms per image fetch attempt
+  var FETCH_TIMEOUT = 12000;    // ms — remote images (a photo on a slow link)
+  var LOCAL_TIMEOUT = 5000;     // ms — our own assets: near-instant or not coming
   var IMAGE_TIMEOUT = 8000;     // ms — html2canvas; images are inlined by then
 
   function loadScript(src) {
@@ -147,39 +148,77 @@
   // photo is free. Cloudinary edit URLs are unique per edit, so this is safe.
   // Failures are cached as null too: one dead URL must not be retried 300 times.
   var _dataUrlCache = {}, _cacheKeys = [];
-  var CACHE_MAX = 60;   // entries
+  var _failed = Object.create(null);   // urls known not to answer — flags only
+  var CACHE_MAX = 60;                  // successful payloads held
   async function fetchAsDataURL(src) {
+    /* A URL that has already failed is never asked again, and the negative
+     * cache is NEVER evicted. This matters far more than it looks. The card
+     * logos are same-origin, so when the site's own server is unreachable
+     * every card pays the full fetch timeout for each of them — with a retry
+     * that is 24s per logo per card, which blows the per-face budget and
+     * fails the whole roster with "couldn't render… not downloading".
+     * Bounding this cache by entry count made it worse, because the unique
+     * per-card photos evicted the shared logos and the stall came back every
+     * few cards. Negative entries are flags, so keeping them all is free. */
+    if (_failed[src]) return null;
     if (_dataUrlCache[src] !== undefined) return _dataUrlCache[src];
     var out = null;
+    // Same-origin card furniture either answers at once or the site is down;
+    // it does not deserve the patience a photo host gets, and that grace is
+    // paid once per dead URL before the negative cache takes over.
+    var isLocal = src.charAt(0) === '/' || src.indexOf(location.origin) === 0;
+    var budget = isLocal ? LOCAL_TIMEOUT : FETCH_TIMEOUT;
     for (var attempt = 0; attempt < 2 && out === null; attempt++) {
-      try { out = await blobToDataURL(await fetchOnce(src, FETCH_TIMEOUT)); } catch (e) { /* retry once, then give up */ }
+      try { out = await blobToDataURL(await fetchOnce(src, budget)); }
+      catch (e) {
+        // Our own abort means the host is not answering; waiting the same
+        // twelve seconds a second time tells us nothing new.
+        if (e && e.name === 'AbortError') break;
+      }
     }
+    if (out === null) { _failed[src] = true; return null; }
     // Bounded, oldest-first. Photos are unique per card and a data URL runs to
-    // a few hundred KB, so an unbounded cache quietly accumulates hundreds of
-    // megabytes across a full roster; the shared logos are re-fetched from the
-    // HTTP cache for free when they fall out.
+    // a few hundred KB, so an unbounded payload cache quietly accumulates
+    // hundreds of megabytes across a full roster.
     _dataUrlCache[src] = out;
     _cacheKeys.push(src);
     while (_cacheKeys.length > CACHE_MAX) delete _dataUrlCache[_cacheKeys.shift()];
     return out;
   }
-  function clearImageCache() { _dataUrlCache = {}; _cacheKeys = []; }
+  function clearImageCache() { _dataUrlCache = {}; _cacheKeys = []; _failed = Object.create(null); }
   /* Inline every <img> in the node as a same-origin data URI before rasterising.
    * Without this, html2canvas taints cross-origin photos (Cloudinary/external)
    * and DROPS them — the on-screen edit "reverts" (vanishes) in the export. We
    * swap src to a data URL, snapshot, then restore the originals. */
+  var INLINE_BUDGET = 6000;   // ms for ALL of one face's images
+  var BLANK_PX = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
   async function inlineImages(node) {
     var imgs = Array.prototype.slice.call(node.querySelectorAll('img'));
     var restore = [];
+    // Whole-face deadline. Inlining is an optimisation — it stops html2canvas
+    // dropping cross-origin photos — not a requirement. Past the deadline the
+    // rest keep their original src and the card still renders, which beats
+    // failing the card outright because an asset host is slow.
+    var deadline = Date.now() + INLINE_BUDGET;
     for (var i = 0; i < imgs.length; i++) {
       var im = imgs[i], src = im.getAttribute('src') || '';
       if (!src || src.indexOf('data:') === 0) continue;
-      var data = await fetchAsDataURL(src);
+      var data = (Date.now() > deadline) ? null : await fetchAsDataURL(src);
       if (data) {
         restore.push([im, src]);
         im.setAttribute('src', data);
         // Ensure the swapped image is decoded before html2canvas snapshots.
         try { if (im.decode) await im.decode(); } catch (e) {}
+      } else {
+        /* Couldn't fetch it, so neutralise it rather than leave it pointing at
+         * a host that is not answering. Skipping alone is not enough:
+         * html2canvas would then wait out its OWN imageTimeout on the same
+         * dead URL, for every face, which is the difference between a roster
+         * that exports without its logos and one that never finishes. The
+         * original src is restored afterwards, so the on-screen card is
+         * untouched — it just prints without that asset. */
+        restore.push([im, src]);
+        im.setAttribute('src', BLANK_PX);
       }
     }
     return function () { for (var j = 0; j < restore.length; j++) restore[j][0].setAttribute('src', restore[j][1]); };

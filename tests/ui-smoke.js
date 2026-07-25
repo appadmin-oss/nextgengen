@@ -70,6 +70,8 @@ const STATUS = {
   // The pages pull in shared chrome (Footer et al) and, for the studio, a tree
   // of admin endpoints. Any path not named below resolves empty, so unrelated
   // chrome can never fail an assertion; only the two board calls are counted.
+  window.__fail = new URLSearchParams(location.search).get('fail') || '';
+  function offline() { var e = new Error('timeout'); e.code = 'timeout'; e.status = 0; return Promise.reject(e); }
   function deep(over) {
     return new Proxy(function () { return Promise.resolve({}); }, {
       get: function (t, k) {
@@ -100,10 +102,11 @@ const STATUS = {
       });
     },
     admin: deep({ registration: deep({
-      cards: function () { return Promise.resolve(ROSTER); },
-      volunteerCards: function () { return Promise.resolve({ program: PROGRAM, cards: [] }); },
+      cards: function () { return window.__fail === 'all' ? offline() : Promise.resolve(ROSTER); },
+      volunteerCards: function () { return window.__fail === 'all' ? offline() : Promise.resolve({ program: PROGRAM, cards: [] }); },
       centres: function () { return Promise.resolve({ centres: [] }); },
-      hierarchy: function () { return Promise.resolve({ tiers: [] }); },
+      // A secondary endpoint failing must not take the roster down with it.
+      hierarchy: function () { return window.__fail ? offline() : Promise.resolve({ tiers: [] }); },
     }) }),
     public: deep({
     status: stub('status', ${JSON.stringify(STATUS)}),
@@ -287,6 +290,24 @@ const STATUS = {
     await studio.waitForSelector('.print-zone', { timeout: 20000 }).catch(() => {});
     ok('the grid comes back after the run', await studio.locator('.print-zone').count() === 1);
     await studio.close();
+
+    // ── a partial load must not blank the studio ─────────────────────────
+    const part = await browser.newPage();
+    await part.goto(BASE + '/tests/_boards_fixture.html?board=cards&mode=ok&fail=one', { waitUntil: 'networkidle' });
+    await part.waitForTimeout(700);
+    const partTxt = await part.evaluate(() => document.body.innerText);
+    ok('one failing endpoint still renders the roster',
+      await part.locator('.card-pair input[type=checkbox]').count() === 24 && /didn.t load/.test(partTxt));
+    await part.close();
+
+    // ── and a total outage says so plainly ───────────────────────────────
+    const down = await browser.newPage();
+    await down.goto(BASE + '/tests/_boards_fixture.html?board=cards&mode=ok&fail=all', { waitUntil: 'networkidle' });
+    await down.waitForTimeout(700);
+    const downTxt = await down.evaluate(() => document.body.innerText);
+    ok('a server outage says the server is unreachable, not that nothing exists',
+      /Can't reach the server/.test(downTxt) && /isn.t your device/.test(downTxt));
+    await down.close();
 
     // ── photo editor: zoom works, and previews without a round trip ──────
     const pe = await browser.newPage();
