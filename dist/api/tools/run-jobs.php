@@ -48,7 +48,12 @@ if ($maxId > 5000) {
     $log['audit_trimmed'] = db_exec('DELETE FROM audit_log WHERE id <= ?', [$maxId - 5000]);
 }
 
-// 6) Push the Sheets mirror if configured.
+// 6) Roll any desk password that has reached its rotation interval.
+require_once $root . '/_lib/mailer.php';
+require_once $root . '/_lib/domain/registration.php';
+$log['gate_passwords'] = gates_rotate_due();
+
+// 7) Push the Sheets mirror if configured.
 if (trim((string)($CONFIG['apps_script_url'] ?? '')) !== '') {
     $out = [];
     @exec('php ' . escapeshellarg(__DIR__ . '/export-sheets.php') . ' 2>&1', $out, $rc);

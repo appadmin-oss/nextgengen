@@ -1869,6 +1869,78 @@ chk('admin.photo.edit re-crops a live student photo (no stacked transforms)', (f
     return strpos($now, 'g_center') !== false && strpos($now, 'c_crop,g_center,w_0.833') !== false && strpos($now, 'z_') === false
         && strpos($now, 'g_face,w_600,h_750/c_fill') === false && substr_count($now, '/upload/') === 1 && strpos($now, '/v17/') !== false;
 })());
+/* ── Gate desk passwords: generation + rotation ─────────────────────────── */
+chk('gate_password_new avoids look-alike characters and does not repeat', (function () {
+    $seen = [];
+    for ($i = 0; $i < 200; $i++) {
+        $pw = gate_password_new();
+        if (!preg_match('/^[ACDEFGHJKMNPQRTUVWXYZ2346789]{4}-[ACDEFGHJKMNPQRTUVWXYZ2346789]{4}$/', $pw)) return false;
+        if (preg_match('/[O0I1LSB5]/', $pw)) return false;
+        $seen[$pw] = true;
+    }
+    return count($seen) > 195;
+})());
+chk('gate create can generate a password, returns it once, stores only a hash', (function () {
+    $r = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Gen desk', 'generate' => true]);
+    if (empty($r['ok']) || empty($r['password']) || empty($r['hasPassword'])) return false;
+    $row = db_row('SELECT passHash, passSetAt FROM gate_links WHERE gateId = ?', [$r['gateId']]);
+    $listed = array_values(array_filter(backend_dispatch('admin.gates.list', ['requesterId' => 'NGG-2025-0099'])['gates'],
+        fn($g) => $g['gateId'] === $r['gateId']))[0];
+    return strpos((string)$row['passHash'], $r['password']) === false
+        && password_verify($r['password'], (string)$row['passHash'])
+        && (string)$row['passSetAt'] !== ''
+        && !array_key_exists('password', $listed) && !array_key_exists('passHash', $listed);
+})());
+chk('gate rotate issues a new password and kills the old one', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Roll desk', 'generate' => true]);
+    $old = $c['password'];
+    $r = backend_dispatch('admin.gates.rotate', ['requesterId' => 'NGG-2025-0099', 'gateId' => $c['gateId']]);
+    if (empty($r['ok']) || empty($r['password']) || $r['password'] === $old) return false;
+    $hash = (string)db_row('SELECT passHash FROM gate_links WHERE gateId = ?', [$c['gateId']])['passHash'];
+    return password_verify($r['password'], $hash) && !password_verify($old, $hash);
+})());
+chk('gate rotation schedule validates the address and clamps the interval', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Sched desk', 'generate' => true]);
+    $bad = backend_dispatch('admin.gates.rotation', ['requesterId' => 'NGG-2025-0099', 'gateId' => $c['gateId'], 'rotateDays' => 30, 'notifyEmail' => 'not-an-email']);
+    $good = backend_dispatch('admin.gates.rotation', ['requesterId' => 'NGG-2025-0099', 'gateId' => $c['gateId'], 'rotateDays' => 400, 'notifyEmail' => 'ops@example.org']);
+    return ($bad['error'] ?? '') === 'bad_email' && !empty($good['ok']) && $good['rotateDays'] === 365;
+})());
+chk('a gate past its interval reports as due', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Due desk', 'generate' => true, 'rotateDays' => 7]);
+    db_update('gate_links', ['passSetAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 8 * 86400)], ['gateId' => $c['gateId']]);
+    $row = array_values(array_filter(backend_dispatch('admin.gates.list', ['requesterId' => 'NGG-2025-0099'])['gates'],
+        fn($g) => $g['gateId'] === $c['gateId']))[0];
+    return $row['rotationDue'] === true && $row['rotatesInDays'] <= 0;
+})());
+chk('scheduled rotation NEVER rolls a gate with nowhere to send the password', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'No-notify desk', 'generate' => true, 'rotateDays' => 7]);
+    db_update('gate_links', ['passSetAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 9 * 86400)], ['gateId' => $c['gateId']]);
+    $before = (string)db_row('SELECT passHash FROM gate_links WHERE gateId = ?', [$c['gateId']])['passHash'];
+    $res = gates_rotate_due();
+    $after = (string)db_row('SELECT passHash FROM gate_links WHERE gateId = ?', [$c['gateId']])['passHash'];
+    return $after === $before && $res['pending_manual'] >= 1 && password_verify($c['password'], $after);
+})());
+chk('a gate not yet due is left alone by the scheduler', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Fresh desk',
+        'generate' => true, 'rotateDays' => 30, 'notifyEmail' => 'ops@example.org']);
+    gates_rotate_due();
+    return password_verify($c['password'], (string)db_row('SELECT passHash FROM gate_links WHERE gateId = ?', [$c['gateId']])['passHash']);
+})());
+chk('a due gate is only rolled if the notification actually sent', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Auto desk',
+        'generate' => true, 'rotateDays' => 7, 'notifyEmail' => 'ops@example.org']);
+    db_update('gate_links', ['passSetAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 9 * 86400)], ['gateId' => $c['gateId']]);
+    $res = gates_rotate_due();
+    $stillOld = password_verify($c['password'], (string)db_row('SELECT passHash FROM gate_links WHERE gateId = ?', [$c['gateId']])['passHash']);
+    // Mail works here or it doesn't; either way the two must agree — a failed
+    // send must leave the desk's current password working.
+    return $res['rotated'] >= 1 ? !$stillOld : ($res['send_failed'] >= 1 && $stillOld);
+})());
+chk('gate rotate is gated from non-staff', (function () {
+    $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Guard desk', 'generate' => true]);
+    return (backend_dispatch('admin.gates.rotate', ['requesterId' => 'NGG-2025-0001', 'gateId' => $c['gateId']])['error'] ?? '') === 'forbidden';
+})());
+
 chk('admin.photo.edit gated from non-staff', backend_dispatch('admin.photo.edit', ['requesterId' => 'NGG-2025-0001', 'subjectType' => 'student', 'subjectId' => 'SUM-R-1', 'spec' => []])['error'] === 'forbidden');
 
 // ── General dashboard (attendance + per-centre analytics) ───────────────────

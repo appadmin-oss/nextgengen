@@ -1290,20 +1290,61 @@ function FormPreview({ fields, name }) {
 }
 
 /* ── Gate links — create/revoke the staff-gated public registration links ── */
+const ROTATE_CHOICES = [[0, "Never"], [7, "Every week"], [30, "Every 30 days"], [90, "Every 90 days"]];
+
 function SummerGates() {
   const [gates, setGates] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [name, setName] = React.useState("");
   const [pw, setPw] = React.useState("");
+  const [autoPw, setAutoPw] = React.useState(true);
+  const [rotateDays, setRotateDays] = React.useState(30);
+  const [notify, setNotify] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  // A generated password exists in the clear exactly once — in this response.
+  // Only its hash is stored, so it is shown until dismissed and never again.
+  const [reveal, setReveal] = React.useState(null);   // {gateId, name, password}
   const load = () => NGGApi.admin.registration.gates().then(r => { setGates(r.gates || []); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const create = async (e) => {
     e && e.preventDefault();
-    if (pw && pw.trim().length < 4) { toast.error("Desk password must be at least 4 characters."); return; }
+    if (!autoPw && pw && pw.trim().length < 4) { toast.error("Desk password must be at least 4 characters."); return; }
     setBusy(true);
-    try { await NGGApi.admin.registration.gateCreate(name || "Registration desk", "", pw.trim()); setName(""); setPw(""); toast.success(pw.trim() ? "Kiosk gate created." : "Gate link created."); load(); }
-    catch (e2) { toast.error(e2.code === "weak_password" ? "Desk password is too short." : (e2.code || e2.message)); } finally { setBusy(false); }
+    try {
+      const label = name || "Registration desk";
+      const r = await NGGApi.admin.registration.gateCreate(label, "", autoPw ? "" : pw.trim(), "",
+        { generate: autoPw, rotateDays, notifyEmail: notify.trim() });
+      setName(""); setPw(""); setNotify("");
+      if (r.password) setReveal({ gateId: r.gateId, name: label, password: r.password });
+      else toast.success(r.hasPassword ? "Kiosk gate created." : "Gate link created.");
+      load();
+    }
+    catch (e2) { toast.error(e2.code === "weak_password" ? "Desk password is too short." : e2.code === "bad_email" ? "That notification email isn't valid." : (e2.code || e2.message)); }
+    finally { setBusy(false); }
+  };
+  const rotateNow = async (g) => {
+    if (!(await dialog.confirm({ title: "Roll this desk password?", body: "A new password is generated now and the current one stops working immediately. Anyone at the desk will need the new one.", cta: "Rotate" }))) return;
+    try { const r = await NGGApi.admin.registration.gateRotate(g.gateId); setReveal({ gateId: g.gateId, name: g.name, password: r.password }); load(); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
+  const editRotation = async (g) => {
+    const days = await dialog.prompt({ title: "Rotate how often?", body: "Days between automatic rotations — 0 turns it off. The new password is emailed when it rolls, so a gate with no email is only ever flagged as due, never rolled behind your back.", cta: "Save", placeholder: "30", inputType: "number", value: String(g.rotateDays || 0), required: false });
+    if (days === null) return;
+    const n = Math.max(0, Math.min(365, parseInt(days, 10) || 0));
+    let email = g.notifyEmail || "";
+    if (n > 0) {
+      const got = await dialog.prompt({ title: "Where should the new password go?", body: "Emailed each time it rolls. Without an address this gate is flagged due instead of rotating, so the desk never gets locked out.", cta: "Save", placeholder: "ops@example.org", value: email, required: false });
+      if (got === null) return;
+      email = got.trim();
+    }
+    try { await NGGApi.admin.registration.gateRotation(g.gateId, n, email); toast.success(n ? ("Rotating every " + n + " days.") : "Rotation off."); load(); }
+    catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : (e.code || e.message)); }
+  };
+  const rotationLabel = (g) => {
+    if (!g.hasPassword) return "—";
+    if (!g.rotateDays) return "manual";
+    if (g.rotationDue) return g.notifyEmail ? "due — rolls tonight" : "DUE — rotate by hand";
+    return "every " + g.rotateDays + "d · in " + g.rotatesInDays + "d";
   };
   const revoke = async (id) => { if (!(await dialog.confirm({ title: "Revoke this link?", body: "Anyone using it will no longer be able to register.", cta: "Revoke" }))) return; try { await NGGApi.admin.registration.gateRevoke(id); load(); } catch (e) { toast.error(e.code || e.message); } };
   const setPassword = async (g) => {
@@ -1316,27 +1357,60 @@ function SummerGates() {
   const linkFor = (g) => location.origin + "/gate?g=" + g.gateId;
   return (
     <div>
-      <p className="admin-hint">A gate link opens the public registration desk. Give it a <b>desk password</b> and field staff can run it without an admin login; otherwise a signed-in staff member must be present.</p>
-      <form onSubmit={create} className="admin-filters">
+      <p className="admin-hint">A gate link opens the public registration desk. Give it a <b>desk password</b> and field staff can run it without an admin login; otherwise a signed-in staff member must be present. Generated passwords are shown once and stored only as a hash. A gate set to rotate emails its new password on the day it rolls {"\u2014"} one with no email is flagged due instead, so a desk is never locked out mid-session.</p>
+      <form onSubmit={create} className="admin-filters" style={{ flexWrap: "wrap" }}>
         <input className="admin-input" placeholder="Label (e.g. Egbeda desk · Sat)" value={name} onChange={e => setName(e.target.value)} style={{ minWidth: 220 }}/>
-        <input className="admin-input" type="text" autoComplete="off" placeholder="Desk password (optional)" value={pw} onChange={e => setPw(e.target.value)} style={{ minWidth: 180 }}/>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+          <input type="checkbox" checked={autoPw} onChange={e => setAutoPw(e.target.checked)}/> Generate password
+        </label>
+        {!autoPw && <input className="admin-input" type="text" autoComplete="off" placeholder="Desk password" value={pw} onChange={e => setPw(e.target.value)} style={{ minWidth: 170 }}/>}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>Rotate
+          <select className="admin-input" value={rotateDays} onChange={e => setRotateDays(Number(e.target.value))} style={{ minWidth: 130 }}>
+            {ROTATE_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        {rotateDays > 0 && <input className="admin-input" type="email" placeholder="Email for the new password" value={notify} onChange={e => setNotify(e.target.value)} style={{ minWidth: 210 }}/>}
+        {rotateDays > 0 && !notify.trim() && <span style={{ fontSize: 12, color: "#8a6d00" }}>No email → flagged due for you to rotate by hand, never rolled unattended.</span>}
         <button className="btn btn-primary btn-sm" disabled={busy}>{busy ? "…" : "+ Create gate link"}</button>
       </form>
+      {reveal && (
+        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,10,24,.6)", display: "grid", placeItems: "center", padding: 18 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 460, width: "100%" }}>
+            <h3 style={{ margin: "0 0 6px", fontSize: 18 }}>Desk password for {reveal.name}</h3>
+            <p style={{ color: "#555", fontSize: 13, lineHeight: 1.55, margin: "0 0 14px" }}>
+              Copy it now {"\u2014"} only its hash is stored, so this is the one and only time it can be shown.
+            </p>
+            <div style={{ font: "700 26px ui-monospace, monospace", letterSpacing: 3, textAlign: "center", padding: "14px 10px", borderRadius: 12, background: "#f3f5fa", userSelect: "all" }}>{reveal.password}</div>
+            <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(reveal.password); toast.success("Password copied."); }}>Copy</button>
+              <button className="btn btn-primary btn-sm" onClick={() => setReveal(null)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
       {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         gates === null ? <div className="dash-spinner"/> :
         gates.length === 0 ? <div className="admin-empty">No gate links yet.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Label</th><th>Link</th><th>Kiosk</th><th>Used</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Label</th><th>Link</th><th>Kiosk</th><th>Rotation</th><th>Used</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {gates.map(g => (
               <tr key={g.gateId}>
                 <td><b>{g.name}</b><div className="mono admin-cell-sub">{fmtDate(g.createdAt)}</div></td>
                 <td><button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(linkFor(g)); toast.success("Link copied."); }}>Copy link</button></td>
                 <td>{g.hasPassword ? <span className="chip chip-lime">🔑 password</span> : <span className="chip status-archived">admin only</span>}</td>
+                <td className="mono" style={{ fontSize: 12 }}>
+                  {g.rotationDue && !g.notifyEmail
+                    ? <span className="chip" style={{ background: "#ffe4e4", color: "#a11" }}>{rotationLabel(g)}</span>
+                    : rotationLabel(g)}
+                  {g.notifyEmail && <div className="admin-cell-sub">→ {g.notifyEmail}</div>}
+                </td>
                 <td className="mono">{g.usedCount || 0}</td>
                 <td>{g.status === "active" ? <span className="chip chip-lime">active</span> : <span className="chip status-archived">{g.status}</span>}</td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{g.status === "active" && <>
                   <button className="btn btn-ghost btn-sm" onClick={() => setPassword(g)}>{g.hasPassword ? "Password" : "Set password"}</button>
+                  {g.hasPassword && <button className="btn btn-ghost btn-sm" onClick={() => rotateNow(g)}>Rotate</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={() => editRotation(g)}>Schedule</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => revoke(g.gateId)}>Revoke</button>
                 </>}</td>
               </tr>

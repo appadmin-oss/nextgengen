@@ -513,6 +513,9 @@ INSERT INTO schema_version (version) VALUES (19) ON DUPLICATE KEY UPDATE version
 -- Gate kiosk password + optional centre pin (migration 20).
 ALTER TABLE gate_links ADD COLUMN passHash VARCHAR(255) DEFAULT '';
 ALTER TABLE gate_links ADD COLUMN centreId VARCHAR(48) DEFAULT '';
+ALTER TABLE gate_links ADD COLUMN passSetAt VARCHAR(40) DEFAULT '';
+ALTER TABLE gate_links ADD COLUMN passRotateDays INT DEFAULT 0;
+ALTER TABLE gate_links ADD COLUMN passNotify VARCHAR(190) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (20) ON DUPLICATE KEY UPDATE version = version;
 

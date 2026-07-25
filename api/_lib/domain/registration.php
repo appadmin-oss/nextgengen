@@ -282,10 +282,54 @@ function admin_forms_publish(array $p): array {
 
 /* ── Gate links ───────────────────────────────────────────────────────────── */
 
+/**
+ * A desk password a volunteer can read off a screen and type on a phone at a
+ * noisy registration table. Two four-character groups from an alphabet with
+ * the look-alikes removed (no O/0, I/1/L, S/5, B/8) — 30^8, about 40 bits,
+ * which is far beyond a 5-per-15-minutes unlock throttle, while staying
+ * hard to mistype and easy to read aloud.
+ */
+function gate_password_new(): string {
+    $abc = 'ACDEFGHJKMNPQRTUVWXYZ2346789';
+    $n = strlen($abc);
+    $out = '';
+    for ($i = 0; $i < 8; $i++) {
+        if ($i === 4) $out .= '-';
+        $out .= $abc[random_int(0, $n - 1)];
+    }
+    return $out;
+}
+
+/** Write a desk password (hash only) and stamp when it was set. */
+function gate_password_store(string $gateId, string $pw): void {
+    db_update('gate_links', [
+        'passHash' => password_hash($pw, PASSWORD_DEFAULT),
+        'passSetAt' => now_iso(),
+    ], ['gateId' => $gateId]);
+}
+
+/** Days until this gate is due to roll, or null when rotation is off. */
+function gate_rotation_due_in(array $gate): ?int {
+    $days = (int)($gate['passRotateDays'] ?? 0);
+    if ($days <= 0 || ($gate['passHash'] ?? '') === '') return null;
+    $set = (string)($gate['passSetAt'] ?? '');
+    $from = $set !== '' ? strtotime($set) : strtotime((string)($gate['createdAt'] ?? ''));
+    if (!$from) return null;
+    return (int)ceil(($from + $days * 86400 - time()) / 86400);
+}
+
 function admin_gates_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    $rows = db_all('SELECT gateId, name, cohortId, centreId, status, createdBy, expiresAt, usedCount, createdAt, passHash FROM gate_links ORDER BY id DESC LIMIT 50');
-    foreach ($rows as &$r) { $r['hasPassword'] = ($r['passHash'] ?? '') !== ''; unset($r['passHash']); }
+    $rows = db_all('SELECT gateId, name, cohortId, centreId, status, createdBy, expiresAt, usedCount, createdAt, passHash, passSetAt, passRotateDays, passNotify FROM gate_links ORDER BY id DESC LIMIT 50');
+    foreach ($rows as &$r) {
+        $r['hasPassword'] = ($r['passHash'] ?? '') !== '';
+        $due = gate_rotation_due_in($r);
+        $r['rotateDays'] = (int)($r['passRotateDays'] ?? 0);
+        $r['rotatesInDays'] = $due;                     // null when rotation is off
+        $r['rotationDue'] = $due !== null && $due <= 0;
+        $r['notifyEmail'] = (string)($r['passNotify'] ?? '');
+        unset($r['passHash'], $r['passRotateDays'], $r['passNotify']);
+    }
     unset($r);
     return ['ok' => true, 'gates' => $rows];
 }
@@ -296,20 +340,32 @@ function admin_gates_create(array $p): array {
     $gateId = 'GL-' . strtoupper(rand_hex(6));
     // Optional kiosk password: field staff without an admin login unlock the
     // desk with it (see gate_unlock). Stored as a bcrypt hash, never plaintext.
-    $passHash = '';
+    $passHash = ''; $plain = '';
     $pw = (string)($p['password'] ?? '');
+    // `generate` asks the server for one. Generating server-side keeps it off
+    // the wire on the way in and out of a human's head — and a typed password
+    // at a registration desk is almost always the centre's name.
+    if ($pw === '' && !empty($p['generate'])) $pw = $plain = gate_password_new();
     if ($pw !== '') {
         if (strlen($pw) < 4) return ['ok' => false, 'error' => 'weak_password'];
         $passHash = password_hash($pw, PASSWORD_DEFAULT);
     }
+    $rotate = max(0, min(365, (int)($p['rotateDays'] ?? 0)));
+    $notify = strtolower(trim((string)($p['notifyEmail'] ?? '')));
+    if ($notify !== '' && !filter_var($notify, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
     db_insert('gate_links', [
         'gateId' => $gateId, 'name' => substr(trim((string)($p['name'] ?? 'Front desk')), 0, 160),
         'cohortId' => $c['cohortId'], 'centreId' => (string)($p['centreId'] ?? ''), 'status' => 'active',
         'createdBy' => $g['requester']['memberId'], 'passHash' => $passHash,
+        'passSetAt' => $passHash !== '' ? now_iso() : '',
+        'passRotateDays' => $rotate, 'passNotify' => $notify,
         'expiresAt' => (string)($p['expiresAt'] ?? ''), 'createdAt' => now_iso(),
     ]);
-    audit('gate.create', $g['requester']['memberId'], $gateId, ['kiosk' => $passHash !== ''], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'gateId' => $gateId, 'hasPassword' => $passHash !== '', 'url' => rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/gate?g=' . $gateId];
+    audit('gate.create', $g['requester']['memberId'], $gateId, ['kiosk' => $passHash !== '', 'rotateDays' => $rotate], (string)($p['ip'] ?? ''));
+    // The plaintext is returned exactly once, here. Only the hash is stored,
+    // so nothing can hand it back later — the panel has to show it now.
+    return ['ok' => true, 'gateId' => $gateId, 'hasPassword' => $passHash !== '', 'password' => $plain,
+            'url' => rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/gate?g=' . $gateId];
 }
 
 /** Set or clear a gate's kiosk password. Empty password removes it. */
@@ -318,15 +374,78 @@ function admin_gates_setpass(array $p): array {
     $gateId = (string)($p['gateId'] ?? '');
     if (!db_row('SELECT gateId FROM gate_links WHERE gateId = ?', [$gateId])) return ['ok' => false, 'error' => 'not_found'];
     $pw = (string)($p['password'] ?? '');
+    $plain = '';
+    if ($pw === '' && !empty($p['generate'])) $pw = $plain = gate_password_new();
     if ($pw === '') {
-        db_update('gate_links', ['passHash' => ''], ['gateId' => $gateId]);
+        db_update('gate_links', ['passHash' => '', 'passSetAt' => ''], ['gateId' => $gateId]);
         audit('gate.password_cleared', $g['requester']['memberId'], $gateId, [], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'hasPassword' => false];
     }
     if (strlen($pw) < 4) return ['ok' => false, 'error' => 'weak_password'];
-    db_update('gate_links', ['passHash' => password_hash($pw, PASSWORD_DEFAULT)], ['gateId' => $gateId]);
-    audit('gate.password_set', $g['requester']['memberId'], $gateId, [], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'hasPassword' => true];
+    gate_password_store($gateId, $pw);
+    audit('gate.password_set', $g['requester']['memberId'], $gateId, ['generated' => $plain !== ''], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'hasPassword' => true, 'password' => $plain];
+}
+
+/** Roll the desk password now and hand back the new one, once. */
+function admin_gates_rotate(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $gateId = (string)($p['gateId'] ?? '');
+    $gate = db_row('SELECT gateId, status FROM gate_links WHERE gateId = ?', [$gateId]);
+    if (!$gate) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$gate['status'] !== 'active') return ['ok' => false, 'error' => 'not_active'];
+    $pw = gate_password_new();
+    gate_password_store($gateId, $pw);
+    audit('gate.password_rotated', $g['requester']['memberId'], $gateId, ['by' => 'admin'], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'hasPassword' => true, 'password' => $pw];
+}
+
+/** How often this desk's password should roll, and who to tell when it does. */
+function admin_gates_rotation(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $gateId = (string)($p['gateId'] ?? '');
+    if (!db_row('SELECT gateId FROM gate_links WHERE gateId = ?', [$gateId])) return ['ok' => false, 'error' => 'not_found'];
+    $days = max(0, min(365, (int)($p['rotateDays'] ?? 0)));
+    $notify = strtolower(trim((string)($p['notifyEmail'] ?? '')));
+    if ($notify !== '' && !filter_var($notify, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
+    db_update('gate_links', ['passRotateDays' => $days, 'passNotify' => $notify], ['gateId' => $gateId]);
+    audit('gate.rotation_set', $g['requester']['memberId'], $gateId, ['rotateDays' => $days, 'notify' => $notify !== ''], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'rotateDays' => $days, 'notifyEmail' => $notify];
+}
+
+/**
+ * Scheduled rotation. Run from the daily job.
+ *
+ * A gate is only rolled unattended when it has somewhere to send the new
+ * password. Rotating a desk with no notify address would lock out the very
+ * people it exists for — a field team mid-session with no admin to hand — so
+ * those are reported as due instead, and the panel shows the badge until an
+ * admin rotates by hand. Silent lockout is a worse outcome than a password
+ * that lived a few days longer.
+ */
+function gates_rotate_due(): array {
+    $rotated = 0; $pending = 0; $failed = 0;
+    $rows = db_all("SELECT * FROM gate_links WHERE status = 'active' AND passRotateDays > 0 AND passHash != ''");
+    foreach ($rows as $gate) {
+        $due = gate_rotation_due_in($gate);
+        if ($due === null || $due > 0) continue;
+        $to = trim((string)($gate['passNotify'] ?? ''));
+        if ($to === '') { $pending++; continue; }
+        $pw = gate_password_new();
+        $name = (string)($gate['name'] ?? $gate['gateId']);
+        $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+        $html = '<p>The desk password for <b>' . htmlspecialchars($name, ENT_QUOTES) . '</b> has rotated on schedule.</p>'
+              . '<p style="font:700 22px ui-monospace,monospace;letter-spacing:2px">' . htmlspecialchars($pw, ENT_QUOTES) . '</p>'
+              . '<p>Desk link: <a href="' . htmlspecialchars($origin . '/gate?g=' . $gate['gateId'], ENT_QUOTES) . '">' . htmlspecialchars($origin . '/gate?g=' . $gate['gateId'], ENT_QUOTES) . '</a></p>'
+              . '<p>The previous password stopped working the moment this was sent. Rotation runs every '
+              . (int)$gate['passRotateDays'] . ' days; change or switch it off in Admin → Gate links.</p>';
+        $sent = send_mail($to, 'Desk password rotated — ' . $name, $html);
+        if (!$sent) { $failed++; continue; }   // keep the old password working
+        gate_password_store((string)$gate['gateId'], $pw);
+        audit('gate.password_rotated', 'system', (string)$gate['gateId'], ['by' => 'schedule', 'notified' => $to], '');
+        $rotated++;
+    }
+    return ['rotated' => $rotated, 'pending_manual' => $pending, 'send_failed' => $failed];
 }
 
 function admin_gates_revoke(array $p): array {

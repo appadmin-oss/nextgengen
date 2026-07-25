@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 54;
+const NGG_SCHEMA_TARGET = 55;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1339,6 +1339,13 @@ function db_migrate(PDO $db): void {
         ",
         54 => "
             ALTER TABLE community_posts ADD COLUMN linkPreview TEXT DEFAULT '';
+        ",
+        // Desk-password lifecycle: when it was last set, how often it should
+        // roll, and where to send the new one when it rolls unattended.
+        55 => "
+            ALTER TABLE gate_links ADD COLUMN passSetAt TEXT DEFAULT '';
+            ALTER TABLE gate_links ADD COLUMN passRotateDays INTEGER DEFAULT 0;
+            ALTER TABLE gate_links ADD COLUMN passNotify TEXT DEFAULT '';
         ",
     ];
 
