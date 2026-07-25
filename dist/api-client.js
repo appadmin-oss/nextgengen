@@ -26,12 +26,35 @@
       headers['Content-Type'] = 'application/json';
       body = JSON.stringify(body);
     }
-    const res = await fetch(BASE + path, {
-      method: method,
-      credentials: 'include',
-      headers: headers,
-      body: body,
-    });
+    // Bound every call. A dead origin makes the browser sit on the socket for
+    // a minute or more before it gives up, which reads as a frozen app rather
+    // than a failure — so we abort first and surface a real error code.
+    // GETs are idempotent and abort cheaply; writes get a much longer ceiling
+    // because aborting one that is still running server-side would leave the
+    // user staring at an error next to work that actually succeeded.
+    const isRead = method === 'GET' || method === 'HEAD';
+    const ms = opts.timeout != null ? opts.timeout : (isRead ? 20000 : 60000);
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ms && ctl ? setTimeout(() => ctl.abort(), ms) : null;
+    let res;
+    try {
+      res = await fetch(BASE + path, {
+        method: method,
+        credentials: 'include',
+        headers: headers,
+        body: body,
+        signal: ctl ? ctl.signal : undefined,
+      });
+    } catch (e) {
+      // Aborted, DNS failure, refused connection, TLS error — the request never
+      // reached a response. Callers can tell this apart from an API error.
+      const aborted = e && (e.name === 'AbortError' || (ctl && ctl.signal.aborted));
+      const err = new Error(aborted ? 'timeout' : 'network');
+      err.code = err.message;
+      err.status = 0;
+      err.detail = e && e.message;
+      throw err;
+    } finally { if (timer) clearTimeout(timer); }
     let data = null;
     try { data = await res.json(); } catch (_) { data = {}; }
     if (!res.ok || data.ok === false) {

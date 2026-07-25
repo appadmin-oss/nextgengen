@@ -718,11 +718,60 @@ function CentreFindUs({ meta, accent }) {
 function sFmt(n) { return (n == null ? 0 : n).toLocaleString("en-US"); }
 function joinNames(arr) { return arr.length <= 1 ? (arr[0] || "") : arr.length === 2 ? arr[0] + " & " + arr[1] : arr.slice(0, -1).join(", ") + " & " + arr[arr.length - 1]; }
 
-function StatusPage({ setPage, previewConfig }) {
+/* Poll a public live board.
+ *
+ * One request in flight at a time, and the interval backs off while the origin
+ * is unreachable. A fixed poll against a dead server stacks up calls that each
+ * take the best part of a minute to fail, so the tab ends up nursing a queue of
+ * doomed requests instead of showing one honest error.
+ *
+ * Also owns the count-up animation, which both boards drive identically off a
+ * fresh payload. Returns { d, err, t, updatedAt, retry }. */
+function usePolledBoard(fetcher, baseMs) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
-  const [, setTick] = React.useState(0);
   const [t, setT] = React.useState(1);
+  const [updatedAt, setUpdatedAt] = React.useState(Date.now());
+  const animRef = React.useRef(null);
+  const inFlight = React.useRef(false), fails = React.useRef(0), lastTry = React.useRef(0);
+  const fetchRef = React.useRef(fetcher);
+  fetchRef.current = fetcher;
+
+  const load = React.useCallback(() => {
+    if (inFlight.current) return;
+    inFlight.current = true; lastTry.current = Date.now();
+    fetchRef.current()
+      .then(r => {
+        fails.current = 0; setD(r.status || r); setErr(""); setUpdatedAt(Date.now());
+        clearInterval(animRef.current); const t0 = Date.now();
+        animRef.current = setInterval(() => {
+          const p = Math.min(1, (Date.now() - t0) / 900); setT(1 - Math.pow(1 - p, 3));
+          if (p >= 1) clearInterval(animRef.current);
+        }, 40);
+      })
+      .catch(e => { fails.current++; setErr(e.code || e.message); })
+      .then(() => { inFlight.current = false; });
+  }, []);
+  // A manual retry starts over at the fast cadence.
+  const retry = React.useCallback(() => { fails.current = 0; load(); }, [load]);
+  React.useEffect(() => {
+    load();
+    const poll = setInterval(() => {
+      if (document.hidden) return;
+      // Base cadence while healthy, doubling per consecutive failure, capped
+      // at 16× (~8 min for the 30s board, ~12 min for the 45s one).
+      const wait = baseMs * Math.pow(2, Math.min(4, fails.current));
+      if (Date.now() - lastTry.current >= wait - 500) load();
+    }, baseMs);
+    return () => { clearInterval(poll); clearInterval(animRef.current); };
+  }, [load, baseMs]);
+  return { d, err, t, updatedAt, retry };
+}
+// A board is unreachable rather than broken when the request never got a reply.
+function boardOffline(err) { return err === "timeout" || err === "network"; }
+
+function StatusPage({ setPage, previewConfig }) {
+  const [, setTick] = React.useState(0);
   const [view, setView] = React.useState("overview");
   const [sortKey, setSortKey] = React.useState("rate");
   const [openCentre, setOpenCentre] = React.useState(null);
@@ -730,25 +779,12 @@ function StatusPage({ setPage, previewConfig }) {
   const [facFilter, setFacFilter] = React.useState("All");
   const [centreFilter, setCentreFilter] = React.useState("All");
   const [daySel, setDaySel] = React.useState("Fri");
-  const [updatedAt, setUpdatedAt] = React.useState(Date.now());
-  const animRef = React.useRef(null);
+  const { d, err, t, updatedAt, retry } = usePolledBoard(NGGApi.public.status, 30000);
 
-  const startCount = React.useCallback(() => {
-    clearInterval(animRef.current); const t0 = Date.now();
-    animRef.current = setInterval(() => {
-      const p = Math.min(1, (Date.now() - t0) / 900); setT(1 - Math.pow(1 - p, 3));
-      if (p >= 1) clearInterval(animRef.current);
-    }, 40);
-  }, []);
-  const load = React.useCallback(() => {
-    NGGApi.public.status().then(r => { setD(r.status || r); setErr(""); setUpdatedAt(Date.now()); startCount(); }).catch(e => setErr(e.code || e.message));
-  }, [startCount]);
   React.useEffect(() => {
-    load();
-    const poll = setInterval(() => { if (!document.hidden) load(); }, 30000);
     const clock = setInterval(() => setTick(x => x + 1), 1000);
-    return () => { clearInterval(poll); clearInterval(clock); clearInterval(animRef.current); };
-  }, [load]);
+    return () => clearInterval(clock);
+  }, []);
 
   const page = previewConfig || (d && d.page) || {};
   if (!previewConfig && d && d.page && d.page.published === false) return (
@@ -770,9 +806,11 @@ function StatusPage({ setPage, previewConfig }) {
       <section className="section" style={{ padding: "110px 0", textAlign: "center" }}>
         <div className="container" style={{ maxWidth: 520 }}>
           <div className="eyebrow">LIVE STATUS</div>
-          <h1 className="display" style={{ fontSize: "clamp(28px,4vw,46px)", margin: "12px 0 10px" }}>We couldn't load the board.</h1>
-          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>A quick hiccup reaching the live numbers — give it another try.</p>
-          <button className="btn btn-primary mt-24" onClick={load}>Retry</button>
+          <h1 className="display" style={{ fontSize: "clamp(28px,4vw,46px)", margin: "12px 0 10px" }}>{boardOffline(err) ? "We can't reach the server." : "We couldn't load the board."}</h1>
+          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>{boardOffline(err)
+            ? "This isn't your device or connection — the site's server isn't answering. The board comes back on its own once it does."
+            : "A quick hiccup reaching the live numbers — give it another try."}</p>
+          <button className="btn btn-primary mt-24" onClick={retry}>Retry</button>
         </div>
       </section>
     </div>
@@ -922,7 +960,7 @@ function StatusPage({ setPage, previewConfig }) {
             <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "#8ea0d8", display: "flex", alignItems: "center", gap: 8 }}><i className="ph ph-shield-check"/> Transparency board</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "rgba(255,255,255,0.55)", display: "inline-flex", alignItems: "center", gap: 6 }}><i className="ph ph-clock-countdown"/> Updated {updatedAgo}</span>
-              <button onClick={load} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 13, padding: "8px 15px", borderRadius: 999, cursor: "pointer", color: "#fff", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.16)", display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-arrow-clockwise"/> Refresh</button>
+              <button onClick={retry} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 13, padding: "8px 15px", borderRadius: 999, cursor: "pointer", color: "#fff", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.16)", display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-arrow-clockwise"/> Refresh</button>
             </div>
           </div>
 
@@ -1272,7 +1310,7 @@ function StatusPage({ setPage, previewConfig }) {
       </section>
 
       {!d && !err && <div className="container" style={{ padding: "60px 0", textAlign: "center" }}><div className="dash-spinner"/></div>}
-      {err && <div className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={load} style={{ background: "none", border: "none", color: "#1c2a5e", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
+      {err && <div className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={retry} style={{ background: "none", border: "none", color: "#1c2a5e", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
       <style>{`@keyframes statuspulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,0.55)}70%{box-shadow:0 0 0 8px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}
 .hero-cols{display:grid}@media(max-width:860px){.hero-cols{grid-template-columns:1fr!important;gap:28px!important}}
 .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:920px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.kpi-grid{grid-template-columns:1fr}}
@@ -1330,32 +1368,19 @@ function vsFacColor(f) { let h = 0; for (let i = 0; i < (f || "").length; i++) h
 function vsJoin(arr) { return arr.length <= 1 ? (arr[0] || "") : arr.length === 2 ? arr[0] + " & " + arr[1] : arr.slice(0, -1).join(", ") + " & " + arr[arr.length - 1]; }
 
 function VolunteerStatusPage({ setPage, previewConfig }) {
-  const [d, setD] = React.useState(null);
-  const [err, setErr] = React.useState("");
   const [, setTick] = React.useState(0);
-  const [t, setT] = React.useState(1);
   const [view, setView] = React.useState("overview");
   const [openCentre, setOpenCentre] = React.useState(null);
   const [sortKey, setSortKey] = React.useState("gap");
   const [roleFilter, setRoleFilter] = React.useState("All");
   const [volRole, setVolRole] = React.useState("All");
   const [volCentre, setVolCentre] = React.useState("All");
-  const [updatedAt, setUpdatedAt] = React.useState(Date.now());
-  const animRef = React.useRef(null);
+  const { d, err, t, updatedAt, retry } = usePolledBoard(NGGApi.public.volunteerStatus, 45000);
 
-  const startCount = React.useCallback(() => {
-    clearInterval(animRef.current); const t0 = Date.now();
-    animRef.current = setInterval(() => { const p = Math.min(1, (Date.now() - t0) / 900); setT(1 - Math.pow(1 - p, 3)); if (p >= 1) clearInterval(animRef.current); }, 40);
-  }, []);
-  const load = React.useCallback(() => {
-    NGGApi.public.volunteerStatus().then(r => { setD(r.status || r); setErr(""); setUpdatedAt(Date.now()); startCount(); }).catch(e => setErr(e.code || e.message));
-  }, [startCount]);
   React.useEffect(() => {
-    load();
-    const poll = setInterval(() => { if (!document.hidden) load(); }, 45000);
     const clock = setInterval(() => setTick(x => x + 1), 1000);
-    return () => { clearInterval(poll); clearInterval(clock); clearInterval(animRef.current); };
-  }, [load]);
+    return () => clearInterval(clock);
+  }, []);
 
   const page = previewConfig || (d && d.page) || {};
   if (!previewConfig && d && d.page && d.page.published === false) return (
@@ -1376,9 +1401,11 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
       <section className="section" style={{ padding: "110px 0", textAlign: "center" }}>
         <div className="container" style={{ maxWidth: 520 }}>
           <div className="eyebrow">VOLUNTEER STATUS</div>
-          <h1 className="display" style={{ fontSize: "clamp(28px,4vw,46px)", margin: "12px 0 10px" }}>We couldn't load the board.</h1>
-          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>A quick hiccup reaching the live numbers — give it another try.</p>
-          <button className="btn btn-primary mt-24" onClick={load}>Retry</button>
+          <h1 className="display" style={{ fontSize: "clamp(28px,4vw,46px)", margin: "12px 0 10px" }}>{boardOffline(err) ? "We can't reach the server." : "We couldn't load the board."}</h1>
+          <p style={{ color: "var(--ink-500)", fontSize: 16, lineHeight: 1.6 }}>{boardOffline(err)
+            ? "This isn't your device or connection — the site's server isn't answering. The board comes back on its own once it does."
+            : "A quick hiccup reaching the live numbers — give it another try."}</p>
+          <button className="btn btn-primary mt-24" onClick={retry}>Retry</button>
         </div>
       </section>
     </div>
@@ -1503,7 +1530,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
             <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "#c8b6f0", display: "flex", alignItems: "center", gap: 8 }}><i className="ph ph-hand-heart"/> Volunteer transparency</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "rgba(255,255,255,0.55)", display: "inline-flex", alignItems: "center", gap: 6 }}><i className="ph ph-clock-countdown"/> Updated {updatedAgo}</span>
-              <button onClick={load} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 13, padding: "8px 15px", borderRadius: 999, cursor: "pointer", color: "#fff", background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.18)", display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-arrow-clockwise"/> Refresh</button>
+              <button onClick={retry} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 13, padding: "8px 15px", borderRadius: 999, cursor: "pointer", color: "#fff", background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.18)", display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-arrow-clockwise"/> Refresh</button>
             </div>
           </div>
 
@@ -1865,7 +1892,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
       </section>
 
       {!d && !err && <div className="container" style={{ padding: "60px 0", textAlign: "center" }}><div className="dash-spinner"/></div>}
-      {err && <div className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={load} style={{ background: "none", border: "none", color: "#5a3fb0", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
+      {err && <div className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={retry} style={{ background: "none", border: "none", color: "#5a3fb0", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
       <style>{`@keyframes volpulse{0%{box-shadow:0 0 0 0 rgba(208,255,58,0.6)}70%{box-shadow:0 0 0 8px rgba(208,255,58,0)}100%{box-shadow:0 0 0 0 rgba(208,255,58,0)}}
 .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:920px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.kpi-grid{grid-template-columns:1fr}}
 .insight-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}@media(max-width:1000px){.insight-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.insight-grid{grid-template-columns:1fr}}
