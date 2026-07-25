@@ -21,8 +21,9 @@ if ($method === 'GET') {
     $action = (string)($b['action'] ?? '');
     $ip = client_ip();
     if ($action === 'publish_form')   $res = gs_call('admin.forms.publish', ['requesterId' => $s['mid'], 'formId' => $b['formId'] ?? 'summer-reg', 'fields' => $b['fields'] ?? [], 'name' => $b['name'] ?? '', 'ip' => $ip]);
-    elseif ($action === 'gate_create') $res = gs_call('admin.gates.create', ['requesterId' => $s['mid'], 'name' => $b['name'] ?? '', 'expiresAt' => $b['expiresAt'] ?? '', 'password' => $b['password'] ?? '', 'generate' => !empty($b['generate']), 'rotateDays' => $b['rotateDays'] ?? 0, 'notifyEmail' => $b['notifyEmail'] ?? '', 'centreId' => $b['centreId'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'gate_create') $res = gs_call('admin.gates.create', ['requesterId' => $s['mid'], 'name' => $b['name'] ?? '', 'expiresAt' => $b['expiresAt'] ?? '', 'validDays' => $b['validDays'] ?? null, 'password' => $b['password'] ?? '', 'generate' => !empty($b['generate']), 'rotateDays' => $b['rotateDays'] ?? 0, 'notifyEmail' => $b['notifyEmail'] ?? '', 'centreId' => $b['centreId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'gate_setpass') $res = gs_call('admin.gates.setpass', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'password' => $b['password'] ?? '', 'generate' => !empty($b['generate']), 'ip' => $ip]);
+    elseif ($action === 'gate_validity') $res = gs_call('admin.gates.validity', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'expiresAt' => $b['expiresAt'] ?? '', 'validDays' => $b['validDays'] ?? null, 'ip' => $ip]);
     elseif ($action === 'gate_rotate') $res = gs_call('admin.gates.rotate', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'gate_rotation') $res = gs_call('admin.gates.rotation', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'rotateDays' => $b['rotateDays'] ?? 0, 'notifyEmail' => $b['notifyEmail'] ?? '', 'ip' => $ip]);
     elseif ($action === 'gate_revoke') $res = gs_call('admin.gates.revoke', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);

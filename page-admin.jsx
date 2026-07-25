@@ -1291,6 +1291,7 @@ function FormPreview({ fields, name }) {
 
 /* ── Gate links — create/revoke the staff-gated public registration links ── */
 const ROTATE_CHOICES = [[0, "Never"], [7, "Every week"], [30, "Every 30 days"], [90, "Every 90 days"]];
+const VALID_CHOICES = [[0, "No expiry"], [1, "Today only"], [7, "1 week"], [30, "30 days"], [90, "90 days"]];
 
 function SummerGates() {
   const [gates, setGates] = React.useState(null);
@@ -1299,6 +1300,7 @@ function SummerGates() {
   const [pw, setPw] = React.useState("");
   const [autoPw, setAutoPw] = React.useState(true);
   const [rotateDays, setRotateDays] = React.useState(30);
+  const [validDays, setValidDays] = React.useState(0);
   const [notify, setNotify] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   // A generated password exists in the clear exactly once — in this response.
@@ -1313,7 +1315,7 @@ function SummerGates() {
     try {
       const label = name || "Registration desk";
       const r = await NGGApi.admin.registration.gateCreate(label, "", autoPw ? "" : pw.trim(), "",
-        { generate: autoPw, rotateDays, notifyEmail: notify.trim() });
+        { generate: autoPw, rotateDays, notifyEmail: notify.trim(), validDays });
       setName(""); setPw(""); setNotify("");
       if (r.password) setReveal({ gateId: r.gateId, name: label, password: r.password });
       else toast.success(r.hasPassword ? "Kiosk gate created." : "Gate link created.");
@@ -1340,6 +1342,28 @@ function SummerGates() {
     try { await NGGApi.admin.registration.gateRotation(g.gateId, n, email); toast.success(n ? ("Rotating every " + n + " days.") : "Rotation off."); load(); }
     catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : (e.code || e.message)); }
   };
+  const setValidity = async (g) => {
+    const v = await dialog.prompt({
+      title: "How long should this link work?",
+      body: "Days from now, or a date (YYYY-MM-DD) — a date means the end of that day. Blank or 0 means it never expires. Expiry is enforced on the desk itself, not just hidden here.",
+      cta: "Save", placeholder: "e.g. 7  or  2026-08-31",
+      value: g.expiresAt ? String(g.expiresAt).slice(0, 10) : "", required: false,
+    });
+    if (v === null) return;
+    const t = v.trim();
+    const opts = /^\d{1,4}$/.test(t) ? { validDays: parseInt(t, 10) } : { expiresAt: t };
+    try {
+      const r = await NGGApi.admin.registration.gateValidity(g.gateId, opts);
+      toast.success(r.expiresAt ? ("Valid until " + fmtDate(r.expiresAt) + ".") : "Expiry removed.");
+      load();
+    } catch (e) { toast.error(e.code === "bad_expiry" ? "Couldn't read that as a number of days or a date." : (e.code || e.message)); }
+  };
+  const validityLabel = (g) => {
+    if (!g.expiresAt) return "no expiry";
+    if (g.expired) return "expired";
+    const d = g.expiresInDays;
+    return d <= 1 ? "expires today" : "in " + d + "d";
+  };
   const rotationLabel = (g) => {
     if (!g.hasPassword) return "—";
     if (!g.rotateDays) return "manual";
@@ -1364,6 +1388,11 @@ function SummerGates() {
           <input type="checkbox" checked={autoPw} onChange={e => setAutoPw(e.target.checked)}/> Generate password
         </label>
         {!autoPw && <input className="admin-input" type="text" autoComplete="off" placeholder="Desk password" value={pw} onChange={e => setPw(e.target.value)} style={{ minWidth: 170 }}/>}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>Valid for
+          <select className="admin-input" value={validDays} onChange={e => setValidDays(Number(e.target.value))} style={{ minWidth: 120 }}>
+            {VALID_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>Rotate
           <select className="admin-input" value={rotateDays} onChange={e => setRotateDays(Number(e.target.value))} style={{ minWidth: 130 }}>
             {ROTATE_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -1392,7 +1421,7 @@ function SummerGates() {
         gates === null ? <div className="dash-spinner"/> :
         gates.length === 0 ? <div className="admin-empty">No gate links yet.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Label</th><th>Link</th><th>Kiosk</th><th>Rotation</th><th>Used</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Label</th><th>Link</th><th>Kiosk</th><th>Valid</th><th>Rotation</th><th>Used</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {gates.map(g => (
               <tr key={g.gateId}>
@@ -1400,16 +1429,24 @@ function SummerGates() {
                 <td><button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(linkFor(g)); toast.success("Link copied."); }}>Copy link</button></td>
                 <td>{g.hasPassword ? <span className="chip chip-lime">🔑 password</span> : <span className="chip status-archived">admin only</span>}</td>
                 <td className="mono" style={{ fontSize: 12 }}>
+                  {g.expired
+                    ? <span className="chip" style={{ background: "#ffe4e4", color: "#a11" }}>expired</span>
+                    : validityLabel(g)}
+                </td>
+                <td className="mono" style={{ fontSize: 12 }}>
                   {g.rotationDue && !g.notifyEmail
                     ? <span className="chip" style={{ background: "#ffe4e4", color: "#a11" }}>{rotationLabel(g)}</span>
                     : rotationLabel(g)}
                   {g.notifyEmail && <div className="admin-cell-sub">→ {g.notifyEmail}</div>}
                 </td>
                 <td className="mono">{g.usedCount || 0}</td>
-                <td>{g.status === "active" ? <span className="chip chip-lime">active</span> : <span className="chip status-archived">{g.status}</span>}</td>
+                <td>{g.status !== "active" ? <span className="chip status-archived">{g.status}</span>
+                  : g.expired ? <span className="chip status-archived">expired</span>
+                  : <span className="chip chip-lime">active</span>}</td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{g.status === "active" && <>
                   <button className="btn btn-ghost btn-sm" onClick={() => setPassword(g)}>{g.hasPassword ? "Password" : "Set password"}</button>
                   {g.hasPassword && <button className="btn btn-ghost btn-sm" onClick={() => rotateNow(g)}>Rotate</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={() => setValidity(g)}>Validity</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => editRotation(g)}>Schedule</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => revoke(g.gateId)}>Revoke</button>
                 </>}</td>

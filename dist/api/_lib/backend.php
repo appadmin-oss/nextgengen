@@ -113,6 +113,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.gates.list'            => 'admin_gates_list',
             'admin.gates.create'          => 'admin_gates_create',
             'admin.gates.setpass'         => 'admin_gates_setpass',
+            'admin.gates.validity'        => 'admin_gates_validity',
             'admin.gates.rotate'          => 'admin_gates_rotate',
             'admin.gates.rotation'        => 'admin_gates_rotation',
             'admin.gates.revoke'          => 'admin_gates_revoke',

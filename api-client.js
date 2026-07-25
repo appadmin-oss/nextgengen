@@ -486,6 +486,7 @@
         gates:      () => request('/admin/registration.php' + qs({ view: 'gates' })),
         gateCreate: (name, expiresAt, password, centreId, opts) => request('/admin/registration.php', { body: Object.assign({ action: 'gate_create', name, expiresAt, password: password || '', centreId: centreId || '' }, opts || {}) }),
         gateSetpass: (gateId, password, generate) => request('/admin/registration.php', { body: { action: 'gate_setpass', gateId, password: password || '', generate: !!generate } }),
+        gateValidity: (gateId, opts) => request('/admin/registration.php', { body: Object.assign({ action: 'gate_validity', gateId }, opts || {}) }),
         gateRotate: (gateId) => request('/admin/registration.php', { body: { action: 'gate_rotate', gateId } }),
         gateRotation: (gateId, rotateDays, notifyEmail) => request('/admin/registration.php', { body: { action: 'gate_rotation', gateId, rotateDays, notifyEmail: notifyEmail || '' } }),
         gateRevoke: (gateId) => request('/admin/registration.php', { body: { action: 'gate_revoke', gateId } }),

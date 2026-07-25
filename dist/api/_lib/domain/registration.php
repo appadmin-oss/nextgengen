@@ -289,6 +289,40 @@ function admin_forms_publish(array $p): array {
  * which is far beyond a 5-per-15-minutes unlock throttle, while staying
  * hard to mistype and easy to read aloud.
  */
+/**
+ * Normalise a requested validity into the exact shape gate_resolve compares
+ * against. That check is a STRING comparison against now_iso(), so anything
+ * stored in another format ("2026-08-01", a local time, an offset) either
+ * never expires or expires immediately. Everything funnels through here.
+ *
+ * Accepts a day count ("expire in N days") or a calendar date, which is taken
+ * to mean the end of that day — a link valid "until the 8th" should still work
+ * on the evening of the 8th. Returns '' for no expiry.
+ */
+function gate_expiry_normalise($value, $days = null): ?string {
+    if ($days !== null && $days !== '') {
+        $d = (int)$days;
+        if ($d <= 0) return '';
+        if ($d > 3650) return null;                       // ten years is a typo
+        return gmdate('Y-m-d\TH:i:s\Z', time() + $d * 86400);
+    }
+    $v = trim((string)$value);
+    if ($v === '') return '';
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) $v .= 'T23:59:59Z';
+    $t = strtotime($v);
+    if ($t === false) return null;
+    return gmdate('Y-m-d\TH:i:s\Z', $t);
+}
+
+/** Days until this link stops working, or null when it never does. */
+function gate_expires_in_days(array $gate): ?int {
+    $exp = (string)($gate['expiresAt'] ?? '');
+    if ($exp === '') return null;
+    $t = strtotime($exp);
+    if (!$t) return null;
+    return (int)ceil(($t - time()) / 86400);
+}
+
 function gate_password_new(): string {
     $abc = 'ACDEFGHJKMNPQRTUVWXYZ2346789';
     $n = strlen($abc);
@@ -328,6 +362,9 @@ function admin_gates_list(array $p): array {
         $r['rotatesInDays'] = $due;                     // null when rotation is off
         $r['rotationDue'] = $due !== null && $due <= 0;
         $r['notifyEmail'] = (string)($r['passNotify'] ?? '');
+        $exp = gate_expires_in_days($r);
+        $r['expiresInDays'] = $exp;                     // null when it never expires
+        $r['expired'] = $exp !== null && (string)$r['expiresAt'] < now_iso();
         unset($r['passHash'], $r['passRotateDays'], $r['passNotify']);
     }
     unset($r);
@@ -350,6 +387,8 @@ function admin_gates_create(array $p): array {
         if (strlen($pw) < 4) return ['ok' => false, 'error' => 'weak_password'];
         $passHash = password_hash($pw, PASSWORD_DEFAULT);
     }
+    $expiresAt = gate_expiry_normalise($p['expiresAt'] ?? '', $p['validDays'] ?? null);
+    if ($expiresAt === null) return ['ok' => false, 'error' => 'bad_expiry'];
     $rotate = max(0, min(365, (int)($p['rotateDays'] ?? 0)));
     $notify = strtolower(trim((string)($p['notifyEmail'] ?? '')));
     if ($notify !== '' && !filter_var($notify, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
@@ -359,7 +398,7 @@ function admin_gates_create(array $p): array {
         'createdBy' => $g['requester']['memberId'], 'passHash' => $passHash,
         'passSetAt' => $passHash !== '' ? now_iso() : '',
         'passRotateDays' => $rotate, 'passNotify' => $notify,
-        'expiresAt' => (string)($p['expiresAt'] ?? ''), 'createdAt' => now_iso(),
+        'expiresAt' => $expiresAt, 'createdAt' => now_iso(),
     ]);
     audit('gate.create', $g['requester']['memberId'], $gateId, ['kiosk' => $passHash !== '', 'rotateDays' => $rotate], (string)($p['ip'] ?? ''));
     // The plaintext is returned exactly once, here. Only the hash is stored,
@@ -446,6 +485,18 @@ function gates_rotate_due(): array {
         $rotated++;
     }
     return ['rotated' => $rotated, 'pending_manual' => $pending, 'send_failed' => $failed];
+}
+
+/** Set, extend or clear how long a link stays usable. */
+function admin_gates_validity(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $gateId = (string)($p['gateId'] ?? '');
+    if (!db_row('SELECT gateId FROM gate_links WHERE gateId = ?', [$gateId])) return ['ok' => false, 'error' => 'not_found'];
+    $expiresAt = gate_expiry_normalise($p['expiresAt'] ?? '', $p['validDays'] ?? null);
+    if ($expiresAt === null) return ['ok' => false, 'error' => 'bad_expiry'];
+    db_update('gate_links', ['expiresAt' => $expiresAt], ['gateId' => $gateId]);
+    audit('gate.validity_set', $g['requester']['memberId'], $gateId, ['expiresAt' => $expiresAt], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'expiresAt' => $expiresAt];
 }
 
 function admin_gates_revoke(array $p): array {
