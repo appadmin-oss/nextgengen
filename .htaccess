@@ -81,12 +81,19 @@ AddDefaultCharset UTF-8
   # Content-Security-Policy — loose because we run in-browser Babel + Google
   # Fonts. When you switch to a precompiled bundle, remove 'unsafe-inline'
   # and 'unsafe-eval' from script-src.
+  #
+  # worker-src: pica (the image resampler behind upload shrinking and the photo
+  # studio) starts its worker pool from a blob URL. Without this it inherits
+  # default-src 'self', the workers are refused, and every resize falls back to
+  # the main thread — correct output, but it janks the tab on a large photo.
+  # blob: workers are same-origin-derived, so this is not a real loosening.
   Header always set Content-Security-Policy "default-src 'self'; \
 script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
 img-src 'self' data: https: blob:; \
 font-src 'self' https://fonts.gstatic.com data:; \
-connect-src 'self' https://api.cloudinary.com; \
+connect-src 'self' https://api.cloudinary.com blob:; \
+worker-src 'self' blob:; \
 frame-ancestors 'self'; \
 base-uri 'self'; \
 form-action 'self'; \

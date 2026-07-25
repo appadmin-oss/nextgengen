@@ -78,8 +78,60 @@
     return _configCache;
   }
 
+  /* ── Shrink before sending ────────────────────────────────────────────────
+   * Uploads used to put the raw camera file on the wire. A current phone photo
+   * is 3–12 MB, so on a mobile connection that is minutes of waiting — and the
+   * first thing done with it was to shrink it to 1600px anyway, so every one of
+   * those megabytes was paid for in the visitor's data and time and then thrown
+   * away. Resampling here first takes a typical 8 MB photo to roughly 300 KB
+   * for the same delivered pixels.
+   *
+   * This sits inside uploadFile rather than at the call sites so every path —
+   * the camera, the file picker, the photo editor's Replace, the media
+   * uploader — gets it, and a new caller cannot forget. It never blocks an
+   * upload: anything undecodable, animated, vector, or already small goes up
+   * exactly as it arrived. */
+  const SHRINK = {
+    headshot: { maxPx: 1600, quality: 0.86 },   // card art is delivered at 900px
+    post: { maxPx: 1600, quality: 0.82 },       // matches the server incoming transform
+    proof: { maxPx: 2000, quality: 0.82 },
+  };
+  let _toolsPromise = null;
+  function ensureImageTools() {
+    if (window.ImageTools) return Promise.resolve(window.ImageTools);
+    if (_toolsPromise) return _toolsPromise;
+    _toolsPromise = new Promise((res, rej) => {
+      let sc = document.getElementById('ngg-imagetools');
+      if (!sc) {
+        sc = document.createElement('script');
+        sc.id = 'ngg-imagetools'; sc.src = '/vendor/image-tools.js';
+        document.head.appendChild(sc);
+      }
+      sc.addEventListener('load', () => res(window.ImageTools), { once: true });
+      sc.addEventListener('error', () => rej(new Error('image_tools_unavailable')), { once: true });
+      setTimeout(() => rej(new Error('image_tools_timeout')), 20000);
+    });
+    return _toolsPromise;
+  }
+  async function shrinkForUpload(file, kind) {
+    const type = (file && file.type) || '';
+    // GIF loses its animation and SVG is already tiny; neither benefits.
+    if (!/^image\//.test(type) || /^image\/(gif|svg\+xml)$/.test(type)) return file;
+    try {
+      const tools = await ensureImageTools();
+      const r = await tools.prepare(file, SHRINK[kind] || SHRINK.proof);
+      if (r.skipped || !r.blob) return file;
+      const name = String(file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+      return new File([r.blob], name, { type: 'image/jpeg', lastModified: Date.now() });
+    } catch (_) {
+      return file;   // optimiser unavailable — send the original rather than fail
+    }
+  }
+
   async function uploadFile(file, kind, onProgress) {
     kind = kind || 'proof';
+    if (onProgress) onProgress(0);
+    file = await shrinkForUpload(file, kind);
     // Headshots are captured on PUBLIC surfaces (apply, gate registration, the
     // guardian reshoot page) where there is no session — so they sign through
     // the public headshot endpoint. Everything else uses the member endpoint.
@@ -145,6 +197,10 @@
 
   const API = {
     config: getConfig,
+    // Lazily loads /vendor/image-tools.js (pica + Cropper.js) and resolves to
+    // window.ImageTools. Shared so the photo studio and the upload shrinker
+    // load it once between them.
+    imageTools: ensureImageTools,
     uploadFile: uploadFile,
     uploadPublic: uploadPublic,
     auth: {

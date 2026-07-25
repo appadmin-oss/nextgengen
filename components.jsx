@@ -1454,6 +1454,78 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
     } catch (e) { setErr("Couldn't replace — " + (e.code || e.message)); setBusy(""); }
   };
 
+  /* ── Studio: the same edits, done on the device ──────────────────────────
+   * Quick mode asks Cloudinary to reframe by rule (crop toward the face, this
+   * much zoom) and every change is a round trip. Studio hands the operator the
+   * actual frame: drag the crop, straighten, flip, set the tone, and it is all
+   * local pixels updating as you move. What gets uploaded is the finished
+   * 900×1125 frame, so the card is cut from the crop somebody chose rather
+   * than from a server-side guess at where the face is — and it keeps working
+   * when Cloudinary's credits run out.
+   *
+   * Background removal is the one thing left on Cloudinary: it is an AI
+   * service, not a filter, and there is no honest local equivalent. */
+  const OUT_W = 900, OUT_H = 1125;                 // 4:5, comfortably over 350 DPI
+  const [tab, setTab] = React.useState("quick");   // quick | studio
+  const [tone, setTone] = React.useState({ brightness: 0, contrast: 0, sharpen: 0 });
+  // Quarter turns and the straighten angle are tracked apart and combined on
+  // every change: Cropper's rotateTo is absolute, so driving it from the
+  // slider alone would silently undo a 90° turn the moment you straightened.
+  const [quarter, setQuarter] = React.useState(0);
+  const [fine, setFine] = React.useState(0);
+  const [ready, setReady] = React.useState(false);
+  const imgRef = React.useRef(null);
+  const cropRef = React.useRef(null);
+
+  // Edit the CLEAN source, not the already-cropped delivery URL — editing a
+  // derivative would bake one crop inside another.
+  const sourceUrl = currentUrl ? cldWith(currentUrl, "") : "";
+
+  React.useEffect(() => {
+    if (tab !== "studio" || !sourceUrl) return;
+    let alive = true, inst = null;
+    setReady(false); setErr(""); setQuarter(0); setFine(0);
+    (async () => {
+      try {
+        const T = await NGGApi.imageTools();
+        const Cropper = await T.ensureCropper();
+        if (!alive || !imgRef.current) return;
+        inst = new Cropper(imgRef.current, {
+          aspectRatio: OUT_W / OUT_H,
+          viewMode: 1, autoCropArea: 0.92, background: false,
+          responsive: true, checkOrientation: true, movable: true,
+          zoomable: true, guides: true, center: true,
+          ready: () => { if (alive) setReady(true); },
+        });
+        cropRef.current = inst;
+      } catch (e) { if (alive) setErr("Couldn't open the studio — " + (e.message || e)); }
+    })();
+    return () => { alive = false; if (inst) { try { inst.destroy(); } catch (e) {} } cropRef.current = null; };
+  }, [tab, sourceUrl]);
+
+  const studioAct = (fn) => { const c = cropRef.current; if (c) { try { fn(c); } catch (e) {} } };
+  const turn = (deg) => { const q = quarter + deg; setQuarter(q); studioAct(c => c.rotateTo(q + fine)); };
+  const applyStudio = async () => {
+    const c = cropRef.current;
+    if (!c || !target.subjectId) { setErr(target.subjectId ? "Nothing to apply yet." : "Can't save here — open this from a card."); return; }
+    setBusy("studio"); setErr("");
+    try {
+      const T = await NGGApi.imageTools();
+      const canvas = await T.renderCrop(c, OUT_W, OUT_H, tone);
+      if (!canvas) throw new Error("render_failed");
+      const blob = await T.toBlob(canvas, "image/jpeg", 0.92);
+      if (!blob) throw new Error("encode_failed");
+      const file = new File([blob], "headshot.jpg", { type: "image/jpeg" });
+      // Upload as a fresh source and point the subject at it. No Cloudinary
+      // transform is involved — the frame is already exactly what we want.
+      const up = await NGGApi.uploadFile(file, "headshot");
+      const r = await NGGApi.admin.photos.replace(target.subjectType, target.subjectId, up.url);
+      onSaved && onSaved(r.editedUrl || up.url); onClose && onClose();
+    } catch (e) {
+      setErr("Couldn't apply the edit — " + (e.code || e.message || e)); setBusy("");
+    }
+  };
+
   const chip = (k, v, label) => (
     <button type="button" onClick={() => set(k, v)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid " + (spec[k] === v ? "#16223e" : "rgba(12,20,50,.18)"), background: spec[k] === v ? "#16223e" : "transparent", color: spec[k] === v ? "#fff" : "#16223e", cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>{label}</button>
   );
@@ -1471,6 +1543,56 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
           <h3 style={{ margin: 0, fontSize: 18 }}>Edit photo{title ? " — " + title : ""}</h3>
           <button onClick={() => !busy && onClose && onClose()} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: "#888" }}>×</button>
         </div>
+        <div role="tablist" style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {[["quick", "Quick", "Rule-based reframe, rendered by Cloudinary"], ["studio", "Studio", "Crop, straighten and tone on this device"]].map(([k, lbl, tip]) => (
+            <button key={k} role="tab" aria-selected={tab === k} title={tip} disabled={!!busy} onClick={() => setTab(k)}
+              style={{ padding: "7px 15px", borderRadius: 9, border: "1px solid " + (tab === k ? "#16223e" : "rgba(12,20,50,.18)"), background: tab === k ? "#16223e" : "transparent", color: tab === k ? "#fff" : "#16223e", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{lbl}</button>
+          ))}
+        </div>
+        {tab === "studio" ? (
+          <div>
+            <div style={{ background: "#0d1426", borderRadius: 12, overflow: "hidden", maxHeight: "48vh" }}>
+              {sourceUrl
+                ? <img ref={imgRef} src={sourceUrl} alt="Source" crossOrigin="anonymous" style={{ maxWidth: "100%", display: "block" }}/>
+                : <div style={{ display: "grid", placeItems: "center", height: 220, color: "#889" }}>No photo to edit</div>}
+            </div>
+            {!ready && sourceUrl && <p className="mono" style={{ fontSize: 11, color: "#889", margin: "8px 0 0" }}>Loading the studio…</p>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+              {[
+                ["\u27F2 90\u00B0", () => turn(-90)],
+                ["\u27F3 90\u00B0", () => turn(90)],
+                ["\u21CB Flip", () => studioAct(c => c.scaleX(-(c.getData().scaleX || 1)))],
+                ["\u21F5 Flip", () => studioAct(c => c.scaleY(-(c.getData().scaleY || 1)))],
+                ["Reset", () => { setQuarter(0); setFine(0); setTone({ brightness: 0, contrast: 0, sharpen: 0 }); studioAct(c => c.reset()); }],
+              ].map(([lbl, fn]) => (
+                <button key={lbl} type="button" disabled={!ready || !!busy} onClick={fn}
+                  style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(12,20,50,.18)", background: "transparent", color: "#16223e", fontWeight: 600, fontSize: 12.5, cursor: ready ? "pointer" : "not-allowed", opacity: ready ? 1 : .5 }}>{lbl}</button>
+              ))}
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <div className="mono" style={{ fontSize: 11, letterSpacing: ".1em", color: "#889", marginBottom: 6 }}>STRAIGHTEN · {fine}°{quarter ? " (+" + quarter + "° turn)" : ""}</div>
+              <input type="range" min="-15" max="15" step="0.5" value={fine} disabled={!ready}
+                onChange={e => { const v = parseFloat(e.target.value); setFine(v); studioAct(c => c.rotateTo(quarter + v)); }}
+                style={{ width: "100%" }} aria-label="Straighten"/>
+            </div>
+            {[["brightness", "BRIGHTNESS", -100, 100], ["contrast", "CONTRAST", -100, 100], ["sharpen", "SHARPEN", 0, 100]].map(([k, lbl, lo, hi]) => (
+              <div key={k} style={{ marginTop: 10 }}>
+                <div className="mono" style={{ fontSize: 11, letterSpacing: ".1em", color: "#889", marginBottom: 6 }}>{lbl} · {tone[k] || 0}</div>
+                <input type="range" min={lo} max={hi} step="1" value={tone[k] || 0} disabled={!ready}
+                  onChange={e => setTone(t => Object.assign({}, t, { [k]: parseInt(e.target.value, 10) }))}
+                  style={{ width: "100%" }} aria-label={lbl}/>
+              </div>
+            ))}
+            <p className="mono" style={{ fontSize: 11, color: "#99a", marginTop: 10 }}>
+              Runs entirely on this device {"—"} nothing is sent until you apply, and the tone sliders bake into the {OUT_W}{"×"}{OUT_H} frame that gets uploaded. Reframing only; never generative.
+            </p>
+            {err && <p style={{ color: "var(--coral, #ff5a3c)", fontSize: 13, margin: "12px 0 0" }}>{err}</p>}
+            <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+              <button className="btn btn-primary btn-sm" disabled={!!busy || !ready || !target.subjectId} onClick={applyStudio}>{busy === "studio" ? "Applying…" : "Apply & save"}</button>
+              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => onClose && onClose()}>Cancel</button>
+            </div>
+          </div>
+        ) : (<>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           <div style={{ position: "relative", width: 168, height: 210, borderRadius: 12, overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", border: "1px solid rgba(12,20,50,.14)", flex: "0 0 auto" }}>
             {shown
@@ -1513,6 +1635,8 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
           <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) replace(f); e.target.value = ""; }}/>
         </div>
         <p className="mono" style={{ fontSize: 11, color: "#99a", marginTop: 10 }}>Edits reframe/adjust the existing photo only — never generative. The change applies to the card and profile immediately.</p>
+        </>
+        )}
       </div>
     </div>
   );

@@ -86,6 +86,16 @@ const STATUS = {
              track: 'Arts', token: 'T' + n, photoUrl: '', centre: { name: 'Ijaiye', color: '#76B043' } };
   }) };
   window.NGGApi = deep({
+    imageTools: function () {
+      if (window.ImageTools) return Promise.resolve(window.ImageTools);
+      return new Promise(function (res, rej) {
+        var sc = document.getElementById('it') || document.createElement('script');
+        sc.id = 'it'; sc.src = '/vendor/image-tools.js';
+        sc.onload = function () { res(window.ImageTools); };
+        sc.onerror = function () { rej(new Error('no image tools')); };
+        if (!sc.parentNode) document.head.appendChild(sc);
+      });
+    },
     admin: deep({ registration: deep({
       cards: function () { return Promise.resolve(ROSTER); },
       volunteerCards: function () { return Promise.resolve({ program: PROGRAM, cards: [] }); },
@@ -103,10 +113,15 @@ const STATUS = {
 <script>
   var b = new URLSearchParams(location.search).get('board');
   var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'cards' ? 'CardStudio' : b === 'photo' ? 'PhotoEditor' : 'StatusPage';
-  var props = b === 'photo'
-    ? { target: { subjectType: 'student', subjectId: 'SUM-1' }, currentUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==',
-        title: 'Test', onSaved: function () {}, onClose: function () {} }
-    : { setPage: function () {} };
+  var props;
+  if (b === 'photo') {
+    var pc = document.createElement('canvas'); pc.width = 800; pc.height = 1000;
+    var px = pc.getContext('2d');
+    px.fillStyle = '#88a'; px.fillRect(0, 0, 800, 1000);
+    px.fillStyle = '#fff'; px.beginPath(); px.arc(400, 380, 190, 0, 7); px.fill();
+    props = { target: { subjectType: 'student', subjectId: 'SUM-1' }, currentUrl: pc.toDataURL('image/png'),
+              title: 'Test', onSaved: function () {}, onClose: function () {} };
+  } else { props = { setPage: function () {} }; }
   // Stand in for the export toolkit so a click can be traced all the way into
   // buildImpositionPDF without rasterising anything.
   if (b === 'cards') {
@@ -128,6 +143,9 @@ const STATUS = {
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(window[which], props));
   } catch (e) { window.__errors.push(String(e && e.message)); }
 </script></body></html>`);
+
+  fs.writeFileSync(path.join(ROOT, 'tests', '_upload_fixture.html'),
+    '<!doctype html><html><body><script src="/dist/api-client.js"></script></body></html>');
 
   const server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
   await new Promise(r => setTimeout(r, 1000));
@@ -276,9 +294,96 @@ const STATUS = {
     const after = await shot();
     ok('dragging zoom changes the preview immediately', before && after && before.tr !== after.tr && /scale\(1.8\)/.test(after.tr));
     ok('…without swapping the image (no network round trip)', before.src === after.src);
+
+    // ── Studio: a real editor that does not touch Cloudinary ─────────────
+    await pe.getByRole('tab', { name: 'Studio' }).click();
+    await pe.waitForSelector('.cropper-container', { timeout: 15000 }).catch(() => {});
+    ok('Studio boots Cropper.js on the device', await pe.locator('.cropper-container').count() === 1);
+    const studioCtl = await pe.evaluate(() =>
+      Array.from(document.querySelectorAll('button')).map(b => b.textContent.trim()));
+    ok('Studio offers rotate, flip and reset', ['90°', 'Flip', 'Reset'].every(t => studioCtl.some(x => x.indexOf(t) !== -1)));
+    const sliders = await pe.locator('input[type=range]').count();
+    ok('Studio offers straighten plus the three tone controls', sliders === 4);
+
+    // rotateTo is absolute, so driving it from the straighten slider alone
+    // would silently undo a 90° turn. Read Cropper's own state, not the DOM.
+    const rotOf = () => pe.evaluate(() => {
+      const el = document.querySelector('img[alt=Source]');
+      return el && el.cropper ? el.cropper.getData().rotate : null;
+    });
+    await pe.getByRole('button', { name: /90°/ }).nth(1).click();
+    const afterTurn = await rotOf();
+    await pe.locator('input[type=range]').first().fill('6');
+    await pe.waitForTimeout(150);
+    const afterFine = await rotOf();
+    const label = await pe.evaluate(() => document.body.innerText);
+    ok('a 90° turn survives straightening (' + afterTurn + '° → ' + afterFine + '°)',
+      afterTurn === 90 && afterFine === 96 && /\+90° turn/.test(label));
+
+    // Leaving the tab must tear the instance down, not leak it.
+    await pe.getByRole('tab', { name: 'Quick' }).click();
+    await pe.waitForTimeout(200);
+    ok('leaving Studio destroys the cropper', await pe.locator('.cropper-container').count() === 0);
     await pe.close();
+
+    // ── upload shrinking ─────────────────────────────────────────────────
+    const shrink = await (async () => {
+      const p2 = await browser.newPage();
+      await p2.goto(BASE + '/tests/_boards_fixture.html?board=photo&mode=ok', { waitUntil: 'networkidle' });
+      const out = await p2.evaluate(async () => {
+        const T = await window.NGGApi.imageTools();
+        const c = document.createElement('canvas'); c.width = 3200; c.height = 2400;
+        const x = c.getContext('2d');
+        for (let i = 0; i < 3200; i += 6) { x.fillStyle = i % 12 ? '#eee' : '#333'; x.fillRect(i, 0, 3, 2400); }
+        const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.95));
+        const f = new File([blob], 'p.jpg', { type: 'image/jpeg' });
+        const big = await T.prepare(f, { maxPx: 1600, quality: 0.86 });
+        const sc = document.createElement('canvas'); sc.width = 300; sc.height = 400;
+        sc.getContext('2d').fillRect(0, 0, 300, 400);
+        const sblob = await new Promise(r => sc.toBlob(r, 'image/jpeg', 0.8));
+        const small = await T.prepare(new File([sblob], 's.jpg', { type: 'image/jpeg' }), { maxPx: 1600 });
+        return { before: f.size, after: big.after, w: big.width, skipped: big.skipped, smallSkipped: small.skipped };
+      });
+      await p2.close();
+      return out;
+    })();
+    ok('a phone-sized photo is resampled before upload (' + Math.round(shrink.before / 1024) + 'KB → ' + Math.round(shrink.after / 1024) + 'KB, ' + shrink.w + 'px wide)',
+      !shrink.skipped && shrink.w === 1600 && shrink.after < shrink.before / 2);
+    ok('an already-small image is left alone (no needless re-encode)', shrink.smallSkipped);
+
+    // ── and the upload path actually uses it ─────────────────────────────
+    // Measuring the library in isolation would still pass if uploadFile sent
+    // the original, so this drives the real client and weighs what leaves.
+    const up = await browser.newPage();
+    let sentBytes = 0;
+    await up.route('**/api/public/upload-headshot-sign.php', (route) => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, apiKey: 'k', timestamp: 1, signature: 's', folder: 'f',
+        uploadUrl: BASE + '/__upload_sink' }),
+    }));
+    await up.route('**/__upload_sink', (route) => {
+      const buf = route.request().postDataBuffer();
+      sentBytes = buf ? buf.length : 0;
+      return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ secure_url: 'https://res.cloudinary.com/x/image/upload/v1/a.jpg', public_id: 'a' }) });
+    });
+    await up.goto(BASE + '/tests/_upload_fixture.html', { waitUntil: 'networkidle' });
+    const orig = await up.evaluate(async () => {
+      const c = document.createElement('canvas'); c.width = 3200; c.height = 2400;
+      const x = c.getContext('2d');
+      for (let i = 0; i < 3200; i += 6) { x.fillStyle = i % 12 ? '#eee' : '#333'; x.fillRect(i, 0, 3, 2400); }
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.95));
+      const f = new File([blob], 'big.jpg', { type: 'image/jpeg' });
+      await window.NGGApi.uploadFile(f, 'headshot');
+      return f.size;
+    });
+    await up.close();
+    ok('uploadFile puts the resampled image on the wire, not the original ('
+      + Math.round(orig / 1024) + 'KB → ' + Math.round(sentBytes / 1024) + 'KB sent)',
+      sentBytes > 0 && sentBytes < orig / 2);
   } catch (e) { fail++; console.error('  ✗ harness error: ' + (e && e.message)); }
-  finally { if (browser) await browser.close(); try { process.kill(-server.pid); } catch (_) {} try { fs.unlinkSync(FIX); } catch (_) {} }
+  finally { if (browser) await browser.close(); try { process.kill(-server.pid); } catch (_) {} try { fs.unlinkSync(FIX); } catch (_) {}
+    try { fs.unlinkSync(path.join(ROOT, 'tests', '_upload_fixture.html')); } catch (_) {}  }
 
   console.log((fail ? '❌ FAIL' : '✅ PASS') + ': ' + pass + ' passed, ' + fail + ' failed (UI smoke: boards + card studio)');
   process.exit(fail ? 1 : 0);
