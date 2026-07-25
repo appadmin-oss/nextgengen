@@ -3224,6 +3224,9 @@ function cardFacePhoto(url, w, h) {
 function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
   const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
+  // A record with no centre used to throw here, and one throw blanked the
+  // whole studio. Never let missing data cost more than a default colour.
+  const centre = card.centre || {};
   // Reflow: every element scales UNIFORMLY (never stretched) and flexible
   // spacers absorb the height difference, so any proportion renders without
   // distortion. Photo caps at its design diameter, shrinks on short cards.
@@ -3252,7 +3255,7 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
       <div style={{ border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff", marginTop: px(13), flex: "none" }}>
         <CardQR token={card.token} size={px(104)}/>
       </div>
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: card.centre.color }}/>
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: centre.color || "#76B043" }}/>
     </div>
   );
 }
@@ -3262,7 +3265,8 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
    Same 590×1004 canvas as the student card so both print at 54×92mm. */
 function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
-  const tint = card.tier.color || "#00225F";
+  const tier = card.tier || {};
+  const tint = tier.color || "#00225F";
   // Headshot keeps its 450:354 aspect (never stretched) and scales with the card.
   const hsH = Math.min(354, Math.max(150, Math.round(H * 0.34)));
   const hsW = Math.round(hsH * 450 / 354);
@@ -3294,7 +3298,7 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
         <div style={{ textAlign: "center", fontSize: px(24), letterSpacing: px(1.2), color: "#101010", textTransform: "uppercase", flex: "none" }}>
           <span style={{ fontWeight: 800 }}>Volunteer</span>
           <span style={{ margin: `0 ${px(8)}px`, color: "#B9BFCB" }}>|</span>
-          <span style={{ fontWeight: 500 }}>{card.role || card.tier.name}</span>
+          <span style={{ fontWeight: 500 }}>{card.role || tier.name || ""}</span>
         </div>
       </div>
     </div>
@@ -3312,7 +3316,7 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
   const isVol = !!card.tier;
   const key = card.studentId || card.volunteerId || card.displayId;
   const midRow = isVol
-    ? ["ROLE", String(card.role || card.tier.name || "").toUpperCase(), "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm-9 9a9 9 0 0 1 18 0"]
+    ? ["ROLE", String(card.role || (card.tier && card.tier.name) || "").toUpperCase(), "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm-9 9a9 9 0 0 1 18 0"]
     : ["CENTRE", ((card.centre && card.centre.name) || "").toUpperCase(), "M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11Zm0-8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"];
   const rows = [
     ["WEBSITE", program.website, "M2 12a10 10 0 1 0 20 0 10 10 0 0 0-20 0Zm2 0h16M12 2c3 3.5 3 16.5 0 20-3-3.5-3-16.5 0-20Z"],
@@ -3362,6 +3366,20 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
         <img src={(program && program.logoLockup) || "/assets/idcard/logo-lockup.png"} alt="Programme lockup" style={{ width: px(230) }}/>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: "#00225F" }}/>
+    </div>
+  );
+}
+
+/* Stands in for a single card the renderer choked on, so the operator sees
+   exactly which record is bad instead of an empty screen. */
+function CardDrawFailed({ id, w, h }) {
+  return (
+    <div style={{ width: w, height: h, borderRadius: 6, border: "1px dashed rgba(255,154,154,.6)", background: "rgba(255,154,154,.08)",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 12, textAlign: "center", boxSizing: "border-box" }}>
+      <span style={{ fontSize: 22 }} aria-hidden="true">⚠</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "#ffb4b4" }}>Couldn{"\u2019"}t draw this card</span>
+      <span className="mono" style={{ fontSize: 11, color: "rgba(230,238,255,.6)", wordBreak: "break-all" }}>{id}</span>
+      <span style={{ fontSize: 11, color: "rgba(230,238,255,.5)" }}>Its record is missing something {"\u2014"} the other cards are unaffected.</span>
     </div>
   );
 }
@@ -3454,12 +3472,10 @@ function CardStudio() {
   const [oneUp, setOneUp] = React.useState(false);  // single-up prepress vs A4 gang-up
   const [prog, setProg] = React.useState(null);     // {done,total,name,eta} during a run
   const [query, setQuery] = React.useState("");     // roster search
-  const [page, setPage] = React.useState(0);        // preview page
   // Cards per output file. One PDF of a thousand cards is ~200MB and jsPDF
   // holds every image as base64 while it builds, which is enough to end the
   // tab on a phone — and no print shop wants a single 200MB file either.
   const [chunk, setChunk] = React.useState(250);
-  const PER_PAGE = 24;
   // Which way the press turns the sheet between sides. Long-edge (work-and-
   // turn) keeps the same gripper edge and registers best, so it's the default.
   const [duplex, setDuplex] = React.useState("long-edge");
@@ -3549,8 +3565,7 @@ function CardStudio() {
   });
   // A roster reload or a tab switch resets to "everyone" — a stale selection
   // of ids that are no longer on screen is worse than no selection.
-  React.useEffect(() => { setSel(null); setPage(0); }, [mode, data, vdata]);
-  React.useEffect(() => { setPage(0); }, [query]);
+  React.useEffect(() => { setSel(null); }, [mode, data, vdata]);
 
   /* ── The render host ─────────────────────────────────────────────────────
    * html2canvas clones the WHOLE document for every capture, so its cost is
@@ -3788,9 +3803,6 @@ function CardStudio() {
         c.track, c.role, (c.centre && c.centre.name), (c.tier && c.tier.name)]
         .some(v => String(v || "").toLowerCase().indexOf(q) !== -1))
     : cards;
-  const pageCount = Math.max(1, Math.ceil(shownCards.length / PER_PAGE));
-  const pageNo = Math.min(page, pageCount - 1);
-  const pageCards = shownCards.slice(pageNo * PER_PAGE, pageNo * PER_PAGE + PER_PAGE);
   const chosenCount = cards.filter(isOn).length;
   const batches = Math.max(1, Math.ceil(chosenCount / chunk));
   const units = isVol ? tiers : centres;
@@ -3975,18 +3987,8 @@ function CardStudio() {
         <button onClick={() => setQuery("")} style={{ padding: "8px 13px", borderRadius: 9, border: "none", background: "rgba(255,255,255,.1)", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Clear search</button>
       </>}
     </div>
-    {pageCount > 1 && (
-      <div className="no-print" style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-        <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={pageNo === 0} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 13, cursor: pageNo === 0 ? "default" : "pointer", opacity: pageNo === 0 ? .4 : 1 }}>← Prev</button>
-        <span style={{ fontSize: 13, color: "rgba(230,238,255,.7)" }}>
-          {pageNo * PER_PAGE + 1}–{Math.min(shownCards.length, (pageNo + 1) * PER_PAGE)} of {shownCards.length} · page {pageNo + 1}/{pageCount}
-        </span>
-        <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={pageNo >= pageCount - 1} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#eef2fb", fontWeight: 700, fontSize: 13, cursor: pageNo >= pageCount - 1 ? "default" : "pointer", opacity: pageNo >= pageCount - 1 ? .4 : 1 }}>Next →</button>
-        <span style={{ fontSize: 12, color: "rgba(230,238,255,.45)" }}>Only this page is drawn; the export covers everything ticked.</span>
-      </div>
-    )}
     <div className="print-zone" ref={zoneRef} style={{ display: "flex", flexWrap: "wrap", gap: 26 }}>
-      {pageCards.map((card, i) => (
+      {shownCards.map((card, i) => (
         <div key={card.studentId || card.volunteerId} className="card-pair" data-sel={isOn(card) ? "1" : "0"} style={{ position: "relative", opacity: isOn(card) ? 1 : .38, transition: "opacity .15s" }}>
           <label className="no-print" title={isOn(card) ? "Included in the export" : "Excluded from the export"}
             style={{ position: "absolute", top: -12, left: -8, zIndex: 3, display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 8, background: isOn(card) ? gold : "#2f3f6b", boxShadow: "0 4px 12px rgba(0,0,0,.3)", cursor: "pointer" }}>
@@ -4004,8 +4006,12 @@ function CardStudio() {
             <button onClick={() => exportPairPng(card)} disabled={!!exp} title="Download this card as PNG (front + back)"
               style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>↓</button>
           </div>
-          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} program={program} S={0.5} H={CANVAS_H}/> : <CardFront card={card} program={program} S={0.5} H={CANVAS_H}/>}</div>
-          <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5} H={CANVAS_H}/></div>
+          <SafeBlock label={cardId(card)} fallback={<CardDrawFailed id={cardId(card)} w={295} h={CANVAS_H / 2}/>}>
+            <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} program={program} S={0.5} H={CANVAS_H}/> : <CardFront card={card} program={program} S={0.5} H={CANVAS_H}/>}</div>
+          </SafeBlock>
+          <SafeBlock label={cardId(card) + " back"} fallback={<CardDrawFailed id={cardId(card)} w={295} h={CANVAS_H / 2}/>}>
+            <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5} H={CANVAS_H}/></div>
+          </SafeBlock>
         </div>
       ))}
       {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>{isVol ? "No active volunteers yet — cards appear here the moment one is approved." : "No verified students yet — cards appear here the moment a parent consents."}</p>}
@@ -4019,12 +4025,14 @@ function CardStudio() {
     <div ref={hostRef} aria-hidden="true" className="no-print"
       style={{ position: "fixed", left: -100000, top: 0, width: 640, pointerEvents: "none", opacity: 0 }}>
       {hostCard && (
-        <div className="card-pair">
-          {isVol
-            ? <VolunteerCardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
-            : <CardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>}
-          <CardBack card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
-        </div>
+        <SafeBlock label={"export " + cardId(hostCard)}>
+          <div className="card-pair">
+            {isVol
+              ? <VolunteerCardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
+              : <CardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>}
+            <CardBack card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
+          </div>
+        </SafeBlock>
       )}
     </div>
     {editPhoto && (

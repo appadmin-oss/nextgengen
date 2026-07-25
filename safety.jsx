@@ -3,6 +3,22 @@
    Load before any page component.
    ================================================================ */
 
+/* A boundary scoped to ONE block, unlike the page-level ErrorBoundary below.
+   Where that one is right for "the app broke, stop everything", this keeps a
+   single bad item from taking its whole list down: a card whose record is
+   missing a field renders a placeholder in its own slot and every other card
+   still draws. Blanking an entire roster because of one row is the worst
+   possible failure for a screen whose job is to show the roster. */
+class SafeBlock extends React.Component {
+  constructor(props) { super(props); this.state = { failed: false }; }
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error) { console.error("[NGG SafeBlock]", this.props.label || "", error); }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return this.props.fallback || null;
+  }
+}
+
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);

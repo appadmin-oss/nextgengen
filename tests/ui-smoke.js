@@ -88,7 +88,8 @@ const STATUS = {
     return { studentId: 'SUM-' + n, displayId: 'NGG/26/' + ('000' + n).slice(-4),
              firstName: (n === 7 ? 'ZEBRA' : 'NAME' + n), surname: 'SUR' + n,
              track: 'Arts', token: 'T' + n, photoUrl: '',
-             centre: { name: n % 2 ? 'Ijaiye' : 'Egbeda', color: '#76B043' } };
+             // #13 has no centre at all — the shape a partial row arrives in.
+             centre: n === 13 ? undefined : { name: n % 2 ? 'Ijaiye' : 'Egbeda', color: '#76B043' } };
   }) };
   window.NGGApi = deep({
     imageTools: function () {
@@ -231,14 +232,14 @@ const STATUS = {
     const copy = await studio.evaluate(() => document.body.innerText);
     ok('/cards explains the selected flip on the page', /work-and-turn/i.test(copy));
 
-    // ── paging keeps the roster out of the DOM ───────────────────────────
-    // html2canvas clones the whole document per capture, so what is mounted
-    // sets the price of every face. A 30-card roster must not all be drawn.
+    // ── the whole roster is drawn ────────────────────────────────────────
     const boxes = studio.locator('.card-pair input[type=checkbox]');
     const bar = () => studio.evaluate(() => document.body.innerText);
-    ok('/cards draws one page, not the whole roster (' + await boxes.count() + ' of 30)', await boxes.count() === 24);
-    ok('/cards shows the paging position', /1–24 of 30 · page 1\/2/.test(await bar()));
+    ok('/cards draws every card, not a subset (' + await boxes.count() + ' of 30)', await boxes.count() === 30);
     ok('/cards defaults to exporting everyone', /All 30 cards will export/.test(await bar()));
+    // One malformed record must cost one card, never the page. A missing
+    // centre used to throw straight through React and render nothing at all.
+    ok('/cards survives a record with no centre', await studio.locator('.idcard').count() >= 58);
 
     // ── search + bulk selection ──────────────────────────────────────────
     await studio.locator('input[placeholder*="Search"]').fill('ZEBRA');
@@ -251,14 +252,14 @@ const STATUS = {
     await studio.getByRole('button', { name: 'Clear search' }).click();
     await studio.waitForTimeout(150);
 
-    // ── selection survives paging ────────────────────────────────────────
+    // ── selection is held by id, so it survives filtering ────────────────
     await boxes.nth(1).uncheck();
     ok('/cards counts the selection after unticking', /29 of 30 selected/.test(await bar()));
-    await studio.getByRole('button', { name: /Next →/ }).click();
-    await studio.waitForTimeout(200);
-    ok('/cards page 2 holds the remainder', await boxes.count() === 6);
-    await boxes.nth(0).uncheck();
-    ok('/cards keeps a selection made on another page', /28 of 30 selected/.test(await bar()));
+    await studio.locator('input[placeholder*="Search"]').fill('NAME1');
+    await studio.waitForTimeout(150);
+    await studio.getByRole('button', { name: 'Clear search' }).click();
+    await studio.waitForTimeout(150);
+    ok('/cards keeps a selection made before a search', /29 of 30 selected/.test(await bar()));
     await studio.getByRole('button', { name: 'Clear', exact: true }).click();
     const disabled = await studio.evaluate(() =>
       Array.from(document.querySelectorAll('button')).filter(b => /Print-ready PDF|PNG \(all/.test(b.textContent || '')).every(b => b.disabled));
@@ -287,6 +288,7 @@ const STATUS = {
     const built = await studio.evaluate(() => window.__pdf);
     ok('a 30-card run splits into batches of 100→one file, honouring the cap ('
       + JSON.stringify(built) + ')', built.length === 1 && built[0].fronts === 30 && built[0].backs === 30);
+    ok('the malformed record still exported rather than being dropped', built[0].fronts === 30);
     await studio.waitForSelector('.print-zone', { timeout: 20000 }).catch(() => {});
     ok('the grid comes back after the run', await studio.locator('.print-zone').count() === 1);
     await studio.close();
@@ -297,7 +299,7 @@ const STATUS = {
     await part.waitForTimeout(700);
     const partTxt = await part.evaluate(() => document.body.innerText);
     ok('one failing endpoint still renders the roster',
-      await part.locator('.card-pair input[type=checkbox]').count() === 24 && /didn.t load/.test(partTxt));
+      await part.locator('.card-pair input[type=checkbox]').count() === 30 && /didn.t load/.test(partTxt));
     await part.close();
 
     // ── and a total outage says so plainly ───────────────────────────────
