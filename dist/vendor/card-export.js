@@ -49,10 +49,15 @@
       (solids, overprints and 75/50/25 tints) let the press operator verify
       register and ink density on the sheet.
 
-   5. DUPLEX. Back sheets are interleaved after their front sheet and the
-      column order is mirrored, so a long-edge flip lands each back on its own
-      front. Emitting all fronts then all backs — as this did before — puts
-      card 1's back on card N's front on any duplexing device.
+   5. DUPLEX. Back sheets are interleaved after their front sheet — emitting
+      all fronts then all backs, as this did before, puts card 1's back on card
+      N's front on any duplexing device. Where each back is imaged then depends
+      on the axis the press turns the sheet about: long-edge (work-and-turn)
+      mirrors columns and leaves the art upright; short-edge (work-and-tumble)
+      mirrors rows and must ALSO turn the art 180°, because tumbling puts the
+      card's head at the sheet's foot. Long-edge keeps the same gripper edge on
+      both passes and registers better, so it is the default. The chosen flip
+      is printed in the slug for the operator to check against the press.
 
    6. COLOUR. Artwork is RGB raster; the file declares the intended printing
       condition with a GTS_PDFX OutputIntent (FOGRA39 by default) so the RIP
@@ -352,11 +357,14 @@
     if (oneUp) {
       // +1mm of slack all round so the outermost crop mark stops short of the
       // MediaBox edge rather than sitting exactly on it, where a RIP's own
-      // clip can shave it off.
+      // clip can shave it off. The slug band is mirrored as dead space at the
+      // top so the card sits dead centre: a centred card lands in the same
+      // place under either duplex flip, which removes a whole class of
+      // front-to-back misregistration.
       cols = rows = 1;
       pageW = trimW + 2 * (clearance + 1);
-      pageH = trimH + 2 * (clearance + 1) + slugBand;
-      startX = clearance + 1; startY = clearance + 1;
+      pageH = trimH + 2 * (clearance + 1 + slugBand);
+      startX = clearance + 1; startY = clearance + 1 + slugBand;
     } else {
       var fmt = SHEETS[String(opts.sheet || 'A4').toUpperCase()] || SHEETS.A4;
       pageW = fmt[0]; pageH = fmt[1];
@@ -459,6 +467,25 @@
     var REG = [1, 1, 1, 1];                    // registration: 100% of every plate
     function stroke(cmyk, w) { doc.setDrawColor(cmyk[0], cmyk[1], cmyk[2], cmyk[3]); doc.setLineWidth(w); }
 
+    /* Draw a face into a trim+bleed rect, optionally turned 180° about the
+     * rect's own centre. jsPDF's addImage `rotation` argument is broken in
+     * 2.5.2 — it collapses the placement matrix to the unit square — so the
+     * turn is applied as an outer transform instead. addImage brackets its own
+     * `q … Q`, so this composes cleanly, and rotating here rather than
+     * re-rendering the bitmap keeps the JPEG free of a second generation of
+     * compression loss. Coordinates in the content stream are points from the
+     * bottom-left, which is why y is measured back off the page height. */
+    function placeImage(face, x, y, w, h, turn) {
+      if (turn) {
+        var cx = (x + w / 2) * MM, cy = (pageH - (y + h / 2)) * MM;
+        doc.internal.write('q', '-1 0 0 -1', (2 * cx).toFixed(4), (2 * cy).toFixed(4), 'cm');
+      }
+      // 'FAST' — the art is already JPEG-compressed; 'SLOW' re-encodes and is
+      // dramatically slower on a full mass-print run for no visible gain.
+      doc.addImage(face.dataUrl, 'JPEG', x, y, w, h, undefined, 'FAST');
+      if (turn) doc.internal.write('Q');
+    }
+
     // Crop marks live in the sheet margin, in line with each cut, so a gang-up
     // sheet is cut by lining the guillotine up on marks at the sheet edge.
     function cropMarks() {
@@ -518,7 +545,29 @@
     }
 
     /* ── Sheet assembly ────────────────────────────────────────────────────── */
-    var sheets = [];                                  // [{ items:[{face,col,row}], side }]
+    /* ── Duplex: putting each back on its own front ────────────────────────
+     * The press turns the sheet between sides, and which axis it turns about
+     * decides where a back has to be imaged.
+     *
+     *   long-edge  (work-and-turn)  — sheet flips about the VERTICAL axis, so
+     *     the material at column c reappears at column cols-1-c. The card's
+     *     "up" still points at the sheet's head, so the art stays upright.
+     *     Same gripper edge both passes, which is why this registers best and
+     *     is the default.
+     *
+     *   short-edge (work-and-tumble) — sheet flips about the HORIZONTAL axis:
+     *     column stays, row becomes rows-1-r, and the card's "up" now points
+     *     at the sheet's foot, so the back art must ALSO be turned 180° or it
+     *     prints upside-down on the card. (Equivalently: take the long-edge
+     *     back sheet and rotate the whole page 180°.) Gripper edge changes
+     *     between passes, so register is looser.
+     *
+     *   none — fronts and backs aligned by hand, or a card printer that
+     *     handles its own flip. No mirroring, no rotation.
+     */
+    var duplex = backs ? String(opts.duplex || 'long-edge').toLowerCase() : 'none';
+    var flipRows = duplex === 'short-edge';
+    var sheets = [];                        // [{ items:[{face,col,row,rot}], side }]
     var nSheets = Math.max(1, Math.ceil(faces.length / perPage));
     for (var s = 0; s < nSheets; s++) {
       var front = [], back = [];
@@ -526,10 +575,15 @@
         var ci = s * perPage + idx;
         if (ci >= faces.length) break;
         var col = idx % cols, row = Math.floor(idx / cols);
-        front.push({ face: faces[ci], col: col, row: row, n: ci + 1 });
-        // Long-edge flip reverses column order; mirroring here is what makes a
-        // back land on its own front instead of the card at the other end.
-        if (backs && backs[ci]) back.push({ face: backs[ci], col: cols - 1 - col, row: row, n: ci + 1 });
+        front.push({ face: faces[ci], col: col, row: row, rot: false, n: ci + 1 });
+        if (backs && backs[ci]) {
+          back.push({
+            face: backs[ci], n: ci + 1,
+            col: duplex === 'long-edge' ? cols - 1 - col : col,
+            row: flipRows ? rows - 1 - row : row,
+            rot: flipRows,
+          });
+        }
       }
       sheets.push({ items: front, side: 'front', sheet: s + 1 });
       if (backs) sheets.push({ items: back, side: 'back', sheet: s + 1 });
@@ -548,9 +602,7 @@
         // `bleed` outside the trim on every side.
         var fb = it.face.bleedPx && it.face.trimWPx ? bleed : 0;
         var w = trimW + 2 * fb, h = trimH + 2 * fb;
-        // 'FAST' — the art is already JPEG-compressed; 'SLOW' re-encodes and is
-        // dramatically slower on a full mass-print run for no visible gain.
-        doc.addImage(it.face.dataUrl, 'JPEG', x - fb, y - fb, w, h, undefined, 'FAST');
+        placeImage(it.face, x - fb, y - fb, w, h, it.rot);
       }
 
       if (marks) {
@@ -600,8 +652,14 @@
         layer('slug');
         slugLine(job + ' · sheet ' + sh.sheet + '/' + nSheets + ' ' + sh.side.toUpperCase() +
           ' · ' + trimW + '\u00D7' + trimH + ' mm trim · ' + bleed + ' mm bleed · ' +
-          (oneUp ? '1-up' : cols + '\u00D7' + rows + '-up') + ' · ' + intent.id +
-          (stamp ? ' · ' + stamp : ''), pageH - slugBand / 2 - 1);
+          (oneUp ? '1-up' : cols + '\u00D7' + rows + '-up') +
+          // The flip axis is the one setting that silently ruins a whole run,
+          // so it is printed on the sheet for the operator to check against how
+          // their press is actually set up.
+          (backs ? ' · duplex: ' + (duplex === 'none' ? 'NO flip (align by hand)'
+            : duplex === 'short-edge' ? 'SHORT-edge flip (work-and-tumble)'
+            : 'LONG-edge flip (work-and-turn)') : '') +
+          ' · ' + intent.id + (stamp ? ' · ' + stamp : ''), pageH - slugBand / 2 - 1);
       }
       endLayer();
 

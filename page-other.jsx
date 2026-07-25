@@ -3434,6 +3434,9 @@ function CardStudio() {
   const cancelRef = React.useRef(false);
   const [dpi, setDpi] = React.useState(350);        // 350 = 2× a 175 lpi screen
   const [oneUp, setOneUp] = React.useState(false);  // single-up prepress vs A4 gang-up
+  // Which way the press turns the sheet between sides. Long-edge (work-and-
+  // turn) keeps the same gripper edge and registers best, so it's the default.
+  const [duplex, setDuplex] = React.useState("long-edge");
   const [exp, setExp] = React.useState("");   // progress/status text
   const [notice, setNotice] = React.useState("");  // transient success note
   const [resending, setResending] = React.useState("");  // id currently resending
@@ -3584,7 +3587,7 @@ function CardStudio() {
       if (!fronts.length) { setExp(""); setMsg("PDF export failed — no cards could be rendered."); return; }
       setExp(oneUp ? "Building pages…" : "Imposing sheets…"); await nextFrame();
       const pdf = await CE.buildImpositionPDF(fronts, {
-        backs,                       // interleaved + column-mirrored for duplex
+        backs, duplex,               // interleaved + mirrored for the press's flip
         layout: oneUp ? "single-up" : "imposed",
         sheet: "A4", trimW_mm: cardW, trimH_mm: cardH,
         bleed_mm: BLEED_MM, safe_mm: 3, marks: true, layers: true,
@@ -3662,6 +3665,15 @@ function CardStudio() {
           <option value="1up">Single-up (one card per page)</option>
         </select>
       </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Front/back flip
+        <select value={duplex} onChange={e => setDuplex(e.target.value)} disabled={!!exp}
+          title="How the press turns the sheet between sides — ask your printer. The wrong axis puts every back on the wrong front."
+          style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
+          <option value="long-edge">Long edge — work-and-turn</option>
+          <option value="short-edge">Short edge — work-and-tumble</option>
+          <option value="none">No flip — align by hand</option>
+        </select>
+      </label>
       <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Resolution
         <select value={dpi} onChange={e => setDpi(Number(e.target.value))} disabled={!!exp}
           style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
@@ -3674,7 +3686,13 @@ function CardStudio() {
     <p className="no-print" style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "0 0 18px", maxWidth: 700 }}>
       {oneUp
         ? <>Single-up is the prepress handoff: one card per page at an exact {cardW}{"×"}{cardH}&nbsp;mm <strong>TrimBox</strong> with a {BLEED_MM}&nbsp;mm <strong>BleedBox</strong>, so the shop imposes it on their own press sheet. </>
-        : <>Imposed lays cards out N-up on A4 at an exact {cardW}{"×"}{cardH}&nbsp;mm trim, gutters set to two bleeds so neighbouring cards never cut into each other, with each back sheet following its front and column-mirrored for a long-edge duplex flip. </>}
+        : <>Imposed lays cards out N-up on A4 at an exact {cardW}{"×"}{cardH}&nbsp;mm trim, gutters set to two bleeds so neighbouring cards never cut into each other, with each back sheet following its front. </>}
+      {duplex === "none"
+        ? <><strong>No flip:</strong> backs sit exactly where the fronts do {"—"} for a card printer that turns the card itself, or hand alignment. </>
+        : duplex === "short-edge"
+          ? <><strong>Short-edge flip</strong> (work-and-tumble): backs are row-mirrored and turned 180°, because tumbling the sheet puts the card{"'"}s head at the sheet{"'"}s foot. The gripper edge changes between passes, so register is looser than long-edge. </>
+          : <><strong>Long-edge flip</strong> (work-and-turn): backs are column-mirrored, art upright, same gripper edge both passes {"—"} the tightest front-to-back register. </>}
+      The flip is printed on every sheet so your printer can check it against their press.{" "}
       Artwork carries {BLEED_MM}&nbsp;mm of real bleed (mirrored outward from the design, so nothing is cropped or stretched) at {dpi}&nbsp;DPI. Crop and registration marks sit outside the bleed in registration colour, alongside a CMYK control strip and a job slug. Printer marks, cut lines (ISO&nbsp;19593-1), bleed and safe-area guides are separate switchable PDF layers {"—"} the guides are flagged non-printing. Colour target is declared as a FOGRA39 output intent. Everything renders in your browser {"—"} nothing is uploaded.
     </p>
 

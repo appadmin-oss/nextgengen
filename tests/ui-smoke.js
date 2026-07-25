@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 /* ============================================================================
-   Live boards smoke test — /status and /v-status.
+   UI smoke test — the two live boards and the ID Card Studio.
 
-   Both boards poll a public endpoint through one shared hook. This mounts the
-   real production bundle against a stubbed NGGApi and checks the things a
-   JSX build cannot: that the components reference no undefined identifiers,
-   that they render real numbers on success, and — the behaviour that matters
-   when the origin is down — that a failing board shows an honest "can't reach
-   the server" state and does NOT stack up overlapping requests.
+   `node build.js` only transforms JSX; it happily ships a component that
+   references an identifier that no longer exists, which then blanks the page
+   at runtime. This mounts the real production bundle against a stubbed NGGApi
+   and checks what the build cannot:
 
-   Run:  node tests/boards-smoke.js
+     /status, /v-status — mount clean, render real numbers, and when the origin
+       is unreachable show an honest "can't reach the server" state, a working
+       Retry, and no pile-up of overlapping requests.
+     /cards            — the studio mounts clean with all its print controls,
+       so a change to the export options can't blank the page.
+
+   Run:  node tests/ui-smoke.js
    Env:  PLAYWRIGHT_MODULE, CHROMIUM_PATH, BOARDS_PORT (default 8198).
    Skips with a pass if playwright isn't installed (like the other E2E tests).
    ========================================================================== */
@@ -63,22 +67,30 @@ const STATUS = {
       return Promise.reject(e);
     };
   }
-  // The boards pull in shared chrome (Footer et al) that calls other public
-  // endpoints. Only the two board calls are counted; everything else resolves
-  // empty so unrelated chrome can't fail the assertions.
-  var boards = {
+  // The pages pull in shared chrome (Footer et al) and, for the studio, a tree
+  // of admin endpoints. Any path not named below resolves empty, so unrelated
+  // chrome can never fail an assertion; only the two board calls are counted.
+  function deep(over) {
+    return new Proxy(function () { return Promise.resolve({}); }, {
+      get: function (t, k) {
+        if (over && Object.prototype.hasOwnProperty.call(over, k)) return over[k];
+        if (k === 'then' || typeof k === 'symbol') return undefined;
+        return deep();
+      },
+      apply: function () { return Promise.resolve({}); },
+    });
+  }
+  window.NGGApi = deep({ public: deep({
     status: stub('status', ${JSON.stringify(STATUS)}),
     volunteerStatus: stub('volunteerStatus', ${JSON.stringify(STATUS)}),
-  };
-  window.NGGApi = { public: new Proxy(boards, {
-    get: function (t, k) { return t[k] || function () { return Promise.resolve({}); }; },
-  }) };
+  }) });
   window.__errors = [];
   window.addEventListener('error', function (e) { window.__errors.push(String(e.message)); });
 </script>
 <script src="/dist/app.min.js"></script>
 <script>
-  var which = new URLSearchParams(location.search).get('board') === 'vol' ? 'VolunteerStatusPage' : 'StatusPage';
+  var b = new URLSearchParams(location.search).get('board');
+  var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'cards' ? 'CardStudio' : 'StatusPage';
   try {
     ReactDOM.createRoot(document.getElementById('root'))
       .render(React.createElement(window[which], { setPage: function () {} }));
@@ -144,9 +156,28 @@ const STATUS = {
       ok(label + ' does not stack requests while one is in flight (' + n0 + ' → ' + n1 + ')', n1 === n0);
       await page.close();
     }
+
+    // ── ID Card Studio: mounts with its print controls intact ──────────────
+    const studio = await browser.newPage();
+    const studioErrs = [];
+    studio.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) studioErrs.push(m.text()); });
+    studio.on('pageerror', e => studioErrs.push(String(e.message)));
+    await studio.goto(BASE + '/tests/_boards_fixture.html?board=cards&mode=ok', { waitUntil: 'networkidle' });
+    await studio.waitForTimeout(900);
+    const sErrs = await studio.evaluate(() => window.__errors);
+    ok('/cards studio mounts with no script error', sErrs.length === 0 && studioErrs.length === 0);
+    if (sErrs.length || studioErrs.length) console.error('       ', sErrs.concat(studioErrs).slice(0, 3).join(' | '));
+    const opts = await studio.evaluate(() =>
+      Array.from(document.querySelectorAll('select')).map(s => Array.from(s.options).map(o => o.value).join('|')));
+    ok('/cards exposes the layout, flip and resolution controls', opts.some(o => /imposed\|1up/.test(o))
+      && opts.some(o => /long-edge\|short-edge\|none/.test(o))
+      && opts.some(o => /300\|350\|600/.test(o)));
+    const copy = await studio.evaluate(() => document.body.innerText);
+    ok('/cards explains the selected flip on the page', /work-and-turn/i.test(copy));
+    await studio.close();
   } catch (e) { fail++; console.error('  ✗ harness error: ' + (e && e.message)); }
   finally { if (browser) await browser.close(); try { process.kill(-server.pid); } catch (_) {} try { fs.unlinkSync(FIX); } catch (_) {} }
 
-  console.log((fail ? '❌ FAIL' : '✅ PASS') + ': ' + pass + ' passed, ' + fail + ' failed (live boards smoke)');
+  console.log((fail ? '❌ FAIL' : '✅ PASS') + ': ' + pass + ' passed, ' + fail + ' failed (UI smoke: boards + card studio)');
   process.exit(fail ? 1 : 0);
 })();

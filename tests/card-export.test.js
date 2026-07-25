@@ -99,11 +99,39 @@ function loadChromium() {
         }
         return out;
       };
-      // Image placements as {x,y} in mm, PDF origin bottom-left.
-      const placements = (txt) => (txt.match(/([-\d.]+) 0 0 ([-\d.]+) ([-\d.]+) ([-\d.]+) cm/g) || [])
-        .map((m) => m.split(' ').map(Number))
-        .filter((v) => v[0] > 100)
-        .map((v) => ({ x: Math.round(v[4] / MM * 100) / 100, y: Math.round(v[5] / MM * 100) / 100 }));
+      // Image placements as {x, y, turned} in mm, PDF origin bottom-left.
+      // A turned back face is drawn inside an extra `q -1 0 0 -1 … cm` so the
+      // effective placement is only visible once the transforms are composed —
+      // hence a real (if tiny) content-stream interpreter rather than a regex
+      // over individual matrices.
+      const placements = (txt) => {
+        const out = [], stack = [];
+        let ctm = [1, 0, 0, 1, 0, 0];
+        // PDF row-vector convention: CTM' = operand × CTM.
+        const mul = (m, n) => [
+          m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3],
+          m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3],
+          m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5],
+        ];
+        const re = /([-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+ [-\d.]+) cm|(?:^|\s)(q|Q)(?=\s)|\/(\w+) Do/g;
+        let m;
+        while ((m = re.exec(txt)) !== null) {
+          if (m[1]) ctm = mul(m[1].split(' ').map(Number), ctm);
+          else if (m[2] === 'q') stack.push(ctm.slice());
+          else if (m[2] === 'Q') ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+          else if (m[3]) {
+            const p = (x, y) => [(ctm[0] * x + ctm[2] * y + ctm[4]) / MM, (ctm[1] * x + ctm[3] * y + ctm[5]) / MM];
+            const a = p(0, 0), b = p(1, 1);
+            if (Math.abs(b[0] - a[0]) < 30) continue;   // not a card-sized image
+            out.push({
+              x: Math.round(Math.min(a[0], b[0]) * 100) / 100,
+              y: Math.round(Math.min(a[1], b[1]) * 100) / 100,
+              turned: ctm[0] < 0 && ctm[3] < 0,
+            });
+          }
+        }
+        return out;
+      };
 
       // ── imposed duplex sheet ─────────────────────────────────────────────
       // Seven cards on a 3×3 grid: the ragged last row is what exposes a
@@ -116,14 +144,44 @@ function loadChromium() {
       });
       const it = decode(imposed);
 
-      const streams = await contentStreams(imposed);
-      const fs_ = placements(streams[0] || ''), bs_ = placements(streams[1] || '');
-      const colXs = Array.from(new Set(fs_.map((p) => p.x))).sort((a, b) => a - b);
-      const mirror = (x) => colXs[colXs.length - 1 - colXs.indexOf(x)];
       const key = (l) => l.map((p) => p.x + '@' + p.y).sort().join(' ');
-      const duplexMirrored = fs_.length === 7 && bs_.length === 7 && colXs.length === 3
-        && key(bs_) === key(fs_.map((p) => ({ x: mirror(p.x), y: p.y })))
-        && key(bs_) !== key(fs_);   // and it genuinely moved something
+      const axisMirror = (list, axis) => {
+        const vals = Array.from(new Set(list.map((p) => p[axis]))).sort((a, b) => a - b);
+        return (v) => vals[vals.length - 1 - vals.indexOf(v)];
+      };
+      // Build the same seven-up sheet under each flip and read back where the
+      // backs actually landed.
+      const duplexRun = async (mode) => {
+        const bytes = await CE.buildImpositionPDF(seven, {
+          backs: seven.map(() => back), layout: 'imposed', sheet: 'A4', duplex: mode,
+          trimW_mm: TRIM_W, trimH_mm: TRIM_H, bleed_mm: BLEED, marks: true, layers: true,
+        });
+        const st = await contentStreams(bytes);
+        return { f: placements(st[0] || ''), b: placements(st[1] || '') };
+      };
+      const longEdge = await duplexRun('long-edge');
+      const shortEdge = await duplexRun('short-edge');
+      const noFlip = await duplexRun('none');
+
+      const mirX = axisMirror(longEdge.f, 'x'), mirY = axisMirror(longEdge.f, 'y');
+      // Long edge: columns reverse, rows hold, art stays upright.
+      const longOk = longEdge.f.length === 7 && longEdge.b.length === 7
+        && key(longEdge.b) === key(longEdge.f.map((p) => ({ x: mirX(p.x), y: p.y })))
+        && key(longEdge.b) !== key(longEdge.f)
+        && longEdge.b.every((p) => !p.turned);
+      // Short edge: rows reverse, columns hold, and every back is turned 180°
+      // or it prints upside-down on the card.
+      const shortOk = shortEdge.b.length === 7
+        && key(shortEdge.b) === key(shortEdge.f.map((p) => ({ x: p.x, y: mirY(p.y) })))
+        && key(shortEdge.b) !== key(shortEdge.f)
+        && shortEdge.b.every((p) => p.turned);
+      // The two flips must not agree, or one of them is wrong.
+      const flipsDiffer = key(longEdge.b) !== key(shortEdge.b);
+      // None: backs sit exactly where the fronts do, untouched.
+      const noneOk = key(noFlip.b) === key(noFlip.f) && noFlip.b.every((p) => !p.turned);
+
+      const fs_ = longEdge.f, bs_ = longEdge.b;
+      const duplexMirrored = longOk;
 
       // Object numbers must be unique: handing a page's id to a layer
       // dictionary leaves a file that opens with no pages at all.
@@ -167,8 +225,9 @@ function loadChromium() {
         // layers
         ocProps: it.indexOf('/OCProperties') !== -1 && it.indexOf('/Type /OCG') !== -1,
         ocRefs: it.indexOf('/Properties <<') !== -1,
-        uniqueIds, xobjectIntact, duplexMirrored,
+        uniqueIds, xobjectIntact, duplexMirrored, shortOk, noneOk, flipsDiffer,
         frontXs: fs_.map((p) => p.x).join(','), backXs: bs_.map((p) => p.x).join(','),
+        shortYs: shortEdge.b.map((p) => p.y).join(','),
         procSteps: it.indexOf('/GTS_ProcStepsGroup /Structural') !== -1 && it.indexOf('/GTS_ProcStepsType /Cutting') !== -1,
         nonPrinting: it.indexOf('/PrintState /OFF') !== -1,
         autoState: it.indexOf('/Event /Print') !== -1,
@@ -199,7 +258,10 @@ function loadChromium() {
     ok('artwork stays in /XObject beside the spliced /Properties list', r.xobjectIntact);
     ok('every page carries a TrimBox', r.imposedTrim);
     ok('duplex interleaves a back sheet per front sheet (' + r.pages + ' pages)', r.pages === 2);
-    ok('back sheet is column-mirrored for a long-edge flip (front ' + r.frontXs + ' → back ' + r.backXs + ')', r.duplexMirrored);
+    ok('long-edge flip: back columns mirrored, art upright (front ' + r.frontXs + ' → back ' + r.backXs + ')', r.duplexMirrored);
+    ok('short-edge flip: back rows mirrored AND art turned 180°', r.shortOk);
+    ok('the two flip axes produce different back sheets', r.flipsDiffer);
+    ok('duplex "none" leaves backs untouched', r.noneOk);
     ok('single-up TrimBox is the card (' + (r.oneUpTrimW || 0).toFixed(2) + '×' + (r.oneUpTrimH || 0).toFixed(2) + 'mm) inside a +3mm BleedBox', r.oneUpBoxes);
     ok('single-up emits one page per face', r.oneUpPages === 2);
   } catch (e) { fail++; console.error('  ✗ harness error: ' + (e && e.message)); }

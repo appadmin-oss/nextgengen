@@ -52,15 +52,51 @@ weave across the card back) from smearing into streaks.
 - **A slug line** with job name, sheet number, front/back, trim size, bleed,
   imposition and colour target.
 
-## Gutters and duplex
+## Gutters
 
-- Gutters are **two bleeds wide (6 mm)** so neighbouring cards' bleeds abut
-  rather than overlap; each cut serves one card and the 6 mm strip between is
-  waste. A narrower gutter would mean every cut damaged the card beside it.
-- Back sheets are **interleaved** (front 1, back 1, front 2, back 2 …) and the
-  **column order on each back is mirrored**, so a long-edge duplex flip lands
-  each back on its own front. Printing all fronts then all backs — as an
-  earlier version of this exporter did — puts card 1's back on card N's front.
+Gutters are **two bleeds wide (6 mm)** so neighbouring cards' bleeds abut
+rather than overlap; each cut serves one card and the 6 mm strip between is
+waste. A narrower gutter would mean every cut damaged the card beside it.
+
+## Duplex — getting the back on its own front
+
+**This is the setting to confirm with your printer before running.** Back
+sheets are **interleaved** (front 1, back 1, front 2, back 2 …) — printing all
+fronts then all backs, as an earlier version did, puts card 1's back on card
+N's front. But interleaving alone is not enough: where each back has to be
+imaged depends on which axis the press turns the sheet about.
+
+| Studio setting | Press term | Sheet turns about | Backs are | Art | Register |
+|---|---|---|---|---|---|
+| **Long edge** (default) | work-and-turn | vertical axis | column-mirrored | upright | **best** — same gripper edge both passes |
+| **Short edge** | work-and-tumble | horizontal axis | row-mirrored | **turned 180°** | looser — gripper edge changes |
+| **No flip** | — | — | unchanged | upright | n/a |
+
+Why short edge also turns the art: tumbling the sheet puts the card's head at
+the sheet's foot, so a back imaged upright would come out upside-down on the
+finished card. Equivalently — take the long-edge back sheet and rotate the
+whole page 180°. Getting this wrong is silent: the sheets look fine and every
+card is ruined.
+
+**Prefer long edge where you have the choice.** Work-and-turn keeps the same
+gripper edge for both passes, which is the single biggest factor in
+front-to-back register; work-and-tumble grips the leading edge on pass one and
+the tail edge on pass two, so any variation in sheet length shows up as
+misregistration.
+
+The chosen flip is **printed in the slug on every sheet**
+(`duplex: LONG-edge flip (work-and-turn)`) so the operator can check it against
+how the press is actually set up before committing to a run.
+
+Single-up pages are laid out symmetrically — the slug band is mirrored as dead
+space at the head — so the card sits dead centre and lands in the same place
+under either flip. Only the 180° turn applies there.
+
+### Card printers
+
+A desktop duplex card printer (Zebra, Evolis, Fargo and similar) flips the card
+itself and expects one card per page, front then back. Use **Single-up** with
+**No flip** for those.
 
 ## Layers
 
