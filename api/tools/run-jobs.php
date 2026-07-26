@@ -53,7 +53,12 @@ require_once $root . '/_lib/mailer.php';
 require_once $root . '/_lib/domain/registration.php';
 $log['gate_passwords'] = gates_rotate_due();
 
-// 7) Push the Sheets mirror if configured.
+// 7) Log absences for programme days that have closed and re-evaluate policy.
+require_once $root . '/_lib/domain/summer.php';
+require_once $root . '/_lib/domain/policy.php';
+$log['policy_sweep'] = policy_sweep_absences();
+
+// 8) Push the Sheets mirror if configured.
 if (trim((string)($CONFIG['apps_script_url'] ?? '')) !== '') {
     $out = [];
     @exec('php ' . escapeshellarg(__DIR__ . '/export-sheets.php') . ' 2>&1', $out, $rc);

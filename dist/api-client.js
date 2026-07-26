@@ -433,6 +433,22 @@
         absenceAlert: (studentId, cohortId) => request('/admin/summer.php', { body: { action: 'absenceAlert', studentId: studentId || '', cohortId: cohortId || '' } }),
         importStudents: (rows) => request('/admin/summer.php', { body: { action: 'import', rows } }),
       },
+      /* Programme calendar + Institutional Policy enforcement. The calendar
+         decides which days count; the policy engine decides what a missed one
+         costs. Both live behind the same 'summer' capability. */
+      policy: {
+        settings:  () => request('/admin/policy.php' + qs({ view: 'settings' })),
+        board:     () => request('/admin/policy.php' + qs({ view: 'board' })),
+        person:    (personId, personType) => request('/admin/policy.php' + qs({ view: 'person', personId, personType })),
+        save:      (programme, policy) => request('/admin/policy.php', { body: { action: 'save', programme, policy } }),
+        dayToggle: (date, runs) => request('/admin/policy.php', { body: { action: 'dayToggle', date, runs } }),
+        infraction:(personId, personType, kind, date, note) => request('/admin/policy.php', { body: { action: 'infraction', personId, personType, kind, date, note } }),
+        void:      (infractionId, reason) => request('/admin/policy.php', { body: { action: 'void', infractionId, reason } }),
+        issue:     (personId, personType, kind, reason, opts) => request('/admin/policy.php', { body: Object.assign({ action: 'sanctionIssue', personId, personType, kind, reason }, opts || {}) }),
+        update:    (sanctionId, status, note) => request('/admin/policy.php', { body: { action: 'sanctionUpdate', sanctionId, status, note } }),
+        reinstate: (personId, personType, opts) => request('/admin/policy.php', { body: Object.assign({ action: 'reinstate', personId, personType }, opts || {}) }),
+        sweep:     () => request('/admin/policy.php', { body: { action: 'sweep' } }),
+      },
       // Attendance-taker rotation + gamified attendance duty.
       attendance: {
         board:    (date) => request('/admin/attendance.php' + qs({ view: 'board', date })),

@@ -64,9 +64,11 @@ function admin_summer_overview(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
     $one = fn($sql, $a = []) => (int)(db_row($sql, $a)['c'] ?? 0);
-    $today = gmdate('Y-m-d');
+    $today = attendance_today();
     return ['ok' => true, 'overview' => [
         'cohort'       => $c,
+        'programmeDay' => programme_is_day($today),
+        'today'        => $today,
         'students'     => $one("SELECT COUNT(*) c FROM summer_students WHERE cohortId=? AND status='active'", [$c['cohortId']]),
         'qrBlank'      => $one("SELECT COUNT(*) c FROM qr_codes WHERE status='blank'"),
         'qrAssigned'   => $one("SELECT COUNT(*) c FROM qr_codes WHERE status='assigned' AND cohortId=?", [$c['cohortId']]),
@@ -527,54 +529,72 @@ function summer_checkin(array $p): array {
     $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
     if (!$qr || empty($qr['studentId'])) return ['ok' => false, 'error' => 'qr_unassigned'];
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
+    // gmdate() filed every scan between local midnight and the UTC offset under
+    // yesterday — a real hour of every day in Lagos. attendance_today() is the
+    // programme's local date.
+    $today = attendance_today();
     if (!$s) {
         // Volunteer badges check in through the same scanner.
         $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$qr['studentId']]);
         if (!$v) return ['ok' => false, 'error' => 'student_not_found'];
-        $today = gmdate('Y-m-d');
         $existing = db_row('SELECT status, lateMinutes FROM attendance WHERE studentId = ? AND date = ?', [$v['volunteerId'], $today]);
         $already = (bool)$existing;
+        // A suspended or evicted person is refused before anything is written,
+        // so a blocked scan leaves no record of presence.
+        if (!$already) {
+            $gate = policy_gate_checkin((string)$v['volunteerId'], 'volunteer');
+            if (!$gate['ok']) return $gate + ['student' => volunteer_public($v)];
+        }
         $cert = null;
         // On re-scan, report what was actually stored at check-in — not a fresh
         // punctuality reading against the current (later) time.
         $punc = $already
-            ? ['status' => (string)($existing['status'] ?: 'present'), 'lateMinutes' => (int)($existing['lateMinutes'] ?? 0)]
-            : attendance_punctuality('volunteer');
+            ? ['status' => (string)($existing['status'] ?: 'present'), 'lateMinutes' => (int)($existing['lateMinutes'] ?? 0), 'redline' => 0, 'halfDay' => 0]
+            : policy_punctuality('volunteer');
         if (!$already) {
             try {
-                db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'createdAt' => now_iso()]);
+                db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'redline' => (int)$punc['redline'], 'halfDay' => (int)$punc['halfDay'], 'createdAt' => now_iso()]);
             } catch (\Throwable $e) {
                 if (!attendance_is_dup($e)) throw $e;      // concurrent duplicate scan → treat as already
                 $row = db_row('SELECT status, lateMinutes FROM attendance WHERE studentId = ? AND date = ?', [$v['volunteerId'], $today]);
                 return ['ok' => true, 'already' => true, 'student' => volunteer_public($v), 'certIssued' => null, 'status' => (string)($row['status'] ?? 'present'), 'lateMinutes' => (int)($row['lateMinutes'] ?? 0)];
             }
             audit('volunteer.checkin', $byId, $v['volunteerId'], ['date' => $today, 'status' => $punc['status']], (string)($p['ip'] ?? ''));
+            policy_on_checkin((string)$v['volunteerId'], 'volunteer', $today, $punc);
             // Service ledger: a milestone day mints the certificate right here.
             $sessions = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$v['volunteerId']])['c'] ?? 0);
             $cert = volunteer_maybe_issue_cert($v, $sessions);
             checkin_volunteer_email($v, $sessions, $cert);
         }
-        return ['ok' => true, 'already' => $already, 'student' => volunteer_public($v), 'certIssued' => $cert, 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes']];
+        return ['ok' => true, 'already' => $already, 'student' => volunteer_public($v), 'certIssued' => $cert,
+                'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'halfDay' => (int)($punc['halfDay'] ?? 0),
+                'programmeDay' => programme_is_day($today), 'compliance' => policy_state((string)$v['volunteerId'], 'volunteer')];
     }
-    $today = gmdate('Y-m-d');
     $existing = db_row('SELECT status, lateMinutes FROM attendance WHERE studentId = ? AND date = ?', [$s['studentId'], $today]);
     $already = (bool)$existing;
+    if (!$already) {
+        $gate = policy_gate_checkin((string)$s['studentId'], 'student');
+        if (!$gate['ok']) return $gate + ['student' => summer_student_public($s)];
+    }
     $punc = $already
-        ? ['status' => (string)($existing['status'] ?: 'present'), 'lateMinutes' => (int)($existing['lateMinutes'] ?? 0)]
-        : attendance_punctuality('student');
+        ? ['status' => (string)($existing['status'] ?: 'present'), 'lateMinutes' => (int)($existing['lateMinutes'] ?? 0), 'redline' => 0, 'halfDay' => 0]
+        : policy_punctuality('student');
     if (!$already) {
         try {
-            db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'createdAt' => now_iso()]);
+            db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'redline' => (int)$punc['redline'], 'halfDay' => (int)$punc['halfDay'], 'createdAt' => now_iso()]);
         } catch (\Throwable $e) {
             if (!attendance_is_dup($e)) throw $e;          // concurrent duplicate scan → treat as already
             $row = db_row('SELECT status, lateMinutes FROM attendance WHERE studentId = ? AND date = ?', [$s['studentId'], $today]);
             return ['ok' => true, 'already' => true, 'student' => summer_student_public($s), 'status' => (string)($row['status'] ?? 'present'), 'lateMinutes' => (int)($row['lateMinutes'] ?? 0)];
         }
         audit('summer.checkin', $byId, $s['studentId'], ['date' => $today, 'status' => $punc['status']], (string)($p['ip'] ?? ''));
+        policy_on_checkin((string)$s['studentId'], 'student', $today, $punc);
         $days = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$s['studentId']])['c'] ?? 0);
         checkin_student_email($s, $days);
     }
-    return ['ok' => true, 'already' => $already, 'student' => summer_student_public($s), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes']];
+    return ['ok' => true, 'already' => $already, 'student' => summer_student_public($s),
+            'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'halfDay' => (int)($punc['halfDay'] ?? 0),
+            'programmeDay' => programme_is_day($today), 'compliance' => policy_state((string)$s['studentId'], 'student')];
 }
 
 /** Stamp a departure time on today's attendance row (optional dwell tracking).
@@ -589,7 +609,7 @@ function summer_checkout(array $p): array {
     $token = trim((string)($p['token'] ?? ''));
     $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
     if (!$qr || empty($qr['studentId'])) return ['ok' => false, 'error' => 'qr_unassigned'];
-    $today = gmdate('Y-m-d');
+    $today = attendance_today();
     $row = db_row('SELECT * FROM attendance WHERE studentId = ? AND date = ?', [(string)$qr['studentId'], $today]);
     if (!$row) return ['ok' => false, 'error' => 'not_checked_in'];
     if (!empty($row['checkOutAt'])) return ['ok' => true, 'already' => true, 'checkOutAt' => $row['checkOutAt']];
@@ -605,8 +625,15 @@ function admin_summer_absence_alert(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
     $cid = trim((string)($p['cohortId'] ?? '')) ?: $c['cohortId'];
-    $today = gmdate('Y-m-d');
+    $today = attendance_today();
     $one = trim((string)($p['studentId'] ?? ''));
+    // Emailing every guardian "we missed them" on a Sunday is the single
+    // loudest way to lose their trust in the system. Named students still go
+    // through — that is a deliberate, individual follow-up.
+    if ($one === '' && !programme_is_day($today)) {
+        return ['ok' => false, 'error' => 'not_a_programme_day', 'date' => $today,
+                'nextDay' => programme_next_day($today), 'sent' => 0, 'skipped' => 0, 'absent' => 0];
+    }
     if ($one !== '') {
         $rows = db_all("SELECT * FROM summer_students WHERE studentId = ? LIMIT 1", [$one]);
     } else {
@@ -638,35 +665,66 @@ function admin_summer_attendance(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
     $cid = trim((string)($p['cohortId'] ?? '')) ?: $c['cohortId'];
-    $today = gmdate('Y-m-d');
+    $today = attendance_today();
     $one = fn($sql, $a = []) => (int)(db_row($sql, $a)['c'] ?? 0);
+    $prog = programme_settings();
+    $isProgrammeDay = programme_is_day($today, $prog);
 
-    // Distinct days attendance was taken so far — the denominator for a rate.
-    // All cohort counts JOIN summer_students so volunteer check-ins (which share
-    // the attendance table, keyed by volunteerId) never skew student figures.
-    $sessionDays = $one("SELECT COUNT(DISTINCT a.date) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ?", [$cid]);
+    /* The denominator for a rate is the number of days the programme RAN, not
+     * the number of days somebody happened to scan. With no calendar set those
+     * are the same thing and this falls back to the old count; with one set,
+     * a closed day two people wandered into stops dragging everyone's rate
+     * down, and a scheduled day nobody attended stops being invisible.
+     * All cohort counts JOIN summer_students so volunteer check-ins (which
+     * share the attendance table, keyed by volunteerId) never skew student
+     * figures. */
+    $scannedDays = $one("SELECT COUNT(DISTINCT a.date) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ?", [$cid]);
+    $programmeDays = !empty($prog['enabled']) ? programme_days_elapsed($today, $prog) : [];
+    $sessionDays = !empty($prog['enabled']) ? count($programmeDays) : $scannedDays;
     $activeStudents = $one("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND status = 'active'", [$cid]);
     $presentToday = $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ? AND a.date = ?", [$cid, $today]);
 
-    // Last 14 calendar days as a series (present count per day, students only).
+    // Last 14 calendar days as a series, each tagged with whether the programme
+    // actually ran — so a flat Sunday reads as "closed", not as a collapse.
     $days = [];
     for ($i = 13; $i >= 0; $i--) {
-        $d = gmdate('Y-m-d', time() - $i * 86400);
-        $days[] = ['date' => $d, 'present' => $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ? AND a.date = ?", [$cid, $d])];
+        $d = gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC') - $i * 86400);
+        $days[] = [
+            'date' => $d,
+            'present' => $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ? AND a.date = ?", [$cid, $d]),
+            'programmeDay' => programme_is_day($d, $prog),
+        ];
     }
 
     // Per-student rollup: total present, last seen, attendance rate.
     $students = db_all("SELECT studentId, fullName, handle, track, centre FROM summer_students WHERE cohortId = ? AND status = 'active' ORDER BY fullName", [$cid]);
     $roster = [];
+    // One query per rollup instead of four per student — a 600-student cohort
+    // was 2,400 round trips to draw one table.
+    $presentBy = []; $lastBy = []; $halfBy = []; $lateBy = [];
+    foreach (db_all("SELECT studentId, COUNT(DISTINCT date) c, MAX(date) last, SUM(halfDay) half, SUM(redline) late FROM attendance WHERE cohortId = ? GROUP BY studentId", [$cid]) as $r) {
+        $presentBy[(string)$r['studentId']] = (int)$r['c'];
+        $lastBy[(string)$r['studentId']] = (string)($r['last'] ?? '');
+        $halfBy[(string)$r['studentId']] = (int)($r['half'] ?? 0);
+        $lateBy[(string)$r['studentId']] = (int)($r['late'] ?? 0);
+    }
+    $todayBy = [];
+    foreach (db_all("SELECT studentId FROM attendance WHERE date = ?", [$today]) as $r) $todayBy[(string)$r['studentId']] = true;
+    $stateBy = policy_states_for(array_map(fn($s) => (string)$s['studentId'], $students), 'student');
     foreach ($students as $s) {
-        // Count distinct days for THIS cohort (numerator consistent with sessionDays).
-        $cnt = $one("SELECT COUNT(DISTINCT date) c FROM attendance WHERE studentId = ? AND cohortId = ?", [$s['studentId'], $cid]);
-        $last = db_row("SELECT date FROM attendance WHERE studentId = ? AND cohortId = ? ORDER BY date DESC LIMIT 1", [$s['studentId'], $cid]);
+        $id = (string)$s['studentId'];
+        $cnt = $presentBy[$id] ?? 0;
+        // A half-day is half an attendance (§ Musing Period), so it must not
+        // score the same as a full day in the rate the coordinator reads.
+        $credited = max(0, $cnt - ($halfBy[$id] ?? 0) * 0.5);
         $roster[] = [
-            'studentId' => $s['studentId'], 'fullName' => $s['fullName'], 'handle' => $s['handle'],
+            'studentId' => $id, 'fullName' => $s['fullName'], 'handle' => $s['handle'],
             'track' => $s['track'], 'centre' => $s['centre'], 'present' => $cnt,
-            'lastSeen' => $last['date'] ?? '', 'presentToday' => (bool)$one("SELECT COUNT(*) c FROM attendance WHERE studentId = ? AND date = ?", [$s['studentId'], $today]),
-            'rate' => $sessionDays ? (int)round($cnt / $sessionDays * 100) : 0,
+            'halfDays' => $halfBy[$id] ?? 0, 'lates' => $lateBy[$id] ?? 0,
+            'lastSeen' => $lastBy[$id] ?? '', 'presentToday' => isset($todayBy[$id]),
+            'rate' => $sessionDays ? (int)round(min($credited, $sessionDays) / $sessionDays * 100) : 0,
+            'state' => $stateBy[$id]['state'] ?? 'clear',
+            'absences' => $stateBy[$id]['absences'] ?? 0,
         ];
     }
     // Lowest attendance first, so at-risk students surface immediately.
@@ -678,8 +736,21 @@ function admin_summer_attendance(array $p): array {
 
     return ['ok' => true, 'attendance' => [
         'cohort' => $c, 'today' => $presentToday, 'sessionDays' => $sessionDays,
-        'activeStudents' => $activeStudents, 'absentToday' => max(0, $activeStudents - $presentToday),
+        'activeStudents' => $activeStudents,
+        // Nobody is absent on a day the programme does not run. This is the
+        // whole point of the calendar: a Sunday used to report the entire
+        // cohort absent and email every guardian about it.
+        'absentToday' => $isProgrammeDay ? max(0, $activeStudents - $presentToday) : 0,
         'days' => $days, 'roster' => $roster, 'atRisk' => $atRisk, 'recent' => $recent,
+        'programme' => [
+            'enabled' => !empty($prog['enabled']),
+            'isProgrammeDay' => $isProgrammeDay,
+            'today' => $today,
+            'nextDay' => programme_next_day($today, $prog),
+            'scannedDays' => $scannedDays,
+            'termStart' => (string)$prog['startDate'], 'termEnd' => (string)$prog['endDate'],
+            'remaining' => !empty($prog['enabled']) ? max(0, count(programme_days_between((string)$prog['startDate'], (string)$prog['endDate'], $prog)) - $sessionDays) : 0,
+        ],
     ]];
 }
 

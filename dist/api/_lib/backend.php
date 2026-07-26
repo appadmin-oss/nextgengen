@@ -96,6 +96,18 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.attendance.duty'       => 'admin_attendance_duty',
             'admin.attendance.duty.set'   => 'admin_attendance_duty_set',
             'admin.summer.cohort.archive' => 'admin_summer_cohort_archive',
+            // Programme calendar + Institutional Policy enforcement
+            'admin.policy.settings'       => 'admin_policy_settings',
+            'admin.policy.save'           => 'admin_policy_save',
+            'admin.policy.day.toggle'     => 'admin_policy_day_toggle',
+            'admin.policy.board'          => 'admin_policy_board',
+            'admin.policy.person'         => 'admin_policy_person',
+            'admin.policy.infraction'     => 'admin_policy_infraction',
+            'admin.policy.void'           => 'admin_policy_void',
+            'admin.policy.sanction.issue' => 'admin_policy_sanction_issue',
+            'admin.policy.sanction.update' => 'admin_policy_sanction_update',
+            'admin.policy.reinstate'      => 'admin_policy_reinstate',
+            'admin.policy.sweep'          => 'admin_policy_sweep',
             // NGG Club coordinator (Summer → Club bridge)
             'admin.club.overview'         => 'admin_club_overview',
             'admin.club.promotable'       => 'admin_club_promotable',

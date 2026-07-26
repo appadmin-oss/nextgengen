@@ -946,3 +946,61 @@ INSERT INTO schema_version (version) VALUES (53) ON DUPLICATE KEY UPDATE version
 -- 54: stored link previews on posts.
 ALTER TABLE community_posts ADD COLUMN linkPreview TEXT;
 INSERT INTO schema_version (version) VALUES (54) ON DUPLICATE KEY UPDATE version = version;
+
+-- 55: gate desk-password rotation metadata.
+ALTER TABLE gate_links ADD COLUMN passSetAt VARCHAR(40) DEFAULT '';
+ALTER TABLE gate_links ADD COLUMN passRotateDays INT DEFAULT 0;
+ALTER TABLE gate_links ADD COLUMN passNotify VARCHAR(190) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (55) ON DUPLICATE KEY UPDATE version = version;
+
+-- 56: gate desk-password expiry (kills a password on schedule; rotation replaces it).
+ALTER TABLE gate_links ADD COLUMN passExpiryDays INT DEFAULT 0;
+ALTER TABLE gate_links ADD COLUMN passExpiresAt VARCHAR(40) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (56) ON DUPLICATE KEY UPDATE version = version;
+
+-- 57: Institutional Policy enforcement — infractions (facts) and sanctions
+-- (consequences). The unique indexes are load-bearing: one infraction per
+-- person per kind per day, one sanction per person per kind per tier.
+CREATE TABLE IF NOT EXISTS infractions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  personId VARCHAR(48) NOT NULL,
+  personType VARCHAR(16) DEFAULT 'student',
+  kind VARCHAR(32) NOT NULL,
+  date VARCHAR(12) NOT NULL,
+  note VARCHAR(255) DEFAULT '',
+  byId VARCHAR(64) DEFAULT '',
+  voidedAt VARCHAR(40) DEFAULT '',
+  voidedBy VARCHAR(64) DEFAULT '',
+  voidReason VARCHAR(255) DEFAULT '',
+  createdAt VARCHAR(40),
+  UNIQUE KEY idx_infr_unique (personId, kind, date),
+  KEY idx_infr_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS sanctions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  personId VARCHAR(48) NOT NULL,
+  personType VARCHAR(16) DEFAULT 'student',
+  kind VARCHAR(24) NOT NULL,
+  tier INT DEFAULT 0,
+  reason VARCHAR(255) DEFAULT '',
+  amount INT DEFAULT 0,
+  startsAt VARCHAR(40) DEFAULT '',
+  endsAt VARCHAR(40) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'active',
+  note VARCHAR(255) DEFAULT '',
+  issuedBy VARCHAR(64) DEFAULT '',
+  issuedAt VARCHAR(40) DEFAULT '',
+  clearedAt VARCHAR(40) DEFAULT '',
+  clearedBy VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40),
+  UNIQUE KEY idx_sanc_unique (personId, kind, tier),
+  KEY idx_sanc_person (personId, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (57) ON DUPLICATE KEY UPDATE version = version;
+
+-- 58: punctuality gained a third state (present|tardy|late) plus the Part VI
+-- redline flag that actually accrues an infraction, and the Musing half-day.
+ALTER TABLE attendance ADD COLUMN redline INT DEFAULT 0;
+ALTER TABLE attendance ADD COLUMN halfDay INT DEFAULT 0;
+INSERT INTO schema_version (version) VALUES (58) ON DUPLICATE KEY UPDATE version = version;

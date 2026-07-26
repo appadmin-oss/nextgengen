@@ -127,4 +127,9 @@ function web_cron_maintenance(): void {
     // together: a gate is only rolled once its interval has elapsed, and
     // rotating stamps passSetAt, so whichever runs second finds nothing due.
     if (function_exists('gates_rotate_due')) gates_rotate_due();
+    // Log absences for programme days that have closed, then re-evaluate the
+    // people whose ledger moved. Idempotent: the sweep records how far it has
+    // got, only touches days strictly before today, and the unique index on
+    // (person, kind, date) means a double run cannot become a double strike.
+    if (function_exists('policy_sweep_absences')) policy_sweep_absences();
 }

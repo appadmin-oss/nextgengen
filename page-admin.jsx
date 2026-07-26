@@ -1109,7 +1109,7 @@ function AdminSummer() {
       </div>
 
       <div className="admin-anchor-tabs">
-        {[["form", "Form builder"], ["gates", "Gate links"], ["pending", "Pending sign-ups"], ["overview", "Enrol"], ["kiosk", "Check-in kiosk"], ["attendance", "Attendance"], ["qr", "QR cards"], ["cards", "ID cards"], ["students", "Roster (" + o.students + ")"]].map(([id, lbl]) => (
+        {[["form", "Form builder"], ["gates", "Gate links"], ["pending", "Pending sign-ups"], ["overview", "Enrol"], ["kiosk", "Check-in kiosk"], ["attendance", "Attendance"], ["policy", "Programme & policy"], ["qr", "QR cards"], ["cards", "ID cards"], ["students", "Roster (" + o.students + ")"]].map(([id, lbl]) => (
           <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
         ))}
       </div>
@@ -1120,6 +1120,7 @@ function AdminSummer() {
       {tab === "overview" && <SummerEnroll cohort={cohort} blank={o.qrBlank} onDone={load}/>}
       {tab === "kiosk" && <SummerKiosk onCheckin={load}/>}
       {tab === "attendance" && <SummerAttendance/>}
+      {tab === "policy" && <SummerPolicy/>}
       {tab === "qr" && <SummerQR onChange={load}/>}
       {tab === "cards" && <SummerCardsLink/>}
       {tab === "students" && <SummerRoster cohortId={cohort.cohortId}/>}
@@ -5538,6 +5539,397 @@ function SummerKiosk({ onCheckin }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Programme calendar + Institutional Policy ───────────────────────────────
+   Two panels that answer two different questions: WHICH DAYS COUNT (the
+   calendar) and WHAT A MISSED ONE COSTS (the policy). They are one screen
+   because setting the second without the first is how you email every guardian
+   on a Sunday. */
+const DOW = [["1", "Mon"], ["2", "Tue"], ["3", "Wed"], ["4", "Thu"], ["5", "Fri"], ["6", "Sat"], ["7", "Sun"]];
+const STATE_CHIP = {
+  clear:     { label: "Clear",     cls: "status-published" },
+  warned:    { label: "Warned",    cls: "status-draft" },
+  dormant:   { label: "Dormant",   cls: "status-draft" },
+  suspended: { label: "Suspended", cls: "status-archived" },
+  evicted:   { label: "Evicted",   cls: "status-archived" },
+};
+const naira = (n) => "₦" + Number(n || 0).toLocaleString();
+
+function PolicyStateChip({ state }) {
+  const s = STATE_CHIP[state] || STATE_CHIP.clear;
+  return <span className={"chip " + s.cls} style={state === "evicted" ? { background: "var(--coral)", color: "#fff" } : undefined}>{s.label}</span>;
+}
+
+function SummerPolicy() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [prog, setProg] = React.useState(null);
+  const [pol, setPol] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const [board, setBoard] = React.useState(null);
+  const [person, setPerson] = React.useState(null);
+  const [newDate, setNewDate] = React.useState("");
+
+  // Fall back to the server's own defaults rather than leaving prog/pol null:
+  // a partial response would otherwise spin forever with nothing to retry from.
+  const load = () => NGGApi.admin.policy.settings().then(r => {
+    setD(r || {});
+    setProg((r && r.programme) || { enabled: false, startDate: "", endDate: "", weekdays: [1, 2, 3, 4, 5], holidays: [], extraDays: [] });
+    setPol((r && r.policy) || { enabled: false, student: {}, volunteer: {}, musing: {}, idCard: {}, reinstatement: {} });
+    setErr("");
+  }).catch(e => setErr(e.code || e.message || "load_failed"));
+  const loadBoard = () => NGGApi.admin.policy.board().then(setBoard).catch(() => setBoard({ board: [], tally: {} }));
+  React.useEffect(() => { load(); loadBoard(); }, []);
+
+  const save = async () => {
+    setBusy("save");
+    try { const r = await NGGApi.admin.policy.save(prog, pol); setD(o => ({ ...o, calendar: r.calendar || o.calendar })); toast.success("Saved"); load(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
+  };
+  const setP = (k, v) => setProg(o => ({ ...o, [k]: v }));
+  const setPol2 = (grp, k, v) => setPol(o => ({ ...o, [grp]: { ...(o[grp] || {}), [k]: v } }));
+  const toggleDow = (n) => setProg(o => {
+    const has = (o.weekdays || []).includes(n);
+    return { ...o, weekdays: has ? o.weekdays.filter(x => x !== n) : [...o.weekdays, n].sort() };
+  });
+  const addException = (list) => {
+    if (!newDate) return;
+    setProg(o => ({ ...o, [list]: Array.from(new Set([...(o[list] || []), newDate])).sort() }));
+    setNewDate("");
+  };
+  const dropException = (list, date) => setProg(o => ({ ...o, [list]: (o[list] || []).filter(x => x !== date) }));
+
+  const sweep = async () => {
+    setBusy("sweep");
+    try {
+      const r = await NGGApi.admin.policy.sweep();
+      toast.success(r.skipped ? ("Nothing to sweep — " + (r.skipped === "policy_disabled" ? "enforcement is off" : "no programme calendar"))
+        : (r.days + " day(s) swept · " + r.absences + " absence(s) logged"), "Absence sweep");
+      load(); loadBoard();
+    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
+  };
+  const openPerson = (row) => NGGApi.admin.policy.person(row.personId, row.personType).then(setPerson).catch(e => toast.error(e.code || e.message));
+
+  if (err) return <ErrorState title="Couldn't load" code={err} onRetry={load}/>;
+  if (!d || !prog || !pol) return <div className="dash-spinner"/>;
+  const cal = d.calendar || {};
+
+  return (
+    <div>
+      {/* ── Programme days ── */}
+      <div className="admin-panel" style={{ marginBottom: 18 }}>
+        <div className="admin-section-head" style={{ marginBottom: 6 }}>
+          <h3 className="admin-h3">Programme days</h3>
+          <label className="fb-toggle">
+            <input type="checkbox" checked={!!prog.enabled} onChange={e => setP("enabled", e.target.checked)}/>
+            <span>Use a programme calendar</span>
+          </label>
+        </div>
+        <p className="admin-hint">
+          Which days the summer students are expected. Absence, attendance rates and guardian
+          alerts all read this — with no calendar set, every calendar day counts, so a Sunday
+          marks the whole cohort absent. Set the term window and the weekdays that run, then
+          cancel or add individual dates below.
+        </p>
+
+        {prog.enabled && (
+          <div className="policy-callout" data-tone={cal.isProgrammeDay ? "ok" : "muted"}>
+            {cal.isProgrammeDay
+              ? <><b>Today ({cal.today}) is a programme day.</b> {cal.elapsed} of {cal.total} programme days have run.</>
+              : <><b>Today ({cal.today}) is not a programme day.</b> Nobody is counted absent{cal.nextDay ? <> — next session is <b>{cal.nextDay}</b>.</> : " — the term window has ended."}</>}
+          </div>
+        )}
+
+        <div className="admin-fields">
+          <Field label="Term starts" type="date" value={prog.startDate} onChange={v => setP("startDate", v)}/>
+          <Field label="Term ends" type="date" value={prog.endDate} onChange={v => setP("endDate", v)}/>
+        </div>
+
+        <div className="admin-fields-h" style={{ marginTop: 10, fontWeight: 700 }}>Days of the week</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+          {DOW.map(([n, lbl]) => {
+            const on = (prog.weekdays || []).includes(Number(n));
+            return (
+              <button key={n} type="button" onClick={() => toggleDow(Number(n))}
+                className={"chip " + (on ? "chip-gold" : "")}
+                style={{ cursor: "pointer", border: "1px solid var(--line, rgba(0,0,0,.14))", opacity: on ? 1 : .55 }}
+                aria-pressed={on}>{lbl}</button>
+            );
+          })}
+        </div>
+
+        <div className="admin-fields-h" style={{ marginTop: 16, fontWeight: 700 }}>Exceptions</div>
+        <p className="admin-hint" style={{ marginTop: 2 }}>A holiday cancels a day that would otherwise run. An extra day adds one that wouldn't.</p>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+          <input type="date" className="admin-input" style={{ width: 175 }} value={newDate} onChange={e => setNewDate(e.target.value)} aria-label="Exception date"/>
+          <button className="btn btn-ghost btn-sm" disabled={!newDate} onClick={() => addException("holidays")}>Cancel this day</button>
+          <button className="btn btn-ghost btn-sm" disabled={!newDate} onClick={() => addException("extraDays")}>Add this day</button>
+        </div>
+        {[["holidays", "Cancelled", "var(--coral)"], ["extraDays", "Added", "var(--lime-ink, #6e9c1d)"]].map(([key, lbl, col]) => (
+          (prog[key] || []).length > 0 && (
+            <div key={key} style={{ marginTop: 10 }}>
+              <div className="eyebrow" style={{ marginBottom: 6, color: col }}>{lbl.toUpperCase()} · {(prog[key] || []).length}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {(prog[key] || []).map(dt => (
+                  <span key={dt} className="chip mono" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    {dt}
+                    <button onClick={() => dropException(key, dt)} aria-label={"Remove " + dt}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )
+        ))}
+
+        {prog.enabled && (cal.upcoming || []).length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>NEXT SESSIONS</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {(cal.upcoming || []).map(dt => <span key={dt} className="chip mono">{dt}</span>)}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Policy thresholds ── */}
+      <div className="admin-panel" style={{ marginBottom: 18 }}>
+        <div className="admin-section-head" style={{ marginBottom: 6 }}>
+          <h3 className="admin-h3">Policy enforcement</h3>
+          <label className="fb-toggle">
+            <input type="checkbox" checked={!!pol.enabled} onChange={e => setPol(o => ({ ...o, enabled: e.target.checked }))}/>
+            <span>Enforce the blueprint</span>
+          </label>
+        </div>
+        <p className="admin-hint">
+          The Institutional Policy &amp; Operational Blueprint, applied automatically. Absences are
+          logged for closed programme days, lateness is measured against the Part VI redline, and
+          the thresholds below issue warnings, dormancy, suspension, fines and eviction.
+          A suspended or evicted person is refused at the scanner.
+        </p>
+        {!prog.enabled && pol.enabled && (
+          <div className="policy-callout" data-tone="warn">
+            Enforcement is on but no programme calendar is set, so <b>every calendar day</b> counts
+            as a session — weekends included. Set the term window above before letting the sweep run.
+          </div>
+        )}
+
+        {[["student", "Students", "Redline 08:30 · 3 lates suspend"], ["volunteer", "Volunteers, mentors & instructors", "Redline 09:00 · 4 lates suspend"]].map(([type, title, sub]) => (
+          <div key={type} style={{ marginTop: 14 }}>
+            <div className="admin-fields-h" style={{ fontWeight: 700 }}>{title}</div>
+            <div className="admin-hint" style={{ margin: "2px 0 8px" }}>{sub}</div>
+            <div className="admin-fields">
+              <label className="admin-field"><span>Lateness redline</span>
+                <input type="time" className="admin-input" value={(pol[type] || {}).lateRedline || ""} onChange={e => setPol2(type, "lateRedline", e.target.value)}/>
+              </label>
+              <label className="admin-field"><span>Absences allowed</span>
+                <input type="number" min={1} max={60} className="admin-input" value={(pol[type] || {}).absenceLimit} onChange={e => setPol2(type, "absenceLimit", Number(e.target.value))}/>
+              </label>
+              <label className="admin-field"><span>Lateness cap → suspension</span>
+                <input type="number" min={1} max={60} className="admin-input" value={(pol[type] || {}).latenessCap} onChange={e => setPol2(type, "latenessCap", Number(e.target.value))}/>
+              </label>
+              <label className="admin-field"><span>Suspension length (days)</span>
+                <input type="number" min={1} max={365} className="admin-input" value={(pol[type] || {}).suspensionDays} onChange={e => setPol2(type, "suspensionDays", Number(e.target.value))}/>
+              </label>
+              <label className="admin-field"><span>Post-suspension lates → fine</span>
+                <input type="number" min={1} max={60} className="admin-input" value={(pol[type] || {}).postSuspensionLateness} onChange={e => setPol2(type, "postSuspensionLateness", Number(e.target.value))}/>
+              </label>
+              <label className="admin-field"><span>Fine (₦)</span>
+                <input type="number" min={0} step={500} className="admin-input" value={(pol[type] || {}).fine} onChange={e => setPol2(type, "fine", Number(e.target.value))}/>
+              </label>
+            </div>
+          </div>
+        ))}
+
+        <div className="admin-fields-h" style={{ marginTop: 16, fontWeight: 700 }}>Musing Period, ID cards &amp; reinstatement</div>
+        <div className="admin-fields">
+          <label className="admin-field"><span>Musing Period ends</span>
+            <input type="time" className="admin-input" value={(pol.musing || {}).endsAt || ""} onChange={e => setPol2("musing", "endsAt", e.target.value)}/>
+          </label>
+          <label className="admin-field"><span>ID card not worn — 2nd offence (₦)</span>
+            <input type="number" min={0} step={500} className="admin-input" value={(pol.idCard || {}).secondOffenceFine} onChange={e => setPol2("idCard", "secondOffenceFine", Number(e.target.value))}/>
+          </label>
+          <label className="admin-field"><span>Lost ID card (₦)</span>
+            <input type="number" min={0} step={500} className="admin-input" value={(pol.idCard || {}).lostFine} onChange={e => setPol2("idCard", "lostFine", Number(e.target.value))}/>
+          </label>
+          <label className="admin-field"><span>Eviction cool-off (days)</span>
+            <input type="number" min={0} max={3650} className="admin-input" value={(pol.reinstatement || {}).coolOffDays} onChange={e => setPol2("reinstatement", "coolOffDays", Number(e.target.value))}/>
+          </label>
+          <label className="admin-field"><span>Reinstatement fine (₦)</span>
+            <input type="number" min={0} step={1000} className="admin-input" value={(pol.reinstatement || {}).fine} onChange={e => setPol2("reinstatement", "fine", Number(e.target.value))}/>
+          </label>
+          <Field label="Reinstatement training" value={(pol.reinstatement || {}).training} onChange={v => setPol2("reinstatement", "training", v)}/>
+        </div>
+        <label className="fb-toggle" style={{ marginTop: 12 }}>
+          <input type="checkbox" checked={!!pol.checkoutRequired} onChange={e => setPol(o => ({ ...o, checkoutRequired: e.target.checked }))}/>
+          <span>Require a check-OUT scan — a day with no scan out counts as an absence (§1.3)</span>
+        </label>
+        <label className="fb-toggle" style={{ marginTop: 6 }}>
+          <input type="checkbox" checked={!!(pol.musing || {}).enabled} onChange={e => setPol2("musing", "enabled", e.target.checked)}/>
+          <span>Missing the Musing Period downgrades the day to a half-day</span>
+        </label>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 18, flexWrap: "wrap" }}>
+          <button className="btn btn-primary" disabled={busy === "save"} onClick={save}>{busy === "save" ? "Saving…" : "Save programme & policy"}</button>
+          <button className="btn btn-ghost btn-sm" disabled={busy === "sweep"} onClick={sweep}>{busy === "sweep" ? "Sweeping…" : "Run the absence sweep now"}</button>
+          <span className="admin-hint" style={{ margin: 0 }}>
+            The sweep runs automatically with the daily jobs. Swept through <span className="mono">{cal.sweptThrough || "—"}</span>.
+          </span>
+        </div>
+      </div>
+
+      {/* ── Compliance board ── */}
+      <div className="admin-section-head" style={{ marginBottom: 4 }}>
+        <h3 className="admin-h3">Compliance</h3>
+        <button className="btn btn-ghost btn-sm" onClick={loadBoard}>Refresh</button>
+      </div>
+      {!board ? <div className="dash-spinner"/> : (
+        <>
+          <div className="admin-tiles" style={{ marginBottom: 12 }}>
+            <AdminTile n={board.tally.warned || 0} l="Warned"/>
+            <AdminTile n={board.tally.dormant || 0} l="Dormant"/>
+            <AdminTile n={board.tally.suspended || 0} l="Suspended"/>
+            <AdminTile n={board.tally.evicted || 0} l="Evicted"/>
+            <AdminTile n={naira(board.tally.finesOwed || 0)} l="Fines outstanding"/>
+          </div>
+          {!board.board.length
+            ? <div className="admin-empty">Nobody has an infraction on record. {board.policyEnabled ? "" : "Enforcement is currently off."}</div>
+            : (
+              <div className="admin-table-wrap"><table className="admin-table">
+                <thead><tr><th>Person</th><th>State</th><th>Absences</th><th>Lates</th><th>Fines</th><th>Awards</th><th/></tr></thead>
+                <tbody>{board.board.map(r => (
+                  <tr key={r.personId}>
+                    <td>{r.fullName}<div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{r.personId} · {r.personType}</div></td>
+                    <td><PolicyStateChip state={r.state}/>{r.until && <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>until {String(r.until).slice(0, 10)}</div>}</td>
+                    <td className="mono">{r.absences}/{r.absenceLimit}</td>
+                    <td className="mono">{r.lates}/{r.latenessCap}</td>
+                    <td className="mono">{r.finesOwed ? naira(r.finesOwed) : "—"}</td>
+                    <td>{r.awardsEligible ? <span className="chip status-published">Eligible</span> : <span className="chip status-draft">Frozen</span>}</td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={() => openPerson(r)}>Record</button></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            )}
+        </>
+      )}
+
+      {person && <PolicyPersonModal data={person} onClose={() => setPerson(null)} onChange={(next) => { setPerson(next); loadBoard(); }}/>}
+    </div>
+  );
+}
+
+/* One person's ledger — the facts, the consequences, and the two corrections
+   an admin actually needs: void a wrong fact, and close out a sanction. */
+function PolicyPersonModal({ data, onClose, onChange }) {
+  // No unsaved-edit guard: every action here commits immediately.
+  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const [busy, setBusy] = React.useState("");
+  const st = data.state || {};
+  const reload = () => NGGApi.admin.policy.person(data.personId, data.personType).then(onChange).catch(() => {});
+
+  const voidOne = async (inf) => {
+    const reason = prompt("Why is this being voided? (recorded against your name)");
+    if (!reason || !reason.trim()) return;
+    setBusy(String(inf.id));
+    try { await NGGApi.admin.policy.void(inf.id, reason.trim()); toast.success("Voided — any sanction it caused has been lifted."); reload(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
+  };
+  const closeOut = async (s, status) => {
+    setBusy("s" + s.id);
+    try { await NGGApi.admin.policy.update(s.id, status); toast.success("Updated"); reload(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
+  };
+  const logManual = async (kind, label) => {
+    if (!(await dialog.confirm({ title: label + "?", body: "Logged against " + data.personId + " for today, and the thresholds re-evaluated.", cta: "Log it" }))) return;
+    setBusy(kind);
+    try {
+      const r = await NGGApi.admin.policy.infraction(data.personId, data.personType, kind, "", "");
+      toast.success(r.alreadyLogged ? "Already logged for today." : r.temporaryCard ? "Logged — issue a temporary Volunteer Emergency Card for today only." : "Logged.");
+      reload();
+    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
+  };
+  const reinstate = async () => {
+    setBusy("reinstate");
+    try {
+      const r = await NGGApi.admin.policy.reinstate(data.personId, data.personType, {});
+      toast.success(r.reinstated ? "Reinstated." : "Done."); reload();
+    } catch (e) {
+      const unmet = (e.data && e.data.unmet) || [];
+      if (unmet.length) {
+        const ok = await dialog.confirm({
+          title: "Reinstatement conditions are not met",
+          body: unmet.map(u => "· " + u.detail).join("\n") + "\n\nOnly the Governing Council may override this.",
+          cta: "Council override", danger: true,
+        });
+        if (!ok) { setBusy(""); return; }
+        const why = prompt("Council resolution / reason for the override:");
+        if (!why || !why.trim()) { setBusy(""); return; }
+        try { await NGGApi.admin.policy.reinstate(data.personId, data.personType, { councilOverride: true, overrideReason: why.trim() }); toast.success("Reinstated by council override."); reload(); }
+        catch (e2) { toast.error(e2.code || e2.message); }
+      } else toast.error(e.code || e.message);
+    } finally { setBusy(""); }
+  };
+
+  return (
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
+      <div className="admin-drawer-head">
+        <h3>Compliance record · {data.personId}</h3>
+        <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+        <PolicyStateChip state={st.state}/>
+        <span className="mono" style={{ fontSize: 12 }}>{st.absences}/{st.absenceLimit} absences · {st.lates}/{st.latenessCap} lates{st.halfDays ? " · " + st.halfDays + " half-days" : ""}</span>
+        {st.finesOwed > 0 && <span className="chip" style={{ background: "var(--coral)", color: "#fff" }}>{naira(st.finesOwed)} outstanding</span>}
+        {!st.awardsEligible && <span className="chip status-draft">Awards frozen</span>}
+      </div>
+      {st.reason && <p className="admin-hint" style={{ marginTop: 0 }}>{st.reason}</p>}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => logManual("idcard_missing", "Log: arrived without their ID card")}>No ID card today</button>
+        <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => logManual("idcard_lost", "Log: lost ID card")}>Lost ID card</button>
+        {data.personType === "volunteer" && <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => logManual("review_missed", "Log: missed Review Time")}>Missed Review Time</button>}
+        {st.state === "evicted" && <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={reinstate}>Reinstate (Part IV)…</button>}
+      </div>
+
+      <div className="eyebrow" style={{ marginBottom: 6 }}>SANCTIONS</div>
+      {!data.sanctions.length ? <div className="admin-empty">None.</div> : (
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Kind</th><th>Reason</th><th>Status</th><th/></tr></thead>
+          <tbody>{data.sanctions.map(s => (
+            <tr key={s.id}>
+              <td style={{ textTransform: "capitalize" }}>{s.kind}{Number(s.amount) > 0 ? " · " + naira(s.amount) : ""}</td>
+              <td style={{ fontSize: 12 }}>{s.reason}<div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{String(s.issuedAt || "").slice(0, 10)}{s.endsAt ? " → " + String(s.endsAt).slice(0, 10) : ""}</div></td>
+              <td><span className="chip">{s.status}</span></td>
+              <td style={{ whiteSpace: "nowrap" }}>
+                {s.status === "pending" && s.kind === "fine" && <button className="btn btn-ghost btn-sm" disabled={busy === "s" + s.id} onClick={() => closeOut(s, "paid")}>Mark paid</button>}
+                {s.status === "active" && s.kind === "suspension" && <button className="btn btn-ghost btn-sm" disabled={busy === "s" + s.id} onClick={() => closeOut(s, "served")}>Mark served</button>}
+                {s.status === "active" && s.kind === "dormant" && <button className="btn btn-ghost btn-sm" disabled={busy === "s" + s.id} onClick={() => closeOut(s, "cleared")}>Clear</button>}
+              </td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+      )}
+
+      <div className="eyebrow" style={{ margin: "18px 0 6px" }}>LEDGER</div>
+      <p className="admin-hint" style={{ marginTop: 0 }}>The facts the sanctions above are derived from. Void a wrong one and everything it caused is lifted immediately.</p>
+      {!data.infractions.length ? <div className="admin-empty">Nothing logged.</div> : (
+        <div className="admin-table-wrap"><table className="admin-table">
+          <thead><tr><th>Date</th><th>Kind</th><th>Note</th><th/></tr></thead>
+          <tbody>{data.infractions.map(i => (
+            <tr key={i.id} style={i.voidedAt ? { opacity: .5 } : undefined}>
+              <td className="mono">{i.date}</td>
+              <td>{String(i.kind).replace(/_/g, " ")}</td>
+              <td style={{ fontSize: 12 }}>{i.voidedAt ? <em>Voided — {i.voidReason}</em> : i.note}</td>
+              <td>{!i.voidedAt && <button className="btn btn-ghost btn-sm" disabled={busy === String(i.id)} onClick={() => voidOne(i)}>Void</button>}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+      )}
+      </div>
     </div>
   );
 }

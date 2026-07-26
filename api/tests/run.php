@@ -37,7 +37,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'analytics', 'profiles', 'community'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'analytics', 'profiles', 'community'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/webcron.php';
 
@@ -997,6 +997,195 @@ chk('super_admin bridges both portals', in_array('summer', admin_role_caps('supe
 // Seed a summer_admin + club_admin to prove the two portals are isolated.
 db_insert('members', ['memberId' => 'NGG-2025-0700', 'fullName' => 'Sunny Summer', 'email' => 'summeradmin@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'summer_admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 db_insert('members', ['memberId' => 'NGG-2025-0701', 'fullName' => 'Clara Club', 'email' => 'clubadmin@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+// ── Programme calendar + Institutional Policy enforcement ───────────────────
+// The calendar decides which days count; the policy engine decides what a
+// missed one costs. Both are exercised against a real term window rather than
+// "today", so the suite does not change behaviour with the day of the week.
+$SU = 'NGG-2025-0099';
+chk('programme calendar is off until an admin sets one', programme_settings()['enabled'] === false);
+chk('with no calendar every day is a programme day', programme_is_day('2026-07-26') === true);   // a Sunday
+
+// A Mon–Fri term with one holiday and one added Saturday.
+$pgSave = backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'programme' => [
+    'enabled' => true, 'startDate' => '2026-07-06', 'endDate' => '2026-08-28',
+    'weekdays' => [1, 2, 3, 4, 5], 'holidays' => ['2026-07-15'], 'extraDays' => ['2026-07-11'],
+]]);
+chk('programme calendar saves', !empty($pgSave['ok']) && $pgSave['programme']['enabled'] === true);
+chk('a scheduled weekday runs', programme_is_day('2026-07-14') === true);
+chk('a weekend does not', programme_is_day('2026-07-12') === false);
+chk('a holiday cancels a scheduled day', programme_is_day('2026-07-15') === false);
+chk('an extra day adds an unscheduled one', programme_is_day('2026-07-11') === true);
+chk('outside the term window nothing runs', programme_is_day('2026-09-01') === false && programme_is_day('2026-07-01') === false);
+chk('day count over a week is 5 weekdays + the extra Saturday', count(programme_days_between('2026-07-06', '2026-07-12')) === 6);
+chk('the holiday week counts 4, not 5', count(programme_days_between('2026-07-13', '2026-07-17')) === 4);
+chk('next programme day skips the weekend', programme_next_day('2026-07-17') === '2026-07-20');
+chk('an impossible date is not a holiday', !in_array('2026-02-30', programme_settings_save(['enabled' => true] + programme_settings() + [], 'test')['holidays'], true));
+// An inverted window would make every day non-programme with no visible cause.
+chk('an inverted term window is swapped, not accepted', (function () {
+    $r = programme_settings_save(array_merge(programme_settings(), ['startDate' => '2026-08-28', 'endDate' => '2026-07-06']), 'test');
+    return $r['startDate'] === '2026-07-06' && $r['endDate'] === '2026-08-28';
+})());
+// Toggling one date is the coordinator's fast path for "no session tomorrow".
+chk('toggling a day off adds a holiday', (function () use ($SU) {
+    backend_dispatch('admin.policy.day.toggle', ['requesterId' => $SU, 'date' => '2026-07-14', 'runs' => false]);
+    return programme_is_day('2026-07-14') === false;
+})());
+chk('toggling it back on removes the holiday', (function () use ($SU) {
+    backend_dispatch('admin.policy.day.toggle', ['requesterId' => $SU, 'date' => '2026-07-14', 'runs' => true]);
+    return programme_is_day('2026-07-14') === true;
+})());
+chk('policy screens are gated by the summer cap', backend_dispatch('admin.policy.settings', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+
+// Absence sweeping + strike ladder, driven directly so the thresholds are
+// tested rather than the wall clock.
+backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true]]);
+chk('policy enforcement can be switched on', policy_settings()['enabled'] === true);
+$pid = $enr['studentId'];
+chk('a clear ledger reads clear', policy_state($pid, 'student')['state'] === 'clear');
+policy_log($pid, 'student', 'absence', '2026-07-06');
+policy_apply($pid, 'student');
+chk('absence 1 is a warning, not dormancy', policy_state($pid, 'student')['state'] === 'warned');
+policy_log($pid, 'student', 'absence', '2026-07-07');
+policy_apply($pid, 'student');
+chk('absence 2 puts the student on the Dormant Track', policy_state($pid, 'student')['state'] === 'dormant');
+chk('dormancy freezes awards eligibility', policy_state($pid, 'student')['awardsEligible'] === false);
+chk('the same absence logged twice is still one strike', (function () use ($pid) {
+    policy_log($pid, 'student', 'absence', '2026-07-07');       // exact repeat
+    return policy_counts($pid)['absence'] === 2;
+})());
+policy_log($pid, 'student', 'absence', '2026-07-08');
+policy_apply($pid, 'student');
+chk('absence 3 is eviction', policy_state($pid, 'student')['state'] === 'evicted');
+// A fresh student, because a scan only reaches the gate when there is no row
+// for today yet — you cannot un-check-in someone who is already present.
+$evicted = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Emeka Evicted', 'age' => 13, 'centre' => 'Egbeda', 'track' => 'Tech']]);
+for ($i = 6; $i <= 8; $i++) policy_log($evicted['studentId'], 'student', 'absence', '2026-07-0' . $i);
+policy_apply($evicted['studentId'], 'student');
+chk('an evicted student cannot check in', backend_dispatch('admin.summer.checkin', ['requesterId' => $SU, 'token' => $evicted['token']])['error'] === 'policy_evicted');
+chk('a blocked scan leaves no attendance row', db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$evicted['studentId']])['c'] === 0);
+
+// Voiding a wrongly logged fact must undo everything it caused, immediately.
+chk('voiding the third absence lifts the eviction', (function () use ($SU, $pid) {
+    $row = db_row("SELECT id FROM infractions WHERE personId = ? AND kind = 'absence' AND date = '2026-07-08'", [$pid]);
+    $r = backend_dispatch('admin.policy.void', ['requesterId' => $SU, 'infractionId' => (int)$row['id'], 'reason' => 'Logged against the wrong student.']);
+    return !empty($r['ok']) && $r['state']['state'] === 'dormant';
+})());
+chk('a void without a reason is refused', backend_dispatch('admin.policy.void', ['requesterId' => $SU, 'infractionId' => 1, 'reason' => ''])['error'] === 'reason_required');
+
+// Reinstatement (Part IV) — refuses with the specific unmet condition.
+policy_log($pid, 'student', 'absence', '2026-07-09');
+policy_apply($pid, 'student');
+chk('re-evicted after a fresh third absence', policy_state($pid, 'student')['state'] === 'evicted');
+$rein = backend_dispatch('admin.policy.reinstate', ['requesterId' => $SU, 'personId' => $pid]);
+chk('reinstatement refuses inside the cool-off period', $rein['error'] === 'conditions_unmet' && count($rein['unmet']) === 3);
+chk('…and names the cool-off, the training and the fine', (function () use ($rein) {
+    $c = array_column($rein['unmet'], 'condition');
+    return in_array('coolOff', $c, true) && in_array('training', $c, true) && in_array('fine', $c, true);
+})());
+chk('a council override needs a written reason', backend_dispatch('admin.policy.reinstate', ['requesterId' => $SU, 'personId' => $pid, 'councilOverride' => true])['error'] === 'conditions_unmet');
+chk('a signed council override reinstates', (function () use ($SU, $pid) {
+    $r = backend_dispatch('admin.policy.reinstate', ['requesterId' => $SU, 'personId' => $pid, 'councilOverride' => true, 'overrideReason' => 'Governing Council resolution 2026/04.']);
+    return !empty($r['ok']) && $r['state']['state'] === 'clear';
+})());
+chk('reinstatement clears the ledger so it cannot instantly re-evict', policy_counts($pid)['absence'] === 0);
+chk('reinstating someone who is not evicted is refused', backend_dispatch('admin.policy.reinstate', ['requesterId' => $SU, 'personId' => $pid])['error'] === 'not_evicted');
+
+// Lateness: the redline, the cap, the suspension, and the post-suspension fine.
+$vlate = $enr2['studentId'];
+for ($i = 1; $i <= 3; $i++) policy_log($vlate, 'student', 'late', '2026-07-2' . $i);
+policy_apply($vlate, 'student');
+chk('3 lateness logs suspend a student', policy_state($vlate, 'student')['state'] === 'suspended');
+chk('a suspended student cannot check in', backend_dispatch('admin.summer.checkin', ['requesterId' => $SU, 'token' => $enr2['token']])['error'] === 'policy_suspended');
+chk('a suspension carries an end date', policy_state($vlate, 'student')['until'] !== '');
+chk('2 more lates after suspension raise the fine', (function () use ($vlate) {
+    $start = substr((string)db_row("SELECT startsAt FROM sanctions WHERE personId = ? AND kind = 'suspension'", [$vlate])['startsAt'], 0, 10);
+    $t = (int)strtotime($start . ' 00:00:00 UTC');
+    policy_log($vlate, 'student', 'late', gmdate('Y-m-d', $t + 86400));
+    policy_log($vlate, 'student', 'late', gmdate('Y-m-d', $t + 2 * 86400));
+    policy_apply($vlate, 'student');
+    return policy_state($vlate, 'student')['finesOwed'] === 5000;
+})());
+
+// Volunteers carry their own thresholds — 4 lates, not 3, and a bigger fine.
+chk('volunteer lateness cap is 4, not 3', policy_for('volunteer')['latenessCap'] === 4 && policy_for('student')['latenessCap'] === 3);
+chk('volunteer redline is 09:00, student 08:30', policy_for('volunteer')['lateRedline'] === '09:00' && policy_for('student')['lateRedline'] === '08:30');
+
+// §2.2 — the first ID-card oversight is a temporary card, the second a fine.
+$idp = $enr['studentId'];
+$r1 = backend_dispatch('admin.policy.infraction', ['requesterId' => $SU, 'personId' => $idp, 'kind' => 'idcard_missing', 'date' => '2026-07-20']);
+chk('a first ID-card oversight issues a temporary card, no fine', !empty($r1['temporaryCard']) && $r1['state']['finesOwed'] === 0);
+$r2 = backend_dispatch('admin.policy.infraction', ['requesterId' => $SU, 'personId' => $idp, 'kind' => 'idcard_missing', 'date' => '2026-07-21']);
+chk('the second is a 1,000 fine', empty($r2['temporaryCard']) && $r2['state']['finesOwed'] === 1000);
+$r3 = backend_dispatch('admin.policy.infraction', ['requesterId' => $SU, 'personId' => $idp, 'kind' => 'idcard_lost', 'date' => '2026-07-22']);
+chk('a lost card adds the 2,000 replacement fee', $r3['state']['finesOwed'] === 3000);
+chk('an unpaid fine freezes awards eligibility', $r3['state']['awardsEligible'] === false);
+chk('automatic infraction kinds are not settable by hand', backend_dispatch('admin.policy.infraction', ['requesterId' => $SU, 'personId' => $idp, 'kind' => 'absence', 'date' => '2026-07-23'])['error'] === 'bad_infraction');
+chk('paying a fine clears the balance', (function () use ($SU, $idp) {
+    foreach (db_all("SELECT id FROM sanctions WHERE personId = ? AND kind = 'fine' AND status = 'pending'", [$idp]) as $s) {
+        backend_dispatch('admin.policy.sanction.update', ['requesterId' => $SU, 'sanctionId' => (int)$s['id'], 'status' => 'paid']);
+    }
+    return policy_state($idp, 'student')['finesOwed'] === 0;
+})());
+
+// Musing Period: two half-days cost a whole attendance day.
+chk('two half-days equal one absence', (function () use ($SU) {
+    $s = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Musa Musing', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Music']]);
+    policy_log($s['studentId'], 'student', 'halfday', '2026-07-06');
+    policy_log($s['studentId'], 'student', 'halfday', '2026-07-07');
+    return policy_state($s['studentId'], 'student')['absences'] === 1;
+})());
+
+// The board surfaces everyone who is not clear, worst first.
+$board = backend_dispatch('admin.policy.board', ['requesterId' => $SU]);
+chk('the compliance board lists people with a ledger', count($board['board']) >= 2);
+chk('the board is ordered worst-state first', (function () use ($board) {
+    $rank = ['evicted' => 0, 'suspended' => 1, 'dormant' => 2, 'warned' => 3, 'clear' => 4];
+    $prev = -1;
+    foreach ($board['board'] as $r) { if ($rank[$r['state']] < $prev) return false; $prev = $rank[$r['state']]; }
+    return true;
+})());
+chk('batched states match the per-person state', (function () use ($vlate) {
+    $b = policy_states_for([$vlate], 'student')[$vlate];
+    $s = policy_state($vlate, 'student');
+    return $b['state'] === $s['state'] && $b['lates'] === $s['lates'] && $b['finesOwed'] === $s['finesOwed'];
+})());
+
+// The sweep only touches closed programme days, and never twice.
+chk('the sweep logs absences for closed programme days only', (function () use ($SU) {
+    setting_set('policy_swept_through', '2026-07-05', 'test');
+    $r = policy_sweep_absences('2026-07-10');
+    // Mon 6th – Fri 10th plus the added Saturday 11th is out of range: 5 days.
+    return !empty($r['ok']) && $r['days'] === 5;
+})());
+chk('re-running the sweep over the same range is a no-op', policy_sweep_absences('2026-07-10')['days'] === 0);
+chk('the sweep skipped the weekend', db_row("SELECT COUNT(*) c FROM infractions WHERE kind = 'absence' AND date IN ('2026-07-04','2026-07-05')")['c'] === 0);
+chk('the sweep does not run without a calendar', (function () use ($SU) {
+    $keep = programme_settings();
+    programme_settings_save(array_merge($keep, ['enabled' => false]), 'test');
+    $r = policy_sweep_absences('2026-07-10');
+    programme_settings_save($keep, 'test');
+    return ($r['skipped'] ?? '') === 'no_programme_calendar';
+})());
+
+// Attendance analytics must read the calendar, not the scan log.
+$att2 = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU])['attendance'];
+chk('analytics reports the programme calendar', !empty($att2['programme']['enabled']) && $att2['programme']['termStart'] === '2026-07-06');
+chk('session days come from the calendar, not from who scanned', $att2['sessionDays'] === count(programme_days_elapsed()));
+chk('each day in the series is tagged as a programme day or not', isset($att2['days'][0]['programmeDay']));
+chk('nobody is absent on a non-programme day', (function () use ($SU) {
+    $keep = programme_settings();
+    // Cancel today outright, then nobody can be absent today.
+    programme_settings_save(array_merge($keep, ['enabled' => true, 'startDate' => '2020-01-01', 'endDate' => '2030-01-01', 'holidays' => array_merge($keep['holidays'], [attendance_today()])]), 'test');
+    $a = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU])['attendance'];
+    $alert = backend_dispatch('admin.summer.absence.alert', ['requesterId' => $SU]);
+    programme_settings_save($keep, 'test');
+    return $a['absentToday'] === 0 && ($alert['error'] ?? '') === 'not_a_programme_day';
+})());
+// Leave enforcement off for the rest of the suite so later assertions see the
+// pre-policy behaviour they were written against.
+backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => false]]);
+programme_settings_save(array_merge(programme_settings(), ['enabled' => false]), 'test');
+
 chk('summer_admin can read its own overview', !empty(backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0700'])['overview']));
 chk('summer_admin is locked out of the Club portal', backend_dispatch('admin.club.overview', ['requesterId' => 'NGG-2025-0700'])['error'] === 'forbidden');
 chk('club_admin can read its own overview', isset(backend_dispatch('admin.club.overview', ['requesterId' => 'NGG-2025-0701'])['overview']));

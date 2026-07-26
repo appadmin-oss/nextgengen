@@ -4340,3 +4340,15 @@ section p[style*="var(--ink-500)"] {
 
 /* Site content editor — stack the preview under the form on narrow screens. */
 @media (max-width: 900px) { .site-editor { grid-template-columns: 1fr !important; } .site-editor > div:last-child { position: static !important; } }
+
+/* Programme & policy — the one-line status banner above the calendar editor.
+   Tone is data-driven so "today is closed" reads differently from "enforcement
+   is on but no calendar is set", which is the mistake worth shouting about. */
+.policy-callout {
+  margin: 12px 0; padding: 11px 14px; border-radius: 12px;
+  font-size: 13.5px; line-height: 1.5;
+  border: 1px solid var(--line, #e6e2d6); background: var(--cream-50, #faf7f0);
+}
+.policy-callout[data-tone="ok"]    { border-color: rgba(110,156,29,.35); background: rgba(110,156,29,.08); }
+.policy-callout[data-tone="muted"] { color: var(--ink-500); }
+.policy-callout[data-tone="warn"]  { border-color: rgba(224,84,60,.4); background: rgba(224,84,60,.08); }

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 56;
+const NGG_SCHEMA_TARGET = 58;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1352,6 +1352,50 @@ function db_migrate(PDO $db): void {
         56 => "
             ALTER TABLE gate_links ADD COLUMN passExpiryDays INTEGER DEFAULT 0;
             ALTER TABLE gate_links ADD COLUMN passExpiresAt TEXT DEFAULT '';
+        ",
+
+        // Institutional Policy enforcement. Two layers, deliberately separate:
+        // infractions are FACTS (one per person per kind per day, hence the
+        // unique index — a re-scan or a re-run of the nightly sweep must not
+        // become a second strike), sanctions are CONSEQUENCES derived from
+        // them. `tier` is the count that triggered a sanction, so issuing is
+        // idempotent across re-evaluation.
+        57 => "
+            CREATE TABLE infractions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              personId TEXT NOT NULL, personType TEXT DEFAULT 'student',
+              kind TEXT NOT NULL, date TEXT NOT NULL,
+              note TEXT DEFAULT '', byId TEXT DEFAULT '',
+              voidedAt TEXT DEFAULT '', voidedBy TEXT DEFAULT '', voidReason TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_infr_unique ON infractions(personId, kind, date);
+            CREATE INDEX idx_infr_date ON infractions(date);
+
+            CREATE TABLE sanctions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              personId TEXT NOT NULL, personType TEXT DEFAULT 'student',
+              kind TEXT NOT NULL, tier INTEGER DEFAULT 0,
+              reason TEXT DEFAULT '', amount INTEGER DEFAULT 0,
+              startsAt TEXT DEFAULT '', endsAt TEXT DEFAULT '',
+              status TEXT DEFAULT 'active', note TEXT DEFAULT '',
+              issuedBy TEXT DEFAULT '', issuedAt TEXT DEFAULT '',
+              clearedAt TEXT DEFAULT '', clearedBy TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_sanc_unique ON sanctions(personId, kind, tier);
+            CREATE INDEX idx_sanc_person ON sanctions(personId, status);
+        ",
+
+        // Punctuality gained a third state. `status` was present|late measured
+        // against the resumption time; the blueprint's Part VI redline is a
+        // later, separate threshold, so status is now present|tardy|late and
+        // `redline` records the breach that actually accrues an infraction.
+        // Legacy rows keep redline = 0: nobody is retroactively sanctioned by
+        // a deploy. halfDay marks a scan that missed the Musing Period.
+        58 => "
+            ALTER TABLE attendance ADD COLUMN redline INTEGER DEFAULT 0;
+            ALTER TABLE attendance ADD COLUMN halfDay INTEGER DEFAULT 0;
         ",
     ];
 
