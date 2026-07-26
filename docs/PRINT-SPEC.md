@@ -31,10 +31,37 @@ want for a copy-shop run.
 - **Safe area is 3 mm inside trim.** Nothing critical is placed outside it.
 
 The card designs are drawn to trim with no bleed of their own, so the exporter
-*generates* the bleed by mirroring the outermost 3 mm of rendered pixels
-outward — the same technique prepress tools use to rescue art supplied without
-bleed. Mirroring rather than stretching keeps patterned edges (the aso-oke
-weave across the card back) from smearing into streaks.
+*generates* it — the same rescue prepress tools apply to art supplied without
+bleed. It does that by **clamping**: every pixel of the bleed is a copy of the
+nearest pixel on the trim edge, so each edge extends its own colour outward and
+each corner extends the corner pixel.
+
+### Why not mirror
+
+Mirroring — reflecting the outer 3 mm back out — is the other standard rescue,
+and it is what this exporter used to do. It was wrong for this artwork, and the
+printed sheets showed it.
+
+The volunteer front is a tier-coloured border 22 of 590 design px wide, which
+is **2.01 mm** on a 54 mm card. Mirroring 3 mm therefore reaches 0.99 mm past
+the border and reflects the **white inner panel** into the outside of the
+bleed. Two visible consequences on a real run:
+
+- a white sliver ran right round every card, so neighbouring cards' bleeds met
+  as a white line on the sheet instead of abutting in colour — and any
+  guillotine drift outward cut that white onto the finished card;
+- the STS badge straddles the top edge, so it was reflected and appeared a
+  **second time** above the trim on every card.
+
+Clamping cannot reflect inner detail outward at all — it can only repeat the
+edge — so neither failure is reachable. The cost is patterned edges: the
+aso-oke weave on the card back smears into 3 mm of vertical streaks rather than
+repeating the motif. That is the safer failure. Streaks are trimmed off, and if
+the cut drifts they read as a continuation of the edge, where a repeated motif
+reads as a printing error.
+
+`CardExport.renderFace` takes `bleedMode: 'mirror'` to restore the old
+behaviour for artwork that already bleeds to its own edge.
 
 ## Marks
 
@@ -140,8 +167,9 @@ make the output deterministic.
 
 ## Colour
 
-Artwork is RGB raster at **350 DPI** by default (2 × a 175 lpi screen; the
-studio also offers 300 for digital presses and 600 for line art). The file
+Artwork is RGB raster at **350 DPI** by default (2 × a 175 lpi screen), set by
+the studio's *Resolution* control, which also offers 300 for digital presses
+and 600 for line art. The file
 declares its intended printing condition with a `GTS_PDFX` **OutputIntent** —
 **FOGRA39** (`Coated FOGRA39, ISO 12647-2:2004`) unless changed — so the RIP
 separates against a known target instead of guessing.
@@ -162,8 +190,15 @@ requires PDF/X-4, ask them to convert against the declared output intent.
 
 Faces are JPEG at quality 0.95 inside the PDF — visually lossless at these
 resolutions and the only way a several-hundred-card run stays a sane file size.
-The **PNG (.zip)** export is lossless at the same resolution, for a designer
-re-laying the cards out by hand.
+The **PNG (.zip)** export is lossless at the same resolution and carries the
+same 3 mm of bleed, for a designer re-laying the cards out by hand.
+
+## Before you export
+
+A card with no photo on file prints the empty photo frame — on the sheet that
+reads as a printing fault rather than as missing data. The studio counts those
+cards and names them before a PDF run so they can be fixed (or the run
+knowingly accepted) rather than discovered on paper.
 
 ## Running a full roster
 

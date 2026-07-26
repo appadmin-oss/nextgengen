@@ -19,10 +19,27 @@
    1. BLEED. Artwork extends 3 mm past every trim edge (the near-universal
       commercial default; ISO/GWG prepress guidance puts the BleedBox 3–5 mm
       outside the TrimBox). The card designs have no bleed of their own, so we
-      *generate* it by mirroring the outermost 3 mm of pixels outward — the
-      same technique prepress tools (Enfocus PitStop, callas pdfToolbox) use to
-      rescue art supplied without bleed. Mirroring beats stretching because it
-      survives patterned edges (the aso-oke weave on the card back).
+      *generate* it — the same rescue prepress tools (Enfocus PitStop, callas
+      pdfToolbox, Esko's "smart bleed") apply to art supplied without one.
+
+      We generate it by CLAMPING: every pixel of the bleed is a copy of the
+      nearest pixel on the trim edge, so each edge extends its own colour
+      outward and the corners extend the corner pixel. This file used to
+      MIRROR instead — reflect the outer 3 mm back out — and that is wrong for
+      this artwork, provably so. The volunteer front is a tier-coloured border
+      22 of 590 design px wide, i.e. 2.01 mm on a 54 mm card. Mirroring 3 mm
+      therefore reaches 0.99 mm past the border and reflects the white inner
+      panel into the outside of the bleed: the finished sheets carried a white
+      sliver around every card, and the STS badge — which straddles the top
+      edge — appeared a second time above the trim. Clamping cannot reflect
+      inner detail outward at all; it can only repeat the edge.
+
+      The trade-off is patterned edges (the aso-oke weave on the card back):
+      clamping smears them into 3 mm of streaks rather than repeating the
+      motif. That is the safer failure. Streaks are trimmed off, and if the
+      guillotine drifts they read as a continuation of the edge, where a
+      mirrored motif reads as a printing error. Pass `bleedMode: 'mirror'` to
+      restore the old behaviour for artwork that genuinely bleeds already.
 
    2. PAGE BOXES. Every page carries a MediaBox, BleedBox and TrimBox. This is
       the single most important thing an imposition RIP reads, and it is what
@@ -259,43 +276,71 @@
     return Math.max(1, Math.round(s * 100) / 100);
   }
 
-  /* Generate bleed by mirroring the outer `bleedPx` of the image outward on all
-   * four sides, so the art runs 3 mm past trim with no design distortion and no
-   * white slivers when the guillotine drifts. Returns the enlarged face plus
-   * the bleed it actually applied (in pixels), which the PDF builder needs to
-   * place the image against the BleedBox rather than the TrimBox. */
+  /* Generate `bleedPx` of bleed on all four sides so the art runs past trim and
+   * a drifting guillotine never cuts a white sliver onto the finished card.
+   * Returns the enlarged face plus the bleed actually applied (in pixels),
+   * which the PDF builder needs to place the image against the BleedBox rather
+   * than the TrimBox.
+   *
+   *   o.mode 'clamp'  (default) each bleed pixel copies the nearest trim-edge
+   *                   pixel. The edge colour — whatever it is — extends
+   *                   outward, and no detail from inside the card can ever
+   *                   reach the bleed. This is the correct mode for art whose
+   *                   outer band is a solid colour, which is every face here.
+   *   o.mode 'mirror' reflect the outer band back out. Repeats motifs rather
+   *                   than streaking them, but only safe when the outermost
+   *                   `bleedPx` of the design is itself edge-to-edge artwork.
+   *                   See the header note for why this was the wrong default. */
   async function addBleed(dataUrl, bleedPx, o) {
     o = o || {};
     var b = Math.max(0, Math.round(bleedPx || 0));
     var img = await loadImage(dataUrl);
     var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
     if (!b) return { dataUrl: dataUrl, wPx: w, hPx: h, bleedPx: 0 };
-    b = Math.min(b, Math.floor(Math.min(w, h) / 2));   // can't mirror more than half the art
+    b = Math.min(b, Math.floor(Math.min(w, h) / 2));   // can't reflect more than half the art
     var cv = document.createElement('canvas');
     cv.width = w + 2 * b; cv.height = h + 2 * b;
     var ctx = cv.getContext('2d');
     ctx.drawImage(img, b, b);
-    // Each edge/corner: translate to the far side of the strip, flip, and draw
-    // the adjacent band of source pixels — a true reflection about the trim edge.
-    var mirror = function (tx, ty, sx_, sy_, sw, sh, dw, dh, fx, fy) {
-      ctx.save(); ctx.translate(tx, ty); ctx.scale(fx, fy);
-      ctx.drawImage(img, sx_, sy_, sw, sh, 0, 0, dw, dh);
-      ctx.restore();
-    };
-    mirror(b, b, 0, 0, w, b, w, b, 1, -1);                      // top
-    mirror(b, h + 2 * b, 0, h - b, w, b, w, b, 1, -1);          // bottom
-    mirror(b, b, 0, 0, b, h, b, h, -1, 1);                      // left
-    mirror(w + 2 * b, b, w - b, 0, b, h, b, h, -1, 1);          // right
-    mirror(b, b, 0, 0, b, b, b, b, -1, -1);                     // top-left
-    mirror(w + 2 * b, b, w - b, 0, b, b, b, b, -1, -1);         // top-right
-    mirror(b, h + 2 * b, 0, h - b, b, b, b, b, -1, -1);         // bottom-left
-    mirror(w + 2 * b, h + 2 * b, w - b, h - b, b, b, b, b, -1, -1); // bottom-right
+
+    if (o.mode === 'mirror') {
+      // Translate to the far side of the strip, flip, draw the adjacent band —
+      // a true reflection about the trim edge.
+      var mirror = function (tx, ty, sx_, sy_, sw, sh, dw, dh, fx, fy) {
+        ctx.save(); ctx.translate(tx, ty); ctx.scale(fx, fy);
+        ctx.drawImage(img, sx_, sy_, sw, sh, 0, 0, dw, dh);
+        ctx.restore();
+      };
+      mirror(b, b, 0, 0, w, b, w, b, 1, -1);                      // top
+      mirror(b, h + 2 * b, 0, h - b, w, b, w, b, 1, -1);          // bottom
+      mirror(b, b, 0, 0, b, h, b, h, -1, 1);                      // left
+      mirror(w + 2 * b, b, w - b, 0, b, h, b, h, -1, 1);          // right
+      mirror(b, b, 0, 0, b, b, b, b, -1, -1);                     // top-left
+      mirror(w + 2 * b, b, w - b, 0, b, b, b, b, -1, -1);         // top-right
+      mirror(b, h + 2 * b, 0, h - b, b, b, b, b, -1, -1);         // bottom-left
+      mirror(w + 2 * b, h + 2 * b, w - b, h - b, b, b, b, b, -1, -1); // bottom-right
+    } else {
+      // Clamp. Nearest-neighbour so a 1-px source strip replicates exactly
+      // instead of being blurred across the strip by the default bilinear
+      // filter — the bleed must be the edge colour, not a gradient towards it.
+      ctx.imageSmoothingEnabled = false;
+      ctx.mozImageSmoothingEnabled = false;
+      ctx.webkitImageSmoothingEnabled = false;
+      ctx.drawImage(img, 0, 0, w, 1, b, 0, w, b);                   // top
+      ctx.drawImage(img, 0, h - 1, w, 1, b, h + b, w, b);           // bottom
+      ctx.drawImage(img, 0, 0, 1, h, 0, b, b, h);                   // left
+      ctx.drawImage(img, w - 1, 0, 1, h, w + b, b, b, h);           // right
+      ctx.drawImage(img, 0, 0, 1, 1, 0, 0, b, b);                   // top-left
+      ctx.drawImage(img, w - 1, 0, 1, 1, w + b, 0, b, b);           // top-right
+      ctx.drawImage(img, 0, h - 1, 1, 1, 0, h + b, b, b);           // bottom-left
+      ctx.drawImage(img, w - 1, h - 1, 1, 1, w + b, h + b, b, b);   // bottom-right
+    }
     var type = o.type || 'image/jpeg', q = o.quality || 0.95;
     return { dataUrl: cv.toDataURL(type, q), wPx: cv.width, hPx: cv.height, bleedPx: b };
   }
 
   /* Rasterise + bleed in one call — what the studio uses per face.
-   *   opts: { trimW_mm, dpi, bleed_mm, type, quality, bg, retries } */
+   *   opts: { trimW_mm, dpi, bleed_mm, bleedMode, type, quality, bg, retries } */
   async function renderFace(node, opts) {
     opts = opts || {};
     var cssW = node.offsetWidth || 295;
@@ -308,7 +353,7 @@
     }
     var pxPerMm = img.wPx / (opts.trimW_mm || 54);
     var bled = await addBleed(img.dataUrl, (opts.bleed_mm == null ? 3 : opts.bleed_mm) * pxPerMm,
-      { type: opts.type || 'image/jpeg', quality: opts.quality || 0.95 });
+      { type: opts.type || 'image/jpeg', quality: opts.quality || 0.95, mode: opts.bleedMode || 'clamp' });
     return { dataUrl: bled.dataUrl, wPx: bled.wPx, hPx: bled.hPx, bleedPx: bled.bleedPx, trimWPx: img.wPx, trimHPx: img.hPx };
   }
 

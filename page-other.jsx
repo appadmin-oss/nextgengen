@@ -3452,6 +3452,9 @@ function CardStudio() {
   // Which way the press turns the sheet between sides. Long-edge
   // (work-and-turn) keeps the same gripper edge and registers best.
   const [duplex, setDuplex] = React.useState("long-edge");
+  // Raster resolution for the embedded artwork. 350 is the offset standard
+  // (2× a 175 lpi screen), 300 the digital-press floor, 600 for line art.
+  const [dpi, setDpi] = React.useState(350);
   const zoneRef = React.useRef(null);
   const [exp, setExp] = React.useState("");   // progress/status text
   const [notice, setNotice] = React.useState("");  // transient success note
@@ -3580,15 +3583,21 @@ function CardStudio() {
     try {
       setExp("Preparing…");
       const CE = await ensureLib(); const files = []; const failed = [];
+      // Same resolution and the same 3mm of bleed as the PDF, so a designer
+      // re-laying these out by hand has usable art. Fixed-scale, bleedless
+      // PNGs were a different deliverable wearing the same label.
+      const pngScale = Math.max(2, Math.min(6, Math.round((dpi * (cardW / 25.4) / 295) * 100) / 100));
+      const facePng = async (node) => {
+        const r = await CE.renderFace(node, { trimW_mm: cardW, scale: pngScale, bleed_mm: BLEED_MM, type: "image/png", bg: "#fff" });
+        return CE.dataUrlToBytes(r.dataUrl);
+      };
       for (let i = 0; i < cards.length; i++) {
         setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
         try {
           await stageCard(cards[i]);
           const n = hostFaces();
-          const f = await withBudget(CE.nodeToImage(n[0], { type: "image/png", scale: 5, bg: "#fff" }), 30000);
-          files.push({ name: cardName(cards[i]) + "-front.png", bytes: f.bytes });
-          const b = await withBudget(CE.nodeToImage(n[1], { type: "image/png", scale: 5, bg: "#fff" }), 30000);
-          files.push({ name: cardName(cards[i]) + "-back.png", bytes: b.bytes });
+          files.push({ name: cardName(cards[i]) + "-front.png", bytes: await withBudget(facePng(n[0]), 30000) });
+          files.push({ name: cardName(cards[i]) + "-back.png", bytes: await withBudget(facePng(n[1]), 30000) });
         } catch (e) { failed.push(cardName(cards[i])); }
         await nextFrame();
       }
@@ -3601,13 +3610,12 @@ function CardStudio() {
     } catch (e) { setExp(""); setMsg("Export failed — try again."); }
   };
 
-  // Render a face at ~330 DPI for the actual trim size — enough for offset/press
-  // print, but far lighter than a fixed 4× (which is ~470 DPI and 2–3× slower).
-  // One retry + a frame yield so a single hiccup never kills a mass run and the
-  // tab stays responsive across hundreds of cards.
+  // Render a face at the chosen DPI for the actual trim size. One retry + a
+  // frame yield so a single hiccup never kills a mass run and the tab stays
+  // responsive across hundreds of cards.
   const renderFace = async (CE, node, scale) => {
     for (let attempt = 0; ; attempt++) {
-      // renderFace (not nodeToImage) so the face carries 3mm of mirrored bleed.
+      // renderFace (not nodeToImage) so the face carries 3mm of real bleed.
       try { return await CE.renderFace(node, { trimW_mm: cardW, scale, bleed_mm: BLEED_MM, quality: 0.95, bg: "#fff" }); }
       catch (e) { if (attempt >= 1) throw e; await new Promise(r => setTimeout(r, 250)); }
     }
@@ -3617,10 +3625,20 @@ function CardStudio() {
   const exportPdf = async () => {
     if (exp || !cards.length) return;
     try {
+      // Preflight: a card with no photo prints the empty gradient frame, which
+      // looks like a printing fault on the finished sheet rather than missing
+      // data. Name them and let the operator decide before spending the run.
+      const noPhoto = cards.filter(c => !c.photoUrl);
+      if (noPhoto.length && !confirm(
+        noPhoto.length + " of " + cards.length + " card(s) have no photo and will print an empty photo frame:\n\n"
+        + noPhoto.slice(0, 8).map(cardName).join(", ") + (noPhoto.length > 8 ? ", …" : "")
+        + "\n\nExport anyway?")) return;
       setExp("Preparing…");
       const CE = await ensureLib();
-      // Scale to hit ~330 DPI at the chosen trim width (card is 295 CSS px wide).
-      const pdfScale = Math.max(2, Math.min(3.2, Math.round((330 * (cardW / 25.4) / 295) * 100) / 100));
+      // Scale to hit the chosen DPI at the chosen trim width (card is 295 CSS
+      // px wide). Capped at 6× — beyond that html2canvas allocates more canvas
+      // than a phone will give it and the run dies mid-roster.
+      const pdfScale = Math.max(2, Math.min(6, Math.round((dpi * (cardW / 25.4) / 295) * 100) / 100));
       const fronts = [], backs = [], failed = [];
       for (let i = 0; i < cards.length; i++) {
         setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
@@ -3702,6 +3720,15 @@ function CardStudio() {
           style={{ padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#eef2fb", fontWeight: 800, fontSize: 14, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
           ↓ PNG (all, .zip)
         </button>
+        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Resolution
+          <select value={dpi} onChange={e => setDpi(Number(e.target.value))} disabled={!!exp}
+            title="Raster resolution of the card artwork inside the PDF. 350 DPI is the offset standard; 300 is the digital-press floor; 600 is for line art and is slow and large."
+            style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
+            <option value={300}>300 DPI — digital press</option>
+            <option value={350}>350 DPI — offset standard</option>
+            <option value={600}>600 DPI — line art (slow)</option>
+          </select>
+        </label>
         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Front/back flip
           <select value={duplex} onChange={e => setDuplex(e.target.value)} disabled={!!exp}
             title="How the press turns the sheet between sides — ask your printer. The wrong axis puts every back on the wrong front."
@@ -3718,7 +3745,7 @@ function CardStudio() {
       </div>
     </div>
     <p className="no-print" style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "-8px 0 18px", maxWidth: 640 }}>
-      The PDF imposes cards {"—"} auto-laid out N-up on A4 at an exact {cardW}{"×"}{cardH}&nbsp;mm trim with crop &amp; registration marks and a CMYK (FOGRA39) output intent, front sheets then back sheets for duplex. Card artwork is embedded at ~300&nbsp;DPI; the press RIP separates it to CMYK against the intent. Everything renders in your browser {"—"} nothing is uploaded.
+      The PDF imposes cards {"—"} auto-laid out N-up on A4 at an exact {cardW}{"×"}{cardH}&nbsp;mm trim with 3&nbsp;mm bleed, crop &amp; registration marks and a CMYK (FOGRA39) output intent, front and back sheets interleaved for duplex. Card artwork is embedded at {dpi}&nbsp;DPI; the press RIP separates it to CMYK against the intent. Everything renders in your browser {"—"} nothing is uploaded.
     </p>
 
     <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 26 }}>

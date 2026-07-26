@@ -15,7 +15,8 @@ declare(strict_types=1);
  * Cadence (overridable via $CONFIG['webcron']):
  *   deliver   every 60s   — integration bus (Chat/webhook/Sheets, escalations)
  *   reminders every 900s  — parent-verification re-nudge + stalled alerts
- *   maint     every 3600s — publish scheduled posts, expire promo, GC, trim
+ *   maint     every 3600s — publish scheduled posts, expire promo, GC, trim,
+ *                             roll due desk passwords
  *
  * Disable entirely with $CONFIG['webcron']['enabled'] = false (e.g. when a real
  * cron drives api/tools/*). CLI SAPI never schedules it.
@@ -120,4 +121,10 @@ function web_cron_maintenance(): void {
     // Prune device sessions revoked more than 30 days ago.
     $cut30 = gmdate('Y-m-d\TH:i:s\Z', time() - 30 * 86400);
     db_exec("DELETE FROM device_sessions WHERE revokedAt IS NOT NULL AND revokedAt != '' AND revokedAt < ?", [$cut30]);
+    // Roll any desk password that has reached its rotation interval. Runs here
+    // as well as in api/tools/run-jobs.php so rotation works on a host with no
+    // shell and no cron — ordinary traffic drives it. Both paths are safe
+    // together: a gate is only rolled once its interval has elapsed, and
+    // rotating stamps passSetAt, so whichever runs second finds nothing due.
+    if (function_exists('gates_rotate_due')) gates_rotate_due();
 }

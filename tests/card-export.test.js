@@ -65,24 +65,40 @@ function loadChromium() {
       const node = document.getElementById('card');
       const TRIM_W = 54, TRIM_H = 75, BLEED = 3;
 
-      // ── bleed generation: mirrored, not stretched ────────────────────────
+      /* ── bleed generation ────────────────────────────────────────────────
+       * The probe is the shape of the real artwork that broke in production:
+       * a 2px coloured border round a white panel, bled by 4px. The border is
+       * NARROWER than the bleed, so mirroring reflects the white panel into
+       * the outside of the bleed — which is exactly what put a white sliver
+       * around every card on the printed sheets, and duplicated the badge
+       * that straddles the top edge. Clamping repeats the edge pixel and
+       * cannot reach inside the card at all. */
       const probe = document.createElement('canvas');
       probe.width = 20; probe.height = 20;
       const pc = probe.getContext('2d');
-      pc.fillStyle = '#ffffff'; pc.fillRect(0, 0, 20, 20);
-      pc.fillStyle = '#ff0000'; pc.fillRect(0, 0, 1, 20);   // 1px red stripe on the left edge
-      pc.fillStyle = '#0000ff'; pc.fillRect(1, 0, 1, 20);   // 1px blue stripe next to it
-      const bled = await CE.addBleed(probe.toDataURL('image/png'), 4, { type: 'image/png' });
-      const bi = new Image(); bi.src = bled.dataUrl;
-      await bi.decode();
-      const rc = document.createElement('canvas');
-      rc.width = bi.width; rc.height = bi.height;
-      rc.getContext('2d').drawImage(bi, 0, 0);
-      const px = (x, y) => { const d = rc.getContext('2d').getImageData(x, y, 1, 1).data; return d[0] + ',' + d[1] + ',' + d[2]; };
-      // With b=4 the left bleed spans x=0..3 and mirrors source columns 3,2,1,0
-      // → x=3 is source col 0 (red) and x=2 is source col 1 (blue). A *stretch*
-      // would paint the whole strip red, so this distinguishes the two.
-      const mirrored = px(3, 10) === '255,0,0' && px(2, 10) === '0,0,255';
+      pc.fillStyle = '#ff0000'; pc.fillRect(0, 0, 20, 20);   // 2px red border…
+      pc.fillStyle = '#ffffff'; pc.fillRect(2, 2, 16, 16);   // …round a white panel
+      const readBack = async (url) => {
+        const bi = new Image(); bi.src = url; await bi.decode();
+        const rc = document.createElement('canvas');
+        rc.width = bi.width; rc.height = bi.height;
+        rc.getContext('2d').drawImage(bi, 0, 0);
+        const d = rc.getContext('2d');
+        return (x, y) => { const p = d.getImageData(x, y, 1, 1).data; return p[0] + ',' + p[1] + ',' + p[2]; };
+      };
+      const clamped = await CE.addBleed(probe.toDataURL('image/png'), 4, { type: 'image/png' });
+      const cp = await readBack(clamped.dataUrl);
+      const mirroredOut = await CE.addBleed(probe.toDataURL('image/png'), 4, { type: 'image/png', mode: 'mirror' });
+      const mp = await readBack(mirroredOut.dataUrl);
+      // b=4, so the left bleed is x=0..3 and the trim edge is x=4.
+      const bleedClamps = cp(0, 12) === '255,0,0' && cp(3, 12) === '255,0,0'   // whole strip = edge colour
+                       && cp(0, 0) === '255,0,0'                               // corner too
+                       && cp(12, 0) === '255,0,0' && cp(12, 27) === '255,0,0'; // top and bottom
+      // …and the old behaviour still available, still demonstrably different:
+      // mirroring x=0..3 reflects source columns 3,2,1,0 → x=0 is column 3,
+      // which is inside the white panel. That is the defect, reproduced.
+      const mirrorLeaksInnerArt = mp(0, 12) === '255,255,255' && mp(3, 12) === '255,0,0';
+      const bleedDefault = clamped.dataUrl !== mirroredOut.dataUrl;
 
       /* ── a dead asset host must not fail the card ────────────────────────
        * The card logos are same-origin. When the site's own server stops
@@ -257,7 +273,7 @@ function loadChromium() {
         jpg: front.dataUrl.indexOf('data:image/jpeg') === 0 && front.wPx > front.trimWPx,
         dpi: Math.round(dpiPx),
         scale,
-        mirrored,
+        bleedClamps, mirrorLeaksInnerArt, bleedDefault,
         bleedPx: front.bleedPx,
         bleedGeom: front.wPx === front.trimWPx + 2 * front.bleedPx && front.hPx === front.trimHPx + 2 * front.bleedPx,
         zipPk: zip[0] === 0x50 && zip[1] === 0x4b && zip.length > 100,
@@ -290,7 +306,9 @@ function loadChromium() {
     ok('…and its src is left alone rather than blanked', !r.photoSrcBlanked);
     ok('renderFace produced a bled JPEG face', r.jpg);
     ok('artwork lands at 350 DPI for the trim size (got ' + r.dpi + ')', Math.abs(r.dpi - 350) <= 6);
-    ok('bleed is mirrored outward, not stretched', r.mirrored);
+    ok('bleed clamps the trim edge outward on all four sides and corners', r.bleedClamps);
+    ok('…which is the default, not the same image as mirroring', r.bleedDefault);
+    ok('…and mirroring, the old default, provably leaks inner artwork into the bleed', r.mirrorLeaksInnerArt);
     ok('face geometry is trim + 2×bleed (' + r.bleedPx + 'px each side)', r.bleedGeom && r.bleedPx > 20);
     ok('fflate produced a valid .zip', r.zipPk);
     ok('jsPDF produced a valid PDF (%PDF … %%EOF, ' + r.pdfLen + ' bytes)', r.pdfHeader && r.pdfEof);
