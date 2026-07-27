@@ -18,7 +18,7 @@
          KIOSK_PORT (default 8199).
    ============================================================================ */
 const { execSync, spawn } = require('child_process');
-const { waitForServer } = require('./_serve');
+const { waitForServer, waitForBoot } = require('./_serve');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -101,7 +101,9 @@ function cleanup() {
   const browser = await chromium.launch(launch);
   const context = await browser.newContext({ viewport: { width: 420, height: 880 } });
   const page = await context.newPage();
-  const errs = []; page.on('pageerror', e => errs.push(String(e)));
+  // Surface page-side errors as they happen: a JSX syntax error otherwise
+  // shows up only as an opaque "SPA never mounted" further down.
+  const errs = []; page.on('pageerror', e => { errs.push(String(e)); console.error('    [pageerror]', String(e)); });
   if (process.env.KIOSK_DEBUG) page.on('response', async r => { if (r.url().includes('gate.php')) { let b = ''; try { b = (await r.text()).slice(0, 200); } catch (_) {} console.log('    [resp]', r.request().method(), r.status(), r.url().split('/api')[1], b); } });
 
   let failed = 0;
@@ -114,7 +116,7 @@ function cleanup() {
   try {
     // Land on the gate desk (SPA: load root, then route to /gate?g=…).
     await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !!window.__navigate, null, { timeout: 15000 });
+    await waitForBoot(page);
     await page.evaluate(g => { history.pushState({}, '', '/gate?g=' + g); window.dispatchEvent(new PopStateEvent('popstate')); }, GATE);
     await page.waitForSelector('input[placeholder="Desk password"]', { timeout: 8000 });
     ok('gate desk renders the unlock form');

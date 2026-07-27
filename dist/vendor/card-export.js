@@ -249,11 +249,45 @@
     return function () { for (var j = 0; j < restore.length; j++) restore[j][0].setAttribute('src', restore[j][1]); };
   }
 
+  /* Fonts must be DECODED before html2canvas snapshots, not merely requested.
+   * The card sets its names in Inter 800; `font-display: swap` means an
+   * undecoded face paints in the system fallback, and html2canvas photographs
+   * exactly what is painted. So an export fired on a cold cache — the common
+   * case, since the studio is usually the first thing an operator opens —
+   * silently rasterises the wrong typeface, at the wrong widths, and nobody
+   * finds out until the sheets come back from the printer.
+   *
+   * `document.fonts.ready` alone is not enough: it settles when *pending*
+   * loads finish, and a face nothing has painted yet was never requested, so
+   * it resolves immediately and proves nothing. We ask for the weights the
+   * card uses by name first, then wait out the set.
+   *
+   * Bounded and memoised: a font server that never answers must degrade to
+   * the old behaviour (fallback face) rather than hang the export, and a
+   * 300-card roster pays this once. */
+  var CARD_FACES = ['800 42px "Inter"', '700 20px "Inter"', '600 16px "Inter"', '500 14px "Inter"', '400 14px "Inter"'];
+  var FONT_TIMEOUT = 4000;      // ms — past this, print with what we have
+  var _fontsReady = null;
+  function ensureFonts() {
+    if (_fontsReady) return _fontsReady;
+    var fonts = root.document && root.document.fonts;
+    if (!fonts || typeof fonts.load !== 'function') return (_fontsReady = Promise.resolve());
+    var work = Promise.all(CARD_FACES.map(function (f) {
+      // Plain-ASCII sample on purpose. `load()` only resolves faces covering
+      // the sample's codepoints, so probing with a glyph outside the latin
+      // subset would quietly match nothing and skip the load entirely.
+      return fonts.load(f, 'Ag').catch(function () {});
+    })).then(function () { return fonts.ready; }).catch(function () {});
+    _fontsReady = Promise.race([work, new Promise(function (r) { setTimeout(r, FONT_TIMEOUT); })]);
+    return _fontsReady;
+  }
+
   /* Rasterise a rendered card node with html2canvas. Returns a data URL (+ bytes
    * + pixel size). Images are inlined first so cross-origin photos never taint. */
   async function nodeToImage(node, o) {
     o = o || {};
     var d = await ensureDeps();
+    await ensureFonts();
     var restore = await inlineImages(node);
     try {
       var canvas = await d.html2canvas(node, {
@@ -857,7 +891,8 @@
   }
 
   root.CardExport = {
-    ensureDeps: ensureDeps, ensureZip: ensureZip, nodeToImage: nodeToImage, addBleed: addBleed,
+    ensureDeps: ensureDeps, ensureZip: ensureZip, ensureFonts: ensureFonts,
+    nodeToImage: nodeToImage, addBleed: addBleed,
     renderFace: renderFace, scaleForDpi: scaleForDpi, zipStore: zipStore,
     buildImpositionPDF: buildImpositionPDF, download: download, dataUrlToBytes: dataUrlToBytes,
     clearImageCache: clearImageCache,

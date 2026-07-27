@@ -227,4 +227,13 @@ function otpFromDb() {
     await browser.close();
   }
   console.log(process.exitCode ? 'SMOKE: FAIL' : 'SMOKE: PASS');
+  /* Exit explicitly. `teardown` is wired to the 'exit' event, but that event
+   * only fires once the event loop drains — and the spawned `php -S` keeps a
+   * live ChildProcess handle referenced, so it never does. (`detached: true`
+   * sets the process group; it does NOT unref the handle.) The result was a
+   * suite that printed PASS and then hung forever, which meant `test:all` —
+   * where this runs last — could never finish. Every other suite ends with an
+   * explicit exit for the same reason. */
+  teardown();
+  process.exit(process.exitCode ? 1 : 0);
 })();

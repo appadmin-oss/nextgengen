@@ -36,4 +36,34 @@ async function waitForServer(base, timeoutMs) {
   }
 }
 
-module.exports = { waitForServer };
+/* Wait for the SPA to actually mount.
+ *
+ * The browser suites serve the SOURCE tree, not `dist/`, so index.html pulls
+ * in ~17 `type="text/babel"` files and Chromium transpiles every one of them
+ * in-page before React mounts. That is deliberate — a failure then points at
+ * the file you just edited instead of at a stale build artifact — but it is
+ * slow, and it gets slower every time the app grows.
+ *
+ * Measured on this container: 13.3–14.0s. The suites used to allow 15s, which
+ * is not a margin, it is a coin flip — and it duly started failing at random
+ * once page-admin.jsx and page-other.jsx grew. Nothing was wrong with the app.
+ *
+ * So the budget is deliberately far above the observed cost. A boot that takes
+ * 20s is not a bug worth failing a suite over; a boot that never happens is,
+ * and that still fails — with a message that says what was being waited for
+ * rather than a bare Playwright timeout.
+ */
+const BOOT_TIMEOUT = 60000;
+
+async function waitForBoot(page, timeoutMs) {
+  try {
+    await page.waitForFunction(() => !!window.__navigate, null, { timeout: timeoutMs || BOOT_TIMEOUT });
+  } catch (e) {
+    const n = await page.evaluate(() => (document.getElementById('root') || {}).childElementCount || 0).catch(() => -1);
+    throw new Error('SPA never mounted (window.__navigate absent after '
+      + Math.round((timeoutMs || BOOT_TIMEOUT) / 1000) + 's; #root has ' + n
+      + ' children). Usually a JSX syntax error — check the page console output above.');
+  }
+}
+
+module.exports = { waitForServer, waitForBoot, BOOT_TIMEOUT };

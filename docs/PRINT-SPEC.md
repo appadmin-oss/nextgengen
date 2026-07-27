@@ -147,8 +147,8 @@ output through the OCG `/Usage` print state **and** an `/AS` auto-state in
 
 ## Typefaces
 
-The card sets its display type in **Inter** (400–800, loaded with the rest of
-the site) and the Ìlú Èkó watermark on the back in **Georgia**.
+The card sets its display type in **Inter** (400–800) and the Ìlú Èkó
+watermark on the back in **Georgia**.
 
 Two other faces used to be named in the card's font stacks — *TT Firs Neue*
 for the names and *Pagkaki* for the watermark — but neither file was ever in
@@ -159,11 +159,24 @@ renders. Nothing about the printed card changed.
 Inter is requested at weight 800 because the names are set at 800; without it
 the browser synthesises a faux bold, which smears noticeably at 350 DPI.
 
-One caveat worth knowing for print: Inter comes from Google Fonts, so if that
-is slow or blocked when an export runs, the faces rasterise in the system
-fallback instead — and cards exported in different sessions could differ.
-Self-hosting Inter beside the other vendored fonts in `assets/fonts/` would
-make the output deterministic.
+Two things make the type deterministic across export runs, and both matter
+because the studio rasterises the card to pixels — whatever is on screen at
+that instant is what goes to plate.
+
+**Inter is self-hosted.** The five weights are vendored as latin-subset woff2
+in `assets/fonts/`, declared in `assets/fonts/fonts.css`, and served from our
+own origin. Previously they came from Google Fonts, so an export run on a
+slow or filtered connection rasterised the system fallback instead and two
+batches printed on different days would not match.
+
+**The export waits for the faces to decode.** Self-hosting shrinks the race
+but does not close it: `font-display: swap` paints a fallback until the face
+arrives, and html2canvas photographs what is painted. `CardExport.ensureFonts()`
+asks for each card weight by name — `document.fonts.ready` alone is no use,
+because a face nothing has painted yet was never requested and it resolves
+immediately — then waits out the set. It runs once per session, in front of
+every rasterise, and gives up after 4s so an unreachable font server degrades
+to the fallback face rather than hanging a 300-card roster.
 
 ## Colour
 

@@ -28,7 +28,11 @@ function loadChromium() {
   const exe = process.env.CHROMIUM_PATH
     || (fs.existsSync('/opt/pw-browsers/chromium-1194/chrome-linux/chrome') ? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' : undefined);
 
-  fs.writeFileSync(FIX, '<!doctype html><html><body>'
+  fs.writeFileSync(FIX, '<!doctype html><html><head>'
+    // The real stylesheet, not a stub: the font assertions below double as a
+    // check that the vendored Inter woff2 files actually decode.
+    + '<link rel="stylesheet" href="/assets/fonts/fonts.css">'
+    + '</head><body>'
     + '<div id="card" class="idcard" style="width:295px;height:410px;background:#fff;position:relative;font-family:Inter,sans-serif;overflow:hidden">'
     + '<div style="position:absolute;top:180px;left:0;right:0;text-align:center;font-weight:800;font-size:26px;color:#E4155F">ADAEZE</div>'
     + '<div style="position:absolute;left:0;right:0;bottom:0;height:14px;background:#B0143C"></div>'
@@ -65,6 +69,21 @@ function loadChromium() {
       const CE = window.CardExport; await CE.ensureDeps();
       const node = document.getElementById('card');
       const TRIM_W = 54, TRIM_H = 75, BLEED = 3;
+
+      /* ── font readiness ──────────────────────────────────────────────────
+       * html2canvas photographs what is painted, and `font-display: swap`
+       * paints a system fallback until the real face decodes. An export on a
+       * cold cache therefore rasterises the wrong typeface at the wrong
+       * widths, invisibly, until the sheets come back from the printer.
+       *
+       * The probe weight is 600, which NOTHING in this fixture paints — the
+       * card sets one heading at 800. So the browser has no reason to have
+       * fetched it, and the "before" reading below is the control that keeps
+       * the "after" reading from being vacuous. */
+      const fontBefore = document.fonts.check('600 16px "Inter"');
+      await CE.ensureFonts();
+      const fontAfter = document.fonts.check('600 16px "Inter"');
+      const fontHeavyAfter = document.fonts.check('800 42px "Inter"');
 
       /* ── bleed generation ────────────────────────────────────────────────
        * The probe is the shape of the real artwork that broke in production:
@@ -298,9 +317,30 @@ function loadChromium() {
           && near(bleedBox && bleedBox.w, TRIM_W + 2 * BLEED) && near(bleedBox && bleedBox.h, TRIM_H + 2 * BLEED),
         oneUpPages: (ot.match(/\/Type \/Page[^s]/g) || []).length,
         slug: it.indexOf('/OutputIntents') !== -1,
+        fontBefore, fontAfter, fontHeavyAfter,
       };
     }, MM);
 
+    /* The font gate sits in front of EVERY rasterise, so a font host that
+     * accepts the connection and never answers must degrade to the fallback
+     * face — not hang the whole roster. Fresh page: ensureFonts memoises, so
+     * the hang can only be observed on a first call. */
+    const hungPage = await browser.newPage();
+    await hungPage.route('**/assets/fonts/*.woff2', () => {});
+    await hungPage.goto(BASE + '/tests/_export_fixture.html', { waitUntil: 'domcontentloaded' });
+    await hungPage.waitForFunction(() => !!window.CardExport, null, { timeout: 15000 });
+    const hung = await hungPage.evaluate(async () => {
+      const t = performance.now();
+      await window.CardExport.ensureFonts();
+      return { ms: performance.now() - t, loaded: document.fonts.check('600 16px "Inter"') };
+    });
+    await hungPage.close();
+
+    ok('Inter 600 is NOT loaded before the gate runs (control — else the next check proves nothing)', r.fontBefore === false);
+    ok('ensureFonts() decodes the card weights the page never painted', r.fontAfter === true);
+    ok('…including the 800 the names are set in (self-hosted woff2 is valid)', r.fontHeavyAfter === true);
+    ok('a font host that never answers times the gate out instead of hanging the export ('
+       + Math.round(hung.ms) + 'ms)', hung.ms < 6000 && hung.loaded === false);
     ok('a card whose asset host never answers still renders (' + r.firstDeadMs + 'ms)', r.firstDeadMs < 25000);
     ok('and the dead URL is not re-tried on later faces (' + r.laterDeadMs + 'ms)', r.laterDeadMs < 1500);
     ok('a cross-origin photo that cannot be inlined still reaches the card', r.photoKept);

@@ -1,6 +1,12 @@
-/* Self-hosted fonts for the Anchor design surfaces (Journal PWA + Circle
-   portal). CSP-safe + offline-first — no Google Fonts dependency. Latin subset,
-   woff2, vendored from @fontsource. */
+/* Self-hosted fonts. CSP-safe + offline-first — no Google Fonts dependency.
+   Latin subset, woff2, vendored from @fontsource (all SIL Open Font License).
+
+   Inter is here for a specific reason beyond speed: the ID card sets its
+   display type in it, and the studio rasterises the card to pixels for print.
+   Loaded from Google Fonts, an export run on a connection where that is slow
+   or blocked silently falls back to a system face — so two batches printed on
+   different days would not match. Served from our own origin, the output is
+   deterministic. */
 
 @font-face { font-family: "Bricolage Grotesque"; font-style: normal; font-weight: 600; font-display: swap; src: url("./bricolage-grotesque-latin-600-normal.woff2") format("woff2"); }
 @font-face { font-family: "Bricolage Grotesque"; font-style: normal; font-weight: 700; font-display: swap; src: url("./bricolage-grotesque-latin-700-normal.woff2") format("woff2"); }
@@ -13,3 +19,12 @@
 
 @font-face { font-family: "Space Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("./space-mono-latin-400-normal.woff2") format("woff2"); }
 @font-face { font-family: "Space Mono"; font-style: normal; font-weight: 700; font-display: swap; src: url("./space-mono-latin-700-normal.woff2") format("woff2"); }
+
+/* Inter — the ID card's display face, and the app's body face. 800 matters:
+   the card sets names at 800, and without the real weight the browser
+   synthesises a faux bold that smears visibly at 350 DPI. */
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap; src: url("./inter-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 500; font-display: swap; src: url("./inter-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 600; font-display: swap; src: url("./inter-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 700; font-display: swap; src: url("./inter-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 800; font-display: swap; src: url("./inter-latin-800-normal.woff2") format("woff2"); }

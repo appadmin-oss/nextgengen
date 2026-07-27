@@ -3272,8 +3272,8 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
 /* ============================================================================
    ID Card Studio (/cards) — renders the 2026 Summer ID design exactly:
    590×1004 front (logo lockup · circular photo with soft shadow · crimson
-   first name / navy surname in TT Firs Neue · track · QR of the check-in
-   token · centre-coloured bar) + back (Ìlú Èkó Pagkaki watermark · LCASP
+   first name / navy surname in Inter 800 · track · QR of the check-in
+   token · centre-coloured bar) + back (Ìlú Èkó watermark in Georgia · LCASP
    year · program contacts · printed ID). Admin-managed centres drive the
    bar colour and the CODE-YY-serial ID. Print = true 54×92mm per card.
    ============================================================================ */
@@ -3366,8 +3366,8 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
         {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 900)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
       </div>
       <div style={{ width: px(30), height: px(6), borderRadius: px(3), background: "#8FA3C8", margin: px(15) + "px 0 " + px(9) + "px", flex: "none" }}/>
-      <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
-      <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding:`0 ${px(16)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
+      <div style={{ textAlign: "center", fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
+      <div style={{ textAlign: "center", fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding:`0 ${px(16)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
       <div style={{ textAlign: "center", fontWeight: 500, fontSize: px(22), color: "#111", textTransform: "uppercase", letterSpacing: px(1.4), marginTop: px(9), flex: "none" }}>
         {(() => {
           // "Arts • Tye & Dye" → bold category, dot, regular course (v3 design).
@@ -3404,7 +3404,7 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
       {/* STS badge, straddling the top edge of the panel. */}
       <div style={{ position: "absolute", top: px(2), left: "50%", transform: "translateX(-50%)", width: px(116), height: px(116), zIndex: 2 }}>
         <div style={{ position: "absolute", inset: px(8), borderRadius: "50%", background: tint, boxShadow: `0 ${px(6)}px ${px(16)}px rgba(0,0,0,.18)`, display: "grid", placeItems: "center" }}>
-          <span style={{ fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(34), letterSpacing: px(1), color: "#fff" }}>STS</span>
+          <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(34), letterSpacing: px(1), color: "#fff" }}>STS</span>
         </div>
         <img src="/assets/idcard/logo-sts.svg" alt="Street-To-Stardom" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
           onError={e => { e.target.style.display = "none"; }}/>
@@ -3415,8 +3415,8 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
           {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
         </div>
         <div style={{ flex: "1 1 0", minHeight: px(6) }}/>
-        <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
-        <div style={{ textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.surname || " "}</div>
+        <div style={{ textAlign: "center", fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
+        <div style={{ textAlign: "center", fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.surname || " "}</div>
         <div style={{ width: px(360), maxWidth: "92%", height: 1, background: "#E4E4E4", marginTop: px(12), flex: "none" }}/>
         <div style={{ border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff", marginTop: px(14), flex: "none" }}>
           <CardQR token={card.token} size={px(112)}/>
@@ -3452,7 +3452,7 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
     ["ID", card.displayId, "M4 5h16v14H4zM8 9.5a2 2 0 1 0 4 0 2 2 0 0 0-4 0ZM7 15c.7-1.8 2.2-2.5 3-2.5s2.3.7 3 2.5M15 10h3M15 13h3"],
   ];
   const wm = [];
-  for (let i = 0; i < 9; i++) wm.push(<div key={i} style={{ fontFamily: '"Pagkaki", Georgia, serif', fontWeight: 800, fontSize: px(86), lineHeight: 1.28, color: "rgba(27,43,107,.045)", whiteSpace: "nowrap", textTransform: "uppercase", marginLeft: (i % 2 ? px(-70) : 0) }}>ÈKÓ ÌLÚ ÈKÓ ÌLÚ</div>);
+  for (let i = 0; i < 9; i++) wm.push(<div key={i} style={{ fontFamily: 'Georgia, serif', fontWeight: 800, fontSize: px(86), lineHeight: 1.28, color: "rgba(27,43,107,.045)", whiteSpace: "nowrap", textTransform: "uppercase", marginLeft: (i % 2 ? px(-70) : 0) }}>ÈKÓ ÌLÚ ÈKÓ ÌLÚ</div>);
   return (
     <div className="idcard" style={{ width: px(590), height: px(H), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>{wm}</div>
@@ -3467,7 +3467,7 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
         <rect width="590" height="26" fill={"url(#wv" + key + ")"}/>
         <rect y="24.4" width="590" height="1.6" fill="#9AA3BE" opacity="0.55"/>
       </svg>
-      <div style={{ position: "absolute", top: pt(170), left: 0, right: 0, textAlign: "center", fontFamily: '"TT Firs Neue","Inter",sans-serif', fontWeight: 800, fontSize: px(62), letterSpacing: px(-1) }}>
+      <div style={{ position: "absolute", top: pt(170), left: 0, right: 0, textAlign: "center", fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(62), letterSpacing: px(-1) }}>
         <span style={{ color: CARD_CRIMSON }}>{program.program}</span> <span style={{ color: CARD_NAVY }}>{program.year}</span>
       </div>
       <div style={{ position: "absolute", top: pt(244), left: 0, right: 0, textAlign: "center", fontWeight: 800, fontSize: px(23), color: CARD_NAVY, letterSpacing: px(2) }}>{program.motto}</div>
@@ -3746,17 +3746,48 @@ function CardStudio() {
   };
   const nextFrame = () => new Promise(r => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => r()) : setTimeout(r, 0)));
 
+  /* Which of the card's shared logos fail to load. The card hides a broken
+     logo rather than showing a torn-image icon — good on screen, but it means
+     a missing crest is invisible until the sheets come back from the printer.
+     Probed once per export, not per card. */
+  const missingCardArt = () => {
+    const art = [
+      ["Programme lockup", (program && program.logoLockup) || "/assets/idcard/logo-lockup.png"],
+      ["Okun Alimọsho crest", (program && program.logoOkun) || "/assets/idcard/logo-okun.png"],
+    ];
+    return Promise.all(art.map(([label, url]) => new Promise(res => {
+      if (!url) return res(label + " — not set");
+      const im = new Image();
+      const done = (bad) => res(bad ? label + " — " + url : null);
+      im.onload = () => done(!im.naturalWidth);
+      im.onerror = () => done(true);
+      setTimeout(() => done(!im.complete || !im.naturalWidth), 6000);
+      im.src = url;
+    }))).then(r => r.filter(Boolean));
+  };
+
   const exportPdf = async () => {
     if (exp || !cards.length) return;
     try {
-      // Preflight: a card with no photo prints the empty gradient frame, which
-      // looks like a printing fault on the finished sheet rather than missing
-      // data. Name them and let the operator decide before spending the run.
+      /* Preflight. Two things that are invisible on screen and obvious on
+         paper, both worth catching before a run of several hundred cards. */
+      const warn = [];
+      // 1. A card with no photo prints the empty gradient frame, which reads as
+      //    a printing fault rather than as missing data.
       const noPhoto = cards.filter(c => !c.photoUrl);
-      if (noPhoto.length && !confirm(
-        noPhoto.length + " of " + cards.length + " card(s) have no photo and will print an empty photo frame:\n\n"
-        + noPhoto.slice(0, 8).map(cardName).join(", ") + (noPhoto.length > 8 ? ", …" : "")
-        + "\n\nExport anyway?")) return;
+      if (noPhoto.length) {
+        warn.push(noPhoto.length + " of " + cards.length + " card(s) have no photo and will print an empty frame:\n  "
+          + noPhoto.slice(0, 8).map(cardName).join(", ") + (noPhoto.length > 8 ? ", …" : ""));
+      }
+      // 2. A card logo that 404s. The card hides a broken logo by design, so
+      //    the omission is silent — and one of these assets is not in the
+      //    repository, so a deploy that syncs the tree can drop it and every
+      //    card in the run comes out missing a crest with nothing to say so.
+      const missingArt = await missingCardArt();
+      if (missingArt.length) {
+        warn.push("Card artwork that will not load, so it prints missing:\n  " + missingArt.join("\n  "));
+      }
+      if (warn.length && !confirm(warn.join("\n\n") + "\n\nExport anyway?")) return;
       setExp("Preparing…");
       const CE = await ensureLib();
       // Scale to hit the chosen DPI at the chosen trim width (card is 295 CSS
@@ -3820,8 +3851,11 @@ function CardStudio() {
   );
   return shell(<>
     <style>{`
-      @font-face { font-family: "TT Firs Neue"; src: url("/assets/fonts/tt-firs-neue-800.woff") format("woff"); font-weight: 700 900; font-display: swap; }
-      @font-face { font-family: "Pagkaki"; src: url("/assets/fonts/pagkaki.woff2") format("woff2"); font-display: swap; }
+      /* TT Firs Neue and Pagkaki used to be declared here. Neither file was
+         ever in the repository, so every studio load fetched two 404s and the
+         browser fell through to the stack behind them. The names were taken
+         out of the card font stacks; these declarations were left behind,
+         still 404ing on every visit. Nothing about the printed card changes. */
       .card-pair { display: flex; gap: 14px; }
       @media print {
         body * { visibility: hidden; }
