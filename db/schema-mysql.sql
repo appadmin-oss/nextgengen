@@ -1048,3 +1048,42 @@ INSERT INTO schema_version (version) VALUES (62) ON DUPLICATE KEY UPDATE version
 -- not who they supervise. Defaults to 'summer' — what every mentor sees today.
 ALTER TABLE mentors ADD COLUMN programme VARCHAR(16) DEFAULT 'summer';
 INSERT INTO schema_version (version) VALUES (63) ON DUPLICATE KEY UPDATE version = version;
+
+-- 64: The Arcade — server-graded mini games in the community. The answer key
+-- lives on the round row and never reaches the client, `startedMs` is what the
+-- speed bonus is timed from (a client-reported duration would be the first
+-- thing edited), and `submittedAt` closes a round so nobody submits, reads
+-- their mistakes and submits again. `programme` on the score row keeps the
+-- Club and the Summer School off each other's boards.
+CREATE TABLE IF NOT EXISTS arcade_rounds (
+  roundId VARCHAR(32) PRIMARY KEY,
+  playerId VARCHAR(64) NOT NULL,
+  game VARCHAR(32) NOT NULL,
+  tier INT DEFAULT 1,
+  answerKey MEDIUMTEXT NOT NULL,
+  seconds INT NOT NULL,
+  startedAt VARCHAR(40) NOT NULL,
+  startedMs BIGINT NOT NULL DEFAULT 0,
+  submittedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_arcade_rounds_player (playerId, game),
+  INDEX idx_arcade_rounds_started (startedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS arcade_scores (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  roundId VARCHAR(32) NOT NULL,
+  playerId VARCHAR(64) NOT NULL,
+  playerType VARCHAR(16) DEFAULT '',
+  programme VARCHAR(16) DEFAULT '',
+  game VARCHAR(32) NOT NULL,
+  score INT NOT NULL DEFAULT 0,
+  correct INT DEFAULT 0,
+  total INT DEFAULT 0,
+  ms INT DEFAULT 0,
+  centre VARCHAR(120) DEFAULT '',
+  date VARCHAR(20) NOT NULL,
+  createdAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_arcade_score_round (roundId),
+  INDEX idx_arcade_score_board (programme, game, date),
+  INDEX idx_arcade_score_player (playerId, game)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (64) ON DUPLICATE KEY UPDATE version = version;

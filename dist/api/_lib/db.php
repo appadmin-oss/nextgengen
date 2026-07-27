@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 63;
+const NGG_SCHEMA_TARGET = 64;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1460,6 +1460,54 @@ function db_migrate(PDO $db): void {
         // so this preserves today's behaviour precisely rather than silently
         // handing anyone a cohort they did not have yesterday.
         63 => "ALTER TABLE mentors ADD COLUMN programme TEXT DEFAULT 'summer';",
+
+        // The Arcade — server-graded mini games in the community.
+        //
+        // `arcade_rounds` holds the answer key, which is the whole point: the
+        // client is sent questions and never answers, so a score cannot be
+        // manufactured by editing the page. `startedMs` is what the speed
+        // bonus is computed from — a client-reported duration would be the
+        // first thing anyone changed. `submittedAt` closes a round for good,
+        // so nobody submits, reads their mistakes, and submits again.
+        //
+        // `programme` on the score row is what keeps the Club and the Summer
+        // School off each other's boards; they are different cohorts of
+        // different ages and a shared ranking would be neither fair nor
+        // meaningful.
+        64 => "
+            CREATE TABLE arcade_rounds (
+              roundId TEXT PRIMARY KEY,
+              playerId TEXT NOT NULL,
+              game TEXT NOT NULL,
+              tier INTEGER DEFAULT 1,
+              answerKey TEXT NOT NULL,
+              seconds INTEGER NOT NULL,
+              startedAt TEXT NOT NULL,
+              startedMs INTEGER NOT NULL DEFAULT 0,
+              submittedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_arcade_rounds_player ON arcade_rounds(playerId, game);
+            CREATE INDEX idx_arcade_rounds_started ON arcade_rounds(startedAt);
+
+            CREATE TABLE arcade_scores (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              roundId TEXT NOT NULL,
+              playerId TEXT NOT NULL,
+              playerType TEXT DEFAULT '',
+              programme TEXT DEFAULT '',
+              game TEXT NOT NULL,
+              score INTEGER NOT NULL DEFAULT 0,
+              correct INTEGER DEFAULT 0,
+              total INTEGER DEFAULT 0,
+              ms INTEGER DEFAULT 0,
+              centre TEXT DEFAULT '',
+              date TEXT NOT NULL,
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_arcade_score_round ON arcade_scores(roundId);
+            CREATE INDEX idx_arcade_score_board ON arcade_scores(programme, game, date);
+            CREATE INDEX idx_arcade_score_player ON arcade_scores(playerId, game);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

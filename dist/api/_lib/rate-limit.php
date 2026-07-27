@@ -23,6 +23,13 @@ function rate_limit_default(string $op): ?array {
         'summer.profile'     => ['max' => 12, 'window' => 300],   // a minor's name + photo + attendance, by guessable handle
         'student.login'      => ['max' => 8,  'window' => 300],   // ID-card credential check — brute-force ceiling
         'community.post'     => ['max' => 12, 'window' => 60],    // feed post/comment write rate
+        // Starting a round writes a row and generates a question set. The limit
+        // is keyed on IP, and a whole centre shares one connection — a class of
+        // thirty children opening the arcade together is the NORMAL case, not
+        // an attack, so this has to clear that comfortably. It is a ceiling on
+        // a runaway script, nothing finer; the real gate is the session, and an
+        // abandoned round is pruned within the week.
+        'arcade.start'       => ['max' => 120, 'window' => 60],
     ];
     return $d[$op] ?? null;
 }

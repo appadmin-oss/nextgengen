@@ -209,6 +209,7 @@ const LEADERBOARD = {
             : b === 'policy' ? 'SummerPolicy' : b === 'att' ? 'SummerAttendance' : b === 'kiosk' ? 'SummerKiosk'
             : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : b === 'centre' ? 'CentreDetail'
             : b === 'builder' ? 'SummerFormBuilder' : b === 'gatereg' ? 'GateRegister'
+            : b === 'arcade' ? 'CmArcade'
             : b === 'roster' ? 'SummerRoster'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
@@ -440,6 +441,77 @@ const LEADERBOARD = {
                                  programmeDay: true, compliance: { state: 'warned' } });
       },
     };
+  } else if (b === 'arcade') {
+    /* The Arcade grades on the server, so the interesting client behaviour is
+       what it SENDS: the answers must line up with the questions they were
+       typed against, and a round must be submitted exactly once however the
+       clock and the Finish button race. Both are recorded here. */
+    var fast = new URLSearchParams(location.search).get('fast') === '1';
+    window.__submits = [];
+    window.__starts = [];
+    var GAMES = [
+      { key: 'maths', name: 'Number Rush', icon: '\u26a1', blurb: 'Twenty sums against the clock.',
+        skill: 'Mental arithmetic', kind: 'type', questions: 20, seconds: 90, best: 140, plays: 3, tier: 2, isDaily: false },
+      { key: 'naija', name: 'Naija Know-How', icon: 'NG', blurb: 'States, capitals and civics.',
+        skill: 'General knowledge', kind: 'choice', questions: 12, seconds: 100, best: 0, plays: 0, tier: 1, isDaily: true },
+      { key: 'spell', name: 'Spell It Right', icon: 'Ab', blurb: 'One of these four is spelt correctly.',
+        skill: 'Spelling', kind: 'choice', questions: 15, seconds: 90, best: 95, plays: 1, tier: 2, isDaily: false },
+      { key: 'word', name: 'Word Untangle', icon: 'WW', blurb: 'Put the letters back in order.',
+        skill: 'Vocabulary', kind: 'type', questions: 12, seconds: 120, best: 0, plays: 0, tier: 1, isDaily: false },
+    ];
+    window.NGGApi.member = window.NGGApi.member || {};
+    window.NGGApi.member.arcade = {
+      home: function () { return Promise.resolve({
+        games: GAMES, daily: 'naija', dailyDone: false, streak: 4, stars: 7,
+        programme: 'summer', totalPlays: 4 }); },
+      board: function (game, scope) {
+        window.__lastBoard = { game: game, scope: scope };
+        return Promise.resolve({
+          scope: scope, game: game, programme: 'summer',
+          board: [
+            { rank: 1, first: 'Zainab', initial: 'K.', centre: 'Ijaiye', best: 264, plays: 5, correct: 40, isMe: false },
+            { rank: 2, first: 'Emeka',  initial: 'O.', centre: 'Egbeda', best: 198, plays: 2, correct: 22, isMe: false },
+          ],
+          // Off the end of the visible list — must still be shown.
+          me: { rank: 37, first: 'Amaka', initial: 'A.', centre: 'Egbeda', best: 61, plays: 9, correct: 8, isMe: true },
+        });
+      },
+      start: function (game) {
+        window.__starts.push(game);
+        return Promise.resolve({
+          roundId: 'AR-TESTROUND', game: game, tier: 1, kind: 'choice',
+          // Deliberately short in fast mode so the auto-submit-on-expiry path
+          // can be exercised without waiting out a real round.
+          seconds: fast ? 1 : 100,
+          questions: [
+            { q: 'Capital of Ekiti State?',  options: ['Akure', 'Ado-Ekiti', 'Osogbo', 'Ibadan'] },
+            { q: 'Capital of Bayelsa State?', options: ['Yenagoa', 'Asaba', 'Calabar', 'Uyo'] },
+            { q: 'Capital of Zamfara State?', options: ['Gusau', 'Sokoto', 'Katsina', 'Dutse'] },
+          ],
+        });
+      },
+      submit: function (roundId, answers) {
+        window.__submits.push({ roundId: roundId, answers: answers.slice() });
+        /* In fast mode the grade is deliberately SLOW. That is what makes the
+           double-submit test real: the round stays on screen while the
+           countdown keeps ticking, which is exactly the window a player on a
+           poor connection sits in. Resolve it immediately and the component
+           unmounts before the next tick, so an unguarded submit looks fine. */
+        var body = {
+          score: 47, correct: 2, total: 3, seconds: 12.4,
+          breakdown: { base: 20, sweep: 0, speed: 7 },
+          best: 47, newBest: true, daily: true, streak: 5,
+          marks: [
+            { i: 0, ok: true,  answer: '1', given: '1' },
+            { i: 1, ok: false, answer: '0', given: '2' },
+            { i: 2, ok: true,  answer: '0', given: '0' },
+          ],
+        };
+        if (!fast) return Promise.resolve(body);
+        return new Promise(function (r) { setTimeout(function () { r(body); }, 1200); });
+      },
+    };
+    props = { auth: { member: { fullName: 'Amaka Amadi', centre: 'Egbeda' } } };
   } else { props = { setPage: function () {} }; }
   // Stand in for the export toolkit so a click can be traced all the way into
   // buildImpositionPDF without rasterising anything.
@@ -1178,7 +1250,13 @@ const LEADERBOARD = {
       await ce.evaluate(() => {
         const b = ['.centre-hero-cta', '.centre-stats'].map(q => document.querySelector(q))
           .find(el => el && getComputedStyle(el).display !== 'none');
-        if (b) b.scrollIntoView({ block: 'center' });
+        // behavior:'instant' is load-bearing, not tidiness. The site sets
+        // `html { scroll-behavior: smooth }`, which makes every scroll here
+        // ANIMATED — so the geometry read on the next line is of the position
+        // the page has not moved to yet. It happened to settle in time on a
+        // light run and not on a heavy one, which is exactly the shape of the
+        // flake this assertion kept showing.
+        if (b) b.scrollIntoView({ block: 'center', behavior: 'instant' });
       });
       await ce.waitForTimeout(150);
       const geo = await ce.evaluate(async () => {
@@ -1221,7 +1299,10 @@ const LEADERBOARD = {
           // Aim for 70% down the viewport: comfortably inside, and reachable
           // even when the point is near the bottom of the document.
           const before = window.scrollY;
-          window.scrollBy(0, Math.round(y - window.innerHeight * 0.7));
+          // Instant, for the same reason as above: an animated scroll leaves
+          // scrollY unchanged on the very next line, and this loop would read
+          // that as "cannot scroll further" and give up where it stood.
+          window.scrollBy({ top: Math.round(y - window.innerHeight * 0.7), behavior: 'instant' });
           if (window.scrollY === before) break;   // cannot scroll further
         }
         const i = img.getBoundingClientRect();
@@ -1688,6 +1769,116 @@ const LEADERBOARD = {
     ok('uploadFile puts the resampled image on the wire, not the original ('
       + Math.round(orig / 1024) + 'KB → ' + Math.round(sentBytes / 1024) + 'KB sent)',
       sentBytes > 0 && sentBytes < orig / 2);
+    /* ── The Arcade ────────────────────────────────────────────────────────
+     * Scoring lives on the server, so what matters on this side is that the
+     * right thing is SENT: the answers indexed against the questions they were
+     * chosen for, and exactly one submission per round. Both have a way of
+     * looking fine on screen while being wrong on the wire. */
+    const arc = await browser.newPage();
+    const arcErrs = [];
+    arc.on('pageerror', e => arcErrs.push(String(e.message)));
+    await arc.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok', { waitUntil: 'networkidle' });
+    await arc.waitForSelector('.arc-card', { timeout: 15000 });
+    const arcHome = await arc.evaluate(() => document.body.innerText);
+    ok('the Arcade mounts with no script error', arcErrs.length === 0);
+    if (arcErrs.length) console.error('       ', arcErrs.slice(0, 3).join(' | '));
+    ok('…and lists every game in the catalogue',
+       await arc.evaluate(() => document.querySelectorAll('.arc-card').length) === 4);
+    ok('…with exactly one flagged as today\'s challenge',
+       await arc.evaluate(() => document.querySelectorAll('.arc-card.is-daily').length) === 1);
+    ok('…which is the one the hero offers to play', /Naija Know-How/.test(arcHome.split('Leaderboard')[0]));
+    /* Read out of their own cells, not matched anywhere in the page text: the
+       board is full of numbers and a bare /\b4\b/ would pass on a coincidence.
+       The mentor-star figure in particular is READ from the payload — if the
+       arcade ever starts computing one of its own, this stops matching. */
+    const arcStats = await arc.evaluate(() => {
+      const out = {};
+      document.querySelectorAll('.arc-stats > div').forEach(d => {
+        out[d.querySelector('dt').textContent.trim()] = d.querySelector('dd').textContent.trim();
+      });
+      return out;
+    });
+    ok('…the streak, plays and mentor stars are the server\'s numbers (' + JSON.stringify(arcStats) + ')',
+       arcStats['Day streak'] === '4\u{1F525}' && arcStats['Rounds played'] === '4'
+       && arcStats['Mentor stars'] === '7\u2B50');
+    ok('…a game with a best score shows it, and one never played says so',
+       /140/.test(arcHome) && /Not played yet/.test(arcHome));
+
+    // Leaderboard: the viewer's own row must survive being off the visible end.
+    ok('the leaderboard renders the ranked players', /Zainab K\./.test(arcHome) && /Emeka O\./.test(arcHome));
+    ok('…and a player ranked off the end of the board still sees their own row',
+       /Amaka A\./.test(arcHome) && /37/.test(arcHome));
+    ok('…marked as theirs', await arc.evaluate(() => !!document.querySelector('.arc-board-row.is-me')));
+    ok('…and the board says which programme it is for, so the two never look shared',
+       /Summer School board/.test(arcHome));
+
+    /* Play a round. Question 2 is answered, then Back, then question 1 — the
+       order that breaks an implementation keying answers off "the current
+       index at submit time" rather than off the question. */
+    await arc.evaluate(() => Array.from(document.querySelectorAll('.arc-card')).find(c => /Naija/.test(c.textContent)).querySelector('.arc-play').click());
+    await arc.waitForSelector('.arc-opt', { timeout: 10000 });
+    ok('starting a game opens a round', (await arc.evaluate(() => window.__starts)).join() === 'naija');
+    ok('…showing the first question and its options',
+       await arc.evaluate(() => document.querySelectorAll('.arc-opt').length) === 4
+       && /Capital of Ekiti/.test(await arc.evaluate(() => document.body.innerText)));
+
+    const arcPick = (n) => arc.evaluate((i) => document.querySelectorAll('.arc-opt')[i].click(), n);
+    const arcNext = () => arc.evaluate(() => document.querySelector('.arc-next').click());
+    await arcPick(1);                    // Q1 → option B
+    await arcNext();
+    await arc.waitForFunction(() => /Bayelsa/.test(document.body.innerText), null, { timeout: 5000 });
+    await arcPick(3);                    // Q2 → option D
+    await arc.evaluate(() => document.querySelector('.arc-sec').click());   // Back to Q1
+    await arc.waitForFunction(() => /Ekiti/.test(document.body.innerText), null, { timeout: 5000 });
+    ok('going back to an answered question shows the answer still selected',
+       await arc.evaluate(() => document.querySelectorAll('.arc-opt')[1].getAttribute('aria-checked') === 'true'));
+    await arcPick(0);                    // change Q1 → option A
+    await arcNext();                     // → Q2
+    await arcNext();                     // → Q3 (unanswered)
+    await arc.waitForFunction(() => /Zamfara/.test(document.body.innerText), null, { timeout: 5000 });
+    await arc.evaluate(() => document.querySelector('.arc-next.is-finish').click());
+    await arc.waitForSelector('.arc-score', { timeout: 10000 });
+
+    const sent = await arc.evaluate(() => window.__submits);
+    ok('finishing submits the round exactly once', sent.length === 1 && sent[0].roundId === 'AR-TESTROUND');
+    /* Q1 was changed from B to A, Q2 is D, Q3 was never answered. Anything
+       other than ['0','3',''] means the answers drifted off their questions. */
+    ok('…with each answer against the question it was chosen for (' + JSON.stringify(sent[0] && sent[0].answers) + ')',
+       sent.length === 1 && sent[0].answers.length === 3
+       && sent[0].answers[0] === '0' && sent[0].answers[1] === '3' && sent[0].answers[2] === '');
+
+    const arcRes = await arc.evaluate(() => document.body.innerText);
+    ok('the result screen shows the score the server returned', /47/.test(arcRes));
+    ok('…broken down rather than as one opaque number', /\+20/.test(arcRes) && /\+7/.test(arcRes));
+    ok('…flags a personal best', /New personal best/i.test(arcRes));
+    ok('…and shows what was missed, now the round is closed', /you put/.test(arcRes));
+    await arc.close();
+
+    /* The clock running out has to submit — once. The expiry tick and a tap on
+       Finish can land in the same frame, and a second submission comes back
+       "already played" over the top of a real score. */
+    const arcT = await browser.newPage();
+    const arcTErrs = [];
+    arcT.on('pageerror', e => arcTErrs.push(String(e.message)));
+    await arcT.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok&fast=1', { waitUntil: 'networkidle' });
+    await arcT.waitForSelector('.arc-card', { timeout: 15000 });
+    await arcT.evaluate(() => document.querySelector('.arc-card .arc-play').click());
+    // Not waitForSelector: a clock that never fires is a legitimate failure of
+    // the first assertion below, not a harness crash that takes the rest of
+    // the run with it.
+    let arcTGraded = true;
+    try { await arcT.waitForSelector('.arc-score', { timeout: 12000 }); }
+    catch (_) { arcTGraded = false; }
+    // The grade is held for 1200ms in fast mode, so the countdown goes on
+    // ticking behind it. Wait past that for any stray second submission.
+    await arcT.waitForTimeout(900);
+    const timedOut = await arcT.evaluate(() => window.__submits);
+    await arcT.close();
+    ok('a round whose clock runs out submits itself without being told',
+       arcTErrs.length === 0 && arcTGraded && timedOut.length >= 1);
+    ok('…exactly once, however the ticking clock and a slow grade overlap (' + timedOut.length + ')',
+       timedOut.length === 1);
+
   } catch (e) { fail++; console.error('  ✗ harness error: ' + (e && e.message)); }
   // KEEP_FIX=1 leaves tests/_boards_fixture.html on disk so a failing board can
   // be opened by hand under `php -S`. Off by default; the fixture is generated.

@@ -664,7 +664,10 @@ function CommunityPublic({ setPage, auth }) {
             </div>
           </div>
           <h1 className="display" style={{ fontWeight: 800, fontSize: "clamp(30px,4.6vw,48px)", letterSpacing: "-0.03em", lineHeight: 1, margin: "18px 0 10px" }}>The Genius community.</h1>
-          <p style={{ color: "rgba(255,255,255,0.68)", fontSize: 15, maxWidth: 560, margin: "0 0 20px" }}>Every centre, every track, one movement. The live chat, channels and showcase are a private, members-only space — sign in to join.</p>
+          {/* The Arcade is named here on purpose. It lives behind the sign-in,
+              which means nobody discovers it by browsing — the same way the
+              mentor platform went unfound until it was pointed at. */}
+          <p style={{ color: "rgba(255,255,255,0.68)", fontSize: 15, maxWidth: 560, margin: "0 0 20px" }}>Every centre, every track, one movement. The live chat, channels, showcase and the <b style={{ color: "#fff" }}>🎮 Arcade</b> — daily brain games with their own leaderboard — are a private, members-only space. Sign in to join.</p>
 
           <div className="cm-pub-doors">
             <button className="btn btn-gold btn-lg" onClick={() => auth.openSignIn && auth.openSignIn()}>Sign in to join →</button>
@@ -817,9 +820,15 @@ function CommunityApp({ setPage, auth }) {
   const [info, setInfo] = React.useState(false);          // channel-details pane
   const [chMembers, setChMembers] = React.useState(null); // members rail (chat view)
   const me = (auth.member && auth.member.fullName) || "You";
+  /* The Arcade is a destination in the sidebar, not a channel — it has no
+     feed, no members rail and no composer. Named once here so every
+     "is this a channel?" test below can exclude it, rather than each one
+     growing its own list of exceptions. A live search still wins: typing in
+     the sidebar takes you back to results from wherever you were. */
+  const isArcade = active === "arcade" && results === null;
   // A specific channel = chat layout (compact rows, members rail, oldest→newest);
   // All activity / Saved / search = a media-forward card feed (newest first).
-  const isChat = active !== "all" && active !== "bookmarks" && results === null;
+  const isChat = active !== "all" && active !== "bookmarks" && active !== "arcade" && results === null;
   const postsRef = React.useRef([]);
   const streamRef = React.useRef(null);
   const searchRef = React.useRef(null);
@@ -883,7 +892,7 @@ function CommunityApp({ setPage, auth }) {
 
   // Channel members rail (chat view only).
   React.useEffect(() => {
-    if (active === "all" || active === "bookmarks") { setChMembers(null); return; }
+    if (active === "all" || active === "bookmarks" || active === "arcade") { setChMembers(null); return; }
     let a = true; setChMembers(null);
     NGGApi.member.community.members(active).then(r => { if (a) setChMembers(r.members || []); }).catch(() => { if (a) setChMembers([]); });
     return () => { a = false; };
@@ -893,6 +902,10 @@ function CommunityApp({ setPage, auth }) {
   // the feed, then mark it read so the sidebar badge clears.
   React.useEffect(() => {
     setPosts(null); setPage2(0); setFresh(null); setThread(null);
+    // The Arcade has no feed. Loading one for it would fetch an empty channel
+    // on every visit and, worse, leave `posts` at [] so a return to All
+    // activity flashed "nothing here yet" before the real feed landed.
+    if (active === "arcade") return;
     const chObj = channels.find(c => c.slug === active);
     setUnreadMark(chObj ? (chObj.unread || 0) : 0);
     loadFeed(active, sort, 0, false);
@@ -922,7 +935,7 @@ function CommunityApp({ setPage, auth }) {
   // Near-real-time polling. If the reader is at the bottom, splice new messages
   // straight in (Slack-style); otherwise surface an unobtrusive pill.
   React.useEffect(() => {
-    if (active === "bookmarks" || results !== null) return;
+    if (active === "bookmarks" || active === "arcade" || results !== null) return;
     const tick = () => {
       if (document.hidden) return;
       NGGApi.member.community.feed(active, sort, 0).then(r => {
@@ -983,8 +996,8 @@ function CommunityApp({ setPage, auth }) {
   // Chronological (oldest→newest) render order with author grouping.
   const chrono = React.useMemo(() => (posts ? [...posts].reverse() : posts), [posts]);
   const dividerIdx = (!results && chrono && unreadMark > 0) ? Math.max(0, chrono.length - unreadMark) : -1;
-  const headTitle = active === "all" ? "All activity" : active === "bookmarks" ? "Saved items" : (activeChannel ? activeChannel.name : active);
-  const headIcon = active === "all" ? "✦" : active === "bookmarks" ? "🔖" : (activeChannel ? activeChannel.icon : "#");
+  const headTitle = active === "all" ? "All activity" : active === "bookmarks" ? "Saved items" : active === "arcade" ? "Arcade" : (activeChannel ? activeChannel.name : active);
+  const headIcon = active === "all" ? "✦" : active === "bookmarks" ? "🔖" : active === "arcade" ? "🎮" : (activeChannel ? activeChannel.icon : "#");
 
   // Sidebar mentors: the staff of the channel currently open (no fabricated
   // presence — we only surface who is actually a mentor here).
@@ -1024,6 +1037,9 @@ function CommunityApp({ setPage, auth }) {
             </button>
             <button className={"cm-sb-item" + (active === "bookmarks" ? " is-active" : "")} aria-current={active === "bookmarks" ? "page" : undefined} onClick={() => go("bookmarks")}>
               <span className="cm-sb-ic" aria-hidden="true">{cmNavIcon("saved")}</span><span className="cm-sb-name">Saved items</span>
+            </button>
+            <button className={"cm-sb-item" + (active === "arcade" ? " is-active" : "")} aria-current={active === "arcade" ? "page" : undefined} onClick={() => go("arcade")}>
+              <span className="cm-sb-ic" aria-hidden="true">🎮</span><span className="cm-sb-name">Arcade</span>
             </button>
             <div className="cm-sb-section" role="heading" aria-level={2}>
               <span>Channels</span>
@@ -1083,16 +1099,17 @@ function CommunityApp({ setPage, auth }) {
               {activeChannel && <span className="cm-hd-topic">{activeChannel.description}</span>}
             </div>
             <div className="cm-hd-actions">
-              {active !== "bookmarks" && !results && (
+              {active !== "bookmarks" && !isArcade && !results && (
                 <div className="cm-hd-sort" role="group" aria-label="Sort messages">
                   {[["latest", isChat ? "Newest" : "New"], ["trending", "Hot"]].map(([v, l]) => <button key={v} className={"cm-hd-sortbtn" + (sort === v ? " is-active" : "")} aria-pressed={sort === v} onClick={() => setSort(v)}>{l}</button>)}
                 </div>
               )}
-              <button className="cm-hd-btn" onClick={catchMeUp} aria-label="AI catch-up summary" title="AI catch-up">✨</button>
-              <button className={"cm-hd-btn" + (info ? " is-on" : "")} onClick={() => setInfo(v => !v)} aria-label="Channel details" aria-expanded={info} title="Details">ⓘ</button>
+              {!isArcade && <button className="cm-hd-btn" onClick={catchMeUp} aria-label="AI catch-up summary" title="AI catch-up">✨</button>}
+              {!isArcade && <button className={"cm-hd-btn" + (info ? " is-on" : "")} onClick={() => setInfo(v => !v)} aria-label="Channel details" aria-expanded={info} title="Details">ⓘ</button>}
             </div>
           </header>
 
+          {isArcade ? <div className="cm-stream is-feed"><CmArcade auth={auth}/></div> : (
           <div className={"cm-stream" + (isChat ? " is-chat" : " is-feed")} ref={streamRef} onScroll={onStreamScroll}
             role={isChat ? "log" : "feed"} aria-label={headTitle + " messages"} aria-busy={posts === null} {...(isChat ? { "aria-live": "polite", "aria-relevant": "additions" } : {})}>
             {/* Pinned brief for a channel (its description) */}
@@ -1131,8 +1148,9 @@ function CommunityApp({ setPage, auth }) {
             )}
             {fresh && <button className="cm-fresh" onClick={showFresh}>↓ New messages — jump to latest</button>}
           </div>
+          )}
 
-          {active !== "bookmarks" && !results && (
+          {active !== "bookmarks" && !isArcade && !results && (
             <div className="cm-dock">
               <CmComposer channels={channels} active={active} me={me} onPosted={onPosted} enterToSend={isChat}/>
             </div>
@@ -1140,7 +1158,7 @@ function CommunityApp({ setPage, auth }) {
         </main>
 
         {/* ── Right column: thread > details > channel members ─────── */}
-        {thread ? (
+        {isArcade ? null : thread ? (
           <CmThread post={thread} me={me} channels={channels} onClose={() => setThread(null)} onPatch={patchPost} onRemove={removePost}/>
         ) : info ? (
           <aside className="cm-info">
@@ -1174,6 +1192,363 @@ function CommunityApp({ setPage, auth }) {
 
       {digest && <CmDigest digest={digest} onClose={() => setDigest(null)}/>}
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   The Arcade — short, replayable mini games inside the Community.
+
+   Everything that decides a score happens on the server: it mints a round,
+   keeps the answer key, and grades the submission. This file therefore holds
+   no answers and no scoring, only the surface — which is exactly the point.
+   A player can read every line of it and learn nothing useful.
+
+   The clock shown here is a display of the server's clock, not the authority
+   for it. Running out on screen submits what the player has; the server
+   decides whether that was in time.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function CmArcade({ auth }) {
+  const [home, setHome] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [round, setRound] = React.useState(null);    // active round (playing)
+  const [result, setResult] = React.useState(null);  // graded round
+  const [starting, setStarting] = React.useState("");
+
+  const load = React.useCallback(() => {
+    NGGApi.member.arcade.home()
+      .then(r => { setHome(r); setErr(""); })
+      .catch(e => setErr((e && e.message) || "Could not open the Arcade."));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const play = (game) => {
+    if (starting) return;
+    setStarting(game); setErr("");
+    NGGApi.member.arcade.start(game)
+      .then(r => { setResult(null); setRound(r); })
+      .catch(e => setErr((e && e.message) || "Could not start that game."))
+      .then(() => setStarting(""));
+  };
+
+  const onGraded = (r, game) => { setRound(null); setResult({ ...r, game }); load(); };
+  const backToHome = () => { setRound(null); setResult(null); };
+
+  if (round) return <ArcadeRound round={round} onGraded={onGraded} onQuit={backToHome}/>;
+  if (result) return <ArcadeResult result={result} games={(home && home.games) || []}
+                                  onAgain={() => play(result.game)} onDone={backToHome}/>;
+
+  return (
+    <div className="arc" data-screen-label="Arcade">
+      {err && <div className="arc-err" role="alert">{err}</div>}
+      {!home ? (
+        <div className="arc-skels">{[0, 1, 2, 3].map(i => <div key={i} className="arc-skel"/>)}</div>
+      ) : (
+        <>
+          <ArcadeHero home={home} onPlay={play} busy={starting}/>
+          <div className="arc-grid">
+            {home.games.map(g => (
+              <ArcadeCard key={g.key} game={g} busy={starting === g.key} onPlay={() => play(g.key)}/>
+            ))}
+          </div>
+          <ArcadeBoard games={home.games} programme={home.programme}/>
+          <p className="arc-fineprint">
+            Rounds are marked on the server, so nobody can type their way to the top of the board.
+            The Club and the Summer School have separate boards.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ArcadeHero({ home, onPlay, busy }) {
+  const daily = home.games.find(g => g.isDaily);
+  return (
+    <header className="arc-hero">
+      <div className="arc-hero-txt">
+        <div className="arc-eyebrow">Today’s challenge</div>
+        <h1 className="arc-hero-h">{daily ? daily.icon + " " + daily.name : "The Arcade"}</h1>
+        <p className="arc-hero-p">{daily ? daily.blurb : "Short games. Real skills."}</p>
+        <button className="arc-cta" onClick={() => daily && onPlay(daily.key)} disabled={!daily || !!busy}>
+          {home.dailyDone ? "Play it again" : "Play today’s challenge"}
+        </button>
+        {home.dailyDone && <span className="arc-done" role="status">✓ Done today — your streak is safe</span>}
+      </div>
+      <dl className="arc-stats">
+        <div><dt>Day streak</dt><dd>{home.streak}<span aria-hidden="true">🔥</span></dd></div>
+        <div><dt>Rounds played</dt><dd>{home.totalPlays}</dd></div>
+        {/* Mentor stars, shown for context. The Arcade never awards one — they
+            mean something a game has no business changing. */}
+        <div><dt>Mentor stars</dt><dd>{home.stars}<span aria-hidden="true">⭐</span></dd></div>
+      </dl>
+    </header>
+  );
+}
+
+function ArcadeCard({ game, onPlay, busy }) {
+  return (
+    <article className={"arc-card" + (game.isDaily ? " is-daily" : "")}>
+      <div className="arc-card-top">
+        <span className="arc-card-ic" aria-hidden="true">{game.icon}</span>
+        {game.isDaily && <span className="arc-tag">Daily</span>}
+      </div>
+      <h3 className="arc-card-h">{game.name}</h3>
+      <p className="arc-card-p">{game.blurb}</p>
+      <div className="arc-card-meta">
+        <span>{game.skill}</span>
+        <span aria-hidden="true">·</span>
+        <span>{game.questions} in {game.seconds}s</span>
+      </div>
+      <div className="arc-card-foot">
+        <div className="arc-best">
+          {game.plays > 0
+            ? <><b>{game.best}</b> best · {game.plays} play{game.plays === 1 ? "" : "s"} · level {game.tier}</>
+            : <span className="arc-new">Not played yet</span>}
+        </div>
+        <button className="arc-play" onClick={onPlay} disabled={busy}>{busy ? "…" : "Play"}</button>
+      </div>
+    </article>
+  );
+}
+
+/* ---- One round ------------------------------------------------------- */
+
+function ArcadeRound({ round, onGraded, onQuit }) {
+  const total = round.questions.length;
+  const [i, setI] = React.useState(0);
+  const [answers, setAnswers] = React.useState(() => round.questions.map(() => ""));
+  const [left, setLeft] = React.useState(round.seconds);
+  const [sending, setSending] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const inputRef = React.useRef(null);
+  const sentRef = React.useRef(false);
+  const answersRef = React.useRef(answers);
+  React.useEffect(() => { answersRef.current = answers; }, [answers]);
+
+  const submit = React.useCallback(() => {
+    // Guarded with a ref, not with `sending`: the timer's expiry and a tap on
+    // Finish can land in the same frame, and two submissions means the second
+    // comes back "already_played" over the top of a real score.
+    if (sentRef.current) return;
+    sentRef.current = true;
+    setSending(true);
+    NGGApi.member.arcade.submit(round.roundId, answersRef.current)
+      .then(r => onGraded(r, round.game))
+      .catch(e => {
+        setErr((e && e.message) || "Could not send that round.");
+        setSending(false);
+        // A failed send is recoverable — the round is only spent once the
+        // server actually grades it, so let them try again.
+        sentRef.current = false;
+      });
+  }, [round, onGraded]);
+
+  /* The countdown runs off a wall-clock deadline, not off a decrementing
+     counter. setInterval drifts, and a backgrounded tab stops firing it
+     altogether — a player who switched apps would come back to a clock that
+     had barely moved while the server's had run out. */
+  React.useEffect(() => {
+    const deadline = Date.now() + round.seconds * 1000;
+    const tick = () => {
+      const s = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+      setLeft(s);
+      if (s <= 0) submit();
+    };
+    tick();
+    const t = setInterval(tick, 250);
+    return () => clearInterval(t);
+  }, [round, submit]);
+
+  React.useEffect(() => { if (inputRef.current) inputRef.current.focus(); }, [i]);
+
+  const q = round.questions[i];
+  const setAnswer = (v) => setAnswers(a => { const n = a.slice(); n[i] = v; return n; });
+  const next = () => (i + 1 < total ? setI(i + 1) : submit());
+  const prev = () => setI(x => Math.max(0, x - 1));
+  const answered = answers.filter(a => String(a) !== "").length;
+  const urgent = left <= 10;
+
+  return (
+    <div className="arc arc-play-wrap" data-screen-label="Arcade round">
+      <header className="arc-run-hd">
+        <button className="arc-quit" onClick={onQuit} disabled={sending}>← Leave</button>
+        <div className="arc-run-prog" aria-hidden="true">
+          <div className="arc-run-bar" style={{ width: (total ? ((i + 1) / total) * 100 : 0) + "%" }}/>
+        </div>
+        <div className={"arc-clock" + (urgent ? " is-urgent" : "")} role="timer" aria-live="off">
+          {left}s
+        </div>
+      </header>
+      {/* The clock is decorative for assistive tech (a per-second live region
+          is unusable); the count of answered questions is the useful signal. */}
+      <div className="sr-only" aria-live="polite">
+        Question {i + 1} of {total}. {answered} answered.
+      </div>
+
+      {err && <div className="arc-err" role="alert">{err}</div>}
+
+      <div className="arc-stage">
+        <div className="arc-qnum">Question {i + 1} <span>of {total}</span></div>
+        {round.kind === "choice" ? (
+          <>
+            <h2 className="arc-q">{q.q}</h2>
+            <div className="arc-opts" role="radiogroup" aria-label={q.q}>
+              {(q.options || []).map((opt, oi) => (
+                <button key={oi} type="button" role="radio" aria-checked={String(answers[i]) === String(oi)}
+                  className={"arc-opt" + (String(answers[i]) === String(oi) ? " is-picked" : "")}
+                  onClick={() => { setAnswer(String(oi)); }}>
+                  <span className="arc-opt-k" aria-hidden="true">{"ABCD"[oi] || oi + 1}</span>
+                  <span className="arc-opt-t">{opt}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className={"arc-q" + (round.game === "word" ? " arc-q-scramble" : " arc-q-sum")}>{q.q}</h2>
+            {q.letters ? <div className="arc-hint">{q.letters} letters</div> : null}
+            <form onSubmit={(e) => { e.preventDefault(); next(); }}>
+              <input ref={inputRef} className="arc-in" value={answers[i]}
+                onChange={e => setAnswer(e.target.value)}
+                // Arithmetic wants the number pad on a phone; a word wants
+                // letters, with the browser's autocorrect out of the way — it
+                // "fixes" a deliberately scrambled word into something else.
+                inputMode={round.game === "maths" ? "numeric" : "text"}
+                autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                aria-label={round.game === "word" ? "Unscramble " + q.q : q.q}
+                placeholder={round.game === "maths" ? "Answer" : "Type the word"}/>
+            </form>
+          </>
+        )}
+      </div>
+
+      <footer className="arc-run-ft">
+        <button className="arc-sec" onClick={prev} disabled={i === 0 || sending}>Back</button>
+        <span className="arc-count">{answered}/{total} answered</span>
+        {i + 1 < total
+          ? <button className="arc-next" onClick={next} disabled={sending}>Next</button>
+          : <button className="arc-next is-finish" onClick={submit} disabled={sending}>{sending ? "Marking…" : "Finish"}</button>}
+      </footer>
+    </div>
+  );
+}
+
+/* ---- Result ---------------------------------------------------------- */
+
+function ArcadeResult({ result, games, onAgain, onDone }) {
+  const g = games.find(x => x.key === result.game);
+  const pct = result.total ? Math.round((result.correct / result.total) * 100) : 0;
+  return (
+    <div className="arc arc-result" data-screen-label="Arcade result">
+      <div className={"arc-score" + (result.newBest ? " is-best" : "")}>
+        {result.newBest && <div className="arc-best-flag">New personal best</div>}
+        <div className="arc-score-n">{result.score}</div>
+        <div className="arc-score-l">points</div>
+        <div className="arc-score-sub">
+          {result.correct}/{result.total} correct ({pct}%) in {result.seconds}s
+        </div>
+      </div>
+
+      <ul className="arc-break">
+        <li><span>Correct answers</span><b>+{result.breakdown.base}</b></li>
+        {result.breakdown.sweep > 0 && <li className="is-bonus"><span>Every single one right</span><b>+{result.breakdown.sweep}</b></li>}
+        <li><span>Speed bonus</span><b>+{result.breakdown.speed}</b></li>
+      </ul>
+
+      {result.daily && (
+        <div className="arc-streak-note">
+          🔥 Daily challenge done — <b>{result.streak} day{result.streak === 1 ? "" : "s"}</b> in a row.
+        </div>
+      )}
+
+      {/* The answers are only shown once the round is closed, which is why the
+          server can afford to send them: a quiz that will not tell a child what
+          they got wrong has taught them nothing. */}
+      <details className="arc-marks" open={result.correct < result.total}>
+        <summary>See what you missed</summary>
+        <ol>
+          {(result.marks || []).map(m => (
+            <li key={m.i} className={m.ok ? "is-ok" : "is-no"}>
+              <span className="arc-mark-ic" aria-hidden="true">{m.ok ? "✓" : "✕"}</span>
+              <span className="arc-mark-a">{m.answer}</span>
+              {!m.ok && <span className="arc-mark-g">{m.given ? "you put “" + m.given + "”" : "left blank"}</span>}
+            </li>
+          ))}
+        </ol>
+      </details>
+
+      <div className="arc-result-ft">
+        <button className="arc-sec" onClick={onDone}>Back to the Arcade</button>
+        <button className="arc-cta" onClick={onAgain}>Play {g ? g.name : "again"} again</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Leaderboard ----------------------------------------------------- */
+
+function ArcadeBoard({ games, programme }) {
+  const [game, setGame] = React.useState(games.length ? games[0].key : "");
+  const [scope, setScope] = React.useState("week");
+  const [data, setData] = React.useState(null);
+  React.useEffect(() => {
+    let live = true; setData(null);
+    NGGApi.member.arcade.board(game, scope)
+      .then(r => { if (live) setData(r); })
+      .catch(() => { if (live) setData({ board: [], me: null }); });
+    return () => { live = false; };
+  }, [game, scope]);
+
+  const rows = (data && data.board) || [];
+  // A board that stops at fifteen tells the fortieth-placed child nothing.
+  // Their own row rides along underneath when it is off the end of the list.
+  const meOff = data && data.me && !rows.some(r => r.isMe) ? data.me : null;
+
+  return (
+    <section className="arc-board">
+      <div className="arc-board-hd">
+        <h2>Leaderboard</h2>
+        <div className="arc-board-scope" role="group" aria-label="Time range">
+          {[["week", "This week"], ["all", "All time"]].map(([v, l]) => (
+            <button key={v} className={scope === v ? "is-active" : ""} aria-pressed={scope === v} onClick={() => setScope(v)}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div className="arc-board-tabs" role="tablist" aria-label="Game">
+        {games.map(g => (
+          <button key={g.key} role="tab" aria-selected={game === g.key}
+            className={"arc-board-tab" + (game === g.key ? " is-active" : "")}
+            onClick={() => setGame(g.key)}>
+            <span aria-hidden="true">{g.icon}</span> {g.name}
+          </button>
+        ))}
+      </div>
+      {data === null ? (
+        <div className="arc-skels">{[0, 1, 2].map(i => <div key={i} className="arc-skel arc-skel-row"/>)}</div>
+      ) : rows.length === 0 ? (
+        <p className="arc-board-empty">Nobody has played this one {scope === "week" ? "this week" : "yet"}. Be the first.</p>
+      ) : (
+        <ol className="arc-board-list">
+          {rows.map(r => <ArcadeBoardRow key={r.rank} row={r}/>)}
+          {meOff && <><li className="arc-board-gap" aria-hidden="true">⋯</li><ArcadeBoardRow row={meOff}/></>}
+        </ol>
+      )}
+      <p className="arc-board-note">
+        {programme === "ngg" ? "NGG Club board." : "Summer School board."} Ranked on your best single round.
+      </p>
+    </section>
+  );
+}
+
+function ArcadeBoardRow({ row }) {
+  return (
+    <li className={"arc-board-row" + (row.isMe ? " is-me" : "")}>
+      <span className={"arc-rank r" + (row.rank <= 3 ? row.rank : "")}>{row.rank}</span>
+      <span className="arc-who">{row.first} {row.initial}{row.isMe && <em> — you</em>}</span>
+      {row.centre && <span className="arc-centre">{row.centre}</span>}
+      <span className="arc-pts"><b>{row.best}</b> pts</span>
+    </li>
   );
 }
 

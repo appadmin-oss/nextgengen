@@ -277,6 +277,13 @@ function backend_dispatch(string $op, array $args = []): array {
             'community.channelMembers'=> 'community_channel_members',
             'community.star'          => 'community_star',
             'community.login'         => 'community_id_login',
+
+            // The Arcade — server-graded mini games. `start` mints a round and
+            // ships questions only; the answer key never leaves the server.
+            'arcade.home'             => 'arcade_home',
+            'arcade.board'            => 'arcade_leaderboard',
+            'arcade.start'            => 'arcade_round_start',
+            'arcade.submit'           => 'arcade_round_submit',
             'student.communityLogin'  => 'community_id_login',   // legacy alias
             'admin.community.overview'      => 'admin_community_overview',
             'admin.community.channel.upsert'=> 'admin_community_channel_upsert',

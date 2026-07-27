@@ -37,7 +37,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'analytics', 'profiles', 'community'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'analytics', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/webcron.php';
 // session.php is pure functions over the device register — no bootstrap, no
@@ -3855,6 +3855,224 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     $GLOBALS['CONFIG']['ai'] = $saved;
 })();
 
+
+/* ── The Arcade ───────────────────────────────────────────────────────────
+   Mini games children compete on. The whole design rests on one property —
+   the client is never told the answers — so most of what is worth testing
+   here is what the server REFUSES, not what it returns. */
+(function () {
+    $SU = 'NGG-2025-0099';
+
+    /* Two players in two programmes: an NGG member and a summer student. The
+       student is inserted directly rather than enrolled — enrolment consumes a
+       card from the QR pool, which earlier tests have already drained, and the
+       arcade cares about the row, not about how it got there. */
+    $AS = 'ARC-STU-1';
+    $AM = 'NGG-2025-0001';          // Tunde Okonkwo, an NGG member
+    db_insert('summer_students', ['studentId' => $AS, 'cohortId' => 'ARC-C', 'handle' => 'arcade-amaka',
+        'fullName' => 'Arcade Amaka', 'status' => 'active', 'regStatus' => 'verified', 'centre' => 'Egbeda',
+        'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    chk('arcade: a player is scoped to the programme their record lives in',
+        arcade_player($AS)['programme'] === 'summer' && arcade_player($AM)['programme'] === 'ngg');
+    chk('arcade: an id belonging to nobody has no programme',
+        arcade_player('WHO-IS-THIS')['programme'] === '');
+
+    // ── The answer key must never reach the client ──────────────────────
+    $r = backend_dispatch('arcade.start', ['memberId' => $AS, 'game' => 'naija']);
+    chk('arcade: a round starts and ships questions', !empty($r['ok']) && count($r['questions']) === 12);
+    $keyRow = db_row('SELECT answerKey FROM arcade_rounds WHERE roundId = ?', [$r['roundId']]);
+    $key = json_decode((string)$keyRow['answerKey'], true);
+    chk('arcade: the server kept an answer key', is_array($key) && count($key) === 12);
+    /* The payload is searched for the key itself, not merely for a field named
+       'answers'. A future refactor that leaks the key under another name — or
+       inside a question object — has to fail this. */
+    chk('arcade: …and NOTHING in the round payload reveals it', (function () use ($r, $key) {
+        $sent = json_encode($r);
+        // Every key here is an option INDEX, so the test is that the payload
+        // does not carry the indices in order anywhere.
+        return strpos($sent, '"' . implode('","', $key) . '"') === false
+            && strpos($sent, 'answerKey') === false;
+    })());
+    chk('arcade: an unknown game is refused',
+        backend_dispatch('arcade.start', ['memberId' => $AS, 'game' => 'roulette'])['error'] === 'unknown_game');
+    chk('arcade: a stranger cannot start a round',
+        backend_dispatch('arcade.start', ['memberId' => 'WHO-IS-THIS', 'game' => 'naija'])['error'] === 'forbidden');
+
+    // ── Grading ─────────────────────────────────────────────────────────
+    $sub = backend_dispatch('arcade.submit', ['memberId' => $AS, 'roundId' => $r['roundId'], 'answers' => $key]);
+    chk('arcade: a perfect sheet scores every question', !empty($sub['ok']) && $sub['correct'] === 12);
+    chk('arcade: …and earns the clean-sweep bonus', $sub['breakdown']['sweep'] === 25);
+    chk('arcade: the score is base + sweep + speed, not a client number',
+        $sub['score'] === $sub['breakdown']['base'] + $sub['breakdown']['sweep'] + $sub['breakdown']['speed']);
+    chk('arcade: a first score is a personal best', $sub['newBest'] === true && $sub['best'] === $sub['score']);
+    chk('arcade: the marks say which answers were right, now the round is closed',
+        count($sub['marks']) === 12 && $sub['marks'][0]['ok'] === true);
+
+    /* Submitting twice is the cheapest possible cheat: grade, read `marks`,
+       resubmit a perfect sheet. The round has to be spent. */
+    chk('arcade: a round cannot be graded twice',
+        backend_dispatch('arcade.submit', ['memberId' => $AS, 'roundId' => $r['roundId'], 'answers' => $key])['error'] === 'already_played');
+
+    // Another player's round is not yours to submit.
+    $r2 = backend_dispatch('arcade.start', ['memberId' => $AS, 'game' => 'spell']);
+    chk('arcade: someone else cannot submit your round',
+        backend_dispatch('arcade.submit', ['memberId' => $AM, 'roundId' => $r2['roundId'], 'answers' => []])['error'] === 'forbidden');
+
+    // Wrong answers score nothing, and a blank sheet is not a clean sweep.
+    $r3 = backend_dispatch('arcade.start', ['memberId' => $AM, 'game' => 'spell']);
+    $blank = backend_dispatch('arcade.submit', ['memberId' => $AM, 'roundId' => $r3['roundId'],
+        'answers' => array_fill(0, 15, '')]);
+    chk('arcade: a blank sheet scores zero', $blank['correct'] === 0 && $blank['score'] === 0);
+    chk('arcade: …and gets no clean-sweep bonus', $blank['breakdown']['sweep'] === 0);
+
+    /* The clock is the server's. A round whose row says it started before the
+       limit is expired even though the client just posted it — and expiring it
+       must also SPEND it, or "stall until the timer suits you" is free. */
+    $r4 = backend_dispatch('arcade.start', ['memberId' => $AM, 'game' => 'maths']);
+    $k4 = json_decode((string)db_row('SELECT answerKey FROM arcade_rounds WHERE roundId = ?', [$r4['roundId']])['answerKey'], true);
+    db_update('arcade_rounds', ['startedMs' => (int)round(microtime(true) * 1000) - (95 + ARCADE_GRACE) * 1000],
+              ['roundId' => $r4['roundId']]);
+    chk('arcade: a round submitted after its clock ran out is refused',
+        backend_dispatch('arcade.submit', ['memberId' => $AM, 'roundId' => $r4['roundId'], 'answers' => $k4])['error'] === 'expired');
+    chk('arcade: …and an expired round is spent, not retryable',
+        backend_dispatch('arcade.submit', ['memberId' => $AM, 'roundId' => $r4['roundId'], 'answers' => $k4])['error'] === 'already_played');
+
+    // ── Typed games mark on the skill, not on typing ────────────────────
+    chk('arcade: maths ignores spaces and thousands separators',
+        arcade_matches('maths', '1200', ' 1,200 ') && !arcade_matches('maths', '1200', '1201'));
+    chk('arcade: a word is marked case-insensitively',
+        arcade_matches('word', 'courage', 'Courage') && !arcade_matches('word', 'courage', 'courege'));
+    chk('arcade: an empty answer is never right',
+        !arcade_matches('word', 'courage', '') && !arcade_matches('maths', '5', ''));
+    /* '' and 'abc' both cast to 0 in PHP. A choice question whose answer is
+       option 0 must not be handed to everyone who left it blank or typed junk. */
+    chk('arcade: junk does not accidentally match choice option zero',
+        !arcade_matches('naija', '0', '') && !arcade_matches('naija', '0', 'abc') && arcade_matches('naija', '0', '0'));
+
+    // ── Generation ──────────────────────────────────────────────────────
+    chk('arcade: every generated game produces as many keys as questions', (function () {
+        foreach (array_keys(arcade_games()) as $g) {
+            foreach ([1, 3, 5] as $tier) {
+                [$qs, $ks] = arcade_generate($g, $tier);
+                if (count($qs) !== count($ks) || count($qs) !== arcade_game($g)['questions']) return false;
+            }
+        }
+        return true;
+    })());
+    chk('arcade: maths division always comes out exact', (function () {
+        for ($n = 0; $n < 40; $n++) {
+            [$qs, $ks] = arcade_gen_maths(20, 5);
+            foreach ($ks as $k) if ($k !== (string)(int)$k) return false;   // no fractions
+        }
+        return true;
+    })());
+    chk('arcade: a scrambled word is never just the word', (function () {
+        foreach (arcade_word_bank() as $tierWords) foreach ($tierWords as $w) {
+            if (arcade_scramble($w) === $w) return false;
+        }
+        return true;
+    })());
+    chk('arcade: every choice question offers its own answer exactly once', (function () {
+        foreach (['naija', 'spell'] as $g) {
+            for ($n = 0; $n < 15; $n++) {
+                [$qs, $ks] = arcade_generate($g, 1);
+                foreach ($qs as $i => $q) {
+                    if (count($q['options']) !== 4) return false;
+                    if (count(array_unique($q['options'])) !== 4) return false;
+                    if (!isset($q['options'][(int)$ks[$i]])) return false;
+                }
+            }
+        }
+        return true;
+    })());
+    chk('arcade: the spelling bank never offers two correct spellings', (function () {
+        // Every distractor must differ from the answer; a typo in the bank that
+        // duplicated the right word would make a question unanswerable.
+        foreach (arcade_spell_bank() as $row) {
+            foreach ($row[1] as $wrong) if ($wrong === $row[0]) return false;
+        }
+        return true;
+    })());
+    chk('arcade: every Nigerian state is in the knowledge bank', (function () {
+        $bank = arcade_naija_bank();
+        $qs = implode(' | ', array_column($bank, 'q'));
+        foreach (['Bayelsa', 'Zamfara', 'Ekiti', 'Kebbi', 'Taraba'] as $st) {
+            if (strpos($qs, $st . ' State') === false) return false;
+        }
+        return count($bank) >= 36;
+    })());
+
+    // ── Boards: the two programmes must not mix ─────────────────────────
+    $bs = backend_dispatch('arcade.board', ['memberId' => $AS, 'game' => 'naija', 'scope' => 'all']);
+    chk('arcade: the board defaults to the viewer\'s own programme', $bs['programme'] === 'summer');
+    chk('arcade: …and the summer board shows the summer player', (function () use ($bs) {
+        foreach ($bs['board'] as $row) if ($row['isMe']) return true;
+        return false;
+    })());
+    $bn = backend_dispatch('arcade.board', ['memberId' => $AM, 'game' => 'naija', 'scope' => 'all']);
+    chk('arcade: an NGG member does not see the summer player on their board',
+        $bn['programme'] === 'ngg' && count($bn['board']) === 0);
+    /* Ranking on totals would reward whoever has the most free time. One
+       player gets a single strong round; the other gets five weak ones worth
+       more in aggregate. The single strong round has to win. */
+    chk('arcade: a board is ranked on best round, not on total or plays', (function () {
+        $grind = 'NGG-2025-0001'; $spike = 'NGG-2025-0099';
+        for ($i = 0; $i < 5; $i++) {
+            db_insert('arcade_scores', ['roundId' => 'AR-GRIND-' . $i, 'playerId' => $grind,
+                'playerType' => 'member', 'programme' => 'ngg', 'game' => 'word', 'score' => 40,
+                'correct' => 4, 'total' => 12, 'ms' => 5000, 'centre' => '', 'date' => gmdate('Y-m-d'), 'createdAt' => now_iso()]);
+        }
+        db_insert('arcade_scores', ['roundId' => 'AR-SPIKE', 'playerId' => $spike,
+            'playerType' => 'member', 'programme' => 'ngg', 'game' => 'word', 'score' => 110,
+            'correct' => 11, 'total' => 12, 'ms' => 5000, 'centre' => '', 'date' => gmdate('Y-m-d'), 'createdAt' => now_iso()]);
+        $b = backend_dispatch('arcade.board', ['memberId' => $spike, 'game' => 'word', 'scope' => 'all']);
+        // 200 total across five rounds must not beat one round of 110.
+        return $b['board'][0]['best'] === 110 && $b['board'][0]['plays'] === 1
+            && $b['board'][1]['best'] === 40 && $b['board'][1]['plays'] === 5;
+    })());
+    chk('arcade: names on the board are first name + last initial, like the feed',
+        !empty($bs['board']) && $bs['board'][0]['first'] === 'Arcade' && $bs['board'][0]['initial'] === 'A.');
+    chk('arcade: a board for an unknown game is refused',
+        backend_dispatch('arcade.board', ['memberId' => $AS, 'game' => 'roulette'])['error'] === 'unknown_game');
+
+    // ── Home ────────────────────────────────────────────────────────────
+    $home = backend_dispatch('arcade.home', ['memberId' => $AS]);
+    chk('arcade: home lists every game', !empty($home['ok']) && count($home['games']) === count(arcade_games()));
+    chk('arcade: home carries the player\'s best and play count for each', (function () use ($home) {
+        foreach ($home['games'] as $g) if ($g['key'] === 'naija') return $g['plays'] === 1 && $g['best'] > 0;
+        return false;
+    })());
+    chk('arcade: exactly one game is flagged as today\'s daily',
+        count(array_filter($home['games'], fn($g) => $g['isDaily'])) === 1);
+    chk('arcade: the daily is the same for everyone on the same day',
+        backend_dispatch('arcade.home', ['memberId' => $AM])['daily'] === $home['daily']);
+    chk('arcade: a stranger gets no home payload',
+        backend_dispatch('arcade.home', ['memberId' => 'WHO-IS-THIS'])['error'] === 'forbidden');
+
+    /* Behaviour stars are SHOWN by the arcade and never written by it. The
+       mentor ledger is what conduct reporting is built on; a game must not be
+       able to move it. */
+    db_insert('member_stars', ['subjectId' => $AS, 'subjectType' => 'student', 'givenById' => $SU,
+        'stars' => 3, 'category' => 'focus', 'centre' => 'Egbeda', 'date' => '2020-01-01', 'createdAt' => now_iso()]);
+    chk('arcade: home shows the mentor stars a player has been given',
+        backend_dispatch('arcade.home', ['memberId' => $AS])['stars'] === 3);
+    $starsBefore = (int)db_row('SELECT COUNT(*) c FROM member_stars')['c'];
+    $r5 = backend_dispatch('arcade.start', ['memberId' => $AS, 'game' => 'word']);
+    $k5 = json_decode((string)db_row('SELECT answerKey FROM arcade_rounds WHERE roundId = ?', [$r5['roundId']])['answerKey'], true);
+    backend_dispatch('arcade.submit', ['memberId' => $AS, 'roundId' => $r5['roundId'], 'answers' => $k5]);
+    chk('arcade: …and playing a game writes no behaviour star of its own',
+        (int)db_row('SELECT COUNT(*) c FROM member_stars')['c'] === $starsBefore);
+
+    // ── Difficulty ──────────────────────────────────────────────────────
+    chk('arcade: a new player starts on the easiest tier', arcade_tier('WHO-IS-THIS', 'maths') === 1);
+    chk('arcade: a high scorer is moved up', (function () use ($AM) {
+        db_insert('arcade_scores', ['roundId' => 'AR-TIERTEST', 'playerId' => $AM, 'playerType' => 'member',
+            'programme' => 'ngg', 'game' => 'maths', 'score' => 300, 'correct' => 20, 'total' => 20,
+            'ms' => 1000, 'centre' => '', 'date' => gmdate('Y-m-d'), 'createdAt' => now_iso()]);
+        return arcade_tier($AM, 'maths') === 5;
+    })());
+})();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

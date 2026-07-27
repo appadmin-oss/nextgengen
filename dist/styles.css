@@ -2678,3 +2678,190 @@ button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
   color: rgba(255,255,255,0.68);
 }
 .cm-stu-who-btn.is-on { background: rgba(245,176,38,0.16); border-color: rgba(245,176,38,0.55); color: #ffce54; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   The Arcade — mini games inside the Community workspace.
+
+   Lives inside .cm-stream, so it inherits the dark community surface and
+   its scroll container. Everything here is sized in rem/%, and the game
+   grid collapses to one column early: the players most likely to be on a
+   phone are exactly the ones this is for.
+   ═══════════════════════════════════════════════════════════════════════ */
+.arc { padding: 18px 20px 40px; max-width: 980px; margin: 0 auto; color: #eef1fb; }
+.arc-err { background: rgba(228,3,43,0.14); border: 1px solid rgba(228,3,43,0.45); color: #ffc9d2;
+  padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 14px; }
+
+/* ── Hero: today's challenge + the player's standing ── */
+.arc-hero { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; justify-content: space-between;
+  background: linear-gradient(135deg, rgba(245,176,38,0.16), rgba(176,124,255,0.14));
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 18px; padding: 22px 24px; margin-bottom: 22px; }
+.arc-hero-txt { flex: 1 1 320px; min-width: 0; }
+.arc-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--gold-400, #ffc34d); margin-bottom: 6px; }
+.arc-hero-h { font-size: clamp(1.5rem, 4vw, 2.1rem); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 6px; }
+.arc-hero-p { margin: 0 0 14px; color: rgba(255,255,255,0.72); font-size: 15px; max-width: 46ch; }
+.arc-cta { background: var(--gold-500, #f5b026); color: #0c1432; border: none; border-radius: 999px;
+  padding: 11px 22px; font: inherit; font-weight: 800; font-size: 15px; cursor: pointer; transition: transform .12s, filter .12s; }
+.arc-cta:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+.arc-cta:disabled { opacity: 0.55; cursor: not-allowed; }
+.arc-done { display: inline-block; margin-left: 12px; font-size: 13px; font-weight: 700; color: var(--lime, #d0ff3a); }
+.arc-stats { display: flex; gap: 8px; margin: 0; flex: 0 1 auto; }
+.arc-stats > div { background: rgba(0,0,0,0.24); border-radius: 12px; padding: 12px 16px; text-align: center; min-width: 92px; }
+.arc-stats dt { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: rgba(255,255,255,0.55); margin-bottom: 4px; }
+.arc-stats dd { margin: 0; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.arc-stats dd span { font-size: 15px; margin-left: 2px; }
+
+/* ── Game cards ── */
+.arc-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); margin-bottom: 30px; }
+.arc-card { display: flex; flex-direction: column; background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.10); border-radius: 16px; padding: 18px; transition: border-color .14s, transform .14s; }
+.arc-card:hover { border-color: rgba(245,176,38,0.5); transform: translateY(-2px); }
+.arc-card.is-daily { border-color: rgba(245,176,38,0.55); background: rgba(245,176,38,0.08); }
+.arc-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.arc-card-ic { font-size: 30px; line-height: 1; }
+.arc-tag { background: var(--gold-500, #f5b026); color: #0c1432; font-size: 10px; font-weight: 800;
+  letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 9px; border-radius: 999px; }
+.arc-card-h { margin: 0 0 5px; font-size: 17px; font-weight: 800; letter-spacing: -0.01em; }
+.arc-card-p { margin: 0 0 10px; font-size: 13.5px; color: rgba(255,255,255,0.68); line-height: 1.45; flex: 1; }
+.arc-card-meta { display: flex; gap: 6px; font-size: 11.5px; color: rgba(255,255,255,0.45); margin-bottom: 14px; }
+.arc-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.arc-best { font-size: 12px; color: rgba(255,255,255,0.72); font-variant-numeric: tabular-nums; }
+.arc-best b { color: var(--gold-400, #ffc34d); font-size: 14px; }
+.arc-new { color: rgba(255,255,255,0.42); font-style: italic; }
+.arc-play { background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.20); color: #fff;
+  border-radius: 999px; padding: 8px 18px; font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+.arc-play:hover:not(:disabled) { background: var(--gold-500, #f5b026); border-color: var(--gold-500, #f5b026); color: #0c1432; }
+.arc-play:disabled { opacity: 0.5; cursor: wait; }
+
+/* ── A round in progress ── */
+.arc-play-wrap { display: flex; flex-direction: column; min-height: 100%; }
+.arc-run-hd { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
+.arc-quit { background: none; border: none; color: rgba(255,255,255,0.6); font: inherit; font-size: 14px;
+  cursor: pointer; padding: 6px 4px; flex: none; }
+.arc-quit:hover:not(:disabled) { color: #fff; }
+.arc-run-prog { flex: 1; height: 6px; background: rgba(255,255,255,0.12); border-radius: 999px; overflow: hidden; }
+.arc-run-bar { height: 100%; background: var(--gold-500, #f5b026); border-radius: 999px; transition: width .2s; }
+.arc-clock { flex: none; font-variant-numeric: tabular-nums; font-weight: 800; font-size: 20px;
+  min-width: 58px; text-align: right; }
+/* Colour alone would not carry the warning; the size change goes with it. */
+.arc-clock.is-urgent { color: #ff6b6b; font-size: 24px; }
+
+.arc-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 10px 0 30px; }
+.arc-qnum { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: rgba(255,255,255,0.45); margin-bottom: 14px; }
+.arc-qnum span { color: rgba(255,255,255,0.3); }
+.arc-q { margin: 0 0 22px; font-size: clamp(1.35rem, 4.5vw, 2rem); font-weight: 700; line-height: 1.3; max-width: 22ch; }
+.arc-q-sum { font-variant-numeric: tabular-nums; font-size: clamp(2.2rem, 9vw, 3.6rem); font-weight: 800; letter-spacing: 0.02em; }
+/* A scrambled word is read letter by letter, so it gets tracked out and set
+   in the monospace face — proportional letterforms make anagrams harder in a
+   way that is nothing to do with the puzzle. */
+.arc-q-scramble { font-family: var(--font-mono, ui-monospace, monospace); letter-spacing: 0.22em;
+  text-transform: uppercase; font-size: clamp(1.5rem, 7vw, 2.6rem); }
+.arc-hint { font-size: 12.5px; color: rgba(255,255,255,0.5); margin: -12px 0 18px; }
+.arc-in { width: min(340px, 90vw); background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.2);
+  border-radius: 14px; padding: 14px 18px; font: inherit; font-size: 22px; font-weight: 700; text-align: center;
+  color: #fff; }
+.arc-in:focus { outline: none; border-color: var(--gold-500, #f5b026); background: rgba(255,255,255,0.12); }
+
+.arc-opts { display: grid; gap: 10px; width: min(520px, 100%); }
+.arc-opt { display: flex; align-items: center; gap: 12px; text-align: left; width: 100%;
+  background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.12); border-radius: 12px;
+  padding: 13px 16px; font: inherit; font-size: 16px; color: #eef1fb; cursor: pointer; transition: border-color .12s, background .12s; }
+.arc-opt:hover { border-color: rgba(255,255,255,0.35); }
+.arc-opt.is-picked { border-color: var(--gold-500, #f5b026); background: rgba(245,176,38,0.16); }
+.arc-opt-k { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px;
+  background: rgba(255,255,255,0.12); font-size: 12px; font-weight: 800; }
+.arc-opt.is-picked .arc-opt-k { background: var(--gold-500, #f5b026); color: #0c1432; }
+.arc-opt-t { flex: 1; min-width: 0; }
+
+.arc-run-ft { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; }
+.arc-count { font-size: 12.5px; color: rgba(255,255,255,0.5); font-variant-numeric: tabular-nums; }
+.arc-sec { background: none; border: 1px solid rgba(255,255,255,0.22); color: rgba(255,255,255,0.8);
+  border-radius: 999px; padding: 9px 18px; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
+.arc-sec:disabled { opacity: 0.4; cursor: not-allowed; }
+.arc-next { background: var(--gold-500, #f5b026); color: #0c1432; border: none; border-radius: 999px;
+  padding: 10px 26px; font: inherit; font-weight: 800; font-size: 15px; cursor: pointer; }
+.arc-next.is-finish { background: var(--lime, #d0ff3a); }
+.arc-next:disabled { opacity: 0.6; cursor: wait; }
+
+/* ── Result ── */
+.arc-result { max-width: 560px; }
+.arc-score { text-align: center; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 18px; padding: 26px 20px; margin-bottom: 18px; }
+.arc-score.is-best { border-color: var(--lime, #d0ff3a); background: rgba(208,255,58,0.09); }
+.arc-best-flag { display: inline-block; background: var(--lime, #d0ff3a); color: #0c1432; font-size: 11px;
+  font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; padding: 5px 12px; border-radius: 999px; margin-bottom: 12px; }
+.arc-score-n { font-size: clamp(3rem, 14vw, 4.5rem); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.arc-score-l { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.5); }
+.arc-score-sub { margin-top: 12px; font-size: 14.5px; color: rgba(255,255,255,0.75); }
+.arc-break { list-style: none; margin: 0 0 16px; padding: 0; }
+.arc-break li { display: flex; justify-content: space-between; padding: 10px 14px; font-size: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08); }
+.arc-break li.is-bonus { color: var(--lime, #d0ff3a); }
+.arc-break b { font-variant-numeric: tabular-nums; }
+.arc-streak-note { background: rgba(245,176,38,0.14); border: 1px solid rgba(245,176,38,0.4);
+  border-radius: 12px; padding: 12px 16px; font-size: 14.5px; margin-bottom: 16px; }
+.arc-marks { margin-bottom: 20px; }
+.arc-marks summary { cursor: pointer; font-size: 14px; font-weight: 700; color: rgba(255,255,255,0.75); padding: 8px 0; }
+.arc-marks ol { list-style: none; margin: 8px 0 0; padding: 0; }
+.arc-marks li { display: flex; align-items: baseline; gap: 10px; padding: 7px 0; font-size: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06); }
+.arc-marks li.is-ok .arc-mark-ic { color: var(--lime, #d0ff3a); }
+.arc-marks li.is-no .arc-mark-ic { color: #ff6b6b; }
+.arc-mark-ic { flex: none; font-weight: 800; width: 16px; }
+.arc-mark-a { font-weight: 700; }
+.arc-mark-g { color: rgba(255,255,255,0.5); font-size: 13px; }
+.arc-result-ft { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+
+/* ── Leaderboard ── */
+.arc-board { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px; padding: 18px 20px; }
+.arc-board-hd { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.arc-board-hd h2 { margin: 0; font-size: 17px; font-weight: 800; }
+.arc-board-scope { display: flex; gap: 4px; background: rgba(0,0,0,0.25); border-radius: 999px; padding: 3px; }
+.arc-board-scope button { background: none; border: none; color: rgba(255,255,255,0.6); font: inherit;
+  font-size: 12.5px; font-weight: 600; padding: 6px 14px; border-radius: 999px; cursor: pointer; }
+.arc-board-scope button.is-active { background: rgba(255,255,255,0.14); color: #fff; }
+.arc-board-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 6px;
+  scrollbar-width: thin; }
+.arc-board-tab { flex: none; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.72); border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 12.5px;
+  font-weight: 600; cursor: pointer; white-space: nowrap; }
+.arc-board-tab.is-active { background: var(--gold-500, #f5b026); border-color: var(--gold-500, #f5b026); color: #0c1432; font-weight: 800; }
+.arc-board-list { list-style: none; margin: 0; padding: 0; }
+.arc-board-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+.arc-board-row:nth-child(odd) { background: rgba(255,255,255,0.035); }
+.arc-board-row.is-me { background: rgba(245,176,38,0.16); outline: 1px solid rgba(245,176,38,0.45); }
+.arc-rank { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px;
+  background: rgba(255,255,255,0.1); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.arc-rank.r1 { background: var(--gold-500, #f5b026); color: #0c1432; }
+.arc-rank.r2 { background: #cfd6e6; color: #0c1432; }
+.arc-rank.r3 { background: #c98a4b; color: #0c1432; }
+.arc-who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.arc-who em { color: rgba(255,255,255,0.55); font-style: normal; font-weight: 500; }
+.arc-centre { flex: none; font-size: 11.5px; color: rgba(255,255,255,0.45); }
+.arc-pts { flex: none; font-size: 12.5px; color: rgba(255,255,255,0.6); font-variant-numeric: tabular-nums; }
+.arc-pts b { color: var(--gold-400, #ffc34d); font-size: 14.5px; }
+.arc-board-gap { text-align: center; color: rgba(255,255,255,0.3); padding: 2px 0; letter-spacing: 0.3em; }
+.arc-board-empty, .arc-board-note { font-size: 13px; color: rgba(255,255,255,0.5); margin: 10px 0 0; }
+.arc-fineprint { font-size: 12px; color: rgba(255,255,255,0.4); text-align: center; margin: 20px auto 0; max-width: 52ch; line-height: 1.6; }
+
+/* ── Loading ── */
+.arc-skels { display: grid; gap: 12px; }
+.arc-skel { height: 128px; border-radius: 16px; background: rgba(255,255,255,0.05); }
+.arc-skel-row { height: 44px; border-radius: 10px; }
+@media (prefers-reduced-motion: no-preference) {
+  .arc-skel { animation: arc-pulse 1.4s ease-in-out infinite; }
+}
+@keyframes arc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+@media (max-width: 640px) {
+  .arc { padding: 14px 14px 32px; }
+  .arc-hero { padding: 18px; }
+  .arc-stats { width: 100%; }
+  .arc-stats > div { flex: 1; min-width: 0; padding: 10px 8px; }
+  .arc-grid { grid-template-columns: 1fr; }
+}

@@ -272,6 +272,12 @@
         members:  (channel) => request('/member/community.php' + qs({ view: 'members', channel })),
         markRead: (channel) => request('/member/community.php', { body: { action: 'markRead', channel } }),
       },
+      arcade: {
+        home:   () => request('/member/arcade.php' + qs({ view: 'home' })),
+        board:  (game, scope) => request('/member/arcade.php' + qs({ view: 'board', game: game || '', scope: scope || 'week' })),
+        start:  (game) => request('/member/arcade.php', { body: { action: 'start', game } }),
+        submit: (roundId, answers) => request('/member/arcade.php', { body: { action: 'submit', roundId, answers } }),
+      },
       changeEmail:         (email) => request('/member/account.php', { body: { action: 'change_email', email } }),
       exportData:          () => request('/member/account.php'),
       deleteAccount:       () => request('/member/account.php', { body: { action: 'delete' } }),
