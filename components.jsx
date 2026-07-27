@@ -1208,12 +1208,27 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   const [linkVal, setLinkVal] = React.useState("");
   const [zoom, setZoom] = React.useState(false);  // full-screen photo viewer
   const [shot, setShot] = React.useState(null);   // captured still awaiting confirm: {url, blob}
+  // Same reason as the registration step's camera: the stream is state, and an
+  // effect attaches it after the render that mounts the <video>. Assigning
+  // srcObject straight out of the getUserMedia callback depends on the element
+  // already existing, and when it doesn't the stream is silently orphaned and
+  // the camera shows a blank frame with no error.
+  const [stream, setStream] = React.useState(null);
   const videoRef = React.useRef(null);
   const streamRef = React.useRef(null);
   const fileRef = React.useRef(null);
 
-  const stop = () => { if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } };
+  const stop = () => {
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    setStream(null);
+  };
   React.useEffect(() => stop, []);
+  React.useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.srcObject !== (stream || null)) v.srcObject = stream || null;
+    if (stream) v.play().catch(() => {});
+  }, [stream, mode]);
   // Lock body scroll while the full-screen camera overlay is open.
   React.useEffect(() => {
     if (mode !== "camera") return;
@@ -1227,7 +1242,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     try {
       const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 720 } }, audio: false });
       streamRef.current = s;
-      if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.play().catch(() => {}); }
+      setStream(s);
     } catch (_) { setErr("Camera permission denied — upload a photo or paste a link instead."); setMode("idle"); }
   };
 
@@ -1318,7 +1333,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
         <button type="button" onClick={closeCamera} aria-label="Close" style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: 22, lineHeight: 1, cursor: "pointer" }}>✕</button>
         <div style={{ color: "#fff", fontFamily: "'Sora',sans-serif", fontWeight: 700, fontSize: 18 }}>{shot ? "Use this photo?" : "Take your photo"}</div>
         <div style={{ position: "relative", width: "100%", maxWidth: 360, aspectRatio: "4 / 5", borderRadius: 18, overflow: "hidden", background: "#0b1020", boxShadow: "0 24px 70px -24px rgba(0,0,0,0.75)" }}>
-          <video ref={videoRef} playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", display: shot ? "none" : "block" }}/>
+          <video ref={videoRef} playsInline muted autoPlay style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", display: shot ? "none" : "block" }}/>
           {shot && <img src={shot.url} alt="Captured photo" style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>}
           {!shot && <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "43%", transform: "translate(-50%,-50%)", width: "62%", height: "72%", border: "2px dashed rgba(255,255,255,0.65)", borderRadius: "50%" }}/>}
           {!shot && <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: 12, fontSize: 12.5, color: "#fff", background: "linear-gradient(transparent, rgba(0,0,0,0.65))", textAlign: "center" }}>Line your face up with the oval, then press Capture.</div>}
@@ -1643,18 +1658,28 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
 }
 
 function Uploader({ kind = "proof", accept, onUploaded, compact }) {
-  const [enabled, setEnabled] = useState(null);
+  // 'signed'  — full Cloudinary keys, the normal path
+  // 'public'  — only a cloud name + unsigned preset. Still a working upload,
+  //             and the shape a lot of deployments actually have. This used to
+  //             count as "uploads off", which is why the centre hero ("giant
+  //             model") field showed a URL box and no upload button at all.
+  // 'off'     — neither. The button stays, disabled, saying why. Rendering
+  //             nothing is indistinguishable from a broken page.
+  const [mode, setMode] = useState(null);   // null = still asking
   const [busy, setBusy] = useState(false);
   const [pct, setPct] = useState(0);
   const inputRef = useRef(null);
 
   useEffect(() => {
     let alive = true;
-    NGGApi.config().then(c => { if (alive) setEnabled(!!(c.uploads && c.uploads.enabled)); }).catch(() => alive && setEnabled(false));
+    NGGApi.config().then(c => {
+      if (!alive) return;
+      if (c && c.uploads && c.uploads.enabled) setMode("signed");
+      else if (c && c.publicUpload && c.publicUpload.enabled) setMode("public");
+      else setMode("off");
+    }).catch(() => alive && setMode("off"));
     return () => { alive = false; };
   }, []);
-
-  if (enabled === false) return null;
 
   const pick = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -1662,7 +1687,11 @@ function Uploader({ kind = "proof", accept, onUploaded, compact }) {
     if (!file) return;
     setBusy(true); setPct(0);
     try {
-      const r = await NGGApi.uploadFile(file, kind, setPct);
+      // Try the signed path, then the unsigned one — a deployment can have
+      // either, and which it has is not this component's business.
+      let r;
+      try { r = await NGGApi.uploadFile(file, kind, setPct); }
+      catch (e1) { r = await NGGApi.uploadPublic(file, setPct); }
       onUploaded && onUploaded(r.url, r);
       if (window.toast) toast.success("Uploaded", file.name);
     } catch (err) {
@@ -1670,11 +1699,14 @@ function Uploader({ kind = "proof", accept, onUploaded, compact }) {
     } finally { setBusy(false); }
   };
 
+  const off = mode === "off";
   return (
     <span className={"uploader" + (compact ? " uploader-compact" : "")}>
-      <input ref={inputRef} type="file" accept={accept} style={{ display: "none" }} onChange={pick} disabled={busy || enabled === null}/>
-      <button type="button" className="btn btn-ghost btn-sm uploader-btn" disabled={busy || enabled === null} onClick={() => inputRef.current && inputRef.current.click()}>
-        {busy ? ("Uploading " + pct + "%") : (enabled === null ? "…" : "↑ Upload")}
+      <input ref={inputRef} type="file" accept={accept} style={{ display: "none" }} onChange={pick} disabled={busy || mode === null}/>
+      <button type="button" className="btn btn-ghost btn-sm uploader-btn" disabled={busy || mode === null || off}
+        title={off ? "Image uploads aren't configured on this server (Cloudinary keys or an unsigned preset are missing). Paste a direct https:// image URL instead." : undefined}
+        onClick={() => inputRef.current && inputRef.current.click()}>
+        {busy ? ("Uploading " + pct + "%") : mode === null ? "…" : off ? "Upload unavailable" : "↑ Upload"}
       </button>
       {busy && <span className="uploader-bar" aria-hidden="true"><span className="uploader-bar-fill" style={{ width: pct + "%" }}/></span>}
     </span>

@@ -1040,11 +1040,13 @@ chk('policy screens are gated by the summer cap', backend_dispatch('admin.policy
 // tested rather than the wall clock.
 backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true]]);
 chk('policy enforcement can be switched on', policy_settings()['enabled'] === true);
-// docs/POLICY.md's safeguarding stance: these are minors, and the ledger can be
-// wrong (§1.3 counts a broken scanner as a full absence). Suspension and
-// eviction are therefore raised for review by default, not self-executing.
-chk('irreversible outcomes need a human by default', policy_settings()['autoEnforce'] === false);
+// Self-executing by the Governing Council's instruction: the thresholds bite
+// without a human in the loop ("no manual overrides, no verbal adjustments").
+chk('the thresholds are self-executing by default', policy_settings()['autoEnforce'] === true);
+// The review-first stance is still supported and still has to work, because it
+// is the only thing standing between a broken scanner and an eviction.
 chk('review-first: a third absence proposes eviction rather than imposing it', (function () use ($SU) {
+    backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true, 'autoEnforce' => false]]);
     $p = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Review Rilwan', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech']]);
     for ($i = 6; $i <= 8; $i++) policy_log($p['studentId'], 'student', 'absence', '2026-07-0' . $i);
     policy_apply($p['studentId'], 'student');
@@ -1066,10 +1068,17 @@ chk('confirming a proposed eviction is what makes it bite', (function () use ($S
     $r = backend_dispatch('admin.policy.sanction.update', ['requesterId' => $SU, 'sanctionId' => $sid, 'status' => 'active']);
     return $r['state']['state'] === 'evicted';
 })());
-// The rest of this block tests the thresholds themselves, so switch to
-// self-executing enforcement and assert that stance directly.
+// Back to the shipped stance for the threshold tests that follow.
 backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true, 'autoEnforce' => true]]);
-chk('self-executing enforcement can be switched on', policy_settings()['autoEnforce'] === true);
+chk('a third absence evicts outright with enforcement strict', (function () use ($SU) {
+    backend_dispatch('admin.summer.qr.mint', ['requesterId' => $SU, 'count' => 5]);   // blanks run out
+    $p = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Strict Sikiru', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech']]);
+    if (empty($p['studentId'])) return false;
+    for ($i = 6; $i <= 8; $i++) policy_log($p['studentId'], 'student', 'absence', '2026-07-0' . $i);
+    policy_apply($p['studentId'], 'student');
+    $st = policy_state($p['studentId'], 'student');
+    return $st['state'] === 'evicted' && $st['awaitingReview'] === false && $st['blocked'] === true;
+})());
 $pid = $enr['studentId'];
 chk('a clear ledger reads clear', policy_state($pid, 'student')['state'] === 'clear');
 policy_log($pid, 'student', 'absence', '2026-07-06');

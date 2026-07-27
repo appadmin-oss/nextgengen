@@ -2655,11 +2655,20 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
   const fileRef = React.useRef(null);
   const [camOpen, setCamOpen] = React.useState(false);
   const [camState, setCamState] = React.useState("idle"); // idle|starting|live|denied
+  // The stream lives in STATE, not just a ref, because the <video> it has to be
+  // attached to is rendered conditionally. Assigning srcObject straight out of
+  // the getUserMedia callback ran BEFORE camState flipped to 'live', so the
+  // element was not mounted yet, videoRef.current was null, the assignment was
+  // skipped — and the video then mounted with nothing in it. A camera that was
+  // permanently blank. As state it drives an effect that runs after the render
+  // that mounts the element, so the ordering cannot go wrong.
+  const [stream, setStream] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const [uErr, setUErr] = React.useState("");
 
   const stopStream = React.useCallback(() => {
     if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    setStream(null);
   }, []);
 
   // The camera only runs while the full-screen overlay is open. Opening it asks
@@ -2671,10 +2680,10 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
     setCamState("starting"); setUErr("");
     if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { setCamState("denied"); return; }
     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1350 } }, audio: false })
-      .then(stream => {
-        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
-        streamRef.current = stream;
-        if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); }
+      .then(s => {
+        if (cancelled) { s.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = s;
+        setStream(s);
         setCamState("live");
       })
       .catch(() => setCamState("denied"));
@@ -2741,17 +2750,28 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
       </div>
       <p style={{ ...mut, fontSize: 12.5, textAlign: "center", margin: 0 }}>Center the face — we crop, brighten and set a clean backdrop automatically. Used only for the student ID.</p>
       {uErr && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,206,84,.12)", border: "1px solid rgba(255,206,84,.4)", fontSize: 13 }}>{uErr}</div>}
-      <input ref={fileRef} type="file" accept="image/*" capture="user" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) uploadBlob(f); }}/>
+      {/* No `capture` attribute: it forces the camera on mobile and removes
+          "choose an existing photo" entirely, so the overlay's device-photo
+          button could never actually upload one. The camera has its own
+          button; this is the way round it. */}
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
+        onChange={e => { const f = e.target.files && e.target.files[0]; if (f) uploadBlob(f); e.target.value = ""; }}/>
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={onBack} style={{ padding: "13px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>←</button>
         {photoUrl
           ? <button onClick={() => setPhotoUrl("")} style={{ flex: 1, padding: 13, borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Retake</button>
-          : <button onClick={openCam} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>{busy ? "Uploading…" : "Open camera"}</button>}
+          : <>
+              <button onClick={openCam} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>{busy ? "Uploading…" : "Open camera"}</button>
+              {/* On a device with no camera, or one where it is blocked, the
+                  overlay is the only place an upload was offered — so a
+                  blocked camera meant no photo at all. */}
+              <button onClick={() => fileRef.current && fileRef.current.click()} disabled={busy} style={{ padding: "13px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Upload</button>
+            </>}
         <button onClick={onNext} disabled={!photoUrl} title={photoUrl ? "" : "A headshot is required"} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: photoUrl ? gold : "rgba(255,255,255,.14)", color: photoUrl ? goldInk : "rgba(255,255,255,.5)", fontWeight: 800, cursor: photoUrl ? "pointer" : "not-allowed" }}>Use photo →</button>
       </div>
       {camOpen && (
         <CameraOverlay
-          videoRef={videoRef} camState={camState} busy={busy}
+          videoRef={videoRef} stream={stream} camState={camState} busy={busy}
           onCapture={capture} onClose={closeCam} gold={gold} goldInk={goldInk}
           onPickFile={() => fileRef.current && fileRef.current.click()}
         />
@@ -2764,7 +2784,16 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
  * front-camera fills the screen, a dimming scrim with a transparent face oval
  * shows exactly where to line up, and a shutter sits at the bottom. Falls back
  * to a device-photo picker when the camera is blocked or unavailable. */
-function CameraOverlay({ videoRef, camState, busy, onCapture, onClose, onPickFile, gold, goldInk }) {
+function CameraOverlay({ videoRef, stream, camState, busy, onCapture, onClose, onPickFile, gold, goldInk }) {
+  // Attach the stream here, after the render that mounted the element, keyed on
+  // the stream itself. The element is also mounted unconditionally (hidden
+  // until live) so the ref is never null when this runs.
+  React.useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.srcObject !== (stream || null)) v.srcObject = stream || null;
+    if (stream) v.play().catch(() => {});
+  }, [stream, videoRef]);
   // Lock body scroll while the overlay is up.
   React.useEffect(() => {
     const prev = document.body.style.overflow;
@@ -2780,9 +2809,14 @@ function CameraOverlay({ videoRef, camState, busy, onCapture, onClose, onPickFil
   return (
     <div style={shell} role="dialog" aria-modal="true" aria-label="Take ID photo">
       <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
-        {camState === "live" ? (
-          <video ref={videoRef} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>
-        ) : (
+        {/* Always mounted, hidden until live. The effect above is what actually
+            fixes the blank camera; this removes the remaining dependency on
+            setStream and setCamState landing in the same commit. If they ever
+            didn't batch, the effect would run with the element unmounted and
+            the stream would be orphaned again — which is the bug this was. */}
+        <video ref={videoRef} muted playsInline autoPlay
+          style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", display: camState === "live" ? "block" : "none" }}/>
+        {camState !== "live" && (
           <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 24, textAlign: "center", color: "#fff" }}>
             <div>
               <div style={{ fontSize: 40 }}>📷</div>

@@ -141,16 +141,32 @@ irreversible outcomes gated behind an explicit admin action:
 | Absence / late scan (vs redline) | logged automatically at check-in and by the nightly sweep; counts kept per person |
 | Strike 1 | **Warning** issued automatically |
 | Strike 2 / dormancy threshold | **Dormant** issued automatically; awards eligibility frozen |
-| Suspension threshold | suspension **proposed** for admin review; confirming it starts the 14-day ban |
-| Eviction threshold | eviction **proposed** for admin review — **never** auto-expelled |
+| Suspension threshold | **14-day ban applied automatically**; the scanner and the community door both refuse |
+| Eviction threshold | **applied automatically**; blocked everywhere, awards forfeited |
 | Fines (₦1k/₦2k/₦5k/₦10k) | recorded as owed on the person's ledger; not auto-charged |
 | Reinstatement | 365-day gate + CIMC-1 + ₦10k checklist an admin clears |
 
-A proposed sanction shows on the compliance board as **awaiting review** and
-does **not** block the scanner until confirmed. The `autoEnforce` setting makes
-suspension and eviction self-executing for a deployment that wants that; the
-default is off, because these are minors and the ledger itself can be wrong —
-§1.3 counts a broken scanner as a full absence.
+**`autoEnforce` is ON.** The Governing Council's instruction is that the
+thresholds bite without a human in the loop — "the AI system automatically
+flags the profile", "no manual overrides, no verbal adjustments".
+
+The cost of that, on the record: §1.3 counts a failure to scan as a full
+absence, so a broken scanner or a flat kiosk battery evicts a student on the
+third occurrence with nobody asked. Two things mitigate it, and coordinators
+should know both:
+
+1. **Void the fact, not the sanction.** Voiding a wrongly logged infraction
+   (with a written reason, kept on the record) lifts every sanction it caused,
+   immediately — the state is derived, never stored.
+2. **Watch the kiosk.** A day the desk could not scan is a day the sweep will
+   read as absent for everyone who was actually there. Cancel that date in the
+   programme calendar before the nightly sweep runs and no absence is logged
+   for it at all.
+
+Setting `autoEnforce` to false switches to review-first: suspension and
+eviction are raised as **proposed**, show on the board as *awaiting review*,
+and do not block anyone until an admin confirms them. The counters, the ledger
+and the board are identical either way — only the moment of effect changes.
 
 ### Two layers: facts and consequences
 **Infractions** are facts (`absence`, `late`, `tardy`, `halfday`,

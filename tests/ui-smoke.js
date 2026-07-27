@@ -126,7 +126,7 @@ const STATUS = {
   var b = new URLSearchParams(location.search).get('board');
   var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'cards' ? 'CardStudio' : b === 'photo' ? 'PhotoEditor'
             : b === 'policy' ? 'SummerPolicy' : b === 'att' ? 'SummerAttendance' : b === 'kiosk' ? 'SummerKiosk'
-            : b === 'signin' ? 'CmStudentSignIn' : 'StatusPage';
+            : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : 'StatusPage';
   var props;
   if (b === 'photo') {
     var pc = document.createElement('canvas'); pc.width = 800; pc.height = 1000;
@@ -176,6 +176,33 @@ const STATUS = {
       infraction: function () { return Promise.resolve({ ok: true, temporaryCard: true, state: {} }); },
       reinstate: function () { return Promise.resolve({ ok: true, reinstated: true }); },
     };
+  } else if (b === 'gatephoto') {
+    window.__uploaded = [];
+    window.NGGApi.uploadPublic = function (f) { window.__uploaded.push(f.name || 'blob'); return Promise.resolve({ url: 'https://res.cloudinary.com/x/image/upload/v1/p.jpg' }); };
+    props = { photoUrl: '', setPhotoUrl: function (u) { window.__photo = u; }, onBack: function () {}, onNext: function () {},
+              card: {}, gold: '#f5b026', goldInk: '#2b2100', mut: {} };
+  } else if (b === 'capture') {
+    window.__uploaded = [];
+    window.NGGApi.uploadFile = function (f) { window.__uploaded.push(f.name || 'blob'); return Promise.resolve({ url: 'https://res.cloudinary.com/x/image/upload/v1/p.jpg' }); };
+    props = { value: '', onChange: function (u) { window.__photo = u; }, size: 96, label: 'Photo' };
+  } else if (b === 'fieldupload') {
+    window.__cfg = new URLSearchParams(location.search).get('uploads') || 'on';
+    window.NGGApi.config = function () {
+      return Promise.resolve(
+        window.__cfg === 'off' ? { uploads: { enabled: false }, publicUpload: { enabled: false } }
+        : window.__cfg === 'missing' ? {}                       // config.php that omits the block
+        // Only an unsigned preset — no signed keys. A very common deployment,
+        // and the one that used to hide the button completely.
+        : window.__cfg === 'unsigned' ? { uploads: { enabled: false }, publicUpload: { enabled: true } }
+        : { uploads: { enabled: true }, publicUpload: { enabled: false } });
+    };
+    window.NGGApi.uploadFile = function (f) {
+      if (window.__cfg === 'unsigned') return Promise.reject(new Error('uploads_disabled'));
+      window.__uploaded = (window.__uploaded || []).concat([f.name]);
+      return Promise.resolve({ url: 'https://res.cloudinary.com/x/image/upload/v1/hero.jpg' });
+    };
+    window.NGGApi.uploadPublic = function (f) { window.__uploaded = (window.__uploaded || []).concat(['public:' + f.name]); return Promise.resolve({ url: 'https://res.cloudinary.com/x/image/upload/v1/hero.jpg' }); };
+    props = { label: 'Hero image (giant model)', value: '', onChange: function (v) { window.__val = v; }, kind: 'cover', placeholder: 'Paste an https:// image URL or upload →' };
   } else if (b === 'signin') {
     props = {};
     window.__logins = [];
@@ -258,7 +285,10 @@ const STATUS = {
   const ok = (l, c) => { c ? pass++ : (fail++, console.error('  ✗ ' + l)); };
   let browser;
   try {
-    browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
+    // Fake camera so the registration photo step can be driven end-to-end;
+    // without a real stream a blank <video> looks identical to a working one.
+    browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox',
+      '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
 
     for (const board of ['status', 'vol']) {
       const label = board === 'vol' ? '/v-status' : '/status';
@@ -497,6 +527,144 @@ const STATUS = {
     ok('…and sends the instructor\'s ID and phone to the login',
       logins.length === 1 && logins[0].displayId === 'VOL-INS-26-001' && /8037654321/.test(logins[0].guardianPhone));
     await si.close();
+
+    /* ── Summer registration: the photo step ──────────────────────────────
+       Run against Chromium's fake camera, because the failure is invisible to
+       any test that does not actually open a stream: the overlay rendered the
+       <video> only once camState was 'live', but the stream was attached to
+       videoRef *before* that flag flipped — so the ref was null, the assignment
+       was skipped, and the element then mounted with nothing in it. A camera
+       that is permanently blank. */
+    const camCtx = await browser.newContext({ permissions: ['camera'] });
+    const gp = await camCtx.newPage();
+    const gpErrs = [];
+    gp.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) gpErrs.push(m.text()); });
+    gp.on('pageerror', e => gpErrs.push(String(e.message)));
+    await gp.goto(BASE + '/tests/_boards_fixture.html?board=gatephoto&mode=ok', { waitUntil: 'networkidle' });
+    await gp.waitForTimeout(300);
+    ok('registration photo step mounts with no script error', gpErrs.length === 0 && (await gp.evaluate(() => window.__errors)).length === 0);
+    if (gpErrs.length) console.error('       ', gpErrs.slice(0, 3).join(' | '));
+
+    await gp.getByRole('button', { name: /Open camera/ }).first().click();
+    await gp.waitForTimeout(1500);
+    const cam = await gp.evaluate(() => {
+      const v = document.querySelector('[role="dialog"] video');
+      return v ? { mounted: true, hasStream: !!v.srcObject,
+                   live: !!(v.srcObject && v.srcObject.getVideoTracks().length && v.srcObject.getVideoTracks()[0].readyState === 'live'),
+                   w: v.videoWidth, playing: !v.paused } : { mounted: false };
+    });
+    ok('the camera overlay actually shows a live stream, not a blank frame',
+      cam.mounted && cam.hasStream && cam.live && cam.w > 0 && cam.playing);
+    if (cam.mounted && !cam.hasStream) console.error('        video mounted with no srcObject — the stream was never attached');
+    ok('…and the shutter is enabled once it is live',
+      !(await gp.getByRole('button', { name: 'Take photo' }).isDisabled()));
+
+    // The camera being blocked must not be a dead end: a real file picker, with
+    // the gallery available. capture="user" forces the camera on mobile and
+    // removes "choose an existing photo" entirely, which is what "does not
+    // allow upload" was.
+    const picker = await gp.evaluate(() => {
+      const i = document.querySelector('input[type=file]');
+      return i ? { accept: i.getAttribute('accept'), capture: i.getAttribute('capture') } : null;
+    });
+    ok('the file picker offers the gallery rather than forcing the camera',
+      picker && picker.accept === 'image/*' && picker.capture === null);
+
+    await gp.evaluate(() => {
+      const i = document.querySelector('input[type=file]');
+      const dt = new DataTransfer();
+      const png = atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z/C/HgAGgwJ/lK3Q6wAAAABJRU5ErkJggg==');
+      const bytes = new Uint8Array(png.length);
+      for (let k = 0; k < png.length; k++) bytes[k] = png.charCodeAt(k);
+      dt.items.add(new File([bytes], 'gallery.png', { type: 'image/png' }));
+      i.files = dt.files;
+      i.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await gp.waitForTimeout(500);
+    ok('…and a picked photo uploads and lands on the form',
+      (await gp.evaluate(() => window.__uploaded)).length === 1
+      && /cloudinary/.test(await gp.evaluate(() => window.__photo || '')));
+    ok('…which also closes the camera overlay',
+      await gp.locator('[role="dialog"]').count() === 0);
+    await camCtx.close();
+    const camCtx2 = await browser.newContext({ permissions: ['camera'] });
+
+    // The admin/apply PhotoCapture opens its camera a different way but had the
+    // same hazard — srcObject assigned from the getUserMedia callback, against
+    // a ref that only exists if the render already happened.
+    const pc = await camCtx2.newPage();
+    await pc.goto(BASE + '/tests/_boards_fixture.html?board=capture&mode=ok', { waitUntil: 'networkidle' });
+    await pc.waitForTimeout(300);
+    await pc.getByRole('button', { name: 'Take photo' }).click();
+    await pc.waitForTimeout(1500);
+    const pcCam = await pc.evaluate(() => {
+      const v = document.querySelector('[role="dialog"] video');
+      return v ? { hasStream: !!v.srcObject, w: v.videoWidth, playing: !v.paused } : null;
+    });
+    ok('the admin photo capture also shows a live stream', pcCam && pcCam.hasStream && pcCam.w > 0 && pcCam.playing);
+    await camCtx2.close();
+
+    /* ── The centre "giant model" hero upload ─────────────────────────────
+       Two separate reasons this could not upload, so both are pinned. */
+    const fu = await browser.newPage();
+    const fuErrs = [];
+    fu.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) fuErrs.push(m.text()); });
+    fu.on('pageerror', e => fuErrs.push(String(e.message)));
+    await fu.goto(BASE + '/tests/_boards_fixture.html?board=fieldupload&mode=ok', { waitUntil: 'networkidle' });
+    await fu.waitForTimeout(400);
+    ok('the hero-image field mounts with no script error', fuErrs.length === 0 && (await fu.evaluate(() => window.__errors)).length === 0);
+
+    // 1. Clicking Upload must reach the file input. Nesting it in a <label>
+    //    that also wraps a text input makes the label the click's owner and
+    //    hands activation to the text box instead.
+    const clicked = await fu.evaluate(async () => {
+      const file = document.querySelector('input[type=file]');
+      if (!file) return { noInput: true };
+      let got = 0;
+      file.addEventListener('click', (e) => { got++; e.preventDefault(); });
+      const btn = Array.from(document.querySelectorAll('button')).find(b => /upload/i.test(b.textContent));
+      if (!btn) return { noButton: true };
+      btn.click();
+      await new Promise(r => setTimeout(r, 60));
+      return { got, focused: (document.activeElement && document.activeElement.type) || '' };
+    });
+    ok('clicking Upload reaches the file input', clicked.got === 1);
+    ok('…and does not hand the click to the URL box instead', clicked.focused !== 'text');
+    ok('…and the field is not nested inside a <label> that owns the file input',
+      await fu.evaluate(() => !document.querySelector('label input[type=file]')));
+
+    // 2. A deployment with only an unsigned preset — no signed Cloudinary keys —
+    //    is a working upload, and the one this field used to refuse outright:
+    //    `uploads.enabled` is false there, and the button rendered as nothing.
+    const fu3 = await browser.newPage();
+    await fu3.goto(BASE + '/tests/_boards_fixture.html?board=fieldupload&mode=ok&uploads=unsigned', { waitUntil: 'networkidle' });
+    await fu3.waitForTimeout(400);
+    ok('an unsigned-preset deployment still gets an Upload button',
+      await fu3.getByRole('button', { name: /↑ Upload/ }).count() === 1);
+    await fu3.evaluate(() => {
+      const i = document.querySelector('input[type=file]');
+      const dt = new DataTransfer();
+      dt.items.add(new File([new Uint8Array([1, 2, 3])], 'model.jpg', { type: 'image/jpeg' }));
+      i.files = dt.files;
+      i.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await fu3.waitForTimeout(400);
+    ok('…and it falls through to the unsigned upload rather than failing',
+      (await fu3.evaluate(() => window.__uploaded || []))[0] === 'public:model.jpg'
+      && /cloudinary/.test(await fu3.evaluate(() => window.__val || '')));
+    await fu3.close();
+
+    // 3. With neither configured the button stays, disabled, saying why —
+    //    silently rendering nothing is indistinguishable from a broken page.
+    const fu2 = await browser.newPage();
+    await fu2.goto(BASE + '/tests/_boards_fixture.html?board=fieldupload&mode=ok&uploads=missing', { waitUntil: 'networkidle' });
+    await fu2.waitForTimeout(400);
+    ok('with uploads unavailable the field says so instead of hiding the button',
+      /Upload unavailable/.test(await fu2.evaluate(() => document.body.innerText)));
+    ok('…and explains what is missing', /Cloudinary/.test(
+      await fu2.evaluate(() => { const b = Array.from(document.querySelectorAll('button')).find(x => /Upload unavailable/.test(x.textContent)); return (b && b.title) || ''; })));
+    await fu2.close();
+    await fu.close();
 
     // ── photo editor: zoom works, and previews without a round trip ──────
     const pe = await browser.newPage();

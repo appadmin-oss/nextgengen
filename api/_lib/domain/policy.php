@@ -186,12 +186,20 @@ const POLICY_DEFAULTS = [
     'enabled' => false,          // strict enforcement is opt-in per deployment
     /* Whether the two irreversible outcomes — suspension and eviction — take
      * effect the moment the counter crosses, or are raised for an admin to
-     * confirm. Default OFF, which is the safeguarding stance docs/POLICY.md
-     * already records for this policy: these are minors, and the ledger itself
-     * can be wrong (§1.3 counts a broken scanner as a full absence). Warnings,
-     * dormancy and fines always apply automatically — they are reversible.
-     * Turning this on makes the thresholds self-executing. */
-    'autoEnforce' => false,
+     * confirm first. ON by the Governing Council's instruction: the blueprint
+     * says "the AI system automatically flags the profile", "no manual
+     * overrides, no verbal adjustments", and the institution wants the
+     * thresholds to bite without a human in the loop.
+     *
+     * What that costs, so it is on the record: §1.3 counts a failure to scan as
+     * a full absence, so a broken scanner or a flat kiosk battery evicts a
+     * student on the third occurrence with no one asked. The correction path is
+     * the ledger — void the wrongly logged fact with a reason and every
+     * sanction it caused lifts immediately — and Part IV reinstatement for
+     * anything already served. Set this to false to have suspension and
+     * eviction raised for review instead; the counters and the board are
+     * identical either way. */
+    'autoEnforce' => true,
     'checkoutRequired' => true,  // §1.3 — scan IN and OUT, or the day is absent
     'student' => [
         'lateRedline'            => '08:30',

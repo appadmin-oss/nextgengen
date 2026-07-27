@@ -5376,17 +5376,23 @@ function FieldCheckbox({ label, value, onChange }) {
 // The Uploader renders nothing if the server has no Cloudinary configured, so
 // this degrades gracefully to a plain paste-a-URL field.
 function FieldUpload({ label, value, onChange, kind, accept, placeholder }) {
+  const id = React.useId ? React.useId() : "fu";
+  /* A <div>, not a <label>. Wrapping the whole row in one put the Uploader's
+     hidden <input type=file> inside a label whose labeled control is the URL
+     text box — so the label owns the click and hands activation to the text
+     box. Chrome tolerates it; Safari and iOS re-dispatch and can swallow the
+     file picker outright, which is an upload button that does nothing. */
   return (
-    <label className="admin-field">
-      <span>{label}</span>
+    <div className="admin-field">
+      <label htmlFor={id}><span>{label}</span></label>
       <div className="admin-upload-row">
-        <input type="text" className="admin-input" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={placeholder || "Paste a URL or upload →"}/>
+        <input id={id} type="text" className="admin-input" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={placeholder || "Paste a URL or upload →"}/>
         <Uploader kind={kind || "cover"} accept={accept || "image/*"} onUploaded={(url) => onChange(url)} compact/>
       </div>
       {value && /^https?:\/\//.test(value) && (
         <span className="admin-upload-preview"><img src={value} alt="" onError={(e) => { e.target.style.display = "none"; }}/></span>
       )}
-    </label>
+    </div>
   );
 }
 
