@@ -6319,6 +6319,24 @@ function SummerPolicy() {
           cancel or add individual dates below.
         </p>
 
+        {/* Say so when the window was inferred rather than set. An admin who
+            does not know where these dates came from cannot tell a sensible
+            default from a mistake, and would have no reason to check them
+            before the policy engine starts marking children absent. */}
+        {prog.derivedFromSession && (
+          <div className="policy-callout" data-tone="warn">
+            <b>Taken from the active session.</b> Nobody has set a term window here, so the calendar is using the
+            session's own dates ({prog.startDate || "—"} → {prog.endDate || "—"}) and the weekdays below. Check they
+            are right and press Save to make them yours — attendance and absence both count off this.
+          </div>
+        )}
+        {!prog.enabled && (
+          <div className="policy-callout" data-tone="warn">
+            <b>No programme calendar.</b> Every date — Sundays, public holidays, dates long after the term ends —
+            counts as a school day, and the absence sweep does nothing. Set the term window and the days that run.
+          </div>
+        )}
+
         {prog.enabled && (
           <div className="policy-callout" data-tone={cal.isProgrammeDay ? "ok" : "muted"}>
             {cal.isProgrammeDay

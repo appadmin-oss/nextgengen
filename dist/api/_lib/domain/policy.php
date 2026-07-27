@@ -56,9 +56,52 @@ const PROGRAMME_DEFAULTS = [
     'extraDays' => [],             // unscheduled days that DO run
 ];
 
+/**
+ * The term window the programme actually runs in.
+ *
+ * Falls back to the ACTIVE SESSION's dates. Sessions already carry the term
+ * start and end — an admin sets them when they open the session — so making
+ * the calendar demand the same two dates a second time, in a different
+ * screen, is how it ended up switched off with nothing in it. And "off" is
+ * not neutral: programme_is_day() answers TRUE for every date when the
+ * calendar is disabled, so a Sunday, a public holiday and a date three months
+ * after the programme ended all counted as school days, while the absence
+ * sweep did nothing at all.
+ *
+ * Returns ['', ''] when there is no active session — there is nothing to
+ * infer from, and inventing dates would be worse than leaving it unset.
+ */
+function programme_window_from_session(): array {
+    $s = db_row("SELECT startDate, endDate FROM sessions WHERE isActive = 1 ORDER BY id DESC LIMIT 1");
+    if (!$s) return ['', ''];
+    $start = programme_clean_dates([$s['startDate'] ?? ''])[0] ?? '';
+    $end   = programme_clean_dates([$s['endDate'] ?? ''])[0] ?? '';
+    return [$start, $end];
+}
+
 function programme_settings(): array {
     $cfg = setting_get('programme');
-    $p = (is_array($cfg) ? $cfg : []) + PROGRAMME_DEFAULTS;
+    $cfg = is_array($cfg) ? $cfg : [];
+    /* An admin who has saved these settings always has an 'enabled' key —
+     * programme_settings_save() writes one every time. Its absence means the
+     * calendar was never configured at all, which is different from being
+     * deliberately switched off, and only the first case should be filled in
+     * from the session. Turning someone's explicit "off" back on would be
+     * changing a decision, not supplying a default. */
+    $neverConfigured = !array_key_exists('enabled', $cfg);
+    if ($neverConfigured) {
+        [$start, $end] = programme_window_from_session();
+        if ($start !== '' && $end !== '') {
+            $cfg['startDate'] = $cfg['startDate'] ?? $start;
+            $cfg['endDate']   = $cfg['endDate'] ?? $end;
+            // The calendar only describes which days run; enforcement is a
+            // separate switch (policy.enabled). Turning this on cannot
+            // sanction anybody — it stops Sundays counting as school days.
+            $cfg['enabled'] = true;
+            $cfg['derivedFromSession'] = true;
+        }
+    }
+    $p = $cfg + PROGRAMME_DEFAULTS;
     $p['weekdays']  = array_values(array_unique(array_filter(array_map('intval', (array)$p['weekdays']), fn($d) => $d >= 1 && $d <= 7)));
     $p['holidays']  = programme_clean_dates($p['holidays']);
     $p['extraDays'] = programme_clean_dates($p['extraDays']);

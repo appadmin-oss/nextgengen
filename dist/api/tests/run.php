@@ -1133,8 +1133,50 @@ db_insert('members', ['memberId' => 'NGG-2025-0701', 'fullName' => 'Clara Club',
 // missed one costs. Both are exercised against a real term window rather than
 // "today", so the suite does not change behaviour with the day of the week.
 $SU = 'NGG-2025-0099';
-chk('programme calendar is off until an admin sets one', programme_settings()['enabled'] === false);
-chk('with no calendar every day is a programme day', programme_is_day('2026-07-26') === true);   // a Sunday
+/* An unconfigured calendar takes its term window from the ACTIVE SESSION.
+ *
+ * "Off" is not a neutral default here: programme_is_day() answers TRUE for
+ * every date when the calendar is disabled, so a Sunday, a public holiday and
+ * a date months after the programme ended all counted as school days, while
+ * the absence sweep did nothing. Sessions already carry the term dates, so
+ * asking for them again in a second screen is what left this switched off and
+ * empty. Deriving them makes days real without inventing anything. */
+(function () use ($SU) {
+    // No active session yet → nothing to infer from, old behaviour stands.
+    db_exec("UPDATE sessions SET isActive = 0");
+    setting_set('programme', null, 'test');
+    chk('with no session and no calendar, the calendar stays off',
+        programme_settings()['enabled'] === false);
+    chk('…and every day still counts, as before', programme_is_day('2026-07-26') === true);  // a Sunday
+
+    db_insert('sessions', ['sessionId' => 'SESS-CAL', 'code' => 'SUMMER', 'year' => 2026, 'name' => 'Summer 2026',
+        'startDate' => '2026-07-06', 'endDate' => '2026-08-28', 'isActive' => 1, 'createdAt' => now_iso()]);
+    setting_set('programme', null, 'test');
+    $derived = programme_settings();
+    chk('an active session switches the calendar on by itself', $derived['enabled'] === true);
+    chk('…using the session term window', $derived['startDate'] === '2026-07-06' && $derived['endDate'] === '2026-08-28');
+    chk('…so a Sunday inside the term is NOT a programme day', programme_is_day('2026-07-26') === false);
+    chk('…a weekday inside it is', programme_is_day('2026-07-23') === true);          // Thursday
+    chk('…and a weekday after the term ends is not', programme_is_day('2026-09-10') === false);
+
+    // An admin who deliberately switched it off must stay switched off — that
+    // is a decision, not a missing default.
+    backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'programme' => ['enabled' => false]]);
+    chk('an explicit "off" is respected, not overridden by the session',
+        programme_settings()['enabled'] === false);
+
+    /* And with NO dates saved either — the case that separates "was this ever
+     * configured?" from "does it happen to have a start date?". Keying the
+     * decision on an empty startDate looks equivalent, because saving carries
+     * the derived dates through; it differs exactly here, where an admin turns
+     * the calendar off before ever setting a window, and it would switch back
+     * on behind them. */
+    setting_set('programme', ['enabled' => false, 'startDate' => '', 'endDate' => '',
+                              'weekdays' => [1, 2, 3, 4, 5], 'holidays' => [], 'extraDays' => []], 'test');
+    chk('…even when they turned it off before setting any dates',
+        programme_settings()['enabled'] === false);
+    setting_set('programme', null, 'test');
+})();
 
 // A Mon–Fri term with one holiday and one added Saturday.
 $pgSave = backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'programme' => [
