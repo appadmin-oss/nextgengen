@@ -43,6 +43,14 @@
         credentials: 'include',
         headers: headers,
         body: body,
+        // Third layer of the same guarantee. The server sends no-store and
+        // .htaccess enforces it for /api/, but a fetch left on the default
+        // cache mode will still hand back a stored response when one exists
+        // — from an older deploy, a proxy that rewrote the headers, or a
+        // browser that cached before this fix shipped. Reads are the ones
+        // that go stale; writes are never cached anyway, but there is no
+        // reason to exempt them.
+        cache: 'no-store',
         signal: ctl ? ctl.signal : undefined,
       });
     } catch (e) {

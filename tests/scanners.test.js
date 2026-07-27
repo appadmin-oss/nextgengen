@@ -125,7 +125,21 @@ function php(body) {
   const page = await browser.newPage();
   const pageErrs = [];
   page.on('pageerror', (e) => pageErrs.push(String(e.message)));
-  await page.goto(BASE + '/tests/_scan_fixture.html', { waitUntil: 'networkidle' });
+  /* Name the unfinished requests if 'networkidle' never arrives. A bare
+     "goto: Timeout 30000ms exceeded" says nothing about which request is
+     still open, and that is the whole diagnosis — this is what identified a
+     fire-and-forget fetch() in the error boundary whose response body was
+     never read, holding its connection open for the life of the page. */
+  const pending = new Set();
+  page.on('request', r => pending.add(r.url()));
+  page.on('requestfinished', r => pending.delete(r.url()));
+  page.on('requestfailed', r => pending.delete(r.url()));
+  try {
+    await page.goto(BASE + '/tests/_scan_fixture.html', { waitUntil: 'networkidle' });
+  } catch (e) {
+    console.error('   still in flight:\n     ' + (Array.from(pending).join('\n     ') || '(none)'));
+    throw e;
+  }
 
   // ── The libraries the scanners depend on are actually reachable ──────────
   const libs = await page.evaluate(() => ({
@@ -257,6 +271,31 @@ function php(body) {
 
   const rows = php(`echo (int)(db_row("SELECT COUNT(*) c FROM attendance")['c'] ?? 0);`).trim();
   is(rows === '2', `both scans landed one attendance row each (got ${rows})`);
+
+  /* ── No API response may be HTTP-cacheable ────────────────────────────────
+   * The client sends every read as a plain GET (no body ⇒ GET), and Apache's
+   * mod_expires block ends with `ExpiresDefault "access plus 1 hour"` —
+   * application/json is not one of the types it names, so JSON replies used
+   * to inherit a one-hour freshness window. The browser then answered reads
+   * from its own cache without asking the server, and an admin's save looked
+   * like it had silently done nothing for the next hour.
+   *
+   * Asserted on the header rather than end-to-end on purpose: `php -S` sends
+   * no Expires header of its own, so a staleness test here would pass even
+   * with the bug present. The header is the thing that has to be true. */
+  const cacheHdrs = await page.evaluate(async (base) => {
+    const head = async (u) => {
+      const r = await fetch(u, { credentials: 'include', cache: 'reload' });
+      await r.text().catch(() => {});
+      return (r.headers.get('cache-control') || '').toLowerCase();
+    };
+    return {
+      pub:  await head(base + '/api/public/status.php'),
+      auth: await head(base + '/api/auth/me.php'),
+    };
+  }, BASE);
+  is(/no-store/.test(cacheHdrs.pub), `a public API read is no-store, not cacheable ("${cacheHdrs.pub}")`);
+  is(/no-store/.test(cacheHdrs.auth), `an auth API read is no-store too ("${cacheHdrs.auth}")`);
 
   is(pageErrs.length === 0, 'no uncaught page errors across the whole chain');
   if (pageErrs.length) console.error('       ', pageErrs.slice(0, 3).join(' | '));

@@ -20,6 +20,28 @@ if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTT
     header('Strict-Transport-Security: max-age=31536000');
 }
 header('Content-Type: application/json; charset=utf-8');
+/* NEVER let an API response be cached.
+ *
+ * This is the fix for "I saved it and the site still shows the old value".
+ * Apache's mod_expires block in .htaccess ends with
+ * `ExpiresDefault "access plus 1 hour"`, and application/json is not one of
+ * the types it names — so every JSON reply picked up a one-hour freshness
+ * window. The API client sends reads as plain GETs (no body ⇒ GET), so the
+ * browser served an hour-old copy straight from its HTTP cache without ever
+ * asking the server. A write went through fine and the next read showed the
+ * stale value, which looks exactly like the save silently failing.
+ *
+ * Setting it here rather than only in .htaccess is deliberate: this is the
+ * one place every endpoint passes through, so it holds whatever the host's
+ * Apache config is doing, whether .htaccess is honoured at all, and whether
+ * a reverse proxy sits in front.
+ *
+ * `no-store` rather than `no-cache`: these payloads carry children's names,
+ * photos and guardian contacts, and no-store keeps them out of the browser's
+ * on-disk cache as well as off the back button on a shared kiosk machine. */
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 if (!file_exists(__DIR__ . '/../config.php')) {
     http_response_code(500);

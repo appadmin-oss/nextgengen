@@ -56,6 +56,41 @@ const ORDER = [
 
 function log(...a) { console.log('[build]', ...a); }
 
+/* Every file a browser may hold in a cache, hashed in a stable order.
+   Sorted paths and path-plus-content (not content alone) so that renaming or
+   removing a file changes the id just as much as editing one does. */
+const CACHED_FILES = ['styles.css', 'styles-app.css', 'data.js', 'photos.js',
+                      'api-client.js', 'manifest.webmanifest'];
+const CACHED_DIRS = ['vendor', 'assets'];
+
+function walkFiles(dir, acc) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1)) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walkFiles(p, acc);
+    else if (e.isFile()) acc.push(p);
+  }
+  return acc;
+}
+
+function hashClientAssets(bundleCode) {
+  const h = crypto.createHash('sha256');
+  h.update(bundleCode);
+  const files = [];
+  for (const f of CACHED_FILES) {
+    const p = path.join(ROOT, f);
+    if (fs.existsSync(p)) files.push(p);
+  }
+  for (const d of CACHED_DIRS) {
+    const p = path.join(ROOT, d);
+    if (fs.existsSync(p)) walkFiles(p, files);
+  }
+  for (const p of files.sort()) {
+    h.update(path.relative(ROOT, p).split(path.sep).join('/'));
+    h.update(fs.readFileSync(p));
+  }
+  return h.digest('hex').slice(0, 10);
+}
+
 async function build() {
   if (!fs.existsSync(DIST)) fs.mkdirSync(DIST, { recursive: true });
 
@@ -98,9 +133,25 @@ async function build() {
     sourcefile: 'app.min.js',
   });
 
-  // Content hash → a deterministic build id used to bust the service-worker
-  // cache on every deploy (see below) and to stamp the HTML.
-  const buildId = crypto.createHash('sha256').update(minified.code).digest('hex').slice(0, 10);
+  /* Content hash → the build id that busts the service-worker cache and
+     stamps the HTML.
+   *
+   * Hashed over EVERY client-cacheable file, not just the JS bundle. When
+   * this covered `minified.code` alone, a deploy that only touched CSS, an
+   * image, a font or a vendored library produced an identical build id — so
+   * dist/service-worker.js came out byte-identical, the browser saw no
+   * service worker to update, the old caches were never treated as stale,
+   * and the fetch handler kept serving those assets cache-first from the
+   * previous deploy. Indefinitely. That is the other half of "my updates
+   * aren't showing", and it was invisible because the JS almost always
+   * changes too — right up until the one deploy where it doesn't.
+   *
+   * index.html is deliberately excluded: the id is stamped INTO it, so
+   * including it would be circular, and it is served no-cache anyway.
+   * api/ is excluded too — PHP is never client-cached, and letting a
+   * backend-only change invalidate every browser's asset cache would be
+   * churn for nothing. */
+  const buildId = hashClientAssets(minified.code);
 
   const code = minified.code + `\n//# sourceMappingURL=app.min.js.map\n`;
   fs.writeFileSync(path.join(DIST, 'app.min.js'), code);

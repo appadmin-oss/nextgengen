@@ -3100,5 +3100,77 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     })());
 })();
 
+/* ── Public board: a name or face only with guardian consent ────────────────
+ * The board is otherwise handle-only. A student is named when the guardian
+ * granted `site_visibility` ("Feature on our website") and pictured only when
+ * they ALSO granted `media` — permission to photograph a child internally is
+ * not permission to publish that photograph on a public web page.
+ *
+ * Asserted in both directions. A missing name is a cosmetic bug; a name or
+ * face that appears WITHOUT consent is a safeguarding failure, so the absence
+ * cases carry the weight here. */
+(function () {
+    db_insert('centres', ['centreId' => 'CEN-CST', 'name' => 'Consentville', 'code' => 'CST', 'color' => '#2f9e44', 'status' => 'active', 'createdAt' => now_iso()]);
+    $mk = function (string $id, string $handle, string $name) {
+        db_insert('summer_students', ['studentId' => $id, 'cohortId' => 'RC1', 'handle' => $handle, 'fullName' => $name,
+            'photoUrl' => 'https://img.example.org/' . $id . '.jpg', 'centre' => 'Consentville', 'track' => 'Tech',
+            'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+    };
+    $grant = function (string $id, string $type, string $status) {
+        db_insert('consents', ['studentId' => $id, 'type' => $type, 'status' => $status,
+            'method' => 'test', 'actorName' => 'Guardian', 'createdAt' => now_iso()]);
+    };
+    $mk('SUM-CST-FULL', 'fullcons', 'Full Consent');       // site_visibility + media
+    $mk('SUM-CST-NAME', 'nameonly', 'Name Only');          // site_visibility only
+    $mk('SUM-CST-NONE', 'nocons',   'No Consent');         // nothing
+    $mk('SUM-CST-PEND', 'pendcons', 'Pending Consent');    // granted but unverified reg
+    $mk('SUM-CST-GONE', 'gonecons', 'Withdrawn Consent');  // granted then withdrawn
+    db_exec("UPDATE summer_students SET regStatus='parent_pending' WHERE studentId='SUM-CST-PEND'");
+
+    $grant('SUM-CST-FULL', 'site_visibility', 'granted');
+    $grant('SUM-CST-FULL', 'media', 'granted');
+    $grant('SUM-CST-NAME', 'site_visibility', 'granted');
+    $grant('SUM-CST-NAME', 'media', 'declined');
+    $grant('SUM-CST-PEND', 'site_visibility', 'granted');
+    $grant('SUM-CST-PEND', 'media', 'granted');
+    // Append-only ledger: the later row is the current decision.
+    $grant('SUM-CST-GONE', 'site_visibility', 'granted');
+    $grant('SUM-CST-GONE', 'media', 'granted');
+    $grant('SUM-CST-GONE', 'site_visibility', 'withdrawn');
+
+    $by = [];
+    foreach (backend_dispatch('public.status', [])['status']['members'] as $m) $by[$m['handle']] = $m;
+
+    chk('public board: consented student is named',
+        ($by['fullcons']['name'] ?? null) === 'Full Consent');
+    chk('public board: consented student is pictured',
+        !empty($by['fullcons']['photo']));
+    chk('public board: name-only consent is named',
+        ($by['nameonly']['name'] ?? null) === 'Name Only');
+    chk('public board: name-only consent has NO photo',
+        ($by['nameonly']['photo'] ?? null) === null);
+    chk('public board: no consent means no name',
+        array_key_exists('nocons', $by) && $by['nocons']['name'] === null);
+    chk('public board: no consent means no photo',
+        array_key_exists('nocons', $by) && $by['nocons']['photo'] === null);
+    chk('public board: an unverified registration is never named, even with a grant on file',
+        array_key_exists('pendcons', $by) && $by['pendcons']['name'] === null && $by['pendcons']['photo'] === null);
+    chk('public board: withdrawing consent removes the name again',
+        array_key_exists('gonecons', $by) && $by['gonecons']['name'] === null);
+    chk('public board: …and the photo goes with it',
+        array_key_exists('gonecons', $by) && $by['gonecons']['photo'] === null);
+    chk('public board: every student is still listed by handle regardless of consent',
+        count(array_intersect(['fullcons','nameonly','nocons','pendcons','gonecons'], array_keys($by))) === 5);
+    // The copy is what parents read. It must not still promise that a name or
+    // photo never appears, and it must say the display is consent-based.
+    $copy = backend_dispatch('public.status', [])['status']['page']['transparencyBody'];
+    chk('public board: the copy no longer promises a name or photo never appears',
+        stripos($copy, 'name, photo, or record never appears') === false
+        && stripos($copy, "child's name, photo") === false);
+    chk('public board: …and it tells parents the display is consent-based',
+        stripos($copy, 'consent') !== false);
+})();
+
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

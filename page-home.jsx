@@ -923,8 +923,19 @@ function StatusPage({ setPage, previewConfig }) {
   const decorate = (m, rank) => {
     const dir = m.move > 0 ? "up" : m.move < 0 ? "down" : "same";
     const medal = rank === 1 ? "#f5b026" : rank === 2 ? "#c3ccdb" : rank === 3 ? "#cd8a4e" : null;
+    /* Named and pictured ONLY where the backend said so. It sends `name` and
+       `photo` as null unless the guardian granted "Feature on our website"
+       (and, for the picture, "Photos & media" as well), so the decision lives
+       in one place and this side cannot invent one. Everyone else keeps the
+       handle they always had — declining changes nothing else about the row. */
+    const named = !!m.name;
     return {
-      rank, handle: "@" + m.handle, initial: (m.handle[0] || "?").toUpperCase(), color: m.color, faculty: m.faculty, centre: m.centre,
+      rank,
+      handle: named ? m.name : "@" + m.handle,
+      subHandle: named ? "@" + m.handle : "",
+      photo: m.photo || "",
+      initial: ((named ? m.name : m.handle)[0] || "?").toUpperCase(),
+      color: m.color, faculty: m.faculty, centre: m.centre,
       stars: m.stars, streak: m.streak, scoreLabel: sFmt(metric === "weekPoints" ? m.weekPoints : m.points),
       metaLine: m.faculty + " · " + m.centre + " · " + m.streak + "d streak",
       moveIcon: dir === "up" ? "ph-caret-up" : dir === "down" ? "ph-caret-down" : "ph-minus",
@@ -1399,8 +1410,11 @@ function StatusPage({ setPage, previewConfig }) {
             <div className="podium">
               {podium.map((p, i) => (
                 <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 160, maxWidth: "40vw" }}>
-                  <span style={{ width: p.avatarSize, height: p.avatarSize, borderRadius: "50%", display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 22, color: "#fff", background: p.color, border: "3px solid " + p.medalColor, boxShadow: "0 0 0 4px rgba(255,255,255,0.06)" }}>{p.initial}</span>
-                  <span style={{ marginTop: 10, fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#fff" }}>{p.handle}</span>
+                  <span style={{ width: p.avatarSize, height: p.avatarSize, borderRadius: "50%", display: "grid", placeItems: "center", position: "relative", overflow: "hidden", fontFamily: "'Sora'", fontWeight: 800, fontSize: 22, color: "#fff", background: p.color, border: "3px solid " + p.medalColor, boxShadow: "0 0 0 4px rgba(255,255,255,0.06)" }}>
+                    {p.initial}
+                    {p.photo ? <img src={p.photo} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
+                  </span>
+                  <span style={{ marginTop: 10, fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#fff", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.handle}</span>
                   <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>{p.faculty} · {p.centre}</span>
                   <div style={{ marginTop: 12, width: "100%", height: p.podiumHeight, borderRadius: "12px 12px 0 0", background: "linear-gradient(180deg," + p.medalColor + ",rgba(255,255,255,0.04))", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: 12 }}>
                     <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, color: "#0c1432" }}>{p.rank}</span>
@@ -1419,7 +1433,11 @@ function StatusPage({ setPage, previewConfig }) {
               </div>
               {leaderboard.map((m, i) => <LbRow key={i} m={m}/>)}
             </div>
-            <p style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6", marginTop: 16, display: "flex", alignItems: "center", gap: 7 }}><i className="ph ph-lock-simple"/>Students appear by handle only — never a full name or photo, in line with our safeguarding policy.</p>
+            {/* This line has to track what the board actually does. It used to
+                promise handle-only unconditionally; a student is now named and
+                pictured where a guardian asked for it, so saying otherwise
+                would be a false assurance to the very parents it is for. */}
+            <p style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6", marginTop: 16, display: "flex", alignItems: "flex-start", gap: 7, lineHeight: 1.6 }}><i className="ph ph-lock-simple" style={{ marginTop: 2 }}/><span>Students appear by handle only. A name and photograph are shown for a student whose parent or guardian has given written consent to be featured — and are withdrawn as soon as that consent is.</span></p>
           </div>
         </section>
       </div>}
@@ -1428,7 +1446,17 @@ function StatusPage({ setPage, previewConfig }) {
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 28px" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(255,255,255,0.08)", fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em" }}><span style={{ width: 7, height: 7, borderRadius: "50%", background: "#d0ff3a" }}/>TRANSPARENCY</span>
           <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(28px,3.6vw,42px)", letterSpacing: "-0.02em", margin: "16px 0 12px" }}>{page.transparencyTitle || "Numbers, not names."}</h2>
-          <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 15.5, lineHeight: 1.75, margin: "0 0 24px" }}>{page.transparencyBody || "This board updates live and shows only aggregate figures and student handles — how many attended, at which centres, and how participation is trending. A child's full name, photo, or record never appears here. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy."}</p>
+          <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 15.5, lineHeight: 1.75, margin: "0 0 24px" }}>{page.transparencyBody || "This board updates live and shows aggregate figures and student handles — how many attended, at which centres, and how participation is trending. A child's record never appears here. A name or photograph appears only where a parent or guardian has consented to it, and disappears the moment that consent is withdrawn. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy."}</p>
+          {/* Not editable, and deliberately so. The paragraph above it is
+              admin copy, and an older saved version of it still promises that
+              a name or photo "never appears here" — which stopped being true
+              when consent-based display shipped. This states the actual rule
+              underneath whatever copy is in the CMS, so the page cannot make
+              a promise about someone's child that the software does not keep. */}
+          <p data-board-note="consent-rule" style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "13px 15px", borderRadius: 12, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.72)", fontSize: 13.5, lineHeight: 1.6, margin: "0 0 24px" }}>
+            <i className="ph ph-shield-check" style={{ color: "#d0ff3a", fontSize: 18, marginTop: 1, flex: "0 0 auto" }}/>
+            <span>A student is named or pictured on this page only where a parent or guardian has given consent for it. Consent can be withdrawn at any time, and the board stops showing them on its next refresh. To withdraw it, contact us and we will action it the same day.</span>
+          </p>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <button onClick={() => setPage && setPage(page.ctaPage || "join")} style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#0c1432", border: "none", background: "linear-gradient(135deg,#ffc34d,#f5b026)", boxShadow: "0 12px 26px -12px rgba(176,124,18,0.7)", display: "inline-flex", alignItems: "center", gap: 8 }}>{page.ctaLabel || "Apply for a place"} <i className="ph ph-arrow-right"/></button>
             <button onClick={() => setPage && setPage("v-status")} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 14, padding: "12px 22px", borderRadius: 999, cursor: "pointer", color: "#fff", background: "transparent", border: "1.5px solid rgba(255,255,255,0.25)" }}>Volunteer status board</button>
@@ -1464,10 +1492,16 @@ function LbRow({ m }) {
     <div className="lb-row">
       <span className="lb-rank" style={{ width: 34, height: 34, borderRadius: 10, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 14, background: m.rankBg, color: m.rankColor }}>{m.rank}</span>
       <span className="lb-id" style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-        <span style={{ width: 38, height: 38, flexShrink: 0, borderRadius: "50%", display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 15, color: "#fff", background: m.color }}>{m.initial}</span>
+        <span style={{ width: 38, height: 38, flexShrink: 0, borderRadius: "50%", display: "grid", placeItems: "center", position: "relative", overflow: "hidden", fontFamily: "'Sora'", fontWeight: 800, fontSize: 15, color: "#fff", background: m.color }}>
+          {m.initial}
+          {/* The initial stays underneath: if the photo 404s the avatar
+              degrades to the same monogram everyone else has, rather than a
+              broken-image icon on a child's row. */}
+          {m.photo ? <img src={m.photo} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
+        </span>
         <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}>{m.handle}</b>
-          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.metaLine}</span>
+          <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.handle}</b>
+          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.subHandle ? m.subHandle + " · " : ""}{m.metaLine}</span>
         </span>
       </span>
       <span className="lb-fac"><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, fontWeight: 600, padding: "4px 10px", borderRadius: 999, background: "rgba(28,42,94,0.06)", color: "#2a335c" }}>{m.faculty}</span></span>

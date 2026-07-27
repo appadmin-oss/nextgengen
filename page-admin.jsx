@@ -1857,6 +1857,219 @@ function consentDocumentHtml(c) {
 </body></html>`;
 }
 
+/* ── Parental consent FORM ───────────────────────────────────────────────────
+   A different instrument from the record above, and the distinction matters.
+   `consentDocumentHtml` reports what is already on file — an audit artefact.
+   This is the form itself: the numbered clauses a parent reads, initials and
+   signs, which is what a school, a centre inspection or a safeguarding review
+   asks to see.
+
+   Prefilled where the child is known, blank where they are not, so the same
+   template serves a specific family and a stack of 200 for a registration day.
+
+   Grounded in the law the programme actually operates under: the Nigeria Data
+   Protection Act 2023 for the data-processing clause and the Child's Rights
+   Act 2003 (and its Lagos State counterpart) for the safeguarding framing.
+   It is a template, not legal advice — the drawer says so where the admin
+   downloads it, because a form like this ought to be read by the
+   organisation's own adviser before it is put in front of a parent. */
+const CONSENT_CLAUSES = [
+  { type: "participation", n: 1, required: true, title: "Participation in the programme",
+    body: "I confirm that I am the parent or legal guardian of the child named in Part A, and I consent to their enrolment and participation in the programme's classes, workshops, mentoring and related activities. I understand that participation is voluntary and that I may withdraw my child at any time by notifying the programme in writing." },
+  { type: "medical", n: 2, required: true, title: "Emergency medical treatment",
+    body: "In the event of an accident, injury or sudden illness, and where I cannot be reached in time, I authorise the programme's staff to obtain such emergency medical treatment for my child as a qualified medical practitioner considers necessary, including transport to hospital. I undertake to disclose in Part C any medical condition, allergy, medication or dietary requirement relevant to my child's safety, and to inform the programme promptly if it changes." },
+  { type: "data", n: 3, required: true, title: "Processing of personal data",
+    body: "I consent to the programme collecting and processing my child's personal data — and my own contact details — for the purposes of enrolment, attendance, safeguarding, communication with me, and reporting to funders in aggregate form. This is processed in accordance with the Nigeria Data Protection Act 2023. Part G sets out what is held, why, for how long, and the rights available to me." },
+  { type: "media", n: 4, required: false, title: "Photography, film and recording",
+    body: "I consent to photographs, video or audio of my child being taken during programme activities, and to their use in the programme's internal records, reports to funders and partners, and printed materials. Declining this does not affect my child's place on the programme in any way." },
+  { type: "site_visibility", n: 5, required: false, title: "Being named or pictured publicly",
+    body: "I consent to my child's name and photograph appearing on the programme's public website and social media — for example on the public participation board. I understand this is separate from clause 4: permission to take a photograph is not permission to publish it. I understand a photograph is published only where I have agreed to BOTH clause 4 and this clause, that I may withdraw this consent at any time, and that my child will be removed from public display promptly once I do." },
+  { type: "trips", n: 6, required: false, title: "Off-site activities and transport",
+    body: "I consent to my child taking part in supervised activities away from their usual centre, including excursions, competitions and showcases, and to being transported by the programme or a transport provider engaged by it. I understand I will be told in advance of any off-site activity, including where it is and when my child will return." },
+  { type: "comms", n: 7, required: false, title: "Programme updates",
+    body: "I consent to receiving messages from the programme by SMS, email or messaging app about my child's attendance, sessions, events and results. I may opt out of these at any time without affecting my child's participation." },
+];
+
+function consentFormHtml(c, opts) {
+  opts = opts || {};
+  const blank = !!opts.blank;
+  const esc = (v) => String(v == null ? "" : v).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  const s = (!blank && c && c.student) || {}, gd = (!blank && c && c.guardian) || {}, prog = (c && c.programme) || {};
+  const org = esc(prog.name) || "Next Generation Genius";
+  const today = new Date().toISOString().slice(0, 10);
+  // A filled value prints as text; an empty one prints as a rule to write on,
+  // so one template covers a named child and a blank pad for a sign-up day.
+  const fill = (v) => (v == null || v === "" ? '<span class="w"></span>' : esc(v));
+
+  const clauses = CONSENT_CLAUSES.map(cl => `
+    <div class="cl">
+      <div class="cl-h"><span class="cl-n">${cl.n}</span><span class="cl-t">${esc(cl.title)}</span>
+        ${cl.required ? '<span class="tag req">Required</span>' : '<span class="tag opt">Optional</span>'}</div>
+      <p class="cl-b">${esc(cl.body)}</p>
+      <div class="cl-c">
+        <span class="box">I <b>CONSENT</b> <i></i></span>
+        <span class="box">I <b>DO NOT</b> consent <i></i></span>
+        <span class="init">Initials <i></i></span>
+      </div>
+    </div>`).join("");
+
+  return `<!doctype html><html><head><meta charset="utf-8">
+<title>Parental consent form${blank ? "" : " — " + esc(s.fullName)}</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 18mm; }
+  * { box-sizing: border-box; }
+  body { font: 10.5pt/1.5 Georgia,"Times New Roman",serif; color: #14181f; margin: 0; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5pt solid #0c1432; padding-bottom: 8pt; }
+  .org { font: 700 15pt/1.15 "Helvetica Neue",Arial,sans-serif; letter-spacing: -0.3pt; color: #0c1432; }
+  .doc { font: 8pt/1.3 "Helvetica Neue",Arial,sans-serif; letter-spacing: 1.5pt; text-transform: uppercase; color: #5a6488; margin-top: 3pt; }
+  .ref { text-align: right; font: 8.5pt/1.5 "Helvetica Neue",Arial,sans-serif; color: #5a6488; }
+  h1 { font: 700 15pt/1.2 "Helvetica Neue",Arial,sans-serif; margin: 14pt 0 2pt; letter-spacing: -0.2pt; }
+  h2 { font: 700 9.5pt/1.3 "Helvetica Neue",Arial,sans-serif; text-transform: uppercase; letter-spacing: 1.1pt;
+       color: #0c1432; margin: 15pt 0 7pt; padding-bottom: 3pt; border-bottom: 0.75pt solid #0c1432; page-break-after: avoid; }
+  .lede { font-size: 9.5pt; color: #47506e; margin: 0 0 4pt; }
+  table.kv { width: 100%; border-collapse: collapse; }
+  table.kv th, table.kv td { text-align: left; padding: 4.5pt 7pt 4.5pt 0; border-bottom: 0.5pt solid #d7dbe6; vertical-align: bottom; font-size: 10pt; }
+  table.kv th { width: 31%; font: 600 8.5pt/1.4 "Helvetica Neue",Arial,sans-serif; color: #5a6488; text-transform: uppercase; letter-spacing: 0.5pt; }
+  .w { display: inline-block; min-width: 58%; border-bottom: 0.5pt dotted #6b7280; }
+  .cl { margin: 0 0 9pt; page-break-inside: avoid; }
+  .cl-h { display: flex; align-items: baseline; gap: 7pt; }
+  .cl-n { font: 700 10pt "Helvetica Neue",Arial,sans-serif; color: #fff; background: #0c1432; width: 15pt; height: 15pt;
+          border-radius: 50%; display: inline-block; text-align: center; line-height: 15pt; flex: 0 0 auto; }
+  .cl-t { font: 700 10.5pt "Helvetica Neue",Arial,sans-serif; }
+  .tag { font: 700 7pt/1 "Helvetica Neue",Arial,sans-serif; text-transform: uppercase; letter-spacing: 0.7pt;
+         padding: 2pt 4pt; border-radius: 2pt; margin-left: auto; flex: 0 0 auto; }
+  .tag.req { background: #fdecea; color: #b3261e; border: 0.5pt solid #b3261e; }
+  .tag.opt { background: #eef1f7; color: #47506e; border: 0.5pt solid #9aa3b8; }
+  .cl-b { margin: 3pt 0 5pt 22pt; font-size: 9.5pt; text-align: justify; }
+  .cl-c { margin-left: 22pt; display: flex; gap: 16pt; align-items: center; font: 9pt "Helvetica Neue",Arial,sans-serif; }
+  .box i { display: inline-block; width: 12pt; height: 12pt; border: 0.75pt solid #14181f; margin-left: 5pt; vertical-align: -2pt; }
+  .init i { display: inline-block; width: 62pt; border-bottom: 0.5pt solid #14181f; margin-left: 5pt; }
+  .decl { font-size: 9.5pt; text-align: justify; }
+  .decl li { margin-bottom: 3pt; }
+  .sig { display: flex; gap: 20pt; margin-top: 14pt; page-break-inside: avoid; }
+  .sig div { flex: 1; }
+  .sig .line { border-bottom: 0.75pt solid #14181f; height: 26pt; }
+  .sig .lbl { font: 8pt/1.4 "Helvetica Neue",Arial,sans-serif; color: #5a6488; padding-top: 3pt; }
+  .notice { font-size: 8.5pt; line-height: 1.55; color: #2b3244; }
+  .notice p { margin: 0 0 5pt; }
+  .office { border: 0.75pt solid #0c1432; padding: 8pt 10pt; margin-top: 12pt; page-break-inside: avoid; }
+  footer { margin-top: 14pt; border-top: 0.5pt solid #d7dbe6; padding-top: 5pt; font: 7.5pt/1.5 "Helvetica Neue",Arial,sans-serif; color: #6b7280; }
+</style></head><body>
+  <div class="head">
+    <div><div class="org">${org}</div><div class="doc">Parental / guardian consent form</div></div>
+    <div class="ref">Ref: ${blank ? '<span class="w" style="min-width:70pt"></span>' : esc(s.displayId || s.studentId || "—")}<br>
+      Issued: ${esc(today)}<br>Form CF-1 &middot; rev. 2026.1</div>
+  </div>
+
+  <h1>Consent to participate</h1>
+  <p class="lede">Please read every clause. Tick <b>one</b> box for each and add your initials. Clauses 1 to 3 must be
+  granted before a child can take part. Clauses 4 to 7 are optional and declining any of them will not affect your
+  child's place, their treatment on the programme, or anything else about their participation.</p>
+
+  <h2>Part A &middot; The child</h2>
+  <table class="kv">
+    <tr><th>Full name</th><td>${fill(s.fullName)}</td></tr>
+    <tr><th>Date of birth / age</th><td>${fill(s.age == null || s.age === "" ? "" : s.age + " years")}</td></tr>
+    <tr><th>Sex</th><td>${fill(s.sex)}</td></tr>
+    <tr><th>Centre</th><td>${fill(s.centre)}</td></tr>
+    <tr><th>Faculty / course</th><td>${fill(s.track)}</td></tr>
+    <tr><th>School attended</th><td><span class="w"></span></td></tr>
+    <tr><th>Home address</th><td><span class="w"></span></td></tr>
+  </table>
+
+  <h2>Part B &middot; Parent or legal guardian</h2>
+  <table class="kv">
+    <tr><th>Full name</th><td>${fill(gd.name)}</td></tr>
+    <tr><th>Relationship to child</th><td><span class="w"></span></td></tr>
+    <tr><th>Mobile telephone</th><td>${fill(gd.phone)}</td></tr>
+    <tr><th>Email</th><td>${fill(gd.email)}</td></tr>
+    <tr><th>Means of identification</th><td><span class="w"></span></td></tr>
+  </table>
+
+  <h2>Part C &middot; Emergency contact, health and safeguarding</h2>
+  <table class="kv">
+    <tr><th>Alternative contact &amp; number</th><td><span class="w"></span></td></tr>
+    <tr><th>Medical conditions / allergies</th><td><span class="w"></span></td></tr>
+    <tr><th>Regular medication</th><td><span class="w"></span></td></tr>
+    <tr><th>Blood group (if known)</th><td><span class="w"></span></td></tr>
+    <tr><th>Persons NOT permitted to collect the child</th><td><span class="w"></span></td></tr>
+    <tr><th>Person(s) authorised to collect the child</th><td><span class="w"></span></td></tr>
+  </table>
+
+  <h2>Part D &middot; The consents</h2>
+  ${clauses}
+
+  <h2>Part E &middot; Declaration</h2>
+  <ol class="decl">
+    <li>I am the parent or person with legal parental responsibility for the child named in Part A, and I am entitled to give the consents in Part D.</li>
+    <li>The information I have given in Parts A to C is true and complete to the best of my knowledge, and I will tell the programme promptly if any of it changes.</li>
+    <li>I have read and understood each clause in Part D and the data protection notice in Part G, and I have had the opportunity to ask questions about them.</li>
+    <li>I understand that I may withdraw any consent at any time, in writing or by contacting the programme, without giving a reason and without any detriment to my child; and that withdrawal takes effect from the date it is received and does not undo anything lawfully done before then.</li>
+    <li>I understand the programme operates a safeguarding policy and that its staff and volunteers are required to report a concern about a child's welfare to the appropriate authority, and that they will do so whether or not I have consented to anything on this form.</li>
+  </ol>
+
+  <div class="sig">
+    <div><div class="line"></div><div class="lbl">Signature &mdash; parent / guardian</div></div>
+    <div><div class="line"></div><div class="lbl">Name in block capitals</div></div>
+    <div><div class="line"></div><div class="lbl">Date</div></div>
+  </div>
+  <div class="sig">
+    <div><div class="line"></div><div class="lbl">Signature &mdash; witness / programme officer</div></div>
+    <div><div class="line"></div><div class="lbl">Name &amp; role in block capitals</div></div>
+    <div><div class="line"></div><div class="lbl">Date</div></div>
+  </div>
+
+  <h2>Part F &middot; Where the child cannot sign for themselves</h2>
+  <p class="lede">A child aged 13 or over should be given the chance to say whether they agree to clauses 4 and 5,
+  which concern their own image and name. Their view is recorded here and is respected even where a parent has consented.</p>
+  <div class="sig">
+    <div><div class="line"></div><div class="lbl">Signature &mdash; child (13+, optional)</div></div>
+    <div><div class="line"></div><div class="lbl">Date</div></div>
+  </div>
+
+  <h2>Part G &middot; Data protection notice</h2>
+  <div class="notice">
+    <p><b>Who holds the data.</b> ${org} is the data controller for the personal data collected on this form.
+      Contact: ${esc(prog.phone) || "the programme office"}${esc(prog.website) ? " &middot; " + esc(prog.website) : ""}.</p>
+    <p><b>What we hold.</b> Your child's name, age, sex, centre, course, photograph, attendance record and any
+      health information you give in Part C; and your name, relationship, telephone number, email and identification reference.</p>
+    <p><b>Why we hold it.</b> To enrol and register your child; to take attendance and account for their safety while
+      in our care; to contact you, including in an emergency; to meet our safeguarding obligations; and to report
+      participation figures to funders and partners &mdash; in aggregate, without identifying any child, unless you
+      have consented under clauses 4 and 5.</p>
+    <p><b>Lawful basis.</b> Your consent, given on this form, under the Nigeria Data Protection Act 2023; and, for
+      safeguarding and emergency care, the protection of your child's vital interests and our legal obligations
+      under the Child's Rights Act 2003 and the corresponding State law.</p>
+    <p><b>Who sees it.</b> Programme staff and volunteers who need it for their role. We do not sell personal data
+      and we do not share it with third parties except where required by law, where necessary to protect a child,
+      or with a medical practitioner treating your child in an emergency.</p>
+    <p><b>How long we keep it.</b> For the duration of your child's involvement and for six years afterwards, after
+      which it is securely destroyed &mdash; except records we are required to retain longer for safeguarding purposes.</p>
+    <p><b>Your rights.</b> You may ask to see the personal data we hold about your child, ask us to correct it,
+      ask us to delete it, object to how we use it, or withdraw a consent &mdash; at any time, free of charge, by
+      contacting the programme office. You may also complain to the Nigeria Data Protection Commission.</p>
+  </div>
+
+  <div class="office">
+    <div style="font:700 8.5pt/1.3 'Helvetica Neue',Arial,sans-serif;text-transform:uppercase;letter-spacing:1pt;color:#0c1432;margin-bottom:6pt">For office use only</div>
+    <table class="kv">
+      <tr><th>Received by</th><td><span class="w"></span></td></tr>
+      <tr><th>Date received</th><td><span class="w"></span></td></tr>
+      <tr><th>ID verified (Y/N) &amp; method</th><td><span class="w"></span></td></tr>
+      <tr><th>Entered on system by / date</th><td><span class="w"></span></td></tr>
+      <tr><th>Student ID issued</th><td>${blank ? '<span class="w"></span>' : esc(s.displayId || s.studentId || "")}</td></tr>
+    </table>
+  </div>
+
+  <footer>
+    ${org} &mdash; Parental / guardian consent form CF-1 rev. 2026.1.
+    This form must be completed and signed before a child takes part. Retain the original at the centre and record the
+    consents on the programme system the same day.
+    ${esc(prog.website) ? esc(prog.website) + " &middot; " : ""}${esc(prog.phone)}
+  </footer>
+</body></html>`;
+}
+
 /** Render `html` and open the browser's print dialog, via a hidden iframe. */
 function printDocument(html, onFail) {
   try {
@@ -1885,17 +2098,24 @@ function ConsentRecord({ studentId, name, onClose }) {
     .catch(e => setErr(e.code || e.message || "load_failed"));
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [studentId]);
 
-  const doPrint = () => printDocument(consentDocumentHtml(c), () => toast.error("Your browser blocked the print dialog — allow popups for this site."));
-  const doDownload = () => {
-    // A standalone .html file: opens and prints identically anywhere, and
-    // survives being filed or emailed. No engine, no server round trip.
-    const blob = new Blob([consentDocumentHtml(c)], { type: "text/html;charset=utf-8" });
+  const blocked = () => toast.error("Your browser blocked the print dialog — allow popups for this site.");
+  const doPrint = () => printDocument(consentDocumentHtml(c), blocked);
+  // A standalone .html file: opens and prints identically anywhere, and
+  // survives being filed or emailed. No engine, no server round trip.
+  const save = (html, filename) => {
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "consent-" + (c.student.displayId || c.student.studentId) + ".html";
+    a.download = filename;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
+  const ref = () => (c.student.displayId || c.student.studentId);
+  const doDownload = () => save(consentDocumentHtml(c), "consent-record-" + ref() + ".html");
+  // The signable form, as opposed to the record of what is already on file.
+  const doFormPrint = () => printDocument(consentFormHtml(c), blocked);
+  const doFormDownload = () => save(consentFormHtml(c), "consent-form-" + ref() + ".html");
+  const doBlankForm = () => save(consentFormHtml(c, { blank: true }), "consent-form-blank.html");
 
   return (
     <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
@@ -1911,10 +2131,30 @@ function ConsentRecord({ studentId, name, onClose }) {
                 ? <><b>All required consents are on file.</b> This child is cleared to participate.</>
                 : <><b>Required consents are missing.</b> This child is not cleared to participate until they are recorded.</>}
             </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0 16px" }}>
-              <button className="btn btn-primary btn-sm" onClick={doPrint}>⎙ Print / Save as PDF</button>
-              <button className="btn btn-ghost btn-sm" onClick={doDownload}>↓ Download document</button>
-              <span className="admin-hint" style={{ margin: 0, alignSelf: "center" }}>A4, with signature lines — file it as it prints.</span>
+            {/* Two documents, and they are not interchangeable. The FORM is the
+                legal instrument a parent signs; the RECORD states what is on
+                file for this child. A centre inspection asks for the first,
+                an audit for the second. */}
+            <div className="eyebrow" style={{ margin: "16px 0 6px" }}>CONSENT FORM · FOR SIGNING</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+              <button className="btn btn-primary btn-sm" onClick={doFormPrint}>⎙ Print / Save as PDF</button>
+              <button className="btn btn-ghost btn-sm" onClick={doFormDownload}>↓ Download (prefilled)</button>
+              <button className="btn btn-ghost btn-sm" onClick={doBlankForm}>↓ Blank form for printing</button>
+            </div>
+            <span className="admin-hint" style={{ display: "block", margin: "0 0 4px" }}>
+              A4, clause by clause, with tick boxes, initials, declaration, signature and witness blocks, a data
+              protection notice under the Nigeria Data Protection Act 2023, and an office-use panel.
+            </span>
+            <span className="admin-hint" style={{ display: "block", margin: "0 0 18px", color: "var(--coral)" }}>
+              This is a template, not legal advice — have your legal adviser review the wording before you put it in
+              front of a parent, and amend it for anything specific to your State or your funders.
+            </span>
+
+            <div className="eyebrow" style={{ margin: "0 0 6px" }}>CONSENT RECORD · WHAT IS ON FILE</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 18px" }}>
+              <button className="btn btn-ghost btn-sm" onClick={doPrint}>⎙ Print / Save as PDF</button>
+              <button className="btn btn-ghost btn-sm" onClick={doDownload}>↓ Download record</button>
+              <span className="admin-hint" style={{ margin: 0, alignSelf: "center" }}>A4 — the ledger as it stands now.</span>
             </div>
 
             <div className="admin-table-wrap"><table className="admin-table">

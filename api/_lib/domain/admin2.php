@@ -89,7 +89,13 @@ function status_pages_defaults(): array {
             'trendDays' => 14,
             'centres' => [],
             'transparencyTitle' => 'Numbers, not names.',
-            'transparencyBody' => "This board updates live and shows only aggregate figures — how many students attended, at which centres, and how participation is trending. A child's name, photo, or record never appears here. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy.",
+            // Says what the board actually does. It used to promise that "a
+            // child's name, photo, or record never appears here" — true until
+            // consent-based display shipped, and a false assurance to parents
+            // afterwards. The board also renders a fixed consent statement
+            // that this copy cannot override, so an admin editing this text
+            // cannot reintroduce the old promise.
+            'transparencyBody' => "This board updates live and shows aggregate figures — how many students attended, at which centres, and how participation is trending. A child's record never appears here. A name or photograph is shown only where a parent or guardian has consented to it, and is removed as soon as that consent is withdrawn. It's how we stay accountable to parents, partners and the community without compromising a single child's privacy.",
             'ctaLabel' => 'Apply for a place →',
             'ctaPage' => 'join',
         ],
@@ -235,7 +241,32 @@ function public_status(array $p): array {
     // PII-free student leaderboard — handle only, never a name or photo.
     $palette = ['#f5b026', '#b07cff', '#2f9e44', '#3b5bdb', '#ff5a3c', '#17a2b8', '#e8a92b', '#6a3fc0'];
     $cIn = $cNames ? ('(' . implode(',', array_fill(0, count($cNames), '?')) . ')') : '';
-    $studs = $cNames ? db_all("SELECT studentId, handle, centre, track FROM summer_students WHERE status='active' AND centre IN $cIn", $cNames) : [];
+    $studs = $cNames ? db_all("SELECT studentId, handle, centre, track, fullName, photoUrl, regStatus FROM summer_students WHERE status='active' AND centre IN $cIn", $cNames) : [];
+
+    /* ── Who may be named and pictured in public ──────────────────────────
+     * Default is still handle-only. A child's name or face appears here for
+     * one reason: a guardian ticked the box that says so.
+     *
+     *   site_visibility ("Feature on our website")  → the name may be shown
+     *   media           ("Photos & media")          → the photograph may be
+     *
+     * Both are optional (priority 1) — declining changes nothing about the
+     * child's place on the programme, and they stay on the board under their
+     * handle exactly as before.
+     *
+     * The photo needs BOTH grants, not just `media`. Permission to take and
+     * use photographs internally is not permission to publish a child's
+     * picture on a public web page, and treating one as the other is the
+     * mistake worth designing against.
+     *
+     * `consents` is append-only, so the LAST row for a type is the current
+     * decision — which is how a withdrawal takes effect. It is read live on
+     * every poll, so a guardian who withdraws consent drops off the public
+     * board within one refresh rather than at some later rebuild. */
+    $consentOf = [];
+    foreach (db_all("SELECT studentId, type, status FROM consents WHERE type IN ('site_visibility','media') ORDER BY id") as $c) {
+        $consentOf[(string)$c['studentId']][(string)$c['type']] = (string)$c['status'];
+    }
     $starAgg = []; foreach (db_all("SELECT subjectId, SUM(stars) s, SUM(CASE WHEN date >= ? THEN stars ELSE 0 END) w FROM member_stars GROUP BY subjectId", [$weekAgo]) as $r) $starAgg[(string)$r['subjectId']] = ['s' => (int)$r['s'], 'w' => (int)$r['w']];
     $attAgg = []; foreach (db_all("SELECT studentId, COUNT(DISTINCT date) c FROM attendance WHERE date >= ? GROUP BY studentId", [$since]) as $r) $attAgg[(string)$r['studentId']] = (int)$r['c'];
     $schoolDays = max(1, (int)(db_row("SELECT COUNT(DISTINCT date) c FROM attendance WHERE date >= ?", [$since])['c'] ?? 1));
@@ -245,11 +276,23 @@ function public_status(array $p): array {
         $st = $starAgg[$sid] ?? ['s' => 0, 'w' => 0];
         $days = $attAgg[$sid] ?? 0;
         $handle = (string)$s['handle']; if ($handle === '') $handle = 'ngg' . substr($sid, -4);
+        // A registration the guardian never completed cannot have produced a
+        // valid grant, whatever the ledger says — verified is a second lock on
+        // the same door.
+        $verified  = ((string)($s['regStatus'] ?? 'verified')) === 'verified';
+        $cs        = $consentOf[$sid] ?? [];
+        $mayName   = $verified && (($cs['site_visibility'] ?? '') === 'granted');
+        $mayPhoto  = $mayName && (($cs['media'] ?? '') === 'granted');
+        $photo     = $mayPhoto ? normalize_image_url($s['photoUrl'] ?? '') : '';
         $members[] = [
             'handle' => $handle, 'centre' => (string)$s['centre'], 'faculty' => ((string)$s['track']) ?: 'General',
             'color' => $palette[abs(crc32($handle)) % count($palette)],
             'points' => $st['s'] * 40 + $days * 8, 'weekPoints' => $st['w'] * 40 + min($days, 5) * 8,
             'stars' => $st['s'], 'attendance' => (int)round($days / $schoolDays * 100), 'streak' => min($days, 14), 'move' => 0,
+            // Absent, not empty-stringed, when there is no consent: nothing
+            // downstream can then render a name it was never given.
+            'name'  => $mayName ? (string)$s['fullName'] : null,
+            'photo' => $photo !== '' ? $photo : null,
         ];
     }
     $faculties = array_values(array_unique(array_filter(array_map(fn($m) => $m['faculty'], $members))));

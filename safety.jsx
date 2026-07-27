@@ -27,12 +27,19 @@ class ErrorBoundary extends React.Component {
   static getDerivedStateFromError(error) { return { error }; }
   componentDidCatch(error, errorInfo) {
     this.setState({ errorInfo });
-    // Best-effort report to the backend audit log.
-    if (typeof NGGApi !== "undefined") {
-      try {
-        fetch("/api/public/stats.php", { method: "GET" }); // warm a noop so we know we're online
-      } catch (_) {}
-    }
+    /* There was a `fetch("/api/public/stats.php")` here, commented as a
+       "best-effort report to the backend audit log". It reported nothing: it
+       requested an unrelated public endpoint, never read the response, never
+       looked at the result, and had no .catch(). Three things wrong with it —
+       it sent no error anywhere, an unread body holds the connection open
+       (browsers allow ~6 per host, and this fires exactly when the app is
+       already in trouble), and a failed call raised an unhandled rejection.
+       It also hid behind the HTTP cache: only once API replies became
+       no-store did the leaked request become visible.
+
+       There is no client-error endpoint to report to, so this now does what
+       it always actually did — nothing — without the leak. Wiring up real
+       client-side error telemetry is a separate piece of work. */
     // Log to the console so we can see it in dev.
     console.error("[NGG ErrorBoundary]", error, errorInfo);
   }

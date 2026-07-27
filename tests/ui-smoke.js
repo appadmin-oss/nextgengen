@@ -57,6 +57,22 @@ const STATUS = {
       { centreId: 'EG', code: 'EG', name: 'Egbeda', color: '#2f9e44', need: 30, filled: 22, gap: 8,
         present: 66, enrolled: 80, rate: 83, registered: 90, pending: 13, capacity: 120, fill: 75 },
     ],
+    /* Three students covering every consent combination the backend can
+       emit. The board must name exactly one of them and picture exactly one
+       of them — getting this wrong publishes a child's face without their
+       guardian's permission, so it is asserted in both directions. */
+    members: [
+      // Full consent: named AND pictured.
+      { handle: 'brightspark', name: 'Adaeze Okonkwo', photo: '/assets/logo.png',
+        centre: 'Ijaiye', faculty: 'Tech', color: '#f5b026', points: 300, weekPoints: 120, stars: 5, attendance: 90, streak: 6, move: 1 },
+      // site_visibility only: named, but NO photograph.
+      { handle: 'quietriver', name: 'Bode Adeyemi', photo: null,
+        centre: 'Egbeda', faculty: 'Arts', color: '#b07cff', points: 200, weekPoints: 80, stars: 3, attendance: 80, streak: 4, move: 0 },
+      // No consent at all: handle only, exactly as before.
+      { handle: 'stonelion', name: null, photo: null,
+        centre: 'Ijaiye', faculty: 'Tech', color: '#2f9e44', points: 100, weekPoints: 40, stars: 1, attendance: 70, streak: 2, move: -1 },
+    ],
+    faculties: ['Tech', 'Arts'],
     directory: [], deltas: {}, page: { published: true },
   },
 };
@@ -547,6 +563,117 @@ const STATUS = {
     await rn.close();
     ok('a payload with no registration block hides the section (control)', noRegSec === null);
     ok('…and the attendance board still renders beside it', /Centre by centre/.test(noRegBody) && rnErrs.length === 0);
+
+    /* ── A name or face appears ONLY with consent ──────────────────────────
+     * The backend sends `name`/`photo` as null unless the guardian granted
+     * "Feature on our website" (and "Photos & media" for the picture). This
+     * checks the board honours both directions: the consented student is
+     * named and pictured, the partially-consented one is named with NO
+     * image, and the unconsented one is neither. A false negative here is a
+     * cosmetic bug; a false positive publishes a child's photograph without
+     * permission, which is why the absence assertions matter more than the
+     * presence ones. */
+    const lb = await browser.newPage();
+    const lbErrs = [];
+    lb.on('pageerror', e => lbErrs.push(String(e.message)));
+    await lb.goto(BASE + '/tests/_boards_fixture.html?board=status&mode=ok', { waitUntil: 'networkidle' });
+    await lb.waitForTimeout(1200);
+    // Switch to the Leaderboard tab, where students are listed.
+    await lb.evaluate(() => {
+      const b = Array.from(document.querySelectorAll('button')).find(x => /leaderboard/i.test(x.textContent || ''));
+      if (b) b.click();
+    });
+    await lb.waitForTimeout(800);
+    const board = await lb.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll('.lb-row'));
+      const find = (needle) => rows.find(r => (r.innerText || '').includes(needle)) || null;
+      const rowOf = (needle) => {
+        const r = find(needle);
+        return r ? { text: r.innerText, imgs: Array.from(r.querySelectorAll('img')).map(i => i.getAttribute('src')) } : null;
+      };
+      return {
+        consented: rowOf('Adaeze Okonkwo'),
+        nameOnly:  rowOf('Bode Adeyemi'),
+        anon:      rowOf('stonelion'),
+        bodyHasSurname: (document.body.innerText || '').includes('Adeyemi'),
+        allImgs: Array.from(document.querySelectorAll('.lb-row img')).map(i => i.getAttribute('src')),
+        note: !!document.querySelector('[data-board-note="consent-rule"]'),
+      };
+    });
+    await lb.close();
+
+    ok('a fully consented student is shown by name', !!board.consented);
+    ok('…and their photograph is rendered', !!board.consented && board.consented.imgs.includes('/assets/logo.png'));
+    ok('…and their handle is kept alongside it', !!board.consented && /@brightspark/.test(board.consented.text));
+    ok('a student consented to naming but NOT to photos is named', !!board.nameOnly && board.bodyHasSurname);
+    ok('…with no image on their row', !!board.nameOnly && board.nameOnly.imgs.length === 0);
+    ok('a student with no consent stays a handle', !!board.anon && /@?stonelion/.test(board.anon.text));
+    ok('…and is never named', !!board.anon && !/Okonkwo|Adeyemi/.test(board.anon.text));
+    ok('exactly one photograph is published across the leaderboard', board.allImgs.length === 1);
+    ok('the board states the consent rule where copy cannot override it', board.note);
+    ok('the consent-gated leaderboard renders with no script error', lbErrs.length === 0);
+    if (lbErrs.length) console.error('      ', lbErrs.slice(0, 3).join(' | '));
+
+    /* ── The parental consent FORM ─────────────────────────────────────────
+     * A legal instrument a parent signs, generated client-side, so nothing
+     * server-side validates it. It is a pure function on the bundle, which
+     * means it can be asserted on directly. The escaping check matters most:
+     * a child's name goes straight into this document, and a name containing
+     * a quote or an angle bracket must not be able to alter the clauses. */
+    const cf = await browser.newPage();
+    await cf.goto(BASE + '/tests/_boards_fixture.html?board=status&mode=ok', { waitUntil: 'domcontentloaded' });
+    await cf.waitForFunction(() => typeof window.consentFormHtml === 'function', null, { timeout: 15000 });
+    const form = await cf.evaluate(() => {
+      const c = {
+        student: { fullName: 'Adaeze <b>Okonkwo</b>', displayId: 'NGG/26/0042', age: 12, sex: 'F', centre: 'Ijaiye', track: 'Tech' },
+        guardian: { name: 'Mrs "Nkechi" Okonkwo', phone: '08031112222', email: 'n@example.org' },
+        programme: { name: 'Next Generation Genius', website: 'ngg.example.org', phone: '0800-000' },
+      };
+      const filled = window.consentFormHtml(c);
+      const blank = window.consentFormHtml(c, { blank: true });
+      const count = (h, re) => (h.match(re) || []).length;
+      return {
+        clauses: count(filled, /class="cl-t"/g),
+        required: count(filled, /class="tag req"/g),
+        optional: count(filled, /class="tag opt"/g),
+        boxes: count(filled, /class="box"/g),
+        hasName: filled.includes('Adaeze'),
+        // Escaped, not executable: the tags must be entities and the raw
+        // markup must not survive into the document.
+        escaped: filled.includes('&lt;b&gt;Okonkwo&lt;/b&gt;') && !filled.includes('<b>Okonkwo</b>'),
+        quoteEscaped: filled.includes('&quot;Nkechi&quot;') && !/name="?Mrs "Nkechi"/.test(filled),
+        ndpa: /Nigeria Data Protection Act 2023/.test(filled),
+        childRights: /Child's Rights Act 2003/.test(filled),
+        withdrawal: /withdraw any consent at any time/i.test(filled),
+        // Clause 5 must say publication needs clause 4 as well.
+        photoGate: /permission to take a photograph is not permission to publish it/i.test(filled),
+        signatures: count(filled, /class="line"/g),
+        officeUse: /For office use only/i.test(filled),
+        a4: /@page \{ size: A4/.test(filled),
+        // Blank mode: same clauses, no child's details.
+        blankClauses: count(blank, /class="cl-t"/g),
+        blankHasName: blank.includes('Adaeze'),
+        blankHasRules: count(blank, /class="w"/g) > 10,
+      };
+    });
+    await cf.close();
+
+    ok('the consent form carries all seven clauses (' + form.clauses + ')', form.clauses === 7);
+    ok('…three marked required, four optional', form.required === 3 && form.optional === 4);
+    ok('…each with consent / do-not-consent boxes (' + form.boxes + ')', form.boxes === 14);
+    ok('…prefilled with the child on file', form.hasName);
+    ok('…with markup in a name escaped, not rendered', form.escaped);
+    ok('…and quotes in a guardian name escaped', form.quoteEscaped);
+    ok('…a data protection notice citing the NDPA 2023', form.ndpa);
+    ok('…the safeguarding basis in the Child’s Rights Act 2003', form.childRights);
+    ok('…the right to withdraw consent, stated plainly', form.withdrawal);
+    ok('…and clause 5 separating taking a photo from publishing it', form.photoGate);
+    ok('…signature, witness and child-assent blocks (' + form.signatures + ' rules)', form.signatures >= 7);
+    ok('…an office-use panel for the receiving centre', form.officeUse);
+    ok('…laid out for A4', form.a4);
+    ok('the blank form keeps every clause', form.blankClauses === 7);
+    ok('…drops the child’s details', !form.blankHasName);
+    ok('…and leaves ruled lines to write on', form.blankHasRules);
 
     // ── ID Card Studio: mounts with its print controls intact ──────────────
     const studio = await browser.newPage();
