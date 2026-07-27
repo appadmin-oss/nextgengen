@@ -2286,6 +2286,7 @@ function ParentVerifyPage() {
   const [actorName, setActorName] = React.useState("");
   const [feedback, setFeedback] = React.useState("");
   const [signature, setSignature] = React.useState("");
+  const [showAll, setShowAll] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
@@ -2306,6 +2307,13 @@ function ParentVerifyPage() {
   const p0Done = p0.every(k => consents[k]);
   const answered = mustAnswer.every(k => Object.prototype.hasOwnProperty.call(consents, k));
   const ready = p0Done && answered && actorName.trim().length >= 2;
+  const allKeys = Object.keys(types);
+  const allAccepted = allKeys.length > 0 && allKeys.every(k => consents[k] === true);
+  const acceptAll = () => setConsents(() => {
+    const next = {};
+    allKeys.forEach(k => { next[k] = true; });
+    return next;
+  });
   const CONSENT_COPY = {
     participation: "may attend all program sessions and activities.",
     medical: "staff may seek medical help for them in an emergency.",
@@ -2338,8 +2346,29 @@ function ParentVerifyPage() {
 
   if (state === "loading") return shell(<div style={{ ...card, textAlign: "center", padding: 48 }}><div className="dash-spinner"/><p style={{ color: "#777" }}>One moment…</p></div>);
   if (state === "error") return shell(<div style={card}><h1 style={{ fontSize: 22, margin: "0 0 8px" }}>We couldn't open this link</h1><p style={{ color: "#555", lineHeight: 1.55 }}>{err}</p></div>);
-  if (state === "done") return shell(<div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>✅</div><h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Already confirmed</h1><p style={{ color: "#555" }}>You've already given consent for <b>{ctx.student.name}</b>. Nothing more is needed — thank you.</p></div>);
-  if (state === "success") return shell(<div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>🎉</div><h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>{first} is fully registered</h1><p style={{ color: "#555", lineHeight: 1.55 }}>Thank you. Their ID card is being prepared, and the program team has been notified. We'll only contact you about the program.</p></div>);
+  /* The centre's parent group, offered the moment consent is done — the one
+     moment a parent is certain to be looking at this page, and the point at
+     which the group is most useful to them. Rendered only when the centre has
+     actually set a link; an empty invitation to nothing is worse than none. */
+  const groupPanel = () => {
+    const g = (ctx && ctx.parentGroup) || {};
+    if (!g.url) return null;
+    return (
+      <div style={{ ...card, marginTop: 14, textAlign: "left", background: "#f0f4e4", border: "1px solid #dbe5bd" }}>
+        <b style={{ fontSize: 14 }}>Join the {g.centre} parent group</b>
+        <p style={{ margin: "6px 0 12px", fontSize: 13.5, color: "#4a4f42", lineHeight: 1.55 }}>
+          Pickup times, session changes and centre notices go out here first. It is optional, and you can leave at any time.
+        </p>
+        <a href={g.url} target="_blank" rel="noopener noreferrer"
+          style={{ display: "block", textAlign: "center", padding: "13px 16px", borderRadius: 12, background: "#c9f24e", color: "#243300", fontWeight: 800, fontSize: 15, textDecoration: "none" }}>
+          Open the parent group →
+        </a>
+      </div>
+    );
+  };
+
+  if (state === "done") return shell(<><div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>✅</div><h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Already confirmed</h1><p style={{ color: "#555" }}>You've already given consent for <b>{ctx.student.name}</b>. Nothing more is needed — thank you.</p></div>{groupPanel()}</>);
+  if (state === "success") return shell(<><div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>🎉</div><h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>{first} is fully registered</h1><p style={{ color: "#555", lineHeight: 1.55 }}>Thank you. Their ID card is being prepared, and the program team has been notified. We'll only contact you about the program.</p></div>{groupPanel()}</>);
 
   return shell(<>
     <div style={{ fontSize: 11, letterSpacing: ".18em", fontWeight: 700, color: "#8a8a80", textTransform: "uppercase" }}>NGG Summer School</div>
@@ -2353,6 +2382,33 @@ function ParentVerifyPage() {
         ? <img src={ctx.student.photoUrl} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: "cover" }}/>
         : <div style={{ width: 56, height: 56, borderRadius: 14, background: "#eef0e6", display: "grid", placeItems: "center", fontSize: 24, fontWeight: 800 }}>{(ctx.student.name || "?").charAt(0)}</div>}
       <div><div style={{ fontWeight: 800, fontSize: 17 }}>{ctx.student.name}</div><div style={{ fontSize: 13, color: "#777" }}>{ctx.student.course || "Summer program"}</div></div>
+    </div>
+
+    {/* One tap for the common case.
+        Most parents agree to everything and were made to tick five to seven
+        boxes to say so, on a phone, at a registration desk. This does it in
+        one — but it is not a shortcut past the wording: every clause is
+        spelled out in full below it, and the button says exactly what it is
+        agreeing to. Anyone who wants to differ on one answer just changes
+        that one afterwards; nothing is locked by using this. */}
+    <div style={{ ...card, padding: 16, marginBottom: 14, borderColor: allAccepted ? "#9fbc3b" : "#e6e6e0", background: allAccepted ? "#f4f9e8" : "#fff" }}>
+      <b style={{ fontSize: 14.5 }}>Happy with everything?</b>
+      <p style={{ margin: "6px 0 12px", fontSize: 13.5, color: "#5a5f52", lineHeight: 1.55 }}>
+        Agree to all {allKeys.length} of the permissions below in one tap. Every one is written out in full underneath —
+        <button type="button" onClick={() => setShowAll(v => !v)} style={{ background: "none", border: "none", padding: "0 0 0 4px", color: "#4a6b00", textDecoration: "underline", cursor: "pointer", font: "inherit" }}>
+          {showAll ? "hide the wording" : "read the wording"}
+        </button>. You can change any single answer afterwards.
+      </p>
+      {showAll && (
+        <ul style={{ margin: "0 0 12px", padding: "0 0 0 18px", fontSize: 13, color: "#5a5f52", lineHeight: 1.6 }}>
+          {allKeys.map(k => <li key={k} style={{ marginBottom: 4 }}><b>{types[k].label}</b> — {first} {CONSENT_COPY[k] || ""}</li>)}
+        </ul>
+      )}
+      <button type="button" onClick={acceptAll}
+        style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", cursor: "pointer", fontWeight: 800, fontSize: 15,
+                 background: allAccepted ? "#eaf3d4" : "#c9f24e", color: allAccepted ? "#5a7000" : "#243300" }}>
+        {allAccepted ? "✓ All permissions accepted" : "Accept all " + allKeys.length + " permissions"}
+      </button>
     </div>
 
     <div style={{ fontSize: 11, letterSpacing: ".14em", fontWeight: 700, color: "#8a8a80", margin: "18px 0 8px", textTransform: "uppercase" }}>Required — please tick all {p0.length}</div>

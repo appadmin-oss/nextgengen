@@ -3363,7 +3363,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
 
     $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
         'firstName' => 'Chidi', 'lastName' => 'Okonkwo-Eze', 'age' => 13,
-        'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+        'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Egbeda',
         'parentName' => 'Mrs Okonkwo', 'parentPhone' => '08039990001',
     ]]);
     chk('name split: registration accepts First and Last', !empty($r['ok']));
@@ -3392,7 +3392,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     // registration — the operator has no way to supply fields it never showed.
     $legacy = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
         'fullName' => 'Ada Nkemdirim', 'age' => 12,
-        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Main',
+        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Egbeda',
         'parentName' => 'Mr Nkemdirim', 'parentPhone' => '08039990002',
     ]]);
     chk('name split: a legacy single-name submission is still accepted', !empty($legacy['ok']));
@@ -3434,7 +3434,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
     $reg = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
         'firstName' => 'Sign', 'lastName' => 'Ature', 'age' => 12,
-        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Main',
+        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Egbeda',
         'parentName' => 'Mrs Ature', 'parentPhone' => '08039991234',
     ]]);
     $vt = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$reg['studentId']])['verifyToken'];
@@ -3471,7 +3471,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     // can change afterwards — which is precisely what a signature must not do.
     $reg2 = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
         'firstName' => 'Hot', 'lastName' => 'Link', 'age' => 12,
-        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Main',
+        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Egbeda',
         'parentName' => 'P', 'parentPhone' => '08039991235',
     ]]);
     $vt2 = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$reg2['studentId']])['verifyToken'];
@@ -3493,6 +3493,91 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     chk('consent doc: the edits reach the document generator', ($recDoc['rcNumber'] ?? '') === 'RC-1234567');
     chk('consent doc: the logo falls back to the ID card branding, not a second setting',
         ($recDoc['logoUrl'] ?? '') !== '');
+})();
+
+
+/* ── Parent group link after consent ────────────────────────────────────────
+ * Offered at the one moment a parent is certain to be looking at the page.
+ * Reuses the centre's existing whatsappUrl rather than a second column
+ * meaning the same thing — two fields for one fact is how an admin fills in
+ * one and wonders why the other screen is empty. */
+(function () use ($SU) {
+    backend_dispatch('admin.centres.upsert', ['requesterId' => $SU, 'data' => [
+        'name' => 'Grouped Centre', 'code' => 'GRP', 'color' => '#123456',
+        'whatsappUrl' => 'https://chat.whatsapp.com/ABCDEF',
+    ]]);
+    $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
+    $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
+        'firstName' => 'Group', 'lastName' => 'Kid', 'age' => 12,
+        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Grouped Centre',
+        'parentName' => 'P', 'parentPhone' => '08039995555',
+    ]]);
+    $vt = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$r['studentId']])['verifyToken'];
+
+    $ctx = backend_dispatch('parent.verify.context', ['t' => $vt]);
+    chk('parent page offers the centre parent group', ($ctx['parentGroup']['url'] ?? '') === 'https://chat.whatsapp.com/ABCDEF');
+    chk('…named after the centre the child is at', ($ctx['parentGroup']['centre'] ?? '') === 'Grouped Centre');
+
+    backend_dispatch('parent.verify.submit', ['t' => $vt, 'consents' => [
+        'participation' => true, 'medical' => true, 'data' => true, 'media' => true, 'site_visibility' => true,
+        'trips' => true, 'comms' => true,
+    ], 'actorName' => 'P']);
+    // A parent who reopens the link later is exactly somebody looking for it.
+    $after = backend_dispatch('parent.verify.context', ['t' => $vt]);
+    chk('…and it is still there once consent is done', ($after['parentGroup']['url'] ?? '') === 'https://chat.whatsapp.com/ABCDEF');
+
+    // A centre with no group set must offer nothing rather than an empty link.
+    backend_dispatch('admin.centres.upsert', ['requesterId' => $SU, 'data' => [
+        'name' => 'Quiet Centre', 'code' => 'QCT', 'color' => '#654321',
+    ]]);
+    $r2 = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
+        'firstName' => 'Quiet', 'lastName' => 'Kid', 'age' => 12,
+        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Quiet Centre',
+        'parentName' => 'P', 'parentPhone' => '08039995556',
+    ]]);
+    $vt2 = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$r2['studentId']])['verifyToken'];
+    chk('a centre with no group offers nothing, not a dead link',
+        empty(backend_dispatch('parent.verify.context', ['t' => $vt2])['parentGroup']));
+
+    // A non-https link must never reach an href on a page a parent opens from
+    // a text message.
+    db_update('centres', ['whatsappUrl' => 'javascript:alert(1)'], ['code' => 'QCT']);
+    chk('a non-https group link is refused on the way out',
+        empty(backend_dispatch('parent.verify.context', ['t' => $vt2])['parentGroup']));
+})();
+
+
+/* ── The Centre field is structural and cannot be dropped ───────────────────
+ * It was not locked, so a republish could remove it from the summer form —
+ * and then every registration afterwards stored an EMPTY centre, silently.
+ * That takes out the printed ID prefix, the card colour, every per-centre
+ * board and the parent group lookup, with nothing anywhere saying why. Found
+ * because the parent-group test could not find a centre on a child who had
+ * plainly been registered at one. */
+(function () use ($SU) {
+    chk('form: dropping Centre from the form is refused',
+        backend_dispatch('admin.forms.publish', ['requesterId' => $SU, 'formId' => 'summer-reg',
+            'fields' => array_values(array_filter(form_default_fields(), fn($f) => $f['key'] !== 'centre'))
+        ])['error'] === 'locked_field_missing');
+
+    // And a form already stored without it repairs itself on read, rather
+    // than quietly registering more children with no centre.
+    $live = form_live('summer-reg');
+    $without = array_values(array_filter($live['fields'], fn($f) => ($f['key'] ?? '') !== 'centre'));
+    db_update('form_defs', ['fields' => json_encode($without, JSON_UNESCAPED_SLASHES)],
+              ['formId' => 'summer-reg', 'status' => 'live']);
+    chk('form: a stored form missing Centre gets it back on read',
+        in_array('centre', array_column(form_live('summer-reg')['fields'], 'key'), true));
+
+    // The point of all of it: a registration lands at a real centre.
+    $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
+    $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
+        'firstName' => 'Centred', 'lastName' => 'Kid', 'age' => 12,
+        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Egbeda',
+        'parentName' => 'P', 'parentPhone' => '08039996000',
+    ]]);
+    chk('form: …so the child is stored at the centre they registered at',
+        (string) db_row('SELECT centre FROM summer_students WHERE studentId = ?', [(string)$r['studentId']])['centre'] === 'Egbeda');
 })();
 
 

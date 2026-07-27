@@ -170,7 +170,12 @@ function form_default_fields(): array {
         // catalogue, the /v-status breakdowns and instructor matching read them.
         ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => academy_faculties(), 'help' => 'Starts from the academy catalogue in Admin → Settings. Picking one narrows the Course list below to that faculty\'s courses; edit these options to override the list for this form.'],
         ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'optionsFrom' => 'faculty', 'options' => academy_courses(), 'help' => 'Courses are filtered by the chosen faculty — that mapping always comes live from Admin → Settings. This option list starts from the catalogue; type your own here to override it for this form.'],
-        ['key' => 'centre', 'label' => 'Centre', 'type' => 'choice', 'required' => true, 'options' => ['Main'], 'help' => 'Options come from Admin → Centres; drives the ID prefix and card colour.'],
+        // Locked. This is not a question, it is the record's home: it sets the
+        // printed ID prefix and card colour, every per-centre board counts off
+        // it, and the parent group link is looked up by it. It was NOT locked,
+        // so a republish dropped it — and every registration afterwards stored
+        // an empty centre with nothing anywhere saying so.
+        ['key' => 'centre', 'label' => 'Centre', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => ['Main'], 'help' => 'Options come from Admin → Centres; drives the ID prefix and card colour.'],
         // Locked: the consent record, the verification message and every
         // safeguarding follow-up name this person. A republish that dropped
         // the question left guardianName empty on every child registered
@@ -1029,14 +1034,36 @@ function registration_send_verification(string $studentId): array {
 
 /* ── Parent verification (public, token-authenticated) ────────────────────── */
 
+/** The centre's parent/guardian group link, if the centre has set one.
+ *
+ * Reuses the centre's existing `whatsappUrl` rather than adding a second
+ * "group link" column beside it. Two fields meaning the same thing is how an
+ * admin ends up filling in one and wondering why the other screen is empty —
+ * and this one is already validated to https on save and already surfaced on
+ * the centre page and event confirmations. */
+function centre_parent_group(string $centre): array {
+    $centre = trim($centre);
+    if ($centre === '') return [];
+    $c = db_row("SELECT name, whatsappUrl FROM centres WHERE name = ? OR code = ? LIMIT 1", [$centre, $centre]);
+    $url = trim((string)($c['whatsappUrl'] ?? ''));
+    // Belt-and-braces on read as well as on save: this lands in an href on a
+    // page a parent opens from a text message.
+    if ($url === '' || !preg_match('#^https://#i', $url)) return [];
+    return ['url' => $url, 'centre' => (string)($c['name'] ?? $centre)];
+}
+
 function parent_verify_context(array $p): array {
     $s = db_row('SELECT * FROM summer_students WHERE verifyToken = ? LIMIT 1', [(string)($p['t'] ?? '')]);
     if (!$s) return ['ok' => false, 'error' => 'link_invalid'];
-    if ((string)$s['regStatus'] === 'verified') return ['ok' => true, 'done' => true, 'student' => ['name' => $s['fullName']]];
+    // The group link is useful on the already-done screen too — a parent who
+    // reopens the link later is exactly someone looking for it.
+    if ((string)$s['regStatus'] === 'verified') return ['ok' => true, 'done' => true,
+        'student' => ['name' => $s['fullName']], 'parentGroup' => centre_parent_group((string)($s['centre'] ?? ''))];
     if (!empty($s['verifyExpiresAt']) && $s['verifyExpiresAt'] < now_iso()) return ['ok' => false, 'error' => 'link_expired'];
     return ['ok' => true, 'done' => false,
         'student' => ['name' => (string)$s['fullName'], 'course' => (string)$s['track'], 'photoUrl' => (string)$s['photoUrl']],
         'guardianName' => (string)$s['guardianName'],
+        'parentGroup' => centre_parent_group((string)($s['centre'] ?? '')),
         'consentTypes' => CONSENT_TYPES];
 }
 
