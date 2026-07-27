@@ -155,8 +155,8 @@ function form_default_fields(): array {
         ['key' => 'age', 'label' => 'Age', 'type' => 'number', 'required' => true, 'min' => 5, 'max' => 19, 'locked' => true],
         // Faculty is asked FIRST and narrows Course. Both are locked keys: the
         // catalogue, the /v-status breakdowns and instructor matching read them.
-        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => academy_faculties(), 'help' => 'The academy catalogue. Picking one narrows the Course list below to that faculty\'s courses.'],
-        ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'optionsFrom' => 'faculty', 'options' => academy_courses(), 'help' => 'Courses are filtered by the chosen faculty. Edit the catalogue in Admin → Settings; the options here follow it.'],
+        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => academy_faculties(), 'help' => 'Starts from the academy catalogue in Admin → Settings. Picking one narrows the Course list below to that faculty\'s courses; edit these options to override the list for this form.'],
+        ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'optionsFrom' => 'faculty', 'options' => academy_courses(), 'help' => 'Courses are filtered by the chosen faculty — that mapping always comes live from Admin → Settings. This option list starts from the catalogue; type your own here to override it for this form.'],
         ['key' => 'centre', 'label' => 'Centre', 'type' => 'choice', 'required' => true, 'options' => ['Main'], 'help' => 'Options come from Admin → Centres; drives the ID prefix and card colour.'],
         ['key' => 'parentName', 'label' => "Parent / guardian's name", 'type' => 'text', 'required' => true],
         ['key' => 'parentPhone', 'label' => "Parent's phone", 'type' => 'phone', 'required' => false, 'help' => 'Either phone or email is required — both is best.', 'locked' => true],
@@ -221,8 +221,100 @@ function form_live(string $formId = 'summer-reg'): array {
         db_insert('form_defs', ['formId' => $formId, 'version' => 1, 'name' => $nm, 'fields' => json_encode(form_defaults_for($formId), JSON_UNESCAPED_SLASHES), 'status' => 'live', 'publishedBy' => 'system', 'createdAt' => now_iso()]);
         $row = db_row("SELECT * FROM form_defs WHERE formId = ? AND status = 'live' ORDER BY version DESC LIMIT 1", [$formId]);
     }
-    $row['fields'] = json_decode((string)$row['fields'], true) ?: [];
+    $stored = json_decode((string)$row['fields'], true) ?: [];
+    $row['fields'] = form_hydrate_options(form_restore_locked($stored, $formId), $formId);
     return $row;
+}
+
+/**
+ * Put back any LOCKED field the stored definition is missing.
+ *
+ * Publishing has refused to drop a locked field for a while, but a form row
+ * written before a locked field existed simply has no such key — and nothing
+ * ever added it. That is how the live summer form ended up with no Faculty
+ * and no Course: the fields were introduced in code, the published row was
+ * older, and `form_live()` served the row verbatim. The catalogue was fine
+ * the whole time; there was nowhere on the form to show it.
+ *
+ * Missing fields are inserted at their default position, which keeps Faculty
+ * ahead of Course — the conditional-logic pass resolves top-down, so a field
+ * that narrows another has to come first. Fields the admin added are left
+ * where they are.
+ */
+function form_restore_locked(array $stored, string $formId = 'summer-reg'): array {
+    $defaults = form_defaults_for($formId);
+    $have = [];
+    foreach ($stored as $f) if (is_array($f) && isset($f['key'])) $have[(string)$f['key']] = true;
+
+    foreach ($defaults as $i => $def) {
+        if (empty($def['locked'])) continue;
+        if (isset($have[$def['key']])) continue;
+        array_splice($stored, min($i, count($stored)), 0, [$def]);
+        $have[$def['key']] = true;
+    }
+    return $stored;
+}
+
+/**
+ * Refresh catalogue-backed options against the LIVE data, every read.
+ *
+ * A published form stores its fields as JSON, options included — a snapshot
+ * of the catalogue at the moment somebody hit Publish. That is wrong for any
+ * option list that is maintained elsewhere:
+ *
+ *  - Editing the academy catalogue in Settings changed nothing on the live
+ *    form. The Faculty select kept whatever was frozen into the stored
+ *    definition, so faculties and courses added later never appeared, and a
+ *    form published before the faculty/course fields existed showed nothing
+ *    at all. This is the "the courses and faculties aren't on the form" bug.
+ *  - Adding or renaming a centre had the same problem, which is why
+ *    gate_context already patched `centre` back up on its way out. That fix
+ *    only helped the gate; the admin preview and submission validation still
+ *    saw the stale copy.
+ *
+ * Doing it here means every consumer — public form, gate, preview and the
+ * validator — agrees, and a course removed from the catalogue stops being
+ * accepted rather than lingering as a valid answer.
+ *
+ * Only lists that HAVE an external source are touched. A plain choice field
+ * an admin typed options into is left exactly as published.
+ *
+ * Scoped to the summer registration form on purpose. The VOLUNTEER form's
+ * Faculty options are the volunteer faculty list and are edited in the form
+ * builder itself (brief §5.4) — overwriting them from the academy catalogue
+ * silently discards an admin's edit. Two different lists that happen to share
+ * a field name; worth knowing before unifying them.
+ */
+function form_hydrate_options(array $fields, string $formId = 'summer-reg'): array {
+    if ($formId !== 'summer-reg') return $fields;
+    $catalogue = academy_catalogue();
+    $faculties = array_keys($catalogue);
+    $centres = array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name');
+
+    foreach ($fields as &$f) {
+        if (!is_array($f)) continue;
+        $key = (string)($f['key'] ?? '');
+        $empty = empty($f['options']) || !is_array($f['options']);
+        if ($key === 'faculty') {
+            // Catalogue fills the list; an admin who typed their own options
+            // in the builder keeps them. Those edits are a supported source
+            // in their own right (they feed public.volunteer.context), so
+            // overwriting them here would silently discard someone's work.
+            if ($empty && $faculties) $f['options'] = $faculties;
+        } elseif (!empty($f['optionsFrom']) && (string)$f['optionsFrom'] === 'faculty') {
+            if ($empty) $f['options'] = array_values(array_unique(array_merge(...(array_values($catalogue) ?: [[]]))));
+            // optionsBy is ALWAYS live — it is the faculty→courses mapping,
+            // which has no builder equivalent and is what narrows the list
+            // once a faculty is picked. Stale here means a cascade that
+            // offers courses from the wrong faculty.
+            $f['optionsBy'] = $catalogue;
+        } elseif ($key === 'centre' && $centres) {
+            $f['type'] = 'choice';
+            $f['options'] = $centres;
+        }
+    }
+    unset($f);
+    return $fields;
 }
 
 /** Validate + normalise a builder-submitted field list. Returns [ok, fields|error]. */

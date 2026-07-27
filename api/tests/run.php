@@ -40,6 +40,10 @@ require $ROOT . '/_lib/sms.php';
 foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'analytics', 'profiles', 'community'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/webcron.php';
+// session.php is pure functions over the device register — no bootstrap, no
+// headers emitted at load — so the idle-clock behaviour can be tested here
+// rather than only through a live HTTP request.
+require $ROOT . '/_lib/session.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
 // recorder BEFORE any handler calls it.
@@ -3208,6 +3212,97 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     $byToken = backend_dispatch('public.summerProfile', ['token' => 'SUMQR-CONSENT1'])['profile'] ?? [];
     chk('public profile by card token: still returns the full record',
         ($byToken['fullName'] ?? '') === 'No Consent');
+})();
+
+
+/* ── An active staff session must not expire while someone is using it ──────
+ * Staff idle out after 30 minutes, and `lastSeenAt` only advanced inside
+ * require_session() — a call that changes something. Reading a roster or
+ * filling a long form makes no such call, so the clock ran out with the admin
+ * sitting at the keyboard. session_touch() is the server half of the fix (the
+ * client heartbeats /auth/me while there is real interaction); it must move
+ * the clock forward, and must never be the thing that logs anyone out. */
+(function () {
+    $sid = 'SID-TOUCH';
+    $stale = gmdate('Y-m-d\TH:i:s\Z', time() - 1200);   // 20 minutes ago
+    db_insert('device_sessions', ['sid' => $sid, 'memberId' => 'NGG-2025-0099', 'ip' => '9.9.9.9',
+        'userAgent' => 'test', 'uaHash' => 'ht', 'createdAt' => $stale, 'lastSeenAt' => $stale, 'revokedAt' => '']);
+    $before = (string) db_row('SELECT lastSeenAt FROM device_sessions WHERE sid = ?', [$sid])['lastSeenAt'];
+
+    session_touch(['sid' => $sid]);
+    $after = (string) db_row('SELECT lastSeenAt FROM device_sessions WHERE sid = ?', [$sid])['lastSeenAt'];
+    chk('session_touch moves an active session\'s idle clock forward', strtotime($after) > strtotime($before));
+
+    // Throttled: a second touch straight away must not write again.
+    session_touch(['sid' => $sid]);
+    $third = (string) db_row('SELECT lastSeenAt FROM device_sessions WHERE sid = ?', [$sid])['lastSeenAt'];
+    chk('…but is throttled, so a chatty client is not one write per request', $third === $after);
+
+    // A revoked session must NOT be resurrected by a heartbeat.
+    db_insert('device_sessions', ['sid' => 'SID-REVOKED', 'memberId' => 'NGG-2025-0099', 'ip' => '9.9.9.9',
+        'userAgent' => 'test', 'uaHash' => 'hr', 'createdAt' => $stale, 'lastSeenAt' => $stale, 'revokedAt' => now_iso()]);
+    session_touch(['sid' => 'SID-REVOKED']);
+    chk('a revoked session is never revived by a heartbeat',
+        (string) db_row('SELECT lastSeenAt FROM device_sessions WHERE sid = ?', ['SID-REVOKED'])['lastSeenAt'] === $stale);
+
+    // Unknown sid / no session: silent no-op, never an error.
+    $threw = false;
+    try { session_touch(['sid' => 'SID-NOT-A-THING']); session_touch([]); session_touch(null); }
+    catch (Throwable $e) { $threw = true; }
+    chk('a heartbeat for a missing or absent session is a silent no-op', !$threw);
+})();
+
+
+/* ── A form published before a locked field existed must self-repair ────────
+ * form_live() served the stored definition verbatim. A row written before the
+ * Faculty and Course fields were introduced therefore had neither, and
+ * nothing ever put them back — which is why the live summer form showed no
+ * faculties and no courses while the catalogue behind it was perfectly fine.
+ * The fields must reappear, in an order where Faculty precedes Course (the
+ * logic pass resolves top-down, so the narrowing field has to come first),
+ * and the live faculty→courses map must always be attached. */
+(function () {
+    // Simulate the old row: strip faculty + course out of the live definition.
+    $live = form_live('summer-reg');
+    $without = array_values(array_filter($live['fields'], fn($f) => !in_array($f['key'] ?? '', ['faculty', 'course'], true)));
+    db_update('form_defs', ['fields' => json_encode($without, JSON_UNESCAPED_SLASHES)],
+              ['formId' => 'summer-reg', 'status' => 'live']);
+    chk('fixture: the stored definition really is missing both fields',
+        !in_array('faculty', array_column(json_decode((string) db_row("SELECT fields FROM form_defs WHERE formId='summer-reg' AND status='live'")['fields'], true), 'key'), true));
+
+    $repaired = form_live('summer-reg')['fields'];
+    $keys = array_column($repaired, 'key');
+    chk('a form missing Faculty gets it back on read', in_array('faculty', $keys, true));
+    chk('…and Course as well', in_array('course', $keys, true));
+    chk('…with Faculty ahead of Course, as the logic pass requires',
+        array_search('faculty', $keys, true) < array_search('course', $keys, true));
+
+    $byKey = [];
+    foreach ($repaired as $f) $byKey[$f['key']] = $f;
+    chk('the restored Faculty field is populated from the catalogue',
+        !empty($byKey['faculty']['options']) && in_array('Music', $byKey['faculty']['options'], true));
+    chk('the restored Course field carries the live faculty→courses map',
+        !empty($byKey['course']['optionsBy']['Music']) && in_array('Piano', $byKey['course']['optionsBy']['Music'], true));
+
+    /* A catalogue edit must reach the cascade even though the option LIST is
+     * builder-owned — the mapping has no builder equivalent. Seeded with a
+     * STALE optionsBy first: filling it in only when absent looks correct and
+     * silently pins the cascade to whatever was stored at publish time, so
+     * the course list would keep offering the old faculty's courses. */
+    $stale = array_map(function ($f) {
+        if (($f['key'] ?? '') === 'course') $f['optionsBy'] = ['Music' => ['Bugle']];
+        return $f;
+    }, form_live('summer-reg')['fields']);
+    db_update('form_defs', ['fields' => json_encode($stale, JSON_UNESCAPED_SLASHES)],
+              ['formId' => 'summer-reg', 'status' => 'live']);
+    setting_set('academy_catalogue', ['Music' => ['Piano', 'Kora'], 'Media' => ['Video']], 'test');
+    $after = [];
+    foreach (form_live('summer-reg')['fields'] as $f) $after[$f['key']] = $f;
+    chk('a catalogue edit reaches the live cascade mapping',
+        in_array('Kora', $after['course']['optionsBy']['Music'] ?? [], true));
+    chk('…replacing a stale stored mapping rather than being ignored',
+        !in_array('Bugle', $after['course']['optionsBy']['Music'] ?? [], true));
+    setting_set('academy_catalogue', [], 'test');   // back to the built-in default
 })();
 
 

@@ -8,6 +8,12 @@ $csrf = csrf_issue();
 $s = session_read();
 if (!$s) json_ok(['member' => null, 'csrf' => $csrf]);
 
+// This is the endpoint the client heartbeats on, so it is where an active
+// session's idle clock is reset. Without it a staff session expired after 30
+// minutes of reading rather than 30 minutes of absence. It cannot fail the
+// request — see session_touch().
+session_touch($s);
+
 $res = gs_call('auth.me', ['memberId' => $s['mid'] ?? '']);
 if (empty($res['ok'])) json_ok(['member' => null, 'csrf' => $csrf]);
 

@@ -185,6 +185,36 @@ function session_read(): ?array {
     return $payload;
 }
 
+/* Mark a live session as still in use, without asserting anything about it.
+ *
+ * The staff idle window is deliberately tight (30 minutes), and `lastSeenAt`
+ * only advances inside require_session() — i.e. on a call that actually does
+ * something. An admin reading a roster, composing a long form or working
+ * through a printed list makes no such call, so the clock ran out while they
+ * were sitting right there, and the next click threw them to the sign-in
+ * screen. That is what "the admin keeps signing out" was.
+ *
+ * This is the other half of the fix: a heartbeat the client sends only while
+ * someone is genuinely interacting with the page. A walked-away laptop still
+ * locks at 30 minutes, which is the point of the policy — but a person at the
+ * keyboard is no longer treated as absent.
+ *
+ * Deliberately quiet: no session, revoked, or missing row and it simply does
+ * nothing. Enforcement belongs in require_session(); this must never be the
+ * thing that logs somebody out. Writes are throttled the same 5 minutes, so
+ * a chatty client costs one UPDATE per session per five minutes at most.
+ */
+function session_touch(?array $s = null): void {
+    $s = $s ?? session_read();
+    if (!$s || empty($s['sid'])) return;
+    try {
+        $row = db_row('SELECT id, revokedAt, lastSeenAt FROM device_sessions WHERE sid = ? LIMIT 1', [(string)$s['sid']]);
+        if (!$row || !empty($row['revokedAt'])) return;
+        $last = strtotime((string)($row['lastSeenAt'] ?? '')) ?: 0;
+        if (time() - $last > 300) db_update('device_sessions', ['lastSeenAt' => now_iso()], ['id' => $row['id']]);
+    } catch (Throwable $e) { /* a heartbeat is never worth failing a request over */ }
+}
+
 function require_session(): array {
     $s = session_read();
     if (!$s) json_error('unauthorized', 401);

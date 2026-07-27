@@ -127,6 +127,40 @@ function AuthProvider({ children }) {
     onVerified: (m) => { setMember(m); setSigninOpen(false); },
   };
 
+  /* Keep an ACTIVE session alive.
+   *
+   * Staff sessions expire after 30 minutes idle, and the server only counted
+   * a request that changed something. An admin reading a roster, working
+   * through a printed list or filling in a long form makes no such request,
+   * so the clock ran out while they were sitting at the keyboard and the next
+   * click dropped them at the sign-in screen.
+   *
+   * The heartbeat is gated on REAL interaction, which is the part that
+   * matters: a laptop left open in a centre still locks on schedule, because
+   * nobody has touched it. Only a person actually working keeps their session.
+   *
+   * Six minutes, against the server's five-minute write throttle and a
+   * thirty-minute window — the write lands, and five heartbeats can be missed
+   * before anyone is logged out. Nothing happens on a hidden tab or for a
+   * signed-out visitor. */
+  const lastActive = React.useRef(Date.now());
+  React.useEffect(() => {
+    if (!member) return;
+    const mark = () => { lastActive.current = Date.now(); };
+    const events = ["pointerdown", "keydown", "focus"];
+    events.forEach(e => window.addEventListener(e, mark, { passive: true }));
+    const beat = setInterval(() => {
+      if (document.hidden) return;
+      // Nothing since the last beat means nobody is there — let it expire.
+      if (Date.now() - lastActive.current > 6 * 60 * 1000) return;
+      NGGApi.auth.me().catch(() => {});
+    }, 6 * 60 * 1000);
+    return () => {
+      events.forEach(e => window.removeEventListener(e, mark));
+      clearInterval(beat);
+    };
+  }, [member]);
+
   return (
     <AuthCtx.Provider value={ctx}>
       {impersonating && (
