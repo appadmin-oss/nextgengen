@@ -58,6 +58,63 @@ function behaviour_classify(string $note): array {
     return behaviour_rule_classify($note) + ['aiSource' => ai_enabled('behaviour') ? 'fallback' : 'rules'];
 }
 
+
+/* ── Quick presets ───────────────────────────────────────────────────────────
+ * A mentor at the end of a session has thirty children and five minutes. Free
+ * text plus an AI round trip is the wrong shape for that: it is the accurate
+ * option, not the fast one, and a tool that is too slow to use during the
+ * session gets filled in from memory that evening — or not at all.
+ *
+ * Presets are one tap: a label, the stars it carries, and the category and
+ * severity it files under. No classification needed, because the preset IS
+ * the classification — which also means they work with AI switched off, on a
+ * bad connection, and identically for every mentor, so the data stays
+ * comparable across centres.
+ *
+ * Free text with AI classification stays for everything a preset cannot say.
+ * Admin-overridable, because the behaviours a programme wants to name are
+ * theirs to choose.
+ */
+const BEHAVIOUR_PRESET_DEFAULTS = [
+    ['id' => 'helped',    'label' => 'Helped a classmate',   'stars' => 2, 'category' => 'commendation',  'severity' => 'positive', 'icon' => '🤝'],
+    ['id' => 'led',       'label' => 'Led the group well',   'stars' => 3, 'category' => 'commendation',  'severity' => 'positive', 'icon' => '⭐'],
+    ['id' => 'effort',    'label' => 'Strong effort today',  'stars' => 2, 'category' => 'participation', 'severity' => 'positive', 'icon' => '💪'],
+    ['id' => 'spoke',     'label' => 'Spoke up in class',    'stars' => 1, 'category' => 'participation', 'severity' => 'positive', 'icon' => '🙋'],
+    ['id' => 'improved',  'label' => 'Much improved',        'stars' => 2, 'category' => 'commendation',  'severity' => 'positive', 'icon' => '📈'],
+    ['id' => 'tidy',      'label' => 'Left the space tidy',  'stars' => 1, 'category' => 'respect',       'severity' => 'positive', 'icon' => '🧹'],
+    ['id' => 'quiet',     'label' => 'Withdrawn / very quiet', 'stars' => 0, 'category' => 'wellbeing',   'severity' => 'concern',  'icon' => '🫥'],
+    ['id' => 'disrupt',   'label' => 'Disrupted the session', 'stars' => 0, 'category' => 'discipline',   'severity' => 'concern',  'icon' => '⚠️'],
+    ['id' => 'conflict',  'label' => 'Conflict with a peer', 'stars' => 0, 'category' => 'peer',          'severity' => 'concern',  'icon' => '💢'],
+];
+
+function behaviour_presets(): array {
+    $saved = setting_get('behaviour_presets');
+    if (!is_array($saved) || !$saved) return BEHAVIOUR_PRESET_DEFAULTS;
+    $out = [];
+    foreach ($saved as $r) {
+        if (!is_array($r)) continue;
+        $id = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($r['id'] ?? '')));
+        $label = substr(trim((string)($r['label'] ?? '')), 0, 80);
+        if ($id === '' || $label === '') continue;
+        $out[] = [
+            'id' => $id, 'label' => $label,
+            'stars' => max(0, min(3, (int)($r['stars'] ?? 0))),
+            'category' => in_array(($r['category'] ?? ''), BEHAVIOUR_CATEGORIES, true) ? (string)$r['category'] : 'participation',
+            'severity' => in_array(($r['severity'] ?? ''), BEHAVIOUR_SEVERITIES, true) ? (string)$r['severity'] : 'info',
+            'icon' => substr(trim((string)($r['icon'] ?? '')), 0, 8),
+        ];
+    }
+    return $out ?: BEHAVIOUR_PRESET_DEFAULTS;
+}
+
+function admin_behaviour_presets_save(array $p): array {
+    $g = behaviour_gate($p); if (!$g['ok']) return $g;
+    $in = is_array($p['presets'] ?? null) ? array_slice($p['presets'], 0, 40) : [];
+    setting_set('behaviour_presets', $in, (string)$g['requester']['memberId']);
+    audit('behaviour.presets.set', (string)$g['requester']['memberId'], '', ['count' => count($in)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'presets' => behaviour_presets()];
+}
+
 /** Staff with people OR summer capability may observe/read. */
 function behaviour_gate(array $p): array {
     $g = admin_cap_gate($p, 'people');

@@ -4142,6 +4142,9 @@ function MentorPortal() {
   const [state, setState] = React.useState("loading"); // loading | need-auth | not-mentor | ready | error
   const [sheet, setSheet] = React.useState(null);       // student being starred
   const [v3sheet, setV3sheet] = React.useState(null);   // student getting a V3 rating
+  const [picked, setPicked] = React.useState([]);       // bulk selection
+  const [query, setQuery] = React.useState("");
+  const [bulkOpen, setBulkOpen] = React.useState(false);
   const navy = "#16223e", gold = "#ffce54";
   const load = React.useCallback(() => {
     setState("loading");
@@ -4163,6 +4166,26 @@ function MentorPortal() {
 
   const m = data.mentor || {}, students = data.students || [];
   const done = students.filter(s => s.starredToday).length;
+
+  /* Filter + multi-select. A mentor with thirty children in front of them
+     needs to find four of them and mark all four in one action; scrolling a
+     list of four hundred to tap each one is the reason this data stopped
+     being recorded during the session and started being recalled that
+     evening. Selection survives filtering, so you can search, tick, clear the
+     search, search again, and apply to the lot. */
+  const q = (query || "").trim().toLowerCase();
+  const shown = q
+    ? students.filter(s => (s.fullName || "").toLowerCase().includes(q) || (s.track || "").toLowerCase().includes(q))
+    : students;
+  const isPicked = (id) => picked.indexOf(id) !== -1;
+  const toggle = (id) => setPicked(p => isPicked(id) ? p.filter(x => x !== id) : p.concat([id]));
+  // "All" means everything currently visible — the filtered set is the thing
+  // the mentor is looking at, so that is what the control should act on.
+  const allShownPicked = shown.length > 0 && shown.every(s => isPicked(s.studentId));
+  const toggleAllShown = () => setPicked(p => allShownPicked
+    ? p.filter(id => !shown.some(s => s.studentId === id))
+    : Array.from(new Set(p.concat(shown.map(s => s.studentId)))));
+
   return shell(<>
     <div style={{ marginBottom: 18 }}>
       <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>MENTOR PORTAL</div>
@@ -4170,9 +4193,30 @@ function MentorPortal() {
       <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>{m.centre || "All centres"}{m.department ? " · " + m.department : ""} · {students.length} student{students.length === 1 ? "" : "s"} · {done} starred today</p>
     </div>
     {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No students in your class yet.</p>}
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {students.map(s => (
-        <div key={s.studentId} style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, padding: "10px 14px" }}>
+
+    {students.length > 0 && (
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search name or course…"
+          aria-label="Search students"
+          style={{ flex: "1 1 200px", minWidth: 160, padding: "11px 14px", borderRadius: 11, fontSize: 15,
+                   background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.16)", color: "#eef2fb" }}/>
+        <button type="button" onClick={toggleAllShown}
+          style={{ padding: "11px 14px", borderRadius: 11, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 13.5, cursor: "pointer", whiteSpace: "nowrap" }}>
+          {allShownPicked ? "Clear" : "Select"} all{q ? " shown" : ""} ({shown.length})
+        </button>
+      </div>
+    )}
+
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingBottom: picked.length ? 96 : 0 }}>
+      {!shown.length && students.length > 0 && <p style={{ color: "rgba(230,238,255,.5)", fontSize: 13.5 }}>Nobody matches “{query}”.</p>}
+      {shown.map(s => (
+        <div key={s.studentId} style={{ display: "flex", alignItems: "center", gap: 12,
+            background: isPicked(s.studentId) ? "rgba(255,206,84,.14)" : "rgba(255,255,255,.06)",
+            border: "1px solid " + (isPicked(s.studentId) ? "rgba(255,206,84,.5)" : "rgba(255,255,255,.12)"),
+            borderRadius: 14, padding: "10px 14px" }}>
+          <input type="checkbox" checked={isPicked(s.studentId)} onChange={() => toggle(s.studentId)}
+            aria-label={"Select " + s.fullName}
+            style={{ width: 20, height: 20, flex: "none", accentColor: gold, cursor: "pointer" }}/>
           <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb,#8fbb3f)", flex: "none" }}>{s.photoUrl ? <img src={s.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>{s.fullName}</div>
@@ -4187,9 +4231,164 @@ function MentorPortal() {
         </div>
       ))}
     </div>
+    {picked.length > 0 && (
+      <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 90, padding: "12px 16px calc(12px + env(safe-area-inset-bottom,0px))",
+                    background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "blur(8px)" }}>
+        <div style={{ maxWidth: 760, margin: "0 auto", display: "flex", gap: 10, alignItems: "center" }}>
+          <span style={{ fontWeight: 800, fontSize: 15 }}>{picked.length} selected</span>
+          <button type="button" onClick={() => setPicked([])}
+            style={{ background: "none", border: "none", color: "rgba(230,238,255,.6)", textDecoration: "underline", cursor: "pointer", fontSize: 13.5 }}>Clear</button>
+          <span style={{ flex: 1 }}/>
+          <button type="button" onClick={() => setBulkOpen(true)}
+            style={{ padding: "12px 20px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>
+            Record for {picked.length} →
+          </button>
+        </div>
+      </div>
+    )}
+    {bulkOpen && <MentorBulkSheet
+      count={picked.length}
+      presets={data.presets || []}
+      categories={data.categories || []}
+      onClose={() => setBulkOpen(false)}
+      onDone={(res) => { setBulkOpen(false); setPicked([]); load(); return res; }}
+      subjectIds={picked}/>}
     {sheet && <MentorStarSheet student={sheet} categories={data.categories || []} onClose={() => setSheet(null)} onDone={() => { setSheet(null); load(); }}/>}
     {v3sheet && <MentorV3Sheet student={v3sheet} period={data.period} onClose={() => setV3sheet(null)} onDone={() => { setV3sheet(null); load(); }}/>}
   </>);
+}
+
+/* ── Bulk record sheet ───────────────────────────────────────────────────────
+   One observation, many children. Two ways in:
+
+   PRESETS are one tap and carry their own stars, category and severity — the
+   preset IS the classification, so there is no AI round trip, nothing to wait
+   for on a bad connection, and every mentor files the same behaviour the same
+   way. That last part is what makes the data comparable across centres.
+
+   FREE TEXT is for everything a preset cannot say, and goes through the
+   server's classifier (AI when it is on, deterministic rules when it is not).
+
+   The result is reported per child, because partial success is the normal
+   case: some of a selection will already have been starred today by another
+   mentor. Failing the whole batch and leaving the mentor to guess what landed
+   would be worse than useless. */
+function MentorBulkSheet({ count, subjectIds, presets, categories, onClose, onDone }) {
+  const [preset, setPreset] = React.useState(null);
+  const [note, setNote] = React.useState("");
+  const [stars, setStars] = React.useState(null);   // null = take it from the preset
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const [result, setResult] = React.useState(null);
+  const gold = "#ffce54", green = "#7fd1a6";
+
+  const effStars = stars != null ? stars : (preset ? preset.stars : 0);
+  const canSend = !!preset || note.trim().length >= 5;
+
+  const submit = async () => {
+    setBusy(true); setErr("");
+    try {
+      const opts = {};
+      if (preset) opts.presetId = preset.id;
+      if (stars != null) opts.stars = stars;
+      if (note.trim()) opts.note = note.trim();
+      const r = await NGGApi.member.bulkAward(subjectIds, opts);
+      setResult(r);
+    } catch (e) {
+      setErr(e.code === "too_many_subjects" ? "That is too many at once — select fewer."
+        : e.code === "nothing_to_record" ? "Pick a preset or write a note first."
+        : (e.code || e.message));
+      setBusy(false);
+    }
+  };
+
+  const chip = (on) => ({
+    display: "flex", alignItems: "center", gap: 7, padding: "10px 13px", borderRadius: 11, cursor: "pointer",
+    fontSize: 13.5, fontWeight: 700, textAlign: "left",
+    border: "1.5px solid " + (on ? gold : "rgba(255,255,255,.18)"),
+    background: on ? "rgba(255,206,84,.16)" : "rgba(255,255,255,.05)",
+    color: on ? gold : "#cdd6ea",
+  });
+
+  return (
+    <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 130, background: "rgba(4,8,20,.72)", display: "grid", placeItems: "end center" }}>
+      <div style={{ width: "100%", maxWidth: 560, maxHeight: "92vh", overflowY: "auto", background: "#101a33", color: "#eef2fb",
+                    borderRadius: "18px 18px 0 0", padding: "20px 20px calc(20px + env(safe-area-inset-bottom,0px))", border: "1px solid rgba(255,255,255,.14)" }}>
+
+        {result ? (
+          <>
+            <h2 style={{ margin: "0 0 10px", fontSize: 19 }}>Recorded</h2>
+            <p style={{ color: "rgba(230,238,255,.72)", fontSize: 14, lineHeight: 1.6, margin: "0 0 14px" }}>
+              {result.awarded > 0 && <><b style={{ color: gold }}>{result.awarded}</b> starred. </>}
+              {result.logged > 0 && <><b style={{ color: green }}>{result.logged}</b> observation{result.logged === 1 ? "" : "s"} logged. </>}
+              {result.skipped > 0 && <><b style={{ color: "#ffb0b0" }}>{result.skipped}</b> skipped.</>}
+            </p>
+            {/* Naming the skips matters: "already starred today" is somebody
+                else having got there first, not a failure to fix. */}
+            {result.skipped > 0 && (
+              <ul style={{ margin: "0 0 16px", padding: "0 0 0 18px", color: "rgba(230,238,255,.55)", fontSize: 12.5, lineHeight: 1.6 }}>
+                {(result.results || []).filter(r => !r.ok).slice(0, 8).map((r, i) => (
+                  <li key={i}>{r.subjectId} — {r.error === "already_starred_today" ? "already starred today" : r.error === "not_your_centre" ? "not in your class" : r.error}</li>
+                ))}
+              </ul>
+            )}
+            <button type="button" onClick={() => onDone(result)}
+              style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Done</button>
+          </>
+        ) : (
+          <>
+            <h2 style={{ margin: "0 0 4px", fontSize: 19 }}>Record for {count} student{count === 1 ? "" : "s"}</h2>
+            <p style={{ color: "rgba(230,238,255,.55)", fontSize: 13, margin: "0 0 14px" }}>Tap what happened. One tap covers all {count}.</p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 8, marginBottom: 16 }}>
+              {presets.map(pr => (
+                <button key={pr.id} type="button" onClick={() => { setPreset(preset && preset.id === pr.id ? null : pr); setStars(null); }}
+                  style={chip(!!preset && preset.id === pr.id)}>
+                  <span aria-hidden="true" style={{ fontSize: 16 }}>{pr.icon || "•"}</span>
+                  <span style={{ flex: 1 }}>{pr.label}</span>
+                  {pr.stars > 0 && <span style={{ opacity: .85 }}>{"★".repeat(pr.stars)}</span>}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <span style={{ display: "block", fontSize: 12, fontWeight: 700, color: "rgba(230,238,255,.6)", marginBottom: 6 }}>
+                Stars {preset && stars == null ? "(from the preset)" : ""}
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[0, 1, 2, 3].map(n => (
+                  <button key={n} type="button" onClick={() => setStars(n)}
+                    style={{ ...chip(effStars === n), justifyContent: "center", flex: 1, padding: "10px 6px" }}>
+                    {n === 0 ? "None" : "★".repeat(n)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <span style={{ display: "block", fontSize: 12, fontWeight: 700, color: "rgba(230,238,255,.6)", marginBottom: 6 }}>
+              Note {preset ? "(optional)" : "(or write what happened — we file it for you)"}
+            </span>
+            <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} maxLength={300}
+              placeholder={preset ? preset.label : "e.g. Worked well together on the group build"}
+              style={{ width: "100%", padding: "12px 14px", borderRadius: 12, fontSize: 15, resize: "vertical", fontFamily: "inherit",
+                       background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.16)", color: "#eef2fb" }}/>
+
+            {err && <p style={{ color: "#ffb0b0", fontSize: 13.5, margin: "10px 0 0" }}>{err}</p>}
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button type="button" onClick={onClose} disabled={busy}
+                style={{ flex: "0 0 auto", padding: "14px 18px", borderRadius: 12, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#cdd6ea", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+              <button type="button" onClick={submit} disabled={busy || !canSend}
+                style={{ flex: 1, padding: 14, borderRadius: 12, border: "none", cursor: canSend ? "pointer" : "default", fontWeight: 800, fontSize: 15,
+                         background: canSend ? gold : "rgba(255,255,255,.12)", color: canSend ? "#2b2100" : "rgba(230,238,255,.4)" }}>
+                {busy ? "Recording…" : "Record for " + count}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /* V3 weekly rating — Verbal · Vocal · Visual, each 1..5, one row per ISO week. */

@@ -38,10 +38,26 @@ function mentor_roster(array $p): array {
     $rows = db_all("SELECT studentId, fullName, track, centre, photoUrl FROM summer_students WHERE $where ORDER BY fullName LIMIT 400", $args);
 
     $period = iso_week_period();
+
+    /* Two batched reads, not two per child.
+     *
+     * This ran a star lookup and a V3 lookup inside the loop — 800 queries for
+     * a 400-student centre, on the one screen a mentor opens with thirty
+     * children in front of them. Fetch both sets once and index them. */
+    $starOf = []; $v3Of = [];
+    if ($rows) {
+        $ids = array_column($rows, 'studentId');
+        $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
+        foreach (db_all("SELECT subjectId, stars, note, category, givenById FROM member_stars WHERE date = ? AND subjectId IN $in",
+                        array_merge([$today], $ids)) as $r2) $starOf[(string)$r2['subjectId']] = $r2;
+        foreach (db_all("SELECT subjectId, verbal, vocal, visual, note FROM v3_scores WHERE period = ? AND subjectId IN $in",
+                        array_merge([$period], $ids)) as $r2) $v3Of[(string)$r2['subjectId']] = $r2;
+    }
+
     $students = [];
     foreach ($rows as $r) {
-        $star = db_row("SELECT stars, note, category, givenById FROM member_stars WHERE subjectId = ? AND date = ? LIMIT 1", [$r['studentId'], $today]);
-        $v3 = db_row("SELECT verbal, vocal, visual, note FROM v3_scores WHERE subjectId = ? AND period = ? LIMIT 1", [$r['studentId'], $period]);
+        $star = $starOf[(string)$r['studentId']] ?? null;
+        $v3 = $v3Of[(string)$r['studentId']] ?? null;
         $students[] = [
             'studentId'    => $r['studentId'],
             'fullName'     => $r['fullName'],
@@ -54,6 +70,7 @@ function mentor_roster(array $p): array {
         ];
     }
     return ['ok' => true, 'today' => $today, 'period' => $period, 'categories' => BEHAVIOUR_CATEGORIES,
+        'presets' => behaviour_presets(),
         'mentor' => ['name' => $mentor['fullName'], 'centre' => $centre, 'department' => $dept],
         'students' => $students];
 }
@@ -156,4 +173,89 @@ function mentor_star_give(array $p): array {
     }
     audit('mentor.star.give', (string)$me['memberId'], $subjectId, ['stars' => $stars, 'category' => $cat], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'stars' => $stars];
+}
+
+/* ── Bulk: one observation, many children ────────────────────────────────────
+ * The single-student sheet is right for a considered note and wrong for the
+ * end of a session, where a mentor wants to say "these eleven all did well"
+ * and move on. Doing that eleven times over a phone connection is how the
+ * data stops getting recorded at all.
+ *
+ * Reuses mentor_star_give per subject rather than reimplementing the rules —
+ * the same-centre check, the one-rating-per-day guard, the behaviour_logs
+ * mirror and the audit line all have to hold identically whether a star is
+ * given one at a time or thirty at once. Anything else drifts.
+ *
+ * Partial success is the normal case, not an error: some of a selection will
+ * already have been starred today by another mentor. Each subject reports its
+ * own outcome so the UI can say which ones did not take, instead of failing
+ * the batch and leaving the mentor to guess what landed.
+ */
+function mentor_bulk_award(array $p): array {
+    $g = mentor_gate($p); if (!$g['ok']) return $g;
+
+    $ids = is_array($p['subjectIds'] ?? null) ? $p['subjectIds'] : [];
+    $ids = array_values(array_unique(array_filter(array_map(fn($x) => trim((string)$x), $ids))));
+    if (!$ids) return ['ok' => false, 'error' => 'no_subjects'];
+    // Bounded: a mentor's class, not the whole programme. Anything larger is a
+    // mistake or a script, and either way should not run in one request.
+    if (count($ids) > 200) return ['ok' => false, 'error' => 'too_many_subjects'];
+
+    // A preset carries its own stars/category — that is the whole point of it.
+    // Explicit values still win, so the UI can offer "preset, but 3 stars".
+    $preset = null;
+    $presetId = trim((string)($p['presetId'] ?? ''));
+    if ($presetId !== '') {
+        foreach (behaviour_presets() as $pr) if ($pr['id'] === $presetId) { $preset = $pr; break; }
+        if (!$preset) return ['ok' => false, 'error' => 'unknown_preset'];
+    }
+    $stars = array_key_exists('stars', $p) ? (int)$p['stars'] : (int)($preset['stars'] ?? 0);
+    $category = (string)($p['category'] ?? ($preset['category'] ?? ''));
+    $severity = (string)($p['severity'] ?? ($preset['severity'] ?? 'info'));
+    $note = substr(trim((string)($p['note'] ?? '')), 0, 300);
+    if ($note === '' && $preset) $note = (string)$preset['label'];
+
+    // Stars are optional here: a concern preset ("disrupted the session")
+    // records an observation and awards nothing. Zero must not mean "give
+    // zero stars", it must mean "no star row at all".
+    if ($stars !== 0 && ($stars < 1 || $stars > 3)) return ['ok' => false, 'error' => 'bad_stars'];
+    if ($stars === 0 && $note === '') return ['ok' => false, 'error' => 'nothing_to_record'];
+
+    $results = []; $awarded = 0; $skipped = 0; $logged = 0;
+    foreach ($ids as $sid) {
+        if ($stars > 0) {
+            $r = mentor_star_give(['requesterId' => (string)($p['requesterId'] ?? ''), 'subjectId' => $sid,
+                'stars' => $stars, 'category' => $category, 'note' => $note, 'ip' => (string)($p['ip'] ?? '')]);
+            if (!empty($r['ok'])) { $awarded++; $results[] = ['subjectId' => $sid, 'ok' => true, 'stars' => $stars]; }
+            else { $skipped++; $results[] = ['subjectId' => $sid, 'ok' => false, 'error' => (string)($r['error'] ?? 'failed')]; }
+            continue;
+        }
+        // Observation only — still centre-gated, same as a star.
+        $s = db_row("SELECT studentId, fullName, centre, cohortId FROM summer_students WHERE studentId = ? LIMIT 1", [$sid]);
+        if (!$s) { $skipped++; $results[] = ['subjectId' => $sid, 'ok' => false, 'error' => 'not_found']; continue; }
+        $mc = trim((string)$g['mentor']['centre']);
+        if ($mc !== '' && (string)$s['centre'] !== $mc) { $skipped++; $results[] = ['subjectId' => $sid, 'ok' => false, 'error' => 'not_your_centre']; continue; }
+        $logId = 'BL-' . strtoupper(rand_hex(6));
+        db_insert('behaviour_logs', [
+            'logId' => $logId, 'subjectId' => $sid, 'subjectName' => (string)$s['fullName'], 'cohortId' => (string)($s['cohortId'] ?? ''),
+            'observerId' => (string)$g['member']['memberId'], 'observerName' => (string)$g['mentor']['fullName'],
+            'note' => $note,
+            'category' => in_array($category, BEHAVIOUR_CATEGORIES, true) ? $category : 'participation',
+            'severity' => in_array($severity, BEHAVIOUR_SEVERITIES, true) ? $severity : 'info',
+            'sentiment' => $severity === 'positive' ? 'positive' : ($severity === 'info' ? 'neutral' : 'negative'),
+            'aiSource' => $preset ? 'preset' : 'manual', 'status' => 'open', 'createdAt' => now_iso(),
+        ]);
+        $logged++;
+        $results[] = ['subjectId' => $sid, 'ok' => true, 'logId' => $logId];
+        // A wellbeing or urgent observation pages the admins immediately, and
+        // must do so per child even when thirty were logged in one action —
+        // a batch is not a reason for a safeguarding flag to go unseen.
+        if ((in_array($category, BEHAVIOUR_CATEGORIES, true) && $category === 'wellbeing') || $severity === 'urgent') {
+            event_emit('behaviour.flagged', ['ref' => $logId, 'subject' => (string)$s['fullName'], 'subjectId' => $sid,
+                'category' => $category, 'severity' => $severity, 'by' => (string)$g['mentor']['fullName']]);
+        }
+    }
+    audit('mentor.bulk.award', (string)$g['member']['memberId'], '',
+        ['count' => count($ids), 'awarded' => $awarded, 'logged' => $logged, 'skipped' => $skipped, 'preset' => $presetId], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'awarded' => $awarded, 'logged' => $logged, 'skipped' => $skipped, 'results' => $results];
 }

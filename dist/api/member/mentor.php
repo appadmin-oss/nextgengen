@@ -28,6 +28,16 @@ if ($method === 'GET') {
             'note'        => $b['note'] ?? '',
             'ip'          => client_ip(),
         ]);
+    } elseif ((string)($b['action'] ?? '') === 'bulk') {
+        $res = gs_call('behaviour.bulk.award', [
+            'requesterId' => $s['mid'],
+            'subjectIds'  => $b['subjectIds'] ?? [],
+            'presetId'    => $b['presetId'] ?? '',
+            // Only forward what was actually sent — a missing key means "take
+            // it from the preset", and a null would override the preset with
+            // nothing.
+        ] + array_intersect_key($b, array_flip(['stars', 'category', 'severity', 'note']))
+          + ['ip' => client_ip()]);
     } else { json_error('unknown_action', 400); }
 } else {
     json_error('method_not_allowed', 405);

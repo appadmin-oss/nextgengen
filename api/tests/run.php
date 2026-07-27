@@ -3581,5 +3581,91 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
 })();
 
 
+/* ── Mentor bulk: one action, many children ─────────────────────────────────
+ * The single-student sheet is right for a considered note and wrong for the
+ * end of a session. Doing it thirty times over a phone connection is how this
+ * data stops being recorded during the session and starts being recalled that
+ * evening — or not at all.
+ *
+ * The rules that hold for one star have to hold identically for thirty: the
+ * same-centre gate, one rating per child per day, the behaviour_logs mirror,
+ * and a safeguarding flag paging per child rather than once per batch. */
+(function () {
+    $MENTOR = 'NGG-2025-0500';
+
+    // A class to work with, all in the mentor's centre.
+    $ids = [];
+    foreach (['BULK-1', 'BULK-2', 'BULK-3'] as $i => $id) {
+        db_insert('summer_students', ['studentId' => $id, 'cohortId' => 'RC1', 'fullName' => 'Bulk Kid ' . ($i + 1),
+            'firstName' => 'Bulk', 'lastName' => 'Kid' . ($i + 1), 'handle' => 'bulk' . ($i + 1),
+            'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'regStatus' => 'verified',
+            'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $ids[] = $id;
+    }
+
+    chk('presets ship with stars, a category and a severity already decided', (function () {
+        foreach (behaviour_presets() as $pr) {
+            if (!isset($pr['id'], $pr['label'], $pr['stars'], $pr['category'], $pr['severity'])) return false;
+            if (!in_array($pr['category'], BEHAVIOUR_CATEGORIES, true)) return false;
+            if (!in_array($pr['severity'], BEHAVIOUR_SEVERITIES, true)) return false;
+        }
+        return count(behaviour_presets()) >= 5;
+    })());
+    chk('the roster ships the presets so the portal needs no second call',
+        count(backend_dispatch('member.mentor.roster', ['requesterId' => $MENTOR])['presets'] ?? []) >= 5);
+
+    // A preset carries its own stars — the whole point of one tap.
+    $r = backend_dispatch('behaviour.bulk.award', ['requesterId' => $MENTOR, 'subjectIds' => $ids, 'presetId' => 'helped']);
+    chk('a preset stars every selected child in one action', ($r['awarded'] ?? 0) === 3 && ($r['skipped'] ?? 1) === 0);
+    chk('…with the stars the preset carries', (int)(db_row("SELECT stars FROM member_stars WHERE subjectId='BULK-1' AND date=?", [gmdate('Y-m-d')])['stars'] ?? 0) === 2);
+    chk('…and each one mirrored into the behaviour feed',
+        (int)(db_row("SELECT COUNT(*) c FROM behaviour_logs WHERE subjectId IN ('BULK-1','BULK-2','BULK-3') AND severity='positive'")['c'] ?? 0) >= 3);
+
+    // Partial success is normal, not an error: somebody else got there first.
+    $again = backend_dispatch('behaviour.bulk.award', ['requesterId' => $MENTOR, 'subjectIds' => $ids, 'presetId' => 'helped']);
+    chk('a second pass skips the already-starred rather than failing the batch',
+        !empty($again['ok']) && ($again['awarded'] ?? 1) === 0 && ($again['skipped'] ?? 0) === 3);
+    chk('…and says why, per child, so the mentor is not left guessing',
+        ($again['results'][0]['error'] ?? '') === 'already_starred_today');
+
+    // A concern preset records an observation and awards nothing — zero stars
+    // must mean "no star row", not "a row worth zero".
+    $c = backend_dispatch('behaviour.bulk.award', ['requesterId' => $MENTOR, 'subjectIds' => ['BULK-1'], 'presetId' => 'disrupt']);
+    chk('a concern preset logs an observation without awarding stars',
+        ($c['logged'] ?? 0) === 1 && ($c['awarded'] ?? 1) === 0);
+    chk('…filed under the preset\'s own category and severity', (function () {
+        $l = db_row("SELECT category, severity, aiSource FROM behaviour_logs WHERE subjectId='BULK-1' ORDER BY id DESC LIMIT 1");
+        return $l['category'] === 'discipline' && $l['severity'] === 'concern' && $l['aiSource'] === 'preset';
+    })());
+
+    // The gate that matters: a mentor cannot reach another centre's children,
+    // in bulk any more than one at a time.
+    $x = backend_dispatch('behaviour.bulk.award', ['requesterId' => $MENTOR, 'subjectIds' => ['SUM-AY-1'], 'presetId' => 'helped']);
+    chk('bulk cannot reach a child in another centre',
+        ($x['awarded'] ?? 1) === 0 && ($x['results'][0]['error'] ?? '') === 'not_your_centre');
+    $obs = backend_dispatch('behaviour.bulk.award', ['requesterId' => $MENTOR, 'subjectIds' => ['SUM-AY-1'], 'presetId' => 'disrupt']);
+    chk('…and the observation-only path is gated the same way',
+        ($obs['logged'] ?? 1) === 0 && ($obs['results'][0]['error'] ?? '') === 'not_your_centre');
+    chk('a non-mentor cannot bulk-record at all',
+        backend_dispatch('behaviour.bulk.award', ['requesterId' => 'NGG-2025-0001', 'subjectIds' => $ids, 'presetId' => 'helped'])['error'] === 'not_a_mentor');
+
+    // Free text still goes through the classifier for anything a preset
+    // cannot say — and a wellbeing note pages per child, not once per batch.
+    $before = (int)(db_row("SELECT COUNT(*) c FROM outbox")['c'] ?? 0);
+    $w = backend_dispatch('behaviour.bulk.award', ['requesterId' => $MENTOR, 'subjectIds' => ['BULK-2', 'BULK-3'],
+        'stars' => 0, 'category' => 'wellbeing', 'severity' => 'urgent', 'note' => 'Both seemed frightened after the incident']);
+    chk('a free-text observation records for everyone selected', ($w['logged'] ?? 0) === 2);
+    chk('…and a safeguarding flag pages for EACH child, not once for the batch',
+        (int)(db_row("SELECT COUNT(*) c FROM outbox")['c'] ?? 0) >= $before + 2);
+
+    // Guards.
+    chk('bulk refuses an empty selection', backend_dispatch('behaviour.bulk.award', ['requesterId' => $MENTOR, 'subjectIds' => []])['error'] === 'no_subjects');
+    chk('bulk refuses an unreasonable selection size',
+        backend_dispatch('behaviour.bulk.award', ['requesterId' => $MENTOR, 'subjectIds' => array_map(fn($i) => 'X' . $i, range(1, 201)), 'presetId' => 'helped'])['error'] === 'too_many_subjects');
+    chk('bulk refuses an unknown preset', backend_dispatch('behaviour.bulk.award', ['requesterId' => $MENTOR, 'subjectIds' => $ids, 'presetId' => 'nope'])['error'] === 'unknown_preset');
+    chk('bulk refuses no stars and no note', backend_dispatch('behaviour.bulk.award', ['requesterId' => $MENTOR, 'subjectIds' => $ids, 'stars' => 0])['error'] === 'nothing_to_record');
+})();
+
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
