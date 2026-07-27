@@ -1040,6 +1040,36 @@ chk('policy screens are gated by the summer cap', backend_dispatch('admin.policy
 // tested rather than the wall clock.
 backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true]]);
 chk('policy enforcement can be switched on', policy_settings()['enabled'] === true);
+// docs/POLICY.md's safeguarding stance: these are minors, and the ledger can be
+// wrong (§1.3 counts a broken scanner as a full absence). Suspension and
+// eviction are therefore raised for review by default, not self-executing.
+chk('irreversible outcomes need a human by default', policy_settings()['autoEnforce'] === false);
+chk('review-first: a third absence proposes eviction rather than imposing it', (function () use ($SU) {
+    $p = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Review Rilwan', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech']]);
+    for ($i = 6; $i <= 8; $i++) policy_log($p['studentId'], 'student', 'absence', '2026-07-0' . $i);
+    policy_apply($p['studentId'], 'student');
+    $st = policy_state($p['studentId'], 'student');
+    $r = backend_dispatch('admin.summer.checkin', ['requesterId' => $SU, 'token' => $p['token']]);
+    $GLOBALS['reviewCase'] = $p;
+    return $st['state'] === 'dormant' && $st['awaitingReview'] === true
+        && $st['proposed'][0]['kind'] === 'eviction' && !empty($r['ok']);
+})());
+chk('…and it shows up on the board as needing review', (function () {
+    foreach (backend_dispatch('admin.policy.board', ['requesterId' => 'NGG-2025-0099'])['board'] as $r) {
+        if ($r['personId'] === $GLOBALS['reviewCase']['studentId']) return !empty($r['awaitingReview']);
+    }
+    return false;
+})());
+chk('confirming a proposed eviction is what makes it bite', (function () use ($SU) {
+    $id = $GLOBALS['reviewCase']['studentId'];
+    $sid = (int)db_row("SELECT id FROM sanctions WHERE personId = ? AND kind = 'eviction'", [$id])['id'];
+    $r = backend_dispatch('admin.policy.sanction.update', ['requesterId' => $SU, 'sanctionId' => $sid, 'status' => 'active']);
+    return $r['state']['state'] === 'evicted';
+})());
+// The rest of this block tests the thresholds themselves, so switch to
+// self-executing enforcement and assert that stance directly.
+backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true, 'autoEnforce' => true]]);
+chk('self-executing enforcement can be switched on', policy_settings()['autoEnforce'] === true);
 $pid = $enr['studentId'];
 chk('a clear ledger reads clear', policy_state($pid, 'student')['state'] === 'clear');
 policy_log($pid, 'student', 'absence', '2026-07-06');
@@ -1125,6 +1155,44 @@ chk('paying a fine clears the balance', (function () use ($SU, $idp) {
         backend_dispatch('admin.policy.sanction.update', ['requesterId' => $SU, 'sanctionId' => (int)$s['id'], 'status' => 'paid']);
     }
     return policy_state($idp, 'student')['finesOwed'] === 0;
+})());
+
+// A kiosk that lost its connection queues scans and flushes them later. Grading
+// those against flush time turned an 07:55 arrival into a lateness infraction
+// because the network came back at 09:30.
+chk('a queued offline scan is graded at the time it was taken', (function () use ($SU) {
+    $st = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Queued Quadri', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech']]);
+    // 06:30 local (tzOffset defaults to +60), well inside every threshold.
+    $scanned = gmdate('Y-m-d\\TH:i:s\\Z', time() - 5 * 3600);
+    $r = backend_dispatch('admin.summer.checkin', ['requesterId' => $SU, 'token' => $st['token'], 'scannedAt' => $scanned]);
+    $row = db_row('SELECT date, checkInAt FROM attendance WHERE studentId = ?', [$st['studentId']]);
+    return !empty($r['ok']) && $row['checkInAt'] === $scanned && $row['date'] === attendance_today(time() - 5 * 3600);
+})());
+chk('a scan time in the future is ignored', attendance_scan_time(gmdate('Y-m-d\\TH:i:s\\Z', time() + 7200)) >= time() - 2);
+chk('a scan time older than a day is ignored', attendance_scan_time(gmdate('Y-m-d\\TH:i:s\\Z', time() - 90000)) >= time() - 2);
+chk('an unparseable scan time is ignored', attendance_scan_time('yesterday-ish') >= time() - 2);
+chk('punctuality is measured at the scan time, not at flush time', (function () {
+    $mid = strtotime(attendance_today() . ' 00:00:00 UTC') - 60 * 60;   // 00:00 local
+    $early = $mid + 6 * 3600;    // 06:00 local — before every threshold
+    $late  = $mid + 11 * 3600;   // 11:00 local — after every threshold
+    return attendance_punctuality('student', $early)['status'] === 'present'
+        && attendance_punctuality('student', $late)['status'] === 'late';
+})());
+// The shipped resumption times are the inverse of the blueprint's redlines, so
+// enforcing the blueprint falls back to its 1-hour advance protocol instead.
+chk('enforcing the blueprint moves the resumption default to 07:00', (function () use ($SU) {
+    backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true]]);
+    $on = attendance_settings()['resumptionByType'];
+    backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => false]]);
+    $off = attendance_settings()['resumptionByType'];
+    backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true]]);
+    return $on['student'] === '07:00' && $on['volunteer'] === '07:00' && $off['student'] === '09:00';
+})());
+chk('an admin-saved resumption still wins over either default', (function () {
+    attendance_settings_save(['enabled' => true, 'tzOffset' => 60, 'graceMinutes' => 10, 'resumptionByType' => ['student' => '08:15']], 'test');
+    $r = attendance_settings()['resumptionByType']['student'];
+    setting_set('attendance', [], 'test');
+    return $r === '08:15';
 })());
 
 // Musing Period: two half-days cost a whole attendance day.
@@ -2653,6 +2721,107 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     // Admin-settable channel rules round-trip.
     $up = backend_dispatch('admin.community.channel.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Robotics Crew', 'rules' => "Be kind.\nShip weekly."]]);
     chk('community: admin can save channel rules', $up['ok'] && $up['channelId']);
+    /* ── Community sign-in with an ID card ────────────────────────────────
+       Two groups hold a card but have no member account: summer students, and
+       the Volunteer Vanguard. The login resolved students only, so an
+       instructor holding the card the studio printed for them could not get in
+       at all — not by QR, not by ID. */
+    $SU2 = 'NGG-2025-0099';
+    $cmStu = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU2, 'data' => [
+        'fullName' => 'Community Chidi', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Music', 'guardianPhone' => '08031234567']]);
+    $cmDid = card_display_id(db_row('SELECT * FROM summer_students WHERE studentId = ?', [$cmStu['studentId']]));
+    chk('community login: a student signs in with their ID + guardian phone', (function () use ($cmDid) {
+        $r = backend_dispatch('community.login', ['displayId' => $cmDid, 'guardianPhone' => '0803 123 4567']);
+        return !empty($r['ok']) && $r['kind'] === 'student';
+    })());
+    chk('community login: …and with the QR on the card', (function () use ($cmStu) {
+        $r = backend_dispatch('community.login', ['token' => $cmStu['token']]);
+        return !empty($r['ok']) && $r['kind'] === 'student';
+    })());
+    chk('community login: the wrong phone is refused', backend_dispatch('community.login', ['displayId' => $cmDid, 'guardianPhone' => '08099999999'])['error'] === 'bad_credentials');
+
+    // A volunteer of this block's own, so an earlier test's sweep cannot have
+    // already evicted whoever happens to be first in the table.
+    // No token on the row: this one can only be resolved through the qr_codes
+    // binding, so that branch is load-bearing rather than shadowed by the
+    // row-token fallback the next case covers.
+    db_insert('volunteers', ['volunteerId' => 'VOL-INS-26-900', 'fullName' => 'Ifeoma Instructor', 'email' => 'ifeoma@ex.co',
+        'phone' => '+2348037654321', 'role' => 'instructor', 'token' => '', 'status' => 'active',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('qr_codes', ['token' => 'VOLQR-CM900TEST', 'studentId' => 'VOL-INS-26-900', 'status' => 'assigned', 'createdAt' => now_iso()]);
+    $cmVol = db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-INS-26-900'");
+    chk('community login: an instructor signs in with the ID on their card', (function () use ($cmVol) {
+        $r = backend_dispatch('community.login', ['displayId' => (string)$cmVol['volunteerId'], 'guardianPhone' => (string)$cmVol['phone']]);
+        return !empty($r['ok']) && $r['kind'] === 'volunteer' && (string)$r['person']['volunteerId'] === (string)$cmVol['volunteerId'];
+    })());
+    chk('community login: …against their OWN number, not a guardian\'s', (function () use ($cmVol) {
+        // The check is last-7, so a 0-prefixed local form of the same number works.
+        $local = '0' . substr(preg_replace('/\D/', '', (string)$cmVol['phone']), -10);
+        return !empty(backend_dispatch('community.login', ['displayId' => (string)$cmVol['volunteerId'], 'guardianPhone' => $local])['ok']);
+    })());
+    chk('community login: …and by scanning their volunteer QR (bound in qr_codes)', (function () {
+        $r = backend_dispatch('community.login', ['token' => 'VOLQR-CM900TEST']);
+        return !empty($r['ok']) && $r['kind'] === 'volunteer' && (string)$r['person']['volunteerId'] === 'VOL-INS-26-900';
+    })());
+    // Two places a card's token can live: bound in qr_codes, or straight on the
+    // volunteer row. Both are real, so both are covered.
+    chk('community login: …or with the token held on the volunteer row alone', (function () {
+        db_insert('volunteers', ['volunteerId' => 'VOL-MEN-26-901', 'fullName' => 'Tunde Tokenonly', 'email' => 'tt@ex.co',
+            'phone' => '+2348039990001', 'role' => 'mentor', 'token' => 'VOLQR-ROWONLY', 'status' => 'active',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $r = backend_dispatch('community.login', ['token' => 'VOLQR-ROWONLY']);
+        return !empty($r['ok']) && $r['kind'] === 'volunteer' && (string)$r['person']['volunteerId'] === 'VOL-MEN-26-901';
+    })());
+    chk('community login: an unknown ID is refused', backend_dispatch('community.login', ['displayId' => 'VOL-XXX-99-999', 'guardianPhone' => '08031234567'])['error'] === 'bad_credentials');
+
+    // §2.3 — suspension is a ban from the premises AND the digital channels.
+    chk('community login: a suspended card is refused at the door too', (function () use ($SU2, $cmVol) {
+        backend_dispatch('admin.policy.save', ['requesterId' => $SU2, 'policy' => ['enabled' => true, 'autoEnforce' => true]]);
+        backend_dispatch('admin.policy.sanction.issue', ['requesterId' => $SU2, 'personId' => (string)$cmVol['volunteerId'],
+            'personType' => 'volunteer', 'kind' => 'suspension', 'reason' => 'Test suspension.']);
+        $r = backend_dispatch('community.login', ['displayId' => (string)$cmVol['volunteerId'], 'guardianPhone' => (string)$cmVol['phone']]);
+        return ($r['error'] ?? '') === 'policy_suspended';
+    })());
+    chk('community login: …and lifting it opens the door again', (function () use ($SU2, $cmVol) {
+        $sid = (int)db_row("SELECT id FROM sanctions WHERE personId = ? AND kind = 'suspension' ORDER BY id DESC LIMIT 1", [(string)$cmVol['volunteerId']])['id'];
+        backend_dispatch('admin.policy.sanction.update', ['requesterId' => $SU2, 'sanctionId' => $sid, 'status' => 'served']);
+        backend_dispatch('admin.policy.save', ['requesterId' => $SU2, 'policy' => ['enabled' => false]]);
+        return !empty(backend_dispatch('community.login', ['displayId' => (string)$cmVol['volunteerId'], 'guardianPhone' => (string)$cmVol['phone']])['ok']);
+    })());
+
+    // Signing in is what makes someone part of the community headcount.
+    chk('community: a signed-in student and instructor are counted', (function () {
+        $st = backend_dispatch('public.stats', [])['stats'];
+        return $st['communityStudents'] >= 1 && $st['communityInstructors'] >= 1
+            && $st['communityMembers'] === $st['activeMembers'] + $st['communityStudents'] + $st['communityInstructors'];
+    })());
+    chk('community: enrolling without signing in does not inflate the count', (function () use ($SU2) {
+        $before = backend_dispatch('public.stats', [])['stats']['communityStudents'];
+        backend_dispatch('admin.summer.enroll', ['requesterId' => $SU2, 'data' => ['fullName' => 'Never Signedin', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech']]);
+        return backend_dispatch('public.stats', [])['stats']['communityStudents'] === $before;
+    })());
+
+    // An instructor who posts must read as themselves, and as staff.
+    chk('community: an instructor posting is resolved by name, not "Member"', (function () use ($cmVol) {
+        $a = community_author((string)$cmVol['volunteerId']);
+        $first = preg_split('/\s+/', trim((string)$cmVol['fullName']))[0];
+        return $a['name'] === $first && $a['name'] !== 'Member';
+    })());
+    chk('community: …and a session resolves through auth.me instead of 404ing', (function () use ($cmVol) {
+        $r = backend_dispatch('auth.me', ['memberId' => (string)$cmVol['volunteerId']]);
+        return !empty($r['ok']) && $r['member']['role'] === 'volunteer' && $r['member']['type'] === 'VOLUNTEER';
+    })());
+    chk('community: an instructor is tagged staff in the channel rail', (function () use ($cmVol) {
+        $ch = db_row("SELECT channelId FROM community_channels WHERE slug = 'commons'");
+        db_insert('community_posts', ['postId' => 'CP-VOLTEST', 'channelId' => (string)$ch['channelId'],
+            'authorId' => (string)$cmVol['volunteerId'], 'authorName' => 'Ins', 'authorCentre' => '',
+            'body' => 'hello', 'status' => 'published', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        foreach (backend_dispatch('community.channelMembers', ['channel' => 'commons'])['members'] as $m) {
+            if ($m['name'] === 'Ins') return $m['staff'] === true;
+        }
+        return false;
+    })());
+
     chk('community: channels expose their rules', (function () {
         foreach (backend_dispatch('community.channels', ['memberId' => 'CM-A'])['channels'] as $c) if ($c['slug'] === 'robotics-crew') return strpos($c['rules'], 'Ship weekly') !== false;
         return false;

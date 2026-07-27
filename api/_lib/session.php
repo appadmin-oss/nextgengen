@@ -122,14 +122,27 @@ function session_issue_kiosk(array $gate): string {
  * IS the studentId, so community attribution/reactions key off a real id.
  */
 function session_issue_student(array $student, bool $remember = false): string {
+    return session_issue_cardholder($student, 'student', $remember);
+}
+
+/**
+ * A session for someone who holds an ID card but has no member account:
+ * a summer student, or a volunteer/instructor/mentor. `$kind` becomes the
+ * session role, so the community can tell an instructor from a student, and
+ * `mid` is their own id in whichever table they live in. Neither kind carries
+ * any capability — the app unlocks the Community and nothing else.
+ */
+function session_issue_cardholder(array $person, string $kind, bool $remember = false): string {
     global $CONFIG;
+    $kind = $kind === 'volunteer' ? 'volunteer' : 'student';
+    $student = ['studentId' => (string)($person['studentId'] ?? $person['volunteerId'] ?? '')];
     $now = time();
     // Default is a short, kiosk-like window (shared devices at a centre); a
     // student who opts to "stay signed in" gets the same 30-day window as members.
     $exp = $now + ($remember ? SESSION_REMEMBER_TTL : (int)($CONFIG['kiosk_ttl'] ?? 43200));
     $payload = [
         'mid'    => (string)($student['studentId'] ?? ''),
-        'role'   => 'student', 'type' => 'SUMMER', 'status' => 'active',
+        'role'   => $kind, 'type' => $kind === 'volunteer' ? 'VOLUNTEER' : 'SUMMER', 'status' => 'active',
         'stu'    => (string)($student['studentId'] ?? ''),
         'iat'    => $now, 'exp' => $exp, 'adminOk' => false,
     ];

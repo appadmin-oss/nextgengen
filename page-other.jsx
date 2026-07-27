@@ -3025,7 +3025,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
     try {
       for (const item of snapshot) {
         try {
-          const r = await NGGApi.public.gate.checkin(g, item.token);
+          const r = await NGGApi.public.gate.checkin(g, item.token, item.scannedAt);
           dequeue(item.token);
           const st = r.student || {};
           setRecent(list => [{ name: st.fullName || item.token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), already: !!r.already, synced: true }, ...list].slice(0, 12));
@@ -3034,7 +3034,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
           // The server rejected a banked scan (e.g. unassigned card). Drop it, but
           // never silently: tell the operator and flag it so it can be re-scanned.
           dequeue(item.token);
-          setErr("A saved scan couldn't be synced (" + (e.code === "qr_unassigned" ? "code not assigned" : e.code === "student_not_found" ? "no member for that code" : (e.code || "rejected")) + "). Please re-scan that card.");
+          setErr("A saved scan couldn't be synced (" + (e.code === "qr_unassigned" ? "code not assigned" : e.code === "student_not_found" ? "no member for that code" : e.code === "policy_suspended" ? "that person is suspended" : e.code === "policy_evicted" ? "that person has been evicted" : (e.code || "rejected")) + "). " + (/^policy_/.test(e.code || "") ? "They are NOT checked in — refer them to the coordinator." : "Please re-scan that card."));
           setRecent(list => [{ name: item.token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), failed: true }, ...list].slice(0, 12));
         }
       }
@@ -3084,7 +3084,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
     } catch (e2) {
       if (isNetErr(e2)) {
         // Offline / unreachable — bank it and sync later so the scan isn't lost.
-        const q = loadQ(); if (!q.some(x => x.token === token)) { q.push({ token, at: Date.now() }); saveQ(q); }
+        const q = loadQ(); if (!q.some(x => x.token === token)) { q.push({ token, at: Date.now(), scannedAt: new Date().toISOString() }); saveQ(q); }
         setRecent(list => [{ name: token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), queued: true }, ...list].slice(0, 12));
         setCode("");
       } else {

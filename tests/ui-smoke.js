@@ -125,7 +125,8 @@ const STATUS = {
 <script>
   var b = new URLSearchParams(location.search).get('board');
   var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'cards' ? 'CardStudio' : b === 'photo' ? 'PhotoEditor'
-            : b === 'policy' ? 'SummerPolicy' : 'StatusPage';
+            : b === 'policy' ? 'SummerPolicy' : b === 'att' ? 'SummerAttendance' : b === 'kiosk' ? 'SummerKiosk'
+            : b === 'signin' ? 'CmStudentSignIn' : 'StatusPage';
   var props;
   if (b === 'photo') {
     var pc = document.createElement('canvas'); pc.width = 800; pc.height = 1000;
@@ -174,6 +175,56 @@ const STATUS = {
       update: function () { return Promise.resolve({ ok: true }); },
       infraction: function () { return Promise.resolve({ ok: true, temporaryCard: true, state: {} }); },
       reinstate: function () { return Promise.resolve({ ok: true, reinstated: true }); },
+    };
+  } else if (b === 'signin') {
+    props = {};
+    window.__logins = [];
+    window.NGGApi.auth = { studentLogin: function (creds) {
+      window.__logins.push(creds);
+      var e = new Error('bad_credentials'); e.code = 'bad_credentials'; return Promise.reject(e);
+    } };
+  } else if (b === 'att' || b === 'kiosk') {
+    props = {};
+    var TODAY2 = new Date().toISOString().slice(0, 10);
+    var CLOSED = new URLSearchParams(location.search).get('closed') === '1';
+    var NOCAL  = new URLSearchParams(location.search).get('nocal') === '1';
+    window.NGGApi.admin.summer = {
+      attendance: function () { return Promise.resolve({ attendance: {
+        cohort: { cohortId: 'C1', name: 'Summer 2026' },
+        today: 2, absentToday: CLOSED ? 0 : 3, activeStudents: 5, sessionDays: 10,
+        days: Array.from({ length: 14 }, function (_, i) {
+          return { date: '2026-07-' + ('0' + (i + 6)).slice(-2), present: (i % 7 === 5 || i % 7 === 6) ? 0 : 4,
+                   programmeDay: !(i % 7 === 5 || i % 7 === 6) };
+        }),
+        roster: [
+          { studentId: 'SUM-1', fullName: 'Amina Alpha', track: 'Music', centre: 'Ijaiye', present: 10, halfDays: 0, lates: 0, lastSeen: TODAY2, presentToday: true,  rate: 100, state: 'clear',   absences: 0 },
+          { studentId: 'SUM-2', fullName: 'Bode Beta',   track: 'Tech',  centre: 'Egbeda', present: 4,  halfDays: 2, lates: 3, lastSeen: '2026-07-14', presentToday: false, rate: 30,  state: 'dormant', absences: 2 },
+          { studentId: 'SUM-3', fullName: 'Chidi Gamma', track: 'Arts',  centre: 'Ijaiye', present: 9,  halfDays: 0, lates: 1, lastSeen: '2026-07-16', presentToday: false, rate: 90,  state: 'warned',  absences: 1 },
+        ],
+        atRisk: [{ studentId: 'SUM-2', fullName: 'Bode Beta', rate: 30 }],
+        recent: [], 
+        programme: NOCAL
+          ? { enabled: false, isProgrammeDay: true, today: TODAY2, nextDay: '', scannedDays: 10, termStart: '', termEnd: '', remaining: 0 }
+          : { enabled: true, isProgrammeDay: !CLOSED, today: TODAY2, nextDay: '2026-07-20', scannedDays: 9,
+              termStart: '2026-07-06', termEnd: '2026-08-28', remaining: 30 },
+      } }); },
+      insights: function () { return Promise.resolve({ insight: '· all good', source: 'rules', aiConfigured: false }); },
+      absenceAlert: function () { var e = new Error('not_a_programme_day'); e.code = 'not_a_programme_day'; e.data = { nextDay: '2026-07-20' }; return Promise.reject(e); },
+      archive: function () { return Promise.resolve({ students: 0 }); },
+      /* The kiosk scan outcomes under test: a late arrival, and a refusal that
+         carries who was refused and why. */
+      checkin: function (token) {
+        window.__scans = (window.__scans || []).concat([Array.prototype.slice.call(arguments)]);
+        if (token === 'REFUSED') {
+          var e = new Error('policy_suspended'); e.code = 'policy_suspended';
+          e.data = { student: { fullName: 'Suspended Sam', studentId: 'SUM-9' },
+                     message: 'Suspended until 2026-08-01 — barred from the premises.', state: { state: 'suspended' } };
+          return Promise.reject(e);
+        }
+        return Promise.resolve({ student: { fullName: 'Late Lara', studentId: 'SUM-4', track: 'Music', photoUrl: '' },
+                                 already: false, status: 'late', lateMinutes: 42, halfDay: 1,
+                                 programmeDay: true, compliance: { state: 'warned' } });
+      },
     };
   } else { props = { setPage: function () {} }; }
   // Stand in for the export toolkit so a click can be traced all the way into
@@ -335,6 +386,117 @@ const STATUS = {
     ok('…marks an already-voided fact as voided rather than hiding it', /Voided — Wrong student/.test(drawer));
     ok('…offers the manual ID-card infractions', /No ID card today/.test(drawer) && /Lost ID card/.test(drawer));
     await pol.close();
+
+    /* ── Attendance dashboard ─────────────────────────────────────────────
+       The screen a coordinator reads every morning. It had no idea whether the
+       programme was even running, so a weekend looked like a collapse and the
+       guardian-email button was live on a Sunday. */
+    const att = await browser.newPage();
+    const attErrs = [];
+    att.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) attErrs.push(m.text()); });
+    att.on('pageerror', e => attErrs.push(String(e.message)));
+    await att.goto(BASE + '/tests/_boards_fixture.html?board=att&mode=ok', { waitUntil: 'networkidle' });
+    await att.waitForTimeout(600);
+    ok('attendance dashboard mounts with no script error', attErrs.length === 0 && (await att.evaluate(() => window.__errors)).length === 0);
+    if (attErrs.length) console.error('       ', attErrs.slice(0, 3).join(' | '));
+    let attBody = await att.evaluate(() => document.body.innerText);
+    ok('…names the session day and the term window', /Session day 10/.test(attBody) && /2026-07-06/.test(attBody));
+    ok('…marks the closed days in the 14-day series rather than drawing them as zero',
+      await att.locator('.summer-attbar-col.is-closed').count() === 4);
+    ok('…shows lateness and half-days per student', /·2½/.test(attBody) && /Dormant/.test(attBody));
+
+    // Filters have to actually narrow the table, and hold across a search.
+    const rows = () => att.locator('.admin-table tbody tr').count();
+    ok('…lists the whole roster by default (' + await rows() + ')', await rows() === 3);
+    await att.selectOption('select[aria-label="Filter the roster"]', 'absent');
+    await att.waitForTimeout(120);
+    ok('…filters to absent-today', await rows() === 2);
+    await att.fill('input[aria-label="Search the roster"]', 'bode');
+    await att.waitForTimeout(120);
+    ok('…and a search narrows inside the filter, rather than replacing it', await rows() === 1);
+    await att.fill('input[aria-label="Search the roster"]', 'zzz');
+    await att.waitForTimeout(120);
+    ok('…says so when nothing matches', /No student matches/.test(await att.evaluate(() => document.body.innerText)));
+    await att.close();
+
+    // Closed day: the numbers and the guardian email both have to stand down.
+    const attC = await browser.newPage();
+    await attC.goto(BASE + '/tests/_boards_fixture.html?board=att&mode=ok&closed=1', { waitUntil: 'networkidle' });
+    await attC.waitForTimeout(600);
+    attBody = await attC.evaluate(() => document.body.innerText);
+    ok('on a closed day the banner says there is no session, and names the next one',
+      /No session today/.test(attBody) && /2026-07-20/.test(attBody));
+    ok('…the absent tile stands down rather than reporting the whole cohort', /Absent \(closed\)/.test(attBody));
+    ok('…and the guardian-email button is disabled',
+      await attC.getByRole('button', { name: /Email today/ }).isDisabled());
+    await attC.close();
+
+    // No calendar at all: say so, because every day is silently a session.
+    const attN = await browser.newPage();
+    await attN.goto(BASE + '/tests/_boards_fixture.html?board=att&mode=ok&nocal=1', { waitUntil: 'networkidle' });
+    await attN.waitForTimeout(600);
+    ok('with no calendar set the dashboard warns that every day counts',
+      /every calendar day counts as a session/i.test(await attN.evaluate(() => document.body.innerText)));
+    await attN.close();
+
+    /* ── Check-in kiosk ───────────────────────────────────────────────────
+       Punctuality was recorded but never shown, so the desk had no idea a scan
+       had just cost someone a lateness log — and a policy refusal printed its
+       raw error code. */
+    const kio = await browser.newPage();
+    const kioErrs = [];
+    kio.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) kioErrs.push(m.text()); });
+    kio.on('pageerror', e => kioErrs.push(String(e.message)));
+    await kio.goto(BASE + '/tests/_boards_fixture.html?board=kiosk&mode=ok', { waitUntil: 'networkidle' });
+    await kio.waitForTimeout(400);
+    ok('kiosk mounts with no script error', kioErrs.length === 0 && (await kio.evaluate(() => window.__errors)).length === 0);
+    if (kioErrs.length) console.error('       ', kioErrs.slice(0, 3).join(' | '));
+    await kio.fill('.summer-scan-input', 'SUMQR-AAAA1111');
+    await kio.getByRole('button', { name: /Check in/ }).click();
+    await kio.waitForTimeout(300);
+    let kioBody = await kio.evaluate(() => document.querySelector('.summer-kiosk-result').innerText);
+    ok('a late scan says LATE, with the minutes', /LATE/.test(kioBody) && /42 min/.test(kioBody));
+    ok('…and flags the missed Musing Period as a half-day', /Half-day/.test(kioBody));
+    ok('…and surfaces the standing the scan just landed on', /Warned/.test(kioBody));
+    await kio.fill('.summer-scan-input', 'REFUSED');
+    await kio.getByRole('button', { name: /Check in/ }).click();
+    await kio.waitForTimeout(300);
+    kioBody = await kio.evaluate(() => document.querySelector('.summer-kiosk-result').innerText);
+    ok('a refused scan names the person and the reason, not an error code',
+      /Suspended Sam/.test(kioBody) && /barred from the premises/.test(kioBody) && !/policy_suspended/.test(kioBody));
+    ok('…and says plainly that they are not checked in', /Not checked in/.test(kioBody));
+    await kio.close();
+
+    /* ── Community sign-in ────────────────────────────────────────────────
+       Instructors hold the same ID card as students but their card carries
+       their OWN number, not a guardian's — which is why the guardian-phone
+       check could never match one. The door now asks who is holding it. */
+    const si = await browser.newPage();
+    const siErrs = [];
+    si.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) siErrs.push(m.text()); });
+    si.on('pageerror', e => siErrs.push(String(e.message)));
+    await si.goto(BASE + '/tests/_boards_fixture.html?board=signin&mode=ok', { waitUntil: 'networkidle' });
+    await si.waitForTimeout(400);
+    ok('community sign-in mounts with no script error', siErrs.length === 0 && (await si.evaluate(() => window.__errors)).length === 0);
+    if (siErrs.length) console.error('       ', siErrs.slice(0, 3).join(' | '));
+    ok('…offers both doors', await si.getByRole('tab', { name: /student/i }).count() === 1
+      && await si.getByRole('tab', { name: /instructor/i }).count() === 1);
+    ok('…asks a student for their guardian\'s number',
+      (await si.getAttribute('input[aria-label="Guardian phone number"]', 'placeholder')) === 'Guardian phone');
+    await si.getByRole('tab', { name: /instructor/i }).click();
+    await si.waitForTimeout(120);
+    ok('…and an instructor for their own',
+      (await si.getAttribute('input[aria-label="Your phone number"]', 'placeholder')) === 'Your phone');
+    ok('…prompting for the card ID, not a student ID',
+      /VOL-INS/.test(await si.getAttribute('input[aria-label="Card ID"]', 'placeholder')));
+    await si.fill('input[aria-label="Card ID"]', 'VOL-INS-26-001');
+    await si.fill('input[aria-label="Your phone number"]', '08037654321');
+    await si.getByRole('button', { name: /Enter/ }).click();
+    await si.waitForTimeout(200);
+    const logins = await si.evaluate(() => window.__logins);
+    ok('…and sends the instructor\'s ID and phone to the login',
+      logins.length === 1 && logins[0].displayId === 'VOL-INS-26-001' && /8037654321/.test(logins[0].guardianPhone));
+    await si.close();
 
     // ── photo editor: zoom works, and previews without a round trip ──────
     const pe = await browser.newPage();

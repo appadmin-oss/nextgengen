@@ -1004,3 +1004,9 @@ INSERT INTO schema_version (version) VALUES (57) ON DUPLICATE KEY UPDATE version
 ALTER TABLE attendance ADD COLUMN redline INT DEFAULT 0;
 ALTER TABLE attendance ADD COLUMN halfDay INT DEFAULT 0;
 INSERT INTO schema_version (version) VALUES (58) ON DUPLICATE KEY UPDATE version = version;
+
+-- 59: community sign-in stamp for card-holders (students + the Vanguard), who
+-- have no row in `members` and so were invisible to the community headcount.
+ALTER TABLE summer_students ADD COLUMN communityAt VARCHAR(40) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN communityAt VARCHAR(40) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (59) ON DUPLICATE KEY UPDATE version = version;

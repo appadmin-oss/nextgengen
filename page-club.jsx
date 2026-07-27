@@ -432,6 +432,10 @@ function CommunityPage({ setPage }) {
 function CmStudentSignIn({ compact }) {
   const [sid, setSid] = React.useState("");
   const [phone, setPhone] = React.useState("");
+  // Instructors, mentors and coordinators hold a card too, and theirs carries
+  // their own number rather than a guardian's — which is exactly why the
+  // guardian-phone check could never match one of them.
+  const [who, setWho] = React.useState("student");   // student | instructor
   const [remember, setRemember] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
@@ -442,13 +446,27 @@ function CmStudentSignIn({ compact }) {
       await NGGApi.auth.studentLogin({ ...creds, remember });
       window.location.href = "/community"; // reboot auth → community unlocks
     } catch (e) {
-      setErr(e.code === "rate_limited" ? "Too many tries — wait a few minutes." : failMsg);
+      // A suspension is a ban from the premises *and* the digital channels, so
+      // the door is genuinely shut — say which, rather than "check your card".
+      if (e.code === "policy_suspended" || e.code === "policy_evicted") {
+        setErr((e.data && e.data.message) || (e.code === "policy_evicted"
+          ? "This ID has been evicted from the programme. Speak to the coordinator."
+          : "This ID is suspended — access to the digital channels is paused."));
+      } else {
+        setErr(e.code === "rate_limited" ? "Too many tries — wait a few minutes." : failMsg);
+      }
       setBusy(false);
     }
   };
+  const isVol = who === "instructor";
   const studentLogin = () => {
-    if (!sid.trim() || phone.replace(/\D/g, "").length < 7) { setErr("Enter your student ID and your parent/guardian's phone number."); return; }
-    doLogin({ displayId: sid.trim(), guardianPhone: phone.trim() }, "We couldn't match that ID and phone number. Check your ID card.");
+    if (!sid.trim() || phone.replace(/\D/g, "").length < 7) {
+      setErr(isVol ? "Enter the ID on your card and your own phone number." : "Enter your student ID and your parent/guardian's phone number.");
+      return;
+    }
+    doLogin({ displayId: sid.trim(), guardianPhone: phone.trim() },
+      isVol ? "We couldn't match that ID and phone number. Use the ID printed on your card (e.g. VOL-INS-26-001) and the number we have on file."
+            : "We couldn't match that ID and phone number. Check your ID card.");
   };
   const openScan = () => {
     setErr("");
@@ -462,22 +480,30 @@ function CmStudentSignIn({ compact }) {
   return (
     <div className="cm-stu-signin">
       <div className="mono cm-stu-title">SIGN IN WITH YOUR ID CARD</div>
-      <p className="cm-stu-hint">Scan your card's QR with the camera — or enter the ID on your card and your parent/guardian's phone number.</p>
+      <div className="cm-stu-who" role="tablist" aria-label="Who is signing in">
+        {[["student", "I'm a student"], ["instructor", "I'm an instructor"]].map(([k, lbl]) => (
+          <button key={k} role="tab" aria-selected={who === k} className={"cm-stu-who-btn" + (who === k ? " is-on" : "")}
+            onClick={() => { setWho(k); setErr(""); }}>{lbl}</button>
+        ))}
+      </div>
+      <p className="cm-stu-hint">
+        Scan your card's QR with the camera — or enter the ID on your card and {isVol ? "your own phone number" : "your parent/guardian's phone number"}.
+      </p>
       {scan ? (
         <>
           <div className="cm-scan-box">
             {typeof QRScanner === "function" ? <QRScanner onToken={onScanToken} gold="#ffce54"/> : <div style={{ padding: 24, color: "rgba(255,255,255,.7)", fontSize: 13, textAlign: "center" }}>Loading scanner…</div>}
             <div className="cm-scan-frame" aria-hidden="true"/>
           </div>
-          <div className="cm-scan-hint">Hold your Genius ID up to the camera. {busy && "Signing you in…"}</div>
+          <div className="cm-scan-hint">Hold your {isVol ? "Vanguard" : "Genius"} ID up to the camera. {busy && "Signing you in…"}</div>
           <button className="cm-scan-btn" onClick={() => setScan(false)}>⌨ Type my ID instead</button>
         </>
       ) : (
         <>
           <button className="cm-scan-btn" onClick={openScan}>📷 Scan my card</button>
           <div className="cm-stu-row" style={{ marginTop: 12 }}>
-            <input className="cm-stu-input" value={sid} onChange={e => setSid(e.target.value)} placeholder="Student ID (e.g. AY-26-001)" autoCapitalize="characters"/>
-            <input className="cm-stu-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Guardian phone" inputMode="tel"/>
+            <input className="cm-stu-input" value={sid} onChange={e => setSid(e.target.value)} placeholder={isVol ? "Card ID (e.g. VOL-INS-26-001)" : "Student ID (e.g. AY-26-001)"} autoCapitalize="characters" aria-label={isVol ? "Card ID" : "Student ID"}/>
+            <input className="cm-stu-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder={isVol ? "Your phone" : "Guardian phone"} inputMode="tel" aria-label={isVol ? "Your phone number" : "Guardian phone number"}/>
             <button className="btn btn-gold" disabled={busy} onClick={studentLogin}>{busy ? "…" : "Enter →"}</button>
           </div>
         </>
@@ -527,7 +553,15 @@ function CommunityPublic({ setPage, auth }) {
   const leaders = [...all].sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 8);
 
   const kpis = [
-    { value: stats && stats.activeMembers > 0 ? stats.activeMembers.toLocaleString() : (all.length ? String(all.length) : "—"), label: "Active members", color: "#fff" },
+    // Members + the card-holders (students, instructors) who have signed in.
+    // The old count read the members table alone, so every summer student and
+    // every instructor in the community was invisible to it.
+    { value: stats && stats.communityMembers > 0 ? stats.communityMembers.toLocaleString()
+        : (stats && stats.activeMembers > 0 ? stats.activeMembers.toLocaleString() : (all.length ? String(all.length) : "—")),
+      label: "In the community", color: "#fff",
+      note: stats && (stats.communityStudents || stats.communityInstructors)
+        ? [stats.communityStudents ? stats.communityStudents + " students" : "", stats.communityInstructors ? stats.communityInstructors + " instructors" : ""].filter(Boolean).join(" · ")
+        : "" },
     { value: stats && stats.missionsVerified > 0 ? stats.missionsVerified.toLocaleString() : "—", label: "Missions verified", color: "#fff" },
     { value: stats && stats.mentors > 0 ? String(stats.mentors) : "—", label: "Volunteer mentors", color: "#d0ff3a" },
     { value: stats && stats.centres > 0 ? String(stats.centres).padStart(2, "0") : (centres.length ? String(centres.length).padStart(2, "0") : "—"), label: "Centres live", color: "#f5b026" },
@@ -569,6 +603,7 @@ function CommunityPublic({ setPage, auth }) {
               <div key={i} style={{ borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.14)", padding: "20px 0 20px " + (i === 0 ? "0" : "16px") }}>
                 <div className="display" style={{ fontWeight: 800, fontSize: "clamp(24px,3.2vw,32px)", color: k.color, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
                 <div className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", marginTop: 6 }}>{k.label}</div>
+                {k.note && <div className="mono" style={{ fontSize: 10, color: "rgba(255,255,255,0.42)", marginTop: 3 }}>{k.note}</div>}
               </div>
             ))}
           </div>

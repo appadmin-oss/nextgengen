@@ -38,9 +38,9 @@ if ($method === 'GET') {
         // The gate token + session (admin or gate-bound kiosk) are already
         // verified above, so authorize the check-in by the gate rather than by
         // a staff capability (a desk-password kiosk has no member/cap).
-        $res = gs_call('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => ($s['mid'] ?: ('gate:' . substr((string)($b['gate'] ?? ''), 0, 24))), 'token' => $b['token'] ?? '', 'method' => 'gate', 'device' => 'gate:' . substr((string)($b['gate'] ?? ''), 0, 12), 'ip' => $ip]);
+        $res = gs_call('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => ($s['mid'] ?: ('gate:' . substr((string)($b['gate'] ?? ''), 0, 24))), 'token' => $b['token'] ?? '', 'scannedAt' => $b['scannedAt'] ?? null, 'method' => 'gate', 'device' => 'gate:' . substr((string)($b['gate'] ?? ''), 0, 12), 'ip' => $ip]);
         if (!empty($res['ok']) && empty($res['already'])) {
-            event_emit('attendance.marked', ['memberId' => $res['student']['studentId'] ?? '', 'name' => $res['student']['fullName'] ?? '', 'date' => gmdate('Y-m-d'), 'source' => 'gate', 'by' => $s['mid']]);
+            event_emit('attendance.marked', ['memberId' => $res['student']['studentId'] ?? '', 'name' => $res['student']['fullName'] ?? '', 'date' => attendance_today(), 'source' => 'gate', 'by' => $s['mid']]);
         }
     } elseif ($action === 'checkout') {
         if (!gate_resolve((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
@@ -53,7 +53,7 @@ if ($method === 'GET') {
         $centre = (string)($ctx['centre'] ?? '');
         $volId = (string)(($ctx['duty']['volunteerId'] ?? '') ?: '');
         if ($centre === '' || $volId === '') json_error('no_duty', 400);
-        $res = gs_call('attendance.duty.complete', ['gateAuthorized' => true, 'date' => gmdate('Y-m-d'), 'centre' => $centre, 'volunteerId' => $volId, 'ip' => $ip]);
+        $res = gs_call('attendance.duty.complete', ['gateAuthorized' => true, 'date' => attendance_today(), 'centre' => $centre, 'volunteerId' => $volId, 'ip' => $ip]);
     } else {
         json_error('unknown_action', 400);
     }

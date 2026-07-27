@@ -27,26 +27,91 @@ const COMMUNITY_PAGE = 15;
  *  - Display ID + guardian phone — for typing in by hand.
  * Returns the student row for the route to mint a session; never the session.
  */
-function student_community_login(array $p): array {
+/**
+ * Community sign-in with an ID card, for the two groups who have a card but no
+ * member account: summer students and the Volunteer Vanguard (instructors,
+ * mentors, coordinators).
+ *
+ * This used to resolve summer_students only, so an instructor holding the ID
+ * card the studio printed for them could not sign in at all — not by QR, not
+ * by ID. Both routes now resolve either.
+ *
+ * Two ways in:
+ *   QR token   — the card's own token, or the token bound to it in qr_codes.
+ *   ID + phone — the ID printed on the card, checked against a phone number.
+ *                For a student that is their guardian's number (they are
+ *                minors and may not have a phone). For a volunteer it is their
+ *                own: they have no guardian on file, which is exactly why the
+ *                guardian-phone check could never match one.
+ *
+ * The phone check compares the last 7 digits, so it survives +234 / 0
+ * prefixing and the spaces people type.
+ */
+function community_id_login(array $p): array {
     $token = trim((string)($p['token'] ?? ''));
-    $idIn = trim((string)($p['displayId'] ?? ''));
-    $phone = preg_replace('/\D/', '', (string)($p['guardianPhone'] ?? ''));
-    $stu = null;
+    $idIn  = trim((string)($p['displayId'] ?? ''));
+    // The field is named guardianPhone by the student form; a volunteer signs
+    // in with their own number through the same input.
+    $phone = preg_replace('/\D/', '', (string)($p['guardianPhone'] ?? ($p['phone'] ?? '')));
+
+    $person = null; $kind = '';
     if ($token !== '') {
         $q = db_row("SELECT studentId FROM qr_codes WHERE token = ? LIMIT 1", [$token]);
         $sid = (string)($q['studentId'] ?? '');
-        if ($sid !== '') $stu = db_row("SELECT * FROM summer_students WHERE studentId = ? AND status = 'active' LIMIT 1", [$sid]);
-        if (!$stu) $stu = db_row("SELECT * FROM summer_students WHERE token = ? AND status = 'active' LIMIT 1", [$token]);
+        if ($sid !== '') {
+            $person = db_row("SELECT * FROM summer_students WHERE studentId = ? AND status = 'active' LIMIT 1", [$sid]);
+            if ($person) $kind = 'student';
+            if (!$person) {
+                $person = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$sid]);
+                if ($person) $kind = 'volunteer';
+            }
+        }
+        if (!$person) {
+            $person = db_row("SELECT * FROM summer_students WHERE token = ? AND status = 'active' LIMIT 1", [$token]);
+            if ($person) $kind = 'student';
+        }
+        if (!$person) {
+            $person = db_row("SELECT * FROM volunteers WHERE token = ? AND status = 'active' LIMIT 1", [$token]);
+            if ($person) $kind = 'volunteer';
+        }
     } elseif ($idIn !== '' && strlen($phone) >= 7) {
+        $tail = fn($a, $b) => strlen($a) >= 7 && strlen($b) >= 7 && (substr($a, -7) === substr($b, -7));
         $cand = db_row("SELECT * FROM summer_students WHERE (displayId = ? OR studentId = ?) AND status = 'active' LIMIT 1", [$idIn, $idIn]);
         if ($cand) {
             $g = preg_replace('/\D/', '', (string)($cand['guardianPhone'] ?? ''));
-            $tail = fn($a, $b) => strlen($a) >= 7 && strlen($b) >= 7 && (substr($a, -7) === substr($b, -7));
-            if ($g !== '' && $tail($g, $phone)) $stu = $cand;
+            if ($g !== '' && $tail($g, $phone)) { $person = $cand; $kind = 'student'; }
+        }
+        if (!$person) {
+            // A volunteer's printed ID *is* their volunteerId (VOL-INS-26-001).
+            $cand = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$idIn]);
+            if ($cand) {
+                $vp = preg_replace('/\D/', '', (string)($cand['phone'] ?? ''));
+                if ($vp !== '' && $tail($vp, $phone)) { $person = $cand; $kind = 'volunteer'; }
+            }
         }
     }
-    if (!$stu) return ['ok' => false, 'error' => 'bad_credentials'];
-    return ['ok' => true, 'student' => $stu];
+    if (!$person) return ['ok' => false, 'error' => 'bad_credentials'];
+
+    // §2.3 — a suspension is "a 14-day total ban from the CACENTRE premises AND
+    // digital channels", and eviction is a total termination of association.
+    // The community is a digital channel, so the same gate that stops the
+    // scanner stops the sign-in.
+    $personId = (string)($kind === 'volunteer' ? $person['volunteerId'] : $person['studentId']);
+    if (function_exists('policy_gate_checkin')) {
+        $gate = policy_gate_checkin($personId, $kind);
+        if (!$gate['ok']) return ['ok' => false, 'error' => $gate['error'], 'message' => $gate['message'] ?? ''];
+    }
+
+    // First sign-in stamps the person as a community participant, which is what
+    // the community's own headcount is counted from — enrolment is not
+    // membership, and the board should say how many people actually turned up.
+    $table = $kind === 'volunteer' ? 'volunteers' : 'summer_students';
+    $key   = $kind === 'volunteer' ? ['volunteerId' => $personId] : ['studentId' => $personId];
+    try { db_update($table, ['communityAt' => now_iso()], $key); } catch (\Throwable $e) {}
+
+    return ['ok' => true, 'kind' => $kind, 'person' => $person,
+            // Back-compat for the existing route, which reads ['student'].
+            'student' => $person];
 }
 
 /* ── Channels ─────────────────────────────────────────────────────────── */
@@ -141,6 +206,9 @@ function community_channel_members(array $p): array {
         $mm = db_row("SELECT role FROM members WHERE memberId = ? LIMIT 1", [(string)$r['authorId']]);
         $role = strtolower((string)($mm['role'] ?? ''));
         $staff = $mm && ($role === 'mentor' || $role === 'staff' || $role === 'coordinator' || is_admin_role($role));
+        // A signed-in instructor/mentor is staff in the rail too — they are not
+        // in `members`, so the lookup above can never see them.
+        if (!$staff && db_row("SELECT id FROM volunteers WHERE volunteerId = ? LIMIT 1", [(string)$r['authorId']])) $staff = true;
         $members[] = ['name' => (string)$r['authorName'], 'centre' => (string)$r['authorCentre'], 'posts' => (int)$r['posts'], 'staff' => $staff, 'photo' => community_photo_for((string)$r['authorId'])];
     }
     return ['ok' => true, 'members' => $members, 'count' => count($members)];
@@ -167,6 +235,9 @@ function community_search(array $p): array {
 function community_author(string $memberId): array {
     $m = db_row("SELECT fullName, centre FROM members WHERE memberId = ? LIMIT 1", [$memberId]);
     if (!$m) $m = db_row("SELECT fullName, centre FROM summer_students WHERE studentId = ? LIMIT 1", [$memberId]); // student sessions
+    // Volunteers have no `centre` column; they sign in with the same kind of
+    // card session, and without this every instructor posted as "Member".
+    if (!$m) $m = db_row("SELECT fullName, '' centre FROM volunteers WHERE volunteerId = ? LIMIT 1", [$memberId]);
     $full = trim((string)($m['fullName'] ?? '')) ?: 'Member';
     $parts = preg_split('/\s+/', $full) ?: [];
     $first = $parts[0] ?? 'Member';
@@ -179,6 +250,7 @@ function community_photo_for(string $id): string {
     if ($id === '') return '';
     $r = db_row("SELECT photoUrl FROM members WHERE memberId = ? LIMIT 1", [$id]);
     if (!$r) $r = db_row("SELECT photoUrl FROM summer_students WHERE studentId = ? LIMIT 1", [$id]);
+    if (!$r) $r = db_row("SELECT photoUrl FROM volunteers WHERE volunteerId = ? LIMIT 1", [$id]);
     return (string)($r['photoUrl'] ?? '');
 }
 

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 58;
+const NGG_SCHEMA_TARGET = 59;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1396,6 +1396,15 @@ function db_migrate(PDO $db): void {
         58 => "
             ALTER TABLE attendance ADD COLUMN redline INTEGER DEFAULT 0;
             ALTER TABLE attendance ADD COLUMN halfDay INTEGER DEFAULT 0;
+        ",
+
+        // Community sign-in stamp. Students and volunteers hold an ID card but
+        // no member account, so the community's headcount had no way to see
+        // them and reported the `members` table alone. Enrolment is not
+        // membership: this records the people who actually turned up.
+        59 => "
+            ALTER TABLE summer_students ADD COLUMN communityAt TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN communityAt TEXT DEFAULT '';
         ",
     ];
 

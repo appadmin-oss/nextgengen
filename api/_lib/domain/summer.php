@@ -468,7 +468,18 @@ function attendance_settings(): array {
     $cfg = setting_get('attendance');
     $p = is_array($cfg) ? $cfg : [];
     $p += ['enabled' => true, 'tzOffset' => 60, 'graceMinutes' => 10, 'resumptionByType' => []];
-    $p['resumptionByType'] = (array)$p['resumptionByType'] + ['default' => '09:00', 'student' => '09:00', 'volunteer' => '08:30'];
+    /* The shipped resumption times (09:00 students, 08:30 volunteers) are the
+     * inverse of the blueprint's Part VI redlines (08:30 / 09:00), so a student
+     * would be flagged LATE half an hour before they were ever TARDY. Where the
+     * blueprint is being enforced, fall back instead to its 1-Hour Advance
+     * Resumption Protocol — 07:00 for everyone — which is the threshold those
+     * redlines are the backstop for. An admin's saved values always win; this
+     * only changes what an install that never set one inherits. */
+    $blueprint = function_exists('policy_settings') && !empty(policy_settings()['enabled']);
+    $fallback = $blueprint
+        ? ['default' => '07:00', 'student' => '07:00', 'volunteer' => '07:00']
+        : ['default' => '09:00', 'student' => '09:00', 'volunteer' => '08:30'];
+    $p['resumptionByType'] = (array)$p['resumptionByType'] + $fallback;
     return $p;
 }
 
@@ -490,18 +501,44 @@ function attendance_settings_save(array $in, string $by): void {
     setting_set('attendance', $clean, $by);
 }
 
-/** {status,lateMinutes} for a check-in of the given member type happening now. */
-function attendance_punctuality(string $type): array {
+/** {status,lateMinutes} for a check-in of the given member type. `$at` is the
+ *  epoch the scan actually happened — not necessarily now: a kiosk that lost
+ *  its connection queues scans and flushes them later, and grading those
+ *  against flush time made an 07:55 arrival late because the network came back
+ *  at 09:30. Defaults to now for every live scan. */
+function attendance_punctuality(string $type, ?int $at = null): array {
     $cfg = attendance_settings();
     if (empty($cfg['enabled'])) return ['status' => 'present', 'lateMinutes' => 0];
     $byType = $cfg['resumptionByType'];
     $hhmm = (string)($byType[$type] ?? $byType['default'] ?? '09:00');
     [$rh, $rm] = array_pad(array_map('intval', explode(':', $hhmm)), 2, 0);
     $resMin = $rh * 60 + $rm + (int)$cfg['graceMinutes'];
-    $localNow = time() + (int)$cfg['tzOffset'] * 60;
-    $nowMin = (int)gmdate('G', $localNow) * 60 + (int)gmdate('i', $localNow);
+    $nowMin = attendance_minutes_at($at);
     $late = max(0, $nowMin - $resMin);
     return ['status' => $late > 0 ? 'late' : 'present', 'lateMinutes' => $late];
+}
+
+/** Minutes past local midnight at `$at` (default now). */
+function attendance_minutes_at(?int $at = null): int {
+    $cfg = attendance_settings();
+    $local = ($at ?? time()) + (int)$cfg['tzOffset'] * 60;
+    return (int)gmdate('G', $local) * 60 + (int)gmdate('i', $local);
+}
+
+/**
+ * The epoch a scan happened, from a client-supplied `scannedAt`. Only the
+ * kiosk sends one, and only for a scan it took while offline. Clamped to the
+ * last 24 hours and never to the future, so a wrong clock or a replayed
+ * payload cannot backdate attendance into an arbitrary day. Anything
+ * unparseable or out of range falls back to now.
+ */
+function attendance_scan_time($raw): int {
+    $now = time();
+    if ($raw === null || $raw === '' || !is_string($raw)) return $now;
+    $t = strtotime($raw);
+    if ($t === false) return $now;
+    if ($t > $now || $t < $now - 86400) return $now;
+    return $t;
 }
 
 /** True when a DB exception is a unique/PK violation (duplicate row) rather than
@@ -531,8 +568,11 @@ function summer_checkin(array $p): array {
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
     // gmdate() filed every scan between local midnight and the UTC offset under
     // yesterday — a real hour of every day in Lagos. attendance_today() is the
-    // programme's local date.
-    $today = attendance_today();
+    // programme's local date, at the moment the scan was actually taken (which
+    // for a queued offline scan is not the moment it reaches us).
+    $at = attendance_scan_time($p['scannedAt'] ?? null);
+    $today = attendance_today($at);
+    $scanIso = gmdate('Y-m-d\\TH:i:s\\Z', $at);
     if (!$s) {
         // Volunteer badges check in through the same scanner.
         $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$qr['studentId']]);
@@ -550,10 +590,10 @@ function summer_checkin(array $p): array {
         // punctuality reading against the current (later) time.
         $punc = $already
             ? ['status' => (string)($existing['status'] ?: 'present'), 'lateMinutes' => (int)($existing['lateMinutes'] ?? 0), 'redline' => 0, 'halfDay' => 0]
-            : policy_punctuality('volunteer');
+            : policy_punctuality('volunteer', $at);
         if (!$already) {
             try {
-                db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'redline' => (int)$punc['redline'], 'halfDay' => (int)$punc['halfDay'], 'createdAt' => now_iso()]);
+                db_insert('attendance', ['cohortId' => (string)($qr['cohortId'] ?? ''), 'studentId' => $v['volunteerId'], 'token' => $token, 'date' => $today, 'checkInAt' => $scanIso, 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'redline' => (int)$punc['redline'], 'halfDay' => (int)$punc['halfDay'], 'createdAt' => now_iso()]);
             } catch (\Throwable $e) {
                 if (!attendance_is_dup($e)) throw $e;      // concurrent duplicate scan → treat as already
                 $row = db_row('SELECT status, lateMinutes FROM attendance WHERE studentId = ? AND date = ?', [$v['volunteerId'], $today]);
@@ -578,10 +618,10 @@ function summer_checkin(array $p): array {
     }
     $punc = $already
         ? ['status' => (string)($existing['status'] ?: 'present'), 'lateMinutes' => (int)($existing['lateMinutes'] ?? 0), 'redline' => 0, 'halfDay' => 0]
-        : policy_punctuality('student');
+        : policy_punctuality('student', $at);
     if (!$already) {
         try {
-            db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => now_iso(), 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'redline' => (int)$punc['redline'], 'halfDay' => (int)$punc['halfDay'], 'createdAt' => now_iso()]);
+            db_insert('attendance', ['cohortId' => $s['cohortId'], 'studentId' => $s['studentId'], 'token' => $token, 'date' => $today, 'checkInAt' => $scanIso, 'method' => (string)($p['method'] ?? 'qr'), 'byId' => $byId, 'device' => substr((string)($p['device'] ?? ''), 0, 64), 'status' => $punc['status'], 'lateMinutes' => $punc['lateMinutes'], 'redline' => (int)$punc['redline'], 'halfDay' => (int)$punc['halfDay'], 'createdAt' => now_iso()]);
         } catch (\Throwable $e) {
             if (!attendance_is_dup($e)) throw $e;          // concurrent duplicate scan → treat as already
             $row = db_row('SELECT status, lateMinutes FROM attendance WHERE studentId = ? AND date = ?', [$s['studentId'], $today]);

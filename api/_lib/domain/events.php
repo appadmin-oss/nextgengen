@@ -138,11 +138,22 @@ function public_stats(array $p): array {
     $submitted = (int)(db_row("SELECT COUNT(*) c FROM member_progress WHERE status IN ('submitted','verified','rejected')")['c'] ?? 0);
     $centres = (int)(db_row("SELECT COUNT(DISTINCT centre) c FROM members WHERE status='active' AND centre != '' AND centre IS NOT NULL")['c'] ?? 0);
 
+    /* Community headcount. Summer students and the Volunteer Vanguard hold an
+     * ID card but have no row in `members`, so every count here saw straight
+     * past them and the community reported the members table alone. These are
+     * the card-holders who have actually signed in — enrolment is not
+     * membership, and the board should say how many people turned up. */
+    $cmStudents = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE status='active' AND communityAt != '' AND communityAt IS NOT NULL")['c'] ?? 0);
+    $cmInstructors = (int)(db_row("SELECT COUNT(*) c FROM volunteers WHERE status='active' AND communityAt != '' AND communityAt IS NOT NULL")['c'] ?? 0);
+
     return ['ok' => true, 'stats' => [
         'activeMembers' => $active, 'summer' => $summer, 'ngg' => $ngg, 'graduates' => $graduates,
         'mentors' => $mentors, 'missionsVerified' => $verified, 'missionsSubmitted' => $submitted,
         'completionRate' => $submitted > 0 ? (int)round($verified / $submitted * 100) : 0,
         'centres' => $centres,
+        'communityStudents' => $cmStudents,
+        'communityInstructors' => $cmInstructors,
+        'communityMembers' => $active + $cmStudents + $cmInstructors,
     ]];
 }
 

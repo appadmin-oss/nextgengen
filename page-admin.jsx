@@ -5404,6 +5404,7 @@ function SummerKiosk({ onCheckin }) {
   const [recent, setRecent] = React.useState([]);
   const [pending, setPending] = React.useState(kioskQueue().length);
   const [camErr, setCamErr] = React.useState("");
+  const [flushErr, setFlushErr] = React.useState(null);   // queued scans the server refused
   const [manual, setManual] = React.useState("");
   const [online, setOnline] = React.useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   const last = React.useRef({ token: "", at: 0 });
@@ -5420,14 +5421,24 @@ function SummerKiosk({ onCheckin }) {
     last.current = { token, at: now };
     try {
       const r = await NGGApi.admin.summer.checkin(token, method, device);
-      setResult({ student: r.student, already: r.already }); buzz(false);
-      setRecent(x => [{ name: r.student.fullName, at: now, already: r.already }, ...x].slice(0, 8));
+      setResult({ student: r.student, already: r.already, status: r.status, lateMinutes: r.lateMinutes, halfDay: r.halfDay, programmeDay: r.programmeDay, compliance: r.compliance });
+      buzz(r.status === "late");
+      setRecent(x => [{ name: r.student.fullName, at: now, already: r.already, status: r.status }, ...x].slice(0, 8));
       onCheckin && onCheckin();
     } catch (e) {
       const code = e.code || e.message || "";
       if (!navigator.onLine || /network|fetch|offline|http_0/i.test(code)) {
-        const q = kioskQueue(); q.push({ token, method, at: now }); kioskSetQueue(q); setPending(q.length);
+        // Stamp the moment the card was actually presented. Without it the
+        // server grades punctuality at flush time, so a 07:55 arrival becomes
+        // a lateness infraction because the network came back at 09:30.
+        const q = kioskQueue(); q.push({ token, method, at: now, scannedAt: new Date(now).toISOString() });
+        kioskSetQueue(q); setPending(q.length);
         setResult({ queued: true, token }); buzz(false);
+      } else if (code === "policy_evicted" || code === "policy_suspended") {
+        // A refusal is not an error the operator can fix by rescanning — say
+        // who it is and why, so the desk can act rather than scan again.
+        const d = e.data || {};
+        setResult({ refused: code, student: d.student, message: d.message, compliance: d.state }); buzz(true);
       } else {
         const map = { qr_unassigned: "That card isn't linked to a student yet.", student_not_found: "Student not found.", forbidden: "Your session expired — sign in again." };
         setResult({ error: map[code] || code }); buzz(true);
@@ -5438,11 +5449,20 @@ function SummerKiosk({ onCheckin }) {
   // Flush the offline queue when back online / periodically.
   const flush = React.useCallback(async () => {
     let q = kioskQueue(); if (!q.length || !navigator.onLine) return;
+    const rejected = [];
     for (const it of [...q]) {
-      try { await NGGApi.admin.summer.checkin(it.token, it.method, device); q = q.filter(x => x !== it); kioskSetQueue(q); }
-      catch (e) { if (!navigator.onLine) break; q = q.filter(x => x !== it); kioskSetQueue(q); }
+      try { await NGGApi.admin.summer.checkin(it.token, it.method, device, it.scannedAt); q = q.filter(x => x !== it); kioskSetQueue(q); }
+      catch (e) {
+        if (!navigator.onLine) break;
+        // A queued scan the server refuses is dropped — but silently dropping
+        // it left the desk believing someone was checked in who is not.
+        rejected.push({ token: it.token, code: e.code || e.message || "rejected" });
+        q = q.filter(x => x !== it); kioskSetQueue(q);
+      }
     }
-    setPending(kioskQueue().length); onCheckin && onCheckin();
+    setPending(kioskQueue().length);
+    if (rejected.length) setFlushErr(rejected);
+    onCheckin && onCheckin();
   }, [device, onCheckin]);
   React.useEffect(() => {
     const on = () => { setOnline(true); flush(); };
@@ -5518,12 +5538,29 @@ function SummerKiosk({ onCheckin }) {
 
         <div className="summer-kiosk-result">
           {!result && <div className="summer-result idle"><i className="ph" aria-hidden="true">◎</i><div>Ready — scan a card.</div></div>}
-          {result && result.student && (
-            <div className={"summer-result " + (result.already ? "dupe" : "ok")}>
+          {result && result.student && !result.refused && (
+            <div className={"summer-result " + (result.already ? "dupe" : result.status === "late" ? "late" : "ok")}>
               <div className="summer-result-av">{result.student.photoUrl ? <img src={result.student.photoUrl} alt=""/> : (result.student.fullName || "?").charAt(0)}</div>
               <div className="summer-result-nm">{result.student.fullName}</div>
               <div className="summer-result-msg">{result.already ? "Already checked in today" : "Checked in ✓"}</div>
               <div className="mono summer-result-id">{result.student.studentId}{result.student.track ? " · " + result.student.track : ""}</div>
+              {/* Punctuality was recorded but never shown, so the desk had no
+                  idea a scan had just cost someone a lateness log. */}
+              <div className="summer-result-tags">
+                {result.status === "late" && <span className="chip" style={{ background: "var(--coral)", color: "#fff" }}>LATE{result.lateMinutes ? " · " + result.lateMinutes + " min" : ""}</span>}
+                {result.status === "tardy" && <span className="chip status-draft">Tardy{result.lateMinutes ? " · " + result.lateMinutes + " min" : ""}</span>}
+                {!!result.halfDay && <span className="chip status-draft">Half-day — missed Musing</span>}
+                {result.programmeDay === false && <span className="chip status-draft">Not a programme day</span>}
+                {result.compliance && result.compliance.state && result.compliance.state !== "clear" && <PolicyStateChip state={result.compliance.state}/>}
+              </div>
+            </div>
+          )}
+          {result && result.refused && (
+            <div className="summer-result err">
+              <div className="summer-result-nm">{(result.student && result.student.fullName) || "Refused"}</div>
+              <div className="summer-result-msg">{result.message || (result.refused === "policy_evicted" ? "Evicted from the programme." : "Currently suspended.")}</div>
+              <div className="summer-result-tags"><PolicyStateChip state={result.refused === "policy_evicted" ? "evicted" : "suspended"}/></div>
+              <div className="mono summer-result-id">Not checked in. Refer to the coordinator.</div>
             </div>
           )}
           {result && result.queued && <div className="summer-result queued"><div className="summer-result-nm">Saved offline</div><div className="summer-result-msg">{result.token} — syncs when back online</div></div>}
@@ -5531,11 +5568,27 @@ function SummerKiosk({ onCheckin }) {
         </div>
       </div>
 
+      {flushErr && (
+        <div className="policy-callout" data-tone="warn" style={{ marginTop: 14 }}>
+          <b>{flushErr.length} queued scan(s) were refused when they synced</b> and are <b>not</b> checked in:{" "}
+          {flushErr.map(r => r.token).join(", ")}.{" "}
+          {flushErr.some(r => /policy_/.test(r.code)) ? "At least one is suspended or evicted." : ""}
+          <button className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={() => setFlushErr(null)}>Dismiss</button>
+        </div>
+      )}
+
       {recent.length > 0 && (
         <div style={{ marginTop: 16 }}>
           <div className="eyebrow" style={{ marginBottom: 8 }}>THIS SESSION</div>
           <div className="summer-kiosk-recent">
-            {recent.map((r, i) => <div key={i} className="summer-recent-row"><span>{r.name}</span><span className={"mono " + (r.already ? "summer-dupe" : "summer-fresh")}>{r.already ? "already" : "checked in"}</span></div>)}
+            {recent.map((r, i) => (
+              <div key={i} className="summer-recent-row">
+                <span>{r.name}</span>
+                <span className={"mono " + (r.already ? "summer-dupe" : "summer-fresh")}>
+                  {r.already ? "already" : r.status === "late" ? "checked in · LATE" : r.status === "tardy" ? "checked in · tardy" : "checked in"}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -5940,6 +5993,8 @@ function SummerAttendance() {
   const [err, setErr] = React.useState("");
   const [ins, setIns] = React.useState(null);
   const [insBusy, setInsBusy] = React.useState(false);
+  const [q, setQ] = React.useState("");
+  const [only, setOnly] = React.useState("all");   // all | absent | atrisk | late | flagged
   const load = () => NGGApi.admin.summer.attendance().then(r => setA(r.attendance)).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const loadInsights = () => { setInsBusy(true); NGGApi.admin.summer.insights().then(setIns).catch(e => setIns({ insight: "Couldn't generate insights: " + (e.code || e.message), source: "error" })).finally(() => setInsBusy(false)); };
@@ -5953,13 +6008,41 @@ function SummerAttendance() {
   if (err) return <ErrorState title="Couldn't load" code={err} onRetry={load}/>;
   if (!a) return <div className="dash-spinner"/>;
   const maxDay = Math.max(1, ...a.days.map(d => d.present));
+  const prog = a.programme || {};
+  const closed = prog.enabled && !prog.isProgrammeDay;
+  /* Filters hold across searching, so a coordinator can narrow to "absent
+     today" and then look for one name inside it. */
+  const needle = q.trim().toLowerCase();
+  const roster = a.roster.filter(r => {
+    if (needle && !((r.fullName || "") + " " + (r.studentId || "") + " " + (r.track || "") + " " + (r.centre || "")).toLowerCase().includes(needle)) return false;
+    if (only === "absent") return !r.presentToday;
+    if (only === "atrisk") return r.rate < 50;
+    if (only === "late") return (r.lates || 0) > 0;
+    if (only === "flagged") return r.state && r.state !== "clear";
+    return true;
+  });
   return (
     <div>
+      {prog.enabled && (
+        <div className="policy-callout" data-tone={closed ? "muted" : "ok"} style={{ marginTop: 0 }}>
+          {closed
+            ? <><b>No session today ({prog.today}).</b> Nobody is counted absent{prog.nextDay ? <> — next session is <b>{prog.nextDay}</b>.</> : " — the term has ended."}</>
+            : <><b>Session day {a.sessionDays}</b>{prog.remaining ? <> of {a.sessionDays + prog.remaining}</> : null} · term {prog.termStart} → {prog.termEnd}.</>}
+        </div>
+      )}
+      {!prog.enabled && (
+        <div className="policy-callout" data-tone="warn" style={{ marginTop: 0 }}>
+          No programme calendar is set, so <b>every calendar day counts as a session</b> — weekends
+          included, and rates are measured against days somebody happened to scan.
+          Set the days in <b>Programme &amp; policy</b>.
+        </div>
+      )}
+
       <div className="admin-tiles" style={{ marginBottom: 14 }}>
         <AdminTile n={a.today} l="Present today"/>
-        <AdminTile n={a.absentToday} l="Absent today"/>
+        <AdminTile n={closed ? "—" : a.absentToday} l={closed ? "Absent (closed)" : "Absent today"}/>
         <AdminTile n={a.activeStudents} l="Active students"/>
-        <AdminTile n={a.sessionDays} l="Session days"/>
+        <AdminTile n={a.sessionDays} l={prog.enabled ? "Programme days run" : "Days scanned"}/>
       </div>
 
       <div className="summer-insight">
@@ -5975,8 +6058,11 @@ function SummerAttendance() {
 
       <div className="eyebrow" style={{ margin: "4px 0 10px" }}>LAST 14 DAYS</div>
       <div className="summer-attbar">
+        {/* A closed day is drawn as closed, not as a collapse in attendance —
+            a flat Sunday next to a full Friday used to read as a crisis. */}
         {a.days.map((d, i) => (
-          <div key={i} className="summer-attbar-col" title={d.date + " · " + d.present + " present"}>
+          <div key={i} className={"summer-attbar-col" + (d.programmeDay === false ? " is-closed" : "")}
+            title={d.date + (d.programmeDay === false ? " · no session" : " · " + d.present + " present")}>
             <div className="summer-attbar-track"><div className="summer-attbar-fill" style={{ height: (d.present / maxDay * 100) + "%" }}/></div>
             <span className="summer-attbar-lbl">{d.date.slice(8)}</span>
           </div>
@@ -5993,32 +6079,52 @@ function SummerAttendance() {
       )}
 
       <div style={{ marginTop: 18 }}>
-        <button className="btn btn-ghost btn-sm" onClick={async () => {
-          if (!confirm("Email the guardians of every student absent today?")) return;
+        <button className="btn btn-ghost btn-sm" disabled={closed} onClick={async () => {
+          if (!(await dialog.confirm({ title: "Email the guardians of every student absent today?", body: a.absentToday + " student(s) have no check-in today. Each guardian with an email on file gets one \u201cwe missed them\u201d note.", cta: "Send " + a.absentToday + " email(s)" }))) return;
           try { const r = await NGGApi.admin.summer.absenceAlert(); toast.success("Emailed " + (r.sent || 0) + " guardian(s)" + (r.skipped ? " (" + r.skipped + " had no email)" : "") + ".", "Absence follow-up"); }
-          catch (e) { toast.error(e.code || e.message); }
+          catch (e) {
+            if (e.code === "not_a_programme_day") toast.error("Today isn't a programme day — nobody is absent." + ((e.data && e.data.nextDay) ? " Next session: " + e.data.nextDay + "." : ""));
+            else toast.error(e.code || e.message);
+          }
         }}>Email today's absentees' guardians</button>
-        <span className="admin-hint" style={{ marginLeft: 10 }}>Sends a warm "we missed them" nudge to guardians with an email on file.</span>
+        <span className="admin-hint" style={{ marginLeft: 10 }}>
+          {closed ? "Disabled — there is no session today, so nobody is absent." : "Sends a warm \u201cwe missed them\u201d nudge to guardians with an email on file."}
+        </span>
       </div>
 
-      <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div className="eyebrow">ATTENDANCE BY STUDENT</div>
         <span style={{ flex: 1 }}/>
-        <button className="btn btn-ghost btn-sm" disabled={!a.roster.length} onClick={() => downloadCsv("summer-attendance", a.roster.map(r => ({ studentId: r.studentId, fullName: r.fullName, track: r.track, present: r.present, rate: r.rate + "%", lastSeen: r.lastSeen, presentToday: r.presentToday ? "yes" : "no" })))}>Export CSV</button>
+        <input className="admin-input" style={{ width: 220 }} placeholder="Search name, ID, track, centre"
+          value={q} onChange={e => setQ(e.target.value)} aria-label="Search the roster"/>
+        <select className="admin-select" value={only} onChange={e => setOnly(e.target.value)} aria-label="Filter the roster">
+          <option value="all">Everyone</option>
+          <option value="absent">Absent today</option>
+          <option value="atrisk">Under 50%</option>
+          <option value="late">Has lateness logs</option>
+          <option value="flagged">Warned or worse</option>
+        </select>
+        <button className="btn btn-ghost btn-sm" disabled={!roster.length} onClick={() => downloadCsv("summer-attendance", roster.map(r => ({ studentId: r.studentId, fullName: r.fullName, track: r.track, centre: r.centre, present: r.present, sessionDays: a.sessionDays, rate: r.rate + "%", halfDays: r.halfDays || 0, lates: r.lates || 0, absences: r.absences || 0, state: r.state || "clear", lastSeen: r.lastSeen, presentToday: r.presentToday ? "yes" : "no" })))}>Export CSV{roster.length !== a.roster.length ? " (" + roster.length + ")" : ""}</button>
       </div>
+      {!roster.length ? (
+        <div className="admin-empty">{a.roster.length ? "No student matches that filter." : "Nobody is enrolled in this cohort yet."}</div>
+      ) : (
       <div className="admin-table-wrap" style={{ marginTop: 8 }}><table className="admin-table">
-        <thead><tr><th>Student</th><th>Track</th><th>Present</th><th>Rate</th><th>Last seen</th><th>Today</th></tr></thead>
-        <tbody>{a.roster.map(r => (
+        <thead><tr><th>Student</th><th>Track</th><th>Present</th><th>Rate</th><th>Late</th><th>Standing</th><th>Last seen</th><th>Today</th></tr></thead>
+        <tbody>{roster.map(r => (
           <tr key={r.studentId}>
-            <td>{r.fullName}<div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{r.studentId}</div></td>
+            <td>{r.fullName}<div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{r.studentId}{r.centre ? " · " + r.centre : ""}</div></td>
             <td>{r.track || "—"}</td>
-            <td className="mono">{r.present}/{a.sessionDays}</td>
+            <td className="mono">{r.present}/{a.sessionDays}{r.halfDays ? <span title={r.halfDays + " half-day(s) — missed the Musing Period"} style={{ color: "var(--ink-500)" }}> ·{r.halfDays}½</span> : null}</td>
             <td style={{ minWidth: 120 }}><div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: r.rate + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono">{r.rate}%</span></div></td>
+            <td className="mono">{r.lates ? r.lates : "—"}</td>
+            <td>{r.state && r.state !== "clear" ? <PolicyStateChip state={r.state}/> : <span className="mono" style={{ color: "var(--ink-500)" }}>—</span>}</td>
             <td className="mono">{r.lastSeen || "—"}</td>
             <td>{r.presentToday ? <span className="chip status-published">✓</span> : <span className="chip status-draft">—</span>}</td>
           </tr>
         ))}</tbody>
       </table></div>
+      )}
 
       {a.recent.length > 0 && (
         <div style={{ marginTop: 22 }}>

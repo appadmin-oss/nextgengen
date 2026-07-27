@@ -62,6 +62,10 @@
       err.status = res.status;
       err.detail = data.detail;
       err.code = data.error;
+      // Some refusals carry structured context the caller needs to act on —
+      // which reinstatement conditions are unmet, who the refused scan was.
+      // Without this the screen can only say "failed" and throw the rest away.
+      err.data = data;
       throw err;
     }
     return data;
@@ -298,7 +302,10 @@
           action: 'register', gate, data, photoUrl, force,
           lat: opts && opts.lat, lng: opts && opts.lng, geoOverride: !!(opts && opts.geoOverride),
         } }),
-        checkin:  (gate, token) => request('/public/gate.php', { body: { action: 'checkin', gate, token } }),
+        // scannedAt is only set when flushing a scan banked while offline, so
+        // punctuality is graded at the moment the card was presented rather
+        // than whenever the signal came back. Clamped server-side to 24h.
+        checkin:  (gate, token, scannedAt) => request('/public/gate.php', { body: { action: 'checkin', gate, token, scannedAt } }),
         dutyClose:(gate) => request('/public/gate.php', { body: { action: 'duty_close', gate } }),
         // Kiosk unlock — mints a gate-scoped session so field staff run the
         // desk without an admin login (see /public/gate-unlock.php).
@@ -423,7 +430,10 @@
         studentStatus:(studentId, status) => request('/admin/summer.php', { body: { action: 'studentStatus', studentId, status } }),
         studentUpdate:(studentId, data) => request('/admin/summer.php', { body: { action: 'studentUpdate', studentId, data } }),
         studentDelete:(studentId) => request('/admin/summer.php', { body: { action: 'studentDelete', studentId } }),
-        checkin:      (token, method, device) => request('/admin/summer.php', { body: { action: 'checkin', token, method, device } }),
+        // scannedAt is only sent for a scan the kiosk took while offline and is
+        // flushing later. The server clamps it to the last 24h so punctuality
+        // is graded at the moment the card was presented, not at flush time.
+        checkin:      (token, method, device, scannedAt) => request('/admin/summer.php', { body: { action: 'checkin', token, method, device, scannedAt } }),
         attendance:   (cohortId) => request('/admin/summer.php' + qs({ view: 'attendance', cohortId })),
         insights:     (cohortId) => request('/admin/summer.php' + qs({ view: 'insights', cohortId })),
         archive:      (cohortId, compress) => request('/admin/summer.php', { body: { action: 'archive', cohortId, compress: !!compress } }),

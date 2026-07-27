@@ -42,5 +42,12 @@ if ($method === 'GET') {
 } else {
     json_error('method_not_allowed', 405);
 }
-if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+if (empty($res['ok'])) {
+    // A policy refusal is not a bare error code: it carries who was refused and
+    // why, and the kiosk needs both to tell the desk something useful instead
+    // of printing "policy_suspended" at them.
+    http_response_code(400);
+    echo json_encode(array_merge(['ok' => false, 'error' => 'failed'], is_array($res) ? $res : []), JSON_UNESCAPED_SLASHES);
+    exit;
+}
 unset($res['ok']); json_ok($res);

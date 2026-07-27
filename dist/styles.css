@@ -2649,3 +2649,15 @@ button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
   .cm-msg { padding-left: 14px; padding-right: 14px; padding-top: 10px; }
   .cm-msg.grouped { padding-top: 4px; }
 }
+
+/* Community sign-in: who is holding the card. Instructors sign in with the
+   same ID card as students, but against their own phone number rather than a
+   guardian's — so the door has to ask which. */
+.cm-stu-who { display: flex; gap: 6; margin: 10px 0 4px; }
+.cm-stu-who-btn {
+  flex: 1; font: inherit; font-size: 12.5px; font-weight: 600;
+  padding: 8px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.68);
+}
+.cm-stu-who-btn.is-on { background: rgba(245,176,38,0.16); border-color: rgba(245,176,38,0.55); color: #ffce54; }

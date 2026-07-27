@@ -4352,3 +4352,12 @@ section p[style*="var(--ink-500)"] {
 .policy-callout[data-tone="ok"]    { border-color: rgba(110,156,29,.35); background: rgba(110,156,29,.08); }
 .policy-callout[data-tone="muted"] { color: var(--ink-500); }
 .policy-callout[data-tone="warn"]  { border-color: rgba(224,84,60,.4); background: rgba(224,84,60,.08); }
+
+/* A day the programme did not run is drawn as closed, not as zero attendance:
+   a flat Sunday beside a full Friday read as a collapse. */
+.summer-attbar-col.is-closed .summer-attbar-track {
+  background: repeating-linear-gradient(45deg, rgba(12,20,50,.05) 0 4px, transparent 4px 8px);
+}
+.summer-attbar-col.is-closed .summer-attbar-lbl { opacity: .45; }
+.summer-result-tags { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
+.summer-result.late { border-color: rgba(224,84,60,.45); }

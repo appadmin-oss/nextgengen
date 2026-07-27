@@ -184,6 +184,14 @@ function programme_next_day(string $date, ?array $cfg = null): string {
  */
 const POLICY_DEFAULTS = [
     'enabled' => false,          // strict enforcement is opt-in per deployment
+    /* Whether the two irreversible outcomes — suspension and eviction — take
+     * effect the moment the counter crosses, or are raised for an admin to
+     * confirm. Default OFF, which is the safeguarding stance docs/POLICY.md
+     * already records for this policy: these are minors, and the ledger itself
+     * can be wrong (§1.3 counts a broken scanner as a full absence). Warnings,
+     * dormancy and fines always apply automatically — they are reversible.
+     * Turning this on makes the thresholds self-executing. */
+    'autoEnforce' => false,
     'checkoutRequired' => true,  // §1.3 — scan IN and OUT, or the day is absent
     'student' => [
         'lateRedline'            => '08:30',
@@ -231,6 +239,7 @@ function policy_settings_save(array $in, string $by): array {
     $cur = policy_settings();
     $clean = [
         'enabled'          => array_key_exists('enabled', $in) ? !empty($in['enabled']) : !empty($cur['enabled']),
+        'autoEnforce'      => array_key_exists('autoEnforce', $in) ? !empty($in['autoEnforce']) : !empty($cur['autoEnforce']),
         'checkoutRequired' => array_key_exists('checkoutRequired', $in) ? !empty($in['checkoutRequired']) : !empty($cur['checkoutRequired']),
     ];
     foreach (['student', 'volunteer'] as $type) {
@@ -274,16 +283,9 @@ function policy_settings_save(array $in, string $by): array {
  *  gmdate('Y-m-d'), so on a UTC host every scan between local midnight and the
  *  UTC offset was filed under yesterday — and in Lagos (UTC+1, no DST) that is
  *  a real hour of every single day. */
-function attendance_today(): string {
+function attendance_today(?int $at = null): string {
     $cfg = attendance_settings();
-    return gmdate('Y-m-d', time() + (int)$cfg['tzOffset'] * 60);
-}
-
-/** Minutes past local midnight, now. */
-function attendance_now_minutes(): int {
-    $cfg = attendance_settings();
-    $t = time() + (int)$cfg['tzOffset'] * 60;
-    return (int)gmdate('G', $t) * 60 + (int)gmdate('i', $t);
+    return gmdate('Y-m-d', ($at ?? time()) + (int)$cfg['tzOffset'] * 60);
 }
 
 function policy_minutes(string $hhmm): int {
@@ -388,11 +390,13 @@ function policy_state(string $personId, string $type = 'student'): array {
     $sanctions = db_all("SELECT * FROM sanctions WHERE personId = ? ORDER BY issuedAt", [$personId]);
     $today = attendance_today();
     $state = 'clear'; $until = ''; $reason = '';
-    $fines = []; $evictedAt = ''; $suspendedFrom = '';
+    $fines = []; $evictedAt = ''; $suspendedFrom = ''; $proposed = [];
     foreach ($sanctions as $s) {
         $kind = (string)$s['kind'];
         $status = (string)$s['status'];
         if ($kind === 'fine' && in_array($status, ['active', 'pending'], true)) $fines[] = $s;
+        // Crossed the threshold, waiting on an admin. Visible, not enforced.
+        if ($status === 'proposed') { $proposed[] = ['kind' => $kind, 'reason' => (string)$s['reason'], 'sanctionId' => (int)$s['id']]; continue; }
         if ($status !== 'active') continue;
         if ($kind === 'eviction') { $state = 'evicted'; $evictedAt = (string)$s['issuedAt']; $reason = (string)$s['reason']; }
         elseif ($kind === 'suspension') {
@@ -414,6 +418,8 @@ function policy_state(string $personId, string $type = 'student'): array {
         'state' => $state,
         'until' => $until,
         'reason' => $reason,
+        'proposed' => $proposed,
+        'awaitingReview' => count($proposed) > 0,
         'evictedAt' => $evictedAt,
         'suspendedFrom' => $suspendedFrom,
         'absences' => $counts['absenceEquivalent'],
@@ -449,16 +455,17 @@ function policy_states_for(array $personIds, string $type = 'student'): array {
             $counts[(string)$r['personId']][(string)$r['kind']] = (int)$r['c'];
         }
         $live = [];
-        foreach (db_all("SELECT personId, kind, endsAt, amount, reason FROM sanctions WHERE personId IN ($ph) AND status IN ('active','pending')", $chunk) as $r) {
+        foreach (db_all("SELECT personId, kind, status, endsAt, amount, reason FROM sanctions WHERE personId IN ($ph) AND status IN ('active','pending','proposed')", $chunk) as $r) {
             $live[(string)$r['personId']][] = $r;
         }
         foreach ($chunk as $id) {
             $c = ($counts[$id] ?? []) + array_fill_keys(POLICY_INFRACTIONS, 0);
             $abs = $c['absence'] + intdiv($c['halfday'], 2);
-            $state = 'clear'; $until = ''; $owed = 0;
+            $state = 'clear'; $until = ''; $owed = 0; $proposed = [];
             foreach ($live[$id] ?? [] as $s) {
                 $kind = (string)$s['kind'];
                 if ($kind === 'fine') { $owed += (int)$s['amount']; continue; }
+                if ((string)$s['status'] === 'proposed') { $proposed[] = ['kind' => $kind, 'reason' => (string)$s['reason']]; continue; }
                 if ($kind === 'eviction') { $state = 'evicted'; }
                 elseif ($kind === 'suspension' && $state !== 'evicted') {
                     $ends = (string)$s['endsAt'];
@@ -468,6 +475,7 @@ function policy_states_for(array $personIds, string $type = 'student'): array {
             }
             $out[$id] = [
                 'state' => $state, 'until' => $until,
+                'proposed' => $proposed, 'awaitingReview' => count($proposed) > 0,
                 'absences' => $abs, 'absenceLimit' => (int)$cfg['absenceLimit'],
                 'lates' => $c['late'], 'latenessCap' => (int)$cfg['latenessCap'],
                 'halfDays' => $c['halfday'], 'tardies' => $c['tardy'],
@@ -489,6 +497,10 @@ function policy_apply(string $personId, string $type): array {
     $cfg = policy_for($type);
     $counts = policy_counts($personId);
     $issued = [];
+    // 'proposed' means the threshold is crossed and the outcome is waiting on a
+    // human. It appears on the board as needing review, and does NOT block the
+    // scanner until an admin confirms it into 'active'.
+    $grave = !empty(policy_settings()['autoEnforce']) ? 'active' : 'proposed';
 
     // §1.1 Attendance — strike 1 warning, strike 2 dormancy, strike 3 eviction.
     $limit = (int)$cfg['absenceLimit'];
@@ -502,7 +514,8 @@ function policy_apply(string $personId, string $type): array {
     }
     if ($abs > $limit) {
         if (policy_issue($personId, $type, 'eviction', $abs, [
-            'reason' => "Absence {$abs} — past the {$limit}-absence limit. Automatic eviction under §1.1.",
+            'status' => $grave,
+            'reason' => "Absence {$abs} — past the {$limit}-absence limit. Eviction under §1.1.",
         ])) $issued[] = 'eviction';
     }
 
@@ -515,7 +528,8 @@ function policy_apply(string $personId, string $type): array {
         $days = (int)$cfg['suspensionDays'];
         $start = attendance_today();
         if (policy_issue($personId, $type, 'suspension', $cap, [
-            'reason' => "{$lates} lateness logs (cap {$cap}) — automatic {$days}-day institutional suspension.",
+            'status' => $grave,
+            'reason' => "{$lates} lateness logs (cap {$cap}) — {$days}-day institutional suspension.",
             'startsAt' => $start,
             'endsAt' => gmdate('Y-m-d', (int)strtotime($start . ' 00:00:00 UTC') + $days * 86400),
         ])) $issued[] = 'suspension';
@@ -598,13 +612,13 @@ function policy_gate_checkin(string $personId, string $type): array {
  *
  * `halfDay` is set when the scan missed the compulsory Musing Period.
  */
-function policy_punctuality(string $type): array {
-    $soft = attendance_punctuality($type);          // resumption + grace
+function policy_punctuality(string $type, ?int $at = null): array {
+    $soft = attendance_punctuality($type, $at);     // resumption + grace
     $pol = policy_settings();
     $out = ['status' => $soft['status'], 'lateMinutes' => (int)$soft['lateMinutes'], 'redline' => 0, 'halfDay' => 0];
     if (empty($pol['enabled'])) return $out;
     $cfg = policy_for($type);
-    $now = attendance_now_minutes();
+    $now = attendance_minutes_at($at);
     if ($now >= policy_minutes((string)$cfg['lateRedline'])) {
         $out['status'] = 'late'; $out['redline'] = 1;
     } elseif ($out['status'] === 'late') {
@@ -809,7 +823,7 @@ function policy_relift(string $personId, string $type): int {
     $cfg = policy_for($type);
     $counts = policy_counts($personId);
     $lifted = 0;
-    foreach (db_all("SELECT * FROM sanctions WHERE personId = ? AND status = 'active' AND issuedBy = 'system'", [$personId]) as $s) {
+    foreach (db_all("SELECT * FROM sanctions WHERE personId = ? AND status IN ('active','proposed') AND issuedBy = 'system'", [$personId]) as $s) {
         $tier = (int)$s['tier'];
         $kind = (string)$s['kind'];
         $holds = true;
@@ -835,13 +849,14 @@ function admin_policy_sanction_update(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $sid = (int)($p['sanctionId'] ?? 0);
     $status = (string)($p['status'] ?? '');
-    if (!$sid || !in_array($status, ['active', 'paid', 'served', 'cleared', 'waived', 'lifted'], true)) return ['ok' => false, 'error' => 'bad_status'];
+    // 'active' on a proposed suspension/eviction is the admin confirming it.
+    if (!$sid || !in_array($status, ['active', 'proposed', 'paid', 'served', 'cleared', 'waived', 'lifted'], true)) return ['ok' => false, 'error' => 'bad_status'];
     $s = db_row('SELECT * FROM sanctions WHERE id = ?', [$sid]);
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     db_update('sanctions', [
         'status' => $status,
-        'clearedAt' => $status === 'active' ? '' : now_iso(),
-        'clearedBy' => $status === 'active' ? '' : (string)$g['requester']['memberId'],
+        'clearedAt' => in_array($status, ['active', 'proposed'], true) ? '' : now_iso(),
+        'clearedBy' => in_array($status, ['active', 'proposed'], true) ? '' : (string)$g['requester']['memberId'],
         'note' => substr((string)($p['note'] ?? ''), 0, 240),
     ], ['id' => $sid]);
     audit('policy.sanction.update', (string)$g['requester']['memberId'], (string)$s['personId'], ['sanctionId' => $sid, 'kind' => $s['kind'], 'status' => $status], (string)($p['ip'] ?? ''));
@@ -886,7 +901,7 @@ function admin_policy_reinstate(array $p): array {
     if ($id === '') return ['ok' => false, 'error' => 'bad_person'];
     $type = (string)($p['personType'] ?? '') ?: (db_row('SELECT 1 x FROM volunteers WHERE volunteerId = ?', [$id]) ? 'volunteer' : 'student');
     $r = policy_settings()['reinstatement'];
-    $ev = db_row("SELECT * FROM sanctions WHERE personId = ? AND kind = 'eviction' AND status = 'active' ORDER BY issuedAt DESC LIMIT 1", [$id]);
+    $ev = db_row("SELECT * FROM sanctions WHERE personId = ? AND kind = 'eviction' AND status IN ('active','proposed') ORDER BY issuedAt DESC LIMIT 1", [$id]);
     if (!$ev) return ['ok' => false, 'error' => 'not_evicted'];
 
     $since = (int)floor((time() - (int)strtotime((string)$ev['issuedAt'])) / 86400);
@@ -906,7 +921,7 @@ function admin_policy_reinstate(array $p): array {
     // archived so it cannot immediately re-evict on the next evaluation.
     db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = ?, voidReason = 'Cleared on reinstatement (Part IV).' WHERE personId = ? AND (voidedAt IS NULL OR voidedAt = '')",
             [now_iso(), (string)$g['requester']['memberId'], $id]);
-    foreach (db_all("SELECT id FROM sanctions WHERE personId = ? AND status = 'active'", [$id]) as $s) {
+    foreach (db_all("SELECT id FROM sanctions WHERE personId = ? AND status IN ('active','proposed')", [$id]) as $s) {
         db_update('sanctions', ['status' => 'cleared', 'clearedAt' => now_iso(), 'clearedBy' => (string)$g['requester']['memberId']], ['id' => (int)$s['id']]);
     }
     audit('policy.reinstate', (string)$g['requester']['memberId'], $id, ['daysServed' => $since, 'override' => $override], (string)($p['ip'] ?? ''));
@@ -922,7 +937,7 @@ function admin_policy_board(array $p): array {
     foreach (db_all("SELECT volunteerId id, fullName FROM volunteers WHERE status = 'active'") as $r) $names[(string)$r['id']] = ['name' => (string)$r['fullName'], 'type' => 'volunteer'];
     // Only people with something on their ledger — a clean roster costs nothing.
     $ids = db_all("SELECT DISTINCT personId FROM infractions WHERE voidedAt IS NULL OR voidedAt = ''");
-    foreach (db_all("SELECT DISTINCT personId FROM sanctions WHERE status = 'active'") as $r) $ids[] = $r;
+    foreach (db_all("SELECT DISTINCT personId FROM sanctions WHERE status IN ('active','proposed','pending')") as $r) $ids[] = $r;
     $seen = [];
     foreach ($ids as $r) {
         $id = (string)$r['personId'];
@@ -930,14 +945,23 @@ function admin_policy_board(array $p): array {
         $seen[$id] = true;
         $meta = $names[$id] ?? ['name' => $id, 'type' => 'student'];
         $st = policy_state($id, $meta['type']);
-        if ($st['state'] === 'clear' && !$st['lates'] && !$st['absences'] && !$st['finesOwed']) continue;
+        if ($st['state'] === 'clear' && !$st['lates'] && !$st['absences'] && !$st['finesOwed'] && empty($st['awaitingReview'])) continue;
         $rows[] = ['personId' => $id, 'fullName' => $meta['name'], 'personType' => $meta['type']] + $st;
     }
     $rank = ['evicted' => 0, 'suspended' => 1, 'dormant' => 2, 'warned' => 3, 'clear' => 4];
     usort($rows, fn($a, $b) => [$rank[$a['state']], -$a['absences'], -$a['lates']] <=> [$rank[$b['state']], -$b['absences'], -$b['lates']]);
-    $tally = ['evicted' => 0, 'suspended' => 0, 'dormant' => 0, 'warned' => 0, 'finesOwed' => 0];
-    foreach ($rows as $r) { if (isset($tally[$r['state']])) $tally[$r['state']]++; $tally['finesOwed'] += (int)$r['finesOwed']; }
-    return ['ok' => true, 'board' => $rows, 'tally' => $tally, 'policyEnabled' => !empty(policy_settings()['enabled'])];
+    $tally = ['evicted' => 0, 'suspended' => 0, 'dormant' => 0, 'warned' => 0, 'finesOwed' => 0, 'awaitingReview' => 0];
+    foreach ($rows as $r) {
+        if (isset($tally[$r['state']])) $tally[$r['state']]++;
+        $tally['finesOwed'] += (int)$r['finesOwed'];
+        if (!empty($r['awaitingReview'])) $tally['awaitingReview']++;
+    }
+    // Anything waiting on a human sorts to the top of its band — that is the
+    // work this board exists to hand over.
+    usort($rows, fn($a, $b) => [$rank[$a['state']], $a['awaitingReview'] ? 0 : 1] <=> [$rank[$b['state']], $b['awaitingReview'] ? 0 : 1]);
+    $pol = policy_settings();
+    return ['ok' => true, 'board' => $rows, 'tally' => $tally,
+            'policyEnabled' => !empty($pol['enabled']), 'autoEnforce' => !empty($pol['autoEnforce'])];
 }
 
 /** Run the absence sweep on demand — the "catch up now" button beside the

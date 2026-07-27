@@ -382,6 +382,14 @@ function auth_me(array $p): array {
         'memberId' => (string)$stu['studentId'], 'fullName' => (string)$stu['fullName'], 'type' => 'SUMMER', 'role' => 'student',
         'caps' => [], 'centre' => (string)($stu['centre'] ?? ''), 'track' => (string)($stu['track'] ?? ''), 'photoUrl' => (string)($stu['photoUrl'] ?? ''),
     ]];
+    // Volunteer-card session (instructors, mentors, coordinators). Without this
+    // an instructor was signed in but every page reload resolved to not_found
+    // and dropped them straight back out to the sign-in door.
+    $vol = db_row("SELECT volunteerId, fullName, role, photoUrl FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$mid]);
+    if ($vol) return ['ok' => true, 'member' => [
+        'memberId' => (string)$vol['volunteerId'], 'fullName' => (string)$vol['fullName'], 'type' => 'VOLUNTEER', 'role' => 'volunteer',
+        'caps' => [], 'centre' => '', 'track' => (string)($vol['role'] ?? ''), 'photoUrl' => (string)($vol['photoUrl'] ?? ''),
+    ]];
     return ['ok' => false, 'error' => 'not_found'];
 }
 

@@ -23,7 +23,11 @@ Maximum **two (2) absences** for the whole program (valid, verified emergencies 
 
 ### 1.2 Lateness & suspension
 - **1-Hour Advance Resumption Protocol:** if the block opens 08:00, the student
-  check-in deadline is **07:00** sharp.
+  check-in deadline is **07:00** sharp. Missing it is recorded as **tardy** —
+  visible, but not an infraction. The Part VI redline below is the threshold
+  that accrues one. (The resumption time defaults to 07:00 once the blueprint
+  is being enforced; before that the shipped defaults were 09:00/08:30, the
+  inverse of the redlines.)
 - **Lateness cap:** 3 instances of lateness → automatic **Suspension**.
 - **Post-suspension:** 2 further latenesses → ₦5,000 fine **or** eviction.
 
@@ -125,16 +129,57 @@ Financial awards for flawless compliance (students + volunteers). *Prize metrics
 ---
 
 ## Enforcement stance (how this system applies the policy)
+
+**Implemented** in `api/_lib/domain/policy.php`, behind
+*Summer School → Programme & policy*. Off until an admin switches it on.
+
 The engine treats the policy as **detection + counting + flagging**, with
 irreversible outcomes gated behind an explicit admin action:
 
 | Signal | System behaviour |
 |---|---|
-| Absence / late scan (vs redline) | logged automatically at check-in; counts kept per person |
-| Strike 2 / dormancy threshold | status auto-set to **Dormant**; awards eligibility frozen |
-| Suspension threshold | status flagged **Suspension-eligible**; admin confirms the 14-day ban |
-| Eviction threshold | flagged **Eviction-eligible** for admin review — **never** auto-expelled |
+| Absence / late scan (vs redline) | logged automatically at check-in and by the nightly sweep; counts kept per person |
+| Strike 1 | **Warning** issued automatically |
+| Strike 2 / dormancy threshold | **Dormant** issued automatically; awards eligibility frozen |
+| Suspension threshold | suspension **proposed** for admin review; confirming it starts the 14-day ban |
+| Eviction threshold | eviction **proposed** for admin review — **never** auto-expelled |
 | Fines (₦1k/₦2k/₦5k/₦10k) | recorded as owed on the person's ledger; not auto-charged |
 | Reinstatement | 365-day gate + CIMC-1 + ₦10k checklist an admin clears |
 
-Timezone for the redlines: **Africa/Lagos (WAT, UTC+1)** — pending confirmation.
+A proposed sanction shows on the compliance board as **awaiting review** and
+does **not** block the scanner until confirmed. The `autoEnforce` setting makes
+suspension and eviction self-executing for a deployment that wants that; the
+default is off, because these are minors and the ledger itself can be wrong —
+§1.3 counts a broken scanner as a full absence.
+
+### Two layers: facts and consequences
+**Infractions** are facts (`absence`, `late`, `tardy`, `halfday`,
+`no_checkout`, `idcard_missing`, `idcard_lost`, `review_missed`,
+`misconduct`) — one per person per kind per day, so a re-scan or a re-run of
+the sweep can never become a second strike.
+
+**Sanctions** are consequences derived from those counts and keyed on the count
+that triggered them, so re-evaluation is idempotent. Compliance state is always
+**derived**, never stored: voiding a wrongly logged absence lifts everything it
+caused, immediately. Voids need a written reason and are kept on the record.
+
+Enforcement does not rewrite `volunteers.status` / `summer_students.status` —
+those drive rosters and a dozen unrelated queries. It blocks the scanner,
+freezes awards eligibility, and flags the profile.
+
+### What counts as a session day
+Absence is only logged on a day the programme actually runs, per the admin's
+**programme calendar** (term window, weekdays, holidays, extra days). Without
+one, every calendar day counts — which marked the whole cohort absent on a
+Sunday. Set it in the same screen.
+
+### Digital channels
+§2.3's suspension is "a **14-day total ban** from the CACENTRE premises **and
+digital channels**". The community sign-in enforces that too: a suspended or
+evicted card is refused at the door with the reason, not a bad-credentials
+message.
+
+Timezone for the redlines: **Africa/Lagos (WAT, UTC+1)**, from the `tzOffset`
+in Settings → Attendance. Check-ins are dated and graded in that local
+timezone, and a scan banked while a kiosk is offline is graded at the moment
+the card was presented, not when the queue flushed.
