@@ -39,6 +39,7 @@ function loadChromium() {
     + '<img id="xphoto" src="http://127.0.0.1:9411/xorigin-photo.png" style="position:absolute;top:20px;left:20px;width:80px;height:80px">'
     + '<img id="deadlogo" src="/assets/__never_answers/logo-a.png" style="width:40px">'
     + '<img src="/assets/__never_answers/logo-b.png" style="width:40px"></div>'
+    + '<script src="/vendor/qrcode.min.js"></script>'
     + '<script src="/vendor/card-export.js"></script></body></html>');
 
   const server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
@@ -84,6 +85,72 @@ function loadChromium() {
       await CE.ensureFonts();
       const fontAfter = document.fonts.check('600 16px "Inter"');
       const fontHeavyAfter = document.fonts.check('800 42px "Inter"');
+
+      /* ── Barcode verification ────────────────────────────────────────────
+       * The one export failure that cannot be seen and cannot be fixed after
+       * the fact: everything upstream right and the printed code still not
+       * scanning. Render a REAL QR, rasterise it the way an export does, and
+       * decode it back out of those pixels.
+       *
+       * Both directions matter, and the negative one matters more: a verifier
+       * that says yes to everything is worse than none, because it converts
+       * "we did not check" into "we checked and it is fine".
+       *
+       * scalable:false mirrors qrSvg() in the studio, and is load-bearing here
+       * too: a viewBox-only SVG has no intrinsic size, and html2canvas does not
+       * merely draw it small — it never settles, and the export hangs. */
+      const mkQrNode = (text) => {
+        const holder = document.createElement('div');
+        holder.style.cssText = 'position:absolute;left:-9999px;top:0;background:#fff;padding:16px;width:220px';
+        const q = window.qrcode(0, 'M');
+        q.addData(text); q.make();
+        holder.innerHTML = q.createSvgTag({ cellSize: 6, margin: 4, scalable: false });
+        document.body.appendChild(holder);
+        return holder;
+      };
+      /* ── A stalled image elsewhere on the page must not hang the export ──
+       * html2canvas copies the WHOLE document into an offscreen iframe and
+       * waits for it to reach readyState 'complete'. One <img> whose host
+       * accepts the connection and never answers holds the clone at 'loading'
+       * indefinitely, and because that wait is html2canvas's own, `imageTimeout`
+       * never fires: the run hangs with no error and no failed card. The
+       * operator reaches this studio from a roster full of remote photos, so
+       * "some image on the page is still in flight" is the normal case.
+       *
+       * `stalledOutside` is the control — the fixture's dead logos live inside
+       * #card, and the node under test is a fresh empty div, so if nothing is
+       * actually pending this assertion proves nothing. */
+      const strandedNode = document.createElement('div');
+      strandedNode.style.cssText = 'position:absolute;left:-9999px;top:0;width:60px;height:30px;background:#fff';
+      strandedNode.textContent = 'x';
+      document.body.appendChild(strandedNode);
+      const stalledOutside = Array.prototype.filter.call(document.images, (i) => !i.complete
+        && !strandedNode.contains(i)).length;
+      let stranded = 'never ran';
+      try {
+        // A deadline far below the harness timeout: it must succeed, not merely
+        // eventually give up.
+        await CE.nodeToImage(strandedNode, { scale: 1, type: 'image/jpeg', quality: 0.8, rasterTimeout: 15000 });
+        stranded = 'ok';
+      } catch (e) { stranded = String((e && e.message) || e); }
+      strandedNode.remove();
+
+      const TOKEN = 'SUMQR-VERIFY01';
+      const qrNode = mkQrNode('https://ngg.example.org/q/' + TOKEN);
+      const qrFace = await CE.nodeToImage(qrNode, { scale: 2, type: 'image/jpeg', quality: 0.9 });
+      const qrGood = await CE.verifyQR(qrFace.dataUrl, TOKEN);
+      // Same artwork, wrong expectation — must be rejected, not waved through.
+      const qrWrong = await CE.verifyQR(qrFace.dataUrl, 'SUMQR-SOMEONEELSE');
+      qrNode.remove();
+      // A face with no QR at all cannot report success.
+      const blankFace = await CE.nodeToImage(node, { scale: 1, type: 'image/jpeg', quality: 0.8 });
+      const qrNone = await CE.verifyQR(blankFace.dataUrl, TOKEN);
+      const qr = {
+        good: qrGood.ok, goodText: (qrGood.text || '').slice(0, 60), goodReason: qrGood.reason || '',
+        wrong: qrWrong.ok, wrongReason: qrWrong.reason || '',
+        none: qrNone.ok, noneReason: qrNone.reason || '',
+        stranded, stalledOutside,
+      };
 
       /* ── bleed generation ────────────────────────────────────────────────
        * The probe is the shape of the real artwork that broke in production:
@@ -318,6 +385,7 @@ function loadChromium() {
         oneUpPages: (ot.match(/\/Type \/Page[^s]/g) || []).length,
         slug: it.indexOf('/OutputIntents') !== -1,
         fontBefore, fontAfter, fontHeavyAfter,
+        qr,
       };
     }, MM);
 
@@ -336,6 +404,15 @@ function loadChromium() {
     });
     await hungPage.close();
 
+    ok('an image is genuinely still in flight elsewhere on the page (control)', r.qr.stalledOutside > 0);
+    ok('a never-answering image elsewhere on the page does not hang the raster (' + r.qr.stranded + ')',
+       r.qr.stranded === 'ok');
+    ok('a real QR decodes back out of the exported raster', r.qr.good === true);
+    ok('…and the decoded text is the card\'s own profile URL', /SUMQR-VERIFY01/.test(r.qr.goodText));
+    ok('a QR that decodes to the WRONG token is rejected (' + r.qr.wrongReason + ')',
+       r.qr.wrong === false && r.qr.wrongReason === 'wrong_token');
+    ok('artwork with no QR at all cannot report success (' + r.qr.noneReason + ')',
+       r.qr.none === false && r.qr.noneReason === 'unreadable');
     ok('Inter 600 is NOT loaded before the gate runs (control — else the next check proves nothing)', r.fontBefore === false);
     ok('ensureFonts() decodes the card weights the page never painted', r.fontAfter === true);
     ok('…including the 800 the names are set in (self-hosted woff2 is valid)', r.fontHeavyAfter === true);

@@ -244,7 +244,7 @@ function admin_summer_import(array $p): array {
  * and notes, and `age` came through undefined so the save failed outright with
  * "Age must be 5-19". That is why nothing could be done with a child.
  */
-function summer_student_admin(array $s): array {
+function summer_student_admin(array $s, ?string $idExpiry = null): array {
     $out = summer_student_public($s, true);
     $out += [
         'age' => $s['age'] === null || $s['age'] === '' ? null : (int)$s['age'],
@@ -260,9 +260,14 @@ function summer_student_admin(array $s): array {
         'regStatus' => (string)($s['regStatus'] ?? 'verified'),
         'formVersion' => (int)($s['formVersion'] ?? 0),
         'enrolledAt' => (string)($s['enrolledAt'] ?? ''),
-        // The card's expiry, so the roster shows who needs reissuing before
-        // they are turned away at a gate rather than after.
-        'idExpiresAt' => (string)(db_row("SELECT expiresAt FROM qr_codes WHERE studentId = ? AND status = 'assigned' LIMIT 1", [(string)$s['studentId']])['expiresAt'] ?? ''),
+        /* The card's expiry, so the roster shows who needs reissuing before
+         * they are turned away at a gate rather than after.
+         *
+         * Passed in, not looked up here: this serializer is array_map'd over
+         * a thousand-row roster, so a query per student would be a thousand
+         * round trips on the most-used admin screen. Callers with one student
+         * can omit it and pay for a single read. */
+        'idExpiresAt' => $idExpiry !== null ? $idExpiry : (string)(db_row("SELECT expiresAt FROM qr_codes WHERE studentId = ? AND status = 'assigned' LIMIT 1", [(string)$s['studentId']])['expiresAt'] ?? ''),
     ];
     // Consent state at a glance: which P0 grants are on file, so the roster can
     // show who is cleared to attend without a second round trip per child.
@@ -291,7 +296,18 @@ function admin_summer_students_list(array $p): array {
     $q = strtolower((string)($p['q'] ?? ''));
     if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(handle) LIKE ? OR lower(studentId) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
     $rows = db_all('SELECT * FROM summer_students WHERE ' . implode(' AND ', $where) . ' ORDER BY id DESC LIMIT 1000', $params);
-    return ['ok' => true, 'students' => array_map('summer_student_admin', $rows), 'cohortId' => $cohortId];
+    // One read for every card in the roster, not one per student.
+    $expiryOf = [];
+    if ($rows) {
+        $ids = array_column($rows, 'studentId');
+        $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
+        foreach (db_all("SELECT studentId, expiresAt FROM qr_codes WHERE status = 'assigned' AND studentId IN $in", $ids) as $q) {
+            $expiryOf[(string)$q['studentId']] = (string)($q['expiresAt'] ?? '');
+        }
+    }
+    $out = [];
+    foreach ($rows as $r) $out[] = summer_student_admin($r, $expiryOf[(string)$r['studentId']] ?? '');
+    return ['ok' => true, 'students' => $out, 'cohortId' => $cohortId];
 }
 
 function admin_summer_student_status(array $p): array {

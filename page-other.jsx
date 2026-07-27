@@ -3713,6 +3713,12 @@ function CardStudio() {
   // Raster resolution for the embedded artwork. 350 is the offset standard
   // (2× a 175 lpi screen), 300 the digital-press floor, 600 for line art.
   const [dpi, setDpi] = React.useState(350);
+  /* Barcode verification, on by default.
+     Off is for a quick proof: it adds a decode pass per card, and somebody
+     checking a layout does not need it. For a real run it should stay on —
+     a batch of cards nobody can scan is scrap, and this is the only step
+     that catches it before the guillotine. */
+  const [verifyQr, setVerifyQr] = React.useState(true);
   const zoneRef = React.useRef(null);
   const [exp, setExp] = React.useState("");   // progress/status text
   const [notice, setNotice] = React.useState("");  // transient success note
@@ -3928,7 +3934,8 @@ function CardStudio() {
       // px wide). Capped at 6× — beyond that html2canvas allocates more canvas
       // than a phone will give it and the run dies mid-roster.
       const pdfScale = Math.max(2, Math.min(6, Math.round((dpi * (cardW / 25.4) / 295) * 100) / 100));
-      const fronts = [], backs = [], failed = [];
+      const fronts = [], backs = [], failed = [], qrBad = [];
+      let qrSkipped = 0;
       for (let i = 0; i < cards.length; i++) {
         setExp("Rendering " + (i + 1) + " / " + cards.length + "…");
         try {
@@ -3937,6 +3944,23 @@ function CardStudio() {
           const f = await withBudget(renderFace(CE, n[0], pdfScale), 30000);
           const b = await withBudget(renderFace(CE, n[1], pdfScale), 30000);
           fronts.push(f); backs.push(b);
+          /* Verify the QR out of the EXPORTED pixels, not the DOM.
+           *
+           * This is the one failure that cannot be seen and cannot be fixed
+           * after the fact: everything upstream can be right and the printed
+           * code still not scan, because rasterising can land module edges
+           * between pixels, JPEG can ring around the finder patterns, and the
+           * bleed pass can eat the quiet zone. A batch of cards nobody can
+           * scan is scrap. Decoded with the same jsQR the gate kiosks use, so
+           * this proves the thing that will actually read it can. */
+          if (verifyQr && cards[i].token) {
+            const v = await CE.verifyQR(f.dataUrl, cards[i].token);
+            if (!v.ok && v.reason !== "no_decoder") {
+              qrBad.push({ name: cardName(cards[i]), reason: v.reason || "unreadable" });
+            } else if (v.reason === "no_decoder") {
+              qrSkipped++;
+            }
+          }
         } catch (e) { failed.push(cardName(cards[i])); }
         await nextFrame(); // yield so the tab never locks up mid-run
       }
@@ -3957,7 +3981,26 @@ function CardStudio() {
       });
       CE.download(pdf, setName() + "-print-cmyk.pdf", "application/pdf");
       setExp("");
-      setMsg(failed.length ? (failed.length + " card(s) couldn't render and were left out — retry the export: " + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : "")) : "");
+      /* Report both failure classes, and be exact about which is which.
+         A card that did not render is missing from the PDF. A card whose QR
+         did not verify IS in the PDF and will print — it just may not scan,
+         which the operator has to decide about before the run. Conflating
+         them would send someone hunting for cards that are present. */
+      const notes = [];
+      if (failed.length) {
+        notes.push(failed.length + " card(s) couldn't render and were LEFT OUT — retry the export: "
+          + failed.slice(0, 5).join(", ") + (failed.length > 5 ? "…" : ""));
+      }
+      if (qrBad.length) {
+        notes.push("⚠ " + qrBad.length + " card(s) are in the PDF but their QR did not decode from the exported artwork — they may not scan at a gate: "
+          + qrBad.slice(0, 5).map(q => q.name + " (" + q.reason + ")").join(", ") + (qrBad.length > 5 ? "…" : "")
+          + ". Try a higher resolution, or PNG instead of JPEG.");
+      } else if (verifyQr && qrSkipped === 0 && fronts.length) {
+        notes.push("✓ Every QR decoded from the exported artwork.");
+      } else if (verifyQr && qrSkipped > 0) {
+        notes.push("QR check skipped — the decoder could not be loaded. The cards are fine; they were just not verified.");
+      }
+      setMsg(notes.join("  "));
       if (!failed.length) setNotice("Print-ready PDF exported.");
     } catch (e) { setExp(""); setMsg("PDF export failed — try again."); }
   };
@@ -4020,6 +4063,12 @@ function CardStudio() {
             <option value={350}>350 DPI — offset standard</option>
             <option value={600}>600 DPI — line art (slow)</option>
           </select>
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)", cursor: "pointer" }}
+          title="Decodes each card's QR back out of the exported artwork, using the same reader the gate kiosks use. Catches codes that look right on screen but will not scan once printed.">
+          <input type="checkbox" checked={verifyQr} onChange={e => setVerifyQr(e.target.checked)} disabled={!!exp}
+            style={{ width: 16, height: 16, accentColor: "#ffce54" }}/>
+          Verify QR codes
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Front/back flip
           <select value={duplex} onChange={e => setDuplex(e.target.value)} disabled={!!exp}

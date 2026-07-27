@@ -282,6 +282,122 @@
     return _fontsReady;
   }
 
+  /* ── Verify the printed QR actually decodes ─────────────────────────────
+   *
+   * The single most expensive failure this studio can ship is a batch of
+   * cards whose QR will not scan. Everything upstream can be right — the
+   * token correct in the database, the SVG correct in the DOM — and the
+   * printed code still be unreadable, because rasterising to a fixed DPI can
+   * land module edges between pixels, JPEG can ring around the finder
+   * patterns, and a bleed pass can eat the quiet zone. None of that is
+   * visible by eye on screen, and all of it is discovered at the moment a
+   * child is standing at a gate.
+   *
+   * So: decode the QR back out of the EXPORTED pixels — the same raster that
+   * goes to the printer, after bleed and after JPEG — and check it says what
+   * it should. This is what a barcode verifier does on a production line, and
+   * it is the difference between hoping the cards scan and knowing.
+   *
+   * jsQR is already vendored for the scanners, which means the decoder here
+   * is the exact one the kiosks use. Verifying with a different decoder than
+   * the one that will read the card in the field would prove much less.
+   */
+  var QR_LIB = '/vendor/jsQR.min.js';
+  async function ensureQrDecoder() {
+    if (root.jsQR) return root.jsQR;
+    try { await loadScript(QR_LIB); } catch (e) { return null; }
+    return root.jsQR || null;
+  }
+
+  /* Decode whatever QR is present in a rendered face.
+   * Returns { ok, text, reason }. `ok:false` with reason 'no_decoder' means we
+   * could not check, which is NOT the same as a bad code — callers must not
+   * report an unverifiable card as a failed one. */
+  async function verifyQR(dataUrl, expected) {
+    var jsQR = await ensureQrDecoder();
+    if (!jsQR) return { ok: false, reason: 'no_decoder' };
+    var img;
+    try { img = await loadImage(dataUrl); } catch (e) { return { ok: false, reason: 'decode_failed' }; }
+
+    var cv = document.createElement('canvas');
+    var ctx = cv.getContext('2d', { willReadFrequently: true });
+    /* Try the full face first, then progressively smaller downsamples.
+     * A 350 DPI face is ~2000px wide and jsQR scans it fine, but a very large
+     * raster can exceed what a phone browser will allocate — and a downsample
+     * often decodes MORE reliably, because it averages out the sub-pixel
+     * ringing that a hard-edged upscale introduces. Trying several is closer
+     * to what a real scanner does as it moves and refocuses. */
+    var scales = [1, 0.5, 0.35];
+    for (var i = 0; i < scales.length; i++) {
+      var w = Math.max(64, Math.round(img.width * scales[i]));
+      var h = Math.max(64, Math.round(img.height * scales[i]));
+      cv.width = w; cv.height = h;
+      ctx.drawImage(img, 0, 0, w, h);
+      var px;
+      try { px = ctx.getImageData(0, 0, w, h); } catch (e) { return { ok: false, reason: 'canvas_tainted' }; }
+      var r = null;
+      try { r = jsQR(px.data, w, h, { inversionAttempts: 'attemptBoth' }); } catch (e) { r = null; }
+      if (r && r.data) {
+        var text = String(r.data);
+        if (expected == null || expected === '') return { ok: true, text: text, atScale: scales[i] };
+        // The card encodes a profile URL containing the token, so a substring
+        // match is the right test — an exact compare would fail on the very
+        // format the cards actually print.
+        var hit = text.indexOf(String(expected)) !== -1;
+        return { ok: hit, text: text, atScale: scales[i], reason: hit ? '' : 'wrong_token' };
+      }
+    }
+    return { ok: false, reason: 'unreadable' };
+  }
+
+  /* ── Quiesce the rest of the page ─────────────────────────────────────────
+   * html2canvas does not clone the target element on its own: it copies the
+   * WHOLE document into an offscreen iframe and waits for that iframe to reach
+   * readyState 'complete'. A single <img> anywhere on the page whose host
+   * accepts the connection and never answers keeps the clone at 'loading'
+   * forever — and that wait is html2canvas's own, so `imageTimeout` (which
+   * only bounds its per-image decode) never fires. The export hangs with no
+   * error, no failed card, and nothing to retry.
+   *
+   * That is not hypothetical for this studio: the operator reaches it from a
+   * roster full of remote passport photos, and any one of them still in flight
+   * poisons every card in the run — including cards that do not use it.
+   *
+   * So before rasterising, point every still-loading image OUTSIDE the target
+   * at a blank pixel, and restore afterwards. Images inside the target are
+   * left to inlineImages(), which has real content to fetch for them; these
+   * ones contribute nothing to the raster and only gate the clone. */
+  function quiesceDocument(node) {
+    var imgs, i, im, undo = [];
+    try { imgs = Array.prototype.slice.call(document.images || []); } catch (e) { return function () {}; }
+    for (i = 0; i < imgs.length; i++) {
+      im = imgs[i];
+      if (im.complete) continue;              // already settled, one way or the other
+      if (node && node.contains && node.contains(im)) continue;
+      var src = im.getAttribute('src');
+      if (!src || src.indexOf('data:') === 0) continue;
+      undo.push([im, src]);
+      im.setAttribute('src', BLANK_PX);
+    }
+    // Restoring re-points the src, so the browser resumes the load it was
+    // already making. Nothing on screen is lost — it just finishes later.
+    return function () { for (var j = 0; j < undo.length; j++) undo[j][0].setAttribute('src', undo[j][1]); };
+  }
+
+  /* Backstop for everything the sweep above cannot reach — a stalled <iframe>,
+   * a webfont the clone is still blocked on, a future html2canvas that finds a
+   * new way to wait. A failed card is recoverable (the studio reports it and
+   * carries on); a hung export is not. */
+  var RASTER_TIMEOUT = 45000;   // ms for ONE face, generous even at 600 dpi
+  function withDeadline(p, ms, what) {
+    var timer;
+    return Promise.race([
+      p.then(function (v) { clearTimeout(timer); return v; },
+             function (e) { clearTimeout(timer); throw e; }),
+      new Promise(function (_, rej) { timer = setTimeout(function () { rej(new Error(what + ' timed out after ' + ms + 'ms')); }, ms); }),
+    ]);
+  }
+
   /* Rasterise a rendered card node with html2canvas. Returns a data URL (+ bytes
    * + pixel size). Images are inlined first so cross-origin photos never taint. */
   async function nodeToImage(node, o) {
@@ -289,17 +405,18 @@
     var d = await ensureDeps();
     await ensureFonts();
     var restore = await inlineImages(node);
+    var unquiesce = quiesceDocument(node);
     try {
-      var canvas = await d.html2canvas(node, {
+      var canvas = await withDeadline(d.html2canvas(node, {
         scale: o.scale || 3,
         backgroundColor: o.bg || '#ffffff',
         useCORS: true, allowTaint: false, logging: false,
         imageTimeout: o.imageTimeout || IMAGE_TIMEOUT,
-      });
+      }), o.rasterTimeout || RASTER_TIMEOUT, 'rasterise');
       var type = o.type || 'image/png', q = o.quality || 0.95;
       var dataUrl = canvas.toDataURL(type, q);
       return { dataUrl: dataUrl, bytes: dataUrlToBytes(dataUrl), wPx: canvas.width, hPx: canvas.height };
-    } finally { restore(); }
+    } finally { unquiesce(); restore(); }
   }
 
   /* The html2canvas scale that lands a `cssW`-wide node on `trimW_mm` of paper
@@ -892,7 +1009,7 @@
 
   root.CardExport = {
     ensureDeps: ensureDeps, ensureZip: ensureZip, ensureFonts: ensureFonts,
-    nodeToImage: nodeToImage, addBleed: addBleed,
+    nodeToImage: nodeToImage, addBleed: addBleed, verifyQR: verifyQR,
     renderFace: renderFace, scaleForDpi: scaleForDpi, zipStore: zipStore,
     buildImpositionPDF: buildImpositionPDF, download: download, dataUrlToBytes: dataUrlToBytes,
     clearImageCache: clearImageCache,

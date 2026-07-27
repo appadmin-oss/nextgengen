@@ -2342,7 +2342,21 @@ function SummerRoster({ cohortId }) {
                   opening the editor first. */}
               <td style={{ fontSize: 12.5 }}>{s.guardianName || "—"}
                 <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{s.guardianPhone || s.parentEmail || "no contact"}</div></td>
-              <td>{s.centre}</td>
+              <td>{s.centre}
+                {/* The card's expiry, where it can still be acted on. A child
+                    turned away at a gate is the expensive way to discover
+                    this; the roster is the cheap one. */}
+                {(() => {
+                  const e = (s.idExpiresAt || "").slice(0, 10);
+                  if (!e) return null;
+                  const today = new Date().toISOString().slice(0, 10);
+                  const soon = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
+                  const tone = e < today ? { c: "#b03535", t: "ID expired " + e }
+                    : e <= soon ? { c: "#a07400", t: "ID expires " + e }
+                    : null;
+                  return tone ? <div className="mono" style={{ fontSize: 11, color: tone.c, fontWeight: 700 }}>{tone.t}</div> : null;
+                })()}
+              </td>
               <td>{s.track}{s.faculty && <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{s.faculty}</div>}</td>
               <td className="mono">{s.attendanceCount}</td>
               <td>
@@ -5196,6 +5210,74 @@ function AdminContact() {
 // Settings
 // ============================================================================
 
+/* ── AI status ───────────────────────────────────────────────────────────────
+   Every AI feature here falls back to deterministic rules when no key is
+   configured. That is correct and completely silent: the behaviour monitor
+   keeps classifying and nothing says the intelligent half is switched off, so
+   an operator can run for months believing observations are being read by a
+   model when they are being matched against a word list.
+
+   The probe matters as much as the status. A key that is SET but rejected —
+   revoked, out of credit, wrong project — looks identical to a working one
+   from configuration alone, and that is exactly the failure worth catching
+   before somebody relies on it. */
+function AiStatusPanel() {
+  const [rows, setRows] = React.useState(null);
+  const [any, setAny] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const load = (probe) => {
+    setBusy(true); setErr("");
+    NGGApi.admin.summer.aiStatus(probe)
+      .then(r => { setRows(r.ai || []); setAny(!!r.anyEnabled); })
+      .catch(e => setErr(e.code || e.message))
+      .then(() => setBusy(false));
+  };
+  React.useEffect(() => { load(false); /* eslint-disable-next-line */ }, []);
+
+  if (err) return <ErrorState title="Couldn't read AI status" code={err} onRetry={() => load(false)}/>;
+  if (!rows) return <div className="dash-spinner"/>;
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div className="admin-section-head" style={{ marginBottom: 10 }}>
+        <h3 className="admin-h2" style={{ fontSize: 18 }}>AI</h3>
+        <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => load(true)}>
+          {busy ? "Testing…" : "Test the keys"}
+        </button>
+      </div>
+      <div className="policy-callout" data-tone={any ? "ok" : "warn"}>
+        {any
+          ? <><b>AI is on.</b> Profiles below show which provider answers each feature. Press <b>Test the keys</b> to send one real request per profile — a key that is set but rejected looks identical to a working one until you do.</>
+          : <><b>AI is off — everything still works.</b> No provider key is configured, so every feature below runs on its built-in rules instead. Nothing is broken; it is just not intelligent. Add a Groq or Gemini key in <code>api/config.php</code> to switch it on.</>}
+      </div>
+      <div className="admin-table-wrap" style={{ marginTop: 12 }}><table className="admin-table">
+        <thead><tr><th>Feature</th><th>Status</th><th>Provider</th><th>Test</th></tr></thead>
+        <tbody>{rows.map(r => (
+          <tr key={r.profile}>
+            <td><b>{r.profile}</b><div className="admin-cell-sub" style={{ fontSize: 12 }}>{r.what}</div></td>
+            <td>
+              {r.enabled
+                ? <span className="chip status-published">On</span>
+                : <span className="chip status-draft">Rules only</span>}
+              {!r.enabled && <div className="admin-cell-sub" style={{ fontSize: 11.5 }}>{r.behaviourWhenOff}</div>}
+            </td>
+            <td className="mono" style={{ fontSize: 12 }}>
+              {r.enabled ? (r.provider + (r.model ? " · " + r.model : "")) : "—"}
+              {r.fallbacks > 0 && <div className="admin-cell-sub" style={{ fontSize: 11 }}>+{r.fallbacks} fallback{r.fallbacks === 1 ? "" : "s"}</div>}
+            </td>
+            <td>
+              {!r.probe ? <span className="admin-cell-sub" style={{ fontSize: 12 }}>not tested</span>
+                : r.probe.ok ? <span className="chip status-published">OK · {r.probe.ms}ms</span>
+                : <span className="chip" style={{ background: "var(--coral)", color: "#fff" }}>{r.probe.error}</span>}
+            </td>
+          </tr>
+        ))}</tbody>
+      </table></div>
+    </div>
+  );
+}
+
 function AdminSettings() {
   const [s, setS] = React.useState(null);
   const [sessions, setSessions] = React.useState([]);
@@ -5283,6 +5365,8 @@ function AdminSettings() {
 
         <AdminPromo/>
 
+        <AiStatusPanel/>
+
         <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>ID card branding</div>
         <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>Drives the printed cards + digital IDs. The card QR always encodes the student's <span className="mono">/q/&lt;token&gt;</span> profile URL, so scanning with any phone opens their page.</p>
         {(() => {
@@ -5295,6 +5379,21 @@ function AdminSettings() {
                 <Field label="Year" value={id.year || ""} onChange={v => setId("year", v)}/>
               </div>
               <Field label="Motto" value={id.motto || ""} onChange={v => setId("motto", v)}/>
+              {/* How long a newly issued card stays valid. Existing cards keep
+                  the expiry they were issued with — changing this must not
+                  silently revoke a card already in a child's pocket. */}
+              <div className="admin-fields-row">
+                <Field label="ID valid for (days · 0 = never expires)" type="number"
+                  value={id.validityDays == null ? 90 : id.validityDays}
+                  onChange={v => setId("validityDays", v === "" ? 0 : parseInt(v, 10) || 0)}/>
+                <div style={{ alignSelf: "end", paddingBottom: 8 }}>
+                  <span className="admin-hint" style={{ margin: 0 }}>
+                    {Number(id.validityDays) === 0
+                      ? "Cards never expire. Anyone issued one keeps gate access indefinitely."
+                      : "New cards expire " + (id.validityDays == null ? 90 : id.validityDays) + " days after they are issued. Expired cards are refused at every gate."}
+                  </span>
+                </div>
+              </div>
               <div className="admin-fields-row">
                 <Field label="Website (printed on card)" value={id.website || ""} onChange={v => setId("website", v)}/>
                 <Field label="Phone (printed on card)" value={id.phone || ""} onChange={v => setId("phone", v)}/>
