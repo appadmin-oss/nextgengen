@@ -4,7 +4,13 @@ require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'GET') {
-    $res = gs_call('admin.settings.get', ['requesterId' => $s['mid']]);
+    if ((string)($_GET['view'] ?? '') === 'ai') {
+        // ?probe=1 sends one real request per live profile — the only way to
+        // tell a working key from a merely present one.
+        $res = gs_call('admin.ai.status', ['requesterId' => $s['mid'], 'probe' => !empty($_GET['probe']), 'ip' => client_ip()]);
+    } else {
+        $res = gs_call('admin.settings.get', ['requesterId' => $s['mid']]);
+    }
 } elseif ($method === 'POST') {
     $b = read_json_body();
     if (($b['action'] ?? '') === 'testMail') {

@@ -207,7 +207,11 @@ function admin_mentors_upsert(array $p): array {
     // Client may send tracks as an array — flatten to the CSV the column stores.
     if (isset($data['tracks']) && is_array($data['tracks'])) $data['tracks'] = implode(', ', array_filter(array_map('trim', $data['tracks'])));
     $mentorId = trim((string)($data['mentorId'] ?? ''));
-    $cols = ['fullName','email','phone','status','tracks','centre','bio','photoUrl','maxMentees','availability','checkedAt','joinedAt','source','program','skills','linkedin','afrovanguardRef'];
+    $cols = ['fullName','email','phone','status','tracks','centre','bio','photoUrl','maxMentees','availability','checkedAt','joinedAt','source','program','skills','linkedin','afrovanguardRef','programme'];
+    // Which cohort they supervise. Anything unrecognised falls back to the
+    // narrowest option rather than the widest — a typo must not hand somebody
+    // both cohorts.
+    if (isset($data['programme']) && !in_array((string)$data['programme'], ['summer', 'ngg', 'both'], true)) $data['programme'] = 'summer';
     $existing = $mentorId ? db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$mentorId]) : null;
 
     if ($existing) {

@@ -431,6 +431,7 @@
         overview:     () => request('/admin/summer.php?view=overview'),
         students:     (q, cohortId) => request('/admin/summer.php' + qs({ view: 'students', q, cohortId })),
         consentDocSave: (doc) => request('/admin/summer.php', { body: { action: 'consentDoc', doc } }),
+        aiStatus:     (probe) => request('/admin/settings.php' + qs({ view: 'ai', probe: probe ? 1 : '' })),
         qrList:       (status, batch) => request('/admin/summer.php' + qs({ view: 'qr', status, batch })),
         qrVoid:       (token) => request('/admin/summer.php', { body: { action: 'qr_void', token } }),
         qrReassign:   (token, studentId) => request('/admin/summer.php', { body: { action: 'qr_reassign', token, studentId } }),

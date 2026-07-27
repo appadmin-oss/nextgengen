@@ -1255,7 +1255,7 @@ function ProfileCheckin({ token, name }) {
   const go = async () => {
     if (busy) return; setBusy(true);
     try { const r = await NGGApi.admin.summer.checkin(token, "profile", "profile-scan"); setRes({ ok: true, already: !!r.already }); }
-    catch (e) { setRes({ err: (e.code === "student_not_found" ? "Not assigned to anyone yet." : e.code === "qr_unassigned" ? "This card isn't assigned yet." : "Couldn't mark present — try again.") }); }
+    catch (e) { setRes({ err: (e.code === "student_not_found" ? "Not assigned to anyone yet." : e.code === "qr_unassigned" ? "This card isn't assigned yet." : e.code === "id_expired" ? ("This ID expired on " + ((e.data && e.data.expiredOn) || "an earlier date") + " — the coordinator needs to reissue it.") : "Couldn't mark present — try again.") }); }
     finally { setBusy(false); }
   };
   return (
@@ -3284,7 +3284,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
           // The server rejected a banked scan (e.g. unassigned card). Drop it, but
           // never silently: tell the operator and flag it so it can be re-scanned.
           dequeue(item.token);
-          setErr("A saved scan couldn't be synced (" + (e.code === "qr_unassigned" ? "code not assigned" : e.code === "student_not_found" ? "no member for that code" : e.code === "policy_suspended" ? "that person is suspended" : e.code === "policy_evicted" ? "that person has been evicted" : (e.code || "rejected")) + "). " + (/^policy_/.test(e.code || "") ? "They are NOT checked in — refer them to the coordinator." : "Please re-scan that card."));
+          setErr("A saved scan couldn't be synced (" + (e.code === "qr_unassigned" ? "code not assigned" : e.code === "student_not_found" ? "no member for that code" : e.code === "policy_suspended" ? "that person is suspended" : e.code === "policy_evicted" ? "that person has been evicted" : e.code === "id_expired" ? "that ID has expired" : (e.code || "rejected")) + "). " + (/^policy_/.test(e.code || "") ? "They are NOT checked in — refer them to the coordinator." : "Please re-scan that card."));
           setRecent(list => [{ name: item.token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), failed: true }, ...list].slice(0, 12));
         }
       }
@@ -3577,6 +3577,14 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
     midRow,
     ["ID", card.displayId, "M4 5h16v14H4zM8 9.5a2 2 0 1 0 4 0 2 2 0 0 0-4 0ZM7 15c.7-1.8 2.2-2.5 3-2.5s2.3.7 3 2.5M15 10h3M15 13h3"],
   ];
+  /* Printed expiry. The server refuses an expired card at the gate regardless,
+     but a date on the card lets a desk see it without scanning, and lets the
+     holder know before they turn up. Only shown when the card actually has
+     one — a programme running "never expires" should not get a blank row. */
+  if (card.expiresAt) {
+    rows.push(["VALID TO", String(card.expiresAt).slice(0, 10),
+      "M7 4v3M17 4v3M4 9h16M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z"]);
+  }
   const wm = [];
   for (let i = 0; i < 9; i++) wm.push(<div key={i} style={{ fontFamily: 'Georgia, serif', fontWeight: 800, fontSize: px(86), lineHeight: 1.28, color: "rgba(27,43,107,.045)", whiteSpace: "nowrap", textTransform: "uppercase", marginLeft: (i % 2 ? px(-70) : 0) }}>ÈKÓ ÌLÚ ÈKÓ ÌLÚ</div>);
   return (

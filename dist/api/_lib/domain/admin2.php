@@ -357,6 +357,15 @@ function public_status(array $p): array {
     ]];
 }
 
+
+/** AI status for the console — which profiles are live, optionally probed. */
+function admin_ai_status(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $probe = !empty($p['probe']);
+    if ($probe) audit('ai.probe', (string)$g['requester']['memberId'], '', [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'ai' => ai_status($probe), 'anyEnabled' => ai_enabled()];
+}
+
 // ── Analytics overview ──────────────────────────────────────────────────────
 function admin_overview(array $p): array {
     $g = admin_gate($p); if (!$g['ok']) return $g;

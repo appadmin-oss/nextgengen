@@ -3667,5 +3667,194 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
 })();
 
 
+/* ── ID cards expire ────────────────────────────────────────────────────────
+ * A summer card is a season pass, not a life membership. Without an expiry a
+ * child who finished in August still opens a gate the following March, and a
+ * volunteer who left still reads as active staff at the door — the card
+ * outliving the relationship it represents is the whole risk of issuing one.
+ * Admin-defined, three months by default, zero meaning never. */
+(function () use ($SU) {
+    chk('IDs default to a three-month validity', idcard_validity_days() === 90);
+    chk('…and an issue today expires ninety days out',
+        idcard_expiry_for() === gmdate('Y-m-d', time() + 90 * 86400));
+
+    // Admin-defined, and 0 is a deliberate "never", not an empty box.
+    idcard_program_save(['validityDays' => 30], 'test');
+    chk('an admin can shorten the window', idcard_validity_days() === 30);
+    idcard_program_save(['validityDays' => 0], 'test');
+    chk('…and switch expiry off entirely', idcard_validity_days() === 0 && idcard_expiry_for() === '');
+    idcard_program_save(['validityDays' => 9999], 'test');
+    chk('…but not to something absurd', idcard_validity_days() === 3650);
+    idcard_program_save(['validityDays' => 90], 'test');
+
+    chk('a blank expiry never expires', idcard_expired('') === false);
+    chk('yesterday is expired', idcard_expired(gmdate('Y-m-d', time() - 86400)) === true);
+    chk('today is still valid — a card dies at the END of its last day',
+        idcard_expired(gmdate('Y-m-d')) === false);
+
+    // The gate is where it counts.
+    $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
+    db_insert('summer_students', ['studentId' => 'EXP-1', 'cohortId' => 'RC1', 'fullName' => 'Expired Kid',
+        'firstName' => 'Expired', 'lastName' => 'Kid', 'handle' => 'expkid', 'centre' => 'Egbeda', 'track' => 'Tech',
+        'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('qr_codes', ['token' => 'SUMQR-EXPIRED', 'batch' => 'B9', 'cohortId' => 'RC1', 'status' => 'assigned',
+        'studentId' => 'EXP-1', 'assignedName' => 'Expired Kid', 'createdAt' => now_iso(), 'assignedAt' => now_iso(),
+        'expiresAt' => gmdate('Y-m-d', time() - 3 * 86400)]);
+
+    $r = backend_dispatch('admin.summer.checkin', ['token' => 'SUMQR-EXPIRED', 'gateAuthorized' => true, 'byId' => 'gate']);
+    chk('an expired card is refused at check-in', ($r['error'] ?? '') === 'id_expired');
+    chk('…and the reply carries the date, so a desk can explain it',
+        ($r['expiredOn'] ?? '') === gmdate('Y-m-d', time() - 3 * 86400));
+    chk('…and nothing was written', (int)(db_row("SELECT COUNT(*) c FROM attendance WHERE studentId='EXP-1'")['c'] ?? 0) === 0);
+
+    // A valid card is untouched by any of this.
+    db_update('qr_codes', ['expiresAt' => gmdate('Y-m-d', time() + 30 * 86400)], ['token' => 'SUMQR-EXPIRED']);
+    chk('a card still inside its window checks in normally',
+        !empty(backend_dispatch('admin.summer.checkin', ['token' => 'SUMQR-EXPIRED', 'gateAuthorized' => true, 'byId' => 'gate'])['ok']));
+
+    /* Check-OUT is deliberately not gated. Somebody who checked in this
+     * morning on a card that expires today must still be able to leave —
+     * refusing would leave them recorded as on-site overnight, which is worse
+     * for safeguarding than honouring a card for its last hour. */
+    db_update('qr_codes', ['expiresAt' => gmdate('Y-m-d', time() - 86400)], ['token' => 'SUMQR-EXPIRED']);
+    chk('someone already checked in can still check OUT on an expired card',
+        !empty(backend_dispatch('admin.summer.checkout', ['token' => 'SUMQR-EXPIRED', 'gateAuthorized' => true, 'byId' => 'gate'])['ok']));
+
+    // Issued cards carry the window; the printed card shows it.
+    $stu = db_row("SELECT studentId FROM summer_students WHERE studentId='SUM-R-1'");
+    if ($stu) {
+        $card = null;
+        foreach (backend_dispatch('admin.cards.data', ['requesterId' => $SU])['cards'] ?? [] as $c) {
+            if ($c['studentId'] === 'SUM-R-1') $card = $c;
+        }
+        chk('the printed card carries its expiry', $card !== null && array_key_exists('expiresAt', $card));
+    }
+
+    // Changing the policy must not silently revoke a card already in a pocket.
+    $issued = (string) db_row("SELECT expiresAt FROM qr_codes WHERE token='SUMQR-EXPIRED'")['expiresAt'];
+    idcard_program_save(['validityDays' => 7], 'test');
+    chk('changing the policy leaves cards already issued alone',
+        (string) db_row("SELECT expiresAt FROM qr_codes WHERE token='SUMQR-EXPIRED'")['expiresAt'] === $issued);
+    idcard_program_save(['validityDays' => 90], 'test');
+})();
+
+
+/* ── NGG and Summer mentors must not collide ────────────────────────────────
+ * The two programmes run side by side, in the same centres, often with
+ * overlapping staff — so "a mentor at Egbeda" does not say whose children they
+ * are responsible for. mentor_roster read summer_students unconditionally, so
+ * an NGG mentor saw summer children they had no business seeing, could star
+ * them, and their own Club members were invisible. Both halves are wrong. */
+(function () use ($SU) {
+    // An NGG-only mentor at the same centre as the existing summer mentor.
+    db_insert('members', ['memberId' => 'NGG-2025-0600', 'fullName' => 'Nia NGGMentor', 'email' => 'nggmentor@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('mentors', ['mentorId' => 'MEN-NGG', 'fullName' => 'Nia NGGMentor', 'email' => 'nggmentor@example.com',
+        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'createdAt' => now_iso()]);
+    // A Club member for them to supervise, at the same centre.
+    db_insert('members', ['memberId' => 'NGG-2025-0601', 'fullName' => 'Club Kid', 'email' => 'clubkid@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    $summer = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0500']);
+    $ngg    = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0600']);
+    $sIds = array_column($summer['students'] ?? [], 'studentId');
+    $nIds = array_column($ngg['students'] ?? [], 'studentId');
+
+    chk('existing mentors keep the summer cohort they already had',
+        in_array('SUM-R-1', $sIds, true) && !in_array('NGG-2025-0601', $sIds, true));
+    chk('an NGG mentor sees their Club members', in_array('NGG-2025-0601', $nIds, true));
+    chk('…and NOT the summer children at the same centre', !in_array('SUM-R-1', $nIds, true));
+    chk('each row says which cohort it came from', (function () use ($ngg) {
+        foreach ($ngg['students'] as $r) if (($r['kind'] ?? '') !== 'member') return false;
+        return count($ngg['students']) > 0;
+    })());
+    chk('the portal is told which programmes the mentor covers',
+        ($ngg['mentor']['programmes'] ?? []) === ['ngg'] && ($summer['mentor']['programmes'] ?? []) === ['summer']);
+
+    /* The control that matters. Scoping the roster alone is cosmetic: the
+     * subject id is posted by the client, so an NGG mentor could star a summer
+     * child just by sending their id. */
+    chk('an NGG mentor cannot star a summer child by posting their id',
+        backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-2025-0600', 'subjectId' => 'SUM-R-1', 'stars' => 3])['error'] === 'not_found');
+    chk('…nor reach one through the bulk path', (function () {
+        $r = backend_dispatch('behaviour.bulk.award', ['requesterId' => 'NGG-2025-0600', 'subjectIds' => ['SUM-R-1'], 'presetId' => 'helped']);
+        return ($r['awarded'] ?? 1) === 0 && ($r['results'][0]['error'] ?? '') === 'not_found';
+    })());
+    chk('…and a summer mentor cannot star a Club member',
+        backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'NGG-2025-0601', 'stars' => 2])['error'] === 'not_found');
+
+    // The NGG mentor CAN star their own, and it is filed as a member.
+    $okStar = backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-2025-0600', 'subjectId' => 'NGG-2025-0601', 'stars' => 2, 'note' => 'Led the circle']);
+    chk('an NGG mentor can star their own member', !empty($okStar['ok']));
+    chk('…recorded against the right subject type',
+        (string) db_row("SELECT subjectType FROM member_stars WHERE subjectId='NGG-2025-0601' AND date=?", [gmdate('Y-m-d')])['subjectType'] === 'member');
+
+    // 'both' is a real answer, not a fudge — people genuinely cover both, and
+    // the alternative is duplicate mentor records that drift apart.
+    db_update('mentors', ['programme' => 'both'], ['mentorId' => 'MEN-NGG']);
+    $bIds = array_column(backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0600'])['students'] ?? [], 'studentId');
+    chk('a mentor set to "both" sees both cohorts',
+        in_array('SUM-R-1', $bIds, true) && in_array('NGG-2025-0601', $bIds, true));
+
+    // A typo must not widen someone's access.
+    db_update('mentors', ['programme' => 'nonsense'], ['mentorId' => 'MEN-NGG']);
+    chk('an unrecognised programme falls back to the narrowest, not the widest',
+        mentor_programmes(['programme' => 'nonsense']) === ['summer']);
+    db_update('mentors', ['programme' => 'ngg'], ['mentorId' => 'MEN-NGG']);
+})();
+
+
+/* ── AI: on, off, and visibly which ─────────────────────────────────────────
+ * Every AI feature degrades to a deterministic rules path when no key is
+ * configured. That is the right behaviour and a genuinely invisible one: the
+ * behaviour monitor keeps classifying and nothing says the intelligent half is
+ * switched off, so an operator can run for months believing observations are
+ * being read by a model when they are being matched against a word list. */
+(function () use ($SU) {
+    $saved = $GLOBALS['CONFIG']['ai'] ?? null;
+
+    // Shipped default: no keys.
+    $GLOBALS['CONFIG']['ai'] = [];
+    chk('with no key configured, AI reports itself off', ai_enabled() === false);
+    foreach (ai_status(false) as $r) {
+        if ($r['enabled'] !== false) { chk('…for every profile', false); break; }
+    }
+    chk('…for every profile', count(array_filter(ai_status(false), fn($r) => $r['enabled'])) === 0);
+    chk('…and each one says what happens instead',
+        strpos(ai_status(false)[0]['behaviourWhenOff'], 'rules') !== false);
+
+    // And the classifier still works — that is the whole point of the fallback.
+    $cls = behaviour_classify('He was crying and seemed frightened after the incident');
+    chk('the rules classifier still catches a wellbeing concern with AI off',
+        $cls['category'] === 'wellbeing' && $cls['severity'] === 'urgent' && $cls['aiSource'] === 'rules');
+    chk('…and a commendation', behaviour_classify('She helped a classmate and was very kind')['category'] === 'commendation');
+
+    // With keys: the per-profile override wins, the default block serves the rest.
+    $GLOBALS['CONFIG']['ai'] = [
+        'groq_api_key' => 'gsk-test', 'provider' => 'groq',
+        'profiles' => ['behaviour' => ['provider' => 'gemini', 'api_key' => 'gem-test', 'model' => 'gemini-1.5-flash']],
+    ];
+    $by = [];
+    foreach (ai_status(false) as $r) $by[$r['profile']] = $r;
+    chk('a per-profile key overrides the default provider', $by['behaviour']['provider'] === 'gemini');
+    chk('…and falls back to the default block behind it', $by['behaviour']['fallbacks'] === 1);
+    chk('profiles with no override use the default provider',
+        $by['moderation']['provider'] === 'groq' && $by['coach']['enabled'] === true);
+
+    // The status is shown in a console. It must never carry the key.
+    chk('AI status never leaks an API key', strpos(json_encode(ai_status(false)), 'gsk-test') === false
+        && strpos(json_encode(ai_status(false)), 'gem-test') === false);
+
+    // Gated like every other settings read.
+    chk('AI status is settings-gated', backend_dispatch('admin.ai.status', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+    $ok = backend_dispatch('admin.ai.status', ['requesterId' => $SU]);
+    chk('…and an admin can read it', !empty($ok['ok']) && count($ok['ai']) === 5 && $ok['anyEnabled'] === true);
+    chk('…with a plain-English note on what each profile is for',
+        strpos((string)$ok['ai'][0]['what'], 'observations') !== false);
+
+    $GLOBALS['CONFIG']['ai'] = $saved;
+})();
+
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

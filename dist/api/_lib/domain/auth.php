@@ -374,7 +374,17 @@ function member_sessions_revoke(array $p): array {
 function auth_me(array $p): array {
     $mid = (string)($p['memberId'] ?? '');
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
-    if ($member) return ['ok' => true, 'member' => public_member($member)];
+    if ($member) {
+        $pm = public_member($member);
+        /* Is this person a mentor? The Mentor Portal at /mentor had no link
+         * anywhere in the site — a mentor had to be told the URL and type it.
+         * A tool nobody can find is a tool nobody uses, and this is the one
+         * surface that records behaviour data every session. One indexed
+         * lookup per /auth/me tells the UI whether to offer it. */
+        $pm['isMentor'] = !empty($member['email'])
+            && (bool) db_row("SELECT id FROM mentors WHERE lower(email) = lower(?) AND status = 'active' LIMIT 1", [(string)$member['email']]);
+        return ['ok' => true, 'member' => $pm];
+    }
     // Summer-student session (signed in with an ID card) — a minimal member
     // shape with no caps, so the app unlocks the Community but nothing else.
     $stu = db_row("SELECT studentId, fullName, centre, photoUrl, track FROM summer_students WHERE studentId = ? AND status = 'active' LIMIT 1", [$mid]);

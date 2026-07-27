@@ -154,7 +154,7 @@ function admin_summer_qr_reassign(array $p): array {
     // Free the student's old card, free any student on the target card.
     if (!empty($s['token']) && $s['token'] !== $token) db_update('qr_codes', ['status' => 'blank', 'studentId' => '', 'assignedName' => '', 'assignedAt' => ''], ['token' => $s['token']]);
     if (!empty($qr['studentId']) && $qr['studentId'] !== $studentId) db_update('summer_students', ['token' => '', 'updatedAt' => now_iso()], ['studentId' => $qr['studentId']]);
-    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $studentId, 'assignedName' => (string)($s['handle'] ?? $s['fullName']), 'assignedAt' => now_iso(), 'cohortId' => (string)$s['cohortId']], ['token' => $token]);
+    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $studentId, 'assignedName' => (string)($s['handle'] ?? $s['fullName']), 'assignedAt' => now_iso(), 'expiresAt' => idcard_expiry_for(), 'cohortId' => (string)$s['cohortId']], ['token' => $token]);
     db_update('summer_students', ['token' => $token, 'updatedAt' => now_iso()], ['studentId' => $studentId]);
     audit('summer.qr.reassign', $g['requester']['memberId'], $token, ['student' => $studentId], (string)($p['ip'] ?? ''));
     return ['ok' => true];
@@ -203,7 +203,7 @@ function admin_summer_enroll(array $p): array {
         'status' => $waitlisted ? 'waitlisted' : 'active', 'notes' => substr((string)($d['notes'] ?? ''), 0, 2000),
         'enrolledAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
-    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $studentId, 'assignedName' => $handle, 'assignedAt' => now_iso(), 'cohortId' => $c['cohortId']], ['token' => $token]);
+    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $studentId, 'assignedName' => $handle, 'assignedAt' => now_iso(), 'expiresAt' => idcard_expiry_for(), 'cohortId' => $c['cohortId']], ['token' => $token]);
     audit('summer.enroll', $g['requester']['memberId'], $studentId, ['token' => $token, 'handle' => $handle, 'waitlisted' => $waitlisted], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'studentId' => $studentId, 'handle' => $handle, 'token' => $token, 'waitlisted' => $waitlisted];
 }
@@ -260,6 +260,9 @@ function summer_student_admin(array $s): array {
         'regStatus' => (string)($s['regStatus'] ?? 'verified'),
         'formVersion' => (int)($s['formVersion'] ?? 0),
         'enrolledAt' => (string)($s['enrolledAt'] ?? ''),
+        // The card's expiry, so the roster shows who needs reissuing before
+        // they are turned away at a gate rather than after.
+        'idExpiresAt' => (string)(db_row("SELECT expiresAt FROM qr_codes WHERE studentId = ? AND status = 'assigned' LIMIT 1", [(string)$s['studentId']])['expiresAt'] ?? ''),
     ];
     // Consent state at a glance: which P0 grants are on file, so the roster can
     // show who is cleared to attend without a second round trip per child.
@@ -633,6 +636,22 @@ function summer_checkin(array $p): array {
     $token = trim((string)($p['token'] ?? ''));
     $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
     if (!$qr || empty($qr['studentId'])) return ['ok' => false, 'error' => 'qr_unassigned'];
+
+    /* An expired card does not open a gate.
+     *
+     * Enforced here rather than only shown on the card, because the printed
+     * date is a courtesy and this is the control. Without it a child who
+     * finished in August still scans in the following March, and a volunteer
+     * who left still reads as active staff at the door — the card outliving
+     * the relationship it represents is the whole risk of issuing one.
+     *
+     * Refused before anything is written, and the reply carries the date so
+     * the desk can tell a parent "this expired on the 3rd" rather than
+     * "computer says no". Reissuing is an admin action, not a desk one. */
+    if (idcard_expired($qr['expiresAt'] ?? '')) {
+        return ['ok' => false, 'error' => 'id_expired', 'expiredOn' => substr((string)$qr['expiresAt'], 0, 10),
+                'name' => (string)($qr['assignedName'] ?? '')];
+    }
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
     // gmdate() filed every scan between local midnight and the UTC offset under
     // yesterday — a real hour of every day in Lagos. attendance_today() is the
@@ -717,6 +736,11 @@ function summer_checkout(array $p): array {
     $token = trim((string)($p['token'] ?? ''));
     $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
     if (!$qr || empty($qr['studentId'])) return ['ok' => false, 'error' => 'qr_unassigned'];
+    /* Deliberately NOT expiry-gated. Somebody who checked in this morning on a
+     * card that expires today must still be able to check out — refusing here
+     * would leave them recorded as on-site overnight, which is worse for
+     * safeguarding than honouring a card for the last hour of its life. The
+     * gate that matters is check-IN. */
     $today = attendance_today();
     $row = db_row('SELECT * FROM attendance WHERE studentId = ? AND date = ?', [(string)$qr['studentId'], $today]);
     if (!$row) return ['ok' => false, 'error' => 'not_checked_in'];

@@ -20,7 +20,30 @@ function mentor_gate(array $p): array {
         ? db_row("SELECT * FROM mentors WHERE lower(email) = lower(?) AND status = 'active' LIMIT 1", [(string)$m['email']])
         : null;
     if (!$mentor) return ['ok' => false, 'error' => 'not_a_mentor'];
-    return ['ok' => true, 'member' => $m, 'mentor' => $mentor];
+    return ['ok' => true, 'member' => $m, 'mentor' => $mentor, 'programmes' => mentor_programmes($mentor)];
+}
+
+/* Which cohorts this mentor supervises.
+ *
+ * NGG and the Summer School run side by side, in the same centres, often with
+ * overlapping staff — so "a mentor at Egbeda" is not enough to say whose
+ * children they are responsible for. Without this, an NGG mentor opened the
+ * portal and saw summer students (the roster only ever queried that table),
+ * could star them, and the Club members they were actually assigned to were
+ * invisible. Both halves of that are wrong.
+ *
+ * 'both' is a real answer, not a fudge: plenty of people genuinely cover both,
+ * and the alternative is duplicate mentor records that drift apart.
+ */
+function mentor_programmes(array $mentor): array {
+    $p = trim((string)($mentor['programme'] ?? 'summer'));
+    if ($p === 'both') return ['summer', 'ngg'];
+    return in_array($p, ['summer', 'ngg'], true) ? [$p] : ['summer'];
+}
+
+/** Does this mentor supervise that cohort? */
+function mentor_covers(array $g, string $programme): bool {
+    return in_array($programme, $g['programmes'] ?? ['summer'], true);
 }
 
 /** The mentor's class for today — students in their centre (+ department), each
@@ -32,10 +55,30 @@ function mentor_roster(array $p): array {
     $dept   = trim((string)($mentor['department'] ?? ''));
     $today  = gmdate('Y-m-d');
 
-    $where = "status = 'active'"; $args = [];
-    if ($centre !== '') { $where .= ' AND centre = ?'; $args[] = $centre; }
-    if ($dept !== '')   { $where .= ' AND track = ?';  $args[] = $dept; }
-    $rows = db_all("SELECT studentId, fullName, track, centre, photoUrl FROM summer_students WHERE $where ORDER BY fullName LIMIT 400", $args);
+    /* The roster is whichever cohorts this mentor supervises — and ONLY those.
+     * It used to read summer_students unconditionally, so an NGG mentor was
+     * shown summer children they had no business seeing while their own Club
+     * members did not appear at all. Each row is tagged with its kind, because
+     * everything downstream (starring, permission checks) has to know which
+     * table a subject lives in. */
+    $rows = [];
+    if (mentor_covers($g, 'summer')) {
+        $where = "status = 'active'"; $args = [];
+        if ($centre !== '') { $where .= ' AND centre = ?'; $args[] = $centre; }
+        if ($dept !== '')   { $where .= ' AND track = ?';  $args[] = $dept; }
+        foreach (db_all("SELECT studentId, fullName, track, centre, photoUrl FROM summer_students WHERE $where ORDER BY fullName LIMIT 400", $args) as $r) {
+            $r['kind'] = 'student';
+            $rows[] = $r;
+        }
+    }
+    if (mentor_covers($g, 'ngg')) {
+        $where = "status = 'active' AND type = 'NGG'"; $args = [];
+        if ($centre !== '') { $where .= ' AND centre = ?'; $args[] = $centre; }
+        foreach (db_all("SELECT memberId studentId, fullName, track, centre, photoUrl FROM members WHERE $where ORDER BY fullName LIMIT 400", $args) as $r) {
+            $r['kind'] = 'member';
+            $rows[] = $r;
+        }
+    }
 
     $period = iso_week_period();
 
@@ -60,6 +103,7 @@ function mentor_roster(array $p): array {
         $v3 = $v3Of[(string)$r['studentId']] ?? null;
         $students[] = [
             'studentId'    => $r['studentId'],
+            'kind'         => $r['kind'],
             'fullName'     => $r['fullName'],
             'track'        => $r['track'],
             'photoUrl'     => $r['photoUrl'],
@@ -71,7 +115,8 @@ function mentor_roster(array $p): array {
     }
     return ['ok' => true, 'today' => $today, 'period' => $period, 'categories' => BEHAVIOUR_CATEGORIES,
         'presets' => behaviour_presets(),
-        'mentor' => ['name' => $mentor['fullName'], 'centre' => $centre, 'department' => $dept],
+        'mentor' => ['name' => $mentor['fullName'], 'centre' => $centre, 'department' => $dept,
+                     'programmes' => $g['programmes']],
         'students' => $students];
 }
 
@@ -149,16 +194,30 @@ function mentor_star_give(array $p): array {
     $subjectId = (string)($p['subjectId'] ?? '');
     $stars = (int)($p['stars'] ?? 0);
     if ($stars < 1 || $stars > 3) return ['ok' => false, 'error' => 'bad_stars'];
-    $s = db_row("SELECT studentId, fullName, centre FROM summer_students WHERE studentId = ? LIMIT 1", [$subjectId]);
+    /* Resolve the subject in whichever cohort this mentor actually supervises.
+     * Scoping the ROSTER alone would be cosmetic — the subject id is posted by
+     * the client, so an NGG mentor could still star a summer child simply by
+     * sending their id. This is the control; the roster is the convenience. */
+    $s = null; $kind = '';
+    if (mentor_covers($g, 'summer')) {
+        $s = db_row("SELECT studentId, fullName, centre FROM summer_students WHERE studentId = ? LIMIT 1", [$subjectId]);
+        if ($s) $kind = 'student';
+    }
+    if (!$s && mentor_covers($g, 'ngg')) {
+        $s = db_row("SELECT memberId studentId, fullName, centre FROM members WHERE memberId = ? AND type = 'NGG' LIMIT 1", [$subjectId]);
+        if ($s) $kind = 'member';
+    }
+    // Deliberately 'not_found' rather than 'wrong_programme': a mentor has no
+    // business learning whether an id they cannot supervise exists at all.
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
-    // Permission: the student must be in the mentor's centre (their class).
+    // Permission: the subject must be in the mentor's centre (their class).
     if (trim((string)$mentor['centre']) !== '' && (string)$s['centre'] !== (string)$mentor['centre']) return ['ok' => false, 'error' => 'not_your_centre'];
     $today = gmdate('Y-m-d');
     if (db_row("SELECT id FROM member_stars WHERE subjectId = ? AND date = ? LIMIT 1", [$subjectId, $today])) return ['ok' => false, 'error' => 'already_starred_today'];
     $cat = in_array(($p['category'] ?? ''), BEHAVIOUR_CATEGORIES, true) ? (string)$p['category'] : '';
     $note = substr(trim((string)($p['note'] ?? '')), 0, 300);
     db_insert('member_stars', [
-        'subjectId' => $subjectId, 'subjectType' => 'student', 'givenById' => (string)$me['memberId'],
+        'subjectId' => $subjectId, 'subjectType' => $kind, 'givenById' => (string)$me['memberId'],
         'stars' => $stars, 'category' => $cat, 'note' => $note, 'centre' => (string)$s['centre'],
         'date' => $today, 'createdAt' => now_iso(),
     ]);
@@ -231,7 +290,9 @@ function mentor_bulk_award(array $p): array {
             continue;
         }
         // Observation only — still centre-gated, same as a star.
-        $s = db_row("SELECT studentId, fullName, centre, cohortId FROM summer_students WHERE studentId = ? LIMIT 1", [$sid]);
+        $s = null;
+        if (mentor_covers($g, 'summer')) $s = db_row("SELECT studentId, fullName, centre, cohortId FROM summer_students WHERE studentId = ? LIMIT 1", [$sid]);
+        if (!$s && mentor_covers($g, 'ngg')) $s = db_row("SELECT memberId studentId, fullName, centre, '' cohortId FROM members WHERE memberId = ? AND type = 'NGG' LIMIT 1", [$sid]);
         if (!$s) { $skipped++; $results[] = ['subjectId' => $sid, 'ok' => false, 'error' => 'not_found']; continue; }
         $mc = trim((string)$g['mentor']['centre']);
         if ($mc !== '' && (string)$s['centre'] !== $mc) { $skipped++; $results[] = ['subjectId' => $sid, 'ok' => false, 'error' => 'not_your_centre']; continue; }

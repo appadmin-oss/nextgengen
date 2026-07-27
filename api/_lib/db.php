@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 61;
+const NGG_SCHEMA_TARGET = 63;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1439,6 +1439,27 @@ function db_migrate(PDO $db): void {
             ALTER TABLE summer_students ADD COLUMN consentSignedName TEXT DEFAULT '';
             ALTER TABLE summer_students ADD COLUMN consentSignedAt TEXT DEFAULT '';
         ",
+
+        // ID cards expire. A summer card is a season pass, not a life
+        // membership: a child who left in August must not still open a gate in
+        // March. Set when the card is assigned, from the admin's validity
+        // window, and backfilled here for cards already in circulation so the
+        // rule applies to the whole estate rather than only to new issues.
+        62 => "
+            ALTER TABLE qr_codes ADD COLUMN expiresAt TEXT DEFAULT '';
+            UPDATE qr_codes
+               SET expiresAt = substr(datetime(COALESCE(NULLIF(assignedAt,''), createdAt), '+90 days'), 1, 10)
+             WHERE expiresAt = '' AND status = 'assigned';
+        ",
+
+        // Which programme a mentor actually serves. `source` already existed
+        // but means where the mentor CAME FROM (ngg / afrovanguard), not who
+        // they supervise — using it to scope a roster would conflate the two.
+        // Defaults to 'summer' because that is exactly what every existing
+        // mentor already sees: mentor_roster only ever read summer_students,
+        // so this preserves today's behaviour precisely rather than silently
+        // handing anyone a cohort they did not have yesterday.
+        63 => "ALTER TABLE mentors ADD COLUMN programme TEXT DEFAULT 'summer';",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

@@ -249,3 +249,56 @@ function ai_photo_review(string $imageUrl): array {
     if (!is_array($data)) return ['ok' => false, 'error' => 'ai_bad_json'];
     return ['ok' => true, 'data' => $data, 'provider' => 'gemini'];
 }
+
+/* ── Is the AI actually on? ──────────────────────────────────────────────────
+ * Every AI feature here degrades to a deterministic rules path when no key is
+ * configured, which is the right behaviour and a genuinely invisible one: the
+ * behaviour monitor keeps classifying, the moderation queue keeps deciding,
+ * and nothing anywhere says the intelligent half is switched off. An operator
+ * can run for months believing observations are being read by a model when
+ * they are being pattern-matched on a word list.
+ *
+ * This reports, per profile, whether a provider would answer and which one —
+ * and can send one real request to prove the key works rather than merely
+ * being present. A key that is set but rejected looks identical to a working
+ * one from the config alone, and that is exactly the failure worth catching.
+ *
+ * Never returns the key, or any part of it.
+ */
+const AI_PROFILE_USES = [
+    'behaviour'  => 'Classifies mentor observations into category and severity.',
+    'moderation' => 'Screens community posts before they publish.',
+    'coach'      => 'The Anchor Journal coaching replies.',
+    'analysis'   => 'Narrative summaries on the analytics boards.',
+    'photo'      => 'Checks uploaded headshots are usable.',
+];
+
+function ai_status(bool $probe = false): array {
+    $out = [];
+    foreach (AI_PROFILE_USES as $profile => $what) {
+        $cands = ai_profile_candidates($profile);
+        $row = [
+            'profile' => $profile,
+            'what' => $what,
+            'enabled' => count($cands) > 0,
+            'provider' => $cands ? (string)$cands[0]['provider'] : '',
+            'model' => $cands ? (string)$cands[0]['model'] : '',
+            'fallbacks' => max(0, count($cands) - 1),
+            // What actually happens today, in words an operator can act on.
+            'behaviourWhenOff' => 'Falls back to fixed rules — still works, just not intelligent.',
+        ];
+        if ($probe && $row['enabled']) {
+            // One tiny real request. Cheap, and the only way to tell a working
+            // key from a present one.
+            $t0 = microtime(true);
+            $r = ai_classify('Reply with {"ok":true} and nothing else.', 'ping', 20, $profile);
+            $row['probe'] = [
+                'ok' => !empty($r['ok']),
+                'error' => empty($r['ok']) ? (string)($r['error'] ?? 'failed') : '',
+                'ms' => (int)round((microtime(true) - $t0) * 1000),
+            ];
+        }
+        $out[] = $row;
+    }
+    return $out;
+}

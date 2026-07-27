@@ -1036,3 +1036,15 @@ ALTER TABLE summer_students ADD COLUMN consentSignatureUrl TEXT;
 ALTER TABLE summer_students ADD COLUMN consentSignedName VARCHAR(160) DEFAULT '';
 ALTER TABLE summer_students ADD COLUMN consentSignedAt VARCHAR(40) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (61) ON DUPLICATE KEY UPDATE version = version;
+
+-- 62: ID cards expire. A summer card is a season pass, not a life membership.
+ALTER TABLE qr_codes ADD COLUMN expiresAt VARCHAR(20) DEFAULT '';
+UPDATE qr_codes
+   SET expiresAt = DATE_FORMAT(DATE_ADD(COALESCE(NULLIF(assignedAt,''), createdAt), INTERVAL 90 DAY), '%Y-%m-%d')
+ WHERE expiresAt = '' AND status = 'assigned';
+INSERT INTO schema_version (version) VALUES (62) ON DUPLICATE KEY UPDATE version = version;
+
+-- 63: which programme a mentor serves. `source` means where they came from,
+-- not who they supervise. Defaults to 'summer' — what every mentor sees today.
+ALTER TABLE mentors ADD COLUMN programme VARCHAR(16) DEFAULT 'summer';
+INSERT INTO schema_version (version) VALUES (63) ON DUPLICATE KEY UPDATE version = version;

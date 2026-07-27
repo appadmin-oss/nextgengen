@@ -608,7 +608,7 @@ function admin_volunteer_approve(array $p): array {
         'token' => $token, 'photoUrl' => (string)($a['photoUrl'] ?? ''),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
-    db_insert('qr_codes', ['token' => $token, 'batch' => 'VOL', 'cohortId' => $c['cohortId'], 'status' => 'assigned', 'studentId' => $volunteerId, 'assignedName' => (string)$a['name'], 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+    db_insert('qr_codes', ['token' => $token, 'batch' => 'VOL', 'cohortId' => $c['cohortId'], 'status' => 'assigned', 'studentId' => $volunteerId, 'assignedName' => (string)$a['name'], 'createdAt' => now_iso(), 'assignedAt' => now_iso(), 'expiresAt' => idcard_expiry_for()]);
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);
 
     $sent = volunteer_send_id($volunteerId);

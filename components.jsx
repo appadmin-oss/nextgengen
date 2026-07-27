@@ -292,6 +292,15 @@ function NavAuthSlot({ setPage }) {
           <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("dashboard"); }}>Dashboard</button>
           <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("anchor"); }}>Anchor 12</button>
           <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("book"); }}>The Anchor book</button>
+          {/* The Mentor Portal had no link anywhere in the site — a mentor had
+              to be told the URL and type it. A tool nobody can find is a tool
+              nobody uses, and this is the surface that records behaviour data
+              every session. Shown only to people who actually are mentors. */}
+          {member.isMentor && (
+            <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("mentor"); }}>
+              <span>★</span> Mentor Portal
+            </button>
+          )}
           {isAdmin && (
             <button className="nav-auth-menu-item nav-auth-menu-admin" onClick={() => { setMenuOpen(false); setPage("admin"); }}>
               <span>⚙</span> Control Room

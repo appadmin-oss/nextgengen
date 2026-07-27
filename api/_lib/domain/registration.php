@@ -1154,7 +1154,7 @@ function registration_issue_id(string $studentId): array {
         db_insert('qr_codes', ['token' => $tok, 'batch' => 'AUTO', 'cohortId' => $s['cohortId'], 'status' => 'blank', 'studentId' => '', 'assignedName' => '', 'createdAt' => now_iso(), 'assignedAt' => '']);
         $qr = db_row('SELECT * FROM qr_codes WHERE token = ?', [$tok]);
     }
-    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $s['studentId'], 'assignedName' => (string)$s['handle'], 'assignedAt' => now_iso(), 'cohortId' => $s['cohortId']], ['token' => $qr['token']]);
+    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $s['studentId'], 'assignedName' => (string)$s['handle'], 'assignedAt' => now_iso(), 'expiresAt' => idcard_expiry_for(), 'cohortId' => $s['cohortId']], ['token' => $qr['token']]);
     db_update('summer_students', ['token' => $qr['token'], 'updatedAt' => now_iso()], ['studentId' => $s['studentId']]);
     card_display_id(db_row('SELECT * FROM summer_students WHERE studentId = ?', [$s['studentId']]) ?: $s);
     audit('registration.id_issued', null, $studentId, ['token' => $qr['token']], '');
@@ -1819,6 +1819,17 @@ function admin_cards_data(array $p): array {
     $params = [$c['cohortId']];
     if (!empty($p['studentId'])) { $where .= ' AND studentId = ?'; $params[] = (string)$p['studentId']; }
     $rows = db_all("SELECT * FROM summer_students WHERE $where ORDER BY id ASC LIMIT 500", $params);
+    /* Expiry lives on the CARD (qr_codes), not the child — a reissued card
+       starts a fresh window, and the student record outlives any one card.
+       Batched: one read for the whole print run, not one per card. */
+    $expiryOf = [];
+    if ($rows) {
+        $ids = array_column($rows, 'studentId');
+        $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
+        foreach (db_all("SELECT studentId, expiresAt FROM qr_codes WHERE status = 'assigned' AND studentId IN $in", $ids) as $q) {
+            $expiryOf[(string)$q['studentId']] = (string)($q['expiresAt'] ?? '');
+        }
+    }
     $centres = [];
     foreach (db_all("SELECT name, code, color FROM centres WHERE status = 'active'") as $cr) {
         $centres[strtolower($cr['name'])] = $cr;
@@ -1846,6 +1857,8 @@ function admin_cards_data(array $p): array {
             'centre' => ['name' => $ctr['name'] ?? (string)$s['centre'], 'code' => $ctr['code'] ?? 'ST', 'color' => $ctr['color'] ?? '#76B043'],
             'displayId' => card_display_id($s),
             'token' => (string)$s['token'],
+            // Printed on the card so the holder and the desk can both see it.
+            'expiresAt' => $expiryOf[(string)$s['studentId']] ?? '',
             'photoUrl' => (string)$s['photoUrl'],
         ];
     }
@@ -1901,6 +1914,36 @@ function consent_doc_save(array $in, string $by): array {
     return $out;
 }
 
+/* ── How long an ID is valid ────────────────────────────────────────────────
+ * A summer card is a season pass, not a life membership. Without an expiry a
+ * child who finished in August still opens a gate the following March, and a
+ * volunteer who left still scans as active staff — the card outlives the
+ * relationship it represents, which is the whole risk of issuing one.
+ *
+ * Admin-defined, defaulting to three months. Zero means never expires, which
+ * some programmes will legitimately want for their NGG members; it is spelled
+ * out rather than implied by an empty box.
+ */
+function idcard_validity_days(): int {
+    $cfg = setting_get('idcard');
+    $d = is_array($cfg) && array_key_exists('validityDays', $cfg) ? (int)$cfg['validityDays'] : 90;
+    return $d <= 0 ? 0 : max(1, min(3650, $d));
+}
+
+/** The expiry date for a card issued now (''=never). */
+function idcard_expiry_for(?int $from = null): string {
+    $days = idcard_validity_days();
+    if ($days === 0) return '';
+    return gmdate('Y-m-d', ($from ?? time()) + $days * 86400);
+}
+
+/** Has this card passed its expiry? Blank expiry never expires. */
+function idcard_expired(?string $expiresAt, ?string $on = null): bool {
+    $e = trim((string)$expiresAt);
+    if ($e === '') return false;
+    return substr($e, 0, 10) < ($on ?? gmdate('Y-m-d'));
+}
+
 function idcard_program(): array {
     $cfg = setting_get('idcard');
     $p = is_array($cfg) ? $cfg : [];
@@ -1913,6 +1956,7 @@ function idcard_program(): array {
         'logoLockup' => '/assets/idcard/logo-lockup.png',
         'logoOkun' => '/assets/idcard/logo-okun.png',
         'widthMm' => 54, 'heightMm' => 75,
+        'validityDays' => 90,
     ];
     // Physical print size (mm). The card artwork reflows to any proportion in
     // this range without distortion; the bounds just keep it legible.
@@ -1939,5 +1983,14 @@ function idcard_program_save(array $in, string $by): void {
     // Card proportions (mm) — validated to the same safe range as on read.
     if (array_key_exists('widthMm', $in))  $clean['widthMm']  = idcard_clamp_mm($in['widthMm'], 50, 60, 54);
     if (array_key_exists('heightMm', $in)) $clean['heightMm'] = idcard_clamp_mm($in['heightMm'], 64, 100, 75);
+    // How long a newly issued card is valid. 0 = never expires, which is a
+    // deliberate choice an admin can make rather than an empty box meaning it
+    // by accident. Existing cards keep the expiry they were issued with —
+    // changing the policy must not silently extend or revoke a card already
+    // in a child's pocket.
+    if (array_key_exists('validityDays', $in)) {
+        $d = (int)$in['validityDays'];
+        $clean['validityDays'] = $d <= 0 ? 0 : max(1, min(3650, $d));
+    }
     setting_set('idcard', $clean, $by);
 }

@@ -91,6 +91,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.summer.absence.alert'  => 'admin_summer_absence_alert',
             'admin.summer.consent'        => 'admin_summer_consent',
             'admin.summer.consentDoc.save' => 'admin_consent_doc_save',
+            'admin.ai.status'             => 'admin_ai_status',
             'admin.summer.import'         => 'admin_summer_import',
             'admin.summer.insights'       => 'admin_summer_insights',
             // Attendance-taker rotation + gamified attendance
