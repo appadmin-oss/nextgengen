@@ -1039,6 +1039,14 @@ function public_summer_profile(array $p): array {
  * Guardian contact details are in here. It is behind the 'summer' capability
  * and must stay there.
  */
+/** Save the editable parts of the consent document (see consent_doc_settings). */
+function admin_consent_doc_save(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $doc = consent_doc_save(is_array($p['doc'] ?? null) ? $p['doc'] : [], (string)$g['requester']['memberId']);
+    audit('consent.doc.set', (string)$g['requester']['memberId'], '', ['keys' => array_keys($doc)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'doc' => $doc];
+}
+
 function admin_summer_consent(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $studentId = trim((string)($p['studentId'] ?? ''));
@@ -1067,6 +1075,9 @@ function admin_summer_consent(array $p): array {
     $complete = count(array_filter($required, fn($i) => $i['status'] === 'granted')) === count($required);
 
     $prog = function_exists('idcard_program') ? idcard_program() : [];
+    // Admin-editable document settings — legal name, retention, an extra
+    // clause, the logo — so the form is theirs without a deploy.
+    $doc = function_exists('consent_doc_settings') ? consent_doc_settings() : [];
     return ['ok' => true, 'consent' => [
         'student' => [
             'studentId' => (string)$s['studentId'],
@@ -1084,6 +1095,14 @@ function admin_summer_consent(array $p): array {
             'name' => (string)($s['guardianName'] ?? ''),
             'phone' => (string)($s['guardianPhone'] ?? ''),
             'email' => (string)($s['parentEmail'] ?? ''),
+        ],
+        // The drawn signature, so the printed record shows what was actually
+        // signed rather than asserting that something was.
+        'doc' => $doc,
+        'signature' => [
+            'image' => (string)($s['consentSignatureUrl'] ?? ''),
+            'name'  => (string)($s['consentSignedName'] ?? ''),
+            'at'    => (string)($s['consentSignedAt'] ?? ''),
         ],
         'registration' => [
             'status' => (string)($s['regStatus'] ?? 'verified'),

@@ -321,7 +321,7 @@
       },
       verify: {
         context: (t) => request('/public/verify.php' + qs({ t })),
-        submit:  (t, consents, actorName, feedback) => request('/public/verify.php', { body: { t, consents, actorName, feedback } }),
+        submit:  (t, consents, actorName, feedback, signature) => request('/public/verify.php', { body: { t, consents, actorName, feedback, signature } }),
       },
       reshoot: {
         context: (t) => request('/public/reshoot.php' + qs({ t })),
@@ -429,6 +429,7 @@
       summer: {
         overview:     () => request('/admin/summer.php?view=overview'),
         students:     (q, cohortId) => request('/admin/summer.php' + qs({ view: 'students', q, cohortId })),
+        consentDocSave: (doc) => request('/admin/summer.php', { body: { action: 'consentDoc', doc } }),
         qrList:       (status, batch) => request('/admin/summer.php' + qs({ view: 'qr', status, batch })),
         qrVoid:       (token) => request('/admin/summer.php', { body: { action: 'qr_void', token } }),
         qrReassign:   (token, studentId) => request('/admin/summer.php', { body: { action: 'qr_reassign', token, studentId } }),

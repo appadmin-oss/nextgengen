@@ -2133,7 +2133,7 @@ $GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', '
 $ir = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Gate Hold Kid', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'hold@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
 chk('issuance gate: registration ok with a photo queued for review', !empty($ir['ok']));
 $vtHold = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$ir['studentId']])['verifyToken'];
-$pvh = backend_dispatch('parent.verify.submit', ['t' => $vtHold, 'consents' => ['participation' => true, 'medical' => true, 'data' => true], 'actorName' => 'P']);
+$pvh = backend_dispatch('parent.verify.submit', ['t' => $vtHold, 'consents' => ['participation' => true, 'medical' => true, 'data' => true, 'media' => false, 'site_visibility' => false], 'actorName' => 'P']);
 chk('issuance gate: consent verifies but the ID is held pending the photo', !empty($pvh['ok']) && ($pvh['photoPending'] ?? false) === true && ($pvh['idIssued'] ?? true) === false);
 chk('issuance gate: no QR token is bound while the photo is pending', (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$ir['studentId']])['token']) === '');
 $holdAsset = db_row("SELECT assetId FROM photo_assets WHERE subjectType='student' AND subjectId=? ORDER BY version DESC LIMIT 1", [$ir['studentId']])['assetId'];
@@ -2143,7 +2143,7 @@ unset($GLOBALS['__ai_photo_mock']);
 // A registration with NO photo is never blocked by the gate.
 $np = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'No Photo Kid', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'nophoto@example.com']]);
 $vtNp = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$np['studentId']])['verifyToken'];
-$pvn = backend_dispatch('parent.verify.submit', ['t' => $vtNp, 'consents' => ['participation' => true, 'medical' => true, 'data' => true], 'actorName' => 'P']);
+$pvn = backend_dispatch('parent.verify.submit', ['t' => $vtNp, 'consents' => ['participation' => true, 'medical' => true, 'data' => true, 'media' => false, 'site_visibility' => false], 'actorName' => 'P']);
 chk('issuance gate: a photo-less registration still issues immediately', !empty($pvn['idIssued']) && (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$np['studentId']])['token']) !== '');
 setting_set('photo_gate_issuance', '0', 'system');
 
@@ -3420,6 +3420,79 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
         $listed && ($listed['guardianName'] ?? '') === 'Mr Nkemdirim' && ($listed['guardianPhone'] ?? '') !== '');
     chk('name split: …and the full submission, so nothing collected is hidden',
         $listed && is_array($listed['answers'] ?? null) && ($listed['answers']['faculty'] ?? '') === 'Music');
+})();
+
+
+/* ── Consent: must-answer clauses, signature capture, editable document ─────
+ * Photography (4) and public display (5) are now required to be ANSWERED —
+ * both answers accepted. They are deliberately NOT required to be granted:
+ * conditioning a child's place on permission to publish their photograph
+ * would make that consent worthless, since it is not freely given if refusing
+ * costs them their place. An untouched checkbox also used to be recorded as a
+ * refusal the parent never actually made, which is its own problem. */
+(function () use ($SU) {
+    $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
+    $reg = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
+        'firstName' => 'Sign', 'lastName' => 'Ature', 'age' => 12,
+        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Main',
+        'parentName' => 'Mrs Ature', 'parentPhone' => '08039991234',
+    ]]);
+    $vt = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$reg['studentId']])['verifyToken'];
+
+    // Leaving them out entirely is refused — silence is not an answer.
+    $silent = backend_dispatch('parent.verify.submit', ['t' => $vt,
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true], 'actorName' => 'Mrs Ature']);
+    chk('consent: an unanswered must-answer clause is refused',
+        ($silent['error'] ?? '') === 'consent_answer_required');
+    chk('consent: …and it says which one', in_array($silent['missing'] ?? '', ['media', 'site_visibility'], true));
+
+    // An explicit NO is accepted — declining must never block the child.
+    $PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z/C/HgAGgwJ/lK3Q6wAAAABJRU5ErkJggg==';
+    $no = backend_dispatch('parent.verify.submit', ['t' => $vt, 'consents' => [
+        'participation' => true, 'medical' => true, 'data' => true,
+        'media' => false, 'site_visibility' => false,
+    ], 'actorName' => 'Mrs Ature', 'signature' => $PNG]);
+    chk('consent: answering No to both is accepted, not blocked', !empty($no['ok']));
+
+    $rec = backend_dispatch('admin.summer.consent', ['requesterId' => $SU, 'studentId' => $reg['studentId']])['consent'];
+    $by = [];
+    foreach ($rec['items'] as $i) $by[$i['type']] = $i;
+    chk('consent: the No is recorded as a decision, not as silence', $by['media']['status'] === 'declined');
+    chk('consent: the child is still verified and cleared to attend',
+        $rec['registration']['status'] === 'verified' && $rec['complete'] === true);
+
+    // The signature is what makes the printed record evidence rather than an
+    // assertion that somebody ticked a box.
+    chk('consent: the drawn signature is stored with the record', ($rec['signature']['image'] ?? '') === $PNG);
+    chk('consent: …with who signed and when',
+        ($rec['signature']['name'] ?? '') === 'Mrs Ature' && ($rec['signature']['at'] ?? '') !== '');
+
+    // A remote URL would let a submission point the record at an image that
+    // can change afterwards — which is precisely what a signature must not do.
+    $reg2 = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
+        'firstName' => 'Hot', 'lastName' => 'Link', 'age' => 12,
+        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Main',
+        'parentName' => 'P', 'parentPhone' => '08039991235',
+    ]]);
+    $vt2 = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$reg2['studentId']])['verifyToken'];
+    backend_dispatch('parent.verify.submit', ['t' => $vt2, 'consents' => [
+        'participation' => true, 'medical' => true, 'data' => true, 'media' => true, 'site_visibility' => false,
+    ], 'actorName' => 'P', 'signature' => 'https://evil.example.org/not-a-signature.png']);
+    $rec2 = backend_dispatch('admin.summer.consent', ['requesterId' => $SU, 'studentId' => $reg2['studentId']])['consent'];
+    chk('consent: a remote URL is rejected as a signature', ($rec2['signature']['image'] ?? '') === '');
+
+    // The document an organisation puts in front of a parent is theirs to edit.
+    $saved = backend_dispatch('admin.summer.consentDoc.save', ['requesterId' => $SU, 'doc' => [
+        'orgName' => 'Afrovanguard Initiative Ltd', 'rcNumber' => 'RC-1234567',
+        'retentionYears' => 7, 'extraClauseTitle' => 'Transport', 'extraClause' => 'Bus fare is covered.',
+    ]]);
+    chk('consent doc: an admin can edit the document', !empty($saved['ok']) && $saved['doc']['orgName'] === 'Afrovanguard Initiative Ltd');
+    chk('consent doc: retention is clamped to something sane',
+        backend_dispatch('admin.summer.consentDoc.save', ['requesterId' => $SU, 'doc' => ['retentionYears' => 900]])['doc']['retentionYears'] === 50);
+    $recDoc = backend_dispatch('admin.summer.consent', ['requesterId' => $SU, 'studentId' => $reg['studentId']])['consent']['doc'];
+    chk('consent doc: the edits reach the document generator', ($recDoc['rcNumber'] ?? '') === 'RC-1234567');
+    chk('consent doc: the logo falls back to the ID card branding, not a second setting',
+        ($recDoc['logoUrl'] ?? '') !== '');
 })();
 
 

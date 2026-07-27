@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 60;
+const NGG_SCHEMA_TARGET = 61;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1427,6 +1427,17 @@ function db_migrate(PDO $db): void {
             UPDATE summer_students
                SET lastName = trim(replace(trim(fullName), firstName, ''))
              WHERE lastName = '' AND firstName != '' AND trim(fullName) != firstName;
+        ",
+
+        // A consent record with no signature is a note that someone ticked a
+        // box. These hold the drawn signature the parent actually made, the
+        // name they signed under and when — so the printed record is evidence
+        // rather than an assertion, which is the whole point of the document.
+        61 => "
+            ALTER TABLE consents ADD COLUMN signatureUrl TEXT DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN consentSignatureUrl TEXT DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN consentSignedName TEXT DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN consentSignedAt TEXT DEFAULT '';
         ",
     ];
 

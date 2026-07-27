@@ -1880,9 +1880,9 @@ const CONSENT_CLAUSES = [
     body: "In the event of an accident, injury or sudden illness, and where I cannot be reached in time, I authorise the programme's staff to obtain such emergency medical treatment for my child as a qualified medical practitioner considers necessary, including transport to hospital. I undertake to disclose in Part C any medical condition, allergy, medication or dietary requirement relevant to my child's safety, and to inform the programme promptly if it changes." },
   { type: "data", n: 3, required: true, title: "Processing of personal data",
     body: "I consent to the programme collecting and processing my child's personal data — and my own contact details — for the purposes of enrolment, attendance, safeguarding, communication with me, and reporting to funders in aggregate form. This is processed in accordance with the Nigeria Data Protection Act 2023. Part G sets out what is held, why, for how long, and the rights available to me." },
-  { type: "media", n: 4, required: false, title: "Photography, film and recording",
+  { type: "media", n: 4, required: false, mustAnswer: true, title: "Photography, film and recording",
     body: "I consent to photographs, video or audio of my child being taken during programme activities, and to their use in the programme's internal records, reports to funders and partners, and printed materials. Declining this does not affect my child's place on the programme in any way." },
-  { type: "site_visibility", n: 5, required: false, title: "Being named or pictured publicly",
+  { type: "site_visibility", n: 5, required: false, mustAnswer: true, title: "Being named or pictured publicly",
     body: "I consent to my child's name and photograph appearing on the programme's public website and social media — for example on the public participation board. I understand this is separate from clause 4: permission to take a photograph is not permission to publish it. I understand a photograph is published only where I have agreed to BOTH clause 4 and this clause, that I may withdraw this consent at any time, and that my child will be removed from public display promptly once I do." },
   { type: "trips", n: 6, required: false, title: "Off-site activities and transport",
     body: "I consent to my child taking part in supervised activities away from their usual centre, including excursions, competitions and showcases, and to being transported by the programme or a transport provider engaged by it. I understand I will be told in advance of any off-site activity, including where it is and when my child will return." },
@@ -1895,6 +1895,11 @@ function consentFormHtml(c, opts) {
   const blank = !!opts.blank;
   const esc = (v) => String(v == null ? "" : v).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
   const s = (!blank && c && c.student) || {}, gd = (!blank && c && c.guardian) || {}, prog = (c && c.programme) || {};
+  // Admin-editable document settings — legal name, address, retention period,
+  // an extra clause their adviser asked for, and the logo. Falls back to the
+  // ID card branding so a logo is set in one place, not two.
+  const doc = (c && c.doc) || {};
+  const sig = (!blank && c && c.signature) || {};
   const org = esc(prog.name) || "Next Generation Genius";
   const today = new Date().toISOString().slice(0, 10);
   // A filled value prints as text; an empty one prints as a rule to write on,
@@ -1904,7 +1909,9 @@ function consentFormHtml(c, opts) {
   const clauses = CONSENT_CLAUSES.map(cl => `
     <div class="cl">
       <div class="cl-h"><span class="cl-n">${cl.n}</span><span class="cl-t">${esc(cl.title)}</span>
-        ${cl.required ? '<span class="tag req">Required</span>' : '<span class="tag opt">Optional</span>'}</div>
+        ${cl.required ? '<span class="tag req">Required</span>'
+          : cl.mustAnswer ? '<span class="tag ans">Answer required</span>'
+          : '<span class="tag opt">Optional</span>'}</div>
       <p class="cl-b">${esc(cl.body)}</p>
       <div class="cl-c">
         <span class="box">I <b>CONSENT</b> <i></i></span>
@@ -1921,6 +1928,9 @@ function consentFormHtml(c, opts) {
   body { font: 10.5pt/1.5 Georgia,"Times New Roman",serif; color: #14181f; margin: 0; }
   .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5pt solid #0c1432; padding-bottom: 8pt; }
   .org { font: 700 15pt/1.15 "Helvetica Neue",Arial,sans-serif; letter-spacing: -0.3pt; color: #0c1432; }
+  .logo { height: 38pt; width: auto; object-fit: contain; }
+  .addr { font: 8pt/1.4 "Helvetica Neue",Arial,sans-serif; color: #5a6488; margin-top: 2pt; }
+  .sigimg { max-height: 26pt; max-width: 150pt; display: block; margin-bottom: 1pt; }
   .doc { font: 8pt/1.3 "Helvetica Neue",Arial,sans-serif; letter-spacing: 1.5pt; text-transform: uppercase; color: #5a6488; margin-top: 3pt; }
   .ref { text-align: right; font: 8.5pt/1.5 "Helvetica Neue",Arial,sans-serif; color: #5a6488; }
   h1 { font: 700 15pt/1.2 "Helvetica Neue",Arial,sans-serif; margin: 14pt 0 2pt; letter-spacing: -0.2pt; }
@@ -1940,6 +1950,7 @@ function consentFormHtml(c, opts) {
          padding: 2pt 4pt; border-radius: 2pt; margin-left: auto; flex: 0 0 auto; }
   .tag.req { background: #fdecea; color: #b3261e; border: 0.5pt solid #b3261e; }
   .tag.opt { background: #eef1f7; color: #47506e; border: 0.5pt solid #9aa3b8; }
+  .tag.ans { background: #fff4e0; color: #8a5a00; border: 0.5pt solid #c98a1a; }
   .cl-b { margin: 3pt 0 5pt 22pt; font-size: 9.5pt; text-align: justify; }
   .cl-c { margin-left: 22pt; display: flex; gap: 16pt; align-items: center; font: 9pt "Helvetica Neue",Arial,sans-serif; }
   .box i { display: inline-block; width: 12pt; height: 12pt; border: 0.75pt solid #14181f; margin-left: 5pt; vertical-align: -2pt; }
@@ -1956,14 +1967,22 @@ function consentFormHtml(c, opts) {
   footer { margin-top: 14pt; border-top: 0.5pt solid #d7dbe6; padding-top: 5pt; font: 7.5pt/1.5 "Helvetica Neue",Arial,sans-serif; color: #6b7280; }
 </style></head><body>
   <div class="head">
-    <div><div class="org">${org}</div><div class="doc">Parental / guardian consent form</div></div>
+    <div style="display:flex;gap:10pt;align-items:flex-start">
+      ${doc.logoUrl ? '<img class="logo" src="' + esc(doc.logoUrl) + '" alt="">' : ""}
+      <div><div class="org">${esc(doc.orgName) || org}</div>
+        <div class="doc">Parental / guardian consent form</div>
+        ${doc.orgAddress ? '<div class="addr">' + esc(doc.orgAddress) + "</div>" : ""}
+        ${doc.rcNumber ? '<div class="addr">RC ' + esc(doc.rcNumber) + "</div>" : ""}
+      </div>
+    </div>
     <div class="ref">Ref: ${blank ? '<span class="w" style="min-width:70pt"></span>' : esc(s.displayId || s.studentId || "—")}<br>
-      Issued: ${esc(today)}<br>Form CF-1 &middot; rev. 2026.1</div>
+      Issued: ${esc(today)}<br>Form ${esc(doc.formRef) || "CF-1"} &middot; rev. ${esc(doc.formRev) || "2026.1"}</div>
   </div>
 
   <h1>Consent to participate</h1>
-  <p class="lede">Please read every clause. Tick <b>one</b> box for each and add your initials. Clauses 1 to 3 must be
-  granted before a child can take part. Clauses 4 to 7 are optional and declining any of them will not affect your
+  <p class="lede">Please read every clause and tick <b>one</b> box for each, then add your initials.
+  Clauses 1 to 3 must be <b>granted</b> before a child can take part. Clauses 4 and 5 must be <b>answered</b> —
+  either answer is fine. The rest are optional. Declining any clause other than 1 to 3 will not affect your
   child's place, their treatment on the programme, or anything else about their participation.</p>
 
   <h2>Part A &middot; The child</h2>
@@ -1999,6 +2018,16 @@ function consentFormHtml(c, opts) {
   <h2>Part D &middot; The consents</h2>
   ${clauses}
 
+  ${doc.extraClause ? `
+    <div class="cl">
+      <div class="cl-h"><span class="cl-n">8</span><span class="cl-t">${esc(doc.extraClauseTitle) || "Additional terms"}</span>
+        <span class="tag opt">Optional</span></div>
+      <p class="cl-b">${esc(doc.extraClause)}</p>
+      <div class="cl-c"><span class="box">I <b>CONSENT</b> <i></i></span>
+        <span class="box">I <b>DO NOT</b> consent <i></i></span>
+        <span class="init">Initials <i></i></span></div>
+    </div>` : ""}
+
   <h2>Part E &middot; Declaration</h2>
   <ol class="decl">
     <li>I am the parent or person with legal parental responsibility for the child named in Part A, and I am entitled to give the consents in Part D.</li>
@@ -2009,9 +2038,11 @@ function consentFormHtml(c, opts) {
   </ol>
 
   <div class="sig">
-    <div><div class="line"></div><div class="lbl">Signature &mdash; parent / guardian</div></div>
-    <div><div class="line"></div><div class="lbl">Name in block capitals</div></div>
-    <div><div class="line"></div><div class="lbl">Date</div></div>
+    <div>
+      ${sig.image ? '<img class="sigimg" src="' + esc(sig.image) + '" alt="Signature on file">' : ""}
+      <div class="line"></div><div class="lbl">Signature &mdash; parent / guardian${sig.image ? " (captured electronically)" : ""}</div></div>
+    <div>${sig.name ? '<div style="padding-bottom:2pt">' + esc(sig.name).toUpperCase() + "</div>" : ""}<div class="line"></div><div class="lbl">Name in block capitals</div></div>
+    <div>${sig.at ? '<div style="padding-bottom:2pt">' + esc(String(sig.at).slice(0, 10)) + "</div>" : ""}<div class="line"></div><div class="lbl">Date</div></div>
   </div>
   <div class="sig">
     <div><div class="line"></div><div class="lbl">Signature &mdash; witness / programme officer</div></div>
@@ -2030,7 +2061,7 @@ function consentFormHtml(c, opts) {
   <h2>Part G &middot; Data protection notice</h2>
   <div class="notice">
     <p><b>Who holds the data.</b> ${org} is the data controller for the personal data collected on this form.
-      Contact: ${esc(prog.phone) || "the programme office"}${esc(prog.website) ? " &middot; " + esc(prog.website) : ""}.</p>
+      Contact: ${esc(doc.dpoContact) || esc(doc.phone) || esc(prog.phone) || "the programme office"}${esc(doc.website || prog.website) ? " &middot; " + esc(doc.website || prog.website) : ""}.</p>
     <p><b>What we hold.</b> Your child's name, age, sex, centre, course, photograph, attendance record and any
       health information you give in Part C; and your name, relationship, telephone number, email and identification reference.</p>
     <p><b>Why we hold it.</b> To enrol and register your child; to take attendance and account for their safety while
@@ -2043,7 +2074,7 @@ function consentFormHtml(c, opts) {
     <p><b>Who sees it.</b> Programme staff and volunteers who need it for their role. We do not sell personal data
       and we do not share it with third parties except where required by law, where necessary to protect a child,
       or with a medical practitioner treating your child in an emergency.</p>
-    <p><b>How long we keep it.</b> For the duration of your child's involvement and for six years afterwards, after
+    <p><b>How long we keep it.</b> For the duration of your child's involvement and for ${esc(String(doc.retentionYears || 6))} year(s) afterwards, after
       which it is securely destroyed &mdash; except records we are required to retain longer for safeguarding purposes.</p>
     <p><b>Your rights.</b> You may ask to see the personal data we hold about your child, ask us to correct it,
       ask us to delete it, object to how we use it, or withdraw a consent &mdash; at any time, free of charge, by
@@ -2088,6 +2119,65 @@ function printDocument(html, onFail) {
     }, 250);
     return true;
   } catch (_) { onFail && onFail(); return false; }
+}
+
+/* The parts of the consent document an organisation owns.
+   Their registered name, address and RC number, who a parent writes to about
+   their data, how long records are kept, and a clause their adviser asked for.
+   None of that should need a deploy — it is their document, not ours. The
+   logo defaults to the ID card branding so it is set in one place. */
+function ConsentDocEditor({ doc, onSaved }) {
+  const [open, setOpen] = React.useState(false);
+  const [f, setF] = React.useState(doc || {});
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => { setF(doc || {}); }, [doc]);
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const save = async () => {
+    setBusy(true);
+    try { await NGGApi.admin.summer.consentDocSave(f); toast.success("Consent document saved."); onSaved && onSaved(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600,#47506e)", marginBottom: 3 };
+  const fld = (k, label, opts = {}) => (
+    <div style={{ flex: opts.grow ? "1 1 100%" : "1 1 180px", minWidth: opts.min || 160 }}>
+      <span style={lbl}>{label}</span>
+      <input className="admin-input" style={{ width: "100%" }} type={opts.type || "text"}
+        value={f[k] == null ? "" : f[k]} onChange={e => set(k, e.target.value)} placeholder={opts.ph || ""}/>
+    </div>
+  );
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>
+        {open ? "▾" : "▸"} Edit the consent document
+      </button>
+      {open && (
+        <div style={{ border: "1px solid var(--line-cool-soft,#eef0f4)", borderRadius: 12, padding: 14, marginTop: 10, display: "grid", gap: 12 }}>
+          <span className="admin-hint" style={{ margin: 0 }}>
+            These apply to every consent form and record you print, not just this child.
+          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+            {fld("orgName", "Registered legal name", { min: 220, ph: "if different from the programme name" })}
+            {fld("rcNumber", "RC number")}
+            {fld("orgAddress", "Registered address", { grow: true })}
+            {fld("dpoContact", "Data protection contact", { min: 220, ph: "email or phone a parent can use" })}
+            {fld("retentionYears", "Keep records for (years)", { type: "number", min: 120 })}
+            {fld("logoUrl", "Logo URL", { min: 220, ph: "defaults to the ID card lockup" })}
+            {fld("formRef", "Form reference", { min: 120 })}
+            {fld("formRev", "Revision", { min: 120 })}
+            {fld("extraClauseTitle", "Extra clause — title", { grow: true, ph: "leave blank for none" })}
+          </div>
+          <div>
+            <span style={lbl}>Extra clause — wording</span>
+            <textarea className="admin-input" rows={3} value={f.extraClause || ""} onChange={e => set("extraClause", e.target.value)}
+              style={{ width: "100%", resize: "vertical" }} placeholder="Appears as clause 8 with its own consent boxes."/>
+          </div>
+          <div>
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save document settings"}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ConsentRecord({ studentId, name, onClose }) {
@@ -2149,6 +2239,8 @@ function ConsentRecord({ studentId, name, onClose }) {
               This is a template, not legal advice — have your legal adviser review the wording before you put it in
               front of a parent, and amend it for anything specific to your State or your funders.
             </span>
+
+            <ConsentDocEditor doc={c.doc || {}} onSaved={load}/>
 
             <div className="eyebrow" style={{ margin: "0 0 6px" }}>CONSENT RECORD · WHAT IS ON FILE</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 18px" }}>

@@ -17,6 +17,7 @@ if ($method === 'GET') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
     $map = [
+        'consentDoc'   => 'admin.summer.consentDoc.save',
         'mint'         => 'admin.summer.qr.mint',
         'qr_void'      => 'admin.summer.qr.void',
         'qr_reassign'  => 'admin.summer.qr.reassign',

@@ -23,8 +23,14 @@ const CONSENT_TYPES = [
     'participation' => ['p' => 0, 'label' => 'Program participation'],
     'medical'       => ['p' => 0, 'label' => 'Emergency medical care'],
     'data'          => ['p' => 0, 'label' => 'Data processing (NDPR)'],
-    'media'         => ['p' => 1, 'label' => 'Photos & media'],
-    'site_visibility' => ['p' => 1, 'label' => 'Feature on our website'],
+    /* `mustAnswer` = the parent has to make an explicit choice; both answers
+     * are accepted. Not the same as p=0, which REFUSES the registration until
+     * the consent is granted. Conditioning a child's place on permission to
+     * publish their photograph would make that consent worthless — it is not
+     * freely given if refusing costs them their place — so these are required
+     * to be ANSWERED, never required to be granted. */
+    'media'         => ['p' => 1, 'mustAnswer' => true, 'label' => 'Photos & media'],
+    'site_visibility' => ['p' => 1, 'mustAnswer' => true, 'label' => 'Feature on our website'],
     'trips'         => ['p' => 2, 'label' => 'Off-site activities'],
     'comms'         => ['p' => 2, 'label' => 'Program updates by SMS/email'],
 ];
@@ -1047,17 +1053,44 @@ function parent_verify_submit(array $p): array {
             return ['ok' => false, 'error' => 'consent_required', 'missing' => $type];
         }
     }
+    /* And the must-answer ones need a decision either way. Previously an
+     * unticked box was indistinguishable from an unread one — both landed as
+     * 'declined' — so a parent who never noticed the photography clause was
+     * recorded as having refused it. Requiring the key to be PRESENT makes
+     * "no" a choice the parent made rather than one made by their scrolling. */
+    foreach (CONSENT_TYPES as $type => $meta) {
+        if (!empty($meta['mustAnswer']) && !array_key_exists($type, $consents)) {
+            return ['ok' => false, 'error' => 'consent_answer_required', 'missing' => $type];
+        }
+    }
     $actor = substr(trim((string)($p['actorName'] ?? $s['guardianName'] ?? '')), 0, 160);
+
+    /* The signature the parent drew, if the form captured one.
+     *
+     * Accepted only as an inline PNG data URI produced by the signature pad.
+     * A remote URL would let a submission point the consent record at any
+     * image on the internet — including one that changes after the fact,
+     * which is precisely what a signature must not do. Bounded because this
+     * is written straight into the row: a generous pad drawing is well under
+     * 100KB and anything larger is not a signature. */
+    $sig = (string)($p['signature'] ?? '');
+    if ($sig !== '' && (!preg_match('#^data:image/(png|jpeg);base64,[A-Za-z0-9+/=]+$#', $sig) || strlen($sig) > 400000)) {
+        $sig = '';
+    }
+
     foreach (CONSENT_TYPES as $type => $meta) {
         db_insert('consents', ['studentId' => $s['studentId'], 'type' => $type,
             'status' => !empty($consents[$type]) ? 'granted' : 'declined',
-            'method' => 'parent_link', 'actorName' => $actor, 'createdAt' => now_iso()]);
+            'method' => 'parent_link', 'actorName' => $actor,
+            'signatureUrl' => $sig, 'createdAt' => now_iso()]);
     }
 
     // Consent recorded → mark verified. ID/QR issuance may still be gated on
     // photo approval (see registration_issue_id); whichever finishes last —
     // consent here or the editor approving the photo — triggers the ID.
-    db_update('summer_students', ['regStatus' => 'verified', 'verifiedAt' => now_iso(), 'updatedAt' => now_iso()], ['studentId' => $s['studentId']]);
+    db_update('summer_students', ['regStatus' => 'verified', 'verifiedAt' => now_iso(), 'updatedAt' => now_iso()]
+        + ($sig !== '' ? ['consentSignatureUrl' => $sig, 'consentSignedName' => $actor, 'consentSignedAt' => now_iso()] : []),
+        ['studentId' => $s['studentId']]);
     $issue = registration_issue_id($s['studentId']);
 
     $feedback = substr(trim((string)($p['feedback'] ?? '')), 0, 1000);
@@ -1795,6 +1828,52 @@ function admin_cards_data(array $p): array {
 // Program/branding identity block for the ID cards — admin-editable via the
 // 'idcard' setting (see admin.settings). Logos are configurable URLs so a wrong
 // or missing mark can be corrected without a code change.
+/**
+ * The editable parts of the parental consent document.
+ *
+ * The form was entirely hardcoded, which is fine until an organisation needs
+ * its registered name on a document a parent signs, its own retention period,
+ * or a clause its lawyer asked for. None of that should require a deploy —
+ * it is their document, not ours.
+ *
+ * Branding falls back to the ID card settings so there is one place to change
+ * a logo or a phone number, and the consent form picks it up.
+ */
+function consent_doc_settings(): array {
+    $card = idcard_program();
+    $cfg = setting_get('consent_doc');
+    $c = is_array($cfg) ? $cfg : [];
+    $c += [
+        'orgName'      => '',                                  // registered legal name, if different
+        'orgAddress'   => '',
+        'rcNumber'     => '',                                  // CAC registration
+        'dpoContact'   => '',                                  // who a parent writes to about their data
+        'retentionYears' => 6,
+        'formRef'      => 'CF-1',
+        'formRev'      => '2026.1',
+        'extraClause'  => '',                                  // an additional clause, if their adviser adds one
+        'extraClauseTitle' => '',
+        'logoUrl'      => (string)($card['logoLockup'] ?? ''),
+        'website'      => (string)($card['website'] ?? ''),
+        'phone'        => (string)($card['phone'] ?? ''),
+    ];
+    $c['retentionYears'] = max(1, min(50, (int)$c['retentionYears']));
+    return $c;
+}
+
+function consent_doc_save(array $in, string $by): array {
+    $cur = consent_doc_settings();
+    $out = $cur;
+    foreach (['orgName' => 160, 'orgAddress' => 300, 'rcNumber' => 40, 'dpoContact' => 200,
+              'formRef' => 20, 'formRev' => 20, 'extraClauseTitle' => 120, 'extraClause' => 2000,
+              'logoUrl' => 512, 'website' => 160, 'phone' => 60] as $k => $max) {
+        if (array_key_exists($k, $in)) $out[$k] = substr(trim((string)$in[$k]), 0, $max);
+    }
+    if (array_key_exists('retentionYears', $in)) $out['retentionYears'] = max(1, min(50, (int)$in['retentionYears']));
+    setting_set('consent_doc', $out, $by);
+    return $out;
+}
+
 function idcard_program(): array {
     $cfg = setting_get('idcard');
     $p = is_array($cfg) ? $cfg : [];

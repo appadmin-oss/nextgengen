@@ -1028,3 +1028,11 @@ UPDATE summer_students
    SET lastName = TRIM(REPLACE(TRIM(fullName), firstName, ''))
  WHERE lastName = '' AND firstName != '' AND TRIM(fullName) != firstName;
 INSERT INTO schema_version (version) VALUES (60) ON DUPLICATE KEY UPDATE version = version;
+
+-- 61: the parent's actual signature. A consent record with no signature is a
+-- note that someone ticked a box; these make the printed record evidence.
+ALTER TABLE consents ADD COLUMN signatureUrl TEXT;
+ALTER TABLE summer_students ADD COLUMN consentSignatureUrl TEXT;
+ALTER TABLE summer_students ADD COLUMN consentSignedName VARCHAR(160) DEFAULT '';
+ALTER TABLE summer_students ADD COLUMN consentSignedAt VARCHAR(40) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (61) ON DUPLICATE KEY UPDATE version = version;

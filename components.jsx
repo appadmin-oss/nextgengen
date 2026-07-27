@@ -1853,9 +1853,117 @@ function A11yToggle({ label, desc, on, onChange }) {
   );
 }
 
+
+/* ── Signature pad ───────────────────────────────────────────────────────────
+   Draws to a canvas with pointer events, exports a trimmed PNG data URI.
+
+   A consent record with no signature is a note saying somebody ticked a box.
+   This is what makes the printed document evidence: the mark the parent
+   actually made, captured at the moment they made it.
+
+   Pointer events rather than mouse+touch: one code path covers a finger on a
+   phone at a registration desk, a stylus, and a mouse, and it does not fight
+   the browser over which fired first. `touch-action: none` stops the page
+   scrolling out from under someone mid-signature, which is the single most
+   common way these are unusable on a phone.
+
+   The canvas is sized to its own layout box times devicePixelRatio, so a
+   signature drawn on a phone is not a blurry upscale when it reaches A4. */
+function SignaturePad({ value, onChange, height = 150, label = "Signature" }) {
+  const wrapRef = React.useRef(null);
+  const canvasRef = React.useRef(null);
+  const drawing = React.useRef(false);
+  const dirty = React.useRef(false);
+  const last = React.useRef(null);
+
+  const ctx2d = () => {
+    const c = canvasRef.current;
+    return c ? c.getContext("2d") : null;
+  };
+
+  // Size the backing store to the CSS box. Re-run on resize, because a phone
+  // rotating mid-signature would otherwise stretch what was already drawn.
+  React.useEffect(() => {
+    const fit = () => {
+      const c = canvasRef.current, wrap = wrapRef.current;
+      if (!c || !wrap) return;
+      const dpr = Math.min(3, window.devicePixelRatio || 1);
+      const w = Math.max(120, wrap.clientWidth);
+      // Preserve what is already there across a resize.
+      const prev = dirty.current ? c.toDataURL("image/png") : "";
+      c.width = Math.round(w * dpr);
+      c.height = Math.round(height * dpr);
+      c.style.width = w + "px";
+      c.style.height = height + "px";
+      const g = c.getContext("2d");
+      g.scale(dpr, dpr);
+      g.lineWidth = 2.2; g.lineCap = "round"; g.lineJoin = "round"; g.strokeStyle = "#11131a";
+      if (prev) { const im = new Image(); im.onload = () => g.drawImage(im, 0, 0, w, height); im.src = prev; }
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [height]);
+
+  const pos = (e) => {
+    const r = canvasRef.current.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  const down = (e) => {
+    e.preventDefault();
+    canvasRef.current.setPointerCapture && canvasRef.current.setPointerCapture(e.pointerId);
+    drawing.current = true; last.current = pos(e);
+  };
+  const move = (e) => {
+    if (!drawing.current) return;
+    e.preventDefault();
+    const g = ctx2d(); if (!g) return;
+    const p = pos(e);
+    g.beginPath(); g.moveTo(last.current.x, last.current.y); g.lineTo(p.x, p.y); g.stroke();
+    last.current = p; dirty.current = true;
+  };
+  const up = () => {
+    if (!drawing.current) return;
+    drawing.current = false;
+    // Export on release rather than per-stroke: a data URL per pointermove
+    // would re-encode the whole canvas hundreds of times while signing.
+    if (dirty.current && onChange) onChange(canvasRef.current.toDataURL("image/png"));
+  };
+  const clear = () => {
+    const c = canvasRef.current, g = ctx2d();
+    if (!c || !g) return;
+    g.clearRect(0, 0, c.width, c.height);
+    dirty.current = false;
+    onChange && onChange("");
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: "#5a6488" }}>{label}</span>
+        <button type="button" onClick={clear} style={{ background: "none", border: "none", padding: 0, fontSize: 12.5, color: "#8a8a80", textDecoration: "underline", cursor: "pointer" }}>Clear</button>
+      </div>
+      <div ref={wrapRef} style={{ position: "relative", border: "1px dashed #c9cbd6", borderRadius: 12, background: "#fff", overflow: "hidden" }}>
+        <canvas
+          ref={canvasRef}
+          aria-label={label}
+          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} onPointerCancel={up}
+          style={{ display: "block", touchAction: "none", cursor: "crosshair" }}
+        />
+        {!value && (
+          <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none", color: "#b9bcc7", fontSize: 13.5 }}>
+            Sign here with your finger or mouse
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 Object.assign(window, {
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart,
-  Uploader, AccessibilityWidget, PhotoEditor, PhotoCapture, ImageLightbox,
+  Uploader, AccessibilityWidget, PhotoEditor, PhotoCapture, ImageLightbox, SignaturePad,
 });

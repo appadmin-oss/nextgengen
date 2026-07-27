@@ -2285,6 +2285,7 @@ function ParentVerifyPage() {
   const [consents, setConsents] = React.useState({});
   const [actorName, setActorName] = React.useState("");
   const [feedback, setFeedback] = React.useState("");
+  const [signature, setSignature] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
@@ -2296,8 +2297,15 @@ function ParentVerifyPage() {
 
   const types = (ctx && ctx.consentTypes) || {};
   const p0 = Object.keys(types).filter(k => types[k].p === 0);
-  const optional = Object.keys(types).filter(k => types[k].p > 0);
+  /* Three groups, not two. `mustAnswer` clauses are optional to GRANT but
+     required to ANSWER — a checkbox cannot tell "no" apart from "did not
+     read", and an untouched box used to be recorded as a refusal the parent
+     never actually made. These get an explicit Yes / No. */
+  const mustAnswer = Object.keys(types).filter(k => types[k].p > 0 && types[k].mustAnswer);
+  const optional = Object.keys(types).filter(k => types[k].p > 0 && !types[k].mustAnswer);
   const p0Done = p0.every(k => consents[k]);
+  const answered = mustAnswer.every(k => Object.prototype.hasOwnProperty.call(consents, k));
+  const ready = p0Done && answered && actorName.trim().length >= 2;
   const CONSENT_COPY = {
     participation: "may attend all program sessions and activities.",
     medical: "staff may seek medical help for them in an emergency.",
@@ -2311,10 +2319,12 @@ function ParentVerifyPage() {
   const submit = async () => {
     setBusy(true); setErr("");
     try {
-      await NGGApi.public.verify.submit(t, consents, actorName.trim(), feedback.trim());
+      await NGGApi.public.verify.submit(t, consents, actorName.trim(), feedback.trim(), signature);
       setState("success");
     } catch (e) {
-      setErr(e.code === "consent_required" ? ("Please tick all " + p0.length + " required boxes — the registration can't complete without them.") : "Couldn't save just now — check your connection and try again. Nothing you entered was lost.");
+      setErr(e.code === "consent_required" ? ("Please tick all " + p0.length + " required boxes — the registration can't complete without them.")
+        : e.code === "consent_answer_required" ? "Please answer Yes or No to every question above — both answers are fine, but we need your decision on each."
+        : "Couldn't save just now — check your connection and try again. Nothing you entered was lost.");
     } finally { setBusy(false); }
   };
 
@@ -2352,7 +2362,30 @@ function ParentVerifyPage() {
         <span style={{ fontSize: 14, lineHeight: 1.5 }}><b>{types[k].label}</b> — {first} {CONSENT_COPY[k] || ""}</span>
       </label>
     ))}
-    <div style={{ fontSize: 11, letterSpacing: ".14em", fontWeight: 700, color: "#8a8a80", margin: "18px 0 8px", textTransform: "uppercase" }}>Optional — your choice either way</div>
+    {mustAnswer.length > 0 && <>
+      <div style={{ fontSize: 11, letterSpacing: ".14em", fontWeight: 700, color: "#8a8a80", margin: "18px 0 4px", textTransform: "uppercase" }}>Please answer — either way is fine</div>
+      <p style={{ fontSize: 12.5, color: "#8a8a80", margin: "0 0 8px", lineHeight: 1.5 }}>
+        Saying no to these changes nothing about {first}'s place on the programme. We just need your decision on each.
+      </p>
+      {mustAnswer.map(k => {
+        const v = consents[k];
+        const set = (val) => setConsents(c => ({ ...c, [k]: val }));
+        const pill = (on, tone) => ({ flex: 1, padding: "10px 12px", borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: "pointer",
+          border: "1.5px solid " + (on ? (tone === "yes" ? "#7a9c1e" : "#b03535") : "#dcdcd4"),
+          background: on ? (tone === "yes" ? "#eef7d8" : "#fdeceb") : "#fff",
+          color: on ? (tone === "yes" ? "#3d5200" : "#7f1d1d") : "#5a5a52" });
+        return (
+          <div key={k} style={{ ...card, padding: 14, marginBottom: 8, borderColor: v === undefined ? "#e8c98a" : "#e6e6e0" }}>
+            <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 10 }}><b>{types[k].label}</b> — {first} {CONSENT_COPY[k] || ""}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" onClick={() => set(true)} style={pill(v === true, "yes")}>Yes</button>
+              <button type="button" onClick={() => set(false)} style={pill(v === false, "no")}>No</button>
+            </div>
+          </div>
+        );
+      })}
+    </>}
+    {optional.length > 0 && <div style={{ fontSize: 11, letterSpacing: ".14em", fontWeight: 700, color: "#8a8a80", margin: "18px 0 8px", textTransform: "uppercase" }}>Optional — your choice either way</div>}
     {optional.map(k => (
       <label key={k} style={{ ...card, display: "flex", gap: 12, alignItems: "flex-start", padding: 14, marginBottom: 8, cursor: "pointer" }}>
         <input type="checkbox" checked={!!consents[k]} onChange={e => setConsents(c => ({ ...c, [k]: e.target.checked }))} style={{ width: 19, height: 19, marginTop: 1, accentColor: "#7a9c1e" }}/>
@@ -2365,12 +2398,27 @@ function ParentVerifyPage() {
       style={{ width: "100%", padding: "13px 15px", borderRadius: 12, border: "1px solid #dcdcd4", fontSize: 16, background: "#fff" }}/>
     <textarea value={feedback} onChange={e => setFeedback(e.target.value)} placeholder={"Anything we should know about " + first + "? (allergies, pickup, concerns — optional)"} maxLength={1000}
       style={{ width: "100%", marginTop: 8, minHeight: 84, padding: "13px 15px", borderRadius: 12, border: "1px solid #dcdcd4", fontSize: 15, background: "#fff", resize: "vertical", fontFamily: "inherit" }}/>
+    {/* The signature is what turns this from a record of ticked boxes into a
+        document that was signed. Optional on purpose — a parent on a cracked
+        phone screen should not be blocked from consenting — but captured
+        whenever it can be, and printed on the record when it is. */}
+    <div style={{ ...card, padding: 14, marginTop: 12 }}>
+      <SignaturePad value={signature} onChange={setSignature} height={140} label={"Sign below (optional)"}/>
+      <p style={{ fontSize: 12, color: "#9a9a90", margin: "8px 0 0", lineHeight: 1.5 }}>
+        Your signature is stored with this consent record and appears on the printed copy.
+      </p>
+    </div>
+
     {err && <p style={{ color: "#b03535", fontSize: 13.5, margin: "10px 0 0" }}>{err}</p>}
-    {!busy && !err && (!p0Done || actorName.trim().length < 2) && (
-      <p style={{ color: "#8a7a2e", fontSize: 13, margin: "10px 0 0" }}>{!p0Done ? "Tick all the required boxes above to confirm." : "Add your name above to confirm."}</p>
+    {!busy && !err && !ready && (
+      <p style={{ color: "#8a7a2e", fontSize: 13, margin: "10px 0 0" }}>
+        {!p0Done ? "Tick all the required boxes above to confirm."
+          : !answered ? "Answer Yes or No to each question above — both answers are fine."
+          : "Add your name above to confirm."}
+      </p>
     )}
-    <button onClick={submit} disabled={!p0Done || busy || actorName.trim().length < 2}
-      style={{ width: "100%", marginTop: 14, padding: 16, borderRadius: 14, border: "none", cursor: p0Done ? "pointer" : "default", fontWeight: 800, fontSize: 16, background: p0Done ? "#c9f24e" : "#e8e8e0", color: p0Done ? "#243300" : "#9a9a90" }}>
+    <button onClick={submit} disabled={!ready || busy}
+      style={{ width: "100%", marginTop: 14, padding: 16, borderRadius: 14, border: "none", cursor: ready ? "pointer" : "default", fontWeight: 800, fontSize: 16, background: ready ? "#c9f24e" : "#e8e8e0", color: ready ? "#243300" : "#9a9a90" }}>
       {busy ? "Saving…" : "Confirm & consent"}
     </button>
     <p style={{ textAlign: "center", fontSize: 12, color: "#9a9a90", lineHeight: 1.5, marginTop: 14 }}>Read-only for us, revocable by you — contact the program team any time to change a choice.</p>

@@ -630,8 +630,16 @@ const STATUS = {
         guardian: { name: 'Mrs "Nkechi" Okonkwo', phone: '08031112222', email: 'n@example.org' },
         programme: { name: 'Next Generation Genius', website: 'ngg.example.org', phone: '0800-000' },
       };
+      // Base document: the seven standing clauses, no organisation extras.
+      c.doc = { orgName: 'Afrovanguard Initiative Ltd', rcNumber: 'RC-999', orgAddress: '12 Akowonjo Rd',
+                dpoContact: 'privacy@example.org', retentionYears: 7, formRef: 'CF-9', formRev: '9.9',
+                logoUrl: '/assets/logo.png', website: 'example.org', phone: '0800' };
+      c.signature = { image: 'data:image/png;base64,AAAA', name: 'Mrs Okonkwo', at: '2026-07-27T10:00:00Z' };
       const filled = window.consentFormHtml(c);
       const blank = window.consentFormHtml(c, { blank: true });
+      // …and the same document with a clause the organisation added.
+      const withExtra = window.consentFormHtml(
+        Object.assign({}, c, { doc: Object.assign({}, c.doc, { extraClauseTitle: 'Transport', extraClause: 'Bus fare is covered.' }) }));
       const count = (h, re) => (h.match(re) || []).length;
       return {
         clauses: count(filled, /class="cl-t"/g),
@@ -655,12 +663,30 @@ const STATUS = {
         blankClauses: count(blank, /class="cl-t"/g),
         blankHasName: blank.includes('Adaeze'),
         blankHasRules: count(blank, /class="w"/g) > 10,
+        // Logo, editable document settings, signature, must-answer tags.
+        logo: /class="logo" src="\/assets\/logo\.png"/.test(filled),
+        orgName: filled.includes('Afrovanguard Initiative Ltd'),
+        rc: filled.includes('RC-999'),
+        formRef: /Form CF-9 &middot; rev\. 9\.9/.test(filled),
+        retention: /for 7 year\(s\) afterwards/.test(filled),
+        dpo: filled.includes('privacy@example.org'),
+        extraClause: withExtra.includes('Transport') && withExtra.includes('Bus fare is covered.'),
+        clausesWithExtra: count(withExtra, /class="cl-t"/g),
+        answerRequired: count(filled, /class="tag ans"/g),
+        optionalTags: count(filled, /class="tag opt"/g),
+        sigImage: /<img class="sigimg" src="data:image\/png;base64,AAAA"/.test(filled),
+        sigName: filled.includes('MRS OKONKWO'),
+        sigDate: filled.includes('2026-07-27'),
+        // The blank pad must NOT carry a specific parent's signature.
+        blankSig: /<img class="sigimg"/.test(blank),
       };
     });
     await cf.close();
 
     ok('the consent form carries all seven clauses (' + form.clauses + ')', form.clauses === 7);
-    ok('…three marked required, four optional', form.required === 3 && form.optional === 4);
+    // 3 required to grant + 2 required to answer + 2 genuinely optional.
+    ok('…three required to grant, two to answer, two optional',
+       form.required === 3 && form.answerRequired === 2 && form.optional === 2);
     ok('…each with consent / do-not-consent boxes (' + form.boxes + ')', form.boxes === 14);
     ok('…prefilled with the child on file', form.hasName);
     ok('…with markup in a name escaped, not rendered', form.escaped);
@@ -675,6 +701,23 @@ const STATUS = {
     ok('the blank form keeps every clause', form.blankClauses === 7);
     ok('…drops the child’s details', !form.blankHasName);
     ok('…and leaves ruled lines to write on', form.blankHasRules);
+    ok('…and never carries a parent\'s captured signature', !form.blankSig);
+
+    // Logo + the parts an organisation owns.
+    ok('the form carries the programme logo', form.logo);
+    ok('…the registered legal name and RC number', form.orgName && form.rc);
+    ok('…the admin-set form reference and revision', form.formRef);
+    ok('…the admin-set retention period, not a hardcoded one', form.retention);
+    ok('…the data protection contact a parent can write to', form.dpo);
+    ok('…and an extra clause the organisation added (now 8)', form.extraClause && form.clausesWithExtra === 8);
+
+    // Clauses 4 and 5 must be ANSWERED, not granted.
+    ok('clauses 4 and 5 are marked answer-required, not optional', form.answerRequired === 2);
+    ok('…leaving off-site activities and updates genuinely optional', form.optionalTags === 2);
+
+    // A captured signature is what makes the printed record evidence.
+    ok('a captured signature is printed on the record', form.sigImage);
+    ok('…with the name signed under and the date', form.sigName && form.sigDate);
 
     // ── ID Card Studio: mounts with its print controls intact ──────────────
     const studio = await browser.newPage();

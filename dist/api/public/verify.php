@@ -21,6 +21,9 @@ if ($method === 'GET') {
         'consents' => is_array($b['consents'] ?? null) ? $b['consents'] : [],
         'actorName' => (string)($b['actorName'] ?? ''),
         'feedback' => (string)($b['feedback'] ?? ''),
+        // The drawn signature, as an inline PNG data URI. Validated and
+        // bounded in parent_verify_submit(); passed through untouched here.
+        'signature' => (string)($b['signature'] ?? ''),
     ]);
 } else {
     json_error('method_not_allowed', 405);
