@@ -18,6 +18,7 @@
          KIOSK_PORT (default 8199).
    ============================================================================ */
 const { execSync, spawn } = require('child_process');
+const { waitForServer } = require('./_serve');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -91,7 +92,7 @@ function cleanup() {
 
   // 3) Serve the repo (PHP executes /api/*.php; SPA fallback via router below).
   server = spawn('php', ['-S', `127.0.0.1:${PORT}`, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
-  await new Promise(r => setTimeout(r, 1200));
+  await waitForServer(BASE);
 
   const chromium = loadChromium();
   const launch = {};

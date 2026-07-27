@@ -19,6 +19,7 @@
    ========================================================================== */
 const fs = require('fs'), path = require('path');
 const { spawn } = require('child_process');
+const { waitForServer } = require('./_serve');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = process.env.BOARDS_PORT || 8198;
@@ -314,7 +315,7 @@ const STATUS = {
     '<!doctype html><html><body><script src="/dist/api-client.js"></script></body></html>');
 
   const server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
-  await new Promise(r => setTimeout(r, 1000));
+  await waitForServer(BASE);
   let pass = 0, fail = 0;
   const ok = (l, c) => { c ? pass++ : (fail++, console.error('  ✗ ' + l)); };
   let browser;
