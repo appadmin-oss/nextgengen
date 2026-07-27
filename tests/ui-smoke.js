@@ -77,6 +77,17 @@ const STATUS = {
   },
 };
 
+/* Club leaderboard: real rows carrying stars alongside XP. Two members only,
+   which used to be BELOW the three-row threshold that silently swapped in
+   twelve invented people from data.js. */
+const LEADERBOARD = {
+  leaderboard: [
+    { memberId: 'NGG-1', first: 'Adaeze', initial: 'O.', centre: 'Ijaiye', xp: 2140, level: 7, streak: 21, week: 8, stars: 37, starsThisWeek: 6 },
+    { memberId: 'NGG-2', first: 'Tunde', initial: 'B.', centre: 'Egbeda', xp: 2980, level: 9, streak: 34, week: 10, stars: 12, starsThisWeek: 2 },
+  ],
+  total: 2,
+};
+
 (async () => {
   const chromium = loadChromium();
   if (!chromium) { console.log('⏭  boards: skipped (playwright not installed)'); process.exit(0); }
@@ -121,6 +132,14 @@ const STATUS = {
           (stripped.status.byCentre || []).forEach(function (c) { delete c.registered; delete c.pending; delete c.capacity; delete c.fill; });
         }
         return Promise.resolve(stripped);
+      }
+      // ?empty=1 makes every board return an empty result set, so the
+      // no-data states can be driven instead of only imagined.
+      if (window.__mode === 'ok' && new URLSearchParams(location.search).get('empty') === '1') {
+        var e = JSON.parse(JSON.stringify(payload));
+        if (e.leaderboard) { e.leaderboard = []; e.total = 0; }
+        if (e.status) { e.status.members = []; }
+        return Promise.resolve(e);
       }
       if (window.__mode === 'ok') return Promise.resolve(payload);
       if (window.__mode === 'hang') return new Promise(function (res) { pending.push(res); });
@@ -177,6 +196,7 @@ const STATUS = {
     }) }),
     public: deep({
     status: stub('status', ${JSON.stringify(STATUS)}),
+    leaderboard: stub('leaderboard', ${JSON.stringify(LEADERBOARD)}),
     volunteerStatus: stub('volunteerStatus', ${JSON.stringify(STATUS)}),
   }) });
   window.__errors = [];
@@ -189,7 +209,8 @@ const STATUS = {
             : b === 'policy' ? 'SummerPolicy' : b === 'att' ? 'SummerAttendance' : b === 'kiosk' ? 'SummerKiosk'
             : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : b === 'centre' ? 'CentreDetail'
             : b === 'builder' ? 'SummerFormBuilder' : b === 'gatereg' ? 'GateRegister'
-            : b === 'roster' ? 'SummerRoster' : 'StatusPage';
+            : b === 'roster' ? 'SummerRoster'
+            : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
   if (b === 'photo') {
     var pc = document.createElement('canvas'); pc.width = 800; pc.height = 1000;
@@ -614,6 +635,82 @@ const STATUS = {
     ok('the board states the consent rule where copy cannot override it', board.note);
     ok('the consent-gated leaderboard renders with no script error', lbErrs.length === 0);
     if (lbErrs.length) console.error('      ', lbErrs.slice(0, 3).join(' | '));
+
+    /* ── /summer and the Club run on real records, never invented ones ────
+     * The summer gallery rendered twelve fictional teenagers from data.js
+     * captioned "not real students", and the Club board silently swapped the
+     * same twelve in whenever fewer than three real members came back. On a
+     * live programme's own site that is the wrong thing to publish: it fills
+     * the page a parent reads with children who do not exist, and it hides
+     * that the real ones were one call away. An empty board is information;
+     * a fabricated one is not. */
+    const sp = await browser.newPage();
+    const spErrs = [];
+    sp.on('pageerror', e => spErrs.push(String(e.message)));
+    await sp.goto(BASE + '/tests/_boards_fixture.html?board=summer&mode=ok', { waitUntil: 'networkidle' });
+    await sp.waitForTimeout(700);
+    const summerTxt = await sp.evaluate(() => document.body.innerText);
+    const summerStars = await sp.evaluate(() =>
+      Array.from(document.querySelectorAll('.member-card')).map(c => c.innerText));
+    await sp.close();
+
+    ok('/summer mounts with no script error', spErrs.length === 0);
+    if (spErrs.length) console.error('       ', spErrs.slice(0, 3).join(' | '));
+    ok('/summer shows the real cohort, not the demo roster',
+       summerStars.length === 3 && !/Future Music Producer|Tech Explorer/.test(summerTxt));
+    ok('…naming the consented student', /Adaeze Okonkwo/.test(summerTxt));
+    ok('…and the unconsented one only by handle', /@?stonelion/.test(summerTxt) && !/Okonkwo.*stonelion/.test(''));
+    ok('…with stars on the card', /★\s*5/.test(summerTxt) || summerStars.some(c => /star/i.test(c)));
+    ok('…and faculties from the live register', /Tech/.test(summerTxt) && /Arts/.test(summerTxt));
+
+    /* An empty register on /summer. This is the state a fallback fires in, so
+       it is the only state that can prove there isn't one — with three real
+       students loaded, a "use demo when empty" branch never runs and the test
+       passes either way. */
+    const spe = await browser.newPage();
+    const speErrs = [];
+    spe.on('pageerror', e => speErrs.push(String(e.message)));
+    await spe.goto(BASE + '/tests/_boards_fixture.html?board=summer&mode=ok&empty=1', { waitUntil: 'networkidle' });
+    await spe.waitForTimeout(700);
+    const summerEmpty = await spe.evaluate(() => document.body.innerText);
+    const summerEmptyCards = await spe.evaluate(() => document.querySelectorAll('.member-card').length);
+    await spe.close();
+    ok('/summer with nobody enrolled renders instead of crashing', speErrs.length === 0);
+    ok('…shows no student cards at all', summerEmptyCards === 0);
+    ok('…and says the class is not enrolled rather than inventing one',
+       /has not been enrolled yet/.test(summerEmpty) && !/Kwame|Nneka|Hadiza|Chinedu/.test(summerEmpty));
+
+    // The Club board with only two real members: it must show two, not twelve.
+    const cp = await browser.newPage();
+    const cpErrs = [];
+    cp.on('pageerror', e => cpErrs.push(String(e.message)));
+    await cp.goto(BASE + '/tests/_boards_fixture.html?board=club&mode=ok', { waitUntil: 'networkidle' });
+    await cp.waitForTimeout(700);
+    const clubTxt = await cp.evaluate(() => document.body.innerText);
+    await cp.close();
+
+    ok('the Club page mounts with no script error', cpErrs.length === 0);
+    if (cpErrs.length) console.error('       ', cpErrs.slice(0, 3).join(' | '));
+    ok('two real members are NOT replaced by the twelve-strong demo roster',
+       /MEMBER DIRECTORY · 2/.test(clubTxt) && !/Kwame|Nneka|Hadiza|Chinedu/.test(clubTxt));
+    ok('…and no invented statistics are printed as fact',
+       !/Earned by \d+%/i.test(clubTxt) && !/126 \/ 164/.test(clubTxt));
+    ok('…the leaderboard names them', /Adaeze O\./.test(clubTxt) && /Tunde B\./.test(clubTxt));
+    ok('…and shows stars beside XP on the featured member', /★ 12/.test(clubTxt) && /2,980 XP/.test(clubTxt));
+
+    // An empty programme must render an honest empty state, not crash — the
+    // featured member used to be top[0] dereferenced unconditionally.
+    const ce2 = await browser.newPage();
+    const ce2Errs = [];
+    ce2.on('pageerror', e => ce2Errs.push(String(e.message)));
+    await ce2.goto(BASE + '/tests/_boards_fixture.html?board=club&mode=ok&empty=1', { waitUntil: 'networkidle' });
+    await ce2.waitForTimeout(600);
+    const emptyTxt = await ce2.evaluate(() => document.body.innerText);
+    await ce2.close();
+    ok('an empty cohort renders instead of crashing the page', ce2Errs.length === 0);
+    if (ce2Errs.length) console.error('       ', ce2Errs.slice(0, 3).join(' | '));
+    ok('…and says so honestly rather than inventing members',
+       /No Club members yet/.test(emptyTxt) && !/Kwame|Nneka|Hadiza/.test(emptyTxt));
 
     /* ── The parental consent FORM ─────────────────────────────────────────
      * A legal instrument a parent signs, generated client-side, so nothing
@@ -1062,7 +1159,20 @@ const STATUS = {
       const ceErrs = [];
       ce.on('pageerror', e => ceErrs.push(String(e.message)));
       await ce.goto(BASE + '/tests/_boards_fixture.html?board=centre&mode=ok&css=1' + q, { waitUntil: 'networkidle' });
-      await ce.waitForTimeout(600);
+      /* Wait for the stylesheet to APPLY, not merely to arrive.
+       *
+       * This fixture injects the real CSS with createElement('link'), and
+       * 'networkidle' can fire before the styles are in effect — the window
+       * widens under load, which is why this suite went flaky only when it
+       * had a dozen other pages behind it. Unstyled, .centre-hero-img has no
+       * height rule at all, so every coordinate measured below describes a
+       * completely different layout. `position: relative` comes from
+       * styles.css, so it is a precise signal that the sheet is live. */
+      await ce.waitForFunction(() => {
+        const i = document.querySelector('.centre-hero-img');
+        return !!i && getComputedStyle(i).position === 'relative';
+      }, null, { timeout: 15000 });
+      await ce.waitForTimeout(300);
       // elementFromPoint works in viewport coordinates, so the seam has to be
       // on screen before we can ask what is painted there.
       await ce.evaluate(() => {
@@ -1071,7 +1181,7 @@ const STATUS = {
         if (b) b.scrollIntoView({ block: 'center' });
       });
       await ce.waitForTimeout(150);
-      const geo = await ce.evaluate(() => {
+      const geo = await ce.evaluate(async () => {
         const img = document.querySelector('.centre-hero-img');
         if (!img) return null;
         const bands = ['.centre-hero-cta', '.centre-stats']
@@ -1086,12 +1196,33 @@ const STATUS = {
          * the fold. elementFromPoint is viewport-relative and returns null
          * for a y outside it — which is indistinguishable from "the model is
          * painting on top", and failed this assertion at random on a layout
-         * that was perfectly correct. Nudge until the point is comfortably
-         * inside, then measure. */
-        for (let n = 0; n < 4; n++) {
+         * that was perfectly correct.
+         *
+         * Two things this has to get right, and the first version got neither:
+         *
+         *  - Scroll to INCLUDE the point, not to centre it. The point can sit
+         *    close enough to the document end that the viewport cannot centre
+         *    it however far it scrolls, and aiming for the centre then never
+         *    converges — which is why the flake came back.
+         *  - Only measure once the hero image has actually loaded. It is the
+         *    tallest thing on the page; if it decodes after the scroll, every
+         *    coordinate read before that is stale. */
+        if (img.tagName === 'IMG' && !img.complete) {
+          await new Promise(res => {
+            const done = () => res();
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', done, { once: true });
+            setTimeout(done, 3000);
+          });
+        }
+        for (let n = 0; n < 6; n++) {
           const y = img.getBoundingClientRect().bottom - 4;
           if (y >= 8 && y <= window.innerHeight - 8) break;
-          window.scrollBy(0, Math.round(y - window.innerHeight / 2));
+          // Aim for 70% down the viewport: comfortably inside, and reachable
+          // even when the point is near the bottom of the document.
+          const before = window.scrollY;
+          window.scrollBy(0, Math.round(y - window.innerHeight * 0.7));
+          if (window.scrollY === before) break;   // cannot scroll further
         }
         const i = img.getBoundingClientRect();
         const b = band.getBoundingClientRect();

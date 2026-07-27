@@ -110,16 +110,38 @@ function public_leaderboard(array $p): array {
                     FROM members m LEFT JOIN member_stats s ON s.memberId = m.memberId
                     WHERE m.status = 'active' AND m.type = 'NGG'
                     ORDER BY xp DESC, m.fullName ASC LIMIT " . $limit);
+    /* Behaviour stars, batched.
+     *
+     * Stars are the thing mentors actually record every session, and they were
+     * nowhere on the board a cohort watches — so the one signal a child can
+     * move by turning up and behaving well was invisible, while XP (which
+     * accrues from journal activity) was the whole ranking. Shown alongside
+     * XP rather than folded into it: they measure different things, and a
+     * single blended number would hide which one a child is moving. */
+    $starOf = [];
+    if ($rows) {
+        $ids = array_column($rows, 'memberId');
+        $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
+        $weekAgo = gmdate('Y-m-d', time() - 6 * 86400);
+        foreach (db_all("SELECT subjectId, SUM(stars) total, SUM(CASE WHEN date >= ? THEN stars ELSE 0 END) wk
+                         FROM member_stars WHERE subjectId IN $in GROUP BY subjectId",
+                        array_merge([$weekAgo], $ids)) as $r2) {
+            $starOf[(string)$r2['subjectId']] = ['total' => (int)$r2['total'], 'week' => (int)$r2['wk']];
+        }
+    }
+
     $out = []; $rank = 0;
     foreach ($rows as $r) {
         $rank++;
         $parts = preg_split('/\s+/', trim((string)$r['fullName'])) ?: [];
         $first = $parts[0] ?? 'Member';
         $initial = count($parts) > 1 ? strtoupper(substr((string)end($parts), 0, 1)) . '.' : '';
+        $st = $starOf[(string)$r['memberId']] ?? ['total' => 0, 'week' => 0];
         $out[] = [
             'rank' => $rank, 'memberId' => (string)$r['memberId'], 'first' => $first, 'initial' => $initial,
             'centre' => (string)($r['centre'] ?? ''), 'xp' => (int)$r['xp'], 'level' => (int)$r['level'],
             'streak' => (int)$r['streak'], 'week' => (int)$r['week'],
+            'stars' => $st['total'], 'starsThisWeek' => $st['week'],
         ];
     }
     return ['ok' => true, 'leaderboard' => $out, 'total' => count($out)];

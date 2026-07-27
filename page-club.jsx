@@ -6,9 +6,31 @@
 function SummerPage({ setPage }) {
   const [track, setTrack] = useState("all");
   const [showAll, setShowAll] = useState(false);
-  const pool = track === "all" ? MEMBERS : MEMBERS.filter(m => m.track === track);
+  /* The real cohort.
+   *
+   * This gallery was twelve invented teenagers from data.js, captioned "not
+   * real students". On a live programme's own site that is the wrong thing to
+   * publish: it fills the page a parent reads with children who do not exist,
+   * and it hides the fact that the real ones are one API call away.
+   *
+   * Comes from the public status board, which is already consent-gated — a
+   * name and photograph appear only where a guardian agreed to it, and
+   * everyone else is here under their handle exactly as on /s-status. */
+  const [cohort, setCohort] = useState(null);   // null = still loading
+  useEffect(() => {
+    let alive = true;
+    NGGApi.public.status()
+      .then(r => { if (alive) setCohort(((r && r.status && r.status.members) || [])); })
+      .catch(() => { if (alive) setCohort([]); });
+    return () => { alive = false; };
+  }, []);
+
+  const roster = cohort || [];
+  const faculties = Array.from(new Set(roster.map(m => m.faculty).filter(Boolean)));
+  const pool = track === "all" ? roster : roster.filter(m => m.faculty === track);
   const filtered = (track === "all" && !showAll) ? pool.slice(0, 8) : pool;
   const hiddenCount = pool.length - filtered.length;
+  const maxStars = Math.max(1, ...roster.map(m => m.stars || 0));
 
   return (
     <div className="page" data-screen-label="02 Summer Students">
@@ -70,51 +92,72 @@ function SummerPage({ setPage }) {
         <div className="container">
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"end", marginBottom:32, flexWrap:"wrap", gap:24}}>
             <div style={{maxWidth:560}}>
-              <span className="eyebrow" style={{color:"var(--navy-900)"}}>SAMPLE COHORT</span>
-              <h2 className="display" style={{fontSize:"clamp(36px, 4.5vw, 60px)", margin:"6px 0 0"}}>How the summer class looks.</h2>
-              <p style={{fontSize:13.5, color:"var(--ink-500)", margin:"8px 0 0"}}>An illustrative layout — not real students. Real cohort profiles appear here once the summer class is enrolled.</p>
+              <span className="eyebrow" style={{color:"var(--navy-900)"}}>THIS COHORT</span>
+              <h2 className="display" style={{fontSize:"clamp(36px, 4.5vw, 60px)", margin:"6px 0 0"}}>The summer class.</h2>
+              <p style={{fontSize:13.5, color:"var(--ink-500)", margin:"8px 0 0"}}>
+                Live from the register. A student is named and pictured only where their parent or guardian has consented; everyone else appears under their handle.
+              </p>
             </div>
             <div style={{display:"flex", flexWrap:"wrap", gap:8}}>
-              <button onClick={() => setTrack("all")} className={"chip " + (track === "all" ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>All tracks · {MEMBERS.length}</button>
-              {TRACKS.filter(t => MEMBERS.some(m => m.track === t.name)).slice(0, 5).map(t => (
-                <button key={t.id} onClick={() => setTrack(t.name)} className={"chip " + (track === t.name ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>
-                  {t.icon} {t.name}
+              <button onClick={() => setTrack("all")} className={"chip " + (track === "all" ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>All faculties · {roster.length}</button>
+              {faculties.slice(0, 6).map(f => (
+                <button key={f} onClick={() => setTrack(f)} className={"chip " + (track === f ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>
+                  {f} · {roster.filter(m => m.faculty === f).length}
                 </button>
               ))}
             </div>
           </div>
 
-          {filtered.length === 0 && (
+          {cohort === null && (
+            <div style={{textAlign:"center", padding:"48px 0"}}><div className="dash-spinner" style={{margin:"0 auto"}}/></div>
+          )}
+          {cohort !== null && roster.length === 0 && (
             <div style={{textAlign:"center", padding:"48px 0", color:"var(--ink-700)"}}>
-              No students on this track yet this cohort.
+              The summer class has not been enrolled yet. Real students appear here as they register — we do not fill this space with examples.
+            </div>
+          )}
+          {cohort !== null && roster.length > 0 && filtered.length === 0 && (
+            <div style={{textAlign:"center", padding:"48px 0", color:"var(--ink-700)"}}>
+              Nobody in this faculty yet this cohort.
               <div style={{marginTop:14}}>
-                <button className="btn btn-ghost btn-sm" onClick={() => setTrack("all")}>Show all tracks</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setTrack("all")}>Show all faculties</button>
               </div>
             </div>
           )}
           <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:18}}>
-            {filtered.map((m, i) => (
-              <div key={m.id} className="member-card reveal" data-reveal style={{"--reveal-delay": (i * 50) + "ms"}} onClick={() => setPage("profile")}>
-                <Photo src={portrait(m.id+10, 600, 600)} ratio="1/1" style={{borderRadius:14}}>
+            {filtered.map((m, i) => {
+              // Named and pictured only where the backend said so; everyone
+              // else keeps the handle and the initial tile they already have
+              // on /s-status. The card must not invent a face.
+              const shown = m.name || ("@" + m.handle);
+              return (
+              <div key={m.handle} className="member-card reveal" data-reveal style={{"--reveal-delay": (i * 50) + "ms"}} onClick={() => setPage("profile")}>
+                <div style={{position:"relative", borderRadius:14, overflow:"hidden", aspectRatio:"1/1", background: m.color || "var(--navy-900)", display:"grid", placeItems:"center"}}>
+                  {m.photo
+                    ? <img src={m.photo} alt="" loading="lazy" style={{position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover"}} onError={e => { e.target.style.display = "none"; }}/>
+                    : <span style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:52, color:"rgba(255,255,255,0.9)"}}>{(shown.replace("@","")[0] || "?").toUpperCase()}</span>}
                   <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, rgba(12,20,50,0) 40%, rgba(12,20,50,0.55) 100%)"}}/>
-                  <div style={{position:"absolute", top:10, left:10}}>
-                    <span className="chip chip-on-dark" style={{background:"rgba(12,20,50,0.55)", color:"white"}}>{m.track}</span>
-                  </div>
+                  {m.faculty && <div style={{position:"absolute", top:10, left:10}}>
+                    <span className="chip chip-on-dark" style={{background:"rgba(12,20,50,0.55)", color:"white"}}>{m.faculty}</span>
+                  </div>}
                   <div style={{position:"absolute", bottom:10, right:10, fontFamily:"var(--font-mono)", fontSize:10, letterSpacing:"0.15em", color:"rgba(255,255,255,0.95)", background:"rgba(12,20,50,0.6)", padding:"3px 8px", borderRadius:4}}>
-                    LVL {String(m.level).padStart(2,"0")}
+                    ★ {m.stars || 0}
                   </div>
-                </Photo>
-                <div>
-                  <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:20, letterSpacing:"-0.02em"}}>{m.first}</div>
-                  <div style={{fontSize:12, color:"var(--coral)", fontWeight:600, marginTop:2}}>{m.title}</div>
                 </div>
-                <Progress value={Math.min(100, (m.week / 12) * 100)} label={`Week ${m.week} of 12`} variant="gold" />
+                <div>
+                  <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:20, letterSpacing:"-0.02em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{shown}</div>
+                  <div style={{fontSize:12, color:"var(--coral)", fontWeight:600, marginTop:2}}>{m.faculty || "Summer student"}</div>
+                </div>
+                {/* Stars, relative to the busiest star-earner in the cohort —
+                    a bar against a fixed target would read as failure for
+                    everyone in a programme that has only just started. */}
+                <Progress value={Math.min(100, ((m.stars || 0) / maxStars) * 100)} label={(m.stars || 0) + " star" + ((m.stars || 0) === 1 ? "" : "s") + " earned"} variant="gold" />
                 <div style={{display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--ink-500)", fontFamily:"var(--font-mono)"}}>
-                  <span>{m.community.toUpperCase()}</span>
-                  <span>★ {m.badges} BADGES</span>
+                  <span>{(m.centre || "").toUpperCase()}</span>
+                  <span>{m.attendance || 0}% ATTENDANCE</span>
                 </div>
               </div>
-            ))}
+            );})}
           </div>
           {hiddenCount > 0 && (
             <div style={{textAlign:"center", marginTop:32}}>
@@ -157,23 +200,32 @@ function SummerPage({ setPage }) {
 /* =================== NGGC MEMBERS =================== */
 function ClubPage({ setPage }) {
   const [sortBy, setSortBy] = useState("rank"); // "rank" (by XP) | "name"
-  // Live cohort leaderboard (privacy-safe first name + initial); fall back to
-  // the demo roster when the API is empty (fresh install / marketing preview).
-  const [live, setLive] = useState(null);
+  /* The live cohort leaderboard.
+   *
+   * There used to be a fallback to the twelve invented members in data.js
+   * whenever the API returned fewer than three rows — so a real programme
+   * with two members showed twelve strangers, and nothing said which was
+   * which. An empty board is information; a fabricated one is not.
+   *
+   * Stars come through alongside XP rather than folded into it. They measure
+   * different things — XP accrues from journal activity, stars are what a
+   * mentor recorded in the room — and a single blended number would hide
+   * which of the two a child is actually moving. */
+  const [live, setLive] = useState(null);   // null = still loading
   useEffect(() => {
     let alive = true;
     NGGApi.public.leaderboard(24).then(r => {
       if (!alive) return;
-      const rows = (r && r.leaderboard) || [];
-      if (rows.length >= 3) setLive(rows.map(m => ({
+      setLive(((r && r.leaderboard) || []).map(m => ({
         id: m.memberId, first: m.first + (m.initial ? " " + m.initial : ""), community: m.centre || "NGG",
         title: "Level " + m.level, xp: m.xp, level: m.level, streak: m.streak || 0, week: m.week || 1,
+        stars: m.stars || 0, starsThisWeek: m.starsThisWeek || 0,
         quote: "Showing up, leveling up.",
       })));
-    }).catch(() => {});
+    }).catch(() => { if (alive) setLive([]); });
     return () => { alive = false; };
   }, []);
-  const roster = live || MEMBERS;
+  const roster = live || [];
   const top = [...roster].sort((a,b) => b.xp - a.xp);
   const directory = sortBy === "rank" ? top : [...roster].sort((a,b) => a.first.localeCompare(b.first));
   const featured = top[0];
@@ -195,19 +247,30 @@ function ClubPage({ setPage }) {
               </p>
             </div>
             <div style={{display:"flex", flexDirection:"column", gap:14}}>
+              {/* Guarded: with the demo fallback gone the roster can genuinely
+                  be empty, and this used to dereference top[0] unconditionally
+                  — an empty cohort would have taken the whole page down. */}
               <div className="card-dark" style={{background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)"}}>
                 <div className="eyebrow" style={{color:"var(--gold-400)"}}>GENIUS OF THE WEEK</div>
-                <div style={{display:"flex", alignItems:"center", gap:14, marginTop:14}}>
-                  <Avatar seed={featured.id} name={featured.first} size={64} ring/>
-                  <div>
-                    <div style={{fontSize:22, fontWeight:700, fontFamily:"var(--font-display)"}}>{featured.first} · {featured.community}</div>
-                    <div style={{fontSize:13, color:"var(--gold-400)", marginTop:2}}>{featured.title}</div>
-                    <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:4}}>LVL {featured.level} · {featured.xp.toLocaleString()} XP · {featured.streak}-day streak</div>
+                {featured ? (<>
+                  <div style={{display:"flex", alignItems:"center", gap:14, marginTop:14}}>
+                    <Avatar seed={featured.id} name={featured.first} size={64} ring/>
+                    <div>
+                      <div style={{fontSize:22, fontWeight:700, fontFamily:"var(--font-display)"}}>{featured.first} · {featured.community}</div>
+                      <div style={{fontSize:13, color:"var(--gold-400)", marginTop:2}}>{featured.title}</div>
+                      <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:4}}>
+                        LVL {featured.level} · {featured.xp.toLocaleString()} XP · ★ {featured.stars} · {featured.streak}-day streak
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <p style={{fontSize:14, marginTop:14, fontStyle:"italic", color:"rgba(255,255,255,0.85)", borderLeft:"2px solid var(--gold-500)", paddingLeft:12, marginBottom:0}}>
-                  "{featured.quote}"
-                </p>
+                  <p style={{fontSize:14, marginTop:14, fontStyle:"italic", color:"rgba(255,255,255,0.85)", borderLeft:"2px solid var(--gold-500)", paddingLeft:12, marginBottom:0}}>
+                    "{featured.quote}"
+                  </p>
+                </>) : (
+                  <p style={{fontSize:14, marginTop:14, color:"rgba(255,255,255,0.7)", marginBottom:0}}>
+                    {live === null ? "Loading the cohort…" : "No Club members yet. This fills in as the first cohort is enrolled."}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -222,7 +285,7 @@ function ClubPage({ setPage }) {
             <div>
               <div style={{display:"flex", justifyContent:"space-between", alignItems:"end", marginBottom:20}}>
                 <div>
-                  <span className="eyebrow" style={{color:"var(--gold-500)"}}>MEMBER DIRECTORY · 164</span>
+                  <span className="eyebrow" style={{color:"var(--gold-500)"}}>MEMBER DIRECTORY · {roster.length}</span>
                   <h2 className="display" style={{fontSize:48, margin:"4px 0 0"}}>The cohort, in motion.</h2>
                 </div>
                 <div style={{display:"flex", gap:8}}>
@@ -298,10 +361,14 @@ function ClubPage({ setPage }) {
                 <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, lineHeight:1.1, letterSpacing:"-0.02em"}}>
                   Interview an elder. Bring back one proverb.
                 </div>
+                {/* "126 / 164 completed", under a live dot, on a block headed
+                    LIVE COHORT MISSION — both numbers were hardcoded. Claiming
+                    live progress that nobody is counting is worse than showing
+                    none, so the mission stands on its own until there is a real
+                    completion figure behind it. */}
                 <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:14}}>
-                  126 / 164 completed · ends Sun 23:59
+                  This week's mission · ends Sunday
                 </div>
-                <div className="progress dark mt-8"><i style={{width: "76%", background:"var(--lime)"}}/></div>
               </div>
             </div>
           </div>
@@ -317,8 +384,12 @@ function ClubPage({ setPage }) {
               <div key={b.id} className="card" style={{padding:24, display:"flex", flexDirection:"column", alignItems:"center", gap:14, textAlign:"center", opacity: b.locked ? 0.55 : 1}}>
                 <BadgePin badge={b}/>
                 <div style={{fontWeight:700, fontSize:14}}>{b.name}</div>
+                {/* This said "Earned by 58%". That number was a hash of the
+                    badge's id — a made-up statistic, stable but invented,
+                    printed on a public page as fact. There is no real earn
+                    rate to show yet, so it shows none. */}
                 <div className="mono" style={{fontSize:10, color:"var(--ink-500)", letterSpacing:"0.12em", textTransform:"uppercase"}}>
-                  {b.locked ? "LOCKED" : `Earned by ${badgeEarnRate(b.id)}%`}
+                  {b.locked ? "LOCKED" : "UNLOCKED"}
                 </div>
               </div>
             ))}
@@ -329,6 +400,9 @@ function ClubPage({ setPage }) {
   );
 }
 
+// REMOVED: badgeEarnRate() hashed a badge id into a 20–80% "earn rate" and
+// the badge wall printed it as a statistic. Stable is not the same as true.
+// Kept here only as a marker so nobody reintroduces it.
 // Stable per-badge earn rate — previously Math.random() in render, which
 // re-rolled a different number on every re-render.
 function badgeEarnRate(id) {
