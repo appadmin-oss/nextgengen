@@ -1944,11 +1944,23 @@ img { background-color: rgba(12,20,50,0.04); }
 .centre-hero-name { display: flex; align-items: center; gap: 13px; font-size: 18px; font-weight: 600; color: var(--centre-ink,#0c1432); margin-bottom: 32px; }
 .centre-hero-code { background: var(--centre-ink,#0c1432); color: var(--centre-accent); font-size: 13px; font-weight: 600; padding: 5px 11px; border-radius: 7px; letter-spacing: 0.08em; }
 .centre-hero-actions { display: flex; flex-wrap: wrap; gap: 14px; }
-.centre-hero-figure { position: relative; align-self: end; display: flex; justify-content: center; height: 100%; }
+/* align-items: flex-end is what makes the bleed a bleed. Left to stretch, the
+   image sat at the TOP of the figure and its negative margin-bottom only
+   shrank the figure's scroll height — it never moved the artwork, so the
+   overhang was whatever height happened to be left over rather than the amount
+   asked for. Pinned to the bottom, the margin does exactly what it says. */
+.centre-hero-figure { position: relative; align-self: end; display: flex; align-items: flex-end; justify-content: center; height: 100%; }
 .centre-hero-figure-ring { position: absolute; left: 50%; bottom: 34%; transform: translateX(-50%); width: min(78%,420px); aspect-ratio: 1; border: 3px dashed var(--centre-ring,#fbf7ed); border-radius: 50%; z-index: 1; opacity: 1; }
 .centre-hero-sts { position: absolute; right: 2%; top: 8%; z-index: 3; background: #1856c4; color: #fff; width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center; text-align: center; font-family: var(--font-display); font-weight: 800; font-size: 13px; line-height: 1.05; box-shadow: 0 12px 26px -10px rgba(0,0,0,0.5); transform: rotate(-8deg); }
-.centre-hero-img { position: relative; z-index: 2; width: auto; height: min(88vh,860px); max-width: 112%; object-fit: contain; object-position: bottom center; margin-bottom: -56px; filter: drop-shadow(0 30px 46px rgba(12,20,50,0.45)); }
-.centre-hero-img-fallback { display: grid; place-items: center; width: min(78%,420px); aspect-ratio: 3/4; height: auto; background: rgba(12,20,50,0.14); border-radius: 20px; font-family: var(--font-display); font-size: 96px; color: rgba(12,20,50,0.4); margin-bottom: 0; }
+/* The model BLEEDS off the bottom of the hero: it hangs past the section edge
+   and the navy band below paints over its last few centimetres, so the figure
+   reads as standing behind that band. Without the overhang the artwork simply
+   stopped on the seam — a dead-straight horizontal line across the shoes,
+   which reads as a cut-off photo rather than a composition. The occluding is
+   the half that matters: hanging over the band without it just moves the same
+   hard edge lower down. */
+.centre-hero-img { position: relative; z-index: 2; width: auto; height: min(88vh,860px); max-width: 112%; object-fit: contain; object-position: bottom center; margin-bottom: calc(-1 * var(--centre-hero-bleed, 86px)); filter: drop-shadow(0 30px 46px rgba(12,20,50,0.45)); }
+.centre-hero-img-fallback { display: grid; place-items: center; width: min(78%,420px); aspect-ratio: 3/4; height: auto; background: rgba(12,20,50,0.14); border-radius: 20px; font-family: var(--font-display); font-size: 96px; color: rgba(12,20,50,0.4); --centre-hero-bleed: 0px; margin-bottom: 0; }
 
 /* Hero buttons */
 .centre-btn-ink { background: var(--centre-ink,#0c1432); color: var(--centre-on-ink,#fff); border: none; border-radius: 999px; box-shadow: 0 16px 30px -14px rgba(12,20,50,0.4); }
@@ -1961,11 +1973,16 @@ img { background-color: rgba(12,20,50,0.04); }
 .centre-btn-outline-light:hover { border-color: rgba(255,255,255,0.6); color: #fff; }
 /* Mobile CTA band (navy, below the hero) — hidden on desktop, where the hero
    holds its own action buttons. */
-.centre-hero-cta { display: none; background: #0c1432; padding: 18px 20px; flex-direction: column; gap: 10px; }
+/* Same job as .centre-stats on mobile, where this band is what sits directly
+   under the hero — it has to occlude the model's overhang, so it needs a
+   stacking context of its own. */
+.centre-hero-cta { display: none; position: relative; z-index: 3; background: #0c1432; padding: 18px 20px; flex-direction: column; gap: 10px; }
 .centre-hero-cta .btn { width: 100%; text-align: center; }
 
 /* ---- Stat strip ---- */
-.centre-stats { position: relative; z-index: 1; background: #0c1432; color: #fff; padding: 30px 0; }
+/* Above the hero (z-index 2), not below it, so it occludes the bleeding model
+   instead of being covered by it. */
+.centre-stats { position: relative; z-index: 3; background: #0c1432; color: #fff; padding: 30px 0; }
 .centre-stats-row { display: flex; flex-wrap: wrap; gap: 56px; align-items: flex-end; }
 .centre-stat-n { font-family: var(--font-display); font-weight: 800; font-size: 46px; line-height: 1; color: var(--centre-accent); }
 .centre-stat-n-sm { font-size: 26px; }
@@ -2067,7 +2084,7 @@ img { background-color: rgba(12,20,50,0.04); }
   .centre-hero-inner { grid-template-columns: 1fr; align-items: start; min-height: 0; gap: 0; }
   .centre-hero-copy { padding: 22px 0 0; order: 1; }
   .centre-hero-figure { order: 2; margin-top: -4px; }
-  .centre-hero-img { height: min(52vh,380px); margin-bottom: -2px; }
+  .centre-hero-img { height: min(52vh,380px); --centre-hero-bleed: 30px; }
   .centre-hero-figure-ring { display: none; }
   .centre-hero-ring { display: none; }
   .centre-hero-sts { width: 66px; height: 66px; font-size: 9px; top: 8%; right: 6%; }

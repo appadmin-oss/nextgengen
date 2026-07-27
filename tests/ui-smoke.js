@@ -49,7 +49,19 @@ const STATUS = {
 
   // Mount the built bundle directly: React, a stubbed NGGApi, then render the
   // board under test into a root div. No API, no router, no service worker.
-  fs.writeFileSync(FIX, `<!doctype html><html><body><div id="root"></div>
+  fs.writeFileSync(FIX, `<!doctype html><html><head>
+<script>
+  /* Opt-in stylesheets. The centre-hero assertions measure layout, and geometry
+     read off an unstyled page means nothing — but loading the real CSS changes
+     what innerText returns for every other board, so it is per-board. */
+  if (new URLSearchParams(location.search).get('css') === '1') {
+    ['/dist/styles.css', '/dist/styles-app.css'].forEach(function (h) {
+      var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = h;
+      document.head.appendChild(l);
+    });
+  }
+</script>
+</head><body><div id="root"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>
 <script src="/dist/data.js"></script>
@@ -126,7 +138,7 @@ const STATUS = {
   var b = new URLSearchParams(location.search).get('board');
   var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'cards' ? 'CardStudio' : b === 'photo' ? 'PhotoEditor'
             : b === 'policy' ? 'SummerPolicy' : b === 'att' ? 'SummerAttendance' : b === 'kiosk' ? 'SummerKiosk'
-            : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : 'StatusPage';
+            : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : b === 'centre' ? 'CentreDetail' : 'StatusPage';
   var props;
   if (b === 'photo') {
     var pc = document.createElement('canvas'); pc.width = 800; pc.height = 1000;
@@ -203,6 +215,28 @@ const STATUS = {
     };
     window.NGGApi.uploadPublic = function (f) { window.__uploaded = (window.__uploaded || []).concat(['public:' + f.name]); return Promise.resolve({ url: 'https://res.cloudinary.com/x/image/upload/v1/hero.jpg' }); };
     props = { label: 'Hero image (giant model)', value: '', onChange: function (v) { window.__val = v; }, kind: 'cover', placeholder: 'Paste an https:// image URL or upload →' };
+  } else if (b === 'centre') {
+    // A full-body cut-out with the feet hard against the bottom of the file —
+    // the shape the hero art actually is, and the one that showed the cut.
+    var MODEL = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="1400" viewBox="0 0 600 1400">'
+      + '<circle cx="300" cy="150" r="105" fill="#3b2a1e"/>'
+      + '<rect x="150" y="300" width="300" height="520" rx="40" fill="#c62828"/>'
+      + '<rect x="185" y="820" width="105" height="520" fill="#1a237e"/>'
+      + '<rect x="310" y="820" width="105" height="520" fill="#1a237e"/>'
+      + '<rect x="170" y="1340" width="260" height="60" rx="18" fill="#111"/></svg>');
+    // Assign INTO the existing public proxy, not over it: the top-level deep()
+    // lists 'public' in its overrides, and overrides win over the target.
+    var LONG = new URLSearchParams(location.search).get('long') === '1';
+    window.NGGApi.public.centre = function () { return Promise.resolve({ centre: {
+      centreId: 'C-IJ', slug: 'ijaiye', name: 'Ijaiye', code: 'IJ', color: '#f5b026',
+      headline: LONG ? 'Ijaiye Community Arts And Technology Centre' : 'Ijaiye',
+      tagline: LONG ? 'Where the noise becomes a name, and the name becomes a movement across every street in Alimosho.' : 'Where the noise becomes a name.',
+      status: 'active', pageStatus: 'published',
+      heroImageUrl: MODEL, heroPosition: 'center bottom', enrolled: 42, capacity: 60,
+      address: '12 Ijaiye Rd', area: 'Ijaiye', story: 'A story.', gallery: [], volunteers: [], needs: [],
+    } }); };
+    props = { slug: 'ijaiye', go: function () {}, setPage: function () {} };
   } else if (b === 'signin') {
     props = {};
     window.__logins = [];
@@ -665,6 +699,65 @@ const STATUS = {
       await fu2.evaluate(() => { const b = Array.from(document.querySelectorAll('button')).find(x => /Upload unavailable/.test(x.textContent)); return (b && b.title) || ''; })));
     await fu2.close();
     await fu.close();
+
+    /* ── The centre hero model bleeds off the bottom ──────────────────────
+       The artwork used to stop exactly on the seam between the hero and the
+       navy band below — a dead-straight horizontal line across the model's
+       shoes, which reads as a cut-off photo rather than a composition. It now
+       hangs past the seam and the band paints over its last few centimetres,
+       so there is no terminal edge to see. Checked at both breakpoints, since
+       they use different bleeds and different bands. */
+    /* The 'long copy' case is the one that proves the bleed is deliberate. With
+       the figure left to stretch, the model sat at the TOP of its cell and any
+       overhang was just leftover height from the image being 88vh in an 82vh
+       row — incidental, and it disappears the moment the copy column grows
+       taller than that. Pinned to the bottom, the bleed is the amount asked
+       for regardless of how much copy the centre has. */
+    for (const [w, h, tag, q] of [[1440, 900, 'desktop', ''], [390, 844, 'mobile', ''],
+                                  [1440, 1280, 'tall', ''], [1180, 760, 'long copy', '&long=1']]) {
+      const ce = await browser.newPage({ viewport: { width: w, height: h } });
+      const ceErrs = [];
+      ce.on('pageerror', e => ceErrs.push(String(e.message)));
+      await ce.goto(BASE + '/tests/_boards_fixture.html?board=centre&mode=ok&css=1' + q, { waitUntil: 'networkidle' });
+      await ce.waitForTimeout(600);
+      // elementFromPoint works in viewport coordinates, so the seam has to be
+      // on screen before we can ask what is painted there.
+      await ce.evaluate(() => {
+        const b = ['.centre-hero-cta', '.centre-stats'].map(q => document.querySelector(q))
+          .find(el => el && getComputedStyle(el).display !== 'none');
+        if (b) b.scrollIntoView({ block: 'center' });
+      });
+      await ce.waitForTimeout(150);
+      const geo = await ce.evaluate(() => {
+        const img = document.querySelector('.centre-hero-img');
+        if (!img) return null;
+        const bands = ['.centre-hero-cta', '.centre-stats']
+          .map(q => document.querySelector(q))
+          .filter(el => el && getComputedStyle(el).display !== 'none');
+        const i = img.getBoundingClientRect();
+        if (!bands.length) return null;
+        const band = bands[0], b = band.getBoundingClientRect();
+        // Geometry alone proves nothing: the model can overlap the band and
+        // still paint ON TOP of it, which is exactly the visible cut. Ask the
+        // browser what is actually painted 4px above the image's bottom edge —
+        // it has to be the band, not the model.
+        const px = Math.round(i.left + i.width / 2), py = Math.round(i.bottom - 4);
+        const hit = document.elementFromPoint(px, py);
+        const occluded = !!(hit && hit !== img && (hit === band || band.contains(hit)));
+        // Relative to the hero, not the viewport — the page has been scrolled.
+        const hero = document.querySelector('.centre-hero');
+        const headroom = hero ? Math.round(i.top - hero.getBoundingClientRect().top) : 0;
+        return { bleed: Math.round(i.bottom - b.top), covered: i.bottom <= b.bottom,
+                 occluded: occluded, hit: hit ? (hit.className || hit.tagName) : 'none', headroom: headroom };
+      });
+      if (tag === 'desktop') ok('the centre hero mounts with no script error', ceErrs.length === 0);
+      ok('the model bleeds past the seam on ' + tag + ' (' + (geo && geo.bleed) + 'px)', geo && geo.bleed > 20);
+      ok('…and the band paints over its bottom edge, so there is no visible cut (' + tag + ')',
+        geo && geo.covered && geo.occluded);
+      if (geo && !geo.occluded) console.error('        topmost element at the model\'s bottom edge was:', geo.hit);
+      ok('…without pushing the head above the hero (' + tag + ', ' + (geo && geo.headroom) + 'px)', geo && geo.headroom > -20);
+      await ce.close();
+    }
 
     // ── photo editor: zoom works, and previews without a round trip ──────
     const pe = await browser.newPage();
