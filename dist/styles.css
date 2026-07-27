@@ -1930,7 +1930,7 @@ img { background-color: rgba(12,20,50,0.04); }
 .centre-hero-wash { position: absolute; inset: 0; background: radial-gradient(90% 80% at 78% 8%, rgba(255,255,255,0.30), transparent 55%), linear-gradient(158deg, rgba(255,255,255,0.05), rgba(0,0,0,0.16)); }
 .centre-hero-orb { position: absolute; right: -6%; bottom: -16%; width: min(62%,860px); aspect-ratio: 1; border-radius: 50%; background: var(--centre-orb,#0c1432); opacity: 1; }
 .centre-hero-ring { position: absolute; right: 7%; top: 12%; width: 172px; height: 172px; border: 14px solid var(--centre-orb,#0c1432); border-radius: 50%; opacity: 1; }
-.centre-hero-watermark { position: absolute; top: -2%; left: -6%; width: 150%; display: flex; flex-direction: column; gap: 0; font-family: var(--font-marker,'Caveat Brush',cursive); font-weight: 400; font-size: 132px; line-height: 0.86; color: var(--centre-ink,#0c1432); opacity: 0.1; pointer-events: none; animation: centreDrift 26s linear infinite alternate; }
+.centre-hero-watermark { position: absolute; top: -2%; left: -6%; width: 150%; display: flex; flex-direction: column; gap: 0; font-family: var(--font-marker,'Caveat Brush',cursive); font-weight: 400; font-size: 132px; line-height: 0.86; color: var(--centre-ink,#0c1432); opacity: 0.05; pointer-events: none; animation: centreDrift 26s linear infinite alternate; }
 .centre-hero-wm-line { display: block; white-space: nowrap; }
 .centre-hero-inner { position: relative; z-index: 2; display: grid; grid-template-columns: 1.02fr 0.98fr; gap: 24px; align-items: end; min-height: min(82vh,760px); }
 .centre-hero-copy { padding: 36px 0 84px; animation: centreRise .7s ease both; }
