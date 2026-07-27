@@ -30,27 +30,89 @@
    OTP row is stored — the test takes the "I already have a code" path and
    reads the OTP straight from the DB via api/config.php.
    ============================================================================ */
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { waitForServer } = require('./_serve');
 
-const BASE = process.env.SMOKE_BASE || 'http://127.0.0.1:8123';
+/* Self-provisioning by default. This suite used to require the operator to
+   hand-write api/config.php, seed a member and start a server before running
+   it, which is why it sat outside `npm test` and quietly rotted until a PHP /
+   shell interaction broke it outright. It now sets its own scratch config, DB
+   and server up unless SMOKE_BASE says an environment is already prepared. */
+const SELF = !process.env.SMOKE_BASE;
+const PORT = process.env.SMOKE_PORT || '8203';
+const BASE = process.env.SMOKE_BASE || `http://127.0.0.1:${PORT}`;
 const MEMBER = process.env.SMOKE_MEMBER || 'NGG-2025-0001';
 const ROOT = path.resolve(__dirname, '..');
+const CFG = path.join(ROOT, 'api', 'config.php');
+const DB = path.join(os.tmpdir(), `ngg-journal-${process.pid}.db`);
 
 let chromium;
-try { ({ chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); }
-catch (e) { console.error('playwright not found — npm i playwright (or set PLAYWRIGHT_MODULE)'); process.exit(2); }
+for (const m of [process.env.PLAYWRIGHT_MODULE, 'playwright', 'playwright-core'].filter(Boolean)) {
+  try { ({ chromium } = require(m)); break; } catch (_) {}
+}
+if (!chromium) { console.log('⏭  journal: skipped (playwright not installed)'); process.exit(0); }
 
+let server;
+function teardown() {
+  if (!SELF) return;
+  try { if (server) process.kill(-server.pid); } catch (_) {}
+  for (const f of [CFG, DB]) { try { fs.existsSync(f) && fs.unlinkSync(f); } catch (_) {} }
+}
+process.on('exit', teardown);
+
+/** Scratch config + migrated DB + one member + a server on PORT. */
+async function provision() {
+  if (fs.existsSync(CFG)) { console.error('api/config.php already exists — refusing to overwrite. Move it aside, or set SMOKE_BASE.'); process.exit(2); }
+  fs.writeFileSync(CFG, `<?php return [
+    'db' => ['dsn' => '', 'sqlite_path' => ${JSON.stringify(DB)}],
+    'mail' => ['from_name' => 'NGG', 'from_email' => 'no-reply@example.org', 'reply_to' => '', 'smtp' => ['host' => '']],
+    'app_origin' => ${JSON.stringify(BASE)},
+    'cookie_secret' => 'journal_smoke_secret_0123456789ab',
+    'cookie_secure' => false, 'cookie_name' => 'ngg_sess', 'cookie_domain' => '', 'cookie_samesite' => 'Lax',
+    'cache_dir' => ${JSON.stringify(path.join(os.tmpdir(), `ngg-journal-cache-${process.pid}`))},
+    'rate_limits' => ['default' => ['max' => 100000, 'window' => 60]],
+    'session_ttl' => 604800, 'kiosk_ttl' => 43200,
+    'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
+    'debug' => false,
+  ];\n`);
+  runPhp(`db_migrate(db_conn());`
+    + `db_insert("members",["memberId"=>"${MEMBER}","fullName"=>"Smoke Tester","email"=>"smoke@example.com",`
+    + `"type"=>"NGG","status"=>"active","role"=>"member","centre"=>"Egbeda","createdAt"=>now_iso(),"updatedAt"=>now_iso()]);`);
+  server = spawn('php', ['-S', `127.0.0.1:${PORT}`, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
+  await waitForServer(BASE);
+}
+
+/** Run a PHP snippet against the configured DB, via a file (see otpFromDb). */
+function runPhp(body) {
+  const f = path.join(os.tmpdir(), `ngg-journal-php-${process.pid}.php`);
+  fs.writeFileSync(f, `<?php $GLOBALS["CONFIG"]=require ${JSON.stringify(CFG)};`
+    + `require ${JSON.stringify(path.join(ROOT, 'api/_lib/response.php'))};`
+    + `require ${JSON.stringify(path.join(ROOT, 'api/_lib/db.php'))};`
+    + `require ${JSON.stringify(path.join(ROOT, 'api/_lib/util.php'))};` + body);
+  try { return execSync(`php ${JSON.stringify(f)}`).toString().trim(); }
+  finally { try { fs.unlinkSync(f); } catch (_) {} }
+}
+
+/* Read the OTP straight out of the DB. Via a temp file, not `php -r "..."`:
+   JSON.stringify produces a DOUBLE-quoted argument, execSync hands it to
+   /bin/sh, and the shell expands $GLOBALS to the empty string before PHP ever
+   sees it — so the snippet became `["CONFIG"]=require ...` and died with
+   "Assignments can only happen to writable values". The other suites already
+   go through a file for exactly this reason. */
 function otpFromDb() {
-  const php = `$GLOBALS["CONFIG"]=require "${ROOT}/api/config.php";`
-    + `require "${ROOT}/api/_lib/response.php";require "${ROOT}/api/_lib/db.php";require "${ROOT}/api/_lib/util.php";`
-    + `echo db_row("SELECT otp FROM auth_sessions ORDER BY id DESC LIMIT 1")["otp"];`;
-  return execSync('php -r ' + JSON.stringify(php)).toString().trim();
+  return runPhp(`echo db_row("SELECT otp FROM auth_sessions ORDER BY id DESC LIMIT 1")["otp"];`);
 }
 
 (async () => {
+  if (SELF) await provision();
   const launch = {};
-  if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
+  const exe = process.env.CHROMIUM_PATH
+    || (fs.existsSync('/opt/pw-browsers/chromium-1194/chrome-linux/chrome') ? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' : '');
+  if (exe) launch.executablePath = exe;
+  launch.args = ['--no-sandbox'];
   const browser = await chromium.launch(launch);
   const page = await browser.newPage({ viewport: { width: 400, height: 850 } });
   const pageErrors = [];

@@ -11,7 +11,10 @@
     "test:smtp": "php api/tests/smtp-send.php",
     "test:kiosk": "node tests/kiosk-offline.js",
     "test:cards": "node tests/card-export.test.js",
-    "test:ui": "node tests/ui-smoke.js"
+    "test:scanners": "node tests/scanners.test.js",
+    "test:journal": "node tests/journal-smoke.js",
+    "test:ui": "node tests/ui-smoke.js",
+    "test:all": "node build.js && php api/tests/run.php && node tests/card-export.test.js && node tests/scanners.test.js && node tests/kiosk-offline.js && node tests/ui-smoke.js && node tests/journal-smoke.js"
   },
   "devDependencies": {
     "esbuild": "^0.23.0"
