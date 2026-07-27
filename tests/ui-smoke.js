@@ -33,11 +33,30 @@ function loadChromium() {
   return null;
 }
 
+/* Shared stub for both public boards.
+ *
+ * The registration figures are deliberately odd numbers that appear nowhere
+ * else on the page. The board is full of counts, so asserting on a round
+ * number like 100 would pass against any coincidental match and prove
+ * nothing — these are checked inside the registration section specifically,
+ * and they have to have come from this payload. */
 const STATUS = {
   status: {
     kpis: { totalStudents: 120, presentToday: 96, lateToday: 4, attendanceRate: 80, fulfillmentRate: 72,
-            totalNeed: 50, totalFilled: 36, totalGap: 14, onTimeToday: 92 },
-    byCentre: [{ centreId: 'IJ', name: 'Ijaiye', need: 20, filled: 14, gap: 6, present: 30, enrolled: 40, rate: 75 }],
+            totalNeed: 50, totalFilled: 36, totalGap: 14, onTimeToday: 92,
+            centres: 2, enrolled: 120, activeVolunteers: 11, starsThisWeek: 33,
+            registered: 137, consentVerified: 118, consentPending: 19, capacity: 180, capacityFill: 76 },
+    registration: {
+      total: 137, verified: 118, pending: 19, today: 7, thisWeek: 23,
+      capacity: 180, fill: 76, consentRate: 86,
+      trend: [{ date: '2026-07-20', signups: 4 }, { date: '2026-07-21', signups: 9 }, { date: '2026-07-22', signups: 2 }],
+    },
+    byCentre: [
+      { centreId: 'IJ', code: 'IJ', name: 'Ijaiye', color: '#3b5bdb', need: 20, filled: 14, gap: 6,
+        present: 30, enrolled: 40, rate: 75, registered: 47, pending: 6, capacity: 60, fill: 78 },
+      { centreId: 'EG', code: 'EG', name: 'Egbeda', color: '#2f9e44', need: 30, filled: 22, gap: 8,
+        present: 66, enrolled: 80, rate: 83, registered: 90, pending: 13, capacity: 120, fill: 75 },
+    ],
     directory: [], deltas: {}, page: { published: true },
   },
 };
@@ -74,6 +93,19 @@ const STATUS = {
   function stub(name, payload) {
     return function () {
       window.__calls[name]++;
+      /* ?noreg=1 serves the pre-registration payload shape — an API older
+         than the frontend. The board must fall back to attendance-only
+         rather than throwing, and it doubles as the control proving the
+         registration section is driven by the payload, not hardcoded. */
+      if (window.__mode === 'ok' && new URLSearchParams(location.search).get('noreg') === '1') {
+        var stripped = JSON.parse(JSON.stringify(payload));
+        if (stripped.status) {
+          delete stripped.status.registration;
+          ['registered', 'consentVerified', 'consentPending', 'capacity', 'capacityFill'].forEach(function (k) { delete stripped.status.kpis[k]; });
+          (stripped.status.byCentre || []).forEach(function (c) { delete c.registered; delete c.pending; delete c.capacity; delete c.fill; });
+        }
+        return Promise.resolve(stripped);
+      }
       if (window.__mode === 'ok') return Promise.resolve(payload);
       if (window.__mode === 'hang') return new Promise(function (res) { pending.push(res); });
       var e = new Error('timeout'); e.code = 'timeout'; e.status = 0;
@@ -459,6 +491,63 @@ const STATUS = {
       await page.close();
     }
 
+    /* ── /s-status shows REGISTRATION, not only attendance ─────────────────
+     * The board reported attendance alone. The API grew a `registration`
+     * block and the page was never wired to it, so the whole feature was
+     * dead payload — and the existing assertion above ("renders live
+     * numbers") passed the entire time, because it only looked for a digit
+     * anywhere on the page. These read inside the registration section
+     * specifically, so an unrelated count elsewhere cannot satisfy them. */
+    const rp = await browser.newPage();
+    const rpErrs = [];
+    rp.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) rpErrs.push(m.text()); });
+    rp.on('pageerror', e => rpErrs.push(String(e.message)));
+    await rp.goto(BASE + '/tests/_boards_fixture.html?board=status&mode=ok', { waitUntil: 'networkidle' });
+    await rp.waitForTimeout(1600);   // count-up animation settles on the real values
+    const regSec = await rp.evaluate(() => {
+      const el = document.querySelector('[data-board-section="registration"]');
+      return el ? el.innerText : null;
+    });
+    // Scoped to the KPI grid, not the whole page — the registration section
+    // below uses the same words, so a body-wide match would pass even with
+    // the KPI cards missing.
+    const kpiRow = await rp.evaluate(() => {
+      const el = document.querySelector('.kpi-grid');
+      return el ? el.innerText : null;
+    });
+    await rp.close();
+
+    ok('/s-status renders a registration section at all', regSec !== null);
+    ok('…with the registered total from the payload (137)', /\b137\b/.test(regSec || ''));
+    ok('…the capacity it is measured against (180 places)', /\b180\b/.test(regSec || ''));
+    ok('…and the fill rate (76%)', /76%/.test(regSec || ''));
+    ok('…consent verified (118) and awaiting a parent (19)', /\b118\b/.test(regSec || '') && /\b19\b/.test(regSec || ''));
+    ok('…the consent rate as a percentage (86%)', /86%/.test(regSec || ''));
+    ok('…sign-ups today (7) and this week (23)', /\b7\b/.test(regSec || '') && /\b23\b/.test(regSec || ''));
+    ok('…per-centre fill for both centres (47/60 and 90/120)',
+       /47\s*\/\s*60/.test(regSec || '') && /90\s*\/\s*120/.test(regSec || ''));
+    ok('…and pending consent is called out per centre', /6 pending/.test(regSec || '') && /13 pending/.test(regSec || ''));
+    // innerText is the RENDERED text, so the cards' text-transform:uppercase
+    // labels come back as "REGISTERED" — hence the /i.
+    ok('registration also reaches the at-a-glance KPI row',
+       /registered/i.test(kpiRow || '') && /\b137\b/.test(kpiRow || '')
+       && /consent verified/i.test(kpiRow || '') && /\b118\b/.test(kpiRow || ''));
+    ok('/s-status registration renders with no script error', rpErrs.length === 0);
+    if (rpErrs.length) console.error('      ', rpErrs.slice(0, 3).join(' | '));
+
+    // An API older than the frontend must degrade to the attendance board,
+    // not throw. Also the control for every assertion above.
+    const rn = await browser.newPage();
+    const rnErrs = [];
+    rn.on('pageerror', e => rnErrs.push(String(e.message)));
+    await rn.goto(BASE + '/tests/_boards_fixture.html?board=status&mode=ok&noreg=1', { waitUntil: 'networkidle' });
+    await rn.waitForTimeout(1200);
+    const noRegSec = await rn.evaluate(() => document.querySelector('[data-board-section="registration"]'));
+    const noRegBody = await rn.evaluate(() => document.body.innerText);
+    await rn.close();
+    ok('a payload with no registration block hides the section (control)', noRegSec === null);
+    ok('…and the attendance board still renders beside it', /Centre by centre/.test(noRegBody) && rnErrs.length === 0);
+
     // ── ID Card Studio: mounts with its print controls intact ──────────────
     const studio = await browser.newPage();
     const studioErrs = [];
@@ -817,27 +906,47 @@ const STATUS = {
         const bands = ['.centre-hero-cta', '.centre-stats']
           .map(q => document.querySelector(q))
           .filter(el => el && getComputedStyle(el).display !== 'none');
-        const i = img.getBoundingClientRect();
         if (!bands.length) return null;
-        const band = bands[0], b = band.getBoundingClientRect();
+        const band = bands[0];
+        /* Put the PROBE POINT on screen, not the band.
+         *
+         * Centring the band is not enough: the image hangs ~86px below the
+         * band's top, so at a short viewport its bottom edge can land past
+         * the fold. elementFromPoint is viewport-relative and returns null
+         * for a y outside it — which is indistinguishable from "the model is
+         * painting on top", and failed this assertion at random on a layout
+         * that was perfectly correct. Nudge until the point is comfortably
+         * inside, then measure. */
+        for (let n = 0; n < 4; n++) {
+          const y = img.getBoundingClientRect().bottom - 4;
+          if (y >= 8 && y <= window.innerHeight - 8) break;
+          window.scrollBy(0, Math.round(y - window.innerHeight / 2));
+        }
+        const i = img.getBoundingClientRect();
+        const b = band.getBoundingClientRect();
         // Geometry alone proves nothing: the model can overlap the band and
         // still paint ON TOP of it, which is exactly the visible cut. Ask the
         // browser what is actually painted 4px above the image's bottom edge —
         // it has to be the band, not the model.
         const px = Math.round(i.left + i.width / 2), py = Math.round(i.bottom - 4);
-        const hit = document.elementFromPoint(px, py);
+        const inView = py >= 0 && py < window.innerHeight;
+        const hit = inView ? document.elementFromPoint(px, py) : null;
         const occluded = !!(hit && hit !== img && (hit === band || band.contains(hit)));
         // Relative to the hero, not the viewport — the page has been scrolled.
         const hero = document.querySelector('.centre-hero');
         const headroom = hero ? Math.round(i.top - hero.getBoundingClientRect().top) : 0;
         return { bleed: Math.round(i.bottom - b.top), covered: i.bottom <= b.bottom,
-                 occluded: occluded, hit: hit ? (hit.className || hit.tagName) : 'none', headroom: headroom };
+                 occluded: occluded, inView: inView,
+                 hit: hit ? (hit.className || hit.tagName) : 'none', headroom: headroom };
       });
       if (tag === 'desktop') ok('the centre hero mounts with no script error', ceErrs.length === 0);
       ok('the model bleeds past the seam on ' + tag + ' (' + (geo && geo.bleed) + 'px)', geo && geo.bleed > 20);
       ok('…and the band paints over its bottom edge, so there is no visible cut (' + tag + ')',
         geo && geo.covered && geo.occluded);
-      if (geo && !geo.occluded) console.error('        topmost element at the model\'s bottom edge was:', geo.hit);
+      // A probe point that never made it on screen is a harness failure, not a
+      // layout one — say which, so a red run is not misread as a design bug.
+      ok('…probed a point that is actually on screen (' + tag + ')', geo && geo.inView);
+      if (geo && geo.inView && !geo.occluded) console.error('        topmost element at the model\'s bottom edge was:', geo.hit);
       ok('…without pushing the head above the hero (' + tag + ', ' + (geo && geo.headroom) + 'px)', geo && geo.headroom > -20);
       await ce.close();
     }
@@ -1251,7 +1360,9 @@ const STATUS = {
       + Math.round(orig / 1024) + 'KB → ' + Math.round(sentBytes / 1024) + 'KB sent)',
       sentBytes > 0 && sentBytes < orig / 2);
   } catch (e) { fail++; console.error('  ✗ harness error: ' + (e && e.message)); }
-  finally { if (browser) await browser.close(); try { process.kill(-server.pid); } catch (_) {} try { fs.unlinkSync(FIX); } catch (_) {}
+  // KEEP_FIX=1 leaves tests/_boards_fixture.html on disk so a failing board can
+  // be opened by hand under `php -S`. Off by default; the fixture is generated.
+  finally { if (browser) await browser.close(); try { process.kill(-server.pid); } catch (_) {} try { if (!process.env.KEEP_FIX) fs.unlinkSync(FIX); } catch (_) {}
     try { fs.unlinkSync(path.join(ROOT, 'tests', '_upload_fixture.html')); } catch (_) {}  }
 
   console.log((fail ? '❌ FAIL' : '✅ PASS') + ': ' + pass + ' passed, ' + fail + ' failed (UI smoke: boards + card studio)');

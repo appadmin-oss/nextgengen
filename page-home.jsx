@@ -859,6 +859,35 @@ function StatusPage({ setPage, previewConfig }) {
     { icon: "ph-handshake", tintBg: "rgba(59,91,219,0.14)", iconColor: "#3b5bdb", value: sFmt(ci(k.activeVolunteers)), label: "Active volunteers", valueColor: "#0a1130", ...dd(dl.volNew || 0, " today") },
     { icon: "ph-star", tintBg: "rgba(245,176,38,0.16)", iconColor: "#a07400", value: sFmt(ci(k.starsThisWeek)), label: "Stars this week", valueColor: "#0a1130", ...dd(dl.starsToday || 0, " today") },
   ];
+  // Intake belongs in the at-a-glance row too, not only in its own section
+  // further down — "how many signed up" is the first question anyone asks.
+  if (k.registered != null) kpis.push(
+    { icon: "ph-user-plus", tintBg: "rgba(176,124,255,0.15)", iconColor: "#6a3fc0", value: sFmt(ci(k.registered)), label: "Registered", valueColor: "#0a1130", ...dd((d && d.registration && d.registration.today) || 0, " today") },
+    { icon: "ph-shield-check", tintBg: "rgba(47,158,68,0.14)", iconColor: "#2f9e44", value: sFmt(ci(k.consentVerified)), label: "Consent verified", valueColor: "#0a1130",
+      deltaBg: (k.consentPending || 0) > 0 ? "rgba(232,169,43,0.16)" : "rgba(47,158,68,0.12)",
+      deltaColor: (k.consentPending || 0) > 0 ? "#a07400" : "#2f9e44",
+      deltaIcon: (k.consentPending || 0) > 0 ? "ph-hourglass-medium" : "ph-check",
+      deltaText: (k.consentPending || 0) > 0 ? k.consentPending + " pending" : "all in" },
+  );
+
+  /* Registration (intake). Separate from attendance on purpose: attendance
+     says how the programme is RUNNING, registration says how it is FILLING,
+     and a board that only shows the first can look healthy while nobody is
+     signing up. `enrolled` counts active students; `reg.total` counts every
+     sign-up ever, because a withdrawal is still a registration that happened.
+
+     Guarded with `|| {}` so a frontend deployed ahead of the API renders the
+     attendance board as before rather than throwing on the whole page. */
+  const reg = (d && d.registration) || null;
+  const regTrend = ((reg && reg.trend) || []).slice(-14);
+  const regMax = Math.max(1, ...regTrend.map(x => x.signups || 0));
+  // Capacity is optional per centre. With none set, a "0 places" fill bar
+  // would read as "the programme is full" — say nothing instead of lying.
+  const hasCapacity = !!(reg && reg.capacity > 0);
+  const regCentres = hasCapacity
+    ? [...centresRaw].filter(c => (c.capacity || 0) > 0).sort((a, b) => (b.fill || 0) - (a.fill || 0))
+    : [];
+  const fillTone = (f) => f >= 100 ? "#e03131" : f >= 85 ? "#e8a92b" : "#2f9e44";
 
   // Centre table (sorted)
   const sorted = [...centresRaw].sort((a, b) => sortKey === "name" ? a.name.localeCompare(b.name) : sortKey === "present" ? (b.present - a.present) : (b.rate - a.rate));
@@ -1029,6 +1058,105 @@ function StatusPage({ setPage, previewConfig }) {
             </div>
           </div>
         </section>
+
+        {reg && <section data-board-section="registration" style={{ padding: "40px 0 4px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#a07400" }}>Places and consent</div>
+                <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Registration</h2>
+              </div>
+              <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6" }}>Every sign-up, including withdrawn</span>
+            </div>
+
+            <div className="reg-cols" style={{ display: "grid", gridTemplateColumns: "1fr 1.25fr", gap: 16, alignItems: "stretch" }}>
+              {/* Headline: total signed up, against capacity when it is set. */}
+              <div style={{ background: "linear-gradient(158deg,#0c1432 0%,#1d2c63 100%)", color: "#fff", borderRadius: 18, padding: "26px 26px 24px", display: "flex", flexDirection: "column" }}>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Registered</span>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 12, margin: "10px 0 0" }}>
+                  <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(46px,6vw,68px)", lineHeight: 0.84, letterSpacing: "-0.04em", color: accent, fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(reg.total))}</span>
+                  {hasCapacity && <span style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "rgba(255,255,255,0.8)", paddingBottom: 7 }}>of {sFmt(reg.capacity)} places</span>}
+                </div>
+                {hasCapacity ? <>
+                  <div style={{ display: "flex", height: 12, borderRadius: 99, overflow: "hidden", background: "rgba(255,255,255,0.12)", marginTop: 18 }}>
+                    <div style={{ width: Math.min(100, reg.fill) + "%", background: "linear-gradient(90deg,#ffcf6b,#f5b026)", transition: "width .8s cubic-bezier(.2,.7,.2,1)" }}/>
+                  </div>
+                  <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "rgba(255,255,255,0.62)", marginTop: 10 }}>{reg.fill}% of places taken{reg.fill >= 100 ? " · full" : " · " + sFmt(Math.max(0, reg.capacity - reg.total)) + " left"}</div>
+                </> : (
+                  <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "rgba(255,255,255,0.5)", marginTop: 18, lineHeight: 1.5 }}>No centre capacities set, so there is no fill rate to show.</div>
+                )}
+                <div style={{ flex: "1 1 auto", minHeight: 14 }}/>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, borderTop: "1px solid rgba(255,255,255,0.14)", paddingTop: 16 }}>
+                  <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(reg.today))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Signed up today</div></div>
+                  <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(reg.thisWeek))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 4 }}>This week</div></div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 16 }}>
+                {/* Consent is the safeguarding number, so it gets its own card
+                    rather than being one figure among several. */}
+                <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, padding: "22px 24px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8088a6" }}>Parent consent</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 999, background: statusBg(reg.consentRate), color: rateTone(reg.consentRate) }}><i className={"ph " + (reg.pending > 0 ? "ph-hourglass-medium" : "ph-shield-check")}/>{reg.consentRate}% verified</span>
+                  </div>
+                  <div style={{ display: "flex", height: 10, borderRadius: 99, overflow: "hidden", background: "rgba(12,20,50,0.07)", marginTop: 16 }}>
+                    <div style={{ width: (reg.consentRate * t) + "%", background: rateTone(reg.consentRate), transition: "width .8s cubic-bezier(.2,.7,.2,1)" }}/>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 18 }}>
+                    <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 28, color: "#2f9e44", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(reg.verified))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488", marginTop: 5 }}>Consent verified</div></div>
+                    <div><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 28, color: reg.pending > 0 ? "#a07400" : "#5a6488", fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(reg.pending))}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488", marginTop: 5 }}>Awaiting a parent</div></div>
+                  </div>
+                </div>
+
+                {/* Sign-ups per day — the same 14-day window as the attendance
+                    trend so the two charts can be read against each other. */}
+                <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, padding: "20px 24px 16px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8088a6" }}>Sign-ups · last {regTrend.length || 14} days</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#5a6488" }}>{sFmt(regTrend.reduce((s, x) => s + (x.signups || 0), 0))} total</span>
+                  </div>
+                  {regTrend.length ? (
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 92, marginTop: 16 }}>
+                      {regTrend.map((b, i) => (
+                        <div key={i} title={b.date + " · " + b.signups + " sign-up" + (b.signups === 1 ? "" : "s")} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", height: "100%" }}>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: "#8088a6", marginBottom: 4 }}>{b.signups}</span>
+                          <div style={{ width: "100%", maxWidth: 22, borderRadius: "5px 5px 0 0", background: "linear-gradient(180deg,#6a3fc0,#b07cff)", height: Math.round((b.signups || 0) / regMax * 66 * t) + "px", transition: "height .8s cubic-bezier(.2,.7,.2,1)" }}/>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "#8088a6", padding: "26px 0 18px", textAlign: "center" }}>No sign-ups in this window.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Per-centre fill. Only where a capacity exists — a centre with
+                none has nothing to be a percentage of. */}
+            {regCentres.length > 0 && <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, padding: "22px 24px", marginTop: 16, boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+              <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8088a6", marginBottom: 16 }}>How each centre is filling</div>
+              <div style={{ display: "grid", gap: 14 }}>
+                {regCentres.map(c => (
+                  <div key={c.code} className="reg-centre-row" style={{ display: "grid", gridTemplateColumns: "1.2fr 2.6fr 96px 118px", alignItems: "center", gap: 16 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 3, background: c.color, flex: "0 0 auto" }}/>
+                      <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 14.5, color: "#0a1130", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</b>
+                    </span>
+                    <span style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}>
+                      <span style={{ display: "block", height: "100%", borderRadius: 99, width: Math.min(100, c.fill) + "%", transformOrigin: "left", transition: "transform .8s cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + t.toFixed(3) + ")", background: fillTone(c.fill) }}/>
+                    </span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#2a335c", fontVariantNumeric: "tabular-nums", textAlign: "right" }}>{ci(c.registered)} / {c.capacity}</span>
+                    <span style={{ justifySelf: "end", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
+                      <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, color: fillTone(c.fill), fontVariantNumeric: "tabular-nums" }}>{ci(c.fill)}%</span>
+                      {(c.pending || 0) > 0 ? <span style={{ color: "#a07400" }}>· {c.pending} pending</span> : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>}
+          </div>
+        </section>}
 
         <section style={{ padding: "48px 0 44px" }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
@@ -1315,6 +1443,8 @@ function StatusPage({ setPage, previewConfig }) {
 .hero-cols{display:grid}@media(max-width:860px){.hero-cols{grid-template-columns:1fr!important;gap:28px!important}}
 .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:920px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.kpi-grid{grid-template-columns:1fr}}
 .insight-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}@media(max-width:1000px){.insight-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.insight-grid{grid-template-columns:1fr}}
+@media(max-width:920px){.reg-cols{grid-template-columns:1fr!important}}
+@media(max-width:700px){.reg-centre-row{grid-template-columns:1fr auto!important;grid-template-areas:"name pct" "bar bar" "count count";row-gap:7px}.reg-centre-row>*:nth-child(1){grid-area:name}.reg-centre-row>*:nth-child(2){grid-area:bar}.reg-centre-row>*:nth-child(3){grid-area:count;text-align:left!important}.reg-centre-row>*:nth-child(4){grid-area:pct}}
 .centre-head,.centre-row{display:grid;grid-template-columns:46px 1.5fr 96px 2.3fr 66px 140px;align-items:center;gap:16px;padding:0 20px}
 .centre-head{height:46px;background:#faf6ec;border-bottom:1px solid #e5e8ee}.centre-row{min-height:66px;border-bottom:1px solid #eef0f4}.centre-row:last-child{border-bottom:none}
 @media(max-width:820px){.centre-head{display:none}.centre-row{grid-template-columns:38px 1fr auto;grid-template-areas:"rank name rate" "rank present status" "bar bar bar";row-gap:10px;padding:16px 18px;min-height:0}.c-rank{grid-area:rank}.c-name{grid-area:name}.c-present{grid-area:present;justify-self:start}.c-bar{grid-area:bar}.c-rate{grid-area:rate;justify-self:end}.c-status{grid-area:status;justify-self:end}}
