@@ -248,6 +248,8 @@ function summer_student_admin(array $s): array {
     $out = summer_student_public($s, true);
     $out += [
         'age' => $s['age'] === null || $s['age'] === '' ? null : (int)$s['age'],
+        'firstName' => (string)($s['firstName'] ?? ''),
+        'lastName' => (string)($s['lastName'] ?? ''),
         'guardianName' => (string)($s['guardianName'] ?? ''),
         'guardianPhone' => (string)($s['guardianPhone'] ?? ''),
         'parentEmail' => (string)($s['parentEmail'] ?? ''),
@@ -256,6 +258,7 @@ function summer_student_admin(array $s): array {
         'displayId' => (string)($s['displayId'] ?? ''),
         'token' => (string)($s['token'] ?? ''),
         'regStatus' => (string)($s['regStatus'] ?? 'verified'),
+        'formVersion' => (int)($s['formVersion'] ?? 0),
         'enrolledAt' => (string)($s['enrolledAt'] ?? ''),
     ];
     // Consent state at a glance: which P0 grants are on file, so the roster can
@@ -312,7 +315,26 @@ function admin_summer_student_update(array $p): array {
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     $d = is_array($p['data'] ?? null) ? $p['data'] : [];
     $row = ['updatedAt' => now_iso()];
-    if (array_key_exists('fullName', $d)) { $name = trim((string)$d['fullName']); if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name']; $row['fullName'] = substr($name, 0, 120); }
+    /* Name. Registration collects First and Last separately; `fullName` stays
+     * the authoritative composed value because search, the duplicate guard and
+     * every existing row are built on it. Editing either part recomposes it,
+     * so the two can never drift — an admin fixing a surname must not leave a
+     * card printing the old one. A direct fullName edit is still honoured for
+     * rows that predate the split. */
+    $editedParts = array_key_exists('firstName', $d) || array_key_exists('lastName', $d);
+    if ($editedParts) {
+        $first = trim((string)($d['firstName'] ?? $s['firstName'] ?? ''));
+        $last  = trim((string)($d['lastName'] ?? $s['lastName'] ?? ''));
+        $whole = trim($first . ' ' . $last);
+        if (strlen($whole) < 2) return ['ok' => false, 'error' => 'bad_name'];
+        $row['firstName'] = substr($first, 0, 120);
+        $row['lastName']  = substr($last, 0, 120);
+        $row['fullName']  = substr($whole, 0, 120);
+    } elseif (array_key_exists('fullName', $d)) {
+        $name = trim((string)$d['fullName']);
+        if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name'];
+        $row['fullName'] = substr($name, 0, 120);
+    }
     if (array_key_exists('age', $d)) { $age = (int)$d['age']; if ($age < 5 || $age > 19) return ['ok' => false, 'error' => 'bad_age']; $row['age'] = $age; }
     foreach (['centre' => 48, 'track' => 64, 'guardianName' => 255, 'guardianPhone' => 48, 'photoUrl' => 512, 'notes' => 2000] as $f => $max) {
         if (array_key_exists($f, $d)) $row[$f] = substr(trim((string)$d[$f]), 0, $max);

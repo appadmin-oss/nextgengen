@@ -2521,6 +2521,17 @@ function formFieldOptions(f, data) {
   return (sub && sub.length) ? sub : base;
 }
 
+/* The child's name as the LIVE form collects it.
+   Registration asks for First and Last separately; a form definition
+   published before that split still has a single `fullName`. Reading both
+   keeps the wizard working across a deploy — and stops a hardcoded
+   `form.fullName` silently disabling the Continue button, which is exactly
+   what happened when the fields were split. */
+function regDisplayName(form) {
+  const two = [form.firstName, form.lastName].map(v => (v || "").trim()).filter(Boolean).join(" ");
+  return two || (form.fullName || "").trim();
+}
+
 function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
   const geoOn = !!(ctx.geo && ctx.geo.enabled);
   const fields = ((ctx.form && ctx.form.fields) || []).filter(f => !(geoOn && f.key === "centre"));
@@ -2590,7 +2601,7 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
     <div style={{ ...card, padding: 22, textAlign: "center" }}>
       <div style={{ fontSize: 40 }}>📨</div>
       <h2 style={{ fontSize: 20, margin: "10px 0 6px" }}>Registered — parent notified</h2>
-      <p style={{ ...mut, fontSize: 14, lineHeight: 1.55 }}>{form.fullName} is in as <b style={{ color: "#fff" }}>{done.studentId}</b>. The registration completes when the parent confirms{done.verificationSent && done.verificationSent.length ? " (sent by " + done.verificationSent.join(" + ") + ")" : ""}. Their ID is issued at that moment.</p>
+      <p style={{ ...mut, fontSize: 14, lineHeight: 1.55 }}>{regDisplayName(form)} is in as <b style={{ color: "#fff" }}>{done.studentId}</b>. The registration completes when the parent confirms{done.verificationSent && done.verificationSent.length ? " (sent by " + done.verificationSent.join(" + ") + ")" : ""}. Their ID is issued at that moment.</p>
       <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
         <button onClick={() => { setDone(null); setForm({}); setPhotoUrl(""); setStep(0); }} style={{ flex: 1, padding: 13, borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>New registration</button>
         <button onClick={() => { const keep = {}; ["parentName", "parentPhone", "parentEmail"].forEach(k => { if (form[k]) keep[k] = form[k]; }); setDone(null); setForm(keep); setPhotoUrl(""); setStep(0); }} style={{ flex: 1, padding: 13, borderRadius: 11, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Register sibling</button>
@@ -2670,7 +2681,13 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
             </label>
           );
         })}
-        {(() => { const ready = (form.fullName || "").trim() && geoReady;
+        {(() => {
+          /* The form asks for First and Last now. This gate used to require
+             `fullName`, which the split left permanently empty — the Continue
+             button would never enable and nobody could register at all. Read
+             whichever the live form actually asks for. */
+          const named = (regDisplayName(form) || "").trim();
+          const ready = named && geoReady;
           return <button onClick={() => setStep(1)} disabled={!ready} style={{ padding: 14, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer", opacity: ready ? 1 : .5 }}>Continue → Photo</button>; })()}
         {geoOn && !geoReady && <p style={{ fontSize: 11.5, textAlign: "center", margin: 0, color: "#ffb0b0" }}>You must be on-site at a registration centre to continue.</p>}
         <p style={{ ...mut, fontSize: 11.5, textAlign: "center", margin: 0 }}>Every field autosaves on this device — nothing is lost if you're interrupted.</p>
@@ -2682,8 +2699,8 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
     {step === 2 && (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ ...card, padding: 16, display: "flex", gap: 13, alignItems: "center" }}>
-          {photoUrl ? <img src={photoUrl} alt="" style={{ width: 54, height: 54, borderRadius: 12, objectFit: "cover" }}/> : <div style={{ width: 54, height: 54, borderRadius: 12, background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center", fontSize: 22, fontWeight: 800 }}>{(form.fullName || "?").charAt(0)}</div>}
-          <div><div style={{ fontWeight: 800, fontSize: 16 }}>{form.fullName}</div><div style={{ ...mut, fontSize: 13 }}>{form.course || ""}{form.age ? " · " + form.age : ""}</div></div>
+          {photoUrl ? <img src={photoUrl} alt="" style={{ width: 54, height: 54, borderRadius: 12, objectFit: "cover" }}/> : <div style={{ width: 54, height: 54, borderRadius: 12, background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center", fontSize: 22, fontWeight: 800 }}>{(regDisplayName(form) || "?").charAt(0)}</div>}
+          <div><div style={{ fontWeight: 800, fontSize: 16 }}>{regDisplayName(form)}</div><div style={{ ...mut, fontSize: 13 }}>{form.course || ""}{form.age ? " · " + form.age : ""}</div></div>
         </div>
         <div style={{ ...card, padding: 14, fontSize: 13.5, lineHeight: 1.6 }}>
           <b>Parent:</b> {form.parentName || "—"}<br/>

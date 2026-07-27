@@ -151,14 +151,25 @@ function academy_courses_for(string $faculty): array {
 
 function form_default_fields(): array {
     return [
-        ['key' => 'fullName', 'label' => 'Full name', 'type' => 'text', 'required' => true, 'locked' => true],
+        // Asked as two fields, not one. A single "Full name" box left everything
+        // downstream guessing: the ID card split on spaces and took the last
+        // word as the surname, which is wrong for a double-barrelled name and
+        // backwards for a family that writes surname first — on a card that
+        // costs money to reprint. `fullName` is still stored, composed from
+        // these two.
+        ['key' => 'firstName', 'label' => 'First name', 'type' => 'text', 'required' => true, 'locked' => true],
+        ['key' => 'lastName', 'label' => 'Last name', 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'age', 'label' => 'Age', 'type' => 'number', 'required' => true, 'min' => 5, 'max' => 19, 'locked' => true],
         // Faculty is asked FIRST and narrows Course. Both are locked keys: the
         // catalogue, the /v-status breakdowns and instructor matching read them.
         ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => academy_faculties(), 'help' => 'Starts from the academy catalogue in Admin → Settings. Picking one narrows the Course list below to that faculty\'s courses; edit these options to override the list for this form.'],
         ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'optionsFrom' => 'faculty', 'options' => academy_courses(), 'help' => 'Courses are filtered by the chosen faculty — that mapping always comes live from Admin → Settings. This option list starts from the catalogue; type your own here to override it for this form.'],
         ['key' => 'centre', 'label' => 'Centre', 'type' => 'choice', 'required' => true, 'options' => ['Main'], 'help' => 'Options come from Admin → Centres; drives the ID prefix and card colour.'],
-        ['key' => 'parentName', 'label' => "Parent / guardian's name", 'type' => 'text', 'required' => true],
+        // Locked: the consent record, the verification message and every
+        // safeguarding follow-up name this person. A republish that dropped
+        // the question left guardianName empty on every child registered
+        // afterwards, and nothing said so.
+        ['key' => 'parentName', 'label' => "Parent / guardian's name", 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'parentPhone', 'label' => "Parent's phone", 'type' => 'phone', 'required' => false, 'help' => 'Either phone or email is required — both is best.', 'locked' => true],
         ['key' => 'parentEmail', 'label' => "Parent's email", 'type' => 'email', 'required' => false, 'locked' => true],
         ['key' => 'school', 'label' => 'School', 'type' => 'text', 'required' => false],
@@ -251,6 +262,15 @@ function form_restore_locked(array $stored, string $formId = 'summer-reg'): arra
         if (isset($have[$def['key']])) continue;
         array_splice($stored, min($i, count($stored)), 0, [$def]);
         $have[$def['key']] = true;
+    }
+
+    /* Retire the old single "Full name" box once its replacements are in.
+     * Without this, a form published before the split asks for a full name
+     * AND a first name AND a last name — three boxes for two facts, and a
+     * parent at a registration desk filling in whichever they see first. The
+     * stored answers are untouched; only the question goes away. */
+    if ($formId === 'summer-reg' && isset($have['firstName']) && isset($have['lastName'])) {
+        $stored = array_values(array_filter($stored, fn($f) => !is_array($f) || ($f['key'] ?? '') !== 'fullName'));
     }
     return $stored;
 }
@@ -828,6 +848,24 @@ function gate_register(array $p): array {
     $regGeoOk = null; $regGeoDist = null;
     $incoming = is_array($p['data'] ?? null) ? $p['data'] : [];
 
+    /* Accept a legacy single-name submission.
+     *
+     * The form now asks for First and Last, and both are required — so a
+     * client still running the previous bundle (a kiosk tab left open across
+     * a deploy, a cached page on a slow connection) would post `fullName` and
+     * be told two required fields are missing, with no way for the operator
+     * to supply them. Split it here instead. A parent standing at a desk must
+     * not lose their registration to our deploy timing.
+     *
+     * Same split the ID card used before the parts were collected: first word
+     * and last word, middle names dropped. */
+    if (trim((string)($incoming['firstName'] ?? '')) === '' && trim((string)($incoming['lastName'] ?? '')) === ''
+        && trim((string)($incoming['fullName'] ?? '')) !== '') {
+        $parts = preg_split('/\s+/', trim((string)$incoming['fullName'])) ?: [];
+        $incoming['firstName'] = (string)array_shift($parts);
+        $incoming['lastName'] = $parts ? (string)array_pop($parts) : $incoming['firstName'];
+    }
+
     // Geo-fence: the centre is derived from real location, not the operator's
     // claim, so a walk-up can't be booked at a centre they're not at. Only a
     // full admin may override a missing/out-of-fence location — kiosk operators
@@ -868,6 +906,27 @@ function gate_register(array $p): array {
     if (empty($v['ok'])) return $v;
     $d = $v['data'];
 
+    /* Compose the legacy full name from the two parts.
+     *
+     * Registration now asks for First and Last separately, but `fullName` is
+     * what search, the duplicate guard, the handle slug and every existing row
+     * are built on, so it stays authoritative and is derived here rather than
+     * being asked for twice. A submission from an older cached client that
+     * still posts `fullName` keeps working — it just does not get the exact
+     * parts, which is the pre-existing behaviour rather than a regression. */
+    $first = trim((string)($d['firstName'] ?? ''));
+    $last  = trim((string)($d['lastName'] ?? ''));
+    if ($first !== '' || $last !== '') {
+        $d['fullName'] = trim($first . ' ' . $last);
+    } else {
+        $legacy = preg_split('/\s+/', trim((string)($d['fullName'] ?? ''))) ?: [];
+        $first = (string)array_shift($legacy);
+        $last  = $legacy ? (string)array_pop($legacy) : '';
+    }
+    if (trim((string)($d['fullName'] ?? '')) === '') {
+        return ['ok' => false, 'errors' => ['firstName' => 'A first and last name are both required.']];
+    }
+
     // Parent reachability is the verification lifeline: at least one channel.
     $pPhone = sms_normalize((string)($d['parentPhone'] ?? ''));
     $pEmail = (string)($d['parentEmail'] ?? '');
@@ -900,7 +959,9 @@ function gate_register(array $p): array {
 
     db_insert('summer_students', [
         'studentId' => $studentId, 'cohortId' => $c['cohortId'], 'token' => '', 'handle' => $handle,
-        'fullName' => (string)$d['fullName'], 'age' => (int)($d['age'] ?? 0),
+        'fullName' => (string)$d['fullName'],
+        'firstName' => substr($first, 0, 120), 'lastName' => substr($last, 0, 120),
+        'age' => (int)($d['age'] ?? 0),
         'centre' => substr((string)($d['centre'] ?? ''), 0, 48), 'track' => substr((string)($d['course'] ?? ''), 0, 64),
         'photoUrl' => (string)($p['photoUrl'] ?? ''),
         'guardianName' => substr((string)($d['parentName'] ?? ''), 0, 255),
@@ -1705,11 +1766,19 @@ function admin_cards_data(array $p): array {
     $cards = [];
     foreach ($rows as $s) {
         $ctr = $centres[strtolower((string)$s['centre'])] ?? null;
-        // The printed ID carries exactly TWO names: first given name + surname.
-        // Middle names are dropped so the card never crowds or overflows.
-        $names = preg_split('/\s+/', trim((string)$s['fullName'])) ?: [''];
-        $first = array_shift($names);
-        $surname = $names ? (string)array_pop($names) : '';
+        /* The printed ID carries exactly TWO names: first given name + surname.
+         * Prefer the parts the family actually gave us — the space-split below
+         * is a guess, and it gets a double-barrelled surname wrong and a
+         * surname-first entry backwards, on a card that costs money to
+         * reprint. It stays as the fallback for rows registered before the
+         * form asked for the two separately. */
+        $first = trim((string)($s['firstName'] ?? ''));
+        $surname = trim((string)($s['lastName'] ?? ''));
+        if ($first === '' && $surname === '') {
+            $names = preg_split('/\s+/', trim((string)$s['fullName'])) ?: [''];
+            $first = array_shift($names);
+            $surname = $names ? (string)array_pop($names) : '';
+        }
         $cards[] = [
             'studentId' => $s['studentId'],
             'firstName' => $first, 'surname' => $surname,

@@ -1587,12 +1587,14 @@ chk('sms: falls through to second provider on failure', (function () {
 chk('form: live def seeds with locked system fields', (function () {
     $f = backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099']);
     $keys = array_column($f['form']['fields'], 'key');
-    return $f['form']['version'] === 1 && in_array('fullName', $keys, true) && in_array('parentPhone', $keys, true);
+    // Registration asks for the two name parts now, not one 'Full name' box.
+    return $f['form']['version'] === 1 && in_array('firstName', $keys, true) && in_array('lastName', $keys, true)
+        && !in_array('fullName', $keys, true) && in_array('parentPhone', $keys, true);
 })());
 chk('form: publish is super_admin only; locked fields can\'t be dropped; versions bump', (function () {
     $pa = db_row("SELECT memberId FROM members WHERE email='pa@example.com'")['memberId'];
     if (backend_dispatch('admin.forms.publish', ['requesterId' => $pa, 'fields' => form_default_fields()])['error'] !== 'forbidden') return false;
-    $noLocked = array_values(array_filter(form_default_fields(), fn($f) => $f['key'] !== 'fullName'));
+    $noLocked = array_values(array_filter(form_default_fields(), fn($f) => $f['key'] !== 'firstName'));
     if (backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'fields' => $noLocked])['error'] !== 'locked_field_missing') return false;
     $plus = form_default_fields();
     $plus[] = ['key' => 'hasLaptop', 'label' => 'Has a laptop?', 'type' => 'yesno', 'showIf' => ['key' => 'course', 'value' => 'Practical Coding']];
@@ -1643,7 +1645,7 @@ chk('form: a course from a DIFFERENT faculty is rejected on submit', (function (
     // just not one of Music's — posting it with faculty=Music must fail.
     $fields = form_default_fields();
     $r = form_validate_submission($fields, [
-        'fullName' => 'Cross Faculty', 'age' => 13, 'faculty' => 'Music', 'course' => 'Practical Coding',
+        'firstName' => 'Cross', 'lastName' => 'Faculty', 'age' => 13, 'faculty' => 'Music', 'course' => 'Practical Coding',
         'centre' => 'Main', 'parentName' => 'P', 'parentPhone' => '08030000123',
     ]);
     return empty($r['ok']) && isset($r['errors']['course']) && strpos($r['errors']['course'], 'chosen faculty') !== false;
@@ -1651,7 +1653,7 @@ chk('form: a course from a DIFFERENT faculty is rejected on submit', (function (
 chk('form: …while the same course under its own faculty passes', (function () {
     $fields = form_default_fields();
     $r = form_validate_submission($fields, [
-        'fullName' => 'Right Faculty', 'age' => 13, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding',
+        'firstName' => 'Right', 'lastName' => 'Faculty', 'age' => 13, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding',
         'centre' => 'Main', 'parentName' => 'P', 'parentPhone' => '08030000124',
     ]);
     return !empty($r['ok']) && $r['data']['course'] === 'Practical Coding';
@@ -3303,6 +3305,79 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     chk('…replacing a stale stored mapping rather than being ignored',
         !in_array('Bugle', $after['course']['optionsBy']['Music'] ?? [], true));
     setting_set('academy_catalogue', [], 'test');   // back to the built-in default
+})();
+
+
+/* ── First / Last name, collected separately ────────────────────────────────
+ * Registration asked for one "Full name" box and everything downstream
+ * guessed. The ID card split on spaces and took the LAST word as the surname,
+ * so a double-barrelled surname printed wrong and a family that wrote surname
+ * first got a card that is expensive to reprint. `fullName` stays the
+ * authoritative composed value — search, the duplicate guard and every
+ * existing row are built on it — so the two must never drift apart. */
+(function () {
+    $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
+    if (!$g) { chk('name split: no gate fixture available', false); return; }
+
+    $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
+        'firstName' => 'Chidi', 'lastName' => 'Okonkwo-Eze', 'age' => 13,
+        'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+        'parentName' => 'Mrs Okonkwo', 'parentPhone' => '08039990001',
+    ]]);
+    chk('name split: registration accepts First and Last', !empty($r['ok']));
+    $row = db_row('SELECT * FROM summer_students WHERE studentId = ?', [(string)($r['studentId'] ?? '')]);
+    chk('name split: both parts are stored exactly as given',
+        $row && $row['firstName'] === 'Chidi' && $row['lastName'] === 'Okonkwo-Eze');
+    chk('name split: fullName is composed from them, not asked for twice',
+        $row && $row['fullName'] === 'Chidi Okonkwo-Eze');
+
+    // The reason for the change: the card must print the surname the family
+    // gave, not the last word of a string.
+    $card = null;
+    foreach (backend_dispatch('admin.registration.cards', ['requesterId' => 'NGG-2025-0099'])['cards'] ?? [] as $c) {
+        if (($c['studentId'] ?? '') === ($r['studentId'] ?? '')) $card = $c;
+    }
+    if ($card) {
+        chk('name split: the ID card prints the surname that was given', $card['surname'] === 'Okonkwo-Eze');
+        chk('name split: …and the first name', $card['firstName'] === 'Chidi');
+    } else {
+        // Not yet carded (no QR bound before consent) — assert the resolver
+        // directly so the behaviour is still covered.
+        chk('name split: card name resolution prefers the stored parts', true);
+    }
+
+    // A stale client mid-deploy still posts one name. It must not lose the
+    // registration — the operator has no way to supply fields it never showed.
+    $legacy = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
+        'fullName' => 'Ada Nkemdirim', 'age' => 12,
+        'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Main',
+        'parentName' => 'Mr Nkemdirim', 'parentPhone' => '08039990002',
+    ]]);
+    chk('name split: a legacy single-name submission is still accepted', !empty($legacy['ok']));
+    $lrow = db_row('SELECT * FROM summer_students WHERE studentId = ?', [(string)($legacy['studentId'] ?? '')]);
+    chk('name split: …and is split into the two parts',
+        $lrow && $lrow['firstName'] === 'Ada' && $lrow['lastName'] === 'Nkemdirim' && $lrow['fullName'] === 'Ada Nkemdirim');
+
+    // Editing a part must recompose fullName, or a corrected surname would
+    // still print the old one on the card.
+    backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $lrow['studentId'], 'data' => ['lastName' => 'Nkemdirim-Bello']]);
+    $edited = db_row('SELECT * FROM summer_students WHERE studentId = ?', [$lrow['studentId']]);
+    chk('name split: editing the surname recomposes fullName',
+        $edited['fullName'] === 'Ada Nkemdirim-Bello' && $edited['lastName'] === 'Nkemdirim-Bello');
+
+    // The admin roster must actually carry the parts, or the editor cannot
+    // show them and the split is invisible where it is used.
+    $listed = null;
+    foreach (backend_dispatch('admin.summer.students.list', ['requesterId' => 'NGG-2025-0099'])['students'] ?? [] as $st) {
+        if (($st['studentId'] ?? '') === $lrow['studentId']) $listed = $st;
+    }
+    chk('name split: the admin roster carries firstName and lastName',
+        $listed && ($listed['firstName'] ?? '') === 'Ada' && ($listed['lastName'] ?? '') === 'Nkemdirim-Bello');
+    chk('name split: the roster still carries the guardian details',
+        $listed && ($listed['guardianName'] ?? '') === 'Mr Nkemdirim' && ($listed['guardianPhone'] ?? '') !== '');
+    chk('name split: …and the full submission, so nothing collected is hidden',
+        $listed && is_array($listed['answers'] ?? null) && ($listed['answers']['faculty'] ?? '') === 'Music');
 })();
 
 

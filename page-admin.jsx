@@ -2414,17 +2414,88 @@ function ProfileExtrasEditor({ subjectType, subjectId }) {
   );
 }
 
+/* Everything the family actually submitted.
+ *
+ * The editor exposes the columns the roster needs — name, age, centre, track,
+ * guardian — and stopped there. School, allergies and every question an admin
+ * added in the form builder live in `formData` and appeared NOWHERE in the
+ * console: collected on the form, written to the database, never shown to
+ * the people who need them. A medical note nobody can see is worse than one
+ * that was never asked for.
+ *
+ * Read-only and labelled from the live form, so a custom question shows the
+ * wording the parent answered rather than its storage key. Fields already
+ * edited above are skipped so the panel is not a confusing second copy. */
+const ANSWERS_SHOWN_ABOVE = { firstName: 1, lastName: 1, fullName: 1, age: 1, centre: 1, course: 1,
+                              parentName: 1, parentPhone: 1, parentEmail: 1 };
+
+function SubmissionAnswers({ s }) {
+  const [labels, setLabels] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.admin.registration.form("summer-reg")
+      .then(r => { if (!alive) return; const m = {}; (r.form?.fields || []).forEach(x => { m[x.key] = x.label; }); setLabels(m); })
+      .catch(() => { if (alive) setLabels({}); });
+    return () => { alive = false; };
+  }, []);
+
+  const answers = s.answers || {};
+  const keys = Object.keys(answers).filter(k => !ANSWERS_SHOWN_ABOVE[k]
+    && answers[k] !== "" && answers[k] != null
+    && !(Array.isArray(answers[k]) && !answers[k].length));
+  const show = (v) => Array.isArray(v) ? v.join(", ") : String(v);
+
+  return (
+    <div>
+      <div className="mono" style={{ fontSize: 10.5, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>
+        Everything they submitted{s.formVersion ? " · form v" + s.formVersion : ""}
+      </div>
+      {!keys.length ? (
+        <div className="admin-cell-sub" style={{ fontSize: 12 }}>
+          Nothing beyond the fields above{labels === null ? "" : " — this child answered no other questions"}.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 6 }}>
+          {keys.map(k => (
+            <div key={k} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "7px 10px", borderRadius: 8, background: "rgba(12,20,50,0.03)" }}>
+              <span style={{ flex: "0 0 34%", fontSize: 12, fontWeight: 700, color: "var(--ink-600,#47506e)" }}>
+                {(labels && labels[k]) || k}
+              </span>
+              <span style={{ flex: 1, fontSize: 13, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{show(answers[k])}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StudentEditor({ s, onSaved, onDelete }) {
   const centreOpts = useCentreOptions();
+  /* Name is edited as two fields, matching what registration now collects.
+     `fullName` is not editable here: the server recomposes it from the parts,
+     so an admin fixing a surname cannot leave the composed value — and the
+     printed card — showing the old one. Rows that predate the split arrive
+     with the parts already backfilled by the migration. */
+  // A row that predates the split (or one the migration could not backfill)
+  // arrives with fullName only. Seed the two boxes by splitting it rather than
+  // opening blank — a blank required field blocks the save, and the admin has
+  // no way to know why the record they can plainly see will not update.
+  const seedName = (() => {
+    if (s.firstName || s.lastName) return { firstName: s.firstName || "", lastName: s.lastName || "" };
+    const parts = String(s.fullName || "").trim().split(/\s+/).filter(Boolean);
+    return { firstName: parts.shift() || "", lastName: parts.pop() || "" };
+  })();
   const [f, setF] = React.useState({
-    fullName: s.fullName || "", age: s.age != null ? String(s.age) : "", handle: s.handle || "",
+    firstName: seedName.firstName, lastName: seedName.lastName,
+    age: s.age != null ? String(s.age) : "", handle: s.handle || "",
     centre: s.centre || "", track: s.track || "", guardianName: s.guardianName || "",
     guardianPhone: s.guardianPhone || "", parentEmail: s.parentEmail || "", photoUrl: s.photoUrl || "", notes: s.notes || "",
   });
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const save = async () => {
-    if (f.fullName.trim().length < 2) { toast.error("Name needs at least 2 characters."); return; }
+    if ((f.firstName.trim() + f.lastName.trim()).length < 2) { toast.error("Enter a first and last name."); return; }
     setBusy(true);
     try {
       await NGGApi.admin.summer.studentUpdate(s.studentId, { ...f, age: f.age === "" ? s.age : parseInt(f.age, 10) || 0 });
@@ -2444,7 +2515,8 @@ function StudentEditor({ s, onSaved, onDelete }) {
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
         <div><span style={lbl}>Photo</span><PhotoCapture value={f.photoUrl} onChange={v => set("photoUrl", v)} size={80} label="Student photo"/></div>
         <div style={{ flex: 1, minWidth: 260, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-          {fld("fullName", "Full name", { min: 200 })}
+          {fld("firstName", "First name", { min: 150 })}
+          {fld("lastName", "Last name", { min: 150 })}
           {fld("age", "Age", { type: "number" })}
           {fld("handle", "Public handle", { ph: "auto-slug" })}
           <div style={{ flex: "1 1 180px", minWidth: 150 }}><span style={lbl}>Centre</span>
@@ -2462,6 +2534,7 @@ function StudentEditor({ s, onSaved, onDelete }) {
         {fld("parentEmail", "Parent email", { type: "email", min: 200 })}
       </div>
       <div><span style={lbl}>Notes</span><textarea className="admin-input" rows={2} value={f.notes} onChange={e => set("notes", e.target.value)} style={{ width: "100%", resize: "vertical" }}/></div>
+      <SubmissionAnswers s={s}/>
       <ProfileExtrasEditor subjectType="student" subjectId={s.studentId}/>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save student"}</button>
@@ -4715,7 +4788,7 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
   const [busy, setBusy] = React.useState(false);
   const set = (k, val) => setF(x => ({ ...x, [k]: val }));
   const save = async () => {
-    if (f.fullName.trim().length < 2) { toast.error("Name needs at least 2 characters."); return; }
+    if ((f.firstName.trim() + f.lastName.trim()).length < 2) { toast.error("Enter a first and last name."); return; }
     setBusy(true);
     try {
       await NGGApi.admin.volunteers.update(v.volunteerId, {

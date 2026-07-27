@@ -355,7 +355,8 @@ const STATUS = {
       g: 'G1', draftKey: 'ngg.test.draft', card: {}, gold: '#ffce54', goldInk: '#2b2100',
       inputS: { width: '100%' },
       ctx: { geo: { enabled: false }, form: { fields: [
-        { key: 'fullName', label: 'Full name', type: 'text', required: true },
+        { key: 'firstName', label: 'First name', type: 'text', required: true },
+        { key: 'lastName', label: 'Last name', type: 'text', required: true },
         { key: 'faculty', label: 'Faculty', type: 'choice', required: true, options: ['AI & Technology', 'Music', 'Media'] },
         { key: 'course', label: 'Course', type: 'choice', required: true, optionsFrom: 'faculty',
           options: ['Practical Coding', 'AI Tools Application', 'Piano', 'Guitar', 'Graphics'],
@@ -1145,6 +1146,33 @@ const STATUS = {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
       setter.call(i, 'St Mary'); i.dispatchEvent(new Event('input', { bubbles: true }));
     });
+
+    /* The Continue button must actually enable once the form is filled.
+     *
+     * It gated on `form.fullName`, which the First/Last split left permanently
+     * empty — so the button stayed disabled and NOBODY could register. The
+     * form rendered perfectly and every field worked; only the one control
+     * that submits it was dead, which is the kind of break that reaches a
+     * registration desk before it reaches anyone who could fix it. */
+    const type = (label, value) => gr.evaluate(([l, v]) => {
+      const lab = Array.from(document.querySelectorAll('label')).find(x => x.textContent.trim().startsWith(l));
+      const i = lab && lab.querySelector('input');
+      if (!i) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(i, v); i.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }, [label, value]);
+    const continueDisabled = () => gr.evaluate(() => {
+      const b = Array.from(document.querySelectorAll('button')).find(x => /Continue/i.test(x.textContent || ''));
+      return b ? b.disabled : null;
+    });
+
+    ok('Continue is disabled before a name is entered', (await continueDisabled()) === true);
+    ok('the form asks for First name', await type('First name', 'Adaeze'));
+    ok('…and Last name', await type('Last name', 'Okonkwo'));
+    await gr.waitForTimeout(150);
+    ok('…and Continue enables once both are filled', (await continueDisabled()) === false);
+
     await gr.close();
 
     /* ── Form builder: the logic editor ──────────────────────────────────── */

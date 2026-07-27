@@ -1010,3 +1010,21 @@ INSERT INTO schema_version (version) VALUES (58) ON DUPLICATE KEY UPDATE version
 ALTER TABLE summer_students ADD COLUMN communityAt VARCHAR(40) DEFAULT '';
 ALTER TABLE volunteers ADD COLUMN communityAt VARCHAR(40) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (59) ON DUPLICATE KEY UPDATE version = version;
+
+-- 60: structured child name, matching applications/volunteers (migration 32).
+-- One "Full name" box made everything downstream guess: the ID card split on
+-- spaces and took the last word as the surname, so a double-barrelled name
+-- printed wrong and a surname-first entry printed backwards. `fullName` stays
+-- authoritative and composed; these are the parts, backfilled on the same
+-- split the card was already using.
+ALTER TABLE summer_students ADD COLUMN firstName VARCHAR(120) DEFAULT '';
+ALTER TABLE summer_students ADD COLUMN lastName VARCHAR(120) DEFAULT '';
+UPDATE summer_students
+   SET firstName = CASE WHEN LOCATE(' ', TRIM(fullName)) > 0
+                        THEN SUBSTRING(TRIM(fullName), 1, LOCATE(' ', TRIM(fullName)) - 1)
+                        ELSE TRIM(fullName) END
+ WHERE firstName = '' AND TRIM(COALESCE(fullName, '')) != '';
+UPDATE summer_students
+   SET lastName = TRIM(REPLACE(TRIM(fullName), firstName, ''))
+ WHERE lastName = '' AND firstName != '' AND TRIM(fullName) != firstName;
+INSERT INTO schema_version (version) VALUES (60) ON DUPLICATE KEY UPDATE version = version;

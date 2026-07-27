@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 59;
+const NGG_SCHEMA_TARGET = 60;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1405,6 +1405,28 @@ function db_migrate(PDO $db): void {
         59 => "
             ALTER TABLE summer_students ADD COLUMN communityAt TEXT DEFAULT '';
             ALTER TABLE volunteers ADD COLUMN communityAt TEXT DEFAULT '';
+        ",
+
+        // Structured child name, matching what applications and volunteers
+        // already carry (migration 32). Registration asked for one 'Full name'
+        // box and everything downstream guessed: the ID card split on spaces
+        // and took the LAST word as the surname, so 'Chidi Okonkwo-Eze Bello'
+        // printed the wrong name, and a family that entered surname-first got
+        // it backwards on a card that is expensive to reprint.
+        // `fullName` stays populated and authoritative for existing rows and
+        // for search; these are the parts, backfilled below on the same split
+        // the card used, so nothing regresses and new intake is exact.
+        60 => "
+            ALTER TABLE summer_students ADD COLUMN firstName TEXT DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN lastName TEXT DEFAULT '';
+            UPDATE summer_students
+               SET firstName = CASE WHEN instr(trim(fullName), ' ') > 0
+                                    THEN substr(trim(fullName), 1, instr(trim(fullName), ' ') - 1)
+                                    ELSE trim(fullName) END
+             WHERE firstName = '' AND trim(COALESCE(fullName, '')) != '';
+            UPDATE summer_students
+               SET lastName = trim(replace(trim(fullName), firstName, ''))
+             WHERE lastName = '' AND firstName != '' AND trim(fullName) != firstName;
         ",
     ];
 
