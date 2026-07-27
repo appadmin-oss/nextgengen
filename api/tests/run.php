@@ -3172,5 +3172,44 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
 })();
 
 
+/* ── Public profile must honour the same consent gate as the board ──────────
+ * This endpoint returned a child's name and photograph to anyone who knew
+ * their handle — and handles are printed on the public board, so a handle is
+ * not a secret. Rate limiting stopped enumeration but not lookup, which made
+ * the board's consent gate decorative: the data it withheld was one request
+ * away. The card TOKEN is a different case and stays open: it is printed on
+ * the child's own ID card, so holding it is the authorisation. */
+(function () {
+    $H = function (string $h) { return backend_dispatch('public.summerProfile', ['handle' => $h])['profile'] ?? []; };
+
+    $full = $H('fullcons');
+    chk('public profile by handle: consented child is named', ($full['fullName'] ?? '') === 'Full Consent');
+    chk('public profile by handle: …and pictured', !empty($full['photoUrl']));
+
+    $nameOnly = $H('nameonly');
+    chk('public profile by handle: name-only consent is named', ($nameOnly['fullName'] ?? '') === 'Name Only');
+    chk('public profile by handle: …but not pictured', ($nameOnly['photoUrl'] ?? '') === '');
+
+    $none = $H('nocons');
+    chk('public profile by handle: no consent hides the name', ($none['fullName'] ?? 'x') === '');
+    chk('public profile by handle: no consent hides the photo', ($none['photoUrl'] ?? 'x') === '');
+    chk('public profile by handle: the page still resolves rather than 404ing',
+        ($none['handle'] ?? '') === 'nocons');
+
+    chk('public profile by handle: a withdrawn consent hides the name again',
+        ($H('gonecons')['fullName'] ?? 'x') === '');
+    chk('public profile by handle: an unverified registration is never named',
+        ($H('pendcons')['fullName'] ?? 'x') === '');
+
+    // The ID card's own token still resolves in full — that is how a family
+    // opens their child's digital ID from the card in their hand.
+    db_insert('qr_codes', ['token' => 'SUMQR-CONSENT1', 'batch' => 'B9', 'cohortId' => 'RC1', 'status' => 'assigned',
+        'studentId' => 'SUM-CST-NONE', 'assignedName' => 'No Consent', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+    $byToken = backend_dispatch('public.summerProfile', ['token' => 'SUMQR-CONSENT1'])['profile'] ?? [];
+    chk('public profile by card token: still returns the full record',
+        ($byToken['fullName'] ?? '') === 'No Consent');
+})();
+
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

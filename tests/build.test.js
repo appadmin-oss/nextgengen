@@ -28,6 +28,7 @@ const ROOT = path.resolve(__dirname, '..');
 // Distinctive name: if this suite ever dies mid-run, the leftover is obvious
 // and greppable rather than looking like a real asset.
 const PROBE = path.join(ROOT, 'assets', '__buildhash_probe.tmp');
+const DIST_PROBE = path.join(ROOT, 'dist', 'assets', '__buildhash_probe.tmp');
 
 let pass = 0, fail = 0;
 const ok = (l, c) => { c ? (pass++, console.log('  ✓ ' + l)) : (fail++, console.error('  ✗ ' + l)); };
@@ -42,7 +43,11 @@ function swVersion() {
   return m ? m[1] : '';
 }
 
-function cleanup() { try { fs.existsSync(PROBE) && fs.unlinkSync(PROBE); } catch (_) {} }
+function cleanup() {
+  // Both copies: the build mirrors assets/ into dist/, so a crash between the
+  // two would otherwise leave the probe sitting in the deploy folder.
+  for (const f of [PROBE, DIST_PROBE]) { try { fs.existsSync(f) && fs.unlinkSync(f); } catch (_) {} }
+}
 process.on('exit', cleanup);
 
 (() => {
@@ -58,12 +63,25 @@ process.on('exit', cleanup);
     ok('an asset-only change moves the build id (' + base + ' → ' + changed + ')', changed !== base);
     ok('…and the service worker version moves with it', swVersion() === 'ngg-' + changed);
 
+    ok('the asset reached dist/', fs.existsSync(DIST_PROBE));
+
     // Removing it must move the id too — a deleted asset is as much a change
     // as an edited one, which is why the hash covers paths and not just bytes.
     fs.unlinkSync(PROBE);
     const restored = buildId();
     ok('removing it moves the id back (' + restored + ')', restored !== changed);
     ok('…and the build is deterministic: same tree, same id', restored === base);
+
+    /* dist/ must MIRROR the source, deletions included. It used to only ever
+       copy over the top, so dist/ accumulated every file that had ever
+       existed in the tree — a renamed image, a dropped vendored library, a
+       deleted API endpoint all stayed behind and kept being deployed. */
+    ok('deleting the asset removes it from dist/ too', !fs.existsSync(DIST_PROBE));
+    // The journal PWA's bundle and shell are GENERATED into dist/journal and
+    // have no counterpart in the source tree — pruning must not eat them.
+    for (const f of ['journal/app.min.js', 'journal/index.html', 'journal/sw.js']) {
+      ok('pruning leaves the generated ' + f + ' alone', fs.existsSync(path.join(ROOT, 'dist', f)));
+    }
   } catch (e) {
     fail++; console.error('  ✗ harness error: ' + (e && e.message));
   } finally { cleanup(); }

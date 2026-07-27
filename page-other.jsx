@@ -1300,7 +1300,12 @@ function SummerProfilePage({ setPage }) {
   const m = state.profile;
   const att = m.attendance || [];
   const isVol = m.kind === "volunteer";
-  const initials = (m.fullName || "?").trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  /* The backend blanks fullName on the public handle route when the guardian
+     has not consented to the child being named. Fall back to the handle so
+     the page still reads as somebody's profile rather than an empty heading —
+     the attendance and milestones on it are not personally identifying. */
+  const shownName = m.fullName || (m.handle ? "@" + m.handle : "Student");
+  const initials = (m.fullName || m.handle || "?").trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
   const title = isVol ? (m.role ? m.role.charAt(0).toUpperCase() + m.role.slice(1) : "Volunteer") : (m.track ? m.track : "Summer student");
   const chips = [];
   if (!isVol && m.track) chips.push(m.track);
@@ -1351,7 +1356,7 @@ function SummerProfilePage({ setPage }) {
                   : <span aria-hidden="true" className="display" style={{ fontWeight: 800, fontSize: 34, color: "var(--gold-500)" }}>{initials}</span>}
               </div>
               <div style={{ paddingBottom: 8 }}>
-                <h1 className="display" style={{ fontSize: "clamp(24px,4vw,32px)", letterSpacing: "-0.02em", margin: 0, color: "var(--ink-900)" }}>{m.fullName}</h1>
+                <h1 className="display" style={{ fontSize: "clamp(24px,4vw,32px)", letterSpacing: "-0.02em", margin: 0, color: "var(--ink-900)" }}>{shownName}</h1>
                 <div className="mono" style={{ fontSize: 12.5, color: "var(--ink-500)", marginTop: 4 }}>{m.handle ? "@" + m.handle + " · " : ""}{m.centre || (isVol ? "Volunteer" : "Summer School")}</div>
               </div>
             </div>
@@ -1386,9 +1391,9 @@ function SummerProfilePage({ setPage }) {
       <section className="section" style={{ paddingTop: 24 }}>
         <div className="container" style={{ maxWidth: 900 }}>
           {auth && auth.isSignedIn && (auth.isAdmin || (auth.hasCap && (auth.hasCap("summer") || auth.hasCap("people")))) && state.token
-            ? <ProfileCheckin token={state.token} name={m.fullName}/> : null}
+            ? <ProfileCheckin token={state.token} name={shownName}/> : null}
           {!isVol && state.token && !(auth && auth.isSignedIn)
-            ? <ProfileCommunityCTA token={state.token} name={m.fullName}/> : null}
+            ? <ProfileCommunityCTA token={state.token} name={shownName}/> : null}
           <div className="card" style={{ padding: 28 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
               <h2 className="display" style={{ fontSize: 28, margin: 0 }}>Attendance</h2>

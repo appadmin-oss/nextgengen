@@ -302,12 +302,33 @@ async function buildJournal(buildId) {
   log(`compiled journal PWA → journal/app.min.js (${(min.code.length / 1024).toFixed(1)} KB, ${(gz / 1024).toFixed(1)} KB gzip)`);
 }
 
-function copyDir(src, dst) {
+/* Mirror `src` onto `dst`, INCLUDING deletions.
+ *
+ * This used to copy over the top and never remove anything, so dist/ was a
+ * union of every build ever run in the working tree: a renamed image, a
+ * dropped vendored library or a deleted endpoint stayed in dist/ and kept
+ * being deployed. Nothing failed, which is what made it easy to miss — the
+ * site just carried files nobody could find in the repository any more, and
+ * a "deleted" API endpoint remained live on the host.
+ *
+ * `keep` protects paths the build writes into dist/ deliberately and which
+ * have no counterpart in the source tree. */
+function copyDir(src, dst, keep) {
+  keep = keep || new Set();
   if (!fs.existsSync(dst)) fs.mkdirSync(dst, { recursive: true });
+
+  const wanted = new Set(fs.readdirSync(src, { withFileTypes: true }).map(e => e.name));
+  for (const entry of fs.readdirSync(dst, { withFileTypes: true })) {
+    if (wanted.has(entry.name)) continue;
+    const stale = path.join(dst, entry.name);
+    if (keep.has(path.relative(DIST, stale).split(path.sep).join('/'))) continue;
+    fs.rmSync(stale, { recursive: true, force: true });
+  }
+
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const s = path.join(src, entry.name);
     const d = path.join(dst, entry.name);
-    if (entry.isDirectory()) copyDir(s, d);
+    if (entry.isDirectory()) copyDir(s, d, keep);
     else fs.copyFileSync(s, d);
   }
 }

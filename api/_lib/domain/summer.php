@@ -970,7 +970,39 @@ function public_summer_profile(array $p): array {
         $s = db_row('SELECT * FROM summer_students WHERE handle = ? LIMIT 1', [$handle]);
     }
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
-    return ['ok' => true, 'profile' => summer_student_public($s, true)];
+
+    /* Consent gate — the same rule the public board uses.
+     *
+     * This endpoint returned a child's full name and photograph to anyone who
+     * knew their handle. Handles are printed on the public board, so a handle
+     * is not a secret: read one off /s-status, call this, and you have the
+     * name and face of a minor. Rate limiting (applied at the endpoint) stops
+     * a stranger ENUMERATING handles; it does nothing about looking up one
+     * that was published. That made the board's consent gate decorative,
+     * because the data it withholds was one request away.
+     *
+     * A `token` is different in kind: it is the code printed on the child's
+     * own ID card, and resolving it is how a family opens their own digital
+     * ID. It is a bearer credential — holding the card is the authorisation —
+     * so that path is left intact.
+     *
+     * Without consent the profile still resolves; it is simply anonymous, so
+     * an existing link degrades to a handle-only page instead of 404ing. */
+    $profile = summer_student_public($s, true);
+    if ($handle !== '' && $token === '') {
+        $cs = [];
+        foreach (db_all("SELECT type, status FROM consents WHERE studentId = ? AND type IN ('site_visibility','media') ORDER BY id",
+                        [(string)$s['studentId']]) as $c) {
+            $cs[(string)$c['type']] = (string)$c['status'];   // append-only: last row wins
+        }
+        $verified = ((string)($s['regStatus'] ?? 'verified')) === 'verified';
+        $mayName  = $verified && (($cs['site_visibility'] ?? '') === 'granted');
+        $mayPhoto = $mayName && (($cs['media'] ?? '') === 'granted');
+        if (!$mayName)  $profile['fullName'] = '';
+        if (!$mayPhoto) $profile['photoUrl'] = '';
+        $profile['named'] = $mayName;
+    }
+    return ['ok' => true, 'profile' => $profile];
 }
 
 /**
