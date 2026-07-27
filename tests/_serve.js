@@ -11,6 +11,11 @@
  * Polls until the port answers, then returns. Throws if it never does, so a
  * genuinely dead server is still a hard failure rather than a hang.
  */
+/* NOTE ON PARALLELISM: the kiosk, scanner and journal suites each write a
+ * throwaway `api/config.php` and delete it on exit. They must run in SEQUENCE
+ * — `npm run test:all` chains them with && for that reason. Running two at
+ * once has one suite deleting the other's config mid-run, which shows up as
+ * unrelated assertions failing on a codebase that is fine. */
 const http = require('http');
 
 function ping(url) {

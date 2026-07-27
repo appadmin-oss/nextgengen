@@ -989,6 +989,133 @@ chk('attendance analytics gated from non-staff', backend_dispatch('admin.summer.
 chk('attendance falls back to active cohort on empty cohortId', backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099', 'cohortId' => ''])['attendance']['sessionDays'] >= 1);
 chk('roster falls back to active cohort on empty cohortId', count(backend_dispatch('admin.summer.students.list', ['requesterId' => 'NGG-2025-0099', 'cohortId' => ''])['students']) >= 1);
 
+$SUR = 'NGG-2025-0099';   // this block sits above where $SU is defined
+/* ── The roster must be able to MANAGE a child ────────────────────────────
+   The list endpoint served the PUBLIC student shape, which withholds guardian
+   contact and age. The roster editor binds to exactly those fields, so it
+   opened blank and then wrote the blanks back — a save wiped the guardian's
+   name, phone, email and notes, and `age` arrived undefined so the save failed
+   with "Age must be 5-19". Nothing could be done with a child. */
+chk('roster: a student carries the fields the editor manages', (function () use ($SUR) {
+    $s = backend_dispatch('admin.summer.enroll', ['requesterId' => $SUR, 'data' => [
+        'fullName' => 'Manage Me', 'age' => 13, 'centre' => 'Egbeda', 'track' => 'Music',
+        'guardianName' => 'Mrs Manage', 'guardianPhone' => '08039990001', 'parentEmail' => 'mm@example.com']]);
+    $GLOBALS['manageId'] = $s['studentId'];
+    foreach (backend_dispatch('admin.summer.students.list', ['requesterId' => $SUR])['students'] as $r) {
+        if ($r['studentId'] !== $s['studentId']) continue;
+        return $r['age'] === 13 && $r['guardianName'] === 'Mrs Manage'
+            && $r['guardianPhone'] === '08039990001' && $r['parentEmail'] === 'mm@example.com'
+            && array_key_exists('notes', $r) && array_key_exists('regStatus', $r);
+    }
+    return false;
+})());
+chk('roster: …so a round-trip save keeps the guardian contact instead of erasing it', (function () use ($SUR) {
+    $id = $GLOBALS['manageId'];
+    $row = null;
+    foreach (backend_dispatch('admin.summer.students.list', ['requesterId' => $SUR])['students'] as $r) if ($r['studentId'] === $id) $row = $r;
+    // Exactly what the editor sends: every managed field, seeded from the list.
+    $r = backend_dispatch('admin.summer.student.update', ['requesterId' => $SUR, 'studentId' => $id, 'data' => [
+        'fullName' => $row['fullName'], 'age' => $row['age'], 'handle' => $row['handle'],
+        'centre' => $row['centre'], 'track' => $row['track'], 'guardianName' => $row['guardianName'],
+        'guardianPhone' => $row['guardianPhone'], 'parentEmail' => $row['parentEmail'],
+        'photoUrl' => $row['photoUrl'], 'notes' => $row['notes'],
+    ]]);
+    $after = db_row('SELECT guardianPhone, parentEmail, age FROM summer_students WHERE studentId = ?', [$id]);
+    return !empty($r['ok']) && $after['guardianPhone'] === '08039990001'
+        && $after['parentEmail'] === 'mm@example.com' && (int)$after['age'] === 13;
+})());
+chk('roster: the PUBLIC profile still withholds the guardian contact', (function () use ($SUR) {
+    $id = $GLOBALS['manageId'];
+    $h = db_row('SELECT handle FROM summer_students WHERE studentId = ?', [$id])['handle'];
+    $pub = backend_dispatch('public.summerProfile', ['handle' => $h])['profile'];
+    // The two serializers exist precisely so the admin roster can see this and
+    // the public profile cannot. `notes` is NOT checked here: the public shape
+    // has a key of that name carrying curated mentor notes, which is a
+    // different thing from the staff notes column of the same name.
+    return !isset($pub['guardianPhone']) && !isset($pub['parentEmail'])
+        && !isset($pub['age']) && !isset($pub['guardianName']) && !isset($pub['answers']);
+})());
+chk('roster: consent state travels with the row', (function () use ($SUR) {
+    foreach (backend_dispatch('admin.summer.students.list', ['requesterId' => $SUR])['students'] as $r) {
+        if ($r['studentId'] === $GLOBALS['manageId']) return array_key_exists('consentComplete', $r) && is_array($r['consents']);
+    }
+    return false;
+})());
+
+/* ── The consent record, for the file ─────────────────────────────────────── */
+chk('consent: the record lists every consent type with its standing', (function () use ($SUR) {
+    $r = backend_dispatch('admin.summer.consent', ['requesterId' => $SUR, 'studentId' => $GLOBALS['manageId']]);
+    if (empty($r['ok'])) return false;
+    $c = $r['consent'];
+    return count($c['items']) === count(CONSENT_TYPES)
+        && $c['items'][0]['status'] === 'not_recorded'   // nothing granted yet
+        && $c['complete'] === false
+        && $c['student']['fullName'] === 'Manage Me'
+        && $c['guardian']['phone'] === '08039990001';
+})());
+chk('consent: a granted record reads back complete, with who and when', (function () use ($SUR) {
+    $id = $GLOBALS['manageId'];
+    foreach (CONSENT_TYPES as $t => $m) {
+        db_insert('consents', ['studentId' => $id, 'type' => $t, 'status' => $m['p'] === 0 ? 'granted' : 'declined',
+            'method' => 'parent_link', 'actorName' => 'Mrs Manage', 'createdAt' => now_iso()]);
+    }
+    $c = backend_dispatch('admin.summer.consent', ['requesterId' => $SUR, 'studentId' => $id])['consent'];
+    $part = null; foreach ($c['items'] as $i) if ($i['type'] === 'participation') $part = $i;
+    return $c['complete'] === true && $part['status'] === 'granted'
+        && $part['actorName'] === 'Mrs Manage' && $part['recordedAt'] !== '';
+})());
+chk('consent: the ledger is append-only, and the record shows the LATEST decision', (function () use ($SUR) {
+    $id = $GLOBALS['manageId'];
+    db_insert('consents', ['studentId' => $id, 'type' => 'media', 'status' => 'granted',
+        'method' => 'staff', 'actorName' => 'Desk', 'createdAt' => now_iso()]);
+    $c = backend_dispatch('admin.summer.consent', ['requesterId' => $SUR, 'studentId' => $id])['consent'];
+    $media = null; foreach ($c['items'] as $i) if ($i['type'] === 'media') $media = $i;
+    // Latest wins for the printed form; the earlier decline stays in history.
+    $declines = count(array_filter($c['history'], fn($h) => $h['type'] === 'media' && $h['status'] === 'declined'));
+    return $media['status'] === 'granted' && $declines === 1 && count($c['history']) === count(CONSENT_TYPES) + 1;
+})());
+chk('consent: the record is gated by the summer capability', backend_dispatch('admin.summer.consent', ['requesterId' => 'NGG-2025-0001', 'studentId' => $GLOBALS['manageId']])['error'] === 'forbidden');
+chk('consent: an unknown child is not found', backend_dispatch('admin.summer.consent', ['requesterId' => $SUR, 'studentId' => 'STU-NOPE'])['error'] === 'not_found');
+
+/* ── /s-status reports registration, not only attendance ─────────────────── */
+chk('s-status: the board carries registration figures', (function () {
+    $st = backend_dispatch('public.status', [])['status'];
+    $r = $st['registration'] ?? null;
+    return is_array($r) && isset($r['total'], $r['verified'], $r['pending'], $r['today'], $r['thisWeek'], $r['consentRate'])
+        && is_array($r['trend']);
+})());
+chk('s-status: registration counts every sign-up, enrolment only the active ones', (function () use ($SUR) {
+    $before = backend_dispatch('public.status', [])['status'];
+    $s = backend_dispatch('admin.summer.enroll', ['requesterId' => $SUR, 'data' => ['fullName' => 'Withdrawn Wale', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Music']]);
+    backend_dispatch('admin.summer.student.status', ['requesterId' => $SUR, 'studentId' => $s['studentId'], 'status' => 'withdrawn']);
+    $after = backend_dispatch('public.status', [])['status'];
+    // A withdrawal is still a registration that happened.
+    return $after['registration']['total'] === $before['registration']['total'] + 1
+        && $after['kpis']['enrolled'] === $before['kpis']['enrolled'];
+})());
+chk('s-status: per-centre intake sits beside per-centre attendance', (function () use ($SUR) {
+    /* Guarantee a centre: this block runs before the suite creates any, and a
+       vacuous loop over an empty list would pass without asserting anything.
+       Removed again afterwards — the summer form takes its `centre` options
+       from this table, so leaving one behind invalidates the 'Main' centre the
+       later gate fixtures register against. */
+    backend_dispatch('admin.centres.upsert', ['requesterId' => $SUR, 'data' => ['name' => 'Statusville', 'code' => 'SV', 'color' => '#f5b026', 'capacity' => 40]]);
+    $rows = backend_dispatch('public.status', [])['status']['byCentre'] ?? [];
+    db_exec("DELETE FROM centres WHERE name = 'Statusville'");
+    if (!$rows) return false;
+    foreach ($rows as $c) {
+        if (!array_key_exists('registered', $c) || !array_key_exists('pending', $c)
+            || !array_key_exists('capacity', $c) || !array_key_exists('fill', $c)) return false;
+    }
+    return true;
+})());
+chk('s-status: still leaks no PII with registration added', (function () {
+    $j = json_encode(backend_dispatch('public.status', []));
+    // Names and guardian contacts of registered children must not appear.
+    return strpos($j, 'Manage Me') === false && strpos($j, '08039990001') === false
+        && strpos($j, 'mm@example.com') === false;
+})());
+
 // ── Stand-alone coordinator portals (Summer School + NGG Club are separate) ──
 chk('admin role caps = console only (no summer/club)', admin_role_caps('admin') === ['content', 'people', 'inbox']);
 chk('club_admin role caps = club only', admin_role_caps('club_admin') === ['club']);

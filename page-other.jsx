@@ -2709,6 +2709,11 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
   // permanently blank. As state it drives an effect that runs after the render
   // that mounts the element, so the ordering cannot go wrong.
   const [stream, setStream] = React.useState(null);
+  // Which camera. Registration is usually a desk operator photographing the
+  // child across the table, which is the REAR lens on a phone — but the front
+  // one is right for a self-serve kiosk, and some tablets only have one.
+  const [facing, setFacing] = React.useState("user");
+  const [multiCam, setMultiCam] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [uErr, setUErr] = React.useState("");
 
@@ -2725,16 +2730,26 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
     let cancelled = false;
     setCamState("starting"); setUErr("");
     if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { setCamState("denied"); return; }
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1350 } }, audio: false })
+    // Release the previous facing before asking for the next: a phone will not
+    // hand out both lenses at once, so re-requesting without stopping fails.
+    stopStream();
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1350 } }, audio: false })
       .then(s => {
         if (cancelled) { s.getTracks().forEach(t => t.stop()); return; }
         streamRef.current = s;
         setStream(s);
         setCamState("live");
+        // Only offer the flip when there is something to flip to. Asking a
+        // single-camera tablet to switch just kills the preview.
+        if (navigator.mediaDevices.enumerateDevices) {
+          navigator.mediaDevices.enumerateDevices()
+            .then(ds => setMultiCam(ds.filter(d => d.kind === "videoinput").length > 1))
+            .catch(() => {});
+        }
       })
       .catch(() => setCamState("denied"));
     return () => { cancelled = true; };
-  }, [camOpen, stopStream]);
+  }, [camOpen, facing, stopStream]);
 
   // Release the camera when the step unmounts.
   React.useEffect(() => stopStream, [stopStream]);
@@ -2775,9 +2790,14 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
     const v = videoRef.current; if (!v || !v.videoWidth) return;
     const c = document.createElement("canvas");
     c.width = 720; c.height = 900;
+    const ctx = c.getContext("2d");
     const scale = Math.max(c.width / v.videoWidth, c.height / v.videoHeight);
     const dx = (c.width - v.videoWidth * scale) / 2, dy = (c.height - v.videoHeight * scale) / 2;
-    c.getContext("2d").drawImage(v, dx, dy, v.videoWidth * scale, v.videoHeight * scale);
+    // Save what the operator SAW. The front preview is mirrored, so the frame
+    // has to be mirrored to match it; the rear preview is not, so it must not
+    // be — otherwise every rear-camera headshot comes out flipped.
+    if (facing !== "environment") { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(v, dx, dy, v.videoWidth * scale, v.videoHeight * scale);
     c.toBlob(b => b && uploadBlob(b), "image/jpeg", 0.9);
   };
 
@@ -2820,6 +2840,8 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
           videoRef={videoRef} stream={stream} camState={camState} busy={busy}
           onCapture={capture} onClose={closeCam} gold={gold} goldInk={goldInk}
           onPickFile={() => fileRef.current && fileRef.current.click()}
+          facing={facing} canFlip={multiCam}
+          onFlip={() => { setCamState("starting"); setFacing(f => (f === "user" ? "environment" : "user")); }}
         />
       )}
     </div>
@@ -2830,7 +2852,7 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
  * front-camera fills the screen, a dimming scrim with a transparent face oval
  * shows exactly where to line up, and a shutter sits at the bottom. Falls back
  * to a device-photo picker when the camera is blocked or unavailable. */
-function CameraOverlay({ videoRef, stream, camState, busy, onCapture, onClose, onPickFile, gold, goldInk }) {
+function CameraOverlay({ videoRef, stream, camState, busy, onCapture, onClose, onPickFile, gold, goldInk, facing, canFlip, onFlip }) {
   // Attach the stream here, after the render that mounted the element, keyed on
   // the stream itself. The element is also mounted unconditionally (hidden
   // until live) so the ref is never null when this runs.
@@ -2860,8 +2882,12 @@ function CameraOverlay({ videoRef, stream, camState, busy, onCapture, onClose, o
             setStream and setCamState landing in the same commit. If they ever
             didn't batch, the effect would run with the element unmounted and
             the stream would be orphaned again — which is the bug this was. */}
+        {/* Mirror the FRONT camera only: a selfie reads naturally mirrored,
+            a rear-facing shot of someone else reads backwards. */}
         <video ref={videoRef} muted playsInline autoPlay
-          style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", display: camState === "live" ? "block" : "none" }}/>
+          style={{ width: "100%", height: "100%", objectFit: "cover",
+                   transform: facing === "environment" ? "none" : "scaleX(-1)",
+                   display: camState === "live" ? "block" : "none" }}/>
         {camState !== "live" && (
           <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 24, textAlign: "center", color: "#fff" }}>
             <div>
@@ -2900,7 +2926,9 @@ function CameraOverlay({ videoRef, stream, camState, busy, onCapture, onClose, o
           style={{ width: 78, height: 78, borderRadius: "50%", border: "5px solid rgba(255,255,255,.85)", background: busy ? "rgba(255,255,255,.4)" : gold, cursor: busy || camState !== "live" ? "default" : "pointer", boxShadow: "0 6px 22px rgba(0,0,0,.4)" }}>
           {busy ? <span style={{ color: goldInk, fontSize: 12, fontWeight: 800 }}>…</span> : null}
         </button>
-        <div style={{ width: 44 }}/>
+        {canFlip
+          ? <button onClick={onFlip} disabled={busy} style={{ ...iconBtn, fontSize: 18 }} aria-label={"Switch to the " + (facing === "user" ? "back" : "front") + " camera"} title="Flip camera">🔄</button>
+          : <div style={{ width: 44 }}/>}
       </div>
     </div>
   );
@@ -3010,6 +3038,10 @@ function QRScanner({ onToken, gold }) {
   const last = React.useRef({ tok: "", at: 0 });
   const [state, setState] = React.useState("starting"); // starting|live|denied|nolib
   const [hit, setHit] = React.useState(0); // brief flash on a successful read
+  // Cards are usually presented to the REAR lens, but a laptop at a desk only
+  // has a front one and a tablet may be turned either way.
+  const [facing, setFacing] = React.useState("environment");
+  const [multiCam, setMultiCam] = React.useState(false);
 
   React.useEffect(() => {
     if (typeof window === "undefined" || typeof window.jsQR !== "function") { setState("nolib"); return; }
@@ -3039,17 +3071,24 @@ function QRScanner({ onToken, gold }) {
       rafRef.current = requestAnimationFrame(tick);
     };
     navigator.mediaDevices && navigator.mediaDevices.getUserMedia
-      ? navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false })
+      ? navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 } }, audio: false })
           .then(stream => {
             if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
             streamRef.current = stream;
             if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.setAttribute("playsinline", ""); videoRef.current.muted = true; videoRef.current.play().catch(() => {}); }
             setState("live"); rafRef.current = requestAnimationFrame(tick);
+            if (navigator.mediaDevices.enumerateDevices) {
+              navigator.mediaDevices.enumerateDevices()
+                .then(ds => setMultiCam(ds.filter(d => d.kind === "videoinput").length > 1))
+                .catch(() => {});
+            }
           })
           .catch(() => setState("denied"))
       : setState("denied");
-    return () => { cancelled = true; if (rafRef.current) cancelAnimationFrame(rafRef.current); if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
-  }, []);
+    // Re-runs on `facing`; the cleanup stops the old stream first, because a
+    // phone will not hand out both lenses at once.
+    return () => { cancelled = true; if (rafRef.current) cancelAnimationFrame(rafRef.current); if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } };
+  }, [facing]);
 
   const flashing = hit && (Date.now() - hit < 700);
   const box = { position: "relative", width: "100%", aspectRatio: "1/1", maxHeight: 340, borderRadius: 16, overflow: "hidden", background: "#05070f", display: "grid", placeItems: "center" };
@@ -3068,6 +3107,11 @@ function QRScanner({ onToken, gold }) {
       {/* Reticle */}
       <div aria-hidden="true" style={{ position: "absolute", inset: "18%", border: "3px solid " + (flashing ? "#6fdc9d" : (gold || "#ffce54")), borderRadius: 14, boxShadow: "0 0 0 100vmax rgba(0,0,0,.28)", transition: "border-color .2s" }}/>
       <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, textAlign: "center", color: "#fff", fontSize: 12, textShadow: "0 1px 3px rgba(0,0,0,.8)" }}>{flashing ? "✓ Scanned" : "Point the QR at the camera"}</div>
+      {multiCam && (
+        <button type="button" onClick={() => { setState("starting"); setFacing(f => (f === "environment" ? "user" : "environment")); }}
+          aria-label={"Switch to the " + (facing === "environment" ? "front" : "back") + " camera"} title="Flip camera"
+          style={{ position: "absolute", top: 10, right: 10, width: 40, height: 40, borderRadius: "50%", border: "1px solid rgba(255,255,255,.35)", background: "rgba(0,0,0,.4)", color: "#fff", fontSize: 17, cursor: "pointer", lineHeight: 1 }}>🔄</button>
+      )}
     </div>
   );
 }

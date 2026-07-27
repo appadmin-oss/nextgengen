@@ -1214,6 +1214,8 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   // already existing, and when it doesn't the stream is silently orphaned and
   // the camera shows a blank frame with no error.
   const [stream, setStream] = React.useState(null);
+  const [facing, setFacing] = React.useState("user");
+  const [multiCam, setMultiCam] = React.useState(false);
   const videoRef = React.useRef(null);
   const streamRef = React.useRef(null);
   const fileRef = React.useRef(null);
@@ -1236,15 +1238,25 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     return () => { document.body.style.overflow = prev; };
   }, [mode]);
 
-  const startCamera = async () => {
+  const startCamera = async (want) => {
+    const side = want || facing;
     setErr(""); setMode("camera");
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setErr("No camera on this device — upload a photo or paste a link instead."); setMode("idle"); return; }
+    // A phone will not hand out both lenses at once — release before asking.
+    stop();
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 720 } }, audio: false });
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: side, width: { ideal: 720 } }, audio: false });
       streamRef.current = s;
       setStream(s);
+      setFacing(side);
+      if (navigator.mediaDevices.enumerateDevices) {
+        navigator.mediaDevices.enumerateDevices()
+          .then(ds => setMultiCam(ds.filter(d => d.kind === "videoinput").length > 1))
+          .catch(() => {});
+      }
     } catch (_) { setErr("Camera permission denied — upload a photo or paste a link instead."); setMode("idle"); }
   };
+  const flipCamera = () => startCamera(facing === "user" ? "environment" : "user");
 
   const uploadBlob = async (blob, name) => {
     setBusy(true); setErr("");
@@ -1274,11 +1286,15 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     const c = document.createElement("canvas");
     c.width = 720; c.height = 900;
     const ctx = c.getContext("2d");
-    // Cover-crop the video frame to a 4:5 portrait.
+    // Cover-crop the video frame to a 4:5 portrait, baking in the same mirror
+    // the preview showed — front is mirrored, rear is not — so the reviewed
+    // still and the saved file match what the operator actually saw.
     const vw = v.videoWidth || 720, vh = v.videoHeight || 900;
     const scale = Math.max(c.width / vw, c.height / vh);
     const dw = vw * scale, dh = vh * scale;
+    if (facing !== "environment") { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
     ctx.drawImage(v, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     setBusy(true); setErr("");
     const check = await validateHeadshot(c, c.width, c.height);
     setBusy(false);
@@ -1291,6 +1307,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   // camera and returns to idle; on failure the review stays put with the error.
   const acceptShot = async () => { if (shot) { await uploadBlob(shot.blob, "headshot.jpg"); setShot(null); } };
   const closeCamera = () => { stop(); setShot(null); setMode("idle"); setErr(""); };
+  React.useEffect(() => { if (mode !== "camera") setMultiCam(false); }, [mode]);
 
   // Upload a chosen file — validate it first, then send.
   const uploadPicked = async (file) => {
@@ -1333,8 +1350,8 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
         <button type="button" onClick={closeCamera} aria-label="Close" style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: 22, lineHeight: 1, cursor: "pointer" }}>✕</button>
         <div style={{ color: "#fff", fontFamily: "'Sora',sans-serif", fontWeight: 700, fontSize: 18 }}>{shot ? "Use this photo?" : "Take your photo"}</div>
         <div style={{ position: "relative", width: "100%", maxWidth: 360, aspectRatio: "4 / 5", borderRadius: 18, overflow: "hidden", background: "#0b1020", boxShadow: "0 24px 70px -24px rgba(0,0,0,0.75)" }}>
-          <video ref={videoRef} playsInline muted autoPlay style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", display: shot ? "none" : "block" }}/>
-          {shot && <img src={shot.url} alt="Captured photo" style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}/>}
+          <video ref={videoRef} playsInline muted autoPlay style={{ width: "100%", height: "100%", objectFit: "cover", transform: facing === "environment" ? "none" : "scaleX(-1)", display: shot ? "none" : "block" }}/>
+          {shot && <img src={shot.url} alt="Captured photo" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>}
           {!shot && <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "43%", transform: "translate(-50%,-50%)", width: "62%", height: "72%", border: "2px dashed rgba(255,255,255,0.65)", borderRadius: "50%" }}/>}
           {!shot && <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: 12, fontSize: 12.5, color: "#fff", background: "linear-gradient(transparent, rgba(0,0,0,0.65))", textAlign: "center" }}>Line your face up with the oval, then press Capture.</div>}
         </div>
@@ -1348,6 +1365,8 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
           ) : (
             <>
               <button type="button" className="btn btn-primary" disabled={busy} onClick={capture}>{busy ? "Checking…" : "📸 Capture"}</button>
+              {multiCam && <button type="button" className="btn" disabled={busy} onClick={flipCamera} title="Flip camera"
+                style={{ color: "#fff", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)" }}>🔄 {facing === "user" ? "Back" : "Front"} camera</button>}
               <button type="button" className="btn" onClick={closeCamera} style={{ color: "#fff", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)" }}>Cancel</button>
             </>
           )}

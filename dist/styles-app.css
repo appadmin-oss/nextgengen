@@ -4374,3 +4374,11 @@ section p[style*="var(--ink-500)"] {
 .fb-logic-lead { font-size: 10px; font-weight: 800; letter-spacing: 0.13em; color: #3b5bdb; }
 .fb-logic .admin-select, .fb-logic .admin-input { font-size: 13px; padding: 6px 9px; }
 .fb-logic-warn { flex-basis: 100%; font-size: 12px; color: var(--coral, #e0543c); }
+
+/* Kiosk camera flip — a desk points the rear lens at the card, an all-in-one
+   kiosk only has a front one, and a tablet gets turned around mid-shift. */
+.summer-cam-flip {
+  position: absolute; top: 10px; right: 10px; z-index: 2;
+  width: 40px; height: 40px; border-radius: 50%; cursor: pointer; line-height: 1; font-size: 17px;
+  border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.45); color: #fff;
+}

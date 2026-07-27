@@ -11,6 +11,7 @@ if ($method === 'GET') {
     elseif ($view === 'qr')       $res = gs_call('admin.summer.qr.list', ['requesterId' => $mid, 'status' => $_GET['status'] ?? '', 'batch' => $_GET['batch'] ?? '']);
     elseif ($view === 'attendance') $res = gs_call('admin.summer.attendance', ['requesterId' => $mid, 'cohortId' => $_GET['cohortId'] ?? '']);
     elseif ($view === 'insights')   $res = gs_call('admin.summer.insights', ['requesterId' => $mid, 'cohortId' => $_GET['cohortId'] ?? '']);
+    elseif ($view === 'consent')    $res = gs_call('admin.summer.consent', ['requesterId' => $mid, 'studentId' => $_GET['studentId'] ?? '']);
     else                          $res = gs_call('admin.summer.overview', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
     $b = read_json_body();

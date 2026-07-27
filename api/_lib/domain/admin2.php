@@ -192,6 +192,34 @@ function public_status(array $p): array {
     $week = 0;
     if ($sess && !empty($sess['startDate'])) { $d = (int)floor((time() - strtotime((string)$sess['startDate'])) / 86400); if ($d >= 0) $week = (int)floor($d / 7) + 1; }
 
+    /* ── Registration ─────────────────────────────────────────────────────
+     * The board reported attendance only, which says how the programme is
+     * running but nothing about how it is filling. These are the intake
+     * figures — counts and rates, no names, no contact details, same PII-free
+     * contract as the rest of the page.
+     *
+     * `enrolled` above counts ACTIVE students; registration counts every
+     * sign-up regardless of status, because a withdrawal is still a
+     * registration that happened. The two are deliberately different numbers. */
+    $regTotal    = $one("SELECT COUNT(*) c FROM summer_students");
+    $regVerified = $one("SELECT COUNT(*) c FROM summer_students WHERE regStatus = 'verified'");
+    $regPending  = $one("SELECT COUNT(*) c FROM summer_students WHERE regStatus = 'parent_pending'");
+    $regToday    = $one("SELECT COUNT(*) c FROM summer_students WHERE substr(enrolledAt,1,10) = ?", [$today]);
+    $regWeek     = $one("SELECT COUNT(*) c FROM summer_students WHERE substr(enrolledAt,1,10) >= ?", [$weekAgo]);
+    $capacity    = (int)(db_row("SELECT COALESCE(SUM(capacity),0) c FROM centres WHERE status = 'active'")['c'] ?? 0);
+    $regTrend = db_all("SELECT substr(enrolledAt,1,10) date, COUNT(*) signups FROM summer_students
+                        WHERE substr(enrolledAt,1,10) >= ? GROUP BY substr(enrolledAt,1,10) ORDER BY 1", [$since]);
+    // Per-centre intake, so a centre that is full and one that is empty are
+    // visible side by side rather than averaged away in a single total.
+    foreach ($byCentre as &$__bc) {
+        $cap = (int)(db_row("SELECT COALESCE(capacity,0) c FROM centres WHERE name = ?", [$__bc['name']])['c'] ?? 0);
+        $__bc['registered'] = $one("SELECT COUNT(*) c FROM summer_students WHERE centre = ?", [$__bc['name']]);
+        $__bc['pending']    = $one("SELECT COUNT(*) c FROM summer_students WHERE centre = ? AND regStatus = 'parent_pending'", [$__bc['name']]);
+        $__bc['capacity']   = $cap;
+        $__bc['fill']       = $cap > 0 ? (int)round($__bc['registered'] / $cap * 100) : 0;
+    }
+    unset($__bc);
+
     $activeVol = $one("SELECT COUNT(*) c FROM volunteers WHERE status = 'active'");
     $starsWeek = $one("SELECT COUNT(*) c FROM member_stars WHERE date >= ?", [$weekAgo]);
     $rateToday = $enrolledTotal ? (int)round($presentToday / $enrolledTotal * 100) : 0;
@@ -262,6 +290,19 @@ function public_status(array $p): array {
             'attendanceRate'   => $rateToday,
             'activeVolunteers' => $activeVol,
             'starsThisWeek'    => $starsWeek,
+            'registered'       => $regTotal,
+            'consentVerified'  => $regVerified,
+            'consentPending'   => $regPending,
+            'capacity'         => $capacity,
+            'capacityFill'     => $capacity > 0 ? (int)round($regTotal / $capacity * 100) : 0,
+        ],
+        'registration' => [
+            'total' => $regTotal, 'verified' => $regVerified, 'pending' => $regPending,
+            'today' => $regToday, 'thisWeek' => $regWeek,
+            'capacity' => $capacity,
+            'fill' => $capacity > 0 ? (int)round($regTotal / $capacity * 100) : 0,
+            'consentRate' => $regTotal > 0 ? (int)round($regVerified / $regTotal * 100) : 0,
+            'trend' => $regTrend,
         ],
         'deltas'   => $deltas,
         'byCentre' => $byCentre,

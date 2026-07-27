@@ -231,6 +231,52 @@ function admin_summer_import(array $p): array {
     return ['ok' => true, 'enrolled' => $ok, 'failed' => $failed, 'waitlisted' => $waitlisted, 'results' => $results];
 }
 
+/**
+ * The ADMIN shape of a student — everything the roster manages, including the
+ * guardian contact details and registration state that `summer_student_public`
+ * deliberately withholds.
+ *
+ * These are two different serializers on purpose. summer_student_public also
+ * feeds /s/<handle> and the community, so a guardian's phone number must never
+ * be in it. But the roster editor binds to exactly these fields, and because
+ * the list endpoint was serving the public shape the editor opened blank and
+ * then wrote those blanks back: a save wiped the guardian's name, phone, email
+ * and notes, and `age` came through undefined so the save failed outright with
+ * "Age must be 5-19". That is why nothing could be done with a child.
+ */
+function summer_student_admin(array $s): array {
+    $out = summer_student_public($s, true);
+    $out += [
+        'age' => $s['age'] === null || $s['age'] === '' ? null : (int)$s['age'],
+        'guardianName' => (string)($s['guardianName'] ?? ''),
+        'guardianPhone' => (string)($s['guardianPhone'] ?? ''),
+        'parentEmail' => (string)($s['parentEmail'] ?? ''),
+        'sex' => (string)($s['sex'] ?? ''),
+        'notes' => (string)($s['notes'] ?? ''),
+        'displayId' => (string)($s['displayId'] ?? ''),
+        'token' => (string)($s['token'] ?? ''),
+        'regStatus' => (string)($s['regStatus'] ?? 'verified'),
+        'enrolledAt' => (string)($s['enrolledAt'] ?? ''),
+    ];
+    // Consent state at a glance: which P0 grants are on file, so the roster can
+    // show who is cleared to attend without a second round trip per child.
+    $granted = [];
+    foreach (db_all("SELECT type, status FROM consents WHERE studentId = ? ORDER BY id", [(string)$s['studentId']]) as $c) {
+        $granted[(string)$c['type']] = (string)$c['status'];
+    }
+    $required = array_keys(array_filter(CONSENT_TYPES, fn($m) => $m['p'] === 0));
+    $out['consents'] = $granted;
+    $out['consentComplete'] = count(array_filter($required, fn($t) => ($granted[$t] ?? '') === 'granted')) === count($required);
+    // Everything else the family answered lives in formData — school, faculty
+    // and any custom question an admin added to the builder. There are no
+    // columns for those, so the roster reads them from the stored submission.
+    $answers = json_decode((string)($s['formData'] ?? ''), true);
+    $out['answers'] = is_array($answers) ? $answers : [];
+    $out['faculty'] = (string)($out['answers']['faculty'] ?? '');
+    $out['school'] = (string)($out['answers']['school'] ?? '');
+    return $out;
+}
+
 function admin_summer_students_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
@@ -239,7 +285,7 @@ function admin_summer_students_list(array $p): array {
     $q = strtolower((string)($p['q'] ?? ''));
     if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(handle) LIKE ? OR lower(studentId) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
     $rows = db_all('SELECT * FROM summer_students WHERE ' . implode(' AND ', $where) . ' ORDER BY id DESC LIMIT 1000', $params);
-    return ['ok' => true, 'students' => array_map(fn($s) => summer_student_public($s, true), $rows), 'cohortId' => $cohortId];
+    return ['ok' => true, 'students' => array_map('summer_student_admin', $rows), 'cohortId' => $cohortId];
 }
 
 function admin_summer_student_status(array $p): array {
@@ -925,4 +971,81 @@ function public_summer_profile(array $p): array {
     }
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     return ['ok' => true, 'profile' => summer_student_public($s, true)];
+}
+
+/**
+ * A child's full consent record, for the file.
+ *
+ * The `consents` ledger is append-only — one row per grant or decline, never
+ * overwritten — so a child re-verified after a change has several rows per
+ * type. This returns the LATEST decision per type plus the full history, so
+ * the printed form states what is true now and the audit trail behind it
+ * survives.
+ *
+ * Guardian contact details are in here. It is behind the 'summer' capability
+ * and must stay there.
+ */
+function admin_summer_consent(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $studentId = trim((string)($p['studentId'] ?? ''));
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
+    if (!$s) return ['ok' => false, 'error' => 'not_found'];
+
+    $rows = db_all('SELECT type, status, method, actorName, createdAt FROM consents WHERE studentId = ? ORDER BY id', [$studentId]);
+    $latest = [];
+    foreach ($rows as $r) $latest[(string)$r['type']] = $r;   // later rows win
+
+    $items = [];
+    foreach (CONSENT_TYPES as $type => $meta) {
+        $r = $latest[$type] ?? null;
+        $items[] = [
+            'type' => $type,
+            'label' => $meta['label'],
+            'priority' => $meta['p'],
+            'required' => $meta['p'] === 0,
+            'status' => $r ? (string)$r['status'] : 'not_recorded',
+            'method' => $r ? (string)$r['method'] : '',
+            'actorName' => $r ? (string)$r['actorName'] : '',
+            'recordedAt' => $r ? (string)$r['createdAt'] : '',
+        ];
+    }
+    $required = array_values(array_filter($items, fn($i) => $i['required']));
+    $complete = count(array_filter($required, fn($i) => $i['status'] === 'granted')) === count($required);
+
+    $prog = function_exists('idcard_program') ? idcard_program() : [];
+    return ['ok' => true, 'consent' => [
+        'student' => [
+            'studentId' => (string)$s['studentId'],
+            'displayId' => (string)($s['displayId'] ?? ''),
+            'fullName' => (string)$s['fullName'],
+            'age' => $s['age'] === null || $s['age'] === '' ? null : (int)$s['age'],
+            'sex' => (string)($s['sex'] ?? ''),
+            'centre' => (string)($s['centre'] ?? ''),
+            'track' => (string)($s['track'] ?? ''),
+            'handle' => (string)($s['handle'] ?? ''),
+            'photoUrl' => normalize_image_url($s['photoUrl'] ?? ''),
+            'enrolledAt' => (string)($s['enrolledAt'] ?? ''),
+        ],
+        'guardian' => [
+            'name' => (string)($s['guardianName'] ?? ''),
+            'phone' => (string)($s['guardianPhone'] ?? ''),
+            'email' => (string)($s['parentEmail'] ?? ''),
+        ],
+        'registration' => [
+            'status' => (string)($s['regStatus'] ?? 'verified'),
+            'verifiedAt' => (string)($s['verifiedAt'] ?? ''),
+            'formVersion' => (int)($s['formVersion'] ?? 0),
+            'answers' => json_decode((string)($s['formData'] ?? ''), true) ?: [],
+        ],
+        'items' => $items,
+        'history' => $rows,
+        'complete' => $complete,
+        'programme' => [
+            'name' => trim((string)(($prog['program'] ?? '') . ' ' . ($prog['year'] ?? ''))),
+            'website' => (string)($prog['website'] ?? ''),
+            'phone' => (string)($prog['phone'] ?? ''),
+        ],
+        'generatedAt' => now_iso(),
+        'generatedBy' => (string)($g['requester']['fullName'] ?? $g['requester']['memberId'] ?? ''),
+    ]];
 }

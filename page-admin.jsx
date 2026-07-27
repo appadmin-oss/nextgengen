@@ -1750,10 +1750,218 @@ function SummerQR({ onChange }) {
   );
 }
 
+/* ── Parental consent record ─────────────────────────────────────────────────
+   The signed record, on screen and as a document for the physical file.
+
+   Printing goes through a hidden iframe rather than a new window: a popup
+   blocker silently eats window.open, and the operator gets nothing and no
+   error. The iframe always works, and the browser's own print dialog offers
+   "Save as PDF", which is what "download for professional print" means here
+   without shipping a PDF engine for one page. The stylesheet is A4 with real
+   margins, so it comes out as a filed document rather than a screenshot. */
+const CONSENT_STATUS_LABEL = { granted: "Granted", declined: "Declined", not_recorded: "Not recorded" };
+
+function consentDocumentHtml(c) {
+  const esc = (v) => String(v == null ? "" : v).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  const day = (v) => (v ? String(v).slice(0, 10) : "—");
+  const s = c.student || {}, gd = c.guardian || {}, reg = c.registration || {}, prog = c.programme || {};
+  const rows = (c.items || []).map(i => `
+    <tr class="${i.status === "granted" ? "ok" : i.status === "declined" ? "no" : "na"}">
+      <td>${esc(i.label)}${i.required ? ' <span class="req">required</span>' : ""}</td>
+      <td class="st">${esc(CONSENT_STATUS_LABEL[i.status] || i.status)}</td>
+      <td>${esc(i.actorName) || "—"}</td>
+      <td class="mono">${day(i.recordedAt)}</td>
+    </tr>`).join("");
+  // Custom form answers, minus the ones already shown above.
+  const skip = { fullName: 1, age: 1, centre: 1, course: 1, faculty: 1, parentName: 1, parentPhone: 1, parentEmail: 1 };
+  const extra = Object.keys(reg.answers || {}).filter(k => !skip[k] && reg.answers[k] !== "" && reg.answers[k] != null);
+  const extraRows = extra.map(k => `<tr><th>${esc(k)}</th><td>${esc(Array.isArray(reg.answers[k]) ? reg.answers[k].join(", ") : reg.answers[k])}</td></tr>`).join("");
+
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Consent — ${esc(s.fullName)}</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body { font: 12pt/1.5 Georgia, "Times New Roman", serif; color: #14181f; margin: 0; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5pt solid #0c1432; padding-bottom: 9pt; }
+  .org { font: 700 16pt/1.15 "Helvetica Neue", Arial, sans-serif; letter-spacing: -0.4pt; color: #0c1432; }
+  .sub { font: 8.5pt/1.3 "Helvetica Neue", Arial, sans-serif; letter-spacing: 1.6pt; text-transform: uppercase; color: #5a6488; margin-top: 3pt; }
+  h1 { font: 700 13pt/1.2 "Helvetica Neue", Arial, sans-serif; margin: 16pt 0 3pt; }
+  .lede { font-size: 10pt; color: #47506e; margin: 0 0 14pt; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 14pt; }
+  th, td { text-align: left; padding: 5pt 7pt; border-bottom: 0.5pt solid #d7dbe6; vertical-align: top; font-size: 10.5pt; }
+  .kv th { width: 32%; font: 600 9.5pt/1.4 "Helvetica Neue", Arial, sans-serif; color: #5a6488; text-transform: uppercase; letter-spacing: 0.6pt; }
+  thead th { border-bottom: 1pt solid #0c1432; font: 700 9pt/1.4 "Helvetica Neue", Arial, sans-serif; text-transform: uppercase; letter-spacing: 0.8pt; }
+  .st { font-weight: 700; white-space: nowrap; }
+  tr.ok .st { color: #1f7a3d; } tr.no .st { color: #b3261e; } tr.na .st { color: #8a90a2; }
+  .req { font: 700 7.5pt/1 "Helvetica Neue", Arial, sans-serif; text-transform: uppercase; letter-spacing: 0.7pt; color: #b3261e; }
+  .mono { font-family: "SFMono-Regular", Consolas, monospace; font-size: 9.5pt; }
+  .banner { padding: 8pt 11pt; border-radius: 3pt; font: 600 10pt "Helvetica Neue", Arial, sans-serif; margin-bottom: 14pt; }
+  .banner.ok { background: #e8f5ec; border: 0.5pt solid #1f7a3d; color: #14532d; }
+  .banner.no { background: #fdecea; border: 0.5pt solid #b3261e; color: #7f1d1d; }
+  .sign { margin-top: 26pt; display: flex; gap: 26pt; }
+  .sign div { flex: 1; border-top: 0.5pt solid #14181f; padding-top: 4pt; font: 8.5pt "Helvetica Neue", Arial, sans-serif; color: #5a6488; }
+  footer { margin-top: 20pt; border-top: 0.5pt solid #d7dbe6; padding-top: 6pt; font-size: 8pt; color: #6b7280; }
+  @media print { .noprint { display: none !important; } }
+</style></head><body>
+  <div class="head">
+    <div><div class="org">${esc(prog.name) || "Next Generation Genius"}</div>
+      <div class="sub">Parental consent record</div></div>
+    <div style="text-align:right;font:9pt/1.4 'Helvetica Neue',Arial,sans-serif;color:#5a6488">
+      ${esc(s.displayId || s.studentId)}<br>${esc(day(c.generatedAt))}
+    </div>
+  </div>
+
+  <div class="banner ${c.complete ? "ok" : "no"}">
+    ${c.complete
+      ? "All required consents are on file. This child is cleared to participate."
+      : "REQUIRED CONSENTS ARE MISSING. This child is not cleared to participate until they are recorded."}
+  </div>
+
+  <h1>Child</h1>
+  <table class="kv">
+    <tr><th>Full name</th><td>${esc(s.fullName)}</td></tr>
+    <tr><th>Student ID</th><td class="mono">${esc(s.displayId || s.studentId)}</td></tr>
+    <tr><th>Age</th><td>${s.age == null ? "—" : esc(s.age)}</td></tr>
+    <tr><th>Centre</th><td>${esc(s.centre) || "—"}</td></tr>
+    <tr><th>Course</th><td>${esc(s.track) || "—"}</td></tr>
+    <tr><th>Registered</th><td>${esc(day(s.enrolledAt))}</td></tr>
+  </table>
+
+  <h1>Parent / guardian</h1>
+  <table class="kv">
+    <tr><th>Name</th><td>${esc(gd.name) || "—"}</td></tr>
+    <tr><th>Phone</th><td>${esc(gd.phone) || "—"}</td></tr>
+    <tr><th>Email</th><td>${esc(gd.email) || "—"}</td></tr>
+    <tr><th>Verification</th><td>${esc(reg.status)}${reg.verifiedAt ? " · " + esc(day(reg.verifiedAt)) : ""}</td></tr>
+  </table>
+
+  <h1>Consents</h1>
+  <p class="lede">Recorded by the parent or guardian named above. Required consents must all be granted before a child may take part.</p>
+  <table>
+    <thead><tr><th>Consent</th><th>Standing</th><th>Given by</th><th>Recorded</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  ${extraRows ? '<h1>Registration answers</h1><table class="kv">' + extraRows + "</table>" : ""}
+
+  <div class="sign">
+    <div>Parent / guardian signature &amp; date</div>
+    <div>For ${esc(prog.name) || "the programme"} — name, signature &amp; date</div>
+  </div>
+
+  <footer>
+    Generated ${esc(c.generatedAt)}${c.generatedBy ? " by " + esc(c.generatedBy) : ""}.
+    This document reflects the consent ledger at the time of printing; the ledger is append-only and holds the full history.
+    ${esc(prog.website) ? esc(prog.website) + " · " : ""}${esc(prog.phone)}
+  </footer>
+</body></html>`;
+}
+
+/** Render `html` and open the browser's print dialog, via a hidden iframe. */
+function printDocument(html, onFail) {
+  try {
+    const fr = document.createElement("iframe");
+    fr.setAttribute("aria-hidden", "true");
+    fr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+    document.body.appendChild(fr);
+    const d = fr.contentDocument || (fr.contentWindow && fr.contentWindow.document);
+    if (!d) throw new Error("no_frame");
+    d.open(); d.write(html); d.close();
+    // Give the frame a tick to lay out before printing, then clean up well
+    // after the (modal) dialog has been dismissed.
+    setTimeout(() => {
+      try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (_) { onFail && onFail(); }
+      setTimeout(() => { try { document.body.removeChild(fr); } catch (_) {} }, 60000);
+    }, 250);
+    return true;
+  } catch (_) { onFail && onFail(); return false; }
+}
+
+function ConsentRecord({ studentId, name, onClose }) {
+  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const [c, setC] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.summer.consent(studentId).then(r => { setC(r.consent); setErr(""); })
+    .catch(e => setErr(e.code || e.message || "load_failed"));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [studentId]);
+
+  const doPrint = () => printDocument(consentDocumentHtml(c), () => toast.error("Your browser blocked the print dialog — allow popups for this site."));
+  const doDownload = () => {
+    // A standalone .html file: opens and prints identically anywhere, and
+    // survives being filed or emailed. No engine, no server round trip.
+    const blob = new Blob([consentDocumentHtml(c)], { type: "text/html;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "consent-" + (c.student.displayId || c.student.studentId) + ".html";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  return (
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3>Consent record · {name}</h3>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
+        </div>
+        {err ? <ErrorState title="Couldn't load the consent record" code={err} onRetry={load}/> : !c ? <div className="dash-spinner"/> : (
+          <>
+            <div className={"policy-callout"} data-tone={c.complete ? "ok" : "warn"}>
+              {c.complete
+                ? <><b>All required consents are on file.</b> This child is cleared to participate.</>
+                : <><b>Required consents are missing.</b> This child is not cleared to participate until they are recorded.</>}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0 16px" }}>
+              <button className="btn btn-primary btn-sm" onClick={doPrint}>⎙ Print / Save as PDF</button>
+              <button className="btn btn-ghost btn-sm" onClick={doDownload}>↓ Download document</button>
+              <span className="admin-hint" style={{ margin: 0, alignSelf: "center" }}>A4, with signature lines — file it as it prints.</span>
+            </div>
+
+            <div className="admin-table-wrap"><table className="admin-table">
+              <thead><tr><th>Consent</th><th>Standing</th><th>Given by</th><th>Recorded</th></tr></thead>
+              <tbody>{c.items.map(i => (
+                <tr key={i.type}>
+                  <td>{i.label}{i.required && <span className="chip" style={{ marginLeft: 6, background: "var(--coral)", color: "#fff" }}>required</span>}</td>
+                  <td><span className={"chip " + (i.status === "granted" ? "status-published" : i.status === "declined" ? "status-archived" : "status-draft")}>{CONSENT_STATUS_LABEL[i.status] || i.status}</span></td>
+                  <td>{i.actorName || "—"}</td>
+                  <td className="mono">{i.recordedAt ? i.recordedAt.slice(0, 10) : "—"}</td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+
+            <div className="eyebrow" style={{ margin: "18px 0 6px" }}>GUARDIAN ON FILE</div>
+            <div className="admin-hint" style={{ marginTop: 0 }}>
+              {c.guardian.name || "—"} · {c.guardian.phone || "no phone"} · {c.guardian.email || "no email"}
+            </div>
+
+            {c.history.length > c.items.length && (
+              <>
+                <div className="eyebrow" style={{ margin: "18px 0 6px" }}>HISTORY · {c.history.length} ENTRIES</div>
+                <p className="admin-hint" style={{ marginTop: 0 }}>The ledger is append-only — a changed answer adds an entry rather than replacing one. The table above shows the latest decision per consent.</p>
+                <div className="admin-table-wrap"><table className="admin-table">
+                  <thead><tr><th>When</th><th>Consent</th><th>Decision</th><th>Method</th><th>By</th></tr></thead>
+                  <tbody>{c.history.slice().reverse().map((h, i) => (
+                    <tr key={i}>
+                      <td className="mono">{String(h.createdAt || "").slice(0, 16).replace("T", " ")}</td>
+                      <td>{h.type}</td><td>{h.status}</td><td>{h.method || "—"}</td><td>{h.actorName || "—"}</td>
+                    </tr>
+                  ))}</tbody>
+                </table></div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SummerRoster({ cohortId }) {
   const [list, setList] = React.useState(null);
   const [q, setQ] = React.useState("");
   const [openId, setOpenId] = React.useState("");
+  const [consentFor, setConsentFor] = React.useState(null);
+  const [only, setOnly] = React.useState("all");   // all | pending | noconsent | withdrawn
   const load = () => NGGApi.admin.summer.students(q, cohortId).then(r => setList(r.students || [])).catch(() => setList([]));
   React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q]);
   const setStatus = async (studentId, status) => {
@@ -1769,33 +1977,61 @@ function SummerRoster({ cohortId }) {
     if (!(await dialog.confirm({ title: "Delete " + s.fullName + "?", body: "This permanently removes the student record and their attendance, and frees their QR card for reuse. This can't be undone.", cta: "Delete", danger: true }))) return;
     try { await NGGApi.admin.summer.studentDelete(s.studentId); toast.success("Student deleted."); setOpenId(""); load(); } catch (e) { toast.error(e.code || e.message); }
   };
+  const rows = (list || []).filter(s => {
+    if (only === "pending") return s.regStatus === "parent_pending";
+    if (only === "noconsent") return !s.consentComplete;
+    if (only === "withdrawn") return s.status !== "active";
+    return true;
+  });
   return (
     <div>
       <div className="admin-filters">
         <input className="admin-input" placeholder="Search name / handle / ID" value={q} onChange={e => setQ(e.target.value)} style={{ maxWidth: 280 }}/>
-        <button className="btn btn-ghost btn-sm" disabled={!list || !list.length} onClick={() => downloadCsv("summer-students", (list || []).map(s => ({ studentId: s.studentId, fullName: s.fullName, handle: s.handle, centre: s.centre, track: s.track, status: s.status, attendance: s.attendanceCount })))}>Export CSV</button>
+        <select className="admin-select" value={only} onChange={e => setOnly(e.target.value)} aria-label="Filter children">
+          <option value="all">Everyone</option>
+          <option value="pending">Awaiting parent consent</option>
+          <option value="noconsent">Missing a required consent</option>
+          <option value="withdrawn">Not active</option>
+        </select>
+        <button className="btn btn-ghost btn-sm" disabled={!rows.length} onClick={() => downloadCsv("summer-students", rows.map(s => ({ studentId: s.studentId, displayId: s.displayId, fullName: s.fullName, handle: s.handle, age: s.age, centre: s.centre, faculty: s.faculty, track: s.track, guardianName: s.guardianName, guardianPhone: s.guardianPhone, parentEmail: s.parentEmail, regStatus: s.regStatus, consent: s.consentComplete ? "complete" : "incomplete", status: s.status, attendance: s.attendanceCount })))}>Export CSV{rows.length !== (list || []).length ? " (" + rows.length + ")" : ""}</button>
       </div>
       {list === null ? <div className="dash-spinner"/> :
-        list.length === 0 ? <div className="admin-empty">No students enrolled yet.</div> :
+        rows.length === 0 ? <div className="admin-empty">{(list || []).length ? "No child matches that filter." : "No students enrolled yet."}</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>ID</th><th>Name</th><th>Handle</th><th>Centre</th><th>Track</th><th>Present</th><th>Status</th><th>Profile</th><th></th></tr></thead>
-          <tbody>{list.map(s => (
+          <thead><tr><th>ID</th><th>Name</th><th>Guardian</th><th>Centre</th><th>Course</th><th>Present</th><th>Consent</th><th>Status</th><th></th></tr></thead>
+          <tbody>{rows.map(s => (
             <React.Fragment key={s.studentId}>
             <tr>
-              <td className="mono">{s.studentId}</td>
-              <td>{s.fullName}</td>
-              <td className="mono">{s.handle}</td>
-              <td>{s.centre}</td><td>{s.track}</td>
+              <td className="mono">{s.displayId || s.studentId}
+                <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}><a href={"/s/" + s.handle} target="_blank" rel="noopener noreferrer">/s/{s.handle}</a></div></td>
+              <td>{s.fullName}<div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{s.age != null ? s.age + " yrs" : "age not set"}</div></td>
+              {/* The guardian is the single most-needed piece of information on
+                  this screen and it was not on it — every follow-up call meant
+                  opening the editor first. */}
+              <td style={{ fontSize: 12.5 }}>{s.guardianName || "—"}
+                <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{s.guardianPhone || s.parentEmail || "no contact"}</div></td>
+              <td>{s.centre}</td>
+              <td>{s.track}{s.faculty && <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{s.faculty}</div>}</td>
               <td className="mono">{s.attendanceCount}</td>
+              <td>
+                {s.regStatus === "parent_pending"
+                  ? <span className="chip status-draft" title="The parent has not completed the consent link yet">Awaiting parent</span>
+                  : s.consentComplete
+                    ? <span className="chip status-published">Complete</span>
+                    : <span className="chip" style={{ background: "var(--coral)", color: "#fff" }}>Incomplete</span>}
+              </td>
               <td><select className="admin-select" value={s.status} onChange={e => setStatus(s.studentId, e.target.value)}><option value="active">active</option><option value="withdrawn">withdrawn</option><option value="graduated">graduated</option><option value="promoted">promoted</option><option value="waitlisted">waitlisted</option></select></td>
-              <td><a className="mono" href={"/s/" + s.handle} target="_blank" rel="noopener noreferrer">/s/{s.handle}</a></td>
-              <td style={{ whiteSpace: "nowrap", textAlign: "right" }}><button className="btn btn-ghost btn-sm" onClick={() => setOpenId(openId === s.studentId ? "" : s.studentId)}>{openId === s.studentId ? "Close" : "Edit"}</button></td>
+              <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setConsentFor(s)}>Consent</button>{" "}
+                <button className="btn btn-ghost btn-sm" onClick={() => setOpenId(openId === s.studentId ? "" : s.studentId)}>{openId === s.studentId ? "Close" : "Edit"}</button>
+              </td>
             </tr>
             {openId === s.studentId && <tr><td colSpan={9} style={{ background: "rgba(12,20,50,0.03)" }}><StudentEditor s={s} onSaved={() => { setOpenId(""); load(); }} onDelete={() => remove(s)}/></td></tr>}
             </React.Fragment>
           ))}</tbody>
         </table></div>
       }
+      {consentFor && <ConsentRecord studentId={consentFor.studentId} name={consentFor.fullName} onClose={() => setConsentFor(null)}/>}
     </div>
   );
 }
@@ -3868,7 +4104,7 @@ const STATUS_FIELDS = [
   ["ctaPage", "Button target page", "input", "A page id, e.g. join, volunteer, home."],
 ];
 const STATUS_SECTION_LABELS = { kpis: "KPI tiles", centres: "Per-centre cards", trend: "Trend chart", transparency: "Transparency section", cta: "Call-to-action buttons" };
-const STATUS_KPI_LABELS = { centres: "Centres", enrolled: "Students enrolled", presentToday: "Present today", attendanceRate: "Attendance rate", activeVolunteers: "Active volunteers", starsThisWeek: "Stars this week", totalVolunteers: "Total volunteers", totalNeed: "Total need", totalFilled: "Slots filled", totalGap: "Open slots" };
+const STATUS_KPI_LABELS = { centres: "Centres", enrolled: "Students enrolled", registered: "Registered (all-time)", consentVerified: "Consent complete", consentPending: "Awaiting parent", capacity: "Capacity", capacityFill: "Capacity filled", presentToday: "Present today", attendanceRate: "Attendance rate", activeVolunteers: "Active volunteers", starsThisWeek: "Stars this week", totalVolunteers: "Total volunteers", totalNeed: "Total need", totalFilled: "Slots filled", totalGap: "Open slots" };
 function StatusGroup({ label, children }) {
   return <div style={{ marginTop: 16 }}>
     <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>{label}</div>
@@ -5471,6 +5707,10 @@ function SummerKiosk({ onCheckin }) {
   const [recent, setRecent] = React.useState([]);
   const [pending, setPending] = React.useState(kioskQueue().length);
   const [camErr, setCamErr] = React.useState("");
+  // Handheld desks point the rear lens at the card; an all-in-one kiosk has
+  // only a front one.
+  const [camFacing, setCamFacing] = React.useState("environment");
+  const [multiCam, setMultiCam] = React.useState(false);
   const [flushErr, setFlushErr] = React.useState(null);   // queued scans the server refused
   const [manual, setManual] = React.useState("");
   const [online, setOnline] = React.useState(typeof navigator !== "undefined" ? navigator.onLine : true);
@@ -5547,10 +5787,11 @@ function SummerKiosk({ onCheckin }) {
     if (mode !== "camera") return;
     let stream = null, raf = 0, stop = false;
     setCamErr("");
+    // Re-runs when the operator flips; the cleanup stops the old stream first.
     (async () => {
       try {
         await ensureQRDecoder();
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: camFacing } });
         const v = videoRef.current; if (!v) return;
         v.setAttribute("playsinline", "true"); v.srcObject = stream; await v.play();
         const cvs = canvasRef.current, ctx = cvs.getContext("2d", { willReadFrequently: true });
@@ -5564,10 +5805,15 @@ function SummerKiosk({ onCheckin }) {
           raf = requestAnimationFrame(tick);
         };
         tick();
+        if (navigator.mediaDevices.enumerateDevices) {
+          navigator.mediaDevices.enumerateDevices()
+            .then(ds => setMultiCam(ds.filter(d => d.kind === "videoinput").length > 1))
+            .catch(() => {});
+        }
       } catch (e) { setCamErr((e && e.name === "NotAllowedError") ? "Camera permission denied — use a handheld scanner or type the token." : "No camera available — use a handheld scanner or type the token."); }
     })();
     return () => { stop = true; if (raf) cancelAnimationFrame(raf); if (stream) stream.getTracks().forEach(t => t.stop()); };
-  }, [mode, doCheckin]);
+  }, [mode, camFacing, doCheckin]);
 
   const submitManual = (e) => { e.preventDefault(); if (manual.trim()) { doCheckin(manual, mode === "camera" ? "manual" : "scan"); setManual(""); } };
 
@@ -5591,6 +5837,11 @@ function SummerKiosk({ onCheckin }) {
               <video ref={videoRef} muted playsInline/>
               <canvas ref={canvasRef} style={{ display: "none" }}/>
               <div className="summer-cam-reticle" aria-hidden="true"/>
+              {multiCam && (
+                <button type="button" className="summer-cam-flip" title="Flip camera"
+                  aria-label={"Switch to the " + (camFacing === "environment" ? "front" : "back") + " camera"}
+                  onClick={() => setCamFacing(f => (f === "environment" ? "user" : "environment"))}>🔄</button>
+              )}
               {camErr && <div className="summer-cam-err">{camErr}</div>}
             </div>
           ) : (

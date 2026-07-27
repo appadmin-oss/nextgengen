@@ -140,7 +140,8 @@ const STATUS = {
   var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'cards' ? 'CardStudio' : b === 'photo' ? 'PhotoEditor'
             : b === 'policy' ? 'SummerPolicy' : b === 'att' ? 'SummerAttendance' : b === 'kiosk' ? 'SummerKiosk'
             : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : b === 'centre' ? 'CentreDetail'
-            : b === 'builder' ? 'SummerFormBuilder' : b === 'gatereg' ? 'GateRegister' : 'StatusPage';
+            : b === 'builder' ? 'SummerFormBuilder' : b === 'gatereg' ? 'GateRegister'
+            : b === 'roster' ? 'SummerRoster' : 'StatusPage';
   var props;
   if (b === 'photo') {
     var pc = document.createElement('canvas'); pc.width = 800; pc.height = 1000;
@@ -239,6 +240,51 @@ const STATUS = {
       address: '12 Ijaiye Rd', area: 'Ijaiye', story: 'A story.', gallery: [], volunteers: [], needs: [],
     } }); };
     props = { slug: 'ijaiye', go: function () {}, setPage: function () {} };
+  } else if (b === 'roster') {
+    window.__consentCalls = [];
+    var KIDS = [
+      { studentId: 'STU-1', displayId: 'EG-26-001', fullName: 'Amina Alpha', handle: 'amina', age: 12,
+        centre: 'Egbeda', track: 'Piano', faculty: 'Music', guardianName: 'Mrs Alpha', guardianPhone: '08031110001',
+        parentEmail: 'a@ex.co', notes: 'Peanut allergy', status: 'active', regStatus: 'verified',
+        attendanceCount: 9, consentComplete: true, consents: { participation: 'granted' } },
+      { studentId: 'STU-2', displayId: 'EG-26-002', fullName: 'Bode Beta', handle: 'bode', age: 13,
+        centre: 'Egbeda', track: 'Graphics', faculty: 'Media', guardianName: 'Mr Beta', guardianPhone: '08031110002',
+        parentEmail: '', notes: '', status: 'active', regStatus: 'parent_pending',
+        attendanceCount: 0, consentComplete: false, consents: {} },
+      { studentId: 'STU-3', displayId: 'EG-26-003', fullName: 'Chidi Gamma', handle: 'chidi', age: 14,
+        centre: 'Ijaiye', track: 'Piano', faculty: 'Music', guardianName: '', guardianPhone: '',
+        parentEmail: 'c@ex.co', notes: '', status: 'withdrawn', regStatus: 'verified',
+        attendanceCount: 3, consentComplete: false, consents: { participation: 'declined' } },
+    ];
+    window.NGGApi.admin.summer = {
+      students: function () { return Promise.resolve({ students: KIDS }); },
+      studentUpdate: function (id, data) { window.__saved = { id: id, data: data }; return Promise.resolve({ ok: true }); },
+      studentStatus: function () { return Promise.resolve({ ok: true }); },
+      studentDelete: function () { return Promise.resolve({ ok: true }); },
+      consent: function (id) {
+        window.__consentCalls.push(id);
+        return Promise.resolve({ consent: {
+          student: { studentId: id, displayId: 'EG-26-001', fullName: 'Amina Alpha', age: 12, centre: 'Egbeda', track: 'Piano', enrolledAt: '2026-07-06T09:00:00Z' },
+          guardian: { name: 'Mrs Alpha', phone: '08031110001', email: 'a@ex.co' },
+          registration: { status: 'verified', verifiedAt: '2026-07-07T10:00:00Z', formVersion: 3, answers: { school: 'St Mary', allergies: 'Peanuts' } },
+          items: [
+            { type: 'participation', label: 'Program participation', priority: 0, required: true, status: 'granted', method: 'parent_link', actorName: 'Mrs Alpha', recordedAt: '2026-07-07T10:00:00Z' },
+            { type: 'medical', label: 'Emergency medical care', priority: 0, required: true, status: 'granted', method: 'parent_link', actorName: 'Mrs Alpha', recordedAt: '2026-07-07T10:00:00Z' },
+            { type: 'media', label: 'Photos & media', priority: 1, required: false, status: 'declined', method: 'parent_link', actorName: 'Mrs Alpha', recordedAt: '2026-07-07T10:00:00Z' },
+          ],
+          history: [
+            { type: 'participation', status: 'granted', method: 'parent_link', actorName: 'Mrs Alpha', createdAt: '2026-07-07T10:00:00Z' },
+            { type: 'medical', status: 'granted', method: 'parent_link', actorName: 'Mrs Alpha', createdAt: '2026-07-07T10:00:00Z' },
+            { type: 'media', status: 'granted', method: 'parent_link', actorName: 'Mrs Alpha', createdAt: '2026-07-07T10:00:00Z' },
+            { type: 'media', status: 'declined', method: 'staff', actorName: 'Desk', createdAt: '2026-07-08T09:00:00Z' },
+          ],
+          complete: true,
+          programme: { name: 'LCASP 2026', website: 'next.afrovanguard.org.ng', phone: '+234 903 777 6318' },
+          generatedAt: '2026-07-27T12:00:00Z', generatedBy: 'Admin',
+        } });
+      },
+    };
+    props = { cohortId: 'C1' };
   } else if (b === 'builder') {
     window.__published = null;
     var FIELDS = [
@@ -918,6 +964,162 @@ const STATUS = {
     ok('…and the faculty→course link survives a round trip through the builder',
       published && (published.find(x => x.key === 'course') || {}).optionsFrom === 'faculty');
     await fb.close();
+
+    /* ── The roster can actually manage a child ───────────────────────────
+       The list served the PUBLIC student shape, so the editor opened blank and
+       a save wrote those blanks back over the guardian's contact details. */
+    const ro = await browser.newPage();
+    const roErrs = [];
+    ro.on('pageerror', e => roErrs.push(String(e.message)));
+    await ro.goto(BASE + '/tests/_boards_fixture.html?board=roster&mode=ok', { waitUntil: 'networkidle' });
+    await ro.waitForTimeout(500);
+    ok('the roster mounts with no script error', roErrs.length === 0 && (await ro.evaluate(() => window.__errors)).length === 0);
+    if (roErrs.length) console.error('       ', roErrs.slice(0, 3).join(' | '));
+    let roBody = await ro.evaluate(() => document.body.innerText);
+    ok('…and shows the guardian without having to open anything', /Mrs Alpha/.test(roBody) && /08031110001/.test(roBody));
+    ok('…and each child\'s consent standing', /Complete/.test(roBody) && /Awaiting parent/.test(roBody) && /Incomplete/.test(roBody));
+
+    const roRows = () => ro.locator('.admin-table tbody tr').count();
+    ok('all three children are listed', await roRows() === 3);
+    await ro.selectOption('select[aria-label="Filter children"]', 'pending');
+    await ro.waitForTimeout(150);
+    ok('filtering to awaiting-parent narrows to the one', await roRows() === 1);
+    await ro.selectOption('select[aria-label="Filter children"]', 'noconsent');
+    await ro.waitForTimeout(150);
+    ok('filtering to missing-consent finds both', await roRows() === 2);
+    await ro.selectOption('select[aria-label="Filter children"]', 'all');
+    await ro.waitForTimeout(150);
+
+    // The bug: open Edit, save, and the guardian details survive.
+    await ro.getByRole('button', { name: 'Edit' }).first().click();
+    await ro.waitForTimeout(250);
+    const seeded = await ro.evaluate(() => {
+      const inputs = Array.from(document.querySelectorAll('.admin-table input.admin-input'));
+      return inputs.map(i => i.value).filter(Boolean);
+    });
+    ok('the editor opens POPULATED, not blank (' + seeded.length + ' fields)',
+      seeded.indexOf('Mrs Alpha') !== -1 && seeded.indexOf('08031110001') !== -1 && seeded.indexOf('12') !== -1);
+    await ro.getByRole('button', { name: /^Save/ }).first().click();
+    await ro.waitForTimeout(300);
+    const rosterSaved = await ro.evaluate(() => window.__saved);
+    ok('…so a save carries the guardian through instead of erasing them',
+      !!(rosterSaved && rosterSaved.data && rosterSaved.data.guardianPhone === '08031110001' && rosterSaved.data.parentEmail === 'a@ex.co' && Number(rosterSaved.data.age) === 12));
+
+    /* ── The consent record + its printable document ─────────────────────── */
+    await ro.getByRole('button', { name: 'Consent' }).first().click();
+    await ro.waitForTimeout(400);
+    const consentDrawer = await ro.evaluate(() => { const el = document.querySelector('.admin-drawer-panel'); return el ? el.innerText : ''; });
+    ok('the consent record opens for that child', /Consent record/.test(consentDrawer) && /Amina Alpha/.test(consentDrawer));
+    ok('…listing every consent with who gave it and when',
+      /Program participation/.test(consentDrawer) && /Mrs Alpha/.test(consentDrawer) && /2026-07-07/.test(consentDrawer));
+    ok('…flagging which are required', /required/i.test(consentDrawer));
+    ok('…and showing the append-only history behind the current standing',
+      /HISTORY/.test(consentDrawer) && /4 ENTRIES/.test(consentDrawer));
+
+    // The printable document is generated in-page; check the real output.
+    const consentDoc = await ro.evaluate(() => {
+      // A guardian name and a form answer carrying markup. These are values a
+      // parent typed into a public form, so the document must escape them, not
+      // render them — the printed page is opened in a browser.
+      const c = { student: { studentId: 'STU-1', displayId: 'EG-26-001', fullName: 'Amina Alpha', age: 12, centre: 'Egbeda', track: 'Piano', enrolledAt: '2026-07-06T09:00:00Z' },
+        guardian: { name: 'Mrs <script>alert(1)</script> Alpha', phone: '08031110001', email: 'a@ex.co' },
+        registration: { status: 'verified', verifiedAt: '2026-07-07T10:00:00Z', answers: { school: 'St Mary <img src=x onerror=alert(2)>', fullName: 'Amina Alpha' } },
+        items: [{ type: 'participation', label: 'Program participation', required: true, status: 'granted', actorName: 'Mrs Alpha', recordedAt: '2026-07-07T10:00:00Z' },
+                { type: 'media', label: 'Photos & media', required: false, status: 'declined', actorName: 'Mrs Alpha', recordedAt: '2026-07-07T10:00:00Z' }],
+        history: [], complete: true,
+        programme: { name: 'LCASP 2026', website: 'next.afrovanguard.org.ng', phone: '+234' },
+        generatedAt: '2026-07-27T12:00:00Z', generatedBy: 'Admin' };
+      return window.consentDocumentHtml(c);
+    });
+    ok('the document is A4 with print margins, not a screenshot', /@page\s*{\s*size:\s*A4/.test(consentDoc) && /margin:\s*18mm/.test(consentDoc));
+    ok('…carries the child, the guardian and every consent',
+      /Amina Alpha/.test(consentDoc) && /08031110001/.test(consentDoc) && /Program participation/.test(consentDoc) && /Photos &amp; media/.test(consentDoc));
+    ok('…states plainly whether the child is cleared', /cleared to participate/.test(consentDoc));
+    ok('…has signature lines for the file', /signature/i.test(consentDoc));
+    ok('…escapes what a parent typed rather than rendering it', (function () {
+      // The hostile strings must appear, escaped, and never as live markup.
+      return consentDoc.indexOf('<script>alert(1)') === -1
+        && consentDoc.indexOf('&lt;script&gt;alert(1)') !== -1
+        && consentDoc.indexOf('<img src=x') === -1
+        && consentDoc.indexOf('&lt;img src=x') !== -1;
+    })());
+    ok('…and does not repeat fields it already shows', /St Mary/.test(consentDoc) && (consentDoc.match(/Amina Alpha/g) || []).length <= 3);
+
+    // A blocked popup must not lose the document — printing goes via an iframe.
+    const printed = await ro.evaluate(() => {
+      let called = 0;
+      const realOpen = window.open;
+      window.open = function () { return null; };          // simulate a popup blocker
+      const html = '<!doctype html><html><body>x</body></html>';
+      const okd = window.printDocument(html, function () { called = -1; });
+      window.open = realOpen;
+      const frames = document.querySelectorAll('iframe').length;
+      return { okd: okd, called: called, frames: frames };
+    });
+    ok('printing survives a popup blocker, because it uses an iframe',
+      printed.okd === true && printed.frames >= 1);
+    await ro.close();
+
+    /* ── The camera can be flipped ────────────────────────────────────────
+       Chromium's fake device reports a single camera, so enumerateDevices is
+       stubbed to look like a phone: the flip is only offered when there is a
+       second lens to flip to, and a one-camera tablet must not get a button
+       that kills its preview. */
+    const flipCtx = await browser.newContext({ permissions: ['camera'] });
+    const fl = await flipCtx.newPage();
+    await fl.addInitScript(() => {
+      window.__facings = [];
+      const realEnum = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
+      const realGet = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.enumerateDevices = () => (window.__oneCamera
+        ? Promise.resolve([{ kind: 'videoinput', deviceId: 'a', label: 'front' }])
+        : Promise.resolve([{ kind: 'videoinput', deviceId: 'a', label: 'front' },
+                           { kind: 'videoinput', deviceId: 'b', label: 'back' }]));
+      navigator.mediaDevices.getUserMedia = (c) => {
+        const f = c && c.video && c.video.facingMode;
+        window.__facings.push(typeof f === 'object' ? (f.ideal || f.exact) : f);
+        return realGet(c);
+      };
+    });
+    await fl.goto(BASE + '/tests/_boards_fixture.html?board=gatephoto&mode=ok', { waitUntil: 'networkidle' });
+    await fl.waitForTimeout(300);
+    await fl.getByRole('button', { name: /Open camera/ }).first().click();
+    await fl.waitForTimeout(1400);
+    ok('the registration camera opens on the front lens',
+      (await fl.evaluate(() => window.__facings))[0] === 'user');
+    const flipBtn = fl.getByRole('button', { name: /Switch to the back camera/ });
+    ok('…and offers a flip when the device has two cameras', await flipBtn.count() === 1);
+    await flipBtn.click();
+    await fl.waitForTimeout(1400);
+    const facings = await fl.evaluate(() => window.__facings);
+    ok('…which actually re-opens the stream on the rear lens (' + facings.join(' → ') + ')',
+      facings[facings.length - 1] === 'environment');
+    const mirrored = await fl.evaluate(() => {
+      const v = document.querySelector('[role="dialog"] video');
+      return v ? v.style.transform : null;
+    });
+    // A selfie reads naturally mirrored; a rear shot of someone else does not.
+    ok('…and stops mirroring the preview once it is the rear camera', mirrored === 'none');
+    ok('…with the stream still live after the flip', await fl.evaluate(() => {
+      const v = document.querySelector('[role="dialog"] video');
+      return !!(v && v.srcObject && v.srcObject.getVideoTracks().some(t => t.readyState === 'live'));
+    }));
+    await fl.close();
+
+    // One camera → no flip button, because switching would kill the preview.
+    const fl1 = await flipCtx.newPage();
+    await fl1.addInitScript(() => { window.__oneCamera = true; });
+    await fl1.addInitScript(() => {
+      navigator.mediaDevices.enumerateDevices = () => Promise.resolve([{ kind: 'videoinput', deviceId: 'a', label: 'only' }]);
+    });
+    await fl1.goto(BASE + '/tests/_boards_fixture.html?board=gatephoto&mode=ok', { waitUntil: 'networkidle' });
+    await fl1.waitForTimeout(300);
+    await fl1.getByRole('button', { name: /Open camera/ }).first().click();
+    await fl1.waitForTimeout(1400);
+    ok('a single-camera device is not offered a flip',
+      await fl1.getByRole('button', { name: /Switch to the/ }).count() === 0);
+    await fl1.close();
+    await flipCtx.close();
 
     // ── photo editor: zoom works, and previews without a round trip ──────
     const pe = await browser.newPage();
