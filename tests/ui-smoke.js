@@ -139,7 +139,8 @@ const STATUS = {
   var b = new URLSearchParams(location.search).get('board');
   var which = b === 'vol' ? 'VolunteerStatusPage' : b === 'cards' ? 'CardStudio' : b === 'photo' ? 'PhotoEditor'
             : b === 'policy' ? 'SummerPolicy' : b === 'att' ? 'SummerAttendance' : b === 'kiosk' ? 'SummerKiosk'
-            : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : b === 'centre' ? 'CentreDetail' : 'StatusPage';
+            : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : b === 'centre' ? 'CentreDetail'
+            : b === 'builder' ? 'SummerFormBuilder' : b === 'gatereg' ? 'GateRegister' : 'StatusPage';
   var props;
   if (b === 'photo') {
     var pc = document.createElement('canvas'); pc.width = 800; pc.height = 1000;
@@ -238,6 +239,41 @@ const STATUS = {
       address: '12 Ijaiye Rd', area: 'Ijaiye', story: 'A story.', gallery: [], volunteers: [], needs: [],
     } }); };
     props = { slug: 'ijaiye', go: function () {}, setPage: function () {} };
+  } else if (b === 'builder') {
+    window.__published = null;
+    var FIELDS = [
+      { key: 'fullName', label: 'Full name', type: 'text', required: true, locked: true },
+      { key: 'faculty', label: 'Faculty', type: 'choice', required: true, locked: true, options: ['AI & Technology', 'Music', 'Media'] },
+      { key: 'course', label: 'Course', type: 'choice', required: true, locked: true, optionsFrom: 'faculty', options: ['Practical Coding', 'Piano', 'Graphics'] },
+      { key: 'school', label: 'School', type: 'text' },
+    ];
+    // Assign INTO admin.registration — the builder calls
+    // NGGApi.admin.registration.form / .publishForm, and the fixture's own
+    // overrides for 'registration' win over anything set on 'admin'.
+    window.NGGApi.admin.registration.form = function () {
+      return Promise.resolve({ form: { formId: 'summer-reg', version: 3, name: 'Summer registration', note: 'n', fields: FIELDS },
+        versions: [], fieldTypes: ['text','longtext','email','phone','number','date','choice','multi','yesno','file','section','info'] });
+    };
+    window.NGGApi.admin.registration.publishForm = function (formId, fields) { window.__published = fields; return Promise.resolve({ ok: true, version: 4 }); };
+    props = { formId: 'summer-reg' };
+  } else if (b === 'gatereg') {
+    props = {
+      g: 'G1', draftKey: 'ngg.test.draft', card: {}, gold: '#ffce54', goldInk: '#2b2100',
+      inputS: { width: '100%' },
+      ctx: { geo: { enabled: false }, form: { fields: [
+        { key: 'fullName', label: 'Full name', type: 'text', required: true },
+        { key: 'faculty', label: 'Faculty', type: 'choice', required: true, options: ['AI & Technology', 'Music', 'Media'] },
+        { key: 'course', label: 'Course', type: 'choice', required: true, optionsFrom: 'faculty',
+          options: ['Practical Coding', 'AI Tools Application', 'Piano', 'Guitar', 'Graphics'],
+          optionsBy: { 'AI & Technology': ['Practical Coding', 'AI Tools Application'], 'Music': ['Piano', 'Guitar'], 'Media': ['Graphics'] } },
+        { key: 'instrument', label: 'Which instrument?', type: 'text', required: true,
+          showIf: { key: 'faculty', op: 'is', value: 'Music' } },
+        { key: 'portfolio', label: 'Portfolio link', type: 'text',
+          showIf: { key: 'faculty', op: 'in', value: 'Media, AI & Technology' } },
+        { key: 'why', label: 'Why not?', type: 'text', showIf: { key: 'school', op: 'empty' } },
+      ] } },
+    };
+    try { localStorage.removeItem('ngg.test.draft'); } catch (e) {}
   } else if (b === 'signin') {
     props = {};
     window.__logins = [];
@@ -759,6 +795,129 @@ const STATUS = {
       ok('…without pushing the head above the hero (' + tag + ', ' + (geo && geo.headroom) + 'px)', geo && geo.headroom > -20);
       await ce.close();
     }
+
+    /* ── Registration form: faculty narrows course, logic shows fields ────
+       The form asked for a course out of one flat list spanning every faculty.
+       Faculty now comes first and narrows it, and conditional fields appear
+       and disappear with the answer. */
+    const gr = await browser.newPage();
+    const grErrs = [];
+    gr.on('pageerror', e => grErrs.push(String(e.message)));
+    await gr.goto(BASE + '/tests/_boards_fixture.html?board=gatereg&mode=ok', { waitUntil: 'networkidle' });
+    await gr.waitForTimeout(400);
+    ok('the registration form mounts with no script error', grErrs.length === 0 && (await gr.evaluate(() => window.__errors)).length === 0);
+    if (grErrs.length) console.error('       ', grErrs.slice(0, 3).join(' | '));
+
+    const opts = (label) => gr.evaluate((l) => {
+      const lab = Array.from(document.querySelectorAll('label')).find(x => x.textContent.trim().startsWith(l));
+      const sel = lab && lab.querySelector('select');
+      return sel ? Array.from(sel.options).map(o => o.textContent) : null;
+    }, label);
+    const shown = () => gr.evaluate(() => Array.from(document.querySelectorAll('label > span:first-child')).map(s => s.textContent.replace(/[ *🔒]+$/, '').trim()));
+
+    let o = await opts('Course');
+    ok('before a faculty is picked, Course says to choose one first', o && /Choose a faculty first/.test(o[0]));
+    ok('…and still lists the full catalogue rather than being a dead end', o && o.length === 6);
+
+    const pick = (label, value) => gr.evaluate(({ l, v }) => {
+      const lab = Array.from(document.querySelectorAll('label')).find(x => x.textContent.trim().startsWith(l));
+      const sel = lab.querySelector('select');
+      sel.value = v;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }, { l: label, v: value });
+
+    await pick('Faculty', 'Music');
+    await gr.waitForTimeout(150);
+    o = await opts('Course');
+    ok('choosing Music narrows Course to Music courses (' + (o || []).slice(1).join(', ') + ')',
+      o && o.length === 3 && o.indexOf('Piano') !== -1 && o.indexOf('Practical Coding') === -1);
+
+    let vis = await shown();
+    ok('…and the Music-only question appears', vis.indexOf('Which instrument?') !== -1);
+    ok('…while the Media/Tech question stays hidden', vis.indexOf('Portfolio link') === -1);
+
+    // Choose a Music course, then switch faculty: the stale course must clear,
+    // or the desk submits a course the new faculty does not offer.
+    await pick('Course', 'Piano');
+    await gr.waitForTimeout(120);
+    await pick('Faculty', 'Media');
+    await gr.waitForTimeout(150);
+    /* Assert the DRAFT, not the <select>. A select whose value is not among its
+       options reports '' all by itself, so reading the DOM would pass whether
+       or not the stale answer was actually cleared — and it is the stored
+       answer that gets submitted. The draft is what the form will send. */
+    const draft = await gr.evaluate(() => { try { return JSON.parse(localStorage.getItem('ngg.test.draft')) || {}; } catch (e) { return {}; } });
+    ok('switching faculty clears a course the new faculty does not offer (draft.course=' + JSON.stringify(draft.course) + ')',
+      draft.faculty === 'Media' && !draft.course);
+    o = await opts('Course');
+    ok('…and Course now offers only Media courses', o && o.length === 2 && o.indexOf('Graphics') !== -1);
+
+    vis = await shown();
+    ok('the "is any of" rule shows for Media', vis.indexOf('Portfolio link') !== -1);
+    ok('…and the Music-only question is gone again', vis.indexOf('Which instrument?') === -1);
+    ok('an "is empty" rule shows while its field is blank', vis.indexOf('Why not?') !== -1);
+    await gr.evaluate(() => {
+      const lab = Array.from(document.querySelectorAll('label')).find(x => x.textContent.trim().startsWith('School'));
+      if (!lab) return;
+      const i = lab.querySelector('input');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(i, 'St Mary'); i.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await gr.close();
+
+    /* ── Form builder: the logic editor ──────────────────────────────────── */
+    const fb = await browser.newPage();
+    const fbErrs = [];
+    fb.on('pageerror', e => fbErrs.push(String(e.message)));
+    await fb.goto(BASE + '/tests/_boards_fixture.html?board=builder&mode=ok', { waitUntil: 'networkidle' });
+    await fb.waitForTimeout(500);
+    ok('the form builder mounts with no script error', fbErrs.length === 0 && (await fb.evaluate(() => window.__errors)).length === 0);
+    if (fbErrs.length) console.error('       ', fbErrs.slice(0, 3).join(' | '));
+    ok('every field offers to become conditional',
+      await fb.getByRole('button', { name: '+ Add logic' }).count() >= 3);
+    // The first field has nothing above it, so it cannot be conditional.
+    ok('…except the first, which has nothing above it to depend on',
+      /Add a field above this one/.test(await fb.evaluate(() => document.body.innerText)));
+
+    await fb.getByRole('button', { name: '+ Add logic' }).last().click();
+    await fb.waitForTimeout(200);
+    const cond = await fb.evaluate(() => {
+      const sels = Array.from(document.querySelectorAll('.fb-logic.is-on select'));
+      return sels.map(s => ({ label: s.getAttribute('aria-label'), value: s.value, opts: Array.from(s.options).map(o => o.value) }));
+    });
+    ok('the rule only offers fields ABOVE it as the source',
+      cond[0] && cond[0].opts.join(',') === 'fullName,faculty,course');
+    ok('…and offers the five operators',
+      cond[1] && cond[1].opts.join(',') === 'is,isNot,in,answered,empty');
+
+    await fb.selectOption('.fb-logic.is-on select[aria-label="Condition field"]', 'faculty');
+    await fb.waitForTimeout(150);
+    const valSel = await fb.evaluate(() => {
+      const s = document.querySelector('.fb-logic.is-on select[aria-label="Condition value"]');
+      return s ? Array.from(s.options).map(o => o.value) : null;
+    });
+    ok('a choice source offers its own options as the value, not a text box',
+      valSel && valSel.indexOf('Music') !== -1);
+    await fb.selectOption('.fb-logic.is-on select[aria-label="Condition operator"]', 'answered');
+    await fb.waitForTimeout(150);
+    ok('"is answered" drops the value input, because it takes no operand',
+      await fb.locator('.fb-logic.is-on [aria-label="Condition value"]').count() === 0);
+
+    await fb.selectOption('.fb-logic.is-on select[aria-label="Condition operator"]', 'is');
+    await fb.waitForTimeout(120);
+    await fb.selectOption('.fb-logic.is-on select[aria-label="Condition value"]', 'Music');
+    await fb.waitForTimeout(120);
+    await fb.getByRole('button', { name: /Publish/ }).first().click();
+    await fb.waitForTimeout(400);
+    const published = await fb.evaluate(() => window.__published);
+    ok('publishing sends the rule to the server', (function () {
+      if (!published) return false;
+      const school = published.find(x => x.key === 'school');
+      return school && school.showIf && school.showIf.key === 'faculty' && school.showIf.op === 'is' && school.showIf.value === 'Music';
+    })());
+    ok('…and the faculty→course link survives a round trip through the builder',
+      published && (published.find(x => x.key === 'course') || {}).optionsFrom === 'faculty');
+    await fb.close();
 
     // ── photo editor: zoom works, and previews without a round trip ──────
     const pe = await browser.newPage();

@@ -2479,6 +2479,43 @@ function haversineM(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/* Conditional-logic evaluation for a form field. A line-for-line mirror of
+   form_field_visible() in api/_lib/domain/registration.php — the server is the
+   authority, this only decides what to draw, and the two are pinned together
+   by tests. Anything the browser hides, the server also treats as absent, so a
+   hidden required field never blocks a submission.
+
+   ops: is · isNot · in (comma list) · answered · empty
+   The pre-upgrade {key,value} shape has no op and means `is`. */
+function formFieldVisible(f, data) {
+  const c = f && f.showIf;
+  if (!c || !c.key) return true;
+  const raw = data ? data[c.key] : undefined;
+  const vals = (Array.isArray(raw) ? raw : [raw]).map(x => String(x == null ? "" : x).trim()).filter(Boolean);
+  const want = String(c.value == null ? "" : c.value).trim();
+  switch (c.op || "is") {
+    case "answered": return vals.length > 0;
+    case "empty":    return vals.length === 0;
+    case "isNot":    return vals.indexOf(want) === -1;
+    case "in":       return want.split(",").map(x => x.trim()).filter(Boolean).some(v => vals.indexOf(v) !== -1);
+    default:         return vals.indexOf(want) !== -1;
+  }
+}
+
+/* The options a choice field offers right now. `optionsFrom` names another
+   field — the faculty — and `optionsBy` is the faculty→courses map the server
+   ships alongside it, so narrowing costs no round trip and the list cannot
+   drift from the catalogue. Falls back to the full list when nothing is chosen
+   yet, so the field is never an empty dead end. */
+function formFieldOptions(f, data) {
+  const base = (f && f.options) || [];
+  if (!f || !f.optionsFrom) return base;
+  const picked = String((data && data[f.optionsFrom]) || "").trim();
+  if (!picked) return base;
+  const sub = (f.optionsBy && f.optionsBy[picked]) || null;
+  return (sub && sub.length) ? sub : base;
+}
+
 function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
   const geoOn = !!(ctx.geo && ctx.geo.enabled);
   const fields = ((ctx.form && ctx.form.fields) || []).filter(f => !(geoOn && f.key === "centre"));
@@ -2490,8 +2527,17 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
   const [dupe, setDupe] = React.useState(null);
   const [done, setDone] = React.useState(null);
   const [geo, setGeo] = React.useState({ st: geoOn ? "idle" : "off", lat: null, lng: null, centre: null, dist: null, err: "" });
-  const set = (k, v) => setForm(f => { const n = { ...f, [k]: v }; try { localStorage.setItem(draftKey, JSON.stringify(n)); } catch (_) {} return n; });
-  const visible = (f) => !f.showIf || String(form[f.showIf.key] || "") === String(f.showIf.value);
+  const set = (k, v) => setForm(f => {
+    const n = { ...f, [k]: v };
+    /* Changing a faculty invalidates the course chosen under the old one.
+       Leaving it would submit a course the new faculty does not offer — the
+       server rejects that, so the desk would hit an error on a field that
+       still looks answered. Clear it instead. */
+    fields.forEach(d => { if (d.optionsFrom === k && n[d.key] && formFieldOptions(d, n).indexOf(n[d.key]) === -1) n[d.key] = ""; });
+    try { localStorage.setItem(draftKey, JSON.stringify(n)); } catch (_) {}
+    return n;
+  });
+  const visible = (f) => formFieldVisible(f, form);
   const mut = { color: "rgba(230,238,255,.62)" };
 
   // Geo-fence: capture the device location and match it to a fenced centre.
@@ -2603,8 +2649,8 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
                 <textarea style={{ ...inputS, minHeight: 70, resize: "vertical" }} value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder || ""}/>
               ) : f.type === "choice" ? (
                 <select style={inputS} value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)}>
-                  <option value="">Choose…</option>
-                  {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+                  <option value="">{f.optionsFrom && !form[f.optionsFrom] ? "Choose a faculty first…" : "Choose…"}</option>
+                  {formFieldOptions(f, form).map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : f.type === "yesno" ? (
                 <div style={{ display: "flex", gap: 8 }}>

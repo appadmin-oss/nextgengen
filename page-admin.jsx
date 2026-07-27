@@ -1139,6 +1139,57 @@ function keyFromLabel(label) {
   return (label || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "field";
 }
 
+/* Per-field conditional logic. The condition may only reference a field ABOVE
+   this one: the form resolves top-down in a single pass, so a forward
+   reference would read an answer nobody has given yet and a cycle would never
+   settle. The server rejects both — this just never offers them. */
+const LOGIC_OPS = [
+  ["is", "is"], ["isNot", "is not"], ["in", "is any of"],
+  ["answered", "is answered"], ["empty", "is empty"],
+];
+const LOGIC_NEEDS_VALUE = (op) => op !== "answered" && op !== "empty";
+
+function FieldLogic({ field, above, onChange }) {
+  const c = field.showIf;
+  const candidates = above.filter(a => a.type !== "section" && a.type !== "info" && a.key);
+  if (!c) {
+    return (
+      <div className="fb-logic">
+        {candidates.length
+          ? <button className="btn btn-ghost btn-sm" onClick={() => onChange({ showIf: { key: candidates[candidates.length - 1].key, op: "is", value: "" } })}>+ Add logic</button>
+          : <span className="admin-cell-sub">Add a field above this one to make it conditional.</span>}
+      </div>
+    );
+  }
+  const src = candidates.find(a => a.key === c.key);
+  const set = (patch) => onChange({ showIf: { ...c, ...patch } });
+  return (
+    <div className="fb-logic is-on">
+      <span className="mono fb-logic-lead">SHOW ONLY WHEN</span>
+      <select className="admin-select" value={c.key} onChange={e => set({ key: e.target.value })} aria-label="Condition field">
+        {candidates.map(a => <option key={a.key} value={a.key}>{a.label || a.key}</option>)}
+        {!src && <option value={c.key}>{c.key} (missing)</option>}
+      </select>
+      <select className="admin-select" value={c.op || "is"} onChange={e => set({ op: e.target.value, value: LOGIC_NEEDS_VALUE(e.target.value) ? (c.value || "") : "" })} aria-label="Condition operator">
+        {LOGIC_OPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+      {LOGIC_NEEDS_VALUE(c.op || "is") && (
+        // A choice source gets a picker for `is`/`is not`; `is any of` and a
+        // free-text source get a text box, because the answer is not a fixed set.
+        src && (src.type === "choice" || src.type === "multi") && (c.op || "is") !== "in"
+          ? <select className="admin-select" value={c.value || ""} onChange={e => set({ value: e.target.value })} aria-label="Condition value">
+              <option value="">Choose…</option>
+              {(src.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          : <input className="admin-input" style={{ maxWidth: 220 }} value={c.value || ""} onChange={e => set({ value: e.target.value })}
+              placeholder={(c.op || "is") === "in" ? "Music, Media" : "value"} aria-label="Condition value"/>
+      )}
+      <button className="fb-del" onClick={() => onChange({ showIf: null })} aria-label="Remove logic">✕</button>
+      {!src && <span className="fb-logic-warn">That field is no longer above this one — fix or remove the rule before publishing.</span>}
+    </div>
+  );
+}
+
 function SummerFormBuilder({ formId = "summer-reg" }) {
   const [state, setState] = React.useState({ status: "loading", err: "" });
   const [fields, setFields] = React.useState([]);
@@ -1186,6 +1237,15 @@ function SummerFormBuilder({ formId = "summer-reg" }) {
       if (HAS_OPTIONS(f.type)) clean.options = (f.options || []).map(o => String(o).trim()).filter(Boolean);
       if (f.help) clean.help = f.help;
       if (f.type === "number") { if (f.min != null && f.min !== "") clean.min = Number(f.min); if (f.max != null && f.max !== "") clean.max = Number(f.max); }
+      /* Carry the properties this editor does not own. Building the payload
+         from a fixed list silently DROPPED them: a conditional rule could
+         never be saved, and the first publish would strip optionsFrom off the
+         Course field and break the faculty cascade for good. Placeholder and
+         requiredMessage were being lost the same way. */
+      if (f.showIf && f.showIf.key) clean.showIf = { key: f.showIf.key, op: f.showIf.op || "is", value: f.showIf.value || "" };
+      if (f.optionsFrom) clean.optionsFrom = f.optionsFrom;
+      if (f.placeholder) clean.placeholder = f.placeholder;
+      if (f.requiredMessage) clean.requiredMessage = f.requiredMessage;
       return clean;
     });
     const keys = out.map(f => f.key);
@@ -1253,6 +1313,7 @@ function SummerFormBuilder({ formId = "summer-reg" }) {
                   </div>
                 )}
                 <input className="admin-input fb-help" value={f.help || ""} onChange={e => update(f._id, { help: e.target.value })} placeholder="Helper text (optional)"/>
+                {f.type !== "section" && <FieldLogic field={f} above={fields.slice(0, i)} onChange={(v) => update(f._id, v)}/>}
               </div>
             </div>
           ))}

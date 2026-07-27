@@ -30,6 +30,65 @@ const CONSENT_TYPES = [
 ];
 const FORM_FIELD_TYPES = ['text', 'longtext', 'email', 'phone', 'number', 'date', 'choice', 'multi', 'yesno', 'file', 'section', 'info'];
 
+/**
+ * Conditional-logic operators for a field's `showIf`.
+ *
+ *   is / isNot   exact match against another field's answer
+ *   in           the answer is one of several values (comma-separated)
+ *   answered     the field has any value at all
+ *   empty        the field has no value
+ *
+ * `showIf` predates this and was a bare {key, value} meaning `is`; that shape
+ * still loads and is normalised on the next save, so published forms keep
+ * working across the upgrade.
+ */
+const FORM_LOGIC_OPS = ['is', 'isNot', 'in', 'answered', 'empty'];
+
+/**
+ * Does `$f` show, given the answers so far? The single source of truth for
+ * conditional logic on the server; page-other.jsx mirrors it exactly for the
+ * live form, and tests pin the two together.
+ *
+ * A multi-select answer satisfies `is` when the value is among the choices —
+ * "show this when they picked Music" should not require Music to be their
+ * ONLY pick.
+ */
+function form_field_visible(array $f, array $data): bool {
+    if (empty($f['showIf']) || empty($f['showIf']['key'])) return true;
+    $c = $f['showIf'];
+    $raw = $data[$c['key']] ?? '';
+    $vals = is_array($raw) ? array_map(fn($x) => trim((string)$x), $raw) : [trim((string)$raw)];
+    $vals = array_values(array_filter($vals, fn($x) => $x !== ''));
+    $want = trim((string)($c['value'] ?? ''));
+    switch ((string)($c['op'] ?? 'is')) {
+        case 'answered': return count($vals) > 0;
+        case 'empty':    return count($vals) === 0;
+        case 'isNot':    return !in_array($want, $vals, true);
+        case 'in':
+            $set = array_values(array_filter(array_map('trim', explode(',', $want)), fn($x) => $x !== ''));
+            foreach ($vals as $v) if (in_array($v, $set, true)) return true;
+            return false;
+        case 'is':
+        default:         return in_array($want, $vals, true);
+    }
+}
+
+/**
+ * The options a choice field actually offers, given the answers so far.
+ * A field with `optionsFrom` takes its list from the academy catalogue entry
+ * for whatever faculty the referenced field holds — which is what makes Course
+ * follow Faculty. With no faculty chosen yet the full catalogue is returned so
+ * the field is never a dead end.
+ */
+function form_field_options(array $f, array $data): array {
+    $base = array_values((array)($f['options'] ?? []));
+    if (empty($f['optionsFrom'])) return $base;
+    $picked = trim((string)($data[(string)$f['optionsFrom']] ?? ''));
+    if ($picked === '') return $base;
+    $sub = academy_courses_for($picked);
+    return $sub ?: $base;
+}
+
 /** The seed form — created on first read; 'locked' fields cannot be removed. */
 /**
  * The programme's academies (faculties) and the courses within each — the
@@ -94,7 +153,10 @@ function form_default_fields(): array {
     return [
         ['key' => 'fullName', 'label' => 'Full name', 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'age', 'label' => 'Age', 'type' => 'number', 'required' => true, 'min' => 5, 'max' => 19, 'locked' => true],
-        ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => academy_courses(), 'help' => 'The course catalogue — edit these options freely (add/rename/remove). Drives student sign-up and the /v-status by-course breakdown.'],
+        // Faculty is asked FIRST and narrows Course. Both are locked keys: the
+        // catalogue, the /v-status breakdowns and instructor matching read them.
+        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => academy_faculties(), 'help' => 'The academy catalogue. Picking one narrows the Course list below to that faculty\'s courses.'],
+        ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'optionsFrom' => 'faculty', 'options' => academy_courses(), 'help' => 'Courses are filtered by the chosen faculty. Edit the catalogue in Admin → Settings; the options here follow it.'],
         ['key' => 'centre', 'label' => 'Centre', 'type' => 'choice', 'required' => true, 'options' => ['Main'], 'help' => 'Options come from Admin → Centres; drives the ID prefix and card colour.'],
         ['key' => 'parentName', 'label' => "Parent / guardian's name", 'type' => 'text', 'required' => true],
         ['key' => 'parentPhone', 'label' => "Parent's phone", 'type' => 'phone', 'required' => false, 'help' => 'Either phone or email is required — both is best.', 'locked' => true],
@@ -173,7 +235,6 @@ function form_validate_fields(array $fields, ?array $systemFields = null): array
         if ($key === '' || strlen($key) > 40) return ['ok' => false, 'error' => 'bad_field_key'];
         if (isset($keys[$key])) return ['ok' => false, 'error' => 'duplicate_field_key'];
         if (!in_array($type, FORM_FIELD_TYPES, true)) return ['ok' => false, 'error' => 'bad_field_type'];
-        $keys[$key] = true;
         $clean = [
             'key' => $key,
             'label' => substr(trim((string)($f['label'] ?? $key)), 0, 120),
@@ -190,8 +251,30 @@ function form_validate_fields(array $fields, ?array $systemFields = null): array
         }
         if ($type === 'number') { if (isset($f['min'])) $clean['min'] = (int)$f['min']; if (isset($f['max'])) $clean['max'] = (int)$f['max']; }
         if (!empty($f['showIf']) && is_array($f['showIf']) && !empty($f['showIf']['key'])) {
-            $clean['showIf'] = ['key' => preg_replace('/[^a-zA-Z0-9_]/', '', (string)$f['showIf']['key']), 'value' => substr((string)($f['showIf']['value'] ?? ''), 0, 80)];
+            $op = (string)($f['showIf']['op'] ?? 'is');
+            if (!in_array($op, FORM_LOGIC_OPS, true)) $op = 'is';
+            $clean['showIf'] = [
+                'key' => preg_replace('/[^a-zA-Z0-9_]/', '', (string)$f['showIf']['key']),
+                'op' => $op,
+                // answered/empty take no operand; storing one would be noise
+                // that the editor then has to explain away.
+                'value' => in_array($op, ['answered', 'empty'], true) ? '' : substr((string)($f['showIf']['value'] ?? ''), 0, 200),
+            ];
+            // A field cannot depend on itself, and only on one ABOVE it — the
+            // renderer resolves top-down in one pass, so a forward reference
+            // would read an answer that has not been collected yet, and a cycle
+            // would never settle.
+            if ($clean['showIf']['key'] === $key || !isset($keys[$clean['showIf']['key']])) {
+                return ['ok' => false, 'error' => 'logic_forward_reference', 'field' => $key];
+            }
         }
+        if (!empty($f['optionsFrom'])) {
+            $src = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$f['optionsFrom']);
+            if ($src !== '' && $src !== $key && isset($keys[$src])) $clean['optionsFrom'] = $src;
+        }
+        // Registered only now, so `showIf`/`optionsFrom` above can only resolve
+        // to a field ALREADY seen — self-reference and forward references fail.
+        $keys[$key] = true;
         $out[] = $clean;
     }
     // System fields the lifecycle depends on must survive every edit. The
@@ -206,10 +289,7 @@ function form_validate_fields(array $fields, ?array $systemFields = null): array
 /** Validate a registration submission against a form def. */
 function form_validate_submission(array $fields, array $data): array {
     $clean = []; $errors = [];
-    $visible = function (array $f) use ($data): bool {
-        if (empty($f['showIf'])) return true;
-        return (string)($data[$f['showIf']['key']] ?? '') === (string)$f['showIf']['value'];
-    };
+    $visible = fn(array $f): bool => form_field_visible($f, $data);
     foreach ($fields as $f) {
         if (in_array($f['type'], ['section', 'info'], true)) continue;
         $k = $f['key'];
@@ -230,9 +310,18 @@ function form_validate_submission(array $fields, array $data): array {
                 if (isset($f['max']) && $n > $f['max']) $errors[$k] = $f['label'] . ' must be at most ' . $f['max'] . '.';
                 $v = (string)$n;
                 break;
-            case 'choice': if (!in_array($v, $f['options'] ?? [], true)) $errors[$k] = 'Pick one of the listed options.'; break;
+            // Against the RESOLVED options: a course that exists under some
+            // other faculty must not pass just because it exists somewhere.
+            case 'choice':
+                $allowed = form_field_options($f, $data);
+                if (!in_array($v, $allowed, true)) {
+                    $errors[$k] = !empty($f['optionsFrom'])
+                        ? 'Pick a course from the chosen faculty.'
+                        : 'Pick one of the listed options.';
+                }
+                break;
             case 'multi':
-                $v = array_values(array_intersect(is_array($v) ? $v : [$v], $f['options'] ?? []));
+                $v = array_values(array_intersect(is_array($v) ? $v : [$v], form_field_options($f, $data)));
                 break;
             case 'date': if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', is_array($v) ? '' : $v)) $errors[$k] = 'Use the date picker.'; break;
         }
@@ -595,8 +684,15 @@ function gate_context(array $p): array {
     $c = summer_current_cohort();
     // Public subset only — no sensitive flags leak ordering/keys beyond need.
     $fields = array_map(function ($f) {
-        return array_intersect_key($f, array_flip(['key', 'label', 'type', 'required', 'options', 'help', 'placeholder', 'min', 'max', 'showIf', 'sensitive']));
+        return array_intersect_key($f, array_flip(['key', 'label', 'type', 'required', 'options', 'help', 'placeholder', 'min', 'max', 'showIf', 'sensitive', 'optionsFrom']));
     }, $live['fields']);
+    // Ship the whole faculty→courses map with the dependent field so the form
+    // can narrow the list as soon as a faculty is picked, with no round trip
+    // and no chance of the client's copy of the catalogue drifting from ours.
+    foreach ($fields as &$__f) {
+        if (!empty($__f['optionsFrom'])) $__f['optionsBy'] = academy_catalogue();
+    }
+    unset($__f);
     // Centres drive the 'centre' choice field + the card's ID prefix/color.
     $centres = db_all("SELECT name, code FROM centres WHERE status = 'active' ORDER BY name");
     foreach ($fields as &$f) {

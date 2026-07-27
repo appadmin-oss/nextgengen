@@ -1468,6 +1468,142 @@ chk('form: publish is super_admin only; locked fields can\'t be dropped; version
     $r = backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'fields' => $plus]);
     return !empty($r['ok']) && $r['version'] === 2 && form_live()['version'] == 2;
 })());
+/* ── Faculty → course cascade ─────────────────────────────────────────────
+   The form asked for a course out of one flat list spanning every faculty.
+   Faculty is now asked first and narrows Course — and the narrowing is
+   enforced on the server, because a UI that only hides the wrong options is
+   not a constraint. */
+chk('form: the summer form asks Faculty before Course', (function () {
+    $keys = array_column(form_default_fields(), 'key');
+    return array_search('faculty', $keys, true) < array_search('course', $keys, true);
+})());
+chk('form: Course declares that its options follow Faculty', (function () {
+    foreach (form_default_fields() as $f) if ($f['key'] === 'course') return ($f['optionsFrom'] ?? '') === 'faculty';
+    return false;
+})());
+chk('form: with a faculty chosen, only that faculty\'s courses are offered', (function () {
+    $course = null;
+    foreach (form_default_fields() as $f) if ($f['key'] === 'course') $course = $f;
+    $music = form_field_options($course, ['faculty' => 'Music']);
+    return in_array('Piano', $music, true) && !in_array('Practical Coding', $music, true);
+})());
+chk('form: with no faculty chosen the field is not a dead end', (function () {
+    $course = null;
+    foreach (form_default_fields() as $f) if ($f['key'] === 'course') $course = $f;
+    return count(form_field_options($course, [])) === count(academy_courses());
+})());
+chk('form: an unknown faculty falls back rather than emptying the list', (function () {
+    $course = null;
+    foreach (form_default_fields() as $f) if ($f['key'] === 'course') $course = $f;
+    return count(form_field_options($course, ['faculty' => 'Nonexistent'])) === count(academy_courses());
+})());
+chk('form: the public form ships the whole faculty→course map with the field', (function () {
+    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Cascade desk']);
+    $ctx = backend_dispatch('gate.context', ['gate' => $g['gateId']]);
+    foreach ($ctx['form']['fields'] as $f) {
+        if (($f['key'] ?? '') === 'course') return isset($f['optionsBy']['Music']) && in_array('Piano', $f['optionsBy']['Music'], true);
+    }
+    return false;
+})());
+
+chk('form: a course from a DIFFERENT faculty is rejected on submit', (function () {
+    // The enforcement that matters. Hiding the wrong options in the UI is a
+    // convenience; this is the constraint. "Practical Coding" is a real course,
+    // just not one of Music's — posting it with faculty=Music must fail.
+    $fields = form_default_fields();
+    $r = form_validate_submission($fields, [
+        'fullName' => 'Cross Faculty', 'age' => 13, 'faculty' => 'Music', 'course' => 'Practical Coding',
+        'centre' => 'Main', 'parentName' => 'P', 'parentPhone' => '08030000123',
+    ]);
+    return empty($r['ok']) && isset($r['errors']['course']) && strpos($r['errors']['course'], 'chosen faculty') !== false;
+})());
+chk('form: …while the same course under its own faculty passes', (function () {
+    $fields = form_default_fields();
+    $r = form_validate_submission($fields, [
+        'fullName' => 'Right Faculty', 'age' => 13, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding',
+        'centre' => 'Main', 'parentName' => 'P', 'parentPhone' => '08030000124',
+    ]);
+    return !empty($r['ok']) && $r['data']['course'] === 'Practical Coding';
+})());
+chk('form: the cascade is enforced through the real registration route too', (function () {
+    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Cross desk']);
+    $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
+        'fullName' => 'Wrong Course Kid', 'age' => 13, 'faculty' => 'Music', 'course' => 'Graphics',
+        'centre' => 'Main', 'parentName' => 'P', 'parentPhone' => '08030000125']]);
+    return !empty($r['errors']['course']);
+})());
+
+/* ── Conditional logic ────────────────────────────────────────────────────
+   showIf was honoured by the renderer and the validator but nothing could set
+   it, and it only did a single equality. */
+chk('logic: is / isNot behave', (function () {
+    $f = ['showIf' => ['key' => 'faculty', 'op' => 'is', 'value' => 'Music']];
+    $g = ['showIf' => ['key' => 'faculty', 'op' => 'isNot', 'value' => 'Music']];
+    return form_field_visible($f, ['faculty' => 'Music']) && !form_field_visible($f, ['faculty' => 'Media'])
+        && !form_field_visible($g, ['faculty' => 'Music']) && form_field_visible($g, ['faculty' => 'Media']);
+})());
+chk('logic: in matches any of a comma list', (function () {
+    $f = ['showIf' => ['key' => 'faculty', 'op' => 'in', 'value' => 'Music, Media']];
+    return form_field_visible($f, ['faculty' => 'Media']) && !form_field_visible($f, ['faculty' => 'Music Hall']);
+})());
+chk('logic: answered / empty need no operand', (function () {
+    $a = ['showIf' => ['key' => 'school', 'op' => 'answered']];
+    $e = ['showIf' => ['key' => 'school', 'op' => 'empty']];
+    return form_field_visible($a, ['school' => 'St Mary']) && !form_field_visible($a, ['school' => '  '])
+        && form_field_visible($e, []) && !form_field_visible($e, ['school' => 'St Mary']);
+})());
+chk('logic: a multi-select satisfies `is` when the value is among the picks', (function () {
+    $f = ['showIf' => ['key' => 'tracks', 'op' => 'is', 'value' => 'Dance']];
+    return form_field_visible($f, ['tracks' => ['Acting', 'Dance']]) && !form_field_visible($f, ['tracks' => ['Acting']]);
+})());
+chk('logic: a field with no condition always shows', form_field_visible(['key' => 'x'], []));
+chk('logic: the pre-upgrade {key,value} shape still means `is`',
+    form_field_visible(['showIf' => ['key' => 'faculty', 'value' => 'Music']], ['faculty' => 'Music']));
+chk('logic: a hidden required field does not block the submission', (function () {
+    $fields = [
+        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'options' => ['Music', 'Media']],
+        ['key' => 'instrument', 'label' => 'Instrument', 'type' => 'text', 'required' => true,
+         'showIf' => ['key' => 'faculty', 'op' => 'is', 'value' => 'Music']],
+    ];
+    $hidden = form_validate_submission($fields, ['faculty' => 'Media']);
+    $shown  = form_validate_submission($fields, ['faculty' => 'Music']);
+    return !empty($hidden['ok']) && empty($shown['ok']) && isset($shown['errors']['instrument']);
+})());
+chk('logic: a hidden field\'s answer is dropped, not carried through', (function () {
+    $fields = [
+        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'options' => ['Music', 'Media']],
+        ['key' => 'instrument', 'label' => 'Instrument', 'type' => 'text', 'showIf' => ['key' => 'faculty', 'op' => 'is', 'value' => 'Music']],
+    ];
+    $r = form_validate_submission($fields, ['faculty' => 'Media', 'instrument' => 'Piano']);
+    return !empty($r['ok']) && !isset($r['data']['instrument']);
+})());
+chk('logic: a condition may only reference a field ABOVE it', (function () {
+    $bad = form_default_fields();
+    $bad[] = ['key' => 'q1', 'label' => 'Q', 'type' => 'text', 'showIf' => ['key' => 'notAFieldAnywhere', 'op' => 'is', 'value' => 'x']];
+    $r = form_validate_fields($bad, form_default_fields());
+    return ($r['error'] ?? '') === 'logic_forward_reference';
+})());
+chk('logic: …and never itself', (function () {
+    $bad = form_default_fields();
+    $bad[] = ['key' => 'q2', 'label' => 'Q', 'type' => 'text', 'showIf' => ['key' => 'q2', 'op' => 'is', 'value' => 'x']];
+    return (form_validate_fields($bad, form_default_fields())['error'] ?? '') === 'logic_forward_reference';
+})());
+chk('logic: an unknown operator is coerced to `is` rather than accepted', (function () {
+    $f = form_default_fields();
+    $f[] = ['key' => 'q3', 'label' => 'Q', 'type' => 'text', 'showIf' => ['key' => 'faculty', 'op' => 'sqlDrop', 'value' => 'Music']];
+    $r = form_validate_fields($f, form_default_fields());
+    if (empty($r['ok'])) return false;
+    foreach ($r['fields'] as $x) if ($x['key'] === 'q3') return $x['showIf']['op'] === 'is';
+    return false;
+})());
+chk('logic: answered/empty store no operand', (function () {
+    $f = form_default_fields();
+    $f[] = ['key' => 'q4', 'label' => 'Q', 'type' => 'text', 'showIf' => ['key' => 'school', 'op' => 'answered', 'value' => 'junk']];
+    $r = form_validate_fields($f, form_default_fields());
+    foreach ($r['fields'] as $x) if ($x['key'] === 'q4') return $x['showIf']['value'] === '';
+    return false;
+})());
+
 $GATE = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Front desk']);
 chk('gate: created with URL, context serves live form', (function () use ($GATE) {
     if (empty($GATE['gateId']) || strpos($GATE['url'], '/gate?g=') === false) return false;
@@ -1477,17 +1613,17 @@ chk('gate: created with URL, context serves live form', (function () use ($GATE)
 chk('gate: register validates fields and requires a parent channel', (function () use ($GATE) {
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'K', 'age' => 3, 'course' => 'Nope']]);
     if (empty($r['errors'])) return false;
-    $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor']]);
+    $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor']]);
     return !empty($r2['errors']['parentPhone']);
 })());
-$REG = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567', 'parentEmail' => 'okafor@example.com', 'allergies' => 'Peanuts']]);
+$REG = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567', 'parentEmail' => 'okafor@example.com', 'allergies' => 'Peanuts']]);
 chk('gate: registration lands parent_pending with normalised phone + no QR yet', (function () use ($REG) {
     if (empty($REG['ok']) || $REG['regStatus'] !== 'parent_pending') return false;
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ?', [$REG['studentId']]);
     return $s['guardianPhone'] === '+2348031234567' && ($s['token'] ?? '') === '' && !empty($s['verifyToken']);
 })());
 chk('gate: duplicate guard flags same child + parent, force overrides', (function () use ($GATE) {
-    $d = ['fullName' => 'Chidi Okafor', 'age' => 14, 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567'];
+    $d = ['fullName' => 'Chidi Okafor', 'age' => 14, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567'];
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => $d]);
     if (($r['error'] ?? '') !== 'duplicate_suspect' || empty($r['existing']['studentId'])) return false;
     $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => $d, 'force' => true]);
@@ -1773,20 +1909,20 @@ chk('centre: without consent the lead shows an anonymous handle, no name', (func
 setting_set('geofence_enabled', '1', 'system');
 $geoGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Geo desk']);
 chk('geo: registration is blocked with no location when the fence is on',
-    backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid One', 'age' => 12, 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000001']])['error'] === 'geo_unavailable');
-$gi = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Two', 'age' => 12, 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000002'], 'lat' => 6.6000, 'lng' => 3.3000]);
+    backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid One', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000001']])['error'] === 'geo_unavailable');
+$gi = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Two', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000002'], 'lat' => 6.6000, 'lng' => 3.3000]);
 chk('geo: an in-fence registration auto-selects the fenced centre', !empty($gi['ok']) && ($gi['geo']['autoCentre'] ?? '') === 'Ayobo Hub' && $gi['geo']['ok'] === 1);
 chk('geo: the student row records the fence pass + captured location', (function () use ($gi) { $s = db_row("SELECT regGeoOk, regLat, centre FROM summer_students WHERE studentId=?", [$gi['studentId']]); return (int)$s['regGeoOk'] === 1 && $s['centre'] === 'Ayobo Hub' && abs((float)$s['regLat'] - 6.6) < 0.0001; })());
-$go = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Three', 'age' => 12, 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000003'], 'lat' => 6.6045, 'lng' => 3.3000]);
+$go = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Three', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000003'], 'lat' => 6.6045, 'lng' => 3.3000]);
 chk('geo: an out-of-fence registration is blocked with the nearest distance', ($go['error'] ?? '') === 'geo_out_of_fence' && ($go['nearest']['distanceM'] ?? 0) > 400);
-$gov = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Four', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000004'], 'lat' => 6.6045, 'lng' => 3.3000, 'isAdmin' => true, 'geoOverride' => true]);
+$gov = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Four', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000004'], 'lat' => 6.6045, 'lng' => 3.3000, 'isAdmin' => true, 'geoOverride' => true]);
 chk('geo: a full admin may override an out-of-fence registration', !empty($gov['ok']) && $gov['geo']['ok'] === 0);
 setting_set('geofence_enabled', '0', 'system');
-chk('geo: with the fence off, no location is required', !empty(backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Five', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000005']])['ok']));
+chk('geo: with the fence off, no location is required', !empty(backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Five', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000005']])['ok']));
 
 // Photo pipeline wiring: gate registration ingests the headshot end-to-end.
 $GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 90, 'issues' => [], 'flags' => [], 'recommend' => ['crop' => true]]];
-$rp = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Photo Reg Kid', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000009'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+$rp = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Photo Reg Kid', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000009'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
 chk('gate register ingests the headshot into the photo pipeline', !empty($rp['ok']) && photo_approved_for('student', $rp['studentId']) === true);
 chk('an approved headshot is written back to the student record', strpos((string)(db_row("SELECT photoUrl FROM summer_students WHERE studentId=?", [$rp['studentId']])['photoUrl'] ?? ''), '/upload/') !== false);
 unset($GLOBALS['__ai_photo_mock']);
@@ -1819,7 +1955,7 @@ $issGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-00
 setting_set('photo_gate_issuance', '1', 'system');
 // A flagged photo → pending_review, so the ID is held until an editor approves.
 $GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 40, 'issues' => ['dark'], 'flags' => ['too_dark'], 'recommend' => ['crop' => true, 'brighten' => true]]];
-$ir = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Gate Hold Kid', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'hold@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+$ir = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Gate Hold Kid', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'hold@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
 chk('issuance gate: registration ok with a photo queued for review', !empty($ir['ok']));
 $vtHold = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$ir['studentId']])['verifyToken'];
 $pvh = backend_dispatch('parent.verify.submit', ['t' => $vtHold, 'consents' => ['participation' => true, 'medical' => true, 'data' => true], 'actorName' => 'P']);
@@ -1830,7 +1966,7 @@ backend_dispatch('admin.photo.approve', ['requesterId' => 'NGG-2025-0099', 'asse
 chk('issuance gate: approving the photo issues the ID', (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$ir['studentId']])['token']) !== '');
 unset($GLOBALS['__ai_photo_mock']);
 // A registration with NO photo is never blocked by the gate.
-$np = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'No Photo Kid', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'nophoto@example.com']]);
+$np = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'No Photo Kid', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'nophoto@example.com']]);
 $vtNp = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$np['studentId']])['verifyToken'];
 $pvn = backend_dispatch('parent.verify.submit', ['t' => $vtNp, 'consents' => ['participation' => true, 'medical' => true, 'data' => true], 'actorName' => 'P']);
 chk('issuance gate: a photo-less registration still issues immediately', !empty($pvn['idIssued']) && (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$np['studentId']])['token']) !== '');
@@ -1838,7 +1974,7 @@ setting_set('photo_gate_issuance', '0', 'system');
 
 // Guardian re-shoot after a retake.
 $GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 88, 'issues' => [], 'flags' => [], 'recommend' => ['crop' => true]]];
-$rsReg = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Reshoot Kid', 'age' => 12, 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'reshoot@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+$rsReg = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Reshoot Kid', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'reshoot@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
 $rsAsset = db_row("SELECT assetId FROM photo_assets WHERE subjectType='student' AND subjectId=? ORDER BY version DESC LIMIT 1", [$rsReg['studentId']])['assetId'];
 $GLOBALS['__mail_sink'] = [];
 backend_dispatch('admin.photo.retake', ['requesterId' => 'NGG-2025-0099', 'assetId' => $rsAsset, 'reason' => 'Please use a plain background.']);
