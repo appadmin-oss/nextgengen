@@ -2057,7 +2057,11 @@ const LEADERBOARD = {
            target — it is measured when it is open, not while it is away. */
         if (r.right <= 0 || r.left >= window.innerWidth) return;
         const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
-        const owns = (x, y) => { const h = document.elementFromPoint(x, y); return !!h && (h === el || el.contains(h) || h.contains(el)); };
+        /* An ancestor at the probe point is the ancestor being hit, not the
+           control — crediting it reports a 38px button as 49px because the row
+           around it is tall. A ::after that widens the hit area still returns
+           the element itself, so real extensions are still credited. */
+        const owns = (x, y) => { const h = document.elementFromPoint(x, y); return !!h && (h === el || el.contains(h)); };
         let up = 0, down = 0;
         for (let d = 1; d <= 24; d++) { if (owns(cx, cy - d)) up = d; else break; }
         for (let d = 1; d <= 24; d++) { if (owns(cx, cy + d)) down = d; else break; }
@@ -2079,6 +2083,142 @@ const LEADERBOARD = {
     ok('…while AI catch-up yields its space, since the sidebar still offers it',
        await cmP.evaluate(() => getComputedStyle(document.querySelector('.cm-hd-btn-ai')).display === 'none'));
     await cmP.close(); await cmT.close();
+
+    /* ── The Control Room on a phone ───────────────────────────────────────
+     * The console was built at a desk and the mobile rule only ever set
+     * `display: flex` on the sidebar — but `.admin-nav` is
+     * `flex-direction: column`, which nothing reset, so all thirty sections
+     * stacked and the page began a screen and a half down. Alongside it: 10px
+     * mono labels, 36px nav rows, and a table you scrolled out into blind
+     * because the name column scrolled away with everything else. */
+    const amT = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+    const amP = await amT.newPage();
+    await amP.goto(BASE + '/tests/_boards_fixture.html?board=status&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await amP.waitForFunction(() => Array.from(document.styleSheets).some(ss => {
+      try { return (ss.href || '').indexOf('styles-app.css') !== -1 && ss.cssRules.length > 0; } catch (_) { return false; }
+    }), null, { timeout: 10000 });
+    /* The admin's own class names, and a nav as long as the real one — a
+       sidebar that stacks only shows up as a problem once it has thirty rows
+       in it. */
+    await amP.evaluate(() => {
+      const navItems = Array.from({ length: 30 }, (_, i) =>
+        '<button class="admin-nav-item' + (i === 0 ? ' is-active' : '') + '">'
+        + '<span class="admin-nav-icon">◯</span><span class="admin-nav-label">Section ' + (i + 1) + '</span></button>').join('');
+      document.body.className = 'app-shell app-shell-admin';
+      document.body.innerHTML = ''
+        + '<div class="admin-topbar"><div class="admin-topbar-l"><div class="admin-topbar-title">'
+        + '<div class="mono admin-topbar-eyebrow">NGG · CONTROL ROOM</div>'
+        + '<div class="admin-topbar-section">Members</div></div></div>'
+        + '<div class="admin-topbar-r"><span class="mono">A Person · owner</span>'
+        + '<span class="admin-session-chip">4h left</span>'
+        + '<button class="btn btn-on-dark-ghost btn-sm">Lock</button>'
+        + '<button class="btn btn-on-dark-ghost btn-sm">View site</button></div></div>'
+        + '<div class="admin-shell">'
+        + '<div class="admin-nav-m"><label class="admin-nav-m-lab" for="amsel">Section</label>'
+        + '<select id="amsel" class="admin-nav-m-sel"><optgroup label="People">'
+        + '<option>Members</option><option>Mentors</option></optgroup></select></div>'
+        + '<aside class="admin-nav"><div class="admin-nav-group">People</div>' + navItems + '</aside>'
+        + '<main class="admin-main"><div class="admin-section">'
+        + '<div class="admin-section-head"><h2 class="admin-h2">Members</h2>'
+        + '<button class="btn btn-primary btn-sm">+ New member</button></div>'
+        + '<div class="admin-tabs"><button class="admin-tab is-active">Awaiting parent · 42</button>'
+        + '<button class="admin-tab">Verified · 318</button><button class="admin-tab">All · 360</button></div>'
+        + '<div class="admin-table-wrap"><table class="admin-table">'
+        + '<thead><tr><th>Student</th><th>Centre</th><th>Parent contact</th><th>Waiting</th><th>Status</th><th></th></tr></thead>'
+        + '<tbody><tr><td><b>Testimony Mayowa Ajanni</b>'
+        + '<div class="mono admin-cell-sub">SUM-2026-0142 · Practical Coding</div></td>'
+        + '<td class="mono">Ijaiye</td><td class="mono">08084843532</td>'
+        + '<td>9d<div class="mono admin-cell-sub">never reminded</div></td>'
+        + '<td><span class="chip status-draft">awaiting parent</span></td>'
+        + '<td><button class="btn btn-ghost btn-sm">Resend link</button></td></tr></tbody></table></div>'
+        + '<label class="admin-field"><span>How was this obtained?</span>'
+        + '<select class="admin-select"><option>Paper form</option></select></label>'
+        + '<div class="admin-fields-row">'
+        + '<label class="admin-field"><span>First name</span><input class="admin-input" value="Testimony"/></label>'
+        + '<label class="admin-field"><span>Last name</span><input class="admin-input" value="Ajanni"/></label></div>'
+        + '<div class="admin-grid-cards"><button class="admin-card">'
+        + '<div class="admin-card-img admin-card-img-fallback">A</div>'
+        + '<div class="admin-card-name">A Mentor</div>'
+        + '<div class="mono admin-card-meta">Summer School · Egbeda</div></button></div>'
+        + '</div></main></div>';
+    });
+    await amP.waitForTimeout(250);
+
+    ok('the admin shell has controls to measure on a phone (control)',
+       await amP.evaluate(() => document.querySelectorAll('.admin-main button, .admin-main input, .admin-main select').length) >= 6);
+    /* The regression itself. Thirty stacked nav rows put the first section
+       roughly 1500px down; anything under one viewport means the sidebar gave
+       way to the picker instead of eating the screen. */
+    const mainTop = await amP.evaluate(() => Math.round(document.querySelector('.admin-main').getBoundingClientRect().top));
+    ok('…and the page starts on the first screen rather than below the nav (top ' + mainTop + 'px)',
+       mainTop < 300);
+    ok('…with the section picker offered in the sidebar\'s place',
+       await amP.evaluate(() => {
+         const sel = document.querySelector('.admin-nav-m-sel'), side = document.querySelector('.admin-nav');
+         return !!sel && sel.getBoundingClientRect().height > 0 && getComputedStyle(side).display === 'none';
+       }));
+    ok('…and nothing pushes the console sideways off the screen',
+       await amP.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+
+    const amTiny = await amP.evaluate(() => {
+      const out = [];
+      document.querySelectorAll('.admin-shell button, .admin-shell input, .admin-shell select').forEach(el => {
+        /* Scroll it under the pointer first: the tabs and the table are
+           deliberate scrollers, and elementFromPoint outside the viewport
+           reports whatever is painted there instead of the target. */
+        el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return;
+        if (r.right <= 0 || r.left >= window.innerWidth) return;
+        if (r.bottom <= 0 || r.top >= window.innerHeight) return;
+        const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+        /* Deliberately NOT `h.contains(el)`: an ancestor containing the
+           element is the ancestor being hit, not the button — counting it
+           reports a 38px control as 49px because the row around it is tall.
+           A ::after that widens the hit area still returns the element
+           itself, so real extensions are credited and padding is not. */
+        const owns = (x, y) => { const h = document.elementFromPoint(x, y); return !!h && (h === el || el.contains(h)); };
+        let up = 0, down = 0;
+        for (let d = 1; d <= 24; d++) { if (owns(cx, cy - d)) up = d; else break; }
+        for (let d = 1; d <= 24; d++) { if (owns(cx, cy + d)) down = d; else break; }
+        if (up + down + 1 < 40 || r.width < 40) out.push(String(el.className).split(' ')[0] + ' ' + Math.round(r.width) + 'x' + (up + down + 1));
+      });
+      return out;
+    });
+    ok('…every admin control is a 40px+ target (' + (amTiny.length ? amTiny.join(', ') : 'all pass') + ')',
+       amTiny.length === 0);
+
+    /* 10px mono at 0.18em tracking is a desk-distance detail. On a phone it was
+       the ID number, the "reminded 2d ago" note and every field label. */
+    const amSmall = await amP.evaluate(() => {
+      const out = [];
+      document.querySelectorAll('.admin-main *').forEach(el => {
+        const t = (el.textContent || '').trim();
+        if (!t || el.children.length > 0) return;
+        const px = parseFloat(getComputedStyle(el).fontSize);
+        if (px < 12) out.push(String(el.className).split(' ').slice(0, 2).join('.') + ' ' + px + 'px');
+      });
+      return Array.from(new Set(out));
+    });
+    ok('…and no admin copy is under 12px on a phone (' + (amSmall.length ? amSmall.join(', ') : 'all pass') + ')',
+       amSmall.length === 0);
+
+    /* Six columns will not fit in 390px, so the table scrolls — but scrolling
+       out to a student's status is useless if their name leaves with it. */
+    const stuck = await amP.evaluate(() => {
+      const wrap = document.querySelector('.admin-table-wrap');
+      const cell = wrap.querySelector('tbody td');
+      wrap.scrollLeft = 0;
+      const before = Math.round(cell.getBoundingClientRect().left - wrap.getBoundingClientRect().left);
+      wrap.scrollLeft = 260;
+      const scrolled = wrap.scrollLeft;
+      const after = Math.round(cell.getBoundingClientRect().left - wrap.getBoundingClientRect().left);
+      return { before, after, scrolled };
+    });
+    ok('the roster table actually scrolls sideways on a phone (' + stuck.scrolled + 'px)', stuck.scrolled > 100);
+    ok('…and the name column stays pinned while it does (' + stuck.before + 'px → ' + stuck.after + 'px)',
+       Math.abs(stuck.after - stuck.before) <= 1);
+    await amP.close(); await amT.close();
 
     /* ── The check-in desk's scanned state ─────────────────────────────────
      * Used at arm's length, in a noisy hall, by someone also talking to a

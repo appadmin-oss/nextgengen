@@ -304,7 +304,7 @@ function AdminTopbar({ section, setSection, setPage, member }) {
       <div className="admin-topbar-l">
         <BrandLogo size={28}/>
         <div className="admin-topbar-title">
-          <div className="mono" style={{fontSize:10, color:"var(--gold-400)"}}>NGG · CONTROL ROOM</div>
+          <div className="mono admin-topbar-eyebrow">NGG · CONTROL ROOM</div>
           <div className="admin-topbar-section">{titleFor(section)}</div>
         </div>
       </div>
@@ -329,16 +329,43 @@ const ADMIN_NAV_GROUPS = [null, "People", "Content", "Inbox", "System"];
 
 function AdminNav({ section, setSection, hasCap }) {
   const can = (it) => !it.cap || (hasCap ? hasCap(it.cap) : true);
-  const groups = ADMIN_NAV_GROUPS.map(h => ({ h, items: ADMIN_SECTIONS.filter(s => s.group === h) }));
+  const groups = ADMIN_NAV_GROUPS
+    .map(h => ({ h, items: ADMIN_SECTIONS.filter(s => s.group === h).filter(can) }))
+    .filter(g => g.items.length);
+  const known = groups.some(g => g.items.some(it => it.id === section));
   return (
-    <aside className="admin-nav">
-      {groups.map((grp, gi) => {
-        const items = grp.items.filter(can);
-        if (!items.length) return null;
-        return (
+    <React.Fragment>
+      {/* Phone nav. The sidebar carries ~30 sections; stacked on a 390px screen
+          that is a screen and a half of buttons before any content appears, and
+          laid out as a swipe strip it is a very long swipe to reach "Audit
+          trail". A native picker is two taps to anywhere, keeps the group
+          headings as optgroups, and costs one row of height. CSS swaps between
+          this and the sidebar at 820px — both are always in the DOM so there is
+          no resize listener to get wrong. */}
+      <div className="admin-nav-m">
+        <label className="admin-nav-m-lab" htmlFor="admin-nav-m-sel">Section</label>
+        <select
+          id="admin-nav-m-sel"
+          className="admin-nav-m-sel"
+          value={section}
+          onChange={e => setSection(e.target.value)}
+        >
+          {/* A section the account cannot normally reach (deep link, cap change
+              mid-session) still needs to show as the current value rather than
+              silently reading as whatever sits first in the list. */}
+          {!known && <option value={section}>{titleFor(section) || section}</option>}
+          {groups.map((grp, gi) => grp.h
+            ? <optgroup key={gi} label={grp.h}>
+                {grp.items.map(it => <option key={it.id} value={it.id}>{it.label}</option>)}
+              </optgroup>
+            : grp.items.map(it => <option key={it.id} value={it.id}>{it.label}</option>))}
+        </select>
+      </div>
+      <aside className="admin-nav">
+        {groups.map((grp, gi) => (
           <React.Fragment key={gi}>
             {grp.h && <div className="admin-nav-group">{grp.h}</div>}
-            {items.map(it => (
+            {grp.items.map(it => (
               <button
                 key={it.id}
                 className={"admin-nav-item" + (section === it.id ? " is-active" : "")}
@@ -349,9 +376,9 @@ function AdminNav({ section, setSection, hasCap }) {
               </button>
             ))}
           </React.Fragment>
-        );
-      })}
-    </aside>
+        ))}
+      </aside>
+    </React.Fragment>
   );
 }
 
@@ -7425,7 +7452,7 @@ function PortalGate({ cap, brand, setPage, children }) {
         <div className="admin-topbar-l">
           <BrandLogo size={28}/>
           <div className="admin-topbar-title">
-            <div className="mono" style={{ fontSize: 10, color: "var(--gold-400)" }}>{brand.eyebrow}</div>
+            <div className="mono admin-topbar-eyebrow">{brand.eyebrow}</div>
             <div className="admin-topbar-section">{brand.label}</div>
           </div>
         </div>

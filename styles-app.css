@@ -1449,6 +1449,7 @@ body.cm-app .fab-top { display: none; }
   border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 .admin-topbar-l { display: flex; align-items: center; gap: 14px; }
+.admin-topbar-eyebrow { font-size: 10px; color: var(--gold-400); white-space: nowrap; }
 .admin-topbar-section { font-family: var(--font-display); font-weight: 700; font-size: 18px; }
 .admin-topbar-r { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .admin-session-chip { font-family: var(--font-mono, monospace); font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
@@ -1472,11 +1473,33 @@ body.cm-app .fab-top { display: none; }
   grid-template-columns: 220px minmax(0, 1fr);
   min-height: calc(100vh - 60px);
 }
+/* Phone section picker — hidden on desktop, where the sidebar does the job. */
+.admin-nav-m { display: none; }
 @media (max-width: 820px) {
   .admin-shell { grid-template-columns: minmax(0, 1fr); }
-  .admin-nav { display: flex !important; overflow-x: auto; padding: 8px !important; gap: 4px; }
-  .admin-nav-item { white-space: nowrap; flex-shrink: 0; padding: 8px 14px !important; }
-  .admin-nav-label { display: inline !important; }
+  /* The sidebar used to stay visible here with only `display: flex` applied —
+     but `.admin-nav` is `flex-direction: column`, which nothing reset, so on a
+     phone it rendered as a full vertical list of every section and pushed the
+     actual page a screen and a half down. The picker replaces it outright. */
+  .admin-nav { display: none !important; }
+  .admin-nav-m {
+    display: flex; align-items: center; gap: 10px;
+    background: white;
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(12, 20, 50, 0.08);
+  }
+  .admin-nav-m-lab {
+    font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink-500); flex-shrink: 0;
+  }
+  .admin-nav-m-sel {
+    flex: 1; min-width: 0; min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid rgba(12, 20, 50, 0.16); border-radius: 10px;
+    background: var(--cream-50);
+    font-family: inherit; font-size: 15px; font-weight: 600; color: var(--ink-900);
+  }
+  .admin-nav-m-sel:focus-visible { outline: 2px solid var(--gold-500); outline-offset: 2px; }
 }
 
 .admin-nav {
@@ -3583,10 +3606,8 @@ button:focus-visible, .nav-link:focus-visible, .btn:focus-visible {
   border-radius: 3px;
   background: var(--gold-500);
 }
-@media (max-width: 820px) {
-  .admin-nav-item.is-active::before { display: none; }
-  .admin-nav { border-bottom: 1px solid rgba(12,20,50,0.08); }
-}
+/* No mobile override needed for the accent bar — below 820px the sidebar is
+   replaced by the section picker, so it never renders there. */
 
 /* --- Skeleton: signed-out preview shimmer for polish --- */
 .signed-out-card-bar,
@@ -4380,4 +4401,82 @@ section p[style*="var(--ink-500)"] {
   position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 40px; height: 40px; border-radius: 50%; cursor: pointer; line-height: 1; font-size: 17px;
   border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.45); color: #fff;
+}
+
+/* ============================================================
+   ADMIN ON A PHONE
+   The console was built for a desk and measured badly at 390px:
+   10px mono labels, table columns you had to scroll to blind, and
+   nav rows under the 44px touch minimum. Everything below is
+   density and reach — no desktop layout is touched.
+   ============================================================ */
+@media (max-width: 820px) {
+  /* Tabs are the section switcher inside a screen; wrapped onto two lines they
+     read as broken headings. Scroll them instead. */
+  .admin-tabs {
+    flex-wrap: nowrap; overflow-x: auto; gap: 2px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .admin-tabs::-webkit-scrollbar { display: none; }
+  .admin-tab { white-space: nowrap; flex-shrink: 0; }
+
+  /* Pin the first column so the person's name stays on screen while you scroll
+     out to their status. Without it you scroll right and lose track of whose
+     row you are reading. */
+  .admin-table th:first-child,
+  .admin-table td:first-child {
+    position: sticky; left: 0; z-index: 2;
+    background: white;
+    box-shadow: 1px 0 0 rgba(12, 20, 50, 0.09);
+  }
+  .admin-table thead th:first-child { z-index: 3; background: var(--cream-50); }
+  /* Right-edge shadow that fades out once you have scrolled to the end — the
+     only cue that there is more table off-screen. */
+  .admin-table-wrap {
+    background:
+      linear-gradient(to left, white, rgba(255, 255, 255, 0)) right center,
+      radial-gradient(farthest-side at 100% 50%, rgba(12, 20, 50, 0.16), rgba(12, 20, 50, 0)) right center;
+    background-repeat: no-repeat;
+    background-size: 26px 100%, 12px 100%;
+    background-attachment: local, scroll;
+  }
+
+  /* 10px mono with 0.18em tracking is a design detail at desk distance and
+     unreadable on a phone. Lift the small print, drop the tracking so the
+     bigger text does not also get wider. */
+  .admin-table th { font-size: 12px; letter-spacing: 0.06em; }
+  .admin-cell-sub { font-size: 12px; letter-spacing: 0.01em; }
+  .admin-card-meta { font-size: 12px; letter-spacing: 0.04em; }
+  .admin-field > span { font-size: 12px; letter-spacing: 0.06em; }
+  .admin-nav-group { font-size: 12px; letter-spacing: 0.1em; }
+  .admin-main .chip { font-size: 12px; letter-spacing: 0.05em; }
+
+  /* Two name fields side by side leaves ~150px each. Stack them. */
+  .admin-fields-row,
+  .admin-fields-row:has(> *:nth-child(3)) { grid-template-columns: minmax(0, 1fr); }
+
+  /* The topbar carries the account name plus up to five buttons; on a phone the
+     name is the first thing to go — the buttons are the part you tap. */
+  .admin-topbar { gap: 10px; }
+  .admin-topbar-r { justify-content: flex-end; gap: 8px; }
+  .admin-topbar-r > .mono { display: none; }
+  .admin-topbar-section { font-size: 16px; }
+  /* "NGG · CONTROL ROOM" wrapped to two lines in the corner; the picker below
+     already says which section you are in, so the eyebrow can go. */
+  .admin-topbar-eyebrow { display: none; }
+}
+
+/* Reach, not looks: applies to any touch screen, including a tablet above the
+   820px breakpoint where the sidebar is still in use. */
+@media (pointer: coarse) {
+  .admin-nav-item { min-height: 44px; }
+  .admin-tab { min-height: 44px; }
+  .admin-card { min-height: 44px; }
+  .admin-input, .admin-select { min-height: 44px; }
+  .admin-field-check input { width: 22px; height: 22px; }
+  /* The console leans on .btn-sm — 32px painted, and it is what "Resend link",
+     "+ New member" and the pager arrows all are. These sit inside dense lists
+     where 44px would push every row apart; 40px still clears a fingertip. */
+  .admin-main .btn-sm,
+  .admin-main .btn { min-height: 40px; }
 }
