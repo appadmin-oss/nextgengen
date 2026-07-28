@@ -4588,6 +4588,54 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
 
 function public_status_fresh(): array { return public_status([]); }
 
+/* ── Staff sessions ───────────────────────────────────────────────────────
+   "The admin keeps signing out." The write mechanics were fine — every
+   authenticated request refreshes lastSeenAt — so what was left was that the
+   window is invisible, unconfigurable by the people it affects, and arrives
+   with no warning. */
+(function () {
+    $saved = setting_raw('session_idle_admin');
+    chk('session: the staff idle window falls back to the config default',
+        session_idle_max(true) === (int)($GLOBALS['CONFIG']['session_idle']['admin'] ?? 1800));
+    setting_set('session_idle_admin', '3600', 'test');
+    chk('session: …and an admin can change it without touching config.php',
+        session_idle_max(true) === 3600);
+    /* Clamped both ways. A window of five seconds makes the console unusable,
+       and a typo of "1" must not become that. */
+    setting_set('session_idle_admin', '5', 'test');
+    chk('session: an absurdly short window is clamped up, not obeyed', session_idle_max(true) === 300);
+    setting_set('session_idle_admin', '999999', 'test');
+    chk('session: …and an absurdly long one is clamped down', session_idle_max(true) === 86400);
+    // Zero is a real choice — a locked, private office — and must survive.
+    setting_set('session_idle_admin', '0', 'test');
+    chk('session: zero means no idle limit and is not clamped to the floor', session_idle_max(true) === 0);
+    chk('session: …and with no limit there is no deadline to warn about',
+        session_idle_deadline(['sid' => 'x', 'role' => 'super_admin']) === 0);
+    chk('session: members are unaffected by the staff setting',
+        session_idle_max(false) === (int)($GLOBALS['CONFIG']['session_idle']['member'] ?? 43200));
+
+    /* The deadline is what lets the console warn BEFORE it happens rather than
+       after — it is lastSeenAt plus the window, not a guess. */
+    setting_set('session_idle_admin', '1800', 'test');
+    db_insert('device_sessions', ['sid' => 'SESS-IDLE-1', 'memberId' => 'NGG-2025-0099',
+        'lastSeenAt' => gmdate('Y-m-d H:i:s', time() - 600), 'createdAt' => now_iso()]);
+    $dl = session_idle_deadline(['sid' => 'SESS-IDLE-1', 'role' => 'super_admin']);
+    chk('session: the deadline is lastSeenAt plus the window (' . ($dl - time()) . 's away)',
+        $dl > 0 && abs($dl - (time() - 600 + 1800)) <= 2);
+    chk('session: a session nobody has seen has no deadline to report',
+        session_idle_deadline(['sid' => 'NO-SUCH-SID', 'role' => 'super_admin']) === 0);
+    /* Touching it must move the deadline out — this is the mechanism the
+       heartbeat and every ordinary request rely on. */
+    db_update('device_sessions', ['lastSeenAt' => gmdate('Y-m-d H:i:s', time() - 400)], ['sid' => 'SESS-IDLE-1']);
+    session_touch(['sid' => 'SESS-IDLE-1', 'role' => 'super_admin']);
+    $dl2 = session_idle_deadline(['sid' => 'SESS-IDLE-1', 'role' => 'super_admin']);
+    chk('session: a heartbeat pushes the deadline out', $dl2 > $dl);
+
+    if ($saved === null) db_exec("DELETE FROM settings WHERE settingKey = 'session_idle_admin'");
+    else setting_set('session_idle_admin', $saved, 'test');
+    db_exec("DELETE FROM device_sessions WHERE sid = 'SESS-IDLE-1'");
+})();
+
 /* ── Record ids must actually be unique ───────────────────────────────────
    new_id() was PREFIX-YYYY-NNNN with the tail drawn at random from 10,000
    values and never checked against the table. By the birthday bound a

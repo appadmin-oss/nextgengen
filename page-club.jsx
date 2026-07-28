@@ -1104,8 +1104,15 @@ function CommunityApp({ setPage, auth }) {
                   {[["latest", isChat ? "Newest" : "New"], ["trending", "Hot"]].map(([v, l]) => <button key={v} className={"cm-hd-sortbtn" + (sort === v ? " is-active" : "")} aria-pressed={sort === v} onClick={() => setSort(v)}>{l}</button>)}
                 </div>
               )}
-              {!isArcade && <button className="cm-hd-btn" onClick={catchMeUp} aria-label="AI catch-up summary" title="AI catch-up">✨</button>}
-              {!isArcade && <button className={"cm-hd-btn" + (info ? " is-on" : "")} onClick={() => setInfo(v => !v)} aria-label="Channel details" aria-expanded={info} title="Details">ⓘ</button>}
+              {/* Two icon buttons, and only one of them has another way in. The
+                  mobile header hides `cm-hd-btn` to make room — which quietly
+                  made channel Details unreachable on a phone, while the
+                  stylesheet went on carefully laying out the full-screen pane
+                  nobody could open. Catch-up survives that because the sidebar
+                  footer offers it too; Details does not, so it is marked to
+                  stay. */}
+              {!isArcade && <button className="cm-hd-btn cm-hd-btn-ai" onClick={catchMeUp} aria-label="AI catch-up summary" title="AI catch-up">✨</button>}
+              {!isArcade && <button className={"cm-hd-btn cm-hd-btn-info" + (info ? " is-on" : "")} onClick={() => setInfo(v => !v)} aria-label="Channel details" aria-expanded={info} title="Details">ⓘ</button>}
             </div>
           </header>
 

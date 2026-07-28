@@ -25,6 +25,9 @@ function AuthProvider({ children }) {
   const [member, setMember] = React.useState(null);
   const [adminOk, setAdminOk] = React.useState(false);
   const [sessionExp, setSessionExp] = React.useState(0);
+  // When the IDLE clock runs out — the one that actually signs staff out.
+  const [idleExp, setIdleExp] = React.useState(0);
+  const [idleWarn, setIdleWarn] = React.useState(false);
   const [impersonating, setImpersonating] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [signinOpen, setSigninOpen] = React.useState(false);
@@ -67,6 +70,7 @@ function AuthProvider({ children }) {
           setMember(me.member || null);
           setAdminOk(Boolean(me.adminOk));
           setSessionExp(me.sessionExp || 0);
+          setIdleExp(me.idleExpiresAt || 0);
           setImpersonating(me.impersonating || null);
           // Conventional /login (or /signin) entry point: open the sign-in
           // modal for guests, send signed-in members to their dashboard.
@@ -111,6 +115,8 @@ function AuthProvider({ children }) {
       setMember(me.member || null);
       setAdminOk(Boolean(me.adminOk));
       setSessionExp(me.sessionExp || 0);
+      setIdleExp(me.idleExpiresAt || 0);
+      setIdleWarn(false);
       setImpersonating(me.impersonating || null);
     },
     signOut: async () => {
@@ -150,19 +156,90 @@ function AuthProvider({ children }) {
     const events = ["pointerdown", "keydown", "focus"];
     events.forEach(e => window.addEventListener(e, mark, { passive: true }));
     const beat = setInterval(() => {
-      if (document.hidden) return;
-      // Nothing since the last beat means nobody is there — let it expire.
-      if (Date.now() - lastActive.current > 6 * 60 * 1000) return;
-      NGGApi.auth.me().catch(() => {});
-    }, 6 * 60 * 1000);
+      /* Interaction is the test, not tab visibility. An admin who tabs away to
+         a spreadsheet or WhatsApp for half an hour and comes back to a sign-in
+         screen has not been idle — they were working, with this console behind
+         another window, which is how anybody actually uses two apps at once.
+         A machine genuinely left alone still fails the interaction check and
+         still locks on schedule, which is the property that matters.
+
+         The window is generous (18 min against a 30-min timeout) so a person
+         who is reading rather than clicking is not treated as absent. */
+      if (Date.now() - lastActive.current > 18 * 60 * 1000) return;
+      NGGApi.auth.me()
+        .then(me => { setIdleExp(me.idleExpiresAt || 0); setIdleWarn(false); })
+        .catch(() => {});
+    }, 5 * 60 * 1000);
     return () => {
       events.forEach(e => window.removeEventListener(e, mark));
       clearInterval(beat);
     };
   }, [member]);
 
+  /* Warn before the clock runs out rather than after.
+   *
+   * Being signed out mid-sentence with a raw error code is the whole of the
+   * complaint; the timeout itself is a policy the programme has chosen. A
+   * countdown two minutes out turns an ambush into a question. */
+  React.useEffect(() => {
+    if (!member || !idleExp) { setIdleWarn(false); return; }
+    const tick = () => {
+      const left = idleExp * 1000 - Date.now();
+      if (left <= 0) { setIdleWarn(false); return; }
+      setIdleWarn(left <= 2 * 60 * 1000);
+    };
+    tick();
+    const t = setInterval(tick, 15000);
+    return () => clearInterval(t);
+  }, [member, idleExp]);
+
+  /* One place that knows what an expired session looks like.
+   *
+   * Every screen used to discover this on its own, from whichever call
+   * happened to be in flight, and show the raw code — "session_expired" in a
+   * red toast next to a half-filled form. Now the client is told once,
+   * centrally, and can say what happened and offer the way back. */
+  const memberRef = React.useRef(null);
+  React.useEffect(() => { memberRef.current = member; }, [member]);
+  React.useEffect(() => {
+    const onExpired = () => {
+      /* Only meaningful if we believed we WERE signed in. A 401 on a surface
+         that never had a member session is routine — the gate desk fires its
+         context request before auth has booted and gets one every single time,
+         and a kiosk unlocked with a desk password has no member at all. Without
+         this guard the sign-in modal opens over every field desk at startup,
+         which is worse than the problem it was added to solve. */
+      if (!memberRef.current) return;
+      setMember(null); setAdminOk(false); setIdleExp(0); setIdleWarn(false);
+      setSigninSeed({ error: "session_expired" });
+      setSigninOpen(true);
+    };
+    window.addEventListener("ngg:session-expired", onExpired);
+    return () => window.removeEventListener("ngg:session-expired", onExpired);
+  }, []);
+
+  const staySignedIn = async () => {
+    try { const me = await NGGApi.auth.me(); setIdleExp(me.idleExpiresAt || 0); setIdleWarn(false); }
+    catch (_) { setIdleWarn(false); }
+  };
+
   return (
     <AuthCtx.Provider value={ctx}>
+      {idleWarn && (
+        <div role="alertdialog" aria-label="Session about to expire"
+          style={{ position: "fixed", right: 16, bottom: 16, zIndex: 9998, maxWidth: 340,
+            background: "#fff", color: "var(--ink-900,#0a1130)", border: "2px solid #f5b026",
+            borderRadius: 14, padding: "14px 16px", boxShadow: "0 18px 44px -18px rgba(12,20,50,.5)" }}>
+          <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Still there?</div>
+          <p style={{ fontSize: 13.5, margin: "0 0 10px", color: "var(--ink-700,#2a335c)" }}>
+            You'll be signed out shortly for security. Anything unsaved stays on this device.
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={staySignedIn} className="btn btn-primary btn-sm">Stay signed in</button>
+            <button onClick={() => setIdleWarn(false)} className="btn btn-ghost btn-sm">Dismiss</button>
+          </div>
+        </div>
+      )}
       {impersonating && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999, background: "#E4155F", color: "#fff", padding: "8px 16px", textAlign: "center", fontSize: 14, fontFamily: "Arial, sans-serif" }}>
           Viewing as <b>{member ? member.fullName : "member"}</b> — actions are performed as them.

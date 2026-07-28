@@ -204,6 +204,41 @@ function session_read(): ?array {
  * thing that logs somebody out. Writes are throttled the same 5 minutes, so
  * a chatty client costs one UPDATE per session per five minutes at most.
  */
+/**
+ * The staff idle window, in seconds. 0 disables it.
+ *
+ * Admin-settable, because the right number is an operational decision this
+ * programme has to make, not one buried in a config file only a developer can
+ * reach. The floor keeps someone from setting it so low the console is
+ * unusable; the ceiling keeps "never" from being a slip of the keyboard.
+ */
+function session_idle_max(bool $isStaff): int {
+    $cfg = $GLOBALS['CONFIG']['session_idle'] ?? [];
+    if (!$isStaff) return (int)($cfg['member'] ?? 43200);
+    /* setting_raw, not setting_get: safe_json() returns null for anything that
+     * is not a JSON array, so a plain number read back as nothing and the
+     * admin's choice was silently ignored. */
+    $set = setting_raw('session_idle_admin');
+    if (is_numeric($set)) {
+        $v = (int)$set;
+        return $v <= 0 ? 0 : max(300, min(86400, $v));
+    }
+    return (int)($cfg['admin'] ?? 1800);
+}
+
+/** When this session's idle clock runs out (unix seconds; 0 = no idle limit). */
+function session_idle_deadline(array $s): int {
+    if (empty($s['sid'])) return 0;
+    $isStaff = !empty($s['adminOk']) || is_admin_role((string)($s['role'] ?? ''));
+    $max = session_idle_max($isStaff);
+    if ($max <= 0) return 0;
+    try {
+        $row = db_row('SELECT lastSeenAt FROM device_sessions WHERE sid = ? LIMIT 1', [(string)$s['sid']]);
+        $last = $row ? (strtotime((string)($row['lastSeenAt'] ?? '')) ?: 0) : 0;
+        return $last > 0 ? $last + $max : 0;
+    } catch (\Throwable $e) { return 0; }
+}
+
 function session_touch(?array $s = null): void {
     $s = $s ?? session_read();
     if (!$s || empty($s['sid'])) return;
@@ -230,9 +265,8 @@ function require_session(): array {
             // Idle timeout — a session that has sat untouched past its window is
             // force-expired (revoked + cookie cleared). Staff are held to the
             // tight window the operational policy demands; members get longer.
-            $idleCfg = $GLOBALS['CONFIG']['session_idle'] ?? [];
             $isStaff = !empty($s['adminOk']) || is_admin_role((string)($s['role'] ?? ''));
-            $idleMax = (int)($isStaff ? ($idleCfg['admin'] ?? 1800) : ($idleCfg['member'] ?? 43200));
+            $idleMax = session_idle_max($isStaff);
             if ($idleMax > 0 && $last > 0 && (time() - $last) > $idleMax) {
                 try { db_update('device_sessions', ['revokedAt' => now_iso()], ['id' => $row['id']]); } catch (Throwable $e) {}
                 session_clear();

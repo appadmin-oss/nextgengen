@@ -127,6 +127,14 @@ function cleanup() {
     await page.waitForSelector('button:has-text("Check-in")', { timeout: 8000 });
     ok('desk unlocked with the password (kiosk session)');
 
+    /* A field desk holds a kiosk session, not a member one, and its context
+       request 401s on every page load before auth has even booted. The central
+       "your session expired" handler must therefore stay quiet here: when it
+       did not, the sign-in modal opened over the desk at startup and nothing
+       on it could be clicked — which is how this test found it. */
+    ok('no sign-in modal was thrown over the desk by a routine 401',
+       (await page.$('.signin-scrim')) === null);
+
     // Open Check-in → reveal the typed fallback (headless has no camera).
     await page.click('button:has-text("Check-in")');
     await page.click('button:has-text("Enter the code")');

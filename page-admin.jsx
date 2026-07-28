@@ -5577,6 +5577,19 @@ function AdminSettings() {
 
         <AiStatusPanel/>
 
+        <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>Staff sign-in</div>
+        <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>How long a Control Room session may sit with nobody touching it before it locks. A warning appears two minutes before, and reading or clicking anywhere keeps it alive — the clock only runs when nobody is there.</p>
+        <FieldSelect label="Sign out staff after" value={String(s.session_idle_admin ?? 1800)}
+          onChange={v => setS(o => ({ ...o, session_idle_admin: Number(v) }))}
+          options={[
+            { value: "900", label: "15 minutes" },
+            { value: "1800", label: "30 minutes (default)" },
+            { value: "3600", label: "1 hour" },
+            { value: "14400", label: "4 hours" },
+            { value: "43200", label: "12 hours — a full working day" },
+            { value: "0", label: "Never — only for a locked, private office" },
+          ]}/>
+
         {/* The Control Room has no site nav, so this is where the accessibility
             controls live for staff. Device-local, like everywhere else: they
             describe how THIS screen needs to behave, and a coordinator on a

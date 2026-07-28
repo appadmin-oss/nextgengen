@@ -2670,8 +2670,12 @@ button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
   .cm-sb-scrim { display: block; position: fixed; inset: 0; z-index: 119; background: rgba(0,0,0,0); pointer-events: none; transition: background .22s; }
   .cm-slack.sb-open .cm-sb-scrim { background: rgba(0,0,0,0.4); pointer-events: auto; }
   .cm-hd-burger { display: block; }
-  /* Keep the sort toggle (per the mobile design); drop the icon buttons + topic to make room. */
-  .cm-hd-topic, .cm-hd-btn { display: none; }
+  /* Keep the sort toggle (per the mobile design) and drop the topic to make
+     room. Catch-up goes too — the sidebar footer offers it as well — but
+     Details STAYS: it has no other entry point, and hiding it is what made
+     channel rules, the description and the member count unreachable on the
+     device most of this community actually uses. */
+  .cm-hd-topic, .cm-hd-btn-ai { display: none; }
   .cm-hd { padding: 10px 12px; gap: 8px; }
   .cm-hd-name { font-size: 17px; }
   .cm-hd-count { display: none; }
@@ -2895,4 +2899,41 @@ button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
   .arc-stats { width: 100%; }
   .arc-stats > div { flex: 1; min-width: 0; padding: 10px 8px; }
   .arc-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Community: tap targets ─────────────────────────────────────────────────
+ * Measured on the real markup, nine controls came in under 40px and several
+ * far under: the post menu at 34×22, the poll dismiss at 32×32, reaction chips
+ * — the most-tapped thing in the whole community — at 49×28. This is a space
+ * used by children on phones, where that is a miss-tap machine: you go to react
+ * and open the overflow menu instead.
+ *
+ * Scoped to `pointer: coarse` so the desktop layout keeps its density. A mouse
+ * can hit 22px; a thumb cannot, and padding the whole UI out for everyone to
+ * fix a phone problem is how a comfortable desktop screen turns loose and
+ * sparse. 44px is the figure every mobile platform converged on.
+ *
+ * Icon buttons grow outright — they sit in rows with room. The inline chips
+ * grow to 44 in height but keep their visual box, because a reaction row that
+ * suddenly becomes chunky reads as a different design. */
+@media (pointer: coarse) {
+  .cm-hd-btn, .cm-menu-btn, .cm-poll-x, .cm-thread-x, .cm-info-head button,
+  .cm-sb-x, .cm-fmt-btn, .cm-dock-ic {
+    min-width: 44px; min-height: 44px;
+  }
+  /* The burger is the only way to reach the channel list on a phone, and it
+     was 22px wide — the most important control in the layout and the hardest
+     to hit. */
+  .cm-hd-burger { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+  /* Chips keep their painted size and gain reach. The inset is smaller than
+     half the row gap, so neighbouring chips cannot steal each other's taps. */
+  .cm-chip-react, .cm-card-reply, .cm-hd-sortbtn, .cm-comment-load, .cm-chip {
+    position: relative;
+  }
+  .cm-chip-react::after, .cm-card-reply::after, .cm-hd-sortbtn::after,
+  .cm-comment-load::after, .cm-chip::after {
+    content: ""; position: absolute; left: 0; right: 0;
+    top: 50%; transform: translateY(-50%); height: 44px;
+  }
+  .cm-sb-item { min-height: 44px; }
 }

@@ -765,6 +765,7 @@ function admin_settings_get(array $p): array {
         'volunteer_sms_notify'      => (setting_raw('volunteer_sms_notify') ?? '1') !== '0',
         'checkin_state_emails'      => (setting_raw('checkin_state_emails') ?? '1') !== '0',
         'volunteer_session_hours'   => (int)(setting_raw('volunteer_session_hours') ?: 4),
+        'session_idle_admin'        => session_idle_max(true),
         'featured_session_id'       => setting_raw('featured_session_id') ?? '',
         'geofence_enabled'          => setting_raw('geofence_enabled') === '1',
         'photo_gate_issuance'       => setting_raw('photo_gate_issuance') === '1',
@@ -782,6 +783,15 @@ function admin_settings_set(array $p): array {
         if (array_key_exists($k, $data)) setting_set($k, !empty($data[$k]) ? '1' : '0', $g['requester']['memberId']);
     }
     if (array_key_exists('volunteer_session_hours', $data)) setting_set('volunteer_session_hours', (string)max(1, min(12, (int)$data['volunteer_session_hours'])), $g['requester']['memberId']);
+    /* How long a staff session may sit idle. This was reachable only by editing
+     * config.php, which is not something the people it affects can do — so the
+     * answer to "the admin keeps signing out" was a developer, every time.
+     * Clamped in session_idle_max(); 0 means no idle limit at all, which is a
+     * real choice for a locked office and a terrible one for a shared desk. */
+    if (array_key_exists('session_idle_admin', $data)) {
+        $v = (int)$data['session_idle_admin'];
+        setting_set('session_idle_admin', (string)($v <= 0 ? 0 : max(300, min(86400, $v))), $g['requester']['memberId']);
+    }
     if (array_key_exists('featured_session_id', $data)) setting_set('featured_session_id', (string)$data['featured_session_id'], $g['requester']['memberId']);
     // Homepage / site copy — validated + length-capped, stored as one JSON blob.
     if (array_key_exists('site_content', $data) && is_array($data['site_content'])) {

@@ -68,6 +68,14 @@
     if (!res.ok || data.ok === false) {
       const err = new Error(data.error || ('http_' + res.status));
       err.status = res.status;
+      /* An expired or revoked session is not a per-screen problem, and every
+         screen discovering it separately is why it surfaced as a raw code in a
+         red toast beside a half-filled form. Announce it once; the auth layer
+         decides what the user sees. Sign-in endpoints are exempt — a failed
+         sign-in attempt is a 401 too, and it must not look like an expiry. */
+      if (res.status === 401 && !/\/auth\/(login|verify|request|gateway|reset)/.test(path)) {
+        try { window.dispatchEvent(new CustomEvent('ngg:session-expired', { detail: { code: data.error || '' } })); } catch (_) {}
+      }
       err.detail = data.detail;
       err.code = data.error;
       // Some refusals carry structured context the caller needs to act on —

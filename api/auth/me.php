@@ -22,5 +22,12 @@ json_ok([
     'adminOk' => (bool)($s['adminOk'] ?? false),
     'impersonating' => !empty($s['imp']) ? (string)$s['imp'] : null,
     'sessionExp' => (int)($s['exp'] ?? 0),  // unix seconds — lets the UI show a friendly expiry
+    /* When the IDLE clock runs out, which is what actually signs staff out —
+     * the absolute expiry above is a week away and never the reason. Without
+     * this the console could only discover the timeout by being refused
+     * mid-action, which is how "the admin keeps signing out" reads from the
+     * other side of the screen. */
+    'idleExpiresAt' => session_idle_deadline($s),
+    'idleWindow' => session_idle_max(!empty($s['adminOk']) || is_admin_role((string)($s['role'] ?? ''))),
     'csrf'    => $csrf,
 ]);

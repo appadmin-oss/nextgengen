@@ -2008,6 +2008,78 @@ const LEADERBOARD = {
        + (worst ? worst.ratio.toFixed(2) + ' on .' + String(worst.cls).split(' ')[0] : 'n/a') + ')',
        contrast.every(c => c.ratio >= 4.5));
 
+    /* ── The community on a phone ──────────────────────────────────────────
+     * Measured against the real class names on a touch viewport. Two things
+     * this caught that reading the stylesheet did not: nine controls under
+     * 40px — the post menu at 34x22, reaction chips at 49x28 — in a space used
+     * by children on phones; and channel Details with no way to open it at all
+     * on mobile, because the header hid its button while the stylesheet went
+     * on laying out the full-screen pane nobody could reach. */
+    const cmT = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+    const cmP = await cmT.newPage();
+    await cmP.goto(BASE + '/tests/_boards_fixture.html?board=status&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await cmP.waitForFunction(() => Array.from(document.styleSheets).some(ss => {
+      try { return (ss.href || '').indexOf('styles.css') !== -1 && ss.cssRules.length > 0; } catch (_) { return false; }
+    }), null, { timeout: 10000 });
+    // Stand the community's own markup up; the classes are what carry the CSS.
+    await cmP.evaluate(() => {
+      document.body.className = 'cm-app';
+      document.body.innerHTML = '<div class="page cm-slack-page"><div class="cm-slack">'
+        + '<aside class="cm-sb"><nav class="cm-sb-nav">'
+        + '<button class="cm-sb-item cm-sb-chan"><span class="cm-sb-hash">#</span><span class="cm-sb-name">Practical Coding</span></button>'
+        + '</nav></aside>'
+        + '<main class="cm-col"><header class="cm-hd">'
+        + '<button class="cm-hd-burger">☰</button>'
+        + '<div class="cm-hd-title"><div class="cm-hd-line"><span class="cm-hd-name">Commons</span></div></div>'
+        + '<div class="cm-hd-actions"><button class="cm-hd-sortbtn">New</button>'
+        + '<button class="cm-hd-btn cm-hd-btn-ai">✨</button>'
+        + '<button class="cm-hd-btn cm-hd-btn-info">ⓘ</button></div></header>'
+        + '<div class="cm-stream is-feed"><div class="cm-cardfeed"><article class="cm-card">'
+        + '<div class="cm-card-body">Hello</div><div class="cm-card-foot">'
+        + '<button class="cm-chip-react">👏 3</button>'
+        + '<button class="cm-card-reply">2 replies</button>'
+        + '<button class="cm-menu-btn">⋯</button></div></article></div></div></main>'
+        + '</div></div>';
+    });
+    await cmP.waitForTimeout(250);
+
+    /* Hittable area, not painted box: a chip 28px tall whose ::after reaches 44
+       IS a 44px target, and measuring the box would report a problem that is
+       not there while missing one that is. */
+    const tiny = await cmP.evaluate(() => {
+      const out = [];
+      document.querySelectorAll('.cm-col button, .cm-sb button').forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return;
+        /* The sidebar is parked off-canvas on a phone until the burger opens
+           it. elementFromPoint over an off-screen element reports whatever is
+           painted there instead, so measuring it says nothing about the
+           target — it is measured when it is open, not while it is away. */
+        if (r.right <= 0 || r.left >= window.innerWidth) return;
+        const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+        const owns = (x, y) => { const h = document.elementFromPoint(x, y); return !!h && (h === el || el.contains(h) || h.contains(el)); };
+        let up = 0, down = 0;
+        for (let d = 1; d <= 24; d++) { if (owns(cx, cy - d)) up = d; else break; }
+        for (let d = 1; d <= 24; d++) { if (owns(cx, cy + d)) down = d; else break; }
+        if (up + down + 1 < 40 || r.width < 40) out.push(String(el.className).split(' ')[0] + ' ' + Math.round(r.width) + 'x' + (up + down + 1));
+      });
+      return out;
+    });
+    ok('the community has controls to measure on a phone (control)',
+       await cmP.evaluate(() => document.querySelectorAll('.cm-col button').length) >= 5);
+    ok('…and every one of them is a 40px+ target (' + (tiny.length ? tiny.join(', ') : 'all pass') + ')',
+       tiny.length === 0);
+    /* Details has no other entry point. Catch-up does — the sidebar footer —
+       so it is the one that may give up its space. */
+    ok('channel Details can still be opened on a phone',
+       await cmP.evaluate(() => {
+         const b = document.querySelector('.cm-hd-btn-info');
+         return !!b && getComputedStyle(b).display !== 'none' && b.getBoundingClientRect().width > 0;
+       }));
+    ok('…while AI catch-up yields its space, since the sidebar still offers it',
+       await cmP.evaluate(() => getComputedStyle(document.querySelector('.cm-hd-btn-ai')).display === 'none'));
+    await cmP.close(); await cmT.close();
+
     /* ── The check-in desk's scanned state ─────────────────────────────────
      * Used at arm's length, in a noisy hall, by someone also talking to a
      * child. The old confirmation was an eleven-pixel row prepended to a list
