@@ -1966,6 +1966,94 @@ chk('gate: registration lands parent_pending with normalised phone + no QR yet',
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ?', [$REG['studentId']]);
     return $s['guardianPhone'] === '+2348031234567' && ($s['token'] ?? '') === '' && !empty($s['verifyToken']);
 })());
+/* ── The desk must not be held open by the parent notification ────────────
+   Field staff kept being told "Couldn't save — check the connection" on a full
+   signal. The registration itself was fine: the row was committed and then the
+   request went on to send the consent link inline — SMS with a 15s timeout
+   tried against two providers, then SMTP with another 15s. Past PHP's
+   max_execution_time the request dies, the desk reports a failure, and the
+   child is registered anyway; staff retry and hit a duplicate warning for a
+   registration that worked. */
+chk('gate: registration does not wait on the parent notification', (function () use ($GATE) {
+    // A provider that hangs for longer than any request may take. If sending is
+    // on the critical path this call inherits the delay.
+    $GLOBALS['__sms_http_mock'] = function () { usleep(1200000); return ['ok' => false, 'error' => 'network']; };
+    $saved = $GLOBALS['CONFIG']['sms'] ?? null;
+    $GLOBALS['CONFIG']['sms'] = ['enabled' => true, 'termii' => ['api_key' => 'k', 'sender' => 'NGG']];
+    $t0 = microtime(true);
+    $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'Slowsend Child', 'age' => 12, 'faculty' => 'Music', 'course' => 'Piano',
+        'centre' => 'Main', 'parentName' => 'Mrs Slow', 'parentPhone' => '08031119999']]);
+    $elapsed = microtime(true) - $t0;
+    $GLOBALS['CONFIG']['sms'] = $saved;
+    unset($GLOBALS['__sms_http_mock']);
+    if (!empty($r['studentId'])) db_exec('DELETE FROM summer_students WHERE studentId = ?', [$r['studentId']]);
+    /* Under CLI after_response() runs inline so the send stays observable, so
+       this asserts the SHAPE that makes deferral possible rather than the
+       wall-clock: the handler no longer reports delivery it has not done, and
+       it succeeds regardless of the provider being dead. */
+    return !empty($r['ok']) && !isset($r['verificationSent']);
+})());
+chk('gate: …and a dead SMS provider does not fail the registration', (function () use ($GATE) {
+    $GLOBALS['__sms_http_mock'] = function () { return ['ok' => false, 'error' => 'network']; };
+    $saved = $GLOBALS['CONFIG']['sms'] ?? null;
+    $GLOBALS['CONFIG']['sms'] = ['enabled' => true, 'termii' => ['api_key' => 'k', 'sender' => 'NGG']];
+    $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'Deadsms Child', 'age' => 12, 'faculty' => 'Music', 'course' => 'Guitar',
+        'centre' => 'Main', 'parentName' => 'Mrs Dead', 'parentPhone' => '08031118888']]);
+    $exists = !empty($r['studentId']) && db_row('SELECT id FROM summer_students WHERE studentId = ?', [$r['studentId']]);
+    $GLOBALS['CONFIG']['sms'] = $saved;
+    unset($GLOBALS['__sms_http_mock']);
+    if (!empty($r['studentId'])) db_exec('DELETE FROM summer_students WHERE studentId = ?', [$r['studentId']]);
+    return !empty($r['ok']) && $exists;
+})());
+/* It promises what it will TRY, from the contacts on file — not what it has
+   already delivered, which it can no longer know at this point. Claiming
+   delivery that later failed silently is how a parent never gets the link and
+   nobody finds out. */
+chk('gate: the reply says which channels will be tried, not that they succeeded', (function () use ($GATE) {
+    $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'Channels Child', 'age' => 12, 'faculty' => 'Music', 'course' => 'Piano',
+        'centre' => 'Main', 'parentName' => 'Mrs Ch', 'parentPhone' => '08031117777',
+        'parentEmail' => 'ch@example.com']]);
+    $ok = !empty($r['ok']) && in_array('email', $r['verificationSending'] ?? [], true);
+    if (!empty($r['studentId'])) db_exec('DELETE FROM summer_students WHERE studentId = ?', [$r['studentId']]);
+    return $ok;
+})());
+chk('gate: …and does not promise SMS when SMS is not configured', (function () use ($GATE) {
+    $saved = $GLOBALS['CONFIG']['sms'] ?? null;
+    $GLOBALS['CONFIG']['sms'] = ['enabled' => false];
+    $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'Nosms Child', 'age' => 12, 'faculty' => 'Music', 'course' => 'Guitar',
+        'centre' => 'Main', 'parentName' => 'Mrs No', 'parentPhone' => '08031116666']]);
+    $GLOBALS['CONFIG']['sms'] = $saved;
+    $ok = !empty($r['ok']) && !in_array('sms', $r['verificationSending'] ?? [], true);
+    if (!empty($r['studentId'])) db_exec('DELETE FROM summer_students WHERE studentId = ?', [$r['studentId']]);
+    return $ok;
+})());
+/* after_response() is the mechanism the deferral rests on. Under CLI it must
+   run inline (or the tests above would be asserting on work that never
+   happened); on the web it must be registered as a shutdown handler so the
+   response goes out first. */
+chk('after_response runs inline under CLI so deferred work stays testable', (function () {
+    $ran = false;
+    after_response('test', function () use (&$ran) { $ran = true; });
+    return $ran === true;
+})());
+chk('…and a throw inside it can never reach the caller', (function () {
+    try { after_response('test', function () { throw new RuntimeException('boom'); }); }
+    catch (Throwable $e) { return false; }
+    return true;
+})());
+chk('…and the web path flushes the response before doing the work', (function () {
+    $src = file_get_contents(dirname(__DIR__) . '/_lib/webcron.php');
+    $fn = substr($src, strpos($src, 'function after_response'));
+    $fn = substr($fn, 0, strpos($fn, "\n}\n") + 2);
+    return strpos($fn, 'register_shutdown_function') !== false
+        && strpos($fn, 'fastcgi_finish_request') !== false
+        && strpos($fn, 'ignore_user_abort') !== false;
+})());
+
 chk('gate: duplicate guard flags same child + parent, force overrides', (function () use ($GATE) {
     $d = ['fullName' => 'Chidi Okafor', 'age' => 14, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567'];
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => $d]);
@@ -3067,8 +3155,16 @@ chk('application delete removes the row', (function () use ($dmAid) {
 
 // ── Academy catalogue: faculties + courses seeded (Leadership excluded) ──
 chk('catalogue: faculties are the 5 academies (no Leadership)', academy_faculties() === ['AI & Technology', 'Entrepreneurship', 'Media', 'Creative Arts', 'Music']);
-chk('catalogue: courses are the flattened academy courses', count(academy_courses()) === 20
+chk('catalogue: courses are the flattened academy courses', count(academy_courses()) === 12
     && in_array('Tie & Dye', academy_courses(), true) && in_array('Talking Drums', academy_courses(), true) && in_array('Google Workspace', academy_courses(), true));
+/* Several courses are one strand with an ampersand in the name, not two. An
+   earlier seed split them and put courses on the registration form that nobody
+   teaches. */
+chk('catalogue: an ampersand in a course name is part of the name, not a join',
+    in_array('AI Tools Application & Digital Problem Solving', academy_courses(), true)
+    && in_array('Drawing & Visual Design', academy_courses(), true)
+    && !in_array('Digital Problem-Solving', academy_courses(), true)
+    && !in_array('Visual Design', academy_courses(), true));
 chk('catalogue: leadership faculty + its courses are excluded', !in_array('Leadership', academy_faculties(), true)
     && !in_array('V3 Fixer', academy_courses(), true) && !in_array('Anchor Journal', academy_courses(), true));
 // Courses are just as editable — an admin edit to the summer-reg Course field
@@ -3079,9 +3175,9 @@ backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'form
 chk('course catalogue edit round-trips to the public context', backend_dispatch('public.volunteer.context', [])['courses'] === ['Practical Coding', 'Robotics Lab', 'Chess Club']);
 
 // ── Academy catalogue: per-faculty mapping (setting-backed, admin-editable) ──
-chk('academy_courses_for returns a faculty\'s courses', academy_courses_for('Music') === ['Talking Drums', 'Piano', 'Guitar', 'Drums'] && academy_courses_for('Nope') === []);
+chk('academy_courses_for returns a faculty\'s courses', academy_courses_for('Music') === ['Talking Drums', 'Piano', 'Guitar'] && academy_courses_for('Nope') === []);
 $vctxBF = backend_dispatch('public.volunteer.context', []);
-chk('volunteer context exposes a coursesByFaculty map', isset($vctxBF['coursesByFaculty']) && ($vctxBF['coursesByFaculty']['AI & Technology'] ?? null) === ['Practical Coding', 'AI Tools Application', 'Digital Problem-Solving']);
+chk('volunteer context exposes a coursesByFaculty map', isset($vctxBF['coursesByFaculty']) && ($vctxBF['coursesByFaculty']['AI & Technology'] ?? null) === ['Practical Coding', 'AI Tools Application & Digital Problem Solving']);
 // Admin get: seeded default until customised.
 $catG = backend_dispatch('admin.academy.catalogue.get', ['requesterId' => 'NGG-2025-0099']);
 chk('catalogue get returns the seeded default (not yet customised)', $catG['customised'] === false && $catG['catalogue'][0]['faculty'] === 'AI & Technology' && count($catG['catalogue']) === 5);

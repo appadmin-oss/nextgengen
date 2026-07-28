@@ -43,6 +43,37 @@ function web_cron_due(string $job, int $interval): bool {
     return true;
 }
 
+/**
+ * Run $fn AFTER the response has been sent to the client.
+ *
+ * For work that a user must not wait on and must not be failed by. The
+ * registration desk is the case that forced this: sending the parent's consent
+ * link does SMS (15s timeout, two providers tried in turn) and SMTP (15s) —
+ * up to ~45s of network I/O, inline, AFTER the child's row was already
+ * committed. Past PHP's max_execution_time the request dies, the desk shows a
+ * connection error, and the child is registered anyway. Staff then retry and
+ * hit a duplicate warning for a registration that actually worked.
+ *
+ * Under CLI (the test runner) it runs inline, so behaviour stays observable
+ * rather than happening after the assertions.
+ */
+function after_response(string $label, callable $fn): void {
+    if (PHP_SAPI === 'cli') {
+        try { $fn(); } catch (\Throwable $e) { error_log('[after:' . $label . '] ' . $e->getMessage()); }
+        return;
+    }
+    register_shutdown_function(function () use ($label, $fn) {
+        // FPM can hand the response back and keep working. Everywhere else,
+        // flush what we have so the browser is not held open by this.
+        if (function_exists('fastcgi_finish_request')) { @fastcgi_finish_request(); }
+        else { @ob_end_flush(); @flush(); }
+        @ignore_user_abort(true);
+        if (function_exists('set_time_limit')) @set_time_limit(60);
+        // Never disrupt anything: the response has already gone.
+        try { $fn(); } catch (\Throwable $e) { error_log('[after:' . $label . '] ' . $e->getMessage()); }
+    });
+}
+
 /** Schedule the tick to run after the response is sent. Called from bootstrap. */
 function web_cron_schedule(): void {
     if (!empty($GLOBALS['__web_cron_scheduled'])) return;

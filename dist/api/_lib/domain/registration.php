@@ -105,12 +105,17 @@ function form_field_options(array $f, array $data): array {
  */
 /** The built-in starting catalogue — used until an admin edits it. */
 function academy_catalogue_default(): array {
+    /* The programme's actual 2026 catalogue, as the coordinators run it.
+     * Some of these are one course, not two: "AI Tools Application & Digital
+     * Problem Solving" and "Drawing & Visual Design" are each taught as a
+     * single strand, and splitting them on the ampersand — which the earlier
+     * seed did — put courses on the form that nobody teaches. */
     return [
-        'AI & Technology'  => ['Practical Coding', 'AI Tools Application', 'Digital Problem-Solving'],
-        'Entrepreneurship' => ['Data Appreciation', 'Google Workspace'],
-        'Media'            => ['Graphics', 'Video', 'Editing', 'Content Management'],
-        'Creative Arts'    => ['Tie & Dye', 'Dance', 'Acting', 'Catering', 'Visual Design', 'Drawing', 'High-Impact Artistic Expressions'],
-        'Music'            => ['Talking Drums', 'Piano', 'Guitar', 'Drums'],
+        'AI & Technology'  => ['Practical Coding', 'AI Tools Application & Digital Problem Solving'],
+        'Entrepreneurship' => ['Google Workspace'],
+        'Media'            => ['Graphics Design', 'Video Editing'],
+        'Creative Arts'    => ['Tie & Dye', 'Catering', 'Dance / Acting', 'Drawing & Visual Design'],
+        'Music'            => ['Talking Drums', 'Piano', 'Guitar'],
     ];
 }
 
@@ -1032,14 +1037,29 @@ function gate_register(array $p): array {
         } catch (Throwable $e) { error_log('[gate_register] photo pipeline: ' . $e->getMessage()); }
     }
 
-    $sent = registration_send_verification($studentId);
+    /* Off the critical path. The row is committed and the registration is
+     * complete; telling the parent is a separate, slow, failure-prone errand
+     * (SMS 15s x two providers, then SMTP 15s) and the desk must not be held
+     * open for it — still less have a working registration reported to them as
+     * a failure because the request outlived max_execution_time.
+     *
+     * What we can promise honestly is which channels we HAVE a contact for.
+     * The outcome is recorded on the student (remindedAt) and the parent link
+     * can be re-sent from the roster if a provider was down. */
+    $willSend = [];
+    if ($pEmail !== '') $willSend[] = 'email';
+    if ($pPhone !== '' && function_exists('sms_enabled') && sms_enabled()) $willSend[] = 'sms';
+    after_response('registration.verify', function () use ($studentId) {
+        registration_send_verification($studentId);
+    });
+
     event_emit('registration.created', [
         'ref' => $studentId, 'name' => (string)$d['fullName'], 'course' => (string)($d['course'] ?? ''),
         'parentContact' => $pEmail !== '' ? mask_email($pEmail) : substr($pPhone, 0, 7) . '•••',
         'status' => 'parent_pending', 'gate' => (string)$gate['name'],
     ]);
     return ['ok' => true, 'ref' => $studentId, 'studentId' => $studentId, 'regStatus' => 'parent_pending',
-        'verificationSent' => $sent, 'centre' => (string)($d['centre'] ?? ''),
+        'verificationSending' => $willSend, 'centre' => (string)($d['centre'] ?? ''),
         'geo' => $geoEnforced ? ['ok' => $regGeoOk, 'distanceM' => $regGeoDist, 'autoCentre' => $regGeoOk === 1 ? (string)($d['centre'] ?? '') : null] : null];
 }
 

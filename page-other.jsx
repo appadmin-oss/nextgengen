@@ -2717,7 +2717,28 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
       else if (c === "geo_unavailable") { setErrors({ _: "This desk needs your location to register. Allow location access and try again." }); setStep(0); }
       else if (c === "geo_out_of_fence") { const n = (e.detail && e.detail.nearest) || {}; setErrors({ _: "You're outside every registration centre's area" + (n.name ? " — nearest is " + n.name + ", about " + n.distanceM + "m away" : "") + ". Registration is only allowed on-site." }); setStep(0); }
       else if (e.errors || (e.detail && e.detail.errors)) { setErrors(e.errors || e.detail.errors); setStep(0); }
-      else setErrors({ _: "Couldn't save — check the connection and try again. The draft is safe on this device." });
+      /* Everything else. This used to say "check the connection" for ANY
+         unrecognised failure, including ones where the connection was fine and
+         the server had refused for a nameable reason — staff at a desk on full
+         signal were told to check their signal, and the actual cause never
+         reached anyone who could act on it.
+         Two cases now, told apart by whether a response arrived at all. */
+      else if (c === "gate_invalid") { setErrors({ _: "This desk link is no longer valid — it may have been revoked or used up. Ask an admin for a fresh gate link." }); }
+      else if (c === "csrf_failed" || c === "unauthorized") { setErrors({ _: "The desk session has expired. Reload the page and unlock the desk again — the draft is safe on this device." }); }
+      /* status 0 is the client's marker for "no response arrived at all" —
+         DNS, refused, TLS, or our own abort. It is falsy, and the code in that
+         case is a truthy 'network'/'timeout', so the order here matters: test
+         for it explicitly or a genuine outage gets reported as a refusal. */
+      else if (e.status === 0 || c === "network" || c === "timeout") {
+        setErrors({ _: c === "timeout"
+          ? "The server took too long to answer. Your draft is safe — check with an admin before re-registering, in case this one went through."
+          : "Couldn't reach the server — check the connection and try again. The draft is safe on this device." });
+      }
+      else {
+        // The server answered and refused. Say what it said; a code nobody can
+        // read still beats a wrong explanation, and it is what gets reported.
+        setErrors({ _: "The server refused this registration" + (c ? " (" + c + ")" : "") + ". The draft is safe on this device — tell an admin what this says." });
+      }
     } finally { setBusy(false); }
   };
 
@@ -2725,7 +2746,7 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
     <div style={{ ...card, padding: 22, textAlign: "center" }}>
       <div style={{ fontSize: 40 }}>📨</div>
       <h2 style={{ fontSize: 20, margin: "10px 0 6px" }}>Registered — parent notified</h2>
-      <p style={{ ...mut, fontSize: 14, lineHeight: 1.55 }}>{regDisplayName(form)} is in as <b style={{ color: "#fff" }}>{done.studentId}</b>. The registration completes when the parent confirms{done.verificationSent && done.verificationSent.length ? " (sent by " + done.verificationSent.join(" + ") + ")" : ""}. Their ID is issued at that moment.</p>
+      <p style={{ ...mut, fontSize: 14, lineHeight: 1.55 }}>{regDisplayName(form)} is in as <b style={{ color: "#fff" }}>{done.studentId}</b>. The registration completes when the parent confirms{done.verificationSending && done.verificationSending.length ? " — the consent link is on its way by " + done.verificationSending.join(" + ") : ""}. Their ID is issued at that moment.</p>
       <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
         <button onClick={() => { setDone(null); setForm({}); setPhotoUrl(""); setStep(0); }} style={{ flex: 1, padding: 13, borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, cursor: "pointer" }}>New registration</button>
         <button onClick={() => { const keep = {}; ["parentName", "parentPhone", "parentEmail"].forEach(k => { if (form[k]) keep[k] = form[k]; }); setDone(null); setForm(keep); setPhotoUrl(""); setStep(0); }} style={{ flex: 1, padding: 13, borderRadius: 11, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Register sibling</button>
