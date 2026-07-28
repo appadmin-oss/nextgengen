@@ -921,6 +921,44 @@ chk('mentor upsert stores new fields', (function () {
     return $r['skills'] === 'coding' && $r['program'] === 'STS' && $r['tracks'] === 'Tech, Music';
 })());
 
+/* Which cohort a mentor supervises decides whose children appear on their
+   roster and whom they can award stars to, so it has to survive the whole
+   round trip. It was writable from the day the column landed but never read
+   back out, so the admin drawer could not show what it had saved and every
+   mentor read as the 'summer' default however it was set. */
+chk('mentor programme survives the round trip through the admin list', (function () {
+    backend_dispatch('admin.mentors.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => [
+        'fullName' => 'Club Mentor', 'email' => 'clubmentor@example.com', 'status' => 'active',
+        'tracks' => 'Tech', 'centre' => 'Egbeda', 'programme' => 'ngg']]);
+    foreach (backend_dispatch('admin.mentors.list', ['requesterId' => 'NGG-2025-0099'])['mentors'] as $m) {
+        if ($m['email'] === 'clubmentor@example.com') return ($m['programme'] ?? '') === 'ngg';
+    }
+    return false;
+})());
+chk('…and a mentor saved before the field existed reads as Summer School, not blank', (function () {
+    foreach (backend_dispatch('admin.mentors.list', ['requesterId' => 'NGG-2025-0099'])['mentors'] as $m) {
+        if ($m['email'] === 'skill@example.com') return ($m['programme'] ?? '') === 'summer';
+    }
+    return false;
+})());
+/* A typo must not silently hand somebody both cohorts. The fallback is the
+   NARROWEST option, and this pins that direction. */
+chk('an unrecognised programme falls back to the narrowest cohort', (function () {
+    backend_dispatch('admin.mentors.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => [
+        'fullName' => 'Typo Mentor', 'email' => 'typo@example.com', 'status' => 'active', 'programme' => 'BOTH ']]);
+    return (string)db_row("SELECT programme FROM mentors WHERE email='typo@example.com'")['programme'] === 'summer';
+})());
+/* The scoping this feeds is the point of the field: an NGG-only mentor must
+   not be handed the summer cohort. */
+chk('a mentor set to NGG does not cover the summer programme', (function () {
+    $m = db_row("SELECT * FROM mentors WHERE email='clubmentor@example.com'");
+    return mentor_programmes($m) === ['ngg'];
+})());
+chk('…and one saved before the field existed still covers summer, as it always did', (function () {
+    $m = db_row("SELECT * FROM mentors WHERE email='skill@example.com'");
+    return mentor_programmes($m) === ['summer'];
+})());
+
 chk('public mentors dir carries AV links', !empty(backend_dispatch('public.mentors', [])['afrovanguard']['volunteerUrl']));
 chk('public mentors shows active, hides pending', (function () {
     $names = array_map(fn($m) => $m['fullName'], backend_dispatch('public.mentors', [])['mentors']);
@@ -1480,10 +1518,67 @@ chk('archive gated from non-staff', backend_dispatch('admin.summer.cohort.archiv
 $cc = backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001']);
 chk('member gets a 6-digit Anchor Link code', preg_match('/^\d{6}$/', (string)$cc['code']) === 1 && $cc['circle']['parent'] === false);
 $code = $cc['code'];
-chk('portal lookup resolves the student by code', !empty(backend_dispatch('circle.lookup', ['code' => $code])['student']['name']));
-chk('lookup rejects an unknown code', backend_dispatch('circle.lookup', ['code' => '000000'])['error'] === 'not_found');
-chk('connect requires consent', backend_dispatch('circle.connect', ['code' => $code, 'role' => 'parent'])['error'] === 'consent_required');
-$conn = backend_dispatch('circle.connect', ['code' => $code, 'role' => 'parent', 'guardianName' => 'A Parent', 'consent' => true]);
+/* The pairing code is six digits — a 10^6 space, typed by hand, and it used to
+   be the ONLY thing standing between a guess and a child. A correct guess
+   returned their full legal name, and connect then minted a guardian portal
+   token carrying attendance, streaks, at-risk state and mentor remarks. Rate
+   limiting raises the cost from one address and does nothing about a hundred.
+
+   The name is therefore no longer something the endpoint tells you; it is
+   something you must already know for it to answer at all. These pin that in
+   both directions. */
+chk('portal lookup resolves the student by code AND name',
+    !empty(backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Tunde'])['student']['name']));
+chk('…by surname too, since families order names differently',
+    !empty(backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Okonkwo'])['student']['name']));
+chk('…and by the whole name typed out',
+    !empty(backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Tunde Okonkwo'])['student']['name']));
+chk('…case and stray spacing do not matter',
+    !empty(backend_dispatch('circle.lookup', ['code' => $code, 'name' => '  tUnDe  '])['student']['name']));
+// The whole point: a correct code with no name attached reveals nothing.
+chk('a CORRECT code with no name reveals nothing',
+    backend_dispatch('circle.lookup', ['code' => $code])['error'] === 'not_found');
+chk('…and a correct code with the wrong name reveals nothing',
+    backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Somebody'])['error'] === 'not_found');
+/* Wrong code and wrong name must be indistinguishable. "Right code, wrong
+   name" would confirm a code is live, handing the oracle back. */
+chk('a wrong code and a wrong name are indistinguishable', (function () use ($code) {
+    $wrongCode = backend_dispatch('circle.lookup', ['code' => '000000', 'name' => 'Tunde']);
+    $wrongName = backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Nobody']);
+    return $wrongCode['error'] === $wrongName['error'] && $wrongCode['error'] === 'not_found'
+        && !isset($wrongCode['student']) && !isset($wrongName['student']);
+})());
+chk('a one-or-zero character name is not a name', (function () use ($code) {
+    return backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'T'])['error'] === 'not_found'
+        && backend_dispatch('circle.lookup', ['code' => $code, 'name' => ''])['error'] === 'not_found';
+})());
+/* The match is a WHOLE name part, not a prefix or a substring. Loosening it
+   would turn the check back into a guessing game played two letters at a
+   time — and the length floor above hides that on its own, because it stops
+   a one-character probe before the compare is reached. This is the assertion
+   that actually pins the comparison. */
+chk('a partial name does not match — the compare is exact, not a prefix', (function () use ($code) {
+    foreach (['Tu', 'Tund', 'Okon', 'unde'] as $partial) {
+        if ((backend_dispatch('circle.lookup', ['code' => $code, 'name' => $partial])['error'] ?? '') !== 'not_found') return false;
+    }
+    return true;
+})());
+chk('lookup rejects an unknown code', backend_dispatch('circle.lookup', ['code' => '000000', 'name' => 'Tunde'])['error'] === 'not_found');
+chk('connect requires consent', backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Tunde', 'role' => 'parent'])['error'] === 'consent_required');
+/* connect is its own request and nothing stops it being called directly, so
+   skipping lookup must not skip the check. This is the one that actually
+   protects the dashboard. */
+chk('connect cannot be called straight through with a bare code', (function () use ($code) {
+    $r = backend_dispatch('circle.connect', ['code' => $code, 'role' => 'parent', 'guardianName' => 'Not A Parent', 'consent' => true]);
+    return ($r['error'] ?? '') === 'not_found' && empty($r['token']);
+})());
+chk('…nor with the wrong name', (function () use ($code) {
+    $r = backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Wrong', 'role' => 'parent', 'consent' => true]);
+    return ($r['error'] ?? '') === 'not_found' && empty($r['token']);
+})());
+chk('…and no link row is created by either refused attempt',
+    (int)db_row("SELECT COUNT(*) c FROM circle_links WHERE guardianName = 'Not A Parent'")['c'] === 0);
+$conn = backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Tunde', 'role' => 'parent', 'guardianName' => 'A Parent', 'consent' => true]);
 chk('connect mints a portal token', !empty($conn['token']) && $conn['role'] === 'parent');
 $ctok = $conn['token'];
 chk('parent link now shows as linked for the student', backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['circle']['parent'] === true);

@@ -168,20 +168,68 @@ function member_circle_revoke(array $p): array {
 }
 
 // ── Portal (guardian) side — code-based, no account ─────────────────────────
+
+/**
+ * Resolve a pairing code, but ONLY to someone who can already name the child.
+ *
+ * The code is six digits, which is a keyspace of 10^6 and typed by hand for
+ * good reason — a guardian has to be able to read it off a slip. On its own
+ * that is fine. What was not fine is what a correct guess bought: `lookup`
+ * answered with the child's full legal name, and `connect` then minted a
+ * guardian portal token carrying attendance, streaks, at-risk state and
+ * mentor remarks. Rate limiting raises the cost of walking the space from one
+ * address; it does nothing about a hundred addresses, and it is the wrong
+ * control for an oracle anyway.
+ *
+ * So the name is no longer something this endpoint TELLS you. It is something
+ * you must already know for it to answer at all: supply the child's name
+ * alongside the code and the server confirms or denies. A guessed code with no
+ * name attached now yields exactly nothing, which is the property that
+ * actually closes the hole.
+ *
+ * Any part of the name counts. Guardians type what they call the child, and
+ * families order their names differently — insisting on "the surname" would
+ * fail honest people while doing nothing to an attacker, who has to know a
+ * name either way.
+ *
+ * Wrong code and wrong name return the SAME error. Distinguishing them would
+ * hand back the oracle in the other direction: "right code, wrong name" tells
+ * you a code is live and worth attacking.
+ *
+ * A happy side effect: a mistyped code that collides with another child's now
+ * fails instead of quietly pairing a stranger to that child's dashboard.
+ */
+function circle_match(string $code, string $name): ?array {
+    $code = preg_replace('/\D/', '', $code);
+    if (strlen($code) !== 6) return null;
+    $given = trim(preg_replace('/\s+/', ' ', $name));
+    // Two characters is not a name; without a floor, "a" would match almost
+    // any record and the check would be decorative.
+    if (mb_strlen($given) < 2) return null;
+    $m = db_row('SELECT memberId, fullName FROM members WHERE anchorCode = ? LIMIT 1', [$code]);
+    if (!$m) return null;
+    $parts = preg_split('/\s+/', mb_strtolower(trim((string)$m['fullName']))) ?: [];
+    $want = mb_strtolower($given);
+    // The whole name typed out is accepted too, not just one part of it.
+    if ($want === mb_strtolower(trim((string)$m['fullName']))) return $m;
+    foreach ($parts as $part) if ($part !== '' && $part === $want) return $m;
+    return null;
+}
+
 function circle_lookup(array $p): array {
-    $code = preg_replace('/\D/', '', (string)($p['code'] ?? ''));
-    if (strlen($code) !== 6) return ['ok' => false, 'error' => 'bad_code'];
-    $m = db_row('SELECT memberId, fullName, dob, type FROM members WHERE anchorCode = ? LIMIT 1', [$code]);
+    $m = circle_match((string)($p['code'] ?? ''), (string)($p['name'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     return ['ok' => true, 'student' => ['name' => $m['fullName'], 'memberId' => $m['memberId']]];
 }
 
 function circle_connect(array $p): array {
-    $code = preg_replace('/\D/', '', (string)($p['code'] ?? ''));
     $role = (string)($p['role'] ?? '');
     if (!in_array($role, ['parent', 'teacher', 'mentor'], true)) return ['ok' => false, 'error' => 'bad_role'];
     if (empty($p['consent'])) return ['ok' => false, 'error' => 'consent_required'];
-    $m = db_row('SELECT memberId, fullName FROM members WHERE anchorCode = ? LIMIT 1', [$code]);
+    // Checked here too, not just on lookup. `connect` is a separate request and
+    // nothing stops it being called directly — a gate that only guards the
+    // step before it is not a gate.
+    $m = circle_match((string)($p['code'] ?? ''), (string)($p['name'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $linkId = 'CL-' . strtoupper(rand_hex(6));
     db_insert('circle_links', [

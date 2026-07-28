@@ -848,7 +848,15 @@ function AdminMentors() {
                 ? <img src={m.photoUrl} alt={m.fullName} className="admin-card-img"/>
                 : <div className="admin-card-img admin-card-img-fallback">{(m.fullName || "?").charAt(0)}</div>}
               <div className="admin-card-name">{m.fullName}</div>
-              <div className="mono admin-card-meta">{m.centre} · {(m.tracks || []).join(", ")}</div>
+              {/* Which cohort they supervise, on the card rather than only in
+                  the drawer: it decides whose children they can see, and that
+                  is not something anyone should have to open twenty drawers
+                  to audit. */}
+              <div className="mono admin-card-meta">
+                {{ ngg: "NGG Club", both: "Both cohorts" }[m.programme] || "Summer School"}
+                {m.centre ? " · " + m.centre : ""}
+              </div>
+              <div className="mono admin-card-meta">{(m.tracks || []).join(", ")}</div>
             </button>
           ))}
           {list.length === 0 && <div className="admin-empty">No mentors yet.</div>}
@@ -883,6 +891,14 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
           <Field label="Phone" value={d.phone||""} onChange={v => set("phone", v)}/>
           <Field label="Tracks (comma separated)" value={d.tracks||""} onChange={v => set("tracks", v)} placeholder="Music, Tech, Leadership"/>
           <FieldCentre value={d.centre} onChange={v => set("centre", v)} extra={["Both"]}/>
+          {/* Which cohort this mentor supervises. It decides whose names appear
+              on their roster and whom they can award stars to, so it is a
+              safeguarding control, not a label — an NGG mentor set to 'both'
+              can see and rate every summer child. Defaults to Summer School,
+              which is exactly what every mentor could see before the field
+              existed. */}
+          <FieldSelect label="Supervises" value={d.programme||"summer"} onChange={v => set("programme", v)}
+            options={[{ value: "summer", label: "Summer School" }, { value: "ngg", label: "NGG Club" }, { value: "both", label: "Both cohorts" }]}/>
           <FieldSelect label="Status" value={d.status||"pending-checks"} onChange={v => set("status", v)} options={["active","pending-checks","on-break","retired"]}/>
           <Field label="Max mentees" value={d.maxMentees||"8"} onChange={v => set("maxMentees", v)} type="number"/>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>

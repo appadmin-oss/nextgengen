@@ -2038,6 +2038,7 @@ function CirclePortal({ setPage }) {
   const [dash, setDash] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
+  const [childName, setChildName] = React.useState("");
   const [remark, setRemark] = React.useState("");
   const [toast, setToastMsg] = React.useState("");
   const flash = (m) => { setToastMsg(m); setTimeout(() => setToastMsg(""), 2400); };
@@ -2080,25 +2081,30 @@ function CirclePortal({ setPage }) {
     try { localStorage.setItem(CIRCLE_TOKEN_KEY, tok); } catch (_) {}
     setToken(tok); loadDash(tok);
   };
-  const addStudent = () => { setRole((dash && dash.role) || role || "mentor"); setStudent(null); setCode(""); setErr(""); setStep("code"); };
+  const addStudent = () => { setRole((dash && dash.role) || role || "mentor"); setStudent(null); setCode(""); setChildName(""); setErr(""); setStep("code"); };
 
   const roleWord = role === "teacher" ? "student" : (role === "mentor" ? "mentee" : "child");
   const submitCode = async () => {
     setBusy(true); setErr("");
-    try { const r = await NGGApi.public.circle.lookup(code); setStudent(r.student); setStep("verify"); }
-    catch (e) { setErr((e.code === "not_found") ? "No student found for that code. Check the digits and try again." : humanizeError(e.message, e.code)); }
+    try { const r = await NGGApi.public.circle.lookup(code, childName.trim()); setStudent(r.student); setStep("verify"); }
+    /* One message for a wrong code AND a wrong name, matching the server. Telling
+       someone "right code, wrong name" would confirm the code is live, which is
+       most of what the name check was added to prevent. */
+    catch (e) { setErr((e.code === "not_found")
+      ? "That code and name don't match a student. Check both and try again."
+      : humanizeError(e.message, e.code)); }
     finally { setBusy(false); }
   };
   const connect = async () => {
     setBusy(true); setErr("");
     try {
-      const r = await NGGApi.public.circle.connect({ code, role, guardianName, consent: true });
+      const r = await NGGApi.public.circle.connect({ code, name: childName.trim(), role, guardianName, consent: true });
       try { localStorage.setItem(CIRCLE_TOKEN_KEY, r.token); } catch (_) {}
       circleTokens.add(r.token);
       setToken(r.token); await loadDash(r.token); flash("Connected securely ✓");
     } catch (e) { setErr(humanizeError(e.message, e.code)); } finally { setBusy(false); }
   };
-  const unlink = () => { try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {} circleTokens.save([]); setCohort(null); setToken(""); setDash(null); setRole(null); setCode(""); setConsent(false); setStep("role"); flash("Signed out of this device"); };
+  const unlink = () => { try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {} circleTokens.save([]); setCohort(null); setToken(""); setDash(null); setRole(null); setCode(""); setChildName(""); setConsent(false); setStep("role"); flash("Signed out of this device"); };
   const weekDates = () => { const out = []; const base = dash && dash.weekStart ? new Date(dash.weekStart + "T00:00:00Z") : new Date(); for (let i = 0; i < 7; i++) { const d = new Date(base); d.setUTCDate(d.getUTCDate() + i); out.push(d.toISOString().slice(0, 10)); } return out; };
   const toggleDay = async (date) => {
     const on = !(dash.confirmed || []).includes(date);
@@ -2158,11 +2164,25 @@ function CirclePortal({ setPage }) {
     <h1 style={{ font: "800 28px/1.05 var(--font-display,sans-serif)", margin: "12px 0 0" }}>Enter the Anchor Link code</h1>
     <p style={{ color: "rgba(255,255,255,.76)", lineHeight: 1.55, marginTop: 12 }}>Ask your {roleWord} to open Anchor → <b>You → Your Circle</b>. They'll read you a 6-digit code.</p>
     <input value={code} onChange={e => setCode((e.target.value || "").replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="••••••"
+      aria-label="6-digit Anchor Link code"
       style={{ width: "100%", marginTop: 24, textAlign: "center", letterSpacing: ".5em", background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.16)", borderRadius: 18, color: "#fff", font: "700 34px var(--font-mono,monospace)", padding: "20px 0 20px .5em", outline: "none" }}/>
+    {/* Required, and it is the actual security control on this page: without
+        it a six-digit code was enough to pull back a child's name and then a
+        guardian's-eye view of them. Asking for a name the guardian obviously
+        knows costs them one field and makes a guessed code worth nothing.
+        It also stops a mistyped code quietly pairing you to another child. */}
+    <input value={childName} onChange={e => setChildName(e.target.value)} placeholder={"Your " + roleWord + "'s name"}
+      aria-label={"Your " + roleWord + "'s name"} autoComplete="off"
+      style={{ width: "100%", marginTop: 12, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.16)", borderRadius: 14, color: "#fff", font: "600 15px var(--font-body,sans-serif)", padding: "13px 15px", outline: "none" }}/>
+    <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginTop: 7 }}>First name or surname — whichever is on their record.</div>
     <input value={guardianName} onChange={e => setGuardianName(e.target.value)} placeholder="Your name (optional)"
+      aria-label="Your name (optional)"
       style={{ width: "100%", marginTop: 12, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, color: "#fff", font: "600 15px var(--font-body,sans-serif)", padding: "13px 15px", outline: "none" }}/>
     {err && <div className="circle-err">{err}</div>}
-    <button className="btn btn-lg" disabled={code.length !== 6 || busy} onClick={submitCode} style={{ width: "100%", marginTop: 18, background: code.length === 6 ? teal : "rgba(255,255,255,.12)", color: code.length === 6 ? "#06231d" : "rgba(255,255,255,.4)", border: "none", fontWeight: 800 }}>{busy ? "Checking…" : "Find student →"}</button>
+    {(() => {
+      const ready = code.length === 6 && childName.trim().length >= 2;
+      return <button className="btn btn-lg" disabled={!ready || busy} onClick={submitCode} style={{ width: "100%", marginTop: 18, background: ready ? teal : "rgba(255,255,255,.12)", color: ready ? "#06231d" : "rgba(255,255,255,.4)", border: "none", fontWeight: 800 }}>{busy ? "Checking…" : "Find student →"}</button>;
+    })()}
   </>);
 
   if (step === "verify") return wrap(<>
@@ -2172,7 +2192,7 @@ function CirclePortal({ setPage }) {
     <div style={{ ...card, padding: 24, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
       <div style={{ width: 74, height: 74, borderRadius: "50%", background: "radial-gradient(circle at 35% 28%,#7fb0ff,#2f6fd0)", display: "grid", placeItems: "center", font: "800 30px var(--font-display,sans-serif)" }}>{((student && student.name) || "?").charAt(0)}</div>
       <div style={{ font: "800 22px var(--font-display,sans-serif)", marginTop: 14 }}>{student && student.name}</div>
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, padding: "6px 13px", borderRadius: 99, background: "rgba(94,224,192,.14)", border: "1px solid rgba(94,224,192,.3)" }}><span style={{ color: teal, fontSize: 11, fontWeight: 700 }} className="mono">✓ CODE MATCHED</span></div>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, padding: "6px 13px", borderRadius: 99, background: "rgba(94,224,192,.14)", border: "1px solid rgba(94,224,192,.3)" }}><span style={{ color: teal, fontSize: 11, fontWeight: 700 }} className="mono">✓ CODE + NAME MATCHED</span></div>
     </div>
     <button className="btn btn-lg" onClick={() => setStep("consent")} style={{ width: "100%", marginTop: 20, background: teal, color: "#06231d", border: "none", fontWeight: 800 }}>Yes, continue →</button>
     <button className="btn btn-ghost" style={{ width: "100%", marginTop: 10, color: "rgba(255,255,255,.7)" }} onClick={() => { setStep("code"); setStudent(null); }}>No, re-enter code</button>

@@ -11,7 +11,10 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? '');
     // A 6-digit invite code maps to a child's name — throttle lookups hard so
     // the 10^6 space can't be walked to enumerate minors (safeguarding).
-    if ($view === 'lookup')         { rate_limit_check('circle.lookup'); $res = gs_call('circle.lookup', ['code' => $_GET['code'] ?? '']); }
+    // A pairing code alone reveals nothing: the caller must already be able to
+    // name the child. Throttled as well, but the name check is the real gate —
+    // rate limiting slows one address down and does nothing about a hundred.
+    if ($view === 'lookup')         { rate_limit_check('circle.lookup'); $res = gs_call('circle.lookup', ['code' => $_GET['code'] ?? '', 'name' => $_GET['name'] ?? '']); }
     elseif ($view === 'dashboard')  $res = gs_call('circle.dashboard', ['token' => $_GET['token'] ?? '']);
     elseif ($view === 'report')     $res = gs_call('circle.report', ['token' => $_GET['token'] ?? '']);
     else                            json_error('unknown_view', 400);

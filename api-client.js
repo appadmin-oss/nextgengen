@@ -335,7 +335,9 @@
         submit:  (t, photoUrl) => request('/public/reshoot.php', { body: { t, photoUrl } }),
       },
       circle: {
-        lookup:    (code) => request('/public/circle.php' + qs({ view: 'lookup', code })),
+        // The child's name is required, not optional: the code alone no longer
+        // resolves to anything, so a guessed code cannot reveal who it belongs to.
+        lookup:    (code, name) => request('/public/circle.php' + qs({ view: 'lookup', code, name })),
         connect:   (data) => request('/public/circle.php', { body: Object.assign({ action: 'connect' }, data) }),
         dashboard: (token) => request('/public/circle.php' + qs({ view: 'dashboard', token })),
         report:    (token) => request('/public/circle.php' + qs({ view: 'report', token })),

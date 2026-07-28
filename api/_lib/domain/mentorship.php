@@ -24,6 +24,12 @@ function mentor_full(array $m): array {
         'maxMentees' => (int)($m['maxMentees'] ?? 0),
         'availability' => $m['availability'] ?? '',
         'source' => $m['source'] ?? 'ngg',
+        /* Which cohort they supervise — NOT the same as `source`, which says
+         * where the mentor came from. This was writable through the upsert
+         * from the day the column landed but was never read back out, so the
+         * admin drawer had no way to show what it had saved and every mentor
+         * looked like the 'summer' default. */
+        'programme' => $m['programme'] ?? 'summer',
         'program' => $m['program'] ?? '',
         'skills' => $m['skills'] ?? '',
         'linkedin' => $m['linkedin'] ?? '',
