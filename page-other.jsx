@@ -4387,6 +4387,14 @@ function CardStudio() {
 /* =================== MENTOR PORTAL (/mentor) ================================
    A signed-in mentor's class for today. Award 1–3 behaviour stars per student
    (one rating per student per day). Grouped by the mentor's centre/department. */
+/* Who is looking. The portal is the same tool for all three, but they arrive
+   with different reach and different words for the people in front of them. */
+const PORTAL_ROLES = {
+  mentor:     { eyebrow: "MENTOR PORTAL",     they: "students" },
+  instructor: { eyebrow: "INSTRUCTOR PORTAL", they: "students in your courses" },
+  admin:      { eyebrow: "STAFF · ALL CENTRES", they: "students" },
+};
+
 function MentorPortal() {
   const auth = (window.useAuth || (() => null))();
   const [data, setData] = React.useState(null);
@@ -4396,14 +4404,20 @@ function MentorPortal() {
   const [picked, setPicked] = React.useState([]);       // bulk selection
   const [query, setQuery] = React.useState("");
   const [bulkOpen, setBulkOpen] = React.useState(false);
+  /* Which centre's class is on screen. Only ever set by someone who covers
+     more than one — a mentor at a single centre never sees the control. */
+  const [centre, setCentre] = React.useState("");
   const navy = "#16223e", gold = "#ffce54";
-  const load = React.useCallback(() => {
+  const load = React.useCallback((c) => {
     setState("loading");
-    NGGApi.member.mentorRoster().then(r => { setData(r); setState("ready"); })
-      .catch(e => { const c = e.code || e.message; setState(c === "unauthorized" ? "need-auth" : c === "not_a_mentor" ? "not-mentor" : "error"); });
+    NGGApi.member.mentorRoster(c || "").then(r => { setData(r); setState("ready"); })
+      .catch(e => { const c2 = e.code || e.message; setState(c2 === "unauthorized" ? "need-auth" : c2 === "not_a_mentor" ? "not-mentor" : "error"); });
   }, []);
-  React.useEffect(() => { load(); }, [load]);
-  React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(); }, [auth && auth.isSignedIn]);
+  React.useEffect(() => { load(centre); }, [load, centre]);
+  React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(centre); }, [auth && auth.isSignedIn]);
+  // Switching centre is switching class: a selection carried across would
+  // apply an observation to children the mentor is no longer looking at.
+  const pickCentre = (c) => { setPicked([]); setQuery(""); setCentre(c); };
 
   const shell = (ch) => (
     <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 18px 90px" }}>
@@ -4411,12 +4425,38 @@ function MentorPortal() {
     </div>
   );
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
-  if (state === "need-auth") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>Mentor sign-in</h1><p style={{ color: "rgba(230,238,255,.6)", margin: "8px 0 16px" }}>Sign in with your mentor email to see your class.</p><button onClick={() => auth && auth.openSignIn()} style={{ padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>Sign in →</button></div>);
-  if (state === "not-mentor") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>Not a mentor account</h1><p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>This portal is for approved mentors. If that's you, make sure you're signed in with the email on your mentor record.</p></div>);
-  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load your class</h1><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
+  if (state === "need-auth") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>Staff sign-in</h1><p style={{ color: "rgba(230,238,255,.6)", margin: "8px 0 16px" }}>Sign in as a mentor, an instructor or an admin to see your class.</p><button onClick={() => auth && auth.openSignIn()} style={{ padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>Sign in →</button></div>);
+  if (state === "not-mentor") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>This account has no class</h1><p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>The portal opens for mentors, instructors and admin staff. If that's you, make sure you're signed in with the email on your mentor record, or with the ID card issued for your instructor or volunteer role.</p></div>);
+  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load your class</h1><button onClick={() => load(centre)} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
 
   const m = data.mentor || {}, students = data.students || [];
   const done = students.filter(s => s.starredToday).length;
+  const role = PORTAL_ROLES[data.role] ? data.role : "mentor";
+  const roleMeta = PORTAL_ROLES[role];
+  const centres = data.centres || [];
+  /* The centre switcher. An admin reaches the whole programme, and a roster of
+     "the whole programme" truncated to the first 400 names is not a roster —
+     so the server asks for one centre and this is where it gets picked. */
+  const centrePicker = centres.length > 1 && (
+    <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+      <span style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)" }}>CENTRE</span>
+      <select value={data.centre || ""} onChange={e => pickCentre(e.target.value)}
+        style={{ flex: "1 1 200px", minWidth: 170, minHeight: 44, padding: "10px 12px", borderRadius: 11, fontSize: 15, fontWeight: 600,
+                 background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.18)", color: "#eef2fb" }}>
+        <option value="">Choose a centre…</option>
+        {centres.map(c => <option key={c} value={c} style={{ color: "#16223e" }}>{c}</option>)}
+      </select>
+    </label>
+  );
+
+  if (data.needsCentre) return shell(<>
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{roleMeta.eyebrow}</div>
+      <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>Pick a centre</h1>
+      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>You cover {centres.length} centres. Choose the one you're standing in.</p>
+    </div>
+    {centrePicker}
+  </>);
 
   /* Filter + multi-select. A mentor with thirty children in front of them
      needs to find four of them and mark all four in one action; scrolling a
@@ -4439,11 +4479,12 @@ function MentorPortal() {
 
   return shell(<>
     <div style={{ marginBottom: 18 }}>
-      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>MENTOR PORTAL</div>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{roleMeta.eyebrow}</div>
       <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{m.name || "Your class"}</h1>
       <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>{m.centre || "All centres"}{m.department ? " · " + m.department : ""} · {students.length} student{students.length === 1 ? "" : "s"} · {done} starred today</p>
     </div>
-    {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No students in your class yet.</p>}
+    {centrePicker}
+    {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No {roleMeta.they} here yet.</p>}
 
     {students.length > 0 && (
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>

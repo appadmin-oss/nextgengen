@@ -292,13 +292,15 @@ function NavAuthSlot({ setPage }) {
           <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("dashboard"); }}>Dashboard</button>
           <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("anchor"); }}>Anchor 12</button>
           <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("book"); }}>The Anchor book</button>
-          {/* The Mentor Portal had no link anywhere in the site — a mentor had
-              to be told the URL and type it. A tool nobody can find is a tool
-              nobody uses, and this is the surface that records behaviour data
-              every session. Shown only to people who actually are mentors. */}
-          {member.isMentor && (
+          {/* The Mentor Portal had no link anywhere in the site — you had to be
+              told the URL and type it. A tool nobody can find is a tool nobody
+              uses, and this is the surface that records behaviour data every
+              session. `portal` is the server's answer to "which view do they
+              get" — mentor, instructor or admin — and empty for everyone
+              else. */}
+          {member.portal && (
             <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); setPage("mentor"); }}>
-              <span>★</span> Mentor Portal
+              <span>★</span> {member.portal === "instructor" ? "Instructor Portal" : "Mentor Portal"}
             </button>
           )}
           {isAdmin && (

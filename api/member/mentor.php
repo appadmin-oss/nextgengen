@@ -1,12 +1,18 @@
 <?php
-/** Mentor Portal API — session-gated; the domain gate confirms the signed-in
- *  member is an active mentor. GET roster · POST a star. */
+/** Mentor Portal API — session-gated; the domain gate resolves the signed-in
+ *  person to a mentor, an instructor or an admin and works out whose children
+ *  they may see. GET roster · POST a star. */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
-    $res = gs_call('member.mentor.roster', ['requesterId' => $s['mid']]);
+    // `centre` narrows an admin (or anyone else covering more than one) to a
+    // single class. The gate rejects a centre outside their scope.
+    $res = gs_call('member.mentor.roster', [
+        'requesterId' => $s['mid'],
+        'centre'      => (string)($_GET['centre'] ?? ''),
+    ]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     if ((string)($b['action'] ?? '') === 'star') {

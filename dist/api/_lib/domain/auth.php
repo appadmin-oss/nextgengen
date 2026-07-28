@@ -376,13 +376,13 @@ function auth_me(array $p): array {
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
     if ($member) {
         $pm = public_member($member);
-        /* Is this person a mentor? The Mentor Portal at /mentor had no link
-         * anywhere in the site — a mentor had to be told the URL and type it.
-         * A tool nobody can find is a tool nobody uses, and this is the one
-         * surface that records behaviour data every session. One indexed
-         * lookup per /auth/me tells the UI whether to offer it. */
-        $pm['isMentor'] = !empty($member['email'])
-            && (bool) db_row("SELECT id FROM mentors WHERE lower(email) = lower(?) AND status = 'active' LIMIT 1", [(string)$member['email']]);
+        /* Which Mentor Portal view, if any. /mentor had no link anywhere in the
+         * site — you had to be told the URL and type it. A tool nobody can find
+         * is a tool nobody uses, and this is the one surface that records
+         * behaviour data every session. This used to answer a bare "are they in
+         * the mentors table", which hid the portal from the admins and
+         * instructors who also belong there. */
+        $pm['portal'] = mentor_portal_role((string)$member['memberId']);
         return ['ok' => true, 'member' => $pm];
     }
     // Summer-student session (signed in with an ID card) — a minimal member
@@ -395,10 +395,13 @@ function auth_me(array $p): array {
     // Volunteer-card session (instructors, mentors, coordinators). Without this
     // an instructor was signed in but every page reload resolved to not_found
     // and dropped them straight back out to the sign-in door.
-    $vol = db_row("SELECT volunteerId, fullName, role, photoUrl FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$mid]);
+    $vol = db_row("SELECT volunteerId, fullName, role, centre, photoUrl FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$mid]);
     if ($vol) return ['ok' => true, 'member' => [
         'memberId' => (string)$vol['volunteerId'], 'fullName' => (string)$vol['fullName'], 'type' => 'VOLUNTEER', 'role' => 'volunteer',
-        'caps' => [], 'centre' => '', 'track' => (string)($vol['role'] ?? ''), 'photoUrl' => (string)($vol['photoUrl'] ?? ''),
+        'caps' => [], 'centre' => (string)($vol['centre'] ?? ''), 'track' => (string)($vol['role'] ?? ''), 'photoUrl' => (string)($vol['photoUrl'] ?? ''),
+        // An instructor holds a card, not an account — this is the only place
+        // the app learns they have a portal to open.
+        'portal' => mentor_portal_role((string)$vol['volunteerId']),
     ]];
     return ['ok' => false, 'error' => 'not_found'];
 }

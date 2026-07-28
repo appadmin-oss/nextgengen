@@ -4069,6 +4069,128 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
 })();
 
 
+/* ── Who else belongs in the Mentor Portal ──────────────────────────────────
+ * Three kinds of adult work with these children every session. Until now the
+ * portal opened for exactly one of them, and instructors could not even reach
+ * the "not a mentor account" screen — they hold a volunteer card rather than a
+ * member account, so the gate's first lookup came back empty and answered
+ * no_requester. Everything below is about reach: who gets in, and over whom. */
+(function () use ($SCOPED) {
+    // An instructor with a card and no member account, teaching two courses at
+    // one centre. Piano is theirs; Guitar at the same centre is not.
+    db_insert('volunteers', ['volunteerId' => 'VOL-INS-1', 'fullName' => 'Ife Instructor', 'email' => 'ins1@example.com',
+        'role' => 'instructor', 'centre' => 'Egbeda', 'faculty' => 'Music',
+        'courses' => json_encode(['Piano', 'Talking Drums']), 'status' => 'active', 'createdAt' => now_iso()]);
+    db_insert('summer_students', ['studentId' => 'SUM-PIANO', 'cohortId' => 'RC1', 'fullName' => 'Piano Kid',
+        'centre' => 'Egbeda', 'track' => 'Piano', 'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('summer_students', ['studentId' => 'SUM-GUITAR', 'cohortId' => 'RC1', 'fullName' => 'Guitar Kid',
+        'centre' => 'Egbeda', 'track' => 'Guitar', 'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    $ins = backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-INS-1']);
+    chk('an instructor with no member account can open the portal', !empty($ins['ok']) && ($ins['role'] ?? '') === 'instructor');
+    $insIds = array_column($ins['students'] ?? [], 'studentId');
+    chk('…and sees the children in the courses they teach', in_array('SUM-PIANO', $insIds, true));
+    chk('…but not the ones in a course they do not', !in_array('SUM-GUITAR', $insIds, true));
+    chk('…nor a child at another centre', !in_array('SUM-AY-1', $insIds, true));
+    /* The control. Filtering the roster is convenience; the subject id is
+     * posted by the client, so the write path has to hold the same line. */
+    chk('an instructor cannot star outside their courses by posting the id',
+        backend_dispatch('behaviour.star.give', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-GUITAR', 'stars' => 3])['error'] === 'not_your_centre');
+    chk('…nor reach one through the bulk path', (function () {
+        $r = backend_dispatch('behaviour.bulk.award', ['requesterId' => 'VOL-INS-1', 'subjectIds' => ['SUM-GUITAR'], 'presetId' => 'helped']);
+        return ($r['awarded'] ?? 1) === 0 && ($r['results'][0]['error'] ?? '') === 'not_your_centre';
+    })());
+    chk('an instructor CAN star a child in their own course',
+        !empty(backend_dispatch('behaviour.star.give', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-PIANO', 'stars' => 2, 'note' => 'Kept time'])['ok']));
+
+    // A volunteer who registered as "Admin / Ops" is not console staff. That
+    // lane is a self-service form; a capability is what actually grants
+    // oversight of a child's behaviour record.
+    db_insert('volunteers', ['volunteerId' => 'VOL-OPS-1', 'fullName' => 'Ops Person', 'email' => 'ops1@example.com',
+        'role' => 'admin', 'centre' => 'Egbeda', 'status' => 'active', 'createdAt' => now_iso()]);
+    chk('a self-registered "Admin / Ops" volunteer is not let in',
+        backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-1'])['error'] === 'not_a_mentor');
+
+    // A volunteer mentor is narrowed by their faculty, the way a mentors-table
+    // record is narrowed by its department.
+    db_insert('volunteers', ['volunteerId' => 'VOL-MEN-1', 'fullName' => 'Vera VolMentor', 'email' => 'volmen1@example.com',
+        'role' => 'mentor', 'centre' => 'Egbeda', 'faculty' => 'Music', 'status' => 'active', 'createdAt' => now_iso()]);
+    $vm = backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-MEN-1']);
+    $vmIds = array_column($vm['students'] ?? [], 'studentId');
+    chk('a volunteer mentor gets the mentor view', ($vm['role'] ?? '') === 'mentor');
+    chk('…scoped to the whole faculty they belong to, not one course',
+        in_array('SUM-PIANO', $vmIds, true) && in_array('SUM-GUITAR', $vmIds, true));
+    chk('…and still not to another faculty at the same centre', !in_array('SUM-R-1', $vmIds, true));
+
+    /* Admins. "Full access depending on admin type" — the capability decides
+     * the reach, and a super_admin who happens to hold no mentor record at all
+     * still gets in. */
+    $adm = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0099']);
+    chk('a super_admin can open the portal without a mentor record', !empty($adm['ok']) && ($adm['role'] ?? '') === 'admin');
+    chk('…covering both cohorts', ($adm['mentor']['programmes'] ?? []) === ['summer', 'ngg']);
+    /* "Every child in the programme", truncated to the first 400 by name, is
+     * not a roster — it is an arbitrary slice that silently hides the rest. */
+    chk('…and is asked which centre rather than handed an arbitrary slice',
+        !empty($adm['needsCentre']) && count($adm['students']) === 0 && count($adm['centres']) > 1);
+    $admEg = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0099', 'centre' => 'Egbeda']);
+    $admIds = array_column($admEg['students'] ?? [], 'studentId');
+    chk('an admin who names a centre gets that centre, both cohorts',
+        empty($admEg['needsCentre']) && in_array('SUM-R-1', $admIds, true) && in_array('NGG-2025-0601', $admIds, true));
+    chk('…and nobody from another centre', !in_array('SUM-AY-1', $admIds, true));
+    chk('an admin can star a child at the centre they picked',
+        !empty(backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-2025-0099', 'subjectId' => 'SUM-R-2', 'stars' => 3, 'note' => 'Observed'])['ok']));
+
+    // A scoped admin is held to their centreScope — including on the picker,
+    // which is where an unenforced scope would leak the whole programme.
+    $sc = backend_dispatch('member.mentor.roster', ['requesterId' => $SCOPED]);
+    chk('a scoped admin covering one centre lands straight on it',
+        !empty($sc['ok']) && empty($sc['needsCentre']) && ($sc['centre'] ?? '') === 'Egbeda' && ($sc['centres'] ?? []) === ['Egbeda']);
+    chk('…and cannot ask for a centre outside their scope',
+        backend_dispatch('member.mentor.roster', ['requesterId' => $SCOPED, 'centre' => 'Ayobo'])['error'] === 'not_your_centre');
+    chk('…nor star a child there', (function () use ($SCOPED) {
+        return backend_dispatch('behaviour.star.give', ['requesterId' => $SCOPED, 'subjectId' => 'SUM-AY-1', 'stars' => 2])['error'] === 'not_your_centre';
+    })());
+
+    // A summer-only coordinator covers the Summer School and nothing else.
+    backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['fullName' => 'Sade SummerAdmin', 'email' => 'sadmin@example.com', 'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'summer_admin']]);
+    $SA = db_row("SELECT memberId FROM members WHERE email='sadmin@example.com'")['memberId'];
+    $sa = backend_dispatch('member.mentor.roster', ['requesterId' => $SA, 'centre' => 'Egbeda']);
+    $saIds = array_column($sa['students'] ?? [], 'studentId');
+    chk('a summer coordinator gets the summer cohort', ($sa['role'] ?? '') === 'admin' && in_array('SUM-R-1', $saIds, true));
+    chk('…and not the Club members at the same centre', !in_array('NGG-2025-0601', $saIds, true));
+
+    // A mentor with a department could always see only their department, but
+    // could star anyone in the centre by posting the id — the same hole the
+    // programme check was written to close, one level down.
+    db_update('mentors', ['department' => 'Piano'], ['mentorId' => 'MEN-1']);
+    $dep = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0500']);
+    $depIds = array_column($dep['students'] ?? [], 'studentId');
+    chk('a mentor with a department sees only that department',
+        in_array('SUM-PIANO', $depIds, true) && !in_array('SUM-GUITAR', $depIds, true));
+    chk('…and can no longer star outside it by posting the id',
+        backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-GUITAR', 'stars' => 2])['error'] === 'not_your_centre');
+    db_update('mentors', ['department' => ''], ['mentorId' => 'MEN-1']);
+
+    /* The nav has to know. /mentor had no link anywhere in the site until one
+     * was added for mentors only, which is exactly how the other two kinds of
+     * adult never found out the portal existed. */
+    chk('the account menu is told which portal each person gets', (function () use ($SCOPED) {
+        return mentor_portal_role('VOL-INS-1') === 'instructor'
+            && mentor_portal_role('NGG-2025-0500') === 'mentor'
+            && mentor_portal_role($SCOPED) === 'admin'
+            && mentor_portal_role('NGG-2025-0001') === ''
+            && mentor_portal_role('VOL-OPS-1') === '';
+    })());
+    chk('…and /auth/me carries it for a cardholder with no member account',
+        (backend_dispatch('auth.me', ['memberId' => 'VOL-INS-1'])['member']['portal'] ?? '') === 'instructor');
+    chk('…as well as for a member account', (function () {
+        return (backend_dispatch('auth.me', ['memberId' => 'NGG-2025-0500'])['member']['portal'] ?? '') === 'mentor'
+            && (backend_dispatch('auth.me', ['memberId' => 'NGG-2025-0001'])['member']['portal'] ?? 'x') === '';
+    })());
+})();
+
+
 /* ── AI: on, off, and visibly which ─────────────────────────────────────────
  * Every AI feature degrades to a deterministic rules path when no key is
  * configured. That is the right behaviour and a genuinely invisible one: the
