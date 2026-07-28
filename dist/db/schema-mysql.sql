@@ -1097,4 +1097,70 @@ CREATE INDEX idx_attend_date ON attendance(date);
 CREATE INDEX idx_sstu_centre ON summer_students(centre);
 CREATE INDEX idx_sstu_status_centre ON summer_students(status, centre);
 CREATE INDEX idx_sstu_cohort_reg ON summer_students(cohortId, regStatus);
-INSERT INTO schema_version (version) VALUES (65) ON DUPLICATE KEY UPDATE version = version;
+-- 66: the instructor's record of teaching — session log, per-child remarks,
+-- and named skill marks per course. See the migration in api/_lib/db.php for
+-- why remarks are not behaviour_logs and why the log stores only attendance
+-- exceptions rather than the roll.
+CREATE TABLE IF NOT EXISTS course_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sessionLogId VARCHAR(48) NOT NULL UNIQUE,
+  course VARCHAR(80) NOT NULL,
+  centre VARCHAR(80) NOT NULL,
+  date VARCHAR(12) NOT NULL,
+  instructorId VARCHAR(64) NOT NULL,
+  instructorName VARCHAR(190) DEFAULT '',
+  covered TEXT,
+  roomScore INT DEFAULT 0,
+  presentCount INT DEFAULT 0,
+  absentCount INT DEFAULT 0,
+  markedPresent TEXT,
+  markedAbsent TEXT,
+  createdAt VARCHAR(40), updatedAt VARCHAR(40),
+  UNIQUE KEY idx_csess_slot (course, centre, date),
+  INDEX idx_csess_instructor (instructorId, date),
+  INDEX idx_csess_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS student_remarks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  remarkId VARCHAR(48) NOT NULL UNIQUE,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectName VARCHAR(190) DEFAULT '',
+  subjectType VARCHAR(16) DEFAULT 'student',
+  course VARCHAR(80) DEFAULT '',
+  centre VARCHAR(80) DEFAULT '',
+  authorId VARCHAR(64) NOT NULL,
+  authorName VARCHAR(190) DEFAULT '',
+  authorRole VARCHAR(24) DEFAULT '',
+  kind VARCHAR(24) NOT NULL,
+  body TEXT NOT NULL,
+  category VARCHAR(24) DEFAULT '',
+  severity VARCHAR(16) DEFAULT '',
+  aiSource VARCHAR(16) DEFAULT '',
+  safeguarding TINYINT DEFAULT 0,
+  status VARCHAR(16) DEFAULT 'open',
+  acknowledgedBy VARCHAR(64) DEFAULT '',
+  acknowledgedAt VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(40),
+  INDEX idx_remark_subject (subjectId, id),
+  INDEX idx_remark_author (authorId, createdAt),
+  INDEX idx_remark_flag (safeguarding, status),
+  INDEX idx_remark_centre (centre, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS skill_marks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectId VARCHAR(64) NOT NULL,
+  course VARCHAR(80) NOT NULL,
+  skill VARCHAR(120) NOT NULL,
+  level INT NOT NULL DEFAULT 1,
+  markedById VARCHAR(64) DEFAULT '',
+  markedByName VARCHAR(190) DEFAULT '',
+  centre VARCHAR(80) DEFAULT '',
+  updatedAt VARCHAR(40),
+  UNIQUE KEY idx_skill_one (subjectId, course, skill),
+  INDEX idx_skill_course (course, centre),
+  INDEX idx_skill_marker (markedById, updatedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (66) ON DUPLICATE KEY UPDATE version = version;

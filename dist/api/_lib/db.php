@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 65;
+const NGG_SCHEMA_TARGET = 66;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1548,6 +1548,95 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_sstu_centre ON summer_students(centre);
             CREATE INDEX IF NOT EXISTS idx_sstu_status_centre ON summer_students(status, centre);
             CREATE INDEX IF NOT EXISTS idx_sstu_cohort_reg ON summer_students(cohortId, regStatus);
+        ",
+
+        /* The instructor's record of teaching.
+         *
+         * A mentor observes character across a centre; an instructor observes
+         * learning inside one course, with the same twenty children twice a
+         * week. Stars answer "how did they behave today" and nothing in the
+         * system answered "can this child do the thing I taught them".
+         *
+         * course_sessions — one row per course per centre per day. This is
+         * what makes an instructor's screen a CLASS rather than a list of
+         * children, and everything else hangs off it. Attendance is already
+         * recorded at the gate, so the log stores only the EXCEPTIONS the
+         * instructor corrected: a child the scanner missed, or one who left.
+         * Storing the roll itself would fork the truth.
+         *
+         * student_remarks — a running thread per child. Deliberately not a
+         * behaviour_log: those are one classified observation with a review
+         * workflow, and stars are capped at one per child per day. A remark
+         * has no cap because "she finally got recursion" and "he was quiet
+         * again" are both worth writing on the same afternoon.
+         *
+         * skill_marks — one row per child per course per named competency,
+         * latest level wins. Four levels, no numbers: a grade invites a
+         * ranking, and this is meant to say what a child can now do.
+         */
+        66 => "
+            CREATE TABLE course_sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sessionLogId TEXT NOT NULL UNIQUE,
+              course TEXT NOT NULL,
+              centre TEXT NOT NULL,
+              date TEXT NOT NULL,
+              instructorId TEXT NOT NULL,
+              instructorName TEXT DEFAULT '',
+              covered TEXT DEFAULT '',
+              roomScore INTEGER DEFAULT 0,
+              presentCount INTEGER DEFAULT 0,
+              absentCount INTEGER DEFAULT 0,
+              markedPresent TEXT DEFAULT '',
+              markedAbsent TEXT DEFAULT '',
+              createdAt TEXT,
+              updatedAt TEXT
+            );
+            CREATE UNIQUE INDEX idx_csess_slot ON course_sessions(course, centre, date);
+            CREATE INDEX idx_csess_instructor ON course_sessions(instructorId, date);
+            CREATE INDEX idx_csess_date ON course_sessions(date);
+
+            CREATE TABLE student_remarks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              remarkId TEXT NOT NULL UNIQUE,
+              subjectId TEXT NOT NULL,
+              subjectName TEXT DEFAULT '',
+              subjectType TEXT DEFAULT 'student',
+              course TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              authorId TEXT NOT NULL,
+              authorName TEXT DEFAULT '',
+              authorRole TEXT DEFAULT '',
+              kind TEXT NOT NULL,
+              body TEXT NOT NULL,
+              category TEXT DEFAULT '',
+              severity TEXT DEFAULT '',
+              aiSource TEXT DEFAULT '',
+              safeguarding INTEGER DEFAULT 0,
+              status TEXT DEFAULT 'open',
+              acknowledgedBy TEXT DEFAULT '',
+              acknowledgedAt TEXT DEFAULT '',
+              createdAt TEXT
+            );
+            CREATE INDEX idx_remark_subject ON student_remarks(subjectId, id);
+            CREATE INDEX idx_remark_author ON student_remarks(authorId, createdAt);
+            CREATE INDEX idx_remark_flag ON student_remarks(safeguarding, status);
+            CREATE INDEX idx_remark_centre ON student_remarks(centre, createdAt);
+
+            CREATE TABLE skill_marks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              course TEXT NOT NULL,
+              skill TEXT NOT NULL,
+              level INTEGER NOT NULL DEFAULT 1,
+              markedById TEXT DEFAULT '',
+              markedByName TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              updatedAt TEXT
+            );
+            CREATE UNIQUE INDEX idx_skill_one ON skill_marks(subjectId, course, skill);
+            CREATE INDEX idx_skill_course ON skill_marks(course, centre);
+            CREATE INDEX idx_skill_marker ON skill_marks(markedById, updatedAt);
         ",
     ];
 

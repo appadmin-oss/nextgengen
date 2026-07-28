@@ -244,6 +244,14 @@
       starGive:      (subjectId, stars, category, note) => request('/member/mentor.php', { body: { action: 'star', subjectId, stars, category, note } }),
       v3Rate:        (subjectId, verbal, vocal, visual, note) => request('/member/mentor.php', { body: { action: 'v3', subjectId, verbal, vocal, visual, note } }),
       bulkAward: (subjectIds, opts) => request('/member/mentor.php', { body: Object.assign({ action: 'bulk', subjectIds }, opts || {}) }),
+      /* The teaching record. One endpoint, three views — an instructor's day
+         is one screen that switches between the class, a child and the grid. */
+      session:      (course, centre, date) => request('/member/teaching.php?view=session&course=' + encodeURIComponent(course || '') + '&centre=' + encodeURIComponent(centre || '') + '&date=' + encodeURIComponent(date || '')),
+      sessionSave:  (data) => request('/member/teaching.php', { body: Object.assign({ action: 'session' }, data || {}) }),
+      skillsBoard:  (course, centre) => request('/member/teaching.php?view=skills&course=' + encodeURIComponent(course || '') + '&centre=' + encodeURIComponent(centre || '')),
+      skillsMark:   (subjectId, course, marks) => request('/member/teaching.php', { body: { action: 'skills', subjectId, course, marks } }),
+      remarks:      (subjectId) => request('/member/teaching.php?view=remarks&subjectId=' + encodeURIComponent(subjectId || '')),
+      remarkAdd:    (subjectId, kind, body) => request('/member/teaching.php', { body: { action: 'remark', subjectId, kind, body } }),
       submitMission: (data) => request('/member/mission.php', { body: data }),
       journal:       () => request('/member/journal.php'),
       journalCreate: (data) => request('/member/journal.php', { body: data }),
@@ -512,6 +520,14 @@
         list:   (q) => request('/admin/behaviour.php' + qs(q || {})),
         log:    (subjectId, note, category, severity) => request('/admin/behaviour.php', { body: { action: 'log', subjectId, note, category, severity } }),
         review: (logId) => request('/admin/behaviour.php', { body: { action: 'review', logId } }),
+      },
+      /* Staff, not children: who has filed what, over what window, next to how
+         many children they are responsible for. */
+      staff: {
+        performance: (days) => request('/admin/staff.php?view=performance&days=' + (days || 30)),
+        ackRemark:   (remarkId) => request('/admin/staff.php', { body: { action: 'ack', remarkId } }),
+        skills:      () => request('/admin/staff.php?view=skills'),
+        saveSkills:  (skills) => request('/admin/staff.php', { body: { action: 'skills', skills } }),
       },
       volunteers: {
         list:    () => request('/admin/volunteers.php'),

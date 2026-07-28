@@ -37,7 +37,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'analytics', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'analytics', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/webcron.php';
 // session.php is pure functions over the device register — no bootstrap, no
@@ -4187,6 +4187,268 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     chk('…as well as for a member account', (function () {
         return (backend_dispatch('auth.me', ['memberId' => 'NGG-2025-0500'])['member']['portal'] ?? '') === 'mentor'
             && (backend_dispatch('auth.me', ['memberId' => 'NGG-2025-0001'])['member']['portal'] ?? 'x') === '';
+    })());
+})();
+
+
+/* ── The teaching record: session log, remarks, skill marks ─────────────────
+ * A mentor observes character across a centre; an instructor observes
+ * learning inside one course. Stars answered the first question and nothing
+ * answered the second. */
+(function () use ($SCOPED) {
+    // Talking Drums at Egbeda: three children, one of whom the gate scanned in.
+    // The instructor already teaches this course (see the access block above).
+    foreach ([['SUM-DRUM-1', 'Ade Drummer'], ['SUM-DRUM-2', 'Bola Drummer'], ['SUM-DRUM-3', 'Chidi Drummer']] as [$id, $nm]) {
+        db_insert('summer_students', ['studentId' => $id, 'cohortId' => 'RC1', 'fullName' => $nm, 'centre' => 'Egbeda',
+            'track' => 'Talking Drums', 'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    $TODAY = gmdate('Y-m-d');
+    db_insert('attendance', ['studentId' => 'SUM-DRUM-1', 'cohortId' => 'RC1', 'date' => $TODAY, 'method' => 'qr', 'createdAt' => now_iso()]);
+
+    // ── Session log ──
+    $sg = backend_dispatch('instructor.session.get', ['requesterId' => 'VOL-INS-1', 'course' => 'Talking Drums']);
+    chk('an instructor opens today\'s class for a course they teach', !empty($sg['ok']) && $sg['centre'] === 'Egbeda' && $sg['date'] === $TODAY);
+    chk('…and it is a class, not the whole centre', count($sg['students']) === 3);
+    /* The gate already recorded attendance. Re-asking the instructor for the
+     * roll would fork the truth — two records, no way to know which is right. */
+    chk('…prefilled from the gate scan rather than blank', (function () use ($sg) {
+        $by = []; foreach ($sg['students'] as $s) $by[$s['studentId']] = $s;
+        return $by['SUM-DRUM-1']['present'] === true && $by['SUM-DRUM-1']['scanned'] === true
+            && $by['SUM-DRUM-2']['present'] === false;
+    })());
+    chk('…and carries the course\'s named skills', count($sg['skills']) >= 4 && in_array('Holds a steady pulse', $sg['skills'], true));
+    chk('an instructor cannot open a course they do not teach',
+        backend_dispatch('instructor.session.get', ['requesterId' => 'VOL-INS-1', 'course' => 'Guitar'])['error'] === 'not_your_course');
+
+    chk('a log with neither a note nor a score is refused',
+        backend_dispatch('instructor.session.save', ['requesterId' => 'VOL-INS-1', 'course' => 'Talking Drums'])['error'] === 'nothing_to_record');
+    $sv = backend_dispatch('instructor.session.save', ['requesterId' => 'VOL-INS-1', 'course' => 'Talking Drums',
+        'covered' => 'Scales, hands together', 'roomScore' => 4, 'markedPresent' => ['SUM-DRUM-2']]);
+    chk('an instructor files the session in one call', !empty($sv['ok']));
+    /* The scanner misses people. The correction is the point of the log — but
+     * it is stored as an exception, so the gate's own record stays intact. */
+    chk('…correcting the scanner counts the child present', ($sv['presentCount'] ?? 0) === 2 && ($sv['absentCount'] ?? 9) === 1);
+    chk('…and the gate\'s attendance row is untouched',
+        (int)db_row("SELECT COUNT(*) c FROM attendance WHERE date=? AND studentId='SUM-DRUM-2'", [$TODAY])['c'] === 0);
+    chk('refiling edits today\'s entry rather than making a second one', (function () use ($TODAY) {
+        backend_dispatch('instructor.session.save', ['requesterId' => 'VOL-INS-1', 'course' => 'Talking Drums',
+            'covered' => 'Scales, then a duet', 'roomScore' => 5]);
+        $n = (int)db_row("SELECT COUNT(*) c FROM course_sessions WHERE course='Talking Drums' AND centre='Egbeda' AND date=?", [$TODAY])['c'];
+        $r = db_row("SELECT covered, roomScore FROM course_sessions WHERE course='Talking Drums' AND centre='Egbeda' AND date=?", [$TODAY]);
+        return $n === 1 && $r['covered'] === 'Scales, then a duet' && (int)$r['roomScore'] === 5;
+    })());
+    chk('a correction naming a child from another class is dropped, not stored', (function () use ($TODAY) {
+        backend_dispatch('instructor.session.save', ['requesterId' => 'VOL-INS-1', 'course' => 'Talking Drums',
+            'covered' => 'x', 'roomScore' => 3, 'markedPresent' => ['SUM-GUITAR', 'SUM-AY-1']]);
+        $r = db_row("SELECT markedPresent, presentCount FROM course_sessions WHERE course='Talking Drums' AND centre='Egbeda' AND date=?", [$TODAY]);
+        return (safe_json((string)$r['markedPresent']) ?: []) === [] && (int)$r['presentCount'] === 1;
+    })());
+    chk('a child cannot be marked both present and absent', (function () use ($TODAY) {
+        backend_dispatch('instructor.session.save', ['requesterId' => 'VOL-INS-1', 'course' => 'Talking Drums',
+            'covered' => 'x', 'roomScore' => 3, 'markedPresent' => ['SUM-DRUM-2'], 'markedAbsent' => ['SUM-DRUM-2']]);
+        $r = db_row("SELECT markedPresent, markedAbsent FROM course_sessions WHERE course='Talking Drums' AND centre='Egbeda' AND date=?", [$TODAY]);
+        return (safe_json((string)$r['markedPresent']) ?: []) === [] && (safe_json((string)$r['markedAbsent']) ?: []) === ['SUM-DRUM-2'];
+    })());
+    chk('a room score outside 1-5 is refused',
+        backend_dispatch('instructor.session.save', ['requesterId' => 'VOL-INS-1', 'course' => 'Talking Drums', 'covered' => 'x', 'roomScore' => 9])['error'] === 'bad_score');
+    chk('a malformed date is refused',
+        backend_dispatch('instructor.session.get', ['requesterId' => 'VOL-INS-1', 'course' => 'Talking Drums', 'date' => 'yesterday'])['error'] === 'bad_date');
+
+    // ── Remarks ──
+    $r1 = backend_dispatch('member.remark.add', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-1',
+        'kind' => 'progress', 'body' => 'Finally played hands together without stopping.']);
+    chk('an instructor writes a remark on a child in their course', !empty($r1['ok']));
+    /* A star is one per child per day because it is a reward. A remark is not:
+     * two things worth writing can happen in the same afternoon. */
+    chk('…and a second one the same day is allowed, unlike a star', (function () {
+        $r = backend_dispatch('member.remark.add', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-1',
+            'kind' => 'strength', 'body' => 'Helped the new girl find middle C.']);
+        return !empty($r['ok'])
+            && (int)db_row("SELECT COUNT(*) c FROM student_remarks WHERE subjectId='SUM-DRUM-1'")['c'] === 2;
+    })());
+    chk('an empty remark is refused',
+        backend_dispatch('member.remark.add', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-1', 'kind' => 'progress', 'body' => '  '])['error'] === 'empty_remark');
+    chk('an unknown kind is refused',
+        backend_dispatch('member.remark.add', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-1', 'kind' => 'gossip', 'body' => 'x'])['error'] === 'bad_kind');
+    chk('an instructor cannot remark on a child outside their courses',
+        backend_dispatch('member.remark.add', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-GUITAR', 'kind' => 'progress', 'body' => 'x'])['error'] === 'not_found');
+
+    /* The one thing nobody should have to remember to tick. The classifier
+     * runs on every remark and raises the flag itself. */
+    // The behaviour monitor already emits this event, so counting rows would
+    // measure its work rather than the remark's — the flag has to be traced to
+    // this remark by reference.
+    $flagsBefore = (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind='behaviour.flagged'")['c'];
+    $flag = backend_dispatch('member.remark.add', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-2',
+        'kind' => 'concern', 'body' => 'Came in hungry again and was crying at the back.']);
+    chk('a safeguarding remark is flagged without the author ticking anything',
+        !empty($flag['ok']) && $flag['safeguarding'] === true && $flag['category'] === 'wellbeing');
+    chk('…and pages the admins on the event they already subscribe to', (function () use ($flag, $flagsBefore) {
+        $after = (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind='behaviour.flagged'")['c'];
+        $ev = db_row("SELECT payload FROM outbox WHERE kind='behaviour.flagged' ORDER BY id DESC LIMIT 1");
+        $pl = $ev ? (safe_json((string)$ev['payload']) ?: []) : [];
+        return $after === $flagsBefore + 1 && ($pl['ref'] ?? '') === $flag['remarkId']
+            && ($pl['subjectId'] ?? '') === 'SUM-DRUM-2';
+    })());
+    chk('…and an ordinary remark raises nothing', (function () {
+        $before = (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind='behaviour.flagged'")['c'];
+        backend_dispatch('member.remark.add', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-3',
+            'kind' => 'progress', 'body' => 'Kept the pulse through the whole piece.']);
+        return (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind='behaviour.flagged'")['c'] === $before;
+    })());
+    chk('an ordinary remark is not flagged', ($r1['safeguarding'] ?? true) === false);
+    chk('the author\'s own words are stored verbatim, not rewritten',
+        (string)db_row("SELECT body FROM student_remarks WHERE remarkId=?", [$r1['remarkId']])['body']
+            === 'Finally played hands together without stopping.');
+
+    /* The point of the thread: the mentor arrives on Saturday already knowing
+     * what the coding instructor saw on Wednesday. */
+    $seen = backend_dispatch('member.remark.list', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-DRUM-1']);
+    chk('the mentor for that centre reads the instructor\'s remarks',
+        !empty($seen['ok']) && count($seen['remarks']) === 2 && $seen['remarks'][0]['authorRole'] === 'instructor');
+    chk('…and a mentor at another centre cannot',
+        backend_dispatch('member.remark.list', ['requesterId' => $SCOPED, 'subjectId' => 'SUM-AY-1'])['error'] === 'not_found');
+    chk('only staff who can act may close a flag',
+        backend_dispatch('admin.remark.ack', ['requesterId' => 'VOL-INS-1', 'remarkId' => $flag['remarkId']])['error'] === 'no_requester');
+    chk('an admin acknowledges a flagged remark', (function () use ($flag) {
+        $r = backend_dispatch('admin.remark.ack', ['requesterId' => 'NGG-2025-0099', 'remarkId' => $flag['remarkId']]);
+        return !empty($r['ok']) && (string)db_row("SELECT status FROM student_remarks WHERE remarkId=?", [$flag['remarkId']])['status'] === 'acknowledged';
+    })());
+
+    // ── Skill marks ──
+    chk('the seeded catalogue names skills for every live course', (function () {
+        $all = course_skills_all();
+        foreach (academy_courses() as $c) if (count($all[$c] ?? []) < 4) return false;
+        return count($all) === count(academy_courses());
+    })());
+    $mk = backend_dispatch('instructor.skills.mark', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-1',
+        'course' => 'Talking Drums', 'marks' => ['Holds a steady pulse' => 3, 'Plays hands together' => 4, 'Follows and answers a call' => 9]]);
+    chk('an instructor marks a child against the course skills', !empty($mk['ok']) && $mk['saved'] === 1);
+    /* Two of those three were nonsense: a Guitar skill and a level outside the
+     * four. Storing either makes a record nothing downstream can read. */
+    chk('…dropping a skill from another course and an out-of-range level',
+        (int)db_row("SELECT COUNT(*) c FROM skill_marks WHERE subjectId='SUM-DRUM-1'")['c'] === 1);
+    chk('re-marking overwrites rather than appending — the question is what they can do NOW', (function () {
+        backend_dispatch('instructor.skills.mark', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-1',
+            'course' => 'Talking Drums', 'marks' => ['Holds a steady pulse' => 4]]);
+        $rows = db_all("SELECT level FROM skill_marks WHERE subjectId='SUM-DRUM-1' AND skill='Holds a steady pulse'");
+        return count($rows) === 1 && (int)$rows[0]['level'] === 4;
+    })());
+    chk('a skill cannot be marked on a child outside the instructor\'s reach at all',
+        backend_dispatch('instructor.skills.mark', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-R-1',
+            'course' => 'Talking Drums', 'marks' => ['Holds a steady pulse' => 3]])['error'] === 'not_found');
+    /* Different failure, same instructor: this child IS theirs, but takes
+     * Piano. A drumming mark on a piano student is not a permission question,
+     * it is a record nothing can read. */
+    chk('…nor on one of their own who takes a different course',
+        backend_dispatch('instructor.skills.mark', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-PIANO',
+            'course' => 'Talking Drums', 'marks' => ['Holds a steady pulse' => 3]])['error'] === 'not_their_course');
+    $bd = backend_dispatch('instructor.skills.board', ['requesterId' => 'VOL-INS-1', 'course' => 'Talking Drums']);
+    chk('the class grid shows where everyone stands', (function () use ($bd) {
+        if (empty($bd['ok']) || count($bd['students']) !== 3) return false;
+        $by = []; foreach ($bd['students'] as $s) $by[$s['studentId']] = $s;
+        return $by['SUM-DRUM-1']['marks']['Holds a steady pulse'] === 4 && $by['SUM-DRUM-1']['marked'] === 1
+            && $by['SUM-DRUM-2']['marked'] === 0 && $by['SUM-DRUM-1']['of'] === count($bd['skills']);
+    })());
+    chk('levels are named, not scored — no number reaches the UI',
+        ($bd['levels'][1] ?? '') === 'not yet' && ($bd['levels'][4] ?? '') === 'can teach it');
+
+    // Admin-editable, the same way the behaviour presets and course catalogue are.
+    chk('an admin edits a course\'s skill list', (function () {
+        $r = backend_dispatch('admin.course.skills', ['requesterId' => 'NGG-2025-0099',
+            'skills' => ['Talking Drums' => ['Holds a steady pulse', 'Plays a solo', 'Plays a solo', '']]]);
+        return !empty($r['ok']) && course_skills('Talking Drums') === ['Holds a steady pulse', 'Plays a solo'];
+    })());
+    chk('…and an empty list means "no skills here", not "fall back to the seed"', (function () {
+        backend_dispatch('admin.course.skills', ['requesterId' => 'NGG-2025-0099', 'skills' => ['Talking Drums' => []]]);
+        return course_skills('Talking Drums') === []
+            && backend_dispatch('instructor.skills.mark', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-1',
+                'course' => 'Talking Drums', 'marks' => ['Holds a steady pulse' => 3]])['error'] === 'no_skills_for_course';
+    })());
+    chk('editing the skill list needs the summer capability',
+        backend_dispatch('admin.course.skills', ['requesterId' => 'NGG-2025-0001', 'skills' => []])['error'] === 'forbidden');
+    setting_set('course_skills', [], 'test');   // back to the seeds for what follows
+
+    // ── Staff performance ──
+    /* The pattern this board exists to catch: the same keen child starred over
+     * and over. Volume and reach have to be visibly different numbers, or
+     * "coverage" can be counting either and nobody would know. */
+    foreach ([2, 3, 4] as $d) {
+        db_insert('member_stars', ['subjectId' => 'SUM-PIANO', 'subjectType' => 'student', 'givenById' => 'VOL-INS-1',
+            'stars' => 2, 'category' => 'participation', 'note' => 'again', 'centre' => 'Egbeda',
+            'date' => gmdate('Y-m-d', time() - $d * 86400), 'createdAt' => now_iso()]);
+    }
+    $perf = backend_dispatch('admin.staff.performance', ['requesterId' => 'NGG-2025-0099', 'days' => 30]);
+    chk('the staff board covers mentors and instructors together', (function () use ($perf) {
+        if (empty($perf['ok'])) return false;
+        $kinds = array_unique(array_column($perf['staff'], 'kind'));
+        return in_array('mentor', $kinds, true) && in_array('instructor', $kinds, true);
+    })());
+    /* The join that decides whether this screen is useful or a lie. Activity
+     * is filed under the signed-in id — a memberId for a mentor with an
+     * account, a volunteerId for a cardholder — so a naive join shows every
+     * mentor at zero and the programme looks dead. */
+    chk('a mentor\'s work counts even though they sign in with a member account', (function () use ($perf) {
+        foreach ($perf['staff'] as $s) if ($s['fullName'] === 'Mia Mentor') return $s['stars'] > 0;
+        return false;
+    })());
+    /* And so does the date of it. "Last active" read off the staff id alone
+     * would show every account-holding mentor as never having worked — the
+     * board's headline signal, inverted. */
+    chk('…including when they were last active', (function () use ($perf) {
+        foreach ($perf['staff'] as $s) if ($s['fullName'] === 'Mia Mentor') {
+            return $s['lastActive'] === gmdate('Y-m-d') && $s['quietDays'] === 0;
+        }
+        return false;
+    })());
+    chk('an instructor\'s session logs and remarks are counted', (function () use ($perf) {
+        foreach ($perf['staff'] as $s) if ($s['fullName'] === 'Ife Instructor') {
+            return $s['sessions'] === 1 && $s['remarks'] === 4 && $s['flags'] === 1 && $s['skillMarks'] >= 1;
+        }
+        return false;
+    })());
+    /* Coverage, not volume. The pattern worth catching is the mentor who stars
+     * the same three keen children every week and never the other twenty. */
+    /* Coverage, not volume, and against their OWN class. "Twelve stars" means
+     * one thing for a mentor with eight children and another with forty. */
+    chk('coverage is measured against their own class, not the whole centre', (function () use ($perf) {
+        $own   = (int)db_row("SELECT COUNT(*) c FROM summer_students WHERE status='active' AND centre='Egbeda' AND track IN ('Piano','Talking Drums')")['c'];
+        $whole = (int)db_row("SELECT COUNT(*) c FROM summer_students WHERE status='active' AND centre='Egbeda'")['c'];
+        foreach ($perf['staff'] as $s) if ($s['fullName'] === 'Ife Instructor') {
+            return $s['classSize'] === $own && $own > 0 && $own < $whole
+                // Four stars, one child. Coverage is the child, not the star —
+                // otherwise starring one favourite four times reads as four
+                // children reached.
+                && $s['stars'] === 4 && $s['childrenStarred'] === 1
+                && $s['coverage'] === (int)round(100 * $s['childrenStarred'] / $own);
+        }
+        return false;
+    })());
+    chk('the quietest staff sort to the top — the screen exists to find them', (function () use ($perf) {
+        $last = null;
+        foreach ($perf['staff'] as $s) {
+            if ($last !== null && $last !== '' && $s['lastActive'] !== '' && strcmp($s['lastActive'], $last) < 0) return false;
+            $last = $s['lastActive'];
+        }
+        return $perf['staff'][0]['lastActive'] === '' && $perf['totals']['silent'] > 0;
+    })());
+    chk('someone who has never filed anything reads as silent, not as zero-out-of-zero', (function () use ($perf) {
+        foreach ($perf['staff'] as $s) if ($s['lastActive'] === '') return $s['quietDays'] === null;
+        return false;
+    })());
+    chk('a scoped admin sees only their own centres\' staff', (function () use ($SCOPED) {
+        db_insert('mentors', ['mentorId' => 'MEN-AY', 'fullName' => 'Ayo Elsewhere', 'email' => 'ayoels@example.com',
+            'status' => 'active', 'centre' => 'Ayobo', 'createdAt' => now_iso()]);
+        $all = backend_dispatch('admin.staff.performance', ['requesterId' => 'NGG-2025-0099']);
+        $sc  = backend_dispatch('admin.staff.performance', ['requesterId' => $SCOPED]);
+        $an = array_column($all['staff'], 'fullName'); $sn = array_column($sc['staff'], 'fullName');
+        return in_array('Ayo Elsewhere', $an, true) && !in_array('Ayo Elsewhere', $sn, true) && in_array('Mia Mentor', $sn, true);
+    })());
+    chk('the staff board is gated to the people capability',
+        backend_dispatch('admin.staff.performance', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+    chk('the window is clamped to something a query can serve', (function () {
+        return backend_dispatch('admin.staff.performance', ['requesterId' => 'NGG-2025-0099', 'days' => 9999])['days'] === 180
+            && backend_dispatch('admin.staff.performance', ['requesterId' => 'NGG-2025-0099', 'days' => -5])['days'] === 1;
     })());
 })();
 
