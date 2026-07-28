@@ -1052,14 +1052,12 @@ function public_summer_profile(array $p): array {
      * an existing link degrades to a handle-only page instead of 404ing. */
     $profile = summer_student_public($s, true);
     if ($handle !== '' && $token === '') {
-        $cs = [];
-        foreach (db_all("SELECT type, status FROM consents WHERE studentId = ? AND type IN ('site_visibility','media') ORDER BY id",
-                        [(string)$s['studentId']]) as $c) {
-            $cs[(string)$c['type']] = (string)$c['status'];   // append-only: last row wins
-        }
-        $verified = ((string)($s['regStatus'] ?? 'verified')) === 'verified';
-        $mayName  = $verified && (($cs['site_visibility'] ?? '') === 'granted');
-        $mayPhoto = $mayName && (($cs['media'] ?? '') === 'granted');
+        // Same policy as the board and every other public surface. Written out
+        // here once too often: this file, admin2.php and members.php each had
+        // their own copy, and the one surface that never got a copy — the
+        // community showcase — shipped with no gate at all.
+        $g = consent_may_publish((string)$s['studentId']);
+        $mayName = $g['mayName']; $mayPhoto = $g['mayPhoto'];
         if (!$mayName)  $profile['fullName'] = '';
         if (!$mayPhoto) $profile['photoUrl'] = '';
         $profile['named'] = $mayName;

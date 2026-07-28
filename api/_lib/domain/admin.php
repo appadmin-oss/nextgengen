@@ -75,14 +75,106 @@ function admin_members_list(array $p): array {
     if (!empty($p['all'])) {
         $rows = db_all('SELECT * FROM members' . $whereSql . ' ORDER BY createdAt DESC LIMIT 5000', $params);
         audit('admin.members.export', $g['requester']['memberId'], '', ['count' => count($rows)], (string)($p['ip'] ?? ''));
-        return ['ok' => true, 'total' => $total, 'members' => array_map('public_member', $rows)];
+        return ['ok' => true, 'total' => $total, 'members' => admin_members_with_consent($rows)];
     }
     $pageSize = min(200, max(1, (int)($p['pageSize'] ?? 50)));
     $page = max(1, (int)($p['page'] ?? 1));
     $offset = ($page - 1) * $pageSize;
     $sql = 'SELECT * FROM members' . $whereSql . ' ORDER BY createdAt DESC LIMIT ? OFFSET ?';
     $rows = db_all($sql, array_merge($params, [$pageSize, $offset]));
-    return ['ok' => true, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize, 'members' => array_map('public_member', $rows)];
+    return ['ok' => true, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize,
+            'members' => admin_members_with_consent($rows),
+            // How much of the roster is still unrecorded, for the whole filtered
+            // set rather than this page. Without it an admin paging through 400
+            // children has no idea how much work is left.
+            'consentSummary' => admin_members_consent_summary($where, $params)];
+}
+
+/**
+ * Attach each member's publication-consent state, batched.
+ *
+ * One query for the page rather than one per member — the roster is the screen
+ * most likely to be opened with a few hundred rows on it, and a per-row lookup
+ * here is the N+1 that has already had to be undone twice elsewhere.
+ */
+function admin_members_with_consent(array $rows): array {
+    if (!$rows) return [];
+    $ids = array_column($rows, 'memberId');
+    $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
+    $byId = [];
+    foreach (db_all("SELECT studentId, type, status, method, actorName, createdAt FROM consents
+                     WHERE studentId IN $in AND type IN ('site_visibility','media') ORDER BY id", $ids) as $c) {
+        $byId[(string)$c['studentId']][(string)$c['type']] = [
+            'status' => (string)$c['status'], 'method' => (string)($c['method'] ?? ''),
+            'by' => (string)($c['actorName'] ?? ''), 'at' => (string)($c['createdAt'] ?? ''),
+        ];
+    }
+    /* The raw rows above are for DISPLAY — method, who recorded it, when — and
+     * the decision itself comes from the shared policy. Re-deriving "is this
+     * child publishable" here would be a fifth copy of the rule, and an admin
+     * screen quietly disagreeing with the public board about who is named is
+     * worse than either being wrong on its own. */
+    $decide = consent_may_publish_many($ids);
+    return array_map(function ($r) use ($byId, $decide) {
+        $m = public_member($r);
+        $mid = (string)$r['memberId'];
+        $cs = $byId[$mid] ?? [];
+        $d = $decide[$mid] ?? ['mayName' => true, 'gated' => false];
+        $m['consent'] = [
+            'gated' => (bool)$d['gated'],
+            'site_visibility' => $cs['site_visibility'] ?? null,
+            'media' => $cs['media'] ?? null,
+            'mayName' => (bool)$d['mayName'],
+            'handle' => consent_handle_for($mid),
+        ];
+        return $m;
+    }, $rows);
+}
+
+/**
+ * Recorded / unrecorded counts across the whole filtered roster.
+ *
+ * Takes the WHERE terms as a list rather than the assembled string, so both
+ * queries can compose their own clause. Slicing a prefix off a built SQL
+ * string to reuse it is the kind of thing that works until a filter changes
+ * shape underneath it.
+ */
+function admin_members_consent_summary(array $where, array $params): array {
+    $terms = array_merge($where, ["m.role = 'member'"]);
+    $sql = ' FROM members m WHERE ' . implode(' AND ', $terms);
+    $total = (int)(db_row('SELECT COUNT(*) c' . $sql, $params)['c'] ?? 0);
+    // Last row wins, matching how the ledger is read everywhere else.
+    $named = (int)(db_row('SELECT COUNT(*) c' . $sql . "
+                           AND (SELECT status FROM consents c2 WHERE c2.studentId = m.memberId
+                                AND c2.type = 'site_visibility' ORDER BY c2.id DESC LIMIT 1) = 'granted'",
+                          $params)['c'] ?? 0);
+    return ['participants' => $total, 'named' => $named, 'unrecorded' => max(0, $total - $named)];
+}
+
+/**
+ * Record a guardian's publication decision for a member.
+ *
+ * Staff record what a guardian actually said — on a paper form, by phone, in
+ * person. `method` is mandatory for that reason: a ledger row that does not
+ * say how the decision was obtained is a checkbox, not evidence.
+ *
+ * Deliberately one child at a time. A bulk "mark this whole centre consented"
+ * button is the obvious next request and the wrong feature: it manufactures a
+ * legal permission for people nobody spoke to, and the resulting ledger would
+ * be worth nothing precisely when it mattered.
+ */
+function admin_member_consent(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $mid = trim((string)($p['memberId'] ?? ''));
+    $m = db_row('SELECT memberId, role FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $r = consent_record($mid, (string)($p['type'] ?? ''), (string)($p['status'] ?? ''),
+                        (string)($p['method'] ?? ''), (string)($g['requester']['fullName'] ?? 'Staff'));
+    if (empty($r['ok'])) return $r;
+    audit('admin.member.consent', $g['requester']['memberId'], $mid,
+          ['type' => (string)($p['type'] ?? ''), 'status' => (string)($p['status'] ?? ''),
+           'method' => (string)($p['method'] ?? '')], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'consent' => consent_state($mid), 'mayName' => consent_may_publish($mid)['mayName']];
 }
 
 function admin_members_upsert(array $p): array {

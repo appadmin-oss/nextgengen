@@ -210,6 +210,7 @@ const LEADERBOARD = {
             : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : b === 'centre' ? 'CentreDetail'
             : b === 'builder' ? 'SummerFormBuilder' : b === 'gatereg' ? 'GateRegister'
             : b === 'arcade' ? 'CmArcade'
+            : b === 'consent' ? 'MemberConsentEditor'
             : b === 'roster' ? 'SummerRoster'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
@@ -441,6 +442,25 @@ const LEADERBOARD = {
                                  programmeDay: true, compliance: { state: 'warned' } });
       },
     };
+  } else if (b === 'consent') {
+    /* Recording a guardian's decision about whether a child may be named and
+       pictured on the public site. What matters is the payload: the wrong type
+       or a missing method silently records the wrong permission for a real
+       child, and it looks identical on screen. */
+    window.__consent = [];
+    window.NGGApi.admin.members = window.NGGApi.admin.members || {};
+    window.NGGApi.admin.members.consent = function (memberId, type, status, method) {
+      window.__consent.push({ memberId: memberId, type: type, status: status, method: method });
+      var st = {};
+      st[type] = { status: status, method: method, by: 'Admin User', at: '2026-07-28T10:00:00Z' };
+      return Promise.resolve({ consent: st, mayName: type === 'site_visibility' && status === 'granted' });
+    };
+    var seeded = new URLSearchParams(location.search).get('seeded') === '1';
+    props = { member: { memberId: 'NGG-2025-0777', fullName: 'Ngozi Balogun', role: 'member',
+      consent: seeded
+        ? { gated: true, handle: 'ngg0777', mayName: true,
+            site_visibility: { status: 'granted', method: 'Paper form', by: 'Prior Staff', at: '2026-06-01T09:00:00Z' } }
+        : { gated: true, handle: 'ngg0777', mayName: false } } };
   } else if (b === 'arcade') {
     /* The Arcade grades on the server, so the interesting client behaviour is
        what it SENDS: the answers must line up with the questions they were
@@ -1878,6 +1898,71 @@ const LEADERBOARD = {
        arcTErrs.length === 0 && arcTGraded && timedOut.length >= 1);
     ok('…exactly once, however the ticking clock and a slow grade overlap (' + timedOut.length + ')',
        timedOut.length === 1);
+
+    /* ── Recording publication consent for a child ─────────────────────────
+     * The payload is the whole point. A wrong type or a missing method records
+     * the wrong permission for a real child and looks identical on screen. */
+    const con = await browser.newPage();
+    const conErrs = [];
+    con.on('pageerror', e => conErrs.push(String(e.message)));
+    await con.goto(BASE + '/tests/_boards_fixture.html?board=consent&mode=ok', { waitUntil: 'networkidle' });
+    await con.waitForSelector('.admin-select', { timeout: 15000 });
+    const conTxt0 = await con.evaluate(() => document.body.innerText);
+    ok('the consent editor mounts with no script error', conErrs.length === 0);
+    if (conErrs.length) console.error('       ', conErrs.slice(0, 3).join(' | '));
+    ok('…offering both grants the public surfaces actually read',
+       /Feature on our website/.test(conTxt0) && /Photos & media/.test(conTxt0));
+    /* "Not recorded" and "Declined" must not read the same. Nobody has been
+       asked yet — that is a task outstanding, not a decision made. */
+    ok('…showing an unrecorded child as unrecorded, not as declined',
+       /Not recorded/.test(conTxt0) && !/Declined ·/.test(conTxt0));
+    ok('…and naming the handle they appear under meanwhile', /ngg0777/.test(conTxt0));
+    ok('…with both grants addressable as their own rows',
+       await con.evaluate(() => !!document.querySelector('[data-consent-row="site_visibility"]')
+                             && !!document.querySelector('[data-consent-row="media"]')));
+
+    // Record a grant with a non-default method, so the method in the payload
+    // can only have come from the control.
+    await con.evaluate(() => {
+      const sel = document.querySelector('.admin-select');
+      sel.value = 'By phone';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const conClick = (type, label) => con.evaluate(([t, l]) => {
+      const row = document.querySelector('[data-consent-row="' + t + '"]');
+      Array.from(row.querySelectorAll('button')).find(b => b.textContent.trim() === l).click();
+    }, [type, label]);
+    await conClick('site_visibility', 'Granted');
+    await con.waitForFunction(() => (window.__consent || []).length > 0, null, { timeout: 8000 });
+    const sentCon = await con.evaluate(() => window.__consent);
+    ok('granting sends exactly one record (' + sentCon.length + ')', sentCon.length === 1);
+    ok('…for the right child, the right consent type, and the chosen method ('
+       + JSON.stringify(sentCon[0]) + ')',
+       sentCon[0].memberId === 'NGG-2025-0777' && sentCon[0].type === 'site_visibility'
+       && sentCon[0].status === 'granted' && sentCon[0].method === 'By phone');
+    const conTxt1 = await con.evaluate(() => document.body.innerText);
+    ok('…and the row updates to show what was recorded and by whom',
+       /Granted · By phone/.test(conTxt1) && /Admin User/.test(conTxt1));
+
+    // Declining is a first-class answer, not just "leave it blank".
+    await conClick('media', 'Declined');
+    await con.waitForFunction(() => (window.__consent || []).length > 1, null, { timeout: 8000 });
+    const sentCon2 = await con.evaluate(() => window.__consent);
+    ok('declining the photo grant is recorded as its own decision',
+       sentCon2.length === 2 && sentCon2[1].type === 'media' && sentCon2[1].status === 'declined');
+    await con.close();
+
+    // A decision recorded earlier has to be visible, or staff re-ask a
+    // guardian who already answered.
+    const con2 = await browser.newPage();
+    await con2.goto(BASE + '/tests/_boards_fixture.html?board=consent&mode=ok&seeded=1', { waitUntil: 'networkidle' });
+    await con2.waitForSelector('.admin-select', { timeout: 15000 });
+    const seededTxt = await con2.evaluate(() => document.body.innerText);
+    await con2.close();
+    ok('an existing decision shows its method, who recorded it and when',
+       /Granted · Paper form/.test(seededTxt) && /Prior Staff/.test(seededTxt) && /2026-06-01/.test(seededTxt));
+    ok('…while the grant nobody has answered still reads as unrecorded',
+       /Not recorded/.test(seededTxt));
 
   } catch (e) { fail++; console.error('  ✗ harness error: ' + (e && e.message)); }
   // KEEP_FIX=1 leaves tests/_boards_fixture.html on disk so a failing board can

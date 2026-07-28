@@ -352,6 +352,9 @@
         upsert: (data) => request('/admin/members.php', { body: data }),
         reset2fa: (memberId) => request('/admin/members.php', { body: { action: 'reset2fa', memberId } }),
         resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
+        // Record a guardian's publication decision. `method` is how it was
+        // obtained (paper form, phone, in person) and the server requires it.
+        consent:       (memberId, type, status, method) => request('/admin/members.php', { body: { action: 'consent', memberId, type, status, method } }),
         remove: (memberId) => request('/admin/members.php', { body: { action: 'delete', memberId } }),
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),

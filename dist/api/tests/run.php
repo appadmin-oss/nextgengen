@@ -4194,6 +4194,11 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
        some or the whole block is vacuous. */
     db_insert('member_stats', ['memberId' => 'PUB-SUM-1', 'xpTotal' => 900, 'level' => 4, 'badgeCount' => 2, 'streak' => 3]);
     db_insert('member_stats', ['memberId' => 'PUB-NGG-1', 'xpTotal' => 500, 'level' => 3, 'badgeCount' => 1, 'streak' => 2]);
+    /* BOTH are granted publication consent, so this block tests the `type`
+       filter and nothing else. Leaving the summer child unconsented would hide
+       their name for the other reason and the assertion below would pass even
+       with the filter gone. */
+    foreach (['PUB-SUM-1', 'PUB-NGG-1'] as $mid) consent_record($mid, 'site_visibility', 'granted', 'Paper form', 'Staff');
     $top = centre_top_students('Publicity Centre', 10);
     $names = array_map(fn($t) => $t['first'], $top);
     chk('the public centre page lists its NGG members (control — else the next check proves nothing)',
@@ -4297,6 +4302,103 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     chk('a grant on an unverified registration is not honoured',
         $row !== null && $row['author'] === 'A member' && $row['mediaUrl'] === '');
     db_update('summer_students', ['regStatus' => 'verified'], ['studentId' => $SHOW]);
+
+    /* ── The Club board is gated the same way ─────────────────────────────
+       Club members are minors too — their record carries a date of birth, a
+       guardian and a school — and their names went out on a public board from
+       the day it shipped, for no better reason than that they had no ledger. */
+    $KID = 'CONSENT-KID-1';
+    db_insert('members', ['memberId' => $KID, 'fullName' => 'Ngozi Balogun', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'member', 'centre' => 'Consent Centre', 'track' => 'Tech',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('member_stats', ['memberId' => $KID, 'xpTotal' => 4200, 'level' => 6, 'badgeCount' => 3, 'streak' => 5]);
+    $boardRow = function () use ($KID) {
+        foreach (backend_dispatch('public.leaderboard', ['limit' => 50])['leaderboard'] as $row) {
+            if ($row['memberId'] === $KID) return $row;
+        }
+        return null;
+    };
+    $row = $boardRow();
+    chk('a Club member with no recorded consent is on the board (control)', $row !== null);
+    chk('…but is NOT named', $row !== null && $row['named'] === false
+        && $row['first'] !== 'Ngozi' && $row['initial'] === '');
+    chk('…and stands in under a handle derived from the id, never from the name',
+        $row !== null && $row['first'] === consent_handle_for($KID) && strpos($row['first'], 'ngozi') === false);
+    chk('…while keeping their rank, score and centre, so nothing is lost but the name',
+        $row !== null && $row['xp'] === 4200 && $row['level'] === 6 && $row['centre'] === 'Consent Centre');
+    /* Absence of a record is not a refusal, and it is not permission either.
+       This is the direction that has to default safe. */
+    chk('…and a DECLINED grant looks the same as no record at all', (function () use ($KID, $boardRow) {
+        consent_record($KID, 'site_visibility', 'declined', 'Paper form', 'Staff');
+        $r = $boardRow();
+        return $r !== null && $r['named'] === false;
+    })());
+    chk('a granted site_visibility puts the real name on the board', (function () use ($KID, $boardRow) {
+        consent_record($KID, 'site_visibility', 'granted', 'Paper form', 'Staff');
+        $r = $boardRow();
+        return $r !== null && $r['named'] === true && $r['first'] === 'Ngozi' && $r['initial'] === 'B.';
+    })());
+    chk('…and withdrawing it takes the name back off on the next request', (function () use ($KID, $boardRow) {
+        consent_record($KID, 'site_visibility', 'declined', 'By phone', 'Staff');
+        $r = $boardRow();
+        return $r !== null && $r['named'] === false;
+    })());
+    // The centre page reads the same ledger, so the two cannot drift apart.
+    chk('the public centre page applies the same rule', (function () use ($KID) {
+        consent_record($KID, 'site_visibility', 'granted', 'Paper form', 'Staff');
+        $named = centre_top_students('Consent Centre', 10);
+        consent_record($KID, 'site_visibility', 'declined', 'Paper form', 'Staff');
+        $hidden = centre_top_students('Consent Centre', 10);
+        return count($named) === 1 && $named[0]['first'] === 'Ngozi' && $named[0]['named'] === true
+            && count($hidden) === 1 && $hidden[0]['named'] === false && $hidden[0]['first'] !== 'Ngozi';
+    })());
+    /* Staff are adults acting professionally, and role is the discriminator
+       rather than type — a child promoted out of the Summer School keeps role
+       'member' while their type changes. */
+    chk('a staff account is not gated', consent_may_publish('NGG-2025-0099')['gated'] === false);
+    chk('…and a participant is', consent_may_publish($KID)['gated'] === true);
+
+    // ── Recording a decision through the admin surface ──────────────────
+    chk('recording consent needs a method — an unexplained row is not evidence',
+        backend_dispatch('admin.members.consent', ['requesterId' => $SU, 'memberId' => $KID,
+            'type' => 'site_visibility', 'status' => 'granted', 'method' => '  '])['error'] === 'method_required');
+    chk('…and a status that is neither granted nor declined is refused',
+        backend_dispatch('admin.members.consent', ['requesterId' => $SU, 'memberId' => $KID,
+            'type' => 'site_visibility', 'status' => 'maybe', 'method' => 'Paper form'])['error'] === 'bad_status');
+    chk('…and a consent type the programme does not have is refused',
+        backend_dispatch('admin.members.consent', ['requesterId' => $SU, 'memberId' => $KID,
+            'type' => 'sell_their_data', 'status' => 'granted', 'method' => 'Paper form'])['error'] === 'bad_type');
+    chk('recording consent is gated from a non-staff member',
+        backend_dispatch('admin.members.consent', ['requesterId' => 'NGG-2025-0001', 'memberId' => $KID,
+            'type' => 'site_visibility', 'status' => 'granted', 'method' => 'Paper form'])['error'] === 'forbidden');
+    chk('an admin records the decision, and it takes effect', (function () use ($SU, $KID, $boardRow) {
+        $r = backend_dispatch('admin.members.consent', ['requesterId' => $SU, 'memberId' => $KID,
+            'type' => 'site_visibility', 'status' => 'granted', 'method' => 'In person']);
+        $b = $boardRow();
+        return !empty($r['ok']) && $r['mayName'] === true && $b['named'] === true && $b['first'] === 'Ngozi';
+    })());
+    /* Who recorded it and how are the difference between a record and a
+       checkbox — the programme has to be able to stand behind this. */
+    chk('…stamped with the method and the staff member who entered it', (function () use ($KID) {
+        $st = consent_state($KID);
+        return $st['site_visibility']['method'] === 'In person'
+            && $st['site_visibility']['by'] === 'Admin User';
+    })());
+    chk('the roster reports how much of the cohort is still unrecorded', (function () use ($SU) {
+        $r = backend_dispatch('admin.members.list', ['requesterId' => $SU, 'centre' => 'Consent Centre']);
+        $sum = $r['consentSummary'];
+        return $sum['participants'] === 1 && $sum['named'] === 1 && $sum['unrecorded'] === 0;
+    })());
+    chk('…and each row carries its own state for the drawer', (function () use ($SU, $KID) {
+        foreach (backend_dispatch('admin.members.list', ['requesterId' => $SU, 'centre' => 'Consent Centre'])['members'] as $m) {
+            if ($m['memberId'] === $KID) {
+                return $m['consent']['gated'] === true && $m['consent']['mayName'] === true
+                    && $m['consent']['site_visibility']['status'] === 'granted'
+                    && $m['consent']['handle'] === consent_handle_for($KID);
+            }
+        }
+        return false;
+    })());
 
     /* Adults who signed up to be listed are not gated by a ledger that does
        not describe them. */

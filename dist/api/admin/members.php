@@ -35,6 +35,12 @@ if ($method === 'POST') {
         $args = ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'caps' => $body['caps'] ?? [], 'ip' => client_ip()];
         if (array_key_exists('centreScope', $body)) $args['centreScope'] = $body['centreScope']; // only when explicitly set — avoids clobbering
         $res = gs_call('admin.members.caps', $args);
+    } elseif ($action === 'consent') {
+        // Recording a guardian's publication decision for a child. Append-only;
+        // `method` says how it was obtained and is required by the domain layer.
+        $res = gs_call('admin.members.consent', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '',
+            'type' => $body['type'] ?? '', 'status' => $body['status'] ?? '', 'method' => $body['method'] ?? '',
+            'ip' => client_ip()]);
     } elseif ($action === 'resetPassword') {
         $res = gs_call('admin.members.resetPassword', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
     } else {

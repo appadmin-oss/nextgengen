@@ -263,10 +263,7 @@ function public_status(array $p): array {
      * decision — which is how a withdrawal takes effect. It is read live on
      * every poll, so a guardian who withdraws consent drops off the public
      * board within one refresh rather than at some later rebuild. */
-    $consentOf = [];
-    foreach (db_all("SELECT studentId, type, status FROM consents WHERE type IN ('site_visibility','media') ORDER BY id") as $c) {
-        $consentOf[(string)$c['studentId']][(string)$c['type']] = (string)$c['status'];
-    }
+    $consentOf = consent_may_publish_many(array_column($studs, 'studentId'));
     $starAgg = []; foreach (db_all("SELECT subjectId, SUM(stars) s, SUM(CASE WHEN date >= ? THEN stars ELSE 0 END) w FROM member_stars GROUP BY subjectId", [$weekAgo]) as $r) $starAgg[(string)$r['subjectId']] = ['s' => (int)$r['s'], 'w' => (int)$r['w']];
     $attAgg = []; foreach (db_all("SELECT studentId, COUNT(DISTINCT date) c FROM attendance WHERE date >= ? GROUP BY studentId", [$since]) as $r) $attAgg[(string)$r['studentId']] = (int)$r['c'];
     $schoolDays = max(1, (int)(db_row("SELECT COUNT(DISTINCT date) c FROM attendance WHERE date >= ?", [$since])['c'] ?? 1));
@@ -276,13 +273,10 @@ function public_status(array $p): array {
         $st = $starAgg[$sid] ?? ['s' => 0, 'w' => 0];
         $days = $attAgg[$sid] ?? 0;
         $handle = (string)$s['handle']; if ($handle === '') $handle = 'ngg' . substr($sid, -4);
-        // A registration the guardian never completed cannot have produced a
-        // valid grant, whatever the ledger says — verified is a second lock on
-        // the same door.
-        $verified  = ((string)($s['regStatus'] ?? 'verified')) === 'verified';
-        $cs        = $consentOf[$sid] ?? [];
-        $mayName   = $verified && (($cs['site_visibility'] ?? '') === 'granted');
-        $mayPhoto  = $mayName && (($cs['media'] ?? '') === 'granted');
+        // Including the regStatus lock — a registration the guardian never
+        // completed cannot have produced a valid grant, whatever the ledger says.
+        $mayName   = (bool)($consentOf[$sid]['mayName'] ?? false);
+        $mayPhoto  = (bool)($consentOf[$sid]['mayPhoto'] ?? false);
         $photo     = $mayPhoto ? normalize_image_url($s['photoUrl'] ?? '') : '';
         $members[] = [
             'handle' => $handle, 'centre' => (string)$s['centre'], 'faculty' => ((string)$s['track']) ?: 'General',

@@ -130,15 +130,32 @@ function public_leaderboard(array $p): array {
         }
     }
 
+    /* Consent, batched. This board is PUBLIC and every row on it is a child:
+     * a Club member's record carries a date of birth, a guardian and a school.
+     * The summer board has always withheld a name until a guardian granted
+     * site_visibility; this one published every name from the day it shipped,
+     * for no better reason than that Club members had no ledger to consult.
+     *
+     * A child with no recorded decision is NOT named — a missing record means
+     * nobody asked, and nobody asked is not yes. They keep their place, their
+     * rank and their score under a handle derived from their id, exactly as an
+     * unconsented summer student does. */
+    $consentOf = $rows ? consent_may_publish_many(array_column($rows, 'memberId')) : [];
+
     $out = []; $rank = 0;
     foreach ($rows as $r) {
         $rank++;
+        $mid = (string)$r['memberId'];
+        $mayName = (bool)($consentOf[$mid]['mayName'] ?? false);
         $parts = preg_split('/\s+/', trim((string)$r['fullName'])) ?: [];
-        $first = $parts[0] ?? 'Member';
-        $initial = count($parts) > 1 ? strtoupper(substr((string)end($parts), 0, 1)) . '.' : '';
-        $st = $starOf[(string)$r['memberId']] ?? ['total' => 0, 'week' => 0];
+        $first = $mayName ? ($parts[0] ?? 'Member') : consent_handle_for($mid);
+        $initial = ($mayName && count($parts) > 1) ? strtoupper(substr((string)end($parts), 0, 1)) . '.' : '';
+        $st = $starOf[$mid] ?? ['total' => 0, 'week' => 0];
         $out[] = [
-            'rank' => $rank, 'memberId' => (string)$r['memberId'], 'first' => $first, 'initial' => $initial,
+            'rank' => $rank, 'memberId' => $mid, 'first' => $first, 'initial' => $initial,
+            // Explicit, so nothing downstream has to guess whether `first` is a
+            // name or a stand-in — an avatar that prints its initial, say.
+            'named' => $mayName,
             'centre' => (string)($r['centre'] ?? ''), 'xp' => (int)$r['xp'], 'level' => (int)$r['level'],
             'streak' => (int)$r['streak'], 'week' => (int)$r['week'],
             'stars' => $st['total'], 'starsThisWeek' => $st['week'],

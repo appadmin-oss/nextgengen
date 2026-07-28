@@ -1705,15 +1705,20 @@ function centre_top_students(string $centreName, int $limit = 4): array {
                      * simply missing it. */
                     WHERE m.status = 'active' AND m.type = 'NGG' AND m.centre = ?
                     ORDER BY xp DESC, m.fullName ASC LIMIT " . max(1, min(10, $limit)), [$centreName]);
+    // Same public surface, same rule as the leaderboard: no recorded grant, no
+    // name. Not batched — this returns at most ten rows.
     $out = []; $rank = 0;
     foreach ($rows as $r) {
         if ((int)$r['xp'] <= 0) continue; // only rank members who've actually earned XP
         $rank++;
+        $mid = (string)$r['memberId'];
+        $mayName = consent_may_publish($mid)['mayName'];
         $parts = preg_split('/\s+/', trim((string)$r['fullName'])) ?: [];
-        $first = $parts[0] ?? 'Member';
-        $initial = count($parts) > 1 ? strtoupper(substr((string)end($parts), 0, 1)) . '.' : '';
+        $first = $mayName ? ($parts[0] ?? 'Member') : consent_handle_for($mid);
+        $initial = ($mayName && count($parts) > 1) ? strtoupper(substr((string)end($parts), 0, 1)) . '.' : '';
         $out[] = [
-            'rank' => $rank, 'first' => $first, 'initial' => $initial, 'track' => (string)($r['track'] ?? ''),
+            'rank' => $rank, 'first' => $first, 'initial' => $initial, 'named' => $mayName,
+            'track' => (string)($r['track'] ?? ''),
             'xp' => (int)$r['xp'], 'level' => (int)$r['level'], 'badges' => (int)$r['badges'], 'streak' => (int)$r['streak'],
         ];
     }
@@ -1908,26 +1913,134 @@ function admin_cards_data(array $p): array {
  * is how a withdrawal takes effect on the next request rather than at some
  * later rebuild.
  *
- * Anyone who is not a summer student gets ['mayName' => true] — volunteers and
- * mentors are adults who signed up to be listed, and NGG Club members have no
- * consent ledger to consult. That gap is real and deliberate to leave here:
- * closing it means building consent capture for Club members, which is a
- * product decision, not a bug fix. It is NOT a claim that those names are
- * fine to publish.
+ * WHO IS GATED. Children, on both programmes. A summer student, and an NGG
+ * Club member whose role is 'member' — the Club's participants are minors too
+ * (their record carries a date of birth, a guardian and a school), and for a
+ * long time the only reason they were not gated was that nobody had built
+ * them a ledger.
+ *
+ * Everyone else passes through: volunteers and mentors are adults who signed
+ * up to be listed, and a `members` row with any staff role is an adult acting
+ * in a professional capacity. Role is the right discriminator here rather than
+ * `type`, because a child promoted out of the Summer School keeps role
+ * 'member' while their type changes.
+ *
+ * The default for a gated child with no ledger row is NOT NAMED. That is the
+ * only safe direction: a missing record means nobody asked, and nobody asked
+ * is not the same as yes.
  */
 function consent_may_publish(string $subjectId): array {
     if ($subjectId === '') return ['mayName' => false, 'mayPhoto' => false, 'gated' => false];
-    $stu = db_row("SELECT studentId, regStatus FROM summer_students WHERE studentId = ? LIMIT 1", [$subjectId]);
-    if (!$stu) return ['mayName' => true, 'mayPhoto' => true, 'gated' => false];
+
+    $verified = true;
+    $stu = db_row("SELECT regStatus FROM summer_students WHERE studentId = ? LIMIT 1", [$subjectId]);
+    if ($stu) {
+        // A registration the guardian never completed cannot have produced a
+        // valid grant, whatever the ledger says — a second lock on the door.
+        $verified = ((string)($stu['regStatus'] ?? 'verified')) === 'verified';
+    } else {
+        $mem = db_row("SELECT role FROM members WHERE memberId = ? LIMIT 1", [$subjectId]);
+        // Not a child on either programme: nothing to gate.
+        if (!$mem || strtolower((string)($mem['role'] ?? '')) !== 'member') {
+            return ['mayName' => true, 'mayPhoto' => true, 'gated' => false];
+        }
+    }
+
     $cs = [];
     foreach (db_all("SELECT type, status FROM consents WHERE studentId = ? AND type IN ('site_visibility','media') ORDER BY id",
                     [$subjectId]) as $c) {
         $cs[(string)$c['type']] = (string)$c['status'];
     }
-    $verified = ((string)($stu['regStatus'] ?? 'verified')) === 'verified';
     $mayName  = $verified && (($cs['site_visibility'] ?? '') === 'granted');
     $mayPhoto = $mayName && (($cs['media'] ?? '') === 'granted');
     return ['mayName' => $mayName, 'mayPhoto' => $mayPhoto, 'gated' => true];
+}
+
+/**
+ * The same decision for many subjects at once.
+ *
+ * Boards ask this for every row, and a per-row lookup is the N+1 that has had
+ * to be undone twice already in this codebase. It exists mainly so that the
+ * batched callers do not each hand-roll the policy — which is precisely how
+ * the community showcase ended up with no gate at all while two other
+ * surfaces had one.
+ *
+ * Returns a map keyed by id; ids that resolve to nobody are simply absent.
+ */
+function consent_may_publish_many(array $subjectIds): array {
+    $ids = array_values(array_unique(array_filter(array_map('strval', $subjectIds), fn($x) => $x !== '')));
+    if (!$ids) return [];
+    $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
+
+    $verifiedOf = [];   // summer students, by studentId
+    foreach (db_all("SELECT studentId, regStatus FROM summer_students WHERE studentId IN $in", $ids) as $r) {
+        $verifiedOf[(string)$r['studentId']] = ((string)($r['regStatus'] ?? 'verified')) === 'verified';
+    }
+    $roleOf = [];       // members, by memberId
+    foreach (db_all("SELECT memberId, role FROM members WHERE memberId IN $in", $ids) as $r) {
+        $roleOf[(string)$r['memberId']] = strtolower((string)($r['role'] ?? ''));
+    }
+    $csOf = [];
+    foreach (db_all("SELECT studentId, type, status FROM consents
+                     WHERE studentId IN $in AND type IN ('site_visibility','media') ORDER BY id", $ids) as $c) {
+        $csOf[(string)$c['studentId']][(string)$c['type']] = (string)$c['status'];
+    }
+
+    $out = [];
+    foreach ($ids as $id) {
+        $isStudent = array_key_exists($id, $verifiedOf);
+        $isChild   = $isStudent || (($roleOf[$id] ?? '') === 'member');
+        if (!$isChild) { $out[$id] = ['mayName' => true, 'mayPhoto' => true, 'gated' => false]; continue; }
+        $verified = $isStudent ? $verifiedOf[$id] : true;
+        $cs = $csOf[$id] ?? [];
+        $mayName  = $verified && (($cs['site_visibility'] ?? '') === 'granted');
+        $out[$id] = ['mayName' => $mayName, 'gated' => true,
+                     'mayPhoto' => $mayName && (($cs['media'] ?? '') === 'granted')];
+    }
+    return $out;
+}
+
+/**
+ * A stable, non-revealing stand-in for a child who may not be named.
+ *
+ * Derived from the id, never from the name — a handle built out of the name is
+ * not a pseudonym, it is the name with extra steps. Matches the fallback the
+ * summer board already uses for a student with no handle of their own.
+ */
+function consent_handle_for(string $subjectId): string {
+    $tail = strtolower(substr(preg_replace('/[^A-Za-z0-9]/', '', $subjectId), -4));
+    return 'ngg' . ($tail !== '' ? $tail : '0000');
+}
+
+/**
+ * Record a guardian's publication decision for a child. Append-only: the last
+ * row for a type is the current answer, which is how a withdrawal works.
+ *
+ * `method` and `actorName` are not decoration. A ledger row that does not say
+ * how the decision was obtained and who recorded it is a checkbox, not
+ * evidence, and this is the record the programme would have to stand behind.
+ */
+function consent_record(string $subjectId, string $type, string $status, string $method, string $actorName): array {
+    if (!isset(CONSENT_TYPES[$type])) return ['ok' => false, 'error' => 'bad_type'];
+    if (!in_array($status, ['granted', 'declined'], true)) return ['ok' => false, 'error' => 'bad_status'];
+    $method = trim($method);
+    if ($method === '') return ['ok' => false, 'error' => 'method_required'];
+    db_insert('consents', [
+        'studentId' => $subjectId, 'type' => $type, 'status' => $status,
+        'method' => mb_substr($method, 0, 60), 'actorName' => mb_substr(trim($actorName), 0, 120),
+        'createdAt' => now_iso(),
+    ]);
+    return ['ok' => true];
+}
+
+/** The current decision per type for a subject, with how it was recorded. */
+function consent_state(string $subjectId): array {
+    $out = [];
+    foreach (db_all("SELECT type, status, method, actorName, createdAt FROM consents WHERE studentId = ? ORDER BY id", [$subjectId]) as $c) {
+        $out[(string)$c['type']] = ['status' => (string)$c['status'], 'method' => (string)($c['method'] ?? ''),
+                                    'by' => (string)($c['actorName'] ?? ''), 'at' => (string)($c['createdAt'] ?? '')];
+    }
+    return $out;
 }
 
 function consent_doc_settings(): array {

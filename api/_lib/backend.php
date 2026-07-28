@@ -64,6 +64,7 @@ function backend_dispatch(string $op, array $args = []): array {
             // Admin
             'admin.members.list'      => 'admin_members_list',
             'admin.members.upsert'    => 'admin_members_upsert',
+            'admin.members.consent'   => 'admin_member_consent',
             'admin.members.reset2fa'  => 'admin_member_reset_2fa',
             'admin.members.resetPassword' => 'admin_member_reset_password',
             'admin.mentors.list'      => 'admin_mentors_list',

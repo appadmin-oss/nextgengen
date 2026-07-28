@@ -814,12 +814,96 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
           {hasCap && hasCap("rbac") && d.memberId && d.role && d.role !== "member" && (
             <MemberCapsEditor member={d}/>
           )}
+          {d.memberId && (!d.role || d.role === "member") && (
+            <MemberConsentEditor member={d}/>
+          )}
         </div>
         <div className="admin-drawer-foot">
           <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
           <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : (d.memberId ? "Save changes" : "Create member")}</button>
         </div>
       </form>
+    </div>
+  );
+}
+
+/* ---- Publication consent for one child ------------------------------------
+ * Club members are minors — their record carries a date of birth, a guardian
+ * and a school — so their name and face are published only if a guardian said
+ * so. Staff record here what a guardian actually told them, on the paper form
+ * or over the phone, which is how the programme already works.
+ *
+ * `method` is mandatory. A ledger row that does not say how the decision was
+ * obtained is a checkbox, not evidence, and this is the record the programme
+ * would have to stand behind.
+ *
+ * One child at a time, on purpose. A "mark this whole centre consented" button
+ * is the obvious next request and the wrong feature: it manufactures a
+ * permission for people nobody spoke to, and the ledger would then be worth
+ * nothing exactly when it mattered.
+ */
+const CONSENT_METHODS = ["Paper form", "Parent portal", "By phone", "In person", "Email/SMS reply"];
+
+function MemberConsentEditor({ member }) {
+  const [state, setState] = React.useState(member.consent || {});
+  const [method, setMethod] = React.useState(CONSENT_METHODS[0]);
+  const [busy, setBusy] = React.useState("");
+
+  const record = async (type, status) => {
+    setBusy(type + status);
+    try {
+      const r = await NGGApi.admin.members.consent(member.memberId, type, status, method);
+      setState(Object.assign({}, state, r.consent, { mayName: r.mayName }));
+      toast.success(status === "granted" ? "Consent recorded." : "Refusal recorded.", "Saved");
+    } catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(""); }
+  };
+
+  const row = (type, label, note) => {
+    const cur = state[type];
+    const st = cur && cur.status;
+    return (
+      <div key={type} data-consent-row={type} style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap",
+        padding: "10px 0", borderTop: "1px solid var(--line,#e4ddcc)" }}>
+        <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 13.5 }}>{label}</div>
+          <div style={{ fontSize: 12.5, color: "var(--ink-500)" }}>{note}</div>
+          {cur
+            ? <div style={{ fontSize: 12, marginTop: 3, color: st === "granted" ? "#2f7a3f" : "#b03535" }}>
+                {st === "granted" ? "Granted" : "Declined"} · {cur.method || "no method recorded"}
+                {cur.by ? " · by " + cur.by : ""}{cur.at ? " · " + String(cur.at).slice(0, 10) : ""}
+              </div>
+            /* Not "declined" — nobody has been asked. Saying so is the point:
+               it is a task outstanding, not a decision that was made. */
+            : <div style={{ fontSize: 12, marginTop: 3, color: "var(--ink-500)", fontStyle: "italic" }}>
+                Not recorded — this child is not named publicly
+              </div>}
+        </div>
+        <div style={{ display: "flex", gap: 6, flex: "none" }}>
+          <button type="button" className={"btn btn-sm" + (st === "granted" ? " btn-primary" : " btn-ghost")}
+            disabled={!!busy} onClick={() => record(type, "granted")}>{busy === type + "granted" ? "…" : "Granted"}</button>
+          <button type="button" className={"btn btn-sm" + (st === "declined" ? " btn-primary" : " btn-ghost")}
+            disabled={!!busy} onClick={() => record(type, "declined")}>{busy === type + "declined" ? "…" : "Declined"}</button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="admin-field">
+      <span className="admin-label">Publication consent</span>
+      <p className="admin-hint" style={{ margin: "2px 0 8px" }}>
+        What a guardian has agreed may appear on the public website. With nothing recorded this child
+        appears on the boards as <b>{state.handle || "a handle"}</b> — keeping their rank and score, but not their name.
+      </p>
+      <label className="admin-field">
+        <span>How was this decision obtained?</span>
+        <select className="admin-select" value={method} onChange={e => setMethod(e.target.value)}>
+          {CONSENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </label>
+      {row("site_visibility", "Feature on our website", "Their first name and last initial may be shown.")}
+      {row("media", "Photos & media", "Their photograph may be published — needs the one above as well.")}
     </div>
   );
 }
