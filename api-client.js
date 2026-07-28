@@ -539,8 +539,11 @@
         gateRotate: (gateId) => request('/admin/registration.php', { body: { action: 'gate_rotate', gateId } }),
         gateRotation: (gateId, rotateDays, notifyEmail, expiryDays) => request('/admin/registration.php', { body: { action: 'gate_rotation', gateId, rotateDays, notifyEmail: notifyEmail || '', expiryDays: expiryDays || 0 } }),
         gateRevoke: (gateId) => request('/admin/registration.php', { body: { action: 'gate_revoke', gateId } }),
-        list:       () => request('/admin/registration.php' + qs({ view: 'registrations' })),
+        // Search/filter/page are server-side: at a hundred centres the cohort is
+        // far too large to ship to the browser and filter there.
+        list:       (opts) => request('/admin/registration.php' + qs(Object.assign({ view: 'registrations' }, opts || {}))),
         remind:     (studentId) => request('/admin/registration.php', { body: { action: 'remind', studentId } }),
+        remindBulk: (opts) => request('/admin/registration.php', { body: Object.assign({ action: 'remind_bulk' }, opts || {}) }),
         centres:      () => request('/admin/registration.php' + qs({ view: 'centres' })),
         centreUpsert: (data) => request('/admin/registration.php', { body: { action: 'centre_upsert', data } }),
         centreDelete: (centreId) => request('/admin/registration.php', { body: { action: 'centre_delete', centreId } }),

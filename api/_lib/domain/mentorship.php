@@ -140,7 +140,7 @@ function admin_mentor_application_convert(array $p): array {
     if ($existing) { db_update('applications', ['status' => 'accepted'], ['id' => $id]); return ['ok' => true, 'mentorId' => $existing['mentorId'], 'existed' => true]; }
 
     $links = mentorship_links();
-    $newId = new_id('MEN');
+    $newId = new_id('MEN', 'mentors', 'mentorId');
     db_insert('mentors', [
         'mentorId' => $newId, 'fullName' => $a['name'], 'email' => $a['email'],
         'status' => 'pending-checks', 'tracks' => (string)($a['role'] ?? ''), 'centre' => $a['centre'] ?: '',

@@ -1087,3 +1087,14 @@ CREATE TABLE IF NOT EXISTS arcade_scores (
   INDEX idx_arcade_score_player (playerId, game)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (64) ON DUPLICATE KEY UPDATE version = version;
+
+-- 65: indexes for the queries a hundred centres make. `attendance` was indexed
+-- on (cohortId, date) and (studentId, date), neither of which a bare
+-- `WHERE date = ?` can seek on — and "what happened today" is the most-asked
+-- question in the system. `centre` had no index, so every per-centre figure on
+-- the public board scanned the whole student table.
+CREATE INDEX idx_attend_date ON attendance(date);
+CREATE INDEX idx_sstu_centre ON summer_students(centre);
+CREATE INDEX idx_sstu_status_centre ON summer_students(status, centre);
+CREATE INDEX idx_sstu_cohort_reg ON summer_students(cohortId, regStatus);
+INSERT INTO schema_version (version) VALUES (65) ON DUPLICATE KEY UPDATE version = version;

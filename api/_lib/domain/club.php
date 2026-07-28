@@ -33,7 +33,7 @@ function admin_club_promote(array $p): array {
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$sid]);
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     if (($s['status'] ?? '') === 'promoted') return ['ok' => false, 'error' => 'already_promoted'];
-    $newId = new_id('NGG');
+    $newId = new_id('NGG', 'members', 'memberId');
     db_insert('members', [
         'memberId' => $newId, 'fullName' => $s['fullName'], 'email' => '', 'type' => 'NGG',
         'status' => 'active', 'role' => 'member', 'centre' => $s['centre'] ?: 'Egbeda',

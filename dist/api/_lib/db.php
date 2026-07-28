@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 64;
+const NGG_SCHEMA_TARGET = 65;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -51,6 +51,20 @@ function db_conn(): PDO {
     $pdo->exec('PRAGMA journal_mode = WAL');
     $pdo->exec('PRAGMA foreign_keys = ON');
     $pdo->exec('PRAGMA synchronous = NORMAL');
+    /* SQLite allows one writer at a time. WITHOUT a busy timeout, a writer that
+     * finds the database locked fails INSTANTLY with SQLITE_BUSY — it does not
+     * wait, it errors. With a hundred centres checking children in and out at
+     * the same moment that is the single likeliest source of "it just failed"
+     * during a busy morning, and it is a hard error in the middle of somebody's
+     * registration rather than a slow one.
+     *
+     * Ten seconds is generous on purpose: every write here is milliseconds, so
+     * the timeout is only ever reached if something is genuinely wedged, and
+     * waiting is always better than failing a child's check-in. */
+    $pdo->exec('PRAGMA busy_timeout = 10000');
+    // Readers do not block the writer in WAL mode, but they do hold the shared
+    // cache; a bigger page cache keeps a hot board off the disk entirely.
+    $pdo->exec('PRAGMA cache_size = -20000');   // ~20MB, negative = KiB
     db_migrate($pdo);
     db_run_seeds($pdo);
     return $pdo;
@@ -245,6 +259,10 @@ function db_migrate(PDO $db): void {
 
     $db->exec("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)");
     $current = (int)($db->query('SELECT IFNULL(MAX(version),0) FROM schema_version')->fetchColumn() ?: 0);
+    /* Nothing to do is the normal case — every request after the first deploy.
+     * Returning here skips building sixty-odd migration strings, asserting the
+     * ladder and looping over all of them, on every single request. */
+    if ($current === NGG_SCHEMA_TARGET) return;
 
     $migrations = [
         1 => "
@@ -1508,6 +1526,29 @@ function db_migrate(PDO $db): void {
             CREATE INDEX idx_arcade_score_board ON arcade_scores(programme, game, date);
             CREATE INDEX idx_arcade_score_player ON arcade_scores(playerId, game);
         ",
+
+        /* Indexes for the queries a hundred centres actually make.
+         *
+         * Measured on a 20k-student, 200k-attendance database, the query
+         * planner was doing this:
+         *
+         *   per-centre enrolment   SCAN summer_students + temp b-tree
+         *   per-centre attendance  SCAN the whole attendance index
+         *
+         * `attendance` was indexed on (cohortId, date) and (studentId, date),
+         * neither of which a bare `WHERE date = ?` can seek on — and "what
+         * happened today" is the most-asked question in the system. `centre`
+         * had no index at all, so every per-centre figure on the public board
+         * read the entire student table.
+         *
+         * Four indexes, all on read paths that run on every board refresh;
+         * writes here are single rows and pay almost nothing for them. */
+        65 => "
+            CREATE INDEX IF NOT EXISTS idx_attend_date ON attendance(date);
+            CREATE INDEX IF NOT EXISTS idx_sstu_centre ON summer_students(centre);
+            CREATE INDEX IF NOT EXISTS idx_sstu_status_centre ON summer_students(status, centre);
+            CREATE INDEX IF NOT EXISTS idx_sstu_cohort_reg ON summer_students(cohortId, regStatus);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
@@ -1572,7 +1613,20 @@ function db_upsert(string $table, array $insert, array $conflict, array $update)
     db_conn()->prepare($sql)->execute($vals);
 }
 
+/* Query counter, off unless a caller switches it on.
+ *
+ * Exists so a test can assert that an endpoint's query COUNT does not grow
+ * with the number of centres. That is the bug class that made the public board
+ * unservable — seven hundred queries at a hundred centres, fourteen at the two
+ * a dev machine has, so it looked fine everywhere except production. Timing
+ * cannot catch it (a fast machine hides it); counting can. */
+function db_count_start(): void { $GLOBALS['__db_qcount'] = 0; }
+function db_count_read(): int { return (int)($GLOBALS['__db_qcount'] ?? 0); }
+function db_count_stop(): void { unset($GLOBALS['__db_qcount']); }
+function db_tick(): void { if (isset($GLOBALS['__db_qcount'])) $GLOBALS['__db_qcount']++; }
+
 function db_row(string $sql, array $params = []): ?array {
+    db_tick();
     $stmt = db_conn()->prepare($sql);
     $stmt->execute($params);
     $row = $stmt->fetch();
@@ -1580,12 +1634,14 @@ function db_row(string $sql, array $params = []): ?array {
 }
 
 function db_all(string $sql, array $params = []): array {
+    db_tick();
     $stmt = db_conn()->prepare($sql);
     $stmt->execute($params);
     return $stmt->fetchAll();
 }
 
 function db_exec(string $sql, array $params = []): int {
+    db_tick();
     $stmt = db_conn()->prepare($sql);
     $stmt->execute($params);
     return $stmt->rowCount();

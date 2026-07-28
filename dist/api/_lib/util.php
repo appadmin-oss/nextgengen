@@ -24,8 +24,41 @@ function dob_age(string $iso): int {
 
 function rand_hex(int $bytes): string { return bin2hex(random_bytes($bytes)); }
 
-function new_id(string $prefix): string {
-    return $prefix . '-' . gmdate('Y') . '-' . str_pad((string)random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+/**
+ * A human-readable record id: PREFIX-YYYY-NNNN.
+ *
+ * The four-digit tail is a 10,000-value keyspace, and this used to hand one
+ * back without ever checking whether it was taken. That is not a remote risk:
+ * by the birthday bound a collision is more likely than not at ~118 records,
+ * and every insert after a couple of thousand has a percentage chance of
+ * failing outright on the UNIQUE constraint. It surfaced here as an
+ * intermittently-failing test — "UNIQUE constraint failed: members.memberId" —
+ * which in production is a member or mentor that simply could not be created,
+ * at a keyboard, with no explanation.
+ *
+ * `$table`/`$column` make it check. Callers that pass them get a genuinely
+ * unique id; the tail widens after a few tries so a crowded year cannot spin,
+ * and the last resort is wide enough to be unique on its own rather than
+ * returning a value known to be taken.
+ */
+function new_id(string $prefix, string $table = '', string $column = ''): string {
+    $mk = fn(int $digits) => $prefix . '-' . gmdate('Y') . '-'
+        . str_pad((string)random_int(0, (int)(10 ** $digits) - 1), $digits, '0', STR_PAD_LEFT);
+    if ($table === '' || $column === '') return $mk(4);
+    // Identifiers are supplied by this file's own callers, never by input, but
+    // they are interpolated into SQL so they are constrained anyway.
+    if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $table) || !preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $column)) return $mk(4);
+    for ($i = 0; $i < 12; $i++) {
+        $digits = $i < 6 ? 4 : ($i < 10 ? 6 : 8);
+        $id = $mk($digits);
+        try {
+            if (!db_row("SELECT 1 x FROM $table WHERE $column = ? LIMIT 1", [$id])) return $id;
+        } catch (\Throwable $e) {
+            return $mk(4);   // table not there yet — behave as before
+        }
+    }
+    // Twelve collisions in a row means the space is exhausted, not unlucky.
+    return $prefix . '-' . gmdate('Y') . '-' . strtoupper(rand_hex(6));
 }
 
 function new_otp(): string { return str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT); }
@@ -182,6 +215,62 @@ function setting_get(string $key) {
 }
 
 /** Raw string setting value (for scalar settings that aren't JSON objects). */
+/**
+ * Memoise an expensive read on disk for a few seconds.
+ *
+ * For endpoints that are POLLED rather than requested: the public board is
+ * refreshed by a screen at every centre, so at a hundred centres the same
+ * figures are recomputed a hundred times a minute from the same rows. One
+ * computation per window serves all of them.
+ *
+ * Deliberately crude — a file and an mtime, no daemon to install. Failure at
+ * any point falls through to computing it, so a read-only cache directory
+ * degrades to today's behaviour instead of an outage.
+ *
+ * A stale entry is served if the recompute throws, because a board that is
+ * thirty seconds out of date is worth more than an error page.
+ */
+function cache_remember(string $key, int $ttl, callable $fn, string $stamp = '') {
+    global $CONFIG;
+    $dir = ($CONFIG['cache_dir'] ?? sys_get_temp_dir()) . '/_memo';
+    $path = $dir . '/' . preg_replace('/[^a-z0-9_.-]/i', '', $key) . '.json';
+    $age = @filemtime($path);
+    if ($age && (time() - $age) < $ttl) {
+        $raw = @file_get_contents($path);
+        if ($raw !== false) {
+            $hit = json_decode($raw, true);
+            /* `stamp` lets a caller bypass the window when the underlying data
+             * has demonstrably changed. Time alone is the wrong rule for
+             * anything with a safeguarding property attached: a guardian who
+             * withdraws consent must drop off the public board on the next
+             * request, not whenever a timer happens to expire. */
+            if (is_array($hit) && isset($hit['__v']) && isset($hit['__d'])) {
+                if ((string)$hit['__v'] === $stamp) return $hit['__d'];
+            } elseif (is_array($hit) && $stamp === '') {
+                return $hit;
+            }
+        }
+    }
+    try {
+        $fresh = $fn();
+    } catch (\Throwable $e) {
+        // Serve whatever we last had rather than failing the request.
+        $raw = @file_get_contents($path);
+        $stale = $raw === false ? null : json_decode($raw, true);
+        if (is_array($stale) && isset($stale['__d'])) $stale = $stale['__d'];
+        if (is_array($stale)) { error_log('[cache] serving stale ' . $key . ': ' . $e->getMessage()); return $stale; }
+        throw $e;
+    }
+    if (is_array($fresh)) {
+        @mkdir($dir, 0755, true);
+        // Write-then-rename, so a concurrent reader never sees half a file.
+        $tmp = $path . '.' . getmypid() . '.tmp';
+        $store = $stamp === '' ? $fresh : ['__v' => $stamp, '__d' => $fresh];
+        if (@file_put_contents($tmp, json_encode($store, JSON_UNESCAPED_SLASHES)) !== false) @rename($tmp, $path);
+    }
+    return $fresh;
+}
+
 function setting_raw(string $key): ?string {
     $row = db_row('SELECT settingValue FROM settings WHERE settingKey = ?', [$key]);
     return $row ? (string)$row['settingValue'] : null;

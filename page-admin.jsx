@@ -1641,23 +1641,67 @@ function SummerGates() {
 }
 
 /* ── Pending sign-ups — parent-verification queue with resend ─────────────── */
+/* Registrations — the screen for chasing parents who have not consented yet.
+ *
+ * It used to render every registration in the cohort, newest first, with no
+ * search: finding one child meant scrolling, and anyone outside the newest 500
+ * could not be found at all, so their link could never be resent. Search,
+ * filter and paging are all server-side now, because across a hundred centres
+ * the cohort is far too large to ship to a browser and filter there. */
 function SummerPending({ onChange }) {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState("");
-  const load = () => NGGApi.admin.registration.list().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); }, []);
-  const remind = async (id) => { setBusy(id); try { const r = await NGGApi.admin.registration.remind(id); toast.success(r.channels && r.channels.length ? "Reminder sent by " + r.channels.join(" + ") : "Reminder queued."); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
+  // Opens on the queue that this screen exists for, not on everything.
+  const [status, setStatus] = React.useState("parent_pending");
+  const [q, setQ] = React.useState("");
+  const [centre, setCentre] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const [centres, setCentres] = React.useState([]);
+  const [bulk, setBulk] = React.useState(false);
+
+  const load = React.useCallback(() => NGGApi.admin.registration
+    .list({ q: q.trim(), status, centre, page })
+    .then(r => { setData(r); setErr(""); })
+    .catch(e => setErr(e.code || e.message)), [q, status, centre, page]);
+
+  // Debounced: a search box that fires per keystroke is a query per keystroke
+  // against the whole cohort.
+  React.useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
+  React.useEffect(() => { NGGApi.admin.registration.centres().then(r => setCentres(r.centres || [])).catch(() => {}); }, []);
+  React.useEffect(() => { setPage(1); }, [q, status, centre]);
+
+  const remind = async (id) => {
+    setBusy(id);
+    try { const r = await NGGApi.admin.registration.remind(id); toast.success(r.channels && r.channels.length ? "Reminder sent by " + r.channels.join(" + ") : "Reminder queued."); load(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
+  };
+
+  const remindAll = async () => {
+    const where = centre ? " at " + centre : " across every centre";
+    if (!(await dialog.confirm({
+      title: "Resend to everyone still waiting?",
+      body: "Sends the consent link to every parent" + where + " who is still awaiting verification and has not been reminded in the last 24 hours. Up to 100 at a time.",
+      cta: "Send reminders",
+    }))) return;
+    setBulk(true);
+    try {
+      const r = await NGGApi.admin.registration.remindBulk({ centre, quietDays: 1, limit: 100 });
+      toast.success(r.queued ? r.queued + " reminder" + (r.queued === 1 ? "" : "s") + " on the way." : (r.note || "Nobody to remind."));
+      setTimeout(load, 800);
+    } catch (e) { toast.error(e.code || e.message); } finally { setBulk(false); }
+  };
+
   // Render the check-in QR to a PNG so the resent email can embed it (same
   // encoder the ID cards use). Returns "" if the encoder can't load.
   const qrPngData = async (token) => {
     try {
       const lib = await ensureQREncoder(); if (!lib) return "";
-      const q = lib(0, "M"); q.addData((location.origin || "") + "/q/" + String(token)); q.make();
-      const n = q.getModuleCount(), cell = 8, margin = 16, size = n * cell + margin * 2;
+      const qr = lib(0, "M"); qr.addData((location.origin || "") + "/q/" + String(token)); qr.make();
+      const n = qr.getModuleCount(), cell = 8, margin = 16, size = n * cell + margin * 2;
       const cv = document.createElement("canvas"); cv.width = cv.height = size;
       const ctx = cv.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, size, size);
-      ctx.save(); ctx.translate(margin, margin); q.renderTo2dContext(ctx, cell); ctx.restore();
+      ctx.save(); ctx.translate(margin, margin); qr.renderTo2dContext(ctx, cell); ctx.restore();
       return cv.toDataURL("image/png");
     } catch (_) { return ""; }
   };
@@ -1672,24 +1716,81 @@ function SummerPending({ onChange }) {
     } catch (e) { toast.error(e.code === "no_id" ? "No ID issued yet." : (e.code || e.message)); }
     finally { setBusy(""); }
   };
+
   if (err) return <ErrorState title="Couldn't load" code={err} onRetry={load}/>;
-  if (data === null) return <div className="dash-spinner"/>;
-  const rows = data.registrations || [];
-  const pending = rows.filter(r => r.regStatus === "parent_pending");
-  const badge = (s) => s === "verified" ? <span className="chip chip-lime">verified</span> : s === "parent_pending" ? <span className="chip status-draft">awaiting parent</span> : <span className="chip">{s}</span>;
+  const rows = (data && data.registrations) || [];
+  const counts = (data && data.counts) || {};
+  const total = (data && data.total) || 0;
+  const pageSize = (data && data.pageSize) || 25;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const badge = (st) => st === "verified" ? <span className="chip chip-lime">verified</span> : st === "parent_pending" ? <span className="chip status-draft">awaiting parent</span> : <span className="chip">{st}</span>;
+  const TABS = [
+    ["parent_pending", "Awaiting parent", counts.parent_pending || 0],
+    ["verified", "Verified", counts.verified || 0],
+    ["all", "All", (data && data.cohortTotal) || 0],
+  ];
+
   return (
     <div>
-      <p className="admin-hint">{pending.length} awaiting parent verification · {rows.length} total this cohort. Consent + QR bind happen automatically when the parent confirms.</p>
-      {rows.length === 0 ? <div className="admin-empty">No registrations yet — share a gate link to start.</div> :
+      <div className="admin-tabs" style={{ marginBottom: 10 }}>
+        {TABS.map(([v, label, n]) => (
+          <button key={v} className={"admin-tab" + (status === v ? " is-active" : "")} onClick={() => setStatus(v)}>
+            {label}{n ? " · " + n : ""}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+        {/* The caller is the PARENT, so their number and email are searchable
+            too — matching only the child's name is what made this painful. */}
+        <input className="admin-input" style={{ flex: "1 1 260px", minWidth: 0 }} value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Search name, ID, parent phone or email…" aria-label="Search registrations"/>
+        <select className="admin-select" style={{ flex: "0 1 180px" }} value={centre} onChange={e => setCentre(e.target.value)} aria-label="Centre">
+          <option value="">Every centre</option>
+          {centres.map(c => <option key={c.centreId || c.name} value={c.name}>{c.name}</option>)}
+        </select>
+        {status === "parent_pending" && (
+          <button className="btn btn-primary btn-sm" onClick={remindAll} disabled={bulk || !(counts.parent_pending)}>
+            {bulk ? "Sending…" : "Resend to all waiting"}
+          </button>
+        )}
+      </div>
+
+      {data === null ? <div className="dash-spinner"/> :
+        rows.length === 0 ? (
+          <div className="admin-empty">
+            {q ? "Nothing matches “" + q + "”." : status === "parent_pending" ? "Nobody is waiting on a parent. 🎉" : "No registrations yet — share a gate link to start."}
+          </div>
+        ) : (
+        <>
+        <p className="admin-hint" style={{ margin: "0 0 8px" }}>
+          Showing {rows.length} of {total}{centre ? " at " + centre : ""}. Consent + QR bind happen automatically when the parent confirms.
+        </p>
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Student</th><th>Course</th><th>Parent contact</th><th>Consents</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Student</th><th>Centre</th><th>Parent contact</th><th>Waiting</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {rows.map(r => (
               <tr key={r.studentId}>
-                <td><b>{r.fullName}</b><div className="mono admin-cell-sub">{r.studentId}</div></td>
-                <td className="mono" style={{ fontSize: 12 }}>{r.track || "—"}</td>
+                <td><b>{r.fullName}</b><div className="mono admin-cell-sub">{r.studentId}{r.track ? " · " + r.track : ""}</div></td>
+                <td className="mono" style={{ fontSize: 12 }}>{r.centre || "—"}</td>
                 <td className="mono" style={{ fontSize: 12 }}>{r.parentEmail || r.guardianPhone || "—"}</td>
-                <td className="mono" style={{ fontSize: 12 }}>{(r.consents || []).length || 0}</td>
+                {/* How long they have waited and when they were last chased —
+                    without it, staff either re-send to the same family twice or
+                    miss the one who has been waiting a fortnight. */}
+                <td style={{ fontSize: 12 }}>
+                  {r.regStatus === "parent_pending" ? (
+                    <>
+                      <span style={{ fontWeight: 700, color: r.waitingDays >= 7 ? "#b3001b" : r.waitingDays >= 3 ? "#8a5a00" : "inherit" }}>
+                        {r.waitingDays === 0 ? "today" : r.waitingDays + "d"}
+                      </span>
+                      <div className="mono admin-cell-sub">
+                        {r.remindedDaysAgo == null ? "never reminded"
+                          : r.remindedDaysAgo === 0 ? "reminded today" : "reminded " + r.remindedDaysAgo + "d ago"}
+                      </div>
+                    </>
+                  ) : "—"}
+                </td>
                 <td>{badge(r.regStatus)}</td>
                 <td style={{ textAlign: "right" }}>
                   {r.regStatus === "parent_pending" && <button className="btn btn-ghost btn-sm" disabled={busy === r.studentId} onClick={() => remind(r.studentId)}>{busy === r.studentId ? "…" : "Resend link"}</button>}
@@ -1698,7 +1799,16 @@ function SummerPending({ onChange }) {
               </tr>
             ))}
           </tbody>
-        </table></div>}
+        </table></div>
+        {pages > 1 && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", marginTop: 12 }}>
+            <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Back</button>
+            <span className="mono" style={{ fontSize: 12 }}>Page {page} of {pages}</span>
+            <button className="btn btn-ghost btn-sm" disabled={page >= pages} onClick={() => setPage(p => p + 1)}>Next →</button>
+          </div>
+        )}
+        </>
+      )}
     </div>
   );
 }

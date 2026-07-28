@@ -9,7 +9,12 @@ if ($method === 'GET') {
     if ($view === 'forms')           $res = gs_call('admin.forms.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'form')        $res = gs_call('admin.forms.get', ['requesterId' => $s['mid'], 'formId' => (string)($_GET['formId'] ?? 'summer-reg')]);
     elseif ($view === 'gates')       $res = gs_call('admin.gates.list', ['requesterId' => $s['mid']]);
-    elseif ($view === 'registrations') $res = gs_call('admin.registrations.list', ['requesterId' => $s['mid']]);
+    elseif ($view === 'registrations') $res = gs_call('admin.registrations.list', [
+        'requesterId' => $s['mid'],
+        'q' => (string)($_GET['q'] ?? ''), 'status' => (string)($_GET['status'] ?? ''),
+        'centre' => (string)($_GET['centre'] ?? ''),
+        'page' => (int)($_GET['page'] ?? 1), 'pageSize' => (int)($_GET['pageSize'] ?? 25),
+    ]);
     elseif ($view === 'centres')     $res = gs_call('admin.centres.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'catalogue')   $res = gs_call('admin.academy.catalogue.get', ['requesterId' => $s['mid']]);
     elseif ($view === 'cards')       $res = gs_call('admin.cards.data', ['requesterId' => $s['mid'], 'studentId' => (string)($_GET['studentId'] ?? '')]);
@@ -28,6 +33,8 @@ if ($method === 'GET') {
     elseif ($action === 'gate_rotation') $res = gs_call('admin.gates.rotation', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'rotateDays' => $b['rotateDays'] ?? 0, 'expiryDays' => $b['expiryDays'] ?? 0, 'notifyEmail' => $b['notifyEmail'] ?? '', 'ip' => $ip]);
     elseif ($action === 'gate_revoke') $res = gs_call('admin.gates.revoke', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'remind')      $res = gs_call('admin.registrations.remind', ['requesterId' => $s['mid'], 'studentId' => $b['studentId'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'remind_bulk') $res = gs_call('admin.registrations.remindBulk', ['requesterId' => $s['mid'],
+        'centre' => $b['centre'] ?? '', 'quietDays' => $b['quietDays'] ?? 1, 'limit' => $b['limit'] ?? 100, 'ip' => $ip]);
     elseif ($action === 'resend_id')   { rate_limit_check('id.resend'); $res = gs_call('admin.id.resend', ['requesterId' => $s['mid'], 'kind' => $b['kind'] ?? 'student', 'id' => $b['id'] ?? '', 'qrPng' => $b['qrPng'] ?? '', 'ip' => $ip]); }
     elseif ($action === 'centre_upsert') $res = gs_call('admin.centres.upsert', ['requesterId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => $ip]);
     elseif ($action === 'centre_delete') $res = gs_call('admin.centres.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'ip' => $ip]);

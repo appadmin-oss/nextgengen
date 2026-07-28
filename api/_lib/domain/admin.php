@@ -227,7 +227,7 @@ function admin_members_upsert(array $p): array {
         return ['ok' => true, 'memberId' => $memberId];
     }
 
-    $newId = new_id(($data['type'] ?? '') === 'Summer' ? 'SUM' : 'NGG');
+    $newId = new_id(($data['type'] ?? '') === 'Summer' ? 'SUM' : 'NGG', 'members', 'memberId');
     $insert = db_pick($data, $cols);
     $insert['memberId'] = $newId;
     $insert['status'] = $insert['status'] ?? ($data['status'] ?? 'active');
@@ -313,7 +313,7 @@ function admin_mentors_upsert(array $p): array {
         audit('admin.mentor.update', $g['requester']['memberId'], $mentorId, [], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'mentorId' => $mentorId];
     }
-    $newId = new_id('MEN');
+    $newId = new_id('MEN', 'mentors', 'mentorId');
     $insert = db_pick($data, $cols, [], ['maxMentees']);
     $insert['mentorId'] = $newId;
     $insert['status'] = $insert['status'] ?? 'pending-checks';

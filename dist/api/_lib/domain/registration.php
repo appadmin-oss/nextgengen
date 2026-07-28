@@ -1379,15 +1379,142 @@ function reshoot_submit(array $p): array {
 
 /* ── Admin registration queue (the "Needs you" list) ─────────────────────── */
 
+/**
+ * The registrations screen — searchable, filterable, paged.
+ *
+ * This used to be "newest 500, no search". Two things wrong with that at any
+ * real size, and the second is not a nuisance:
+ *
+ *  - Finding one child meant scrolling every registration in the cohort.
+ *  - A child outside the newest 500 could not be found AT ALL, so their
+ *    parent's consent link could never be resent. Across a hundred centres
+ *    that is most of the cohort, and the people it strands are exactly the
+ *    ones who registered earliest and are still waiting.
+ *
+ * It also read EVERY granted consent row in the database on every load, to
+ * annotate at most 500 students. Consents are now fetched for the page only.
+ *
+ * Default order is longest-waiting first, because this screen exists to chase
+ * people, and the person who registered nine days ago needs chasing before the
+ * one who registered this morning.
+ */
 function admin_registrations_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT studentId, fullName, track, regStatus, guardianName, guardianPhone, parentEmail, enrolledAt, remindedAt, verifiedAt, photoUrl, token FROM summer_students WHERE cohortId = ? ORDER BY id DESC LIMIT 500", [$c['cohortId']]);
+
+    $where = ['cohortId = ?']; $args = [$c['cohortId']];
+
+    $status = (string)($p['status'] ?? '');
+    if ($status !== '' && $status !== 'all') { $where[] = 'regStatus = ?'; $args[] = $status; }
+
+    $centre = trim((string)($p['centre'] ?? ''));
+    if ($centre !== '') { $where[] = 'centre = ?'; $args[] = $centre; }
+
+    /* Search covers everything a staffer actually has to hand when a parent
+     * calls: the child's name, the ID on the card, and the parent's own phone
+     * or email. Matching only the child's name is why this was painful — the
+     * caller is the parent, and their number is the thing being read out. */
+    $q = trim((string)($p['q'] ?? ''));
+    if ($q !== '') {
+        $like = '%' . strtolower($q) . '%';
+        // Digits only, so a number typed with spaces or a +234 prefix still finds
+        // a row stored in either shape.
+        $digits = preg_replace('/\D/', '', $q);
+        $terms = ['lower(fullName) LIKE ?', 'lower(studentId) LIKE ?', 'lower(parentEmail) LIKE ?', 'lower(guardianName) LIKE ?'];
+        array_push($args, $like, $like, $like, $like);
+        if ($digits !== '' && strlen($digits) >= 4) {
+            $terms[] = "replace(replace(replace(COALESCE(guardianPhone,''), ' ', ''), '-', ''), '+', '') LIKE ?";
+            $args[] = '%' . $digits . '%';
+        }
+        $where[] = '(' . implode(' OR ', $terms) . ')';
+    }
+    $whereSql = implode(' AND ', $where);
+
+    $total = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE $whereSql", $args)['c'] ?? 0);
+    $pageSize = max(1, min(100, (int)($p['pageSize'] ?? 25)));
+    $page = max(1, (int)($p['page'] ?? 1));
+
+    // Oldest first for the pending queue (chase the longest wait), newest first
+    // for everything else (the usual "what just happened" reading).
+    $order = ($status === 'parent_pending') ? 'id ASC' : 'id DESC';
+    $rows = db_all("SELECT studentId, fullName, centre, track, regStatus, guardianName, guardianPhone,
+                           parentEmail, enrolledAt, remindedAt, verifiedAt, photoUrl, token
+                    FROM summer_students WHERE $whereSql ORDER BY $order LIMIT ? OFFSET ?",
+                   array_merge($args, [$pageSize, ($page - 1) * $pageSize]));
+
+    // Consents for THIS PAGE, not for the whole database.
     $consents = [];
-    foreach (db_all("SELECT studentId, type, status FROM consents WHERE status = 'granted'") as $cr) $consents[$cr['studentId']][] = $cr['type'];
-    foreach ($rows as &$r) { $r['consents'] = $consents[$r['studentId']] ?? []; }
-    $pending = array_values(array_filter($rows, fn($r) => $r['regStatus'] === 'parent_pending'));
-    return ['ok' => true, 'registrations' => $rows, 'pendingCount' => count($pending)];
+    if ($rows) {
+        $ids = array_column($rows, 'studentId');
+        $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
+        foreach (db_all("SELECT studentId, type FROM consents WHERE status = 'granted' AND studentId IN $in", $ids) as $cr) {
+            $consents[(string)$cr['studentId']][] = (string)$cr['type'];
+        }
+    }
+    $now = time();
+    foreach ($rows as &$r) {
+        $r['consents'] = $consents[(string)$r['studentId']] ?? [];
+        // Precomputed here so the screen can sort and colour by it without every
+        // client re-deriving the same arithmetic from two timestamps.
+        $enrolled = strtotime((string)($r['enrolledAt'] ?? '')) ?: 0;
+        $r['waitingDays'] = $enrolled ? (int)floor(($now - $enrolled) / 86400) : 0;
+        $rem = strtotime((string)($r['remindedAt'] ?? '')) ?: 0;
+        $r['remindedDaysAgo'] = $rem ? (int)floor(($now - $rem) / 86400) : null;
+    }
+    unset($r);
+
+    // Cohort-wide counts, independent of the filter — the tab badges.
+    $counts = [];
+    foreach (db_all("SELECT regStatus, COUNT(*) c FROM summer_students WHERE cohortId = ? GROUP BY regStatus",
+                    [$c['cohortId']]) as $cr) {
+        $counts[(string)$cr['regStatus']] = (int)$cr['c'];
+    }
+    return ['ok' => true, 'registrations' => $rows, 'total' => $total,
+            'page' => $page, 'pageSize' => $pageSize,
+            'counts' => $counts, 'pendingCount' => (int)($counts['parent_pending'] ?? 0),
+            'cohortTotal' => array_sum($counts)];
+}
+
+/**
+ * Remind every parent matching the current filter, in one go.
+ *
+ * Chasing a hundred families one button at a time is the actual complaint
+ * behind "stressful". Bounded per call so one click cannot fan out into
+ * thousands of messages, and deferred past the response for the same reason
+ * the gate desk is: this is slow network I/O and nobody should watch it.
+ *
+ * Only ever touches rows that are genuinely awaiting a parent, whatever filter
+ * was passed — a bulk send is not the place to trust a client-supplied status.
+ */
+function admin_registrations_remind_bulk(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $c = summer_ensure_cohort();
+    $where = ["cohortId = ?", "regStatus = 'parent_pending'"]; $args = [$c['cohortId']];
+    $centre = trim((string)($p['centre'] ?? ''));
+    if ($centre !== '') { $where[] = 'centre = ?'; $args[] = $centre; }
+    // "Only those we have not chased recently" — the default, so repeated
+    // clicking cannot pester the same family twice in a day.
+    $quietDays = max(0, min(30, (int)($p['quietDays'] ?? 1)));
+    if ($quietDays > 0) {
+        $cut = gmdate('Y-m-d H:i:s', time() - $quietDays * 86400);
+        $where[] = "(remindedAt IS NULL OR remindedAt = '' OR remindedAt < ?)";
+        $args[] = $cut;
+    }
+    $cap = max(1, min(200, (int)($p['limit'] ?? 100)));
+    $rows = db_all("SELECT studentId FROM summer_students WHERE " . implode(' AND ', $where)
+                   . " ORDER BY id ASC LIMIT ?", array_merge($args, [$cap]));
+    $ids = array_column($rows, 'studentId');
+    if (!$ids) return ['ok' => true, 'queued' => 0, 'note' => 'Nobody is waiting who has not already been reminded.'];
+
+    audit('registration.remind.bulk', $g['requester']['memberId'], $centre ?: 'all',
+          ['count' => count($ids), 'quietDays' => $quietDays], (string)($p['ip'] ?? ''));
+    after_response('registration.remind.bulk', function () use ($ids) {
+        foreach ($ids as $id) {
+            try { registration_send_verification((string)$id); }
+            catch (\Throwable $e) { error_log('[remind.bulk] ' . $id . ': ' . $e->getMessage()); }
+        }
+    });
+    return ['ok' => true, 'queued' => count($ids)];
 }
 
 function admin_registrations_remind(array $p): array {

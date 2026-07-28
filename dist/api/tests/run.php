@@ -4586,5 +4586,180 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     })());
 })();
 
+function public_status_fresh(): array { return public_status([]); }
+
+/* ── Record ids must actually be unique ───────────────────────────────────
+   new_id() was PREFIX-YYYY-NNNN with the tail drawn at random from 10,000
+   values and never checked against the table. By the birthday bound a
+   collision is more likely than not at ~118 records, and past a couple of
+   thousand every insert carries a percentage chance of dying on the UNIQUE
+   constraint. It showed up here as an intermittently failing test; in
+   production it is a member or mentor that could not be created, at a
+   keyboard, with no explanation. */
+chk('ids: new_id never returns one that is already taken', (function () {
+    // Fill most of the four-digit space for this prefix, so a generator that
+    // does not check is overwhelmingly likely to hand back a duplicate.
+    $db = db_conn();
+    $db->beginTransaction();
+    for ($i = 0; $i < 9000; $i++) {
+        db_insert('mentors', ['mentorId' => 'IDT-' . gmdate('Y') . '-' . str_pad((string)$i, 4, '0', STR_PAD_LEFT),
+            'fullName' => 'Filler ' . $i, 'status' => 'retired', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    $db->commit();
+    for ($n = 0; $n < 40; $n++) {
+        $id = new_id('IDT', 'mentors', 'mentorId');
+        if (db_row("SELECT 1 x FROM mentors WHERE mentorId = ?", [$id])) return false;
+    }
+    return true;
+})());
+chk('ids: …and widens the tail rather than giving up in a crowded year', (function () {
+    // The four-digit space for this prefix is now full: every id must still
+    // come back unique, which is only possible by using more digits.
+    $db = db_conn();
+    $db->beginTransaction();
+    for ($i = 0; $i < 10000; $i++) {
+        db_insert('mentors', ['mentorId' => 'FULL-' . gmdate('Y') . '-' . str_pad((string)$i, 4, '0', STR_PAD_LEFT),
+            'fullName' => 'Full ' . $i, 'status' => 'retired', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    $db->commit();
+    $id = new_id('FULL', 'mentors', 'mentorId');
+    return !db_row("SELECT 1 x FROM mentors WHERE mentorId = ?", [$id]) && strlen($id) > strlen('FULL-2026-0000');
+})());
+chk('ids: a caller that names no table still gets the classic shape',
+    preg_match('/^MEN-\d{4}-\d{4}$/', new_id('MEN')) === 1);
+db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-%'");
+
+/* ── Scale: the query count must not grow with the number of centres ──────
+   This is the shape of the worst performance bug in the system so far. The
+   public board ran one activities query per centre plus one COUNT(DISTINCT)
+   JOIN per centre PER WEEKDAY, and three more per centre above that. At the
+   two centres a dev machine has, fourteen queries — imperceptible. At a
+   hundred, seven hundred, six hundred of them joining every attendance row
+   ever recorded: measured at 26.6 SECONDS on a 20k-student database, on the
+   unauthenticated endpoint a screen at every centre polls.
+
+   Timing cannot catch that in CI — a fast machine on a small fixture hides it.
+   Counting can, and it is the property that actually matters: the board must
+   cost the same number of queries whether there are five centres or fifty. */
+(function () {
+    $SU = 'NGG-2025-0099';
+    /* An earlier test may have limited the board to named centres. Clear that
+       first, or "the board lists every centre" is measuring the allow-list. */
+    $pages = setting_get('status_pages');
+    if (is_array($pages) && isset($pages['attendance']['centres'])) {
+        $pages['attendance']['centres'] = [];
+        setting_set('status_pages', $pages, 'test');
+    }
+    $mk = function (int $from, int $to) {
+        for ($i = $from; $i <= $to; $i++) {
+            $n = sprintf('ScaleC%03d', $i);
+            db_insert('centres', ['centreId' => 'SC' . $i, 'name' => $n, 'code' => 'S' . $i,
+                'status' => 'active', 'capacity' => 50, 'createdAt' => now_iso()]);
+            // A student and an attendance row each, so the grouped queries have
+            // something to group and the joins are not trivially empty.
+            $sid = 'SCALE-STU-' . $i;
+            db_insert('summer_students', ['studentId' => $sid, 'cohortId' => 'SCALE-C', 'handle' => 'sc' . $i,
+                'fullName' => 'Scale Child' . $i, 'status' => 'active', 'regStatus' => 'verified',
+                'centre' => $n, 'track' => 'Practical Coding', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+            db_insert('attendance', ['studentId' => $sid, 'cohortId' => 'SCALE-C', 'date' => gmdate('Y-m-d'),
+                'status' => 'present', 'checkInAt' => now_iso(), 'method' => 'gate']);
+        }
+    };
+    $count = function () {
+        db_count_start();
+        public_status_fresh();
+        $n = db_count_read();
+        db_count_stop();
+        return $n;
+    };
+
+    $mk(1, 5);
+    $small = $count();
+    $mk(6, 40);
+    $big = $count();
+
+    chk('scale: the public board is not empty at either size (control)', $small > 0 && $big > 0);
+    /* Eight times the centres. A per-centre query pattern would multiply the
+       count; a grouped one leaves it flat. The allowance is for the handful of
+       queries that legitimately scale with distinct values, not with centres. */
+    chk('scale: 8x the centres does not multiply the board\'s query count ('
+        . $small . ' at 5 centres → ' . $big . ' at 40)', $big <= $small + 5);
+    chk('scale: …and the board still reports every centre',
+        count(public_status_fresh()['status']['byCentre']) >= 40);
+
+    /* The board ships a leaderboard, not the roster. Left uncapped it was
+       20,000 rows and 3.75 MB per poll on a public endpoint. */
+    $st = public_status_fresh()['status'];
+    chk('scale: the board caps its member list per centre and says what the real total is',
+        isset($st['membersTotal']) && $st['membersTotal'] >= count($st['members'])
+        && ($st['membersPerCentreCap'] ?? 0) > 0);
+    /* One BUSY centre, so the cap is actually reached. Without a centre holding
+       more students than the cap, "no centre exceeds the cap" is true of any
+       cap at all and the assertion proves nothing. */
+    for ($i = 1; $i <= 40; $i++) {
+        $sid = 'SCALE-BUSY-' . $i;
+        db_insert('summer_students', ['studentId' => $sid, 'cohortId' => 'SCALE-C', 'handle' => 'sb' . $i,
+            'fullName' => 'Busy Child' . $i, 'status' => 'active', 'regStatus' => 'verified',
+            'centre' => 'ScaleC001', 'track' => 'Piano', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+        db_insert('member_stars', ['subjectId' => $sid, 'subjectType' => 'student', 'givenById' => $SU,
+            'stars' => 1 + ($i % 3), 'category' => 'focus', 'centre' => 'ScaleC001',
+            'date' => gmdate('Y-m-d', time() - $i * 86400), 'createdAt' => now_iso()]);
+    }
+    $st = public_status_fresh()['status'];
+    $cap = (int)($st['membersPerCentreCap'] ?? 25);
+    $busy = 0;
+    foreach ($st['members'] as $m) if ((string)$m['centre'] === 'ScaleC001') $busy++;
+    chk('scale: a centre with more students than the cap is trimmed to it ('
+        . $busy . ' of 41 at ScaleC001, cap ' . $cap . ')', $busy === $cap);
+    chk('scale: …and the payload reports the untrimmed total, so nothing lies',
+        (int)$st['membersTotal'] > count($st['members']));
+    chk('scale: …keeping the highest scorers, not an arbitrary slice', (function () use ($st) {
+        $pts = [];
+        foreach ($st['members'] as $m) if ((string)$m['centre'] === 'ScaleC001') $pts[] = (int)$m['points'];
+        if (count($pts) < 2) return false;
+        $sorted = $pts; rsort($sorted);
+        return $pts === $sorted && $pts[0] > 0;
+    })());
+    chk('scale: …capped PER CENTRE, so a quiet centre still has a board', (function () use ($st) {
+        $by = [];
+        foreach ($st['members'] as $m) $by[(string)$m['centre']] = ($by[(string)$m['centre']] ?? 0) + 1;
+        foreach ($by as $n) if ($n > ($st['membersPerCentreCap'] ?? 25)) return false;
+        // Every centre with a student must appear, not just the busiest.
+        return count($by) >= 40;
+    })());
+
+    /* Polling is memoised at the HTTP route, not in the domain — the console
+       and every internal caller must still see the truth as it is now. What the
+       route does is pinned here through the same helper it uses. */
+    chk('scale: a repeat poll inside the window does no work', (function () {
+        $key = 'test_poll_' . rand_hex(4);
+        $calls = 0;
+        $build = function () use (&$calls) { $calls++; return ['ok' => true]; };
+        cache_remember($key, 60, $build, 'v1');
+        cache_remember($key, 60, $build, 'v1');
+        return $calls === 1;
+    })());
+    /* The safeguarding property the memo must not break: a guardian's
+       withdrawal appends a consents row, which moves the stamp, which drops the
+       cache on the very next request rather than whenever a timer expires. */
+    chk('scale: …but a change to the consent ledger drops it immediately', (function () {
+        $key = 'test_poll_' . rand_hex(4);
+        $calls = 0;
+        $build = function () use (&$calls) { $calls++; return ['ok' => true]; };
+        cache_remember($key, 60, $build, 'c10');
+        cache_remember($key, 60, $build, 'c11');   // a new consent row
+        return $calls === 2;
+    })());
+    chk('cache_remember recomputes once the window has passed', (function () {
+        $n = 0;
+        $f = function () use (&$n) { $n++; return ['n' => $n]; };
+        $key = 'test_ttl_' . rand_hex(4);
+        cache_remember($key, 60, $f);
+        cache_remember($key, 60, $f);        // inside the window — memo
+        cache_remember($key, 0, $f);         // window elapsed — recompute
+        return $n === 2;
+    })());
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
