@@ -4169,5 +4169,150 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     })());
 })();
 
+/* ── What reaches an UNAUTHENTICATED page ─────────────────────────────────
+   Two surfaces published a child's details with no consent check while the
+   summer board withheld the same details for the same child. Neither was a
+   policy disagreement — both were the policy simply not being applied. */
+(function () {
+    $SU = 'NGG-2025-0099';
+
+    /* 1. The public centre page listed its top students straight out of
+       `members` with no `type` filter, while its sibling public_leaderboard()
+       has always filtered to NGG. `members` also holds type='Summer' rows —
+       admin_club_promote() writes one on every promotion — so a summer child
+       was named on a public page that never consults the consent ledger. */
+    db_insert('members', ['memberId' => 'PUB-SUM-1', 'fullName' => 'Summerchild Adeyemi', 'type' => 'Summer',
+        'status' => 'active', 'role' => 'member', 'centre' => 'Publicity Centre', 'track' => 'Tech',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'PUB-NGG-1', 'fullName' => 'Clubchild Okafor', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'member', 'centre' => 'Publicity Centre', 'track' => 'Tech',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    /* Distinct names, and the SUMMER child is given more XP so it sorts first.
+       If the filter is dropped they lead the list, which is both the real
+       failure and the one a count-only assertion would be least likely to
+       catch convincingly. Only members with XP are ranked at all, so both need
+       some or the whole block is vacuous. */
+    db_insert('member_stats', ['memberId' => 'PUB-SUM-1', 'xpTotal' => 900, 'level' => 4, 'badgeCount' => 2, 'streak' => 3]);
+    db_insert('member_stats', ['memberId' => 'PUB-NGG-1', 'xpTotal' => 500, 'level' => 3, 'badgeCount' => 1, 'streak' => 2]);
+    $top = centre_top_students('Publicity Centre', 10);
+    $names = array_map(fn($t) => $t['first'], $top);
+    chk('the public centre page lists its NGG members (control — else the next check proves nothing)',
+        in_array('Clubchild', $names, true));
+    chk('…and does NOT name a summer child out of the members table',
+        !in_array('Summerchild', $names, true) && count($top) === 1);
+    chk('…which is the same filter its sibling leaderboard applies', (function () {
+        foreach (backend_dispatch('public.leaderboard', ['limit' => 50])['leaderboard'] as $row) {
+            if ($row['memberId'] === 'PUB-SUM-1') return false;
+        }
+        return true;
+    })());
+
+    /* 2. The community showcase is public, and featuring a post is a MENTOR'S
+       editorial call — not a guardian's consent decision. Being featured was
+       therefore enough on its own to publish a child's first name and whatever
+       photo or video they had uploaded. */
+    $SHOW = 'SHOW-STU-1';
+    db_insert('summer_students', ['studentId' => $SHOW, 'cohortId' => 'SHOW-C', 'handle' => 'show-kid',
+        'fullName' => 'Showcase Chinelo', 'status' => 'active', 'regStatus' => 'verified', 'centre' => 'Egbeda',
+        'photoUrl' => 'https://img.example.org/face.jpg', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $grant = function (string $type, string $status) use ($SHOW) {
+        db_insert('consents', ['studentId' => $SHOW, 'type' => $type, 'status' => $status,
+            'method' => 'test', 'actorName' => 'Guardian', 'createdAt' => now_iso()]);
+    };
+    $feature = function (string $body, string $mediaUrl) use ($SHOW) {
+        $pid = 'CP-SHOW-' . strtoupper(rand_hex(4));
+        db_insert('community_posts', ['postId' => $pid, 'channelId' => 'x', 'authorId' => $SHOW,
+            'authorName' => 'Showcase Chinelo', 'authorCentre' => 'Egbeda', 'body' => $body,
+            'mediaType' => $mediaUrl === '' ? '' : 'image', 'mediaUrl' => $mediaUrl, 'mediaPoster' => '',
+            'altText' => 'work', 'status' => 'published', 'featured' => 1,
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        return $pid;
+    };
+    $withText = $feature('My bridge design', 'https://img.example.org/bridge.jpg');
+    $mediaOnly = $feature('', 'https://img.example.org/silent.jpg');
+    $find = function (string $pid) {
+        foreach (backend_dispatch('community.showcase', [])['showcase'] as $row) {
+            if ($row['postId'] === $pid) return $row;
+        }
+        return null;
+    };
+
+    // No grants at all — the default a child sits at until a guardian acts.
+    $row = $find($withText);
+    chk('a featured post from an ungranted child is not published under their name',
+        $row !== null && $row['author'] === 'A member');
+    chk('…and their uploaded picture is not published at all',
+        $row !== null && $row['mediaUrl'] === '' && $row['mediaType'] === '');
+    chk('…the work itself still shows, because that is the mentor\'s call to make',
+        $row !== null && $row['body'] === 'My bridge design');
+    chk('…but a picture-only post drops out entirely rather than showing an empty card',
+        $find($mediaOnly) === null);
+
+    // site_visibility alone names them. It must NOT release the photograph:
+    // permission to be named is not permission to have your face published.
+    $grant('site_visibility', 'granted');
+    $row = $find($withText);
+    chk('site_visibility alone lets the child be named', $row !== null && $row['author'] === 'Showcase');
+    chk('…and STILL withholds the photograph, which needs its own grant',
+        $row !== null && $row['mediaUrl'] === '');
+
+    $grant('media', 'granted');
+    $row = $find($withText);
+    chk('both grants together publish the name and the picture',
+        $row !== null && $row['author'] === 'Showcase' && $row['mediaUrl'] === 'https://img.example.org/bridge.jpg');
+    chk('…and the picture-only post comes back too', $find($mediaOnly) !== null);
+
+    /* `consents` is append-only and last-row-wins, which is the whole
+       mechanism by which a guardian can change their mind. A withdrawal has to
+       take effect on the very next request. */
+    $grant('media', 'declined');
+    $row = $find($withText);
+    chk('withdrawing media consent pulls the picture on the next request',
+        $row !== null && $row['mediaUrl'] === '' && $row['author'] === 'Showcase');
+    $grant('site_visibility', 'declined');
+    $row = $find($withText);
+    chk('…and withdrawing site_visibility pulls the name too',
+        $row !== null && $row['author'] === 'A member');
+
+    /* The rule the summer board spells out and this helper has to keep:
+       a photograph needs BOTH grants. Permission to take and use pictures
+       internally is not permission to publish a child's face on the open web,
+       and a guardian who declined to have them featured has not agreed to
+       have them pictured either.
+
+       This is the ONE ordering that separates `mayName && media` from
+       `verified && media`, so without it the coupling can be dropped and every
+       other assertion here still passes. */
+    $grant('media', 'granted');            // media yes, site_visibility still declined
+    $row = $find($withText);
+    chk('media consent WITHOUT site_visibility does not publish the picture',
+        $row !== null && $row['mediaUrl'] === '' && $row['author'] === 'A member');
+
+    /* An unverified registration cannot have produced a valid grant, whatever
+       the ledger says — the second lock the summer board already applies. */
+    $grant('site_visibility', 'granted');
+    $grant('media', 'granted');
+    db_update('summer_students', ['regStatus' => 'pending'], ['studentId' => $SHOW]);
+    $row = $find($withText);
+    chk('a grant on an unverified registration is not honoured',
+        $row !== null && $row['author'] === 'A member' && $row['mediaUrl'] === '');
+    db_update('summer_students', ['regStatus' => 'verified'], ['studentId' => $SHOW]);
+
+    /* Adults who signed up to be listed are not gated by a ledger that does
+       not describe them. */
+    chk('a post by someone with no consent ledger is unchanged', (function () {
+        $pid = 'CP-SHOW-ADULT';
+        db_insert('community_posts', ['postId' => $pid, 'channelId' => 'x', 'authorId' => 'NGG-2025-0099',
+            'authorName' => 'Admin User', 'authorCentre' => 'Egbeda', 'body' => 'Staff note',
+            'mediaType' => 'image', 'mediaUrl' => 'https://img.example.org/staff.jpg', 'mediaPoster' => '',
+            'altText' => '', 'status' => 'published', 'featured' => 1,
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        foreach (backend_dispatch('community.showcase', [])['showcase'] as $row) {
+            if ($row['postId'] === $pid) return $row['author'] === 'Admin' && $row['mediaUrl'] !== '';
+        }
+        return false;
+    })());
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

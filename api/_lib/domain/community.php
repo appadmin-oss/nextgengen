@@ -889,13 +889,32 @@ function community_showcase(array $p): array {
     $rows = db_all("SELECT * FROM community_posts WHERE featured = 1 AND status = 'published' ORDER BY updatedAt DESC LIMIT 12");
     $out = [];
     foreach ($rows as $r) {
+        /* Featuring a post is a MENTOR'S editorial decision. It is not a
+         * guardian's consent decision, and this endpoint is public — so being
+         * featured was, on its own, enough to publish a child's first name and
+         * whatever photograph or video they had uploaded to the open web.
+         *
+         * The summer board withholds exactly that data for exactly that child
+         * until a guardian grants it. The same rule applies here now: a mentor
+         * can choose what is worth showing, but not who may be named or
+         * pictured. */
+        $grants = consent_may_publish((string)$r['authorId']);
+        $first = $grants['mayName']
+            ? (explode(' ', trim((string)$r['authorName']))[0] ?? 'A member')
+            : 'A member';
+        $mediaUrl = $grants['mayPhoto'] ? (string)$r['mediaUrl'] : '';
+        // A media post stripped of its media is an empty card. Drop it rather
+        // than publish a caption with a hole where the work used to be.
+        if ($mediaUrl === '' && trim((string)$r['body']) === '') continue;
         $ch = db_row("SELECT name, color, icon FROM community_channels WHERE channelId = ? LIMIT 1", [(string)$r['channelId']]);
-        $first = explode(' ', trim((string)$r['authorName']))[0] ?? 'A member';
         $out[] = [
             'postId' => (string)$r['postId'],
             'channel' => ['name' => (string)($ch['name'] ?? ''), 'color' => (string)($ch['color'] ?? '#3b5bdb'), 'icon' => (string)($ch['icon'] ?? '')],
             'author' => $first, 'body' => (string)$r['body'],
-            'mediaType' => (string)$r['mediaType'], 'mediaUrl' => (string)$r['mediaUrl'], 'mediaPoster' => (string)$r['mediaPoster'], 'altText' => (string)$r['altText'],
+            'mediaType' => $mediaUrl === '' ? '' : (string)$r['mediaType'],
+            'mediaUrl' => $mediaUrl,
+            'mediaPoster' => $mediaUrl === '' ? '' : (string)$r['mediaPoster'],
+            'altText' => (string)$r['altText'],
         ];
     }
     return ['ok' => true, 'showcase' => $out];

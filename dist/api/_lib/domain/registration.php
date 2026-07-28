@@ -1695,7 +1695,15 @@ function centre_top_students(string $centreName, int $limit = 4): array {
     if ($centreName === '') return [];
     $rows = db_all("SELECT m.memberId, m.fullName, m.track, COALESCE(s.xpTotal,0) xp, COALESCE(s.level,1) level, COALESCE(s.badgeCount,0) badges, COALESCE(s.streak,0) streak
                     FROM members m LEFT JOIN member_stats s ON s.memberId = m.memberId
-                    WHERE m.status = 'active' AND m.centre = ?
+                    /* `type = 'NGG'` is not cosmetic. `members` also holds
+                     * type='Summer' rows, and this is a PUBLIC page: without the
+                     * filter a summer child appeared here by name, on a surface
+                     * with no consent check, while the summer board was
+                     * carefully withholding that same child's name until a
+                     * guardian granted site_visibility. The sibling
+                     * public_leaderboard() has always filtered; this one was
+                     * simply missing it. */
+                    WHERE m.status = 'active' AND m.type = 'NGG' AND m.centre = ?
                     ORDER BY xp DESC, m.fullName ASC LIMIT " . max(1, min(10, $limit)), [$centreName]);
     $out = []; $rank = 0;
     foreach ($rows as $r) {
@@ -1879,6 +1887,49 @@ function admin_cards_data(array $p): array {
  * Branding falls back to the ID card settings so there is one place to change
  * a logo or a phone number, and the consent form picks it up.
  */
+/**
+ * May this person's name / photograph be published on a PUBLIC page?
+ *
+ * The rule the summer board already applies, in one callable place. It was
+ * written out twice (admin2.php for the board, summer.php for the profile) and
+ * a third surface — the community showcase — was published with no gate at
+ * all, which is precisely what happens when a policy lives in its callers
+ * rather than in a function.
+ *
+ *   site_visibility  → the name may be shown
+ *   media            → the photograph may be, and ONLY together with
+ *                      site_visibility. Permission to take and use pictures
+ *                      internally is not permission to publish a child's face
+ *                      on the open web.
+ *
+ * `regStatus` is a second lock on the same door: a registration the guardian
+ * never completed cannot have produced a valid grant, whatever the ledger
+ * says. Read live, because `consents` is append-only and last-row-wins — that
+ * is how a withdrawal takes effect on the next request rather than at some
+ * later rebuild.
+ *
+ * Anyone who is not a summer student gets ['mayName' => true] — volunteers and
+ * mentors are adults who signed up to be listed, and NGG Club members have no
+ * consent ledger to consult. That gap is real and deliberate to leave here:
+ * closing it means building consent capture for Club members, which is a
+ * product decision, not a bug fix. It is NOT a claim that those names are
+ * fine to publish.
+ */
+function consent_may_publish(string $subjectId): array {
+    if ($subjectId === '') return ['mayName' => false, 'mayPhoto' => false, 'gated' => false];
+    $stu = db_row("SELECT studentId, regStatus FROM summer_students WHERE studentId = ? LIMIT 1", [$subjectId]);
+    if (!$stu) return ['mayName' => true, 'mayPhoto' => true, 'gated' => false];
+    $cs = [];
+    foreach (db_all("SELECT type, status FROM consents WHERE studentId = ? AND type IN ('site_visibility','media') ORDER BY id",
+                    [$subjectId]) as $c) {
+        $cs[(string)$c['type']] = (string)$c['status'];
+    }
+    $verified = ((string)($stu['regStatus'] ?? 'verified')) === 'verified';
+    $mayName  = $verified && (($cs['site_visibility'] ?? '') === 'granted');
+    $mayPhoto = $mayName && (($cs['media'] ?? '') === 'granted');
+    return ['mayName' => $mayName, 'mayPhoto' => $mayPhoto, 'gated' => true];
+}
+
 function consent_doc_settings(): array {
     $card = idcard_program();
     $cfg = setting_get('consent_doc');
