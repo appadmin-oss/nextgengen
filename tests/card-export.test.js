@@ -152,6 +152,64 @@ function loadChromium() {
         stranded, stalledOutside,
       };
 
+      /* ── The card's real logo files ──────────────────────────────────────
+       * A logo whose URL 404s does not fail an export. `onError` hides the
+       * <img>, the card renders with a blank space where the crest should be,
+       * every sheet prints that way, and nobody finds out until the cards come
+       * back from the printer. That is exactly what shipped: the card markup
+       * referenced /assets/idcard/logo-okun.png for weeks while no such file
+       * existed in the repo.
+       *
+       * So this fetches the ACTUAL paths the card uses and rasterises each one
+       * the way an export does. The measure is ink on the page — a missing
+       * file, an undecodable image, and an SVG html2canvas draws as nothing
+       * all land in the same place: a white rectangle.
+       *
+       * The SVG is here for its own reason. This suite already found that
+       * html2canvas will not settle on a viewBox-only SVG, and the STS badge
+       * is the one piece of card artwork that is a vector. */
+      const inkOf = async (src) => {
+        const holder = document.createElement('div');
+        holder.style.cssText = 'position:absolute;left:-9999px;top:0;width:120px;height:120px;background:#fff';
+        const im = document.createElement('img');
+        im.src = src;
+        im.style.cssText = 'width:100%;height:100%;object-fit:contain';
+        holder.appendChild(im);
+        document.body.appendChild(im.parentNode);
+        let out;
+        try {
+          const face = await CE.nodeToImage(holder, { scale: 1, type: 'image/png', rasterTimeout: 20000 });
+          const img = await new Promise((res, rej) => {
+            const i = new Image();
+            i.onload = () => res(i); i.onerror = () => rej(new Error('decode'));
+            i.src = face.dataUrl;
+          });
+          const cv = document.createElement('canvas');
+          cv.width = img.width; cv.height = img.height;
+          const cx = cv.getContext('2d', { willReadFrequently: true });
+          cx.drawImage(img, 0, 0);
+          const px = cx.getImageData(0, 0, cv.width, cv.height).data;
+          let ink = 0;
+          // Anything meaningfully off-white counts. A tolerance rather than an
+          // exact compare, because JPEG-free PNG still carries edge blending.
+          for (let p = 0; p < px.length; p += 4) {
+            if (px[p] < 240 || px[p + 1] < 240 || px[p + 2] < 240) ink++;
+          }
+          out = { ink: ink, total: px.length / 4 };
+        } catch (e) { out = { ink: -1, total: 0, err: String((e && e.message) || e) }; }
+        holder.remove();
+        return out;
+      };
+      const logos = {
+        okun: await inkOf('/assets/idcard/logo-okun.png'),
+        lockup: await inkOf('/assets/idcard/logo-lockup.png'),
+        sts: await inkOf('/assets/idcard/logo-sts.svg'),
+        // The control. This path does not exist, so it MUST come back blank —
+        // without it, an assertion that "the logo has ink" could be passing on
+        // something else entirely.
+        missing: await inkOf('/assets/idcard/__no-such-logo.png'),
+      };
+
       /* ── bleed generation ────────────────────────────────────────────────
        * The probe is the shape of the real artwork that broke in production:
        * a 2px coloured border round a white panel, bled by 4px. The border is
@@ -385,7 +443,7 @@ function loadChromium() {
         oneUpPages: (ot.match(/\/Type \/Page[^s]/g) || []).length,
         slug: it.indexOf('/OutputIntents') !== -1,
         fontBefore, fontAfter, fontHeavyAfter,
-        qr,
+        qr, logos,
       };
     }, MM);
 
@@ -403,6 +461,20 @@ function loadChromium() {
       return { ms: performance.now() - t, loaded: document.fonts.check('600 16px "Inter"') };
     });
     await hungPage.close();
+
+    /* Percentages, not raw counts — the assertion should read the same if the
+       probe size ever changes. */
+    const inkPct = (l) => (l && l.total ? Math.round((l.ink / l.total) * 1000) / 10 : -1);
+    ok('a logo path that does not exist rasterises blank (control — else the next three prove nothing) ('
+       + inkPct(r.logos.missing) + '%)', r.logos.missing.ink === 0);
+    ok('the Okun Alimọsho crest on the card actually renders (' + inkPct(r.logos.okun) + '% ink)',
+       r.logos.okun.ink > 0 && inkPct(r.logos.okun) > 5);
+    ok('…so does the programme lockup (' + inkPct(r.logos.lockup) + '% ink)',
+       r.logos.lockup.ink > 0 && inkPct(r.logos.lockup) > 5);
+    // The one vector on the card, and the format this suite has already caught
+    // html2canvas mishandling.
+    ok('…and the STS badge survives being an SVG (' + inkPct(r.logos.sts) + '% ink)',
+       r.logos.sts.ink > 0 && inkPct(r.logos.sts) > 5);
 
     ok('an image is genuinely still in flight elsewhere on the page (control)', r.qr.stalledOutside > 0);
     ok('a never-answering image elsewhere on the page does not hang the raster (' + r.qr.stranded + ')',
