@@ -844,8 +844,21 @@ function admin_summer_attendance(array $p): array {
         ];
     }
 
-    // Per-student rollup: total present, last seen, attendance rate.
-    $students = db_all("SELECT studentId, fullName, handle, track, centre FROM summer_students WHERE cohortId = ? AND status = 'active' ORDER BY fullName", [$cid]);
+    /* Per-student rollup: total present, last seen, attendance rate.
+     *
+     * Scoped and capped. This returned every active student in the cohort —
+     * fine at 600, about 900ms and several megabytes at 20,000, on a screen a
+     * coordinator refreshes all morning. The rate is computed in PHP, so the
+     * sort cannot move into SQL; what CAN move is how many rows leave the
+     * building. The list is ordered lowest-attendance-first and the useful end
+     * is the front of it, so a cap loses the children nobody needed to look at.
+     * `centre` narrows it properly for anyone working one site. */
+    $wantCentre = trim((string)($p['centre'] ?? ''));
+    $cap = max(20, min(1000, (int)($p['limit'] ?? 300)));
+    $sql = "SELECT studentId, fullName, handle, track, centre FROM summer_students WHERE cohortId = ? AND status = 'active'";
+    $args = [$cid];
+    if ($wantCentre !== '') { $sql .= ' AND centre = ?'; $args[] = $wantCentre; }
+    $students = db_all($sql . ' ORDER BY fullName', $args);
     $roster = [];
     // One query per rollup instead of four per student — a 600-student cohort
     // was 2,400 round trips to draw one table.
@@ -877,8 +890,14 @@ function admin_summer_attendance(array $p): array {
     }
     // Lowest attendance first, so at-risk students surface immediately.
     usort($roster, fn($a, $b) => $a['rate'] <=> $b['rate']);
-    // At-risk: only meaningful once a few sessions have run.
-    $atRisk = $sessionDays >= 3 ? array_values(array_filter($roster, fn($r) => $r['rate'] < 50)) : [];
+    // At-risk: only meaningful once a few sessions have run. Computed BEFORE
+    // the cap and capped separately — it is the actionable list, and silently
+    // truncating it with the roster would hide exactly the children it exists
+    // to surface.
+    $atRiskAll = $sessionDays >= 3 ? array_values(array_filter($roster, fn($r) => $r['rate'] < 50)) : [];
+    $atRisk = array_slice($atRiskAll, 0, $cap);
+    $rosterTotal = count($roster);
+    $roster = array_slice($roster, 0, $cap);
 
     $recent = db_all("SELECT a.studentId, a.date, a.checkInAt, a.method, s.fullName FROM attendance a LEFT JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ? ORDER BY a.checkInAt DESC LIMIT 25", [$cid]);
 
@@ -890,6 +909,11 @@ function admin_summer_attendance(array $p): array {
         // cohort absent and email every guardian about it.
         'absentToday' => $isProgrammeDay ? max(0, $activeStudents - $presentToday) : 0,
         'days' => $days, 'roster' => $roster, 'atRisk' => $atRisk, 'recent' => $recent,
+        // Say what was left out. A truncated list that does not admit it reads
+        // as "this is everyone", which is the wrong thing to believe about an
+        // attendance register.
+        'rosterTotal' => $rosterTotal, 'rosterCap' => $cap, 'rosterCentre' => $wantCentre,
+        'atRiskTotal' => count($atRiskAll),
         'programme' => [
             'enabled' => !empty($prog['enabled']),
             'isProgrammeDay' => $isProgrammeDay,

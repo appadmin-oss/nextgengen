@@ -521,6 +521,11 @@
         log:    (subjectId, note, category, severity) => request('/admin/behaviour.php', { body: { action: 'log', subjectId, note, category, severity } }),
         review: (logId) => request('/admin/behaviour.php', { body: { action: 'review', logId } }),
       },
+      /* Is it broken, and did anyone notice. */
+      ops: {
+        status: () => request('/admin/ops.php'),
+        clear:  (id) => request('/admin/ops.php', { body: { action: 'clear', id: id || 0 } }),
+      },
       /* Staff, not children: who has filed what, over what window, next to how
          many children they are responsible for. */
       staff: {

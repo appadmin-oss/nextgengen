@@ -103,10 +103,21 @@ function web_cron_run(): void {
     } catch (Throwable $e) { /* a web-cron tick must never disrupt anything */ }
 }
 
-/** Run one job, swallowing (but logging) any failure so others still run. */
+/** Run one job, swallowing (but logging) any failure so others still run.
+ *
+ * Every run is journalled, success included. This hook swallows throwables by
+ * design so a background job cannot break a page — which also meant that when
+ * reminders and integration deliveries stopped, they stopped silently. The
+ * heartbeat is what turns "nothing happened" into something a screen can say.
+ */
 function web_cron_guard(string $label, callable $fn): void {
-    try { $fn(); }
-    catch (Throwable $e) { error_log('[webcron:' . $label . '] ' . $e->getMessage()); }
+    try {
+        $fn();
+        if (function_exists('ops_record')) ops_record('cron', $label, 'ran');
+    } catch (Throwable $e) {
+        error_log('[webcron:' . $label . '] ' . $e->getMessage());
+        if (function_exists('ops_record')) ops_record('error', 'webcron:' . $label, $e->getMessage(), basename($e->getFile()) . ':' . $e->getLine());
+    }
 }
 
 /**
@@ -149,6 +160,7 @@ function web_cron_maintenance(): void {
     if (function_exists('ensure_year')) ensure_year((int)gmdate('Y'));
     $maxId = (int)(db_row('SELECT MAX(id) m FROM audit_log')['m'] ?? 0);
     if ($maxId > 5000) db_exec('DELETE FROM audit_log WHERE id <= ?', [$maxId - 5000]);
+    if (function_exists('ops_prune')) ops_prune(30);
     // Prune device sessions revoked more than 30 days ago.
     $cut30 = gmdate('Y-m-d\TH:i:s\Z', time() - 30 * 86400);
     db_exec("DELETE FROM device_sessions WHERE revokedAt IS NOT NULL AND revokedAt != '' AND revokedAt < ?", [$cut30]);

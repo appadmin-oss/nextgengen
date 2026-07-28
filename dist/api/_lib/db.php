@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 66;
+const NGG_SCHEMA_TARGET = 67;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1637,6 +1637,40 @@ function db_migrate(PDO $db): void {
             CREATE UNIQUE INDEX idx_skill_one ON skill_marks(subjectId, course, skill);
             CREATE INDEX idx_skill_course ON skill_marks(course, centre);
             CREATE INDEX idx_skill_marker ON skill_marks(markedById, updatedAt);
+        ",
+
+        /* The operations journal — what broke, and whether the background work
+         * is still running.
+         *
+         * Both were invisible. Handler exceptions went to
+         * api/logs/php-error.log, a file nobody at a youth programme is going
+         * to SSH in and read, so the first report of anything failing came
+         * from a centre phoning to say the desk was down. And the web-cron is
+         * driven by ordinary traffic through a shutdown hook that swallows
+         * everything — if it stopped, parent reminders and integration
+         * deliveries simply stopped with it and nothing said so.
+         *
+         * ROLLED UP BY SIGNATURE, which is the whole design. An error journal
+         * that appends a row per occurrence turns one broken endpoint into
+         * tens of thousands of rows — the outage writes a second outage. One
+         * row per (kind, source, message) with a count and a last-seen is
+         * bounded by the number of DISTINCT faults, which is small even when
+         * the fault count is not.
+         */
+        67 => "
+            CREATE TABLE ops_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              kind TEXT NOT NULL,
+              source TEXT NOT NULL,
+              message TEXT NOT NULL DEFAULT '',
+              detail TEXT DEFAULT '',
+              hits INTEGER NOT NULL DEFAULT 1,
+              firstAt TEXT NOT NULL,
+              lastAt TEXT NOT NULL,
+              clearedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_ops_sig ON ops_events(kind, source, message);
+            CREATE INDEX idx_ops_recent ON ops_events(kind, lastAt);
         ",
     ];
 

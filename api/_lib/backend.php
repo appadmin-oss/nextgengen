@@ -135,6 +135,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.remark.ack'            => 'remark_ack',
             'admin.course.skills'         => 'admin_course_skills_save',
             'admin.staff.performance'     => 'admin_staff_performance',
+            'admin.ops.status'            => 'admin_ops_status',
+            'admin.ops.clear'             => 'admin_ops_clear',
             'admin.forms.list'            => 'admin_forms_list',
             'admin.forms.get'             => 'admin_forms_get',
             'admin.forms.publish'         => 'admin_forms_publish',
@@ -334,6 +336,13 @@ function backend_dispatch(string $op, array $args = []): array {
     } catch (Throwable $e) {
         global $CONFIG;
         error_log('[backend_dispatch] op=' . $op . ' err=' . $e->getMessage() . ' @' . $e->getFile() . ':' . $e->getLine());
+        /* Also into the operations journal. The log file is correct and
+         * unreadable — nobody running a youth programme is going to SSH in and
+         * tail it, so the first report of a broken endpoint came from a centre
+         * phoning to say the desk was down. */
+        if (function_exists('ops_record')) {
+            ops_record('error', $op, $e->getMessage(), basename($e->getFile()) . ':' . $e->getLine());
+        }
         return ['ok' => false, 'error' => 'internal', 'detail' => !empty($CONFIG['debug']) ? $e->getMessage() : null];
     }
 }

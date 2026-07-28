@@ -1163,4 +1163,21 @@ CREATE TABLE IF NOT EXISTS skill_marks (
   INDEX idx_skill_marker (markedById, updatedAt)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO schema_version (version) VALUES (66) ON DUPLICATE KEY UPDATE version = version;
+-- 67: the operations journal. Rolled up by (kind, source, message) so a
+-- broken endpoint is one row with a count rather than one row per request —
+-- an append-per-occurrence log turns an outage into a second outage.
+CREATE TABLE IF NOT EXISTS ops_events (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  kind VARCHAR(16) NOT NULL,
+  source VARCHAR(120) NOT NULL,
+  message VARCHAR(255) NOT NULL DEFAULT '',
+  detail VARCHAR(255) DEFAULT '',
+  hits INT NOT NULL DEFAULT 1,
+  firstAt VARCHAR(40) NOT NULL,
+  lastAt VARCHAR(40) NOT NULL,
+  clearedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_ops_sig (kind, source, message),
+  INDEX idx_ops_recent (kind, lastAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (67) ON DUPLICATE KEY UPDATE version = version;

@@ -207,7 +207,12 @@ function App() {
     const ogu = document.querySelector('meta[property="og:url"]');
     if (ogu && PAGE_IDS.includes(page)) ogu.setAttribute("content", canonicalUrl);
     // Deep pages that are personal/operational surfaces stay out of the index.
-    const noindexPages = ["dashboard", "profile", "admin", "summer-admin", "club-admin", "gate", "verify", "circle", "mentor"];
+    /* "certificate" belongs here: a completion certificate carries a child's
+       full name, centre and course, the URL is shareable, and without this a
+       parent forwarding it to one person put it in a search index for
+       everyone. The document is theirs to show — that is not the same as
+       publishing it. */
+    const noindexPages = ["dashboard", "profile", "admin", "summer-admin", "club-admin", "gate", "verify", "circle", "mentor", "certificate"];
     let rob = document.querySelector('meta[name="robots"]');
     if (rob) rob.setAttribute("content", noindexPages.includes(page) ? "noindex, nofollow" : "index, follow, max-image-preview:large");
     // Announce route change for assistive tech via a polite live region.

@@ -72,6 +72,7 @@ const ADMIN_SECTIONS = [
   { id: "messages",    group: "Inbox",    label: "Messages",     title: "Messages",            icon: "✆", cap: "inbox" },
   { id: "access",      group: "System",   label: "Access & roles", title: "Access & roles",    icon: "⚿", cap: "rbac" },
   { id: "audit",       group: "System",   label: "Audit trail",  title: "Audit log",           icon: "⌗", cap: "audit" },
+  { id: "ops",         group: "System",   label: "Diagnostics",  title: "Diagnostics",         icon: "◉", cap: "settings" },
   { id: "integrations",group: "System",   label: "Integrations", title: "Integrations & delivery", icon: "⇄", cap: "settings" },
   { id: "donations",   group: "System",   label: "Donations",    title: "Donations",           icon: "❤", cap: "settings" },
   { id: "settings",    group: "System",   label: "Settings",     title: "Settings",            icon: "⚙", cap: "settings" },
@@ -170,6 +171,7 @@ function AdminPage({ setPage }) {
           {view === "attendance" && <AdminAttendanceDuty/>}
           {view === "access" && <AdminAccess/>}
           {view === "audit" && <AdminAudit/>}
+          {view === "ops" && <AdminOps/>}
           {view === "behaviour" && <AdminBehaviour/>}
           {view === "staff" && <AdminStaff/>}
           {view === "integrations" && <AdminIntegrations/>}
@@ -3697,6 +3699,106 @@ function AdminComments() {
    quiet and go and ask them why, which is the only use of it that helps
    anybody. Quietest first, because sorting by the busiest buries exactly the
    people the screen exists to find. */
+/* ── Diagnostics ─────────────────────────────────────────────────────────────
+   Everything here already existed and none of it was visible. Handler
+   exceptions went to api/logs/php-error.log — correct, and unreadable by
+   anyone actually running the programme — so the first report of a broken
+   endpoint came from a centre phoning to say the desk was down. The web-cron
+   runs in a shutdown hook that swallows throwables so a background job can
+   never break a page, which also meant that when reminders and integration
+   deliveries stopped, they stopped in silence. */
+function AdminOps() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.admin.ops.status().then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
+  const clear = async (id) => {
+    setBusy(true);
+    try { const r = await NGGApi.admin.ops.clear(id); toast.success(r.cleared + " marked as dealt with", "Acknowledged"); load(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  const h = (d && d.health) || {};
+  const c = h.checks || {};
+  const ago = (s) => s === null || s === undefined ? "never" : s < 90 ? s + "s ago" : s < 5400 ? Math.round(s / 60) + "m ago" : Math.round(s / 3600) + "h ago";
+  const light = (ok, label, detail) => (
+    <div className="admin-tile" style={{ cursor: "default" }}>
+      {/* Never colour alone: a red dot and a green dot are the same dot to
+          about one man in twelve, and this is the screen you read in a hurry. */}
+      <div className="admin-tile-n" style={{ fontSize: 22, color: ok ? "var(--lime-ink)" : "var(--coral, #c0341a)" }}>{ok ? "✓" : "✕"}</div>
+      <div className="admin-tile-l">{label}</div>
+      <div className="mono admin-cell-sub">{ok ? "ok" : detail || "failing"}</div>
+    </div>
+  );
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Diagnostics</h2>
+        <div className="admin-section-actions">
+          <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
+          {d && d.events && d.events.length > 0 &&
+            <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => clear(0)}>Mark all dealt with</button>}
+        </div>
+      </div>
+      <p className="admin-hint">
+        Faults are grouped, so one broken endpoint is one row with a count rather than ten thousand rows.
+        Acknowledging a fault does not silence it — if it happens again it comes straight back.
+        For an uptime monitor, watch <code>/api/public/health.php</code>: it answers 503 when the site cannot serve.
+      </p>
+      {err && <p className="admin-error">{err}</p>}
+      {!d && !err && <p className="admin-hint">Loading…</p>}
+
+      {d && <>
+        <div className="admin-tiles" style={{ marginBottom: 18 }}>
+          {light(!!(c.db && c.db.ok), "Database", "read-only — the disk may be full")}
+          {light(!!(c.schema && c.schema.ok), "Schema", c.schema ? "at " + c.schema.at + ", code wants " + d.schemaTarget : "unreadable")}
+          {light(!!(c.cron && c.cron.ok), "Background jobs", c.cron && c.cron.stale ? "stalled: " + c.cron.stale.join(", ") : "")}
+          {light((d.errors24h || 0) === 0, "Errors (24h)", d.errors24h + " in the last day")}
+        </div>
+
+        <h3 className="admin-h3">Background jobs</h3>
+        <div className="admin-chips" style={{ marginBottom: 18 }}>
+          {Object.keys(h.cron || {}).map(job => {
+            const j = h.cron[job];
+            const stale = j.ageSeconds !== null && j.ageSeconds > j.interval * 10;
+            return <span key={job} className={"chip " + (j.ageSeconds === null ? "chip-navy" : stale ? "chip-crimson" : "chip-lime")} style={{ marginRight: 6 }}>
+              {job}: {ago(j.ageSeconds)}
+            </span>;
+          })}
+          <span className="admin-cell-sub">Driven by ordinary traffic — a quiet site runs them less often, which is not a fault.</span>
+        </div>
+
+        <h3 className="admin-h3">Open faults{d.clearedCount ? <span className="admin-count">{d.clearedCount} dealt with</span> : null}</h3>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Where</th><th>What</th><th>Seen</th><th>Last</th><th></th></tr></thead>
+            <tbody>
+              {!d.events.length && <tr><td colSpan={5} className="admin-empty">Nothing has failed. That is the expected state — this table being empty is the good news.</td></tr>}
+              {d.events.map(e => (
+                <tr key={e.id}>
+                  <td>
+                    <div className="admin-cell-name">{e.source}</div>
+                    <div className="mono admin-cell-sub">{e.kind}{e.detail ? " · " + e.detail : ""}</div>
+                  </td>
+                  <td>{e.message || "—"}</td>
+                  <td><span className={"chip " + (e.hits > 20 ? "chip-crimson" : e.hits > 1 ? "chip-gold" : "chip-navy")}>{e.hits}×</span></td>
+                  <td className="mono">{(e.lastAt || "").replace("T", " ").slice(0, 16)}
+                    <div className="mono admin-cell-sub">first {(e.firstAt || "").slice(0, 10)}</div></td>
+                  <td style={{ textAlign: "right" }}>
+                    <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => clear(e.id)}>Dealt with</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {d.build && <p className="admin-hint" style={{ marginTop: 12 }}>Server build <code>{d.build}</code> · schema {h.schema} of {d.schemaTarget}</p>}
+      </>}
+    </div>
+  );
+}
+
 function AdminStaff() {
   const [d, setD] = React.useState(null);
   const [days, setDays] = React.useState(30);

@@ -37,7 +37,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'analytics', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/webcron.php';
 // session.php is pure functions over the device register — no bootstrap, no
@@ -5191,6 +5191,218 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         cache_remember($key, 0, $f);         // window elapsed — recompute
         return $n === 2;
     })());
+})();
+
+
+/* ── Operations: knowing it broke before a centre phones ────────────────────
+ * Handler exceptions went to a log file nobody reads; the web-cron ran in a
+ * shutdown hook that swallows everything by design, so when the background
+ * work stopped it stopped silently. Neither was a correctness bug and both
+ * meant the first report of an outage came from a coordinator. */
+(function () {
+    db_exec("DELETE FROM ops_events");
+
+    /* The wiring. A missing table is a real deployment fault — a migration
+     * that half-applied — and exactly the kind that used to surface only as a
+     * centre phoning to say a screen was blank. */
+    $r = (function () {
+        db_exec('ALTER TABLE v3_scores RENAME TO v3_scores_gone');
+        try { return backend_dispatch('admin.champions.board', ['requesterId' => 'NGG-2025-0099']); }
+        finally { db_exec('ALTER TABLE v3_scores_gone RENAME TO v3_scores'); }
+    })();
+    chk('a thrown handler still answers the caller cleanly', ($r['error'] ?? '') === 'internal');
+    chk('…and lands in the operations journal rather than only a log file', (function () {
+        $e = db_row("SELECT source, message FROM ops_events WHERE kind='error' AND source='admin.champions.board'");
+        return $e && stripos((string)$e['message'], 'v3_scores') !== false;
+    })());
+    chk('…and the board works again the moment the table is back',
+        !empty(backend_dispatch('admin.champions.board', ['requesterId' => 'NGG-2025-0099'])['ok']));
+
+    /* The design decision, not an optimisation: an append-per-occurrence
+     * journal turns one broken endpoint into tens of thousands of rows in an
+     * afternoon, and the screen meant to explain the outage becomes part of
+     * it. Bounded by DISTINCT faults, not by fault count. */
+    chk('faults are rolled up by signature, so an outage cannot flood the table', (function () {
+        for ($i = 0; $i < 50; $i++) ops_record('error', 'test.ops.boom', 'kaboom', 'x.php:1');
+        $n = (int)db_row("SELECT COUNT(*) c FROM ops_events WHERE source='test.ops.boom'")['c'];
+        $hits = (int)db_row("SELECT hits FROM ops_events WHERE source='test.ops.boom'")['hits'];
+        return $n === 1 && $hits === 50;
+    })());
+    chk('two different faults stay two rows', (function () {
+        ops_record('error', 'test.ops.boom', 'a different failure');
+        return (int)db_row("SELECT COUNT(*) c FROM ops_events WHERE source='test.ops.boom'")['c'] === 2;
+    })());
+    // Called from a catch block and from a shutdown hook: it must not be able
+    // to fail the thing it is journalling.
+    chk('journalling a nameless source is a no-op, not a throw', (function () {
+        $before = (int)db_row("SELECT COUNT(*) c FROM ops_events")['c'];
+        ops_record('error', '   ', 'x');
+        ops_record('nonsense-kind', 'test.kind.fallback', 'y');
+        return (int)db_row("SELECT COUNT(*) c FROM ops_events")['c'] === $before + 1
+            && (string)db_row("SELECT kind FROM ops_events WHERE source='test.kind.fallback'")['kind'] === 'error';
+    })());
+
+    // Acknowledging, and why it cannot be used to silence a live fault.
+    chk('an admin acknowledges a fault', (function () {
+        $id = (int)db_row("SELECT id FROM ops_events WHERE source='test.ops.boom' AND message='kaboom'")['id'];
+        $r = backend_dispatch('admin.ops.clear', ['requesterId' => 'NGG-2025-0099', 'id' => $id]);
+        return !empty($r['ok']) && (string)db_row("SELECT clearedAt FROM ops_events WHERE id=?", [$id])['clearedAt'] !== '';
+    })());
+    chk('…and it comes back the moment it happens again', (function () {
+        ops_record('error', 'test.ops.boom', 'kaboom', 'x.php:1');
+        $id = (int)db_row("SELECT id FROM ops_events WHERE source='test.ops.boom' AND message='kaboom'")['id'];
+        return (string)db_row("SELECT clearedAt FROM ops_events WHERE id=?", [$id])['clearedAt'] === '';
+    })());
+    chk('the journal is gated to the settings capability',
+        backend_dispatch('admin.ops.status', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+    chk('the admin screen shows open faults with their counts', (function () {
+        $r = backend_dispatch('admin.ops.status', ['requesterId' => 'NGG-2025-0099']);
+        if (empty($r['ok'])) return false;
+        $found = null;
+        foreach ($r['events'] as $e) if ($e['source'] === 'test.ops.boom' && $e['message'] === 'kaboom') $found = $e;
+        return $found && $found['hits'] === 51 && $r['errors24h'] >= 51 && $r['schemaTarget'] === NGG_SCHEMA_TARGET;
+    })());
+    chk('…and hides the ones already dealt with', (function () {
+        ops_record('error', 'test.ops.quiet', 'handled');
+        $id = (int)db_row("SELECT id FROM ops_events WHERE source='test.ops.quiet'")['id'];
+        backend_dispatch('admin.ops.clear', ['requesterId' => 'NGG-2025-0099', 'id' => $id]);
+        $r = backend_dispatch('admin.ops.status', ['requesterId' => 'NGG-2025-0099']);
+        foreach ($r['events'] as $e) if ($e['source'] === 'test.ops.quiet') return false;
+        return $r['clearedCount'] >= 1;
+    })());
+    chk('clearing something that is not there is not a silent success',
+        backend_dispatch('admin.ops.clear', ['requesterId' => 'NGG-2025-0099', 'id' => 999999])['error'] === 'not_found');
+
+    /* Background work runs in a hook that swallows throwables so a page can
+     * never be broken by it. The heartbeat is what turns "nothing happened"
+     * into something a screen can say. */
+    chk('a background job records that it ran', (function () {
+        web_cron_guard('test_job_ok', function () { /* did its work */ });
+        $e = db_row("SELECT kind, message FROM ops_events WHERE source='test_job_ok'");
+        return $e && (string)$e['kind'] === 'cron' && (string)$e['message'] === 'ran';
+    })());
+    chk('…and a job that throws is journalled without breaking the caller', (function () {
+        web_cron_guard('test_job_bad', function () { throw new RuntimeException('job died'); });
+        $e = db_row("SELECT kind, message FROM ops_events WHERE source='webcron:test_job_bad'");
+        return $e && (string)$e['kind'] === 'error' && (string)$e['message'] === 'job died';
+    })());
+
+    /* Health. The failures that matter return a perfectly healthy 200 from
+     * every other endpoint: a read-only database after a disk fills, and code
+     * deployed ahead of its migrations. */
+    $h = ops_health();
+    chk('a working system reports itself serving', !empty($h['serving']) && !empty($h['checks']['db']['ok']));
+    chk('…and confirms the schema is where the code expects it',
+        !empty($h['checks']['schema']['ok']) && $h['schema'] === NGG_SCHEMA_TARGET);
+    chk('the public probe is four booleans and nothing about anybody', (function () {
+        $pub = ops_health_public();
+        return array_keys($pub) === ['ok', 'db', 'schema', 'cron']
+            && count(array_filter($pub, fn($v) => !is_bool($v))) === 0;
+    })());
+    chk('a schema behind the code reports NOT serving', (function () {
+        // The check is a read against schema_version, so raising the target
+        // past it is the honest way to simulate a half-finished deploy.
+        $real = (int)db_row('SELECT MAX(version) v FROM schema_version')['v'];
+        db_exec('DELETE FROM schema_version WHERE version = ?', [$real]);
+        $h2 = ops_health();
+        $pub2 = ops_health_public();
+        db_exec('INSERT INTO schema_version (version) VALUES (?)', [$real]);
+        // The probe payload is what the endpoint turns into 200 or 503, so it
+        // has to agree — a monitor watches the status code, not the body.
+        return empty($h2['serving']) && empty($h2['checks']['schema']['ok']) && empty($pub2['ok']);
+    })());
+    chk('…and the system is serving again once it catches up', !empty(ops_health()['serving']));
+    /* A quiet cron is worth showing and not worth paging about; a fresh
+     * install that has never run one has not failed at anything. */
+    chk('a cron that has never run is not reported as broken', (function () {
+        $h3 = ops_health();
+        return !empty($h3['checks']['cron']['ok']);
+    })());
+
+    chk('acknowledged faults are pruned once they stop recurring', (function () {
+        db_exec("UPDATE ops_events SET clearedAt = ?, lastAt = ? WHERE source = 'test.ops.quiet'",
+                [now_iso(), gmdate('Y-m-d\TH:i:s\Z', time() - 40 * 86400)]);
+        $n = ops_prune(30);
+        return $n === 1 && !db_row("SELECT id FROM ops_events WHERE source='test.ops.quiet'");
+    })());
+    chk('…while a live one is never pruned, however old its first sighting', (function () {
+        db_exec("UPDATE ops_events SET firstAt = ? WHERE source='test.ops.boom'",
+                [gmdate('Y-m-d\TH:i:s\Z', time() - 400 * 86400)]);
+        ops_prune(30);
+        return (int)db_row("SELECT COUNT(*) c FROM ops_events WHERE source='test.ops.boom'")['c'] === 2;
+    })());
+    db_exec("DELETE FROM ops_events WHERE source LIKE 'test%' OR source LIKE 'webcron:test%'");
+})();
+
+
+/* ── The attendance register at scale ───────────────────────────────────────
+ * Returned every active student in the cohort: fine at 600, several megabytes
+ * and about a second at 20,000, on a screen a coordinator refreshes all
+ * morning. */
+(function () {
+    $cid = summer_ensure_cohort()['cohortId'];
+    for ($i = 0; $i < 40; $i++) {
+        db_insert('summer_students', ['studentId' => 'SUM-BULK-' . $i, 'cohortId' => $cid,
+            'fullName' => 'Bulk Student ' . str_pad((string)$i, 3, '0', STR_PAD_LEFT),
+            'centre' => $i % 2 ? 'Egbeda' : 'Ayobo', 'track' => 'Tech', 'status' => 'active',
+            'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    /* At-risk only means anything once a few sessions have run, so the cohort
+       needs a history — three past dates, on one student who is therefore NOT
+       at risk while the forty with no attendance at all are. */
+    db_insert('summer_students', ['studentId' => 'SUM-BULK-ATT', 'cohortId' => $cid, 'fullName' => 'Aaa Regular',
+        'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'regStatus' => 'verified',
+        'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+    foreach ([3, 4, 5] as $back) {
+        db_insert('attendance', ['studentId' => 'SUM-BULK-ATT', 'cohortId' => $cid,
+            'date' => gmdate('Y-m-d', time() - $back * 86400), 'method' => 'qr', 'createdAt' => now_iso()]);
+    }
+    $full = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099'])['attendance'];
+    chk('the register is capped and says how many it left out',
+        count($full['roster']) <= $full['rosterCap'] && $full['rosterTotal'] >= 40
+        && $full['rosterCap'] === 300);
+    chk('a smaller page is honoured', (function () {
+        $r = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099', 'limit' => 20])['attendance'];
+        return count($r['roster']) === 20 && $r['rosterTotal'] > 20;
+    })());
+    chk('…and an absurd one is clamped rather than served', (function () {
+        $lo = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099', 'limit' => 1])['attendance'];
+        $hi = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099', 'limit' => 99999])['attendance'];
+        return $lo['rosterCap'] === 20 && $hi['rosterCap'] === 1000;
+    })());
+    /* The cap loses the children nobody needed to look at, because the sort
+     * runs first — the front of the list is the low-attendance end. */
+    chk('what survives the cap is the low-attendance end of the list', (function () {
+        $r = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099', 'limit' => 25])['attendance'];
+        $rates = array_column($r['roster'], 'rate');
+        $sorted = $rates; sort($sorted);
+        return $rates === $sorted && count($rates) === 25;
+    })());
+    chk('a coordinator can scope the register to one centre', (function () {
+        $r = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099', 'centre' => 'Ayobo'])['attendance'];
+        if ($r['rosterCentre'] !== 'Ayobo' || !count($r['roster'])) return false;
+        foreach ($r['roster'] as $x) if ($x['centre'] !== 'Ayobo') return false;
+        return true;
+    })());
+    /* At-risk is the actionable list. Truncating it alongside the roster would
+     * hide exactly the children it exists to surface, so it is computed before
+     * the cap and reported with its own total. */
+    chk('the at-risk list is counted across the whole cohort, not the page', (function () {
+        $r = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099', 'limit' => 20])['attendance'];
+        // Forty children with no attendance at all, shown twenty at a time:
+        // the count has to be forty-odd, or a coordinator reads "20 at risk"
+        // and stops looking.
+        return $r['sessionDays'] >= 3 && count($r['atRisk']) === 20 && $r['atRiskTotal'] > 20;
+    })());
+    // The cohort-wide tiles are aggregates and must not move with the page size.
+    chk('the headline figures are unaffected by paging', (function () {
+        $a = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099', 'limit' => 20])['attendance'];
+        $b = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099', 'limit' => 1000])['attendance'];
+        return $a['activeStudents'] === $b['activeStudents'] && $a['today'] === $b['today']
+            && $a['absentToday'] === $b['absentToday'] && $a['activeStudents'] >= 40;
+    })());
+    db_exec("DELETE FROM attendance WHERE studentId = 'SUM-BULK-ATT'");
+    db_exec("DELETE FROM summer_students WHERE studentId LIKE 'SUM-BULK-%'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

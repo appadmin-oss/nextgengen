@@ -2343,6 +2343,56 @@ const LEADERBOARD = {
     await tP.close(); await tT.close();
     try { fs.unlinkSync(path.join(ROOT, 'tests', '_teach_fixture.html')); } catch (_) {}
 
+    /* ── Diagnostics ───────────────────────────────────────────────────────
+     * The screen a coordinator opens when something feels wrong. Two things
+     * it must not do: signal state by colour alone, and look broken when
+     * nothing has broken. */
+    fs.writeFileSync(path.join(ROOT, 'tests', '_ops_fixture.html'),
+      '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">'
+      + '<link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css"></head>'
+      + '<body class="app-shell app-shell-admin"><div id="x"></div>'
+      + '<script src="/dist/vendor/react.production.min.js"></script>'
+      + '<script src="/dist/vendor/react-dom.production.min.js"></script>'
+      + '<script src="/dist/data.js"></script><script src="/dist/photos.js"></script>'
+      + '<script src="/dist/app.min.js"></script>'
+      + '<script>ReactDOM.createRoot(document.getElementById("x"))'
+      + '.render(React.createElement(window.AdminOps));</script></body></html>');
+    const opsPage = async (payload) => {
+      const pg = await browser.newPage();
+      await pg.addInitScript((pl) => {
+        const stub = { admin: { ops: { status: () => Promise.resolve(pl), clear: () => Promise.resolve({ cleared: 1 }) } } };
+        Object.defineProperty(window, 'NGGApi', { get: () => stub, set: () => {}, configurable: false });
+      }, payload);
+      await pg.goto(BASE + '/tests/_ops_fixture.html', { waitUntil: 'networkidle' });
+      await pg.waitForTimeout(900);
+      return pg;
+    };
+    const busted = await opsPage({ schemaTarget: 67, build: 'abc123', errors24h: 53, clearedCount: 2,
+      health: { ok: false, serving: true, schema: 67,
+        checks: { db: { ok: true, mode: 'rw' }, schema: { ok: true, at: 67 }, cron: { ok: false, stale: ['reminders'] } },
+        cron: { deliver: { interval: 60, ageSeconds: 12 }, reminders: { interval: 900, ageSeconds: 41000 }, maint: { interval: 3600, ageSeconds: null } } },
+      events: [{ id: 1, kind: 'error', source: 'admin.summer.attendance', message: 'no such table: v3_scores',
+                 detail: 'summer.php:812', hits: 53, firstAt: '2026-07-28T06:10:00Z', lastAt: '2026-07-28T09:44:00Z' }] });
+    const bText = await busted.evaluate(() => document.getElementById('x').innerText);
+    ok('the diagnostics screen names the failing endpoint and how often', /admin\.summer\.attendance/.test(bText) && /53×/.test(bText));
+    ok('…and says which background job has stalled', /stalled: reminders/.test(bText) && /11h ago/i.test(bText));
+    /* A red dot and a green dot are the same dot to about one man in twelve,
+       and this is the screen you read in a hurry. */
+    ok('…marking state with a glyph, not colour alone', /✕/.test(bText) && /✓/.test(bText));
+    await busted.close();
+
+    const clean = await opsPage({ schemaTarget: 67, build: 'abc123', errors24h: 0, clearedCount: 0,
+      health: { ok: true, serving: true, schema: 67, checks: { db: { ok: true }, schema: { ok: true, at: 67 }, cron: { ok: true } },
+        cron: { deliver: { interval: 60, ageSeconds: 5 } } },
+      events: [] });
+    const cText = await clean.evaluate(() => document.getElementById('x').innerText);
+    /* An empty table on a diagnostics screen reads as "this is broken too".
+       Say plainly that empty is the good answer. */
+    ok('an empty journal reads as good news, not as a broken screen',
+       /that is the expected state/i.test(cText) && !/✕/.test(cText));
+    await clean.close();
+    try { fs.unlinkSync(path.join(ROOT, 'tests', '_ops_fixture.html')); } catch (_) {}
+
     /* ── The check-in desk's scanned state ─────────────────────────────────
      * Used at arm's length, in a noisy hall, by someone also talking to a
      * child. The old confirmation was an eleven-pixel row prepended to a list
