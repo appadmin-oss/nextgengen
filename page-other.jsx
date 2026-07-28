@@ -4407,6 +4407,8 @@ function MentorPortal() {
   /* Which centre's class is on screen. Only ever set by someone who covers
      more than one — a mentor at a single centre never sees the control. */
   const [centre, setCentre] = React.useState("");
+  const [tabState, setTabState] = React.useState("");   // "" = the role's default
+  const [remarkOn, setRemarkOn] = React.useState(null); // child whose thread is open
   const navy = "#16223e", gold = "#ffce54";
   const load = React.useCallback((c) => {
     setState("loading");
@@ -4477,13 +4479,46 @@ function MentorPortal() {
     ? p.filter(id => !shown.some(s => s.studentId === id))
     : Array.from(new Set(p.concat(shown.map(s => s.studentId)))));
 
-  return shell(<>
+  /* An instructor's home screen is the SESSION, not the roster: they teach one
+     course to the same twenty children and the first thing they need is
+     today's class, already filled in. A mentor's home is still the roster —
+     they cover a centre, not a class. */
+  const teachCourses = (data.courses && data.courses.length) ? data.courses : [];
+  const canTeach = role === "instructor" || (role === "admin" && teachCourses.length > 0);
+  const tab = canTeach ? (tabState || (role === "instructor" ? "session" : "class")) : "class";
+
+  const tabs = canTeach && (
+    <div role="tablist" style={{ display: "flex", gap: 4, marginBottom: 16, borderBottom: "1px solid rgba(255,255,255,.12)" }}>
+      {[["session", "Today's session"], ["class", "Stars & notes"], ["skills", "Skills"]].map(([k, label]) => (
+        <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTabState(k)}
+          style={{ padding: "11px 14px", minHeight: 44, background: "none", border: "none", cursor: "pointer",
+                   borderBottom: "2px solid " + (tab === k ? gold : "transparent"), marginBottom: -1,
+                   color: tab === k ? "#fff" : "rgba(230,238,255,.6)", fontWeight: 700, fontSize: 14, fontFamily: "inherit" }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const header = (
     <div style={{ marginBottom: 18 }}>
       <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{roleMeta.eyebrow}</div>
       <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{m.name || "Your class"}</h1>
       <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>{m.centre || "All centres"}{m.department ? " · " + m.department : ""} · {students.length} student{students.length === 1 ? "" : "s"} · {done} starred today</p>
     </div>
+  );
+
+  if (tab === "session") return shell(<>{header}{centrePicker}{tabs}
+    <SessionPanel courses={teachCourses} centre={data.centre || m.centre || ""} onRemarks={setRemarkOn}/>
+  </>);
+  if (tab === "skills") return shell(<>{header}{centrePicker}{tabs}
+    <SkillsPanel courses={teachCourses} centre={data.centre || m.centre || ""}/>
+  </>);
+
+  return shell(<>
+    {header}
     {centrePicker}
+    {tabs}
     {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No {roleMeta.they} here yet.</p>}
 
     {students.length > 0 && (
@@ -4502,7 +4537,10 @@ function MentorPortal() {
     <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingBottom: picked.length ? 96 : 0 }}>
       {!shown.length && students.length > 0 && <p style={{ color: "rgba(230,238,255,.5)", fontSize: 13.5 }}>Nobody matches “{query}”.</p>}
       {shown.map(s => (
-        <div key={s.studentId} style={{ display: "flex", alignItems: "center", gap: 12,
+        /* Three actions plus a checkbox and an avatar do not fit beside a
+           name at 390px — the name wrapped mid-word and the buttons collided.
+           Let the action group drop to its own line instead of squeezing. */
+        <div key={s.studentId} style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
             background: isPicked(s.studentId) ? "rgba(255,206,84,.14)" : "rgba(255,255,255,.06)",
             border: "1px solid " + (isPicked(s.studentId) ? "rgba(255,206,84,.5)" : "rgba(255,255,255,.12)"),
             borderRadius: 14, padding: "10px 14px" }}>
@@ -4510,15 +4548,20 @@ function MentorPortal() {
             aria-label={"Select " + s.fullName}
             style={{ width: 20, height: 20, flex: "none", accentColor: gold, cursor: "pointer" }}/>
           <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb,#8fbb3f)", flex: "none" }}>{s.photoUrl ? <img src={s.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ flex: "1 1 120px", minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>{s.fullName}</div>
             <div style={{ fontSize: 12, color: "rgba(230,238,255,.55)" }}>{s.track || ""}{s.v3 ? " · V3 " + (s.v3.verbal + s.v3.vocal + s.v3.visual) + "/15" : ""}</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto", marginLeft: "auto" }}>
             {s.starredToday
               ? <span title={s.note} style={{ color: gold, fontWeight: 800, fontSize: 16 }}>{"★".repeat(s.starredToday)}</span>
               : <button onClick={() => setSheet(s)} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid " + gold, background: "transparent", color: gold, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>★ Stars</button>}
             <button onClick={() => setV3sheet(s)} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid " + (s.v3 ? "#7fd1a6" : "rgba(255,255,255,.28)"), background: s.v3 ? "rgba(127,209,166,.14)" : "transparent", color: s.v3 ? "#a7e8c6" : "#cdd6ea", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{s.v3 ? "V3 ✓" : "V3"}</button>
+            {/* The thread. A star is a reward and one a day; this is where the
+                things that are not rewards go, and where the mentor reads what
+                the instructor saw on Wednesday. */}
+            <button onClick={() => setRemarkOn(s)} title={"Notes on " + s.fullName} aria-label={"Notes on " + s.fullName}
+              style={{ minWidth: 44, minHeight: 40, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,.28)", background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>✎</button>
           </div>
         </div>
       ))}
@@ -4545,9 +4588,338 @@ function MentorPortal() {
       onClose={() => setBulkOpen(false)}
       onDone={(res) => { setBulkOpen(false); setPicked([]); load(); return res; }}
       subjectIds={picked}/>}
-    {sheet && <MentorStarSheet student={sheet} categories={data.categories || []} onClose={() => setSheet(null)} onDone={() => { setSheet(null); load(); }}/>}
-    {v3sheet && <MentorV3Sheet student={v3sheet} period={data.period} onClose={() => setV3sheet(null)} onDone={() => { setV3sheet(null); load(); }}/>}
+    {sheet && <MentorStarSheet student={sheet} categories={data.categories || []} onClose={() => setSheet(null)} onDone={() => { setSheet(null); load(centre); }}/>}
+    {v3sheet && <MentorV3Sheet student={v3sheet} period={data.period} onClose={() => setV3sheet(null)} onDone={() => { setV3sheet(null); load(centre); }}/>}
+    {remarkOn && <RemarksSheet student={remarkOn} onClose={() => setRemarkOn(null)}/>}
   </>);
+}
+
+/* ── Today's session ─────────────────────────────────────────────────────────
+   The instructor's home screen. Two things to fill in — what we covered and
+   how the room went — over a register the gate has already answered. Ticking
+   twenty children who were all scanned in is work with no information in it,
+   so the list starts correct and you touch only the exceptions. */
+function SessionPanel({ courses, centre, onRemarks }) {
+  const [course, setCourse] = React.useState(courses[0] || "");
+  const [d, setD] = React.useState(null);
+  const [state, setState] = React.useState("loading");
+  const [covered, setCovered] = React.useState("");
+  const [room, setRoom] = React.useState(0);
+  const [flip, setFlip] = React.useState({});   // studentId → present, only where changed
+  const [busy, setBusy] = React.useState(false);
+  const [saved, setSaved] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const gold = "#ffce54", green = "#7fd1a6";
+
+  const load = React.useCallback(() => {
+    if (!course) { setState("ready"); setD(null); return; }
+    setState("loading"); setErr("");
+    NGGApi.member.session(course, centre).then(r => {
+      setD(r); setState("ready"); setFlip({});
+      setCovered((r.log && r.log.covered) || "");
+      setRoom((r.log && r.log.roomScore) || 0);
+    }).catch(e => { setErr(e.code || e.message); setState("error"); });
+  }, [course, centre]);
+  React.useEffect(() => { load(); }, [load]);
+
+  if (!courses.length) return <p style={{ color: "rgba(230,238,255,.6)", fontSize: 14 }}>No courses are assigned to you yet — ask an admin to add them to your record.</p>;
+  if (state === "loading") return <div style={{ textAlign: "center", padding: "50px 0" }}><div className="dash-spinner"/></div>;
+  if (state === "error") return <p style={{ color: "#ff9a9a", fontSize: 14 }}>Couldn't load the class ({err}). <button onClick={load} style={{ background: "none", border: "none", color: gold, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Retry</button></p>;
+
+  const kids = (d && d.students) || [];
+  const isHere = (s) => (s.studentId in flip) ? flip[s.studentId] : s.present;
+  const here = kids.filter(isHere).length;
+  const submit = async () => {
+    setBusy(true); setErr(""); setSaved("");
+    const markedPresent = [], markedAbsent = [];
+    kids.forEach(s => {
+      // Only send what differs from the gate's own answer — the log records
+      // corrections, not a second copy of the register.
+      const want = isHere(s);
+      if (want !== s.scanned) (want ? markedPresent : markedAbsent).push(s.studentId);
+    });
+    try {
+      const r = await NGGApi.member.sessionSave({ course, centre, covered: covered.trim(), roomScore: room, markedPresent, markedAbsent });
+      setSaved("Filed · " + r.presentCount + " here, " + r.absentCount + " away");
+      setBusy(false); load();
+    } catch (e) {
+      setErr(e.code === "nothing_to_record" ? "Add a line about what you covered, or rate the room."
+           : e.code === "not_your_course" ? "That isn't one of your courses."
+           : (e.code || e.message));
+      setBusy(false);
+    }
+  };
+
+  return <>
+    {courses.length > 1 && (
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <span style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)" }}>COURSE</span>
+        <select value={course} onChange={e => setCourse(e.target.value)}
+          style={{ flex: "1 1 200px", minWidth: 170, minHeight: 44, padding: "10px 12px", borderRadius: 11, fontSize: 15, fontWeight: 600,
+                   background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.18)", color: "#eef2fb" }}>
+          {courses.map(c => <option key={c} value={c} style={{ color: "#16223e" }}>{c}</option>)}
+        </select>
+      </label>
+    )}
+
+    <div style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, padding: 14, marginBottom: 14 }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 8 }}>
+        {course.toUpperCase()} · {d && d.date}{d && d.log ? " · FILED" : ""}
+      </div>
+      <textarea value={covered} onChange={e => setCovered(e.target.value)} rows={3} maxLength={1000}
+        placeholder="What did you cover today?" aria-label="What did you cover today?"
+        style={{ width: "100%", boxSizing: "border-box", padding: "11px 12px", borderRadius: 11, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontSize: 15, resize: "vertical", fontFamily: "inherit" }}/>
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 13, color: "rgba(230,238,255,.7)", marginBottom: 6 }}>How did the room go?</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[1, 2, 3, 4, 5].map(n => (
+            <button key={n} onClick={() => setRoom(room === n ? 0 : n)} aria-label={"Room " + n + " of 5"} aria-pressed={room === n}
+              style={{ flex: 1, minHeight: 44, borderRadius: 10, border: "1px solid " + (n <= room ? green : "rgba(255,255,255,.18)"),
+                       background: n <= room ? "rgba(127,209,166,.18)" : "transparent",
+                       color: n <= room ? "#d7f6e6" : "rgba(230,238,255,.5)", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{n}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+      <span style={{ fontWeight: 700, fontSize: 15 }}>Register</span>
+      <span style={{ fontSize: 13, color: "rgba(230,238,255,.6)" }}>{here} of {kids.length} here</span>
+    </div>
+    {!kids.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>Nobody is enrolled on {course} at {centre} yet.</p>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 90 }}>
+      {kids.map(s => {
+        const on = isHere(s);
+        return (
+          <div key={s.studentId} style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 12, padding: "8px 12px",
+              background: on ? "rgba(127,209,166,.10)" : "rgba(255,255,255,.05)",
+              border: "1px solid " + (on ? "rgba(127,209,166,.32)" : "rgba(255,255,255,.12)") }}>
+            <button onClick={() => setFlip(f => ({ ...f, [s.studentId]: !on }))} aria-pressed={on} aria-label={(on ? "Mark away: " : "Mark here: ") + s.fullName}
+              style={{ minWidth: 74, minHeight: 40, borderRadius: 9, cursor: "pointer", fontWeight: 800, fontSize: 13,
+                       border: "1px solid " + (on ? green : "rgba(255,255,255,.24)"),
+                       background: on ? "rgba(127,209,166,.2)" : "transparent", color: on ? "#d7f6e6" : "rgba(230,238,255,.6)" }}>
+              {on ? "Here" : "Away"}
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 15 }}>{s.fullName}</div>
+              {/* A scan and a hand correction look identical otherwise, and an
+                  instructor should be able to see which one they are trusting. */}
+              <div style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)" }}>
+                {s.scanned ? "scanned in at the gate" : "no gate scan"}{(s.studentId in flip) ? " · changed by you" : (s.overridden ? " · corrected" : "")}
+              </div>
+            </div>
+            <button onClick={() => onRemarks(s)} aria-label={"Notes on " + s.fullName}
+              style={{ minWidth: 44, minHeight: 40, borderRadius: 9, border: "1px solid rgba(255,255,255,.24)", background: "transparent", color: "#cdd6ea", fontSize: 15, cursor: "pointer" }}>✎</button>
+          </div>
+        );
+      })}
+    </div>
+
+    <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 90, padding: "12px 16px calc(12px + env(safe-area-inset-bottom,0px))",
+                  background: "rgba(10,17,36,.96)", borderTop: "1px solid rgba(255,255,255,.14)", backdropFilter: "blur(8px)" }}>
+      <div style={{ maxWidth: 760, margin: "0 auto", display: "flex", gap: 10, alignItems: "center" }}>
+        <span style={{ fontSize: 13, color: err ? "#ff9a9a" : "rgba(230,238,255,.7)", flex: 1, minWidth: 0 }}>{err || saved || (d && d.log ? "Filed — saving again updates it" : "Not filed yet")}</span>
+        <button onClick={submit} disabled={busy}
+          style={{ padding: "13px 22px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer", minHeight: 44 }}>
+          {busy ? "Filing…" : (d && d.log ? "Update" : "File session")}
+        </button>
+      </div>
+    </div>
+  </>;
+}
+
+/* ── Skills ──────────────────────────────────────────────────────────────────
+   Four levels and no numbers. A score out of five invites a ranking between
+   children; these say what one child can now do. */
+function SkillsPanel({ courses, centre }) {
+  const [course, setCourse] = React.useState(courses[0] || "");
+  const [d, setD] = React.useState(null);
+  const [state, setState] = React.useState("loading");
+  const [open, setOpen] = React.useState("");   // studentId whose card is expanded
+  const [busy, setBusy] = React.useState("");
+  const gold = "#ffce54";
+  const LEVEL_COLOR = { 1: "rgba(255,255,255,.16)", 2: "rgba(245,176,38,.35)", 3: "rgba(127,209,166,.4)", 4: "rgba(127,209,166,.75)" };
+
+  const load = React.useCallback(() => {
+    if (!course) { setState("ready"); return; }
+    setState("loading");
+    NGGApi.member.skillsBoard(course, centre).then(r => { setD(r); setState("ready"); }).catch(() => setState("error"));
+  }, [course, centre]);
+  React.useEffect(() => { load(); }, [load]);
+
+  if (!courses.length) return <p style={{ color: "rgba(230,238,255,.6)", fontSize: 14 }}>No courses are assigned to you yet.</p>;
+  if (state === "loading") return <div style={{ textAlign: "center", padding: "50px 0" }}><div className="dash-spinner"/></div>;
+  if (state === "error") return <p style={{ color: "#ff9a9a", fontSize: 14 }}>Couldn't load the skills grid. <button onClick={load} style={{ background: "none", border: "none", color: gold, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Retry</button></p>;
+
+  const skills = (d && d.skills) || [];
+  const levels = (d && d.levels) || {};
+  const mark = async (studentId, skill, level) => {
+    setBusy(studentId + "|" + skill);
+    try { await NGGApi.member.skillsMark(studentId, course, { [skill]: level }); await load(); }
+    catch (_) { /* the grid reloads either way; a failed mark simply stays unset */ }
+    setBusy("");
+  };
+
+  return <>
+    {courses.length > 1 && (
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <span style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)" }}>COURSE</span>
+        <select value={course} onChange={e => { setCourse(e.target.value); setOpen(""); }}
+          style={{ flex: "1 1 200px", minWidth: 170, minHeight: 44, padding: "10px 12px", borderRadius: 11, fontSize: 15, fontWeight: 600,
+                   background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.18)", color: "#eef2fb" }}>
+          {courses.map(c => <option key={c} value={c} style={{ color: "#16223e" }}>{c}</option>)}
+        </select>
+      </label>
+    )}
+    {!skills.length && <p style={{ color: "rgba(230,238,255,.6)", fontSize: 14 }}>No skills are named for {course} yet — an admin sets them in the Control Room.</p>}
+    {skills.length > 0 && (
+      <p style={{ color: "rgba(230,238,255,.55)", fontSize: 13, margin: "0 0 12px" }}>
+        {skills.length} skills · tap a child, then tap where they are. You can change it any week — the question is what they can do now.
+      </p>
+    )}
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 24 }}>
+      {((d && d.students) || []).map(s => {
+        const isOpen = open === s.studentId;
+        return (
+          <div key={s.studentId} style={{ borderRadius: 14, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)" }}>
+            <button onClick={() => setOpen(isOpen ? "" : s.studentId)} aria-expanded={isOpen}
+              style={{ width: "100%", minHeight: 44, display: "flex", alignItems: "center", gap: 10, padding: "11px 14px",
+                       background: "none", border: "none", color: "#eef2fb", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+              <span style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 15 }}>{s.fullName}</span>
+              <span style={{ fontSize: 12.5, color: s.marked === s.of && s.of > 0 ? "#a7e8c6" : "rgba(230,238,255,.55)" }}>{s.marked}/{s.of}</span>
+              <span aria-hidden="true" style={{ color: "rgba(230,238,255,.5)" }}>{isOpen ? "▾" : "▸"}</span>
+            </button>
+            {isOpen && (
+              <div style={{ padding: "0 14px 14px" }}>
+                {skills.map(sk => (
+                  <div key={sk} style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13.5, marginBottom: 6, color: "rgba(230,238,255,.85)" }}>{sk}</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {[1, 2, 3, 4].map(n => {
+                        const on = (s.marks || {})[sk] === n;
+                        return (
+                          <button key={n} disabled={busy === s.studentId + "|" + sk} onClick={() => mark(s.studentId, sk, n)} aria-pressed={on}
+                            style={{ flex: "1 1 auto", minWidth: 78, minHeight: 40, padding: "8px 10px", borderRadius: 9, cursor: "pointer",
+                                     border: "1px solid " + (on ? LEVEL_COLOR[n] : "rgba(255,255,255,.16)"),
+                                     background: on ? LEVEL_COLOR[n] : "transparent",
+                                     color: on ? "#0d1c14" : "rgba(230,238,255,.65)", fontWeight: on ? 800 : 600, fontSize: 12.5, fontFamily: "inherit" }}>
+                            {levels[n]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  </>;
+}
+
+/* ── The thread on one child ─────────────────────────────────────────────────
+   Staff-only. The instructor writes what they saw on Wednesday and the mentor
+   reads it before Saturday — that hand-off is the entire point.
+
+   The four kinds are the author's own call. The classifier runs behind them
+   and raises the safeguarding flag, which is the one thing nobody should have
+   to remember to tick, but it never touches the words. */
+const REMARK_KIND_META = {
+  progress:        { label: "Progress",       hint: "moved forward on something",       color: "#7fd1a6" },
+  strength:        { label: "Strength",       hint: "something they are good at",       color: "#ffce54" },
+  concern:         { label: "Concern",        hint: "something that worried you",       color: "#ff9a9a" },
+  "parent-worthy": { label: "Tell a parent",  hint: "worth saying at the next pickup",  color: "#b07cff" },
+};
+
+function RemarksSheet({ student, onClose }) {
+  const [rows, setRows] = React.useState(null);
+  const [kind, setKind] = React.useState("progress");
+  const [body, setBody] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const gold = "#ffce54";
+  const load = React.useCallback(() => {
+    NGGApi.member.remarks(student.studentId).then(r => setRows(r.remarks || [])).catch(() => setRows([]));
+  }, [student.studentId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const submit = async () => {
+    if (!body.trim()) return;
+    setBusy(true); setErr("");
+    try { await NGGApi.member.remarkAdd(student.studentId, kind, body.trim()); setBody(""); setBusy(false); load(); }
+    catch (e) { setErr(e.code === "not_found" ? "That child isn't in your class." : (e.code || e.message)); setBusy(false); }
+  };
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label={"Notes on " + student.fullName}
+      onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(4,8,20,.72)", display: "grid", placeItems: "end center" }}>
+      <div style={{ width: "100%", maxWidth: 560, maxHeight: "88vh", overflowY: "auto", background: "#101a33", color: "#eef2fb",
+                    borderRadius: "18px 18px 0 0", padding: "20px 20px calc(20px + env(safe-area-inset-bottom,0px))", border: "1px solid rgba(255,255,255,.14)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+          <h2 style={{ margin: "0 0 4px", fontSize: 19 }}>Notes · {student.fullName}</h2>
+          <button onClick={onClose} aria-label="Close" style={{ minWidth: 44, minHeight: 40, background: "none", border: "none", color: "rgba(230,238,255,.6)", fontSize: 20, cursor: "pointer" }}>×</button>
+        </div>
+        <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "rgba(230,238,255,.55)" }}>Seen by their mentor and by admin staff. Never shown to parents or to the child.</p>
+
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          {Object.keys(REMARK_KIND_META).map(k => {
+            const meta = REMARK_KIND_META[k], on = kind === k;
+            return (
+              <button key={k} onClick={() => setKind(k)} aria-pressed={on} title={meta.hint}
+                style={{ minHeight: 40, padding: "9px 13px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit",
+                         border: "1px solid " + (on ? meta.color : "rgba(255,255,255,.2)"),
+                         background: on ? meta.color : "transparent", color: on ? "#0d1424" : "rgba(230,238,255,.7)",
+                         fontWeight: on ? 800 : 600, fontSize: 13 }}>{meta.label}</button>
+            );
+          })}
+        </div>
+        <textarea value={body} onChange={e => setBody(e.target.value)} rows={3} maxLength={1200}
+          placeholder={REMARK_KIND_META[kind].hint + "…"} aria-label="Your note"
+          style={{ width: "100%", boxSizing: "border-box", padding: "11px 12px", borderRadius: 11, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontSize: 15, resize: "vertical", fontFamily: "inherit" }}/>
+        {err && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "8px 0 0" }}>{err}</p>}
+        <button onClick={submit} disabled={busy || !body.trim()}
+          style={{ width: "100%", marginTop: 10, padding: "13px", borderRadius: 12, border: "none", minHeight: 44,
+                   background: body.trim() ? gold : "rgba(255,255,255,.12)", color: body.trim() ? "#2b2100" : "rgba(230,238,255,.4)",
+                   fontWeight: 800, fontSize: 15, cursor: body.trim() ? "pointer" : "default" }}>
+          {busy ? "Saving…" : "Add note"}
+        </button>
+
+        <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+          {rows === null && <div style={{ textAlign: "center", padding: 20 }}><div className="dash-spinner"/></div>}
+          {rows && !rows.length && <p style={{ color: "rgba(230,238,255,.5)", fontSize: 13.5 }}>Nothing written about {student.fullName} yet.</p>}
+          {(rows || []).map(r => {
+            const meta = REMARK_KIND_META[r.kind] || { label: r.kind, color: "rgba(255,255,255,.4)" };
+            return (
+              <div key={r.remarkId} style={{ borderRadius: 12, padding: "11px 13px", background: "rgba(255,255,255,.05)",
+                    borderLeft: "3px solid " + meta.color, border: "1px solid rgba(255,255,255,.1)" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", marginBottom: 5 }}>
+                  <span style={{ fontWeight: 800, fontSize: 12, color: meta.color }}>{meta.label}</span>
+                  {/* A flag that only lives in a database column is a flag
+                      nobody acts on. It is the first thing on the card. */}
+                  {r.safeguarding && (
+                    <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999,
+                                   background: r.status === "acknowledged" ? "rgba(127,209,166,.2)" : "rgba(255,90,60,.22)",
+                                   color: r.status === "acknowledged" ? "#a7e8c6" : "#ffb3a3" }}>
+                      {r.status === "acknowledged" ? "✓ seen by admin" : "⚑ safeguarding"}
+                    </span>
+                  )}
+                  <span style={{ flex: 1 }}/>
+                  <span style={{ fontSize: 11.5, color: "rgba(230,238,255,.45)" }}>{(r.createdAt || "").slice(0, 10)}</span>
+                </div>
+                <div style={{ fontSize: 14.5, lineHeight: 1.5 }}>{r.body}</div>
+                <div style={{ fontSize: 11.5, color: "rgba(230,238,255,.45)", marginTop: 6 }}>
+                  {r.authorName}{r.authorRole ? " · " + r.authorRole : ""}{r.course ? " · " + r.course : ""}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ── Bulk record sheet ───────────────────────────────────────────────────────

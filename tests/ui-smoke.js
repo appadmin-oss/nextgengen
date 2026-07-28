@@ -2220,6 +2220,129 @@ const LEADERBOARD = {
        Math.abs(stuck.after - stuck.before) <= 1);
     await amP.close(); await amT.close();
 
+    /* ── The teaching record, driven end to end ────────────────────────────
+     * The whole point of the session log is that the register starts CORRECT
+     * and the instructor touches only the exceptions — so what gets sent has
+     * to be the corrections, not a second copy of the roll. That is invisible
+     * in the markup and only shows up by driving the screen and reading the
+     * request. */
+    const tT = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+    const tP = await tT.newPage();
+    const tErr = [];
+    tP.on('pageerror', e => tErr.push(e.message));
+    await tP.addInitScript(() => {
+      const session = {
+        course: 'Talking Drums', centre: 'Egbeda', date: '2026-07-28', role: 'instructor',
+        courses: ['Talking Drums'], log: null,
+        skills: ['Holds a steady pulse', 'Plays the core patterns cleanly'],
+        levels: { 1: 'not yet', 2: 'getting there', 3: 'can do it', 4: 'can teach it' },
+        students: [
+          // Scanned and present: the instructor changes nothing about them.
+          { studentId: 'S1', fullName: 'Ade Drummer', present: true, scanned: true, overridden: false },
+          // Missed by the scanner: this is the one the log exists to correct.
+          { studentId: 'S2', fullName: 'Bola Drummer', present: false, scanned: false, overridden: false },
+        ],
+      };
+      window.__sent = [];
+      const stub = {
+        auth: { me: () => Promise.resolve({ member: { memberId: 'VOL-INS-1', fullName: 'Ife Instructor', portal: 'instructor', caps: [], role: 'volunteer' } }) },
+        member: {
+          mentorRoster: () => Promise.resolve({
+            role: 'instructor', centre: 'Egbeda', centres: ['Egbeda'], needsCentre: false,
+            courses: ['Talking Drums'], categories: [], presets: [],
+            mentor: { name: 'Ife Instructor', centre: 'Egbeda', department: 'Talking Drums', programmes: ['summer'] },
+            students: [{ studentId: 'S1', fullName: 'Ade Drummer', track: 'Talking Drums', starredToday: 0, v3: null }],
+          }),
+          session: () => Promise.resolve(JSON.parse(JSON.stringify(session))),
+          sessionSave: (d) => { window.__sent.push(d); return Promise.resolve({ sessionLogId: 'CS-1', presentCount: 2, absentCount: 0 }); },
+          skillsBoard: () => Promise.resolve({
+            course: 'Talking Drums', centre: 'Egbeda', skills: session.skills, levels: session.levels,
+            students: [{ studentId: 'S1', fullName: 'Ade Drummer', marks: { 'Holds a steady pulse': 3 }, marked: 1, of: 2 }],
+          }),
+          skillsMark: () => Promise.resolve({ saved: 1 }),
+          remarks: () => Promise.resolve({ subjectId: 'S1', subjectName: 'Ade Drummer', remarks: [
+            { remarkId: 'R1', kind: 'progress', body: 'Kept the pulse through the whole piece.', authorName: 'Ife Instructor', authorRole: 'instructor', course: 'Talking Drums', safeguarding: false, status: 'open', createdAt: '2026-07-27T10:00:00Z' },
+            { remarkId: 'R2', kind: 'concern', body: 'Came in hungry again.', authorName: 'Ife Instructor', authorRole: 'instructor', course: 'Talking Drums', safeguarding: true, status: 'open', createdAt: '2026-07-28T10:00:00Z' },
+          ] }),
+          remarkAdd: () => Promise.resolve({ remarkId: 'R3', safeguarding: false }),
+        },
+      };
+      /* Booting the real app means other screens call the client too. Anything
+         this fixture does not model resolves empty rather than throwing, so the
+         page-error assertion below stays about the teaching screens. */
+      const soft = (obj) => new Proxy(obj, {
+        get: (t, k) => (k in t) ? t[k] : (typeof k === 'string' ? () => Promise.resolve({}) : undefined),
+      });
+      stub.member = soft(stub.member);
+      const root = new Proxy(stub, { get: (t, k) => (k in t) ? t[k] : soft({}) });
+      /* The bundle assigns window.NGGApi as it loads, so a plain assignment
+         here is overwritten before the portal ever calls it. */
+      Object.defineProperty(window, 'NGGApi', { get: () => root, set: () => {}, configurable: false });
+    });
+    /* Boot the real bundle and navigate the way the app's own sign-in modal
+       does. Serving index.html directly does not work here: its asset paths are
+       absolute and this harness roots the server above /dist. */
+    fs.writeFileSync(path.join(ROOT, 'tests', '_teach_fixture.html'),
+      '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">'
+      + '<link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css"></head>'
+      + '<body><div id="root"></div>'
+      + '<script src="/dist/vendor/react.production.min.js"></script>'
+      + '<script src="/dist/vendor/react-dom.production.min.js"></script>'
+      + '<script src="/dist/data.js"></script><script src="/dist/photos.js"></script>'
+      + '<script src="/dist/app.min.js"></script></body></html>');
+    await tP.goto(BASE + '/tests/_teach_fixture.html', { waitUntil: 'networkidle' });
+    await tP.waitForFunction(() => typeof window.__navigate === 'function', null, { timeout: 15000 });
+    await tP.evaluate(() => window.__navigate('mentor'));
+    await tP.waitForTimeout(1400);
+
+    /* An instructor's home is the class, not the roster: they teach one course
+       to the same twenty children and the first thing they need is today. */
+    ok('an instructor lands on today\'s session, not the star roster',
+       await tP.evaluate(() => {
+         const t = document.querySelector('[role="tab"][aria-selected="true"]');
+         return !!t && /Today's session/.test(t.textContent);
+       }));
+    ok('…with the register already answered by the gate scan',
+       await tP.getByRole('button', { name: /Mark away: Ade Drummer/ }).count() === 1
+       && await tP.getByRole('button', { name: /Mark here: Bola Drummer/ }).count() === 1);
+
+    await tP.getByRole('button', { name: /Mark here: Bola Drummer/ }).click();
+    await tP.getByRole('button', { name: /^File session$/ }).click();
+    await tP.waitForTimeout(400);
+    const filed = await tP.evaluate(() => window.__sent[0] || null);
+    /* The claim the whole design rests on. Sending both children back would
+       fork the register: the gate would say one thing and the log another,
+       with no way to tell which was right an hour later. */
+    ok('filing sends only the child the instructor corrected',
+       !!filed && JSON.stringify(filed.markedPresent) === '["S2"]' && JSON.stringify(filed.markedAbsent) === '[]');
+
+    await tP.getByRole('tab', { name: 'Skills' }).click();
+    await tP.waitForTimeout(400);
+    await tP.getByRole('button', { name: /Ade Drummer/ }).first().click();
+    await tP.waitForTimeout(300);
+    const lv = await tP.evaluate(() => Array.from(document.querySelectorAll('button')).map(b => b.textContent.trim()));
+    /* Four named levels and no score. A number out of five invites a ranking
+       between children; this is meant to say what one child can now do. */
+    ok('the skills grid offers named levels, never a number',
+       ['not yet', 'getting there', 'can do it', 'can teach it'].every(l => lv.indexOf(l) !== -1)
+       && !lv.some(x => /^[1-5]$/.test(x)));
+
+    await tP.getByRole('tab', { name: 'Stars & notes' }).click();
+    await tP.waitForTimeout(400);
+    await tP.getByRole('button', { name: /Notes on Ade Drummer/ }).first().click();
+    await tP.waitForTimeout(400);
+    const thread = await tP.evaluate(() => {
+      const d = document.querySelector('[role="dialog"]');
+      return d ? d.innerText : '';
+    });
+    ok('the notes thread shows what the instructor wrote', /Kept the pulse through the whole piece/.test(thread));
+    /* A flag that only lives in a database column is a flag nobody acts on. */
+    ok('…and a safeguarding flag is visible on the card, not just stored', /safeguarding/i.test(thread));
+    ok('…while saying plainly who can read it', /Never shown to parents/i.test(thread));
+    ok('the teaching screens threw nothing (' + (tErr[0] || 'clean') + ')', tErr.length === 0);
+    await tP.close(); await tT.close();
+    try { fs.unlinkSync(path.join(ROOT, 'tests', '_teach_fixture.html')); } catch (_) {}
+
     /* ── The check-in desk's scanned state ─────────────────────────────────
      * Used at arm's length, in a noisy hall, by someone also talking to a
      * child. The old confirmation was an eleven-pixel row prepended to a list

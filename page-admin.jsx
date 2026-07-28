@@ -51,6 +51,7 @@ const ADMIN_SECTIONS = [
   { id: "mentors",     group: "People",   label: "Mentors",      title: "Mentors",             icon: "☺", cap: "people" },
   { id: "mentorship",  group: "People",   label: "Mentorship",   title: "Mentorship",          icon: "◐", cap: "people" },
   { id: "behaviour",   group: "People",   label: "Behaviour",    title: "Behaviour monitor",   icon: "◔", cap: "people" },
+  { id: "staff",       group: "People",   label: "Staff activity", title: "Staff activity",    icon: "◑", cap: "people" },
   { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
   { id: "qr",          group: "People",   label: "QR codes",     title: "QR codes",            icon: "▦", cap: "summer" },
   { id: "attendance",  group: "People",   label: "Attendance duty", title: "Attendance duty",  icon: "🗓", cap: "summer" },
@@ -170,6 +171,7 @@ function AdminPage({ setPage }) {
           {view === "access" && <AdminAccess/>}
           {view === "audit" && <AdminAudit/>}
           {view === "behaviour" && <AdminBehaviour/>}
+          {view === "staff" && <AdminStaff/>}
           {view === "integrations" && <AdminIntegrations/>}
           {view === "comments" && <AdminComments/>}
           {view === "community" && <AdminCommunity/>}
@@ -3685,6 +3687,129 @@ function AdminComments() {
 // ============================================================================
 // Behaviour monitor — log observations, AI/rule triage, wellbeing flags
 // ============================================================================
+
+/* ── Staff activity ──────────────────────────────────────────────────────────
+   What the programme knows about the adults, not the children.
+
+   Deliberately activity, not judgement: counts of what each person filed over
+   a window, next to how many children they are responsible for. No score and
+   no ranking — a coordinator reading this should be able to see who has gone
+   quiet and go and ask them why, which is the only use of it that helps
+   anybody. Quietest first, because sorting by the busiest buries exactly the
+   people the screen exists to find. */
+function AdminStaff() {
+  const [d, setD] = React.useState(null);
+  const [days, setDays] = React.useState(30);
+  const [err, setErr] = React.useState("");
+  const [skills, setSkills] = React.useState(null);
+  const [dirty, setDirty] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [tab, setTab] = React.useState("activity");
+  React.useEffect(() => {
+    NGGApi.admin.staff.performance(days).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  }, [days]);
+  React.useEffect(() => {
+    if (tab === "skills" && skills === null) NGGApi.admin.staff.skills().then(r => setSkills(r.skills || {})).catch(e => toast.error(e.code || e.message));
+  }, [tab]);
+
+  const saveSkills = async () => {
+    setBusy(true);
+    try { const r = await NGGApi.admin.staff.saveSkills(skills); setSkills(r.skills || {}); setDirty(false); toast.success("Instructors mark against these from now on", "Skills saved"); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+
+  const rows = (d && d.staff) || [];
+  const t = (d && d.totals) || {};
+  /* A count with no denominator says nothing. 12 stars is diligent for a
+     mentor with 8 children and thin for one with 40, so coverage is the
+     column that carries the meaning. */
+  const covChip = (c) => c === null ? "chip-navy" : c >= 70 ? "chip-lime" : c >= 30 ? "chip-gold" : "chip-crimson";
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Staff activity</h2>
+        <div className="admin-section-actions">
+          <FieldSelect label="" value={String(days)} onChange={v => setDays(parseInt(v, 10) || 30)}
+            options={[{ value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" }, { value: "90", label: "Last 90 days" }]}/>
+        </div>
+      </div>
+      <div className="admin-tabs">
+        <button className={"admin-tab" + (tab === "activity" ? " is-active" : "")} onClick={() => setTab("activity")}>Who is filing{t.silent ? " · " + t.silent + " silent" : ""}</button>
+        <button className={"admin-tab" + (tab === "skills" ? " is-active" : "")} onClick={() => setTab("skills")}>Course skills</button>
+      </div>
+
+      {tab === "activity" && <>
+        <p className="admin-hint">Mentors and instructors together, quietest first. These are counts of work filed, not a rating — the point is to notice who has stopped, not to rank anyone.</p>
+        {err && <p className="admin-error">{err}</p>}
+        {!d && !err && <p className="admin-hint">Loading…</p>}
+        {d && (
+          <div className="admin-chips" style={{ marginBottom: 12 }}>
+            <span className="chip chip-navy">{t.staff} staff</span>
+            {t.silent > 0 && <span className="chip chip-crimson">{t.silent} never filed anything</span>}
+            <span className="chip chip-navy">{t.stars} stars</span>
+            <span className="chip chip-navy">{t.remarks} notes</span>
+            {t.flags > 0 && <span className="chip chip-gold">{t.flags} safeguarding</span>}
+            <span className="chip chip-navy">{t.sessions} sessions</span>
+            <span className="chip chip-navy">{t.skillMarks} skill marks</span>
+          </div>
+        )}
+        {d && (
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Person</th><th>Centre</th><th>Last active</th><th>Coverage</th><th>Stars</th><th>Notes</th><th>Sessions</th><th>Skills</th></tr></thead>
+              <tbody>
+                {!rows.length && <tr><td colSpan={8} className="admin-empty">No mentors or instructors on record yet.</td></tr>}
+                {rows.map(s => (
+                  <tr key={s.staffId + s.kind}>
+                    <td>
+                      <div className="admin-cell-name">{s.fullName}</div>
+                      <div className="mono admin-cell-sub">{s.kind}{s.focus ? " · " + s.focus : ""}</div>
+                    </td>
+                    <td className="mono">{s.centre || "—"}</td>
+                    <td>
+                      {/* Never-filed is a different thing from "quiet for a
+                          while", and the two must not read the same. */}
+                      {s.lastActive
+                        ? <>{s.quietDays === 0 ? "today" : s.quietDays + "d ago"}<div className="mono admin-cell-sub">{s.lastActive}</div></>
+                        : <span className="chip chip-crimson">never</span>}
+                    </td>
+                    <td>
+                      {s.coverage === null
+                        ? <span className="admin-cell-sub">no class set</span>
+                        : <><span className={"chip " + covChip(s.coverage)}>{s.coverage}%</span>
+                            <div className="mono admin-cell-sub">{s.childrenStarred} of {s.classSize}</div></>}
+                    </td>
+                    <td>{s.stars || "—"}</td>
+                    <td>{s.remarks || "—"}{s.flags > 0 && <div className="mono admin-cell-sub">{s.flags} flagged</div>}</td>
+                    <td>{s.sessions || "—"}</td>
+                    <td>{s.skillMarks || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </>}
+
+      {tab === "skills" && <>
+        <p className="admin-hint">What instructors mark each child against, per course. Four levels — not yet · getting there · can do it · can teach it — and no numbers, because a score invites a ranking between children and this is meant to say what one child can now do. Seeded from the catalogue; correct them to whatever the people teaching the course actually mean.</p>
+        {skills === null && <p className="admin-hint">Loading…</p>}
+        {skills && Object.keys(skills).map(course => (
+          <div key={course} className="admin-field" style={{ marginBottom: 14 }}>
+            <span className="admin-label">{course}</span>
+            <textarea className="admin-input" rows={Math.max(3, (skills[course] || []).length + 1)}
+              value={(skills[course] || []).join("\n")}
+              placeholder="One skill per line — verb-led and observable, e.g. “Plays hands together”."
+              onChange={e => { setSkills(s => ({ ...s, [course]: e.target.value.split("\n") })); setDirty(true); }}/>
+            <span className="admin-cell-sub">{(skills[course] || []).filter(x => x.trim()).length} skills</span>
+          </div>
+        ))}
+        {skills && <button className="btn btn-primary btn-sm" disabled={busy || !dirty} onClick={saveSkills}>{busy ? "Saving…" : "Save skills"}</button>}
+      </>}
+    </div>
+  );
+}
 
 function AdminBehaviour() {
   const [d, setD] = React.useState(null);
