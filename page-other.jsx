@@ -3224,6 +3224,94 @@ function extractCheckinToken(s) {
 // Camera-first QR reader (window.jsQR). Scans continuously, debounces repeat
 // reads, and calls onToken with the extracted code. Falls back gracefully when
 // the camera is denied or the decoder isn't loaded.
+/* ── Scan feedback ──────────────────────────────────────────────────────────
+ * A check-in desk is used at arm's length, in a noisy hall, by someone also
+ * talking to a child. The old confirmation was an eleven-pixel row prepended
+ * to a list of identical-looking rows — technically present, effectively
+ * invisible, and indistinguishable from the scan before it. Operators could
+ * not tell a successful check-in from a repeat or a refusal without reading.
+ *
+ * So the outcome is announced three ways at once, because any one of them can
+ * be missed: a panel that takes over the top of the screen, a distinct sound,
+ * and a distinct vibration. Colour never carries meaning alone — every state
+ * has its own glyph and its own word.
+ */
+const SCAN_KINDS = {
+  in:      { word: "Checked in",   glyph: "✓", tone: [880, 1320], buzz: [60],         bg: "rgba(48,160,90,.20)",  edge: "#4ad07f", fg: "#b9f5d0" },
+  already: { word: "Already in",   glyph: "↻", tone: [660, 660],  buzz: [40, 70, 40], bg: "rgba(245,176,38,.18)", edge: "#f5b026", fg: "#ffd98a" },
+  queued:  { word: "Saved offline", glyph: "☁", tone: [520],      buzz: [30],         bg: "rgba(120,160,255,.16)", edge: "#7da2ff", fg: "#c7d8ff" },
+  no:      { word: "Not accepted", glyph: "✕", tone: [220, 180],  buzz: [180],        bg: "rgba(230,70,70,.20)",  edge: "#ff6b6b", fg: "#ffc4c4" },
+};
+
+/* WebAudio rather than an audio file: no asset to ship, no decode latency, and
+ * the tone can differ per outcome. iOS will not start a context without a user
+ * gesture, so it is created lazily — by the time anything is scanned the
+ * operator has already tapped to unlock the desk. */
+let _scanAudio = null;
+function scanBeep(tones) {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!_scanAudio) _scanAudio = new AC();
+    if (_scanAudio.state === "suspended") _scanAudio.resume();
+    let t = _scanAudio.currentTime;
+    tones.forEach((hz, i) => {
+      const osc = _scanAudio.createOscillator(), gain = _scanAudio.createGain();
+      osc.type = "sine"; osc.frequency.value = hz;
+      // A short envelope — a square-edged tone clicks, and a click at volume is
+      // what makes people turn the sound off.
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+      osc.connect(gain); gain.connect(_scanAudio.destination);
+      osc.start(t); osc.stop(t + 0.14);
+      t += 0.11 + (i === 0 ? 0.02 : 0);
+    });
+  } catch (_) { /* audio is a bonus; never let it break a check-in */ }
+}
+
+function scanFeedback(kind, muted) {
+  const k = SCAN_KINDS[kind] || SCAN_KINDS.in;
+  if (!muted) scanBeep(k.tone);
+  // Vibration is separate from mute on purpose: it is silent, and it is the
+  // one channel that still works with the phone face-down on a desk.
+  if (navigator.vibrate) { try { navigator.vibrate(k.buzz); } catch (_) {} }
+}
+
+/* The panel itself. Big enough to read without leaning in, and it shows the
+ * PHOTO — an operator glancing between the screen and the child is the only
+ * check that the card belongs to the person holding it. */
+function ScanResult({ result, onDone }) {
+  React.useEffect(() => {
+    if (!result) return;
+    // Long enough to read a name and compare a face; short enough not to block
+    // the queue behind them.
+    const t = setTimeout(onDone, result.kind === "no" ? 6000 : 3500);
+    return () => clearTimeout(t);
+  }, [result, onDone]);
+  if (!result) return null;
+  const k = SCAN_KINDS[result.kind] || SCAN_KINDS.in;
+  return (
+    <div role="status" aria-live="assertive"
+      style={{ display: "flex", alignItems: "center", gap: 16, padding: "18px 18px",
+        borderRadius: 16, background: k.bg, border: "2px solid " + k.edge, minHeight: 96 }}>
+      {result.photo
+        ? <img src={result.photo} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", flex: "none", border: "2px solid " + k.edge }}/>
+        : <span aria-hidden="true" style={{ width: 72, height: 72, borderRadius: "50%", flex: "none", display: "grid", placeItems: "center", background: "rgba(0,0,0,.22)", fontSize: 34, color: k.edge, fontWeight: 800 }}>{k.glyph}</span>}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span aria-hidden="true" style={{ fontSize: 20, color: k.edge, fontWeight: 900 }}>{k.glyph}</span>
+          <span style={{ fontSize: 12, letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 800, color: k.fg, fontFamily: "var(--font-mono, monospace)" }}>
+            {result.word || k.word}
+          </span>
+        </div>
+        <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.15, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{result.name}</div>
+        {result.sub && <div style={{ fontSize: 13, color: "rgba(230,238,255,.75)", marginTop: 2 }}>{result.sub}</div>}
+      </div>
+    </div>
+  );
+}
+
 function QRScanner({ onToken, gold }) {
   const videoRef = React.useRef(null);
   const streamRef = React.useRef(null);
@@ -3325,6 +3413,18 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
   const centre = (ctx && ctx.centre) || "";
   // Offline scan queue — field kiosks lose signal; a scan must never be lost.
   const [pending, setPending] = React.useState(0);
+  // The big outcome panel + whether the desk is allowed to make noise.
+  const [scan, setScan] = React.useState(null);
+  const [muted, setMuted] = React.useState(() => { try { return localStorage.getItem("ngg.gate.mute") === "1"; } catch (_) { return false; } });
+  const mutedRef = React.useRef(muted);
+  React.useEffect(() => { mutedRef.current = muted; try { localStorage.setItem("ngg.gate.mute", muted ? "1" : "0"); } catch (_) {} }, [muted]);
+  // Announce and show in one place, so no outcome can ever get one without the
+  // other — a silent panel or a beep with nothing on screen is how an operator
+  // ends up guessing.
+  const announce = React.useCallback((kind, r) => {
+    scanFeedback(kind, mutedRef.current);
+    setScan({ kind, ...r });
+  }, []);
   const flushing = React.useRef(false);
   const QKEY = "ngg.gate.q." + g;
   const loadQ = () => { try { return JSON.parse(localStorage.getItem(QKEY) || "[]"); } catch (_) { return []; } };
@@ -3386,6 +3486,13 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
       const r = await NGGApi.public.gate.checkin(g, token);
       const st = r.student || {};
       const isVol = st.kind === "volunteer";
+      announce(r.already ? "already" : "in", {
+        name: st.fullName || token,
+        photo: st.photoUrl || "",
+        sub: [st.centre, st.track || st.role, r.status === "late" ? "Late by " + (r.lateMinutes || 0) + " min" : ""]
+          .filter(Boolean).join(" · "),
+        word: r.already ? "Already in today" : (isVol ? "Checked in · volunteer" : "Checked in"),
+      });
       setRecent(list => [{
         name: st.fullName,
         at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -3402,11 +3509,22 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
       if (isNetErr(e2)) {
         // Offline / unreachable — bank it and sync later so the scan isn't lost.
         const q = loadQ(); if (!q.some(x => x.token === token)) { q.push({ token, at: Date.now(), scannedAt: new Date().toISOString() }); saveQ(q); }
+        announce("queued", { name: token, sub: "No signal — this scan will sync automatically." });
         setRecent(list => [{ name: token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), queued: true }, ...list].slice(0, 12));
         setCode("");
       } else {
         const c = e2.code || e2.message;
-        setErr(c === "qr_unassigned" ? "That code isn't assigned to anyone yet." : c === "student_not_found" ? "No student or volunteer found for that code." : "Couldn't check in — try again.");
+        /* A refusal is the outcome an operator MUST not miss: the person in
+           front of them is not checked in, and some of these mean they must not
+           be let in at all. It gets the loudest treatment and stays up longest. */
+        const why = c === "qr_unassigned" ? "That card isn't assigned to anyone yet."
+          : c === "student_not_found" ? "No student or volunteer found for that code."
+          : c === "id_expired" ? "That ID has expired — send them to the coordinator."
+          : c === "policy_suspended" ? "Suspended. Do NOT admit — refer to the coordinator."
+          : c === "policy_evicted" ? "Association terminated. Do NOT admit."
+          : (e2.message || "Couldn't check in — try again.");
+        announce("no", { name: /^policy_/.test(c) ? ((e2.data && e2.data.student && e2.data.student.fullName) || "Not accepted") : "Not accepted", sub: why });
+        setErr(why);
       }
     } finally { busyRef.current = false; setBusy(false); }
   };
@@ -3426,8 +3544,17 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
         </div>
       )}
       {dutyMsg && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(111,220,157,.12)", border: "1px solid rgba(111,220,157,.35)", fontSize: 13 }}>{dutyMsg}</div>}
+      {/* The outcome, before anything else on the screen. */}
+      <ScanResult result={scan} onDone={() => setScan(null)}/>
       {/* QR-first: the camera scans continuously; typing is the fallback. */}
       <QRScanner onToken={mark} gold={gold}/>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <button type="button" onClick={() => setMuted(m => !m)} aria-pressed={muted}
+          style={{ background: "none", border: "1px solid rgba(255,255,255,.22)", color: "rgba(230,238,255,.8)",
+            borderRadius: 999, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          {muted ? "🔇 Scan sound off" : "🔊 Scan sound on"}
+        </button>
+      </div>
       <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Hold a Genius ID or volunteer card up to the camera. Students and volunteers both scan here — a duplicate scan is safe, a day counts once.</p>
       {pending > 0 && (
         <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(245,176,38,.14)", border: "1px solid rgba(245,176,38,.4)", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>

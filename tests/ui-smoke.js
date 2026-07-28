@@ -211,6 +211,7 @@ const LEADERBOARD = {
             : b === 'builder' ? 'SummerFormBuilder' : b === 'gatereg' ? 'GateRegister'
             : b === 'arcade' ? 'CmArcade'
             : b === 'consent' ? 'MemberConsentEditor'
+            : b === 'checkin' ? 'GateCheckin'
             : b === 'roster' ? 'SummerRoster'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
@@ -442,6 +443,32 @@ const LEADERBOARD = {
                                  programmeDay: true, compliance: { state: 'warned' } });
       },
     };
+  } else if (b === 'checkin') {
+    /* The check-in desk. Its whole job is telling an operator, at arm's length
+       in a noisy hall, what just happened to the card they scanned. */
+    window.__scans = [];
+    window.__vibes = [];
+    navigator.vibrate = function (p) { window.__vibes.push(p); return true; };
+    var CASES = {
+      OKTOKEN:   { student: { fullName: 'Adaeze Okonkwo', photoUrl: '/assets/logo.png', centre: 'Ijaiye', track: 'Music', kind: 'student' }, already: false, status: 'present' },
+      AGAINTOKEN:{ student: { fullName: 'Adaeze Okonkwo', photoUrl: '/assets/logo.png', centre: 'Ijaiye', track: 'Music', kind: 'student' }, already: true,  status: 'present' },
+      LATETOKEN: { student: { fullName: 'Bode Adeyemi', photoUrl: '', centre: 'Egbeda', track: 'Tech', kind: 'student' }, already: false, status: 'late', lateMinutes: 22 },
+    };
+    window.NGGApi.public.gate = {
+      checkin: function (g, token) {
+        window.__scans.push(token);
+        if (CASES[token]) return Promise.resolve(CASES[token]);
+        var err = new Error(token === 'SUSPENDED' ? 'policy_suspended' : 'qr_unassigned');
+        err.code = token === 'SUSPENDED' ? 'policy_suspended' : 'qr_unassigned';
+        err.status = 400;
+        err.data = { student: { fullName: 'Chidi Banned' } };
+        return Promise.reject(err);
+      },
+      dutyClose: function () { return Promise.resolve({ message: 'ok' }); },
+    };
+    try { localStorage.removeItem('ngg.gate.mute'); localStorage.removeItem('ngg.gate.q.G1'); } catch (e) {}
+    props = { g: 'G1', ctx: { centre: 'Ijaiye' }, card: { background: '#12203f' },
+              inputS: { width: '100%' }, gold: '#ffce54', goldInk: '#2b2100' };
   } else if (b === 'consent') {
     /* Recording a guardian's decision about whether a child may be named and
        pictured on the public site. What matters is the payload: the wrong type
@@ -1980,6 +2007,104 @@ const LEADERBOARD = {
     ok('…and every piece of it clears 4.5:1 there (worst: '
        + (worst ? worst.ratio.toFixed(2) + ' on .' + String(worst.cls).split(' ')[0] : 'n/a') + ')',
        contrast.every(c => c.ratio >= 4.5));
+
+    /* ── The check-in desk's scanned state ─────────────────────────────────
+     * Used at arm's length, in a noisy hall, by someone also talking to a
+     * child. The old confirmation was an eleven-pixel row prepended to a list
+     * of identical rows — present, but indistinguishable from the scan before
+     * it, so an operator could not tell a check-in from a repeat or a refusal
+     * without stopping to read. */
+    const chk1 = await browser.newPage();
+    const chkErrs = [];
+    chk1.on('pageerror', e => chkErrs.push(String(e.message)));
+    await chk1.goto(BASE + '/tests/_boards_fixture.html?board=checkin&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await chk1.waitForSelector('button', { timeout: 15000 });
+    ok('the check-in desk mounts with no script error', chkErrs.length === 0);
+    if (chkErrs.length) console.error('       ', chkErrs.slice(0, 3).join(' | '));
+
+    // Type a code rather than driving the camera — same code path into mark().
+    const scanAs = async (token) => {
+      await chk1.evaluate(() => {
+        const b = Array.from(document.querySelectorAll('button')).find(x => /Enter the code/i.test(x.textContent));
+        if (b) b.click();
+      });
+      await chk1.waitForSelector('input[placeholder*="Code from the ID"]', { timeout: 5000 });
+      await chk1.evaluate((t) => {
+        const i = document.querySelector('input[placeholder*="Code from the ID"]');
+        const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        set.call(i, t); i.dispatchEvent(new Event('input', { bubbles: true }));
+        i.closest('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      }, token);
+      await chk1.waitForTimeout(450);
+    };
+    const panel = () => chk1.evaluate(() => {
+      const el = document.querySelector('[role="status"][aria-live="assertive"]');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { text: el.innerText.replace(/\n/g, ' | '), h: Math.round(r.height),
+               border: getComputedStyle(el).borderColor, photo: !!el.querySelector('img') };
+    });
+
+    await scanAs('OKTOKEN');
+    let pn = await panel();
+    ok('a successful scan puts a result panel on screen at all', pn !== null);
+    ok('…naming the person, not just a tick (' + (pn && pn.text.slice(0, 48)) + ')',
+       pn && /Adaeze Okonkwo/.test(pn.text) && /Checked in/i.test(pn.text));
+    /* The old row was ~40px of an identical-looking list. Height is a crude
+       proxy for "you cannot miss this", but it is the property that failed. */
+    ok('…at a size that reads across a desk (' + (pn && pn.h) + 'px tall)', pn && pn.h >= 90);
+    ok('…and shows their photo, so the card can be matched to the face', pn && pn.photo === true);
+    ok('…and the desk vibrated', (await chk1.evaluate(() => window.__vibes.length)) > 0);
+
+    const okBorder = pn.border;
+    await scanAs('AGAINTOKEN');
+    pn = await panel();
+    ok('a repeat scan says so rather than looking like a fresh check-in',
+       pn && /Already in/i.test(pn.text) && !/^.*Checked in.*$/i.test(pn.text.split('|')[1] || ''));
+    /* Colour alone is never the signal — the glyph and the word change too, so
+       this holds up for an operator who cannot distinguish green from amber. */
+    ok('…distinguished by more than colour', pn && pn.border !== okBorder && /↻/.test(pn.text));
+
+    await scanAs('BADCODE');
+    pn = await panel();
+    ok('a refused scan is announced, not left to a small red line',
+       pn && /Not accepted/i.test(pn.text) && /isn.t assigned/i.test(pn.text));
+    ok('…and marked with its own glyph', pn && /✕/.test(pn.text));
+
+    /* The one an operator must never miss: the person must not be admitted. */
+    await scanAs('SUSPENDED');
+    pn = await panel();
+    ok('a policy refusal spells out that they must not be admitted',
+       pn && /Do NOT admit/i.test(pn.text));
+
+    // Late arrivals carry the detail an operator has to act on.
+    await scanAs('LATETOKEN');
+    pn = await panel();
+    ok('a late check-in says how late, on the panel itself', pn && /Late by 22 min/i.test(pn.text));
+
+    /* Sound is optional — a desk in a quiet room turns it off — but the panel
+       and the vibration are not, so the outcome is never silent AND invisible. */
+    const vibesBefore = await chk1.evaluate(() => window.__vibes.length);
+    await chk1.evaluate(() => {
+      const b = Array.from(document.querySelectorAll('button')).find(x => /Scan sound/i.test(x.textContent));
+      if (b) b.click();
+    });
+    await chk1.waitForTimeout(150);
+    ok('the desk can be muted', /off/i.test(await chk1.evaluate(() => {
+      const b = Array.from(document.querySelectorAll('button')).find(x => /Scan sound/i.test(x.textContent));
+      return b ? b.textContent : '';
+    })));
+    await scanAs('OKTOKEN');
+    ok('…and a muted desk still shows the panel and still vibrates',
+       (await panel()) !== null && (await chk1.evaluate(() => window.__vibes.length)) > vibesBefore);
+    ok('…with the choice remembered for next time',
+       (await chk1.evaluate(() => localStorage.getItem('ngg.gate.mute'))) === '1');
+
+    // It must clear itself, or the next child is greeted by the last one's name.
+    await chk1.waitForTimeout(4200);
+    ok('the panel clears itself so it cannot be mistaken for the next scan',
+       (await panel()) === null);
+    await chk1.close();
 
     /* ── Recording publication consent for a child ─────────────────────────
      * The payload is the whole point. A wrong type or a missing method records
