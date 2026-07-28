@@ -1375,7 +1375,23 @@ const LEADERBOARD = {
 
     let o = await opts('Course');
     ok('before a faculty is picked, Course says to choose one first', o && /Choose a faculty first/.test(o[0]));
-    ok('…and still lists the full catalogue rather than being a dead end', o && o.length === 6);
+    /* It offers NOTHING until a faculty is chosen. The previous version of this
+       assertion required the opposite — the full catalogue, "rather than being
+       a dead end" — which is why the cascade kept reading as broken however
+       many times the wiring behind it was fixed: the box said "choose a faculty
+       first" and then listed every course in the programme anyway. Worse, a
+       course picked before a faculty is silently dropped the moment one is
+       chosen, because the reconciliation clears any answer outside the new
+       parent's list. The volunteer form has always gated its course picker this
+       way; the two now behave alike. */
+    ok('…and offers no courses at all until one is picked (' + ((o || []).length - 1) + ' offered)',
+       o && o.length === 1);
+    ok('…with the control disabled, so it cannot be opened onto an empty list',
+       await gr.evaluate(() => {
+         const lab = Array.from(document.querySelectorAll('label')).find(x => x.textContent.trim().startsWith('Course'));
+         const sel = lab && lab.querySelector('select');
+         return !!sel && sel.disabled === true;
+       }));
 
     const pick = (label, value) => gr.evaluate(({ l, v }) => {
       const lab = Array.from(document.querySelectorAll('label')).find(x => x.textContent.trim().startsWith(l));
@@ -1389,6 +1405,13 @@ const LEADERBOARD = {
     o = await opts('Course');
     ok('choosing Music narrows Course to Music courses (' + (o || []).slice(1).join(', ') + ')',
       o && o.length === 3 && o.indexOf('Piano') !== -1 && o.indexOf('Practical Coding') === -1);
+
+    ok('…and the control is usable again once a faculty is chosen',
+       await gr.evaluate(() => {
+         const lab = Array.from(document.querySelectorAll('label')).find(x => x.textContent.trim().startsWith('Course'));
+         const sel = lab && lab.querySelector('select');
+         return !!sel && sel.disabled === false;
+       }));
 
     let vis = await shown();
     ok('…and the Music-only question appears', vis.indexOf('Which instrument?') !== -1);

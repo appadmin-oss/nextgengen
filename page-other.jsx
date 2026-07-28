@@ -2634,15 +2634,25 @@ function formFieldVisible(f, data) {
 /* The options a choice field offers right now. `optionsFrom` names another
    field — the faculty — and `optionsBy` is the faculty→courses map the server
    ships alongside it, so narrowing costs no round trip and the list cannot
-   drift from the catalogue. Falls back to the full list when nothing is chosen
-   yet, so the field is never an empty dead end. */
+   drift from the catalogue.
+   
+   With nothing chosen in the parent field, a dependent field offers NOTHING.
+   It used to fall back to the flat list of every course in the programme,
+   which read as "the cascade is broken": the Course box said "choose a faculty
+   first" and then listed all twelve courses anyway. Worse, you could pick one
+   before choosing a faculty and have it silently cleared the moment you did —
+   the reconciliation below drops any answer that is not in the new parent's
+   list. The volunteer form has always gated its course picker this way; this
+   is the same rule. */
 function formFieldOptions(f, data) {
   const base = (f && f.options) || [];
   if (!f || !f.optionsFrom) return base;
   const picked = String((data && data[f.optionsFrom]) || "").trim();
-  if (!picked) return base;
+  if (!picked) return [];
   const sub = (f.optionsBy && f.optionsBy[picked]) || null;
-  return (sub && sub.length) ? sub : base;
+  // A faculty with no courses mapped is an empty list, not the full one:
+  // offering courses from other faculties would just be wrong.
+  return sub ? sub : [];
 }
 
 /* The child's name as the LIVE form collects it.
@@ -2808,12 +2818,28 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
               <span style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>{f.label}{f.required && <span style={{ color: gold }}> *</span>}{f.sensitive && " 🔒"}</span>
               {f.type === "longtext" ? (
                 <textarea style={{ ...inputS, minHeight: 70, resize: "vertical" }} value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder || ""}/>
-              ) : f.type === "choice" ? (
-                <select style={inputS} value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)}>
-                  <option value="">{f.optionsFrom && !form[f.optionsFrom] ? "Choose a faculty first…" : "Choose…"}</option>
-                  {formFieldOptions(f, form).map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-              ) : f.type === "yesno" ? (
+              ) : f.type === "choice" ? (() => {
+                const parentField = f.optionsFrom ? fields.find(x => x.key === f.optionsFrom) : null;
+                const parentLabel = (parentField && parentField.label) || f.optionsFrom;
+                const waiting = !!f.optionsFrom && !form[f.optionsFrom];
+                const opts = formFieldOptions(f, form);
+                return (
+                  <>
+                    {/* Disabled, not merely empty — an enabled select that opens
+                        on nothing looks broken rather than sequenced. */}
+                    <select style={{ ...inputS, opacity: waiting ? 0.6 : 1 }} disabled={waiting}
+                      value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)}>
+                      <option value="">{waiting ? "Choose a " + String(parentLabel).toLowerCase() + " first…" : "Choose…"}</option>
+                      {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                    {!waiting && f.optionsFrom && opts.length === 0 && (
+                      <span style={{ ...mut, display: "block", fontSize: 11.5, marginTop: 4 }}>
+                        No {String(f.label).toLowerCase()} options are listed under {form[f.optionsFrom]} yet.
+                      </span>
+                    )}
+                  </>
+                );
+              })() : f.type === "yesno" ? (
                 <div style={{ display: "flex", gap: 8 }}>
                   {["Yes", "No"].map(v => <button type="button" key={v} onClick={() => set(f.key, v)} style={{ flex: 1, padding: 11, borderRadius: 10, cursor: "pointer", fontWeight: 700, border: "1px solid " + (form[f.key] === v ? gold : "rgba(255,255,255,.18)"), background: form[f.key] === v ? "rgba(255,206,84,.16)" : "rgba(255,255,255,.06)", color: "#fff" }}>{v}</button>)}
                 </div>
