@@ -1803,6 +1803,80 @@ chk('form: the cascade is enforced through the real registration route too', (fu
     return !empty($r['errors']['course']);
 })());
 
+/* A form published by an earlier builder kept the Course field but lost
+   `optionsFrom`, because that publish path rebuilt each field from a fixed
+   list of properties and dropped the rest. The key was still present, so
+   form_restore_locked() skipped it; `optionsFrom` was gone, so
+   form_hydrate_options() skipped it too — the one property identifying the
+   field as catalogue-driven was also the property both repairs keyed on.
+
+   What an admin sees is Course offering every course in the programme and a
+   faculty choice that narrows nothing. Fixing the builder stopped NEW
+   publishes losing it; it did nothing for the definition already stored, which
+   is why this kept coming back as "the courses aren't seeded". */
+chk('form: a stored Course field that lost its cascade link is repaired on read', (function () {
+    $fields = form_defaults_for('summer-reg');
+    foreach ($fields as &$f) { if (($f['key'] ?? '') === 'course') unset($f['optionsFrom']); }
+    unset($f);
+    db_exec("DELETE FROM form_defs WHERE formId = 'cascade-repair'");
+    db_insert('form_defs', ['formId' => 'cascade-repair', 'version' => 1, 'name' => 'Repair',
+        'fields' => json_encode($fields), 'status' => 'live', 'publishedBy' => 'system', 'createdAt' => now_iso()]);
+    // form_hydrate_options only acts on the summer form, so the repair has to
+    // be checked where it happens — restore, on the stored definition.
+    $repaired = form_restore_locked($fields, 'summer-reg');
+    foreach ($repaired as $f) if (($f['key'] ?? '') === 'course') return ($f['optionsFrom'] ?? '') === 'faculty';
+    return false;
+})());
+chk('form: …so the live form ships the faculty→courses map again', (function () {
+    $fields = form_defaults_for('summer-reg');
+    foreach ($fields as &$f) { if (($f['key'] ?? '') === 'course') unset($f['optionsFrom']); }
+    unset($f);
+    /* Stand a deliberately-damaged definition up as the live one, then put the
+       real one back. Leaving it live would break every later test that reads
+       this form — and did, the first time this was written. */
+    $prev = db_row("SELECT version FROM form_defs WHERE formId = 'summer-reg' AND status = 'live' ORDER BY version DESC LIMIT 1");
+    db_exec("UPDATE form_defs SET status = 'archived' WHERE formId = 'summer-reg'");
+    db_insert('form_defs', ['formId' => 'summer-reg', 'version' => 999, 'name' => 'Broken publish',
+        'fields' => json_encode($fields), 'status' => 'live', 'publishedBy' => 'system', 'createdAt' => now_iso()]);
+    $live = form_live('summer-reg');
+    $ok = false;
+    foreach ($live['fields'] as $f) {
+        if (($f['key'] ?? '') === 'course') {
+            $ok = isset($f['optionsBy']['Music']) && in_array('Piano', $f['optionsBy']['Music'], true)
+               && !in_array('Graphics', $f['optionsBy']['Music'], true);
+        }
+    }
+    db_exec("DELETE FROM form_defs WHERE formId = 'summer-reg' AND version = 999");
+    if ($prev) db_exec("UPDATE form_defs SET status = 'live' WHERE formId = 'summer-reg' AND version = ?", [$prev['version']]);
+    return $ok;
+})());
+/* A locked field that lost its lock could be deleted next time round and
+   vanish from the form for good. */
+chk('form: a locked field that lost its lock flag gets it back', (function () {
+    $fields = form_defaults_for('summer-reg');
+    foreach ($fields as &$f) { if (($f['key'] ?? '') === 'centre') unset($f['locked']); }
+    unset($f);
+    foreach (form_restore_locked($fields, 'summer-reg') as $f) {
+        if (($f['key'] ?? '') === 'centre') return !empty($f['locked']);
+    }
+    return false;
+})());
+/* The repair must not reach past structure into an admin's own edits. */
+chk('form: repairing structure does not overwrite an admin\'s label or options', (function () {
+    $fields = form_defaults_for('summer-reg');
+    foreach ($fields as &$f) {
+        if (($f['key'] ?? '') === 'course') { unset($f['optionsFrom']); $f['label'] = 'Strand'; $f['options'] = ['Only This One']; }
+    }
+    unset($f);
+    foreach (form_restore_locked($fields, 'summer-reg') as $f) {
+        if (($f['key'] ?? '') === 'course') {
+            return ($f['optionsFrom'] ?? '') === 'faculty' && $f['label'] === 'Strand'
+                && $f['options'] === ['Only This One'];
+        }
+    }
+    return false;
+})());
+
 /* ── Conditional logic ────────────────────────────────────────────────────
    showIf was honoured by the renderer and the validator but nothing could set
    it, and it only did a single equality. */

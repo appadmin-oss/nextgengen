@@ -282,7 +282,6 @@ function App() {
         <ToastHost/>
         <DialogHost/>
         <CommandPalette/>
-        <AccessibilityWidget/>
         <div id="ngg-a11y-live" aria-live="polite" className="sr-only"/>
       </div>
     );
@@ -305,7 +304,6 @@ function App() {
       <ToastHost/>
       <DialogHost/>
       <CommandPalette/>
-      <AccessibilityWidget/>
       <div id="ngg-a11y-live" aria-live="polite" className="sr-only"/>
 
       <TweaksPanel title="Tweaks">

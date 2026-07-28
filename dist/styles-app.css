@@ -502,7 +502,6 @@ html { scroll-behavior: smooth; }
 @keyframes cmdk-hint-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 /* Full-height app chrome (community): keep the corners clear. */
 body.cm-app .cmdk-hint { display: none; }
-body.cm-app .a11y-fab { left: auto; right: 18px; bottom: 88px; }
 body.cm-app .fab-top { display: none; }
 
 /* ============================================================

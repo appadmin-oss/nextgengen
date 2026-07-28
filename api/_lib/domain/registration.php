@@ -275,6 +275,41 @@ function form_restore_locked(array $stored, string $formId = 'summer-reg'): arra
         $have[$def['key']] = true;
     }
 
+    /* Reinstate a locked field's STRUCTURE, not just its existence.
+     *
+     * Restoring only whole missing fields was not enough. A form published by
+     * an earlier builder kept the Course field but lost `optionsFrom`, because
+     * that publish path rebuilt each field from a fixed list of properties and
+     * silently dropped the rest. The key was still there, so the loop above
+     * skipped it; `optionsFrom` was gone, so form_hydrate_options() skipped it
+     * too — the one property that identifies the field as catalogue-driven was
+     * also the property both repairs keyed on.
+     *
+     * The visible result is the bug that keeps being reported as "the courses
+     * aren't seeded": Course offers every course in the programme, and picking
+     * a faculty narrows nothing. Fixing the builder stopped NEW publishes
+     * losing it and did nothing for the definition already in the database.
+     *
+     * Only structural properties are restored. A locked field's label, options
+     * and help text are the admin's to edit; which other field it cascades
+     * from is not — the builder does not even expose it, so a missing value is
+     * always damage rather than a decision. */
+    $structural = ['optionsFrom'];
+    $defByKey = [];
+    foreach ($defaults as $def) if (!empty($def['locked'])) $defByKey[(string)$def['key']] = $def;
+    foreach ($stored as &$f) {
+        if (!is_array($f)) continue;
+        $def = $defByKey[(string)($f['key'] ?? '')] ?? null;
+        if (!$def) continue;
+        // Also re-assert the lock itself, so a field that lost it cannot be
+        // deleted next time round and vanish from the form for good.
+        $f['locked'] = true;
+        foreach ($structural as $prop) {
+            if (!empty($def[$prop]) && empty($f[$prop])) $f[$prop] = $def[$prop];
+        }
+    }
+    unset($f);
+
     /* Retire the old single "Full name" box once its replacements are in.
      * Without this, a form published before the split asks for a full name
      * AND a first name AND a last name — three boxes for two facts, and a

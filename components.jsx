@@ -537,6 +537,7 @@ function TopNav({ page, setPage }) {
           </nav>
 
           <div className="nav-right">
+            <A11yNavButton/>
             <NavBell setPage={setPage}/>
             <NavAuthSlot setPage={setPage}/>
             {/* Context-aware: signed-in members already belong — the public
@@ -1765,8 +1766,11 @@ function osA11y() {
   return { motion: mm("(prefers-reduced-motion: reduce)"), contrast: mm("(prefers-contrast: more)") };
 }
 
-function AccessibilityWidget() {
-  const [open, setOpen] = React.useState(false);
+/* The a11y preferences themselves, shared by every surface that offers them.
+ * Device-local (localStorage), not per-account — they describe how this person
+ * needs THIS screen to behave, which is not something to make them sign in for.
+ */
+function useA11yState() {
   const [autoOs, setAutoOs] = React.useState(false); // seeded from the OS, not chosen
   const [s, setS] = React.useState(() => {
     try {
@@ -1777,74 +1781,93 @@ function AccessibilityWidget() {
     return Object.assign({}, A11Y_DEFAULTS, osA11y());
   });
   React.useEffect(() => { try { if (!localStorage.getItem(A11Y_KEY)) { const o = osA11y(); setAutoOs(o.motion || o.contrast); } } catch (_) {} }, []);
-  const panelRef = React.useRef(null);
-  const btnRef = React.useRef(null);
-
   React.useEffect(() => {
     applyA11y(s);
     try { localStorage.setItem(A11Y_KEY, JSON.stringify(s)); } catch (_) {}
     const live = document.getElementById("ngg-a11y-live");
     if (live) live.textContent = "Accessibility settings updated";
   }, [s]);
+  return {
+    s, autoOs,
+    set: (k, v) => setS(o => Object.assign({}, o, { [k]: v })),
+    reset: () => setS({ ...A11Y_DEFAULTS }),
+    anyOn: s.contrast || s.motion || s.readable || s.underline,
+  };
+}
 
-  // Focus trap + Escape + focus restore while the panel is open.
+/* The controls, with no chrome of their own, so the same panel can sit in a
+ * nav dropdown on the public site and in a settings page in the Control Room.
+ * There is one implementation because there is one set of preferences; two
+ * would drift, and a toggle that disagrees with itself is worse than none. */
+function A11ySettingsPanel({ heading }) {
+  const { s, autoOs, set, reset, anyOn } = useA11yState();
+  return (
+    <div className="a11y-settings">
+      {heading && <h3 className="a11y-settings-h">{heading}</h3>}
+      {autoOs && (
+        <p className="a11y-auto">✓ Matched to your device's accessibility settings. Tweak anything below.</p>
+      )}
+      <p className="a11y-tip">Tip: press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> and <kbd>+</kbd> to enlarge the page.</p>
+      <A11yToggle label="High contrast" desc="Stronger colours + borders" on={s.contrast} onChange={v => set("contrast", v)}/>
+      <A11yToggle label="Reduce motion" desc="Stop animations + transitions" on={s.motion} onChange={v => set("motion", v)}/>
+      <A11yToggle label="Readable font" desc="High-legibility, spaced type" on={s.readable} onChange={v => set("readable", v)}/>
+      <A11yToggle label="Underline links" desc="Underline every link" on={s.underline} onChange={v => set("underline", v)}/>
+      <button className="a11y-reset" onClick={reset} disabled={!anyOn}>Reset to defaults</button>
+    </div>
+  );
+}
+
+/* The nav entry point. Previously a fixed-position button floating over the
+ * page corner, which is how it ended up overlapping the community workspace,
+ * the back-to-top control and the composer — each fixed later by nudging its
+ * coordinates for that one screen. It now lives in the nav's action row like
+ * every other control, so it cannot cover content at all.
+ *
+ * Still one tap from anywhere, and deliberately NOT moved behind a sign-in:
+ * the people most likely to need it include the ones who have not made an
+ * account yet. */
+function A11yNavButton() {
+  const [open, setOpen] = React.useState(false);
+  const { anyOn } = useA11yState();
+  const wrapRef = React.useRef(null);
+  const btnRef = React.useRef(null);
+
   React.useEffect(() => {
     if (!open) return;
-    const prev = document.activeElement;
-    const first = panelRef.current && panelRef.current.querySelector("button,input");
-    if (first) first.focus();
-    const onKey = (e) => {
-      if (e.key === "Escape") { setOpen(false); return; }
-      if (e.key === "Tab" && panelRef.current) {
-        const f = panelRef.current.querySelectorAll('button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])');
-        if (!f.length) return;
-        const a = f[0], b = f[f.length - 1];
-        if (e.shiftKey && document.activeElement === a) { e.preventDefault(); b.focus(); }
-        else if (!e.shiftKey && document.activeElement === b) { e.preventDefault(); a.focus(); }
-      }
-    };
+    const onKey = (e) => { if (e.key === "Escape") { setOpen(false); if (btnRef.current) btnRef.current.focus(); } };
+    // Dismiss on a click anywhere outside, the way the other nav menus behave.
+    const onDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("keydown", onKey); if (prev && prev.focus) { try { prev.focus(); } catch (_) {} } };
+    document.addEventListener("pointerdown", onDown);
+    const first = wrapRef.current && wrapRef.current.querySelector(".a11y-settings button");
+    if (first) first.focus();
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("pointerdown", onDown); };
   }, [open]);
 
-  const set = (k, v) => setS(o => Object.assign({}, o, { [k]: v }));
-  const reset = () => setS({ ...A11Y_DEFAULTS });
-  const anyOn = s.contrast || s.motion || s.readable || s.underline;
-
   return (
-    <React.Fragment>
+    <div className="a11y-nav" ref={wrapRef}>
       <button
         ref={btnRef}
-        className="a11y-fab"
+        className={"a11y-nav-btn" + (open ? " is-open" : "")}
         aria-expanded={open}
         aria-haspopup="dialog"
-        aria-label="Accessibility options"
+        aria-label={"Accessibility options" + (anyOn ? " (some are on)" : "")}
+        title="Accessibility"
         onClick={() => setOpen(v => !v)}
       >
         <span aria-hidden="true">♿</span>
-        {anyOn && <span className="a11y-fab-dot" aria-hidden="true"/>}
+        {anyOn && <span className="a11y-nav-dot" aria-hidden="true"/>}
       </button>
       {open && (
-        <div className="a11y-panel" role="dialog" aria-modal="false" aria-label="Accessibility options" ref={panelRef}>
+        <div className="a11y-pop" role="dialog" aria-label="Accessibility options">
           <div className="a11y-panel-head">
             <h2 className="a11y-panel-title">Accessibility</h2>
             <button className="a11y-panel-close" onClick={() => setOpen(false)} aria-label="Close accessibility options">✕</button>
           </div>
-
-          {autoOs && (
-            <p className="a11y-auto">✓ Matched to your device's accessibility settings. Tweak anything below.</p>
-          )}
-          <p className="a11y-tip">Tip: press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> and <kbd>+</kbd> to enlarge the page.</p>
-
-          <A11yToggle label="High contrast" desc="Stronger colours + borders" on={s.contrast} onChange={v => set("contrast", v)}/>
-          <A11yToggle label="Reduce motion" desc="Stop animations + transitions" on={s.motion} onChange={v => set("motion", v)}/>
-          <A11yToggle label="Readable font" desc="High-legibility, spaced type" on={s.readable} onChange={v => set("readable", v)}/>
-          <A11yToggle label="Underline links" desc="Underline every link" on={s.underline} onChange={v => set("underline", v)}/>
-
-          <button className="a11y-reset" onClick={reset} disabled={!anyOn}>Reset to defaults</button>
+          <A11ySettingsPanel/>
         </div>
       )}
-    </React.Fragment>
+    </div>
   );
 }
 
@@ -1974,5 +1997,5 @@ Object.assign(window, {
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart,
-  Uploader, AccessibilityWidget, PhotoEditor, PhotoCapture, ImageLightbox, SignaturePad,
+  Uploader, A11ySettingsPanel, A11yNavButton, PhotoEditor, PhotoCapture, ImageLightbox, SignaturePad,
 });

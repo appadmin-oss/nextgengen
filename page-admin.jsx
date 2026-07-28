@@ -5467,6 +5467,15 @@ function AdminSettings() {
 
         <AiStatusPanel/>
 
+        {/* The Control Room has no site nav, so this is where the accessibility
+            controls live for staff. Device-local, like everywhere else: they
+            describe how THIS screen needs to behave, and a coordinator on a
+            shared desk machine should not have to change an account setting to
+            turn contrast up for an afternoon. */}
+        <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>Accessibility (this device)</div>
+        <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>Applies to the Control Room and the public site in this browser. Nothing here is saved to your account or shared with anyone else.</p>
+        <A11ySettingsPanel/>
+
         <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>ID card branding</div>
         <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>Drives the printed cards + digital IDs. The card QR always encodes the student's <span className="mono">/q/&lt;token&gt;</span> profile URL, so scanning with any phone opens their page.</p>
         {(() => {

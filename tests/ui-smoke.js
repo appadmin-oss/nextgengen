@@ -1899,6 +1899,65 @@ const LEADERBOARD = {
     ok('…exactly once, however the ticking clock and a slow grade overlap (' + timedOut.length + ')',
        timedOut.length === 1);
 
+    /* ── The Arcade is legible where it actually renders ───────────────────
+     * The first version of the Arcade stylesheet assumed a dark surface. The
+     * community SIDEBAR is dark navy, but the main column it renders into —
+     * .cm-col — is #fff, so it shipped as white text on white: twelve of
+     * fourteen measured pairs under 4.5:1 and most at 1.00, meaning invisible.
+     * It looked fine in isolation, which is exactly why this mounts it inside
+     * the real community shell and measures rather than eyeballing. */
+    const arcC = await browser.newPage();
+    await arcC.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await arcC.waitForSelector('.arc-card', { timeout: 15000 });
+    // Wait for the stylesheets to APPLY, not merely load — they are injected as
+    // <link> elements, and networkidle fires before the styles take effect.
+    await arcC.waitForFunction(() => getComputedStyle(document.querySelector('.arc-card')).borderRadius !== '0px',
+                               null, { timeout: 10000 });
+    await arcC.evaluate(() => {
+      const root = document.getElementById('root');
+      const wrap = document.createElement('div');
+      wrap.className = 'cm-slack-page';
+      wrap.innerHTML = '<div class="cm-slack"><main class="cm-col"><div class="cm-stream is-feed" id="cmslot"></div></main></div>';
+      root.parentNode.insertBefore(wrap, root);
+      document.getElementById('cmslot').appendChild(root);
+    });
+    const contrast = await arcC.evaluate(() => {
+      const lum = (r, g, b) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const num = (s) => (String(s).match(/[\d.]+/g) || [0, 0, 0]).map(Number);
+      // Walk to the nearest OPAQUE backdrop. A translucent layer over white is
+      // still white, which is the trap the original stylesheet fell into.
+      const backdrop = (el) => {
+        let n = el;
+        while (n) {
+          const c = getComputedStyle(n).backgroundColor, m = num(c);
+          if (c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent' && (m.length < 4 || m[3] === 1)) return m;
+          n = n.parentElement;
+        }
+        return [255, 255, 255];
+      };
+      const out = [];
+      document.querySelectorAll('.arc *').forEach((el) => {
+        const t = (el.textContent || '').trim();
+        if (!t || el.children.length > 0) return;
+        const f = num(getComputedStyle(el).color), g = backdrop(el);
+        const a = f[3] === undefined ? 1 : f[3];
+        const c = [0, 1, 2].map(i => f[i] * a + g[i] * (1 - a));
+        const L1 = lum(c[0], c[1], c[2]), L2 = lum(g[0], g[1], g[2]);
+        out.push({ cls: String(el.className || el.tagName), ratio: (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05) });
+      });
+      return out;
+    });
+    await arcC.close();
+    const worst = contrast.slice().sort((a, b) => a.ratio - b.ratio)[0];
+    // Control: an all-transparent or unstyled render would produce nothing to
+    // measure, and "no failures" would then be meaningless.
+    ok('the arcade has text to measure on the community surface (' + contrast.length + ' nodes)',
+       contrast.length >= 15);
+    ok('…and every piece of it clears 4.5:1 there (worst: '
+       + (worst ? worst.ratio.toFixed(2) + ' on .' + String(worst.cls).split(' ')[0] : 'n/a') + ')',
+       contrast.every(c => c.ratio >= 4.5));
+
     /* ── Recording publication consent for a child ─────────────────────────
      * The payload is the whole point. A wrong type or a missing method records
      * the wrong permission for a real child and looks identical on screen. */
