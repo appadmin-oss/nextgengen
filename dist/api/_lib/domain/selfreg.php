@@ -276,6 +276,17 @@ function selfreg_queue(array $p): array {
     $sql = implode(' AND ', $where);
     $total = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE $sql", $args)['c'] ?? 0);
 
+    /* A QUEUE is served oldest first. It was newest first, which is the right
+     * order for a feed and exactly the wrong one for people waiting: on a busy
+     * morning the family who submitted on Monday sinks under Tuesday's
+     * arrivals and is seen last, or not at all. Nobody chose that; it is the
+     * default `ORDER BY id DESC` that gets written without thinking.
+     *
+     * Decided work keeps newest-first, because there you are looking for what
+     * just happened — "did that approval go through" — not for the oldest
+     * thing on the pile. Whitelisted, never interpolated from input. */
+    $order = $status === 'self_pending' ? 'id ASC' : 'id DESC';
+
     /* Photo verdict lives in a JSON column, so it cannot be filtered in SQL
      * without a second column that would then need keeping in step. The queue
      * is bounded by the page size either way; the verdict filter is applied
@@ -285,7 +296,7 @@ function selfreg_queue(array $p): array {
                            guardianName, guardianPhone, parentEmail, photoUrl, regStatus, photoCheck,
                            submittedVia, enrolledAt, formVersion, formData,
                            reviewedById, reviewedAt, reviewNote
-                    FROM summer_students WHERE $sql ORDER BY id DESC LIMIT ? OFFSET ?",
+                    FROM summer_students WHERE $sql ORDER BY $order LIMIT ? OFFSET ?",
                    array_merge($args, [$per, ($page - 1) * $per]));
 
     /* The questions, so the reviewer can read the answers against them.
@@ -301,14 +312,32 @@ function selfreg_queue(array $p): array {
 
     /* Duplicate suspicion, computed once for the page rather than per row.
      * Two parents registering the same child is the commonest thing in this
-     * queue and the one a reviewer most needs pointed out. */
-    $names = array_values(array_filter(array_map(fn($r) => mb_strtolower(trim((string)$r['fullName'])), $rows)));
+     * queue and the one a reviewer most needs pointed out.
+     *
+     * It used to report only that a name collided — a chip reading "possible
+     * duplicate" and nowhere to go from it. That is a dead end dressed as a
+     * warning: the reviewer still has to search the name by hand to find out
+     * whether it is the same child twice at one centre or two children who
+     * happen to share a very common Nigerian name, and those need opposite
+     * decisions. So the OTHER records come back with it — who, where, what
+     * state they are in and when — and the answer is usually obvious on
+     * sight. */
+    $names = array_values(array_unique(array_filter(array_map(fn($r) => mb_strtolower(trim((string)$r['fullName'])), $rows))));
     $dupOf = [];
     if ($names) {
         $in = '(' . implode(',', array_fill(0, count($names), '?')) . ')';
-        foreach (db_all("SELECT lower(fullName) n, COUNT(*) c FROM summer_students
-                         WHERE lower(fullName) IN $in AND status = 'active' GROUP BY lower(fullName) HAVING COUNT(*) > 1", $names) as $d) {
-            $dupOf[(string)$d['n']] = (int)$d['c'];
+        foreach (db_all("SELECT studentId, displayId, fullName, centre, track, regStatus, enrolledAt
+                         FROM summer_students
+                         WHERE lower(fullName) IN $in AND status = 'active'
+                         ORDER BY id ASC LIMIT 200", $names) as $d) {
+            $dupOf[mb_strtolower(trim((string)$d['fullName']))][] = [
+                'studentId' => (string)$d['studentId'],
+                'displayId' => (string)($d['displayId'] ?? ''),
+                'centre'    => (string)($d['centre'] ?? ''),
+                'course'    => (string)($d['track'] ?? ''),
+                'regStatus' => (string)($d['regStatus'] ?? ''),
+                'submittedAt' => (string)($d['enrolledAt'] ?? ''),
+            ];
         }
     }
 
@@ -347,7 +376,11 @@ function selfreg_queue(array $p): array {
             'submittedAt' => (string)($r['enrolledAt'] ?? ''),
             'reviewedAt' => (string)($r['reviewedAt'] ?? ''),
             'reviewNote' => (string)($r['reviewNote'] ?? ''),
-            'possibleDuplicate' => isset($dupOf[mb_strtolower(trim((string)$r['fullName']))]),
+            'possibleDuplicate' => count($dupOf[mb_strtolower(trim((string)$r['fullName']))] ?? []) > 1,
+            // The OTHER records only — a row is not its own duplicate.
+            'duplicates' => array_values(array_filter(
+                $dupOf[mb_strtolower(trim((string)$r['fullName']))] ?? [],
+                fn($d) => $d['studentId'] !== (string)$r['studentId'])),
         ];
     }
 

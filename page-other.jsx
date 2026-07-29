@@ -2630,6 +2630,25 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
   const named = regDisplayName(form);
   const steps = ["Details", "Photo", "Consent", "Done"];
 
+  /* Leaving the Details step is where the answers get checked — and where the
+     first bad one gets FOCUSED. Telling somebody "please check the highlighted
+     answers" and leaving them at the top of a twelve-field form to find the
+     highlight is not telling them anything; on a phone the offending box is
+     usually below the fold. */
+  const onContinue = () => {
+    const bad = regMissing(fields, form);
+    setErrors(bad);
+    const keys = Object.keys(bad);
+    if (!keys.length) { setErr(""); setStep(1); window.scrollTo({ top: 0, behavior: "instant" }); return; }
+    setErr(keys.length === 1 ? "One answer needs fixing." : keys.length + " answers need fixing.");
+    const el = document.querySelector('[data-fieldkey="' + keys[0] + '"]');
+    if (el) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      const input = el.querySelector("input, select, textarea");
+      if (input) input.focus({ preventScroll: true });
+    }
+  };
+
   if (step === 3 && done) return (
     <div style={{ textAlign: "center", padding: "50px 0" }}>
       <div style={{ fontSize: 46 }} aria-hidden="true">✓</div>
@@ -2672,8 +2691,11 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
     {step === 0 && (
       <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
         <RegFieldList fields={fields} form={form} set={set} errors={errors} visible={visible} inputS={inputS} gold={gold} mut={mut}/>
-        <button onClick={() => { setErr(""); setStep(1); }} disabled={!named}
-          style={{ padding: 14, minHeight: 48, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15.5, cursor: "pointer", opacity: named ? 1 : .5 }}>
+        {/* Enabled whatever the state of the answers. A greyed-out button that
+            will not say why is the worst of both: you cannot proceed and you
+            cannot find out what is wrong. Press it and it tells you. */}
+        <button onClick={onContinue}
+          style={{ padding: 14, minHeight: 48, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15.5, cursor: "pointer" }}>
           Continue → Photo
         </button>
         <p style={{ ...mut, fontSize: 11.5, textAlign: "center", margin: 0 }}>Saved on this device as you type — nothing is lost if you're interrupted.</p>
@@ -3030,6 +3052,16 @@ function ReviewDeskPage() {
   </>);
 }
 
+/* Registration states in the words a coordinator uses, not the words the
+   column holds. "parent_pending" is a database value; "waiting on consent" is
+   what is actually true of the family. */
+const REVIEW_STATE = {
+  self_pending: "waiting to be checked",
+  parent_pending: "waiting on consent",
+  verified: "confirmed",
+  rejected: "rejected",
+};
+
 /* Shared vocabulary for the photo verdict. The wording has to read as advice
    and never as the decision — the model does not get to turn a child away. */
 function reviewVerdict(v) {
@@ -3037,6 +3069,24 @@ function reviewVerdict(v) {
            check: { tint: "#ffce54", bg: "rgba(245,176,38,.18)", label: "Worth a look",      short: "⚠ check photo" },
            fail:  { tint: "#ffb3a3", bg: "rgba(255,90,60,.2)",   label: "Not usable on a card", short: "✕ photo unusable" } }[v]
       || { tint: "rgba(230,238,255,.6)", bg: "rgba(255,255,255,.08)", label: "Not checked", short: "photo unchecked" };
+}
+
+/* How long a family has been waiting, in the words somebody uses out loud.
+ *
+ * A date is a fact you have to do arithmetic on. "3 days waiting" is the same
+ * fact already turned into the thing a reviewer is deciding with — and it is
+ * the number that should be embarrassing when it grows, which a timestamp
+ * quietly never is. */
+function waitedFor(iso) {
+  const t = Date.parse(String(iso || ""));
+  if (!isFinite(t)) return null;
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 0) return null;
+  if (mins < 60) return { text: mins <= 1 ? "just now" : mins + " min", days: 0 };
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return { text: hrs + (hrs === 1 ? " hour" : " hours") + " waiting", days: 0 };
+  const days = Math.floor(hrs / 24);
+  return { text: days + (days === 1 ? " day" : " days") + " waiting", days };
 }
 
 /* One submission, the whole of it. Laid out the way the registration desk's
@@ -3098,7 +3148,35 @@ function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
               {r.possibleDuplicate && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "4px 10px", borderRadius: 999, color: "#ffce54", background: "rgba(245,176,38,.18)" }}>possible duplicate</span>}
               {decided && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "4px 10px", borderRadius: 999, color: "#a7e8c6", background: "rgba(127,209,166,.18)" }}>{r.regStatus === "rejected" ? "rejected" : "approved"}</span>}
             </div>
-            <div className="mono" style={{ ...mut, fontSize: 12.5, marginTop: 5 }}>{r.studentId}{r.submittedAt ? " · submitted " + String(r.submittedAt).slice(0, 10) : ""}</div>
+            <div className="mono" style={{ ...mut, fontSize: 12.5, marginTop: 5 }}>{r.studentId}{r.submittedAt ? " · submitted " + String(r.submittedAt).slice(0, 10) : ""}{(() => {
+              const w = waitedFor(r.submittedAt); return w && !decided ? " · " + w.text : "";
+            })()}</div>
+
+            {/* WHICH records it collides with. The chip on its own was a dead
+                end dressed as a warning: a reviewer still had to go and search
+                the name by hand to find out whether this is the same child
+                entered twice at one centre — reject it — or two children who
+                happen to share a very common name, which must go through.
+                Those need opposite decisions and the difference is usually
+                obvious the moment you can see both rows. */}
+            {(r.duplicates || []).length > 0 && (
+              <div style={{ marginTop: 11, padding: 11, borderRadius: 11, background: "rgba(245,176,38,.1)", border: "1px solid rgba(245,176,38,.35)" }}>
+                <div style={{ fontWeight: 800, fontSize: 13, color: "#ffce54" }}>
+                  Already {r.duplicates.length === 1 ? "one record" : r.duplicates.length + " records"} under this name
+                </div>
+                <ul style={{ listStyle: "none", padding: 0, margin: "7px 0 0", display: "grid", gap: 5 }}>
+                  {r.duplicates.map(d => (
+                    <li key={d.studentId} className="mono" style={{ fontSize: 12, color: "rgba(230,238,255,.8)" }}>
+                      {d.displayId || d.studentId} · {d.centre || "no centre"}{d.course ? " · " + d.course : ""} · {REVIEW_STATE[d.regStatus] || d.regStatus}
+                      {d.submittedAt ? " · " + String(d.submittedAt).slice(0, 10) : ""}
+                    </li>
+                  ))}
+                </ul>
+                <p style={{ ...mut, fontSize: 12, margin: "8px 0 0", lineHeight: 1.5 }}>
+                  Same centre and same course usually means the family registered twice. A different centre, or a common name, usually means two different children — check the photo and the guardian's number before rejecting either.
+                </p>
+              </div>
+            )}
 
             <div style={{ marginTop: 12, padding: 11, borderRadius: 11, background: v.bg, border: "1px solid " + v.tint + "33" }}>
               <div style={{ fontWeight: 800, fontSize: 13.5, color: v.tint }}>{v.label}{r.photo && r.photo.score !== null && r.photo.score !== undefined ? " · " + r.photo.score + "/100" : ""}</div>
@@ -3211,6 +3289,18 @@ function ReviewList({ rows, g, gold, picked, setPicked, selectable, busy, onOpen
               <div style={{ fontWeight: 700, fontSize: 15 }}>{r.fullName}</div>
               <div className="mono" style={{ ...mut, fontSize: 12 }}>{r.centre || "no centre"}{r.course ? " · " + r.course : ""} · {r.studentId}</div>
             </div>
+            {/* How long they have been waiting, not when they arrived. Past two
+                days it stops being grey — the queue is served oldest first, so
+                anything old is either a backlog or something everybody has been
+                quietly stepping over. */}
+            {(() => {
+              const w = waitedFor(r.submittedAt);
+              if (!w) return null;
+              const late = w.days >= 2;
+              return <span title={"Submitted " + String(r.submittedAt || "").slice(0, 10)}
+                style={{ fontSize: 11.5, fontWeight: late ? 800 : 600, whiteSpace: "nowrap", flex: "none",
+                         color: late ? "#ffce54" : "rgba(230,238,255,.5)" }}>{w.text}</span>;
+            })()}
             <span style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: v.tint, background: v.bg, whiteSpace: "nowrap", flex: "none" }}>{v.short}</span>
             {r.possibleDuplicate && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: "#ffce54", background: "rgba(245,176,38,.18)", flex: "none" }}>dup?</span>}
             <button onClick={() => onOpen(i)}
@@ -3384,19 +3474,77 @@ function regDisplayName(form) {
   return two || (form.fullName || "").trim();
 }
 
+/* What is still missing from the answers, keyed by field.
+ *
+ * The wizard used to let you leave the Details step as soon as a name was
+ * typed, and everything else was checked by the SERVER after the photo, the
+ * consents and the submit. So a family who left Centre blank found out about
+ * it four screens later, thrown back to the top of a twelve-field form with
+ * "please check the highlighted answers" — having already taken a photo of
+ * their child and read three consent clauses. The rules are the same ones the
+ * server enforces; running them here just moves the news to the moment the
+ * answer is wrong.
+ *
+ * The server still checks. This is the courtesy, not the guard. */
+function regMissing(fields, form) {
+  const out = {};
+  fields.forEach(f => {
+    if (!f || ['section', 'info'].indexOf(f.type) !== -1) return;
+    if (!formFieldVisible(f, form)) return;          // a hidden field is not owed an answer
+    const raw = form[f.key];
+    const v = Array.isArray(raw) ? raw.join("") : String(raw == null ? "" : raw).trim();
+    if (f.required && !v) { out[f.key] = "This one is needed."; return; }
+    if (!v) return;
+    if (f.type === "email" && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(v)) out[f.key] = "That doesn't look like an email address.";
+    if (f.type === "number") {
+      const n = Number(v);
+      if (!isFinite(n)) out[f.key] = "Numbers only.";
+      else if (f.min != null && n < Number(f.min)) out[f.key] = "Must be " + f.min + " or more.";
+      else if (f.max != null && n > Number(f.max)) out[f.key] = "Must be " + f.max + " or less.";
+    }
+    if (f.type === "phone" && v.replace(/\D/g, "").length < 10) out[f.key] = "That looks too short for a phone number.";
+  });
+  /* Either phone or email, not neither — the rule the server applies and the
+     one nothing on the form states, because it belongs to the PAIR and every
+     message on a form belongs to a single field. Attached to the phone box,
+     which is the one a Nigerian family is more likely to have. */
+  const has = (k) => String(form[k] == null ? "" : form[k]).trim() !== "";
+  const asks = (k) => fields.some(f => f && f.key === k && formFieldVisible(f, form));
+  if (asks('parentPhone') && asks('parentEmail') && !has('parentPhone') && !has('parentEmail')) {
+    out.parentPhone = "We need a phone number or an email — this is how we reach your parent or guardian.";
+  }
+  return out;
+}
+
 /* The live form's fields, rendered.
    Shared by the staff gate and the public self-registration link, because the
    two must ask exactly the same questions with exactly the same conditional
    logic — a second copy is a second set of rules that drifts the first time
    somebody edits the form builder. */
 function RegFieldList({ fields, form, set, errors, visible, inputS, gold, mut }) {
+  const shown = fields.filter(visible);
   return <>
-    {fields.filter(visible).map(f => {
-      if (f.type === "section") return <div key={f.key} style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.55)", marginTop: 6 }}>{f.label.toUpperCase()}</div>;
+    {shown.map((f, i) => {
+      /* A heading has to be visibly a heading. This was a 10px mono line with
+         6px of air above it, which at arm's length on a phone is another row
+         of grey text in a column of grey text — and the form it is dividing is
+         twelve boxes long. The rule and the space are what make the groups
+         read as groups; without them the questions run together and a parent
+         does not notice the form has changed who it is asking about. */
+      if (f.type === "section") return (
+        <div key={f.key} style={{ marginTop: i === 0 ? 0 : 20 }}>
+          <div style={{ font: "800 11px var(--font-mono, monospace)", letterSpacing: ".18em", color: gold, textTransform: "uppercase" }}>{f.label}</div>
+          <div style={{ height: 1, background: "rgba(255,255,255,.14)", marginTop: 7 }}/>
+        </div>
+      );
       if (f.type === "info") return <p key={f.key} style={{ ...mut, fontSize: 13, margin: 0 }}>{f.label}</p>;
       const errMsg = errors[f.key];
       return (
-        <label key={f.key} style={{ display: "block" }}>
+        /* data-fieldkey is how the wizard finds the first bad answer to scroll
+           to and focus. aria-invalid is the same fact for a screen reader,
+           which otherwise gets a red border it cannot see and a message it is
+           never told about. */
+        <label key={f.key} data-fieldkey={f.key} aria-invalid={errMsg ? "true" : undefined} style={{ display: "block" }}>
           <span style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>{f.label}{f.required && <span style={{ color: gold }}> *</span>}{f.sensitive && " 🔒"}</span>
           {f.type === "longtext" ? (
         <textarea style={{ ...inputS, minHeight: 70, resize: "vertical" }} value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder || ""}/>

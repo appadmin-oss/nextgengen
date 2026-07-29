@@ -2596,10 +2596,21 @@ const LEADERBOARD = {
           selfreg: {
             context: () => Promise.resolve({ open: true, selfServe: true, gate: { name: 'Public link' },
               form: { version: 2, fields: [
+                { key: 'secChild', label: 'About the child', type: 'section' },
                 { key: 'firstName', label: 'First name', type: 'text', required: true },
                 { key: 'lastName', label: 'Last name', type: 'text', required: true },
+                { key: 'age', label: 'Age', type: 'number', required: true, min: 5, max: 19 },
+                { key: 'secCourse', label: 'What they want to learn', type: 'section' },
                 { key: 'faculty', label: 'Faculty', type: 'choice', options: ['Music'], required: true },
                 { key: 'course', label: 'Course', type: 'choice', optionsFrom: 'faculty', optionsBy: { Music: ['Piano'] }, required: true },
+                /* Required, and hidden unless the faculty is Media. A rule
+                   that demands an answer to a question the family was never
+                   shown is a form that cannot be completed at all. */
+                { key: 'showreel', label: 'Link to their work', type: 'text', required: true,
+                  showIf: { key: 'faculty', op: 'is', value: 'Media' } },
+                { key: 'secParent', label: 'Parent or guardian', type: 'section' },
+                { key: 'parentPhone', label: "Parent's phone", type: 'phone' },
+                { key: 'parentEmail', label: "Parent's email", type: 'email' },
               ] },
               consents: [{ key: 'participation', label: 'Program participation', required: true },
                          { key: 'media', label: 'Photos & media', required: false }] }),
@@ -2630,10 +2641,77 @@ const LEADERBOARD = {
        phone is where people give up. */
     ok('…in steps, with the consent step named before you start', /Details/.test(srText) && /Consent/.test(srText));
 
+    /* The questions come in labelled groups. Twelve boxes in one column is a
+       wall on a phone, and they are not one subject — a family that does not
+       notice the form has changed who it is asking about types the child's own
+       number into the guardian field. */
+    ok('…with the questions grouped under headings, not one long column',
+       /ABOUT THE CHILD/i.test(srText) && /PARENT OR GUARDIAN/i.test(srText));
+    /* And the heading has to LOOK like one. This was a 10px grey mono line
+       with six pixels of air above it, which at arm's length on a phone is
+       another row of grey text in a column of grey text — the words were
+       there and the grouping was not. Checked as separation and contrast, not
+       as a font size: a rule under it, and a colour that is not the colour
+       every field label already uses. */
+    ok('…that read as headings — a rule beneath and their own colour',
+       await srP.evaluate(() => {
+         const h = Array.from(document.querySelectorAll('div'))
+           .find(d => d.textContent.trim() === 'Parent or guardian' && d.children.length === 0);
+         if (!h) return false;
+         const block = h.parentElement;
+         const rule = Array.from(block.children).find(c => c !== h && Math.round(c.getBoundingClientRect().height) === 1);
+         /* The ACCENT, not another shade of the same ink. Every text colour on
+            this page is a blue-white — comparing against one particular label
+            would pass for any of the others, which is how the old grey mono
+            heading looked "different" while reading as body text. Gold is the
+            one colour on the page whose red channel leads. */
+         const rgb = getComputedStyle(h).color.match(/\d+/g) || [];
+         const accent = rgb.length >= 3 && +rgb[0] > +rgb[2] + 40;
+         return !!rule && accent;
+       }));
+
+    /* Leaving Details is where the answers are checked. It used to let you
+       through on a name alone and let the SERVER object after the photo, the
+       consents and the submit — so a blank Centre surfaced four screens later,
+       with the family thrown back to the top of the form having already
+       photographed their child. */
     await srP.fill('input[type="text"] >> nth=0', 'Ada');
     await srP.fill('input[type="text"] >> nth=1', 'Obi');
     await srP.getByRole('button', { name: /Continue → Photo/ }).click();
-    await srP.waitForTimeout(300);
+    await srP.waitForTimeout(400);
+    const halfText = await srP.evaluate(() => document.body.innerText);
+    ok('a half-filled form does not get past the first step',
+       /answers need fixing/.test(halfText) && !/A photo for the ID card/.test(halfText));
+    /* And it puts the cursor IN the first bad box. "Please check the
+       highlighted answers", with the highlight below the fold, is not telling
+       somebody anything. */
+    ok('…with the cursor already in the first answer that needs fixing',
+       await srP.evaluate(() => {
+         const el = document.activeElement;
+         const lab = el && el.closest('[data-fieldkey]');
+         return !!lab && lab.getAttribute('data-fieldkey') === 'age';
+       }));
+
+    await srP.fill('input[type="number"] >> nth=0', '12');
+    await srP.selectOption('select >> nth=0', 'Music');
+    await srP.waitForTimeout(200);
+    await srP.selectOption('select >> nth=1', 'Piano');
+    await srP.getByRole('button', { name: /Continue → Photo/ }).click();
+    await srP.waitForTimeout(400);
+    /* Phone OR email, never neither — the rule the server applies, which
+       nothing on the form ever stated because it belongs to the pair rather
+       than to either box. */
+    ok('…and it will not let a family through with no way to reach them',
+       /phone number or an email/.test(await srP.evaluate(() => document.body.innerText)));
+    await srP.fill('input[type="tel"], input[type="text"] >> nth=2', '08031112222');
+    await srP.getByRole('button', { name: /Continue → Photo/ }).click();
+    await srP.waitForTimeout(400);
+    /* The form has a required field that only appears for Media. Getting here
+       at all means the rule did not demand an answer to a question this family
+       was never shown — which would make the form impossible to finish, with
+       nothing on screen to fix. */
+    ok('…and through to the photo once the answers are good',
+       /A photo for the ID card/.test(await srP.evaluate(() => document.body.innerText)));
     // A 90px image, offered the way a family would offer one.
     await srP.evaluate(() => {
       const cv = document.createElement('canvas'); cv.width = 90; cv.height = 90;
@@ -2673,13 +2751,23 @@ const LEADERBOARD = {
             answers: [{ key: 'firstName', label: 'First name', type: 'text', value: 'Ada' },
                       { key: 'parentPhone', label: "Parent's phone", type: 'phone', value: '0803 111 2222' }],
             photo: { verdict: 'check', score: 52, issues: ['too_dark'], notes: [], source: 'ai', width: 720, height: 960 },
-            possibleDuplicate: true },
+            // Four days old, and colliding with two other records under the
+            // same name — one at her own centre, one elsewhere.
+            submittedAt: new Date(Date.now() - 4 * 864e5).toISOString(),
+            possibleDuplicate: true,
+            duplicates: [
+              { studentId: 'RC1-0044', displayId: 'EG-26-002', centre: 'Egbeda', course: 'Piano',
+                regStatus: 'parent_pending', submittedAt: '2026-07-20T09:00:00Z' },
+              { studentId: 'RC1-0077', displayId: 'AY-26-011', centre: 'Ayobo', course: 'Guitar',
+                regStatus: 'verified', submittedAt: '2026-07-22T09:00:00Z' },
+            ] },
           { studentId: 'RC1-0102', displayId: 'EG-26-015', fullName: 'Bola Eze', firstName: 'Bola', lastName: 'Eze',
             age: 12, centre: 'Egbeda', course: 'Piano', guardianName: 'Mr Eze',
             guardianPhone: '', parentEmail: 'eze@example.com', photoUrl: '', regStatus: 'self_pending',
             answers: [{ key: 'firstName', label: 'First name', type: 'text', value: 'Bola' }],
             photo: { verdict: 'pass', score: 88, issues: [], notes: [], source: 'ai', width: 900, height: 1200 },
-            possibleDuplicate: false },
+            submittedAt: new Date(Date.now() - 90 * 60000).toISOString(),
+            possibleDuplicate: false, duplicates: [] },
         ] };
       const stub = {
         auth: { me: () => Promise.reject(Object.assign(new Error('u'), { code: 'unauthorized' })) },
@@ -2718,6 +2806,11 @@ const LEADERBOARD = {
        && !/WHAT THEY SUBMITTED/.test(rvText));
     ok('…and saying plainly that approving is what emails the family',
        /Approving is what emails the guardian/.test(rvText));
+    /* How long they have waited, in words, not a date to do arithmetic on.
+       This is the number that ought to be embarrassing when it grows, and a
+       timestamp quietly never is. */
+    ok('…telling you how long each family has been waiting',
+       /4 days waiting/.test(rvText) && /1 hour waiting|hours waiting/.test(rvText));
 
     /* Each submission is its OWN page: its own address, its own back button,
        one job on the screen. */
@@ -2732,6 +2825,16 @@ const LEADERBOARD = {
        never the decision. */
     ok('…the photo verdict reading as advice, with the duplicate warning',
        /Worth a look/.test(oneText) && /advice, not the decision/.test(oneText) && /possible duplicate/.test(oneText));
+    /* A duplicate warning that does not say WHICH records is a dead end
+       dressed as a warning — the reviewer still has to go and search the name
+       by hand to tell the same child twice from two children sharing a common
+       one, and those need opposite decisions. */
+    ok('…and the duplicate names the records it collides with',
+       /EG-26-002/.test(oneText) && /AY-26-011/.test(oneText));
+    ok('…in a coordinator\'s words, not the database\'s',
+       /waiting on consent/.test(oneText) && !/parent_pending/.test(oneText));
+    ok('…with enough detail to tell one child from two',
+       /Egbeda/.test(oneText) && /Ayobo/.test(oneText) && /Same centre and same course/.test(oneText));
     /* A reviewer is checking a registration, not proofing a print run. The
        card is not theirs to approve and it crowded out the thing that is. */
     /* Checked structurally, not by wording: a preview reintroduced under any

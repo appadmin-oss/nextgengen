@@ -3744,6 +3744,56 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     chk('a form with no School field still gets the question, at the end',
         in_array('schoolType', array_column(form_live('summer-reg')['fields'], 'key'), true));
 
+    /* ── Section headings ────────────────────────────────────────────────────
+     * Twelve boxes in one unbroken column is a wall on a phone, and the
+     * questions are not one subject. A heading is only worth anything in the
+     * right PLACE, though: it exists to introduce the group below it, so
+     * below-the-group is not a smaller version of the same idea — "Parent or
+     * guardian" sitting under the parent's email reads as a label for the
+     * school questions beneath it, which is worse than no heading at all.
+     */
+    db_update('form_defs', ['fields' => json_encode([
+        ['key' => 'firstName', 'label' => 'First name', 'type' => 'text', 'required' => true, 'locked' => true],
+        ['key' => 'parentName', 'label' => "Parent / guardian's name", 'type' => 'text', 'required' => true, 'locked' => true],
+        ['key' => 'school', 'label' => 'School', 'type' => 'text', 'required' => false],
+    ], JSON_UNESCAPED_SLASHES)], ['formId' => 'summer-reg', 'status' => 'live']);
+    db_exec("DELETE FROM settings WHERE settingKey = 'form_seeded_sections'");
+    $keys = array_column(form_live('summer-reg')['fields'], 'key');
+    $pos = array_flip($keys);
+    chk('an older form gets the section headings', isset($pos['secChild']) && isset($pos['secParent']));
+    chk('…each ABOVE the group it introduces, never below it',
+        $pos['secChild'] < $pos['firstName'] && $pos['secParent'] < $pos['parentName']
+        && $pos['secSchool'] < $pos['school']);
+    /* A group whose first question is gone but whose others remain. Anchoring
+       a heading only to the first member would leave "What they want to learn"
+       off a form that still asks for a Course. */
+    db_update('form_defs', ['fields' => json_encode([
+        ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => ['Piano']],
+        ['key' => 'school', 'label' => 'School', 'type' => 'text', 'required' => false],
+    ], JSON_UNESCAPED_SLASHES)], ['formId' => 'summer-reg', 'status' => 'live']);
+    db_exec("DELETE FROM settings WHERE settingKey = 'form_seeded_sections'");
+    $pos2 = array_flip(array_column(form_live('summer-reg')['fields'], 'key'));
+    chk('…anchoring to whatever survives of the group, not only its first question',
+        isset($pos2['secCourse']) && $pos2['secCourse'] < $pos2['course']);
+
+    /* Now one where a heading genuinely has nothing to introduce. The whole
+       point of a heading is the group under it; appended to the bottom of a
+       form it introduces nothing and reads as a fault. */
+    db_exec("DELETE FROM form_defs WHERE formId = 'sections-orphan'");
+    db_insert('form_defs', ['formId' => 'sections-orphan', 'version' => 1, 'name' => 'Orphan',
+        'fields' => json_encode([['key' => 'onlyThing', 'label' => 'Only thing', 'type' => 'text']], JSON_UNESCAPED_SLASHES),
+        'status' => 'live', 'publishedBy' => 'test', 'createdAt' => now_iso()]);
+    $orphanRow = db_row("SELECT * FROM form_defs WHERE formId = 'sections-orphan'");
+    $orphan = form_seed_optional_field(
+        [['key' => 'onlyThing', 'label' => 'Only thing', 'type' => 'text']], 'secParent', 'parentName', 'before');
+    chk('a heading with nothing to introduce is not added at all',
+        array_column($orphan, 'key') === ['onlyThing']);
+    db_exec("DELETE FROM form_defs WHERE formId = 'sections-orphan'");
+
+    // Back to a full default form for the rest of the block.
+    db_update('form_defs', ['fields' => json_encode(form_default_fields(), JSON_UNESCAPED_SLASHES)],
+              ['formId' => 'summer-reg', 'status' => 'live']);
+
     /* The answer has to come back OUT again. There is no column for it — the
        roster reads custom answers from the stored submission — so a projection
        that silently returns '' would look like every family declining to
@@ -5533,6 +5583,76 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         return !in_array((string)$d['studentId'], $ids, true) && count($ids) > 0
             && (string)db_row("SELECT submittedVia FROM summer_students WHERE studentId=?", [$d['studentId']])['submittedVia'] === '';
     })());
+    /* A QUEUE is served oldest first. It was newest first — the `ORDER BY id
+     * DESC` that gets written without thinking — which on a busy morning
+     * sinks Monday's family under Tuesday's arrivals and sees them last, or
+     * never. Nobody chose that. */
+    /* Seeded here rather than leaning on whatever earlier tests left waiting —
+       an ordering claim needs at least three rows it owns. */
+    $ORDER_IDS = [];
+    for ($i = 1; $i <= 3; $i++) {
+        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good, 'data' => [
+            'firstName' => 'Queue' . $i, 'lastName' => 'Order', 'age' => 12, 'faculty' => 'Music', 'course' => 'Piano',
+            'centre' => 'Egbeda', 'parentName' => 'A Parent', 'parentPhone' => '0805999000' . $i]]);
+        $ORDER_IDS[] = (string)($r['studentId'] ?? '');
+    }
+    $rowSeq = function (array $ids, array $queue) {
+        $pos = []; foreach ($queue as $i => $r) $pos[(string)$r['studentId']] = $i;
+        $out = []; foreach ($ids as $id) if (isset($pos[$id])) $out[] = $pos[$id];
+        return $out;
+    };
+    chk('the waiting queue is served oldest first', (function () use ($REV, $ORDER_IDS, $rowSeq) {
+        $seq = $rowSeq($ORDER_IDS, backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'per' => 200])['queue']);
+        if (count($seq) !== 3) return false;
+        // Submitted 1, 2, 3 — so they must appear in that order.
+        return $seq[0] < $seq[1] && $seq[1] < $seq[2];
+    })());
+    /* Decided work keeps newest-first: there you are looking for what just
+     * happened — "did that approval go through" — not for the oldest thing on
+     * the pile. */
+    chk('…while decided work stays newest first, which is what you look at it for', (function () use ($REV, $ORDER_IDS, $rowSeq) {
+        $seq = $rowSeq($ORDER_IDS, backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'status' => 'all', 'per' => 200])['queue']);
+        if (count($seq) !== 3) return false;
+        return $seq[0] > $seq[1] && $seq[1] > $seq[2];
+    })());
+
+    /* A duplicate warning has to say WHICH records. On its own it is a dead
+     * end dressed as a warning: the reviewer still has to search the name by
+     * hand to tell one child entered twice from two children sharing a very
+     * common Nigerian name, and those need opposite decisions. */
+    chk('a name collision names the other records, and never itself', (function () use ($SELF, $REV, $good) {
+        /* Same child's name, DIFFERENT guardian numbers — which is the actual
+           shape of the problem: two relatives each registering the same child,
+           each looking legitimate on its own. Identical contact details are
+           refused outright by gate_register and never reach the queue. */
+        $mk = fn($first, $phone) => backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good, 'data' => [
+            'firstName' => $first, 'lastName' => 'Duplicando', 'age' => 12, 'faculty' => 'Music', 'course' => 'Piano',
+            'centre' => 'Egbeda', 'parentName' => 'A Parent', 'parentPhone' => $phone]]);
+        $a = $mk('Tobi', '08051110000'); $b = $mk('Tobi', '08051110001');
+        if (empty($a['ok']) || empty($b['ok'])) return false;
+        $rows = backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'status' => 'all', 'per' => 100])['queue'];
+        $seen = 0;
+        foreach ($rows as $r) {
+            if (($r['fullName'] ?? '') !== 'Tobi Duplicando') continue;
+            $seen++;
+            if (empty($r['possibleDuplicate'])) return false;
+            $ids = array_column($r['duplicates'] ?? [], 'studentId');
+            // The OTHER one, with somewhere to look — and not itself.
+            if (count($ids) !== 1) return false;
+            if (in_array($r['studentId'], $ids, true)) return false;
+            if (($r['duplicates'][0]['centre'] ?? '') !== 'Egbeda') return false;
+            if (($r['duplicates'][0]['regStatus'] ?? '') === '') return false;
+        }
+        return $seen === 2;
+    })());
+    chk('…and a name nobody shares carries no duplicate list', (function () use ($REV, $SID) {
+        foreach (backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'status' => 'all', 'per' => 100])['queue'] as $r) {
+            if ($r['studentId'] !== $SID) continue;
+            return empty($r['possibleDuplicate']) && ($r['duplicates'] ?? []) === [];
+        }
+        return false;
+    })());
+
     chk('the desk filters by centre, course and photo verdict', (function () use ($REV) {
         $byCentre = backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'centre' => 'Nowhere']);
         $byCourse = backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'course' => 'Piano']);

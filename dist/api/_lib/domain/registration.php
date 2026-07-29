@@ -160,8 +160,36 @@ function academy_courses_for(string $faculty): array {
     return array_values($cat[trim($faculty)] ?? []);
 }
 
+/**
+ * Section headings, seeded into forms that predate them.
+ *
+ * Twelve boxes in one unbroken column is a wall on a phone, and the questions
+ * are not one subject: three are about the child, three about the course,
+ * three about a parent, three about school. Undivided, a family scrolls past
+ * "Parent's phone" without registering that the form has changed who it is
+ * asking about — and the commonest support call on a registration desk is a
+ * child's own number typed into the guardian field.
+ *
+ * Same one-shot mechanism as School type: optional, seeded once, deletable.
+ * Each is inserted ABOVE its anchor rather than below, so it introduces the
+ * group instead of trailing the one before it.
+ *
+ * `before` lists the whole group, not just its first question. A form that
+ * dropped Faculty but kept Course still has a group to head, and anchoring
+ * only to the first member would leave it bare. A group with none of its
+ * members left has nothing to introduce, and gets no heading — see
+ * form_seed_optional_field().
+ */
+const FORM_SECTIONS = [
+    ['key' => 'secChild',  'before' => ['firstName', 'lastName', 'age'],                'label' => 'About the child'],
+    ['key' => 'secCourse', 'before' => ['faculty', 'course', 'centre'],                 'label' => 'What they want to learn'],
+    ['key' => 'secParent', 'before' => ['parentName', 'parentPhone', 'parentEmail'],    'label' => 'Parent or guardian'],
+    ['key' => 'secSchool', 'before' => ['school', 'schoolType', 'allergies'],           'label' => 'School and health'],
+];
+
 function form_default_fields(): array {
     return [
+        ['key' => 'secChild', 'label' => 'About the child', 'type' => 'section'],
         // Asked as two fields, not one. A single "Full name" box left everything
         // downstream guessing: the ID card split on spaces and took the last
         // word as the surname, which is wrong for a double-barrelled name and
@@ -171,6 +199,7 @@ function form_default_fields(): array {
         ['key' => 'firstName', 'label' => 'First name', 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'lastName', 'label' => 'Last name', 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'age', 'label' => 'Age', 'type' => 'number', 'required' => true, 'min' => 5, 'max' => 19, 'locked' => true],
+        ['key' => 'secCourse', 'label' => 'What they want to learn', 'type' => 'section'],
         // Faculty is asked FIRST and narrows Course. Both are locked keys: the
         // catalogue, the /v-status breakdowns and instructor matching read them.
         /* `help` is read by the FAMILY filling the form in. `adminHelp` is the
@@ -191,6 +220,7 @@ function form_default_fields(): array {
         ['key' => 'centre', 'label' => 'Centre', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => ['Main'],
          'help' => 'The site your child will attend.',
          'adminHelp' => 'Options come from Admin → Centres; drives the ID prefix and card colour.'],
+        ['key' => 'secParent', 'label' => 'Parent or guardian', 'type' => 'section'],
         // Locked: the consent record, the verification message and every
         // safeguarding follow-up name this person. A republish that dropped
         // the question left guardianName empty on every child registered
@@ -198,6 +228,7 @@ function form_default_fields(): array {
         ['key' => 'parentName', 'label' => "Parent / guardian's name", 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'parentPhone', 'label' => "Parent's phone", 'type' => 'phone', 'required' => false, 'help' => 'Either phone or email is required — both is best.', 'locked' => true],
         ['key' => 'parentEmail', 'label' => "Parent's email", 'type' => 'email', 'required' => false, 'locked' => true],
+        ['key' => 'secSchool', 'label' => 'School and health', 'type' => 'section'],
         ['key' => 'school', 'label' => 'School', 'type' => 'text', 'required' => false],
         // Asked as a dropdown, not a free-text box, because it is a fact that
         // gets COUNTED. Typed, the same answer arrives as "public", "Public
@@ -273,7 +304,15 @@ function form_live(string $formId = 'summer-reg'): array {
         $row = db_row("SELECT * FROM form_defs WHERE formId = ? AND status = 'live' ORDER BY version DESC LIMIT 1", [$formId]);
     }
     $stored = json_decode((string)$row['fields'], true) ?: [];
-    if ($formId === 'summer-reg') $stored = form_seed_once($row, $stored, 'schoolType', 'school');
+    if ($formId === 'summer-reg') {
+        $stored = form_seed_once($row, $stored, 'schoolType', 'school');
+        /* The headings go in as a set, under one flag. Four separate flags
+           would let a half-applied run leave a form with two of its four
+           groups labelled, which reads as a mistake rather than a decision —
+           and there is no state in which "some of the sections" is what
+           anybody wanted. */
+        $stored = form_seed_once($row, $stored, FORM_SECTIONS, '', 'before', 'form_seeded_sections');
+    }
     $row['fields'] = form_hydrate_options(form_restore_locked($stored, $formId), $formId);
     return $row;
 }
@@ -302,11 +341,17 @@ function form_live(string $formId = 'summer-reg'): array {
  * that the organisation now OWNS the question — the builder reads form_live()
  * too, so it edits and republishes like any other field.
  */
-function form_seed_once(array $row, array $stored, string $key, string $after): array {
-    $flag = 'form_seeded_' . $key;
+function form_seed_once(array $row, array $stored, $key, string $anchor, string $side = 'after', string $flagName = ''): array {
+    $flag = $flagName !== '' ? $flagName : 'form_seeded_' . $key;
     if (setting_raw($flag) !== null) return $stored;
 
-    $seeded = form_seed_optional_field($stored, $key, $after);
+    /* One field, or a set that goes in together. A set is all-or-nothing on
+       the same flag: see the caller. */
+    $seeded = $stored;
+    foreach (is_array($key) ? $key : [['key' => $key, 'before' => $anchor, 'after' => $anchor]] as $spec) {
+        // NOT cast to string — an anchor may be a whole group.
+        $seeded = form_seed_optional_field($seeded, (string)$spec['key'], $spec[$side] ?? $anchor, $side);
+    }
     // Already there (or no such default) — nothing to write, but the job IS
     // done, so record it rather than re-checking on every read forever.
     if ($seeded === $stored) { setting_set($flag, '1'); return $stored; }
@@ -329,20 +374,45 @@ function form_seed_once(array $row, array $stored, string $key, string $after): 
  * older, and `form_live()` served the row verbatim. The catalogue was fine
  * the whole time; there was nowhere on the form to show it.
  *
- * Missing fields are inserted at their default position, which keeps Faculty
- * ahead of Course — the conditional-logic pass resolves top-down, so a field
- * that narrows another has to come first. Fields the admin added are left
- * where they are.
+ * Each missing field goes back beside the NEIGHBOUR it has in the defaults,
+ * not at its default numeric index. The index is a position in a different
+ * list: a stored form that has dropped four questions and gained two of the
+ * admin's own is not the same shape, so index 9 in one is somewhere arbitrary
+ * in the other. That is not theoretical — adding the section headings shifted
+ * every default index down, and the numeric splice started dropping "Parent /
+ * guardian's name" in between School and School type, in the middle of a
+ * group it has nothing to do with.
+ *
+ * Anchoring keeps Faculty ahead of Course, which the conditional-logic pass
+ * requires (it resolves top-down, so a field that narrows another has to come
+ * first), and it keeps a restored field inside the right section heading.
+ * Fields the admin added are left where they are.
  */
 function form_restore_locked(array $stored, string $formId = 'summer-reg'): array {
     $defaults = form_defaults_for($formId);
     $have = [];
     foreach ($stored as $f) if (is_array($f) && isset($f['key'])) $have[(string)$f['key']] = true;
 
+    $indexOf = function (array $list, string $key) {
+        foreach ($list as $i => $f) if (is_array($f) && ($f['key'] ?? '') === $key) return $i;
+        return -1;
+    };
     foreach ($defaults as $i => $def) {
         if (empty($def['locked'])) continue;
         if (isset($have[$def['key']])) continue;
-        array_splice($stored, min($i, count($stored)), 0, [$def]);
+        // Nearest default field ABOVE this one that the stored form still has.
+        $at = -1;
+        for ($j = $i - 1; $j >= 0 && $at < 0; $j--) {
+            $k = $indexOf($stored, (string)($defaults[$j]['key'] ?? ''));
+            if ($k >= 0) $at = $k + 1;
+        }
+        // Otherwise the nearest one BELOW, so it lands above that instead.
+        for ($j = $i + 1; $j < count($defaults) && $at < 0; $j++) {
+            $k = $indexOf($stored, (string)($defaults[$j]['key'] ?? ''));
+            if ($k >= 0) $at = $k;
+        }
+        if ($at < 0) $at = count($stored);       // nothing in common — append
+        array_splice($stored, $at, 0, [$def]);
         $have[$def['key']] = true;
     }
 
@@ -402,21 +472,42 @@ function form_restore_locked(array $stored, string $formId = 'summer-reg'): arra
 }
 
 /**
- * Insert a default field after its anchor, so it lands beside the question it
- * belongs with rather than at the bottom under the medical notes. Returns the
- * list UNCHANGED — same array, so callers can compare with `===` — when the
- * field is already present or there is no such default.
+ * Insert a default field next to its anchor, so it lands beside the question
+ * it belongs with rather than at the bottom under the medical notes. Returns
+ * the list UNCHANGED — same array, so callers can compare with `===` — when
+ * the field is already present or there is no such default.
+ *
+ * `$side` is 'after' for a question (School type belongs under School) and
+ * 'before' for a heading, which has to introduce its group rather than trail
+ * the group above it. Getting that backwards puts "Parent or guardian" under
+ * the parent's email, where it reads as a label for the school questions
+ * beneath — worse than no heading at all.
  *
  * Pure: whether this should happen at all, and what to record once it has, is
  * form_seed_once()'s job.
  */
-function form_seed_optional_field(array $stored, string $key, string $after): array {
+function form_seed_optional_field(array $stored, string $key, $anchor, string $side = 'after'): array {
     foreach ($stored as $f) if (is_array($f) && ($f['key'] ?? '') === $key) return $stored;
     $def = null;
     foreach (form_default_fields() as $d) if (($d['key'] ?? '') === $key) { $def = $d; break; }
     if (!$def) return $stored;
-    $at = count($stored);
-    foreach ($stored as $i => $f) if (is_array($f) && ($f['key'] ?? '') === $after) { $at = $i + 1; break; }
+    /* An anchor can be a group. The first member still on the form wins, in
+       the order given, so a heading lands above whatever survives of what it
+       describes. */
+    $at = -1;
+    foreach ((array)$anchor as $want) {
+        foreach ($stored as $i => $f) {
+            if (is_array($f) && ($f['key'] ?? '') === $want) { $at = $side === 'before' ? $i : $i + 1; break 2; }
+        }
+    }
+    if ($at < 0) {
+        /* No anchor. A question can still go in at the end — a worse position,
+           not a reason to drop it. A HEADING cannot: it exists to introduce
+           the group below it, and appended to the bottom it introduces
+           nothing and reads as a fault. */
+        if ($side === 'before') return $stored;
+        $at = count($stored);
+    }
     array_splice($stored, $at, 0, [$def]);
     return $stored;
 }
