@@ -37,7 +37,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/webcron.php';
 // session.php is pure functions over the device register — no bootstrap, no
@@ -5190,6 +5190,233 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         cache_remember($key, 60, $f);        // inside the window — memo
         cache_remember($key, 0, $f);         // window elapsed — recompute
         return $n === 2;
+    })());
+})();
+
+
+/* ── Self-registration, and the desk that checks it ─────────────────────────
+ * Registration happened at a table: one queue, one centre, one morning, staff
+ * typing a family's answers back at them. A family can now fill it in
+ * themselves — but nothing they submit is a registration until a human at a
+ * REVIEW desk has looked at it, and that desk has its own password. */
+(function () {
+    $SELF = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Public link', 'kind' => 'self']);
+    $REV  = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Review desk', 'kind' => 'review', 'password' => 'review-pass-1']);
+    $DESK = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Front table', 'password' => 'desk-pass-1']);
+
+    chk('a public link is created without a password and cannot be given one',
+        !empty($SELF['ok']) && $SELF['kind'] === 'self' && $SELF['hasPassword'] === false
+        && strpos($SELF['url'], '/apply?g=') !== false);
+    /* A public link carrying a password is just a desk link somebody shared;
+     * the request must not be able to create one. */
+    chk('…even when a password is asked for', (function () {
+        $r = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Leaky', 'kind' => 'self', 'password' => 'secret123']);
+        return $r['hasPassword'] === false
+            && (string)db_row("SELECT passHash FROM gate_links WHERE gateId=?", [$r['gateId']])['passHash'] === '';
+    })());
+    chk('a review desk must have a password to exist at all',
+        backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Open review', 'kind' => 'review'])['error'] === 'password_required');
+    chk('…and it is a different password from the check-in desk', (function () use ($REV, $DESK) {
+        // The whole reason the review desk is separate: the volunteer who can
+        // scan cards at the front table must not also be able to wave
+        // strangers into the programme.
+        return !empty(backend_dispatch('gate.unlock', ['gate' => $REV['gateId'], 'password' => 'review-pass-1'])['ok'])
+            && backend_dispatch('gate.unlock', ['gate' => $REV['gateId'], 'password' => 'desk-pass-1'])['error'] === 'bad_password'
+            && backend_dispatch('gate.unlock', ['gate' => $DESK['gateId'], 'password' => 'review-pass-1'])['error'] === 'bad_password';
+    })());
+    chk('a review link cannot be used to register anybody',
+        backend_dispatch('gate.register', ['gate' => $REV['gateId'], 'data' => ['fullName' => 'Any Child', 'age' => 12]])['error'] === 'gate_invalid');
+    chk('a desk link is not a public link', backend_dispatch('selfreg.context', ['gate' => $DESK['gateId']])['error'] === 'gate_invalid');
+    chk('…and a public link is not a review desk', backend_dispatch('selfreg.queue', ['gate' => $SELF['gateId']])['error'] === 'gate_invalid');
+
+    /* Photo validation. Three gates — shape, then the model, then a person —
+     * and only the last one decides. */
+    $png = function (int $w, int $h) {
+        $im = imagecreatetruecolor($w, $h);
+        imagefill($im, 0, 0, imagecolorallocate($im, 200, 180, 160));
+        ob_start(); imagepng($im); $raw = ob_get_clean(); imagedestroy($im);
+        return 'data:image/png;base64,' . base64_encode($raw);
+    };
+    $good = $png(600, 800);
+    chk('a usable headshot passes the shape check', (function () use ($good) {
+        $r = photo_shape_check($good);
+        return !empty($r['ok']) && empty($r['fatal']) && $r['width'] === 600 && $r['height'] === 800 && $r['issues'] === [];
+    })());
+    chk('a tiny image is refused outright', (function () use ($png) {
+        $r = photo_shape_check($png(90, 90));
+        return empty($r['ok']) && in_array('too_small', $r['issues'], true);
+    })());
+    chk('a landscape group shot is flagged, not accepted as a face', (function () use ($png) {
+        $r = photo_shape_check($png(1200, 500));
+        return in_array('not_portrait', $r['issues'], true);
+    })());
+    chk('something that is not an image at all is fatal', (function () {
+        $r = photo_shape_check('data:text/html;base64,PGh0bWw+');
+        return !empty($r['fatal']) && in_array('not_an_image', $r['issues'], true);
+    })());
+    chk('the verdict is pass / check / fail, and says which checks ran', (function () use ($good, $png) {
+        return photo_validate($good)['verdict'] === 'pass'
+            && photo_validate($png(1200, 500))['verdict'] === 'check'
+            && photo_validate($png(90, 90))['verdict'] === 'fail'
+            && photo_validate($good)['source'] === 'shape';
+    })());
+
+    /* Submission. Everything the desk validates, and then it stops short of
+     * telling anybody. */
+    $form = ['fullName' => 'Amaka Self', 'age' => 13, 'faculty' => 'Music', 'course' => 'Piano',
+             'centre' => 'Egbeda', 'parentName' => 'Mrs Self', 'parentPhone' => '08031112222',
+             'parentEmail' => 'selfparent@example.com'];
+    chk('a submission with no photo is refused before anything is written',
+        backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'data' => $form])['error'] === 'photo_required');
+    chk('…and so is one whose photo is unusable', (function () use ($SELF, $form, $png) {
+        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'data' => $form, 'photo' => $png(80, 80)]);
+        return $r['error'] === 'photo_rejected'
+            && (int)db_row("SELECT COUNT(*) c FROM summer_students WHERE fullName='Amaka Self'")['c'] === 0;
+    })());
+    chk('the public form still enforces every rule the desk does', (function () use ($SELF, $good) {
+        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good,
+            'data' => ['fullName' => 'X', 'age' => 3, 'course' => 'Nope']]);
+        return !empty($r['errors']);
+    })());
+
+    /* The ordering the whole design rests on. An unreviewed submission that
+     * could email a family is a way for anyone holding the public link to send
+     * mail in the programme's name — so the mailbox is watched across the
+     * submission itself, not inspected for side effects afterwards. */
+    $GLOBALS['__mail_sink'] = [];
+    $sub = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'data' => $form, 'photo' => $good]);
+    $subMail = $GLOBALS['__mail_sink'];
+    unset($GLOBALS['__mail_sink']);
+    chk('a family can register themselves', !empty($sub['ok']) && $sub['regStatus'] === 'self_pending');
+    $SID = (string)$sub['studentId'];
+    chk('…and nobody is emailed until a human has looked at it', (function () use ($SID, $sub, $subMail) {
+        $s = db_row("SELECT regStatus, remindedAt FROM summer_students WHERE studentId=?", [$SID]);
+        return count($subMail) === 0 && ($sub['verificationSending'] ?? ['x']) === []
+            && (string)$s['regStatus'] === 'self_pending' && trim((string)$s['remindedAt']) === '';
+    })());
+    chk('…nor is it announced as a registration', (function () {
+        return (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind='registration.created' AND payload LIKE '%Amaka Self%'")['c'] === 0
+            && (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind='registration.submitted' AND payload LIKE '%Amaka Self%'")['c'] === 1;
+    })());
+    chk('the photo verdict is stored with the submission', (function () use ($SID) {
+        $c = safe_json((string)db_row("SELECT photoCheck FROM summer_students WHERE studentId=?", [$SID])['photoCheck']);
+        return is_array($c) && $c['verdict'] === 'pass' && $c['width'] === 600;
+    })());
+    chk('a self-registration is not counted as one on the public board', (function () {
+        // regStatus 'self_pending' is neither verified nor parent_pending, so
+        // every existing count that keys on those is untouched by definition.
+        return (int)db_row("SELECT COUNT(*) c FROM summer_students WHERE regStatus='self_pending'")['c'] >= 1;
+    })());
+    chk('an admin can close the public door without revoking the link', (function () use ($SELF, $form, $good) {
+        setting_set('selfreg_closed', '1', 'test');
+        $shut = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'data' => $form, 'photo' => $good]);
+        $ctx = backend_dispatch('selfreg.context', ['gate' => $SELF['gateId']]);
+        setting_set('selfreg_closed', '', 'test');
+        return ($shut['error'] ?? '') === 'closed' && ($ctx['open'] ?? true) === false && !empty($ctx['ok']);
+    })());
+
+    /* The queue. A coordinator on a Monday has three hundred of these and
+     * fifteen minutes. */
+    $q = backend_dispatch('selfreg.queue', ['gate' => $REV['gateId']]);
+    chk('the review desk lists what came in', !empty($q['ok']) && count($q['queue']) >= 1);
+    chk('…with the photo verdict attached to each one', (function () use ($q, $SID) {
+        foreach ($q['queue'] as $r) if ($r['studentId'] === $SID) return ($r['photo']['verdict'] ?? '') === 'pass';
+        return false;
+    })());
+    chk('…and only submissions that came through a link', (function () use ($DESK, $REV) {
+        /* A desk registration was already checked by the person who typed it.
+         * Putting it in this queue would ask a reviewer to approve work that
+         * is already done — and, worse, hold up a child who is standing in the
+         * room. */
+        $d = backend_dispatch('gate.register', ['gate' => $DESK['gateId'], 'data' => [
+            'fullName' => 'Desk Typed Child', 'age' => 12, 'faculty' => 'Music', 'course' => 'Piano',
+            'centre' => 'Egbeda', 'parentName' => 'A Parent', 'parentPhone' => '08055554444']]);
+        if (empty($d['ok'])) return false;
+        // By id, not by name: the form rebuilds fullName from first + last, so
+        // a name checked as typed is a name that is never in the list.
+        $ids = array_column(backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'status' => 'all', 'per' => 100])['queue'], 'studentId');
+        return !in_array((string)$d['studentId'], $ids, true) && count($ids) > 0
+            && (string)db_row("SELECT submittedVia FROM summer_students WHERE studentId=?", [$d['studentId']])['submittedVia'] === '';
+    })());
+    chk('the desk filters by centre, course and photo verdict', (function () use ($REV) {
+        $byCentre = backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'centre' => 'Nowhere']);
+        $byCourse = backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'course' => 'Piano']);
+        $byPhoto  = backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'photo' => 'fail']);
+        return count($byCentre['queue']) === 0 && count($byCourse['queue']) >= 1 && count($byPhoto['queue']) === 0;
+    })());
+    chk('…and searches the fields a family actually mistypes', (function () use ($REV) {
+        foreach (['amaka', 'selfparent@example.com', '08031112222', '2222', 'mrs self'] as $term) {
+            if (count(backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'q' => $term])['queue']) !== 1) return false;
+        }
+        return count(backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'q' => 'zzznobody'])['queue']) === 0;
+    })());
+    /* Two parents registering the same child is the commonest thing in this
+     * queue and the one a reviewer most needs pointed out. */
+    chk('the desk points out a child who looks already registered', (function () use ($SELF, $REV, $good, $form) {
+        backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good,
+            'data' => $form + [] , 'force' => true]);
+        $again = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good,
+            'data' => array_merge($form, ['parentPhone' => '08039998888', 'parentEmail' => 'other@example.com']), 'force' => true]);
+        if (empty($again['ok'])) return false;
+        $q2 = backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'q' => 'amaka']);
+        foreach ($q2['queue'] as $r) if (!empty($r['possibleDuplicate'])) return true;
+        return false;
+    })());
+
+    /* Approval is the moment it becomes a registration — and the only moment
+     * a family is contacted. */
+    chk('approving turns a submission into a registration and sends the email', (function () use ($REV, $SID) {
+        $r = backend_dispatch('selfreg.approve', ['gate' => $REV['gateId'], 'studentId' => $SID]);
+        $s = db_row("SELECT regStatus, reviewedById, reviewedAt FROM summer_students WHERE studentId=?", [$SID]);
+        return !empty($r['ok']) && in_array('email', $r['verificationSending'], true)
+            && (string)$s['regStatus'] === 'parent_pending'
+            && strpos((string)$s['reviewedById'], 'gate:') === 0 && (string)$s['reviewedAt'] !== '';
+    })());
+    chk('…and approving twice does not email the family twice',
+        backend_dispatch('selfreg.approve', ['gate' => $REV['gateId'], 'studentId' => $SID])['error'] === 'not_pending');
+    chk('a rejection has to say why', (function () use ($REV, $SELF, $good, $form) {
+        $sub2 = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good,
+            'data' => array_merge($form, ['fullName' => 'Reject Me', 'parentEmail' => 'rej@example.com']), 'force' => true]);
+        $bad = backend_dispatch('selfreg.reject', ['gate' => $REV['gateId'], 'studentId' => $sub2['studentId']]);
+        $ok  = backend_dispatch('selfreg.reject', ['gate' => $REV['gateId'], 'studentId' => $sub2['studentId'], 'note' => 'Photo is of an adult']);
+        $s = db_row("SELECT regStatus, status, reviewNote FROM summer_students WHERE studentId=?", [$sub2['studentId']]);
+        // The row stays: a rejected submission is evidence a family tried, and
+        // deleting it loses both the trail and the ability to say what to fix.
+        return ($bad['error'] ?? '') === 'reason_required' && !empty($ok['ok'])
+            && (string)$s['regStatus'] === 'rejected' && (string)$s['status'] === 'inactive'
+            && (string)$s['reviewNote'] === 'Photo is of an adult';
+    })());
+    chk('a whole page can be approved at once, each row reporting its own outcome', (function () use ($REV, $SELF, $good, $form) {
+        $ids = [];
+        foreach (['Bulk One', 'Bulk Two'] as $i => $n) {
+            $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good,
+                'data' => array_merge($form, ['fullName' => $n, 'parentEmail' => 'b' . $i . '@example.com']), 'force' => true]);
+            $ids[] = $r['studentId'];
+        }
+        $ids[] = 'SUM-NOT-A-THING';
+        $r = backend_dispatch('selfreg.approveBulk', ['gate' => $REV['gateId'], 'studentIds' => $ids]);
+        return ($r['approved'] ?? 0) === 2 && count($r['results']) === 3
+            && ($r['results'][2]['error'] ?? '') === 'not_found';
+    })());
+    chk('a bulk approval is bounded',
+        backend_dispatch('selfreg.approveBulk', ['gate' => $REV['gateId'],
+            'studentIds' => array_map(fn($i) => 'SUM-BULK-CAP-' . $i, range(1, 101))])['error'] === 'too_many');
+
+    /* The consents, in the email itself. A parent deciding whether to click an
+     * unfamiliar link about their child could not see what they were agreeing
+     * to until after they had clicked it. */
+    chk('the registration email names every consent it will ask for', (function () {
+        $GLOBALS['__mail_sink'] = [];
+        registration_send_verification((string)db_row("SELECT studentId FROM summer_students WHERE fullName='Amaka Self' LIMIT 1")['studentId']);
+        $box = $GLOBALS['__mail_sink'];
+        unset($GLOBALS['__mail_sink']);
+        if (!count($box)) return false;
+        $sent = (string)$box[0]['html'];
+        foreach (CONSENT_TYPES as $ct) if (strpos($sent, esc_html((string)$ct['label'])) === false) return false;
+        // And says which are optional — a consent that costs a child their
+        // place if refused is not freely given and is worth nothing.
+        return strpos($sent, 'required') !== false && strpos($sent, 'optional') !== false
+            && strpos($sent, 'does not affect') !== false;
     })());
 })();
 

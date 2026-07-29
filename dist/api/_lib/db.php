@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 68;
+const NGG_SCHEMA_TARGET = 69;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1694,6 +1694,38 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_mentors_member ON mentors(memberId);
             CREATE INDEX IF NOT EXISTS idx_mentors_volunteer ON mentors(volunteerId);
             CREATE INDEX IF NOT EXISTS idx_mentors_centre_rank ON mentors(centre, rank);
+        ",
+
+        /* Self-registration, and the desk that checks it.
+         *
+         * Until now a child could only be registered by staff standing at a
+         * gate. That is one queue, at one table, at one centre, on one
+         * morning — and it is why registration day is the bottleneck it is.
+         *
+         * `gate_links.kind` splits the one link type into three, because they
+         * are three different doors and sharing a password between them is
+         * how a public link ends up opening a staff desk:
+         *   desk   — staff register on a child's behalf (today's behaviour)
+         *   self   — the public link, no password, the family fills it in
+         *   review — staff check what came in through the public link, with
+         *            its OWN password
+         *
+         * A self-registration lands as regStatus 'self_pending': not yet a
+         * registration, not yet rejected, and deliberately not counted as one
+         * anywhere until a human has looked at it. Only on approval does it
+         * become 'parent_pending' and trigger the guardian's email — so an
+         * unreviewed submission can never send a family anything.
+         */
+        69 => "
+            ALTER TABLE gate_links ADD COLUMN kind TEXT DEFAULT 'desk';
+            CREATE INDEX IF NOT EXISTS idx_gate_kind ON gate_links(kind, status);
+
+            ALTER TABLE summer_students ADD COLUMN submittedVia TEXT DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN photoCheck TEXT DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN reviewedById TEXT DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN reviewedAt TEXT DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN reviewNote TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_sstu_reg_centre ON summer_students(regStatus, centre);
         ",
     ];
 

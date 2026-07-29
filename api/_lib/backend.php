@@ -323,6 +323,13 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.cert'             => 'public_cert',
             'public.siteContent'      => 'public_site_content',
             'public.instructorRoster' => 'public_instructor_roster',
+            // Self-registration: the public link, and the desk that checks it.
+            'selfreg.context'         => 'selfreg_context',
+            'selfreg.submit'          => 'selfreg_submit',
+            'selfreg.queue'           => 'selfreg_queue',
+            'selfreg.approve'         => 'selfreg_approve',
+            'selfreg.approveBulk'     => 'selfreg_approve_bulk',
+            'selfreg.reject'          => 'selfreg_reject',
             'public.contact'          => 'public_contact',
         ];
     }

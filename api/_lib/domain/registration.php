@@ -632,8 +632,10 @@ function gate_rotation_due_in(array $gate): ?int {
 
 function admin_gates_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    $rows = db_all('SELECT gateId, name, cohortId, centreId, status, createdBy, expiresAt, usedCount, createdAt, passHash, passSetAt, passRotateDays, passNotify, passExpiryDays, passExpiresAt FROM gate_links ORDER BY id DESC LIMIT 50');
+    $rows = db_all('SELECT gateId, kind, name, cohortId, centreId, status, createdBy, expiresAt, usedCount, createdAt, passHash, passSetAt, passRotateDays, passNotify, passExpiryDays, passExpiresAt FROM gate_links ORDER BY id DESC LIMIT 50');
     foreach ($rows as &$r) {
+        $r['kind'] = trim((string)($r['kind'] ?? 'desk')) ?: 'desk';
+        $r['path'] = ['desk' => '/gate?g=', 'self' => '/apply?g=', 'review' => '/review?g='][$r['kind']] ?? '/gate?g=';
         $r['hasPassword'] = ($r['passHash'] ?? '') !== '';
         $due = gate_rotation_due_in($r);
         $r['rotateDays'] = (int)($r['passRotateDays'] ?? 0);
@@ -675,8 +677,18 @@ function admin_gates_create(array $p): array {
     $expiryDays = max(0, min(365, (int)($p['expiryDays'] ?? 0)));
     $notify = strtolower(trim((string)($p['notifyEmail'] ?? '')));
     if ($notify !== '' && !filter_var($notify, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
+    /* Three kinds of door, not one. `self` is the public registration link and
+     * must never carry a password — a public link with one is just a desk link
+     * somebody shared. `review` is where those submissions are checked, and it
+     * has its own, so the volunteer who can scan cards at the gate cannot also
+     * wave strangers into the programme. */
+    $kind = (string)($p['kind'] ?? 'desk');
+    if (!in_array($kind, ['desk', 'self', 'review'], true)) $kind = 'desk';
+    if ($kind === 'self') { $passHash = ''; $plain = ''; }
+    if ($kind === 'review' && $passHash === '') return ['ok' => false, 'error' => 'password_required'];
     db_insert('gate_links', [
-        'gateId' => $gateId, 'name' => substr(trim((string)($p['name'] ?? 'Front desk')), 0, 160),
+        'gateId' => $gateId, 'kind' => $kind,
+        'name' => substr(trim((string)($p['name'] ?? 'Front desk')), 0, 160),
         'cohortId' => $c['cohortId'], 'centreId' => (string)($p['centreId'] ?? ''), 'status' => 'active',
         'createdBy' => $g['requester']['memberId'], 'passHash' => $passHash,
         'passSetAt' => $passHash !== '' ? now_iso() : '',
@@ -685,11 +697,12 @@ function admin_gates_create(array $p): array {
         'passExpiresAt' => ($passHash !== '' && $expiryDays > 0) ? gmdate('Y-m-d\TH:i:s\Z', time() + $expiryDays * 86400) : '',
         'expiresAt' => $expiresAt, 'createdAt' => now_iso(),
     ]);
-    audit('gate.create', $g['requester']['memberId'], $gateId, ['kiosk' => $passHash !== '', 'rotateDays' => $rotate], (string)($p['ip'] ?? ''));
+    audit('gate.create', $g['requester']['memberId'], $gateId, ['kind' => $kind, 'kiosk' => $passHash !== '', 'rotateDays' => $rotate], (string)($p['ip'] ?? ''));
     // The plaintext is returned exactly once, here. Only the hash is stored,
     // so nothing can hand it back later — the panel has to show it now.
-    return ['ok' => true, 'gateId' => $gateId, 'hasPassword' => $passHash !== '', 'password' => $plain,
-            'url' => rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/gate?g=' . $gateId];
+    $path = ['desk' => '/gate?g=', 'self' => '/apply?g=', 'review' => '/review?g='][$kind];
+    return ['ok' => true, 'gateId' => $gateId, 'kind' => $kind, 'hasPassword' => $passHash !== '', 'password' => $plain,
+            'url' => rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . $path . $gateId];
 }
 
 /** Set or clear a gate's kiosk password. Empty password removes it. */
@@ -890,6 +903,15 @@ function gate_context(array $p): array {
 function gate_register(array $p): array {
     $gate = gate_resolve((string)($p['gate'] ?? ''));
     if (!$gate) return ['ok' => false, 'error' => 'gate_invalid'];
+    /* A review desk checks registrations; it does not take them. Without this
+     * the review link's password would also open a registration form, which
+     * is the opposite of the reason it has its own password. */
+    if (trim((string)($gate['kind'] ?? 'desk')) === 'review') return ['ok' => false, 'error' => 'gate_invalid'];
+    /* Self-service submissions run every one of the rules below — the fields,
+     * the duplicate check, the id — and then stop short of telling anybody.
+     * Nothing reaches a family until a human at the review desk has looked at
+     * it, so the caller finishes the job rather than this one. */
+    $selfServe = !empty($p['selfServe']);
     $live = form_live();
 
     // Capture the device location if the client sent one — recorded regardless
@@ -1049,6 +1071,17 @@ function gate_register(array $p): array {
     $willSend = [];
     if ($pEmail !== '') $willSend[] = 'email';
     if ($pPhone !== '' && function_exists('sms_enabled') && sms_enabled()) $willSend[] = 'sms';
+    if ($selfServe) {
+        // Deliberately nothing sent and nothing announced as a registration:
+        // an unreviewed submission that could email a family is a way for
+        // anyone holding the public link to send mail in the programme's name.
+        event_emit('registration.submitted', [
+            'ref' => $studentId, 'name' => (string)$d['fullName'], 'course' => (string)($d['course'] ?? ''),
+            'centre' => (string)($d['centre'] ?? ''), 'status' => 'self_pending', 'gate' => (string)$gate['name'],
+        ]);
+        return ['ok' => true, 'ref' => $studentId, 'studentId' => $studentId, 'regStatus' => 'self_pending',
+            'verificationSending' => [], 'centre' => (string)($d['centre'] ?? ''), 'geo' => null];
+    }
     after_response('registration.verify', function () use ($studentId) {
         registration_send_verification($studentId);
     });
@@ -1071,10 +1104,38 @@ function registration_send_verification(string $studentId): array {
     $first = explode(' ', (string)$s['fullName'])[0] ?: 'your child';
     $channels = [];
     if (!empty($s['parentEmail'])) {
+        /* The consents, spelled out in the email itself.
+         *
+         * This said only "we need your consent" and put everything behind a
+         * link. A parent deciding whether to click an unfamiliar link about
+         * their child could not see what they were being asked to agree to
+         * until after they had clicked it — and the ones who did not click
+         * are exactly the registrations that stall. Naming the permissions
+         * here also means the email is a record of what was asked, which a
+         * link that can be edited later is not.
+         *
+         * Which ones are optional is stated too: refusing to have a child
+         * photographed must visibly not cost them their place, or the consent
+         * is not freely given and therefore worth nothing. */
+        $rows = '';
+        foreach (CONSENT_TYPES as $ct) {
+            $need = ((int)$ct['p']) === 0
+                ? '<span style="color:#8a6d00;font-weight:700">required</span>'
+                : '<span style="color:#4a5578">optional</span>';
+            $rows .= '<tr><td style="padding:5px 10px 5px 0;font-size:14px;color:#1b2340">'
+                  . esc_html((string)$ct['label']) . '</td>'
+                  . '<td style="padding:5px 0;font-size:12px;white-space:nowrap">' . $need . '</td></tr>';
+        }
+        $body = '<p style="margin:0 0 10px"><b>Why you got this:</b> we need your consent before the registration is complete. '
+              . 'It takes about a minute, and you can also tell us anything we should know.</p>'
+              . '<p style="margin:0 0 6px;font-size:14px"><b>What you will be asked:</b></p>'
+              . '<table role="presentation" style="border-collapse:collapse;margin:0 0 10px">' . $rows . '</table>'
+              . '<p style="margin:0 0 10px;font-size:13px;color:#4a5578">The optional ones are genuinely optional — saying no to photographs '
+              . 'or to appearing on our website does not affect ' . esc_html($first) . "'s place.</p>";
         $html = email_template([
             'title' => 'Confirm ' . esc_html($first) . "'s registration",
-            'intro' => 'Hello' . (!empty($s['guardianName']) ? ' ' . esc_html((string)$s['guardianName']) : '') . ' — ' . esc_html((string)$s['fullName']) . ' was registered for NGG Summer School today.',
-            'bodyHtml' => '<p style="margin:0 0 10px"><b>Why you got this:</b> we need your consent before the registration is complete. It takes about a minute, and you can also tell us anything we should know.</p>',
+            'intro' => 'Hello' . (!empty($s['guardianName']) ? ' ' . esc_html((string)$s['guardianName']) : '') . ' — ' . esc_html((string)$s['fullName']) . ' was registered for NGG Summer School.',
+            'bodyHtml' => $body,
             'ctaLabel' => 'Review & consent →', 'ctaUrl' => $url,
         ]);
         if (send_mail((string)$s['parentEmail'], "Confirm {$first}'s NGG Summer School registration", $html)) $channels[] = 'email';

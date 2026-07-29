@@ -1190,4 +1190,18 @@ CREATE INDEX idx_mentors_member ON mentors(memberId);
 CREATE INDEX idx_mentors_volunteer ON mentors(volunteerId);
 CREATE INDEX idx_mentors_centre_rank ON mentors(centre, rank);
 
-INSERT INTO schema_version (version) VALUES (68) ON DUPLICATE KEY UPDATE version = version;
+-- 69: self-registration, and the desk that checks it. `kind` splits one link
+-- type into three doors — desk, self (public, no password) and review (its own
+-- password) — because sharing a password between them is how a public link
+-- ends up opening a staff desk.
+ALTER TABLE gate_links ADD COLUMN kind VARCHAR(16) DEFAULT 'desk';
+CREATE INDEX idx_gate_kind ON gate_links(kind, status);
+
+ALTER TABLE summer_students ADD COLUMN submittedVia VARCHAR(48) DEFAULT '';
+ALTER TABLE summer_students ADD COLUMN photoCheck TEXT;
+ALTER TABLE summer_students ADD COLUMN reviewedById VARCHAR(64) DEFAULT '';
+ALTER TABLE summer_students ADD COLUMN reviewedAt VARCHAR(40) DEFAULT '';
+ALTER TABLE summer_students ADD COLUMN reviewNote TEXT;
+CREATE INDEX idx_sstu_reg_centre ON summer_students(regStatus, centre);
+
+INSERT INTO schema_version (version) VALUES (69) ON DUPLICATE KEY UPDATE version = version;

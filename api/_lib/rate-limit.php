@@ -23,6 +23,12 @@ function rate_limit_default(string $op): ?array {
         'summer.profile'     => ['max' => 12, 'window' => 300],   // a minor's name + photo + attendance, by guessable handle
         'student.login'      => ['max' => 8,  'window' => 300],   // ID-card credential check — brute-force ceiling
         'community.post'     => ['max' => 12, 'window' => 60],    // feed post/comment write rate
+        // The public self-registration link. Its own buckets, so a queue of
+        // families filling in the form cannot lock out the check-in desk they
+        // are standing in front of.
+        'selfreg.read'       => ['max' => 30, 'window' => 60],
+        'selfreg.submit'     => ['max' => 4,  'window' => 300],   // a few minutes of typing; many is queue-stuffing
+        'selfreg.desk'       => ['max' => 240, 'window' => 60],   // a reviewer works fast; the password is the real control
         // Starting a round writes a row and generates a question set. The limit
         // is keyed on IP, and a whole centre shares one connection — a class of
         // thirty children opening the arcade together is the NORMAL case, not
