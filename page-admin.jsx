@@ -2698,7 +2698,7 @@ function SummerRoster({ cohortId }) {
           <option value="noconsent">Missing a required consent</option>
           <option value="withdrawn">Not active</option>
         </select>
-        <button className="btn btn-ghost btn-sm" disabled={!rows.length} onClick={() => downloadCsv("summer-students", rows.map(s => ({ studentId: s.studentId, displayId: s.displayId, fullName: s.fullName, handle: s.handle, age: s.age, centre: s.centre, faculty: s.faculty, track: s.track, guardianName: s.guardianName, guardianPhone: s.guardianPhone, parentEmail: s.parentEmail, regStatus: s.regStatus, consent: s.consentComplete ? "complete" : "incomplete", status: s.status, attendance: s.attendanceCount })))}>Export CSV{rows.length !== (list || []).length ? " (" + rows.length + ")" : ""}</button>
+        <button className="btn btn-ghost btn-sm" disabled={!rows.length} onClick={() => downloadCsv("summer-students", rows.map(s => ({ studentId: s.studentId, displayId: s.displayId, fullName: s.fullName, handle: s.handle, age: s.age, centre: s.centre, faculty: s.faculty, track: s.track, school: s.school || "", schoolType: s.schoolType || "", guardianName: s.guardianName, guardianPhone: s.guardianPhone, parentEmail: s.parentEmail, regStatus: s.regStatus, consent: s.consentComplete ? "complete" : "incomplete", status: s.status, attendance: s.attendanceCount })))}>Export CSV{rows.length !== (list || []).length ? " (" + rows.length + ")" : ""}</button>
       </div>
       {list === null ? <div className="dash-spinner"/> :
         rows.length === 0 ? <div className="admin-empty">{(list || []).length ? "No child matches that filter." : "No students enrolled yet."}</div> :
@@ -5555,12 +5555,18 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
   );
 }
 
+/* Sentinel for "no centre on file". A real centre name is trimmed non-empty,
+   so it can never collide, and the filter stays one value instead of a value
+   plus a boolean that can contradict it. */
+const VOL_NO_CENTRE = " none";
+
 function AdminVolunteers() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState("");
   const [tab, setTab] = React.useState(() => takePendingAdminTab("pending"));
   const [q, setQ] = React.useState("");
+  const [vCentre, setVCentre] = React.useState("");
   const [expanded, setExpanded] = React.useState(() => new Set());
   const toggleExpand = (id) => setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const load = () => NGGApi.admin.volunteers.list().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
@@ -5597,7 +5603,21 @@ function AdminVolunteers() {
 
   const roleChip = (r) => <span className={"chip " + (r === "instructor" ? "chip-gold" : r === "mentor" ? "chip-lime" : "chip-navy")}>{r}</span>;
   const pending = (data && data.pending) || [];
-  const roster = ((data && data.volunteers) || []).filter(v => {
+  const all = (data && data.volunteers) || [];
+  /* A volunteer with no centre is invisible in every per-site count and prints
+     an ID card with nothing on it saying where they belong. The list of
+     centres cannot surface them — "none" is not a centre — so it gets its own
+     option, and a count next to it so nobody has to go looking. */
+  const noCentre = all.filter(v => !(v.centre || "").trim()).length;
+  const centreOpts = Array.from(new Set(all.map(v => (v.centre || "").trim()).filter(Boolean))).sort();
+  const inCentre = (v) => {
+    const c = (v.centre || "").trim();
+    if (vCentre === VOL_NO_CENTRE) return !c;
+    if (vCentre) return c === vCentre;
+    return true;
+  };
+  const roster = all.filter(v => {
+    if (!inCentre(v)) return false;
     if (!q.trim()) return true;
     const s = (v.fullName + " " + v.volunteerId + " " + v.email + " " + v.role).toLowerCase();
     return s.includes(q.trim().toLowerCase());
@@ -5648,8 +5668,19 @@ function AdminVolunteers() {
           <>
             <div className="admin-filters">
               <input className="admin-input" placeholder="Search name, ID, email, role…" value={q} onChange={e => setQ(e.target.value)}/>
+              <select className="admin-select" value={vCentre} onChange={e => setVCentre(e.target.value)} aria-label="Filter volunteers by centre">
+                <option value="">All centres · {all.length}</option>
+                {centreOpts.map(c => <option key={c} value={c}>{c} · {all.filter(v => (v.centre || "").trim() === c).length}</option>)}
+                {noCentre > 0 && <option value={VOL_NO_CENTRE}>⚠ No centre on file · {noCentre}</option>}
+              </select>
+              {noCentre > 0 && vCentre !== VOL_NO_CENTRE &&
+                <button className="btn btn-ghost btn-sm" onClick={() => setVCentre(VOL_NO_CENTRE)}>⚠ {noCentre} with no centre</button>}
             </div>
-            {roster.length === 0 ? <div className="admin-empty">No volunteers yet.</div> :
+            {vCentre === VOL_NO_CENTRE && roster.length > 0 &&
+              <p className="admin-hint" style={{ margin: "-2px 0 10px" }}>
+                These volunteers are missing from every per-centre count, and their ID card prints with no centre colour, code or band. Edit each one to set it.
+              </p>}
+            {roster.length === 0 ? <div className="admin-empty">{all.length ? "No volunteer matches that filter." : "No volunteers yet."}</div> :
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead><tr><th>Volunteer</th><th>Role</th><th>Centre</th><th>Faculty / Courses</th><th>Safeguarding</th><th>ID</th><th></th></tr></thead>
@@ -7854,4 +7885,7 @@ function ClubAdminPortal({ setPage }) {
   </PortalGate>;
 }
 
-Object.assign(window, { AdminPage, SummerAdminPortal, ClubAdminPortal });
+/* AdminVolunteers is exported so the roster can be mounted on its own. It
+   needs nothing but its one data call — no auth, no shell — and the console
+   around it is what makes the rest of the admin tree expensive to test. */
+Object.assign(window, { AdminPage, SummerAdminPortal, ClubAdminPortal, AdminVolunteers });

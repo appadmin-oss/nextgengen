@@ -209,7 +209,20 @@ const LEADERBOARD = {
       centres: function () { return Promise.resolve({ centres: [] }); },
       // A secondary endpoint failing must not take the roster down with it.
       hierarchy: function () { return window.__fail ? offline() : Promise.resolve({ tiers: [] }); },
-    }) }),
+    }),
+    /* The volunteer roster, as the admin console loads it. Three centres,
+       and two records filed before centres were captured — the shape the
+       missing-centre filter exists for. One of those two has an empty string
+       rather than a null, because that is what the older rows actually hold
+       and a filter that only catches null would miss half of them. */
+    volunteers: deep({ list: function () { return Promise.resolve({ pending: [], volunteers: [
+      { volunteerId: 'VOL-001', fullName: 'Tunde Bakare', email: 't@x.org', role: 'mentor', centre: 'Egbeda', safeguarding: 'cleared', status: 'active', token: 'V1', courses: [] },
+      { volunteerId: 'VOL-002', fullName: 'Ngozi Eze', email: 'n@x.org', role: 'mentor', centre: 'Ijaiye', safeguarding: 'cleared', status: 'active', token: 'V2', courses: [] },
+      { volunteerId: 'VOL-003', fullName: 'Segun Adeyemi', email: 's@x.org', role: 'instructor', centre: 'Egbeda', safeguarding: 'pending', status: 'active', token: 'V3', courses: [] },
+      { volunteerId: 'VOL-004', fullName: 'Old Record', email: 'o@x.org', role: 'mentor', centre: '', safeguarding: 'pending', status: 'active', token: 'V4', courses: [] },
+      { volunteerId: 'VOL-005', fullName: 'Older Record', email: 'oo@x.org', role: 'mentor', safeguarding: 'pending', status: 'active', token: 'V5', courses: [] },
+    ] }); } }),
+    }),
     public: deep({
     status: stub('status', ${JSON.stringify(STATUS)}),
     leaderboard: stub('leaderboard', ${JSON.stringify(LEADERBOARD)}),
@@ -229,6 +242,7 @@ const LEADERBOARD = {
             : b === 'consent' ? 'MemberConsentEditor'
             : b === 'checkin' ? 'GateCheckin'
             : b === 'roster' ? 'SummerRoster'
+            : b === 'vols' ? 'AdminVolunteers'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
   if (b === 'photo') {
@@ -405,6 +419,9 @@ const LEADERBOARD = {
           showIf: { key: 'faculty', op: 'is', value: 'Music' } },
         { key: 'portfolio', label: 'Portfolio link', type: 'text',
           showIf: { key: 'faculty', op: 'in', value: 'Media, AI & Technology' } },
+        { key: 'school', label: 'School', type: 'text' },
+        { key: 'schoolType', label: 'School type', type: 'choice', options: ['Public', 'Private'],
+          help: 'Public means a government school (state, LGEA or federal). Optional — leave blank if the child is not in school.' },
         { key: 'why', label: 'Why not?', type: 'text', showIf: { key: 'school', op: 'empty' } },
       ] } },
     };
@@ -1037,8 +1054,55 @@ const LEADERBOARD = {
     ok('…while the record with no centre still draws a card',
       stuFronts.filter(c => !c.band).length === 1);
 
+    /* ── The batch filter, and the one filter the centre list cannot give you ─
+     * Cards are handed out per site, so the studio has to be able to print one
+     * site's batch. The reason it exists, though, is the option a list of
+     * centres can never contain: the records that have NO centre. Those print
+     * a plain frame with no ring, no code and no band, and until now you found
+     * that out at the guillotine with the run already cut.
+     */
+    const batch = studio.getByLabel('Filter cards by centre');
+    const batchOpts = await batch.locator('option').allInnerTexts();
+    ok('the studio can print one centre\'s batch (' + batchOpts.length + ' options)',
+      batchOpts.some(o => /^Egbeda · 15$/.test(o)) && batchOpts.some(o => /^Ijaiye · 14$/.test(o)));
+    ok('…and offers the one option a list of centres cannot, with its count',
+      batchOpts.some(o => /No centre on file · 1$/.test(o)));
+    /* Surfaced whether or not you went looking. A warning you only see after
+       you have already found the problem is not a warning. */
+    ok('…flagged on the toolbar without opening the picker',
+      (await studio.getByRole('button', { name: /1 with no centre/ }).count()) === 1);
+
+    await batch.selectOption({ label: 'Egbeda · 15' });
+    await studio.waitForTimeout(500);
+    ok('picking a centre narrows the run to that batch (' + (await studio.locator('.card-pair').count()) + ')',
+      (await studio.locator('.card-pair').count()) === 15);
+    /* The count in the header is what somebody reads before hitting Print, so
+       it has to say it is a subset — "14 students ready" next to a 30-strong
+       roster is how a partial run gets sent to a printer. */
+    ok('…and the header says it is a subset, not the whole roster',
+      /15 of 30 verified students ready/.test(await studio.evaluate(() => document.body.innerText)));
+
+    await batch.selectOption({ label: '⚠ No centre on file · 1' });
+    await studio.waitForTimeout(500);
+    const noneText = await studio.evaluate(() => document.body.innerText);
+    ok('the missing-centre filter finds exactly the record with none',
+      (await studio.locator('.card-pair').count()) === 1 && /NAME13/.test(noneText));
+    ok('…and says what will print and where to fix it',
+      /prints without a centre/i.test(noneText) && /Admin → Summer/.test(noneText));
+    /* Both of these read wrong at a count of one, and one is exactly the count
+       you hit when a batch is nearly clean — the moment somebody is most
+       likely to be reading the screen for reassurance. */
+    ok('…in a sentence that survives a count of one',
+      /1 of 30 verified students ready/.test(noneText) && /This card prints without a centre/.test(noneText));
+
     await studio.getByRole('button', { name: /^Volunteers/ }).click();
     await studio.waitForTimeout(700);
+    /* The filter belongs to the batch on the table. Carrying "no centre" over
+       to a different roster would silently hide two of the three volunteers,
+       and the header would still read as if that were everybody. */
+    ok('switching roster clears the filter rather than carrying it over',
+      (await studio.locator('.card-pair').count()) === 3
+      && !/of 3 volunteers ready/.test(await studio.evaluate(() => document.body.innerText)));
     const volFronts = (await centreOnCard('.card-pair .idcard')).filter((_, i) => i % 2 === 0);
     ok('the volunteer card carries the same centre band (' + volFronts.length + ' cards)',
       volFronts.length === 3 && volFronts[0].band === 'EGBEDA' && volFronts[1].band === 'IJAIYE');
@@ -1059,7 +1123,64 @@ const LEADERBOARD = {
       volFronts[0].gutter >= 2 && volFronts[1].gutter >= 2);
     ok('…and a volunteer filed before centres existed still gets a card',
       volFronts[2].band === '' && /OLD/.test(volFronts[2].text));
+    // Same filter, same problem, the other roster.
+    await studio.getByLabel('Filter cards by centre').selectOption({ label: '⚠ No centre on file · 1' });
+    await studio.waitForTimeout(500);
+    const volNone = await studio.evaluate(() => document.body.innerText);
+    ok('the missing-centre filter works on volunteers too',
+      (await studio.locator('.card-pair').count()) === 1 && /OLD/.test(volNone));
+    ok('…pointing at where a volunteer\'s centre is actually set',
+      /Admin → Volunteers/.test(volNone));
     await studio.close();
+
+    /* ── …and the same filter where the centre can actually be SET ───────────
+     * The studio can only show you the problem. Admin → Volunteers → Roster is
+     * where it gets fixed, so the filter has to exist at both ends — finding
+     * eleven cards with no centre is not much use if the only way to work out
+     * WHICH eleven people they are is to read the roster line by line.
+     */
+    const vp = await browser.newPage();
+    const vpErrs = [];
+    vp.on('pageerror', e => vpErrs.push(String(e.message)));
+    await vp.goto(BASE + '/tests/_boards_fixture.html?board=vols&mode=ok', { waitUntil: 'networkidle' });
+    await vp.waitForTimeout(800);
+    await vp.getByRole('button', { name: /^Roster/ }).click();
+    await vp.waitForTimeout(400);
+    ok('the volunteer roster mounts with no script error', vpErrs.length === 0);
+    if (vpErrs.length) console.error('       ', vpErrs.slice(0, 2).join(' | '));
+    const vSel = vp.getByLabel('Filter volunteers by centre');
+    const vOpts = await vSel.locator('option').allInnerTexts();
+    ok('the roster filters by centre, counted (' + vOpts.length + ' options)',
+      vOpts.some(o => /^Egbeda · 2$/.test(o)) && vOpts.some(o => /^Ijaiye · 1$/.test(o)));
+    /* Two records, one holding null and one holding an empty string. A filter
+       written against only one of those shapes finds one volunteer and reports
+       it as if that were all of them. */
+    ok('…and counts both shapes of "no centre" as the same problem',
+      vOpts.some(o => /No centre on file · 2$/.test(o)));
+    ok('…flagged without opening the picker',
+      (await vp.getByRole('button', { name: /2 with no centre/ }).count()) === 1);
+
+    await vp.getByRole('button', { name: /2 with no centre/ }).click();
+    await vp.waitForTimeout(300);
+    const vText = await vp.evaluate(() => document.body.innerText);
+    ok('one click lists exactly the volunteers with no centre',
+      /Old Record/.test(vText) && /Older Record/.test(vText) && !/Tunde Bakare/.test(vText));
+    ok('…saying what it costs them, not just that a field is blank',
+      /missing from every per-centre count/.test(vText) && /prints with no centre/.test(vText));
+
+    await vSel.selectOption({ label: 'Egbeda · 2' });
+    await vp.waitForTimeout(300);
+    const vEg = await vp.evaluate(() => document.body.innerText);
+    ok('…and picking a centre narrows to that centre',
+      /Tunde Bakare/.test(vEg) && /Segun Adeyemi/.test(vEg) && !/Ngozi Eze/.test(vEg) && !/Old Record/.test(vEg));
+    /* An empty result has to read as "your filter matched nothing", not as
+       "you have no volunteers" — the second sends somebody to go and add them
+       all over again. */
+    await vp.fill('input[placeholder="Search name, ID, email, role…"]', 'zzzz');
+    await vp.waitForTimeout(300);
+    ok('…with an empty result that blames the filter, not the data',
+      /No volunteer matches that filter/.test(await vp.evaluate(() => document.body.innerText)));
+    await vp.close();
 
     /* ── Programme & policy: the screen that decides which days count ─────
        Mounted against a term where TODAY is cancelled, because that is the
@@ -1502,6 +1623,16 @@ const LEADERBOARD = {
       return sel ? Array.from(sel.options).map(o => o.textContent) : null;
     }, label);
     const shown = () => gr.evaluate(() => Array.from(document.querySelectorAll('label > span:first-child')).map(s => s.textContent.replace(/[ *🔒]+$/, '').trim()));
+
+    /* School type is a dropdown, not a text box, because it is a fact that
+       gets counted: typed, "public" arrives as five different spellings and
+       the public/private split every funder report opens with has to be
+       reconstructed by hand afterwards. */
+    const st = await opts('School type');
+    ok('School type is a two-option dropdown, not a free-text box',
+      st && st.filter(x => /^(Public|Private)$/.test(x.trim())).length === 2);
+    ok('…with a blank first option, because it is not required',
+      st && !/^(Public|Private)$/.test(st[0].trim()));
 
     let o = await opts('Course');
     ok('before a faculty is picked, Course says to choose one first', o && /Choose a faculty first/.test(o[0]));

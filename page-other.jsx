@@ -4333,6 +4333,11 @@ const CARD_CRIMSON = "#E4155F", CARD_NAVY = "#1B2B6B";
 // with NO scaling at all (vf = 1). A non-default admin proportion scales the
 // whole card vertically from this base — bounded and only when they deviate.
 const CARD_DESIGN_H = 972;
+/* Sentinel for "the records that have no centre". A real centre could never
+   collide with it — centre names come from the admin list and are trimmed
+   non-empty — and it keeps the filter a single value rather than a value plus
+   a boolean that can disagree with it. */
+const NO_CENTRE = " none";
 
 function CardQR({ token, size }) {
   const [src, setSrc] = React.useState("");
@@ -4681,6 +4686,12 @@ function CardStudio() {
   // Shared manager inputs (reused across centres + tiers).
   const [mName, setMName] = React.useState(""); const [mCode, setMCode] = React.useState(""); const [mColor, setMColor] = React.useState("#76B043");
   const [msg, setMsg] = React.useState("");
+  /* Which centre's batch is on the table. "" is everyone; NO_CENTRE is the
+     one filter you cannot build out of the list of centres — the records that
+     have none. Those are the cards that print with a plain frame and no band,
+     and before this there was no way to see them coming: you found out at the
+     guillotine, with the run already cut. */
+  const [pick, setPick] = React.useState("");
   // Card proportion (mm) — admin-set, applies to preview, PNG/PDF export + print.
   const [sizeW, setSizeW] = React.useState(54); const [sizeH, setSizeH] = React.useState(75);
   const [sizeMsg, setSizeMsg] = React.useState("");
@@ -4712,7 +4723,7 @@ function CardStudio() {
 
   const isVol = mode === "volunteers";
   const resetInputs = () => { setMName(""); setMCode(""); setMColor(isVol ? "#00225F" : "#76B043"); };
-  const switchMode = (m) => { setMode(m); setMsg(""); setMName(""); setMCode(""); setMColor(m === "volunteers" ? "#00225F" : "#76B043"); };
+  const switchMode = (m) => { setMode(m); setMsg(""); setMName(""); setMCode(""); setPick(""); setMColor(m === "volunteers" ? "#00225F" : "#76B043"); };
 
   const addUnit = async () => {
     setMsg("");
@@ -5039,7 +5050,18 @@ function CardStudio() {
   if (state === "need-auth") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 22 }}>Staff sign-in required</h1><button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Sign in →</button></div>);
   if (state === "error") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load the studio</h1><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
 
-  const cards = (isVol ? (vdata && vdata.cards) : (data && data.cards)) || [];
+  const allCards = (isVol ? (vdata && vdata.cards) : (data && data.cards)) || [];
+  /* Everything downstream reads `cards` — the header count, the ZIP, the
+     imposed PDF and the print zone. Filtering here rather than only in the
+     preview is the point: a batch you can see is a batch you can print. */
+  const cardCentre = (c) => (c.centre && c.centre.name) || "";
+  const noCentreCount = allCards.filter(c => !cardCentre(c)).length;
+  const centreCounts = allCards.reduce((m, c) => {
+    const n = cardCentre(c); if (n) m[n] = (m[n] || 0) + 1; return m;
+  }, {});
+  const cards = pick === NO_CENTRE ? allCards.filter(c => !cardCentre(c))
+    : pick ? allCards.filter(c => cardCentre(c) === pick)
+    : allCards;
   const program = ((isVol ? vdata : data) && (isVol ? vdata : data).program) || {};
   // Physical card proportion (admin-set). The artwork's design canvas is 590×1004
   // (≈54×92mm); we keep the 590px width and derive the canvas height from the
@@ -5070,7 +5092,9 @@ function CardStudio() {
     <div className="no-print" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 18, marginBottom: 18 }}>
       <div>
         <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>ID CARD STUDIO · {String(program.program || "")} {String(program.year || "")}</div>
-        <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{cards.length} {isVol ? "volunteer" : "verified student"}{cards.length === 1 ? "" : "s"} ready</h1>
+        {/* "1 of 30 verified student ready" — the noun agrees with the TOTAL
+            once there is a total in the sentence, not with the filtered count. */}
+        <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{cards.length}{cards.length !== allCards.length ? " of " + allCards.length : ""} {isVol ? "volunteer" : "verified student"}{(cards.length !== allCards.length ? allCards.length : cards.length) === 1 ? "" : "s"} ready</h1>
         <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0", maxWidth: 520 }}>{isVol ? "Cards render for active volunteers — the ID and QR bind at approval. Colour + code come from the hierarchy tier." : "Cards render for verified students only — the ID and QR bind at parent consent. Print uses a true " + cardW + "×" + cardH + "mm per card."}</p>
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -5114,10 +5138,39 @@ function CardStudio() {
       The PDF imposes cards {"—"} auto-laid out N-up on A4 at an exact {cardW}{"×"}{cardH}&nbsp;mm trim with 3&nbsp;mm bleed, crop &amp; registration marks and a CMYK (FOGRA39) output intent, front and back sheets interleaved for duplex. Card artwork is embedded at {dpi}&nbsp;DPI; the press RIP separates it to CMYK against the intent. Everything renders in your browser {"—"} nothing is uploaded.
     </p>
 
-    <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 26 }}>
+    <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
       {tab("students", "Summer students")}
       {tab("volunteers", "Volunteers")}
+      <span style={{ width: 1, height: 26, background: "rgba(255,255,255,.16)", margin: "0 4px" }}/>
+      {/* Print one site's batch at a time — that is how the cards are handed
+          out — and, the reason this exists, find the records with no centre on
+          file before they are printed rather than after. */}
+      <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "rgba(230,238,255,.7)" }}>
+        Batch
+        <select value={pick} onChange={e => setPick(e.target.value)} aria-label="Filter cards by centre"
+          style={{ minHeight: 40, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (pick === NO_CENTRE ? "#f5b026" : "rgba(255,255,255,.18)"), background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13, fontWeight: 700 }}>
+          <option value="">All centres · {allCards.length}</option>
+          {Object.keys(centreCounts).sort().map(n => <option key={n} value={n}>{n} · {centreCounts[n]}</option>)}
+          {noCentreCount > 0 && <option value={NO_CENTRE}>⚠ No centre on file · {noCentreCount}</option>}
+        </select>
+      </label>
+      {/* Shown whatever the filter is set to. A warning you only see once you
+          have already gone looking for the problem is not a warning. */}
+      {noCentreCount > 0 && pick !== NO_CENTRE && (
+        <button onClick={() => setPick(NO_CENTRE)}
+          style={{ minHeight: 40, padding: "9px 14px", borderRadius: 10, border: "1px solid rgba(245,176,38,.5)", background: "rgba(245,176,38,.14)", color: "#ffce54", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+          ⚠ {noCentreCount} with no centre
+        </button>
+      )}
     </div>
+    {pick === NO_CENTRE && (
+      <div className="no-print" style={{ background: "rgba(245,176,38,.12)", border: "1px solid rgba(245,176,38,.4)", borderRadius: 12, padding: "12px 14px", marginBottom: 22, maxWidth: 720 }}>
+        <div style={{ fontWeight: 800, fontSize: 13.5, color: "#ffce54" }}>{noCentreCount === 1 ? "This card prints" : "These " + noCentreCount + " cards print"} without a centre</div>
+        <p style={{ margin: "5px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "rgba(230,238,255,.72)" }}>
+          No coloured ring, no code, no band {"—"} nothing on the card says which site the {isVol ? "volunteer belongs to" : "child attends"}. Set the centre in {isVol ? <>Admin {"→"} Volunteers {"→"} Roster {"→"} Edit</> : <>Admin {"→"} Summer {"→"} the child{"'"}s record</>}, then come back and reprint. Printing them as they are is fine if you mean to; it is only a problem when nobody noticed.
+        </p>
+      </div>
+    )}
 
     <div className="no-print" style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, padding: 16, marginBottom: 30 }}>
       <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 10 }}>{isVol ? "HIERARCHY — CODE + CARD COLOUR" : "CENTRES — CODE + CARD COLOUR"}</div>

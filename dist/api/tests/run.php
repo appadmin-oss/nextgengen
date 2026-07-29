@@ -3615,6 +3615,101 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
 })();
 
 
+/* ── School type: a counted fact, so a dropdown ─────────────────────────────
+ * The form asked for a School as free text and nothing at all about whether
+ * it was a government or a private one — the single split every funder report
+ * opens with. Asked as text it would arrive as "public", "Public school",
+ * "govt", "LGEA" and "state": five spellings of one number.
+ *
+ * The interesting part is not the field, it is HOW it reaches a form that was
+ * published before it existed. It is optional, so unlike Faculty it cannot be
+ * force-restored on every read — that would mean an organisation could never
+ * decide it does not want the question. It is seeded exactly once. */
+(function () {
+    /* A definition published before the field existed, written out in full
+       rather than derived from whatever the suite has left live by now — the
+       assertion below is about WHERE the field lands, so the fixture has to
+       own the order it lands in. */
+    $old = [
+        ['key' => 'firstName', 'label' => 'First name', 'type' => 'text', 'required' => true, 'locked' => true],
+        ['key' => 'lastName', 'label' => 'Last name', 'type' => 'text', 'required' => true, 'locked' => true],
+        ['key' => 'school', 'label' => 'School', 'type' => 'text', 'required' => false],
+        ['key' => 'allergies', 'label' => 'Allergies or medical notes', 'type' => 'longtext', 'required' => false],
+    ];
+    db_update('form_defs', ['fields' => json_encode($old, JSON_UNESCAPED_SLASHES)],
+              ['formId' => 'summer-reg', 'status' => 'live']);
+    db_exec("DELETE FROM settings WHERE settingKey = 'form_seeded_schoolType'");
+    chk('fixture: the stored definition really has no School type',
+        !in_array('schoolType', array_column(json_decode((string) db_row("SELECT fields FROM form_defs WHERE formId='summer-reg' AND status='live'")['fields'], true), 'key'), true));
+
+    $seeded = form_live('summer-reg')['fields'];
+    $keys = array_column($seeded, 'key');
+    chk('an older form gets the School type question on read', in_array('schoolType', $keys, true));
+    /* Next to the question it belongs with, not dumped at the bottom under
+       the medical notes where a parent reads them as one thought. */
+    chk('…immediately after School, not appended at the end',
+        array_search('schoolType', $keys, true) === array_search('school', $keys, true) + 1);
+    /* Which means it must land ABOVE the medical notes, not below them —
+       "Allergies" is the last thing on the form for a reason. */
+    chk('…and above the medical notes rather than after them',
+        array_search('schoolType', $keys, true) < array_search('allergies', $keys, true));
+    $byKey = [];
+    foreach ($seeded as $f) $byKey[$f['key']] = $f;
+    chk('…as a dropdown offering exactly Public and Private',
+        ($byKey['schoolType']['type'] ?? '') === 'choice'
+        && ($byKey['schoolType']['options'] ?? []) === ['Public', 'Private']);
+    /* Optional on purpose: a child who is not in school has no honest answer
+       to a two-option question, and a required field would make them pick a
+       wrong one. */
+    chk('…and optional, so a child not in school can leave it blank',
+        empty($byKey['schoolType']['required']));
+
+    /* The written-back definition is the real test of "seeded once". Patching
+       it on the way out would look identical here and put the field back the
+       moment an admin deleted it. */
+    $storedNow = array_column(json_decode((string) db_row("SELECT fields FROM form_defs WHERE formId='summer-reg' AND status='live'")['fields'], true), 'key');
+    chk('the question is written into the stored definition, not patched on read',
+        in_array('schoolType', $storedNow, true));
+
+    // An admin deletes it. It must stay deleted.
+    $deleted = array_values(array_filter(form_live('summer-reg')['fields'], fn($f) => ($f['key'] ?? '') !== 'schoolType'));
+    db_update('form_defs', ['fields' => json_encode($deleted, JSON_UNESCAPED_SLASHES)],
+              ['formId' => 'summer-reg', 'status' => 'live']);
+    chk('an organisation that deletes the question keeps it deleted',
+        !in_array('schoolType', array_column(form_live('summer-reg')['fields'], 'key'), true));
+
+    /* No School field to anchor to — an organisation that deleted it years
+       ago. The question still has to arrive; landing at the end is a worse
+       position, not a reason to drop it on the floor. */
+    db_update('form_defs', ['fields' => json_encode([
+        ['key' => 'firstName', 'label' => 'First name', 'type' => 'text', 'required' => true, 'locked' => true],
+        ['key' => 'allergies', 'label' => 'Allergies', 'type' => 'longtext', 'required' => false],
+    ], JSON_UNESCAPED_SLASHES)], ['formId' => 'summer-reg', 'status' => 'live']);
+    db_exec("DELETE FROM settings WHERE settingKey = 'form_seeded_schoolType'");
+    chk('a form with no School field still gets the question, at the end',
+        in_array('schoolType', array_column(form_live('summer-reg')['fields'], 'key'), true));
+
+    /* The answer has to come back OUT again. There is no column for it — the
+       roster reads custom answers from the stored submission — so a projection
+       that silently returns '' would look like every family declining to
+       answer. */
+    $sid = 'RC1-SCHTY';
+    db_exec("DELETE FROM summer_students WHERE studentId = ?", [$sid]);
+    db_insert('summer_students', ['studentId' => $sid, 'cohortId' => summer_ensure_cohort()['cohortId'],
+        'fullName' => 'School Type Child', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Piano',
+        'formData' => json_encode(['school' => 'St Mary', 'schoolType' => 'Public']),
+        'regStatus' => 'verified', 'status' => 'active', 'enrolledAt' => now_iso()]);
+    $row = summer_student_admin(db_row("SELECT * FROM summer_students WHERE studentId = ?", [$sid]));
+    chk('the answer reaches the roster as a school type of its own',
+        ($row['schoolType'] ?? '') === 'Public' && ($row['school'] ?? '') === 'St Mary');
+    db_exec("DELETE FROM summer_students WHERE studentId = ?", [$sid]);
+
+    // Put it back for the rest of the suite, the way a republish would.
+    db_exec("DELETE FROM settings WHERE settingKey = 'form_seeded_schoolType'");
+    form_live('summer-reg');
+})();
+
+
 /* ── First / Last name, collected separately ────────────────────────────────
  * Registration asked for one "Full name" box and everything downstream
  * guessed. The ID card split on spaces and took the LAST word as the surname,

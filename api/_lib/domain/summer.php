@@ -285,6 +285,7 @@ function summer_student_admin(array $s, ?string $idExpiry = null): array {
     $out['answers'] = is_array($answers) ? $answers : [];
     $out['faculty'] = (string)($out['answers']['faculty'] ?? '');
     $out['school'] = (string)($out['answers']['school'] ?? '');
+    $out['schoolType'] = (string)($out['answers']['schoolType'] ?? '');
     return $out;
 }
 

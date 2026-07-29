@@ -189,6 +189,16 @@ function form_default_fields(): array {
         ['key' => 'parentPhone', 'label' => "Parent's phone", 'type' => 'phone', 'required' => false, 'help' => 'Either phone or email is required — both is best.', 'locked' => true],
         ['key' => 'parentEmail', 'label' => "Parent's email", 'type' => 'email', 'required' => false, 'locked' => true],
         ['key' => 'school', 'label' => 'School', 'type' => 'text', 'required' => false],
+        // Asked as a dropdown, not a free-text box, because it is a fact that
+        // gets COUNTED. Typed, the same answer arrives as "public", "Public
+        // school", "govt", "LGEA" and "state" — five spellings of one number,
+        // and every funder report that asks for the public/private split then
+        // has to be reconstructed by hand. Two options is also the whole
+        // question: it stays optional, so a child who is not in school (or a
+        // family who would rather not say) simply leaves it blank.
+        ['key' => 'schoolType', 'label' => 'School type', 'type' => 'choice', 'required' => false,
+         'options' => ['Public', 'Private'],
+         'help' => 'Public means a government school (state, LGEA or federal). Optional — leave blank if the child is not in school.'],
         ['key' => 'allergies', 'label' => 'Allergies or medical notes', 'type' => 'longtext', 'required' => false, 'sensitive' => true, 'help' => 'Visible to program staff only. Never exported.'],
     ];
 }
@@ -249,6 +259,18 @@ function form_live(string $formId = 'summer-reg'): array {
         $row = db_row("SELECT * FROM form_defs WHERE formId = ? AND status = 'live' ORDER BY version DESC LIMIT 1", [$formId]);
     }
     $stored = json_decode((string)$row['fields'], true) ?: [];
+    /* A new optional default question, introduced into a definition published
+       before it existed. Written back to the row, not patched on the way out:
+       the point is that the organisation now OWNS the question and can edit or
+       delete it in the builder like any other. */
+    if ($formId === 'summer-reg') {
+        $seeded = form_seed_optional_field($stored, 'schoolType', 'school');
+        if ($seeded !== $stored) {
+            $stored = $seeded;
+            db_exec("UPDATE form_defs SET fields = ? WHERE id = ?",
+                [json_encode($stored, JSON_UNESCAPED_SLASHES), (int)$row['id']]);
+        }
+    }
     $row['fields'] = form_hydrate_options(form_restore_locked($stored, $formId), $formId);
     return $row;
 }
@@ -323,6 +345,35 @@ function form_restore_locked(array $stored, string $formId = 'summer-reg'): arra
     if ($formId === 'summer-reg' && isset($have['firstName']) && isset($have['lastName'])) {
         $stored = array_values(array_filter($stored, fn($f) => !is_array($f) || ($f['key'] ?? '') !== 'fullName'));
     }
+    return $stored;
+}
+
+/**
+ * Introduce a new OPTIONAL default question into a form that predates it —
+ * once, and only once.
+ *
+ * form_restore_locked() cannot do this job. It reinstates locked fields on
+ * every read, which is right for a field the system depends on and wrong for
+ * a question the organisation is allowed to decide it does not want: delete
+ * School type from the builder and the next page load would put it straight
+ * back. So the seed is gated on a setting. The first read after deploy adds
+ * the field; every read after that leaves the definition alone, and a deleted
+ * field stays deleted.
+ *
+ * Inserted directly after its anchor so it lands beside the question it
+ * belongs with rather than at the bottom under the medical notes.
+ */
+function form_seed_optional_field(array $stored, string $key, string $after): array {
+    $flag = 'form_seeded_' . $key;
+    if (setting_raw($flag) !== null) return $stored;
+    setting_set($flag, '1');
+    foreach ($stored as $f) if (is_array($f) && ($f['key'] ?? '') === $key) return $stored;
+    $def = null;
+    foreach (form_default_fields() as $d) if (($d['key'] ?? '') === $key) { $def = $d; break; }
+    if (!$def) return $stored;
+    $at = count($stored);
+    foreach ($stored as $i => $f) if (is_array($f) && ($f['key'] ?? '') === $after) { $at = $i + 1; break; }
+    array_splice($stored, $at, 0, [$def]);
     return $stored;
 }
 
