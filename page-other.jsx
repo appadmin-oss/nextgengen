@@ -2506,6 +2506,530 @@ function ParentVerifyPage() {
    Dark blue + gold. Requires a signed-in staff member; the token scopes
    the link. Register wizard: Details → Photo → Confirm. Check-in by code.
    ============================================================================ */
+
+/* ── The public self-registration link — /apply?g=… ──────────────────────────
+   A family filling this in on a phone, unsupervised, possibly on a slow
+   connection, probably interrupted. Everything here follows from that:
+
+   · Four short steps rather than one long page, because a twenty-field form
+     on a phone is where people give up.
+   · Every keystroke autosaves to the device. A dropped call at step three
+     must not cost somebody ten minutes of typing.
+   · The photo is checked BEFORE the family leaves the photo step, with the
+     reason shown. Being told at the end that something ten minutes ago was
+     wrong is the worst possible moment to hear it.
+   · The consents are listed before submitting, so nobody is surprised by the
+     email — and it says plainly which ones are optional.
+   · The end state says what happens next and when, because the one thing this
+     flow cannot do is confirm a place. */
+function SelfRegisterPage() {
+  const g = new URLSearchParams(window.location.search).get("g") || "";
+  const [ctx, setCtx] = React.useState(null);
+  const [state, setState] = React.useState("loading");  // loading|ready|closed|bad|error
+  const draftKey = "ngg_apply_draft_" + g;
+  const navy = "#101a33", gold = "#ffce54", goldInk = "#2b2100";
+
+  React.useEffect(() => {
+    if (!g) { setState("bad"); return; }
+    NGGApi.public.selfreg.context(g)
+      .then(r => { setCtx(r); setState(r.open === false ? "closed" : "ready"); })
+      .catch(e => setState((e.code || e.message) === "gate_invalid" ? "bad" : "error"));
+  }, [g]);
+
+  const shell = (ch) => (
+    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 18px 60px" }}>
+      <div style={{ maxWidth: 560, margin: "0 auto" }}>{ch}</div>
+    </div>
+  );
+  const notice = (title, body) => shell(
+    <div style={{ textAlign: "center", padding: "70px 0" }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>NGG SUMMER SCHOOL</div>
+      <h1 style={{ fontSize: 23, margin: "8px 0 0", fontWeight: 800 }}>{title}</h1>
+      <p style={{ color: "rgba(230,238,255,.62)", marginTop: 10, fontSize: 14.5, lineHeight: 1.55 }}>{body}</p>
+    </div>
+  );
+  if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
+  if (state === "bad") return notice("This link isn't open",
+    "Registration links are given out by each centre and are closed once the intake is finished. Ask your centre coordinator for the current one.");
+  if (state === "closed") return notice("Registration is closed for now",
+    "The link is still valid — we've just paused new sign-ups. Try again shortly, or ask your centre coordinator when the next intake opens.");
+  if (state === "error") return notice("We couldn't load the form",
+    "Check your connection and refresh. Nothing you typed has been lost.");
+
+  return shell(<SelfRegisterForm g={g} ctx={ctx} draftKey={draftKey} gold={gold} goldInk={goldInk}/>);
+}
+
+function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
+  const fields = (ctx.form && ctx.form.fields) || [];
+  const consents = ctx.consents || [];
+  const [step, setStep] = React.useState(0);   // 0 details · 1 photo · 2 consents · 3 done
+  const [form, setForm] = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey)) || {}; } catch (_) { return {}; } });
+  const [errors, setErrors] = React.useState({});
+  const [photo, setPhoto] = React.useState("");
+  const [photoMsg, setPhotoMsg] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const [done, setDone] = React.useState(null);
+  const fileRef = React.useRef(null);
+  const mut = { color: "rgba(230,238,255,.62)" };
+  const inputS = { width: "100%", boxSizing: "border-box", padding: "12px 13px", borderRadius: 11, fontSize: 16,
+                   background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.18)", color: "#eef2fb", fontFamily: "inherit" };
+  const card = { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14 };
+
+  const set = (k, v) => setForm(f => {
+    const n = { ...f, [k]: v };
+    fields.forEach(d => { if (d.optionsFrom === k && n[d.key] && formFieldOptions(d, n).indexOf(n[d.key]) === -1) n[d.key] = ""; });
+    try { localStorage.setItem(draftKey, JSON.stringify(n)); } catch (_) {}
+    return n;
+  });
+  const visible = (f) => formFieldVisible(f, form);
+
+  /* Checked here, on this step, while the camera is still open. The server
+     runs the same rules again — this is the fast half, not the real one. */
+  const inspect = (dataUrl) => new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const issues = [];
+      if (img.width < 320 || img.height < 320) issues.push("It's too small to print — we need at least 320 pixels on each side.");
+      if (img.height > 0 && img.width / img.height > 1.45) issues.push("This looks like a wide photo. A head-and-shoulders picture works best.");
+      resolve({ ok: issues.length === 0, issues, w: img.width, h: img.height });
+    };
+    img.onerror = () => resolve({ ok: false, issues: ["We couldn't read that file. Try a JPG or PNG."], w: 0, h: 0 });
+    img.src = dataUrl;
+  });
+
+  const takeFile = async (file) => {
+    setPhotoMsg(null); setErr("");
+    if (!file) return;
+    if (file.size > 8000000) { setPhotoMsg({ ok: false, issues: ["That file is over 8MB. Most phones have a 'medium' size option."] }); return; }
+    const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result || "")); r.readAsDataURL(file); });
+    const v = await inspect(dataUrl);
+    setPhotoMsg(v);
+    setPhoto(v.ok ? dataUrl : "");
+    if (v.ok) setPhoto(dataUrl);
+  };
+
+  const submit = async () => {
+    setBusy(true); setErr(""); setErrors({});
+    try {
+      const r = await NGGApi.public.selfreg.submit({ gate: g, data: form, photo });
+      try { localStorage.removeItem(draftKey); } catch (_) {}
+      setDone(r); setStep(3);
+    } catch (e) {
+      const c = e.code || e.message;
+      if (e.data && e.data.errors) { setErrors(e.data.errors); setStep(0); setErr("Please check the highlighted answers."); }
+      else if (c === "photo_rejected") { setStep(1); setPhoto(""); setPhotoMsg({ ok: false, issues: ["That photo can't be used for an ID card. Please take another."] }); }
+      else if (c === "duplicate_suspect") setErr("Someone has already registered this child with the same contact details. Speak to your centre coordinator rather than registering twice.");
+      else if (c === "closed") setErr("Registration has just closed. Ask your centre coordinator when it reopens.");
+      else if (c === "rate_limited") setErr("That's a few submissions in a short time. Wait a couple of minutes and try again.");
+      else setErr("We couldn't send that. Check your connection — nothing you typed has been lost.");
+      setBusy(false);
+    }
+  };
+
+  const named = regDisplayName(form);
+  const steps = ["Details", "Photo", "Consent", "Done"];
+
+  if (step === 3 && done) return (
+    <div style={{ textAlign: "center", padding: "50px 0" }}>
+      <div style={{ fontSize: 46 }} aria-hidden="true">✓</div>
+      <h1 style={{ fontSize: 24, margin: "10px 0 0", fontWeight: 800 }}>Sent for checking</h1>
+      <p style={{ ...mut, marginTop: 10, fontSize: 15, lineHeight: 1.6 }}>
+        Thank you. A coordinator will look at {named || "this registration"} — usually within a day.
+        {" "}Once they confirm it, we'll email your parent or guardian a short consent form, and the place is confirmed after that.
+      </p>
+      <div style={{ ...card, padding: 14, marginTop: 18, textAlign: "left" }}>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: gold }}>YOUR REFERENCE</div>
+        <div className="mono" style={{ fontSize: 19, fontWeight: 800, marginTop: 4 }}>{done.ref}</div>
+        <p style={{ ...mut, fontSize: 12.5, margin: "8px 0 0" }}>Write this down. Your coordinator can find the registration with it.</p>
+      </div>
+      {/* Said plainly, because the one thing this flow cannot do is confirm a
+          place, and a family that believes it can will stop chasing. */}
+      <p style={{ ...mut, fontSize: 12.5, marginTop: 16 }}>This is not a confirmed place yet — it becomes one when your parent or guardian completes the consent.</p>
+    </div>
+  );
+
+  return <>
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>NGG SUMMER SCHOOL</div>
+      <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>Register online</h1>
+      <p style={{ ...mut, fontSize: 13.5, margin: "6px 0 0" }}>About five minutes. Everything saves on this device as you go.</p>
+    </div>
+
+    {/* Where you are, and how much is left. */}
+    <ol style={{ display: "flex", gap: 6, listStyle: "none", padding: 0, margin: "0 0 18px" }}>
+      {steps.map((label, i) => (
+        <li key={label} aria-current={i === step ? "step" : undefined}
+          style={{ flex: 1, fontSize: 11, textAlign: "center", color: i <= step ? "#eef2fb" : "rgba(230,238,255,.4)" }}>
+          <div style={{ height: 4, borderRadius: 3, background: i <= step ? gold : "rgba(255,255,255,.14)", marginBottom: 5 }}/>
+          {label}
+        </li>
+      ))}
+    </ol>
+
+    {err && <div role="alert" style={{ ...card, borderColor: "rgba(255,120,100,.5)", background: "rgba(255,90,60,.12)", padding: 12, marginBottom: 14, fontSize: 14 }}>{err}</div>}
+
+    {step === 0 && (
+      <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+        <RegFieldList fields={fields} form={form} set={set} errors={errors} visible={visible} inputS={inputS} gold={gold} mut={mut}/>
+        <button onClick={() => { setErr(""); setStep(1); }} disabled={!named}
+          style={{ padding: 14, minHeight: 48, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15.5, cursor: "pointer", opacity: named ? 1 : .5 }}>
+          Continue → Photo
+        </button>
+        <p style={{ ...mut, fontSize: 11.5, textAlign: "center", margin: 0 }}>Saved on this device as you type — nothing is lost if you're interrupted.</p>
+      </div>
+    )}
+
+    {step === 1 && (
+      <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+        <div style={{ ...card, padding: 15 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>A photo for the ID card</div>
+          <p style={{ ...mut, fontSize: 13.5, margin: "0 0 10px", lineHeight: 1.55 }}>
+            Head and shoulders, facing the camera, in good light. A plain wall behind is best. It goes on a printed card, so a blurry one will be sent back.
+          </p>
+          {photo
+            ? <img src={photo} alt="The photo you chose" style={{ width: 150, height: 190, objectFit: "cover", borderRadius: 12, display: "block", margin: "0 auto 10px" }}/>
+            : <div style={{ width: 150, height: 190, borderRadius: 12, margin: "0 auto 10px", display: "grid", placeItems: "center",
+                            border: "2px dashed rgba(255,255,255,.22)", color: "rgba(230,238,255,.4)", fontSize: 13 }}>No photo yet</div>}
+          <input ref={fileRef} type="file" accept="image/*" capture="user" style={{ display: "none" }}
+            onChange={e => takeFile(e.target.files && e.target.files[0])}/>
+          <button onClick={() => fileRef.current && fileRef.current.click()}
+            style={{ width: "100%", padding: 13, minHeight: 48, borderRadius: 11, border: "1px solid rgba(255,255,255,.3)", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>
+            {photo ? "Take a different photo" : "📷 Take or choose a photo"}
+          </button>
+          {/* The reason, on this step, while the camera is still open. */}
+          {photoMsg && !photoMsg.ok && (
+            <div role="alert" style={{ marginTop: 10, fontSize: 13.5, color: "#ffb3a3", lineHeight: 1.5 }}>
+              {photoMsg.issues.map((t, i) => <div key={i}>• {t}</div>)}
+            </div>
+          )}
+          {photoMsg && photoMsg.ok && (
+            <div style={{ marginTop: 10, fontSize: 13.5, color: "#a7e8c6" }}>✓ That will work — {photoMsg.w}×{photoMsg.h}.</div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={() => setStep(0)} style={{ padding: 13, minHeight: 48, borderRadius: 12, border: "1px solid rgba(255,255,255,.24)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Back</button>
+          <button onClick={() => setStep(2)} disabled={!photo}
+            style={{ flex: 1, padding: 14, minHeight: 48, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15.5, cursor: "pointer", opacity: photo ? 1 : .5 }}>
+            Continue → Consent
+          </button>
+        </div>
+      </div>
+    )}
+
+    {step === 2 && (
+      <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+        <div style={{ ...card, padding: 15 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>What your parent or guardian will be asked</div>
+          {/* Shown before submitting, not for the first time in an email. The
+              consent itself is theirs to give — a child ticking boxes on their
+              parent's behalf would not be consent at all. */}
+          <p style={{ ...mut, fontSize: 13.5, margin: "0 0 12px", lineHeight: 1.55 }}>
+            We'll email them a short form. Nothing is confirmed until they complete it.
+          </p>
+          {consents.map(c => (
+            <div key={c.key} style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "7px 0", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
+              <span style={{ flex: 1, fontSize: 14 }}>{c.label}</span>
+              <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".06em", color: c.required ? gold : "rgba(230,238,255,.5)" }}>
+                {c.required ? "REQUIRED" : "OPTIONAL"}
+              </span>
+            </div>
+          ))}
+          <p style={{ ...mut, fontSize: 12.5, marginTop: 12, lineHeight: 1.5 }}>
+            The optional ones are genuinely optional — saying no to photographs or to appearing on our website does not affect {named ? named.split(" ")[0] : "the child"}'s place.
+          </p>
+        </div>
+        <div style={{ ...card, padding: 15 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>Check before you send</div>
+          <div style={{ fontSize: 14, lineHeight: 1.7 }}>
+            <div><span style={mut}>Name</span> · <b>{named || "—"}</b></div>
+            {form.age && <div><span style={mut}>Age</span> · {form.age}</div>}
+            {form.centre && <div><span style={mut}>Centre</span> · {form.centre}</div>}
+            {form.course && <div><span style={mut}>Course</span> · {form.course}</div>}
+            <div><span style={mut}>Parent contact</span> · {form.parentEmail || form.parentPhone || "—"}</div>
+          </div>
+          <button onClick={() => setStep(0)} style={{ marginTop: 10, background: "none", border: "none", color: gold, textDecoration: "underline", cursor: "pointer", font: "inherit", fontSize: 13.5, padding: 0 }}>Change something</button>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={() => setStep(1)} disabled={busy} style={{ padding: 13, minHeight: 48, borderRadius: 12, border: "1px solid rgba(255,255,255,.24)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Back</button>
+          <button onClick={submit} disabled={busy}
+            style={{ flex: 1, padding: 14, minHeight: 48, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15.5, cursor: "pointer" }}>
+            {busy ? "Sending…" : "Send registration"}
+          </button>
+        </div>
+      </div>
+    )}
+  </>;
+}
+
+
+/* ── The review desk — /review?g=… ───────────────────────────────────────────
+   Its own link and its own password. A coordinator opens this with three
+   hundred submissions and fifteen minutes, so the whole screen is built for
+   deciding fast without deciding carelessly:
+
+   · Filters that narrow to the ones needing a judgement — photo verdict
+     first, because that is the only thing here a person cannot skim.
+   · The photo large enough to actually look at, with the machine's verdict
+     next to it rather than instead of it.
+   · Approve in bulk for the clean ones; a rejection always costs a reason.
+   · The count of what is left, always visible, because "am I nearly done" is
+     the question that decides whether somebody finishes the queue today. */
+function ReviewDeskPage() {
+  const g = new URLSearchParams(window.location.search).get("g") || "";
+  const auth = (window.useAuth || (() => null))();
+  const [state, setState] = React.useState("loading");   // loading|locked|ready|bad|error
+  const [pw, setPw] = React.useState("");
+  const [unlockBusy, setUnlockBusy] = React.useState(false);
+  const [unlockErr, setUnlockErr] = React.useState("");
+  const [d, setD] = React.useState(null);
+  const [f, setF] = React.useState({ status: "self_pending", q: "", centre: "", course: "", photo: "", page: 1 });
+  const [picked, setPicked] = React.useState([]);
+  const [busy, setBusy] = React.useState("");
+  const [msg, setMsg] = React.useState("");
+  const navy = "#101a33", gold = "#ffce54";
+
+  const load = React.useCallback((filters) => {
+    const q = filters || f;
+    NGGApi.public.review.queue(g, q)
+      .then(r => { setD(r); setState("ready"); setMsg(""); })
+      .catch(e => {
+        const c = e.code || e.message;
+        if (c === "unauthorized" || c === "forbidden") setState("locked");
+        else if (c === "gate_invalid") setState("bad");
+        else setState("error");
+      });
+  }, [g, f]);
+  React.useEffect(() => { if (!g) { setState("bad"); return; } load(); /* eslint-disable-next-line */ }, [g, f.status, f.centre, f.course, f.photo, f.page]);
+  // Typing in the search box should not fire a request per keystroke.
+  React.useEffect(() => {
+    if (state !== "ready") return;
+    const t = setTimeout(() => load(), 260);
+    return () => clearTimeout(t);
+  }, [f.q]);
+
+  const doUnlock = async (e) => {
+    if (e) e.preventDefault();
+    if (!pw.trim() || unlockBusy) return;
+    setUnlockBusy(true); setUnlockErr("");
+    try { await NGGApi.public.gate.unlock(g, pw.trim()); setPw(""); setState("loading"); load(); }
+    catch (er) {
+      const c = er.code || er.message;
+      setUnlockErr(c === "bad_password" ? "That password isn't right for this desk."
+        : c === "password_expired" ? "This desk's password has expired — ask an admin for the new one."
+        : c === "gate_invalid" ? "This review link has been closed or revoked."
+        : "Couldn't reach the server. Check your connection.");
+    } finally { setUnlockBusy(false); }
+  };
+
+  const shell = (ch) => (
+    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "22px 16px 60px" }}>
+      <div style={{ maxWidth: 900, margin: "0 auto" }}>{ch}</div>
+    </div>
+  );
+  if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
+  if (state === "bad") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
+    <h1 style={{ fontSize: 22 }}>This review link isn't open</h1>
+    <p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>It has been closed or revoked. Ask an admin for a fresh one.</p></div>);
+  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
+    <h1 style={{ fontSize: 21 }}>Couldn't load the queue</h1>
+    <button onClick={() => { setState("loading"); load(); }} style={{ marginTop: 12, minHeight: 44, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
+
+  if (state === "locked") return shell(
+    <form onSubmit={doUnlock} style={{ maxWidth: 380, margin: "60px auto 0", textAlign: "center" }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>REGISTRATION REVIEW</div>
+      <h1 style={{ fontSize: 23, margin: "8px 0 0", fontWeight: 800 }}>Unlock the desk</h1>
+      {/* Said out loud, because a coordinator who tries the check-in password
+          three times and gives up is the failure this separation invites. */}
+      <p style={{ color: "rgba(230,238,255,.6)", fontSize: 13.5, margin: "10px 0 16px", lineHeight: 1.55 }}>
+        This desk has its own password — not the one used for check-in.
+      </p>
+      <input value={pw} onChange={e => setPw(e.target.value)} type="password" autoFocus aria-label="Review desk password"
+        style={{ width: "100%", boxSizing: "border-box", padding: "13px 14px", minHeight: 48, borderRadius: 11, fontSize: 16,
+                 background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.2)", color: "#eef2fb", textAlign: "center" }}/>
+      {unlockErr && <p role="alert" style={{ color: "#ff9a9a", fontSize: 13.5, margin: "10px 0 0" }}>{unlockErr}</p>}
+      <button disabled={unlockBusy} style={{ width: "100%", marginTop: 12, padding: 14, minHeight: 48, borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15.5, cursor: "pointer" }}>
+        {unlockBusy ? "Checking…" : "Unlock →"}
+      </button>
+      <button type="button" onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, background: "none", border: "none", color: "rgba(230,238,255,.6)", textDecoration: "underline", cursor: "pointer", font: "inherit", fontSize: 13 }}>
+        Or sign in as an admin
+      </button>
+    </form>
+  );
+
+  const rows = (d && d.queue) || [];
+  const counts = (d && d.counts) || {};
+  const setF1 = (k, v) => setF(x => ({ ...x, [k]: v, page: k === "page" ? v : 1 }));
+  const toggle = (id) => setPicked(p => p.indexOf(id) === -1 ? p.concat([id]) : p.filter(x => x !== id));
+  const allPicked = rows.length > 0 && rows.every(r => picked.indexOf(r.studentId) !== -1);
+  const act = async (fn, label) => {
+    setBusy(label);
+    try { const r = await fn(); setPicked([]); load(); setMsg(r && r.approved !== undefined ? r.approved + " approved" : label + " done"); }
+    catch (e) { setMsg("Couldn't " + label + " — " + (e.code || e.message)); }
+    finally { setBusy(""); }
+  };
+  const verdictChip = (v) => {
+    const meta = { pass: ["#a7e8c6", "rgba(127,209,166,.18)", "✓ photo ok"],
+                   check: ["#ffce54", "rgba(245,176,38,.18)", "⚠ check photo"],
+                   fail: ["#ffb3a3", "rgba(255,90,60,.2)", "✕ photo unusable"] }[v] || ["rgba(230,238,255,.6)", "rgba(255,255,255,.08)", "photo unchecked"];
+    return <span style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: meta[0], background: meta[1], whiteSpace: "nowrap" }}>{meta[2]}</span>;
+  };
+  const inputS = { padding: "10px 12px", minHeight: 44, borderRadius: 10, fontSize: 15, background: "rgba(255,255,255,.07)",
+                   border: "1px solid rgba(255,255,255,.18)", color: "#eef2fb", fontFamily: "inherit" };
+
+  return shell(<>
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>REGISTRATION REVIEW · {(d.gate && d.gate.name) || ""}</div>
+      <h1 style={{ fontSize: 23, margin: "4px 0 0", fontWeight: 800 }}>
+        {counts.self_pending || 0} waiting
+      </h1>
+      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>
+        Nothing here has been sent to a family yet. Approving is what emails the guardian their consent form.
+      </p>
+    </div>
+
+    <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }} role="tablist">
+      {[["self_pending", "Waiting", counts.self_pending || 0],
+        ["parent_pending", "Approved", counts.parent_pending || 0],
+        ["rejected", "Rejected", counts.rejected || 0],
+        ["all", "All", Object.values(counts).reduce((a, b) => a + b, 0)]].map(([k, label, n]) => (
+        <button key={k} role="tab" aria-selected={f.status === k} onClick={() => setF1("status", k)}
+          style={{ minHeight: 44, padding: "10px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 13.5,
+                   border: "1px solid " + (f.status === k ? gold : "rgba(255,255,255,.18)"),
+                   background: f.status === k ? "rgba(255,206,84,.16)" : "transparent", color: f.status === k ? "#fff" : "rgba(230,238,255,.7)" }}>
+          {label} · {n}
+        </button>
+      ))}
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginBottom: 14 }}>
+      <input value={f.q} onChange={e => setF(x => ({ ...x, q: e.target.value, page: 1 }))} style={{ ...inputS, gridColumn: "1 / -1" }}
+        placeholder="Search name, phone, email or reference" aria-label="Search the queue"/>
+      <select value={f.photo} onChange={e => setF1("photo", e.target.value)} style={inputS} aria-label="Filter by photo verdict">
+        <option value="">Any photo</option>
+        <option value="check">⚠ Needs a look</option>
+        <option value="fail">✕ Unusable</option>
+        <option value="pass">✓ Fine</option>
+      </select>
+      <select value={f.centre} onChange={e => setF1("centre", e.target.value)} style={inputS} aria-label="Filter by centre">
+        <option value="">All centres</option>
+        {(d.centres || []).map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <select value={f.course} onChange={e => setF1("course", e.target.value)} style={inputS} aria-label="Filter by course">
+        <option value="">All courses</option>
+        {(d.courses || []).map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+    </div>
+
+    {msg && <div role="status" style={{ marginBottom: 12, fontSize: 13.5, color: "#a7e8c6" }}>{msg}</div>}
+
+    {f.status === "self_pending" && rows.length > 0 && (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+          <input type="checkbox" checked={allPicked} onChange={() => setPicked(allPicked ? [] : rows.map(r => r.studentId))}
+            style={{ width: 20, height: 20, accentColor: gold }}/>
+          Select all {rows.length} shown
+        </label>
+        {picked.length > 0 && (
+          <button disabled={!!busy} onClick={() => act(() => NGGApi.public.review.approveBulk(g, picked), "approve")}
+            style={{ minHeight: 44, padding: "10px 18px", borderRadius: 11, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+            {busy === "approve" ? "Approving…" : "Approve " + picked.length + " →"}
+          </button>
+        )}
+      </div>
+    )}
+
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {!rows.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14, padding: "30px 0", textAlign: "center" }}>
+        {f.q || f.centre || f.course || f.photo ? "Nothing matches those filters." : "Nothing waiting. That is the good answer."}
+      </p>}
+      {rows.map(r => <ReviewRow key={r.studentId} r={r} g={g} gold={gold}
+        picked={picked.indexOf(r.studentId) !== -1} onToggle={() => toggle(r.studentId)}
+        selectable={f.status === "self_pending"} verdictChip={verdictChip}
+        onDone={(m) => { setMsg(m); load(); }}/>)}
+    </div>
+
+    {d.total > d.per && (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, gap: 12 }}>
+        <span style={{ fontSize: 13, color: "rgba(230,238,255,.6)" }}>{d.shown} of {d.total}</span>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button disabled={f.page <= 1} onClick={() => setF1("page", f.page - 1)} style={{ minHeight: 44, padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#fff", cursor: "pointer", opacity: f.page <= 1 ? .4 : 1 }}>← Back</button>
+          <button disabled={f.page * d.per >= d.total} onClick={() => setF1("page", f.page + 1)} style={{ minHeight: 44, padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#fff", cursor: "pointer", opacity: f.page * d.per >= d.total ? .4 : 1 }}>Next →</button>
+        </div>
+      </div>
+    )}
+  </>);
+}
+
+function ReviewRow({ r, g, gold, picked, onToggle, selectable, verdictChip, onDone }) {
+  const [open, setOpen] = React.useState(false);
+  const [note, setNote] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const mut = { color: "rgba(230,238,255,.55)" };
+  const run = async (fn, label) => {
+    setBusy(label); setErr("");
+    try { await fn(); onDone(r.fullName + " " + label + "d"); }
+    catch (e) { setErr(e.code === "reason_required" ? "Say why, so the family can be told what to fix." : (e.code || e.message)); setBusy(""); }
+  };
+  return (
+    <div style={{ borderRadius: 14, background: picked ? "rgba(255,206,84,.12)" : "rgba(255,255,255,.06)",
+                  border: "1px solid " + (picked ? "rgba(255,206,84,.45)" : "rgba(255,255,255,.12)"), padding: 12 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+        {selectable && <input type="checkbox" checked={picked} onChange={onToggle} aria-label={"Select " + r.fullName}
+          style={{ width: 20, height: 20, marginTop: 4, accentColor: gold, flex: "none", cursor: "pointer" }}/>}
+        {/* Big enough to actually judge. A thumbnail is a reason to approve
+            everything without looking. */}
+        <button onClick={() => setOpen(o => !o)} aria-label={"Enlarge photo of " + r.fullName}
+          style={{ border: "none", background: "none", padding: 0, cursor: "pointer", flex: "none" }}>
+          {r.photoUrl
+            ? <img src={r.photoUrl} alt="" style={{ width: open ? 190 : 66, height: open ? 240 : 84, objectFit: "cover", borderRadius: 10, transition: "width .15s, height .15s" }}/>
+            : <div style={{ width: 66, height: 84, borderRadius: 10, display: "grid", placeItems: "center", background: "rgba(255,255,255,.08)", color: "rgba(230,238,255,.4)", fontSize: 11 }}>no photo</div>}
+        </button>
+        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 700, fontSize: 16 }}>{r.fullName}</span>
+            {verdictChip(r.photo && r.photo.verdict)}
+            {/* Two parents registering the same child is the commonest thing
+                in this queue and the easiest to approve twice by accident. */}
+            {r.possibleDuplicate && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: "#ffce54", background: "rgba(245,176,38,.18)" }}>possible duplicate</span>}
+          </div>
+          <div style={{ ...mut, fontSize: 13, marginTop: 3 }}>
+            {r.age ? r.age + " · " : ""}{r.centre || "no centre"}{r.course ? " · " + r.course : ""}
+          </div>
+          <div className="mono" style={{ ...mut, fontSize: 12, marginTop: 3 }}>
+            {r.studentId} · {r.guardianName || "no guardian name"} · {r.parentEmail || r.guardianPhone || "no contact"}
+          </div>
+          {open && r.photo && (r.photo.issues || []).length > 0 && (
+            <div style={{ ...mut, fontSize: 12.5, marginTop: 6 }}>
+              Photo notes: {r.photo.issues.join(", ")}
+              {r.photo.score !== null && r.photo.score !== undefined ? " · score " + r.photo.score + "/100" : ""}
+              {r.photo.source === "shape" ? " · checked on size only" : r.photo.source === "shape_ai_unavailable" ? " · the vision check was unavailable" : ""}
+            </div>
+          )}
+          {r.reviewNote && <div style={{ ...mut, fontSize: 12.5, marginTop: 5 }}>Note: {r.reviewNote}</div>}
+        </div>
+      </div>
+      {r.regStatus === "self_pending" && (
+        <div style={{ display: "flex", gap: 8, marginTop: 11, flexWrap: "wrap", alignItems: "center" }}>
+          <button disabled={!!busy} onClick={() => run(() => NGGApi.public.review.approve(g, r.studentId, ""), "approve")}
+            style={{ minHeight: 44, padding: "10px 18px", borderRadius: 11, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+            {busy === "approve" ? "Approving…" : "Approve"}
+          </button>
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder="Reason, if rejecting" aria-label={"Reason for rejecting " + r.fullName}
+            style={{ flex: "1 1 180px", minWidth: 140, minHeight: 44, padding: "10px 12px", borderRadius: 10, fontSize: 14,
+                     background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.18)", color: "#eef2fb" }}/>
+          <button disabled={!!busy} onClick={() => run(() => NGGApi.public.review.reject(g, r.studentId, note.trim()), "reject")}
+            style={{ minHeight: 44, padding: "10px 16px", borderRadius: 11, border: "1px solid rgba(255,120,100,.5)", background: "transparent", color: "#ffb3a3", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+            {busy === "reject" ? "Rejecting…" : "Reject"}
+          </button>
+        </div>
+      )}
+      {err && <div role="alert" style={{ color: "#ff9a9a", fontSize: 13, marginTop: 8 }}>{err}</div>}
+    </div>
+  );
+}
+
 function GatePage() {
   const g = new URLSearchParams(window.location.search).get("g") || "";
   const auth = (window.useAuth || (() => null))();   // stable: set before mount
@@ -2666,6 +3190,59 @@ function regDisplayName(form) {
   return two || (form.fullName || "").trim();
 }
 
+/* The live form's fields, rendered.
+   Shared by the staff gate and the public self-registration link, because the
+   two must ask exactly the same questions with exactly the same conditional
+   logic — a second copy is a second set of rules that drifts the first time
+   somebody edits the form builder. */
+function RegFieldList({ fields, form, set, errors, visible, inputS, gold, mut }) {
+  return <>
+    {fields.filter(visible).map(f => {
+      if (f.type === "section") return <div key={f.key} style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.55)", marginTop: 6 }}>{f.label.toUpperCase()}</div>;
+      if (f.type === "info") return <p key={f.key} style={{ ...mut, fontSize: 13, margin: 0 }}>{f.label}</p>;
+      const errMsg = errors[f.key];
+      return (
+        <label key={f.key} style={{ display: "block" }}>
+          <span style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>{f.label}{f.required && <span style={{ color: gold }}> *</span>}{f.sensitive && " 🔒"}</span>
+          {f.type === "longtext" ? (
+        <textarea style={{ ...inputS, minHeight: 70, resize: "vertical" }} value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder || ""}/>
+          ) : f.type === "choice" ? (() => {
+        const parentField = f.optionsFrom ? fields.find(x => x.key === f.optionsFrom) : null;
+        const parentLabel = (parentField && parentField.label) || f.optionsFrom;
+        const waiting = !!f.optionsFrom && !form[f.optionsFrom];
+        const opts = formFieldOptions(f, form);
+        return (
+          <>
+            {/* Disabled, not merely empty — an enabled select that opens
+            on nothing looks broken rather than sequenced. */}
+            <select style={{ ...inputS, opacity: waiting ? 0.6 : 1 }} disabled={waiting}
+          value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)}>
+          <option value="">{waiting ? "Choose a " + String(parentLabel).toLowerCase() + " first…" : "Choose…"}</option>
+          {opts.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+            {!waiting && f.optionsFrom && opts.length === 0 && (
+          <span style={{ ...mut, display: "block", fontSize: 11.5, marginTop: 4 }}>
+            No {String(f.label).toLowerCase()} options are listed under {form[f.optionsFrom]} yet.
+          </span>
+            )}
+          </>
+        );
+          })() : f.type === "yesno" ? (
+        <div style={{ display: "flex", gap: 8 }}>
+          {["Yes", "No"].map(v => <button type="button" key={v} onClick={() => set(f.key, v)} style={{ flex: 1, padding: 11, borderRadius: 10, cursor: "pointer", fontWeight: 700, border: "1px solid " + (form[f.key] === v ? gold : "rgba(255,255,255,.18)"), background: form[f.key] === v ? "rgba(255,206,84,.16)" : "rgba(255,255,255,.06)", color: "#fff" }}>{v}</button>)}
+        </div>
+          ) : (
+        <input style={inputS} type={f.type === "number" ? "number" : f.type === "date" ? "date" : f.type === "email" ? "email" : f.type === "phone" ? "tel" : "text"}
+          value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder || ""} inputMode={f.type === "phone" ? "tel" : undefined}/>
+          )}
+          {f.help && !errMsg && <span style={{ ...mut, display: "block", fontSize: 11.5, marginTop: 4 }}>{f.help}</span>}
+          {errMsg && <span style={{ display: "block", fontSize: 12, marginTop: 4, color: "#ff9a9a" }}>{errMsg}</span>}
+        </label>
+      );
+        })}
+  </>;
+}
+
 function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
   const geoOn = !!(ctx.geo && ctx.geo.enabled);
   const fields = ((ctx.form && ctx.form.fields) || []).filter(f => !(geoOn && f.key === "centre"));
@@ -2809,48 +3386,7 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
             </div>
           );
         })()}
-        {fields.filter(visible).map(f => {
-          if (f.type === "section") return <div key={f.key} style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.55)", marginTop: 6 }}>{f.label.toUpperCase()}</div>;
-          if (f.type === "info") return <p key={f.key} style={{ ...mut, fontSize: 13, margin: 0 }}>{f.label}</p>;
-          const errMsg = errors[f.key];
-          return (
-            <label key={f.key} style={{ display: "block" }}>
-              <span style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 5 }}>{f.label}{f.required && <span style={{ color: gold }}> *</span>}{f.sensitive && " 🔒"}</span>
-              {f.type === "longtext" ? (
-                <textarea style={{ ...inputS, minHeight: 70, resize: "vertical" }} value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder || ""}/>
-              ) : f.type === "choice" ? (() => {
-                const parentField = f.optionsFrom ? fields.find(x => x.key === f.optionsFrom) : null;
-                const parentLabel = (parentField && parentField.label) || f.optionsFrom;
-                const waiting = !!f.optionsFrom && !form[f.optionsFrom];
-                const opts = formFieldOptions(f, form);
-                return (
-                  <>
-                    {/* Disabled, not merely empty — an enabled select that opens
-                        on nothing looks broken rather than sequenced. */}
-                    <select style={{ ...inputS, opacity: waiting ? 0.6 : 1 }} disabled={waiting}
-                      value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)}>
-                      <option value="">{waiting ? "Choose a " + String(parentLabel).toLowerCase() + " first…" : "Choose…"}</option>
-                      {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                    {!waiting && f.optionsFrom && opts.length === 0 && (
-                      <span style={{ ...mut, display: "block", fontSize: 11.5, marginTop: 4 }}>
-                        No {String(f.label).toLowerCase()} options are listed under {form[f.optionsFrom]} yet.
-                      </span>
-                    )}
-                  </>
-                );
-              })() : f.type === "yesno" ? (
-                <div style={{ display: "flex", gap: 8 }}>
-                  {["Yes", "No"].map(v => <button type="button" key={v} onClick={() => set(f.key, v)} style={{ flex: 1, padding: 11, borderRadius: 10, cursor: "pointer", fontWeight: 700, border: "1px solid " + (form[f.key] === v ? gold : "rgba(255,255,255,.18)"), background: form[f.key] === v ? "rgba(255,206,84,.16)" : "rgba(255,255,255,.06)", color: "#fff" }}>{v}</button>)}
-                </div>
-              ) : (
-                <input style={inputS} type={f.type === "number" ? "number" : f.type === "date" ? "date" : f.type === "email" ? "email" : f.type === "phone" ? "tel" : "text"}
-                  value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder || ""} inputMode={f.type === "phone" ? "tel" : undefined}/>
-              )}
-              {f.help && !errMsg && <span style={{ ...mut, display: "block", fontSize: 11.5, marginTop: 4 }}>{f.help}</span>}
-              {errMsg && <span style={{ display: "block", fontSize: 12, marginTop: 4, color: "#ff9a9a" }}>{errMsg}</span>}
-            </label>
-          );
+        <RegFieldList fields={fields} form={form} set={set} errors={errors} visible={visible} inputS={inputS} gold={gold} mut={mut}/>
         })}
         {(() => {
           /* The form asks for First and Last now. This gate used to require
@@ -5319,4 +5855,4 @@ function LegalPage({ setPage }) {
   );
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, InstructorRoster, CertificatePage, LegalPage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio, MentorPortal });
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, InstructorRoster, CertificatePage, LegalPage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio, MentorPortal, SelfRegisterPage, ReviewDeskPage });

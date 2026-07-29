@@ -342,6 +342,20 @@
         // desk without an admin login (see /public/gate-unlock.php).
         unlock:   (gate, password) => request('/public/gate-unlock.php', { body: { gate, password } }),
       },
+      /* The public self-registration link: no session at all, because it is a
+         link a family opens on their own phone. */
+      selfreg: {
+        context: (g) => request('/public/selfreg.php' + qs({ g })),
+        submit:  (body) => request('/public/selfreg.php', { body }),
+      },
+      /* The desk that checks those submissions. Same kiosk unlock as the gate,
+         bound to its own link and its own password. */
+      review: {
+        queue:       (g, q) => request('/public/review.php' + qs(Object.assign({ g }, q || {}))),
+        approve:     (g, studentId, note) => request('/public/review.php', { body: { action: 'approve', gate: g, studentId, note } }),
+        approveBulk: (g, studentIds) => request('/public/review.php', { body: { action: 'approveBulk', gate: g, studentIds } }),
+        reject:      (g, studentId, note) => request('/public/review.php', { body: { action: 'reject', gate: g, studentId, note } }),
+      },
       verify: {
         context: (t) => request('/public/verify.php' + qs({ t })),
         submit:  (t, consents, actorName, feedback, signature) => request('/public/verify.php', { body: { t, consents, actorName, feedback, signature } }),

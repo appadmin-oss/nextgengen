@@ -2343,6 +2343,141 @@ const LEADERBOARD = {
     await tP.close(); await tT.close();
     try { fs.unlinkSync(path.join(ROOT, 'tests', '_teach_fixture.html')); } catch (_) {}
 
+    /* ── Self-registration, and the desk that checks it ────────────────────
+     * A family filling this in on a phone, unsupervised, possibly on a slow
+     * connection. Two claims worth holding: the photo is judged on the photo
+     * step with the reason shown, and the review desk announces that it has
+     * its own password rather than letting a coordinator try the check-in one
+     * three times and give up. */
+    const srT = await browser.newContext({ viewport: { width: 390, height: 900 }, hasTouch: true });
+    const srP = await srT.newPage();
+    const srErr = [];
+    srP.on('pageerror', e => srErr.push(e.message));
+    await srP.addInitScript(() => {
+      const soft = (o) => new Proxy(o, { get: (t, k) => (k in t) ? t[k] : (typeof k === 'string' ? () => Promise.resolve({}) : undefined) });
+      window.__sent = [];
+      const stub = {
+        auth: { me: () => Promise.reject(Object.assign(new Error('u'), { code: 'unauthorized' })) },
+        public: {
+          selfreg: {
+            context: () => Promise.resolve({ open: true, selfServe: true, gate: { name: 'Public link' },
+              form: { version: 2, fields: [
+                { key: 'firstName', label: 'First name', type: 'text', required: true },
+                { key: 'lastName', label: 'Last name', type: 'text', required: true },
+                { key: 'faculty', label: 'Faculty', type: 'choice', options: ['Music'], required: true },
+                { key: 'course', label: 'Course', type: 'choice', optionsFrom: 'faculty', optionsBy: { Music: ['Piano'] }, required: true },
+              ] },
+              consents: [{ key: 'participation', label: 'Program participation', required: true },
+                         { key: 'media', label: 'Photos & media', required: false }] }),
+            submit: (b) => { window.__sent.push(b); return Promise.resolve({ ref: 'RC1-0099', studentId: 'RC1-0099', regStatus: 'self_pending' }); },
+          },
+        },
+      };
+      stub.public = soft(stub.public);
+      const root = new Proxy(stub, { get: (t, k) => (k in t) ? t[k] : soft({}) });
+      Object.defineProperty(window, 'NGGApi', { get: () => root, set: () => {}, configurable: false });
+    });
+    fs.writeFileSync(path.join(ROOT, 'tests', '_apply_fixture.html'),
+      '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">'
+      + '<link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css"></head>'
+      + '<body><div id="root"></div>'
+      + '<script src="/dist/vendor/react.production.min.js"></script>'
+      + '<script src="/dist/vendor/react-dom.production.min.js"></script>'
+      + '<script src="/dist/data.js"></script><script src="/dist/photos.js"></script>'
+      + '<script src="/dist/app.min.js"></script></body></html>');
+    await srP.goto(BASE + '/tests/_apply_fixture.html', { waitUntil: 'networkidle' });
+    await srP.waitForFunction(() => typeof window.__navigate === 'function', null, { timeout: 15000 });
+    await srP.evaluate(() => { history.pushState({}, '', '/apply?g=GL-TEST'); window.__navigate('apply'); });
+    await srP.waitForTimeout(1100);
+    const srText = await srP.evaluate(() => document.body.innerText);
+    ok('the public link renders the live form, not a hardcoded one',
+       /First name/.test(srText) && /Choose a faculty first/.test(srText));
+    /* Four short steps rather than one long page: a twenty-field form on a
+       phone is where people give up. */
+    ok('…in steps, with the consent step named before you start', /Details/.test(srText) && /Consent/.test(srText));
+
+    await srP.fill('input[type="text"] >> nth=0', 'Ada');
+    await srP.fill('input[type="text"] >> nth=1', 'Obi');
+    await srP.getByRole('button', { name: /Continue → Photo/ }).click();
+    await srP.waitForTimeout(300);
+    // A 90px image, offered the way a family would offer one.
+    await srP.evaluate(() => {
+      const cv = document.createElement('canvas'); cv.width = 90; cv.height = 90;
+      cv.getContext('2d').fillRect(0, 0, 90, 90);
+      const bin = atob(cv.toDataURL('image/png').split(',')[1]);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const dt = new DataTransfer(); dt.items.add(new File([arr], 'tiny.png', { type: 'image/png' }));
+      const inp = document.querySelector('input[type=file]');
+      inp.files = dt.files; inp.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await srP.waitForTimeout(600);
+    const photoText = await srP.evaluate(() => document.body.innerText);
+    /* Judged here, while the camera is still open. Being told at the end that
+       something ten minutes ago was wrong is the worst moment to hear it. */
+    ok('an unusable photo is refused on the photo step, with the reason',
+       /at least 320 pixels/.test(photoText));
+    ok('…and cannot be carried forward', await srP.evaluate(() => {
+      const b = Array.from(document.querySelectorAll('button')).find(x => /Continue → Consent/.test(x.textContent));
+      return !!b && b.disabled;
+    }));
+    ok('the public form threw nothing (' + (srErr[0] || 'clean') + ')', srErr.length === 0);
+    await srP.close(); await srT.close();
+
+    /* The review desk. Locked, and saying which password it wants. */
+    const rvT = await browser.newContext({ viewport: { width: 1100, height: 1000 } });
+    const rvP = await rvT.newPage();
+    await rvP.addInitScript(() => {
+      let locked = true;
+      const soft = (o) => new Proxy(o, { get: (t, k) => (k in t) ? t[k] : (typeof k === 'string' ? () => Promise.resolve({}) : undefined) });
+      const q = { ok: true, total: 2, page: 1, per: 25, shown: 2, gate: { name: 'Review desk' },
+        counts: { self_pending: 2 }, centres: ['Egbeda'], courses: ['Piano'],
+        queue: [
+          { studentId: 'RC1-0101', fullName: 'Ada Obi', age: 13, centre: 'Egbeda', course: 'Piano', guardianName: 'Mrs Obi',
+            guardianPhone: '+2348031112222', parentEmail: 'obi@example.com', photoUrl: '', regStatus: 'self_pending',
+            photo: { verdict: 'check', score: 52, issues: ['too_dark'], source: 'ai' }, possibleDuplicate: false },
+          { studentId: 'RC1-0102', fullName: 'Bola Eze', age: 12, centre: 'Egbeda', course: 'Piano', guardianName: 'Mr Eze',
+            guardianPhone: '', parentEmail: 'eze@example.com', photoUrl: '', regStatus: 'self_pending',
+            photo: { verdict: 'pass', score: 88, issues: [], source: 'ai' }, possibleDuplicate: true },
+        ] };
+      const stub = {
+        auth: { me: () => Promise.reject(Object.assign(new Error('u'), { code: 'unauthorized' })) },
+        public: {
+          review: {
+            queue: () => locked ? Promise.reject(Object.assign(new Error('f'), { code: 'forbidden' })) : Promise.resolve(q),
+            approve: () => Promise.resolve({ ok: true }),
+            approveBulk: (g, ids) => Promise.resolve({ approved: ids.length }),
+            reject: (g, id, note) => note ? Promise.resolve({ ok: true }) : Promise.reject(Object.assign(new Error('r'), { code: 'reason_required' })),
+          },
+          gate: { unlock: (g, pw) => pw === 'right' ? (locked = false, Promise.resolve({ ok: true })) : Promise.reject(Object.assign(new Error('b'), { code: 'bad_password' })) },
+        },
+      };
+      stub.public = soft(stub.public);
+      const root = new Proxy(stub, { get: (t, k) => (k in t) ? t[k] : soft({}) });
+      Object.defineProperty(window, 'NGGApi', { get: () => root, set: () => {}, configurable: false });
+    });
+    await rvP.goto(BASE + '/tests/_apply_fixture.html', { waitUntil: 'networkidle' });
+    await rvP.waitForFunction(() => typeof window.__navigate === 'function', null, { timeout: 15000 });
+    await rvP.evaluate(() => { history.pushState({}, '', '/review?g=GL-REV'); window.__navigate('review'); });
+    await rvP.waitForTimeout(1100);
+    /* A coordinator who tries the check-in password three times and gives up
+       is the failure the separation invites; say it before they try. */
+    ok('the review desk says it has its own password',
+       /own password — not the one used for check-in/i.test(await rvP.evaluate(() => document.body.innerText)));
+    await rvP.fill('input[aria-label="Review desk password"]', 'right');
+    await rvP.getByRole('button', { name: /Unlock/ }).click();
+    await rvP.waitForTimeout(900);
+    const rvText = await rvP.evaluate(() => document.body.innerText);
+    ok('…and unlocks to the queue', /2 waiting/.test(rvText) && /Ada Obi/.test(rvText));
+    /* The verdict is next to the photo, not instead of it — and it is not the
+       decision, so the wording has to read as advice. */
+    ok('…showing each photo verdict and the duplicate warning',
+       /check photo/.test(rvText) && /photo ok/.test(rvText) && /possible duplicate/.test(rvText));
+    ok('…and saying plainly that approving is what emails the family',
+       /Approving is what emails the guardian/.test(rvText));
+    await rvP.close(); await rvT.close();
+    try { fs.unlinkSync(path.join(ROOT, 'tests', '_apply_fixture.html')); } catch (_) {}
+
     /* ── The Mentor Portal's door ──────────────────────────────────────────
      * Reported from the field: "I'm unable to login to the mentorship page.
      * It does not recognize summer volunteers as members." Exactly right —
