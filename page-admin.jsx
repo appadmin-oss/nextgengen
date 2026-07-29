@@ -943,26 +943,151 @@ function MemberConsentEditor({ member }) {
 // Mentors
 // ============================================================================
 
+/* Which centre somebody belongs to, readable without reading.
+   On a list of forty volunteers the centre was a word in small grey type, in
+   the same place on every row — so nobody could tell at a glance who worked
+   where. Centres already carried their own colour; this puts it on the photo
+   and keeps the CODE next to it, because colour alone is not a label. */
+function CentreRing({ centre, centres, url, name, size }) {
+  const c = (centres || {})[centre];
+  const px = size || 56;
+  const tint = c ? c.color : "rgba(12,20,50,0.18)";
+  return (
+    <span className="centre-ring" style={{ width: px, height: px, borderColor: tint }}
+      title={centre || "No centre set"}>
+      {url
+        ? <img src={url} alt="" className="centre-ring-img"/>
+        : <span className="centre-ring-img centre-ring-fallback" style={{ background: tint }}>{(name || "?").charAt(0)}</span>}
+      {c && <span className="centre-ring-code mono" style={{ background: c.color }}>{c.code}</span>}
+    </span>
+  );
+}
+
+function RankChip({ rank }) {
+  if (rank !== "lead") return null;
+  return <span className="chip chip-gold" title="Runs this centre — sees every child there, and the mentors working with them">LEAD</span>;
+}
+
+/* Promote somebody already in the programme onto the mentor roster.
+   A picker, because "make X a mentor" over a list of hundreds is mostly the
+   problem of finding X — members and volunteers together, since a coordinator
+   thinks in people, not in which table they live in. */
+function MentorPromote({ centres, onClose, onDone }) {
+  const [q, setQ] = React.useState("");
+  const [rows, setRows] = React.useState(null);
+  const [pick, setPick] = React.useState(null);
+  const [rank, setRank] = React.useState("mentor");
+  const [programme, setProgramme] = React.useState("summer");
+  const [centre, setCentre] = React.useState("");
+  const [dept, setDept] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => {
+    let live = true;
+    const t = setTimeout(() => {
+      NGGApi.admin.mentor.candidates(q).then(r => { if (live) setRows(r.candidates || []); }).catch(() => { if (live) setRows([]); });
+    }, q ? 220 : 0);
+    return () => { live = false; clearTimeout(t); };
+  }, [q]);
+  const choose = (c) => { setPick(c); setCentre(c.centre || ""); setDept(c.faculty || ""); };
+  const submit = async () => {
+    if (!pick) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.mentor.promote(pick.personId, { rank, programme, centre, department: dept });
+      toast.success(pick.fullName + " is now a " + (rank === "lead" ? "lead mentor" : "mentor") + (r.created ? "" : " (record updated)"), "Added to the roster");
+      onDone();
+    } catch (e) { toast.error(e.code || e.message); setBusy(false); }
+  };
+  const { panelRef, close } = useAdminDrawer(onClose, false);
+  return (
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className="admin-drawer-panel">
+        <div className="admin-drawer-head">
+          <h3>Make someone a mentor</h3>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
+        </div>
+        <div className="admin-fields">
+      <p className="admin-hint">Anyone already in the programme — a member, or a summer volunteer. Their mentor record remembers which account or card they sign in with, so an instructor holding an ID card is matched too.</p>
+      <label className="admin-field"><span className="admin-label">Search</span>
+        <input className="admin-input" value={q} onChange={e => setQ(e.target.value)} placeholder="Name, email or ID" autoFocus/>
+      </label>
+      <div style={{ maxHeight: 210, overflowY: "auto", border: "1px solid rgba(12,20,50,0.1)", borderRadius: 10, margin: "8px 0 14px" }}>
+        {rows === null && <p className="admin-hint" style={{ padding: 12 }}>Searching…</p>}
+        {rows && !rows.length && <p className="admin-hint" style={{ padding: 12 }}>Nobody matches — or everyone who does is already a mentor.</p>}
+        {(rows || []).map(c => (
+          <button key={c.kind + c.personId} onClick={() => choose(c)}
+            className={"admin-pick-row" + (pick && pick.personId === c.personId ? " is-on" : "")}>
+            <CentreRing centre={c.centre} centres={centres} name={c.fullName} size={36}/>
+            <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+              <span style={{ fontWeight: 600, display: "block" }}>{c.fullName}</span>
+              <span className="mono admin-cell-sub">{c.kind} · {c.centre || "no centre"}{c.email ? " · " + c.email : ""}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      {pick && <>
+        <div className="admin-fields-row">
+          <FieldSelect label="Rank" value={rank} onChange={setRank}
+            options={[{ value: "mentor", label: "Mentor — their class" }, { value: "lead", label: "Lead mentor — the whole centre" }]}/>
+          <FieldSelect label="Cohort" value={programme} onChange={setProgramme}
+            options={[{ value: "summer", label: "Summer School" }, { value: "ngg", label: "NGG Club" }, { value: "both", label: "Both" }]}/>
+        </div>
+        <div className="admin-fields-row">
+          <FieldSelect label="Centre" value={centre} onChange={setCentre}
+            options={[{ value: "", label: "— every centre —" }].concat(Object.keys(centres || {}).map(n => ({ value: n, label: n })))}/>
+          <Field label={rank === "lead" ? "Department (ignored for a lead)" : "Department (blank = the whole centre)"}
+            value={dept} onChange={setDept}/>
+        </div>
+        <p className="admin-hint">
+          {rank === "lead"
+            ? "A lead sees every child at their centre and how active the mentors there are."
+            : "A mentor sees their centre, narrowed to their department if one is set."}
+        </p>
+      </>}
+        </div>
+        <div className="admin-drawer-foot">
+          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
+          <button type="button" className="btn btn-primary" disabled={!pick || busy} onClick={submit}>
+            {busy ? "Saving…" : pick ? "Make " + pick.fullName.split(" ")[0] + " a " + (rank === "lead" ? "lead mentor" : "mentor") : "Pick someone"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminMentors() {
   const [list, setList] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [editing, setEditing] = React.useState(null);
-  const load = () => { setErr(""); return NGGApi.admin.mentors.list().then(r => setList(r.mentors || [])).catch(e => setErr(e.code || e.message || "load_failed")); };
+  const [promoting, setPromoting] = React.useState(false);
+  const [centres, setCentres] = React.useState({});
+  const load = () => {
+    setErr("");
+    NGGApi.admin.mentorship.roster().then(r => setCentres(r.centres || {})).catch(() => {});
+    return NGGApi.admin.mentors.list().then(r => setList(r.mentors || [])).catch(e => setErr(e.code || e.message || "load_failed"));
+  };
   React.useEffect(() => { load(); }, []);
   return (
     <div className="admin-section">
       <div className="admin-section-head">
         <h2 className="admin-h2">Mentors</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New mentor</button>
+        <div className="admin-section-actions">
+          {/* The gap the field reported: records only appeared by converting a
+              mentor APPLICATION, so somebody already in the programme had to
+              have one invented for them. */}
+          <button className="btn btn-primary btn-sm" onClick={() => setPromoting(true)}>+ Make someone a mentor</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditing({})}>Add from scratch</button>
+        </div>
       </div>
+      {promoting && <MentorPromote centres={centres} onClose={() => setPromoting(false)} onDone={() => { setPromoting(false); load(); }}/>}
       {list === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
         <div className="admin-grid-cards">
           {list.map(m => (
             <button key={m.mentorId} className="admin-card" onClick={() => setEditing(m)}>
-              {m.photoUrl
-                ? <img src={m.photoUrl} alt={m.fullName} className="admin-card-img"/>
-                : <div className="admin-card-img admin-card-img-fallback">{(m.fullName || "?").charAt(0)}</div>}
-              <div className="admin-card-name">{m.fullName}</div>
+              <CentreRing centre={m.centre} centres={centres} url={m.photoUrl} name={m.fullName} size={72}/>
+              <div className="admin-card-name">{m.fullName} <RankChip rank={m.rank}/></div>
               {/* Which cohort they supervise, on the card rather than only in
                   the drawer: it decides whose children they can see, and that
                   is not something anyone should have to open twenty drawers
@@ -1043,6 +1168,7 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
 // ============================================================================
 
 function AdminMentorship() {
+  const [promoting, setPromoting] = React.useState(false);
   const [ov, setOv] = React.useState(null);
   const [roster, setRoster] = React.useState(null);
   const [apps, setApps] = React.useState([]);
@@ -1081,8 +1207,12 @@ function AdminMentorship() {
     <div className="admin-section">
       <div className="admin-section-head">
         <h2 className="admin-h2">Mentorship</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New mentor</button>
+        <div className="admin-section-actions">
+          <button className="btn btn-primary btn-sm" onClick={() => setPromoting(true)}>+ Make someone a mentor</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditing({})}>Add from scratch</button>
+        </div>
       </div>
+      {promoting && <MentorPromote centres={roster.centres || {}} onClose={() => setPromoting(false)} onDone={() => { setPromoting(false); load(); }}/>}
 
       {/* Afrovanguard connection */}
       <div className="admin-av-panel">
@@ -1130,13 +1260,15 @@ function AdminMentorship() {
           <div key={m.mentorId} className="admin-roster-card">
             <div className="admin-roster-head">
               {m.photoUrl ? <img src={m.photoUrl} alt="" className="admin-roster-avatar" onError={e => { e.target.style.display = "none"; }}/> : <div className="admin-roster-avatar admin-card-img-fallback">{(m.fullName || "?").charAt(0)}</div>}
+              <CentreRing centre={m.centre} centres={roster.centres} url={m.photoUrl} name={m.fullName} size={38}/>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="admin-roster-name">
                   {m.fullName}
+                  {m.rank === "lead" && <span className="chip chip-gold" style={{ marginLeft: 8 }} title="Runs this centre — sees every child there, and how active its mentors are">LEAD</span>}
                   <span className={"chip " + (m.status === "active" ? "chip-lime" : "chip-gold")} style={{ marginLeft: 8 }}>{m.status}</span>
                   {m.source === "afrovanguard" && <span className="chip chip-navy" style={{ marginLeft: 6 }}>AV</span>}
                 </div>
-                <div className="mono admin-cell-sub">{m.centre}{(m.tracks || []).length ? " · " + m.tracks.join(", ") : ""}</div>
+                <div className="mono admin-cell-sub">{m.centre}{m.department ? " · " + m.department : ""}{(m.tracks || []).length ? " · " + m.tracks.join(", ") : ""}</div>
               </div>
               <button className="btn btn-ghost btn-sm" onClick={() => setEditing(m)}>Edit</button>
             </div>
@@ -3822,6 +3954,7 @@ function AdminStaff() {
 
   const rows = (d && d.staff) || [];
   const t = (d && d.totals) || {};
+  const centres = (d && d.centres) || {};
   /* A count with no denominator says nothing. 12 stars is diligent for a
      mentor with 8 children and thin for one with 40, so coverage is the
      column that carries the meaning. */
@@ -3842,7 +3975,10 @@ function AdminStaff() {
       </div>
 
       {tab === "activity" && <>
-        <p className="admin-hint">Mentors and instructors together, quietest first. These are counts of work filed, not a rating — the point is to notice who has stopped, not to rank anyone.</p>
+        <p className="admin-hint">
+          Mentors and instructors together, quietest first. These are counts of work filed, not a rating — the point is to notice who has stopped, not to rank anyone.
+          {d && d.scope === "lead" && " You're seeing your own centre."}
+        </p>
         {err && <p className="admin-error">{err}</p>}
         {!d && !err && <p className="admin-hint">Loading…</p>}
         {d && (
@@ -3865,8 +4001,14 @@ function AdminStaff() {
                 {rows.map(s => (
                   <tr key={s.staffId + s.kind}>
                     <td>
-                      <div className="admin-cell-name">{s.fullName}</div>
-                      <div className="mono admin-cell-sub">{s.kind}{s.focus ? " · " + s.focus : ""}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <CentreRing centre={s.centre} centres={centres} name={s.fullName} size={34}/>
+                        <span style={{ minWidth: 0 }}>
+                          <span className="admin-cell-name">{s.fullName}</span>
+                          {s.kind === "lead mentor" && <RankChip rank="lead"/>}
+                          <div className="mono admin-cell-sub">{s.kind}{s.focus ? " · " + s.focus : ""}</div>
+                        </span>
+                      </div>
                     </td>
                     <td className="mono">{s.centre || "—"}</td>
                     <td>

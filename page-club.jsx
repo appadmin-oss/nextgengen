@@ -503,13 +503,17 @@ function CommunityPage({ setPage }) {
 }
 
 /* ---- Student ID sign-in panel (ID + guardian phone, or QR scan) ---- */
-function CmStudentSignIn({ compact }) {
+function CmStudentSignIn({ compact, dest, roles }) {
   const [sid, setSid] = React.useState("");
   const [phone, setPhone] = React.useState("");
   // Instructors, mentors and coordinators hold a card too, and theirs carries
   // their own number rather than a guardian's — which is exactly why the
   // guardian-phone check could never match one of them.
-  const [who, setWho] = React.useState("student");   // student | instructor
+  /* `roles` lets a host page narrow the door. The Mentor Portal has no
+     students behind it, and offering "I'm a student" there is an invitation to
+     fail. */
+  const doors = (roles && roles.length ? roles : ["student", "instructor"]);
+  const [who, setWho] = React.useState(doors[0]);   // student | instructor
   const [remember, setRemember] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
@@ -518,7 +522,12 @@ function CmStudentSignIn({ compact }) {
     setBusy(true); setErr("");
     try {
       await NGGApi.auth.studentLogin({ ...creds, remember });
-      window.location.href = "/community"; // reboot auth → community unlocks
+      /* A full reload rather than a state update: the session cookie is what
+         changed, and every provider on the page reads it at boot. `dest` is
+         why a mentor signing in at /mentor now lands back on /mentor — the
+         door always sent everyone to /community, which is where a mentor who
+         did find it ended up instead of the portal they were trying to open. */
+      window.location.href = dest || "/community";
     } catch (e) {
       // A suspension is a ban from the premises *and* the digital channels, so
       // the door is genuinely shut — say which, rather than "check your card".
@@ -554,8 +563,15 @@ function CmStudentSignIn({ compact }) {
   return (
     <div className="cm-stu-signin">
       <div className="mono cm-stu-title">SIGN IN WITH YOUR ID CARD</div>
-      <div className="cm-stu-who" role="tablist" aria-label="Who is signing in">
-        {[["student", "I'm a student"], ["instructor", "I'm an instructor"]].map(([k, lbl]) => (
+      {/* One door needs no chooser. `hidden` alone loses to the class's own
+          display rule, so the style has to say it too. */}
+      <div className="cm-stu-who" role="tablist" aria-label="Who is signing in"
+        hidden={doors.length < 2} style={doors.length < 2 ? { display: "none" } : undefined}>
+        {/* "I'm an instructor" is who the card door was labelled for, and it
+            reads as excluding the mentors and coordinators who hold exactly
+            the same Vanguard card — part of why summer volunteers thought
+            this door was not for them. */}
+        {doors.map(k => [k, k === "student" ? "I'm a student" : "I'm a volunteer"]).map(([k, lbl]) => (
           <button key={k} role="tab" aria-selected={who === k} className={"cm-stu-who-btn" + (who === k ? " is-on" : "")}
             onClick={() => { setWho(k); setErr(""); }}>{lbl}</button>
         ))}
@@ -2228,4 +2244,4 @@ function CmDigest({ digest, onClose }) {
   );
 }
 
-Object.assign(window, { SummerPage, ClubPage, BadgePin, CommunityPage });
+Object.assign(window, { SummerPage, ClubPage, BadgePin, CommunityPage, CmStudentSignIn });

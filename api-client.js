@@ -534,6 +534,14 @@
         skills:      () => request('/admin/staff.php?view=skills'),
         saveSkills:  (skills) => request('/admin/staff.php', { body: { action: 'skills', skills } }),
       },
+      mentor: {
+        /* There was no way to make somebody a mentor at all — records only
+           appeared by converting a mentor APPLICATION, so anyone already in
+           the programme had to have one invented for them. */
+        candidates: (q) => request('/admin/mentors.php?view=candidates&q=' + encodeURIComponent(q || '')),
+        promote:    (personId, opts) => request('/admin/mentors.php', { body: Object.assign({ action: 'promote', personId }, opts || {}) }),
+        demote:     (mentorId) => request('/admin/mentors.php', { body: { action: 'demote', mentorId } }),
+      },
       volunteers: {
         list:    () => request('/admin/volunteers.php'),
         approve: (id) => request('/admin/volunteers.php', { body: { action: 'approve', id } }),

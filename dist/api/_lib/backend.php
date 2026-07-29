@@ -79,6 +79,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.mentorship.overview' => 'admin_mentorship_overview',
             'admin.mentorship.roster'   => 'admin_mentorship_roster',
             'admin.mentor.application.convert' => 'admin_mentor_application_convert',
+            'admin.mentor.promote'    => 'admin_mentor_promote',
+            'admin.mentor.demote'     => 'admin_mentor_demote',
+            'admin.mentor.candidates' => 'admin_mentor_candidates',
             // Summer School (QR attendance + enrollment)
             'admin.summer.overview'       => 'admin_summer_overview',
             'admin.summer.cohort.upsert'  => 'admin_summer_cohort_upsert',

@@ -73,24 +73,36 @@ function mentor_gate(array $p): array {
      * console's own portal showing them that class and nothing else. */
     $progs = mentor_admin_programmes(member_effective_caps($m));
     if ($progs) {
-        return ['ok' => true, 'member' => $m, 'role' => 'admin',
-            'mentor' => ['fullName' => (string)($m['fullName'] ?? ''), 'centre' => '', 'department' => ''],
+        return ['ok' => true, 'member' => $m, 'role' => 'admin', 'rank' => 'admin',
+            'mentor' => ['fullName' => (string)($m['fullName'] ?? ''), 'centre' => '', 'department' => '', 'rank' => 'admin'],
             'programmes' => $progs,
             'centres' => admin_centre_names_in_scope($m),
             'courses' => null];
     }
 
-    $mentor = $email !== ''
-        ? db_row("SELECT * FROM mentors WHERE lower(email) = ? AND status = 'active' LIMIT 1", [$email])
-        : null;
+    /* Find their mentor record by the id they actually signed in with, then
+     * fall back to email. Email alone was the only match, which fails outright
+     * for anyone holding an ID card — a card carries no email — and quietly
+     * pairs two different people who share a mailbox. */
+    $mid = (string)$m['memberId'];
+    $mentor = db_row("SELECT * FROM mentors WHERE status = 'active' AND (memberId = ? OR volunteerId = ?) LIMIT 1", [$mid, $mid]);
+    if (!$mentor && $email !== '') {
+        $mentor = db_row("SELECT * FROM mentors WHERE lower(email) = ? AND status = 'active' LIMIT 1", [$email]);
+    }
     if ($mentor) {
         $centre = trim((string)($mentor['centre'] ?? ''));
         $dept   = trim((string)($mentor['department'] ?? ''));
+        /* A lead mentor runs a centre, not a class. Their department stops
+         * narrowing who they can see, because "who has gone quiet at Egbeda"
+         * is their job — a lead held to one department is a lead in name. */
+        $isLead = trim((string)($mentor['rank'] ?? 'mentor')) === 'lead';
         return ['ok' => true, 'member' => $m, 'role' => 'mentor',
-            'mentor' => ['fullName' => (string)($mentor['fullName'] ?? ''), 'centre' => $centre, 'department' => $dept],
+            'rank' => $isLead ? 'lead' : 'mentor',
+            'mentor' => ['fullName' => (string)($mentor['fullName'] ?? ''), 'centre' => $centre,
+                         'department' => $isLead ? '' : $dept, 'rank' => $isLead ? 'lead' : 'mentor'],
             'programmes' => mentor_programmes($mentor),
             'centres' => $centre !== '' ? [$centre] : null,
-            'courses' => $dept !== '' ? [$dept] : null];
+            'courses' => (!$isLead && $dept !== '') ? [$dept] : null];
     }
 
     /* The volunteer lane. A volunteer who registered as "Admin / Ops" is NOT
@@ -112,9 +124,9 @@ function mentor_gate(array $p): array {
         $courses = $isInstructor
             ? array_values(array_filter(array_map('strval', json_decode((string)($v['courses'] ?? ''), true) ?: [])))
             : ($faculty !== '' ? academy_courses_for($faculty) : []);
-        return ['ok' => true, 'member' => $m, 'role' => $isInstructor ? 'instructor' : 'mentor',
+        return ['ok' => true, 'member' => $m, 'role' => $isInstructor ? 'instructor' : 'mentor', 'rank' => 'mentor',
             'mentor' => ['fullName' => (string)($v['fullName'] ?? ''), 'centre' => $centre,
-                         'department' => $isInstructor ? implode(' · ', $courses) : $faculty],
+                         'department' => $isInstructor ? implode(' · ', $courses) : $faculty, 'rank' => 'mentor'],
             'programmes' => ['summer'],
             'centres' => $centre !== '' ? [$centre] : null,
             'courses' => $courses ?: null];
@@ -279,6 +291,7 @@ function mentor_roster(array $p): array {
          * from. The `mentor` block keeps its old shape so nothing that reads it
          * has to change. */
         'role' => (string)($g['role'] ?? 'mentor'),
+        'rank' => (string)($g['rank'] ?? 'mentor'),
         'centre' => $want,
         'centres' => $pickable,
         'needsCentre' => $needsCentre,

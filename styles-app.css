@@ -4480,3 +4480,117 @@ section p[style*="var(--ink-500)"] {
   .admin-main .btn-sm,
   .admin-main .btn { min-height: 40px; }
 }
+
+/* ============================================================
+   WHICH CENTRE, WITHOUT READING
+   Centres already carried their own colour and nothing showed it.
+   On a list of forty volunteers the centre was a word in small grey
+   type, in the same place on every row, so nobody could tell at a
+   glance who worked where. The ring is the colour; the code beside
+   it is the label, because colour alone is not one.
+   ============================================================ */
+.centre-ring {
+  position: relative; display: inline-block; flex: none;
+  border-radius: 50%;
+  border: 3px solid rgba(12, 20, 50, 0.18);
+  padding: 2px;
+  background: white;
+}
+.centre-ring-img {
+  display: block; width: 100%; height: 100%;
+  border-radius: 50%; object-fit: cover;
+}
+.centre-ring-fallback {
+  display: grid; place-items: center;
+  color: white; font-family: var(--font-display); font-weight: 800;
+  font-size: 0.9em; line-height: 1;
+}
+.centre-ring-code {
+  position: absolute; right: -4px; bottom: -4px;
+  min-width: 20px; padding: 1px 5px;
+  border-radius: 999px; border: 2px solid white;
+  color: white; font-size: 10px; font-weight: 800; letter-spacing: 0.02em;
+  line-height: 1.4; text-align: center;
+  /* The code stays legible on a pale centre colour: a dark outline rather
+     than a second colour choice per centre, which would need maintaining. */
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.55);
+}
+
+/* Candidate rows in the promote picker. */
+.admin-pick-row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 11px; min-height: 44px;
+  background: none; border: none; border-bottom: 1px solid rgba(12, 20, 50, 0.06);
+  font-family: inherit; font-size: 14px; color: var(--ink-900); cursor: pointer;
+  text-align: left;
+}
+.admin-pick-row:last-child { border-bottom: none; }
+.admin-pick-row:hover { background: rgba(12, 20, 50, 0.04); }
+.admin-pick-row.is-on { background: rgba(245, 176, 38, 0.14); box-shadow: inset 3px 0 0 var(--gold-500); }
+.admin-pick-row:focus-visible { outline: 2px solid var(--gold-500); outline-offset: -2px; }
+
+/* ============================================================
+   WHICH CENTRE SOMEBODY BELONGS TO
+   Centres already carried their own colour and nothing showed
+   it. On a list of forty volunteers the centre was a word in
+   small grey type, in the same place on every row, so nobody
+   could tell at a glance who worked where. The ring puts it on
+   the photo; the code stays next to it, because colour alone
+   is not a label — and one man in twelve cannot read it.
+   ============================================================ */
+.centre-ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  border: 3px solid rgba(12, 20, 50, 0.18);
+  padding: 2px;
+  background: white;
+}
+.centre-ring-img {
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+.centre-ring-fallback {
+  display: grid; place-items: center;
+  color: white;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.9em;
+}
+.centre-ring-code {
+  position: absolute;
+  bottom: -5px; right: -6px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 2px solid white;
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  /* The code is small by necessity — it rides on a photo. Give it a shadow so
+     it stays legible over a light centre colour as well as a dark one. */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+/* A row in the "make someone a mentor" picker. */
+.admin-pick-row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid rgba(12, 20, 50, 0.06);
+  background: transparent;
+  font-family: inherit; font-size: 14px; color: var(--ink-900);
+  text-align: left; cursor: pointer;
+}
+.admin-pick-row:last-child { border-bottom: none; }
+.admin-pick-row:hover { background: rgba(12, 20, 50, 0.04); }
+.admin-pick-row.is-on { background: rgba(245, 176, 38, 0.14); box-shadow: inset 3px 0 0 var(--gold-500); }
+.admin-pick-row:focus-visible { outline: 2px solid var(--gold-500); outline-offset: -2px; }
+@media (pointer: coarse) { .admin-pick-row { min-height: 52px; } }

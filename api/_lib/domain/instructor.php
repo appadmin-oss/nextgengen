@@ -549,17 +549,38 @@ function instructor_skills_board(array $p): array {
  * pattern this exists to surface.
  */
 function admin_staff_performance(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    /* A lead mentor sees this for their own centre. "Who has gone quiet at
+     * Egbeda" is the lead's job, not head office's, and routing them through
+     * the console would mean handing a lead mentor an admin capability to see
+     * the people they already supervise. They get their centre and no more. */
+    $lead = null;
+    $g = admin_cap_gate($p, 'people');
+    if (!$g['ok']) {
+        $mg = mentor_gate($p);
+        if (!empty($mg['ok']) && ($mg['rank'] ?? '') !== 'lead') {
+            // Somebody we plainly know, who simply may not see this. Answering
+            // "we do not know you" would send an instructor to check their
+            // sign-in over a permission they were never going to have.
+            return ['ok' => false, 'error' => 'forbidden', 'detail' => 'not_a_lead'];
+        }
+        if (empty($mg['ok'])) return $g;
+        $lead = $mg;
+        $g = ['ok' => true, 'requester' => $mg['member']];
+    }
     $days = max(1, min(180, (int)($p['days'] ?? 30)));
     $since = gmdate('Y-m-d', time() - $days * 86400);
-    $scope = admin_centre_names_in_scope($g['requester']);
+    $scope = $lead ? ($lead['centres'] ?? null) : admin_centre_names_in_scope($g['requester']);
+    // A lead with no centre on their record supervises nobody in particular;
+    // that must not silently widen to the whole programme.
+    if ($lead && $scope === null) return ['ok' => false, 'error' => 'no_centre'];
 
     /* The staff list is mentors and instructors together, because the question
      * "who has gone quiet" does not care which table someone lives in. */
     $staff = [];
-    foreach (db_all("SELECT mentorId id, fullName, email, centre, department, programme, status FROM mentors ORDER BY fullName") as $m) {
+    foreach (db_all("SELECT mentorId id, fullName, email, centre, department, programme, status, rank FROM mentors ORDER BY fullName") as $m) {
         if ($scope !== null && trim((string)$m['centre']) !== '' && !in_array((string)$m['centre'], $scope, true)) continue;
-        $staff[] = ['staffId' => (string)$m['id'], 'kind' => 'mentor', 'fullName' => (string)$m['fullName'],
+        $staff[] = ['staffId' => (string)$m['id'], 'kind' => ($m['rank'] ?? '') === 'lead' ? 'lead mentor' : 'mentor',
+            'fullName' => (string)$m['fullName'],
             'email' => strtolower(trim((string)$m['email'])), 'centre' => (string)$m['centre'],
             'focus' => (string)($m['department'] ?? ''), 'programme' => (string)($m['programme'] ?? 'summer'),
             'status' => (string)$m['status'], 'courses' => []];
@@ -684,5 +705,6 @@ function admin_staff_performance(array $p): array {
         'sessions' => array_sum(array_column($out, 'sessions')),
         'skillMarks' => array_sum(array_column($out, 'skillMarks')),
     ];
-    return ['ok' => true, 'days' => $days, 'since' => $since, 'staff' => $out, 'totals' => $totals];
+    return ['ok' => true, 'days' => $days, 'since' => $since, 'staff' => $out, 'totals' => $totals,
+        'scope' => $lead ? 'lead' : 'admin', 'centres' => centre_palette()];
 }

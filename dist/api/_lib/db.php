@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 67;
+const NGG_SCHEMA_TARGET = 68;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1671,6 +1671,29 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX idx_ops_sig ON ops_events(kind, source, message);
             CREATE INDEX idx_ops_recent ON ops_events(kind, lastAt);
+        ",
+
+        /* Lead mentors, and the link back to the person's own account.
+         *
+         * `rank` — a lead mentor runs a centre rather than a class. A mentor
+         * with a department sees that department; a lead sees every child at
+         * the centre and the activity of the mentors working there, because
+         * "who has gone quiet at Egbeda" is their job and not head office's.
+         *
+         * `memberId` / `volunteerId` — a mentor record was matched to the
+         * signed-in person ONLY by email. That works until someone signs in
+         * with an ID card, which carries no email at all, and it silently
+         * pairs two different people who share a mailbox. Promoting a member
+         * or a volunteer now records which record they are, and the email
+         * match stays as the fallback for mentors who predate this.
+         */
+        68 => "
+            ALTER TABLE mentors ADD COLUMN rank TEXT DEFAULT 'mentor';
+            ALTER TABLE mentors ADD COLUMN memberId TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN volunteerId TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_mentors_member ON mentors(memberId);
+            CREATE INDEX IF NOT EXISTS idx_mentors_volunteer ON mentors(volunteerId);
+            CREATE INDEX IF NOT EXISTS idx_mentors_centre_rank ON mentors(centre, rank);
         ",
     ];
 

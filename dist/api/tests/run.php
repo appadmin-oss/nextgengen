@@ -5194,6 +5194,134 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
 })();
 
 
+/* ── Lead mentors, and getting onto the roster at all ───────────────────────
+ * Reported from the field: "I'm unable to login to the mentorship page. It
+ * does not recognize summer volunteers as members and there's no direct way
+ * to making a member a mentor." Both halves were true. Mentor records only
+ * appeared by converting a mentor APPLICATION, so somebody already in the
+ * programme had to have one invented for them; and the gate matched a mentor
+ * record by EMAIL alone, which cannot work for anyone signing in with an ID
+ * card, because a card carries no email. */
+(function () use ($SCOPED) {
+    db_insert('members', ['memberId' => 'NGG-2025-0810', 'fullName' => 'Tola Member', 'email' => 'tola@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-SUM-9', 'fullName' => 'Femi Volunteer', 'email' => 'femi@example.com',
+        'role' => 'mentor', 'centre' => 'Egbeda', 'faculty' => 'Music', 'status' => 'active', 'createdAt' => now_iso()]);
+
+    chk('a member who is not a mentor gets no portal', mentor_portal_role('NGG-2025-0810') === '');
+    $pr = backend_dispatch('admin.mentor.promote', ['requesterId' => 'NGG-2025-0099', 'personId' => 'NGG-2025-0810']);
+    chk('an admin can make an existing member a mentor in one action', !empty($pr['ok']) && $pr['created'] === true);
+    chk('…and they can open the portal straight away', mentor_portal_role('NGG-2025-0810') === 'mentor');
+    /* The record has to remember WHICH person it is. Email alone silently
+     * pairs two people who share a mailbox, and matches nobody at all when
+     * they sign in with a card. */
+    chk('…with the promotion recording who they are, not just their email', (function () {
+        $m = db_row("SELECT memberId, volunteerId, rank, centre FROM mentors WHERE memberId='NGG-2025-0810'");
+        return $m && (string)$m['volunteerId'] === '' && (string)$m['rank'] === 'mentor' && (string)$m['centre'] === 'Egbeda';
+    })());
+    chk('promoting the same person again updates rather than minting a second record', (function () {
+        backend_dispatch('admin.mentor.promote', ['requesterId' => 'NGG-2025-0099', 'personId' => 'NGG-2025-0810', 'rank' => 'lead']);
+        return (int)db_row("SELECT COUNT(*) c FROM mentors WHERE memberId='NGG-2025-0810'")['c'] === 1
+            && (string)db_row("SELECT rank FROM mentors WHERE memberId='NGG-2025-0810'")['rank'] === 'lead';
+    })());
+
+    // A summer volunteer, promoted by their volunteer id and no member account.
+    $pv = backend_dispatch('admin.mentor.promote', ['requesterId' => 'NGG-2025-0099', 'personId' => 'VOL-SUM-9', 'department' => 'Piano']);
+    chk('a summer volunteer can be made a mentor too', !empty($pv['ok']) && $pv['kind'] === 'volunteer');
+    chk('…and is matched by the id on their card, which carries no email', (function () {
+        // The email match is deliberately broken here: a card holder must
+        // resolve on their volunteerId alone or the door stays shut for them.
+        db_update('mentors', ['email' => ''], ['volunteerId' => 'VOL-SUM-9']);
+        $g = mentor_gate(['requesterId' => 'VOL-SUM-9']);
+        return !empty($g['ok']) && $g['role'] === 'mentor' && ($g['mentor']['department'] ?? '') === 'Piano';
+    })());
+    chk('promoting somebody who does not exist is refused',
+        backend_dispatch('admin.mentor.promote', ['requesterId' => 'NGG-2025-0099', 'personId' => 'NOBODY-1'])['error'] === 'not_found');
+    chk('making a mentor needs the people capability',
+        backend_dispatch('admin.mentor.promote', ['requesterId' => 'NGG-2025-0001', 'personId' => 'NGG-2025-0810'])['error'] === 'forbidden');
+
+    /* The picker. A promote action with no way to find the person is the same
+     * problem one step along. */
+    $cand = backend_dispatch('admin.mentor.candidates', ['requesterId' => 'NGG-2025-0099', 'q' => 'tola']);
+    chk('the picker searches members and volunteers together', (function () {
+        $all = backend_dispatch('admin.mentor.candidates', ['requesterId' => 'NGG-2025-0099']);
+        $kinds = array_unique(array_column($all['candidates'], 'kind'));
+        return !empty($all['ok']) && in_array('member', $kinds, true) && in_array('volunteer', $kinds, true);
+    })());
+    chk('…and hides people who are already on the roster', (function () use ($cand) {
+        foreach ($cand['candidates'] as $c) if ($c['personId'] === 'NGG-2025-0810') return false;
+        return true;
+    })());
+    chk('…and is held to a scoped admin\'s own centres', (function () use ($SCOPED) {
+        db_insert('members', ['memberId' => 'NGG-2025-0811', 'fullName' => 'Ayo Faraway', 'email' => 'ayofar@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Ayobo',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $wide = array_column(backend_dispatch('admin.mentor.candidates', ['requesterId' => 'NGG-2025-0099', 'q' => 'faraway'])['candidates'], 'personId');
+        $narrow = array_column(backend_dispatch('admin.mentor.candidates', ['requesterId' => $SCOPED, 'q' => 'faraway'])['candidates'], 'personId');
+        return in_array('NGG-2025-0811', $wide, true) && !in_array('NGG-2025-0811', $narrow, true);
+    })());
+
+    /* Lead mentors. A mentor with a department sees that department; a lead
+     * runs the centre, and a lead held to one department is a lead in name. */
+    db_update('mentors', ['department' => 'Piano', 'rank' => 'mentor'], ['memberId' => 'NGG-2025-0810']);
+    $asMentor = mentor_gate(['requesterId' => 'NGG-2025-0810']);
+    db_update('mentors', ['rank' => 'lead'], ['memberId' => 'NGG-2025-0810']);
+    $asLead = mentor_gate(['requesterId' => 'NGG-2025-0810']);
+    chk('a mentor with a department is narrowed to it', ($asMentor['courses'] ?? null) === ['Piano']);
+    chk('…while a lead sees the whole centre',
+        array_key_exists('courses', $asLead) && $asLead['courses'] === null && ($asLead['centres'] ?? []) === ['Egbeda']);
+    chk('…and is still held to that centre, not the programme', (function () {
+        $r = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0810']);
+        if (empty($r['ok'])) return false;
+        foreach ($r['students'] as $s2) if (($s2['studentId'] ?? '') === 'SUM-AY-1') return false;
+        return ($r['rank'] ?? '') === 'lead' && $r['centre'] === 'Egbeda';
+    })());
+    /* "Who has gone quiet at Egbeda" is the lead's job. Routing them through
+     * the console would mean handing a lead an admin capability to see the
+     * people they already supervise. */
+    $ls = backend_dispatch('admin.staff.performance', ['requesterId' => 'NGG-2025-0810']);
+    chk('a lead mentor can read the staff board for their centre', !empty($ls['ok']) && $ls['scope'] === 'lead');
+    chk('…and sees only their own centre on it', (function () use ($ls) {
+        foreach ($ls['staff'] as $s2) if ($s2['centre'] !== '' && $s2['centre'] !== 'Egbeda') return false;
+        return count($ls['staff']) > 0;
+    })());
+    chk('an ordinary mentor cannot read it at all',
+        backend_dispatch('admin.staff.performance', ['requesterId' => 'NGG-2025-0500'])['error'] === 'forbidden');
+    chk('…nor can an instructor',
+        backend_dispatch('admin.staff.performance', ['requesterId' => 'VOL-INS-1'])['error'] === 'forbidden');
+    // A lead with no centre supervises nobody in particular; that must not
+    // silently widen into the whole programme.
+    chk('a lead with no centre on their record is refused rather than shown everything', (function () {
+        db_update('mentors', ['centre' => ''], ['memberId' => 'NGG-2025-0810']);
+        $r = backend_dispatch('admin.staff.performance', ['requesterId' => 'NGG-2025-0810']);
+        db_update('mentors', ['centre' => 'Egbeda'], ['memberId' => 'NGG-2025-0810']);
+        return ($r['error'] ?? '') === 'no_centre';
+    })());
+    chk('the roster board puts a centre\'s lead at the top', (function () {
+        $r = backend_dispatch('admin.mentorship.roster', ['requesterId' => 'NGG-2025-0099']);
+        return !empty($r['ok']) && ($r['mentors'][0]['rank'] ?? '') === 'lead';
+    })());
+    chk('demoting keeps the person and their history, just off the roster', (function () {
+        $mid = (string)db_row("SELECT mentorId FROM mentors WHERE memberId='NGG-2025-0810'")['mentorId'];
+        backend_dispatch('admin.mentor.demote', ['requesterId' => 'NGG-2025-0099', 'mentorId' => $mid]);
+        return db_row("SELECT id FROM mentors WHERE mentorId=?", [$mid])
+            && mentor_portal_role('NGG-2025-0810') === '';
+    })());
+
+    /* Every list of people can now say which centre they belong to in colour.
+     * The centre was a word in small grey type, in the same place on every
+     * row, on a list of forty volunteers. */
+    chk('lists carry each centre\'s own colour and code', (function () {
+        $pal = centre_palette();
+        $r = backend_dispatch('admin.staff.performance', ['requesterId' => 'NGG-2025-0099']);
+        return isset($pal['Egbeda']['color'], $pal['Egbeda']['code'])
+            && preg_match('/^#[0-9a-f]{6}$/i', $pal['Egbeda']['color'])
+            && isset($r['centres']['Egbeda']);
+    })());
+})();
+
+
 /* ── Operations: knowing it broke before a centre phones ────────────────────
  * Handler exceptions went to a log file nobody reads; the web-cron ran in a
  * shutdown hook that swallows everything by design, so when the background

@@ -1180,4 +1180,14 @@ CREATE TABLE IF NOT EXISTS ops_events (
   INDEX idx_ops_recent (kind, lastAt)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO schema_version (version) VALUES (67) ON DUPLICATE KEY UPDATE version = version;
+-- 68: lead mentors, and the link from a mentor record back to the account or
+-- card the person actually signs in with. Email-only matching breaks the
+-- moment somebody signs in with an ID card, which carries no email.
+ALTER TABLE mentors ADD COLUMN rank VARCHAR(16) DEFAULT 'mentor';
+ALTER TABLE mentors ADD COLUMN memberId VARCHAR(64) DEFAULT '';
+ALTER TABLE mentors ADD COLUMN volunteerId VARCHAR(64) DEFAULT '';
+CREATE INDEX idx_mentors_member ON mentors(memberId);
+CREATE INDEX idx_mentors_volunteer ON mentors(volunteerId);
+CREATE INDEX idx_mentors_centre_rank ON mentors(centre, rank);
+
+INSERT INTO schema_version (version) VALUES (68) ON DUPLICATE KEY UPDATE version = version;

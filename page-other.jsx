@@ -4390,6 +4390,7 @@ function CardStudio() {
 /* Who is looking. The portal is the same tool for all three, but they arrive
    with different reach and different words for the people in front of them. */
 const PORTAL_ROLES = {
+  lead:       { eyebrow: "LEAD MENTOR · CENTRE",  they: "students" },
   mentor:     { eyebrow: "MENTOR PORTAL",     they: "students" },
   instructor: { eyebrow: "INSTRUCTOR PORTAL", they: "students in your courses" },
   admin:      { eyebrow: "STAFF · ALL CENTRES", they: "students" },
@@ -4427,13 +4428,41 @@ function MentorPortal() {
     </div>
   );
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
-  if (state === "need-auth") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>Staff sign-in</h1><p style={{ color: "rgba(230,238,255,.6)", margin: "8px 0 16px" }}>Sign in as a mentor, an instructor or an admin to see your class.</p><button onClick={() => auth && auth.openSignIn()} style={{ padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>Sign in →</button></div>);
+  /* Two doors, because the people who work here hold two different things.
+     Mentors and admins have an account and a password. Instructors and summer
+     volunteers hold an ID CARD and no account at all — the modal is
+     email-and-password only, so from this page they could not sign in by any
+     means. That is the whole of the "can't log in to the mentorship page"
+     report: the backend accepted them and there was no door. */
+  if (state === "need-auth") return shell(<div style={{ padding: "40px 0 0" }}>
+    <div style={{ textAlign: "center" }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>MENTOR &amp; INSTRUCTOR PORTAL</div>
+      <h1 style={{ fontSize: 24, margin: "6px 0 0", fontWeight: 800 }}>Sign in to see your class</h1>
+      <p style={{ color: "rgba(230,238,255,.6)", margin: "8px auto 20px", maxWidth: 420, fontSize: 14 }}>
+        Staff and admins sign in with their email. Instructors and volunteers use the ID card they were issued.
+      </p>
+      <button onClick={() => auth && auth.openSignIn()}
+        style={{ padding: "13px 26px", minHeight: 44, borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>
+        Sign in with email →
+      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "26px 0 18px", color: "rgba(230,238,255,.4)", fontSize: 12 }}>
+        <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,.14)" }}/>OR<span style={{ flex: 1, height: 1, background: "rgba(255,255,255,.14)" }}/>
+      </div>
+    </div>
+    {typeof CmStudentSignIn === "function"
+      ? <CmStudentSignIn dest="/mentor" roles={["instructor"]}/>
+      : <p style={{ color: "rgba(230,238,255,.55)", fontSize: 13.5, textAlign: "center" }}>Card sign-in is on the Community page.</p>}
+  </div>);
   if (state === "not-mentor") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>This account has no class</h1><p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>The portal opens for mentors, instructors and admin staff. If that's you, make sure you're signed in with the email on your mentor record, or with the ID card issued for your instructor or volunteer role.</p></div>);
   if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load your class</h1><button onClick={() => load(centre)} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
 
   const m = data.mentor || {}, students = data.students || [];
   const done = students.filter(s => s.starredToday).length;
-  const role = PORTAL_ROLES[data.role] ? data.role : "mentor";
+  /* A lead runs a centre rather than a class, and the header is the only
+     place that says so — the reach is otherwise indistinguishable from an
+     unusually broad mentor. */
+  const roleKey = data.rank === "lead" ? "lead" : data.role;
+  const role = PORTAL_ROLES[roleKey] ? roleKey : "mentor";
   const roleMeta = PORTAL_ROLES[role];
   const centres = data.centres || [];
   /* The centre switcher. An admin reaches the whole programme, and a roster of

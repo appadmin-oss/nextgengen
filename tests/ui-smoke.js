@@ -1103,10 +1103,10 @@ const LEADERBOARD = {
     ok('community sign-in mounts with no script error', siErrs.length === 0 && (await si.evaluate(() => window.__errors)).length === 0);
     if (siErrs.length) console.error('       ', siErrs.slice(0, 3).join(' | '));
     ok('…offers both doors', await si.getByRole('tab', { name: /student/i }).count() === 1
-      && await si.getByRole('tab', { name: /instructor/i }).count() === 1);
+      && await si.getByRole('tab', { name: /volunteer/i }).count() === 1);
     ok('…asks a student for their guardian\'s number',
       (await si.getAttribute('input[aria-label="Guardian phone number"]', 'placeholder')) === 'Guardian phone');
-    await si.getByRole('tab', { name: /instructor/i }).click();
+    await si.getByRole('tab', { name: /volunteer/i }).click();
     await si.waitForTimeout(120);
     ok('…and an instructor for their own',
       (await si.getAttribute('input[aria-label="Your phone number"]', 'placeholder')) === 'Your phone');
@@ -2342,6 +2342,62 @@ const LEADERBOARD = {
     ok('the teaching screens threw nothing (' + (tErr[0] || 'clean') + ')', tErr.length === 0);
     await tP.close(); await tT.close();
     try { fs.unlinkSync(path.join(ROOT, 'tests', '_teach_fixture.html')); } catch (_) {}
+
+    /* ── The Mentor Portal's door ──────────────────────────────────────────
+     * Reported from the field: "I'm unable to login to the mentorship page.
+     * It does not recognize summer volunteers as members." Exactly right —
+     * the sign-in modal is email-and-password only, and an instructor or a
+     * summer volunteer has no account and no password, only an ID card. The
+     * backend accepted them; there was no door. */
+    const dT = await browser.newContext({ viewport: { width: 390, height: 900 }, hasTouch: true });
+    const dP = await dT.newPage();
+    await dP.addInitScript(() => {
+      const soft = (o) => new Proxy(o, { get: (t, k) => (k in t) ? t[k] : (typeof k === 'string' ? () => Promise.resolve({}) : undefined) });
+      const nope = () => Promise.reject(Object.assign(new Error('unauthorized'), { code: 'unauthorized' }));
+      const stub = { auth: { me: nope, studentLogin: () => Promise.resolve({ member: {}, kind: 'volunteer' }) },
+                     member: soft({ mentorRoster: nope }) };
+      const root = new Proxy(stub, { get: (t, k) => (k in t) ? t[k] : soft({}) });
+      Object.defineProperty(window, 'NGGApi', { get: () => root, set: () => {}, configurable: false });
+    });
+    fs.writeFileSync(path.join(ROOT, 'tests', '_door_fixture.html'),
+      '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">'
+      + '<link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css"></head>'
+      + '<body><div id="root"></div>'
+      + '<script src="/dist/vendor/react.production.min.js"></script>'
+      + '<script src="/dist/vendor/react-dom.production.min.js"></script>'
+      + '<script src="/dist/data.js"></script><script src="/dist/photos.js"></script>'
+      + '<script src="/dist/app.min.js"></script></body></html>');
+    await dP.goto(BASE + '/tests/_door_fixture.html', { waitUntil: 'networkidle' });
+    await dP.waitForFunction(() => typeof window.__navigate === 'function', null, { timeout: 15000 });
+    await dP.evaluate(() => window.__navigate('mentor'));
+    await dP.waitForTimeout(1100);
+    const doorText = await dP.evaluate(() => document.body.innerText);
+    ok('the signed-out portal offers the email door', /Sign in with email/i.test(doorText));
+    /* The half that was missing. Without it a summer volunteer standing at
+       /mentor has no way in at all — the modal wants a password they do not
+       have. */
+    ok('…and the ID-card door beside it', /SIGN IN WITH YOUR ID CARD/i.test(doorText)
+       && await dP.getByPlaceholder(/Card ID/i).count() === 1);
+    // One door needs no chooser; offering "I'm a student" here invites failure.
+    ok('…with no student option on a staff-only door', !/I'm a student/i.test(doorText));
+    /* The door always sent everyone to /community, so a mentor who did find it
+       was carried away from the portal they were trying to open. Checked by
+       following the redirect, not by reading the markup — the destination is
+       the whole point and it is invisible until the button is pressed. */
+    await dP.fill('input[aria-label="Card ID"]', 'VOL-INS-26-001');
+    await dP.fill('input[aria-label="Your phone number"]', '08037654321');
+    await dP.getByRole('button', { name: /Enter/ }).click();
+    // The destination is a 404 on this harness, so the page never fires
+    // 'load' and waitForURL times out even once the address has changed.
+    // Read the address itself.
+    let landed = '';
+    for (let i = 0; i < 25 && landed !== '/mentor'; i++) {
+      landed = new URL(dP.url()).pathname;
+      if (landed !== '/mentor') await dP.waitForTimeout(200);
+    }
+    ok('…which returns to the portal rather than the community (' + landed + ')', landed === '/mentor');
+    await dP.close(); await dT.close();
+    try { fs.unlinkSync(path.join(ROOT, 'tests', '_door_fixture.html')); } catch (_) {}
 
     /* ── Diagnostics ───────────────────────────────────────────────────────
      * The screen a coordinator opens when something feels wrong. Two things

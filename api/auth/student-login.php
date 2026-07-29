@@ -40,4 +40,9 @@ json_ok(['member' => [
     'centre'   => (string)($who['centre'] ?? ''),
     'track'    => (string)($kind === 'volunteer' ? ($who['role'] ?? '') : ($who['track'] ?? '')),
     'photoUrl' => (string)($who['photoUrl'] ?? ''),
+    /* Which portal this card opens, answered at sign-in rather than on the
+     * next /auth/me. Without it a mentor signing in with a card saw no Mentor
+     * Portal link until they happened to reload — the tool they had just
+     * signed in to use was invisible on the screen they landed on. */
+    'portal'   => function_exists('mentor_portal_role') ? mentor_portal_role($personId) : '',
 ], 'kind' => $kind, 'csrf' => $csrf]);

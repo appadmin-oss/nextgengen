@@ -9,6 +9,130 @@ declare(strict_types=1);
  * 'people' capability (see admin_role_caps).
  */
 
+/* Every active centre's name → code + colour.
+ *
+ * Centres already carried a colour nobody could see. On a list of forty
+ * volunteers a coordinator could not tell at a glance who belongs where —
+ * the centre was a word in small grey type, in the same place, on every row.
+ * One read, cached per request, so any list can put a person's centre on
+ * their photo instead. */
+function centre_palette(): array {
+    // Deliberately not memoised across the request: one small indexed read,
+    // and a static would freeze whatever the table held the first time it was
+    // asked — wrong the moment a centre is added or renamed.
+    $out = [];
+    foreach (db_all("SELECT name, code, color FROM centres WHERE status = 'active' ORDER BY name") as $r) {
+        $out[(string)$r['name']] = ['code' => (string)$r['code'], 'color' => (string)($r['color'] ?: '#76B043')];
+    }
+    return $out;
+}
+
+/* Promote a member or a volunteer into the mentor roster.
+ *
+ * There was no way to do this at all: mentor records only appeared by
+ * converting a mentor APPLICATION, so somebody already in the programme — a
+ * member, or a summer volunteer who signed up to teach — could not be made a
+ * mentor without inventing an application for them.
+ *
+ * The new row records WHICH record they are, not just their email. Email-only
+ * matching fails outright for anyone who signs in with an ID card, and pairs
+ * two different people who share a mailbox.
+ */
+function admin_mentor_promote(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $who = trim((string)($p['personId'] ?? ''));
+    if ($who === '') return ['ok' => false, 'error' => 'no_person'];
+    $rank = (string)($p['rank'] ?? 'mentor') === 'lead' ? 'lead' : 'mentor';
+    $programme = in_array((string)($p['programme'] ?? ''), ['summer', 'ngg', 'both'], true) ? (string)$p['programme'] : 'summer';
+
+    $src = db_row('SELECT memberId, fullName, email, phone, centre, photoUrl FROM members WHERE memberId = ? LIMIT 1', [$who]);
+    $kind = $src ? 'member' : '';
+    if (!$src) {
+        $src = db_row("SELECT volunteerId, fullName, email, phone, centre, faculty, photoUrl FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$who]);
+        $kind = $src ? 'volunteer' : '';
+    }
+    if (!$src) return ['ok' => false, 'error' => 'not_found'];
+
+    $memberId    = $kind === 'member' ? $who : '';
+    $volunteerId = $kind === 'volunteer' ? $who : '';
+    $email = strtolower(trim((string)($src['email'] ?? '')));
+
+    /* Already a mentor? Update rather than mint a second record — two rows for
+     * one person drift apart, and the gate would pick whichever it found
+     * first. Matched the same way the gate matches. */
+    $existing = db_row("SELECT * FROM mentors WHERE (memberId != '' AND memberId = ?) OR (volunteerId != '' AND volunteerId = ?) LIMIT 1",
+                       [$memberId ?: '\x00', $volunteerId ?: '\x00']);
+    if (!$existing && $email !== '') $existing = db_row('SELECT * FROM mentors WHERE lower(email) = ? LIMIT 1', [$email]);
+
+    $centre = trim((string)($p['centre'] ?? ($src['centre'] ?? '')));
+    $dept   = trim((string)($p['department'] ?? ($src['faculty'] ?? '')));
+    $patch = [
+        'fullName' => (string)$src['fullName'], 'email' => (string)($src['email'] ?? ''),
+        'phone' => (string)($src['phone'] ?? ''), 'centre' => $centre, 'department' => $dept,
+        'rank' => $rank, 'programme' => $programme, 'status' => 'active',
+        'memberId' => $memberId, 'volunteerId' => $volunteerId,
+        'photoUrl' => (string)($src['photoUrl'] ?? ''), 'updatedAt' => now_iso(),
+    ];
+    if ($existing) {
+        db_update('mentors', $patch, ['id' => (int)$existing['id']]);
+        $mentorId = (string)$existing['mentorId'];
+        $created = false;
+    } else {
+        $mentorId = new_id('MEN', 'mentors', 'mentorId');
+        db_insert('mentors', $patch + ['mentorId' => $mentorId, 'maxMentees' => 5,
+            'source' => $kind === 'volunteer' ? 'ngg' : 'ngg', 'createdAt' => now_iso(), 'joinedAt' => now_iso()]);
+        $created = true;
+    }
+    audit('admin.mentor.promote', $g['requester']['memberId'], $mentorId,
+          ['from' => $kind, 'personId' => $who, 'rank' => $rank], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'mentorId' => $mentorId, 'created' => $created, 'rank' => $rank, 'kind' => $kind];
+}
+
+/** Take someone off the mentor roster without deleting the history attached
+ *  to them. Their stars, remarks and session logs stay where they are. */
+function admin_mentor_demote(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $mentorId = trim((string)($p['mentorId'] ?? ''));
+    $row = db_row('SELECT id FROM mentors WHERE mentorId = ? LIMIT 1', [$mentorId]);
+    if (!$row) return ['ok' => false, 'error' => 'not_found'];
+    db_update('mentors', ['status' => 'inactive', 'updatedAt' => now_iso()], ['id' => (int)$row['id']]);
+    audit('admin.mentor.demote', $g['requester']['memberId'], $mentorId, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/** Who an admin can promote: members and active volunteers not already on the
+ *  roster, searchable — a picker over a list of hundreds is the whole job. */
+function admin_mentor_candidates(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $q = mb_strtolower(trim((string)($p['q'] ?? '')));
+    $like = '%' . $q . '%';
+    $taken = [];
+    foreach (db_all("SELECT memberId, volunteerId, lower(email) e FROM mentors WHERE status = 'active'") as $r) {
+        foreach (['memberId', 'volunteerId', 'e'] as $k) if (trim((string)$r[$k]) !== '') $taken[(string)$r[$k]] = true;
+    }
+    $out = [];
+    $scope = admin_centre_names_in_scope($g['requester']);
+    $inScope = fn($c) => $scope === null || trim((string)$c) === '' || in_array((string)$c, $scope, true);
+    $rows = $q === ''
+        ? db_all("SELECT memberId id, fullName, email, centre, '' faculty, 'member' kind FROM members WHERE status = 'active' ORDER BY fullName LIMIT 40")
+        : db_all("SELECT memberId id, fullName, email, centre, '' faculty, 'member' kind FROM members
+                  WHERE status = 'active' AND (lower(fullName) LIKE ? OR lower(email) LIKE ? OR lower(memberId) LIKE ?)
+                  ORDER BY fullName LIMIT 40", [$like, $like, $like]);
+    $vols = $q === ''
+        ? db_all("SELECT volunteerId id, fullName, email, centre, faculty, 'volunteer' kind FROM volunteers WHERE status = 'active' ORDER BY fullName LIMIT 40")
+        : db_all("SELECT volunteerId id, fullName, email, centre, faculty, 'volunteer' kind FROM volunteers
+                  WHERE status = 'active' AND (lower(fullName) LIKE ? OR lower(email) LIKE ? OR lower(volunteerId) LIKE ?)
+                  ORDER BY fullName LIMIT 40", [$like, $like, $like]);
+    foreach (array_merge($rows, $vols) as $r) {
+        if (isset($taken[(string)$r['id']]) || (trim((string)$r['email']) !== '' && isset($taken[strtolower((string)$r['email'])]))) continue;
+        if (!$inScope($r['centre'])) continue;
+        $out[] = ['personId' => (string)$r['id'], 'kind' => (string)$r['kind'], 'fullName' => (string)$r['fullName'],
+            'email' => (string)($r['email'] ?? ''), 'centre' => (string)($r['centre'] ?? ''), 'faculty' => (string)($r['faculty'] ?? '')];
+    }
+    usort($out, fn($a, $b) => strcasecmp($a['fullName'], $b['fullName']));
+    return ['ok' => true, 'candidates' => array_slice($out, 0, 50), 'centres' => centre_palette()];
+}
+
 /** Full mentor record for admin views (public_mentor is the trimmed public one). */
 function mentor_full(array $m): array {
     return [
@@ -30,6 +154,10 @@ function mentor_full(array $m): array {
          * admin drawer had no way to show what it had saved and every mentor
          * looked like the 'summer' default. */
         'programme' => $m['programme'] ?? 'summer',
+        'rank' => ($m['rank'] ?? 'mentor') === 'lead' ? 'lead' : 'mentor',
+        'memberId' => (string)($m['memberId'] ?? ''),
+        'volunteerId' => (string)($m['volunteerId'] ?? ''),
+        'department' => (string)($m['department'] ?? ''),
         'program' => $m['program'] ?? '',
         'skills' => $m['skills'] ?? '',
         'linkedin' => $m['linkedin'] ?? '',
@@ -125,7 +253,13 @@ function admin_mentorship_roster(array $p): array {
          ORDER BY m.fullName LIMIT 500",
         [$sessionId]
     );
-    return ['ok' => true, 'mentors' => $out, 'unassigned' => $unassigned, 'sessionId' => $sessionId, 'afrovanguard' => mentorship_links()];
+    // Leads first: a centre's lead is who you look for on this screen.
+    usort($out, function ($a, $b) {
+        $r = ($b['rank'] === 'lead' ? 1 : 0) <=> ($a['rank'] === 'lead' ? 1 : 0);
+        return $r ?: strcasecmp((string)$a['fullName'], (string)$b['fullName']);
+    });
+    return ['ok' => true, 'mentors' => $out, 'unassigned' => $unassigned, 'sessionId' => $sessionId,
+        'centres' => centre_palette(), 'afrovanguard' => mentorship_links()];
 }
 
 // ── Convert a mentor application into a mentor record ────────────────────────
