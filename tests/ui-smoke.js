@@ -2433,12 +2433,19 @@ const LEADERBOARD = {
       const q = { ok: true, total: 2, page: 1, per: 25, shown: 2, gate: { name: 'Review desk' },
         counts: { self_pending: 2 }, centres: ['Egbeda'], courses: ['Piano'],
         queue: [
-          { studentId: 'RC1-0101', fullName: 'Ada Obi', age: 13, centre: 'Egbeda', course: 'Piano', guardianName: 'Mrs Obi',
+          { studentId: 'RC1-0101', displayId: 'EG-26-014', fullName: 'Ada Obi', firstName: 'Ada', lastName: 'Obi',
+            age: 13, centre: 'Egbeda', course: 'Piano', guardianName: 'Mrs Obi',
             guardianPhone: '+2348031112222', parentEmail: 'obi@example.com', photoUrl: '', regStatus: 'self_pending',
-            photo: { verdict: 'check', score: 52, issues: ['too_dark'], source: 'ai' }, possibleDuplicate: false },
-          { studentId: 'RC1-0102', fullName: 'Bola Eze', age: 12, centre: 'Egbeda', course: 'Piano', guardianName: 'Mr Eze',
+            answers: [{ key: 'firstName', label: 'First name', type: 'text', value: 'Ada' },
+                      { key: 'parentPhone', label: "Parent's phone", type: 'phone', value: '0803 111 2222' }],
+            photo: { verdict: 'check', score: 52, issues: ['too_dark'], notes: [], source: 'ai', width: 720, height: 960 },
+            possibleDuplicate: true },
+          { studentId: 'RC1-0102', displayId: 'EG-26-015', fullName: 'Bola Eze', firstName: 'Bola', lastName: 'Eze',
+            age: 12, centre: 'Egbeda', course: 'Piano', guardianName: 'Mr Eze',
             guardianPhone: '', parentEmail: 'eze@example.com', photoUrl: '', regStatus: 'self_pending',
-            photo: { verdict: 'pass', score: 88, issues: [], source: 'ai' }, possibleDuplicate: true },
+            answers: [{ key: 'firstName', label: 'First name', type: 'text', value: 'Bola' }],
+            photo: { verdict: 'pass', score: 88, issues: [], notes: [], source: 'ai', width: 900, height: 1200 },
+            possibleDuplicate: false },
         ] };
       const stub = {
         auth: { me: () => Promise.reject(Object.assign(new Error('u'), { code: 'unauthorized' })) },
@@ -2469,12 +2476,30 @@ const LEADERBOARD = {
     await rvP.waitForTimeout(900);
     const rvText = await rvP.evaluate(() => document.body.innerText);
     ok('…and unlocks to the queue', /2 waiting/.test(rvText) && /Ada Obi/.test(rvText));
-    /* The verdict is next to the photo, not instead of it — and it is not the
-       decision, so the wording has to read as advice. */
-    ok('…showing each photo verdict and the duplicate warning',
-       /check photo/.test(rvText) && /photo ok/.test(rvText) && /possible duplicate/.test(rvText));
+    /* A desk, not a report. It opens on ONE submission with the whole record,
+       because a table asks you to approve from a summary line — which means
+       approving without looking, which is the thing a review step exists to
+       prevent. */
+    ok('…opening on one submission rather than a table',
+       /1 of 2 on this page/.test(rvText) && /WHAT THEY SUBMITTED/.test(rvText));
+    ok('…with every answer the family gave, against the question asked',
+       /Parent's phone/.test(rvText) && /0803 111 2222/.test(rvText));
+    /* The card is shown before the decision, the same way the registration
+       desk shows it on its confirm step. */
+    ok('…and the card that will actually be printed', /This is the card that gets printed/.test(rvText));
+    /* The verdict is next to the photo, not instead of it — and it is advice,
+       never the decision. */
+    ok('…the photo verdict reading as advice, with the duplicate warning',
+       /Worth a look/.test(rvText) && /advice, not the decision/.test(rvText) && /possible duplicate/.test(rvText));
     ok('…and saying plainly that approving is what emails the family',
        /Approving is what emails the guardian/.test(rvText));
+    /* The list is still there for sweeping clean batches — and admits what it
+       cannot show you. */
+    await rvP.getByRole('tab', { name: 'List' }).click();
+    await rvP.waitForTimeout(400);
+    const listText = await rvP.evaluate(() => document.body.innerText);
+    ok('…with a list mode that says bulk approval skips the photo',
+       /Select all 2 shown/.test(listText) && /does not show you the photo/.test(listText));
     await rvP.close(); await rvT.close();
     try { fs.unlinkSync(path.join(ROOT, 'tests', '_apply_fixture.html')); } catch (_) {}
 

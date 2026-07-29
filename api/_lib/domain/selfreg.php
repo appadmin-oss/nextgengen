@@ -281,11 +281,23 @@ function selfreg_queue(array $p): array {
      * is bounded by the page size either way; the verdict filter is applied
      * after the read and the count is reported separately so the pager cannot
      * claim more than it will show. */
-    $rows = db_all("SELECT studentId, fullName, age, sex, centre, track, guardianName, guardianPhone,
-                           parentEmail, photoUrl, regStatus, photoCheck, submittedVia, enrolledAt,
+    $rows = db_all("SELECT studentId, displayId, fullName, firstName, lastName, age, sex, centre, track,
+                           guardianName, guardianPhone, parentEmail, photoUrl, regStatus, photoCheck,
+                           submittedVia, enrolledAt, formVersion, formData,
                            reviewedById, reviewedAt, reviewNote
                     FROM summer_students WHERE $sql ORDER BY id DESC LIMIT ? OFFSET ?",
                    array_merge($args, [$per, ($page - 1) * $per]));
+
+    /* The questions, so the reviewer can read the answers against them.
+     * A reviewer checking a registration needs the WHOLE form — the summary
+     * line is what a list shows, not what a decision is made on, and a field
+     * the family filled in that nobody looks at may as well not be asked. */
+    $live = form_live();
+    $labels = [];
+    foreach (($live['fields'] ?? []) as $fld) {
+        if (in_array(($fld['type'] ?? ''), ['section', 'info'], true)) continue;
+        $labels[(string)$fld['key']] = ['label' => (string)($fld['label'] ?? $fld['key']), 'type' => (string)($fld['type'] ?? 'text')];
+    }
 
     /* Duplicate suspicion, computed once for the page rather than per row.
      * Two parents registering the same child is the commonest thing in this
@@ -305,8 +317,22 @@ function selfreg_queue(array $p): array {
         $chk = safe_json((string)($r['photoCheck'] ?? '')) ?: [];
         $v = (string)($chk['verdict'] ?? 'unchecked');
         if ($photo !== '' && $v !== $photo) continue;
+        /* Every answer, in the order the form asks them, labelled. */
+        $answers = [];
+        $fd = safe_json((string)($r['formData'] ?? '')) ?: [];
+        foreach ($labels as $k => $meta) {
+            // NOT $v — that already holds the photo verdict a few lines up, and
+            // reusing it here quietly rewrote every row's verdict to the last
+            // answer on the form.
+            $ans = $fd[$k] ?? '';
+            if (is_array($ans)) $ans = implode(', ', array_map('strval', $ans));
+            $answers[] = ['key' => $k, 'label' => $meta['label'], 'type' => $meta['type'], 'value' => trim((string)$ans)];
+        }
         $out[] = [
             'studentId' => (string)$r['studentId'], 'fullName' => (string)$r['fullName'],
+            'displayId' => (string)($r['displayId'] ?? ''),
+            'firstName' => (string)($r['firstName'] ?? ''), 'lastName' => (string)($r['lastName'] ?? ''),
+            'answers' => $answers,
             'age' => (int)$r['age'], 'sex' => (string)($r['sex'] ?? ''),
             'centre' => (string)$r['centre'], 'course' => (string)$r['track'],
             'guardianName' => (string)($r['guardianName'] ?? ''),

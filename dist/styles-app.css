@@ -4594,3 +4594,11 @@ section p[style*="var(--ink-500)"] {
 .admin-pick-row.is-on { background: rgba(245, 176, 38, 0.14); box-shadow: inset 3px 0 0 var(--gold-500); }
 .admin-pick-row:focus-visible { outline: 2px solid var(--gold-500); outline-offset: -2px; }
 @media (pointer: coarse) { .admin-pick-row { min-height: 52px; } }
+
+/* The review desk reads as two columns on a desktop and one on a phone. The
+   photo and the answers belong side by side when there is room — a reviewer
+   comparing a face against a name should not be scrolling between them. */
+@media (min-width: 900px) {
+  .review-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
+  .review-grid > :nth-child(3) { grid-column: 1 / -1; }
+}

@@ -2775,6 +2775,26 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
    · Approve in bulk for the clean ones; a rejection always costs a reason.
    · The count of what is left, always visible, because "am I nearly done" is
      the question that decides whether somebody finishes the queue today. */
+/* ── The review desk — /review?g=… ───────────────────────────────────────────
+   This is a DESK, not a report. It sits where the registration desk sits in
+   the day: somebody at a table, working through a pile, deciding. So it is
+   built the way the registration flow is built — one record at a time, the
+   whole record on screen, the card that will be printed shown before the
+   decision, and the next one queued up behind it.
+
+   A filtered table was the wrong shape for that. A table asks you to approve
+   from a summary line, which means approving without looking, which is the
+   one thing a review step exists to prevent.
+
+   Two modes, because there are two jobs:
+   · REVIEW  — the default. One submission, everything the family typed, the
+               photo at a size you can judge, the card preview, approve or
+               reject, straight on to the next.
+   · LIST    — the same queue as rows, for sweeping obviously-clean batches
+               and for finding one particular child.
+
+   Keyboard: A approves, R focuses the reason box, ← → move. A coordinator
+   with three hundred of these should not have to reach for a mouse. */
 function ReviewDeskPage() {
   const g = new URLSearchParams(window.location.search).get("g") || "";
   const auth = (window.useAuth || (() => null))();
@@ -2783,16 +2803,17 @@ function ReviewDeskPage() {
   const [unlockBusy, setUnlockBusy] = React.useState(false);
   const [unlockErr, setUnlockErr] = React.useState("");
   const [d, setD] = React.useState(null);
+  const [mode, setMode] = React.useState("review");      // review | list
   const [f, setF] = React.useState({ status: "self_pending", q: "", centre: "", course: "", photo: "", page: 1 });
+  const [cursor, setCursor] = React.useState(0);
   const [picked, setPicked] = React.useState([]);
-  const [busy, setBusy] = React.useState("");
   const [msg, setMsg] = React.useState("");
+  const [busy, setBusy] = React.useState("");
   const navy = "#101a33", gold = "#ffce54";
 
-  const load = React.useCallback((filters) => {
-    const q = filters || f;
-    NGGApi.public.review.queue(g, q)
-      .then(r => { setD(r); setState("ready"); setMsg(""); })
+  const load = React.useCallback((keepCursor) => {
+    NGGApi.public.review.queue(g, f)
+      .then(r => { setD(r); setState("ready"); if (!keepCursor) setCursor(0); })
       .catch(e => {
         const c = e.code || e.message;
         if (c === "unauthorized" || c === "forbidden") setState("locked");
@@ -2800,8 +2821,8 @@ function ReviewDeskPage() {
         else setState("error");
       });
   }, [g, f]);
-  React.useEffect(() => { if (!g) { setState("bad"); return; } load(); /* eslint-disable-next-line */ }, [g, f.status, f.centre, f.course, f.photo, f.page]);
-  // Typing in the search box should not fire a request per keystroke.
+  React.useEffect(() => { if (!g) { setState("bad"); return; } load(); /* eslint-disable-next-line */ },
+    [g, f.status, f.centre, f.course, f.photo, f.page]);
   React.useEffect(() => {
     if (state !== "ready") return;
     const t = setTimeout(() => load(), 260);
@@ -2822,9 +2843,9 @@ function ReviewDeskPage() {
     } finally { setUnlockBusy(false); }
   };
 
-  const shell = (ch) => (
-    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "22px 16px 60px" }}>
-      <div style={{ maxWidth: 900, margin: "0 auto" }}>{ch}</div>
+  const shell = (ch, wide) => (
+    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)" }}>
+      <div style={{ maxWidth: wide ? 1080 : 900, margin: "0 auto", padding: "20px 16px 70px" }}>{ch}</div>
     </div>
   );
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
@@ -2859,36 +2880,45 @@ function ReviewDeskPage() {
 
   const rows = (d && d.queue) || [];
   const counts = (d && d.counts) || {};
-  const setF1 = (k, v) => setF(x => ({ ...x, [k]: v, page: k === "page" ? v : 1 }));
-  const toggle = (id) => setPicked(p => p.indexOf(id) === -1 ? p.concat([id]) : p.filter(x => x !== id));
-  const allPicked = rows.length > 0 && rows.every(r => picked.indexOf(r.studentId) !== -1);
-  const act = async (fn, label) => {
-    setBusy(label);
-    try { const r = await fn(); setPicked([]); load(); setMsg(r && r.approved !== undefined ? r.approved + " approved" : label + " done"); }
-    catch (e) { setMsg("Couldn't " + label + " — " + (e.code || e.message)); }
-    finally { setBusy(""); }
-  };
-  const verdictChip = (v) => {
-    const meta = { pass: ["#a7e8c6", "rgba(127,209,166,.18)", "✓ photo ok"],
-                   check: ["#ffce54", "rgba(245,176,38,.18)", "⚠ check photo"],
-                   fail: ["#ffb3a3", "rgba(255,90,60,.2)", "✕ photo unusable"] }[v] || ["rgba(230,238,255,.6)", "rgba(255,255,255,.08)", "photo unchecked"];
-    return <span style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: meta[0], background: meta[1], whiteSpace: "nowrap" }}>{meta[2]}</span>;
-  };
+  const setF1 = (k, v) => { setF(x => ({ ...x, [k]: v, page: k === "page" ? v : 1 })); setPicked([]); };
+  const current = rows[Math.min(cursor, Math.max(0, rows.length - 1))] || null;
   const inputS = { padding: "10px 12px", minHeight: 44, borderRadius: 10, fontSize: 15, background: "rgba(255,255,255,.07)",
                    border: "1px solid rgba(255,255,255,.18)", color: "#eef2fb", fontFamily: "inherit" };
 
-  return shell(<>
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>REGISTRATION REVIEW · {(d.gate && d.gate.name) || ""}</div>
-      <h1 style={{ fontSize: 23, margin: "4px 0 0", fontWeight: 800 }}>
-        {counts.self_pending || 0} waiting
-      </h1>
-      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>
-        Nothing here has been sent to a family yet. Approving is what emails the guardian their consent form.
-      </p>
-    </div>
+  /* After a decision the row is gone from this filter, so the list shortens
+     under the cursor. Staying put lands on the NEXT one, which is what the
+     desk wants — but only until the end, where it has to step back. */
+  const afterDecision = (text) => {
+    setMsg(text);
+    NGGApi.public.review.queue(g, f).then(r => {
+      setD(r);
+      setCursor(c => Math.max(0, Math.min(c, (r.queue || []).length - 1)));
+    }).catch(() => load(true));
+  };
 
-    <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }} role="tablist">
+  return shell(<>
+    <header style={{ display: "flex", gap: 14, alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 14 }}>
+      <div>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>
+          REGISTRATION REVIEW · {(d.gate && d.gate.name) || ""}
+        </div>
+        <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{counts.self_pending || 0} waiting</h1>
+        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "5px 0 0" }}>
+          Nothing here has been sent to a family yet. Approving is what emails the guardian their consent form.
+        </p>
+      </div>
+      <div role="tablist" aria-label="Desk mode" style={{ display: "flex", gap: 4, background: "rgba(255,255,255,.06)", padding: 4, borderRadius: 12 }}>
+        {[["review", "Review"], ["list", "List"]].map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={mode === k} onClick={() => setMode(k)}
+            style={{ minHeight: 44, padding: "10px 20px", borderRadius: 9, cursor: "pointer", border: "none", fontFamily: "inherit",
+                     fontWeight: 700, fontSize: 14, background: mode === k ? gold : "transparent", color: mode === k ? "#2b2100" : "rgba(230,238,255,.7)" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+    </header>
+
+    <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }} role="tablist" aria-label="Status">
       {[["self_pending", "Waiting", counts.self_pending || 0],
         ["parent_pending", "Approved", counts.parent_pending || 0],
         ["rejected", "Rejected", counts.rejected || 0],
@@ -2923,34 +2953,32 @@ function ReviewDeskPage() {
 
     {msg && <div role="status" style={{ marginBottom: 12, fontSize: 13.5, color: "#a7e8c6" }}>{msg}</div>}
 
-    {f.status === "self_pending" && rows.length > 0 && (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
-          <input type="checkbox" checked={allPicked} onChange={() => setPicked(allPicked ? [] : rows.map(r => r.studentId))}
-            style={{ width: 20, height: 20, accentColor: gold }}/>
-          Select all {rows.length} shown
-        </label>
-        {picked.length > 0 && (
-          <button disabled={!!busy} onClick={() => act(() => NGGApi.public.review.approveBulk(g, picked), "approve")}
-            style={{ minHeight: 44, padding: "10px 18px", borderRadius: 11, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
-            {busy === "approve" ? "Approving…" : "Approve " + picked.length + " →"}
-          </button>
-        )}
-      </div>
+    {!rows.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14, padding: "40px 0", textAlign: "center" }}>
+      {f.q || f.centre || f.course || f.photo ? "Nothing matches those filters." : "Nothing waiting. That is the good answer."}
+    </p>}
+
+    {mode === "review" && current && (
+      <ReviewOne key={current.studentId} r={current} g={g} gold={gold}
+        index={Math.min(cursor, rows.length - 1)} total={rows.length}
+        onPrev={() => setCursor(c => Math.max(0, c - 1))}
+        onNext={() => setCursor(c => Math.min(rows.length - 1, c + 1))}
+        onDone={afterDecision}/>
     )}
 
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {!rows.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14, padding: "30px 0", textAlign: "center" }}>
-        {f.q || f.centre || f.course || f.photo ? "Nothing matches those filters." : "Nothing waiting. That is the good answer."}
-      </p>}
-      {rows.map(r => <ReviewRow key={r.studentId} r={r} g={g} gold={gold}
-        picked={picked.indexOf(r.studentId) !== -1} onToggle={() => toggle(r.studentId)}
-        selectable={f.status === "self_pending"} verdictChip={verdictChip}
-        onDone={(m) => { setMsg(m); load(); }}/>)}
-    </div>
+    {mode === "list" && rows.length > 0 && (
+      <ReviewList rows={rows} g={g} gold={gold} picked={picked} setPicked={setPicked}
+        selectable={f.status === "self_pending"} busy={busy}
+        onOpen={(i) => { setCursor(i); setMode("review"); }}
+        onBulk={async () => {
+          setBusy("approve");
+          try { const r = await NGGApi.public.review.approveBulk(g, picked); setPicked([]); afterDecision(r.approved + " approved"); }
+          catch (e) { setMsg("Couldn't approve — " + (e.code || e.message)); }
+          finally { setBusy(""); }
+        }}/>
+    )}
 
     {d.total > d.per && (
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 18, gap: 12 }}>
         <span style={{ fontSize: 13, color: "rgba(230,238,255,.6)" }}>{d.shown} of {d.total}</span>
         <div style={{ display: "flex", gap: 8 }}>
           <button disabled={f.page <= 1} onClick={() => setF1("page", f.page - 1)} style={{ minHeight: 44, padding: "9px 16px", borderRadius: 10, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#fff", cursor: "pointer", opacity: f.page <= 1 ? .4 : 1 }}>← Back</button>
@@ -2958,76 +2986,235 @@ function ReviewDeskPage() {
         </div>
       </div>
     )}
-  </>);
+  </>, mode === "review");
 }
 
-function ReviewRow({ r, g, gold, picked, onToggle, selectable, verdictChip, onDone }) {
-  const [open, setOpen] = React.useState(false);
+/* Shared vocabulary for the photo verdict. The wording has to read as advice
+   and never as the decision — the model does not get to turn a child away. */
+function reviewVerdict(v) {
+  return { pass:  { tint: "#a7e8c6", bg: "rgba(127,209,166,.18)", label: "Photo looks fine", short: "✓ photo ok" },
+           check: { tint: "#ffce54", bg: "rgba(245,176,38,.18)", label: "Worth a look",      short: "⚠ check photo" },
+           fail:  { tint: "#ffb3a3", bg: "rgba(255,90,60,.2)",   label: "Not usable on a card", short: "✕ photo unusable" } }[v]
+      || { tint: "rgba(230,238,255,.6)", bg: "rgba(255,255,255,.08)", label: "Not checked", short: "photo unchecked" };
+}
+
+/* One submission, the whole of it. Laid out the way the registration desk's
+   confirm step is laid out, because it is the same job read backwards: there
+   somebody checks what they typed before committing it, here somebody checks
+   what a family typed before letting it through. */
+function ReviewOne({ r, g, gold, index, total, onPrev, onNext, onDone }) {
   const [note, setNote] = React.useState("");
   const [busy, setBusy] = React.useState("");
   const [err, setErr] = React.useState("");
+  const noteRef = React.useRef(null);
   const mut = { color: "rgba(230,238,255,.55)" };
+  const card = { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, padding: 16 };
+  const v = reviewVerdict(r.photo && r.photo.verdict);
+  const decided = r.regStatus !== "self_pending";
+
   const run = async (fn, label) => {
     setBusy(label); setErr("");
     try { await fn(); onDone(r.fullName + " " + label + "d"); }
-    catch (e) { setErr(e.code === "reason_required" ? "Say why, so the family can be told what to fix." : (e.code || e.message)); setBusy(""); }
+    catch (e) { setErr(e.code === "reason_required" ? "Say why, so the family can be told what to fix."
+      : e.code === "not_pending" ? "Somebody else already handled this one."
+      : (e.code || e.message)); setBusy(""); }
   };
-  return (
-    <div style={{ borderRadius: 14, background: picked ? "rgba(255,206,84,.12)" : "rgba(255,255,255,.06)",
-                  border: "1px solid " + (picked ? "rgba(255,206,84,.45)" : "rgba(255,255,255,.12)"), padding: 12 }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-        {selectable && <input type="checkbox" checked={picked} onChange={onToggle} aria-label={"Select " + r.fullName}
-          style={{ width: 20, height: 20, marginTop: 4, accentColor: gold, flex: "none", cursor: "pointer" }}/>}
-        {/* Big enough to actually judge. A thumbnail is a reason to approve
-            everything without looking. */}
-        <button onClick={() => setOpen(o => !o)} aria-label={"Enlarge photo of " + r.fullName}
-          style={{ border: "none", background: "none", padding: 0, cursor: "pointer", flex: "none" }}>
-          {r.photoUrl
-            ? <img src={r.photoUrl} alt="" style={{ width: open ? 190 : 66, height: open ? 240 : 84, objectFit: "cover", borderRadius: 10, transition: "width .15s, height .15s" }}/>
-            : <div style={{ width: 66, height: 84, borderRadius: 10, display: "grid", placeItems: "center", background: "rgba(255,255,255,.08)", color: "rgba(230,238,255,.4)", fontSize: 11 }}>no photo</div>}
-        </button>
-        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ fontWeight: 700, fontSize: 16 }}>{r.fullName}</span>
-            {verdictChip(r.photo && r.photo.verdict)}
-            {/* Two parents registering the same child is the commonest thing
-                in this queue and the easiest to approve twice by accident. */}
-            {r.possibleDuplicate && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: "#ffce54", background: "rgba(245,176,38,.18)" }}>possible duplicate</span>}
+  const approve = () => run(() => NGGApi.public.review.approve(g, r.studentId, ""), "approve");
+  const reject = () => run(() => NGGApi.public.review.reject(g, r.studentId, note.trim()), "reject");
+
+  /* A coordinator with three hundred of these should not have to reach for a
+     mouse between each one. Ignored while typing, so R in a reason does not
+     submit it. */
+  React.useEffect(() => {
+    const onKey = (e) => {
+      const t = e.target && e.target.tagName;
+      if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT") return;
+      if (e.key === "ArrowLeft") { onPrev(); return; }
+      if (e.key === "ArrowRight") { onNext(); return; }
+      if (decided || busy) return;
+      if (e.key === "a" || e.key === "A") { e.preventDefault(); approve(); }
+      if (e.key === "r" || e.key === "R") { e.preventDefault(); noteRef.current && noteRef.current.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  return <>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
+      <button onClick={onPrev} disabled={index <= 0} aria-label="Previous submission"
+        style={{ minHeight: 44, padding: "9px 15px", borderRadius: 10, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#fff", cursor: "pointer", opacity: index <= 0 ? .35 : 1 }}>←</button>
+      <span style={{ fontSize: 13, color: "rgba(230,238,255,.6)" }}>{index + 1} of {total} on this page</span>
+      <button onClick={onNext} disabled={index >= total - 1} aria-label="Next submission"
+        style={{ minHeight: 44, padding: "9px 15px", borderRadius: 10, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#fff", cursor: "pointer", opacity: index >= total - 1 ? .35 : 1 }}>→</button>
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }} className="review-grid">
+      {/* Left: the photo, at a size you can actually judge, with the machine's
+          reading beside it rather than instead of it. */}
+      <div style={card}>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ flex: "none" }}>
+            {r.photoUrl
+              ? <img src={r.photoUrl} alt={"Photo submitted for " + r.fullName}
+                  style={{ width: 200, height: 254, objectFit: "cover", borderRadius: 12, display: "block", background: "rgba(255,255,255,.06)" }}/>
+              : <div style={{ width: 200, height: 254, borderRadius: 12, display: "grid", placeItems: "center", background: "rgba(255,255,255,.07)", color: "rgba(230,238,255,.45)", fontSize: 13 }}>No photo</div>}
           </div>
-          <div style={{ ...mut, fontSize: 13, marginTop: 3 }}>
-            {r.age ? r.age + " · " : ""}{r.centre || "no centre"}{r.course ? " · " + r.course : ""}
-          </div>
-          <div className="mono" style={{ ...mut, fontSize: 12, marginTop: 3 }}>
-            {r.studentId} · {r.guardianName || "no guardian name"} · {r.parentEmail || r.guardianPhone || "no contact"}
-          </div>
-          {open && r.photo && (r.photo.issues || []).length > 0 && (
-            <div style={{ ...mut, fontSize: 12.5, marginTop: 6 }}>
-              Photo notes: {r.photo.issues.join(", ")}
-              {r.photo.score !== null && r.photo.score !== undefined ? " · score " + r.photo.score + "/100" : ""}
-              {r.photo.source === "shape" ? " · checked on size only" : r.photo.source === "shape_ai_unavailable" ? " · the vision check was unavailable" : ""}
+          <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <h2 style={{ fontSize: 22, margin: 0, fontWeight: 800 }}>{r.fullName}</h2>
+              {r.possibleDuplicate && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "4px 10px", borderRadius: 999, color: "#ffce54", background: "rgba(245,176,38,.18)" }}>possible duplicate</span>}
+              {decided && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "4px 10px", borderRadius: 999, color: "#a7e8c6", background: "rgba(127,209,166,.18)" }}>{r.regStatus === "rejected" ? "rejected" : "approved"}</span>}
             </div>
-          )}
-          {r.reviewNote && <div style={{ ...mut, fontSize: 12.5, marginTop: 5 }}>Note: {r.reviewNote}</div>}
+            <div className="mono" style={{ ...mut, fontSize: 12.5, marginTop: 5 }}>{r.studentId}{r.submittedAt ? " · submitted " + String(r.submittedAt).slice(0, 10) : ""}</div>
+
+            <div style={{ marginTop: 12, padding: 11, borderRadius: 11, background: v.bg, border: "1px solid " + v.tint + "33" }}>
+              <div style={{ fontWeight: 800, fontSize: 13.5, color: v.tint }}>{v.label}{r.photo && r.photo.score !== null && r.photo.score !== undefined ? " · " + r.photo.score + "/100" : ""}</div>
+              {r.photo && (r.photo.notes || []).length > 0 && <div style={{ ...mut, fontSize: 12.5, marginTop: 4 }}>{r.photo.notes.join(". ")}</div>}
+              {r.photo && (r.photo.issues || []).length > 0 && <div style={{ ...mut, fontSize: 12, marginTop: 4 }}>{r.photo.issues.join(", ")}</div>}
+              {/* Which checks actually ran. A verdict from half of them reads
+                  identically to one from all of them otherwise. */}
+              <div style={{ ...mut, fontSize: 11.5, marginTop: 5 }}>
+                {r.photo && r.photo.source === "ai" ? "Size and vision check" :
+                 r.photo && r.photo.source === "shape_ai_unavailable" ? "Size only — the vision check was unavailable" : "Size only"}
+                {r.photo && r.photo.width ? " · " + r.photo.width + "×" + r.photo.height : ""}
+                {" · this is advice, not the decision"}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      {r.regStatus === "self_pending" && (
-        <div style={{ display: "flex", gap: 8, marginTop: 11, flexWrap: "wrap", alignItems: "center" }}>
-          <button disabled={!!busy} onClick={() => run(() => NGGApi.public.review.approve(g, r.studentId, ""), "approve")}
-            style={{ minHeight: 44, padding: "10px 18px", borderRadius: 11, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
-            {busy === "approve" ? "Approving…" : "Approve"}
+
+      {/* Right: everything the family actually typed, against the questions
+          they were asked. A field nobody looks at may as well not be asked. */}
+      <div style={card}>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: gold, marginBottom: 10 }}>WHAT THEY SUBMITTED</div>
+        <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "minmax(110px, 34%) 1fr", gap: "7px 14px", fontSize: 14 }}>
+          {(r.answers || []).map(a => (
+            <React.Fragment key={a.key}>
+              <dt style={{ ...mut, fontSize: 12.5 }}>{a.label}</dt>
+              <dd style={{ margin: 0, wordBreak: "break-word", color: a.value ? "#eef2fb" : "rgba(230,238,255,.35)" }}>{a.value || "—"}</dd>
+            </React.Fragment>
+          ))}
+          {!(r.answers || []).length && <>
+            <dt style={{ ...mut, fontSize: 12.5 }}>Centre</dt><dd style={{ margin: 0 }}>{r.centre || "—"}</dd>
+            <dt style={{ ...mut, fontSize: 12.5 }}>Course</dt><dd style={{ margin: 0 }}>{r.course || "—"}</dd>
+          </>}
+        </dl>
+        <div style={{ marginTop: 12, paddingTop: 11, borderTop: "1px solid rgba(255,255,255,.1)" }}>
+          <div style={{ ...mut, fontSize: 12.5 }}>Guardian we will email on approval</div>
+          <div style={{ fontSize: 14.5, marginTop: 3 }}>
+            {r.guardianName || "—"}{" · "}
+            <span className="mono">{r.parentEmail || r.guardianPhone || "no contact on file"}</span>
+          </div>
+        </div>
+        {r.reviewNote && <div style={{ ...mut, fontSize: 13, marginTop: 10 }}>Note: {r.reviewNote}</div>}
+      </div>
+
+      {/* The card that will be printed, shown before the decision — the same
+          preview the registration desk shows on its confirm step. Approving a
+          photo without seeing it on the card is how an unusable one gets
+          through. */}
+      {typeof CardFront === "function" && (
+        <div style={{ ...card, display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ boxShadow: "0 12px 30px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden", flex: "none" }}>
+            <SafeBlock fallback={<div style={{ width: 177, height: 301, background: "rgba(255,255,255,.06)" }}/>}>
+              <CardFront S={0.3} card={{
+                firstName: r.firstName || String(r.fullName || "").split(" ")[0], surname: r.lastName || String(r.fullName || "").split(" ").slice(-1)[0],
+                track: r.course, photoUrl: r.photoUrl, token: "", displayId: r.displayId || r.studentId,
+                centre: r.centreCard || { name: r.centre, code: (r.centre || "").slice(0, 2).toUpperCase(), color: "#76B043" },
+              }} program={{}}/>
+            </SafeBlock>
+          </div>
+          <div style={{ flex: "1 1 220px", minWidth: 0, ...mut, fontSize: 13, lineHeight: 1.6 }}>
+            <b style={{ color: "#eef2fb" }}>This is the card that gets printed.</b><br/>
+            {/* The QR shown here is a placeholder — the real one is minted when
+                the guardian completes consent. Saying it is "blank" would be
+                wrong: there is a code on screen, and a reviewer who scanned it
+                and got nothing would reasonably think the card was broken. */}
+            The centre ring and colour come from the centre they chose. The QR is a placeholder until the guardian consents.
+            Look at the face: if you would not recognise this child from it across a hall, reject and ask for another photo.
+          </div>
+        </div>
+      )}
+    </div>
+
+    {!decided && (
+      <div style={{ position: "sticky", bottom: 0, marginTop: 16, padding: "12px 0 calc(4px + env(safe-area-inset-bottom,0px))",
+                    background: "linear-gradient(180deg, rgba(16,26,51,0) 0%, #101a33 26%)" }}>
+        {err && <div role="alert" style={{ color: "#ff9a9a", fontSize: 13.5, marginBottom: 8 }}>{err}</div>}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <button disabled={!!busy} onClick={approve}
+            style={{ minHeight: 50, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15.5, cursor: "pointer" }}>
+            {busy === "approve" ? "Approving…" : "Approve & email guardian"}
           </button>
-          <input value={note} onChange={e => setNote(e.target.value)} placeholder="Reason, if rejecting" aria-label={"Reason for rejecting " + r.fullName}
-            style={{ flex: "1 1 180px", minWidth: 140, minHeight: 44, padding: "10px 12px", borderRadius: 10, fontSize: 14,
+          <input ref={noteRef} value={note} onChange={e => setNote(e.target.value)} placeholder="Reason, if rejecting"
+            aria-label={"Reason for rejecting " + r.fullName}
+            style={{ flex: "1 1 200px", minWidth: 150, minHeight: 50, padding: "12px 14px", borderRadius: 11, fontSize: 15,
                      background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.18)", color: "#eef2fb" }}/>
-          <button disabled={!!busy} onClick={() => run(() => NGGApi.public.review.reject(g, r.studentId, note.trim()), "reject")}
-            style={{ minHeight: 44, padding: "10px 16px", borderRadius: 11, border: "1px solid rgba(255,120,100,.5)", background: "transparent", color: "#ffb3a3", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+          <button disabled={!!busy} onClick={reject}
+            style={{ minHeight: 50, padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,120,100,.5)", background: "transparent", color: "#ffb3a3", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>
             {busy === "reject" ? "Rejecting…" : "Reject"}
           </button>
         </div>
-      )}
-      {err && <div role="alert" style={{ color: "#ff9a9a", fontSize: 13, marginTop: 8 }}>{err}</div>}
+        <div style={{ ...mut, fontSize: 11.5, marginTop: 7 }}>
+          <b>A</b> approve · <b>R</b> reason · <b>←</b> <b>→</b> move between submissions
+        </div>
+      </div>
+    )}
+  </>;
+}
+
+/* The list. For sweeping obviously-clean batches and for finding one child —
+   not for deciding from, which is why every row opens into the full record. */
+function ReviewList({ rows, g, gold, picked, setPicked, selectable, busy, onOpen, onBulk }) {
+  const allPicked = rows.length > 0 && rows.every(r => picked.indexOf(r.studentId) !== -1);
+  const mut = { color: "rgba(230,238,255,.55)" };
+  return <>
+    {selectable && (
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer", minHeight: 44 }}>
+          <input type="checkbox" checked={allPicked} onChange={() => setPicked(allPicked ? [] : rows.map(r => r.studentId))}
+            style={{ width: 20, height: 20, accentColor: gold }}/>
+          Select all {rows.length} shown
+        </label>
+        {picked.length > 0 && (
+          <button disabled={!!busy} onClick={onBulk}
+            style={{ minHeight: 44, padding: "10px 18px", borderRadius: 11, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+            {busy === "approve" ? "Approving…" : "Approve " + picked.length + " →"}
+          </button>
+        )}
+        <span style={{ ...mut, fontSize: 12.5 }}>Approving from here does not show you the photo — open one to look.</span>
+      </div>
+    )}
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {rows.map((r, i) => {
+        const v = reviewVerdict(r.photo && r.photo.verdict);
+        const on = picked.indexOf(r.studentId) !== -1;
+        return (
+          <div key={r.studentId} style={{ display: "flex", gap: 12, alignItems: "center", padding: "9px 12px", borderRadius: 12,
+                background: on ? "rgba(255,206,84,.12)" : "rgba(255,255,255,.06)",
+                border: "1px solid " + (on ? "rgba(255,206,84,.45)" : "rgba(255,255,255,.12)") }}>
+            {selectable && <input type="checkbox" checked={on} aria-label={"Select " + r.fullName}
+              onChange={() => setPicked(p => on ? p.filter(x => x !== r.studentId) : p.concat([r.studentId]))}
+              style={{ width: 20, height: 20, accentColor: gold, flex: "none", cursor: "pointer" }}/>}
+            {r.photoUrl
+              ? <img src={r.photoUrl} alt="" style={{ width: 42, height: 54, objectFit: "cover", borderRadius: 8, flex: "none" }}/>
+              : <div style={{ width: 42, height: 54, borderRadius: 8, background: "rgba(255,255,255,.08)", flex: "none" }}/>}
+            <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>{r.fullName}</div>
+              <div className="mono" style={{ ...mut, fontSize: 12 }}>{r.centre || "no centre"}{r.course ? " · " + r.course : ""} · {r.studentId}</div>
+            </div>
+            <span style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: v.tint, background: v.bg, whiteSpace: "nowrap", flex: "none" }}>{v.short}</span>
+            {r.possibleDuplicate && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, color: "#ffce54", background: "rgba(245,176,38,.18)", flex: "none" }}>dup?</span>}
+            <button onClick={() => onOpen(i)}
+              style={{ minHeight: 44, padding: "9px 15px", borderRadius: 10, border: "1px solid rgba(255,255,255,.24)", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 13.5, cursor: "pointer", flex: "none" }}>
+              Open →
+            </button>
+          </div>
+        );
+      })}
     </div>
-  );
+  </>;
 }
 
 function GatePage() {
@@ -4202,6 +4389,52 @@ function cardFacePhoto(url, w, h) {
   return url.slice(0, i + 8) + params.join(",") + "/" + rest;
 }
 
+/* Which centre a card belongs to, readable across a room.
+ *
+ * The student card already carried the centre colour as a bar along the
+ * bottom, which is invisible the moment the card is in a lanyard sleeve or
+ * face-up on a table with the bottom edge tucked under. The volunteer card
+ * carried no centre at all — it is coloured by TIER, which says what somebody
+ * does and nothing about where they belong, so at a site with forty
+ * volunteers nobody could tell who was theirs.
+ *
+ * The ring goes round the photo, which is the one part of a card that is
+ * always visible and always looked at. The CODE is set into it because colour
+ * alone is not a label: roughly one man in twelve cannot read it, print
+ * colour drifts between batches, and a photocopy has none of it at all.
+ */
+function CardCentreRing({ centre, size, px, radius, children }) {
+  const c = centre || {};
+  const tint = c.color || "#76B043";
+  const band = Math.max(2, px(14));           // scales with the card
+  const chipH = Math.max(7, px(38));
+  return (
+    <div style={{ position: "relative", width: px(size), height: px(size), flex: "none" }}>
+      <div style={{ position: "absolute", inset: 0, borderRadius: radius, background: tint,
+                    boxShadow: `0 ${px(14)}px ${px(34)}px rgba(27,43,107,.16)` }}/>
+      <div style={{ position: "absolute", inset: band, borderRadius: radius, overflow: "hidden",
+                    background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)" }}>
+        {children}
+      </div>
+      {/* On the ring at 45°, not hanging below it: underneath is where the
+          name divider and the child's first name live, and a chip there
+          collided with both. Bottom-right also matches where the volunteer
+          card puts its code, so the two cards are read the same way. */}
+      {c.code ? (
+        <div style={{ position: "absolute", left: "85.4%", top: "85.4%", transform: "translate(-50%, -50%)",
+                      height: chipH, minWidth: chipH * 2, padding: `0 ${px(13)}px`, borderRadius: chipH,
+                      background: tint, border: `${Math.max(1, px(5))}px solid #fff`,
+                      display: "grid", placeItems: "center", boxSizing: "border-box",
+                      boxShadow: `0 ${px(4)}px ${px(10)}px rgba(0,0,0,.18)` }}>
+          <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: chipH * 0.6,
+                         letterSpacing: px(1), color: "#fff", lineHeight: 1, whiteSpace: "nowrap",
+                         textShadow: "0 1px 2px rgba(0,0,0,.4)" }}>{c.code}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
   const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
@@ -4218,9 +4451,9 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
     <div className="idcard" style={{ width: px(590), height: px(H), background: "#fff", position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none", display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box", padding: px(34) + "px " + px(24) + "px " + px(44) + "px" }}>
       <img src={lockup} alt="Programme lockup" style={{ width: px(290), flex: "none" }}/>
       <div style={{ flex: "1 1 0", minHeight: px(6) }}/>
-      <div style={{ width: px(photoD), height: px(photoD), borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 55%,#8fbb3f 90%)", boxShadow: `0 ${px(14)}px ${px(34)}px rgba(27,43,107,.16)`, flex: "none" }}>
+      <CardCentreRing centre={centre} size={photoD} px={px} radius="50%">
         {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 900)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
-      </div>
+      </CardCentreRing>
       <div style={{ width: px(30), height: px(6), borderRadius: px(3), background: "#8FA3C8", margin: px(15) + "px 0 " + px(9) + "px", flex: "none" }}/>
       <div style={{ textAlign: "center", fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
       <div style={{ textAlign: "center", fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), padding:`0 ${px(16)}px`, whiteSpace: "nowrap" }}>{card.surname || " "}</div>
@@ -4238,7 +4471,12 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
       <div style={{ border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff", marginTop: px(13), flex: "none" }}>
         <CardQR token={card.token} size={px(104)}/>
       </div>
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: centre.color || "#76B043" }}/>
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: centre.color || "#76B043",
+                    display: "grid", placeItems: "center" }}>
+        {centre.name ? <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(15),
+          letterSpacing: px(2.2), color: "#fff", textTransform: "uppercase", lineHeight: 1,
+          textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>{centre.name}</span> : null}
+      </div>
     </div>
   );
 }
@@ -4267,8 +4505,32 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
       </div>
       {/* Content column inside the panel — reflows to any card height. */}
       <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box", padding: px(94) + "px " + px(40) + "px " + px(28) + "px" }}>
-        <div style={{ width: px(hsW), height: px(hsH), borderRadius: px(22), overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)", boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)`, flex: "none" }}>
-          {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
+        {/* The headshot in the CENTRE's colour, not the tier's. The card is
+            already tier-coloured all over; repeating that around the photo
+            would say the same thing twice and the thing a coordinator
+            actually needs — which site this person belongs to — still would
+            not be on the card anywhere. */}
+        <div style={{ position: "relative", width: px(hsW), height: px(hsH), flex: "none" }}>
+          {card.centre ? (
+            <>
+              <div style={{ position: "absolute", inset: 0, borderRadius: px(22), background: card.centre.color || "#76B043",
+                            boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)` }}/>
+              <div style={{ position: "absolute", inset: px(11), borderRadius: px(14), overflow: "hidden",
+                            background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)" }}>
+                {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
+              </div>
+              <div style={{ position: "absolute", right: px(-6), top: px(-6), height: px(38), minWidth: px(72), padding: `0 ${px(12)}px`,
+                            borderRadius: px(38), background: card.centre.color || "#76B043", border: `${Math.max(1, px(4))}px solid #fff`,
+                            display: "grid", placeItems: "center", boxSizing: "border-box" }}>
+                <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(21), letterSpacing: px(1),
+                               color: "#fff", lineHeight: 1, whiteSpace: "nowrap", textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>{card.centre.code}</span>
+              </div>
+            </>
+          ) : (
+            <div style={{ position: "absolute", inset: 0, borderRadius: px(22), overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)", boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)` }}>
+              {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
+            </div>
+          )}
         </div>
         <div style={{ flex: "1 1 0", minHeight: px(6) }}/>
         <div style={{ textAlign: "center", fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
@@ -4283,6 +4545,10 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
           <span style={{ margin: `0 ${px(8)}px`, color: "#B9BFCB" }}>|</span>
           <span style={{ fontWeight: 500 }}>{card.role || tier.name || ""}</span>
         </div>
+        {/* Spelled out under the role. The ring and the code are for across a
+            room; this is for somebody holding the card. */}
+        {card.centre && <div style={{ textAlign: "center", fontSize: px(19), letterSpacing: px(1.6), marginTop: px(4),
+          color: card.centre.color || "#76B043", fontWeight: 800, textTransform: "uppercase", flex: "none" }}>{card.centre.name}</div>}
       </div>
     </div>
   );
@@ -5855,4 +6121,4 @@ function LegalPage({ setPage }) {
   );
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, InstructorRoster, CertificatePage, LegalPage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio, MentorPortal, SelfRegisterPage, ReviewDeskPage });
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, InstructorRoster, CertificatePage, LegalPage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio, MentorPortal, SelfRegisterPage, ReviewDeskPage, CardFront, VolunteerCardFront, CardBack });

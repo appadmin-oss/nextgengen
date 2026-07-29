@@ -90,11 +90,21 @@ function admin_volunteer_cards_data(array $p): array {
         $names = preg_split('/\s+/', trim((string)$v['fullName'])) ?: [''];
         $first = array_shift($names);
         $surname = $names ? (string)array_pop($names) : '';
+        /* The centre, which this card never carried. A volunteer card was
+         * coloured by TIER — what they do — and said nothing about WHERE, so
+         * at a centre with forty volunteers on site nobody could tell at a
+         * glance who belonged to their own. The tier colour stays; the centre
+         * arrives as a ring and a code on the face. */
+        $c = trim((string)($v['centre'] ?? ''));
+        $cRow = $c !== '' ? db_row("SELECT name, code, color FROM centres WHERE name = ? OR code = ? LIMIT 1", [$c, $c]) : null;
         $cards[] = [
             'volunteerId' => $v['volunteerId'],
             'firstName' => $first, 'surname' => $surname,
             'role' => (string)$v['role'],
             'tier' => ['name' => $tier['name'], 'code' => $tier['code'], 'color' => $tier['color']],
+            'centre' => $cRow
+                ? ['name' => (string)$cRow['name'], 'code' => (string)$cRow['code'], 'color' => (string)($cRow['color'] ?: '#76B043')]
+                : ($c !== '' ? ['name' => $c, 'code' => strtoupper(substr($c, 0, 3)), 'color' => '#76B043'] : null),
             'displayId' => (string)$v['volunteerId'],
             'token' => (string)$v['token'],
             'photoUrl' => (string)$v['photoUrl'],
