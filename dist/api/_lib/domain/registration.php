@@ -173,14 +173,24 @@ function form_default_fields(): array {
         ['key' => 'age', 'label' => 'Age', 'type' => 'number', 'required' => true, 'min' => 5, 'max' => 19, 'locked' => true],
         // Faculty is asked FIRST and narrows Course. Both are locked keys: the
         // catalogue, the /v-status breakdowns and instructor matching read them.
-        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => academy_faculties(), 'help' => 'Starts from the academy catalogue in Admin → Settings. Picking one narrows the Course list below to that faculty\'s courses; edit these options to override the list for this form.'],
-        ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'optionsFrom' => 'faculty', 'options' => academy_courses(), 'help' => 'Courses are filtered by the chosen faculty — that mapping always comes live from Admin → Settings. This option list starts from the catalogue; type your own here to override it for this form.'],
+        /* `help` is read by the FAMILY filling the form in. `adminHelp` is the
+         * note for whoever is editing the form in the builder, and it never
+         * leaves the console — these three used to carry their builder
+         * guidance in `help`, so a parent on their phone was told to go and
+         * edit the option list in Admin → Settings. */
+        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => academy_faculties(),
+         'help' => 'Pick the faculty first — the courses below change to match.',
+         'adminHelp' => 'Starts from the academy catalogue in Admin → Settings. Picking one narrows the Course list below to that faculty\'s courses; edit these options to override the list for this form.'],
+        ['key' => 'course', 'label' => 'Course', 'type' => 'choice', 'required' => true, 'locked' => true, 'optionsFrom' => 'faculty', 'options' => academy_courses(),
+         'adminHelp' => 'Courses are filtered by the chosen faculty — that mapping always comes live from Admin → Settings. This option list starts from the catalogue; type your own here to override it for this form.'],
         // Locked. This is not a question, it is the record's home: it sets the
         // printed ID prefix and card colour, every per-centre board counts off
         // it, and the parent group link is looked up by it. It was NOT locked,
         // so a republish dropped it — and every registration afterwards stored
         // an empty centre with nothing anywhere saying so.
-        ['key' => 'centre', 'label' => 'Centre', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => ['Main'], 'help' => 'Options come from Admin → Centres; drives the ID prefix and card colour.'],
+        ['key' => 'centre', 'label' => 'Centre', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => ['Main'],
+         'help' => 'The site your child will attend.',
+         'adminHelp' => 'Options come from Admin → Centres; drives the ID prefix and card colour.'],
         // Locked: the consent record, the verification message and every
         // safeguarding follow-up name this person. A republish that dropped
         // the question left guardianName empty on every child registered
@@ -211,11 +221,15 @@ function volunteer_default_fields(): array {
         ['key' => 'role', 'label' => 'Volunteer role', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => ['Admin / Ops', 'Mentor', 'Instructor']],
         ['key' => 'name', 'label' => 'Full name', 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'email', 'label' => 'Email', 'type' => 'email', 'required' => true, 'locked' => true],
-        ['key' => 'phone', 'label' => 'Phone', 'type' => 'phone', 'required' => false, 'locked' => true, 'help' => 'Required for instructors — enforced at submit.'],
+        ['key' => 'phone', 'label' => 'Phone', 'type' => 'phone', 'required' => false, 'locked' => true,
+         'help' => 'Required if you are applying to be an instructor.',
+         'adminHelp' => 'Enforced at submit for instructors, and again at approval.'],
         // Faculty is the teaching group mentors & instructors belong to. Locked
         // key (the /v-status board + validation read it), but its OPTIONS are
         // admin-editable here — the single source of truth for the catalogue.
-        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => false, 'locked' => true, 'options' => academy_faculties(), 'help' => 'The academy / faculty catalogue — edit these options freely (add/rename/remove). Required for mentors & instructors; drives the /v-status faculty breakdown.'],
+        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => false, 'locked' => true, 'options' => academy_faculties(),
+         'help' => 'Which teaching group you would join. Required for mentors and instructors.',
+         'adminHelp' => 'The academy / faculty catalogue — edit these options freely (add/rename/remove). Drives the /v-status faculty breakdown.'],
         ['key' => 'why', 'label' => 'Why you', 'type' => 'longtext', 'required' => false, 'locked' => true],
     ];
 }
@@ -350,7 +364,13 @@ function form_restore_locked(array $stored, string $formId = 'summer-reg'): arra
      * Only structural properties are restored. A locked field's label, options
      * and help text are the admin's to edit; which other field it cascades
      * from is not — the builder does not even expose it, so a missing value is
-     * always damage rather than a decision. */
+     * always damage rather than a decision.
+     *
+     * `adminHelp` is on the same footing. It is the note explaining what a
+     * locked field is wired to, written in code and shown only in the builder,
+     * so it belongs to the code and not to whoever last hit Publish — and it
+     * is re-asserted rather than filled in only when absent, because an edit
+     * to that explanation has to reach forms already published. */
     $structural = ['optionsFrom'];
     $defByKey = [];
     foreach ($defaults as $def) if (!empty($def['locked'])) $defByKey[(string)$def['key']] = $def;
@@ -364,6 +384,9 @@ function form_restore_locked(array $stored, string $formId = 'summer-reg'): arra
         foreach ($structural as $prop) {
             if (!empty($def[$prop]) && empty($f[$prop])) $f[$prop] = $def[$prop];
         }
+        // Overwritten, not filled in — see above.
+        if (isset($def['adminHelp'])) $f['adminHelp'] = $def['adminHelp'];
+        else unset($f['adminHelp']);
     }
     unset($f);
 

@@ -4355,6 +4355,13 @@ section p[style*="var(--ink-500)"] {
 .fb-option { display: flex; gap: 6px; align-items: center; }
 .fb-option .admin-input { flex: 1; }
 .fb-help { font-size: 13px; }
+/* Builder-only note on a locked field. Indented and quieter than the help
+   input above it so it reads as a fact about the field, not as more copy the
+   admin is expected to edit. */
+.fb-adminhelp {
+  margin: 6px 0 0; padding-left: 10px; font-size: 12px; line-height: 1.5;
+  border-left: 2px solid var(--line, rgba(12,20,50,.14));
+}
 .fb-add { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px dashed rgba(12,20,50,0.14); }
 :root[data-theme="dark"] .fb-field, :root[data-theme="dark"] .fb-move { background: var(--surface-2, #1a1a24); }
 

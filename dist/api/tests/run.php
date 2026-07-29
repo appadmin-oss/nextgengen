@@ -3615,6 +3615,61 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
 })();
 
 
+/* ── Nothing a parent reads may be written for an administrator ─────────────
+ * Caught by looking at the page that actually gets sent to families. Three
+ * locked fields carried their builder guidance in `help`, and `help` renders
+ * on the public form — so a parent filling in a registration on their phone
+ * was told, under the Faculty box, to "edit these options to override the
+ * list for this form", and under Centre that it "drives the ID prefix and
+ * card colour". Instructions to somebody who is not there, about a screen
+ * they cannot open.
+ *
+ * `help` is now the family's; `adminHelp` is the builder's and never leaves
+ * the console.
+ */
+(function () {
+    // The tells: console navigation, and the vocabulary of the form builder.
+    $adminSpeak = '/Admin\s*(→|->)|\boverride\b|\bthis form\b|\/v-status|catalogue|enforced at submit|card colour|ID prefix/i';
+    foreach (['summer-reg', 'volunteer', 'contact'] as $formId) {
+        $leaks = [];
+        foreach (form_live($formId)['fields'] as $f) {
+            $h = (string)($f['help'] ?? '');
+            if ($h !== '' && preg_match($adminSpeak, $h)) $leaks[] = (string)($f['key'] ?? '?');
+        }
+        chk('no admin-facing help reaches the public ' . $formId . ' form'
+            . ($leaks ? ' (' . implode(', ', $leaks) . ')' : ''), $leaks === []);
+    }
+    /* The note itself must still exist, or the fix is just deletion — whoever
+     * edits the form still needs to know Course is catalogue-driven. */
+    $byKey = [];
+    foreach (form_live('summer-reg')['fields'] as $f) $byKey[(string)($f['key'] ?? '')] = $f;
+    chk('…and the guidance survives, on the builder side of the line',
+        preg_match('/Admin/', (string)($byKey['course']['adminHelp'] ?? '')) === 1
+        && preg_match('/Admin/', (string)($byKey['centre']['adminHelp'] ?? '')) === 1);
+    /* Faculty keeps a `help`, but one written for the person filling it in.
+     * Stripping the guidance and leaving the box bare would also pass the
+     * test above, and would be a worse form. */
+    chk('…with the family told the one thing that helps them: pick faculty first',
+        preg_match('/faculty first/i', (string)($byKey['faculty']['help'] ?? '')) === 1);
+
+    /* A republish must not be able to reintroduce it. The builder never
+     * offers adminHelp as an editable field, so a payload carrying admin
+     * prose in `help` is the shape a hand-rolled or older publish sends. */
+    $live = form_live('summer-reg');
+    $tampered = array_map(function ($f) {
+        if (($f['key'] ?? '') === 'centre') $f['adminHelp'] = 'STALE NOTE FROM AN OLD PUBLISH';
+        return $f;
+    }, $live['fields']);
+    db_update('form_defs', ['fields' => json_encode($tampered, JSON_UNESCAPED_SLASHES)],
+              ['formId' => 'summer-reg', 'status' => 'live']);
+    $after = [];
+    foreach (form_live('summer-reg')['fields'] as $f) $after[(string)($f['key'] ?? '')] = $f;
+    chk('a stale builder note from an old publish is overwritten, not kept',
+        strpos((string)($after['centre']['adminHelp'] ?? ''), 'STALE') === false
+        && strpos((string)($after['centre']['adminHelp'] ?? ''), 'Admin') !== false);
+})();
+
+
 /* ── School type: a counted fact, so a dropdown ─────────────────────────────
  * The form asked for a School as free text and nothing at all about whether
  * it was a government or a private one — the single split every funder report

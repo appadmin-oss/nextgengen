@@ -1575,7 +1575,13 @@ function SummerFormBuilder({ formId = "summer-reg" }) {
                     <label className="fb-toggle">Max <input className="admin-input" style={{ width: 70 }} type="number" value={f.max ?? ""} onChange={e => update(f._id, { max: e.target.value })}/></label>
                   </div>
                 )}
-                <input className="admin-input fb-help" value={f.help || ""} onChange={e => update(f._id, { help: e.target.value })} placeholder="Helper text (optional)"/>
+                <input className="admin-input fb-help" value={f.help || ""} onChange={e => update(f._id, { help: e.target.value })} placeholder="Helper text — shown to whoever fills the form in"/>
+                {/* Not editable, and never leaves this screen. What a locked
+                    field is wired to is a fact about the system, not copy for
+                    a parent — these notes used to sit in `help`, which put
+                    "edit these options in Admin → Settings" on the public
+                    registration form for families to read. */}
+                {f.adminHelp && <div className="admin-hint fb-adminhelp">🔒 {f.adminHelp}</div>}
                 {f.type !== "section" && <FieldLogic field={f} above={fields.slice(0, i)} onChange={(v) => update(f._id, v)}/>}
               </div>
             </div>
