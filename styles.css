@@ -1150,6 +1150,37 @@ summary:focus-visible,
   clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
 }
 
+/* ── The summer roster grid ──────────────────────────────────────────────
+ *
+ * A real class, not an inline `repeat(4, 1fr)` matched by an attribute
+ * selector further down this file. That arrangement worked only while the
+ * string stayed spelled exactly that way, and it could not be fixed without
+ * breaking the mobile collapse.
+ *
+ * minmax(0, 1fr) is the whole bug. A bare `1fr` means minmax(AUTO, 1fr), and
+ * auto resolves to min-content — which for an unbreakable string like
+ * "@egbusor-chiemerie-benedict-d062" is the full width of the handle. One
+ * long handle therefore widened its own column and squeezed the others, so
+ * four cards that should have been identical came out at four different
+ * widths, with four different square photos, and the whole row read as
+ * broken. The `text-overflow: ellipsis` on the name could never fire either:
+ * the column grew instead of the text truncating.
+ */
+.roster-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+@media (max-width: 1100px) { .roster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 820px)  { .roster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; } }
+@media (max-width: 460px)  { .roster-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Every part of a card sits at the same height as its neighbours', so the
+   row reads as a row. The footer is pushed down rather than following the
+   content, which keeps the centre and attendance line level even when one
+   card's faculty wraps and another's does not. */
+.member-card > .member-card-foot { margin-top: auto; }
+
 /* Member-card style */
 .member-card {
   background: white;

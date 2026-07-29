@@ -71,6 +71,13 @@ const STATUS = {
       // No consent at all: handle only, exactly as before.
       { handle: 'stonelion', name: null, photo: null,
         centre: 'Ijaiye', faculty: 'Tech', color: '#2f9e44', points: 100, weekPoints: 40, stars: 1, attendance: 70, streak: 2, move: -1 },
+      /* A generated handle at full length. This is what broke the roster: a
+         bare `1fr` column is minmax(AUTO, 1fr), auto is min-content, and
+         min-content for an unbreakable string is the whole string — so this
+         one row widened its own column and squeezed every other card in the
+         grid to a different size. */
+      { handle: 'egbusor-chiemerie-benedict-d062', name: null, photo: null,
+        centre: 'Egbe-Idimu', faculty: 'Arts', color: '#b07cff', points: 60, weekPoints: 10, stars: 0, attendance: 0, streak: 0, move: 0 },
     ],
     faculties: ['Tech', 'Arts'],
     directory: [], deltas: {}, page: { published: true },
@@ -209,6 +216,17 @@ const LEADERBOARD = {
       centres: function () { return Promise.resolve({ centres: [] }); },
       // A secondary endpoint failing must not take the roster down with it.
       hierarchy: function () { return window.__fail ? offline() : Promise.resolve({ tiers: [] }); },
+      /* Gate links, as the panel loads them — one of each door, because
+         telling them apart is the whole job of the screen. */
+      gates: function () { return Promise.resolve({ gates: [
+        { gateId: 'GL-DESK', kind: 'desk', path: '/gate?g=', name: 'Egbeda desk', hasPassword: true,
+          status: 'active', usedCount: 12, createdAt: '2026-07-01T09:00:00Z' },
+        { gateId: 'GL-SELF', kind: 'self', path: '/apply?g=', name: 'Alimosho public sign-up', hasPassword: false,
+          status: 'active', usedCount: 240, createdAt: '2026-07-02T09:00:00Z' },
+        { gateId: 'GL-REV', kind: 'review', path: '/review?g=', name: 'Alimosho review desk', hasPassword: true,
+          status: 'active', usedCount: 31, createdAt: '2026-07-03T09:00:00Z' },
+      ] }); },
+      gateCreate: function (name, exp, pw, centre, opts) { window.__gateCreates.push({ name: name, pw: pw, opts: opts }); return Promise.resolve({ ok: true, gateId: 'GL-NEW', kind: (opts || {}).kind, hasPassword: !!pw, password: '', url: 'https://x.org/apply?g=GL-NEW' }); },
     }),
     /* The volunteer roster, as the admin console loads it. Three centres,
        and two records filed before centres were captured — the shape the
@@ -228,6 +246,7 @@ const LEADERBOARD = {
     leaderboard: stub('leaderboard', ${JSON.stringify(LEADERBOARD)}),
     volunteerStatus: stub('volunteerStatus', ${JSON.stringify(STATUS)}),
   }) });
+  window.__gateCreates = [];
   window.__errors = [];
   window.addEventListener('error', function (e) { window.__errors.push(String(e.message)); });
 </script>
@@ -243,6 +262,7 @@ const LEADERBOARD = {
             : b === 'checkin' ? 'GateCheckin'
             : b === 'roster' ? 'SummerRoster'
             : b === 'vols' ? 'AdminVolunteers'
+            : b === 'gates' ? 'SummerGates'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
   if (b === 'photo') {
@@ -809,7 +829,7 @@ const LEADERBOARD = {
     ok('/summer mounts with no script error', spErrs.length === 0);
     if (spErrs.length) console.error('       ', spErrs.slice(0, 3).join(' | '));
     ok('/summer shows the real cohort, not the demo roster',
-       summerStars.length === 3 && !/Future Music Producer|Tech Explorer/.test(summerTxt));
+       summerStars.length === 4 && !/Future Music Producer|Tech Explorer/.test(summerTxt));
     ok('…naming the consented student', /Adaeze Okonkwo/.test(summerTxt));
     ok('…and the unconsented one only by handle', /@?stonelion/.test(summerTxt) && !/Okonkwo.*stonelion/.test(''));
     ok('…with stars on the card', /★\s*5/.test(summerTxt) || summerStars.some(c => /star/i.test(c)));
@@ -839,6 +859,15 @@ const LEADERBOARD = {
     await cp.goto(BASE + '/tests/_boards_fixture.html?board=club&mode=ok', { waitUntil: 'networkidle' });
     await cp.waitForTimeout(700);
     const clubTxt = await cp.evaluate(() => document.body.innerText);
+    /* ── The roster grid ─────────────────────────────────────────────────
+     * Reported as "too irregular, terrible", and it was: four cards at four
+     * different widths with four differently-sized photos. One row's handle
+     * is thirty-two characters, and a bare `1fr` column is minmax(AUTO, 1fr)
+     * — auto resolving to min-content, which for an unbreakable string is
+     * the whole string. That one card widened its own column and squeezed
+     * the rest, and the ellipsis on the name could never fire because the
+     * column grew instead of the text truncating.
+     */
     await cp.close();
 
     ok('the Club page mounts with no script error', cpErrs.length === 0);
@@ -849,6 +878,72 @@ const LEADERBOARD = {
        !/Earned by \d+%/i.test(clubTxt) && !/126 \/ 164/.test(clubTxt));
     ok('…the leaderboard names them', /Adaeze O\./.test(clubTxt) && /Tunde B\./.test(clubTxt));
     ok('…and shows stars beside XP on the featured member', /★ 12/.test(clubTxt) && /2,980 XP/.test(clubTxt));
+
+    /* Measured on /summer, which is where the roster grid lives. */
+    /* css=1 matters here and nowhere else in this block: the claim is about
+       LAYOUT, and geometry measured on an unstyled page is four block-level
+       divs at container width — which would pass "all the same width" without
+       the grid existing at all. */
+    const rg = await browser.newPage();
+    await rg.goto(BASE + '/tests/_boards_fixture.html?board=summer&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await rg.waitForTimeout(700);
+    const cardGeom = await rg.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll('.roster-grid > .member-card'));
+      const tiles = cards.map(c => c.querySelector('div[style*="aspect-ratio"], div[style*="aspectRatio"]') || c.firstElementChild);
+      const r = (el) => el.getBoundingClientRect();
+      return {
+        n: cards.length,
+        widths: cards.map(c => Math.round(r(c).width)),
+        tileH: tiles.map(t => Math.round(r(t).height)),
+        // Where the footer line sits, measured from the top of the grid.
+        feet: cards.map(c => {
+          const f = c.querySelector('.member-card-foot');
+          return f ? Math.round(r(f).top - r(c.parentElement).top) : -1;
+        }),
+        longest: cards.map(c => c.textContent).find(t => /egbusor-chiemerie-benedict/.test(t)) ? 1 : 0,
+      };
+    });
+    await rg.close();
+
+    ok('the roster draws every student, long handle included (' + cardGeom.n + ')',
+      cardGeom.n === 4 && cardGeom.longest === 1);
+    /* Identical widths is the whole fix. One card wider than another means a
+       column sized itself to its content, and everything downstream — photo
+       size, name truncation, where the footer sits — follows from it. */
+    ok('…all at the same width (' + cardGeom.widths.join(', ') + ')',
+      new Set(cardGeom.widths).size === 1);
+    ok('…so every photo is the same size too (' + cardGeom.tileH.join(', ') + ')',
+      new Set(cardGeom.tileH).size === 1);
+    /* And the footers line up across the row. Today that follows from the
+       cards being the same height with identical one-line content; the
+       margin-top:auto on the foot is what keeps it true the first time one
+       card's content is taller than another's. */
+    ok('…and the centre/attendance line sits level across the row',
+      new Set(cardGeom.feet).size === 1 && cardGeom.feet[0] > 0);
+    /* The long handle is truncated rather than allowed to set the width. */
+    ok('…with an over-long handle cut off, not left to stretch the card',
+      await (async () => {
+        const c2 = await browser.newPage();
+        await c2.goto(BASE + '/tests/_boards_fixture.html?board=summer&mode=ok&css=1', { waitUntil: 'networkidle' });
+        await c2.waitForTimeout(600);
+        const clipped = await c2.evaluate(() => {
+          const el = Array.from(document.querySelectorAll('.roster-grid .member-card div[title]'))
+            .find(d => /egbusor-chiemerie-benedict/.test(d.getAttribute('title') || ''));
+          if (!el) return false;
+          const cs = getComputedStyle(el);
+          const card = el.closest('.member-card').getBoundingClientRect();
+          /* Three separate things, because two of them pass on their own while
+             the text still spills: there is more text than fits, it is CUT
+             rather than allowed to run on, and what is drawn stays inside the
+             card. `overflow: hidden` alone with no ellipsis truncates
+             mid-letter; `nowrap` alone just overflows visibly. */
+          return el.scrollWidth > el.clientWidth + 1
+            && cs.textOverflow === 'ellipsis' && cs.overflow !== 'visible'
+            && el.getBoundingClientRect().right <= card.right + 1;
+        });
+        await c2.close();
+        return clipped;
+      })());
 
     // An empty programme must render an honest empty state, not crash — the
     // featured member used to be top[0] dereferenced unconditionally.
@@ -1181,6 +1276,70 @@ const LEADERBOARD = {
     ok('…with an empty result that blames the filter, not the data',
       /No volunteer matches that filter/.test(await vp.evaluate(() => document.body.innerText)));
     await vp.close();
+
+    /* ── The three doors ─────────────────────────────────────────────────────
+     * Reported as "where's the form for the online registration?" — and the
+     * honest answer was nowhere. The backend has supported a public sign-up
+     * link and a separately-passworded review desk since self-registration
+     * shipped; this panel only ever created the staff desk, and copied every
+     * link as /gate regardless of what it actually was.
+     */
+    const gk = await browser.newPage();
+    const gkErrs = [];
+    gk.on('pageerror', e => gkErrs.push(String(e.message)));
+    await gk.goto(BASE + '/tests/_boards_fixture.html?board=gates&mode=ok', { waitUntil: 'networkidle' });
+    await gk.waitForTimeout(700);
+    ok('the gate-links panel mounts with no script error', gkErrs.length === 0);
+    if (gkErrs.length) console.error('       ', gkErrs.slice(0, 2).join(' | '));
+
+    const gkText = () => gk.evaluate(() => document.body.innerText);
+    ok('you can make a public sign-up link, not just a staff desk',
+      (await gk.getByRole('radio', { name: 'Public sign-up' }).count()) === 1
+      && (await gk.getByRole('radio', { name: 'Review desk' }).count()) === 1);
+    /* Three links that look identical in a table is how a public URL gets
+       sent to a parents' group believing it is the staff desk. */
+    /* Read off the TABLE, not the page — the three words are also the labels
+       on the radio buttons above it, so a page-wide regex passes with the
+       column deleted. */
+    const gkRows = await gk.evaluate(() => Array.from(document.querySelectorAll('.admin-table tbody tr')).map(tr => ({
+      text: tr.innerText.replace(/\s+/g, ' '),
+      kind: (tr.querySelector('td:nth-child(2) .chip') || {}).textContent || '',
+      href: (tr.querySelector('a[href]') || {}).getAttribute ? tr.querySelector('a[href]').getAttribute('href') : '',
+    })));
+    ok('…and the table says which door each existing link is',
+      gkRows.length === 3 && gkRows.map(r => r.kind).join('|') === 'Staff desk|Public sign-up|Review desk');
+    /* The href is what Copy link and Open both build. Asserting the printed
+       path only would pass while the button still handed out /gate for
+       everything — which is exactly what it used to do. */
+    ok('…and every link points at its own door, not all at the staff desk',
+      /\/apply\?g=GL-SELF$/.test(gkRows[1].href) && /\/review\?g=GL-REV$/.test(gkRows[2].href)
+      && /\/gate\?g=GL-DESK$/.test(gkRows[0].href));
+
+    /* A public link with a password is a staff desk somebody shared. The
+       server drops the password; the panel must not offer the control and
+       imply otherwise. */
+    await gk.getByRole('radio', { name: 'Public sign-up' }).click();
+    await gk.waitForTimeout(250);
+    ok('a public link is not offered a password at all',
+      (await gk.locator('input[placeholder="Desk password"]').count()) === 0
+      && !/Generate password/.test(await gkText()));
+    ok('…and says plainly what it is for',
+      /link you send to families/i.test(await gkText()));
+    await gk.getByRole('button', { name: /Create public sign-up/ }).click();
+    await gk.waitForTimeout(400);
+    ok('…and creating one asks the server for a self link with no password',
+      await gk.evaluate(() => {
+        const c = (window.__gateCreates || [])[0];
+        return !!c && c.opts.kind === 'self' && !c.pw && c.opts.generate === false;
+      }));
+
+    /* The opposite rule: a review desk without a password lets anybody wave
+       strangers into the programme. */
+    await gk.getByRole('radio', { name: 'Review desk' }).click();
+    await gk.waitForTimeout(250);
+    ok('a review desk gets its own password back',
+      /Generate password/.test(await gkText()) && /own password/i.test(await gkText()));
+    await gk.close();
 
     /* ── Programme & policy: the screen that decides which days count ─────
        Mounted against a term where TODAY is cancelled, because that is the

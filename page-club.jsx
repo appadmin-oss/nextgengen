@@ -124,7 +124,7 @@ function SummerPage({ setPage }) {
               </div>
             </div>
           )}
-          <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:18}}>
+          <div className="roster-grid">
             {filtered.map((m, i) => {
               // Named and pictured only where the backend said so; everyone
               // else keeps the handle and the initial tile they already have
@@ -144,17 +144,22 @@ function SummerPage({ setPage }) {
                     ★ {m.stars || 0}
                   </div>
                 </div>
-                <div>
-                  <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:20, letterSpacing:"-0.02em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{shown}</div>
-                  <div style={{fontSize:12, color:"var(--coral)", fontWeight:600, marginTop:2}}>{m.faculty || "Summer student"}</div>
+                <div style={{minWidth:0}}>
+                  {/* A generated handle can be forty characters long. It gets
+                      ONE line and an ellipsis, with the whole thing on hover —
+                      a name is an identifier here, not the content, and
+                      letting it set the card's width is what made four
+                      identical cards come out four different sizes. */}
+                  <div title={shown} style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:20, letterSpacing:"-0.02em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{shown}</div>
+                  <div style={{fontSize:12, color:"var(--coral)", fontWeight:600, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{m.faculty || "Summer student"}</div>
                 </div>
                 {/* Stars, relative to the busiest star-earner in the cohort —
                     a bar against a fixed target would read as failure for
                     everyone in a programme that has only just started. */}
                 <Progress value={Math.min(100, ((m.stars || 0) / maxStars) * 100)} label={(m.stars || 0) + " star" + ((m.stars || 0) === 1 ? "" : "s") + " earned"} variant="gold" />
-                <div style={{display:"flex", justifyContent:"space-between", fontSize:11, color:"var(--ink-500)", fontFamily:"var(--font-mono)"}}>
-                  <span>{(m.centre || "").toUpperCase()}</span>
-                  <span>{m.attendance || 0}% ATTENDANCE</span>
+                <div className="member-card-foot" style={{display:"flex", justifyContent:"space-between", gap:8, fontSize:11, color:"var(--ink-500)", fontFamily:"var(--font-mono)"}}>
+                  <span style={{overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{(m.centre || "NO CENTRE").toUpperCase()}</span>
+                  <span style={{flex:"none"}}>{m.attendance || 0}% ATTENDANCE</span>
                 </div>
               </div>
             );})}

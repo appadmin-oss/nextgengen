@@ -1625,9 +1625,24 @@ const ROTATE_CHOICES = [[0, "Never"], [7, "Every week"], [30, "Every 30 days"], 
 const VALID_CHOICES = [[0, "No expiry"], [1, "Today only"], [7, "1 week"], [30, "30 days"], [90, "90 days"]];
 const PWEXP_CHOICES = [[0, "Never"], [7, "After 7 days"], [30, "After 30 days"], [90, "After 90 days"]];
 
+/* Three doors, not one.
+ *
+ * The backend has supported all three since self-registration shipped; this
+ * panel only ever created the first, which is why nobody could find the
+ * online registration form — there was no way to make one. */
+const GATE_KINDS = {
+  desk: { label: "Staff desk", chip: "chip-navy", fallback: "Registration desk",
+          blurb: "Staff register a child who is standing in front of them. A desk password lets field staff run it without an admin login." },
+  self: { label: "Public sign-up", chip: "chip-lime", fallback: "Public registration link",
+          blurb: "The link you send to families. No password — anyone with the link can fill it in, and nothing they submit becomes a registration until somebody checks it." },
+  review: { label: "Review desk", chip: "chip-gold", fallback: "Review desk",
+            blurb: "Where public submissions get checked and approved. Its own password, deliberately different from the check-in one — approving is what emails a family." },
+};
+
 function SummerGates() {
   const [gates, setGates] = React.useState(null);
   const [err, setErr] = React.useState("");
+  const [kind, setKind] = React.useState("desk");
   const [name, setName] = React.useState("");
   const [pw, setPw] = React.useState("");
   const [autoPw, setAutoPw] = React.useState(true);
@@ -1644,14 +1659,22 @@ function SummerGates() {
   const create = async (e) => {
     e && e.preventDefault();
     if (!autoPw && pw && pw.trim().length < 4) { toast.error("Desk password must be at least 4 characters."); return; }
+    /* A public link with a password is a staff desk somebody shared, and a
+       review desk without one lets anybody wave strangers into the programme.
+       The server enforces both; saying so here saves a round trip and a
+       confusing error. */
+    if (kind === "review" && !autoPw && pw.trim().length < 4) {
+      toast.error("A review desk needs its own password — generate one or type at least 4 characters."); return;
+    }
     setBusy(true);
     try {
-      const label = name || "Registration desk";
-      const r = await NGGApi.admin.registration.gateCreate(label, "", autoPw ? "" : pw.trim(), "",
-        { generate: autoPw, rotateDays, notifyEmail: notify.trim(), validDays, expiryDays });
+      const label = name || GATE_KINDS[kind].fallback;
+      const wantsPw = kind !== "self";
+      const r = await NGGApi.admin.registration.gateCreate(label, "", wantsPw && !autoPw ? pw.trim() : "", "",
+        { kind, generate: wantsPw && autoPw, rotateDays, notifyEmail: notify.trim(), validDays, expiryDays });
       setName(""); setPw(""); setNotify("");
-      if (r.password) setReveal({ gateId: r.gateId, name: label, password: r.password });
-      else toast.success(r.hasPassword ? "Kiosk gate created." : "Gate link created.");
+      if (r.password) setReveal({ gateId: r.gateId, name: label, password: r.password, url: r.url });
+      else toast.success(kind === "self" ? "Public registration link created — copy it from the table." : "Gate link created.");
       load();
     }
     catch (e2) { toast.error(e2.code === "weak_password" ? "Desk password is too short." : e2.code === "bad_email" ? "That notification email isn't valid." : (e2.code || e2.message)); }
@@ -1719,34 +1742,49 @@ function SummerGates() {
     try { const r = await NGGApi.admin.registration.gateSetpass(g.gateId, next.trim()); toast.success(r.hasPassword ? "Desk password set." : "Desk password removed."); load(); }
     catch (e) { toast.error(e.code === "weak_password" ? "Too short." : (e.code || e.message)); }
   };
-  const linkFor = (g) => location.origin + "/gate?g=" + g.gateId;
+  /* The server says which door this is; the panel used to assume /gate for
+     all of them, so copying a public sign-up link handed somebody the staff
+     desk instead. */
+  const linkFor = (g) => location.origin + (g.path || "/gate?g=") + g.gateId;
   return (
     <div>
-      <p className="admin-hint">A gate link opens the public registration desk. Give it a <b>desk password</b> and field staff can run it without an admin login; otherwise a signed-in staff member must be present. Generated passwords are shown once and stored only as a hash. A gate set to rotate emails its new password on the day it rolls {"\u2014"} one with no email is flagged due instead, so a desk is never locked out mid-session. <b>Password expiry</b> is the opposite policy and fails closed: past its date the desk stops opening until someone issues a new password. Set both and expiry is the backstop for rotation silently not running.</p>
+      {/* Which door you are making, first — everything below it depends on
+          the answer, and the panel used to have no way to ask. */}
+      <div className="admin-pick-row" role="radiogroup" aria-label="What kind of link">
+        {Object.keys(GATE_KINDS).map(k => (
+          <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
+            className={"btn btn-sm " + (kind === k ? "btn-primary" : "btn-ghost")}>{GATE_KINDS[k].label}</button>
+        ))}
+      </div>
+      <p className="admin-hint">{GATE_KINDS[kind].blurb}</p>
+      {kind !== "self" && <p className="admin-hint" style={{ marginTop: -4 }}>Generated passwords are shown once and stored only as a hash. A gate set to rotate emails its new password on the day it rolls {"\u2014"} one with no email is flagged due instead, so a desk is never locked out mid-session. <b>Password expiry</b> is the opposite policy and fails closed: past its date the desk stops opening until someone issues a new password. Set both and expiry is the backstop for rotation silently not running.</p>}
       <form onSubmit={create} className="admin-filters" style={{ flexWrap: "wrap" }}>
-        <input className="admin-input" placeholder="Label (e.g. Egbeda desk · Sat)" value={name} onChange={e => setName(e.target.value)} style={{ minWidth: 220 }}/>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+        <input className="admin-input" placeholder={kind === "self" ? "Label (e.g. Alimosho public sign-up)" : "Label (e.g. Egbeda desk \u00b7 Sat)"} value={name} onChange={e => setName(e.target.value)} style={{ minWidth: 220 }}/>
+        {/* A public link takes no password at all. Offering the control and
+            then ignoring it is how somebody ends up believing a link is
+            protected when it is not. */}
+        {kind !== "self" && <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
           <input type="checkbox" checked={autoPw} onChange={e => setAutoPw(e.target.checked)}/> Generate password
-        </label>
-        {!autoPw && <input className="admin-input" type="text" autoComplete="off" placeholder="Desk password" value={pw} onChange={e => setPw(e.target.value)} style={{ minWidth: 170 }}/>}
+        </label>}
+        {kind !== "self" && !autoPw && <input className="admin-input" type="text" autoComplete="off" placeholder={kind === "review" ? "Review desk password" : "Desk password"} value={pw} onChange={e => setPw(e.target.value)} style={{ minWidth: 170 }}/>}
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>Valid for
           <select className="admin-input" value={validDays} onChange={e => setValidDays(Number(e.target.value))} style={{ minWidth: 120 }}>
             {VALID_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>Password dies
+        {kind !== "self" && <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>Password dies
           <select className="admin-input" value={expiryDays} onChange={e => setExpiryDays(Number(e.target.value))} style={{ minWidth: 130 }}>
             {PWEXP_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
-        </label>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>Rotate
+        </label>}
+        {kind !== "self" && <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>Rotate
           <select className="admin-input" value={rotateDays} onChange={e => setRotateDays(Number(e.target.value))} style={{ minWidth: 130 }}>
             {ROTATE_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
-        </label>
-        {rotateDays > 0 && <input className="admin-input" type="email" placeholder="Email for the new password" value={notify} onChange={e => setNotify(e.target.value)} style={{ minWidth: 210 }}/>}
-        {rotateDays > 0 && !notify.trim() && <span style={{ fontSize: 12, color: "#8a6d00" }}>No email → flagged due for you to rotate by hand, never rolled unattended.</span>}
-        <button className="btn btn-primary btn-sm" disabled={busy}>{busy ? "…" : "+ Create gate link"}</button>
+        </label>}
+        {kind !== "self" && rotateDays > 0 && <input className="admin-input" type="email" placeholder="Email for the new password" value={notify} onChange={e => setNotify(e.target.value)} style={{ minWidth: 210 }}/>}
+        {kind !== "self" && rotateDays > 0 && !notify.trim() && <span style={{ fontSize: 12, color: "#8a6d00" }}>No email → flagged due for you to rotate by hand, never rolled unattended.</span>}
+        <button className="btn btn-primary btn-sm" disabled={busy}>{busy ? "…" : "+ Create " + GATE_KINDS[kind].label.toLowerCase()}</button>
       </form>
       {reveal && (
         <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,10,24,.6)", display: "grid", placeItems: "center", padding: 18 }}>
@@ -1756,7 +1794,14 @@ function SummerGates() {
               Copy it now {"\u2014"} only its hash is stored, so this is the one and only time it can be shown.
             </p>
             <div style={{ font: "700 26px ui-monospace, monospace", letterSpacing: 3, textAlign: "center", padding: "14px 10px", borderRadius: 12, background: "#f3f5fa", userSelect: "all" }}>{reveal.password}</div>
+            {/* The address as well as the password. A password on its own is
+                half of what somebody needs, and the other half was only ever
+                findable by hunting the row back down in the table. */}
+            {reveal.url && (
+              <div className="mono" style={{ marginTop: 12, fontSize: 12.5, wordBreak: "break-all", color: "#333", padding: "10px 12px", borderRadius: 10, background: "#f3f5fa" }}>{reveal.url}</div>
+            )}
             <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
+              {reveal.url && <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(reveal.url); toast.success("Link copied."); }}>Copy link</button>}
               <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(reveal.password); toast.success("Password copied."); }}>Copy</button>
               <button className="btn btn-primary btn-sm" onClick={() => setReveal(null)}>Done</button>
             </div>
@@ -1765,14 +1810,22 @@ function SummerGates() {
       )}
       {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         gates === null ? <div className="dash-spinner"/> :
-        gates.length === 0 ? <div className="admin-empty">No gate links yet.</div> :
+        gates.length === 0 ? <div className="admin-empty">No links yet. A <b>public sign-up</b> link is the one you send to families; a <b>review desk</b> is where what they send comes in to be checked.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Label</th><th>Link</th><th>Kiosk</th><th>Valid</th><th>Password</th><th>Rotation</th><th>Used</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Label</th><th>Kind</th><th>Link</th><th>Kiosk</th><th>Valid</th><th>Password</th><th>Rotation</th><th>Used</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {gates.map(g => (
               <tr key={g.gateId}>
                 <td><b>{g.name}</b><div className="mono admin-cell-sub">{fmtDate(g.createdAt)}</div></td>
-                <td><button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(linkFor(g)); toast.success("Link copied."); }}>Copy link</button></td>
+                {/* Which door. Three links that look identical in a table is
+                    how a public sign-up URL gets sent to a WhatsApp group
+                    believing it is the staff desk, or the other way round. */}
+                <td><span className={"chip " + (GATE_KINDS[g.kind] || GATE_KINDS.desk).chip}>{(GATE_KINDS[g.kind] || GATE_KINDS.desk).label}</span></td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard && navigator.clipboard.writeText(linkFor(g)); toast.success("Link copied."); }}>Copy link</button>
+                  <a className="btn btn-ghost btn-sm" href={linkFor(g)} target="_blank" rel="noreferrer">Open</a>
+                  <div className="mono admin-cell-sub" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{(g.path || "/gate?g=") + g.gateId}</div>
+                </td>
                 <td>{g.hasPassword ? <span className="chip chip-lime">🔑 password</span> : <span className="chip status-archived">admin only</span>}</td>
                 <td className="mono" style={{ fontSize: 12 }}>
                   {g.expired
@@ -7894,4 +7947,4 @@ function ClubAdminPortal({ setPage }) {
 /* AdminVolunteers is exported so the roster can be mounted on its own. It
    needs nothing but its one data call — no auth, no shell — and the console
    around it is what makes the rest of the admin tree expensive to test. */
-Object.assign(window, { AdminPage, SummerAdminPortal, ClubAdminPortal, AdminVolunteers });
+Object.assign(window, { AdminPage, SummerAdminPortal, ClubAdminPortal, AdminVolunteers, SummerGates });
