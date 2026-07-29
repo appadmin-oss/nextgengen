@@ -2803,17 +2803,33 @@ function ReviewDeskPage() {
   const [unlockBusy, setUnlockBusy] = React.useState(false);
   const [unlockErr, setUnlockErr] = React.useState("");
   const [d, setD] = React.useState(null);
-  const [mode, setMode] = React.useState("review");      // review | list
+  /* WHICH submission, in the URL. Each one is its own page — its own address,
+     its own back button, its own thing to send somebody. A decision about a
+     child is not a row that expands; sharing "the one I'm stuck on" should be
+     copying the address bar, and Back should return to the queue rather than
+     to whatever was open before the desk. */
+  const [openId, setOpenId] = React.useState(() => new URLSearchParams(window.location.search).get("s") || "");
+  React.useEffect(() => {
+    const onPop = () => setOpenId(new URLSearchParams(window.location.search).get("s") || "");
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  const goto = React.useCallback((id) => {
+    const u = new URL(window.location.href);
+    if (id) u.searchParams.set("s", id); else u.searchParams.delete("s");
+    window.history.pushState({}, "", u.pathname + u.search);
+    setOpenId(id || "");
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, []);
   const [f, setF] = React.useState({ status: "self_pending", q: "", centre: "", course: "", photo: "", page: 1 });
-  const [cursor, setCursor] = React.useState(0);
   const [picked, setPicked] = React.useState([]);
   const [msg, setMsg] = React.useState("");
   const [busy, setBusy] = React.useState("");
   const navy = "#101a33", gold = "#ffce54";
 
-  const load = React.useCallback((keepCursor) => {
+  const load = React.useCallback(() => {
     NGGApi.public.review.queue(g, f)
-      .then(r => { setD(r); setState("ready"); if (!keepCursor) setCursor(0); })
+      .then(r => { setD(r); setState("ready"); })
       .catch(e => {
         const c = e.code || e.message;
         if (c === "unauthorized" || c === "forbidden") setState("locked");
@@ -2881,41 +2897,74 @@ function ReviewDeskPage() {
   const rows = (d && d.queue) || [];
   const counts = (d && d.counts) || {};
   const setF1 = (k, v) => { setF(x => ({ ...x, [k]: v, page: k === "page" ? v : 1 })); setPicked([]); };
-  const current = rows[Math.min(cursor, Math.max(0, rows.length - 1))] || null;
+  const at = openId ? rows.findIndex(r => r.studentId === openId) : -1;
+  const current = at >= 0 ? rows[at] : null;
   const inputS = { padding: "10px 12px", minHeight: 44, borderRadius: 10, fontSize: 15, background: "rgba(255,255,255,.07)",
                    border: "1px solid rgba(255,255,255,.18)", color: "#eef2fb", fontFamily: "inherit" };
 
-  /* After a decision the row is gone from this filter, so the list shortens
-     under the cursor. Staying put lands on the NEXT one, which is what the
-     desk wants — but only until the end, where it has to step back. */
+  /* After a decision the row leaves this filter, so the desk moves to the one
+     that was next — by address, so Back still walks the trail. Running out
+     returns to the queue rather than stranding somebody on a page that no
+     longer has anything to decide. */
   const afterDecision = (text) => {
     setMsg(text);
+    const nextId = at >= 0 && rows[at + 1] ? rows[at + 1].studentId : "";
     NGGApi.public.review.queue(g, f).then(r => {
       setD(r);
-      setCursor(c => Math.max(0, Math.min(c, (r.queue || []).length - 1)));
-    }).catch(() => load(true));
+      const still = (r.queue || []).some(x => x.studentId === nextId);
+      goto(still ? nextId : "");
+    }).catch(() => { load(); goto(""); });
   };
 
-  return shell(<>
-    <header style={{ display: "flex", gap: 14, alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 14 }}>
-      <div>
-        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>
-          REGISTRATION REVIEW · {(d.gate && d.gate.name) || ""}
-        </div>
-        <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{counts.self_pending || 0} waiting</h1>
-        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "5px 0 0" }}>
-          Nothing here has been sent to a family yet. Approving is what emails the guardian their consent form.
+  /* ── One submission: its own page ──────────────────────────────────────
+     Not the queue with a row expanded. A different address, a different
+     screen, one job on it — and the queue is where Back goes. */
+  if (openId) {
+    if (!current) return shell(
+      <div style={{ maxWidth: 520, margin: "70px auto 0", textAlign: "center" }}>
+        <h1 style={{ fontSize: 21, fontWeight: 800 }}>That submission isn't in this queue</h1>
+        <p style={{ color: "rgba(230,238,255,.6)", fontSize: 14, marginTop: 8, lineHeight: 1.6 }}>
+          It may already have been decided, or it may be under a different filter. The queue is where to look.
         </p>
+        <button onClick={() => goto("")} style={{ marginTop: 16, minHeight: 48, padding: "13px 24px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>
+          ← Back to the queue
+        </button>
       </div>
-      <div role="tablist" aria-label="Desk mode" style={{ display: "flex", gap: 4, background: "rgba(255,255,255,.06)", padding: 4, borderRadius: 12 }}>
-        {[["review", "Review"], ["list", "List"]].map(([k, label]) => (
-          <button key={k} role="tab" aria-selected={mode === k} onClick={() => setMode(k)}
-            style={{ minHeight: 44, padding: "10px 20px", borderRadius: 9, cursor: "pointer", border: "none", fontFamily: "inherit",
-                     fontWeight: 700, fontSize: 14, background: mode === k ? gold : "transparent", color: mode === k ? "#2b2100" : "rgba(230,238,255,.7)" }}>
-            {label}
-          </button>
-        ))}
+    );
+    return shell(<>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        <button onClick={() => goto("")}
+          style={{ minHeight: 44, padding: "10px 16px", borderRadius: 10, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+          ← Queue{counts.self_pending ? " · " + counts.self_pending + " waiting" : ""}
+        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button onClick={() => goto(rows[at - 1] && rows[at - 1].studentId)} disabled={at <= 0} aria-label="Previous submission"
+            style={{ minHeight: 44, padding: "10px 15px", borderRadius: 10, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#fff", cursor: "pointer", opacity: at <= 0 ? .35 : 1 }}>←</button>
+          <span style={{ fontSize: 13, color: "rgba(230,238,255,.6)" }}>{at + 1} of {rows.length}</span>
+          <button onClick={() => goto(rows[at + 1] && rows[at + 1].studentId)} disabled={at >= rows.length - 1} aria-label="Next submission"
+            style={{ minHeight: 44, padding: "10px 15px", borderRadius: 10, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#fff", cursor: "pointer", opacity: at >= rows.length - 1 ? .35 : 1 }}>→</button>
+        </div>
       </div>
+      {msg && <div role="status" style={{ marginBottom: 12, fontSize: 13.5, color: "#a7e8c6" }}>{msg}</div>}
+      <ReviewOne key={current.studentId} r={current} g={g} gold={gold}
+        onPrev={() => at > 0 && goto(rows[at - 1].studentId)}
+        onNext={() => at < rows.length - 1 && goto(rows[at + 1].studentId)}
+        onDone={afterDecision}/>
+    </>, true);
+  }
+
+  /* ── The queue ─────────────────────────────────────────────────────────
+     An index. Its job is to get somebody to the right submission, not to be
+     the place decisions are made — every row opens its own page. */
+  return shell(<>
+    <header style={{ marginBottom: 14 }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>
+        REGISTRATION REVIEW · {(d.gate && d.gate.name) || ""}
+      </div>
+      <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{counts.self_pending || 0} waiting</h1>
+      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "5px 0 0" }}>
+        Nothing here has been sent to a family yet. Approving is what emails the guardian their consent form.
+      </p>
     </header>
 
     <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }} role="tablist" aria-label="Status">
@@ -2957,21 +3006,13 @@ function ReviewDeskPage() {
       {f.q || f.centre || f.course || f.photo ? "Nothing matches those filters." : "Nothing waiting. That is the good answer."}
     </p>}
 
-    {mode === "review" && current && (
-      <ReviewOne key={current.studentId} r={current} g={g} gold={gold}
-        index={Math.min(cursor, rows.length - 1)} total={rows.length}
-        onPrev={() => setCursor(c => Math.max(0, c - 1))}
-        onNext={() => setCursor(c => Math.min(rows.length - 1, c + 1))}
-        onDone={afterDecision}/>
-    )}
-
-    {mode === "list" && rows.length > 0 && (
+    {rows.length > 0 && (
       <ReviewList rows={rows} g={g} gold={gold} picked={picked} setPicked={setPicked}
         selectable={f.status === "self_pending"} busy={busy}
-        onOpen={(i) => { setCursor(i); setMode("review"); }}
+        onOpen={(i) => goto(rows[i].studentId)}
         onBulk={async () => {
           setBusy("approve");
-          try { const r = await NGGApi.public.review.approveBulk(g, picked); setPicked([]); afterDecision(r.approved + " approved"); }
+          try { const r = await NGGApi.public.review.approveBulk(g, picked); setPicked([]); setMsg(r.approved + " approved"); load(); }
           catch (e) { setMsg("Couldn't approve — " + (e.code || e.message)); }
           finally { setBusy(""); }
         }}/>
@@ -2986,7 +3027,7 @@ function ReviewDeskPage() {
         </div>
       </div>
     )}
-  </>, mode === "review");
+  </>);
 }
 
 /* Shared vocabulary for the photo verdict. The wording has to read as advice
@@ -3002,7 +3043,7 @@ function reviewVerdict(v) {
    confirm step is laid out, because it is the same job read backwards: there
    somebody checks what they typed before committing it, here somebody checks
    what a family typed before letting it through. */
-function ReviewOne({ r, g, gold, index, total, onPrev, onNext, onDone }) {
+function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
   const [note, setNote] = React.useState("");
   const [busy, setBusy] = React.useState("");
   const [err, setErr] = React.useState("");
@@ -3040,14 +3081,6 @@ function ReviewOne({ r, g, gold, index, total, onPrev, onNext, onDone }) {
   });
 
   return <>
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-      <button onClick={onPrev} disabled={index <= 0} aria-label="Previous submission"
-        style={{ minHeight: 44, padding: "9px 15px", borderRadius: 10, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#fff", cursor: "pointer", opacity: index <= 0 ? .35 : 1 }}>←</button>
-      <span style={{ fontSize: 13, color: "rgba(230,238,255,.6)" }}>{index + 1} of {total} on this page</span>
-      <button onClick={onNext} disabled={index >= total - 1} aria-label="Next submission"
-        style={{ minHeight: 44, padding: "9px 15px", borderRadius: 10, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#fff", cursor: "pointer", opacity: index >= total - 1 ? .35 : 1 }}>→</button>
-    </div>
-
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }} className="review-grid">
       {/* Left: the photo, at a size you can actually judge, with the machine's
           reading beside it rather than instead of it. */}
@@ -3110,32 +3143,6 @@ function ReviewOne({ r, g, gold, index, total, onPrev, onNext, onDone }) {
         {r.reviewNote && <div style={{ ...mut, fontSize: 13, marginTop: 10 }}>Note: {r.reviewNote}</div>}
       </div>
 
-      {/* The card that will be printed, shown before the decision — the same
-          preview the registration desk shows on its confirm step. Approving a
-          photo without seeing it on the card is how an unusable one gets
-          through. */}
-      {typeof CardFront === "function" && (
-        <div style={{ ...card, display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ boxShadow: "0 12px 30px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden", flex: "none" }}>
-            <SafeBlock fallback={<div style={{ width: 177, height: 301, background: "rgba(255,255,255,.06)" }}/>}>
-              <CardFront S={0.3} card={{
-                firstName: r.firstName || String(r.fullName || "").split(" ")[0], surname: r.lastName || String(r.fullName || "").split(" ").slice(-1)[0],
-                track: r.course, photoUrl: r.photoUrl, token: "", displayId: r.displayId || r.studentId,
-                centre: r.centreCard || { name: r.centre, code: (r.centre || "").slice(0, 2).toUpperCase(), color: "#76B043" },
-              }} program={{}}/>
-            </SafeBlock>
-          </div>
-          <div style={{ flex: "1 1 220px", minWidth: 0, ...mut, fontSize: 13, lineHeight: 1.6 }}>
-            <b style={{ color: "#eef2fb" }}>This is the card that gets printed.</b><br/>
-            {/* The QR shown here is a placeholder — the real one is minted when
-                the guardian completes consent. Saying it is "blank" would be
-                wrong: there is a code on screen, and a reviewer who scanned it
-                and got nothing would reasonably think the card was broken. */}
-            The centre ring and colour come from the centre they chose. The QR is a placeholder until the guardian consents.
-            Look at the face: if you would not recognise this child from it across a hall, reject and ask for another photo.
-          </div>
-        </div>
-      )}
     </div>
 
     {!decided && (
@@ -4504,7 +4511,8 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
           onError={e => { e.target.style.display = "none"; }}/>
       </div>
       {/* Content column inside the panel — reflows to any card height. */}
-      <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box", padding: px(94) + "px " + px(40) + "px " + px(28) + "px" }}>
+      <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box",
+                    padding: px(94) + "px " + px(40) + "px " + px(card.centre ? 68 : 28) + "px" }}>
         {/* The headshot in the CENTRE's colour, not the tier's. The card is
             already tier-coloured all over; repeating that around the photo
             would say the same thing twice and the thing a coordinator
@@ -4545,11 +4553,30 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
           <span style={{ margin: `0 ${px(8)}px`, color: "#B9BFCB" }}>|</span>
           <span style={{ fontWeight: 500 }}>{card.role || tier.name || ""}</span>
         </div>
-        {/* Spelled out under the role. The ring and the code are for across a
-            room; this is for somebody holding the card. */}
-        {card.centre && <div style={{ textAlign: "center", fontSize: px(19), letterSpacing: px(1.6), marginTop: px(4),
-          color: card.centre.color || "#76B043", fontWeight: 800, textTransform: "uppercase", flex: "none" }}>{card.centre.name}</div>}
       </div>
+      {/* The centre band, the same device the student card uses.
+          The card's outer frame is the TIER colour and always will be — role
+          is what a volunteer is stopped and asked about. But that left the
+          centre living only on the photo ring, which is one signal where the
+          student card has two. A band across the foot of the panel gives the
+          volunteer card the same pair: a colour you find across a room and a
+          name you read in the hand. */}
+      {card.centre && (
+        /* Inset px(6) from the panel and rounded px(6) tighter, so it is
+           CONCENTRIC with the panel and a hairline of white always shows
+           between the band and the frame. Flush looked better until you put a
+           maroon Lead Mentor frame round a red centre and the two merged into
+           one shape — the gutter is what keeps the card legible whatever
+           pair of colours the hierarchy table happens to hold. */
+        <div style={{ position: "absolute", left: px(28), right: px(28), bottom: px(28), height: px(38),
+                      borderRadius: `${px(6)}px ${px(6)}px ${px(24)}px ${px(24)}px`,
+                      background: card.centre.color || "#76B043",
+                      display: "grid", placeItems: "center", overflow: "hidden" }}>
+          <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(18), letterSpacing: px(2.2),
+                         color: "#fff", textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap",
+                         textShadow: "0 1px 2px rgba(0,0,0,.4)" }}>{card.centre.name}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -4561,7 +4588,9 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
   // without distortion (the icon dots stay perfectly round).
   const pt = (n) => n * S * (H / CARD_DESIGN_H);
   // The back is shared by students and volunteers; the 3rd row is a CENTRE
-  // for students and the ROLE for volunteers (who have no centre).
+  // for students and the ROLE for volunteers. A volunteer's centre is on the
+  // front twice over (photo ring + foot band), so the one line the back can
+  // spare goes to the thing the front only says once.
   const isVol = !!card.tier;
   const key = card.studentId || card.volunteerId || card.displayId;
   const midRow = isVol

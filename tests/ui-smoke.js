@@ -174,8 +174,24 @@ const LEADERBOARD = {
              firstName: (n === 7 ? 'ZEBRA' : 'NAME' + n), surname: 'SUR' + n,
              track: 'Arts', token: 'T' + n, photoUrl: '',
              // #13 has no centre at all — the shape a partial row arrives in.
-             centre: n === 13 ? undefined : { name: n % 2 ? 'Ijaiye' : 'Egbeda', color: '#76B043' } };
+             centre: n === 13 ? undefined
+               : (n % 2 ? { name: 'Ijaiye', code: 'IJ', color: '#2E7DD1' }
+                        : { name: 'Egbeda', code: 'EG', color: '#D64545' }) };
   }) };
+  /* Volunteers get the same centre identity as students. VOL-3 is the legacy
+     shape — a record filed before centres were captured — and must still draw
+     a card rather than a hole. */
+  var VOLS = { program: PROGRAM, cards: [
+    { volunteerId: 'VOL-MEN-26-001', displayId: 'VOL-MEN-26-001', firstName: 'TUNDE', surname: 'BAKARE',
+      role: 'Lead Mentor', tier: { name: 'Lead Mentor', code: 'LED', color: '#8A1538' }, token: 'V1', photoUrl: '',
+      centre: { name: 'Egbeda', code: 'EG', color: '#D64545' } },
+    { volunteerId: 'VOL-MEN-26-002', displayId: 'VOL-MEN-26-002', firstName: 'NGOZI', surname: 'EZE',
+      role: 'Mentor', tier: { name: 'Mentor', code: 'MEN', color: '#00225F' }, token: 'V2', photoUrl: '',
+      centre: { name: 'Ijaiye', code: 'IJ', color: '#2E7DD1' } },
+    { volunteerId: 'VOL-MEN-26-003', displayId: 'VOL-MEN-26-003', firstName: 'OLD', surname: 'RECORD',
+      role: 'Mentor', tier: { name: 'Mentor', code: 'MEN', color: '#00225F' }, token: 'V3', photoUrl: '',
+      centre: null },
+  ] };
   window.NGGApi = deep({
     imageTools: function () {
       if (window.ImageTools) return Promise.resolve(window.ImageTools);
@@ -189,7 +205,7 @@ const LEADERBOARD = {
     },
     admin: deep({ registration: deep({
       cards: function () { return window.__fail === 'all' ? offline() : Promise.resolve(ROSTER); },
-      volunteerCards: function () { return window.__fail === 'all' ? offline() : Promise.resolve({ program: PROGRAM, cards: [] }); },
+      volunteerCards: function () { return window.__fail === 'all' ? offline() : Promise.resolve(VOLS); },
       centres: function () { return Promise.resolve({ centres: [] }); },
       // A secondary endpoint failing must not take the roster down with it.
       hierarchy: function () { return window.__fail ? offline() : Promise.resolve({ tiers: [] }); },
@@ -956,6 +972,93 @@ const LEADERBOARD = {
     const body = await studio.evaluate(() => document.body.innerText);
     ok('/cards is not blank', body.trim().length > 200 && /verified student/.test(body));
     ok('/cards offers the bulk exports', /PNG \(all, \.zip\)/.test(body) && /Print-ready PDF/.test(body));
+
+    /* ── Centre identity on the printed card ────────────────────────────────
+     * Reported from the field: "there is no way to identify the volunteers per
+     * centre." Neither card carried the site at all — a coordinator at a hall
+     * with forty lanyards could not tell who was theirs.
+     *
+     * Both cards now say it twice: a colour you can find across a room, and a
+     * two-letter CODE + the centre NAME you can read in the hand. Colour is
+     * checked, but colour is never what the assertion RESTS on — one man in
+     * twelve cannot read red against green, print colour drifts between
+     * batches, and a photocopy has none of it.
+     */
+    const centreOnCard = (sel) => studio.evaluate((s) => {
+      const cards = Array.from(document.querySelectorAll(s));
+      const hex = (c) => {
+        const m = String(c).match(/\d+/g);
+        return m ? '#' + m.slice(0, 3).map(n => (+n).toString(16).padStart(2, '0')).join('') : '';
+      };
+      // The band is the widest solid-coloured box at the foot of a card.
+      const band = (card) => {
+        const r = card.getBoundingClientRect();
+        return Array.from(card.querySelectorAll('div')).filter(d => {
+          const b = d.getBoundingClientRect(), bg = getComputedStyle(d).backgroundColor;
+          return b.width > r.width * 0.55 && b.height > 4 && b.height < r.height * 0.12
+            && b.bottom > r.bottom - r.height * 0.14 && /^rgb\(/.test(bg)
+            && bg !== 'rgb(255, 255, 255)';
+        }).sort((a, z) => z.getBoundingClientRect().width - a.getBoundingClientRect().width)[0];
+      };
+      /* The white panel the volunteer card's frame surrounds. Measuring the
+         band against THIS, not against the card, is what tells you whether a
+         hairline of white survives between the band and the coloured frame. */
+      const panel = (card) => {
+        const r = card.getBoundingClientRect();
+        return Array.from(card.querySelectorAll('div')).filter(d => {
+          const b = d.getBoundingClientRect();
+          return getComputedStyle(d).backgroundColor === 'rgb(255, 255, 255)'
+            && b.width > r.width * 0.8 && b.height > r.height * 0.8;
+        })[0];
+      };
+      return cards.map(card => {
+        const bd = band(card), pn = panel(card);
+        const bb = bd && bd.getBoundingClientRect(), pb = pn && pn.getBoundingClientRect();
+        return { text: card.innerText.replace(/\s+/g, ' ').trim(),
+                 band: bd ? bd.innerText.trim() : '',
+                 bandColor: bd ? hex(getComputedStyle(bd).backgroundColor) : '',
+                 frame: hex(getComputedStyle(card).backgroundColor),
+                 // Smallest white margin between the band and the panel edge on
+                 // the three sides that face the frame. null when there is no
+                 // inner panel at all (the student card is one white plane).
+                 gutter: bb && pb
+                   ? Math.round(Math.min(bb.left - pb.left, pb.right - bb.right, pb.bottom - bb.bottom))
+                   : null };
+      });
+    }, sel);
+
+    const stuFronts = (await centreOnCard('.card-pair .idcard')).filter((_, i) => i % 2 === 0);
+    ok('every student card names its centre in a band (' + stuFronts.filter(c => c.band).length + '/30)',
+      stuFronts.length === 30 && stuFronts.filter(c => /^(IJAIYE|EGBEDA)$/i.test(c.band)).length === 29);
+    ok('…in that centre\'s own colour, so two sites never look alike',
+      new Set(stuFronts.filter(c => c.band).map(c => c.bandColor)).size === 2);
+    ok('…and the code is set into the photo ring, because colour is not a label',
+      stuFronts.filter(c => /\bIJ\b/.test(c.text) || /\bEG\b/.test(c.text)).length === 29);
+    ok('…while the record with no centre still draws a card',
+      stuFronts.filter(c => !c.band).length === 1);
+
+    await studio.getByRole('button', { name: /^Volunteers/ }).click();
+    await studio.waitForTimeout(700);
+    const volFronts = (await centreOnCard('.card-pair .idcard')).filter((_, i) => i % 2 === 0);
+    ok('the volunteer card carries the same centre band (' + volFronts.length + ' cards)',
+      volFronts.length === 3 && volFronts[0].band === 'EGBEDA' && volFronts[1].band === 'IJAIYE');
+    ok('…and the same code chip on the headshot',
+      /\bEG\b/.test(volFronts[0].text) && /\bIJ\b/.test(volFronts[1].text));
+    /* Two facts, two places. The frame stays the TIER colour — role is what a
+       volunteer gets stopped and asked about — so the band has to be the only
+       thing carrying the centre, and it must not merge into the frame. That is
+       exactly what a maroon Lead Mentor frame round a red Egbeda band did. */
+    ok('…without the centre band eating the role colour the frame carries',
+      volFronts[0].frame === '#8a1538' && volFronts[0].bandColor === '#d64545'
+      && volFronts[1].frame === '#00225f' && volFronts[1].bandColor === '#2e7dd1');
+    /* Two colours meeting with no seam read as one shape, and card 0 is the
+       worst case on purpose: a maroon Lead Mentor frame round a red Egbeda
+       band. The band is inset inside the panel so white always shows between
+       them, whatever pair the hierarchy table happens to hold. */
+    ok('…and a white gutter keeping the two colours from merging (' + volFronts[0].gutter + 'px)',
+      volFronts[0].gutter >= 2 && volFronts[1].gutter >= 2);
+    ok('…and a volunteer filed before centres existed still gets a card',
+      volFronts[2].band === '' && /OLD/.test(volFronts[2].text));
     await studio.close();
 
     /* ── Programme & policy: the screen that decides which days count ─────
@@ -2476,30 +2579,41 @@ const LEADERBOARD = {
     await rvP.waitForTimeout(900);
     const rvText = await rvP.evaluate(() => document.body.innerText);
     ok('…and unlocks to the queue', /2 waiting/.test(rvText) && /Ada Obi/.test(rvText));
-    /* A desk, not a report. It opens on ONE submission with the whole record,
-       because a table asks you to approve from a summary line — which means
-       approving without looking, which is the thing a review step exists to
-       prevent. */
-    ok('…opening on one submission rather than a table',
-       /1 of 2 on this page/.test(rvText) && /WHAT THEY SUBMITTED/.test(rvText));
+    /* The queue is an INDEX. Its job is to get somebody to the right
+       submission, not to be where decisions are made — a table asks you to
+       approve from a summary line, which means approving without looking. */
+    ok('…unlocking to a queue that lists rather than decides',
+       /Select all 2 shown/.test(rvText) && /does not show you the photo/.test(rvText)
+       && !/WHAT THEY SUBMITTED/.test(rvText));
+    ok('…and saying plainly that approving is what emails the family',
+       /Approving is what emails the guardian/.test(rvText));
+
+    /* Each submission is its OWN page: its own address, its own back button,
+       one job on the screen. */
+    await rvP.getByRole('button', { name: /Open/ }).first().click();
+    await rvP.waitForTimeout(500);
+    ok('opening a submission gives it its own address',
+       /[?&]s=RC1-0101/.test(await rvP.evaluate(() => window.location.search)));
+    const oneText = await rvP.evaluate(() => document.body.innerText);
     ok('…with every answer the family gave, against the question asked',
-       /Parent's phone/.test(rvText) && /0803 111 2222/.test(rvText));
-    /* The card is shown before the decision, the same way the registration
-       desk shows it on its confirm step. */
-    ok('…and the card that will actually be printed', /This is the card that gets printed/.test(rvText));
+       /WHAT THEY SUBMITTED/.test(oneText) && /Parent's phone/.test(oneText) && /0803 111 2222/.test(oneText));
     /* The verdict is next to the photo, not instead of it — and it is advice,
        never the decision. */
     ok('…the photo verdict reading as advice, with the duplicate warning',
-       /Worth a look/.test(rvText) && /advice, not the decision/.test(rvText) && /possible duplicate/.test(rvText));
-    ok('…and saying plainly that approving is what emails the family',
-       /Approving is what emails the guardian/.test(rvText));
-    /* The list is still there for sweeping clean batches — and admits what it
-       cannot show you. */
-    await rvP.getByRole('tab', { name: 'List' }).click();
-    await rvP.waitForTimeout(400);
-    const listText = await rvP.evaluate(() => document.body.innerText);
-    ok('…with a list mode that says bulk approval skips the photo',
-       /Select all 2 shown/.test(listText) && /does not show you the photo/.test(listText));
+       /Worth a look/.test(oneText) && /advice, not the decision/.test(oneText) && /possible duplicate/.test(oneText));
+    /* A reviewer is checking a registration, not proofing a print run. The
+       card is not theirs to approve and it crowded out the thing that is. */
+    /* Checked structurally, not by wording: a preview reintroduced under any
+       other caption still renders a .idcard, and that is the thing that must
+       not be here. */
+    ok('…and no ID-card preview anywhere on it',
+      (await rvP.locator('.idcard').count()) === 0 && !/card that gets printed/i.test(oneText));
+    /* Back belongs to the browser now, because the page is a real page. */
+    await rvP.goBack();
+    await rvP.waitForTimeout(500);
+    ok('…and Back returns to the queue',
+       !/[?&]s=/.test(await rvP.evaluate(() => window.location.search))
+       && /Select all 2 shown/.test(await rvP.evaluate(() => document.body.innerText)));
     await rvP.close(); await rvT.close();
     try { fs.unlinkSync(path.join(ROOT, 'tests', '_apply_fixture.html')); } catch (_) {}
 
