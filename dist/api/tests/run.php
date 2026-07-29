@@ -3704,6 +3704,51 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
         ($row['schoolType'] ?? '') === 'Public' && ($row['school'] ?? '') === 'St Mary');
     db_exec("DELETE FROM summer_students WHERE studentId = ?", [$sid]);
 
+    /* ── The flag must never run ahead of the write ──────────────────────────
+     * The seed is one-shot, so the flag IS the record that the question has
+     * been introduced. Set it before the row is written and a failed write
+     * becomes a question that never arrives and never retries — and the only
+     * symptom is a form that does not have it, which reads exactly like the
+     * feature was never deployed.
+     *
+     * Simulated with the race that actually causes it: an admin publishes a
+     * new version in the same second, archiving the row this read is holding.
+     * The UPDATE is scoped to `status = 'live'`, so it matches nothing.
+     */
+    db_exec("DELETE FROM settings WHERE settingKey = 'form_seeded_schoolType'");
+    /* A REAL row, archived out from under the read — not a made-up id. An
+       id that matches nothing fails whether or not the write is scoped to
+       `live`, so it proves nothing about the scoping; this row exists, and an
+       unscoped UPDATE would happily write the question into it and then
+       declare the job done, losing it from the version that is actually
+       serving the public form. */
+    $preRace = [['key' => 'school', 'label' => 'School', 'type' => 'text']];
+    db_update('form_defs', ['fields' => json_encode($preRace, JSON_UNESCAPED_SLASHES)],
+              ['formId' => 'summer-reg', 'status' => 'live']);
+    $held = db_row("SELECT * FROM form_defs WHERE formId = 'summer-reg' AND status = 'live' ORDER BY version DESC LIMIT 1");
+    db_exec("UPDATE form_defs SET status = 'archived' WHERE id = ?", [(int)$held['id']]);
+    $out = form_seed_once($held, $preRace, 'schoolType', 'school');
+    chk('a seed whose write lands nowhere does not report itself as done',
+        setting_raw('form_seeded_schoolType') === null);
+    chk('…and does not hand back a field that was never stored',
+        !in_array('schoolType', array_column($out, 'key'), true));
+    chk('…leaving the archived row exactly as it was found',
+        !in_array('schoolType', array_column(json_decode((string) db_row("SELECT fields FROM form_defs WHERE id = ?", [(int)$held['id']])['fields'], true), 'key'), true));
+
+    // The next read, once the row is live again, must still do the job.
+    db_exec("UPDATE form_defs SET status = 'live' WHERE id = ?", [(int)$held['id']]);
+    chk('…so the next read after the race still introduces the question',
+        in_array('schoolType', array_column(form_live('summer-reg')['fields'], 'key'), true)
+        && setting_raw('form_seeded_schoolType') !== null);
+
+    /* The other end of it: a definition that ALREADY has the question needs no
+     * write, but the job is done and must be recorded — otherwise every read
+     * for the rest of the installation's life re-checks and re-splices. */
+    db_exec("DELETE FROM settings WHERE settingKey = 'form_seeded_schoolType'");
+    form_live('summer-reg');
+    chk('a form that already has the question records the job as done anyway',
+        setting_raw('form_seeded_schoolType') !== null);
+
     // Put it back for the rest of the suite, the way a republish would.
     db_exec("DELETE FROM settings WHERE settingKey = 'form_seeded_schoolType'");
     form_live('summer-reg');

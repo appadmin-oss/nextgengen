@@ -82,6 +82,29 @@ process.on('exit', cleanup);
     for (const f of ['journal/app.min.js', 'journal/index.html', 'journal/sw.js']) {
       ok('pruning leaves the generated ' + f + ' alone', fs.existsSync(path.join(ROOT, 'dist', f)));
     }
+
+    /* The service worker must never come between the app and /api/.
+     *
+     * Every live answer the app has comes through there — who is signed in,
+     * which questions the registration form asks today, whether a child's
+     * consent has been withdrawn. A cached copy of any of them is not a stale
+     * page, it is the wrong answer served confidently, and the reporting
+     * symptom is always the same: "I changed it and nothing happened."
+     *
+     * The API sets `no-store`, which handles the browser's HTTP cache. It does
+     * NOT bind the Cache Storage API — a service worker can put a no-store
+     * response in a cache and serve it back for as long as it likes. So the
+     * guard has to be in the worker, and it has to come BEFORE anything that
+     * could respond from a cache.
+     */
+    const sw = fs.readFileSync(path.join(ROOT, 'dist', 'service-worker.js'), 'utf8');
+    const fetchAt = sw.indexOf("addEventListener('fetch'");
+    const apiAt = sw.indexOf("'/api/'", fetchAt);
+    const cacheAt = sw.search(/caches\.(match|open)|respondWith/);
+    ok('the shipped service worker refuses to handle /api/ at all',
+      fetchAt > -1 && apiAt > fetchAt && /startsWith\('\/api\/'\)\)\s*return/.test(sw));
+    ok('…and bails out before it can answer from any cache',
+      apiAt > -1 && cacheAt > -1 && apiAt < sw.indexOf('respondWith', fetchAt));
   } catch (e) {
     fail++; console.error('  ✗ harness error: ' + (e && e.message));
   } finally { cleanup(); }
