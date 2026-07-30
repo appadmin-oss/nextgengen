@@ -160,6 +160,30 @@ function admin_ops_clear(array $p): array {
     return ['ok' => true, 'cleared' => $n];
 }
 
+/**
+ * Run a background job now, from the browser.
+ *
+ * The web-cron is driven by ordinary traffic, so on a quiet host — or one where
+ * an admin has just changed something and wants it to take effect this minute —
+ * a job can sit un-run for its whole interval. This lets an admin kick one (or
+ * all) by hand instead of waiting, or refreshing the site to generate traffic.
+ * Same lock as the tick, so it can never stampede an in-flight run.
+ */
+function admin_ops_run_cron(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $map = [
+        'deliver'   => fn() => deliveries_dispatch(50),
+        'reminders' => fn() => web_cron_reminders(),
+        'maint'     => fn() => web_cron_maintenance(),
+    ];
+    $job = (string)($p['job'] ?? 'all');
+    if ($job !== 'all' && !isset($map[$job])) return ['ok' => false, 'error' => 'unknown_job'];
+    $sel = $job === 'all' ? $map : [$job => $map[$job]];
+    $ran = web_cron_run_now($sel);
+    audit('ops.run_cron', (string)$g['requester']['memberId'], $job, $ran, (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'ran' => $ran, 'cron' => ops_cron_ages()];
+}
+
 /** Drop journal rows that have been acknowledged and have not recurred.
  *  Called from maintenance; bounded so the table cannot creep. */
 function ops_prune(int $days = 30): int {

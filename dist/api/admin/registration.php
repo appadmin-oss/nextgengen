@@ -32,6 +32,7 @@ if ($method === 'GET') {
     elseif ($action === 'gate_rotate') $res = gs_call('admin.gates.rotate', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'gate_rotation') $res = gs_call('admin.gates.rotation', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'rotateDays' => $b['rotateDays'] ?? 0, 'expiryDays' => $b['expiryDays'] ?? 0, 'notifyEmail' => $b['notifyEmail'] ?? '', 'ip' => $ip]);
     elseif ($action === 'gate_revoke') $res = gs_call('admin.gates.revoke', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'gate_delete') $res = gs_call('admin.gates.delete', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'remind')      $res = gs_call('admin.registrations.remind', ['requesterId' => $s['mid'], 'studentId' => $b['studentId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'remind_bulk') $res = gs_call('admin.registrations.remindBulk', ['requesterId' => $s['mid'],
         'centre' => $b['centre'] ?? '', 'quietDays' => $b['quietDays'] ?? 1, 'limit' => $b['limit'] ?? 100, 'ip' => $ip]);

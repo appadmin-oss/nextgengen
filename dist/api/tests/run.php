@@ -39,6 +39,7 @@ require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
 foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
+require $ROOT . '/_lib/sheets.php';
 require $ROOT . '/_lib/webcron.php';
 // session.php is pure functions over the device register — no bootstrap, no
 // headers emitted at load — so the idle-clock behaviour can be tested here
@@ -1776,6 +1777,20 @@ chk('form: the public form ships the whole faculty→course map with the field',
     return false;
 })());
 
+chk('gate: each kind gets its own door, not the staff desk', (function () {
+    $self = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Public link', 'kind' => 'self']);
+    $rev  = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Review desk', 'kind' => 'review', 'generate' => true]);
+    $desk = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Front desk']);
+    // A self link carries no password and lands on /apply; a review desk keeps
+    // its own and lands on /review; a plain create is still a /gate desk.
+    return $self['kind'] === 'self' && $self['hasPassword'] === false && strpos($self['url'], '/apply?g=') !== false
+        && $rev['kind'] === 'review' && $rev['hasPassword'] === true && strpos($rev['url'], '/review?g=') !== false
+        && $desk['kind'] === 'desk' && strpos($desk['url'], '/gate?g=') !== false;
+})());
+chk('gate: a review desk with no password is refused', (function () {
+    return backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Bad review', 'kind' => 'review'])['error'] === 'password_required';
+})());
+
 chk('form: a course from a DIFFERENT faculty is rejected on submit', (function () {
     // The enforcement that matters. Hiding the wrong options in the UI is a
     // convenience; this is the constraint. "Practical Coding" is a real course,
@@ -2098,6 +2113,29 @@ chk('registrations list carries consent + pending queue; remind only for pending
 chk('gate: revoked link stops working', (function () use ($GATE) {
     backend_dispatch('admin.gates.revoke', ['requesterId' => 'NGG-2025-0099', 'gateId' => $GATE['gateId']]);
     return backend_dispatch('gate.context', ['gate' => $GATE['gateId']])['error'] === 'gate_invalid';
+})());
+chk('gate: an active link cannot be deleted — only revoked', (function () {
+    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Deletable desk']);
+    $r = backend_dispatch('admin.gates.delete', ['requesterId' => 'NGG-2025-0099', 'gateId' => $g['gateId']]);
+    // Still there, untouched.
+    return $r['error'] === 'not_revoked'
+        && db_row('SELECT gateId FROM gate_links WHERE gateId = ?', [$g['gateId']]) !== null;
+})());
+chk('gate: a revoked link deletes and is gone for good', (function () {
+    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Throwaway desk']);
+    backend_dispatch('admin.gates.revoke', ['requesterId' => 'NGG-2025-0099', 'gateId' => $g['gateId']]);
+    $r = backend_dispatch('admin.gates.delete', ['requesterId' => 'NGG-2025-0099', 'gateId' => $g['gateId']]);
+    return !empty($r['ok'])
+        && db_row('SELECT gateId FROM gate_links WHERE gateId = ?', [$g['gateId']]) === null
+        && backend_dispatch('admin.gates.delete', ['requesterId' => 'NGG-2025-0099', 'gateId' => $g['gateId']])['error'] === 'not_found';
+})());
+chk('gate: delete is gated, not open to any member', (function () {
+    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Guarded desk']);
+    backend_dispatch('admin.gates.revoke', ['requesterId' => 'NGG-2025-0099', 'gateId' => $g['gateId']]);
+    $blocked = backend_dispatch('admin.gates.delete', ['requesterId' => 'NGG-2025-0001', 'gateId' => $g['gateId']])['error'] === 'forbidden';
+    // Clean up so the guarded row does not linger in later assertions.
+    backend_dispatch('admin.gates.delete', ['requesterId' => 'NGG-2025-0099', 'gateId' => $g['gateId']]);
+    return $blocked;
 })());
 chk('registration events reached the outbox', (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind IN ('registration.created','registration.verified')")['c'] >= 2);
 
@@ -5436,6 +5474,27 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         cache_remember($key, 0, $f);         // window elapsed — recompute
         return $n === 2;
     })());
+    /* The filesystem cache must only ever write what a read could serve. An op
+       with no positive TTL is a no-cache op; writing its file anyway just
+       litters the cache dir and — the day a TTL is added — hands back a file
+       that predates it. Read and write have to agree on what is cacheable. */
+    chk('gs_cache_write leaves no file for a no-cache op', (function () {
+        global $CONFIG;
+        $op = 'test.nocache.' . rand_hex(4);
+        $CONFIG['cache_ttl'][$op] = 0;                 // explicitly no cache
+        gs_cache_write($op, [], ['ok' => true, 'x' => 1]);
+        return !file_exists(gs_cache_path($op, []))     // nothing written
+            && gs_cache_read($op, []) === null;         // and nothing to read
+    })());
+    chk('gs_cache_write does write when the op has a positive TTL', (function () {
+        global $CONFIG;
+        $op = 'test.cache.' . rand_hex(4);
+        $CONFIG['cache_ttl'][$op] = 60;
+        gs_cache_write($op, ['a' => 1], ['ok' => true, 'x' => 2]);
+        $hit = gs_cache_read($op, ['a' => 1]);
+        gs_cache_purge($op);
+        return is_array($hit) && ($hit['x'] ?? null) === 2;
+    })());
 })();
 
 
@@ -5956,6 +6015,25 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         $e = db_row("SELECT kind, message FROM ops_events WHERE source='webcron:test_job_bad'");
         return $e && (string)$e['kind'] === 'error' && (string)$e['message'] === 'job died';
     })());
+
+    /* Running a job from the browser: an admin on a quiet host should not have
+     * to generate traffic to make the background work happen. */
+    chk('an admin can run a single background job on demand', (function () {
+        $r = backend_dispatch('admin.ops.run', ['requesterId' => 'NGG-2025-0099', 'job' => 'maint']);
+        // Ran (or, if a real tick held the lock this instant, reported busy —
+        // never silently nothing), and the heartbeat now shows a fresh run.
+        return !empty($r['ok']) && in_array($r['ran']['maint'] ?? '', ['ran', 'busy'], true)
+            && ($r['cron']['maint']['ageSeconds'] ?? null) !== null;
+    })());
+    chk('running all jobs kicks every one of them', (function () {
+        $r = backend_dispatch('admin.ops.run', ['requesterId' => 'NGG-2025-0099', 'job' => 'all']);
+        return !empty($r['ok']) && count($r['ran']) === 3
+            && count(array_filter($r['ran'], fn($v) => in_array($v, ['ran', 'busy'], true))) === 3;
+    })());
+    chk('an unknown job name is refused, not run',
+        backend_dispatch('admin.ops.run', ['requesterId' => 'NGG-2025-0099', 'job' => 'rm-rf'])['error'] === 'unknown_job');
+    chk('running jobs is gated to the settings capability',
+        backend_dispatch('admin.ops.run', ['requesterId' => 'NGG-2025-0001', 'job' => 'maint'])['error'] === 'forbidden');
 
     /* Health. The failures that matter return a perfectly healthy 200 from
      * every other endpoint: a read-only database after a disk fills, and code

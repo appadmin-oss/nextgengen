@@ -1002,6 +1002,24 @@ function admin_gates_revoke(array $p): array {
 }
 
 /**
+ * Permanently remove a link. Only a REVOKED link can be deleted — an active or
+ * expired one is still a live credential and must be revoked first, so a single
+ * click can never both cut off and erase a link that people are still using.
+ * Revoke is the reversible, auditable step; delete is only ever tidying up
+ * after it.
+ */
+function admin_gates_delete(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $gateId = (string)($p['gateId'] ?? '');
+    $gate = db_row('SELECT gateId, status FROM gate_links WHERE gateId = ?', [$gateId]);
+    if (!$gate) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$gate['status'] !== 'revoked') return ['ok' => false, 'error' => 'not_revoked'];
+    db_exec('DELETE FROM gate_links WHERE gateId = ?', [$gateId]);
+    audit('gate.delete', $g['requester']['memberId'], $gateId, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/**
  * Verify a gate's kiosk password. On success the ROUTE mints a short-lived,
  * gate-scoped kiosk session (never an admin session) — see gate-unlock.php.
  * This lets field staff run the desk without an admin login while the gate

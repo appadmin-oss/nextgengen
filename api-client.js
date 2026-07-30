@@ -539,6 +539,7 @@
       ops: {
         status: () => request('/admin/ops.php'),
         clear:  (id) => request('/admin/ops.php', { body: { action: 'clear', id: id || 0 } }),
+        run:    (job) => request('/admin/ops.php', { body: { action: 'run', job: job || 'all' } }),
       },
       /* Staff, not children: who has filed what, over what window, next to how
          many children they are responsible for. */
@@ -590,6 +591,7 @@
         gateRotate: (gateId) => request('/admin/registration.php', { body: { action: 'gate_rotate', gateId } }),
         gateRotation: (gateId, rotateDays, notifyEmail, expiryDays) => request('/admin/registration.php', { body: { action: 'gate_rotation', gateId, rotateDays, notifyEmail: notifyEmail || '', expiryDays: expiryDays || 0 } }),
         gateRevoke: (gateId) => request('/admin/registration.php', { body: { action: 'gate_revoke', gateId } }),
+        gateDelete: (gateId) => request('/admin/registration.php', { body: { action: 'gate_delete', gateId } }),
         // Search/filter/page are server-side: at a hundred centres the cohort is
         // far too large to ship to the browser and filter there.
         list:       (opts) => request('/admin/registration.php' + qs(Object.assign({ view: 'registrations' }, opts || {}))),

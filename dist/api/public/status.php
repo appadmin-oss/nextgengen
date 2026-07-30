@@ -16,7 +16,10 @@
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $stamp = 'c' . (string)(db_row("SELECT COALESCE(MAX(id),0) v FROM consents")['v'] ?? '0');
-$res = cache_remember('public_status', 20, fn() => gs_call('public.status', [], true), $stamp);
+// Memoisation is handled by cache_remember (consent-stamped, 20s); the inner
+// gs_call must NOT also cache, or a second, un-stamped copy of the board — one
+// that a consent withdrawal cannot invalidate — ends up on disk.
+$res = cache_remember('public_status', 20, fn() => gs_call('public.status', []), $stamp);
 if (empty($res['ok'])) json_error($res['error'] ?? 'unavailable', 503);
 unset($res['ok']);
 json_ok($res);

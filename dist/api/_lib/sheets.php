@@ -40,6 +40,13 @@ function gs_cache_read(string $op, array $args): ?array {
 
 function gs_cache_write(string $op, array $args, array $data): void {
     global $CONFIG;
+    // Only write what a read could actually serve. An op with no positive TTL
+    // is a no-cache op: gs_cache_read bails on it, so writing the file just
+    // litters the cache dir with entries nothing ever reads — and turns into a
+    // stale-data trap the day someone adds a TTL for that op and the old file
+    // is suddenly live. Keep read and write agreeing on what is cacheable.
+    $ttl = $CONFIG['cache_ttl'][$op] ?? $CONFIG['cache_ttl']['default'] ?? 0;
+    if ($ttl <= 0) return;
     $path = gs_cache_path($op, $args);
     @mkdir(dirname($path), 0755, true);
     @file_put_contents($path, json_encode($data, JSON_UNESCAPED_SLASHES), LOCK_EX);

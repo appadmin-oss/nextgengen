@@ -34,13 +34,61 @@ function web_cron_dir(): string {
     return $wc;
 }
 
+/** Absolute path of a job's throttle/heartbeat marker. */
+function web_cron_marker(string $job): string {
+    return web_cron_dir() . '/' . preg_replace('/[^a-z0-9_]/i', '', $job) . '.at';
+}
+
 /** True at most once per $interval seconds for $job — and claims the slot. */
 function web_cron_due(string $job, int $interval): bool {
-    $marker = web_cron_dir() . '/' . preg_replace('/[^a-z0-9_]/i', '', $job) . '.at';
+    $marker = web_cron_marker($job);
     $last = @filemtime($marker) ?: 0;
     if (time() - $last < $interval) return false;
     @touch($marker);
     return true;
+}
+
+/** Stamp a job as just-run, so its heartbeat/age resets. */
+function web_cron_touch(string $job): void {
+    @touch(web_cron_marker($job));
+}
+
+/**
+ * Run named jobs on demand — the admin "run now" path.
+ *
+ * Guarded by the SAME lock as the background tick, so a manual run and a
+ * shutdown-hook tick can never stampede the same work. If the tick holds the
+ * lock the job reports 'busy' rather than queueing behind it. Each job is
+ * wrapped so one failing does not stop the rest, mirrors the heartbeat the
+ * scheduled path stamps, and is journalled either way.
+ *
+ * $jobs is [name => callable]; returns [name => 'ran'|'error'|'busy'].
+ */
+function web_cron_run_now(array $jobs): array {
+    $out = [];
+    $lock = @fopen(web_cron_dir() . '/.lock', 'c');
+    if ($lock && @flock($lock, LOCK_EX | LOCK_NB)) {
+        try {
+            if (function_exists('set_time_limit')) @set_time_limit(60);
+            foreach ($jobs as $name => $fn) {
+                try {
+                    $fn();
+                    web_cron_touch($name);
+                    if (function_exists('ops_record')) ops_record('cron', $name, 'ran (manual)');
+                    $out[$name] = 'ran';
+                } catch (Throwable $e) {
+                    error_log('[webcron:manual:' . $name . '] ' . $e->getMessage());
+                    if (function_exists('ops_record')) ops_record('error', 'webcron:' . $name, $e->getMessage(), basename($e->getFile()) . ':' . $e->getLine());
+                    $out[$name] = 'error';
+                }
+            }
+        } finally { @flock($lock, LOCK_UN); }
+        @fclose($lock);
+    } else {
+        if ($lock) @fclose($lock);
+        foreach (array_keys($jobs) as $name) $out[$name] = 'busy';
+    }
+    return $out;
 }
 
 /**

@@ -1735,6 +1735,10 @@ function SummerGates() {
     return "every " + g.rotateDays + "d · in " + g.rotatesInDays + "d";
   };
   const revoke = async (id) => { if (!(await dialog.confirm({ title: "Revoke this link?", body: "Anyone using it will no longer be able to register.", cta: "Revoke" }))) return; try { await NGGApi.admin.registration.gateRevoke(id); load(); } catch (e) { toast.error(e.code || e.message); } };
+  /* Delete is only offered on links that are already revoked — a revoked link
+     is dead, so removing it is just clearing clutter, never cutting off anyone
+     mid-use. */
+  const del = async (id) => { if (!(await dialog.confirm({ title: "Delete this revoked link?", body: "It is removed for good, along with its row here. This can't be undone.", cta: "Delete" }))) return; try { await NGGApi.admin.registration.gateDelete(id); toast.success("Link deleted."); load(); } catch (e) { toast.error(e.code === "not_revoked" ? "Revoke the link before deleting it." : (e.code || e.message)); } };
   const setPassword = async (g) => {
     const next = await dialog.prompt({ title: g.hasPassword ? "Change desk password" : "Set a desk password", body: "Field staff open this desk with the password — no admin login needed. Leave blank to remove it.", cta: "Save", placeholder: "Desk password (min 4 chars)", inputType: "password", required: false });
     if (next === null) return; // cancelled
@@ -1853,7 +1857,8 @@ function SummerGates() {
                   <button className="btn btn-ghost btn-sm" onClick={() => setValidity(g)}>Validity</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => editRotation(g)}>Schedule</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => revoke(g.gateId)}>Revoke</button>
-                </>}</td>
+                </>}{g.status === "revoked" &&
+                  <button className="btn btn-ghost btn-sm" style={{ color: "var(--coral, #c0341a)" }} onClick={() => del(g.gateId)}>Delete</button>}</td>
               </tr>
             ))}
           </tbody>
@@ -3909,6 +3914,22 @@ function AdminOps() {
     try { const r = await NGGApi.admin.ops.clear(id); toast.success(r.cleared + " marked as dealt with", "Acknowledged"); load(); }
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
+  // Background jobs are normally driven by ordinary traffic; on a quiet host
+  // this runs one (or all) on demand rather than waiting for the next visitor.
+  const runCron = async (job) => {
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.ops.run(job);
+      const ran = r.ran || {};
+      const busyJobs = Object.keys(ran).filter(k => ran[k] === "busy");
+      const failed = Object.keys(ran).filter(k => ran[k] === "error");
+      if (failed.length) toast.error("Failed: " + failed.join(", "));
+      else if (busyJobs.length) toast.info("Already running — try again in a moment.");
+      else toast.success((job === "all" ? "All jobs" : job) + " ran.", "Done");
+      load();
+    }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
   const h = (d && d.health) || {};
   const c = h.checks || {};
   const ago = (s) => s === null || s === undefined ? "never" : s < 90 ? s + "s ago" : s < 5400 ? Math.round(s / 60) + "m ago" : Math.round(s / 3600) + "h ago";
@@ -3948,17 +3969,21 @@ function AdminOps() {
           {light((d.errors24h || 0) === 0, "Errors (24h)", d.errors24h + " in the last day")}
         </div>
 
-        <h3 className="admin-h3">Background jobs</h3>
-        <div className="admin-chips" style={{ marginBottom: 18 }}>
+        <div className="admin-section-head" style={{ marginTop: 4 }}>
+          <h3 className="admin-h3">Background jobs</h3>
+          <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => runCron("all")}>Run all now</button>
+        </div>
+        <div className="admin-chips" style={{ marginBottom: 8 }}>
           {Object.keys(h.cron || {}).map(job => {
             const j = h.cron[job];
             const stale = j.ageSeconds !== null && j.ageSeconds > j.interval * 10;
-            return <span key={job} className={"chip " + (j.ageSeconds === null ? "chip-navy" : stale ? "chip-crimson" : "chip-lime")} style={{ marginRight: 6 }}>
-              {job}: {ago(j.ageSeconds)}
+            return <span key={job} className="chip-run" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginRight: 6 }}>
+              <span className={"chip " + (j.ageSeconds === null ? "chip-navy" : stale ? "chip-crimson" : "chip-lime")}>{job}: {ago(j.ageSeconds)}</span>
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => runCron(job)} title={"Run " + job + " now"}>Run now</button>
             </span>;
           })}
-          <span className="admin-cell-sub">Driven by ordinary traffic — a quiet site runs them less often, which is not a fault.</span>
         </div>
+        <p className="admin-cell-sub" style={{ marginBottom: 18 }}>Driven by ordinary traffic — a quiet site runs them less often, which is not a fault. Use <b>Run now</b> to kick one by hand instead of waiting for the next visitor.</p>
 
         <h3 className="admin-h3">Open faults{d.clearedCount ? <span className="admin-count">{d.clearedCount} dealt with</span> : null}</h3>
         <div className="admin-table-wrap">

@@ -8,8 +8,11 @@ if ($method === 'GET') {
     $res = gs_call('admin.ops.status', ['requesterId' => $s['mid']]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
-    if ((string)($b['action'] ?? '') === 'clear') {
+    $action = (string)($b['action'] ?? '');
+    if ($action === 'clear') {
         $res = gs_call('admin.ops.clear', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'ip' => client_ip()]);
+    } elseif ($action === 'run') {
+        $res = gs_call('admin.ops.run', ['requesterId' => $s['mid'], 'job' => $b['job'] ?? 'all', 'ip' => client_ip()]);
     } else { json_error('unknown_action', 400); }
 } else {
     json_error('method_not_allowed', 405);
