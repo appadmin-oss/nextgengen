@@ -448,6 +448,9 @@
       statusPages:  () => request('/admin/status-pages.php'),
       statusPagesSet: (data) => request('/admin/status-pages.php', { body: { data } }),
       analytics:    (filters) => request('/admin/analytics.php' + qs(filters || {})),
+      // Level 5 · Growth Potential — its own fetch so Levels 1-4 never pay for
+      // per-student trajectory scoring nobody has asked to see.
+      analyticsGrowth: (centre, weeks) => request('/admin/analytics.php' + qs({ view: 'growth', centre: centre || '', weeks: weeks || '' })),
       analyticsDrill: (metric, filters) => request('/admin/analytics.php', { body: { action: 'drilldown', metric, ...(filters || {}) } }),
       activityAdd:  (data) => request('/admin/analytics.php', { body: { action: 'activity.add', ...data } }),
       championsMint: (period) => request('/admin/analytics.php', { body: { action: 'champions.mint', period: period || '' } }),

@@ -37,7 +37,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'growth', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/sheets.php';
 require $ROOT . '/_lib/webcron.php';
@@ -6325,6 +6325,135 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
     db_exec("DELETE FROM attendance WHERE studentId = 'SUM-BULK-ATT'");
     db_exec("DELETE FROM summer_students WHERE studentId LIKE 'SUM-BULK-%'");
 })();
+
+/* ── Growth Potential (Level 5) ─────────────────────────────────────────────
+ * The predictive level. The claim being tested is the one the whole feature
+ * rests on: two children with near-identical attendance LEVELS but opposite
+ * trajectories must land far apart, because that difference is the decision. */
+(function () {
+    // Pure maths first — no fixtures, so a failure points at the model.
+    chk('growth: slope reads direction, not magnitude', (function () {
+        return growth_slope([20, 40, 60, 80]) > 0
+            && growth_slope([80, 60, 40, 20]) < 0
+            && abs(growth_slope([50, 50, 50, 50])) < 0.0001
+            && growth_slope([50]) === 0.0;          // one point has no direction
+    })());
+    chk('growth: percentile handles ties without exploding', (function () {
+        // Dozens of children on 100% attendance is the NORMAL case, and it is
+        // exactly where a z-score on a near-zero sd goes wild.
+        $tied = [100, 100, 100, 100];
+        $p = growth_percentile(100.0, $tied);
+        return $p > 40 && $p < 60                      // mid-rank among equals
+            && growth_percentile(10.0, [10, 20, 30, 40]) < 25
+            && growth_percentile(40.0, [10, 20, 30, 40]) > 75
+            && growth_percentile(5.0, [5]) === 50.0;   // nothing to compare against
+    })());
+    chk('growth: age bands keep a 10-year-old away from a 17-year-old', (function () {
+        return growth_age_band(10) === '10-11' && growth_age_band(13) === '12-13'
+            && growth_age_band(15) === '14-15' && growth_age_band(17) === '16-17'
+            && growth_age_band(0) === 'unknown';
+    })());
+    chk('growth: the published weights sum to 1', (function () {
+        return abs(array_sum(GROWTH_WEIGHTS) - 1.0) < 0.0001;
+    })());
+    chk('growth: the methodology is published, not implied', (function () {
+        $m = growth_methodology();
+        return ($m['minObservations'] ?? 0) === GROWTH_MIN_OBS
+            && count($m['notes'] ?? []) >= 5
+            && ($m['weights']['attendance'] ?? 0) > 0;
+    })());
+
+    /* Fixtures: three children, deliberately similar means, opposite slopes. */
+    db_insert('centres', ['centreId' => 'GCT', 'name' => 'Growthville', 'code' => 'GRW', 'status' => 'active', 'createdAt' => now_iso()]);
+    $mk = function (string $id, string $name, array $perWeek, int $joinedWeeksAgo = 10) {
+        db_insert('summer_students', ['studentId' => $id, 'cohortId' => 'C-GROWTH', 'fullName' => $name,
+            'age' => 12, 'centre' => 'Growthville', 'track' => 'Tech', 'status' => 'active',
+            'regStatus' => 'verified', 'enrolledAt' => gmdate('Y-m-d\TH:i:s\Z', time() - $joinedWeeksAgo * 7 * 86400),
+            'updatedAt' => now_iso()]);
+        foreach (array_reverse($perWeek) as $back => $days) {
+            for ($d = 0; $d < $days; $d++) {
+                $ts = time() - ($back * 7 * 86400) - ($d * 86400);
+                db_insert('attendance', ['cohortId' => 'C-GROWTH', 'studentId' => $id,
+                    'date' => gmdate('Y-m-d', $ts), 'checkInAt' => now_iso(), 'method' => 'qr', 'createdAt' => now_iso()]);
+            }
+        }
+    };
+    $mk('G-RISE', 'Rising Child',  [1, 2, 4, 5]);
+    $mk('G-FALL', 'Falling Child', [5, 4, 2, 1]);
+    $mk('G-FLAT', 'Steady Child',  [3, 3, 3, 3]);
+    $mk('G-NEW',  'Joined Today',  [0, 0, 0, 2], 0);   // enrolled this week
+
+    $G = backend_dispatch('analytics.growth', ['requesterId' => 'NGG-2025-0099']);
+    $byName = [];
+    foreach (($G['growth']['students'] ?? []) as $s) $byName[$s['name']] = $s;
+
+    chk('growth: the workspace is admin-gated', (function () {
+        return backend_dispatch('analytics.growth', ['requesterId' => ''])['ok'] !== true;
+    })());
+    chk('growth: THE claim — same level, opposite trajectory, far apart', (function () use ($byName) {
+        $r = $byName['Rising Child'] ?? null; $f = $byName['Falling Child'] ?? null;
+        if (!$r || !$f || $r['score'] === null || $f['score'] === null) return false;
+        // Levels are close (that is the point of the fixture)…
+        if (abs($r['attLevel'] - $f['attLevel']) > 12) return false;
+        // …and the index still separates them decisively.
+        return $r['score'] - $f['score'] > 10 && $r['attSlope'] > 0 && $f['attSlope'] < 0;
+    })());
+    chk('growth: a child who joined this week is NOT scored', (function () use ($byName) {
+        $n = $byName['Joined Today'] ?? null;
+        // The weeks before they enrolled must not be counted as absences —
+        // that manufactures a "was away, now returning" curve for a child who
+        // had not started, which is how staff stop believing the number.
+        return $n && $n['score'] === null && $n['status'] === 'insufficient_data' && $n['weeks'] < GROWTH_MIN_OBS;
+    })());
+    chk('growth: every scored child carries reason codes', (function () use ($G) {
+        foreach (($G['growth']['students'] ?? []) as $s) {
+            if (empty($s['reasons'])) return false;
+            foreach ($s['reasons'] as $r) if (($r['text'] ?? '') === '') return false;
+        }
+        return true;
+    })());
+    chk('growth: the falling child is on the needs-support list', (function () use ($G) {
+        return in_array('Falling Child', array_column($G['growth']['atRisk'] ?? [], 'name'), true);
+    })());
+    chk('growth: …and the rising child is not', (function () use ($G) {
+        return !in_array('Rising Child', array_column($G['growth']['atRisk'] ?? [], 'name'), true)
+            && in_array('Rising Child', array_column($G['growth']['rising'] ?? [], 'name'), true);
+    })());
+    chk('growth: a voided infraction is not held against a child', (function () {
+        $before = null;
+        foreach ((backend_dispatch('analytics.growth', ['requesterId' => 'NGG-2025-0099'])['growth']['students'] ?? []) as $s) {
+            if ($s['name'] === 'Steady Child') $before = $s['infractions'];
+        }
+        db_insert('infractions', ['personId' => 'G-FLAT', 'personType' => 'student', 'kind' => 'absence',
+            'date' => gmdate('Y-m-d'), 'voidedAt' => now_iso(), 'voidedBy' => 'admin', 'createdAt' => now_iso()]);
+        $after = null;
+        foreach ((backend_dispatch('analytics.growth', ['requesterId' => 'NGG-2025-0099'])['growth']['students'] ?? []) as $s) {
+            if ($s['name'] === 'Steady Child') $after = $s['infractions'];
+        }
+        // A withdrawn infraction was a staff mistake; scoring it would make the
+        // index a record of that mistake rather than of the child.
+        return $before === 0 && $after === 0;
+    })());
+    chk('growth: a centre names ONE constraint, with the number behind it', (function () use ($G) {
+        $cs = $G['growth']['centres'] ?? [];
+        $mine = null;
+        foreach ($cs as $c) if ($c['name'] === 'Growthville') $mine = $c;
+        return $mine && isset($mine['constraint']) && $mine['constraintText'] !== ''
+            && is_array($mine['funnel']) && array_key_exists('conversion', $mine);
+    })());
+    chk('growth: the summary counts scored and unscored separately', (function () use ($G) {
+        $s = $G['growth']['summary'] ?? [];
+        return ($s['students'] ?? 0) >= 4 && ($s['scored'] ?? 0) >= 3 && ($s['insufficient'] ?? 0) >= 1
+            && ($s['scored'] + $s['insufficient']) === $s['students'];
+    })());
+})();
+/* Fixtures removed: this block adds a centre and four students, and every
+   assertion that counts either would otherwise inherit them. Placed last AND
+   cleaned up, because "last" stops being true the moment somebody appends. */
+db_exec("DELETE FROM attendance WHERE studentId LIKE 'G-%'");
+db_exec("DELETE FROM infractions WHERE personId LIKE 'G-%'");
+db_exec("DELETE FROM summer_students WHERE studentId LIKE 'G-%'");
+db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

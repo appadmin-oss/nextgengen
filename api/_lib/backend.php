@@ -220,6 +220,10 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.dashboard.overview' => 'admin_dashboard_overview',
             'analytics.workspace'      => 'analytics_workspace',
             'analytics.drilldown'      => 'analytics_drilldown',
+            // Level 5. Its own op rather than another key on the workspace:
+            // it is per-student work over a multi-week window, so it must be
+            // fetchable (and cacheable) without paying for it on every load.
+            'analytics.growth'         => 'growth_workspace',
             'analytics.activity.add'   => 'analytics_activity_add',
             'admin.member.detail'     => 'admin_member_detail',
             'admin.mentor.assign'     => 'admin_assign_mentor',

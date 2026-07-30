@@ -19,6 +19,27 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     unset($res['ok']); json_ok($res);
 }
 
+/* Level 5 · Growth Potential is fetched separately.
+ *
+ * It scores every active student over a four-week window, so folding it into
+ * the main workspace read would make every visit to Levels 1–4 pay for work
+ * nobody had asked to see. Memoised on top of that, stamped with the attendance
+ * high-water mark: a new check-in is the only thing that can move a trajectory,
+ * so the stamp invalidates precisely when the answer changes and not otherwise.
+ */
+if (($_GET['view'] ?? '') === 'growth') {
+    $centre = (string)($_GET['centre'] ?? '');
+    $weeks  = (string)($_GET['weeks'] ?? '');
+    $stamp = 'a' . (string)(db_row('SELECT COALESCE(MAX(id),0) v FROM attendance')['v'] ?? '0')
+           . '.s' . (string)(db_row('SELECT COALESCE(MAX(id),0) v FROM assignment_submissions')['v'] ?? '0');
+    $key = 'growth_' . substr(hash('sha256', $s['mid'] . '|' . $centre . '|' . $weeks), 0, 16);
+    $res = cache_remember($key, 300, fn() => gs_call('analytics.growth', [
+        'requesterId' => $s['mid'], 'centre' => $centre, 'weeks' => $weeks,
+    ]), $stamp);
+    if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+    unset($res['ok']); json_ok($res);
+}
+
 $res = gs_call('analytics.workspace', [
     'requesterId' => $s['mid'],
     'week'       => $_GET['week'] ?? '',

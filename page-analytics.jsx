@@ -484,6 +484,7 @@ function AnalyticsWorkspace() {
     <nav className="an-levelnav" aria-label="Analytics levels">
       <a href="#an-exec">① Executive</a><a href="#an-ops">② Operations</a>
       <a href="#an-research">③ Research</a><a href="#an-evidence">④ Evidence</a>
+      <a href="#an-growth">⑤ Growth potential</a>
     </nav>
 
     {/* ── Level 1 · Executive ── */}
@@ -717,6 +718,9 @@ function AnalyticsWorkspace() {
         })}</div>}
     </section>
 
+    {/* ── Level 5 · Growth Potential ── */}
+    <AnGrowth centre={filters.centre} onDrill={openDrill}/>
+
     {/* Downloads & reports */}
     <section className="an-sec" style={{ marginBottom: 40 }}>
       <div className="an-eyebrow">Reporting</div>
@@ -733,6 +737,225 @@ function AnalyticsWorkspace() {
     {logOpen && <AnActivityDrawer opts={opts} defaults={filters} onClose={() => setLogOpen(false)}
       onSaved={() => { setLogOpen(false); load(filters); }}/>}
   </div>;
+}
+
+/* ── Level 5 · Growth Potential ─────────────────────────────────────────────
+ *
+ * The predictive level. Levels 1–4 describe what happened; this says which
+ * children are about to fall out and which centre is about to stall — the two
+ * questions a coordinator actually acts on each week, and neither of which an
+ * average can answer.
+ *
+ * Loaded on demand, not with the workspace: it scores every active student over
+ * a four-week window, and Levels 1–4 should not pay for work nobody asked to
+ * see. The server memoises it against the attendance high-water mark.
+ *
+ * The framing is deliberate and is a safeguarding decision, not a style choice.
+ * "At risk" is a label that can follow a child, so the at-risk list is titled by
+ * what to DO about it, every row carries the reasons that put it there, and the
+ * whole section is staff-only — it is never shown to a student or a guardian.
+ */
+const AN_BAND = (s) => (s === null || s === undefined ? { label: "No score", tone: "#64748b" }
+  : s >= 70 ? { label: "Thriving", tone: AN_TONE.good }
+  : s >= 55 ? { label: "Steady", tone: "#4C6FFF" }
+  : s >= 40 ? { label: "Watch", tone: AN_TONE.warn }
+  : { label: "Needs support", tone: AN_TONE.bad });
+
+function AnSpark({ series, tone }) {
+  const vals = (series || []).map(Number).filter(v => v === v);
+  if (vals.length < 2) return <span style={{ color: "var(--ink-400)", fontSize: 11 }}>—</span>;
+  const max = Math.max(100, ...vals), min = Math.min(0, ...vals);
+  const w = 62, h = 18;
+  const pts = vals.map((v, i) => {
+    const x = (i / (vals.length - 1)) * w;
+    const y = h - ((v - min) / (max - min || 1)) * h;
+    return x.toFixed(1) + "," + y.toFixed(1);
+  }).join(" ");
+  return <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" style={{ display: "block" }}>
+    <polyline points={pts} fill="none" stroke={tone || "#4C6FFF"} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round"/>
+  </svg>;
+}
+
+function AnGrowthRow({ s, onDrill }) {
+  const band = AN_BAND(s.score);
+  const tone = s.attSlope > 0 ? AN_TONE.good : s.attSlope < 0 ? AN_TONE.bad : "#64748b";
+  return <tr>
+    <td>
+      <b>{s.name}</b>
+      <div style={{ color: "var(--ink-400)", fontSize: 11.5 }}>{s.centre} · age {s.age || "—"}</div>
+    </td>
+    <td style={{ whiteSpace: "nowrap" }}>
+      {s.score === null
+        ? <span className="an-pill" style={{ background: "#eef1f6", color: "#64748b" }}>not enough data</span>
+        : <><b style={{ fontSize: 16, color: band.tone }}>{s.score}</b>
+            <div style={{ fontSize: 11, color: band.tone, fontWeight: 700 }}>{band.label}</div></>}
+    </td>
+    <td><AnSpark series={s.series ? Object.values(s.series) : []} tone={tone}/>
+      <div style={{ fontSize: 11, color: tone, fontWeight: 700 }}>
+        {s.attSlope > 0 ? "▲" : s.attSlope < 0 ? "▼" : "▬"} {Math.abs(Math.round(s.attSlope))}%/wk
+      </div>
+    </td>
+    <td style={{ fontSize: 12, color: "var(--ink-500)", maxWidth: 330 }}>
+      {(s.reasons || []).map((r, i) => <div key={i}>· {r.text}</div>)}
+    </td>
+    <td style={{ whiteSpace: "nowrap", fontSize: 11.5 }}>
+      {/* Confidence is reported next to the score, never folded into it —
+          blending them makes a thin score look like a middling one. */}
+      <span className="an-pill" style={{
+        background: s.confidence === "high" ? "rgba(22,163,74,.12)" : s.confidence === "medium" ? "rgba(245,158,11,.14)" : "#eef1f6",
+        color: s.confidence === "high" ? AN_TONE.good : s.confidence === "medium" ? "#8a6d00" : "#64748b",
+      }}>{s.confidence} confidence</span>
+      <div style={{ color: "var(--ink-400)", marginTop: 3 }}>{s.observations} observation{s.observations === 1 ? "" : "s"} · {s.weeks}w attendance</div>
+    </td>
+  </tr>;
+}
+
+function AnGrowth({ centre, onDrill }) {
+  const [g, setG] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [weeks, setWeeks] = React.useState(4);
+  const [method, setMethod] = React.useState(false);
+  const [tab, setTab] = React.useState("risk");   // risk | rising | centres
+
+  const load = React.useCallback(() => {
+    setLoading(true); setErr("");
+    api.admin.analyticsGrowth(centre || "", weeks)
+      .then(r => { setG(r.growth); setLoading(false); })
+      .catch(e => { setErr(e.code || e.message || "Couldn't load growth potential."); setLoading(false); });
+  }, [centre, weeks]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const sum = (g && g.summary) || {};
+  const rows = !g ? [] : tab === "risk" ? g.atRisk : tab === "rising" ? g.rising : [];
+
+  return <section className="an-sec" id="an-growth">
+    <div className="an-eyebrow">Level 5 · Growth potential</div>
+    <h2 className="an-h">Who needs support, and where growth is blocked.</h2>
+    <p className="an-sub">
+      The only predictive level. Everything above describes what has happened; this reads the <b>direction of travel</b> —
+      a child at 60% attendance and climbing is a different case from one at 60% and falling, and an average cannot tell
+      them apart. Scores are relative to children at the same centre and in the same age band, carry the reasons that
+      produced them, and are never shown to a student or guardian.
+    </p>
+
+    {err && <div className="an-card"><div className="an-empty" style={{ color: AN_TONE.bad }}>{err}</div></div>}
+    {loading && !g && <div className="an-card"><div className="an-empty">Scoring the cohort…</div></div>}
+
+    {g && <>
+      <div className="an-grid an-kpis" style={{ marginBottom: 14 }}>
+        <AnKpi icon="🫂" value={anFmt(sum.atRiskCount)} label="Need support now"
+          foot="low index, or attendance falling fast"/>
+        <AnKpi icon="🌱" value={anFmt(sum.risingCount)} label="Rising" foot="climbing week on week"/>
+        <AnKpi icon="🎯" value={sum.meanScore === null || sum.meanScore === undefined ? "—" : sum.meanScore} label="Mean index"
+          foot={sum.stats ? `median ${sum.stats.median} · sd ${sum.stats.sd}` : ""}/>
+        <AnKpi icon="🔍" value={anFmt(sum.scored)} label="Children scored"
+          foot={`${anFmt(sum.insufficient)} without enough data yet`}/>
+      </div>
+
+      <div className="an-card" style={{ marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div className="an-levelnav" style={{ margin: 0 }}>
+          {[["risk", "Needs support (" + (sum.atRiskCount || 0) + ")"], ["rising", "Rising (" + (sum.risingCount || 0) + ")"], ["centres", "By centre"]].map(([id, l]) => (
+            <a key={id} href="#an-growth" onClick={e => { e.preventDefault(); setTab(id); }}
+              style={tab === id ? { background: "var(--navy-900)", color: "#fff" } : undefined}>{l}</a>
+          ))}
+        </div>
+        <label style={{ marginLeft: "auto", fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6 }}>
+          Window
+          <select className="an-chip" value={weeks} onChange={e => setWeeks(Number(e.target.value))}>
+            {[3, 4, 6, 8].map(w => <option key={w} value={w}>{w} weeks</option>)}
+          </select>
+        </label>
+        <button className="an-chip" onClick={() => setMethod(m => !m)}>{method ? "Hide method" : "How this is calculated"}</button>
+        {/* Exported with the reasons and the confidence, not just the number —
+            a score handed to a colleague without them is unusable. */}
+        <button className="an-chip" onClick={() => {
+          const out = [["Child", "Centre", "Age", "Index", "Band", "Trajectory %/wk", "Attendance %", "Confidence", "Observations", "Why"]];
+          (g.students || []).forEach(s => out.push([
+            s.name, s.centre, s.age, s.score === null ? "" : s.score, AN_BAND(s.score).label,
+            s.attSlope, s.attLevel, s.confidence, s.observations,
+            (s.reasons || []).map(r => r.text).join(" "),
+          ]));
+          anDownload("ngg-growth-potential-" + g.windowWeeks + "w.csv",
+            out.map(r => r.map(anCsv).join(",")).join("\n"), "text/csv");
+        }}>⭳ CSV</button>
+      </div>
+
+      {/* The published method. An unexplained score is not defensible to a
+          funder, and should not be trusted by staff either. */}
+      {method && g.methodology && <div className="an-card" style={{ marginBottom: 14 }}>
+        <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Method</h3>
+        <div className="an-ev" style={{ marginBottom: 10 }}>
+          {Object.keys(g.methodology.weights || {}).map(k => (
+            <span key={k} className="an-evtype">{k} · {Math.round(g.methodology.weights[k] * 100)}%</span>
+          ))}
+          <span className="an-evtype" style={{ background: "var(--navy-900)", color: "#fff" }}>
+            {Math.round((g.methodology.trajectoryShare || 0) * 100)}% of each component is trajectory
+          </span>
+        </div>
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.65, color: "var(--ink-500)" }}>
+          {(g.methodology.notes || []).map((n, i) => <li key={i}>{n}</li>)}
+        </ul>
+      </div>}
+
+      {tab !== "centres" && <div className="an-card" style={{ padding: 0, overflowX: "auto" }}>
+        <table className="admin-table" style={{ minWidth: 780 }}>
+          <thead><tr><th>Child</th><th>Index</th><th>Trajectory</th><th>Why</th><th>Evidence</th></tr></thead>
+          <tbody>
+            {rows.length === 0
+              ? <tr><td colSpan={5} className="an-empty">
+                  {tab === "risk"
+                    ? "Nobody is trending out of the programme in this window. That is the good news."
+                    : "No child is climbing sharply enough to flag yet."}
+                </td></tr>
+              : rows.map(s => <AnGrowthRow key={s.studentId} s={s} onDrill={onDrill}/>)}
+          </tbody>
+        </table>
+      </div>}
+
+      {tab === "centres" && <div className="an-card" style={{ padding: 0, overflowX: "auto" }}>
+        <table className="admin-table" style={{ minWidth: 820 }}>
+          <thead><tr><th>Centre</th><th>Mean index</th><th>Weekly present</th><th>Sign-up → confirmed</th><th>Children per staff</th><th>What is blocking growth</th></tr></thead>
+          <tbody>
+            {(g.centres || []).length === 0
+              ? <tr><td colSpan={6} className="an-empty">No centres in scope.</td></tr>
+              : g.centres.map(c => {
+                const band = AN_BAND(c.meanScore);
+                const tone = c.attendanceTrend > 0 ? AN_TONE.good : c.attendanceTrend < 0 ? AN_TONE.bad : "#64748b";
+                return <tr key={c.centreId || c.name}>
+                  <td><b>{c.name}</b><div style={{ color: "var(--ink-400)", fontSize: 11.5 }}>{c.enrolled} enrolled · {c.atRisk} needing support</div></td>
+                  <td><b style={{ color: band.tone, fontSize: 15 }}>{c.meanScore === null ? "—" : c.meanScore}</b></td>
+                  <td><AnSpark series={c.weeklyPresent} tone={tone}/>
+                    <div style={{ fontSize: 11, color: tone, fontWeight: 700 }}>
+                      {c.attendanceTrend > 0 ? "▲" : c.attendanceTrend < 0 ? "▼" : "▬"} {Math.abs(c.attendanceTrend)}/wk
+                    </div></td>
+                  <td><b style={{ color: AN_RATE_TONE(c.conversion) }}>{c.conversion}%</b>
+                    <div style={{ color: "var(--ink-400)", fontSize: 11 }}>
+                      {c.funnel ? `${c.funnel.self_pending} waiting · ${c.funnel.verified} confirmed` : ""}
+                    </div></td>
+                  <td>{c.ratio === null ? <span style={{ color: AN_TONE.bad, fontWeight: 700 }}>no staff</span> : c.ratio}</td>
+                  {/* One named constraint, not a list of three. A ranking that
+                      does not imply an action is just a league table. */}
+                  <td style={{ fontSize: 12, maxWidth: 300 }}>
+                    <span className="an-pill" style={{
+                      background: c.constraint === "none" ? "rgba(22,163,74,.12)" : "rgba(239,68,68,.12)",
+                      color: c.constraint === "none" ? AN_TONE.good : AN_TONE.bad,
+                    }}>{c.constraint}</span>
+                    <div style={{ color: "var(--ink-500)", marginTop: 3 }}>{c.constraintText}</div>
+                  </td>
+                </tr>;
+              })}
+          </tbody>
+        </table>
+      </div>}
+
+      <p className="an-sub" style={{ marginTop: 10 }}>
+        {anFmt(sum.insufficient)} {sum.insufficient === 1 ? "child has" : "children have"} too little history to score
+        and {sum.insufficient === 1 ? "is" : "are"} deliberately left blank rather than given a number nobody can trust.
+        Window: {g.windowWeeks} weeks{centre ? ` · ${centre}` : ""}.
+      </p>
+    </>}
+  </section>;
 }
 
 // One-page PDF summary via the vendored jsPDF (lazy-loaded).
