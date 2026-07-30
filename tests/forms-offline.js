@@ -213,6 +213,82 @@ const students = () => parseInt(php(`echo (int) db_row("SELECT COUNT(*) c FROM s
     else bad(`refusal handled wrongly: ${JSON.stringify(refusal)}`);
     if (qAfter === 0) ok('and it is not left in the queue to retry for ever');
     else bad(`a refused submission stayed queued (${qAfter})`);
+    /* 6 · THE REGRESSION: an `in_flight` reply must not fail the submission.
+
+       send() banks the row before awaiting the response, so the 20s flush tick
+       used to pick up the SAME row and send the same payload again. The server
+       claims a submissionId before doing the work, so the loser was told
+       `in_flight` — correct, but it arrives as a 4xx, and a 4xx meant "declined,
+       stop": the row was dropped and an error shown to somebody with a perfectly
+       good connection who had submitted exactly once. Any submission slower than
+       the tick tripped it, and a photo upload comfortably is.
+
+       Reproduced by INTERCEPTING the first POST and answering `in_flight`, not by
+       racing two real requests: php -S is single-threaded, so a second request
+       serialises behind the first and gets a replay rather than the concurrent
+       claim. Production runs FPM or Apache with several workers, where the
+       overlap is genuine — so the stub is the faithful reproduction here and a
+       real race is not. */
+    let served = 0;
+    await page.route('**/api/public/selfreg.php', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      served++;
+      if (served === 1) {
+        return route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: false, error: 'in_flight' }),
+        });
+      }
+      return route.continue();   // the retry reaches the real server
+    });
+
+    const raced = await page.evaluate(async (p) => {
+      const payload = JSON.parse(JSON.stringify(p));
+      payload.data = Object.assign({}, p.data, { firstName: 'Raced', lastName: 'Child' });
+      const out = { queued: false, terminal: null };
+      try {
+        await window.outbox.intake('selfreg.submit', payload, 'ngg_race_draft');
+        out.sentFirstTry = true;
+      } catch (e) {
+        out.queued = !!e.queued;
+        out.terminal = e.queued ? null : (e.code || e.message || String(e));
+      }
+      return out;
+    }, payload);
+
+    // An in_flight must leave the work QUEUED, never reported as a dead end.
+    if (raced.queued) ok('an in_flight reply keeps the submission queued, not failed');
+    else bad(`in_flight was treated as terminal (${raced.terminal}) — the shipped regression`);
+
+    // …and the retry must actually land it, exactly once.
+    let landed = false;
+    for (let i = 0; i < 40 && !landed; i++) {
+      await page.evaluate(() => window.outbox.flush());
+      landed = students() === 2;
+      if (!landed) await new Promise(r => setTimeout(r, 250));
+    }
+    if (landed) ok('and the retry lands it — exactly one extra student row');
+    else bad(`the retry never landed (${students()} rows; expected 2)`);
+
+    const qEnd = await page.evaluate(() => window.outbox.pending());
+    if (qEnd === 0) ok('the queue drains rather than holding a ghost');
+    else bad(`queue still holds ${qEnd} after the retry landed`);
+    await page.unroute('**/api/public/selfreg.php');
+
+    // 7 · in_flight must be classified as retryable, not as a refusal.
+    const cls = await page.evaluate(() => {
+      const mk = (code, status) => { const e = new Error(code); e.code = code; e.status = status; return e; };
+      return {
+        inflight: window.outbox.isRetryable(mk('in_flight', 400)),
+        validation: window.outbox.isRetryable(mk('bad_age', 400)),
+        network: window.outbox.isRetryable(mk('network', 0)),
+        server: window.outbox.isRetryable(mk('http_500', 500)),
+      };
+    });
+    if (cls.inflight && cls.network && cls.server && !cls.validation)
+      ok('in_flight retries; a real validation refusal still does not');
+    else bad(`retry classification wrong: ${JSON.stringify(cls)}`);
   } catch (e) {
     bad('threw: ' + (e && e.message ? e.message : String(e)));
   } finally {

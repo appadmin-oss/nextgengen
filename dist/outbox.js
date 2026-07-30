@@ -174,9 +174,22 @@
      is an answer, and re-sending an answer just fills the queue for ever. */
   function isRetryable(err) {
     if (!err) return false;
+    var c = String((err && (err.code || err.message)) || '');
+    /* `in_flight` is NOT a refusal, and treating it as one is what made a
+       perfectly online submission fail.
+
+       The server claims a submissionId before doing the work (intake_once), so a
+       second request carrying the same id while the first is still running is
+       told `in_flight` — correctly. But it arrives as a 4xx, and a 4xx used to
+       mean "the server declined on purpose, stop": the row was dropped and the
+       caller was shown an error. It means the opposite. It means this exact
+       submission is being processed right now, so the only sane response is to
+       wait and ask again — at which point the original has finished and the
+       replay hands back its real result. Checked BEFORE the 4xx rule below,
+       which would otherwise swallow it. */
+    if (c === 'in_flight') return true;
     if (err.status === 0 || err.status === 429) return true;
     if (err.status >= 500) return true;
-    var c = String(err.code || err.message || '');
     if (/^(network|timeout)$/.test(c)) return true;
     // A 4xx with a code is the server declining on purpose.
     if (err.status >= 400 && err.status < 500) return false;
@@ -216,8 +229,18 @@
       at: Date.now(),
       label: opts.label || '',
     };
-    // Storage FIRST. This is the whole point of the module: if the tab dies
-    // between here and the response, the submission still exists.
+    /* Storage FIRST — that is the whole point of the module: if the tab dies
+       between here and the response, the submission still exists.
+
+       Leased before the attempt, though. The row is visible in the queue while
+       this request is in flight, and the periodic flush used to pick it up and
+       send the SAME payload again — so any submission slower than the 20s tick
+       (a photo upload comfortably is) raced itself. The server, quite rightly,
+       told the loser `in_flight`; the loser then dropped the row and reported an
+       error to somebody with a perfectly good connection who had submitted once.
+       The lease is what makes "queued" and "being sent right now" different
+       states instead of the same one. */
+    row.sendingAt = Date.now();
     return put(row).then(function () {
       notify();
       return attempt(row).then(function (res) {
@@ -228,6 +251,7 @@
           return drop(row.id).then(function () { notify(); throw err; });
         }
         row.tries = 1;
+        row.sendingAt = 0;        // release, so the flush may take it from here
         row.lastError = String(err && (err.code || err.message) || 'network');
         return put(row).then(function () {
           schedule();
@@ -253,20 +277,35 @@
     });
   }
 
+  /* A lease older than this is assumed dead — the tab was closed, or the request
+     was killed mid-flight — so the row becomes claimable again. It must comfortably
+     exceed api-client's own 60s write timeout, or the flush would start duplicating
+     the very slow submissions this exists to protect. */
+  var LEASE_MS = 90000;
+
+  function leased(row) {
+    return !!row.sendingAt && (Date.now() - row.sendingAt) < LEASE_MS;
+  }
+
   /** Drain the queue oldest-first. Stops on the first still-unreachable entry. */
   function flush() {
     if (draining) return Promise.resolve();
     draining = true;
     return readAll().then(function (rows) {
+      // Skip anything another attempt currently owns. Sending it again would
+      // collide with itself on the server and get the whole row thrown away.
+      rows = rows.filter(function (r) { return !leased(r); });
       rows.sort(function (a, b) { return a.at - b.at; });
       var chain = Promise.resolve();
       var stop = false;
       rows.forEach(function (row) {
         chain = chain.then(function () {
           if (stop) return;
-          return attempt(row).then(function () {
+          row.sendingAt = Date.now();
+          return put(row).then(function () { return attempt(row); }).then(function () {
             return drop(row.id);
           }, function (err) {
+            row.sendingAt = 0;
             if (!isRetryable(err)) return drop(row.id);   // refused: stop carrying it
             // Still unreachable — leave it queued and stop the pass, so a long
             // queue does not hammer a dead network entry by entry.

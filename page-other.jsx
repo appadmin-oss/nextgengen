@@ -2653,7 +2653,10 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
       else if (c === "photo_rejected") { setStep(1); setPhoto(""); setPhotoMsg({ ok: false, issues: ["That photo can't be used for an ID card. Please take another."] }); }
       else if (c === "duplicate_suspect") setErr("Someone has already registered this child with the same contact details. Speak to your centre coordinator rather than registering twice.");
       else if (c === "closed") setErr("Registration has just closed. Ask your centre coordinator when it reopens.");
-      else if (c === "in_flight") setErr("This form is already being sent — give it a moment rather than sending it twice.");
+      /* Not a dead end: the server is still working on THIS submission, and the
+         outbox retries until it can hand back the real result. Say so, rather
+         than telling somebody to stop doing the thing they already did. */
+      else if (c === "in_flight") setErr("Still sending — this is taking a moment. Leave the page open; it finishes on its own and you don't need to send it again.");
       /* Queued, not lost. The outbox has it on this device and will keep trying
          on its own, so the honest thing to say is "it will go", not "try again"
          — and certainly not "check your connection", which is what sent
@@ -3711,7 +3714,7 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
          Two cases now, told apart by whether a response arrived at all. */
       else if (c === "gate_invalid") { setErrors({ _: "This desk link is no longer valid — it may have been revoked or used up. Ask an admin for a fresh gate link." }); }
       else if (c === "csrf_failed" || c === "unauthorized") { setErrors({ _: "The desk session has expired. Reload the page and unlock the desk again — the draft is safe on this device." }); }
-      else if (c === "in_flight") { setErrors({ _: "This registration is already being sent. Give it a moment rather than sending it again." }); }
+      else if (c === "in_flight") { setErrors({ _: "Still sending — give it a moment. It finishes on its own; don't re-send or you'll be waiting on two of them." }); }
       /* Queued by the outbox: banked on this device, and it will keep trying by
          itself. This replaces the advice that used to be given after a timeout —
          "check with an admin before re-registering, in case this one went
