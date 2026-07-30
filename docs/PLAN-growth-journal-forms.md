@@ -1,6 +1,26 @@
 # Plan — Growth Potential analytics · Program Journal · Form reliability & caching
 
-Status: proposed · Branch: `claude/gate-links-staff-desk-4g73f9`
+Status: **delivered** · Branch: `claude/gate-links-staff-desk-4g73f9`
+
+> All four workstreams shipped. Two things changed from the plan during
+> implementation, both because reality disagreed with it:
+>
+> - **The forms defect was not what §1.1 predicted.** The `web_cron_run` flush
+>   gap is real and is fixed, but the reason the public form would not submit was
+>   a lossy route file: `public/selfreg.php` forwarded `$res['error']` only, and a
+>   field-level rejection arrives as `errors` (plural) with no `error` key — so
+>   the family got `{"error":"failed"}` and the fall-through message blamed the
+>   connection. `public/gate.php` already forwarded the whole refusal, which is
+>   why the staff desk worked and the public form did not. An HTTP-level test now
+>   guards it; the domain-level suite could never have seen it.
+> - **The `post_max_size` theory in §1.3 was wrong.** An 8MB photo does
+>   base64-inflate past a default `post_max_size`, but it is not this bug —
+>   `php -S` accepted a 10.6MB body cleanly. Left here as a real deployment risk
+>   on Apache, not as a diagnosis.
+>
+> One thing was found only by running it: the Growth index was scoring children
+> for weeks *before they enrolled*, manufacturing a "was away, now returning"
+> curve. Fixed by windowing from `enrolledAt`.
 
 ---
 
