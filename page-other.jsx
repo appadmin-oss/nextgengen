@@ -3263,6 +3263,73 @@ function waitedFor(iso) {
    confirm step is laid out, because it is the same job read backwards: there
    somebody checks what they typed before committing it, here somebody checks
    what a family typed before letting it through. */
+/* The submitted photo, or a straight answer about why there isn't one.
+ *
+ * A family cannot submit this form without a photo — it is enforced on the
+ * client and again on the server. So a row with no photoUrl does not mean "they
+ * sent none", it means the server could not keep the one they sent: an
+ * unwritable image directory is the usual cause, and on a shared host the only
+ * trace was a line in a PHP error log. And a photoUrl that 404s renders as an
+ * identical blank box, because <img> failures are silent.
+ *
+ * Three states, three different things to do about them, so the desk says which
+ * one it is instead of showing the same grey rectangle for all three. */
+function ReviewPhoto({ r }) {
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => { setFailed(false); }, [r.photoUrl]);
+  const box = { width: 200, height: 254, borderRadius: 12, display: "grid", placeItems: "center",
+                textAlign: "center", padding: 12, boxSizing: "border-box", fontSize: 12.5, lineHeight: 1.5 };
+  // `stored === false` is the server telling us it lost the image. null means an
+  // older submission that predates the flag — don't accuse the host on a guess.
+  const lost = r.photoUrl === "" && r.photo && r.photo.stored === false;
+
+  if (r.photoUrl && !failed) {
+    return <img src={r.photoUrl} alt={"Photo submitted for " + r.fullName} onError={() => setFailed(true)}
+      style={{ width: 200, height: 254, objectFit: "cover", borderRadius: 12, display: "block", background: "rgba(255,255,255,.06)" }}/>;
+  }
+  if (r.photoUrl && failed) {
+    return (
+      <div style={{ ...box, background: "rgba(255,90,60,.12)", border: "1px solid rgba(255,120,100,.45)", color: "#ffb3a3" }}>
+        <div>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>Photo won't load</div>
+          <div>It's on the record but the server didn't return it. Send this line to your administrator:</div>
+          <div className="mono" style={{ fontSize: 10.5, marginTop: 6, wordBreak: "break-all", opacity: .85 }}>{r.photoUrl}</div>
+        </div>
+      </div>
+    );
+  }
+  if (lost) {
+    return (
+      <div style={{ ...box, background: "rgba(255,90,60,.12)", border: "1px solid rgba(255,120,100,.45)", color: "#ffb3a3" }}>
+        <div>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>Photo was not saved</div>
+          <div>The family did send one — this server couldn't store it. Ask an administrator to check
+          Diagnostics → Photo storage; the image directory is usually not writable.</div>
+        </div>
+      </div>
+    );
+  }
+  return <div style={{ ...box, background: "rgba(255,255,255,.07)", color: "rgba(230,238,255,.45)", fontSize: 13 }}>No photo</div>;
+}
+
+/* The list's 42×54 thumbnail. Same three states as ReviewPhoto, compressed to
+   what fits in a row: the picture, a warning glyph, or nothing. */
+function ReviewThumb({ r }) {
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => { setFailed(false); }, [r.photoUrl]);
+  const box = { width: 42, height: 54, borderRadius: 8, flex: "none", display: "grid", placeItems: "center", fontSize: 17 };
+  const lost = r.photoUrl === "" && r.photo && r.photo.stored === false;
+  if (r.photoUrl && !failed) {
+    return <img src={r.photoUrl} alt="" onError={() => setFailed(true)}
+      style={{ width: 42, height: 54, objectFit: "cover", borderRadius: 8, flex: "none" }}/>;
+  }
+  if (failed || lost) {
+    return <div title={failed ? "This photo won't load — open the record" : "The server did not save this photo"}
+      style={{ ...box, background: "rgba(255,90,60,.16)", border: "1px solid rgba(255,120,100,.5)", color: "#ffb3a3" }}>⚠</div>;
+  }
+  return <div style={{ ...box, background: "rgba(255,255,255,.08)" }}/>;
+}
+
 function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
   const [note, setNote] = React.useState("");
   const [busy, setBusy] = React.useState("");
@@ -3307,10 +3374,12 @@ function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
       <div style={card}>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           <div style={{ flex: "none" }}>
-            {r.photoUrl
-              ? <img src={r.photoUrl} alt={"Photo submitted for " + r.fullName}
-                  style={{ width: 200, height: 254, objectFit: "cover", borderRadius: 12, display: "block", background: "rgba(255,255,255,.06)" }}/>
-              : <div style={{ width: 200, height: 254, borderRadius: 12, display: "grid", placeItems: "center", background: "rgba(255,255,255,.07)", color: "rgba(230,238,255,.45)", fontSize: 13 }}>No photo</div>}
+            {/* A blank frame used to be the answer to three different questions:
+                no photo was sent, the server failed to keep the one that was, or
+                the URL on the row does not load. The desk can distinguish all
+                three, so it should — an empty box that will not say why is what
+                made this impossible to report. */}
+            <ReviewPhoto r={r}/>
           </div>
           <div style={{ flex: "1 1 240px", minWidth: 0 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -3478,9 +3547,12 @@ function ReviewList({ rows, g, gold, picked, setPicked, selectable, busy, onOpen
             {selectable && <input type="checkbox" checked={on} aria-label={"Select " + r.fullName}
               onChange={() => setPicked(p => on ? p.filter(x => x !== r.studentId) : p.concat([r.studentId]))}
               style={{ width: 20, height: 20, accentColor: gold, flex: "none", cursor: "pointer" }}/>}
-            {r.photoUrl
-              ? <img src={r.photoUrl} alt="" style={{ width: 42, height: 54, objectFit: "cover", borderRadius: 8, flex: "none" }}/>
-              : <div style={{ width: 42, height: 54, borderRadius: 8, background: "rgba(255,255,255,.08)", flex: "none" }}/>}
+            {/* A row whose thumbnail is an empty grey box says nothing about
+                whether the photo is missing or merely failed to arrive — and
+                bulk-approving from this list is offered right above it. The
+                marker is what stops a whole page being approved on the
+                assumption the photos were fine. */}
+            <ReviewThumb r={r}/>
             <div style={{ flex: "1 1 160px", minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{r.fullName}</div>
               <div className="mono" style={{ ...mut, fontSize: 12 }}>{r.centre || "no centre"}{r.course ? " · " + r.course : ""} · {r.studentId}</div>

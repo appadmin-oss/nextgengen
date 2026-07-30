@@ -295,6 +295,108 @@ function makeBigPhoto() {
     if (pubRows.length === 2 && pubRows.every(p => p.split(':')[1] === 'declined')) ok('an unticked publication box is recorded as declined, and the place stands');
     else bad(`publication consent was not recorded as declined: ${pubRows.join(', ')}`);
 
+    /* ── THE REVIEW DESK ACTUALLY SHOWING THE PHOTO ────────────────────────
+     * Everything above proves the bytes are stored and that the URL serves.
+     * None of it proves the desk RENDERS it, and that is the thing that was
+     * reported: the <img> has an onError that hides itself, so a broken photo
+     * looks exactly like a card with no photo — silent, on the one screen whose
+     * whole job is to look at a photograph.
+     *
+     * So this drives the real desk with a real password and reads
+     * naturalWidth off the rendered element. Decoded pixels or nothing. */
+    const REVPW = 'reviewpass123';
+    php(`db_insert('gate_links', ['gateId'=>'GL-REVSHOW','kind'=>'review','name'=>'Review desk','cohortId'=>'C1','centreId'=>'','status'=>'active','passHash'=>password_hash(${JSON.stringify(REVPW)}, PASSWORD_DEFAULT),'passSetAt'=>now_iso(),'createdBy'=>'seed','createdAt'=>now_iso()]);`);
+    const desk = await context.newPage();
+    const deskErrs = [];
+    desk.on('pageerror', e => deskErrs.push(String(e.message)));
+    // Every request the desk makes for an image, with its status — so a 404,
+    // a 403 from an .htaccess rule or a 429 is named rather than guessed at.
+    const imgReqs = [];
+    desk.on('response', async (r) => {
+      if (/photo\.php|cloudinary|\.(png|jpe?g|webp)(\?|$)/i.test(r.url())) {
+        imgReqs.push({ url: r.url().replace(BASE, ''), status: r.status(), type: r.headers()['content-type'] || '' });
+      }
+    });
+    await desk.goto(BASE + '/review?g=GL-REVSHOW', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(desk);
+    await desk.waitForTimeout(1200);
+
+    const pwBox = desk.locator('input[type="password"]').first();
+    if (await pwBox.count()) {
+      await pwBox.fill(REVPW);
+      await desk.getByRole('button', { name: /Unlock/ }).first().click();
+      await desk.waitForTimeout(2000);
+    }
+    const deskText = await desk.evaluate(() => document.body.innerText);
+    if (/waiting/i.test(deskText) && /Ada/.test(deskText)) ok('the review desk unlocks and lists the submission');
+    else bad(`the review desk did not reach the queue: ${deskText.slice(0, 200).replace(/\n/g, ' | ')}`);
+
+    /* The rendered element. naturalWidth is 0 for a broken image and >0 only
+       when the browser actually decoded pixels — the one check that cannot pass
+       on a URL that 404s. */
+    const shown = await desk.evaluate(async () => {
+      const imgs = Array.from(document.querySelectorAll('img')).filter(i => /photo\.php|cloudinary|data:image/.test(i.src || ''));
+      await Promise.all(imgs.map(i => i.complete ? null : new Promise(r => { i.onload = i.onerror = r; })));
+      return imgs.map(i => ({ src: (i.src || '').slice(-70), w: i.naturalWidth, h: i.naturalHeight,
+                              hidden: getComputedStyle(i).display === 'none' }));
+    });
+    if (shown.length === 0) {
+      bad(`the review desk rendered NO photo element at all (image requests: ${JSON.stringify(imgReqs)})`);
+    } else if (shown.every(i => i.w > 0 && !i.hidden)) {
+      ok(`the review desk displays the headshot (${shown[0].w}×${shown[0].h})`);
+    } else {
+      bad(`the desk's photo did not load: ${JSON.stringify(shown)} · requests: ${JSON.stringify(imgReqs)}`);
+    }
+    if (imgReqs.every(r => r.status === 200)) ok('…and every image request the desk made returned 200');
+    else bad(`an image request failed: ${JSON.stringify(imgReqs.filter(r => r.status !== 200))}`);
+    if (!deskErrs.length) ok('…with no page errors on the desk');
+    else bad('desk page errors: ' + deskErrs.join(' | '));
+
+    /* And when the photo DOESN'T load, the desk has to say so.
+     *
+     * An <img> failure is silent, so a URL that 404s rendered as the same grey
+     * rectangle as a family who sent no photo — which is why this was reported
+     * as "photos don't display" with nothing to act on. Simulated by deleting the
+     * stored file out from under the row, which is also a real state: a swept
+     * cache directory, a restored backup that missed api/storage. */
+    php(`$u = (string) db_row("SELECT photoUrl FROM summer_students WHERE fullName LIKE 'Ada%' LIMIT 1")['photoUrl'];`
+      + `@unlink(photo_store_path(substr($u, strrpos($u, '=') + 1)));`);
+    await desk.close();
+    /* A FRESH context, not a reload. The photo URL is content-addressed and
+       served immutable for a year, so the browser that already fetched it keeps
+       displaying the deleted file from its own cache — correct behaviour (the id
+       IS the bytes, so a cached copy can never be the wrong image) and precisely
+       why the reload showed nothing wrong. A reviewer opening the desk tomorrow
+       is the case that matters, and that is a cold cache. */
+    // A phone-width viewport, because the desk opens on the single-record REVIEW
+    // view there; a wide one lands on the list, which is an index and
+    // deliberately not where a decision is made.
+    const cold = await browser.newContext({ viewport: { width: 460, height: 940 } });
+    const desk2 = await cold.newPage();
+    await desk2.goto(BASE + '/review?g=GL-REVSHOW', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(desk2);
+    await desk2.waitForTimeout(1200);
+    const pw2 = desk2.locator('input[type="password"]').first();
+    if (await pw2.count()) {
+      await pw2.fill(REVPW);
+      await desk2.getByRole('button', { name: /Unlock/ }).first().click();
+      await desk2.waitForTimeout(2200);
+    }
+    // Straight to the record if the desk showed the list.
+    const openBtn = desk2.getByRole('button', { name: /^Open/ }).first();
+    if (await openBtn.count()) { await openBtn.click(); await desk2.waitForTimeout(1200); }
+    const brokenText = await desk2.evaluate(async () => {
+      const imgs = Array.from(document.querySelectorAll('img')).filter(i => /photo\.php/.test(i.src || ''));
+      await Promise.all(imgs.map(i => i.complete ? null : new Promise(r => { i.onload = i.onerror = r; })));
+      await new Promise(r => setTimeout(r, 400));
+      return document.body.innerText;
+    });
+    if (/won't load/i.test(brokenText)) ok('a photo that fails to load says so, instead of a blank frame');
+    else bad(`a broken photo rendered silently: ${brokenText.replace(/\n/g, ' | ')}`);
+    if (/administrator/i.test(brokenText)) ok('…and names something the reviewer can pass on');
+    else bad('the broken-photo message gives the reviewer nothing to do');
+    await cold.close();
+
     /* And approval finishes it — no second consent email, ID issued there. */
     const rev = php(`db_insert('gate_links', ['gateId'=>'GL-REVUI','kind'=>'review','name'=>'Desk','cohortId'=>'C1','centreId'=>'','status'=>'active','passHash'=>'','createdBy'=>'seed','createdAt'=>now_iso()]);`
       + `$id = (string) db_row("SELECT studentId FROM summer_students WHERE fullName LIKE 'Ada%' LIMIT 1")['studentId'];`

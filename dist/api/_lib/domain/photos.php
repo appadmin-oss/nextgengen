@@ -218,11 +218,94 @@ function photo_pipeline_alert(string $reason, array $detail = []): void {
 const PHOTO_STORE_MAX_BYTES = 6000000;   // a resampled headshot is ~150KB
 const PHOTO_STORE_TYPES = ['jpeg' => 'jpg', 'jpg' => 'jpg', 'png' => 'png', 'webp' => 'webp'];
 
+/**
+ * Where originals live, and a fallback for the host that will not let us write
+ * there.
+ *
+ * The intended home is `api/storage/photos`. On a badly-permissioned shared
+ * host — and "the web user cannot write to a directory you uploaded by FTP" is
+ * the single most common way a PHP deploy is broken — `@mkdir` fails silently,
+ * `file_put_contents` fails silently, and the only trace was a line in a PHP
+ * error log nobody reads. A registration then succeeded with an empty photo
+ * frame, which is indistinguishable from no photo having been sent.
+ *
+ * So: fall back to the cache directory, which MUST already be writable or rate
+ * limiting could not work at all, and record that we did. A photo in a
+ * second-choice directory is worth far more than a lost one — but it is not
+ * fine, so `photo_store_where()` reports it and the diagnostics screen says so
+ * out loud rather than leaving the deployment quietly degraded.
+ */
 function photo_store_dir(): string {
+    static $resolved = null;
+    if ($resolved !== null) return $resolved;
+
     $base = (string)($GLOBALS['CONFIG']['db']['sqlite_path'] ?? '');
-    $dir = ($base !== '' ? dirname($base) : (__DIR__ . '/../../storage')) . '/photos';
-    if (!is_dir($dir)) @mkdir($dir, 0775, true);
-    return $dir;
+    $primary = ($base !== '' ? dirname($base) : (__DIR__ . '/../../storage')) . '/photos';
+    $cache = (string)($GLOBALS['CONFIG']['cache_dir'] ?? '');
+    $candidates = [$primary];
+    if ($cache !== '') $candidates[] = rtrim($cache, '/') . '/photos';
+
+    foreach ($candidates as $i => $dir) {
+        if (!is_dir($dir)) @mkdir($dir, 0775, true);
+        if (!is_dir($dir) || !is_writable($dir)) continue;
+        // Whichever directory wins, it must not be browsable. The primary is
+        // already covered by api/storage/.htaccess; the cache fallback is not.
+        $ht = $dir . '/.htaccess';
+        if (!is_file($ht)) {
+            @file_put_contents($ht, "<IfModule mod_authz_core.c>\n  Require all denied\n</IfModule>\n"
+                . "<IfModule !mod_authz_core.c>\n  Order allow,deny\n  Deny from all\n</IfModule>\nOptions -Indexes\n");
+        }
+        $GLOBALS['__photo_store_where'] = $i === 0 ? 'storage' : 'cache_fallback';
+        return $resolved = $dir;
+    }
+    // Nothing writable. Return the primary anyway so callers get a real path in
+    // their error, and let photo_store_put report the failure properly.
+    $GLOBALS['__photo_store_where'] = 'unwritable';
+    return $resolved = $primary;
+}
+
+/** 'storage' | 'cache_fallback' | 'unwritable' — for the diagnostics screen. */
+function photo_store_where(): string {
+    photo_store_dir();
+    return (string)($GLOBALS['__photo_store_where'] ?? 'unknown');
+}
+
+/**
+ * Can we actually store and read back an image on this host, right now?
+ *
+ * A real round trip — write a tiny PNG, resolve it the way the serving route
+ * does, read it back, delete it — because every part of that chain is something
+ * a host can break independently, and the symptom of any of them is the same
+ * blank frame. Answers the question an admin actually has ("why is there no
+ * photo?") instead of the one the code can see ("write_failed").
+ */
+function photo_store_selftest(): array {
+    $dir = photo_store_dir();
+    $out = ['dir' => $dir, 'where' => photo_store_where(),
+            'exists' => is_dir($dir), 'writable' => is_dir($dir) && is_writable($dir),
+            'files' => 0, 'bytes' => 0];
+    if (is_dir($dir)) {
+        foreach ((array)@scandir($dir) as $f) {
+            if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', (string)$f)) continue;
+            $out['files']++;
+            $out['bytes'] += (int)@filesize($dir . '/' . $f);
+        }
+    }
+    /* A 24×24 PNG, written and read back through the very same helpers a
+     * submission uses — no shortcut, or the probe would pass on a host where a
+     * real photo fails. Deliberately not a 1×1: photo_store_put refuses
+     * anything under 100 bytes as an icon or a blank, so the smallest possible
+     * PNG fails the probe for a reason that has nothing to do with the host. */
+    $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAIAAABvFaqvAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAmElEQVQ4ja3Tyw6DIBBA0Wtr37UVpPT//7QLKyEiOgwmdzFsTgYSGuCxRy0GaOoL0KGyGDrWNINadSl00rUInRXloEtpK9C1qHXoJm8TuguTQKJPIoSem8mhLp+Hrgh6Jbkwl0LvqCE+KqAeerDT8E8HmTQFZMGAnVUKDdNGFoa4IshFVxshF1K/UYA+Y3LI5yEPfpeNPHx/JEAT8G7byQ4AAAAASUVORK5CYII=';
+    $r = photo_store_put($png);
+    if (empty($r['ok'])) return $out + ['ok' => false, 'stage' => 'write', 'error' => (string)($r['error'] ?? 'failed')];
+    $path = photo_store_path((string)$r['id']);
+    $readable = $path !== '' && is_file($path) && @filesize($path) > 0;
+    // Clean up: the probe is not somebody's headshot and must not survive as one.
+    if ($path !== '') @unlink($path);
+    return $out + ($readable
+        ? ['ok' => true, 'stage' => 'read', 'url' => (string)$r['url']]
+        : ['ok' => false, 'stage' => 'read', 'error' => 'written_but_unreadable']);
 }
 
 /** The on-disk path for a store id. Validated, so a crafted id cannot escape. */
@@ -277,8 +360,37 @@ function photo_store_put(string $dataUrl): array {
     // again would be correct but pointless, and a partial write would not be.
     if (!is_file($path)) {
         $tmp = $path . '.' . rand_hex(4) . '.part';
-        if (@file_put_contents($tmp, $raw) === false) return ['ok' => false, 'error' => 'write_failed'];
-        if (!@rename($tmp, $path)) { @unlink($tmp); return ['ok' => false, 'error' => 'write_failed']; }
+        $wrote = @file_put_contents($tmp, $raw) !== false && @rename($tmp, $path);
+        if (!$wrote) {
+            @unlink($tmp);
+            /* Loud, not a log line.
+             *
+             * This is the failure that made "photos don't display" impossible to
+             * diagnose: the write fails on an unwritable directory, the caller
+             * gets '' for a photoUrl, the registration succeeds, and the review
+             * desk shows an empty frame that looks exactly like a family who
+             * sent no photo. The only trace was error_log, which on a shared
+             * host nobody reads.
+             *
+             * ops_record puts it in the Diagnostics journal where an admin will
+             * see it; photo_pipeline_alert pages the same channels a Cloudinary
+             * outage does, because losing a child's headshot is the same class
+             * of problem. Guarded because this runs on a public intake path and
+             * must not turn a storage fault into a 500. */
+            $dir = photo_store_dir();
+            $detail = 'dir=' . $dir . ' writable=' . (is_writable($dir) ? 'yes' : 'no')
+                    . ' exists=' . (is_dir($dir) ? 'yes' : 'no') . ' bytes=' . strlen($raw);
+            error_log('[photo_store_put] write failed: ' . $detail);
+            try {
+                if (function_exists('ops_record')) {
+                    ops_record('error', 'photo.store', 'Could not save an uploaded photo — the image directory is not writable.', $detail);
+                }
+                if (function_exists('photo_pipeline_alert')) {
+                    photo_pipeline_alert('photo_store_unwritable', ['dir' => $dir, 'writable' => is_writable($dir)]);
+                }
+            } catch (Throwable $e) { /* never let reporting break an intake */ }
+            return ['ok' => false, 'error' => 'write_failed'];
+        }
     }
     return ['ok' => true, 'id' => $id, 'url' => photo_store_url($id),
             'absolute' => photo_store_absolute($id), 'bytes' => strlen($raw), 'ext' => $ext];

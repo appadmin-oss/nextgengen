@@ -173,11 +173,27 @@ them from `api/public/photo.php`. Every surface that takes a headshot works this
 way when no cloud is configured — the public sign-up form, the staff desk, the
 guardian retake link, the admin photo studio.
 
+**If photos aren't appearing, run this first:**
+
+```bash
+php api/tools/check-photos.php
+```
+
+It reports where images go, whether that directory is writable, whether a real
+write-and-read-back round trip works on this host, how many images are held, and
+how many recent sign-ups have one. Exit code 0 means healthy; anything else names
+the fault and the fix. The same information is on **Admin → Diagnostics → Photo
+storage**, which is the better place to look if you have no shell.
+
 What you should know about it:
 
 - **`api/storage/` must be writable by the web user.** It already has to be for
-  SQLite; on MySQL it is easy to miss, and the symptom is a registration that
-  succeeds with an empty photo frame.
+  SQLite; on MySQL it is easy to miss, and it is *the* usual cause of "photos
+  don't display" — a registration succeeds and the review desk shows an empty
+  frame. `chmod 775 api/storage api/storage/photos` (755 when PHP runs as the
+  directory's owner, which is usual on cPanel). If the directory cannot be
+  written the app falls back to the cache directory so photographs are not lost,
+  and Diagnostics reports that as **degraded** rather than healthy.
 - **Back it up with the database.** The rows point at these files. A dump of one
   without the other loses every photograph.
 - **The URLs are unguessable, not private.** The id is an HMAC of the file's own

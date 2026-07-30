@@ -2783,6 +2783,39 @@ chk('the sweep deletes what nothing references, and keeps what something does', 
     $n = photo_store_sweep(7, 100);
     return $n >= 1 && is_file(photo_store_path((string)$keep['id'])) && !is_file(photo_store_path((string)$drop['id']));
 })());
+/* The failure this store had to learn to report.
+ *
+ * "The web user cannot write to the directory you uploaded" is the commonest way
+ * a PHP deploy is broken, and the symptom was a blank frame on the review desk —
+ * indistinguishable from a family who sent no photo, with the only trace a line
+ * in a PHP error log nobody reads. Simulated here by making the directory
+ * read-only, because a fault that is only reachable on a misconfigured host is a
+ * fault that never gets tested. */
+chk('an unwritable image directory is reported, not swallowed', (function () use ($png) {
+    $dir = photo_store_dir();
+    $mode = @fileperms($dir) & 0777;
+    if (!@chmod($dir, 0500)) return true;               // running as root: cannot simulate, don't fail
+    if (is_writable($dir)) { @chmod($dir, $mode); return true; }   // same
+    $r = photo_store_put($png(700, 900));
+    $logged = (int)(db_row("SELECT COUNT(*) c FROM ops_events WHERE source = 'photo.store'")['c'] ?? 0);
+    $st = photo_store_selftest();
+    @chmod($dir, $mode);
+    return empty($r['ok']) && ($r['error'] ?? '') === 'write_failed'
+        // In the ops journal, where an admin will actually see it.
+        && $logged >= 1
+        // And the self-test says so plainly rather than reporting healthy.
+        && empty($st['ok']) && ($st['stage'] ?? '') === 'write';
+})());
+chk('…and the self-test passes again the moment it is writable', (function () {
+    $st = photo_store_selftest();
+    // It writes a probe, reads it back and deletes it — so a pass here means
+    // this host can genuinely keep a photograph, not that the code compiles. The
+    // probe must not survive as if it were somebody's headshot.
+    preg_match('/p=([0-9a-f]{32}\.[a-z]+)/', (string)($st['url'] ?? ''), $m);
+    return !empty($st['ok']) && ($st['where'] ?? '') === 'storage' && ($st['stage'] ?? '') === 'read'
+        && !empty($m[1]) && !is_file(photo_store_path($m[1]));
+})());
+
 chk('…and a file younger than the window is never a candidate', (function () use ($png) {
     $fresh = photo_store_put($png(680, 800));
     photo_store_sweep(7, 100);
@@ -6008,6 +6041,15 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
     chk('the photo verdict is stored with the submission', (function () use ($SID) {
         $c = safe_json((string)db_row("SELECT photoCheck FROM summer_students WHERE studentId=?", [$SID])['photoCheck']);
         return is_array($c) && $c['verdict'] === 'pass' && $c['width'] === 600;
+    })());
+    /* …including whether the image actually SURVIVED. A family cannot submit
+     * this form without a photo, so an empty photoUrl means the server lost it —
+     * and the review desk needs to tell that apart from "they sent none", which
+     * is what a blank frame used to say for both. */
+    chk('…including whether the image itself survived', (function () use ($SID) {
+        $c = safe_json((string)db_row("SELECT photoCheck FROM summer_students WHERE studentId=?", [$SID])['photoCheck']);
+        return is_array($c) && ($c['stored'] ?? null) === true
+            && (string)db_row("SELECT photoUrl FROM summer_students WHERE studentId=?", [$SID])['photoUrl'] !== '';
     })());
     /* photoUrl is a URL column, not an image one.
      *

@@ -107,6 +107,43 @@ function ops_health(): array {
     }
     $checks['cron'] = $stale ? ['ok' => false, 'stale' => $stale] : ['ok' => true];
 
+    /* Can this host actually keep a photograph?
+     *
+     * Every headshot on a deployment without Cloudinary is written to disk, and
+     * "the web user cannot write to a directory you uploaded" is the commonest
+     * way a PHP deploy is broken. The symptom is a blank frame on the review
+     * desk, which is indistinguishable from a family sending no photo — so it
+     * was reported as "photos don't display" with nothing to go on.
+     *
+     * A real round trip, so the answer is about this host and not about the
+     * code. Degraded (writing to the cache fallback) is reported as NOT ok:
+     * photos are being kept, but somewhere they should not have to be. */
+    if (function_exists('photo_store_selftest')) {
+        try {
+            $ps = photo_store_selftest();
+            $checks['photos'] = [
+                'ok' => !empty($ps['ok']) && ($ps['where'] ?? '') === 'storage',
+                'writable' => !empty($ps['writable']),
+                'where' => (string)($ps['where'] ?? ''),
+                'dir' => (string)($ps['dir'] ?? ''),
+                'files' => (int)($ps['files'] ?? 0),
+                'bytes' => (int)($ps['bytes'] ?? 0),
+            ] + (empty($ps['ok']) ? ['stage' => (string)($ps['stage'] ?? ''), 'error' => (string)($ps['error'] ?? '')] : []);
+        } catch (Throwable $e) {
+            $checks['photos'] = ['ok' => false, 'error' => 'selftest_failed'];
+        }
+    }
+    /* And whether it IS happening — the self-test can pass while real
+     * submissions are still arriving without a photo (a cloud that refuses, a
+     * body truncated in front of PHP). Counted over recent self-registrations,
+     * which are the ones that always send one. */
+    try {
+        $r = db_row("SELECT COUNT(*) n, SUM(CASE WHEN photoUrl = '' THEN 1 ELSE 0 END) blank
+                     FROM (SELECT photoUrl FROM summer_students WHERE submittedVia != '' ORDER BY id DESC LIMIT 50) t");
+        $n = (int)($r['n'] ?? 0); $blank = (int)($r['blank'] ?? 0);
+        if ($n > 0) $checks['photosOnRecord'] = ['ok' => $blank === 0, 'checked' => $n, 'missing' => $blank];
+    } catch (Throwable $e) { /* not worth a failed health check */ }
+
     $ok = true;
     foreach ($checks as $c) if (empty($c['ok'])) $ok = false;
     // The cron being quiet is worth showing and not worth paging about at 3am;

@@ -272,6 +272,21 @@ function selfreg_submit(array $p): array {
     $stored = (string)(db_row('SELECT photoUrl FROM summer_students WHERE studentId = ?', [$studentId])['photoUrl'] ?? '');
     $hosted = function_exists('photo_store_absolute') ? photo_store_absolute($stored) : $stored;
     $verdict = photo_validate($photo, $hosted);
+    /* Did the photo actually survive?
+     *
+     * A family sent one — this function refuses without one — so an empty
+     * photoUrl here means the server could not keep it: an unwritable directory,
+     * or a cloud that refused. Recorded ON the submission, because the reviewer
+     * is the person who will notice, and an empty frame that cannot say why
+     * looks identical to a family who sent nothing. `stored` is what the review
+     * desk reads to tell those two apart. */
+    $verdict['stored'] = $stored !== '';
+    if ($stored === '') {
+        $verdict['issues'] = array_values(array_unique(array_merge((array)($verdict['issues'] ?? []), ['not_stored'])));
+        if (function_exists('ops_record')) {
+            ops_record('error', 'photo.store', 'A self-registration photo could not be saved.', 'student=' . $studentId);
+        }
+    }
     db_update('summer_students', [
         'regStatus' => 'self_pending',
         'submittedVia' => $gateId,
@@ -475,7 +490,14 @@ function selfreg_queue(array $p): array {
             'photo' => ['verdict' => $v, 'score' => $chk['score'] ?? null,
                         'issues' => array_values((array)($chk['issues'] ?? [])),
                         'notes' => array_values((array)($chk['notes'] ?? [])),
-                        'source' => (string)($chk['source'] ?? '')],
+                        'source' => (string)($chk['source'] ?? ''),
+                        /* Whether the server kept the image. A family cannot
+                           submit without one, so "no photo on the row" means the
+                           server lost it — and the reviewer needs to know that
+                           rather than see a blank frame indistinguishable from a
+                           family who sent nothing. Absent on rows written before
+                           this was recorded, hence the null rather than false. */
+                        'stored' => array_key_exists('stored', $chk) ? (bool)$chk['stored'] : null],
             'regStatus' => (string)$r['regStatus'],
             // granted | declined | '' (no ledger row — a pre-change submission
             // whose consent is still coming through the parent link).

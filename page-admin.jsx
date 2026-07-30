@@ -3997,6 +3997,40 @@ function AdminOps() {
           {light((d.errors24h || 0) === 0, "Errors (24h)", d.errors24h + " in the last day")}
         </div>
 
+        {/* Photo storage. On a deployment without Cloudinary every headshot is
+            written to disk, and "the web user cannot write to a directory you
+            uploaded" is the commonest way a PHP deploy is broken. The symptom is
+            a blank frame on the review desk, which looks exactly like a family
+            sending no photo — so it gets reported as "photos don't display" with
+            nothing to go on. This is the answer, in one place, in words. */}
+        {c.photos && (
+          <div style={{ marginBottom: 18 }}>
+            <h3 className="admin-h3">Photo storage</h3>
+            <div className="admin-tiles">
+              {light(!!c.photos.ok, "Saving photos",
+                c.photos.where === "unwritable" ? "the image directory is NOT writable — no photo can be saved"
+                : c.photos.where === "cache_fallback" ? "writing to the cache directory as a fallback — fix permissions on api/storage"
+                : c.photos.error ? c.photos.stage + ": " + c.photos.error
+                : "")}
+              {c.photosOnRecord && light(!!c.photosOnRecord.ok, "Recent sign-ups",
+                c.photosOnRecord.missing + " of the last " + c.photosOnRecord.checked + " arrived with no photo")}
+            </div>
+            <p className="admin-cell-sub" style={{ marginTop: 6 }}>
+              {c.photos.dir ? <>Directory <code>{c.photos.dir}</code> · </> : null}
+              {c.photos.files} image{c.photos.files === 1 ? "" : "s"} held
+              {c.photos.bytes ? " · " + (c.photos.bytes / 1048576).toFixed(1) + " MB" : ""}
+              {c.photos.where === "storage" ? " · checked by writing and reading back a test image just now" : ""}
+            </p>
+            {!c.photos.ok && (
+              <p className="admin-hint" style={{ marginTop: 4 }}>
+                Make <code>api/storage</code> writable by the web user (<code>chmod 775</code>, or 755 if PHP runs as
+                the owner) and press Refresh. Photos already accepted are not lost by fixing this — but any
+                submission that arrived while it was broken has no image, and those families need a retake link.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="admin-section-head" style={{ marginTop: 4 }}>
           <h3 className="admin-h3">Background jobs</h3>
           <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => runCron("all")}>Run all now</button>
