@@ -49,6 +49,10 @@ function rate_limit_default(string $op): ?array {
         // a runaway script, nothing finer; the real gate is the session, and an
         // abandoned round is pruned within the week.
         'arcade.start'       => ['max' => 120, 'window' => 60],
+        // A shared journal entry's token is the only thing between a guess and a
+        // programme record, so guessing should be expensive. Generous enough for
+        // a link legitimately opened by a group from one office connection.
+        'journal.shared'     => ['max' => 30, 'window' => 300],
     ];
     return $d[$op] ?? null;
 }

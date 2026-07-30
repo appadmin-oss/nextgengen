@@ -1223,3 +1223,46 @@ CREATE TABLE IF NOT EXISTS intake_submissions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (70) ON DUPLICATE KEY UPDATE version = version;
+
+-- 71: the Programme Journal. The community holds conversation, which is fast and
+-- gone; this holds the durable record — advice given, contributions made, issues
+-- raised and how they resolved. visibility defaults to 'staff' so an entry naming
+-- a child never becomes member- or world-readable by forgetting a dropdown, and a
+-- shareToken is resolved against the CURRENT visibility, so narrowing an entry
+-- kills every link already sent.
+CREATE TABLE IF NOT EXISTS program_journal (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  entryId VARCHAR(48) UNIQUE NOT NULL,
+  title VARCHAR(240) DEFAULT '',
+  body TEXT,
+  kind VARCHAR(24) DEFAULT 'note',
+  status VARCHAR(16) DEFAULT 'open',
+  visibility VARCHAR(16) DEFAULT 'staff',
+  authorId VARCHAR(64) DEFAULT '',
+  authorName VARCHAR(120) DEFAULT '',
+  centreId VARCHAR(48) DEFAULT '',
+  occurredAt VARCHAR(40) DEFAULT '',
+  mediaJson TEXT,
+  shareToken VARCHAR(64) DEFAULT '',
+  pinned TINYINT DEFAULT 0,
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  archivedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_pj_vis (visibility, occurredAt),
+  INDEX idx_pj_kind (kind, status),
+  INDEX idx_pj_share (shareToken)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS program_journal_tags (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  entryId VARCHAR(48) NOT NULL,
+  personId VARCHAR(64) NOT NULL,
+  personKind VARCHAR(16) DEFAULT 'member',
+  personName VARCHAR(120) DEFAULT '',
+  role VARCHAR(32) DEFAULT 'involved',
+  createdAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_pjt_unique (entryId, personId),
+  INDEX idx_pjt_person (personId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (71) ON DUPLICATE KEY UPDATE version = version;

@@ -37,7 +37,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'growth', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'growth', 'journal', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/sheets.php';
 require $ROOT . '/_lib/webcron.php';
@@ -6454,6 +6454,184 @@ db_exec("DELETE FROM attendance WHERE studentId LIKE 'G-%'");
 db_exec("DELETE FROM infractions WHERE personId LIKE 'G-%'");
 db_exec("DELETE FROM summer_students WHERE studentId LIKE 'G-%'");
 db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
+
+
+/* ── The Programme Journal ──────────────────────────────────────────────────
+ * The community holds conversation; this holds the record. The part that has to
+ * be right is VISIBILITY: an entry can name a child, so the default must be
+ * staff-only, widening must be deliberate, and a share link must die the moment
+ * an entry is narrowed. */
+(function () {
+    chk('journal: the journalist capability is grantable and real', (function () {
+        return in_array('journal', admin_role_caps('super_admin'), true)
+            /* No role except super_admin inherits it. The journalist role is
+               assigned per person, because writing the programme's record is a
+               different trust from publishing content or managing people. */
+            && !in_array('journal', admin_role_caps('editor'), true)
+            && !in_array('journal', admin_role_caps('admin'), true)
+            && !in_array('journal', admin_role_caps('member'), true);
+    })());
+    chk('journal: it is grantable to one person without any other access', (function () {
+        db_insert('members', ['memberId' => 'NGG-JRN-1', 'fullName' => 'Ada Journalist', 'email' => 'jrn@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'centre' => 'Egbeda',
+            'capsExtra' => json_encode(['journal']), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $m = db_row("SELECT memberId, role, capsExtra FROM members WHERE memberId = 'NGG-JRN-1'");
+        $caps = member_effective_caps($m);
+        if (!in_array('journal', $caps, true) || in_array('people', $caps, true)) return false;
+        // And it actually works end to end for that person.
+        $r = backend_dispatch('journal.save', ['requesterId' => 'NGG-JRN-1', 'title' => 'Written by the journalist']);
+        if (empty($r['ok'])) return false;
+        db_exec('DELETE FROM program_journal WHERE entryId = ?', [$r['entry']['entryId']]);
+        return ($r['entry']['authorName'] ?? '') === 'Ada Journalist';
+    })());
+    chk('journal: authoring is refused without the capability', (function () {
+        return backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0001', 'title' => 'Nope'])['error'] === 'forbidden';
+    })());
+    chk('journal: a title is required', (function () {
+        return backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099', 'title' => '  '])['error'] === 'title_required';
+    })());
+    chk('journal: an unknown kind is refused, not silently coerced', (function () {
+        return backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099', 'title' => 'X', 'kind' => 'gossip'])['error'] === 'bad_kind';
+    })());
+
+    $E = backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099',
+        'title' => 'Sponsor asked about retention', 'body' => 'Advice from the board.',
+        'kind' => 'advice', 'status' => 'open', 'centreId' => 'CT-J',
+        'people' => [
+            ['personId' => 'NGG-2025-0001', 'name' => 'Tunde Okonkwo', 'role' => 'raised'],
+            ['personId' => 'NGG-2025-0002', 'name' => 'Edith Editor', 'role' => 'advised'],
+            ['personId' => 'NGG-2025-0001', 'name' => 'dupe', 'role' => 'dupe'],
+        ]]);
+    $EID = $E['entry']['entryId'] ?? '';
+
+    chk('journal: a new entry defaults to STAFF-ONLY, whatever the payload said', (function () {
+        // Explicitly asks for public; must be ignored on create. This is what
+        // stops an entry naming a child going world-readable via a stale form.
+        $r = backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099',
+            'title' => 'Tries to be public', 'visibility' => 'public']);
+        $vis = (string)(db_row('SELECT visibility FROM program_journal WHERE entryId = ?', [$r['entry']['entryId']])['visibility'] ?? '');
+        db_exec('DELETE FROM program_journal WHERE entryId = ?', [$r['entry']['entryId']]);
+        return $vis === 'staff';
+    })());
+    chk('journal: people are tagged with roles, and duplicates collapse', (function () use ($EID) {
+        $t = journal_tags($EID);
+        $ids = array_column($t, 'personId');
+        return count($t) === 2 && count(array_unique($ids)) === 2
+            && ($t[0]['role'] ?? '') === 'raised';
+    })());
+
+    // ── the visibility matrix ────────────────────────────────────────────────
+    $seesIt = function (string $requesterId, bool $signedIn) use ($EID): bool {
+        $r = backend_dispatch('journal.feed', ['requesterId' => $requesterId, 'signedIn' => $signedIn]);
+        return in_array($EID, array_column($r['entries'] ?? [], 'entryId'), true);
+    };
+    chk('journal: staff-only is visible to staff', $seesIt('NGG-2025-0099', true));
+    chk('journal: …and NOT to a signed-in member', !$seesIt('NGG-2025-0001', true));
+    chk('journal: …and NOT to the public', !$seesIt('', false));
+
+    backend_dispatch('journal.visibility', ['requesterId' => 'NGG-2025-0099', 'entryId' => $EID, 'visibility' => 'community']);
+    chk('journal: widened to community, a member can see it', $seesIt('NGG-2025-0001', true));
+    chk('journal: …but the public still cannot', !$seesIt('', false));
+
+    chk('journal: a bad visibility value is refused', (function () use ($EID) {
+        return backend_dispatch('journal.visibility', ['requesterId' => 'NGG-2025-0099', 'entryId' => $EID, 'visibility' => 'everyone'])['error'] === 'bad_visibility';
+    })());
+    chk('journal: changing visibility is audited', (function () use ($EID) {
+        return db_row("SELECT id FROM audit_log WHERE event = 'journal.visibility' AND subject = ?", [$EID]) !== null;
+    })());
+
+    // ── share tokens are revocable credentials ───────────────────────────────
+    $SH = backend_dispatch('journal.share', ['requesterId' => 'NGG-2025-0099', 'entryId' => $EID]);
+    $TOK = $SH['shareToken'] ?? '';
+    chk('journal: a share link on a non-public entry does NOT resolve', (function () use ($TOK) {
+        // Minted while the entry is community-only: the token exists, the door
+        // does not open. Saying so beats handing over a link that 404s.
+        return strlen($TOK) >= 32 && backend_dispatch('journal.shared', ['t' => $TOK])['error'] === 'not_shared';
+    })());
+    backend_dispatch('journal.visibility', ['requesterId' => 'NGG-2025-0099', 'entryId' => $EID, 'visibility' => 'public']);
+    chk('journal: made public, the same link opens', (function () use ($TOK, $EID) {
+        $r = backend_dispatch('journal.shared', ['t' => $TOK]);
+        return !empty($r['ok']) && ($r['entry']['entryId'] ?? '') === $EID;
+    })());
+    chk('journal: a shared entry never leaks its own share token', (function () use ($TOK) {
+        $r = backend_dispatch('journal.shared', ['t' => $TOK]);
+        // Reading an entry must not be enough to mint a link to it.
+        return !array_key_exists('shareToken', $r['entry']) && !array_key_exists('authorId', $r['entry']);
+    })());
+    chk('journal: NARROWING it kills the link that was already sent', (function () use ($TOK, $EID) {
+        backend_dispatch('journal.visibility', ['requesterId' => 'NGG-2025-0099', 'entryId' => $EID, 'visibility' => 'staff']);
+        // The revocable-credential model: the token is unchanged and useless.
+        return backend_dispatch('journal.shared', ['t' => $TOK])['error'] === 'not_shared';
+    })());
+    chk('journal: …and re-publishing brings the same link back', (function () use ($TOK, $EID) {
+        backend_dispatch('journal.visibility', ['requesterId' => 'NGG-2025-0099', 'entryId' => $EID, 'visibility' => 'public']);
+        return !empty(backend_dispatch('journal.shared', ['t' => $TOK])['ok']);
+    })());
+    chk('journal: revoking the token itself also closes the door', (function () use ($TOK, $EID) {
+        backend_dispatch('journal.share', ['requesterId' => 'NGG-2025-0099', 'entryId' => $EID, 'revoke' => true]);
+        return backend_dispatch('journal.shared', ['t' => $TOK])['error'] === 'not_found';
+    })());
+    chk('journal: a guessed token is refused', (function () {
+        return backend_dispatch('journal.shared', ['t' => str_repeat('a', 32)])['error'] === 'not_found'
+            && backend_dispatch('journal.shared', ['t' => 'short'])['error'] === 'not_found';
+    })());
+
+    // ── issues are tracked to a resolution ───────────────────────────────────
+    chk('journal: an issue can be moved to resolved', (function () {
+        $r = backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099', 'title' => 'Bus broke down', 'kind' => 'issue', 'status' => 'open']);
+        $id = $r['entry']['entryId'];
+        backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099', 'entryId' => $id, 'title' => 'Bus broke down', 'kind' => 'issue', 'status' => 'resolved']);
+        return (string)db_row('SELECT status FROM program_journal WHERE entryId = ?', [$id])['status'] === 'resolved';
+    })());
+    chk('journal: a bad status is refused', (function () {
+        return backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099', 'title' => 'X', 'status' => 'whenever'])['error'] === 'bad_status';
+    })());
+
+    // ── memories respect the same visibility rule ────────────────────────────
+    chk('journal: memories never hand a member a staff-only entry', (function () {
+        $r = backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099',
+            'title' => 'Staff-only milestone', 'kind' => 'milestone',
+            'occurredAt' => gmdate('Y-m-d\TH:i:s\Z', strtotime('-1 year'))]);
+        $id = $r['entry']['entryId'];
+        $mem = backend_dispatch('journal.memories', ['requesterId' => 'NGG-2025-0001', 'signedIn' => true]);
+        foreach (($mem['collections'] ?? []) as $c) {
+            foreach ($c['entries'] as $e) if ($e['entryId'] === $id) return false;
+        }
+        // …and staff DO get it, so the collection itself works.
+        $staff = backend_dispatch('journal.memories', ['requesterId' => 'NGG-2025-0099', 'signedIn' => true]);
+        $found = false;
+        foreach (($staff['collections'] ?? []) as $c) {
+            foreach ($c['entries'] as $e) if ($e['entryId'] === $id) $found = true;
+        }
+        return $found;
+    })());
+    chk('journal: "on this day" surfaces an entry from a previous year', (function () {
+        $r = backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099', 'title' => 'Same day last year',
+            'kind' => 'note', 'occurredAt' => gmdate('Y-m-d\TH:i:s\Z', strtotime('-1 year'))]);
+        $mem = backend_dispatch('journal.memories', ['requesterId' => 'NGG-2025-0099', 'signedIn' => true]);
+        foreach (($mem['collections'] ?? []) as $c) {
+            if ($c['key'] === 'on_this_day' && in_array($r['entry']['entryId'], array_column($c['entries'], 'entryId'), true)) return true;
+        }
+        return false;
+    })());
+    chk('journal: a tagged person can find what they were part of', (function () use ($EID) {
+        $r = backend_dispatch('journal.person', ['requesterId' => 'NGG-2025-0099', 'signedIn' => true, 'personId' => 'NGG-2025-0001']);
+        return in_array($EID, array_column($r['entries'] ?? [], 'entryId'), true);
+    })());
+    chk('journal: filters narrow the feed', (function () {
+        $r = backend_dispatch('journal.feed', ['requesterId' => 'NGG-2025-0099', 'signedIn' => true, 'kind' => 'issue']);
+        foreach (($r['entries'] ?? []) as $e) if ($e['kind'] !== 'issue') return false;
+        return count($r['entries']) >= 1;
+    })());
+    chk('journal: delete removes the entry and its tags', (function () use ($EID) {
+        backend_dispatch('journal.delete', ['requesterId' => 'NGG-2025-0099', 'entryId' => $EID]);
+        return db_row('SELECT id FROM program_journal WHERE entryId = ?', [$EID]) === null
+            && db_row('SELECT id FROM program_journal_tags WHERE entryId = ?', [$EID]) === null;
+    })());
+
+    db_exec("DELETE FROM program_journal_tags");
+    db_exec("DELETE FROM program_journal");
+})();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

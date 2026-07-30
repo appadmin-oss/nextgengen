@@ -148,10 +148,16 @@ function push_notification(string $memberId, array $n): void {
  */
 function admin_role_caps($role): array {
     switch (strtolower((string)($role ?? ''))) {
-        case 'super_admin':  return ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'audit'];
+        case 'super_admin':  return ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'audit', 'journal'];
         case 'admin':        return ['content', 'people', 'inbox'];
         case 'summer_admin': return ['summer'];   // Summer School portal only
         case 'club_admin':   return ['club'];      // NGG Club portal only
+        /* Deliberately NOT granted 'journal'. The journalist role is ASSIGNED
+         * per person (Access & roles → extra capabilities), not inherited from
+         * being an editor — writing the programme's institutional record is a
+         * different trust from publishing site content, and bundling them would
+         * make every editor a journalist by accident. super_admin holds it
+         * because super_admin holds everything. */
         case 'editor':       return ['content'];
         // Monitoring & Evaluation: reads everything the M&E workspace shows,
         // writes nothing operational — the role simply holds no other cap.

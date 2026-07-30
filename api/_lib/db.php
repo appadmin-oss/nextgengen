@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 70;
+const NGG_SCHEMA_TARGET = 71;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1759,6 +1759,64 @@ function db_migrate(PDO $db): void {
                 completedAt TEXT DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_intake_status ON intake_submissions(status, createdAt);
+        ",
+
+        /* The Programme Journal — the record of the programme's own story.
+         *
+         * The community has channels, posts, reactions and moderation, which is
+         * conversation: fast, and gone. What it had no way to hold was the
+         * durable record — the advice that was given, the contribution somebody
+         * made, the issue that was raised and how it actually resolved. Those
+         * were living in WhatsApp threads and in people's memory, which means
+         * that when a coordinator leaves, so does the institutional history.
+         *
+         * `visibility` defaults to 'staff' on purpose. An entry naming a child
+         * must not become member- or world-readable because somebody forgot a
+         * dropdown; widening is an explicit, audited act.
+         *
+         * `shareToken` mints a public link, but resolution is checked against
+         * the CURRENT visibility, so narrowing an entry kills every link already
+         * sent — the same revocable-credential model as the gate links.
+         *
+         * `status` exists because an issue is not merely recorded, it is tracked
+         * to a resolution; a journal of open problems nobody closed is a list,
+         * not a record.
+         */
+        71 => "
+            CREATE TABLE IF NOT EXISTS program_journal (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entryId TEXT UNIQUE NOT NULL,
+                title TEXT DEFAULT '',
+                body TEXT DEFAULT '',
+                kind TEXT DEFAULT 'note',
+                status TEXT DEFAULT 'open',
+                visibility TEXT DEFAULT 'staff',
+                authorId TEXT DEFAULT '',
+                authorName TEXT DEFAULT '',
+                centreId TEXT DEFAULT '',
+                occurredAt TEXT DEFAULT '',
+                mediaJson TEXT DEFAULT '',
+                shareToken TEXT DEFAULT '',
+                pinned INTEGER DEFAULT 0,
+                createdAt TEXT DEFAULT '',
+                updatedAt TEXT DEFAULT '',
+                archivedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_pj_vis ON program_journal(visibility, occurredAt);
+            CREATE INDEX IF NOT EXISTS idx_pj_kind ON program_journal(kind, status);
+            CREATE INDEX IF NOT EXISTS idx_pj_share ON program_journal(shareToken);
+
+            CREATE TABLE IF NOT EXISTS program_journal_tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entryId TEXT NOT NULL,
+                personId TEXT NOT NULL,
+                personKind TEXT DEFAULT 'member',
+                personName TEXT DEFAULT '',
+                role TEXT DEFAULT 'involved',
+                createdAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_pjt_unique ON program_journal_tags(entryId, personId);
+            CREATE INDEX IF NOT EXISTS idx_pjt_person ON program_journal_tags(personId);
         ",
     ];
 

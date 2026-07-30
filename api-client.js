@@ -270,6 +270,20 @@
       circleRevoke: (linkId) => request('/member/circle.php', { body: { action: 'revoke', linkId } }),
       react:               (post, emoji) => request('/member/engage.php', { body: { action: 'react', post, emoji } }),
       comment:             (post, body) => request('/member/engage.php', { body: { action: 'comment', post, body } }),
+      /* The Programme Journal — the programme's durable record, living as a
+         destination inside the Community. Distinct from `journal`, which is a
+         member's own private Anchor reflections. */
+      programJournal: {
+        feed:     (q) => request('/member/program-journal.php' + qs(Object.assign({ view: 'feed' }, q || {}))),
+        memories: () => request('/member/program-journal.php' + qs({ view: 'memories' })),
+        person:   (personId) => request('/member/program-journal.php' + qs({ view: 'person', personId })),
+        save:     (data) => request('/member/program-journal.php', { body: Object.assign({ action: 'save' }, data) }),
+        // Widening who can see an entry is its own call, and audited: an entry
+        // can name a child, so this is not a field on a form.
+        visibility: (entryId, visibility) => request('/member/program-journal.php', { body: { action: 'visibility', entryId, visibility } }),
+        share:    (entryId, revoke) => request('/member/program-journal.php', { body: { action: 'share', entryId, revoke: !!revoke } }),
+        remove:   (entryId) => request('/member/program-journal.php', { body: { action: 'delete', entryId } }),
+      },
       community: {
         channels: () => request('/member/community.php' + qs({ view: 'channels' })),
         feed:     (channel, sort, page) => request('/member/community.php' + qs({ view: 'feed', channel: channel || 'all', sort: sort || 'latest', page: page || 0 })),
@@ -324,6 +338,9 @@
       apply:      (data) => request('/public/apply.php', { body: data }),
       volunteer:  { context: () => request('/public/volunteer.php') },
       cert:       (id) => request('/public/cert.php' + qs({ id })),
+      // A shared journal entry. Resolves only while the entry is public, so
+      // narrowing it revokes every link already sent.
+      journalEntry: (t) => request('/public/journal-entry.php' + qs({ t })),
       siteContent: () => request('/public/site.php'),
       instructorRoster: (token, email) => request('/public/instructor.php', { body: { token, email } }),
       contact:    (data) => request('/public/contact.php', { body: data }),

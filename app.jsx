@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","centres","club","community","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","apply","review","verify","reshoot","cards","certificate","legal"];
+const PAGE_IDS = ["home","summer","centres","club","community","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","apply","review","verify","reshoot","cards","certificate","legal","journal-entry"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
@@ -43,6 +43,7 @@ const PAGE_META = {
   verify:     { title: "Confirm your child's registration · NGG",     desc: "" },
   reshoot:    { title: "A new photo · NGG",                           desc: "" },
   cards:      { title: "ID Card Studio · NGG",                        desc: "" },
+  "journal-entry": { title: "From the programme journal · NGG",       desc: "" },
 };
 
 /* ---- 404 fallback — when a hash doesn't match any registered page ---- */
@@ -212,7 +213,7 @@ function App() {
        parent forwarding it to one person put it in a search index for
        everyone. The document is theirs to show — that is not the same as
        publishing it. */
-    const noindexPages = ["dashboard", "profile", "admin", "summer-admin", "club-admin", "gate", "verify", "circle", "mentor", "certificate", "review"];
+    const noindexPages = ["dashboard", "profile", "admin", "summer-admin", "club-admin", "gate", "verify", "circle", "mentor", "certificate", "review", "journal-entry"];
     let rob = document.querySelector('meta[name="robots"]');
     if (rob) rob.setAttribute("content", noindexPages.includes(page) ? "noindex, nofollow" : "index, follow, max-image-preview:large");
     // Announce route change for assistive tech via a polite live region.
@@ -275,12 +276,13 @@ function App() {
     reshoot:    <ReshootPage/>,
     cards:      <CardStudio/>,
     certificate: <CertificatePage/>,
+    "journal-entry": <JournalEntryPage/>,
     legal:      <LegalPage setPage={setPage}/>,
   };
 
   // The staff console/portals, the guardian Circle portal, the gate desk and
   // the parent verification page use their own chrome — no topnav/footer.
-  if (page === "admin" || page === "summer-admin" || page === "club-admin" || page === "circle" || page === "mentor" || page === "apply" || page === "review" || page === "gate" || page === "verify" || page === "reshoot" || page === "cards" || page === "certificate") {
+  if (page === "admin" || page === "summer-admin" || page === "club-admin" || page === "circle" || page === "mentor" || page === "apply" || page === "review" || page === "gate" || page === "verify" || page === "reshoot" || page === "cards" || page === "certificate" || page === "journal-entry") {
     return (
       <div className="app-shell app-shell-admin">
         <SkipLink/>

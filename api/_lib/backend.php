@@ -224,6 +224,18 @@ function backend_dispatch(string $op, array $args = []): array {
             // it is per-student work over a multi-week window, so it must be
             // fetchable (and cacheable) without paying for it on every load.
             'analytics.growth'         => 'growth_workspace',
+            /* The Programme Journal. Writes need the `journal` capability (the
+             * journalist role); reads are filtered by the viewer's visibility
+             * level inside the handler, which is why the feed and the memories
+             * rail are safe to expose without an admin gate. */
+            'journal.feed'             => 'journal_feed',
+            'journal.memories'         => 'journal_memories',
+            'journal.person'           => 'journal_for_person',
+            'journal.shared'           => 'journal_shared',
+            'journal.save'             => 'journal_entry_save',
+            'journal.visibility'       => 'journal_visibility_set',
+            'journal.share'            => 'journal_share',
+            'journal.delete'           => 'journal_delete',
             'analytics.activity.add'   => 'analytics_activity_add',
             'admin.member.detail'     => 'admin_member_detail',
             'admin.mentor.assign'     => 'admin_assign_mentor',

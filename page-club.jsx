@@ -847,9 +847,13 @@ function CommunityApp({ setPage, auth }) {
      growing its own list of exceptions. A live search still wins: typing in
      the sidebar takes you back to results from wherever you were. */
   const isArcade = active === "arcade" && results === null;
+  /* Same shape as the Arcade: a destination with its own view, no channel feed,
+     no composer, no members rail. Named once so every "is this a channel?"
+     test below excludes it instead of each growing its own exception. */
+  const isJournal = active === "journal" && results === null;
   // A specific channel = chat layout (compact rows, members rail, oldest→newest);
   // All activity / Saved / search = a media-forward card feed (newest first).
-  const isChat = active !== "all" && active !== "bookmarks" && active !== "arcade" && results === null;
+  const isChat = active !== "all" && active !== "bookmarks" && active !== "arcade" && active !== "journal" && results === null;
   const postsRef = React.useRef([]);
   const streamRef = React.useRef(null);
   const searchRef = React.useRef(null);
@@ -913,7 +917,7 @@ function CommunityApp({ setPage, auth }) {
 
   // Channel members rail (chat view only).
   React.useEffect(() => {
-    if (active === "all" || active === "bookmarks" || active === "arcade") { setChMembers(null); return; }
+    if (active === "all" || active === "bookmarks" || active === "arcade" || active === "journal") { setChMembers(null); return; }
     let a = true; setChMembers(null);
     NGGApi.member.community.members(active).then(r => { if (a) setChMembers(r.members || []); }).catch(() => { if (a) setChMembers([]); });
     return () => { a = false; };
@@ -926,7 +930,7 @@ function CommunityApp({ setPage, auth }) {
     // The Arcade has no feed. Loading one for it would fetch an empty channel
     // on every visit and, worse, leave `posts` at [] so a return to All
     // activity flashed "nothing here yet" before the real feed landed.
-    if (active === "arcade") return;
+    if (active === "arcade" || active === "journal") return;
     const chObj = channels.find(c => c.slug === active);
     setUnreadMark(chObj ? (chObj.unread || 0) : 0);
     loadFeed(active, sort, 0, false);
@@ -956,7 +960,7 @@ function CommunityApp({ setPage, auth }) {
   // Near-real-time polling. If the reader is at the bottom, splice new messages
   // straight in (Slack-style); otherwise surface an unobtrusive pill.
   React.useEffect(() => {
-    if (active === "bookmarks" || active === "arcade" || results !== null) return;
+    if (active === "bookmarks" || active === "arcade" || active === "journal" || results !== null) return;
     const tick = () => {
       if (document.hidden) return;
       NGGApi.member.community.feed(active, sort, 0).then(r => {
@@ -1017,8 +1021,8 @@ function CommunityApp({ setPage, auth }) {
   // Chronological (oldest→newest) render order with author grouping.
   const chrono = React.useMemo(() => (posts ? [...posts].reverse() : posts), [posts]);
   const dividerIdx = (!results && chrono && unreadMark > 0) ? Math.max(0, chrono.length - unreadMark) : -1;
-  const headTitle = active === "all" ? "All activity" : active === "bookmarks" ? "Saved items" : active === "arcade" ? "Arcade" : (activeChannel ? activeChannel.name : active);
-  const headIcon = active === "all" ? "✦" : active === "bookmarks" ? "🔖" : active === "arcade" ? "🎮" : (activeChannel ? activeChannel.icon : "#");
+  const headTitle = active === "all" ? "All activity" : active === "bookmarks" ? "Saved items" : active === "arcade" ? "Arcade" : active === "journal" ? "Programme journal" : (activeChannel ? activeChannel.name : active);
+  const headIcon = active === "all" ? "✦" : active === "bookmarks" ? "🔖" : active === "arcade" ? "🎮" : active === "journal" ? "📖" : (activeChannel ? activeChannel.icon : "#");
 
   // Sidebar mentors: the staff of the channel currently open (no fabricated
   // presence — we only surface who is actually a mentor here).
@@ -1058,6 +1062,12 @@ function CommunityApp({ setPage, auth }) {
             </button>
             <button className={"cm-sb-item" + (active === "bookmarks" ? " is-active" : "")} aria-current={active === "bookmarks" ? "page" : undefined} onClick={() => go("bookmarks")}>
               <span className="cm-sb-ic" aria-hidden="true">{cmNavIcon("saved")}</span><span className="cm-sb-name">Saved items</span>
+            </button>
+            {/* The programme's own record, not a channel — the community holds
+                conversation, which is fast and gone; this holds what was decided,
+                advised, contributed and resolved. */}
+            <button className={"cm-sb-item" + (active === "journal" ? " is-active" : "")} aria-current={active === "journal" ? "page" : undefined} onClick={() => go("journal")}>
+              <span className="cm-sb-ic" aria-hidden="true">📖</span><span className="cm-sb-name">Programme journal</span>
             </button>
             <button className={"cm-sb-item" + (active === "arcade" ? " is-active" : "")} aria-current={active === "arcade" ? "page" : undefined} onClick={() => go("arcade")}>
               <span className="cm-sb-ic" aria-hidden="true">🎮</span><span className="cm-sb-name">Arcade</span>
@@ -1137,7 +1147,7 @@ function CommunityApp({ setPage, auth }) {
             </div>
           </header>
 
-          {isArcade ? <div className="cm-stream is-feed"><CmArcade auth={auth}/></div> : (
+          {isJournal ? <div className="cm-stream is-feed"><CmProgramJournal auth={auth}/></div> : isArcade ? <div className="cm-stream is-feed"><CmArcade auth={auth}/></div> : (
           <div className={"cm-stream" + (isChat ? " is-chat" : " is-feed")} ref={streamRef} onScroll={onStreamScroll}
             role={isChat ? "log" : "feed"} aria-label={headTitle + " messages"} aria-busy={posts === null} {...(isChat ? { "aria-live": "polite", "aria-relevant": "additions" } : {})}>
             {/* Pinned brief for a channel (its description) */}
@@ -1186,7 +1196,7 @@ function CommunityApp({ setPage, auth }) {
         </main>
 
         {/* ── Right column: thread > details > channel members ─────── */}
-        {isArcade ? null : thread ? (
+        {isArcade || isJournal ? null : thread ? (
           <CmThread post={thread} me={me} channels={channels} onClose={() => setThread(null)} onPatch={patchPost} onRemove={removePost}/>
         ) : info ? (
           <aside className="cm-info">
@@ -2249,4 +2259,348 @@ function CmDigest({ digest, onClose }) {
   );
 }
 
-Object.assign(window, { SummerPage, ClubPage, BadgePin, CommunityPage, CmStudentSignIn });
+/* ── The Programme Journal ───────────────────────────────────────────────────
+ *
+ * The community holds conversation — fast, and gone. This holds the record:
+ * the advice that was given, the contribution somebody made, the issue that was
+ * raised and how it resolved. Before this, that history lived in WhatsApp
+ * threads and in people's heads, which means it left when they did.
+ *
+ * Memories comes first on purpose. A journal nobody re-reads is an archive; the
+ * point of resurfacing is to put last term's decision in front of the person
+ * about to make the same one again.
+ *
+ * Everything here is filtered server-side by the viewer's visibility level, so
+ * a member simply never receives a staff-only entry — the UI is not what is
+ * keeping it back.
+ */
+const PJ_KINDS = {
+  advice:       { label: "Advice",       icon: "💡", chip: "chip-gold" },
+  contribution: { label: "Contribution", icon: "🎁", chip: "chip-lime" },
+  issue:        { label: "Issue",        icon: "⚠️", chip: "chip-crimson" },
+  milestone:    { label: "Milestone",    icon: "🏅", chip: "chip-navy" },
+  decision:     { label: "Decision",     icon: "⚖️", chip: "chip-navy" },
+  note:         { label: "Note",         icon: "📝", chip: "" },
+};
+const PJ_STATUS = { open: "Open", in_progress: "In progress", resolved: "Resolved", archived: "Archived" };
+const PJ_VIS = {
+  staff:     { label: "Staff only", icon: "🔒", hint: "Only staff can read this. The safe default." },
+  community: { label: "Community",  icon: "👥", hint: "Every signed-in member can read this." },
+  public:    { label: "Public",     icon: "🌍", hint: "Anyone with the link can read this." },
+};
+
+function pjDate(s) {
+  if (!s) return "";
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function CmJournalCard({ e, canAuthor, onEdit, onVisibility, onShare, compact }) {
+  const k = PJ_KINDS[e.kind] || PJ_KINDS.note;
+  const vis = PJ_VIS[e.visibility] || PJ_VIS.staff;
+  return (
+    <article className="cm-pj-card" style={compact ? { minWidth: 232, maxWidth: 232 } : undefined}>
+      <header className="cm-pj-head">
+        <span className={"chip " + k.chip}>{k.icon} {k.label}</span>
+        {e.kind === "issue" && <span className={"chip " + (e.status === "resolved" ? "chip-lime" : "status-draft")}>{PJ_STATUS[e.status] || e.status}</span>}
+        {/* Who can see it, always on the card. A visibility you have to open a
+            menu to discover is a visibility people get wrong. */}
+        <span className="chip status-archived" title={vis.hint}>{vis.icon} {vis.label}</span>
+      </header>
+      <h4 className="cm-pj-title">{e.title}</h4>
+      {!compact && e.body && <p className="cm-pj-body">{e.body}</p>}
+      <div className="cm-pj-meta">
+        {pjDate(e.occurredAt)}{e.authorName ? " · " + e.authorName : ""}
+      </div>
+      {(e.people || []).length > 0 && (
+        <div className="cm-pj-people">
+          {e.people.map(p => (
+            <span key={p.personId} className="cm-pj-person" title={p.role}>
+              {p.name || p.personId}<i>{p.role}</i>
+            </span>
+          ))}
+        </div>
+      )}
+      {canAuthor && !compact && (
+        <div className="cm-pj-actions">
+          <button className="btn btn-ghost btn-sm" onClick={() => onEdit(e)}>Edit</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => onVisibility(e)}>Who can see it</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => onShare(e)}>Share link</button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function CmJournalEditor({ entry, onClose, onSaved }) {
+  const [f, setF] = React.useState(() => ({
+    entryId: (entry && entry.entryId) || "",
+    title: (entry && entry.title) || "",
+    body: (entry && entry.body) || "",
+    kind: (entry && entry.kind) || "note",
+    status: (entry && entry.status) || "open",
+    occurredAt: (entry && entry.occurredAt) || new Date().toISOString(),
+    people: (entry && entry.people) || [],
+  }));
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const [who, setWho] = React.useState("");
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+  const addPerson = () => {
+    const name = who.trim();
+    if (!name) return;
+    // Free text with a generated key: tagging somebody who has no member record
+    // (a visiting sponsor, a parent) has to be possible or the field goes unused.
+    set("people", [...f.people, { personId: "free:" + name.toLowerCase().replace(/\s+/g, "-"), name, role: "involved" }]);
+    setWho("");
+  };
+
+  const save = async () => {
+    if (!f.title.trim()) { setErr("Give it a title — that is what makes it findable later."); return; }
+    setBusy(true); setErr("");
+    try { const r = await NGGApi.member.programJournal.save(f); onSaved(r.entry); }
+    catch (e) {
+      const d = e.data || {};
+      setErr(d.error === "title_required" ? "A title is required."
+        : d.error === "bad_kind" ? "Pick one of the listed kinds."
+        : d.error === "forbidden" ? "Your account isn't set up to write journal entries."
+        : (e.code || e.message || "Couldn't save."));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="cm-pj-modal" role="dialog" aria-modal="true" aria-label={f.entryId ? "Edit entry" : "New entry"}>
+      <div className="cm-pj-sheet">
+        <h3 style={{ margin: "0 0 4px", fontSize: 18 }}>{f.entryId ? "Edit entry" : "New journal entry"}</h3>
+        <p className="cm-pj-hint">
+          New entries are <b>staff only</b> until you widen them. Nothing here reaches families or the public by default.
+        </p>
+        <label className="cm-pj-lab">What happened
+          <input className="cm-pj-in" value={f.title} onChange={e => set("title", e.target.value)} placeholder="e.g. Board advised moving intake a week earlier"/>
+        </label>
+        <div className="cm-pj-row">
+          <label className="cm-pj-lab">Kind
+            <select className="cm-pj-in" value={f.kind} onChange={e => set("kind", e.target.value)}>
+              {Object.keys(PJ_KINDS).map(k => <option key={k} value={k}>{PJ_KINDS[k].icon + " " + PJ_KINDS[k].label}</option>)}
+            </select>
+          </label>
+          {/* Status only matters for an issue — an "advice" with a status is
+              noise, and a form full of irrelevant fields does not get filled. */}
+          {f.kind === "issue" && <label className="cm-pj-lab">Status
+            <select className="cm-pj-in" value={f.status} onChange={e => set("status", e.target.value)}>
+              {Object.keys(PJ_STATUS).map(k => <option key={k} value={k}>{PJ_STATUS[k]}</option>)}
+            </select>
+          </label>}
+          <label className="cm-pj-lab">When
+            <input className="cm-pj-in" type="date" value={String(f.occurredAt).slice(0, 10)}
+              onChange={e => set("occurredAt", e.target.value ? new Date(e.target.value).toISOString() : new Date().toISOString())}/>
+          </label>
+        </div>
+        <label className="cm-pj-lab">Detail
+          <textarea className="cm-pj-in" rows={5} value={f.body} onChange={e => set("body", e.target.value)}
+            placeholder="What was said, what was decided, what changed as a result."/>
+        </label>
+        <label className="cm-pj-lab">Who was involved
+          <div style={{ display: "flex", gap: 6 }}>
+            <input className="cm-pj-in" value={who} onChange={e => setWho(e.target.value)} placeholder="Name"
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addPerson(); } }}/>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={addPerson}>Add</button>
+          </div>
+        </label>
+        {f.people.length > 0 && <div className="cm-pj-people" style={{ marginBottom: 10 }}>
+          {f.people.map((p, i) => (
+            <span key={p.personId + i} className="cm-pj-person">
+              {p.name}
+              <input value={p.role} onChange={e => set("people", f.people.map((x, j) => j === i ? { ...x, role: e.target.value } : x))}
+                aria-label={"Role for " + p.name}
+                style={{ width: 74, marginLeft: 5, font: "inherit", fontSize: 11, border: "1px solid rgba(0,0,0,.14)", borderRadius: 6, padding: "1px 4px" }}/>
+              <button type="button" onClick={() => set("people", f.people.filter((_, j) => j !== i))} aria-label={"Remove " + p.name}
+                style={{ marginLeft: 4, border: "none", background: "none", cursor: "pointer", color: "#a11" }}>×</button>
+            </span>
+          ))}
+        </div>}
+        {err && <p style={{ color: "#c0341a", fontSize: 13, margin: "0 0 8px" }}>{err}</p>}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save entry"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CmProgramJournal({ auth }) {
+  const [feed, setFeed] = React.useState(null);
+  const [mem, setMem] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [kind, setKind] = React.useState("");
+  const [q, setQ] = React.useState("");
+  const [editing, setEditing] = React.useState(null);
+
+  const load = React.useCallback(() => {
+    NGGApi.member.programJournal.feed({ kind, q })
+      .then(r => { setFeed(r); setErr(""); })
+      .catch(e => setErr(e.code || e.message || "Couldn't load the journal."));
+    NGGApi.member.programJournal.memories().then(r => setMem(r.collections || [])).catch(() => setMem([]));
+  }, [kind, q]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const canAuthor = !!(feed && feed.canAuthor);
+
+  const onVisibility = async (e) => {
+    const order = ["staff", "community", "public"];
+    const next = await dialog.prompt({
+      title: "Who can see this entry?",
+      body: "staff — only staff.\ncommunity — every signed-in member.\npublic — anyone with the share link.\n\n"
+          + "It is " + (PJ_VIS[e.visibility] || {}).label + " now. Narrowing it immediately stops every share link that has already been sent from working.",
+      cta: "Save", value: e.visibility, placeholder: "staff | community | public", required: true,
+    });
+    if (next === null) return;
+    const v = String(next).trim().toLowerCase();
+    if (order.indexOf(v) === -1) { toast.error("Use staff, community or public."); return; }
+    try {
+      const r = await NGGApi.member.programJournal.visibility(e.entryId, v);
+      toast.success("Now visible to: " + v + (r.shareLive ? " — share links are live." : " — share links will not open."));
+      load();
+    } catch (x) { toast.error(x.code || x.message); }
+  };
+
+  const onShare = async (e) => {
+    try {
+      const r = await NGGApi.member.programJournal.share(e.entryId);
+      if (navigator.clipboard && r.url) navigator.clipboard.writeText(r.url);
+      // Say plainly when the link will not open yet, rather than handing over a URL that 404s.
+      toast[r.live ? "success" : "info"](r.live ? "Link copied." : (r.note || "Link created, but the entry is not public yet."));
+      load();
+    } catch (x) { toast.error(x.code || x.message); }
+  };
+
+  return (
+    <div className="cm-pj">
+      <header className="cm-pj-intro">
+        <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Programme journal</h2>
+        <p className="cm-pj-hint" style={{ margin: 0 }}>
+          The record of what this programme actually did — advice given, contributions made, issues raised and how they
+          resolved, and who was involved. Channels are for talking; this is what remains.
+        </p>
+        {canAuthor && <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }}
+          onClick={() => setEditing({})}>＋ New entry</button>}
+      </header>
+
+      {err && <div className="cm-pj-empty" style={{ color: "#c0341a" }}>{err}</div>}
+
+      {/* Memories first: a journal nobody re-reads is an archive. */}
+      {mem && mem.length > 0 && (
+        <section className="cm-pj-mem">
+          {mem.map(c => (
+            <div key={c.key} className="cm-pj-memrow">
+              <div className="cm-pj-memhead">
+                <b>{c.title}</b><span>{c.subtitle}</span>
+              </div>
+              <div className="cm-pj-memscroll">
+                {c.entries.map(e => <CmJournalCard key={e.entryId} e={e} compact canAuthor={false}
+                  onEdit={() => {}} onVisibility={() => {}} onShare={() => {}}/>)}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
+      <div className="cm-pj-filters">
+        <input className="cm-pj-in" value={q} onChange={e => setQ(e.target.value)} placeholder="Search the record…" style={{ maxWidth: 240 }}/>
+        <button className={"btn btn-sm " + (kind === "" ? "btn-primary" : "btn-ghost")} onClick={() => setKind("")}>Everything</button>
+        {Object.keys(PJ_KINDS).map(k => (
+          <button key={k} className={"btn btn-sm " + (kind === k ? "btn-primary" : "btn-ghost")}
+            onClick={() => setKind(kind === k ? "" : k)}>{PJ_KINDS[k].icon} {PJ_KINDS[k].label}</button>
+        ))}
+      </div>
+
+      {!feed ? <div className="cm-pj-empty">Loading the record…</div>
+        : feed.entries.length === 0
+          ? <div className="cm-pj-empty">
+              {q || kind ? "Nothing in the record matches that." :
+                canAuthor ? "Nothing written yet. The first entry is usually the decision somebody will ask about in three months."
+                          : "Nothing in the journal you can see yet."}
+            </div>
+          : <div className="cm-pj-list">
+              {feed.entries.map(e => (
+                <CmJournalCard key={e.entryId} e={e} canAuthor={canAuthor}
+                  onEdit={setEditing} onVisibility={onVisibility} onShare={onShare}/>
+              ))}
+            </div>}
+
+      {editing && <CmJournalEditor entry={editing.entryId ? editing : null}
+        onClose={() => setEditing(null)}
+        onSaved={() => { setEditing(null); toast.success("Saved to the record."); load(); }}/>}
+    </div>
+  );
+}
+
+/* A single shared journal entry, opened from a link — /journal-entry?t=…
+ *
+ * Resolves only while the entry is public. Narrowing it back to staff or
+ * community makes this page stop working for every link already sent, which is
+ * the point: a share link is a credential, and one you cannot withdraw is not
+ * one. A refused token and a missing token are answered identically, because
+ * "this exists but you may not see it" confirms the entry exists. */
+function JournalEntryPage() {
+  const t = new URLSearchParams(window.location.search).get("t") || "";
+  const [entry, setEntry] = React.useState(null);
+  const [state, setState] = React.useState("loading");
+  React.useEffect(() => {
+    if (!t) { setState("gone"); return; }
+    NGGApi.public.journalEntry(t)
+      .then(r => { setEntry(r.entry); setState("ok"); })
+      .catch(() => setState("gone"));
+  }, [t]);
+
+  const wrap = (ch) => (
+    <div style={{ minHeight: "100vh", background: "#101a33", color: "#eef2fb", padding: "34px 18px 70px",
+                  fontFamily: "var(--font-body, system-ui, sans-serif)" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto" }}>{ch}</div>
+    </div>
+  );
+  if (state === "loading") return wrap(<div style={{ textAlign: "center", padding: "80px 0" }}><div className="dash-spinner"/></div>);
+  if (state === "gone") return wrap(
+    <div style={{ textAlign: "center", padding: "70px 0" }}>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: "#ffce54" }}>NEXT GENERATION GENIUS</div>
+      <h1 style={{ fontSize: 23, margin: "10px 0 0", fontWeight: 800 }}>This link isn't open</h1>
+      <p style={{ color: "rgba(230,238,255,.62)", marginTop: 10, fontSize: 14.5, lineHeight: 1.6 }}>
+        Shared journal entries can be closed again by the programme at any time, and this one is closed.
+        Ask whoever sent it to you for an up-to-date link.
+      </p>
+    </div>
+  );
+
+  const k = PJ_KINDS[entry.kind] || PJ_KINDS.note;
+  return wrap(
+    <article>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: "#ffce54" }}>
+        FROM THE PROGRAMME JOURNAL
+      </div>
+      <div style={{ marginTop: 12, fontSize: 13, color: "rgba(230,238,255,.7)" }}>
+        {k.icon} {k.label}{entry.occurredAt ? " · " + pjDate(entry.occurredAt) : ""}
+      </div>
+      <h1 style={{ fontSize: "clamp(24px,4.4vw,34px)", lineHeight: 1.12, margin: "8px 0 14px", fontWeight: 800 }}>{entry.title}</h1>
+      {entry.body && <p style={{ fontSize: 15.5, lineHeight: 1.72, color: "rgba(230,238,255,.86)", whiteSpace: "pre-wrap" }}>{entry.body}</p>}
+      {(entry.people || []).length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: ".08em", color: "rgba(230,238,255,.5)", fontWeight: 700 }}>Who was involved</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+            {entry.people.map(p => (
+              <span key={p.personId} style={{ fontSize: 12.5, fontWeight: 600, padding: "4px 10px", borderRadius: 999,
+                background: "rgba(255,255,255,.09)" }}>{p.name || p.personId} <i style={{ fontStyle: "normal", opacity: .6, fontSize: 11 }}>{p.role}</i></span>
+            ))}
+          </div>
+        </div>
+      )}
+      <p style={{ marginTop: 28, fontSize: 12, color: "rgba(230,238,255,.45)", lineHeight: 1.6 }}>
+        Shared from the Next Generation Genius programme journal{entry.authorName ? " · recorded by " + entry.authorName : ""}.
+      </p>
+    </article>
+  );
+}
+
+Object.assign(window, { SummerPage, ClubPage, BadgePin, CommunityPage, CmStudentSignIn, CmProgramJournal, JournalEntryPage });
