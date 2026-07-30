@@ -13,14 +13,62 @@ Status: **delivered** · Branch: `claude/gate-links-staff-desk-4g73f9`
 >   connection. `public/gate.php` already forwarded the whole refusal, which is
 >   why the staff desk worked and the public form did not. An HTTP-level test now
 >   guards it; the domain-level suite could never have seen it.
-> - **The `post_max_size` theory in §1.3 was wrong.** An 8MB photo does
->   base64-inflate past a default `post_max_size`, but it is not this bug —
->   `php -S` accepted a 10.6MB body cleanly. Left here as a real deployment risk
->   on Apache, not as a diagnosis.
+> - **The `post_max_size` theory in §1.3 was half right, and it was a second,
+>   separate bug.** It was not the cause of "the form does not submit" — `php -S`
+>   accepted a 10.6MB body cleanly, so it was recorded as a deployment risk
+>   rather than a diagnosis. It then turned up in production exactly as
+>   predicted, as a bare `413` on `selfreg.php`. The public form was the one
+>   surface that embedded its headshot inline (no session, so no signed upload)
+>   and it did so with a raw `FileReader`, bypassing the resampler every other
+>   upload path already went through. Fixed at the source rather than by asking
+>   hosts to raise a limit: the file is resampled to 1000px/q0.78 before it
+>   becomes a data URL, which takes a 6.9MB photo to well under nginx's 1MB
+>   `client_max_body_size` default. `tests/forms-selfreg-ui.js` asserts both the
+>   ratio and the bytes actually put on the wire.
 >
 > One thing was found only by running it: the Growth index was scoring children
 > for weeks *before they enrolled*, manufacturing a "was away, now returning"
 > curve. Fixed by windowing from `enrolledAt`.
+
+### Follow-up: date of birth, and consent in one tick
+
+Three later changes to the same public form, requested after it was in use:
+
+1. **Age → date of birth.** The form asks for a birthday and the age is derived
+   on submit (`dob_age`), so a family cannot type an age that disagrees with it
+   and the age cannot silently go stale across a season. Every downstream
+   reader still sees `age`, so no report, band or eligibility rule changed.
+   Migration 72 adds `summer_students.dob`; a seed regenerates the
+   auto-published `summer-reg` form. Forms an admin published by hand are left
+   alone deliberately and keep working through the `age` fallback.
+
+2. **The 413** — see above.
+
+3. **Consent in one tick, taken here, with no second email.** The desk flow
+   splits consent from registration for a good reason: a volunteer typing a
+   family's answers cannot consent for them, so the guardian gets a link. The
+   self-serve form is the opposite case — the guardian is the one filling it in.
+   Emailing them a link to re-consent to clauses they just read added a day of
+   latency and everything email deliverability can cost, and bought nothing. So
+   `selfreg_submit` now records the ledger at submit time
+   (`selfreg_record_consents`, `method = 'self_serve'`) and `selfreg_approve`
+   goes straight to `verified` and issues the ID instead of parking the row at
+   `parent_pending`.
+
+   **One deliberate deviation from "all consent is required", and it is not a
+   style choice.** Permission to *publish* a child's photograph (`media`,
+   `site_visibility`) is asked separately and either answer is accepted. Consent
+   is not freely given if refusing it costs a child their place, which is
+   precisely what the NDPA means by consent — bundling publication into a
+   mandatory tick would make every publication permission the programme holds
+   worthless, and the publication itself unlawful. The mandatory tick therefore
+   covers participation, medical, data, trips and comms; publication sits below
+   it, clearly optional, and the review desk shows the answer next to the photo
+   so a reviewer cannot assume yes. `CONSENT_PUBLICATION` names the split in one
+   place and the test suite pins it.
+
+   The one message that still goes out is the one families actually want: the
+   Genius ID, after approval, once there is an ID to send.
 
 ---
 

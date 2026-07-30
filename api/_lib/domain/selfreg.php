@@ -141,6 +141,10 @@ function selfreg_context(array $p): array {
     if (empty($ctx['ok'])) return $ctx;
     $ctx['selfServe'] = true;
     $ctx['consents'] = consent_public_copy();
+    // Grouped for the one-tick form, and carrying the document link. Kept
+    // alongside the flat list rather than replacing it so a cached older
+    // client keeps rendering.
+    $ctx['consentSelf'] = consent_selfserve_copy();
     // A cap the admin controls, so a link that leaks cannot be used to fill
     // the review queue with thousands of rows overnight.
     $ctx['open'] = selfreg_is_open();
@@ -168,6 +172,56 @@ function consent_public_copy(): array {
     return $out;
 }
 
+/* ── Consent on the self-serve form ──────────────────────────────────────────
+ * The desk flow splits consent from registration for a real reason: a
+ * volunteer typing a family's answers cannot consent on their behalf, so the
+ * guardian is emailed a link and consents themselves.
+ *
+ * The self-serve form is the opposite situation. The person filling it in IS
+ * the guardian — they are already reading the clauses, already identified by
+ * their own contact details, already at a keyboard. Emailing them a second
+ * link to re-consent to what they just read adds a day of latency, a
+ * deliverability failure mode, and an extra step families were dropping out
+ * of; it does not add consent that wasn't there.
+ *
+ * So this path takes consent inline, in ONE tick, against the full document
+ * linked beside it.
+ *
+ * One exception, and it is not a style choice. Permission to PUBLISH a child's
+ * photograph cannot be bundled into a tick the child's place depends on:
+ * consent conditioned on losing your place is not freely given, which is
+ * exactly what the NDPA means by consent. So publication is asked separately
+ * and either answer is accepted — see the note on CONSENT_TYPES.
+ */
+const CONSENT_PUBLICATION = ['media', 'site_visibility'];
+
+/** The two groups the self-serve form shows: everything the place genuinely
+ *  depends on, behind one tick, and publication permission, which is a free
+ *  choice. Derived from CONSENT_TYPES so adding a clause there shows up here. */
+function consent_selfserve_copy(): array {
+    $bundled = []; $publication = [];
+    foreach (CONSENT_TYPES as $key => $meta) {
+        $row = ['key' => $key, 'label' => (string)$meta['label']];
+        if (in_array($key, CONSENT_PUBLICATION, true)) $publication[] = $row;
+        else $bundled[] = $row;
+    }
+    return ['url' => consent_public_url(), 'bundled' => $bundled, 'publication' => $publication];
+}
+
+/** Write the ledger for a self-served consent. One row per type, same
+ *  append-only table the parent link writes to, with `self_serve` as the
+ *  method so an auditor can tell the two apart without guessing. */
+function selfreg_record_consents(string $studentId, bool $publication, string $actorName): void {
+    $actor = mb_substr(trim($actorName), 0, 160);
+    foreach (CONSENT_TYPES as $type => $meta) {
+        $granted = in_array($type, CONSENT_PUBLICATION, true) ? $publication : true;
+        db_insert('consents', ['studentId' => $studentId, 'type' => $type,
+            'status' => $granted ? 'granted' : 'declined',
+            'method' => 'self_serve', 'actorName' => $actor,
+            'signatureUrl' => '', 'createdAt' => now_iso()]);
+    }
+}
+
 /**
  * A family submits their own registration.
  *
@@ -181,6 +235,12 @@ function selfreg_submit(array $p): array {
     $gate = selfreg_gate($gateId, 'self');
     if (!$gate) return ['ok' => false, 'error' => 'gate_invalid'];
     if (!selfreg_is_open()) return ['ok' => false, 'error' => 'closed'];
+
+    /* Consent, before a row exists. Checked here and not merely in the UI: the
+     * endpoint is public and a submission with no consent is not a registration
+     * to tidy up later, it is data there was never a basis to hold. */
+    if (empty($p['consent'])) return ['ok' => false, 'error' => 'consent_required'];
+    $publication = !empty($p['publication']);
 
     $photo = (string)($p['photo'] ?? '');
     if ($photo === '') return ['ok' => false, 'error' => 'photo_required'];
@@ -212,13 +272,27 @@ function selfreg_submit(array $p): array {
         'updatedAt' => now_iso(),
     ], ['studentId' => $studentId]);
 
-    audit('selfreg.submit', null, $studentId, ['gate' => $gateId, 'photo' => $verdict['verdict']], (string)($p['ip'] ?? ''));
+    /* The consent ledger, written now, against the person who actually gave it.
+     * Recorded after gate_register so there is a studentId to attach it to, and
+     * before the audit line so an approved registration can never exist without
+     * the record of what was agreed.
+     *
+     * The name comes off the ROW, not the raw answers: gate_register has
+     * already mapped the form's `parentName` onto guardianName and trimmed it,
+     * and a consent record attributed to a key that got renamed in the form
+     * builder would be attributed to nobody. */
+    $actor = (string)(db_row('SELECT guardianName FROM summer_students WHERE studentId = ?', [$studentId])['guardianName'] ?? '');
+    selfreg_record_consents($studentId, $publication, $actor);
+
+    audit('selfreg.submit', null, $studentId, ['gate' => $gateId, 'photo' => $verdict['verdict'],
+        'consent' => 'self_serve', 'publication' => $publication ? 'granted' : 'declined'], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'ref' => $studentId, 'studentId' => $studentId,
             'regStatus' => 'self_pending', 'photo' => $verdict,
             // Explicitly empty, not absent: "we are sending nothing" is the
             // promise this endpoint makes, and it should be readable as one.
             'verificationSending' => [],
-            'message' => 'Sent for checking. Once a coordinator has confirmed it we will email your parent or guardian to finish the consent.'];
+            'consentRecorded' => true,
+            'message' => 'Sent for checking. A coordinator confirms it — nothing further is needed from you.'];
 }
 
 
@@ -238,8 +312,12 @@ function selfreg_queue(array $p): array {
     $gate = selfreg_gate((string)($p['gate'] ?? ''), 'review');
     if (!$gate) return ['ok' => false, 'error' => 'gate_invalid'];
 
+    /* `verified` belongs here now: an approved self-registration lands there
+     * directly rather than waiting on a consent email, so without it the
+     * reviewer's own approvals vanished from every filter they could pick.
+     * `parent_pending` stays for the rows approved before that change. */
     $status = (string)($p['status'] ?? 'self_pending');
-    if (!in_array($status, ['self_pending', 'parent_pending', 'rejected', 'all'], true)) $status = 'self_pending';
+    if (!in_array($status, ['self_pending', 'parent_pending', 'verified', 'rejected', 'all'], true)) $status = 'self_pending';
     $q = mb_strtolower(trim((string)($p['q'] ?? '')));
     $centre = trim((string)($p['centre'] ?? ''));
     $course = trim((string)($p['course'] ?? ''));
@@ -340,6 +418,24 @@ function selfreg_queue(array $p): array {
         }
     }
 
+    /* Whether each family agreed to their child's photo being published, read
+     * once for the page. The reviewer is looking at a photograph and deciding
+     * what happens to it; "may we publish this" is not a detail to go and look
+     * up in another screen, and a reviewer who assumes yes is the way an
+     * unpublishable photo ends up published. */
+    $pub = [];
+    if ($rows) {
+        $ids = array_map(fn($r) => (string)$r['studentId'], $rows);
+        $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
+        $types = '(' . implode(',', array_fill(0, count(CONSENT_PUBLICATION), '?')) . ')';
+        // Append-only ledger, so the LAST row for a studentId+type is current.
+        foreach (db_all("SELECT studentId, type, status FROM consents
+                         WHERE studentId IN $in AND type IN $types ORDER BY id ASC",
+                        array_merge($ids, CONSENT_PUBLICATION)) as $c) {
+            $pub[(string)$c['studentId']] = (string)$c['status'];
+        }
+    }
+
     $out = [];
     foreach ($rows as $r) {
         $chk = safe_json((string)($r['photoCheck'] ?? '')) ?: [];
@@ -372,6 +468,9 @@ function selfreg_queue(array $p): array {
                         'notes' => array_values((array)($chk['notes'] ?? [])),
                         'source' => (string)($chk['source'] ?? '')],
             'regStatus' => (string)$r['regStatus'],
+            // granted | declined | '' (no ledger row — a pre-change submission
+            // whose consent is still coming through the parent link).
+            'publication' => (string)($pub[(string)$r['studentId']] ?? ''),
             'submittedAt' => (string)($r['enrolledAt'] ?? ''),
             'reviewedAt' => (string)($r['reviewedAt'] ?? ''),
             'reviewNote' => (string)($r['reviewNote'] ?? ''),
@@ -397,34 +496,64 @@ function selfreg_queue(array $p): array {
 /**
  * Approve — the moment a submission becomes a registration.
  *
- * This is the only place the guardian's email is sent for a self-registration,
- * and it is sent AFTER the response so a slow SMTP hop cannot make the desk
- * look broken to somebody who has already approved twenty.
+ * Consent was given on the form, by the guardian, and is already in the ledger
+ * (see selfreg_record_consents). So approval is the LAST step, not the
+ * middle one: it goes straight to `verified` and issues the ID.
+ *
+ * It used to park the row at `parent_pending` and email the guardian a link to
+ * consent again. That was the desk flow's ending grafted onto a flow that does
+ * not need it — the family had already read the clauses and ticked them — and
+ * it cost a day of latency plus everything email deliverability can cost, for
+ * a second copy of a consent already held.
+ *
+ * The reviewer's job is unchanged and still the point: a human looks at the
+ * photo and the answers before anything is issued in a child's name.
  */
 function selfreg_approve(array $p): array {
     $gate = selfreg_gate((string)($p['gate'] ?? ''), 'review');
     if (!$gate) return ['ok' => false, 'error' => 'gate_invalid'];
     $id = (string)($p['studentId'] ?? '');
-    $s = db_row("SELECT studentId, regStatus, fullName, parentEmail, guardianPhone FROM summer_students WHERE studentId = ? AND submittedVia != '' LIMIT 1", [$id]);
+    $s = db_row("SELECT studentId, regStatus, fullName, track, parentEmail, guardianPhone FROM summer_students WHERE studentId = ? AND submittedVia != '' LIMIT 1", [$id]);
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
-    // Approving twice must not email a family twice.
+    // Approving twice must not issue twice, or re-stamp verifiedAt.
     if ((string)$s['regStatus'] !== 'self_pending') return ['ok' => false, 'error' => 'not_pending', 'regStatus' => (string)$s['regStatus']];
 
     db_update('summer_students', [
-        'regStatus' => 'parent_pending',
+        'regStatus' => 'verified',
+        'verifiedAt' => now_iso(),
         'reviewedById' => 'gate:' . (string)$gate['gateId'],
         'reviewedAt' => now_iso(),
         'reviewNote' => mb_substr(trim((string)($p['note'] ?? '')), 0, 300),
         'updatedAt' => now_iso(),
     ], ['studentId' => $id]);
 
-    $willSend = [];
-    if (trim((string)$s['parentEmail']) !== '') $willSend[] = 'email';
-    if (trim((string)$s['guardianPhone']) !== '' && function_exists('sms_enabled') && sms_enabled()) $willSend[] = 'sms';
-    after_response('selfreg.verify', function () use ($id) { registration_send_verification($id); });
+    /* Same gate the parent-link flow goes through, so the photo hold and the
+     * QR pool behave identically however a registration arrived. */
+    $issue = registration_issue_id($id);
 
-    audit('selfreg.approve', 'gate:' . (string)$gate['gateId'], $id, [], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'studentId' => $id, 'regStatus' => 'parent_pending', 'verificationSending' => $willSend];
+    /* One message still goes out, and it is the one the family actually wants:
+     * the ID, once there is an ID. Dropping the consent email must not turn
+     * into dropping every trace — a family that filled the form and heard
+     * nothing again has no way to know the place is confirmed.
+     *
+     * After the response, because a reviewer clearing a queue of two hundred
+     * must not wait on SMTP, and only when issuance actually happened. */
+    if (!empty($issue['issued']) || !empty($issue['already'])) {
+        after_response('selfreg.sendId', function () use ($id) { student_send_id($id); });
+    }
+
+    audit('selfreg.approve', 'gate:' . (string)$gate['gateId'], $id,
+        ['idHeld' => !empty($issue['held']), 'reason' => (string)($issue['reason'] ?? '')], (string)($p['ip'] ?? ''));
+    event_emit('registration.verified', ['ref' => $id, 'name' => (string)$s['fullName'],
+        'course' => (string)($s['track'] ?? ''), 'status' => 'verified', 'feedback' => '']);
+
+    return ['ok' => true, 'studentId' => $id, 'regStatus' => 'verified',
+            // Nothing is emailed to ask for consent any more. Kept as an empty
+            // list so an older cached client reads "no messages queued"
+            // rather than crashing on a missing key.
+            'verificationSending' => [],
+            'idIssued' => !empty($issue['issued']) || !empty($issue['already']),
+            'photoPending' => !empty($issue['held']) && ($issue['reason'] ?? '') === 'photo_pending'];
 }
 
 /** Reject, with a reason. The row stays: a rejected submission is evidence

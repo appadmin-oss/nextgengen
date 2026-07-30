@@ -15,8 +15,8 @@
     "test:scanners": "node tests/scanners.test.js",
     "test:journal": "node tests/journal-smoke.js",
     "test:ui": "node tests/ui-smoke.js",
-    "test:forms": "node tests/forms-submit.js && node tests/forms-offline.js",
-    "test:all": "node build.js && node tests/build.test.js && php api/tests/run.php && node tests/card-export.test.js && node tests/scanners.test.js && node tests/forms-submit.js && node tests/forms-offline.js && node tests/kiosk-offline.js && node tests/ui-smoke.js && node tests/journal-smoke.js",
+    "test:forms": "node tests/forms-submit.js && node tests/forms-offline.js && node tests/forms-selfreg-ui.js",
+    "test:all": "node build.js && node tests/build.test.js && php api/tests/run.php && node tests/card-export.test.js && node tests/scanners.test.js && node tests/forms-submit.js && node tests/forms-offline.js && node tests/forms-selfreg-ui.js && node tests/kiosk-offline.js && node tests/ui-smoke.js && node tests/journal-smoke.js",
     "test:build": "node tests/build.test.js"
   },
   "devDependencies": {

@@ -2963,8 +2963,14 @@ const LEADERBOARD = {
     ok('…unlocking to a queue that lists rather than decides',
        /Select all 2 shown/.test(rvText) && /does not show you the photo/.test(rvText)
        && !/WHAT THEY SUBMITTED/.test(rvText));
-    ok('…and saying plainly that approving is what emails the family',
-       /Approving is what emails the guardian/.test(rvText));
+    /* What approving DOES, in the words of the consequence. It used to email the
+       guardian a consent form; a self-serve guardian now consents on the form
+       itself, so approving confirms the place and issues the ID — and a desk
+       that still says "emails the guardian" is describing a step that no longer
+       happens, which is how somebody comes to approve without looking. */
+    ok('…and saying plainly what approving actually does',
+       /Consent is already on file/.test(rvText)
+       && /confirms the place and issues the Genius ID/.test(rvText));
     /* How long they have waited, in words, not a date to do arithmetic on.
        This is the number that ought to be embarrassing when it grows, and a
        timestamp quietly never is. */

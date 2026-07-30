@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 71;
+const NGG_SCHEMA_TARGET = 72;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -248,6 +248,21 @@ function db_run_seeds(PDO $db): void {
         if (setting_raw('seed_academy_v1') !== '1') {
             $db->exec("DELETE FROM form_defs WHERE status = 'live' AND publishedBy = 'system' AND formId IN ('summer-reg', 'volunteer')");
             setting_set('seed_academy_v1', '1', 'system');
+        }
+        /* Seed `dob_v1`: the intake form now asks for a date of birth instead of
+         * an age. Auto-generated forms are dropped so they rebuild from the
+         * current defaults — the same mechanism academy_v1 uses, and the only way
+         * the change reaches a deployment whose form was lazily created from the
+         * old defaults years ago.
+         *
+         * Admin-PUBLISHED forms are deliberately untouched: somebody edited those
+         * on purpose, and silently rewriting their questions is not this seed's
+         * business. Those keep asking for age, which still works — the record
+         * derives age from dob when it is given and falls back to the typed age
+         * when it is not. */
+        if (setting_raw('seed_dob_v1') !== '1') {
+            $db->exec("DELETE FROM form_defs WHERE status = 'live' AND publishedBy = 'system' AND formId = 'summer-reg'");
+            setting_set('seed_dob_v1', '1', 'system');
         }
     } catch (Throwable $e) {
         error_log('[db] seed: ' . $e->getMessage());
@@ -1817,6 +1832,22 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_pjt_unique ON program_journal_tags(entryId, personId);
             CREATE INDEX IF NOT EXISTS idx_pjt_person ON program_journal_tags(personId);
+        ",
+
+        /* Date of birth, asked instead of age.
+         *
+         * An age typed into a box is wrong within months and cannot be
+         * corrected without asking the family again — and every age band, every
+         * cohort comparison and every safeguarding rule downstream is computed
+         * from it. A date of birth is a fact that stays true; the age is derived
+         * from it on the way in, so nothing downstream changes.
+         *
+         * `age` is kept and still populated. It is read in a dozen places, and
+         * recomputing it everywhere would be a much larger change than this
+         * needs to be.
+         */
+        72 => "
+            ALTER TABLE summer_students ADD COLUMN dob TEXT DEFAULT '';
         ",
     ];
 

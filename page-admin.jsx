@@ -2599,6 +2599,12 @@ function ConsentDocEditor({ doc, onSaved }) {
             {fld("dpoContact", "Data protection contact", { min: 220, ph: "email or phone a parent can use" })}
             {fld("retentionYears", "Keep records for (years)", { type: "number", min: 120 })}
             {fld("logoUrl", "Logo URL", { min: 220, ph: "defaults to the ID card lockup" })}
+            {/* The public sign-up form takes consent in ONE tick, which is only
+                honest if the full wording is one tap away — so this is the link
+                beside it. Blank falls back to the site's own Parental Consent
+                document; point it at a hosted PDF if your adviser signed off a
+                specific version. */}
+            {fld("consentUrl", "Consent document link", { grow: true, ph: "blank = /legal?doc=consent" })}
             {fld("formRef", "Form reference", { min: 120 })}
             {fld("formRev", "Revision", { min: 120 })}
             {fld("extraClauseTitle", "Extra clause — title", { grow: true, ph: "leave blank for none" })}

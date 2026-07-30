@@ -128,9 +128,9 @@ function cleanup() {
     'cookie_samesite' => 'Lax',
     'cache_dir' => ${JSON.stringify(CACHE)},
     // Deliberately tiny so the per-gate scoping is observable. Counts below are
-    // written against max=4: the main gate spends 3, the throwaway gate proves
-    // the 429, and the main gate's 4th proves the buckets are separate.
-    'rate_limits' => ['default' => ['max' => 100000, 'window' => 60], 'selfreg.submit' => ['max' => 4, 'window' => 300]],
+    // written against max=5: the main gate spends 4, the throwaway gate proves
+    // the 429, and the main gate's 5th proves the buckets are separate.
+    'rate_limits' => ['default' => ['max' => 100000, 'window' => 60], 'selfreg.submit' => ['max' => 5, 'window' => 300]],
     'session_ttl' => 604800,
     'kiosk_ttl' => 43200,
     'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
@@ -165,8 +165,8 @@ function cleanup() {
 
     // 2 · THE REGRESSION. A refusal must carry the per-field map.
     const short = await post('/api/public/selfreg.php', {
-      gate: GATE, photo,
-      data: { firstName: 'Ada', lastName: 'Test', age: '12' },   // deliberately incomplete
+      gate: GATE, photo, consent: true,
+      data: { firstName: 'Ada', lastName: 'Test' },   // deliberately incomplete
     });
     if (short.json && short.json.errors && typeof short.json.errors === 'object' && Object.keys(short.json.errors).length) {
       ok(`a refusal carries the per-field errors map (${Object.keys(short.json.errors).join(', ')})`);
@@ -179,17 +179,25 @@ function cleanup() {
       ok('refusal is not the generic "failed" the form reports as a connection error');
     }
 
+    /* 2b · consent is enforced by the SERVER, not by the checkbox.
+       The endpoint is public and unauthenticated, so a submission with the tick
+       omitted is one POST away — and a registration with no recorded consent is
+       data there was never a basis to hold. */
+    const noConsent = await post('/api/public/selfreg.php', { gate: GATE, photo, data: { firstName: 'NoTick' } });
+    if (noConsent.json && noConsent.json.error === 'consent_required') ok('a submission with no consent is refused by the server');
+    else bad(`consent was not enforced server-side — got ${noConsent.status} ${noConsent.raw.slice(0, 160)}`);
+
     // 3 · anonymous intake: no CSRF cookie was ever minted here.
     if (short.status !== 403) ok('POST does not demand a CSRF cookie on the public sign-up link');
     else bad('POST returned 403 csrf_failed with no cookie — the public form cannot submit');
 
     // 4 · the happy path actually registers.
     const good = {
-      firstName: 'Ada', lastName: 'Test', age: '12', centre: 'Egbeda',
+      firstName: 'Ada', lastName: 'Test', dob: '2013-04-02', centre: 'Egbeda',
       faculty: fac, course: crs, sex: 'Female',
       parentName: 'P Test', parentPhone: '08030000000', parentEmail: 'p@example.org',
     };
-    const sent = await post('/api/public/selfreg.php', { gate: GATE, photo, data: good });
+    const sent = await post('/api/public/selfreg.php', { gate: GATE, photo, consent: true, data: good });
     if (sent.status === 200 && sent.json && sent.json.studentId && sent.json.regStatus === 'self_pending')
       ok(`a complete submission is accepted (${sent.json.studentId}, self_pending)`);
     else bad(`valid submission was refused (status ${sent.status}): ${sent.raw.slice(0, 200)}`);
@@ -202,8 +210,16 @@ function cleanup() {
     if (via === GATE) ok('the row records which gate link it came through');
     else bad(`submittedVia was "${via}", expected "${GATE}"`);
 
+    /* The form asks for a date of birth; the row still carries an age, because
+       every report, band and eligibility rule downstream reads `age`. Derived
+       on submit rather than typed, so it cannot drift and cannot be guessed. */
+    const born = php(`$r = db_row("SELECT dob, age FROM summer_students LIMIT 1"); echo $r['dob'] . '|' . (int)$r['age'];`);
+    const expectAge = String(php(`echo dob_age('2013-04-02');`));
+    if (born === `2013-04-02|${expectAge}`) ok(`the date of birth is stored and the age derived from it (${expectAge})`);
+    else bad(`expected "2013-04-02|${expectAge}" from the row, got "${born}"`);
+
     // 5 · the same child twice is caught, not double-registered.
-    const again = await post('/api/public/selfreg.php', { gate: GATE, photo, data: good });
+    const again = await post('/api/public/selfreg.php', { gate: GATE, photo, consent: true, data: good });
     const n2 = parseInt(php(`echo (int) db_row("SELECT COUNT(*) c FROM summer_students")['c'];`), 10);
     if (again.status !== 200 && n2 === 1) ok('a repeat submission is refused rather than duplicating the child');
     else bad(`repeat submission left ${n2} rows (status ${again.status}) — expected 1 and a refusal`);
@@ -211,21 +227,21 @@ function cleanup() {
     /* 6 · Rate limiting is keyed per gate, not per IP alone.
        Every family on a mobile carrier or a centre's WiFi shares one address, so
        an IP-only bucket lets the busiest centre ration every other centre's
-       link. GATE has spent 3 of 4 above; this second gate spends its own. */
+       link. GATE has spent its own allowance above; this second gate spends its own. */
     php(`db_insert('gate_links', ['gateId'=>'GL-RL','kind'=>'self','name'=>'Other centre','cohortId'=>'C1','centreId'=>'','status'=>'active','passHash'=>'','createdBy'=>'seed','createdAt'=>now_iso()]);`);
     let limited = null;
-    for (let i = 0; i < 5 && !limited; i++) {
-      const r = await post('/api/public/selfreg.php', { gate: 'GL-RL', photo, data: { firstName: 'X' + i } });
+    for (let i = 0; i < 6 && !limited; i++) {
+      const r = await post('/api/public/selfreg.php', { gate: 'GL-RL', photo, consent: true, data: { firstName: 'X' + i } });
       if (r.status === 429) limited = r;
     }
     if (limited) ok('a genuine flood on one gate is still rate-limited (429)');
     else bad('the rate limiter never fired — the ceiling is not being enforced');
 
     // Retry-After is what lets an offline outbox back off instead of hammering.
-    const ra = await post('/api/public/selfreg.php', { gate: 'GL-RL', photo, data: { firstName: 'Y' } });
+    const ra = await post('/api/public/selfreg.php', { gate: 'GL-RL', photo, consent: true, data: { firstName: 'Y' } });
     if (ra.status === 429) {
       const hdr = await new Promise((resolve) => {
-        const p = JSON.stringify({ gate: 'GL-RL', photo, data: { firstName: 'Z' } });
+        const p = JSON.stringify({ gate: 'GL-RL', photo, consent: true, data: { firstName: 'Z' } });
         const rq = http.request(BASE + '/api/public/selfreg.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(p) },
@@ -238,7 +254,7 @@ function cleanup() {
     } else bad('expected the flooded gate to stay limited');
 
     // The other gate's bucket is untouched — this is the whole point.
-    const other = await post('/api/public/selfreg.php', { gate: GATE, photo, data: { firstName: 'Q' } });
+    const other = await post('/api/public/selfreg.php', { gate: GATE, photo, consent: true, data: { firstName: 'Q' } });
     if (other.status !== 429) ok('a different gate on the SAME ip still has its own allowance');
     else bad('one gate exhausting its bucket also locked out another gate on the same IP');
   } catch (e) {

@@ -130,7 +130,8 @@ const students = () => parseInt(php(`echo (int) db_row("SELECT COUNT(*) c FROM s
     // covers the endpoint contract.
     const payload = {
       gate: GATE,
-      data: { firstName: 'Ada', lastName: 'Offline', age: '12', centre: 'Egbeda',
+      consent: true,
+      data: { firstName: 'Ada', lastName: 'Offline', dob: '2013-04-02', centre: 'Egbeda',
               faculty: fac, course: crs, sex: 'Female',
               parentName: 'P Test', parentPhone: '08030000000', parentEmail: 'p@example.org' },
       photo: 'data:image/png;base64,' + 'iVBORw0KGgoAAAANSUhEUgAAAUAAAAFACAIAAAB'.repeat(40),
@@ -204,7 +205,7 @@ const students = () => parseInt(php(`echo (int) db_row("SELECT COUNT(*) c FROM s
     // 4 · a real refusal must not be queued for ever.
     const refusal = await page.evaluate(async (g) => {
       try {
-        await window.outbox.intake('selfreg.submit', { gate: g, data: { firstName: 'NoFields' }, photo: 'data:image/png;base64,AAAA' }, 'ngg_apply_draft_bad');
+        await window.outbox.intake('selfreg.submit', { gate: g, consent: true, data: { firstName: 'NoFields' }, photo: 'data:image/png;base64,AAAA' }, 'ngg_apply_draft_bad');
         return { sent: true };
       } catch (e) { return { sent: false, queued: !!e.queued, errors: (e.data && e.data.errors) || null }; }
     }, GATE);

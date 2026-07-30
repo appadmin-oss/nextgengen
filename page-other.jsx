@@ -2582,12 +2582,22 @@ function SelfRegisterPage() {
 
 function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
   const fields = (ctx.form && ctx.form.fields) || [];
-  const consents = ctx.consents || [];
-  const [step, setStep] = React.useState(0);   // 0 details · 1 photo · 2 consents · 3 done
+  /* Grouped consent, with the document link, from selfreg_context. The
+     fallback derives the same split from the flat list an older cached
+     response carries, so a client that loaded before the server rolled still
+     renders one tick rather than an empty consent step. */
+  const PUBLICATION_KEYS = ["media", "site_visibility"];
+  const cself = ctx.consentSelf || null;
+  const flat = ctx.consents || [];
+  const bundled = cself ? cself.bundled : flat.filter(c => PUBLICATION_KEYS.indexOf(c.key) === -1);
+  const consentUrl = (cself && cself.url) || "/legal?doc=consent";
+  const [step, setStep] = React.useState(0);   // 0 details · 1 photo · 2 consent · 3 done
   const [form, setForm] = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey)) || {}; } catch (_) { return {}; } });
   const [errors, setErrors] = React.useState({});
   const [photo, setPhoto] = React.useState("");
   const [photoMsg, setPhotoMsg] = React.useState(null);
+  const [agreed, setAgreed] = React.useState(false);
+  const [publication, setPublication] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
   const [done, setDone] = React.useState(null);
@@ -2619,15 +2629,52 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
     img.src = dataUrl;
   });
 
+  /* This is the ONE headshot in the whole site that travels inline, inside the
+     submission JSON, because a public self-registration has no session and the
+     signed-upload paths the desk uses aren't open to it. So the file a phone
+     hands over IS the request body — and a modern phone hands over 4–12MB,
+     which base64 inflates by a further third. Every server in front of PHP
+     caps that: Apache LimitRequestBody, nginx client_max_body_size,
+     post_max_size. The result was a 413 with no message, on the last tap of a
+     five-minute form.
+     Resampling here fixes it at the source rather than asking every host to
+     raise a limit. 1000px on the long edge at q0.78 is comfortably above what
+     a printed ID card needs (the card art is delivered at 900px) and lands
+     around 80–150KB for a real photograph; the budget it is sized against is
+     nginx's client_max_body_size default of 1MB, which is the tightest limit
+     in common use. The optimiser is optional — if /vendor/image-tools.js can't
+     load we send the original and let the size check below be what speaks. */
+  const PHOTO_SOFT_BYTES = 1400000;
+  const shrink = async (file) => {
+    const type = (file && file.type) || "";
+    if (!/^image\//.test(type) || /^image\/(gif|svg\+xml)$/.test(type)) return file;
+    try {
+      const tools = await NGGApi.imageTools();
+      const r = await tools.prepare(file, { maxPx: 1000, quality: 0.78 });
+      if (r.skipped || !r.blob) return file;
+      return r.blob;
+    } catch (_) { return file; }
+  };
+
   const takeFile = async (file) => {
     setPhotoMsg(null); setErr("");
     if (!file) return;
-    if (file.size > 8000000) { setPhotoMsg({ ok: false, issues: ["That file is over 8MB. Most phones have a 'medium' size option."] }); return; }
-    const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result || "")); r.readAsDataURL(file); });
+    // Generous, and about the camera rather than the wire: a 40MP burst frame
+    // is not a headshot, but a 9MB one shrinks fine and used to be refused.
+    if (file.size > 30000000) { setPhotoMsg({ ok: false, issues: ["That file is over 30MB. Most phones have a 'medium' size option in the camera settings."] }); return; }
+    setPhotoMsg({ ok: true, working: true, issues: [] });
+    const small = await shrink(file);
+    const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result || "")); r.readAsDataURL(small); });
+    /* Checked on the shrunk result, not the original, and stated in the terms
+       the person can act on. Silence here is what produced the 413. */
+    if (dataUrl.length > PHOTO_SOFT_BYTES) {
+      setPhotoMsg({ ok: false, issues: ["That photo is still too large to send (" + Math.round(dataUrl.length / 1048576) + "MB). Set your camera to a smaller size, or take the photo again."] });
+      setPhoto("");
+      return;
+    }
     const v = await inspect(dataUrl);
     setPhotoMsg(v);
     setPhoto(v.ok ? dataUrl : "");
-    if (v.ok) setPhoto(dataUrl);
   };
 
   /* Banked before it is sent, and sent through the outbox rather than straight
@@ -2635,9 +2682,15 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
      fill and survives a reload, so a re-send after a timeout replays the
      original registration instead of creating a second child. */
   const submit = async () => {
+    if (!agreed) {
+      setErr("Please tick the consent box — we can't register a child without their parent or guardian agreeing.");
+      const el = document.querySelector('input[type="checkbox"]');
+      if (el) { el.scrollIntoView({ block: "center", behavior: "smooth" }); el.focus({ preventScroll: true }); }
+      return;
+    }
     setBusy(true); setErr(""); setErrors({});
     const sid = window.outbox ? window.outbox.submissionId(draftKey) : "";
-    const payload = { gate: g, data: form, photo, submissionId: sid };
+    const payload = { gate: g, data: form, photo, consent: true, publication, submissionId: sid };
     try {
       const r = window.outbox
         ? await window.outbox.send("selfreg.submit", payload, { label: regDisplayName(form) })
@@ -2651,6 +2704,13 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
       const c = e.code || e.message;
       if (e.data && e.data.errors) { setErrors(e.data.errors); setStep(0); setErr("Please check the highlighted answers."); }
       else if (c === "photo_rejected") { setStep(1); setPhoto(""); setPhotoMsg({ ok: false, issues: ["That photo can't be used for an ID card. Please take another."] }); }
+      else if (c === "consent_required") setErr("Please tick the consent box before sending.");
+      /* 413 is the server refusing to READ the request, so nothing inside it —
+         including a helpful error — ever comes back. The photo is the only
+         thing in this payload big enough to cause it, and it is now shrunk on
+         the way in, so this is the belt to that braces: name the cause and the
+         fix instead of showing a bare status code. */
+      else if (c === "http_413" || /\b413\b/.test(String(c || ""))) { setStep(1); setPhoto(""); setPhotoMsg({ ok: false, issues: ["That photo was too large for the server to accept. Take it again — the camera's 'medium' size setting works best."] }); setErr("The photo was too large to send. Please take another."); }
       else if (c === "duplicate_suspect") setErr("Someone has already registered this child with the same contact details. Speak to your centre coordinator rather than registering twice.");
       else if (c === "closed") setErr("Registration has just closed. Ask your centre coordinator when it reopens.");
       /* Not a dead end: the server is still working on THIS submission, and the
@@ -2670,6 +2730,11 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
 
   const named = regDisplayName(form);
   const steps = ["Details", "Photo", "Consent", "Done"];
+  // The age the server will derive, shown back for checking. -1 means the date
+  // isn't a date yet, and `age` covers a form an admin published before the
+  // date-of-birth field replaced the typed one.
+  const derivedAge = dobToAge(form.dob);
+  const shownAge = derivedAge >= 0 ? derivedAge : (form.age ? Number(form.age) : null);
 
   /* Leaving the Details step is where the answers get checked — and where the
      first bad one gets FOCUSED. Telling somebody "please check the highlighted
@@ -2696,7 +2761,7 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
       <h1 style={{ fontSize: 24, margin: "10px 0 0", fontWeight: 800 }}>Sent for checking</h1>
       <p style={{ ...mut, marginTop: 10, fontSize: 15, lineHeight: 1.6 }}>
         Thank you. A coordinator will look at {named || "this registration"} — usually within a day.
-        {" "}Once they confirm it, we'll email your parent or guardian a short consent form, and the place is confirmed after that.
+        {" "}Your consent is recorded, so there is nothing further for you to fill in: once they confirm it, the place is confirmed and the Genius ID is sent to the contact you gave.
       </p>
       <div style={{ ...card, padding: 14, marginTop: 18, textAlign: "left" }}>
         <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: gold }}>YOUR REFERENCE</div>
@@ -2705,7 +2770,7 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
       </div>
       {/* Said plainly, because the one thing this flow cannot do is confirm a
           place, and a family that believes it can will stop chasing. */}
-      <p style={{ ...mut, fontSize: 12.5, marginTop: 16 }}>This is not a confirmed place yet — it becomes one when your parent or guardian completes the consent.</p>
+      <p style={{ ...mut, fontSize: 12.5, marginTop: 16 }}>This is not a confirmed place yet — it becomes one when a coordinator has checked it.</p>
     </div>
   );
 
@@ -2766,7 +2831,10 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
               {photoMsg.issues.map((t, i) => <div key={i}>• {t}</div>)}
             </div>
           )}
-          {photoMsg && photoMsg.ok && (
+          {photoMsg && photoMsg.ok && photoMsg.working && (
+            <div style={{ marginTop: 10, fontSize: 13.5, color: "rgba(230,238,255,.7)" }}>Getting the photo ready…</div>
+          )}
+          {photoMsg && photoMsg.ok && !photoMsg.working && (
             <div style={{ marginTop: 10, fontSize: 13.5, color: "#a7e8c6" }}>✓ That will work — {photoMsg.w}×{photoMsg.h}.</div>
           )}
         </div>
@@ -2783,30 +2851,66 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
     {step === 2 && (
       <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
         <div style={{ ...card, padding: 15 }}>
-          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>What your parent or guardian will be asked</div>
-          {/* Shown before submitting, not for the first time in an email. The
-              consent itself is theirs to give — a child ticking boxes on their
-              parent's behalf would not be consent at all. */}
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Consent</div>
+          {/* One tick, given here, by the person giving it. This form is filled
+              in by the parent or guardian themselves — so asking them to read
+              the clauses now and then emailing them a link to agree to the same
+              clauses tomorrow adds a day and a deliverability failure, not
+              consent. What the tick covers is listed, and the full document is
+              one tap away: a single tick standing for several clauses is only
+              honest if the clauses are readable. */}
           <p style={{ ...mut, fontSize: 13.5, margin: "0 0 12px", lineHeight: 1.55 }}>
-            We'll email them a short form. Nothing is confirmed until they complete it.
+            Read this as the parent or guardian. One tick covers everything the place depends on — you're agreeing to it now, and nothing further is emailed to you.
           </p>
-          {consents.map(c => (
-            <div key={c.key} style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "7px 0", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
+          {bundled.map(c => (
+            <div key={c.key} style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
+              <span aria-hidden="true" style={{ color: gold, fontSize: 12 }}>•</span>
               <span style={{ flex: 1, fontSize: 14 }}>{c.label}</span>
-              <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".06em", color: c.required ? gold : "rgba(230,238,255,.5)" }}>
-                {c.required ? "REQUIRED" : "OPTIONAL"}
-              </span>
             </div>
           ))}
-          <p style={{ ...mut, fontSize: 12.5, marginTop: 12, lineHeight: 1.5 }}>
-            The optional ones are genuinely optional — saying no to photographs or to appearing on our website does not affect {named ? named.split(" ")[0] : "the child"}'s place.
-          </p>
+          <a href={consentUrl} target="_blank" rel="noopener noreferrer"
+            style={{ display: "inline-block", marginTop: 12, color: gold, fontSize: 13.5, fontWeight: 700 }}>
+            Read the full consent document ↗
+          </a>
+
+          <label style={{ display: "flex", gap: 12, alignItems: "flex-start", cursor: "pointer", marginTop: 14,
+                          padding: "14px 15px", borderRadius: 12,
+                          background: agreed ? "rgba(255,206,84,.10)" : "rgba(255,255,255,.05)",
+                          border: "1px solid " + (agreed ? gold : "rgba(255,255,255,.2)") }}>
+            <input type="checkbox" checked={agreed} onChange={e => { setAgreed(e.target.checked); if (err) setErr(""); }}
+              style={{ width: 20, height: 20, marginTop: 1, accentColor: gold, flex: "none" }}/>
+            <span style={{ fontSize: 14, lineHeight: 1.5 }}>
+              I am {named ? named.split(" ")[0] + "'s" : "this child's"} parent or guardian. I have read the consent document and I agree to all of it on their behalf.
+            </span>
+          </label>
         </div>
+
+        {/* Deliberately NOT inside the tick above, and deliberately not
+            required. Consent to publish a child's photograph is not freely
+            given if refusing it costs them their place — which would make the
+            consent worthless and the publication unlawful. Either answer is
+            accepted and the place is identical. */}
+        <div style={{ ...card, padding: 15 }}>
+          <label style={{ display: "flex", gap: 12, alignItems: "flex-start", cursor: "pointer" }}>
+            <input type="checkbox" checked={publication} onChange={e => setPublication(e.target.checked)}
+              style={{ width: 20, height: 20, marginTop: 1, accentColor: gold, flex: "none" }}/>
+            <span>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>You may use {named ? named.split(" ")[0] + "'s" : "the child's"} photo publicly</span>
+              <span style={{ ...mut, display: "block", fontSize: 12.5, marginTop: 3, lineHeight: 1.5 }}>
+                Photographs and video from the programme, and being featured on our website. This one is genuinely your choice — saying no changes nothing about the place, and you can change your mind later.
+              </span>
+            </span>
+          </label>
+        </div>
+
         <div style={{ ...card, padding: 15 }}>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>Check before you send</div>
           <div style={{ fontSize: 14, lineHeight: 1.7 }}>
             <div><span style={mut}>Name</span> · <b>{named || "—"}</b></div>
-            {form.age && <div><span style={mut}>Age</span> · {form.age}</div>}
+            {/* Shown as the age, because that is what a parent can check at a
+                glance — but derived from the date they gave, so a mistyped year
+                shows up here as an obviously wrong number. */}
+            {shownAge !== null && <div><span style={mut}>Age</span> · {shownAge}{form.dob ? <span style={mut}> (born {form.dob})</span> : null}</div>}
             {form.centre && <div><span style={mut}>Centre</span> · {form.centre}</div>}
             {form.course && <div><span style={mut}>Course</span> · {form.course}</div>}
             <div><span style={mut}>Parent contact</span> · {form.parentEmail || form.parentPhone || "—"}</div>
@@ -2815,9 +2919,12 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={() => setStep(1)} disabled={busy} style={{ padding: 13, minHeight: 48, borderRadius: 12, border: "1px solid rgba(255,255,255,.24)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Back</button>
+          {/* Enabled, and it says why — the same reason the Details step's
+              button is always live. A dead button that will not explain itself
+              is the worst outcome on the last tap of a five-minute form. */}
           <button onClick={submit} disabled={busy}
-            style={{ flex: 1, padding: 14, minHeight: 48, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15.5, cursor: "pointer" }}>
-            {busy ? "Sending…" : "Send registration"}
+            style={{ flex: 1, padding: 14, minHeight: 48, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15.5, cursor: "pointer", opacity: busy ? .6 : 1 }}>
+            {busy ? "Sending…" : "Agree & send registration"}
           </button>
         </div>
       </div>
@@ -3026,13 +3133,18 @@ function ReviewDeskPage() {
       </div>
       <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{counts.self_pending || 0} waiting</h1>
       <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "5px 0 0" }}>
-        Nothing here has been sent to a family yet. Approving is what emails the guardian their consent form.
+        Consent is already on file — the guardian gave it on the form. Approving is what confirms the place and issues the Genius ID, so look at the photo and the answers first.
       </p>
     </header>
 
     <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }} role="tablist" aria-label="Status">
+      {/* Approved now means `verified` — the row goes straight there. The
+          parent_pending tab only appears while rows approved under the old
+          flow are still waiting on their consent email, so it doesn't sit
+          there as a permanent zero once they've drained. */}
       {[["self_pending", "Waiting", counts.self_pending || 0],
-        ["parent_pending", "Approved", counts.parent_pending || 0],
+        ["verified", "Approved", counts.verified || 0],
+        ...(counts.parent_pending ? [["parent_pending", "Awaiting consent", counts.parent_pending]] : []),
         ["rejected", "Rejected", counts.rejected || 0],
         ["all", "All", Object.values(counts).reduce((a, b) => a + b, 0)]].map(([k, label, n]) => (
         <button key={k} role="tab" aria-selected={f.status === k} onClick={() => setF1("status", k)}
@@ -3232,6 +3344,20 @@ function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
                 {" · this is advice, not the decision"}
               </div>
             </div>
+
+            {/* What the family said about PUBLISHING this photo, next to the
+                photo. It is the one consent answer that changes what a person
+                may do with what is on their screen, and a reviewer who has to
+                go and look it up elsewhere will assume yes. */}
+            {r.publication === "declined" && (
+              <div style={{ marginTop: 10, padding: "9px 11px", borderRadius: 10, background: "rgba(255,120,100,.12)", border: "1px solid rgba(255,120,100,.42)" }}>
+                <div style={{ fontWeight: 800, fontSize: 13, color: "#ffb3a3" }}>Not for publication</div>
+                <div style={{ ...mut, fontSize: 12, marginTop: 3, lineHeight: 1.5 }}>The guardian declined photo and website use. ID card only — do not post this photo or feature {r.firstName || "this child"} on the site. The place is unaffected.</div>
+              </div>
+            )}
+            {r.publication === "granted" && (
+              <div style={{ ...mut, fontSize: 12, marginTop: 8 }}>✓ Guardian agreed to photo and website use.</div>
+            )}
           </div>
         </div>
       </div>
@@ -3271,7 +3397,7 @@ function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <button disabled={!!busy} onClick={approve}
             style={{ minHeight: 50, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15.5, cursor: "pointer" }}>
-            {busy === "approve" ? "Approving…" : "Approve & email guardian"}
+            {busy === "approve" ? "Approving…" : "Approve & confirm place"}
           </button>
           <input ref={noteRef} value={note} onChange={e => setNote(e.target.value)} placeholder="Reason, if rejecting"
             aria-label={"Reason for rejecting " + r.fullName}
@@ -6346,19 +6472,25 @@ function LegalPage({ setPage }) {
       <P>If you have a safeguarding concern, contact us immediately at <a href={"mailto:" + (typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng")}>{typeof CONTACT !== "undefined" ? CONTACT.email : "next@afrovanguard.org.ng"}</a> or {typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "+234 903 777 6318"}. Urgent risk to a child should also be reported to the Lagos State authorities.</P>
     </>,
     consent: <>
-      <P>Registering a child is a two-step, consent-first process. A child is only officially enrolled once a parent or guardian has confirmed and granted consent.</P>
+      <P>No child is enrolled until a parent or guardian has granted consent. This page is the full wording behind that decision — it is what the single tick on our online registration form refers to, and what the confirmation link sent to a parent asks for.</P>
       <H>The consents we ask for</H>
       <UL>
         <LI><b>Participation</b> — required. Permission for the child to take part in the programme.</LI>
         <LI><b>Medical &amp; emergency care</b> — required. Basic first aid and seeking care in an emergency where you can't be reached.</LI>
         <LI><b>Data processing</b> — required. Holding the child's registration data as described in the Privacy Notice.</LI>
-        <LI><b>Media</b> — optional. Using photos/video of the child in programme media.</LI>
-        <LI><b>Trips</b> — optional. Off-site programme activities.</LI>
-        <LI><b>Communications</b> — optional. Programme updates to your contact channel.</LI>
+        <LI><b>Trips</b> — off-site programme activities.</LI>
+        <LI><b>Communications</b> — programme updates to your contact channel.</LI>
+        <LI><b>Photos &amp; media</b> — <b>optional, and separate</b>. Using photographs or video of the child in programme media.</LI>
+        <LI><b>Feature on our website</b> — <b>optional, and separate</b>. Showing the child's name and picture on this site.</LI>
       </UL>
-      <P>The three required consents must each be granted explicitly — there are no pre-ticked boxes and no bundling. Optional consents can be declined without affecting the child's place, and any consent can be withdrawn later by contacting us.</P>
-      <H>How we verify it's really you</H>
-      <P>We send a private confirmation link to the parent contact on file (email and/or SMS). Only someone with that link can complete consent, and the record notes who confirmed and when.</P>
+      <P>The last two are asked on their own, and either answer is accepted. We will not make a child's place depend on permission to publish their photograph: a consent you cannot refuse without losing something is not a consent, and we would rather have an honest no than a worthless yes. Any consent can be withdrawn later by contacting us, and withdrawing publication permission means we stop using the images going forward.</P>
+      <H>How we know it is really you</H>
+      <P>There are two routes in, and which one applies depends on who filled the form.</P>
+      <UL>
+        <LI><b>A parent or guardian registers online.</b> You read this wording and consent on the form itself, identified by the contact details you give us. Nothing further is emailed to you to sign — you have already given the consent, and asking twice would only delay the place. A coordinator still checks every submission before it is confirmed.</LI>
+        <LI><b>Our staff register a child at a desk.</b> A volunteer typing your answers cannot consent on your behalf, so we send a private confirmation link to the parent contact on file (email and/or SMS). Only someone with that link can complete it.</LI>
+      </UL>
+      <P>Either way the record notes what was granted, how it was given, and when.</P>
     </>,
     cookies: <>
       <P>We keep browser storage to the minimum needed to make the site work. We do not run advertising or third-party tracking cookies.</P>

@@ -341,6 +341,42 @@ function seed() {
       await ctx.close();
     }
 
+    // ── 5b · Consent: one tick, one document, publication kept separate ──────
+    {
+      const ctx = await phone(null);
+      const page = await ctx.newPage();
+      await goto(page, '/apply?g=' + GATE_SELF, 'input, select');
+      const fill = async (key, value) => {
+        const input = page.locator(`[data-fieldkey="${key}"]`).first().locator('input, select, textarea').first();
+        const tag = await input.evaluate(el => el.tagName).catch(() => '');
+        if (tag === 'SELECT') await input.selectOption(value).catch(() => {});
+        else if (tag) await input.fill(value).catch(() => {});
+      };
+      const fac = php(`echo academy_faculties()[0] ?? '';`);
+      const crs = php(`$c = academy_courses_for(${JSON.stringify(php(`echo academy_faculties()[0] ?? '';`))});`
+        + `echo is_array($c[0] ?? null) ? ($c[0]['name'] ?? '') : (string)($c[0] ?? '');`);
+      await fill('firstName', 'Adaeze');
+      await fill('lastName', 'Nwankwo');
+      await fill('dob', '2013-04-02');
+      await fill('centre', 'Alimosho');
+      await fill('faculty', fac);
+      await fill('course', crs);
+      await fill('parentName', 'Mrs Nwankwo');
+      await fill('parentPhone', '08031234567');
+      await fill('parentEmail', 'n@example.org');
+      await page.click('button:has-text("Continue → Photo")').catch(() => {});
+      await page.waitForTimeout(600);
+      /* A real file through the real picker — headless Chromium has no camera,
+         but the file input is the path most families take anyway, and it
+         exercises the resampler on the way through. */
+      await page.setInputFiles('input[type="file"]', path.join(ROOT, 'assets', 'logo.png')).catch(() => {});
+      await page.waitForSelector('button:has-text("Continue → Consent"):not([disabled])', { timeout: 30000 }).catch(() => {});
+      await page.click('button:has-text("Continue → Consent")').catch(() => {});
+      await page.waitForTimeout(800);
+      await shoot(page, '14-selfreg-consent', 'One consent tick, the full document linked, publication a separate free choice');
+      await ctx.close();
+    }
+
     // ── 6 · The offline outbox ───────────────────────────────────────────────
     {
       const ctx = await phone(null);
@@ -351,7 +387,8 @@ function seed() {
         try {
           await window.outbox.intake('selfreg.submit', {
             gate: g,
-            data: { firstName: 'Adaeze', lastName: 'Nwankwo', age: '12', centre: 'Alimosho',
+            consent: true,
+            data: { firstName: 'Adaeze', lastName: 'Nwankwo', dob: '2013-04-02', centre: 'Alimosho',
                     parentName: 'Mrs Nwankwo', parentPhone: '08031234567', parentEmail: 'n@example.org' },
             photo: 'data:image/png;base64,iVBORw0KGgoAAAANS',
           }, 'shot_draft');

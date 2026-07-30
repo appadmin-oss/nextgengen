@@ -1266,3 +1266,12 @@ CREATE TABLE IF NOT EXISTS program_journal_tags (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (71) ON DUPLICATE KEY UPDATE version = version;
+
+-- 72: date of birth, asked instead of age. An age typed into a box is wrong within
+-- months and cannot be corrected without asking the family again, while every age
+-- band and cohort comparison downstream is computed from it. `age` is kept and
+-- still populated (derived from dob on the way in) because it is read in a dozen
+-- places.
+ALTER TABLE summer_students ADD COLUMN dob VARCHAR(12) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (72) ON DUPLICATE KEY UPDATE version = version;

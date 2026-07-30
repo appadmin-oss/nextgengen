@@ -2,7 +2,7 @@
   {
     "name": "01-growth-needs-support",
     "label": "Level 5 · who needs support, with reason codes",
-    "kb": 361
+    "kb": 363
   },
   {
     "name": "02-growth-by-centre",
@@ -22,17 +22,17 @@
   {
     "name": "00-analytics-full",
     "label": "The whole analytics workspace, all levels",
-    "kb": 2623
+    "kb": 2649
   },
   {
     "name": "13-depth",
     "label": "Level 6 · comparison, cross-tabs, confidence intervals, findings",
-    "kb": 581
+    "kb": 603
   },
   {
     "name": "05-diagnostics-run-now",
     "label": "Diagnostics · per-job \"Run now\" and the stale-cache warning",
-    "kb": 431
+    "kb": 434
   },
   {
     "name": "06-journal-staff",
@@ -52,17 +52,22 @@
   {
     "name": "08-public-signup",
     "label": "Public sign-up on a phone — the form that would not submit",
-    "kb": 280
+    "kb": 298
   },
   {
     "name": "09-public-signup-errors",
     "label": "A refusal names the fields — no more \"check your connection\"",
-    "kb": 322
+    "kb": 329
+  },
+  {
+    "name": "14-selfreg-consent",
+    "label": "One consent tick, the full document linked, publication a separate free choice",
+    "kb": 331
   },
   {
     "name": "10-outbox-queued",
     "label": "Offline: banked on the device, and the banner says so",
-    "kb": 314
+    "kb": 333
   },
   {
     "name": "11-journal-shared",

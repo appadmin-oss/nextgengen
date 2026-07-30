@@ -35,6 +35,11 @@ const CONSENT_TYPES = [
     'comms'         => ['p' => 2, 'label' => 'Program updates by SMS/email'],
 ];
 const FORM_FIELD_TYPES = ['text', 'longtext', 'email', 'phone', 'number', 'date', 'choice', 'multi', 'yesno', 'file', 'section', 'info'];
+/* The ages the programme takes. Named once because three places need to agree:
+ * the date-of-birth validator, the record it writes, and the message a family
+ * reads when they mistype a year. */
+const REG_MIN_AGE = 5;
+const REG_MAX_AGE = 19;
 
 /**
  * Conditional-logic operators for a field's `showIf`.
@@ -181,7 +186,7 @@ function academy_courses_for(string $faculty): array {
  * form_seed_optional_field().
  */
 const FORM_SECTIONS = [
-    ['key' => 'secChild',  'before' => ['firstName', 'lastName', 'age'],                'label' => 'About the child'],
+    ['key' => 'secChild',  'before' => ['firstName', 'lastName', 'dob', 'age'],          'label' => 'About the child'],
     ['key' => 'secCourse', 'before' => ['faculty', 'course', 'centre'],                 'label' => 'What they want to learn'],
     ['key' => 'secParent', 'before' => ['parentName', 'parentPhone', 'parentEmail'],    'label' => 'Parent or guardian'],
     ['key' => 'secSchool', 'before' => ['school', 'schoolType', 'allergies'],           'label' => 'School and health'],
@@ -198,7 +203,17 @@ function form_default_fields(): array {
         // these two.
         ['key' => 'firstName', 'label' => 'First name', 'type' => 'text', 'required' => true, 'locked' => true],
         ['key' => 'lastName', 'label' => 'Last name', 'type' => 'text', 'required' => true, 'locked' => true],
-        ['key' => 'age', 'label' => 'Age', 'type' => 'number', 'required' => true, 'min' => 5, 'max' => 19, 'locked' => true],
+        /* Date of birth, not age.
+         *
+         * An age typed into a box is stale within months, cannot be corrected
+         * without asking the family again, and is the input to every age band,
+         * cohort comparison and safeguarding rule downstream. A date of birth
+         * stays true. The age is computed from it — shown back to the family as
+         * they type so a slipped year is obvious, and stored alongside so the
+         * dozen places that read `age` keep working. */
+        ['key' => 'dob', 'label' => 'Date of birth', 'type' => 'date', 'required' => true, 'locked' => true,
+         'help' => 'We work the age out from this — please check it looks right.',
+         'adminHelp' => 'Replaces the old free-typed Age. The age is derived on submit and still stored, so every report that reads age is unaffected.'],
         ['key' => 'secCourse', 'label' => 'What they want to learn', 'type' => 'section'],
         // Faculty is asked FIRST and narrows Course. Both are locked keys: the
         // catalogue, the /v-status breakdowns and instructor matching read them.
@@ -672,7 +687,20 @@ function form_validate_submission(array $fields, array $data): array {
             case 'multi':
                 $v = array_values(array_intersect(is_array($v) ? $v : [$v], form_field_options($f, $data)));
                 break;
-            case 'date': if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', is_array($v) ? '' : $v)) $errors[$k] = 'Use the date picker.'; break;
+            case 'date':
+                if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', is_array($v) ? '' : $v)) { $errors[$k] = 'Use the date picker.'; break; }
+                /* A date of birth is checked as an AGE, because that is what the
+                 * mistake looks like: the commonest slip is the current year, and
+                 * "1 January 2026" is a perfectly valid date and an impossible
+                 * child. The bounds are the programme's, so the message can say
+                 * what is actually wrong rather than "invalid date". */
+                if ($k === 'dob') {
+                    $a = dob_age($v);
+                    if ($a < 0) { $errors[$k] = 'That date is in the future — check the year.'; break; }
+                    if ($a < REG_MIN_AGE) $errors[$k] = 'That works out to ' . $a . ' years old. The programme starts at ' . REG_MIN_AGE . ' — check the year.';
+                    elseif ($a > REG_MAX_AGE) $errors[$k] = 'That works out to ' . $a . ' years old, which is above the ' . REG_MAX_AGE . ' the programme takes.';
+                }
+                break;
         }
         $clean[$k] = $v;
     }
@@ -1238,7 +1266,13 @@ function gate_register(array $p): array {
         'studentId' => $studentId, 'cohortId' => $c['cohortId'], 'token' => '', 'handle' => $handle,
         'fullName' => (string)$d['fullName'],
         'firstName' => substr($first, 0, 120), 'lastName' => substr($last, 0, 120),
-        'age' => (int)($d['age'] ?? 0),
+        /* Age DERIVED from the date of birth, never taken from the payload.
+         * A client-supplied age could disagree with the date it was supposedly
+         * computed from, and every age band downstream would then depend on
+         * which of the two a given query happened to read. `dob` is the fact;
+         * `age` is a cache of it kept because a dozen readers want it. */
+        'dob' => (string)($d['dob'] ?? ''),
+        'age' => (string)($d['dob'] ?? '') !== '' ? max(0, dob_age((string)$d['dob'])) : (int)($d['age'] ?? 0),
         'centre' => substr((string)($d['centre'] ?? ''), 0, 48), 'track' => substr((string)($d['course'] ?? ''), 0, 64),
         /* A URL, never an image. The staff desk uploads to Cloudinary first and
          * passes a short hosted URL; the PUBLIC sign-up form posts the headshot
@@ -2522,6 +2556,12 @@ function consent_doc_settings(): array {
         'formRev'      => '2026.1',
         'extraClause'  => '',                                  // an additional clause, if their adviser adds one
         'extraClauseTitle' => '',
+        /* Where the FULL consent text lives, for the self-serve form to link
+         * out to. One tick standing for seven clauses is only honest if the
+         * clauses are one tap away, so this is not decoration. Defaults to the
+         * site's own Parental Consent document; override it to point at a
+         * hosted PDF or a version your legal adviser signed off. */
+        'consentUrl'   => '',
         'logoUrl'      => (string)($card['logoLockup'] ?? ''),
         'website'      => (string)($card['website'] ?? ''),
         'phone'        => (string)($card['phone'] ?? ''),
@@ -2530,12 +2570,20 @@ function consent_doc_settings(): array {
     return $c;
 }
 
+/** The link the public form points at for the full consent wording. Falls back
+ *  to the site's own Parental Consent document, which is always present — a
+ *  blank setting must never produce a dead "read the full consent" link. */
+function consent_public_url(): string {
+    $u = trim((string)(consent_doc_settings()['consentUrl'] ?? ''));
+    return $u !== '' ? $u : '/legal?doc=consent';
+}
+
 function consent_doc_save(array $in, string $by): array {
     $cur = consent_doc_settings();
     $out = $cur;
     foreach (['orgName' => 160, 'orgAddress' => 300, 'rcNumber' => 40, 'dpoContact' => 200,
               'formRef' => 20, 'formRev' => 20, 'extraClauseTitle' => 120, 'extraClause' => 2000,
-              'logoUrl' => 512, 'website' => 160, 'phone' => 60] as $k => $max) {
+              'logoUrl' => 512, 'website' => 160, 'phone' => 60, 'consentUrl' => 512] as $k => $max) {
         if (array_key_exists($k, $in)) $out[$k] = substr(trim((string)$in[$k]), 0, $max);
     }
     if (array_key_exists('retentionYears', $in)) $out['retentionYears'] = max(1, min(50, (int)$in['retentionYears']));

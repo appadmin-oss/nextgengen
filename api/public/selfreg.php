@@ -29,6 +29,12 @@ if ($method === 'GET') {
         'photo' => $b['photo'] ?? '',
         'lat'   => $b['lat'] ?? null,
         'lng'   => $b['lng'] ?? null,
+        // The one consent tick, and the separate publication answer. Forwarded
+        // explicitly for the same reason as everything else here: a field this
+        // route drops is a field the domain treats as absent, and absent
+        // consent refuses the submission.
+        'consent'     => !empty($b['consent']),
+        'publication' => !empty($b['publication']),
         'ip'    => client_ip(),
         // Retry key: minted once when the form opened, carried on every attempt,
         // so a re-send after a timeout replays rather than re-registers.

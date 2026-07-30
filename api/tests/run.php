@@ -408,7 +408,7 @@ $qm = backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099'
 $qtok = $qm['tokens'][0];
 chk('qr list reports status counts', is_array(backend_dispatch('admin.summer.qr.list', ['requesterId' => 'NGG-2025-0099'])['counts']));
 // Bind that blank card to the verified summer student from earlier (SUM-2026-0001 exists in this run? use enroll path)
-$enr = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'QR Test Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'token' => $qm['tokens'][1]]]);
+$enr = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'QR Test Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech', 'token' => $qm['tokens'][1]]]);
 $qrKid = $enr['studentId'] ?? '';
 chk('reassign moves a student onto another card', backend_dispatch('admin.summer.qr.reassign', ['requesterId' => 'NGG-2025-0099', 'token' => $qtok, 'studentId' => $qrKid])['ok'] === true);
 chk('reassigned card is now assigned to the student', db_row('SELECT studentId FROM qr_codes WHERE token = ?', [$qtok])['studentId'] === $qrKid);
@@ -646,13 +646,13 @@ $gc = backend_dispatch('gate.context', ['gate' => 'GATE-T-1']);
 chk('gate context resolves centre + attendance duty for the kiosk', ($gc['centre'] ?? '') === 'Egbeda' && !empty($gc['duty']) && !empty($gc['duty']['volunteerId']));
 // Desk-password kiosk check-in: no staff cap, authorized by the gate token.
 db_insert('qr_codes', ['token' => 'SUMQR-KIOSK1', 'batch' => 'BK', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'SUM-K-1', 'assignedName' => 'Kiosk Kid', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
-db_insert('summer_students', ['studentId' => 'SUM-K-1', 'cohortId' => '', 'token' => 'SUMQR-KIOSK1', 'handle' => 'kioskkid', 'fullName' => 'Kiosk Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-K-1', 'cohortId' => '', 'token' => 'SUMQR-KIOSK1', 'handle' => 'kioskkid', 'fullName' => 'Kiosk Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
 $ci = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-KIOSK1', 'method' => 'gate']);
 chk('gate-authorized kiosk check-in writes attendance (no staff cap needed)', $ci['ok'] === true && (int)db_row("SELECT COUNT(*) c FROM attendance WHERE studentId='SUM-K-1'")['c'] === 1);
 chk('unauthorized check-in (no cap, no gate) is still refused', !empty(backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-2025-0001', 'token' => 'SUMQR-KIOSK1'])['error']));
 // Check-in state emails — synchronous (no SSH/cron), gated by a setting.
 db_insert('qr_codes', ['token' => 'SUMQR-STATE1', 'batch' => 'BK', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'SUM-ST-1', 'assignedName' => 'State Kid', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
-db_insert('summer_students', ['studentId' => 'SUM-ST-1', 'cohortId' => '', 'token' => 'SUMQR-STATE1', 'handle' => 'statekid', 'fullName' => 'State Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'parentEmail' => 'guardian-state@example.com', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-ST-1', 'cohortId' => '', 'token' => 'SUMQR-STATE1', 'handle' => 'statekid', 'fullName' => 'State Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'parentEmail' => 'guardian-state@example.com', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
 $GLOBALS['__mail_sink'] = [];
 $sci = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-STATE1', 'method' => 'gate']);
 chk('new student check-in emails the guardian a state note', $sci['ok'] === true && count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'guardian-state@example.com')) === 1);
@@ -662,7 +662,7 @@ chk('same-day re-scan does not re-email the guardian', count($GLOBALS['__mail_si
 // Setting off ⇒ no state email even on a fresh check-in.
 setting_set('checkin_state_emails', '0', 'test');
 db_insert('qr_codes', ['token' => 'SUMQR-STATE2', 'batch' => 'BK', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'SUM-ST-2', 'assignedName' => 'Off Kid', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
-db_insert('summer_students', ['studentId' => 'SUM-ST-2', 'cohortId' => '', 'token' => 'SUMQR-STATE2', 'handle' => 'offkid', 'fullName' => 'Off Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'parentEmail' => 'guardian-off@example.com', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-ST-2', 'cohortId' => '', 'token' => 'SUMQR-STATE2', 'handle' => 'offkid', 'fullName' => 'Off Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'parentEmail' => 'guardian-off@example.com', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
 $GLOBALS['__mail_sink'] = [];
 backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:GATE-T-1', 'token' => 'SUMQR-STATE2', 'method' => 'gate']);
 chk('checkin_state_emails=0 suppresses the state email', count($GLOBALS['__mail_sink']) === 0);
@@ -910,7 +910,7 @@ chk('web-cron maintenance GCs an expired auth challenge', (function () {
 chk('web-cron reminders escalate a >48h unverified registration once', (function () {
     db_insert('summer_cohorts', ['cohortId' => 'WC1', 'name' => 'WC', 'status' => 'active', 'createdAt' => now_iso()]);
     $old = gmdate('Y-m-d\TH:i:s\Z', time() - 50 * 3600);
-    db_insert('summer_students', ['studentId' => 'SUM-WC-1', 'cohortId' => 'WC1', 'token' => 'WCQR-1', 'handle' => 'wc1', 'fullName' => 'Stalled Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'regStatus' => 'parent_pending', 'parentEmail' => 'wcguardian@example.com', 'enrolledAt' => $old, 'remindedAt' => $old, 'updatedAt' => $old]);
+    db_insert('summer_students', ['studentId' => 'SUM-WC-1', 'cohortId' => 'WC1', 'token' => 'WCQR-1', 'handle' => 'wc1', 'fullName' => 'Stalled Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech', 'status' => 'active', 'regStatus' => 'parent_pending', 'parentEmail' => 'wcguardian@example.com', 'enrolledAt' => $old, 'remindedAt' => $old, 'updatedAt' => $old]);
     $GLOBALS['__mail_sink'] = [];
     web_cron_reminders(); web_cron_reminders(); // second run must not double-emit
     unset($GLOBALS['__mail_sink']);
@@ -1055,7 +1055,7 @@ chk('audit event filter narrows results', (function () {
 chk('summer_admin role caps = summer only', admin_role_caps('summer_admin') === ['summer']);
 $mint = backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 5]);
 chk('summer mint creates blank QR cards', count($mint['tokens']) === 5);
-$enr = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Kofi Junior', 'age' => 11, 'centre' => 'Egbeda', 'track' => 'Music']]);
+$enr = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Kofi Junior', 'age' => 11, 'dob' => gmdate('Y-m-d', strtotime('-11 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Music']]);
 chk('summer enroll binds a QR + handle', !empty($enr['studentId']) && !empty($enr['token']) && !empty($enr['handle']));
 chk('bound QR flips to assigned', db_row('SELECT status FROM qr_codes WHERE token=?', [$enr['token']])['status'] === 'assigned');
 chk('enrolled student in roster', (function () {
@@ -1068,9 +1068,9 @@ chk('duplicate same-day checkin flagged', backend_dispatch('admin.summer.checkin
 chk('public profile by QR token', backend_dispatch('public.summerProfile', ['token' => $enr['token']])['profile']['fullName'] === 'Kofi Junior');
 chk('public profile by handle + attendance', backend_dispatch('public.summerProfile', ['handle' => $enr['handle']])['profile']['attendanceCount'] === 1);
 chk('summer gated from non-staff', backend_dispatch('admin.summer.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
-chk('enroll rejects an already-used QR', backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Dupe Kid', 'age' => 12, 'token' => $enr['token']]])['error'] === 'qr_already_used');
+chk('enroll rejects an already-used QR', backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Dupe Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'token' => $enr['token']]])['error'] === 'qr_already_used');
 // Admin single-enroll now captures parentEmail (was dropped → no guardian emails).
-$enr2 = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Ada Guardianed', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'parentEmail' => 'ada-guardian@example.com']]);
+$enr2 = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Ada Guardianed', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech', 'parentEmail' => 'ada-guardian@example.com']]);
 chk('admin enroll persists parentEmail', db_row('SELECT parentEmail FROM summer_students WHERE studentId=?', [$enr2['studentId']])['parentEmail'] === 'ada-guardian@example.com');
 // Check-OUT stamps a departure time on today's row (Kofi checked in above).
 chk('checkout stamps a departure time', (function () use ($enr) {
@@ -1110,7 +1110,7 @@ $SUR = 'NGG-2025-0099';   // this block sits above where $SU is defined
    with "Age must be 5-19". Nothing could be done with a child. */
 chk('roster: a student carries the fields the editor manages', (function () use ($SUR) {
     $s = backend_dispatch('admin.summer.enroll', ['requesterId' => $SUR, 'data' => [
-        'fullName' => 'Manage Me', 'age' => 13, 'centre' => 'Egbeda', 'track' => 'Music',
+        'fullName' => 'Manage Me', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Music',
         'guardianName' => 'Mrs Manage', 'guardianPhone' => '08039990001', 'parentEmail' => 'mm@example.com']]);
     $GLOBALS['manageId'] = $s['studentId'];
     foreach (backend_dispatch('admin.summer.students.list', ['requesterId' => $SUR])['students'] as $r) {
@@ -1198,7 +1198,7 @@ chk('s-status: the board carries registration figures', (function () {
 })());
 chk('s-status: registration counts every sign-up, enrolment only the active ones', (function () use ($SUR) {
     $before = backend_dispatch('public.status', [])['status'];
-    $s = backend_dispatch('admin.summer.enroll', ['requesterId' => $SUR, 'data' => ['fullName' => 'Withdrawn Wale', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Music']]);
+    $s = backend_dispatch('admin.summer.enroll', ['requesterId' => $SUR, 'data' => ['fullName' => 'Withdrawn Wale', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Music']]);
     backend_dispatch('admin.summer.student.status', ['requesterId' => $SUR, 'studentId' => $s['studentId'], 'status' => 'withdrawn']);
     $after = backend_dispatch('public.status', [])['status'];
     // A withdrawal is still a registration that happened.
@@ -1328,7 +1328,7 @@ chk('the thresholds are self-executing by default', policy_settings()['autoEnfor
 // is the only thing standing between a broken scanner and an eviction.
 chk('review-first: a third absence proposes eviction rather than imposing it', (function () use ($SU) {
     backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true, 'autoEnforce' => false]]);
-    $p = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Review Rilwan', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech']]);
+    $p = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Review Rilwan', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech']]);
     for ($i = 6; $i <= 8; $i++) policy_log($p['studentId'], 'student', 'absence', '2026-07-0' . $i);
     policy_apply($p['studentId'], 'student');
     $st = policy_state($p['studentId'], 'student');
@@ -1353,7 +1353,7 @@ chk('confirming a proposed eviction is what makes it bite', (function () use ($S
 backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true, 'autoEnforce' => true]]);
 chk('a third absence evicts outright with enforcement strict', (function () use ($SU) {
     backend_dispatch('admin.summer.qr.mint', ['requesterId' => $SU, 'count' => 5]);   // blanks run out
-    $p = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Strict Sikiru', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech']]);
+    $p = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Strict Sikiru', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech']]);
     if (empty($p['studentId'])) return false;
     for ($i = 6; $i <= 8; $i++) policy_log($p['studentId'], 'student', 'absence', '2026-07-0' . $i);
     policy_apply($p['studentId'], 'student');
@@ -1378,7 +1378,7 @@ policy_apply($pid, 'student');
 chk('absence 3 is eviction', policy_state($pid, 'student')['state'] === 'evicted');
 // A fresh student, because a scan only reaches the gate when there is no row
 // for today yet — you cannot un-check-in someone who is already present.
-$evicted = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Emeka Evicted', 'age' => 13, 'centre' => 'Egbeda', 'track' => 'Tech']]);
+$evicted = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Emeka Evicted', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech']]);
 for ($i = 6; $i <= 8; $i++) policy_log($evicted['studentId'], 'student', 'absence', '2026-07-0' . $i);
 policy_apply($evicted['studentId'], 'student');
 chk('an evicted student cannot check in', backend_dispatch('admin.summer.checkin', ['requesterId' => $SU, 'token' => $evicted['token']])['error'] === 'policy_evicted');
@@ -1451,7 +1451,7 @@ chk('paying a fine clears the balance', (function () use ($SU, $idp) {
 // those against flush time turned an 07:55 arrival into a lateness infraction
 // because the network came back at 09:30.
 chk('a queued offline scan is graded at the time it was taken', (function () use ($SU) {
-    $st = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Queued Quadri', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech']]);
+    $st = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Queued Quadri', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech']]);
     // 06:30 local (tzOffset defaults to +60), well inside every threshold.
     $scanned = gmdate('Y-m-d\\TH:i:s\\Z', time() - 5 * 3600);
     $r = backend_dispatch('admin.summer.checkin', ['requesterId' => $SU, 'token' => $st['token'], 'scannedAt' => $scanned]);
@@ -1487,7 +1487,7 @@ chk('an admin-saved resumption still wins over either default', (function () {
 
 // Musing Period: two half-days cost a whole attendance day.
 chk('two half-days equal one absence', (function () use ($SU) {
-    $s = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Musa Musing', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Music']]);
+    $s = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Musa Musing', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Music']]);
     policy_log($s['studentId'], 'student', 'halfday', '2026-07-06');
     policy_log($s['studentId'], 'student', 'halfday', '2026-07-07');
     return policy_state($s['studentId'], 'student')['absences'] === 1;
@@ -1866,7 +1866,7 @@ chk('form: a course from a DIFFERENT faculty is rejected on submit', (function (
     // just not one of Music's — posting it with faculty=Music must fail.
     $fields = form_default_fields();
     $r = form_validate_submission($fields, [
-        'firstName' => 'Cross', 'lastName' => 'Faculty', 'age' => 13, 'faculty' => 'Music', 'course' => 'Practical Coding',
+        'firstName' => 'Cross', 'lastName' => 'Faculty', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'faculty' => 'Music', 'course' => 'Practical Coding',
         'centre' => 'Main', 'parentName' => 'P', 'parentPhone' => '08030000123',
     ]);
     return empty($r['ok']) && isset($r['errors']['course']) && strpos($r['errors']['course'], 'chosen faculty') !== false;
@@ -1874,7 +1874,7 @@ chk('form: a course from a DIFFERENT faculty is rejected on submit', (function (
 chk('form: …while the same course under its own faculty passes', (function () {
     $fields = form_default_fields();
     $r = form_validate_submission($fields, [
-        'firstName' => 'Right', 'lastName' => 'Faculty', 'age' => 13, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding',
+        'firstName' => 'Right', 'lastName' => 'Faculty', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding',
         'centre' => 'Main', 'parentName' => 'P', 'parentPhone' => '08030000124',
     ]);
     return !empty($r['ok']) && $r['data']['course'] === 'Practical Coding';
@@ -1882,7 +1882,7 @@ chk('form: …while the same course under its own faculty passes', (function () 
 chk('form: the cascade is enforced through the real registration route too', (function () {
     $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Cross desk']);
     $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
-        'fullName' => 'Wrong Course Kid', 'age' => 13, 'faculty' => 'Music', 'course' => 'Graphics',
+        'fullName' => 'Wrong Course Kid', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'faculty' => 'Music', 'course' => 'Graphics',
         'centre' => 'Main', 'parentName' => 'P', 'parentPhone' => '08030000125']]);
     return !empty($r['errors']['course']);
 })());
@@ -2039,12 +2039,12 @@ chk('gate: created with URL, context serves live form', (function () use ($GATE)
     return !empty($ctx['ok']) && $ctx['form']['version'] === 2 && isset($ctx['consentTypes']['participation']);
 })());
 chk('gate: register validates fields and requires a parent channel', (function () use ($GATE) {
-    $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'K', 'age' => 3, 'course' => 'Nope']]);
+    $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'K', 'age' => 3, 'dob' => gmdate('Y-m-d', strtotime('-3 years -3 months')), 'course' => 'Nope']]);
     if (empty($r['errors'])) return false;
-    $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor']]);
+    $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'dob' => gmdate('Y-m-d', strtotime('-14 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor']]);
     return !empty($r2['errors']['parentPhone']);
 })());
-$REG = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567', 'parentEmail' => 'okafor@example.com', 'allergies' => 'Peanuts']]);
+$REG = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => ['fullName' => 'Chidi Okafor', 'age' => 14, 'dob' => gmdate('Y-m-d', strtotime('-14 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567', 'parentEmail' => 'okafor@example.com', 'allergies' => 'Peanuts']]);
 chk('gate: registration lands parent_pending with normalised phone + no QR yet', (function () use ($REG) {
     if (empty($REG['ok']) || $REG['regStatus'] !== 'parent_pending') return false;
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ?', [$REG['studentId']]);
@@ -2066,7 +2066,7 @@ chk('gate: registration does not wait on the parent notification', (function () 
     $GLOBALS['CONFIG']['sms'] = ['enabled' => true, 'termii' => ['api_key' => 'k', 'sender' => 'NGG']];
     $t0 = microtime(true);
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
-        'fullName' => 'Slowsend Child', 'age' => 12, 'faculty' => 'Music', 'course' => 'Piano',
+        'fullName' => 'Slowsend Child', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'Music', 'course' => 'Piano',
         'centre' => 'Main', 'parentName' => 'Mrs Slow', 'parentPhone' => '08031119999']]);
     $elapsed = microtime(true) - $t0;
     $GLOBALS['CONFIG']['sms'] = $saved;
@@ -2083,7 +2083,7 @@ chk('gate: …and a dead SMS provider does not fail the registration', (function
     $saved = $GLOBALS['CONFIG']['sms'] ?? null;
     $GLOBALS['CONFIG']['sms'] = ['enabled' => true, 'termii' => ['api_key' => 'k', 'sender' => 'NGG']];
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
-        'fullName' => 'Deadsms Child', 'age' => 12, 'faculty' => 'Music', 'course' => 'Guitar',
+        'fullName' => 'Deadsms Child', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'Music', 'course' => 'Guitar',
         'centre' => 'Main', 'parentName' => 'Mrs Dead', 'parentPhone' => '08031118888']]);
     $exists = !empty($r['studentId']) && db_row('SELECT id FROM summer_students WHERE studentId = ?', [$r['studentId']]);
     $GLOBALS['CONFIG']['sms'] = $saved;
@@ -2097,7 +2097,7 @@ chk('gate: …and a dead SMS provider does not fail the registration', (function
    nobody finds out. */
 chk('gate: the reply says which channels will be tried, not that they succeeded', (function () use ($GATE) {
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
-        'fullName' => 'Channels Child', 'age' => 12, 'faculty' => 'Music', 'course' => 'Piano',
+        'fullName' => 'Channels Child', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'Music', 'course' => 'Piano',
         'centre' => 'Main', 'parentName' => 'Mrs Ch', 'parentPhone' => '08031117777',
         'parentEmail' => 'ch@example.com']]);
     $ok = !empty($r['ok']) && in_array('email', $r['verificationSending'] ?? [], true);
@@ -2108,7 +2108,7 @@ chk('gate: …and does not promise SMS when SMS is not configured', (function ()
     $saved = $GLOBALS['CONFIG']['sms'] ?? null;
     $GLOBALS['CONFIG']['sms'] = ['enabled' => false];
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
-        'fullName' => 'Nosms Child', 'age' => 12, 'faculty' => 'Music', 'course' => 'Guitar',
+        'fullName' => 'Nosms Child', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'Music', 'course' => 'Guitar',
         'centre' => 'Main', 'parentName' => 'Mrs No', 'parentPhone' => '08031116666']]);
     $GLOBALS['CONFIG']['sms'] = $saved;
     $ok = !empty($r['ok']) && !in_array('sms', $r['verificationSending'] ?? [], true);
@@ -2175,7 +2175,7 @@ chk('response_detach is safe to call with no buffer open', (function () {
 })());
 
 chk('gate: duplicate guard flags same child + parent, force overrides', (function () use ($GATE) {
-    $d = ['fullName' => 'Chidi Okafor', 'age' => 14, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567'];
+    $d = ['fullName' => 'Chidi Okafor', 'age' => 14, 'dob' => gmdate('Y-m-d', strtotime('-14 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main', 'parentName' => 'Mrs Okafor', 'parentPhone' => '08031234567'];
     $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => $d]);
     if (($r['error'] ?? '') !== 'duplicate_suspect' || empty($r['existing']['studentId'])) return false;
     $r2 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => $d, 'force' => true]);
@@ -2283,7 +2283,7 @@ chk('intake: gate.register is idempotent end to end through dispatch', (function
     // Its own gate: the shared $GATE is revoked by an earlier assertion.
     $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Idempotency desk']);
     $sid = 'sub_' . rand_hex(12);
-    $d = ['fullName' => 'Idem Child', 'age' => 13, 'faculty' => 'Music', 'course' => 'Guitar',
+    $d = ['fullName' => 'Idem Child', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'faculty' => 'Music', 'course' => 'Guitar',
           'centre' => 'Main', 'parentName' => 'Mrs Idem', 'parentPhone' => '08031117777'];
     $a = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => $d, 'submissionId' => $sid]);
     $b = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => $d, 'submissionId' => $sid]);
@@ -2560,20 +2560,20 @@ chk('centre: without consent the lead shows an anonymous handle, no name', (func
 setting_set('geofence_enabled', '1', 'system');
 $geoGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Geo desk']);
 chk('geo: registration is blocked with no location when the fence is on',
-    backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid One', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000001']])['error'] === 'geo_unavailable');
-$gi = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Two', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000002'], 'lat' => 6.6000, 'lng' => 3.3000]);
+    backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid One', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000001']])['error'] === 'geo_unavailable');
+$gi = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Two', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000002'], 'lat' => 6.6000, 'lng' => 3.3000]);
 chk('geo: an in-fence registration auto-selects the fenced centre', !empty($gi['ok']) && ($gi['geo']['autoCentre'] ?? '') === 'Ayobo Hub' && $gi['geo']['ok'] === 1);
 chk('geo: the student row records the fence pass + captured location', (function () use ($gi) { $s = db_row("SELECT regGeoOk, regLat, centre FROM summer_students WHERE studentId=?", [$gi['studentId']]); return (int)$s['regGeoOk'] === 1 && $s['centre'] === 'Ayobo Hub' && abs((float)$s['regLat'] - 6.6) < 0.0001; })());
-$go = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Three', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000003'], 'lat' => 6.6045, 'lng' => 3.3000]);
+$go = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Three', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000003'], 'lat' => 6.6045, 'lng' => 3.3000]);
 chk('geo: an out-of-fence registration is blocked with the nearest distance', ($go['error'] ?? '') === 'geo_out_of_fence' && ($go['nearest']['distanceM'] ?? 0) > 400);
-$gov = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Four', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000004'], 'lat' => 6.6045, 'lng' => 3.3000, 'isAdmin' => true, 'geoOverride' => true]);
+$gov = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Four', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000004'], 'lat' => 6.6045, 'lng' => 3.3000, 'isAdmin' => true, 'geoOverride' => true]);
 chk('geo: a full admin may override an out-of-fence registration', !empty($gov['ok']) && $gov['geo']['ok'] === 0);
 setting_set('geofence_enabled', '0', 'system');
-chk('geo: with the fence off, no location is required', !empty(backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Five', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000005']])['ok']));
+chk('geo: with the fence off, no location is required', !empty(backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Five', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000005']])['ok']));
 
 // Photo pipeline wiring: gate registration ingests the headshot end-to-end.
 $GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 90, 'issues' => [], 'flags' => [], 'recommend' => ['crop' => true]]];
-$rp = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Photo Reg Kid', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000009'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+$rp = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Photo Reg Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ayobo Hub', 'parentName' => 'P', 'parentPhone' => '08030000009'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
 chk('gate register ingests the headshot into the photo pipeline', !empty($rp['ok']) && photo_approved_for('student', $rp['studentId']) === true);
 chk('an approved headshot is written back to the student record', strpos((string)(db_row("SELECT photoUrl FROM summer_students WHERE studentId=?", [$rp['studentId']])['photoUrl'] ?? ''), '/upload/') !== false);
 unset($GLOBALS['__ai_photo_mock']);
@@ -2606,7 +2606,7 @@ $issGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-00
 setting_set('photo_gate_issuance', '1', 'system');
 // A flagged photo → pending_review, so the ID is held until an editor approves.
 $GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 40, 'issues' => ['dark'], 'flags' => ['too_dark'], 'recommend' => ['crop' => true, 'brighten' => true]]];
-$ir = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Gate Hold Kid', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'hold@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+$ir = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Gate Hold Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'hold@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
 chk('issuance gate: registration ok with a photo queued for review', !empty($ir['ok']));
 $vtHold = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$ir['studentId']])['verifyToken'];
 $pvh = backend_dispatch('parent.verify.submit', ['t' => $vtHold, 'consents' => ['participation' => true, 'medical' => true, 'data' => true, 'media' => false, 'site_visibility' => false], 'actorName' => 'P']);
@@ -2617,7 +2617,7 @@ backend_dispatch('admin.photo.approve', ['requesterId' => 'NGG-2025-0099', 'asse
 chk('issuance gate: approving the photo issues the ID', (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$ir['studentId']])['token']) !== '');
 unset($GLOBALS['__ai_photo_mock']);
 // A registration with NO photo is never blocked by the gate.
-$np = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'No Photo Kid', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'nophoto@example.com']]);
+$np = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'No Photo Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'nophoto@example.com']]);
 $vtNp = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$np['studentId']])['verifyToken'];
 $pvn = backend_dispatch('parent.verify.submit', ['t' => $vtNp, 'consents' => ['participation' => true, 'medical' => true, 'data' => true, 'media' => false, 'site_visibility' => false], 'actorName' => 'P']);
 chk('issuance gate: a photo-less registration still issues immediately', !empty($pvn['idIssued']) && (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$np['studentId']])['token']) !== '');
@@ -2625,7 +2625,7 @@ setting_set('photo_gate_issuance', '0', 'system');
 
 // Guardian re-shoot after a retake.
 $GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 88, 'issues' => [], 'flags' => [], 'recommend' => ['crop' => true]]];
-$rsReg = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Reshoot Kid', 'age' => 12, 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'reshoot@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
+$rsReg = backend_dispatch('gate.register', ['gate' => $issGate['gateId'], 'data' => ['fullName' => 'Reshoot Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Ijaiye', 'parentName' => 'P', 'parentEmail' => 'reshoot@example.com'], 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
 $rsAsset = db_row("SELECT assetId FROM photo_assets WHERE subjectType='student' AND subjectId=? ORDER BY version DESC LIMIT 1", [$rsReg['studentId']])['assetId'];
 $GLOBALS['__mail_sink'] = [];
 backend_dispatch('admin.photo.retake', ['requesterId' => 'NGG-2025-0099', 'assetId' => $rsAsset, 'reason' => 'Please use a plain background.']);
@@ -2645,8 +2645,8 @@ unset($GLOBALS['__ai_photo_mock'], $GLOBALS['__mail_sink']);
 chk('centre capacity waitlists once full', (function () {
     backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'CapCentre', 'code' => 'CAP', 'color' => '#123456', 'capacity' => 1]]);
     backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 4]);
-    $a = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Cap One', 'age' => 12, 'centre' => 'CapCentre']]);
-    $b = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Cap Two', 'age' => 12, 'centre' => 'CapCentre']]);
+    $a = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Cap One', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'CapCentre']]);
+    $b = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Cap Two', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'CapCentre']]);
     return empty($a['waitlisted']) && !empty($b['waitlisted'])
         && db_row('SELECT status FROM summer_students WHERE studentId=?', [$b['studentId']])['status'] === 'waitlisted';
 })());
@@ -2656,8 +2656,8 @@ chk('centre list reports enrolled/capacity/full', (function () {
 })());
 chk('bulk import enrols multiple students', (function () {
     $r = backend_dispatch('admin.summer.import', ['requesterId' => 'NGG-2025-0099', 'rows' => [
-        ['fullName' => 'Import A', 'age' => 12, 'centre' => 'Egbeda', 'parentEmail' => 'ia@example.com'],
-        ['fullName' => 'Import B', 'age' => 13, 'centre' => 'Egbeda'],
+        ['fullName' => 'Import A', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'parentEmail' => 'ia@example.com'],
+        ['fullName' => 'Import B', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'centre' => 'Egbeda'],
     ]]);
     return !empty($r['ok']) && $r['enrolled'] === 2 && $r['failed'] === 0;
 })());
@@ -2865,8 +2865,8 @@ chk('punctuality: invalid HH:MM rejected, valid kept', (function () {
 
 // ── Admin resend ID ─────────────────────────────────────────────────────────
 db_insert('summer_cohorts', ['cohortId' => 'RC1', 'name' => 'Resend Cohort', 'status' => 'active', 'createdAt' => now_iso()]);
-db_insert('summer_students', ['studentId' => 'SUM-R-1', 'cohortId' => 'RC1', 'token' => 'SUMQR-RS1', 'handle' => 'rskid', 'fullName' => 'Resend Kid', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'regStatus' => 'verified', 'parentEmail' => 'parent@example.com', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
-db_insert('summer_students', ['studentId' => 'SUM-R-2', 'cohortId' => 'RC1', 'token' => '', 'handle' => 'noid', 'fullName' => 'No Id', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech', 'regStatus' => 'verified', 'parentEmail' => 'p2@example.com', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-R-1', 'cohortId' => 'RC1', 'token' => 'SUMQR-RS1', 'handle' => 'rskid', 'fullName' => 'Resend Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech', 'regStatus' => 'verified', 'parentEmail' => 'parent@example.com', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-R-2', 'cohortId' => 'RC1', 'token' => '', 'handle' => 'noid', 'fullName' => 'No Id', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech', 'regStatus' => 'verified', 'parentEmail' => 'p2@example.com', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
 chk('resend ID: missing id rejected', backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => ''])['error'] === 'missing_id');
 chk('resend ID: non-staff forbidden', backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0001', 'kind' => 'student', 'id' => 'SUM-R-1'])['error'] === 'forbidden');
 chk('resend ID: unknown student not_found', backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => 'SUM-NOPE'])['error'] === 'not_found');
@@ -3295,8 +3295,8 @@ chk('verify approve awards XP + clears from queue', (function () use ($pmid) {
 // running against the driver production actually uses.
 db_upsert('centres', ['centreId' => 'CEN-AN', 'name' => 'Analytics Centre', 'code' => 'AN', 'color' => '#4C6FFF', 'status' => 'active'],
           ['centreId'], ['name' => 'Analytics Centre']);
-db_insert('summer_students', ['studentId' => 'SUM-AN-1', 'cohortId' => '', 'token' => '', 'handle' => 'ang1', 'fullName' => 'Ana Girl', 'age' => 12, 'gender' => 'F', 'centre' => 'Analytics Centre', 'track' => 'STEM', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
-db_insert('summer_students', ['studentId' => 'SUM-AN-2', 'cohortId' => '', 'token' => '', 'handle' => 'anb2', 'fullName' => 'Ben Boy', 'age' => 15, 'gender' => 'M', 'centre' => 'Analytics Centre', 'track' => 'Arts', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-AN-1', 'cohortId' => '', 'token' => '', 'handle' => 'ang1', 'fullName' => 'Ana Girl', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'gender' => 'F', 'centre' => 'Analytics Centre', 'track' => 'STEM', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-AN-2', 'cohortId' => '', 'token' => '', 'handle' => 'anb2', 'fullName' => 'Ben Boy', 'age' => 15, 'dob' => gmdate('Y-m-d', strtotime('-15 years -3 months')), 'gender' => 'M', 'centre' => 'Analytics Centre', 'track' => 'Arts', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
 $anToday = gmdate('Y-m-d');
 db_insert('attendance', ['cohortId' => '', 'studentId' => 'SUM-AN-1', 'token' => '', 'date' => $anToday, 'checkInAt' => now_iso(), 'method' => 'qr', 'byId' => 'NGG-2025-0099', 'device' => '', 'createdAt' => now_iso()]);
 db_insert('activities', ['activityId' => 'ACT-AN-1', 'title' => 'STEM Lab', 'category' => 'lesson', 'centre' => 'Analytics Centre', 'department' => 'STEM', 'date' => $anToday, 'facilitatorId' => '', 'facilitatorName' => 'Coach', 'notes' => '', 'evidence' => json_encode([['type' => 'photo', 'url' => 'https://example.org/a.jpg', 'label' => 'Group']]), 'participants' => 2, 'createdBy' => 'NGG-2025-0099', 'createdAt' => now_iso()]);
@@ -3334,15 +3334,15 @@ chk('static sitemap lists both status boards', is_string($smStatic) && str_conta
 // Student — enrol a throwaway, edit real fields, then delete (frees the QR).
 $dmQ = backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 1]);
 $dmTok = $dmQ['tokens'][0];
-$dmSid = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Edit Me', 'age' => 11, 'centre' => 'Egbeda', 'track' => 'Tech', 'token' => $dmTok]])['studentId'];
+$dmSid = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Edit Me', 'age' => 11, 'dob' => gmdate('Y-m-d', strtotime('-11 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech', 'token' => $dmTok]])['studentId'];
 chk('student update edits real fields', (function () use ($dmSid) {
-    if (empty(backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $dmSid, 'data' => ['fullName' => 'Edited Kid', 'age' => 13, 'centre' => 'Ikeja', 'guardianPhone' => '08030000001']])['ok'])) return false;
+    if (empty(backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $dmSid, 'data' => ['fullName' => 'Edited Kid', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'centre' => 'Ikeja', 'guardianPhone' => '08030000001']])['ok'])) return false;
     $s = db_row('SELECT fullName, age, centre, guardianPhone FROM summer_students WHERE studentId = ?', [$dmSid]);
     return $s['fullName'] === 'Edited Kid' && (int)$s['age'] === 13 && $s['centre'] === 'Ikeja' && $s['guardianPhone'] === '08030000001';
 })());
-chk('student update rejects a bad age', backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $dmSid, 'data' => ['age' => 99]])['error'] === 'bad_age');
+chk('student update rejects a bad age', backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $dmSid, 'data' => ['age' => 99, 'dob' => gmdate('Y-m-d', strtotime('-99 years -3 months'))]])['error'] === 'bad_age');
 chk('student update rejects a malformed parent email', backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $dmSid, 'data' => ['parentEmail' => 'nope']])['error'] === 'bad_email');
-chk('a non-admin cannot edit a student', backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0001', 'studentId' => $dmSid, 'data' => ['age' => 12]])['error'] === 'forbidden');
+chk('a non-admin cannot edit a student', backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0001', 'studentId' => $dmSid, 'data' => ['age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months'))]])['error'] === 'forbidden');
 chk('student delete removes the record and frees the QR', (function () use ($dmSid, $dmTok) {
     if (empty(backend_dispatch('admin.summer.student.delete', ['requesterId' => 'NGG-2025-0099', 'studentId' => $dmSid])['ok'])) return false;
     return !db_row('SELECT id FROM summer_students WHERE studentId = ?', [$dmSid]) && db_row('SELECT status FROM qr_codes WHERE token = ?', [$dmTok])['status'] === 'blank';
@@ -3364,7 +3364,7 @@ chk('volunteer delete removes the record and its QR', (function () {
 })());
 
 // Application — throwaway pending row, edit, delete.
-db_insert('applications', ['kind' => 'teen', 'name' => 'App Edit', 'age' => 15, 'centre' => 'Egbeda', 'email' => 'appedit@example.com', 'status' => 'new', 'createdAt' => now_iso()]);
+db_insert('applications', ['kind' => 'teen', 'name' => 'App Edit', 'age' => 15, 'dob' => gmdate('Y-m-d', strtotime('-15 years -3 months')), 'centre' => 'Egbeda', 'email' => 'appedit@example.com', 'status' => 'new', 'createdAt' => now_iso()]);
 $dmAid = (int)db_row("SELECT id FROM applications WHERE email = 'appedit@example.com'")['id'];
 chk('application update corrects fields', (function () use ($dmAid) {
     if (empty(backend_dispatch('admin.application.update', ['requesterId' => 'NGG-2025-0099', 'id' => $dmAid, 'data' => ['name' => 'App Edited', 'centre' => 'Yaba', 'phone' => '08030000003']])['ok'])) return false;
@@ -3536,7 +3536,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
        at all — not by QR, not by ID. */
     $SU2 = 'NGG-2025-0099';
     $cmStu = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU2, 'data' => [
-        'fullName' => 'Community Chidi', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Music', 'guardianPhone' => '08031234567']]);
+        'fullName' => 'Community Chidi', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Music', 'guardianPhone' => '08031234567']]);
     $cmDid = card_display_id(db_row('SELECT * FROM summer_students WHERE studentId = ?', [$cmStu['studentId']]));
     chk('community login: a student signs in with their ID + guardian phone', (function () use ($cmDid) {
         $r = backend_dispatch('community.login', ['displayId' => $cmDid, 'guardianPhone' => '0803 123 4567']);
@@ -3605,7 +3605,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     })());
     chk('community: enrolling without signing in does not inflate the count', (function () use ($SU2) {
         $before = backend_dispatch('public.stats', [])['stats']['communityStudents'];
-        backend_dispatch('admin.summer.enroll', ['requesterId' => $SU2, 'data' => ['fullName' => 'Never Signedin', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Tech']]);
+        backend_dispatch('admin.summer.enroll', ['requesterId' => $SU2, 'data' => ['fullName' => 'Never Signedin', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech']]);
         return backend_dispatch('public.stats', [])['stats']['communityStudents'] === $before;
     })());
 
@@ -4024,7 +4024,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     $sid = 'RC1-SCHTY';
     db_exec("DELETE FROM summer_students WHERE studentId = ?", [$sid]);
     db_insert('summer_students', ['studentId' => $sid, 'cohortId' => summer_ensure_cohort()['cohortId'],
-        'fullName' => 'School Type Child', 'age' => 12, 'centre' => 'Egbeda', 'track' => 'Piano',
+        'fullName' => 'School Type Child', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Piano',
         'formData' => json_encode(['school' => 'St Mary', 'schoolType' => 'Public']),
         'regStatus' => 'verified', 'status' => 'active', 'enrolledAt' => now_iso()]);
     $row = summer_student_admin(db_row("SELECT * FROM summer_students WHERE studentId = ?", [$sid]));
@@ -4095,7 +4095,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     if (!$g) { chk('name split: no gate fixture available', false); return; }
 
     $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
-        'firstName' => 'Chidi', 'lastName' => 'Okonkwo-Eze', 'age' => 13,
+        'firstName' => 'Chidi', 'lastName' => 'Okonkwo-Eze', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')),
         'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Egbeda',
         'parentName' => 'Mrs Okonkwo', 'parentPhone' => '08039990001',
     ]]);
@@ -4124,7 +4124,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     // A stale client mid-deploy still posts one name. It must not lose the
     // registration — the operator has no way to supply fields it never showed.
     $legacy = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
-        'fullName' => 'Ada Nkemdirim', 'age' => 12,
+        'fullName' => 'Ada Nkemdirim', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')),
         'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Egbeda',
         'parentName' => 'Mr Nkemdirim', 'parentPhone' => '08039990002',
     ]]);
@@ -4166,7 +4166,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
 (function () use ($SU) {
     $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
     $reg = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
-        'firstName' => 'Sign', 'lastName' => 'Ature', 'age' => 12,
+        'firstName' => 'Sign', 'lastName' => 'Ature', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')),
         'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Egbeda',
         'parentName' => 'Mrs Ature', 'parentPhone' => '08039991234',
     ]]);
@@ -4203,7 +4203,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     // A remote URL would let a submission point the record at an image that
     // can change afterwards — which is precisely what a signature must not do.
     $reg2 = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
-        'firstName' => 'Hot', 'lastName' => 'Link', 'age' => 12,
+        'firstName' => 'Hot', 'lastName' => 'Link', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')),
         'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Egbeda',
         'parentName' => 'P', 'parentPhone' => '08039991235',
     ]]);
@@ -4241,7 +4241,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     ]]);
     $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
     $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
-        'firstName' => 'Group', 'lastName' => 'Kid', 'age' => 12,
+        'firstName' => 'Group', 'lastName' => 'Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')),
         'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Grouped Centre',
         'parentName' => 'P', 'parentPhone' => '08039995555',
     ]]);
@@ -4264,7 +4264,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
         'name' => 'Quiet Centre', 'code' => 'QCT', 'color' => '#654321',
     ]]);
     $r2 = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
-        'firstName' => 'Quiet', 'lastName' => 'Kid', 'age' => 12,
+        'firstName' => 'Quiet', 'lastName' => 'Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')),
         'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Quiet Centre',
         'parentName' => 'P', 'parentPhone' => '08039995556',
     ]]);
@@ -4305,7 +4305,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     // The point of all of it: a registration lands at a real centre.
     $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
     $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
-        'firstName' => 'Centred', 'lastName' => 'Kid', 'age' => 12,
+        'firstName' => 'Centred', 'lastName' => 'Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')),
         'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Egbeda',
         'parentName' => 'P', 'parentPhone' => '08039996000',
     ]]);
@@ -5775,7 +5775,7 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
             && backend_dispatch('gate.unlock', ['gate' => $DESK['gateId'], 'password' => 'review-pass-1'])['error'] === 'bad_password';
     })());
     chk('a review link cannot be used to register anybody',
-        backend_dispatch('gate.register', ['gate' => $REV['gateId'], 'data' => ['fullName' => 'Any Child', 'age' => 12]])['error'] === 'gate_invalid');
+        backend_dispatch('gate.register', ['gate' => $REV['gateId'], 'data' => ['fullName' => 'Any Child', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months'))]])['error'] === 'gate_invalid');
     chk('a desk link is not a public link', backend_dispatch('selfreg.context', ['gate' => $DESK['gateId']])['error'] === 'gate_invalid');
     chk('…and a public link is not a review desk', backend_dispatch('selfreg.queue', ['gate' => $SELF['gateId']])['error'] === 'gate_invalid');
 
@@ -5813,19 +5813,28 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
 
     /* Submission. Everything the desk validates, and then it stops short of
      * telling anybody. */
-    $form = ['fullName' => 'Amaka Self', 'age' => 13, 'faculty' => 'Music', 'course' => 'Piano',
+    $form = ['fullName' => 'Amaka Self', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'faculty' => 'Music', 'course' => 'Piano',
              'centre' => 'Egbeda', 'parentName' => 'Mrs Self', 'parentPhone' => '08031112222',
              'parentEmail' => 'selfparent@example.com'];
+    /* Consent is the first thing checked and the cheapest — a submission
+     * without it is not a row to tidy up later, it is data there was never a
+     * basis to hold. Checked on the SERVER because the endpoint is public: a
+     * form that skips the tick is one POST away. */
+    chk('a submission with no consent is refused before anything is written', (function () use ($SELF, $form, $good) {
+        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'data' => $form, 'photo' => $good]);
+        return ($r['error'] ?? '') === 'consent_required'
+            && (int)db_row("SELECT COUNT(*) c FROM summer_students WHERE fullName='Amaka Self'")['c'] === 0;
+    })());
     chk('a submission with no photo is refused before anything is written',
-        backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'data' => $form])['error'] === 'photo_required');
+        backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'data' => $form])['error'] === 'photo_required');
     chk('…and so is one whose photo is unusable', (function () use ($SELF, $form, $png) {
-        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'data' => $form, 'photo' => $png(80, 80)]);
+        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'data' => $form, 'photo' => $png(80, 80)]);
         return $r['error'] === 'photo_rejected'
             && (int)db_row("SELECT COUNT(*) c FROM summer_students WHERE fullName='Amaka Self'")['c'] === 0;
     })());
     chk('the public form still enforces every rule the desk does', (function () use ($SELF, $good) {
-        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good,
-            'data' => ['fullName' => 'X', 'age' => 3, 'course' => 'Nope']]);
+        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'photo' => $good,
+            'data' => ['fullName' => 'X', 'age' => 3, 'dob' => gmdate('Y-m-d', strtotime('-3 years -3 months')), 'course' => 'Nope']]);
         return !empty($r['errors']);
     })());
 
@@ -5834,7 +5843,7 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
      * mail in the programme's name — so the mailbox is watched across the
      * submission itself, not inspected for side effects afterwards. */
     $GLOBALS['__mail_sink'] = [];
-    $sub = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'data' => $form, 'photo' => $good]);
+    $sub = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'data' => $form, 'photo' => $good]);
     $subMail = $GLOBALS['__mail_sink'];
     unset($GLOBALS['__mail_sink']);
     chk('a family can register themselves', !empty($sub['ok']) && $sub['regStatus'] === 'self_pending');
@@ -5867,6 +5876,74 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         $u = (string)(db_row("SELECT photoUrl FROM summer_students WHERE studentId=?", [$SID])['photoUrl'] ?? '');
         return strpos($u, 'data:') !== 0 && strlen($u) <= 512;
     })());
+    /* The consent ledger, written at submit time.
+     *
+     * The guardian filling this form IS the person whose consent is needed, so
+     * emailing them a link to re-consent to clauses they just read adds a day
+     * and a deliverability failure, not consent. What must not happen is the
+     * consent going unrecorded — so the ledger is asserted as thoroughly here
+     * as it is for the parent link. */
+    chk('one tick records every consent the place depends on, against the guardian', (function () use ($SID) {
+        $rows = db_all("SELECT type, status, method, actorName FROM consents WHERE studentId=? ORDER BY id", [$SID]);
+        $by = [];
+        foreach ($rows as $r) $by[(string)$r['type']] = $r;
+        foreach (CONSENT_TYPES as $t => $meta) {
+            if (!isset($by[$t])) return false;                                  // every clause on the record
+            if ((string)$by[$t]['method'] !== 'self_serve') return false;       // and distinguishable from the parent link
+            if (in_array($t, CONSENT_PUBLICATION, true)) continue;
+            if ((string)$by[$t]['status'] !== 'granted') return false;
+        }
+        // Attributed to the guardian off the ROW, not to a form key that a
+        // builder rename could quietly turn into nobody.
+        return (string)$by['participation']['actorName'] === 'Mrs Self';
+    })());
+    /* The one deliberate exception, and it is not a style choice. Consent to
+     * publish a child's photograph is not freely given if refusing costs them
+     * their place — which would make the consent worthless and the publication
+     * unlawful. So the one tick does NOT cover it, either answer is accepted,
+     * and the place is identical. */
+    chk('…but publication consent is not bundled into it, and defaults to declined', (function () use ($SID) {
+        foreach (CONSENT_PUBLICATION as $t) {
+            $r = db_row("SELECT status FROM consents WHERE studentId=? AND type=? ORDER BY id DESC LIMIT 1", [$SID, $t]);
+            if (!$r || (string)$r['status'] !== 'declined') return false;
+        }
+        // …and declining it did not cost the place.
+        return (string)db_row("SELECT regStatus FROM summer_students WHERE studentId=?", [$SID])['regStatus'] === 'self_pending';
+    })());
+    chk('…and answering yes to publication is recorded as granted', (function () use ($SELF, $good, $form) {
+        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'publication' => true,
+            'photo' => $good, 'force' => true,
+            // Distinct guardian details throughout: the search test below pins
+            // "one row per term", and reusing Mrs Self's phone would make it
+            // two for a reason that has nothing to do with searching.
+            'data' => array_merge($form, ['fullName' => 'Pub Yes', 'parentName' => 'Mr Pub',
+                'parentPhone' => '08037776666', 'parentEmail' => 'puby@example.com'])]);
+        if (empty($r['ok'])) return false;
+        foreach (CONSENT_PUBLICATION as $t) {
+            $c = db_row("SELECT status FROM consents WHERE studentId=? AND type=? ORDER BY id DESC LIMIT 1", [$r['studentId'], $t]);
+            if (!$c || (string)$c['status'] !== 'granted') return false;
+        }
+        return true;
+    })());
+    /* The reviewer is looking at a photograph and deciding what happens to it,
+     * so "may we publish this" has to be on that screen. A reviewer who has to
+     * go and look it up somewhere else will assume yes. */
+    chk('the review queue carries the publication answer next to the photo', (function () use ($REV, $SID) {
+        $q = backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'q' => 'amaka']);
+        foreach ($q['queue'] as $r) if ($r['studentId'] === $SID) return ($r['publication'] ?? '') === 'declined';
+        return false;
+    })());
+    /* One tick standing for several clauses is only honest if the clauses are
+     * one tap away, so the form is handed both the list and the document. */
+    chk('the public form is given the consent list and a link to the full document', (function () use ($SELF) {
+        $c = backend_dispatch('selfreg.context', ['gate' => $SELF['gateId']])['consentSelf'] ?? null;
+        if (!is_array($c) || trim((string)($c['url'] ?? '')) === '') return false;
+        $keys = array_column($c['bundled'], 'key');
+        // Publication is listed separately, never inside the bundle.
+        return in_array('participation', $keys, true) && !array_intersect($keys, CONSENT_PUBLICATION)
+            && array_column($c['publication'], 'key') === CONSENT_PUBLICATION;
+    })());
+
     chk('a self-registration is not counted as one on the public board', (function () {
         // regStatus 'self_pending' is neither verified nor parent_pending, so
         // every existing count that keys on those is untouched by definition.
@@ -5874,7 +5951,7 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
     })());
     chk('an admin can close the public door without revoking the link', (function () use ($SELF, $form, $good) {
         setting_set('selfreg_closed', '1', 'test');
-        $shut = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'data' => $form, 'photo' => $good]);
+        $shut = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'data' => $form, 'photo' => $good]);
         $ctx = backend_dispatch('selfreg.context', ['gate' => $SELF['gateId']]);
         setting_set('selfreg_closed', '', 'test');
         return ($shut['error'] ?? '') === 'closed' && ($ctx['open'] ?? true) === false && !empty($ctx['ok']);
@@ -5894,7 +5971,7 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
          * is already done — and, worse, hold up a child who is standing in the
          * room. */
         $d = backend_dispatch('gate.register', ['gate' => $DESK['gateId'], 'data' => [
-            'fullName' => 'Desk Typed Child', 'age' => 12, 'faculty' => 'Music', 'course' => 'Piano',
+            'fullName' => 'Desk Typed Child', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'Music', 'course' => 'Piano',
             'centre' => 'Egbeda', 'parentName' => 'A Parent', 'parentPhone' => '08055554444']]);
         if (empty($d['ok'])) return false;
         // By id, not by name: the form rebuilds fullName from first + last, so
@@ -5911,8 +5988,8 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
        an ordering claim needs at least three rows it owns. */
     $ORDER_IDS = [];
     for ($i = 1; $i <= 3; $i++) {
-        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good, 'data' => [
-            'firstName' => 'Queue' . $i, 'lastName' => 'Order', 'age' => 12, 'faculty' => 'Music', 'course' => 'Piano',
+        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'photo' => $good, 'data' => [
+            'firstName' => 'Queue' . $i, 'lastName' => 'Order', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'Music', 'course' => 'Piano',
             'centre' => 'Egbeda', 'parentName' => 'A Parent', 'parentPhone' => '0805999000' . $i]]);
         $ORDER_IDS[] = (string)($r['studentId'] ?? '');
     }
@@ -5945,8 +6022,8 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
            shape of the problem: two relatives each registering the same child,
            each looking legitimate on its own. Identical contact details are
            refused outright by gate_register and never reach the queue. */
-        $mk = fn($first, $phone) => backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good, 'data' => [
-            'firstName' => $first, 'lastName' => 'Duplicando', 'age' => 12, 'faculty' => 'Music', 'course' => 'Piano',
+        $mk = fn($first, $phone) => backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'photo' => $good, 'data' => [
+            'firstName' => $first, 'lastName' => 'Duplicando', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'Music', 'course' => 'Piano',
             'centre' => 'Egbeda', 'parentName' => 'A Parent', 'parentPhone' => $phone]]);
         $a = $mk('Tobi', '08051110000'); $b = $mk('Tobi', '08051110001');
         if (empty($a['ok']) || empty($b['ok'])) return false;
@@ -5988,9 +6065,9 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
     /* Two parents registering the same child is the commonest thing in this
      * queue and the one a reviewer most needs pointed out. */
     chk('the desk points out a child who looks already registered', (function () use ($SELF, $REV, $good, $form) {
-        backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good,
+        backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'photo' => $good,
             'data' => $form + [] , 'force' => true]);
-        $again = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good,
+        $again = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'photo' => $good,
             'data' => array_merge($form, ['parentPhone' => '08039998888', 'parentEmail' => 'other@example.com']), 'force' => true]);
         if (empty($again['ok'])) return false;
         $q2 = backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'q' => 'amaka']);
@@ -5998,19 +6075,33 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         return false;
     })());
 
-    /* Approval is the moment it becomes a registration — and the only moment
-     * a family is contacted. */
-    chk('approving turns a submission into a registration and sends the email', (function () use ($REV, $SID) {
+    /* Approval is the moment it becomes a registration. Consent came in on the
+     * form, from the guardian, so approval finishes the job rather than
+     * kicking off a second round of asking for it. */
+    chk('approving completes the registration outright — no second consent round', (function () use ($REV, $SID) {
         $r = backend_dispatch('selfreg.approve', ['gate' => $REV['gateId'], 'studentId' => $SID]);
-        $s = db_row("SELECT regStatus, reviewedById, reviewedAt FROM summer_students WHERE studentId=?", [$SID]);
-        return !empty($r['ok']) && in_array('email', $r['verificationSending'], true)
-            && (string)$s['regStatus'] === 'parent_pending'
+        $s = db_row("SELECT regStatus, verifiedAt, reviewedById, reviewedAt FROM summer_students WHERE studentId=?", [$SID]);
+        return !empty($r['ok']) && $r['regStatus'] === 'verified'
+            // Nothing is queued to ask the family for anything.
+            && ($r['verificationSending'] ?? ['x']) === []
+            && (string)$s['regStatus'] === 'verified' && (string)$s['verifiedAt'] !== ''
             && strpos((string)$s['reviewedById'], 'gate:') === 0 && (string)$s['reviewedAt'] !== '';
     })());
-    chk('…and approving twice does not email the family twice',
+    chk('…and the ID is issued at that moment, on the same gate the desk uses', (function () use ($SID) {
+        return trim((string)db_row("SELECT token FROM summer_students WHERE studentId=?", [$SID])['token']) !== '';
+    })());
+    chk('…and approving twice does not issue twice',
         backend_dispatch('selfreg.approve', ['gate' => $REV['gateId'], 'studentId' => $SID])['error'] === 'not_pending');
+    /* The reviewer's own approvals have to stay findable. They used to land at
+     * parent_pending, which the queue accepted as a filter; `verified` was not
+     * in the whitelist, so every approval silently fell out of every tab. */
+    chk('the desk can list what it approved', (function () use ($REV, $SID) {
+        $q = backend_dispatch('selfreg.queue', ['gate' => $REV['gateId'], 'status' => 'verified']);
+        foreach ($q['queue'] as $r) if ($r['studentId'] === $SID) return true;
+        return false;
+    })());
     chk('a rejection has to say why', (function () use ($REV, $SELF, $good, $form) {
-        $sub2 = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good,
+        $sub2 = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'photo' => $good,
             'data' => array_merge($form, ['fullName' => 'Reject Me', 'parentEmail' => 'rej@example.com']), 'force' => true]);
         $bad = backend_dispatch('selfreg.reject', ['gate' => $REV['gateId'], 'studentId' => $sub2['studentId']]);
         $ok  = backend_dispatch('selfreg.reject', ['gate' => $REV['gateId'], 'studentId' => $sub2['studentId'], 'note' => 'Photo is of an adult']);
@@ -6024,7 +6115,7 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
     chk('a whole page can be approved at once, each row reporting its own outcome', (function () use ($REV, $SELF, $good, $form) {
         $ids = [];
         foreach (['Bulk One', 'Bulk Two'] as $i => $n) {
-            $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'photo' => $good,
+            $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'photo' => $good,
                 'data' => array_merge($form, ['fullName' => $n, 'parentEmail' => 'b' . $i . '@example.com']), 'force' => true]);
             $ids[] = $r['studentId'];
         }
@@ -6455,7 +6546,7 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
     db_insert('centres', ['centreId' => 'GCT', 'name' => 'Growthville', 'code' => 'GRW', 'status' => 'active', 'createdAt' => now_iso()]);
     $mk = function (string $id, string $name, array $perWeek, int $joinedWeeksAgo = 10) {
         db_insert('summer_students', ['studentId' => $id, 'cohortId' => 'C-GROWTH', 'fullName' => $name,
-            'age' => 12, 'centre' => 'Growthville', 'track' => 'Tech', 'status' => 'active',
+            'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Growthville', 'track' => 'Tech', 'status' => 'active',
             'regStatus' => 'verified', 'enrolledAt' => gmdate('Y-m-d\TH:i:s\Z', time() - $joinedWeeksAgo * 7 * 86400),
             'updatedAt' => now_iso()]);
         foreach (array_reverse($perWeek) as $back => $days) {

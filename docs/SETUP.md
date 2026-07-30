@@ -140,6 +140,27 @@ php api/tools/create-admin.php "Ada Admin" admin@yourdomain.com   # from the hos
 (No shell? Insert a row into `members` with `role = super_admin` via phpMyAdmin,
 or use the SQLite CLI on `api/storage/ngg.db`.)
 
+### Request body size
+
+One endpoint carries an image inside its JSON: `api/public/selfreg.php`, the
+public sign-up form. It has no session, so it cannot use the signed direct
+upload every other surface uses, and the headshot travels inline.
+
+The form resamples the photo to 1000px before sending, so a typical submission
+is 100–200KB and no configuration is needed. If you nonetheless see a **413**
+on that endpoint, the limit in front of PHP is tighter than ~1MB. In order of
+likelihood:
+
+| Where | Setting | Suggested |
+|---|---|---|
+| nginx | `client_max_body_size` | `4m` |
+| Apache | `LimitRequestBody` | `4194304` |
+| PHP | `post_max_size` | `8M` (the default) |
+
+Raising a limit is the fallback, not the fix — a 413 here more likely means the
+client-side resampler failed to load, so check that `/vendor/image-tools.js`
+is being served and is not blocked by a CSP or a stale cache.
+
 ## Step 5 — Sign-in flow
 
 1. Click **Sign in**, enter the admin email.
