@@ -92,7 +92,13 @@ self.addEventListener('fetch', (event) => {
         caches.open(RUNTIME_CACHE).then(c => c.put(req, copy));
       }
       return res;
-    }).catch(() => hit))
+    }).catch(() =>
+      // This branch is only reached when the cache MISSED (hit was falsy) and
+      // the network then failed, so the old `() => hit` resolved with undefined
+      // — which rejects the respondWith and surfaces as an opaque fetch error
+      // rather than a response. Answer with a real one instead.
+      new Response('', { status: 504, statusText: 'Offline and not cached' })
+    ))
   );
 });
 

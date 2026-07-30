@@ -8,11 +8,13 @@
  * should not also be able to wave strangers into the programme.
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
-rate_limit_check('selfreg.desk');
 $s = require_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $b = $method === 'POST' ? read_json_body() : [];
 $reqGate = $method === 'GET' ? (string)($_GET['g'] ?? '') : (string)($b['gate'] ?? '');
+// Scoped to the gate: two review desks on one office connection are the normal
+// case, and neither should be able to spend the other's allowance.
+rate_limit_check('selfreg.desk', $reqGate);
 
 /* Two ways in, exactly as the gate has: an admin session, or a kiosk session
  * unlocked with THIS gate's password. A kiosk session for a different gate is

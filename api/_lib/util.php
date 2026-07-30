@@ -254,11 +254,34 @@ function cache_remember(string $key, int $ttl, callable $fn, string $stamp = '')
     try {
         $fresh = $fn();
     } catch (\Throwable $e) {
-        // Serve whatever we last had rather than failing the request.
-        $raw = @file_get_contents($path);
+        /* Serve whatever we last had rather than failing the request — but not
+         * forever, and not silently.
+         *
+         * Unbounded, this degrades from "a board thirty seconds out of date" to
+         * "a board from last March": if the builder keeps throwing, the same
+         * ancient payload is served indefinitely and the only trace is an
+         * error_log line nobody reads. A stale window of 10× the TTL keeps the
+         * intended graceful degradation over a transient fault while making a
+         * persistent one surface as a real failure.
+         *
+         * The event is journalled as a warning, so Diagnostics can say "serving
+         * stale public_status, 4h old" instead of the site quietly lying. */
+        $age = @filemtime($path);
+        $staleFor = $age ? time() - $age : PHP_INT_MAX;
+        $maxStale = max($ttl * 10, 300);
+        $raw = $staleFor <= $maxStale ? @file_get_contents($path) : false;
         $stale = $raw === false ? null : json_decode($raw, true);
         if (is_array($stale) && isset($stale['__d'])) $stale = $stale['__d'];
-        if (is_array($stale)) { error_log('[cache] serving stale ' . $key . ': ' . $e->getMessage()); return $stale; }
+        if (is_array($stale)) {
+            error_log('[cache] serving stale ' . $key . ' (' . $staleFor . 's): ' . $e->getMessage());
+            if (function_exists('ops_record')) {
+                ops_record('warn', 'cache:' . $key, 'serving stale (' . $staleFor . 's old)', $e->getMessage());
+            }
+            return $stale;
+        }
+        if (function_exists('ops_record')) {
+            ops_record('error', 'cache:' . $key, 'no usable cache, request failed', $e->getMessage());
+        }
         throw $e;
     }
     if (is_array($fresh)) {

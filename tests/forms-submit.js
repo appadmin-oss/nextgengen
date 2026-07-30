@@ -127,7 +127,10 @@ function cleanup() {
     'cookie_domain' => '',
     'cookie_samesite' => 'Lax',
     'cache_dir' => ${JSON.stringify(CACHE)},
-    'rate_limits' => ['default' => ['max' => 100000, 'window' => 60], 'selfreg.submit' => ['max' => 100000, 'window' => 60]],
+    // Deliberately tiny so the per-gate scoping is observable. Counts below are
+    // written against max=4: the main gate spends 3, the throwaway gate proves
+    // the 429, and the main gate's 4th proves the buckets are separate.
+    'rate_limits' => ['default' => ['max' => 100000, 'window' => 60], 'selfreg.submit' => ['max' => 4, 'window' => 300]],
     'session_ttl' => 604800,
     'kiosk_ttl' => 43200,
     'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
@@ -204,6 +207,40 @@ function cleanup() {
     const n2 = parseInt(php(`echo (int) db_row("SELECT COUNT(*) c FROM summer_students")['c'];`), 10);
     if (again.status !== 200 && n2 === 1) ok('a repeat submission is refused rather than duplicating the child');
     else bad(`repeat submission left ${n2} rows (status ${again.status}) — expected 1 and a refusal`);
+
+    /* 6 · Rate limiting is keyed per gate, not per IP alone.
+       Every family on a mobile carrier or a centre's WiFi shares one address, so
+       an IP-only bucket lets the busiest centre ration every other centre's
+       link. GATE has spent 3 of 4 above; this second gate spends its own. */
+    php(`db_insert('gate_links', ['gateId'=>'GL-RL','kind'=>'self','name'=>'Other centre','cohortId'=>'C1','centreId'=>'','status'=>'active','passHash'=>'','createdBy'=>'seed','createdAt'=>now_iso()]);`);
+    let limited = null;
+    for (let i = 0; i < 5 && !limited; i++) {
+      const r = await post('/api/public/selfreg.php', { gate: 'GL-RL', photo, data: { firstName: 'X' + i } });
+      if (r.status === 429) limited = r;
+    }
+    if (limited) ok('a genuine flood on one gate is still rate-limited (429)');
+    else bad('the rate limiter never fired — the ceiling is not being enforced');
+
+    // Retry-After is what lets an offline outbox back off instead of hammering.
+    const ra = await post('/api/public/selfreg.php', { gate: 'GL-RL', photo, data: { firstName: 'Y' } });
+    if (ra.status === 429) {
+      const hdr = await new Promise((resolve) => {
+        const p = JSON.stringify({ gate: 'GL-RL', photo, data: { firstName: 'Z' } });
+        const rq = http.request(BASE + '/api/public/selfreg.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(p) },
+        }, (res) => { res.resume(); resolve(res.headers['retry-after']); });
+        rq.on('error', () => resolve(undefined));
+        rq.end(p);
+      });
+      if (hdr && parseInt(hdr, 10) > 0) ok(`a 429 carries Retry-After (${hdr}s) so a client can back off`);
+      else bad(`429 had no usable Retry-After header (got ${hdr})`);
+    } else bad('expected the flooded gate to stay limited');
+
+    // The other gate's bucket is untouched — this is the whole point.
+    const other = await post('/api/public/selfreg.php', { gate: GATE, photo, data: { firstName: 'Q' } });
+    if (other.status !== 429) ok('a different gate on the SAME ip still has its own allowance');
+    else bad('one gate exhausting its bucket also locked out another gate on the same IP');
   } catch (e) {
     bad('threw: ' + (e && e.message ? e.message : String(e)));
   } finally {

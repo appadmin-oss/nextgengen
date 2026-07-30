@@ -26,8 +26,21 @@ function rate_limit_default(string $op): ?array {
         // The public self-registration link. Its own buckets, so a queue of
         // families filling in the form cannot lock out the check-in desk they
         // are standing in front of.
-        'selfreg.read'       => ['max' => 30, 'window' => 60],
-        'selfreg.submit'     => ['max' => 4,  'window' => 300],   // a few minutes of typing; many is queue-stuffing
+        //
+        // Both are keyed on IP + gate (see the $scope argument), and sized for
+        // the case that is NORMAL rather than the one that is hostile: a whole
+        // centre — or a whole mobile carrier — shares one address, so a queue of
+        // families registering from the same WiFi is the expected traffic, not
+        // an attack. At 4 per 5 minutes the fifth family was refused, and told
+        // to check a connection that was fine. The same reasoning is already
+        // written out for 'arcade.start' below; it was never applied here.
+        //
+        // These stay a runaway-script ceiling, nothing finer. The real control
+        // is that a submission is not a registration: it lands as self_pending
+        // and a human at the review desk has to approve it before anything
+        // reaches a family (see api/public/selfreg.php).
+        'selfreg.read'       => ['max' => 120, 'window' => 60],
+        'selfreg.submit'     => ['max' => 40,  'window' => 300],
         'selfreg.desk'       => ['max' => 240, 'window' => 60],   // a reviewer works fast; the password is the real control
         // Starting a round writes a row and generates a question set. The limit
         // is keyed on IP, and a whole centre shares one connection — a class of
@@ -40,7 +53,16 @@ function rate_limit_default(string $op): ?array {
     return $d[$op] ?? null;
 }
 
-function rate_limit_check(string $op): void {
+/**
+ * @param string $op    the bucket name
+ * @param string $scope extra key material, so one tenant cannot exhaust another's
+ *                      allowance. Everything here is keyed on IP, and on a mobile
+ *                      carrier or a centre's WiFi an entire queue of people shares
+ *                      one address — so for a per-link surface (a gate's public
+ *                      sign-up) the gate id belongs in the key, or the busiest
+ *                      centre silently rations every other centre.
+ */
+function rate_limit_check(string $op, string $scope = ''): void {
     global $CONFIG;
     // Config wins; then a hardcoded safety floor; then the loose default; then a
     // last-resort literal so a missing 'rate_limits' block can never fatal.
@@ -51,7 +73,7 @@ function rate_limit_check(string $op): void {
     $max = (int)$cfg['max'];
     $window = (int)$cfg['window'];
     $ip = client_ip();
-    $key = sha1($op . '|' . $ip);
+    $key = sha1($op . '|' . $ip . ($scope === '' ? '' : '|' . $scope));
     $dir = $CONFIG['cache_dir'] . '/_rl';
     @mkdir($dir, 0755, true);
     $path = $dir . '/' . $key;
@@ -75,7 +97,13 @@ function rate_limit_check(string $op): void {
         }
     }
     if (count($hits) >= $max) {
+        // Retry-After turns a refusal into something a client can obey. Without
+        // it an offline outbox retries on its own schedule and simply keeps
+        // hitting the wall; with it, it backs off until the window has actually
+        // rolled. The oldest hit in the window is when a slot next frees up.
+        $retry = max(1, ($hits ? min($hits) : $now) + $window - $now);
         flock($fh, LOCK_UN); fclose($fh);
+        if (!headers_sent()) header('Retry-After: ' . $retry);
         json_error('rate_limited', 429);
     }
     $hits[] = $now;

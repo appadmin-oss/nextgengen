@@ -15,13 +15,14 @@ require_once __DIR__ . '/../_lib/bootstrap.php';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
-    rate_limit_check('selfreg.read');
+    rate_limit_check('selfreg.read', (string)($_GET['g'] ?? ''));
     $res = gs_call('selfreg.context', ['gate' => (string)($_GET['g'] ?? '')]);
 } elseif ($method === 'POST') {
     // Tighter than the read: one submission is a few minutes of typing, and
-    // the only reason to send many is to fill the review queue.
-    rate_limit_check('selfreg.submit');
+    // the only reason to send many is to fill the review queue. Scoped to the
+    // gate so one busy centre cannot ration every other centre's link.
     $b = read_json_body();
+    rate_limit_check('selfreg.submit', (string)($b['gate'] ?? ''));
     $res = gs_call('selfreg.submit', [
         'gate'  => $b['gate'] ?? '',
         'data'  => $b['data'] ?? [],

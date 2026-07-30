@@ -105,16 +105,35 @@ function web_cron_run_now(array $jobs): array {
  * Under CLI (the test runner) it runs inline, so behaviour stays observable
  * rather than happening after the assertions.
  */
+/**
+ * Hand the finished response back to the client, then keep working.
+ *
+ * FPM can genuinely detach. Everywhere else — Apache mod_php, CGI, the built-in
+ * server, which is to say the no-SSH shared hosting this whole file exists to
+ * serve — the best available move is to push the bytes out and let
+ * Content-Length (see _lib/response.php) tell the browser the body is complete.
+ *
+ * The loop matters. A single ob_end_flush() pops ONE buffer level, and there is
+ * routinely more than one: the `output_buffering` ini default, mod_deflate, and
+ * anything a handler opened. Popping one of three leaves the response exactly
+ * where it was — sitting in a buffer while the caller waits.
+ *
+ * One helper rather than two copies, because the two copies drifted: this was
+ * inlined in after_response() and simply missing from web_cron_run().
+ */
+function response_detach(): void {
+    if (function_exists('fastcgi_finish_request')) { @fastcgi_finish_request(); return; }
+    while (ob_get_level() > 0) { @ob_end_flush(); }
+    @flush();
+}
+
 function after_response(string $label, callable $fn): void {
     if (PHP_SAPI === 'cli') {
         try { $fn(); } catch (\Throwable $e) { error_log('[after:' . $label . '] ' . $e->getMessage()); }
         return;
     }
     register_shutdown_function(function () use ($label, $fn) {
-        // FPM can hand the response back and keep working. Everywhere else,
-        // flush what we have so the browser is not held open by this.
-        if (function_exists('fastcgi_finish_request')) { @fastcgi_finish_request(); }
-        else { @ob_end_flush(); @flush(); }
+        response_detach();
         @ignore_user_abort(true);
         if (function_exists('set_time_limit')) @set_time_limit(60);
         // Never disrupt anything: the response has already gone.
@@ -132,9 +151,20 @@ function web_cron_schedule(): void {
     register_shutdown_function('web_cron_run');
 }
 
-/** The shutdown worker. Flushes the response first, then does throttled work. */
+/**
+ * The shutdown worker. Flushes the response first, then does throttled work.
+ *
+ * The flush is not a nicety, it is the whole contract. This is registered from
+ * bootstrap, which makes it the FIRST shutdown function on every request — it
+ * runs before any after_response() a handler registered. It used to detach only
+ * under FPM, so on every other SAPI the finished response sat in the output
+ * buffer through up to 45s of deliveries, reminders and maintenance, and
+ * after_response added its own SMS/SMTP time on top. The browser saw nothing,
+ * api-client aborted the write at 60s, and a registration that had already
+ * committed was reported to the user as "check your connection".
+ */
 function web_cron_run(): void {
-    if (function_exists('fastcgi_finish_request')) { @fastcgi_finish_request(); }
+    response_detach();
     try {
         @ignore_user_abort(true);
         if (function_exists('set_time_limit')) @set_time_limit(45);

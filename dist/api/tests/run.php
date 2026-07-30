@@ -2060,13 +2060,49 @@ chk('…and a throw inside it can never reach the caller', (function () {
     catch (Throwable $e) { return false; }
     return true;
 })());
-chk('…and the web path flushes the response before doing the work', (function () {
-    $src = file_get_contents(dirname(__DIR__) . '/_lib/webcron.php');
-    $fn = substr($src, strpos($src, 'function after_response'));
-    $fn = substr($fn, 0, strpos($fn, "\n}\n") + 2);
+/* Both deferred paths must hand the response back BEFORE doing slow work, on
+ * every SAPI — not just under FPM.
+ *
+ * web_cron_run is the one that mattered and the one that was wrong. It is
+ * registered from bootstrap, so it is the FIRST shutdown function on every
+ * request, and it detached only when fastcgi_finish_request existed. On Apache
+ * mod_php or CGI — the no-SSH hosting the web-cron exists for — a finished
+ * response therefore sat in the output buffer through up to 45s of background
+ * work, the client aborted at 60s, and a committed registration was reported to
+ * the user as a connection failure.
+ *
+ * Asserted at source level because the behaviour needs a real web SAPI to
+ * observe; what is checked is that neither path can silently lose its detach
+ * again, and that the non-FPM fallback drains EVERY buffer level (one
+ * ob_end_flush pops one of possibly several, which leaves the bytes put). */
+$__wc = file_get_contents(dirname(__DIR__) . '/_lib/webcron.php');
+$__slice = function (string $needle) use ($__wc): string {
+    $fn = substr($__wc, strpos($__wc, $needle));
+    return substr($fn, 0, strpos($fn, "\n}\n") + 2);
+};
+chk('…and the web path hands the response back before doing the work', (function () use ($__slice) {
+    $fn = $__slice('function after_response');
     return strpos($fn, 'register_shutdown_function') !== false
-        && strpos($fn, 'fastcgi_finish_request') !== false
+        && strpos($fn, 'response_detach') !== false
         && strpos($fn, 'ignore_user_abort') !== false;
+})());
+chk('the web-cron tick detaches too — it runs FIRST, ahead of after_response', (function () use ($__slice) {
+    // The paren matters: web_cron_run_now() sorts earlier in the file and a
+    // prefix match silently asserts against the wrong function.
+    return strpos($__slice('function web_cron_run('), 'response_detach') !== false;
+})());
+chk('…but a manual "run now" does NOT detach — the admin is waiting for it', (function () use ($__slice) {
+    return strpos($__slice('function web_cron_run_now('), 'response_detach') === false;
+})());
+chk('response_detach covers non-FPM and drains every buffer level', (function () use ($__slice) {
+    $fn = $__slice('function response_detach');
+    return strpos($fn, 'fastcgi_finish_request') !== false
+        && strpos($fn, 'while (ob_get_level()') !== false
+        && strpos($fn, 'flush()') !== false;
+})());
+chk('response_detach is safe to call with no buffer open', (function () {
+    response_detach();   // must not warn, throw, or hang under CLI
+    return true;
 })());
 
 chk('gate: duplicate guard flags same child + parent, force overrides', (function () use ($GATE) {
@@ -5474,6 +5510,28 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         cache_remember($key, 0, $f);         // window elapsed — recompute
         return $n === 2;
     })());
+    /* Graceful degradation has to be bounded, or it stops being degradation and
+       becomes a site that quietly serves last month's numbers forever. */
+    chk('a throwing rebuild serves the last good copy', (function () {
+        $key = 'test_stale_' . rand_hex(4);
+        cache_remember($key, 60, fn() => ['v' => 'good']);
+        $r = cache_remember($key, 0, function () { throw new RuntimeException('down'); });
+        return ($r['v'] ?? '') === 'good';
+    })());
+    chk('…but not past the stale ceiling, and it is journalled', (function () {
+        global $CONFIG;
+        $key = 'test_stale2_' . rand_hex(4);
+        cache_remember($key, 1, fn() => ['v' => 'ancient']);
+        // Age the file well past 10× the TTL (the ceiling, floored at 300s).
+        $path = $CONFIG['cache_dir'] . '/_memo/' . $key . '.json';
+        @touch($path, time() - 4000);
+        $threw = false;
+        try { cache_remember($key, 1, function () { throw new RuntimeException('still down'); }); }
+        catch (Throwable $e) { $threw = true; }
+        // A persistent fault must surface, not hide behind an ancient payload.
+        return $threw && db_row("SELECT id FROM ops_events WHERE source = ?", ['cache:' . $key]) !== null;
+    })());
+
     /* The filesystem cache must only ever write what a read could serve. An op
        with no positive TTL is a no-cache op; writing its file anyway just
        litters the cache dir and — the day a TTL is added — hands back a file
