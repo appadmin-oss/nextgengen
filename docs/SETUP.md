@@ -95,9 +95,34 @@ maps to). `dist/` deliberately excludes `api/config.php` and the local SQLite fi
 
 - **SQLite (default):** nothing to do. The schema auto-migrates on the first
   request; the DB lives at `api/storage/ngg.db`. Great for a single site.
-- **MySQL/MariaDB:** create a database + user, set `db.dsn` (e.g.
-  `mysql:host=localhost;dbname=ngg;charset=utf8mb4`) + username/password, then
-  apply `db/schema-mysql.sql` once via phpMyAdmin or the CLI.
+- **MySQL/MariaDB:** create an empty database + user and set `db.dsn` (e.g.
+  `mysql:host=localhost;dbname=ngg;charset=utf8mb4`) plus `username` /
+  `password`. That is all — the app applies `db/schema-mysql.sql` itself on the
+  next request and brings the schema up to date on every deploy.
+
+  **Do not pipe the mirror through the CLI** (`mysql ngg < db/schema-mysql.sql`).
+  It fails part-way with `ERROR 1060 Duplicate column name 'passSetAt'`, and
+  that is expected: the mirror deliberately repeats `ALTER TABLE … ADD COLUMN`
+  for post-baseline columns so it can be *replayed* over an existing schema.
+  `db_apply_mysql_schema()` runs it statement by statement and swallows exactly
+  those already-applied errors; the CLI stops at the first one. If you want to
+  confirm it applied, check `schema_meta`:
+
+  ```sql
+  SELECT * FROM schema_meta;              -- mysql_schema_status should be 'ok'
+  SELECT MAX(version) FROM schema_version;-- should equal NGG_SCHEMA_TARGET
+  ```
+
+  To run the backend suite against MySQL rather than SQLite (worth doing before
+  a release — MySQL runs in `STRICT_ALL_TABLES`, so it rejects writes SQLite
+  silently tolerates):
+
+  ```bash
+  NGG_TEST_DSN='mysql:host=127.0.0.1;dbname=ngg_test;charset=utf8mb4' \
+  NGG_TEST_DB_USER=ngg NGG_TEST_DB_PASS=nggpass php api/tests/run.php
+  ```
+
+  It drops every table in that database first, so point it at a throwaway one.
 
 ## Step 4 — Smoke test
 

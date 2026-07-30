@@ -1240,7 +1240,18 @@ function gate_register(array $p): array {
         'firstName' => substr($first, 0, 120), 'lastName' => substr($last, 0, 120),
         'age' => (int)($d['age'] ?? 0),
         'centre' => substr((string)($d['centre'] ?? ''), 0, 48), 'track' => substr((string)($d['course'] ?? ''), 0, 64),
-        'photoUrl' => (string)($p['photoUrl'] ?? ''),
+        /* A URL, never an image. The staff desk uploads to Cloudinary first and
+         * passes a short hosted URL; the PUBLIC sign-up form posts the headshot
+         * inline as a base64 data: URL, which is tens of thousands of characters
+         * and does not belong in a VARCHAR(512).
+         *
+         * SQLite does not enforce column lengths, so it silently stored the
+         * whole data URL and everything appeared to work. MySQL runs in
+         * STRICT_ALL_TABLES (see db_conn) and rejects it outright — 1406 Data
+         * too long — which means every public self-registration failed on
+         * production and passed in every test. The photo pipeline below is what
+         * turns the data URL into a hosted one; it writes the real value back. */
+        'photoUrl' => preg_match('#^data:#i', (string)($p['photoUrl'] ?? '')) ? '' : substr((string)($p['photoUrl'] ?? ''), 0, 512),
         'guardianName' => substr((string)($d['parentName'] ?? ''), 0, 255),
         'guardianPhone' => $pPhone, 'parentEmail' => $pEmail,
         'status' => 'active', 'regStatus' => 'parent_pending',
@@ -1259,7 +1270,14 @@ function gate_register(array $p): array {
     if ($photoUrl !== '' && function_exists('photo_ingest')) {
         try {
             $ing = photo_ingest('student', $studentId, $photoUrl, (string)($p['byId'] ?? ''));
-            if (!empty($ing['ok']) && function_exists('photo_process')) photo_process($ing['assetId']);
+            if (!empty($ing['ok'])) {
+                /* Write the HOSTED url back. This is what fills the column for a
+                 * self-registration, whose inline data: URL was deliberately not
+                 * stored above — without this the row would keep no photo at all. */
+                $hosted = substr((string)($ing['url'] ?? ''), 0, 512);
+                if ($hosted !== '') db_update('summer_students', ['photoUrl' => $hosted], ['studentId' => $studentId]);
+                if (function_exists('photo_process')) photo_process($ing['assetId']);
+            }
         } catch (Throwable $e) { error_log('[gate_register] photo pipeline: ' . $e->getMessage()); }
     }
 

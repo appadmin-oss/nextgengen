@@ -200,11 +200,10 @@ function selfreg_submit(array $p): array {
     if (empty($res['ok'])) return $res;
     $studentId = (string)$res['studentId'];
 
-    $hosted = '';
-    if (function_exists('photo_ingest')) {
-        $ing = photo_ingest('student', $studentId, $photo, 'selfreg');
-        $hosted = (string)($ing['url'] ?? '');
-    }
+    /* gate_register has already run the photo through the pipeline and stored the
+     * hosted URL on the row, so read it back rather than ingesting a second
+     * time — the old second call uploaded every headshot twice. */
+    $hosted = (string)(db_row('SELECT photoUrl FROM summer_students WHERE studentId = ?', [$studentId])['photoUrl'] ?? '');
     $verdict = photo_validate($photo, $hosted);
     db_update('summer_students', [
         'regStatus' => 'self_pending',

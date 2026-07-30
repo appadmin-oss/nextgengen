@@ -17,9 +17,42 @@ $ROOT = dirname(__DIR__);                 // .../api
 $tmp = sys_get_temp_dir() . '/ngg-tests-' . getmypid() . '-' . bin2hex(random_bytes(3)) . '.db';
 register_shutdown_function(fn() => @unlink($tmp));
 
+/* Which database this run exercises.
+ *
+ * SQLite by default — fast, disposable, no service to start. Set NGG_TEST_DSN to
+ * run the SAME suite against MySQL/MariaDB, which is what production uses:
+ *
+ *   NGG_TEST_DSN='mysql:unix_socket=/run/mysqld/mysqld.sock;dbname=ngg_test;charset=utf8mb4' \
+ *   NGG_TEST_DB_USER=ngg NGG_TEST_DB_PASS=nggpass php api/tests/run.php
+ *
+ * This matters for more than the migrations. db_conn() puts MySQL into
+ * STRICT_ALL_TABLES, so writes SQLite silently tolerates — '' into an INT
+ * column, a missing value for a NOT NULL column with no default, a string past
+ * its VARCHAR length — are hard errors there and nowhere else. A suite that only
+ * ever runs on SQLite cannot see that class of bug at all.
+ *
+ * The MySQL path drops every table first, because the fixtures below assume a
+ * virgin database and use fixed ids. db_conn() then replays
+ * db/schema-mysql.sql itself.
+ */
+$__dsn = (string)(getenv('NGG_TEST_DSN') ?: '');
+if ($__dsn !== '') {
+    $__pdo = new PDO($__dsn, getenv('NGG_TEST_DB_USER') ?: null, getenv('NGG_TEST_DB_PASS') ?: null,
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $__pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
+    foreach ($__pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) as $__t) {
+        $__pdo->exec('DROP TABLE IF EXISTS `' . $__t . '`');
+    }
+    $__pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+    $__pdo = null;
+    fwrite(STDERR, "[tests] target: MySQL via NGG_TEST_DSN (tables dropped for a clean run)\n");
+}
+
 // Config normally loaded by bootstrap. Tests inject their own.
 $CONFIG = [
-    'db' => ['dsn' => '', 'sqlite_path' => $tmp],
+    'db' => $__dsn !== ''
+        ? ['dsn' => $__dsn, 'username' => getenv('NGG_TEST_DB_USER') ?: null, 'password' => getenv('NGG_TEST_DB_PASS') ?: null]
+        : ['dsn' => '', 'sqlite_path' => $tmp],
     'mail' => ['from_name' => 'NGG', 'from_email' => 'test@example.com', 'reply_to' => '', 'smtp' => ['host' => '']],
     'app_origin' => 'https://ngg.example.org',
     'cookie_secret' => 'test_cookie_secret_0123456789abcdef',
@@ -79,10 +112,22 @@ chk('migrator: ladder guard rejects a gap in versions',
 chk('migrator: ladder guard rejects a count/target mismatch (forgotten bump)',
     (function () { try { db_assert_migration_ladder([1 => 'a', 2 => 'b']); return false; } catch (Throwable $e) { return true; } })());
 
+/* db_migrate() is the SQLite migrator and emits SQLite-flavoured DDL, so this
+   is asserted on a SQLite connection even when the suite is targeting MySQL.
+   The MySQL equivalent — replaying the mirror over a live schema — is covered
+   by the driver-specific checks above. */
 chk('migrator: re-running migrations on a current DB is a clean no-op',
-    (function () { $db = db_conn(); $b = (int)$db->query('SELECT MAX(version) FROM schema_version')->fetchColumn();
-        try { db_migrate($db); } catch (Throwable $e) { return false; }
-        return (int)$db->query('SELECT MAX(version) FROM schema_version')->fetchColumn() === $b && $b === NGG_SCHEMA_TARGET; })());
+    (function () {
+        $tmp = sys_get_temp_dir() . '/ngg-noop-' . bin2hex(random_bytes(3)) . '.db';
+        $db = new PDO('sqlite:' . $tmp, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+        try {
+            db_migrate($db);
+            $b = (int)$db->query('SELECT MAX(version) FROM schema_version')->fetchColumn();
+            db_migrate($db);
+            return (int)$db->query('SELECT MAX(version) FROM schema_version')->fetchColumn() === $b && $b === NGG_SCHEMA_TARGET;
+        } catch (Throwable $e) { return false; }
+        finally { $db = null; @unlink($tmp); }
+    })());
 
 chk('migrator: full replay over a populated schema self-heals (no clash, no dup seeds)',
     (function () {
@@ -133,7 +178,15 @@ function ngg_parse_mysql_schema(string $sql): array {
     return $tables;
 }
 $mysqlSchema = ngg_parse_mysql_schema((string)@file_get_contents(dirname($ROOT) . '/db/schema-mysql.sql'));
-$parityDb = db_conn();
+/* Compared against a THROWAWAY SQLite database, not against whatever this run
+ * is targeting. The question is "does the mirror match the SQLite migrations",
+ * which is true or false regardless of which driver the suite happens to be
+ * pointed at — and reading sqlite_master on a MySQL connection is simply a
+ * fatal error, which is what made this block unrunnable against MySQL. */
+$parityTmp = sys_get_temp_dir() . '/ngg-parity-' . bin2hex(random_bytes(3)) . '.db';
+$parityDb = new PDO('sqlite:' . $parityTmp, null, null,
+    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+db_migrate($parityDb);
 $drift = [];
 foreach ($parityDb->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'") as $tr) {
     $t = (string)$tr['name'];
@@ -144,7 +197,23 @@ foreach ($parityDb->query("SELECT name FROM sqlite_master WHERE type = 'table' A
         if (!in_array($col, $mysqlSchema[$t], true)) $drift[] = "$t.$col";
     }
 }
+$parityDb = null; @unlink($parityTmp);
 chk('migrator: SQLite⇄MySQL mirror parity — every table+column present' . ($drift ? ' [DRIFT: ' . implode(', ', array_slice($drift, 0, 15)) . ']' : ''), empty($drift));
+
+/* The reverse direction, only meaningful when actually running on MySQL: every
+ * table the mirror declares must really exist in the live database. The parity
+ * check above reads a FILE; this proves the file was successfully applied. */
+if (db_driver() === 'mysql') {
+    $live = [];
+    foreach (db_conn()->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) as $t) $live[$t] = true;
+    $absent = array_values(array_filter(array_keys($mysqlSchema), fn($t) => !isset($live[$t])));
+    chk('migrator: every table the mirror declares exists in the live MySQL database'
+        . ($absent ? ' [ABSENT: ' . implode(', ', array_slice($absent, 0, 10)) . ']' : ''), empty($absent));
+    chk('migrator: the MySQL replay reported a clean apply', (function () {
+        $st = db_conn()->query("SELECT v FROM schema_meta WHERE k = 'mysql_schema_status'");
+        return (string)($st ? ($st->fetchColumn() ?: '') : '') === 'ok';
+    })());
+}
 
 // ── Seed ──
 db_insert('members', ['memberId' => 'NGG-2025-0099', 'fullName' => 'Admin User', 'email' => 'admin@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
@@ -3221,7 +3290,11 @@ chk('verify approve awards XP + clears from queue', (function () use ($pmid) {
 })());
 
 // ── Analytics workspace (4-level M&E engine) ─────────────────────────────────
-db_exec("INSERT OR IGNORE INTO centres (centreId,name,code,color,status) VALUES ('CEN-AN','Analytics Centre','AN','#4C6FFF','active')");
+// db_upsert, not "INSERT OR IGNORE" — that is SQLite-only syntax and is a
+// hard 1064 syntax error on MySQL, which is what stopped this suite from
+// running against the driver production actually uses.
+db_upsert('centres', ['centreId' => 'CEN-AN', 'name' => 'Analytics Centre', 'code' => 'AN', 'color' => '#4C6FFF', 'status' => 'active'],
+          ['centreId'], ['name' => 'Analytics Centre']);
 db_insert('summer_students', ['studentId' => 'SUM-AN-1', 'cohortId' => '', 'token' => '', 'handle' => 'ang1', 'fullName' => 'Ana Girl', 'age' => 12, 'gender' => 'F', 'centre' => 'Analytics Centre', 'track' => 'STEM', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
 db_insert('summer_students', ['studentId' => 'SUM-AN-2', 'cohortId' => '', 'token' => '', 'handle' => 'anb2', 'fullName' => 'Ben Boy', 'age' => 15, 'gender' => 'M', 'centre' => 'Analytics Centre', 'track' => 'Arts', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
 $anToday = gmdate('Y-m-d');
@@ -5778,6 +5851,21 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
     chk('the photo verdict is stored with the submission', (function () use ($SID) {
         $c = safe_json((string)db_row("SELECT photoCheck FROM summer_students WHERE studentId=?", [$SID])['photoCheck']);
         return is_array($c) && $c['verdict'] === 'pass' && $c['width'] === 600;
+    })());
+    /* photoUrl is a URL column, not an image one.
+     *
+     * The public form posts its headshot inline as a base64 data: URL — tens of
+     * thousands of characters — and that used to go straight into
+     * summer_students.photoUrl, a VARCHAR(512). SQLite does not enforce column
+     * lengths, so it stored the lot and every test passed; MySQL runs in
+     * STRICT_ALL_TABLES and rejects it with 1406, so EVERY public
+     * self-registration failed in production and nowhere else.
+     *
+     * Asserted as an invariant rather than as a driver behaviour, so it holds on
+     * both: whatever ends up in this column is a short URL, never an image. */
+    chk('a data: URL is never persisted into the photoUrl column', (function () use ($SID) {
+        $u = (string)(db_row("SELECT photoUrl FROM summer_students WHERE studentId=?", [$SID])['photoUrl'] ?? '');
+        return strpos($u, 'data:') !== 0 && strlen($u) <= 512;
     })());
     chk('a self-registration is not counted as one on the public board', (function () {
         // regStatus 'self_pending' is neither verified nor parent_pending, so

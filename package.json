@@ -8,6 +8,7 @@
     "dev": "http-server -p 8123 -s",
     "check": "node build.js && echo build OK",
     "test:api": "php api/tests/run.php",
+    "test:api:mysql": "NGG_TEST_DSN=\"mysql:host=127.0.0.1;dbname=ngg_test;charset=utf8mb4\" NGG_TEST_DB_USER=ngg NGG_TEST_DB_PASS=nggpass php api/tests/run.php",
     "test:smtp": "php api/tests/smtp-send.php",
     "test:kiosk": "node tests/kiosk-offline.js",
     "test:cards": "node tests/card-export.test.js",
