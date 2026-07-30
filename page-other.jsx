@@ -3640,12 +3640,20 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
       try { localStorage.removeItem(draftKey); } catch (_) {}
       setDone(r);
     } catch (e) {
-      const c = e.code || (e.detail && e.detail.error);
-      if (c === "duplicate_suspect" || (e.detail && e.detail.existing)) { setDupe((e.detail && e.detail.existing) || {}); }
+      /* The refusal payload lives on e.data — api-client sets err.data to the
+         whole body, while err.detail is only body.detail. Reading e.errors and
+         e.detail.errors meant the per-field branch below never once fired: a
+         validation refusal arrives as {ok:false, errors:{…}} with no `detail`
+         and no `error`, so every one of them fell past these cases into the
+         generic handler and the desk was told the server "refused this
+         registration" with no code and nothing highlighted. */
+      const d = e.data || {};
+      const c = e.code || d.error;
+      if (c === "duplicate_suspect" || d.existing) { setDupe(d.existing || {}); }
       else if (c === "photo_required") { setErrors({ _: "A headshot is required — take or upload a photo to register." }); setStep(1); }
       else if (c === "geo_unavailable") { setErrors({ _: "This desk needs your location to register. Allow location access and try again." }); setStep(0); }
-      else if (c === "geo_out_of_fence") { const n = (e.detail && e.detail.nearest) || {}; setErrors({ _: "You're outside every registration centre's area" + (n.name ? " — nearest is " + n.name + ", about " + n.distanceM + "m away" : "") + ". Registration is only allowed on-site." }); setStep(0); }
-      else if (e.errors || (e.detail && e.detail.errors)) { setErrors(e.errors || e.detail.errors); setStep(0); }
+      else if (c === "geo_out_of_fence") { const n = d.nearest || {}; setErrors({ _: "You're outside every registration centre's area" + (n.name ? " — nearest is " + n.name + ", about " + n.distanceM + "m away" : "") + ". Registration is only allowed on-site." }); setStep(0); }
+      else if (d.errors) { setErrors(Object.assign({ _: "Some answers need fixing — see the highlighted fields." }, d.errors)); setStep(0); }
       /* Everything else. This used to say "check the connection" for ANY
          unrecognised failure, including ones where the connection was fine and
          the server had refused for a nameable reason — staff at a desk on full

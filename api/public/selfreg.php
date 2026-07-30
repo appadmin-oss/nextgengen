@@ -33,14 +33,25 @@ if ($method === 'GET') {
 } else {
     json_error('method_not_allowed', 405);
 }
+/* Forward the WHOLE refusal, not just its code.
+ *
+ * A field-level rejection from gate_register arrives as ['ok' => false,
+ * 'errors' => [field => message]] — with no 'error' key at all. Keeping only
+ * $res['error'] therefore sent the family `{"error":"failed"}`: the per-field
+ * map was dropped, the form had nothing to highlight, and "failed" matches no
+ * case in its handler, so it fell through to "check your connection" — for a
+ * request that arrived perfectly and was refused for a nameable, fixable
+ * reason. The public sign-up form could not be submitted at all, and said the
+ * one thing guaranteed to make a family retry instead of correct the answer.
+ *
+ * The photo verdict rides along the same way (it used to need its own branch),
+ * as does the duplicate hint. This is what the staff desk (public/gate.php)
+ * and the guardian reshoot have always done; the public form was the odd one.
+ */
 if (empty($res['ok'])) {
-    // The photo verdict travels with the refusal: "try another photo" without
-    // saying what was wrong with this one is how a family gives up.
-    if (($res['error'] ?? '') === 'photo_rejected') {
-        http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'photo_rejected', 'photo' => $res['photo'] ?? []], JSON_UNESCAPED_SLASHES);
-        exit;
-    }
-    json_error($res['error'] ?? 'failed', 400);
+    http_response_code(($res['error'] ?? '') === 'rate_limited' ? 429 : 400);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['ok' => false] + array_diff_key($res, ['ok' => 1]), JSON_UNESCAPED_SLASHES);
+    exit;
 }
 unset($res['ok']); json_ok($res);

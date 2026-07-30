@@ -51,6 +51,19 @@ function csrf_require(): void {
     // Anonymous intake — no session privileges to ride; IP rate-limited,
     // validated server-side, and reachable cross-origin from sister sites.
     if (preg_match('#/api/public/apply\\.php$#', $path))          return;
+    /* The public self-registration link is the same class of door as apply: a
+     * family opens it on their own phone with no session, and there is no
+     * privilege for a forged request to ride — a submission is not a
+     * registration until a reviewer approves it (see public/selfreg.php).
+     *
+     * It is exempt for a practical reason as well as a principled one. The
+     * ngg_csrf cookie is only minted by GET /api/auth/me.php, so the form's
+     * ability to submit depended on an unrelated auth bootstrap having already
+     * succeeded on a page that has nothing to do with auth. When that call was
+     * slow, blocked or failed, the POST came back 403 csrf_failed and the
+     * family was told to check a connection that was fine.
+     * The GET (context) side is untouched — reads were never CSRF-checked. */
+    if (preg_match('#/api/public/selfreg\\.php$#', $path))        return;
     // Public headshot signer — used on those SAME anonymous intake surfaces
     // (apply, gate registration, guardian reshoot), including cross-origin
     // embeds where no ngg_csrf cookie exists. It only returns a short-lived

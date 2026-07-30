@@ -1,0 +1,215 @@
+#!/usr/bin/env node
+/* ============================================================================
+   Public registration — endpoint submit contract (HTTP level).
+
+   The bug this exists to catch: api/public/selfreg.php reduced every refusal to
+   `$res['error'] ?? 'failed'`. A field-level rejection from gate_register comes
+   back as ['ok' => false, 'errors' => [field => message]] with NO 'error' key,
+   so the family received {"ok":false,"error":"failed"} — the per-field map was
+   dropped, the form had nothing to highlight, and "failed" matches no case in
+   its handler, so it fell through to "check your connection" for a request that
+   arrived perfectly. The public sign-up form could not be submitted at all.
+
+   Why HTTP and not backend_dispatch: api/tests/run.php exercises the DOMAIN
+   layer directly, which returned the right shape all along. The loss happened
+   in the route file, between the domain and the wire — the one seam that suite
+   cannot see. That is precisely why the bug survived 1200+ passing tests.
+
+   Asserted here:
+     1. GET context on a `self` gate returns the form.
+     2. A refusal carries the per-field `errors` map, not a bare "failed".
+     3. The POST does not require a CSRF cookie (anonymous intake, like apply).
+     4. A valid submission returns ok + lands exactly one self_pending row.
+     5. Re-submitting the SAME child is refused as a duplicate, not silently
+        double-registered.
+
+   Self-contained: throwaway api/config.php (SQLite temp), seeds a cohort +
+   public gate + centre, serves the repo with PHP's built-in server, then
+   cleans everything up. NEVER touches an existing config.php.
+
+   Run:  node tests/forms-submit.js
+   Env:  FORMS_PORT (default 8203)
+   ============================================================================ */
+const { execSync, spawn } = require('child_process');
+const { waitForServer } = require('./_serve');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const http = require('http');
+
+const ROOT = path.resolve(__dirname, '..');
+const PORT = process.env.FORMS_PORT || '8203';
+const BASE = `http://127.0.0.1:${PORT}`;
+const CFG = path.join(ROOT, 'api', 'config.php');
+const DB = path.join(os.tmpdir(), `ngg-forms-${process.pid}.db`);
+const CACHE = path.join(os.tmpdir(), `ngg-forms-cache-${process.pid}`);
+const GATE = 'GL-SELFTEST';
+let _seq = 0;
+
+/** Run a PHP snippet with the throwaway config + the full domain layer booted. */
+function php(snippet) {
+  const req = (f) => `require ${JSON.stringify(ROOT + '/api/_lib/' + f)};`;
+  const domains = ['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2',
+    'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations',
+    'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor',
+    'instructor', 'ops', 'analytics', 'profiles', 'community', 'arcade'];
+  const code = `<?php $GLOBALS['CONFIG']=require ${JSON.stringify(CFG)};`
+    + req('response.php') + req('db.php') + req('util.php') + req('mailer.php')
+    + req('anchor-content.php') + req('ai.php') + req('bus.php') + req('sms.php')
+    + domains.map(d => `require ${JSON.stringify(ROOT + '/api/_lib/domain/' + d + '.php')};`).join('')
+    + req('backend.php') + req('sheets.php') + req('webcron.php')
+    + `db_conn();\n` + snippet;
+  const f = path.join(os.tmpdir(), `ngg-forms-php-${process.pid}-${++_seq}.php`);
+  fs.writeFileSync(f, code);
+  try { return execSync('php ' + JSON.stringify(f), { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); }
+  finally { try { fs.unlinkSync(f); } catch (_) {} }
+}
+
+/** POST JSON. `headers` may add a CSRF header; omit for the anonymous case. */
+function post(pathname, body, headers) {
+  const payload = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const req = http.request(BASE + pathname, {
+      method: 'POST',
+      headers: Object.assign({
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      }, headers || {}),
+    }, (res) => {
+      let raw = '';
+      res.on('data', (c) => { raw += c; });
+      res.on('end', () => {
+        let json = null;
+        try { json = JSON.parse(raw); } catch (_) {}
+        resolve({ status: res.statusCode, json, raw });
+      });
+    });
+    req.on('error', reject);
+    req.end(payload);
+  });
+}
+
+function get(pathname) {
+  return new Promise((resolve, reject) => {
+    http.get(BASE + pathname, (res) => {
+      let raw = '';
+      res.on('data', (c) => { raw += c; });
+      res.on('end', () => {
+        let json = null;
+        try { json = JSON.parse(raw); } catch (_) {}
+        resolve({ status: res.statusCode, json, raw, headers: res.headers });
+      });
+    }).on('error', reject);
+  });
+}
+
+let server;
+function cleanup() {
+  try { if (server) process.kill(-server.pid); } catch (_) {}
+  try { fs.unlinkSync(CFG); } catch (_) {}
+  try { fs.unlinkSync(DB); } catch (_) {}
+  try { fs.rmSync(CACHE, { recursive: true, force: true }); } catch (_) {}
+}
+
+(async () => {
+  if (fs.existsSync(CFG)) {
+    console.error('api/config.php already exists — refusing to overwrite. Move it aside and re-run.');
+    process.exit(2);
+  }
+
+  fs.writeFileSync(CFG, `<?php return [
+    'db' => ['dsn' => '', 'sqlite_path' => ${JSON.stringify(DB)}],
+    'mail' => ['from_name' => 'NGG', 'from_email' => 'no-reply@example.org', 'reply_to' => 'r@example.org', 'smtp' => ['host' => '']],
+    'app_origin' => ${JSON.stringify(BASE)},
+    'cookie_secret' => 'forms_test_secret_0123456789abcd',
+    'cookie_secure' => false,
+    'cookie_name' => 'ngg_sess',
+    'cookie_domain' => '',
+    'cookie_samesite' => 'Lax',
+    'cache_dir' => ${JSON.stringify(CACHE)},
+    'rate_limits' => ['default' => ['max' => 100000, 'window' => 60], 'selfreg.submit' => ['max' => 100000, 'window' => 60]],
+    'session_ttl' => 604800,
+    'kiosk_ttl' => 43200,
+    'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
+    'debug' => false,
+  ];\n`);
+
+  let failed = 0;
+  const ok = (m) => console.log('  ✓ ' + m);
+  const bad = (m) => { console.error('  ✗ ' + m); failed++; };
+
+  try {
+    // Seed: a public sign-up gate (kind=self, no password) + a centre.
+    php(`db_migrate(db_conn());`
+      + `db_insert('summer_cohorts', ['cohortId'=>'C1','name'=>'Summer 2026','status'=>'active','createdAt'=>now_iso()]);`
+      + `db_insert('gate_links', ['gateId'=>'${GATE}','kind'=>'self','name'=>'Public sign-up','cohortId'=>'C1','centreId'=>'','status'=>'active','passHash'=>'','createdBy'=>'seed','createdAt'=>now_iso()]);`
+      + `db_insert('centres', ['centreId'=>'CT1','name'=>'Egbeda','code'=>'EGB','status'=>'active','createdAt'=>now_iso()]);`);
+
+    // A faculty/course pair the validator will actually accept.
+    const fac = php(`echo academy_faculties()[0] ?? '';`);
+    const crs = php(`$c = academy_courses_for(${JSON.stringify(php(`echo academy_faculties()[0] ?? '';`))});`
+      + `echo is_array($c[0] ?? null) ? ($c[0]['name'] ?? '') : (string)($c[0] ?? '');`);
+    const photo = php(`echo 'data:image/png;base64,' . base64_encode(file_get_contents(${JSON.stringify(ROOT + '/assets/logo.png')}));`);
+
+    server = spawn('php', ['-S', `127.0.0.1:${PORT}`, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
+    await waitForServer(BASE);
+
+    // 1 · the form loads.
+    const ctx = await get(`/api/public/selfreg.php?g=${GATE}`);
+    if (ctx.status === 200 && ctx.json && ctx.json.form && Array.isArray(ctx.json.form.fields) && ctx.json.form.fields.length)
+      ok('GET context returns the form for a public sign-up gate');
+    else bad(`GET context failed (status ${ctx.status}): ${ctx.raw.slice(0, 160)}`);
+
+    // 2 · THE REGRESSION. A refusal must carry the per-field map.
+    const short = await post('/api/public/selfreg.php', {
+      gate: GATE, photo,
+      data: { firstName: 'Ada', lastName: 'Test', age: '12' },   // deliberately incomplete
+    });
+    if (short.json && short.json.errors && typeof short.json.errors === 'object' && Object.keys(short.json.errors).length) {
+      ok(`a refusal carries the per-field errors map (${Object.keys(short.json.errors).join(', ')})`);
+    } else {
+      bad(`refusal lost its field errors — got ${short.raw.slice(0, 200)}`);
+    }
+    if (short.json && short.json.error === 'failed') {
+      bad('refusal collapsed to the generic "failed" code (the bug this test exists for)');
+    } else {
+      ok('refusal is not the generic "failed" the form reports as a connection error');
+    }
+
+    // 3 · anonymous intake: no CSRF cookie was ever minted here.
+    if (short.status !== 403) ok('POST does not demand a CSRF cookie on the public sign-up link');
+    else bad('POST returned 403 csrf_failed with no cookie — the public form cannot submit');
+
+    // 4 · the happy path actually registers.
+    const good = {
+      firstName: 'Ada', lastName: 'Test', age: '12', centre: 'Egbeda',
+      faculty: fac, course: crs, sex: 'Female',
+      parentName: 'P Test', parentPhone: '08030000000', parentEmail: 'p@example.org',
+    };
+    const sent = await post('/api/public/selfreg.php', { gate: GATE, photo, data: good });
+    if (sent.status === 200 && sent.json && sent.json.studentId && sent.json.regStatus === 'self_pending')
+      ok(`a complete submission is accepted (${sent.json.studentId}, self_pending)`);
+    else bad(`valid submission was refused (status ${sent.status}): ${sent.raw.slice(0, 200)}`);
+
+    const n = parseInt(php(`echo (int) db_row("SELECT COUNT(*) c FROM summer_students")['c'];`), 10);
+    if (n === 1) ok('exactly one student row was created');
+    else bad(`expected 1 student row, found ${n}`);
+
+    const via = php(`echo (string) (db_row("SELECT submittedVia FROM summer_students LIMIT 1")['submittedVia'] ?? '');`);
+    if (via === GATE) ok('the row records which gate link it came through');
+    else bad(`submittedVia was "${via}", expected "${GATE}"`);
+
+    // 5 · the same child twice is caught, not double-registered.
+    const again = await post('/api/public/selfreg.php', { gate: GATE, photo, data: good });
+    const n2 = parseInt(php(`echo (int) db_row("SELECT COUNT(*) c FROM summer_students")['c'];`), 10);
+    if (again.status !== 200 && n2 === 1) ok('a repeat submission is refused rather than duplicating the child');
+    else bad(`repeat submission left ${n2} rows (status ${again.status}) — expected 1 and a refusal`);
+  } catch (e) {
+    bad('threw: ' + (e && e.message ? e.message : String(e)));
+  } finally {
+    cleanup();
+  }
+
+  if (failed) { console.error(`\n❌ FAIL: ${failed} failed (public registration submit)`); process.exit(1); }
+  console.log('\n✅ PASS: public registration submit contract');
+})().catch((e) => { cleanup(); console.error(e); process.exit(1); });

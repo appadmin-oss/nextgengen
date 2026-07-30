@@ -46,5 +46,13 @@ if ($method === 'GET') {
 } else {
     json_error('method_not_allowed', 405);
 }
-if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+// Whole refusal, same reason as public/selfreg.php: an approve that fails
+// per-record carries the detail in the payload, and reducing it to a bare code
+// leaves the reviewer with "failed" and nothing to act on.
+if (empty($res['ok'])) {
+    http_response_code(400);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['ok' => false] + array_diff_key($res, ['ok' => 1]), JSON_UNESCAPED_SLASHES);
+    exit;
+}
 unset($res['ok']); json_ok($res);
