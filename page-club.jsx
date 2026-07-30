@@ -1188,7 +1188,11 @@ function CommunityApp({ setPage, auth }) {
           </div>
           )}
 
-          {active !== "bookmarks" && !isArcade && !results && (
+          {/* The journal is excluded for the same reason the Arcade is: it is a
+              destination with its own authoring flow, not a channel. Leaving the
+              channel composer docked under it offered a "Message #the channel"
+              box that posts nowhere related to what is on screen. */}
+          {active !== "bookmarks" && !isArcade && !isJournal && !results && (
             <div className="cm-dock">
               <CmComposer channels={channels} active={active} me={me} onPosted={onPosted} enterToSend={isChat}/>
             </div>

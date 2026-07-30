@@ -1,0 +1,67 @@
+[
+  {
+    "name": "01-growth-needs-support",
+    "label": "Level 5 · who needs support, with reason codes",
+    "kb": 361
+  },
+  {
+    "name": "02-growth-by-centre",
+    "label": "Level 5 · per-centre readiness + named constraint",
+    "kb": 301
+  },
+  {
+    "name": "03-growth-method",
+    "label": "Level 5 · published weights and method",
+    "kb": 490
+  },
+  {
+    "name": "04-gate-links",
+    "label": "Gate links · three kinds, Delete only on the revoked row",
+    "kb": 598
+  },
+  {
+    "name": "05-diagnostics-run-now",
+    "label": "Diagnostics · per-job \"Run now\" and the stale-cache warning",
+    "kb": 432
+  },
+  {
+    "name": "06-journal-staff",
+    "label": "Programme journal as STAFF · memories rail, all visibilities",
+    "kb": 469
+  },
+  {
+    "name": "06b-journal-entries",
+    "label": "The record itself · kinds, status, visibility, people tagged",
+    "kb": 317
+  },
+  {
+    "name": "07-journal-member",
+    "label": "Same journal as a MEMBER · staff-only entries not present",
+    "kb": 460
+  },
+  {
+    "name": "08-public-signup",
+    "label": "Public sign-up on a phone — the form that would not submit",
+    "kb": 287
+  },
+  {
+    "name": "09-public-signup-errors",
+    "label": "A refusal names the fields — no more \"check your connection\"",
+    "kb": 330
+  },
+  {
+    "name": "10-outbox-queued",
+    "label": "Offline: banked on the device, and the banner says so",
+    "kb": 323
+  },
+  {
+    "name": "11-journal-shared",
+    "label": "A shared entry (public visibility) — revocable link",
+    "kb": 98
+  },
+  {
+    "name": "12-journal-share-revoked",
+    "label": "Narrowed to staff — the same link no longer opens",
+    "kb": 70
+  }
+]

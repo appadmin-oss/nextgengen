@@ -7,7 +7,7 @@
    drill-down charts that open side panels (never navigate away), saved
    filter views, and one-click PDF/CSV export for donor & research reporting.
 
-   Backend: api.admin.analytics(filters) → { workspace: {executive, operations,
+   Backend: NGGApi.admin.analytics(filters) → { workspace: {executive, operations,
    research, evidence, rankings, timeline, filters} }. All numbers respect
    per-centre admin scoping.
    ================================================================ */
@@ -315,7 +315,7 @@ function AnActivityDrawer({ opts, defaults, onClose, onSaved }) {
   const upload = async (i, file) => {
     if (!file) return;
     setEv(i, { _uploading: true }); setErr("");
-    try { const r = await api.uploadFile(file, "evidence"); setEv(i, { url: r.url, label: file.name, _uploading: false }); }
+    try { const r = await NGGApi.uploadFile(file, "evidence"); setEv(i, { url: r.url, label: file.name, _uploading: false }); }
     catch (e) { setErr("Upload failed: " + (e.message || e)); setEv(i, { _uploading: false }); }
   };
 
@@ -323,7 +323,7 @@ function AnActivityDrawer({ opts, defaults, onClose, onSaved }) {
     if (!form.title.trim()) { setErr("A title is required."); return; }
     setSaving(true); setErr("");
     try {
-      await api.admin.activityAdd({
+      await NGGApi.admin.activityAdd({
         title: form.title.trim(), category: form.category, centre: form.centre, department: form.department,
         date: form.date, participants: Number(form.participants) || 0, notes: form.notes,
         evidence: evidence.filter(e => e.url).map(e => ({ type: e.type, url: e.url, label: e.label })),
@@ -405,7 +405,7 @@ function AnalyticsWorkspace() {
 
   const load = React.useCallback((f) => {
     setLoading(true); setErr("");
-    api.admin.analytics(f).then(r => { setWs(r.workspace); setLoading(false); })
+    NGGApi.admin.analytics(f).then(r => { setWs(r.workspace); setLoading(false); })
       .catch(e => { setErr(e.message || "Failed to load analytics."); setLoading(false); });
   }, []);
   useEffect(() => { load(filters); }, [filters, load]);
@@ -417,7 +417,7 @@ function AnalyticsWorkspace() {
 
   const openDrill = (metric, title) => {
     setDrill({ open: true, title, rows: null, loading: true });
-    api.admin.analyticsDrill(metric, filters).then(r => setDrill({ open: true, title, rows: r.rows, loading: false }))
+    NGGApi.admin.analyticsDrill(metric, filters).then(r => setDrill({ open: true, title, rows: r.rows, loading: false }))
       .catch(() => setDrill({ open: true, title, rows: [], loading: false }));
   };
   const showEvidence = (a) => setDrill({ open: true, title: a.title + " — evidence", loading: false,
@@ -425,7 +425,7 @@ function AnalyticsWorkspace() {
   const [minting, setMinting] = useState(false);
   const mintChampions = () => {
     setMinting(true);
-    api.admin.championsMint(ws && ws.rankings && ws.rankings.v3 ? ws.rankings.v3.period : "")
+    NGGApi.admin.championsMint(ws && ws.rankings && ws.rankings.v3 ? ws.rankings.v3.period : "")
       .then(() => { toast.success("Champions minted."); load(filters); })
       .catch(e => toast.error(e.code || e.message || "Couldn't mint champions."))
       .finally(() => setMinting(false));
@@ -806,6 +806,9 @@ function AnGrowthRow({ s, onDrill }) {
         color: s.confidence === "high" ? AN_TONE.good : s.confidence === "medium" ? "#8a6d00" : "#64748b",
       }}>{s.confidence} confidence</span>
       <div style={{ color: "var(--ink-400)", marginTop: 3 }}>{s.observations} observation{s.observations === 1 ? "" : "s"} · {s.weeks}w attendance</div>
+      {/* Which comparison produced the score. "Ranked against 3 peers" and
+          "against 300" are different claims; say which one this is. */}
+      {s.peerBasis && <div style={{ color: "var(--ink-400)", marginTop: 2 }}>vs {s.peerCount} in same {s.peerBasis}</div>}
     </td>
   </tr>;
 }
@@ -820,7 +823,7 @@ function AnGrowth({ centre, onDrill }) {
 
   const load = React.useCallback(() => {
     setLoading(true); setErr("");
-    api.admin.analyticsGrowth(centre || "", weeks)
+    NGGApi.admin.analyticsGrowth(centre || "", weeks)
       .then(r => { setG(r.growth); setLoading(false); })
       .catch(e => { setErr(e.code || e.message || "Couldn't load growth potential."); setLoading(false); });
   }, [centre, weeks]);

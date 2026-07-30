@@ -45,6 +45,10 @@ declare(strict_types=1);
  * methodology panel — an unexplained score is not defensible to a funder. */
 const GROWTH_WINDOW_WEEKS = 4;     // trajectory window
 const GROWTH_MIN_OBS      = 3;     // fewer observations than this ⇒ no score
+/* A peer group smaller than this cannot rank anybody: percentile against one
+ * other child is noise, and against zero it is the neutral 50 for everyone. The
+ * group widens (centre+band → centre → band → cohort) until it clears this. */
+const GROWTH_MIN_PEERS    = 4;
 const GROWTH_WEIGHTS = [
     'attendance'  => 0.30,   // trajectory of showing up — the strongest signal
     'academic'    => 0.25,   // grade movement against the student's own baseline
@@ -233,13 +237,43 @@ function growth_student_index(array $students, array $weekKeys): array {
         ];
     }
 
-    // ── peer groups: same centre AND same age band ───────────────────────────
-    $peers = [];
-    foreach ($raw as $r) $peers[$r['centre'] . '|' . $r['band']][] = $r;
+    /* ── peer groups, narrowest that is still big enough ─────────────────────
+     *
+     * Ideally a child is compared with children at the same centre and in the
+     * same age band. But centres are small, and that pair is often a group of
+     * one — in which case growth_percentile has nothing to compare against and
+     * correctly returns its neutral 50. Do that for every component and every
+     * score comes out as exactly 50.0: arithmetically right, and worthless. It
+     * showed up the moment the page was opened with a realistic cohort, where
+     * all three at-risk children scored an identical 50.
+     *
+     * So widen until the comparison means something: centre+band, then centre,
+     * then band across centres, then the whole cohort. Each row reports which
+     * basis was actually used, because "ranked against 2 peers" and "ranked
+     * against 200" are different claims and the reader is entitled to know
+     * which one they are being shown. */
+    $byCentreBand = []; $byCentre = []; $byBand = [];
+    foreach ($raw as $r) {
+        $byCentreBand[$r['centre'] . '|' . $r['band']][] = $r;
+        $byCentre[$r['centre']][] = $r;
+        $byBand[$r['band']][] = $r;
+    }
+    $all = array_values($raw);
+    $pickPeers = function (array $r) use ($byCentreBand, $byCentre, $byBand, $all): array {
+        foreach ([
+            ['centre and age band', $byCentreBand[$r['centre'] . '|' . $r['band']] ?? []],
+            ['centre',              $byCentre[$r['centre']] ?? []],
+            ['age band',            $byBand[$r['band']] ?? []],
+            ['whole cohort',        $all],
+        ] as [$basis, $g]) {
+            if (count($g) >= GROWTH_MIN_PEERS) return [$basis, $g];
+        }
+        return ['whole cohort', $all];
+    };
 
     $out = [];
     foreach ($raw as $sid => $r) {
-        $group = $peers[$r['centre'] . '|' . $r['band']] ?? [$r];
+        [$peerBasis, $group] = $pickPeers($r);
         $obs = $r['weeks'] + ($r['gradeCount'] > 0 ? 1 : 0) + ($r['submissions'] > 0 ? 1 : 0);
         if ($r['weeks'] < GROWTH_MIN_OBS) {
             $out[] = $r + ['score' => null, 'status' => 'insufficient_data', 'confidence' => 'none',
@@ -302,6 +336,8 @@ function growth_student_index(array $students, array $weekKeys): array {
         $out[] = $r + [
             'score' => $score, 'status' => 'scored', 'confidence' => $confidence,
             'observations' => $obs, 'components' => $components,
+            // Which comparison produced this, and how many children it spans.
+            'peerBasis' => $peerBasis, 'peerCount' => count($group),
             'reasons' => array_slice($reasons, 0, 3),
         ];
     }
@@ -450,11 +486,13 @@ function growth_methodology(): array {
     return [
         'windowWeeks' => GROWTH_WINDOW_WEEKS,
         'minObservations' => GROWTH_MIN_OBS,
+        'minPeers' => GROWTH_MIN_PEERS,
         'weights' => GROWTH_WEIGHTS,
         'trajectoryShare' => 0.66,
         'notes' => [
             'Every signal is measured as a trajectory over the window, not as a level. A child at 60% and climbing is a different case from one at 60% and falling, and an average cannot tell them apart.',
             'Scores are cohort-relative: each signal is a percentile against children at the SAME centre and in the same age band, so a strong child at a struggling centre is not marked down for their peers.',
+            'Where a centre and age band holds fewer than ' . GROWTH_MIN_PEERS . ' children, the comparison widens — centre, then age band across centres, then the whole cohort — because a percentile against one other child is noise and against none it is a neutral 50 for everybody. Each row states which basis was used.',
             'Percentile rather than z-score, deliberately. These distributions are small, skewed and full of ties, where a z-score on a near-zero standard deviation produces violent and meaningless swings.',
             'A student with fewer than ' . GROWTH_MIN_OBS . ' weeks of attendance gets NO score and is listed as insufficient data. A number nobody can trust is worse than a blank, because it gets acted on anyway.',
             'Ungraded work scores the midpoint, not zero: a child nobody has assessed yet is not a failing child.',
