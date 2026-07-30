@@ -27,6 +27,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
  * high-water mark: a new check-in is the only thing that can move a trajectory,
  * so the stamp invalidates precisely when the answer changes and not otherwise.
  */
+/* Level 6 · depth — comparison, segmentation, rigour, narrative. Separate op and
+ * separate cache for the same reason as growth: it walks every student over two
+ * windows, and the descriptive levels must not pay for it. */
+if (($_GET['view'] ?? '') === 'depth') {
+    $centre = (string)($_GET['centre'] ?? '');
+    $stamp = 'a' . (string)(db_row('SELECT COALESCE(MAX(id),0) v FROM attendance')['v'] ?? '0')
+           . '.n' . (string)(db_row('SELECT COALESCE(MAX(id),0) v FROM summer_students')['v'] ?? '0');
+    $key = 'depth_' . substr(hash('sha256', $s['mid'] . '|' . $centre . '|'
+         . (string)($_GET['week'] ?? '') . '|' . (string)($_GET['rowDim'] ?? '') . '|' . (string)($_GET['colDim'] ?? '')), 0, 16);
+    $res = cache_remember($key, 300, fn() => gs_call('analytics.depth', [
+        'requesterId' => $s['mid'], 'centre' => $centre,
+        'week' => $_GET['week'] ?? '', 'day' => $_GET['day'] ?? '',
+        'rowDim' => $_GET['rowDim'] ?? '', 'colDim' => $_GET['colDim'] ?? '',
+    ]), $stamp);
+    if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+    unset($res['ok']); json_ok($res);
+}
+
 if (($_GET['view'] ?? '') === 'growth') {
     $centre = (string)($_GET['centre'] ?? '');
     $weeks  = (string)($_GET['weeks'] ?? '');

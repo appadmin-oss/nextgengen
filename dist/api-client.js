@@ -468,6 +468,8 @@
       // Level 5 · Growth Potential — its own fetch so Levels 1-4 never pay for
       // per-student trajectory scoring nobody has asked to see.
       analyticsGrowth: (centre, weeks) => request('/admin/analytics.php' + qs({ view: 'growth', centre: centre || '', weeks: weeks || '' })),
+      // Level 6 · comparison, segmentation, rigour, narrative.
+      analyticsDepth: (q) => request('/admin/analytics.php' + qs(Object.assign({ view: 'depth' }, q || {}))),
       analyticsDrill: (metric, filters) => request('/admin/analytics.php', { body: { action: 'drilldown', metric, ...(filters || {}) } }),
       activityAdd:  (data) => request('/admin/analytics.php', { body: { action: 'activity.add', ...data } }),
       championsMint: (period) => request('/admin/analytics.php', { body: { action: 'champions.mint', period: period || '' } }),

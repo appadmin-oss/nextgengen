@@ -70,7 +70,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'growth', 'journal', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'analytics-depth', 'growth', 'journal', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/sheets.php';
 require $ROOT . '/_lib/webcron.php';
@@ -6719,6 +6719,110 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     db_exec("DELETE FROM program_journal_tags");
     db_exec("DELETE FROM program_journal");
+})();
+
+
+/* ── Analytics depth: comparison, rigour, segmentation ──────────────────────
+ * The statistics are tested without fixtures, so a failure points at the maths
+ * rather than at a seed. These are the numbers a funder may act on. */
+(function () {
+    chk('depth: normal CDF matches the known values', (function () {
+        return abs(an_norm_cdf(0.0) - 0.5) < 1e-6
+            && abs(an_norm_cdf(1.96) - 0.975) < 1e-3
+            && abs(an_norm_cdf(-1.96) - 0.025) < 1e-3
+            && abs(an_norm_cdf(1.0) - 0.8413) < 1e-3;
+    })());
+    chk('depth: Wilson does NOT claim certainty from four observations', (function () {
+        // The naive interval returns [100, 100] here, which is the whole reason
+        // for using Wilson: four children all attending is not proof of 100%.
+        $ci = an_ci(4, 4);
+        return $ci['rate'] === 100.0 && $ci['low'] < 60.0 && $ci['high'] === 100.0;
+    })());
+    chk('depth: an interval narrows as n grows', (function () {
+        $small = an_ci(3, 4)['width'];
+        $mid = an_ci(45, 60)['width'];
+        $big = an_ci(300, 400)['width'];
+        return $small > $mid && $mid > $big && $big < 12.0;
+    })());
+    chk('depth: an interval never escapes 0..100', (function () {
+        foreach ([[0, 1], [1, 1], [0, 3], [7, 7]] as [$s, $n]) {
+            $ci = an_ci($s, $n);
+            if ($ci['low'] < 0.0 || $ci['high'] > 100.0) return false;
+        }
+        return an_ci(0, 0)['rate'] === null;   // no data ⇒ no number
+    })());
+    chk('depth: a gap on tiny groups is reported as UNKNOWN, not as a finding', (function () {
+        // 75% vs 85% on 4 and 20 is the shape of a real centre comparison here.
+        $r = an_compare_rates(3, 4, 17, 20);
+        return $r['ok'] === false && $r['verdict'] === 'too_small'
+            && strpos($r['text'], 'cannot be told apart') !== false;
+    })());
+    chk('depth: a genuine difference IS reported as significant', (function () {
+        $r = an_compare_rates(45, 60, 30, 60);
+        return !empty($r['ok']) && !empty($r['significant']) && $r['p'] < 0.05;
+    })());
+    chk('depth: 60 child-days from 3 children does NOT earn a p-value', (function () {
+        /* The clustering trap, and the reason this guard exists. Without the
+           child counts the very same call returns a confident p=0.006 — a claim
+           about three people dressed up as sixty observations. */
+        $loose = an_compare_rates(51, 60, 39, 60);
+        $tight = an_compare_rates(51, 60, 39, 60, 3, 3);
+        return !empty($loose['significant'])
+            && empty($tight['significant'])
+            && $tight['verdict'] === 'too_few_people'
+            && strpos($tight['text'], 'not independent evidence') !== false;
+    })());
+    chk('depth: enough children AND enough days does earn one', (function () {
+        $r = an_compare_rates(45, 60, 30, 60, 15, 15);
+        return !empty($r['ok']) && !empty($r['significant']);
+    })());
+    chk('depth: a small difference on big groups is reported as noise', (function () {
+        $r = an_compare_rates(31, 60, 29, 60);
+        return !empty($r['ok']) && empty($r['significant']) && $r['verdict'] === 'not_significant';
+    })());
+    chk('depth: the previous period is the same length, immediately before', (function () {
+        $p = an_previous_period('2026-07-01', '2026-07-14');   // 14 days
+        return $p['from'] === '2026-06-17' && $p['to'] === '2026-06-30';
+    })());
+    chk('depth: age bands and dimension labels are stable', (function () {
+        return an_age_band(11) === '10–11' && an_age_band(12) === '12–13'
+            && an_age_band(17) === '16–17' && an_age_band(0) === 'Unknown'
+            && an_dim_value(['gender' => 'F'], 'gender') === 'Female'
+            && an_dim_value(['gender' => ''], 'gender') === 'Not recorded'
+            && an_dim_value(['track' => ''], 'track') === 'Unassigned';
+    })());
+    chk('depth: a child is not charged for days before they enrolled', (function () {
+        $days = ['2026-07-01', '2026-07-02', '2026-07-03'];
+        $s = ['studentId' => 'X1', 'enrolledAt' => '2026-07-03T00:00:00Z'];
+        [$hit, $opp] = an_student_units($s, $days, ['X1' => ['2026-07-03' => true]]);
+        // One opportunity, one attendance — not one of three.
+        return $opp === 1 && $hit === 1;
+    })());
+    chk('depth: the op is admin-gated', (function () {
+        return backend_dispatch('analytics.depth', ['requesterId' => ''])['ok'] !== true;
+    })());
+    chk('depth: the op returns comparison, segments, weekday and narrative', (function () {
+        $r = backend_dispatch('analytics.depth', ['requesterId' => 'NGG-2025-0099']);
+        if (empty($r['ok'])) return false;
+        $d = $r['depth'];
+        if (!empty($d['empty'])) return true;   // no centres in scope is a valid shape
+        return isset($d['headline']['attendance'], $d['crosstab']['rows'], $d['weekday'], $d['retention'])
+            && is_array($d['findings']) && count($d['findings']) >= 1
+            && count($d['method']) >= 4;
+    })());
+    chk('depth: a crosstab cell too thin to compare is flagged as such', (function () {
+        $r = backend_dispatch('analytics.depth', ['requesterId' => 'NGG-2025-0099']);
+        $d = $r['depth'] ?? [];
+        if (!empty($d['empty'])) return true;
+        foreach (($d['crosstab']['rows'] ?? []) as $row) {
+            foreach ($row['cells'] as $c) {
+                if (!$c) continue;
+                // Every cell must declare whether it is readable on its own.
+                if (!array_key_exists('thin', $c) || !array_key_exists('n', $c)) return false;
+            }
+        }
+        return true;
+    })());
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

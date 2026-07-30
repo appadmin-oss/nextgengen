@@ -224,6 +224,9 @@ function backend_dispatch(string $op, array $args = []): array {
             // it is per-student work over a multi-week window, so it must be
             // fetchable (and cacheable) without paying for it on every load.
             'analytics.growth'         => 'growth_workspace',
+            // Comparison, segmentation, rigour and narrative. Its own op for the
+            // same reason as growth: it must not be paid for on every load.
+            'analytics.depth'          => 'analytics_depth',
             /* The Programme Journal. Writes need the `journal` capability (the
              * journalist role); reads are filtered by the viewer's visibility
              * level inside the handler, which is why the feed and the memories

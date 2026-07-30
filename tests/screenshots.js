@@ -100,7 +100,7 @@ function seed() {
   ];
   kids.forEach(([name, centre, age, pattern, stars, infractions], i) => {
     const sid = 'SUM-26-' + String(i + 1).padStart(3, '0');
-    s += `db_insert('summer_students', ['studentId'=>'${sid}','cohortId'=>'C1','token'=>'','handle'=>'k${i}','fullName'=>${JSON.stringify(name)},'age'=>${age},'gender'=>'${i % 2 ? 'M' : 'F'}','centre'=>${JSON.stringify(centre)},'track'=>'${['STEM', 'Arts', 'Coding'][i % 3]}','status'=>'active','regStatus'=>'verified','enrolledAt'=>gmdate('Y-m-d\\TH:i:s\\Z', time()-70*86400),'updatedAt'=>now_iso()]);`;
+    s += `db_insert('summer_students', ['studentId'=>'${sid}','cohortId'=>'C1','token'=>'','handle'=>'k${i}','fullName'=>${JSON.stringify(name)},'age'=>${age},'gender'=>'${i % 2 ? 'M' : 'F'}','centre'=>${JSON.stringify(centre)},'track'=>'${['STEM', 'Arts', 'Coding'][i % 3]}','status'=>'active','regStatus'=>'verified','enrolledAt'=>gmdate('Y-m-d\\TH:i:s\\Z', time()-${28 - (i % 3) * 7}*86400),'updatedAt'=>now_iso()]);`;
     pattern.forEach((days, w) => {
       const back = pattern.length - 1 - w;
       for (let d = 0; d < days; d++) {
@@ -250,6 +250,21 @@ function seed() {
       await page.evaluate(() => window.__adminSection && window.__adminSection('registration', 'gates'));
       await page.waitForTimeout(2000);
       await shoot(page, '04-gate-links', 'Gate links · three kinds, Delete only on the revoked row');
+      // Full workspace, every level, so its actual depth can be judged.
+      await page.evaluate(() => window.__adminSection && window.__adminSection('dashboard'));
+      await page.waitForSelector('.an-wrap', { timeout: 25000 }).catch(() => {});
+      await page.waitForTimeout(3200);
+      await shoot(page, '00-analytics-full', 'The whole analytics workspace, all levels');
+      // Level 6 on its own — comparison, segments, rigour, narrative.
+      await page.evaluate(() => { const el = document.getElementById('an-depth'); if (el) el.scrollIntoView(); });
+      await page.waitForTimeout(2600);
+      const dep = await page.$('#an-depth');
+      if (dep) {
+        const file = path.join(OUT, '13-depth.png');
+        await dep.screenshot({ path: file });
+        shots.push({ name: '13-depth', label: 'Level 6 · comparison, cross-tabs, confidence intervals, findings', kb: Math.round(fs.statSync(file).size / 1024) });
+        console.log('  ✓ 13-depth.png — Level 6 depth');
+      } else console.error('  ✗ #an-depth did not render');
       await ctx.close();
     }
 

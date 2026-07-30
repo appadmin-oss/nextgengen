@@ -484,7 +484,7 @@ function AnalyticsWorkspace() {
     <nav className="an-levelnav" aria-label="Analytics levels">
       <a href="#an-exec">① Executive</a><a href="#an-ops">② Operations</a>
       <a href="#an-research">③ Research</a><a href="#an-evidence">④ Evidence</a>
-      <a href="#an-growth">⑤ Growth potential</a>
+      <a href="#an-growth">⑤ Growth potential</a><a href="#an-depth">⑥ Depth</a>
     </nav>
 
     {/* ── Level 1 · Executive ── */}
@@ -720,6 +720,9 @@ function AnalyticsWorkspace() {
 
     {/* ── Level 5 · Growth Potential ── */}
     <AnGrowth centre={filters.centre} onDrill={openDrill}/>
+
+    {/* ── Level 6 · Depth — comparison, segmentation, rigour, narrative ── */}
+    <AnDepth filters={filters}/>
 
     {/* Downloads & reports */}
     <section className="an-sec" style={{ marginBottom: 40 }}>
@@ -959,6 +962,312 @@ function AnGrowth({ centre, onDrill }) {
       </p>
     </>}
   </section>;
+}
+
+/* ── Level 6 · Depth ────────────────────────────────────────────────────────
+ *
+ * The levels above report bare figures. "65% attendance" with nothing beside it
+ * is a reading, not an insight — the viewer cannot tell whether it is good,
+ * whether it moved, or whether the gap they are looking at is real. This level
+ * supplies the four things a bare number is missing: a benchmark, a segment, an
+ * interval, and a sentence saying what it means.
+ *
+ * The confidence interval is drawn, not tabulated, because it is the part most
+ * likely to be ignored. At this programme's size a rate of 100% from four
+ * observations and a rate of 75% from four hundred look identical in a table and
+ * are not remotely the same claim; the band makes that impossible to miss.
+ */
+const AN_SEV = {
+  good: { bg: 'rgba(22,163,74,.10)', bar: AN_TONE.good, label: 'Good' },
+  bad:  { bg: 'rgba(239,68,68,.10)', bar: AN_TONE.bad, label: 'Attention' },
+  warn: { bg: 'rgba(245,158,11,.12)', bar: AN_TONE.warn, label: 'Watch' },
+  info: { bg: 'rgba(76,111,255,.09)', bar: AN_TONE.info, label: 'Note' },
+};
+
+/* A rate with its 95% interval, drawn to scale on 0–100. The solid mark is the
+   estimate; the pale band is the range the data actually supports. */
+function AnCIBar({ ci, tone, compact }) {
+  if (!ci || ci.rate === null || ci.rate === undefined) {
+    return <span style={{ color: 'var(--ink-400)', fontSize: 12 }}>—</span>;
+  }
+  const c = tone || AN_RATE_TONE(ci.rate);
+  const w = compact ? 96 : 150;
+  return (
+    <div style={{ minWidth: w }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+        <b style={{ fontSize: compact ? 13 : 15, color: c }}>{ci.rate}%</b>
+        {ci.low !== null && <span style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
+          {ci.low}–{ci.high}
+        </span>}
+      </div>
+      <div style={{ position: 'relative', height: 6, width: w, borderRadius: 999, background: '#eef1f6', marginTop: 3 }}>
+        {ci.low !== null && (
+          <div style={{ position: 'absolute', left: ci.low + '%', width: Math.max(1, ci.high - ci.low) + '%',
+                        top: 0, bottom: 0, borderRadius: 999, background: c, opacity: 0.28 }}/>
+        )}
+        <div style={{ position: 'absolute', left: 'calc(' + ci.rate + '% - 1px)', width: 2, top: -2, bottom: -2,
+                      borderRadius: 2, background: c }}/>
+      </div>
+      {/* Spelled out, because "n=20" reads as twenty children and it is twenty
+          child-DAYS. Conflating the two is how a three-child centre gets treated
+          as a sixty-observation sample. */}
+      {ci.n !== undefined && <div style={{ fontSize: 10, color: 'var(--ink-400)', marginTop: 2, lineHeight: 1.35 }}>
+        {ci.n} child-day{ci.n === 1 ? '' : 's'}
+        {ci.students !== undefined ? ' · ' + ci.students + (ci.students === 1 ? ' child' : ' children') : ''}
+        {ci.thin ? <><br/><span style={{ color: AN_TONE.warn, fontWeight: 700 }}>too thin to compare</span></> : null}
+      </div>}
+    </div>
+  );
+}
+
+function AnHeatCell({ ci }) {
+  if (!ci || ci.rate === null) {
+    return <td style={{ background: '#f7f8fa', color: 'var(--ink-400)', textAlign: 'center', fontSize: 11 }}>—</td>;
+  }
+  // Single-hue ramp: lightness carries the value, so it stays readable in
+  // greyscale and for the one man in twelve who cannot separate red from green.
+  const t = Math.max(0, Math.min(1, ci.rate / 100));
+  return (
+    <td title={`${ci.rate}% (95% CI ${ci.low}–${ci.high}, n=${ci.n})`}
+        style={{ background: `rgba(76,111,255,${(0.08 + t * 0.72).toFixed(3)})`,
+                 color: t > 0.55 ? '#fff' : 'var(--ink-900)',
+                 textAlign: 'center', fontWeight: 700, fontSize: 12.5, padding: '9px 6px' }}>
+      {ci.rate}%
+      <div style={{ fontWeight: 500, fontSize: 9.5, opacity: 0.8 }}>n={ci.n}</div>
+    </td>
+  );
+}
+
+function AnDepth({ filters }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState('');
+  const [rowDim, setRowDim] = React.useState('age');
+  const [colDim, setColDim] = React.useState('gender');
+  const [method, setMethod] = React.useState(false);
+
+  const load = React.useCallback(() => {
+    setErr('');
+    NGGApi.admin.analyticsDepth({ centre: filters.centre || '', week: filters.week || '', rowDim, colDim })
+      .then(r => setD(r.depth))
+      .catch(e => setErr(e.code || e.message || 'Couldn’t load the depth analysis.'));
+  }, [filters.centre, filters.week, rowDim, colDim]);
+  React.useEffect(() => { load(); }, [load]);
+
+  if (err) return <section className="an-sec" id="an-depth"><div className="an-card"><div className="an-empty" style={{ color: AN_TONE.bad }}>{err}</div></div></section>;
+  if (!d) return <section className="an-sec" id="an-depth"><div className="an-card"><div className="an-empty">Computing comparisons…</div></div></section>;
+  if (d.empty) return null;
+
+  const h = d.headline || {};
+  const ct = d.crosstab || { rows: [], cols: [] };
+  const wd = d.weekday || { days: [], centres: [] };
+
+  return (
+    <section className="an-sec" id="an-depth">
+      <div className="an-eyebrow">Level 6 · Depth</div>
+      <h2 className="an-h">What it means, and whether it is real.</h2>
+      <p className="an-sub">
+        Every rate below is <b>present-days over opportunity-days</b> — one definition across every panel — carried with a
+        95% confidence interval and, where the groups are big enough, a test. At this size most single cells are not yet
+        evidence, and the ones that aren’t are marked so rather than left to be over-read.
+      </p>
+
+      {/* What the page thinks. Stated, with the figures behind it. */}
+      <div className="an-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 12, marginBottom: 16 }}>
+        {(d.findings || []).map((f, i) => {
+          const sv = AN_SEV[f.severity] || AN_SEV.info;
+          return (
+            <div key={i} className="an-card" style={{ background: sv.bg, borderLeft: '3px solid ' + sv.bar }}>
+              <div className="an-pill" style={{ background: 'rgba(255,255,255,.7)', color: sv.bar, marginBottom: 6 }}>{sv.label}</div>
+              <b style={{ display: 'block', fontSize: 14.5, lineHeight: 1.35, marginBottom: 4 }}>{f.title}</b>
+              <span style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink-600)' }}>{f.detail}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* This period against the one before it — same number of days either side. */}
+      <div className="an-card" style={{ marginBottom: 16 }}>
+        <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>This period against the last</h3>
+        <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-400)', fontWeight: 700, marginBottom: 4 }}>
+              {d.range.label} · {d.range.days} days
+            </div>
+            <AnCIBar ci={h.attendance}/>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-400)', fontWeight: 700, marginBottom: 4 }}>
+              Previous {d.previous.days} days
+            </div>
+            <AnCIBar ci={h.previous} tone="#94a3b8"/>
+          </div>
+          <div style={{ maxWidth: 340 }}>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-400)', fontWeight: 700, marginBottom: 4 }}>Change</div>
+            <b style={{ fontSize: 20, color: h.delta && h.delta.dir === 'up' ? AN_TONE.good : h.delta && h.delta.dir === 'down' ? AN_TONE.bad : 'var(--ink-500)' }}>
+              {h.delta && h.delta.delta !== null ? (h.delta.delta > 0 ? '+' : '') + h.delta.delta + ' pts' : '—'}
+            </b>
+            <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--ink-500)', marginTop: 4 }}>
+              {(h.test && h.test.text) || 'Not enough data to compare.'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Per centre, tested against the rest of the programme rather than ranked. */}
+      <div className="an-card" style={{ marginBottom: 16, padding: 0, overflowX: 'auto' }}>
+        <table className="admin-table" style={{ minWidth: 720 }}>
+          <thead><tr><th>Centre</th><th>Attendance (95% CI)</th><th>vs programme</th><th>Is the difference real?</th></tr></thead>
+          <tbody>
+            {(d.perCentre || []).length === 0
+              ? <tr><td colSpan={4} className="an-empty">No centre has attendance in this range.</td></tr>
+              : d.perCentre.map(c => (
+                <tr key={c.centre}>
+                  <td><b>{c.centre}</b><div style={{ color: 'var(--ink-400)', fontSize: 11.5 }}>{c.students} children</div></td>
+                  <td><AnCIBar ci={c.ci}/></td>
+                  <td style={{ whiteSpace: 'nowrap', fontWeight: 700,
+                               color: c.vsProgramme.dir === 'up' ? AN_TONE.good : c.vsProgramme.dir === 'down' ? AN_TONE.bad : 'var(--ink-500)' }}>
+                    {c.vsProgramme.delta === null ? '—' : (c.vsProgramme.delta > 0 ? '+' : '') + c.vsProgramme.delta + ' pts'}
+                  </td>
+                  {/* A ranking invites a comparison the reader has no way to
+                      evaluate. This says whether it survives a test. */}
+                  <td style={{ fontSize: 12, maxWidth: 300, color: 'var(--ink-600)' }}>
+                    <span className="an-pill" style={{
+                      background: c.test.verdict === 'significant' ? 'rgba(239,68,68,.12)' : '#eef1f6',
+                      color: c.test.verdict === 'significant' ? AN_TONE.bad : 'var(--ink-500)', marginRight: 6,
+                    }}>{c.test.verdict === 'significant' ? 'real'
+                        : (c.test.verdict === 'too_small' || c.test.verdict === 'too_few_people' || c.test.verdict === 'no_data') ? 'unknown'
+                        : 'noise'}</span>
+                    {c.test.text}
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Cross-tab: two dimensions at once, with margins. */}
+      <div className="an-card" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+          <h3 style={{ margin: 0, fontSize: 15 }}>Segments</h3>
+          <label style={{ fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 5 }}>Rows
+            <select className="an-chip" value={rowDim} onChange={e => setRowDim(e.target.value)}>
+              {Object.keys(d.dims).map(k => <option key={k} value={k}>{d.dims[k]}</option>)}
+            </select>
+          </label>
+          <label style={{ fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 5 }}>Columns
+            <select className="an-chip" value={colDim} onChange={e => setColDim(e.target.value)}>
+              {Object.keys(d.dims).map(k => <option key={k} value={k}>{d.dims[k]}</option>)}
+            </select>
+          </label>
+          <span className="an-sub" style={{ margin: 0, fontSize: 12 }}>
+            Gender and age used to sit in two separate tables, which cannot answer a question involving both.
+          </span>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="admin-table" style={{ minWidth: 640 }}>
+            <thead><tr>
+              <th>{d.dims[rowDim]}</th>
+              {ct.cols.map(c => <th key={c}>{c}</th>)}
+              <th style={{ borderLeft: '2px solid rgba(0,0,0,.1)' }}>All</th>
+            </tr></thead>
+            <tbody>
+              {ct.rows.map(r => (
+                <tr key={r.label}>
+                  <td><b>{r.label}</b></td>
+                  {r.cells.map((c, i) => <td key={i}><AnCIBar ci={c} compact/></td>)}
+                  <td style={{ borderLeft: '2px solid rgba(0,0,0,.1)' }}><AnCIBar ci={r.total} compact/></td>
+                </tr>
+              ))}
+              <tr style={{ borderTop: '2px solid rgba(0,0,0,.1)' }}>
+                <td><b>All</b></td>
+                {(ct.colTotals || []).map((c, i) => <td key={i}><AnCIBar ci={c} compact/></td>)}
+                <td style={{ borderLeft: '2px solid rgba(0,0,0,.1)' }}><AnCIBar ci={ct.grand} compact/></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Weekday × centre. The panel a coordinator actually acts on. */}
+      {wd.centres.length > 0 && (
+        <div className="an-card" style={{ marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>Attendance by weekday</h3>
+          <p className="an-sub" style={{ marginTop: 0 }}>
+            A centre that is full on Saturday and empty on Wednesday has a timetable or transport problem, not an
+            engagement problem — and no single rate can tell those apart.
+          </p>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="admin-table" style={{ minWidth: 520 }}>
+              <thead><tr><th>Centre</th>{wd.days.map(x => <th key={x} style={{ textAlign: 'center' }}>{x}</th>)}</tr></thead>
+              <tbody>
+                {wd.centres.map(r => (
+                  <tr key={r.centre}>
+                    <td><b>{r.centre}</b></td>
+                    {r.cells.map((c, i) => <AnHeatCell key={i} ci={c}/>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Retention by week since each child's own enrolment. */}
+      {(d.retention.cohorts || []).length > 0 && (
+        <div className="an-card" style={{ marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>Retention by intake</h3>
+          <p className="an-sub" style={{ marginTop: 0 }}>
+            Share of each intake still attending N weeks after they joined. A headcount trend cannot answer this —
+            recruitment and retention move it in the same direction.
+          </p>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="admin-table" style={{ minWidth: 560 }}>
+              <thead><tr><th>Intake</th><th>Size</th>
+                {(() => {
+                  // Columns span the real week offsets present, not 0..n — a
+                  // cohort whose early weeks predate the register starts later.
+                  const wks = [];
+                  d.retention.cohorts.forEach(c => c.curve.forEach(p => { if (wks.indexOf(p.week) === -1) wks.push(p.week); }));
+                  wks.sort((a, b) => a - b);
+                  return wks.map(k => <th key={k} style={{ textAlign: 'center' }}>wk {k}</th>);
+                })()}
+              </tr></thead>
+              <tbody>
+                {d.retention.cohorts.map(c => {
+                  const wks = [];
+                  d.retention.cohorts.forEach(x => x.curve.forEach(p => { if (wks.indexOf(p.week) === -1) wks.push(p.week); }));
+                  wks.sort((a, b) => a - b);
+                  const at = {}; c.curve.forEach(p => { at[p.week] = p; });
+                  return (
+                    <tr key={c.cohort}>
+                      <td><b>{c.cohort}</b>
+                        {c.unobservedWeeks > 0 && <div style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
+                          first {c.unobservedWeeks} week{c.unobservedWeeks === 1 ? '' : 's'} predate the register
+                        </div>}
+                      </td>
+                      <td className="mono">{c.size}</td>
+                      {wks.map(k => <AnHeatCell key={k} ci={at[k] || null}/>)}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="an-card">
+        <button className="an-chip" onClick={() => setMethod(m => !m)}>
+          {method ? 'Hide method' : 'How these are calculated'}
+        </button>
+        {method && (
+          <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: 12.5, lineHeight: 1.7, color: 'var(--ink-500)' }}>
+            {Object.keys(d.method).map(k => <li key={k}>{d.method[k]}</li>)}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
 }
 
 // One-page PDF summary via the vendored jsPDF (lazy-loaded).

@@ -20,9 +20,19 @@
     "kb": 598
   },
   {
+    "name": "00-analytics-full",
+    "label": "The whole analytics workspace, all levels",
+    "kb": 2623
+  },
+  {
+    "name": "13-depth",
+    "label": "Level 6 · comparison, cross-tabs, confidence intervals, findings",
+    "kb": 581
+  },
+  {
     "name": "05-diagnostics-run-now",
     "label": "Diagnostics · per-job \"Run now\" and the stale-cache warning",
-    "kb": 433
+    "kb": 431
   },
   {
     "name": "06-journal-staff",
