@@ -30,9 +30,12 @@ shared host — there is no external service on the request path.
   an optional cron pushes a read-only snapshot to a Sheet for admins who like a
   spreadsheet view (see `apps-script/README.md`). Skip it entirely if you don't.
 - Email goes out via SMTP (recommended) or PHP `mail()`.
-- Media uploads go **straight from the browser to Cloudinary**, authorized by a
-  short-lived signature the PHP layer mints (the api_secret never ships to the
-  client).
+- Media uploads go **straight from the browser to Cloudinary** when it is
+  configured, authorized by a short-lived signature the PHP layer mints (the
+  api_secret never ships to the client). **Cloudinary is optional.** With no
+  keys set, a headshot travels inside the form submission and the server holds
+  the bytes itself under `api/storage/photos` — see *Photos without Cloudinary*
+  below. Photographs work on a fresh install with no accounts to open.
 
 ## Prerequisites
 
@@ -161,6 +164,38 @@ Raising a limit is the fallback, not the fix — a 413 here more likely means th
 client-side resampler failed to load, so check that `/vendor/image-tools.js`
 is being served and is not blocked by a CSP or a stale cache.
 
+### Photos without Cloudinary
+
+Cloudinary needs three keys, and until they are set there is nowhere to upload
+to. Headshots do not wait for that: the browser sends the image inside the form
+submission and the server stores the bytes under `api/storage/photos`, serving
+them from `api/public/photo.php`. Every surface that takes a headshot works this
+way when no cloud is configured — the public sign-up form, the staff desk, the
+guardian retake link, the admin photo studio.
+
+What you should know about it:
+
+- **`api/storage/` must be writable by the web user.** It already has to be for
+  SQLite; on MySQL it is easy to miss, and the symptom is a registration that
+  succeeds with an empty photo frame.
+- **Back it up with the database.** The rows point at these files. A dump of one
+  without the other loses every photograph.
+- **The URLs are unguessable, not private.** The id is an HMAC of the file's own
+  bytes under `cookie_secret`, so it cannot be enumerated or derived from a copy
+  of the image — the URL is the capability, the same posture as a Cloudinary
+  delivery URL. Rotating `cookie_secret` changes future ids only; files already
+  stored keep working because the id is on the row.
+- **Abandoned originals are swept.** A rejected application or a replaced photo
+  leaves a file nothing points at; maintenance deletes those once they are a week
+  old (`photo_store_sweep`), and does nothing at all if it cannot read what is
+  referenced.
+- **Configuring Cloudinary later needs no migration.** New photos upload to it
+  and get the AI/edit pipeline; existing local ones keep serving from disk.
+
+Setting `cloudinary` is still worth doing for a real deployment — it brings the
+CDN, the face-aware crop and the identity-safe enhancement pass, and it keeps
+image bytes out of your database backups.
+
 ## Step 5 — Sign-in flow
 
 1. Click **Sign in**, enter the admin email.
@@ -222,7 +257,10 @@ Nothing reads from the Sheet — it's a one-way mirror.
 
 - **Backups:** copy `api/storage/ngg.db` (SQLite) or `mysqldump` (MySQL). Do it
   on a schedule; that file *is* your data now.
-- **Uploads:** managed in the Cloudinary dashboard; the DB stores only URLs.
+- **Uploads:** managed in the Cloudinary dashboard when configured; the DB
+  stores only URLs. Locally-held headshots live in `api/storage/photos` and
+  belong in the same backup as the database — the DB rows point at them, so
+  a backup of one without the other loses every photograph.
 - **Rotate secrets:** change `cookie_secret` (logs everyone out) or
   `shared_secret` (update the Apps Script Script Property to match).
 - **Tests:** `php api/tests/run.php` boots a throwaway SQLite DB and runs the
@@ -231,7 +269,9 @@ Nothing reads from the Sheet — it's a one-way mirror.
 ## What intentionally isn't here
 
 - **Real-time updates** — the dashboard polls every 60s (visible tabs only).
-- **Direct file storage on the host** — media lives in Cloudinary; the DB holds URLs.
+- **Direct file storage on the host for general media** — posts, proofs and
+  submissions need Cloudinary; the DB holds URLs. Headshots are the exception
+  (see below), because an ID card with no photograph is not an ID card.
 - **SMS OTP** — a `phone` column exists; only email OTP is wired.
 
 ## Scheduled jobs (desk password rotation, reminders, maintenance)

@@ -511,3 +511,107 @@ belong in the build, not as an afterthought: the score is **never** shown to the
 student or their guardian, and every list is framed as *who to support this
 week*, with reason codes, rather than a ranking of children. Worth an explicit
 decision from the requester before 3 ships.
+
+---
+
+## Follow-up: photos with no Cloudinary, the caching layer, DOB, and the ID cards
+
+Six things, reported from a live deployment. Grouped because five of the six had
+the same root shape: something worked on the machine it was built on and quietly
+did not work on a host configured differently.
+
+### 1 · Headshots vanished without Cloudinary
+
+Cloudinary needs three keys in `api/config.php`. Until they are set there is
+nowhere to upload to, and every intake path treated that as an error in its own
+way: `apply.php` truncated an inline data URL to 512 characters of base64,
+`reshoot_submit` refused it as `bad_photo`, `gate_register` dropped it, and
+`admin_photo_replace` refused a replacement. The public form's photo was
+discarded silently — so a registration succeeded and the review desk, whose only
+job is to look at a photograph, rendered an empty frame.
+
+There was also a dead line making it worse: `gate_register` read
+`$ing['url']` from `photo_ingest`, which has never returned a `url` key. The
+write-back could never have fired.
+
+Fixed by holding the bytes ourselves:
+
+- `photo_store_put` / `api/public/photo.php` — a content-addressed local store.
+  The id is an **HMAC of the file's bytes under `cookie_secret`**, not a bare
+  hash: a bare hash would let anyone holding a copy of a child's photograph
+  confirm it is in the system and fetch it back. Served `immutable` for a year,
+  because the id *is* the bytes.
+- `photo_intake_url` — the one door every intake path now uses. Hosted URL passes
+  through; inline data URL is persisted and replaced by its served URL.
+- The governed pipeline still runs on top when there is a cloud, fed the
+  absolute URL (Cloudinary and the vision model have to *fetch* the image), and
+  `photo_apply_to_subject` relativises before writing — a stored absolute URL
+  bakes in today's hostname.
+- `photo_store_sweep` in maintenance: write-on-intake plus a refusable intake
+  means abandoned originals, and a shared host's disk quota is a bad way to find
+  that out. Conservative — a week old before it is a candidate, and it does
+  nothing at all if it cannot read what is referenced.
+- Client side, `NGGApi.uploadOrInline` replaces the try-public-then-signed-then-
+  give-up dance at every headshot surface. "Photo uploads aren't set up on this
+  server yet — skip for now" is gone.
+
+`api/storage/.htaccess` now guards the deny in both Apache syntaxes. It was 2.4
+only, which 500s a 2.2 host; that directory holds children's photographs.
+
+### 2 · A 401 on the review desk read as a broken connection
+
+`require_session()` answers `unauthorized` with no session and `session_expired`
+when a kiosk one idles out. Twelve hours is a working day, so the second is the
+one a real reviewer hits — and the desk only recognised the first, falling
+through to "couldn't load, check your connection" with no way back. `DESK_RELOCK`
+now covers both on both desks.
+
+### 3 · A 504 "Offline and not cached" on an ordinary route
+
+Two independent causes, both in the service worker:
+
+- `cache.addAll()` is one promise over the whole precache list, so **one** entry
+  that 404s rejects it and nothing at all is cached — and the rejection was
+  swallowed by an offline-tolerant `catch`, leaving a worker that is installed,
+  active, and holding an empty cache. Entries are now cached individually.
+- The navigation fallback matched the request URL exactly, so `/review?g=…` never
+  hit the cached shell. Now `ignoreSearch`, with an inline offline page as the
+  last resort — a navigation always gets a document.
+
+### 4 · Real cache busting
+
+Freshness rested on the worker being network-first for fixed-name entry files
+plus a `no-store` header, both of which a host, proxy or CDN can override. Moved
+to per-file content hashes: `app.<tag>.min.js`, `styles.<tag>.css`. `index.html`
+is the only no-cache file and it names the current set; the hashed files are
+`immutable` for a year and never revalidated. Per-file rather than one build id,
+so a CSS-only deploy does not re-issue a 1.3MB bundle. The plain names still ship
+for anything that hard-codes them, served must-revalidate.
+
+### 5 · The DOB was not stored on the admin path
+
+The public form asked for a birthday and stored one; `admin_summer_enroll` — which
+the desk *and* the CSV importer both go through — took only a typed age and never
+wrote `dob`. An age is right for exactly one season, so those rows go silently
+wrong at the next intake. The date is now accepted and wins over a typed age when
+both are given; it stays optional, because a desk sometimes genuinely only has an
+age, and the roster shows which rows those are rather than hiding it.
+
+### 6 · Centre colour on the volunteer ID, made context-aware
+
+The band, ring and code chip existed but were hard-coded to white text with a
+drop shadow. Centre colours are picked by an admin, so:
+
+- Ink is now derived from the colour's luminance (`cardInk`), thresholded a
+  little earlier than the screen-perfect 0.5 — ink on card stock reads darker
+  than a backlit pixel, and these get printed.
+- A centre colour perceptually close to the tier frame it sits inside gains a
+  keyline (`cardColorsClash`, redmean distance). The white gutter alone was not
+  enough for a maroon frame around a red band, and the palette is editable so no
+  fixed pairing can be relied on.
+- A volunteer with no single site gets the programme mark instead of a hole — two
+  card geometries in one print run reads as a misprint, not as "works
+  everywhere".
+- Long centre names scale to fit rather than running off the end.
+- An instructor's **faculty** joins their role on the back: "INSTRUCTOR" is the
+  least identifying thing you can print at a site where every third person is one.

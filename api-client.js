@@ -115,6 +115,11 @@
     headshot: { maxPx: 1600, quality: 0.86 },   // card art is delivered at 900px
     post: { maxPx: 1600, quality: 0.82 },       // matches the server incoming transform
     proof: { maxPx: 2000, quality: 0.82 },
+    /* For an image that travels INSIDE a JSON submission rather than as its own
+       upload. Sized against nginx's 1MB client_max_body_size default, which is
+       the tightest limit in common use — a 413 on a form's last tap is the
+       worst possible place to discover a body limit. */
+    inline: { maxPx: 1000, quality: 0.78 },
   };
   let _toolsPromise = null;
   function ensureImageTools() {
@@ -215,6 +220,70 @@
     });
   }
 
+  /* ── Upload, or carry the image yourself ──────────────────────────────────
+   * Cloudinary is opt-in: it needs three keys in api/config.php, and until
+   * somebody sets them there is nothing to upload to. Every headshot surface
+   * used to treat that as an error — "photo uploads aren't set up on this
+   * server yet, skip for now" — so on a fresh deployment nobody could attach a
+   * photograph anywhere, and the review desk existed to look at photographs.
+   *
+   * There is a third option, and it is the one the public registration form has
+   * always used: put the image in the submission and let the server hold it.
+   * photo_intake_url on the server accepts either shape, so a caller does not
+   * have to know which happened — it gets a `url` back and stores it.
+   *
+   * Order matters. A real upload is still preferred when one is possible: a
+   * hosted image gets the CDN, the derivative transforms and the AI edit, and
+   * it keeps the bytes out of the database request. Inline is the fallback, not
+   * the default, and it is shrunk harder because it has to fit in a request
+   * body rather than a file upload.
+   */
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ''));
+      r.onerror = () => reject(new Error('unreadable_image'));
+      r.readAsDataURL(blob);
+    });
+  }
+
+  async function inlineImage(file) {
+    let out = file;
+    try {
+      const tools = await ensureImageTools();
+      const r = await tools.prepare(file, SHRINK.inline);
+      if (!r.skipped && r.blob) out = r.blob;
+    } catch (_) { /* optimiser unavailable — send what we have */ }
+    const dataUrl = await blobToDataUrl(out);
+    // Refuse rather than provoke a 413 the server can never explain, since a
+    // rejected body means no error message survives the round trip.
+    if (dataUrl.length > 1400000) throw new Error('photo_too_large');
+    return dataUrl;
+  }
+
+  /**
+   * Resolve a chosen file to something a form can submit as `photoUrl`.
+   * `{url, inline}` — `inline` is true when the url IS the image.
+   */
+  async function uploadOrInline(file, kind, onProgress) {
+    kind = kind || 'headshot';
+    const cfg = await getConfig();
+    const canPublic = !!(cfg && cfg.publicUpload && cfg.publicUpload.enabled);
+    const canSigned = !!(cfg && cfg.uploads && cfg.uploads.enabled);
+    if (canPublic) {
+      try { return Object.assign({ inline: false }, await uploadPublic(await shrinkForUpload(file, kind), onProgress)); }
+      catch (_) { /* fall through — a configured cloud that refused is still a cloud we cannot use right now */ }
+    }
+    if (canSigned) {
+      try { return Object.assign({ inline: false }, await uploadFile(file, kind, onProgress)); }
+      catch (_) { /* same */ }
+    }
+    if (onProgress) onProgress(50);
+    const url = await inlineImage(file);
+    if (onProgress) onProgress(100);
+    return { url: url, inline: true, bytes: url.length };
+  }
+
   const API = {
     config: getConfig,
     // Lazily loads /vendor/image-tools.js (pica + Cropper.js) and resolves to
@@ -223,6 +292,10 @@
     imageTools: ensureImageTools,
     uploadFile: uploadFile,
     uploadPublic: uploadPublic,
+    /* The one every headshot surface should call: uploads when there is a cloud,
+       hands back the image inline when there is not. Never fails because
+       Cloudinary is unconfigured. */
+    uploadOrInline: uploadOrInline,
     auth: {
       gateway: (identifier) => request('/auth/gateway.php', { body: { identifier } }),
       request: (identifier) => request('/auth/request.php', { body: { identifier } }),

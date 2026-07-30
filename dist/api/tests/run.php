@@ -1072,6 +1072,49 @@ chk('enroll rejects an already-used QR', backend_dispatch('admin.summer.enroll',
 // Admin single-enroll now captures parentEmail (was dropped → no guardian emails).
 $enr2 = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Ada Guardianed', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech', 'parentEmail' => 'ada-guardian@example.com']]);
 chk('admin enroll persists parentEmail', db_row('SELECT parentEmail FROM summer_students WHERE studentId=?', [$enr2['studentId']])['parentEmail'] === 'ada-guardian@example.com');
+/* Date of birth, on the admin path too.
+ *
+ * This is where it was missing. The public form asked for a birthday and stored
+ * one; admin_summer_enroll took only a typed age and never wrote dob at all, so
+ * a child enrolled at a desk — or through a CSV import, which goes through the
+ * same function — had no date on file while a child who registered themselves
+ * did. An age is right for exactly one season, so those rows silently go wrong
+ * at the next intake and nothing shows you which they are.
+ */
+backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 4]);   // this block enrols; don't drain the pool a later test needs
+chk('admin enroll stores the date of birth and derives the age from it', (function () {
+    $dob = gmdate('Y-m-d', strtotime('-14 years -5 months'));
+    // A deliberately WRONG age alongside a right date: the date has to win, or
+    // one typo becomes the number every report reads.
+    $r = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => [
+        'fullName' => 'Dob Desk', 'dob' => $dob, 'age' => 9, 'centre' => 'Egbeda', 'track' => 'Tech']]);
+    if (empty($r['ok'])) return false;
+    $s = db_row('SELECT dob, age FROM summer_students WHERE studentId=?', [$r['studentId']]);
+    return (string)$s['dob'] === $dob && (int)$s['age'] === dob_age($dob) && (int)$s['age'] === 14;
+})());
+chk('…a desk with only an age can still enrol, and says so by leaving the date empty', (function () {
+    $r = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => [
+        'fullName' => 'Age Only', 'age' => 13, 'centre' => 'Egbeda']]);
+    if (empty($r['ok'])) return false;
+    $s = db_row('SELECT dob, age FROM summer_students WHERE studentId=?', [$r['studentId']]);
+    return (string)$s['dob'] === '' && (int)$s['age'] === 13;
+})());
+chk('…a date outside the programme range is refused as a date, not as an age', (function () {
+    $r = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => [
+        'fullName' => 'Too Old', 'dob' => gmdate('Y-m-d', strtotime('-31 years')), 'centre' => 'Egbeda']]);
+    $bad = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => [
+        'fullName' => 'Not A Date', 'dob' => '14', 'centre' => 'Egbeda']]);
+    return ($r['error'] ?? '') === 'bad_dob' && ($bad['error'] ?? '') === 'bad_dob';
+})());
+chk('…and a CSV import carries the date through rather than dropping it', (function () {
+    $dob = gmdate('Y-m-d', strtotime('-10 years -2 months'));
+    $r = backend_dispatch('admin.summer.import', ['requesterId' => 'NGG-2025-0099', 'rows' => [
+        ['fullName' => 'Import Dob', 'dob' => $dob, 'centre' => 'Egbeda'],
+    ]]);
+    if (empty($r['ok'])) return false;
+    $s = db_row("SELECT dob, age FROM summer_students WHERE fullName = 'Import Dob' LIMIT 1");
+    return $s && (string)$s['dob'] === $dob && (int)$s['age'] === dob_age($dob);
+})());
 // Check-OUT stamps a departure time on today's row (Kofi checked in above).
 chk('checkout stamps a departure time', (function () use ($enr) {
     $r = backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-2025-0099', 'token' => $enr['token']]);
@@ -2638,8 +2681,113 @@ chk('re-shoot: a bad token is rejected', backend_dispatch('reshoot.context', ['t
 chk('re-shoot: an empty token is rejected', backend_dispatch('reshoot.context', ['t' => ''])['error'] === 'link_invalid');
 $rsub = backend_dispatch('reshoot.submit', ['t' => $ptok, 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/sample.jpg']);
 chk('re-shoot: submitting a new photo creates a fresh version', !empty($rsub['ok']) && $rsub['version'] >= 2);
-chk('re-shoot: a non-https photo is rejected', backend_dispatch('reshoot.submit', ['t' => $ptok, 'photoUrl' => 'ftp://nope'])['error'] === 'bad_photo');
+chk('re-shoot: something that is not a URL at all is rejected', backend_dispatch('reshoot.submit', ['t' => $ptok, 'photoUrl' => 'ftp://nope'])['error'] === 'bad_photo');
+/* A real, decodable PNG as a data: URL — what a browser sends when there is no
+ * cloud to upload to. Solid fill would compress identically at every size, so
+ * the colour is derived from the dimensions to keep distinct sizes distinct. */
+$png = function (int $w, int $h) {
+    $im = imagecreatetruecolor($w, $h);
+    imagefill($im, 0, 0, imagecolorallocate($im, $w % 256, $h % 256, ($w + $h) % 256));
+    ob_start(); imagepng($im); $raw = ob_get_clean(); imagedestroy($im);
+    return 'data:image/png;base64,' . base64_encode($raw);
+};
+/* Cloudinary is opt-in — three keys in config.php — and until they are set there
+ * is nothing to upload to, so a browser sends the image itself. Every intake
+ * path used to demand a hosted https URL: this one answered `bad_photo`, which
+ * blamed the guardian's photograph for a configuration they cannot see, and
+ * meant the retake link they had been emailed could not be completed at all.
+ *
+ * The bytes are held locally instead, and — this is the part that matters — the
+ * new photo is APPLIED even when the AI/Cloudinary pass cannot run. A guardian
+ * who did exactly what was asked must not still see the old picture. */
+chk('re-shoot: an inline photo works with no cloud configured, and is applied', (function () use ($ptok, $rsReg, $png) {
+    $r = backend_dispatch('reshoot.submit', ['t' => $ptok, 'photoUrl' => $png(600, 750)]);
+    if (empty($r['ok'])) return false;
+    $u = (string)db_row('SELECT photoUrl FROM summer_students WHERE studentId = ?', [$rsReg['studentId']])['photoUrl'];
+    // Relative on the row: a stored absolute URL bakes in today's hostname.
+    return $u === photo_store_relativise($u) && photo_is_stored_locally($u)
+        && is_file(photo_store_path(substr($u, strrpos($u, '=') + 1)));
+})());
 unset($GLOBALS['__ai_photo_mock'], $GLOBALS['__mail_sink']);
+
+/* ── The local image store ───────────────────────────────────────────────────
+ * The whole point of it: a deployment with no Cloudinary must still be able to
+ * show a photograph. Before this, the review desk — the one screen whose job is
+ * to look at a headshot — rendered an empty frame on every self-registration.
+ */
+chk('the store persists an inline image and hands back a short, stable URL', (function () use ($png) {
+    $r = photo_store_put($png(600, 750));
+    if (empty($r['ok'])) return false;
+    return photo_is_stored_locally((string)$r['url'])
+        && strlen((string)$r['url']) <= 512                 // fits the column MySQL enforces
+        && is_file(photo_store_path((string)$r['id']));
+})());
+chk('…content-addressed, so the same photo twice is one file and one URL', (function () use ($png) {
+    $a = photo_store_put($png(600, 750));
+    $b = photo_store_put($png(600, 750));
+    return ($a['url'] ?? 'x') === ($b['url'] ?? 'y');
+})());
+chk('…and a different photo gets a different URL', (function () use ($png) {
+    return ($png(600, 750) !== $png(620, 750))
+        && (photo_store_put($png(600, 750))['url'] ?? 'x') !== (photo_store_put($png(620, 750))['url'] ?? 'x');
+})());
+/* The id is an HMAC under the app secret, not a bare hash of the bytes. A bare
+ * hash would let anyone holding a copy of a child's photograph confirm it is in
+ * the system and fetch it back; keyed, the URL is a capability. */
+chk('…the id is keyed to the deployment, not derivable from the image', (function () use ($png) {
+    $img = $png(600, 750);
+    $one = photo_store_put($img)['id'] ?? '';
+    $raw = base64_decode(substr($img, strpos($img, ',') + 1), true);
+    return $one !== '' && strpos($one, substr(hash('sha256', (string)$raw), 0, 32)) !== 0;
+})());
+chk('…a crafted id cannot escape the store directory', (function () {
+    foreach (['../../config.php', '/etc/passwd', 'x.jpg', str_repeat('a', 32) . '.php', ''] as $bad) {
+        if (photo_store_path($bad) !== '') return false;
+    }
+    return true;
+})());
+chk('…a non-image, an oversized file and a lie about the type are all refused', (function () {
+    $notImage = 'data:image/jpeg;base64,' . base64_encode('this is plainly not a jpeg, whatever the header says');
+    $big = 'data:image/jpeg;base64,' . base64_encode(str_repeat('x', PHOTO_STORE_MAX_BYTES + 10));
+    return empty(photo_store_put($notImage)['ok'])
+        && empty(photo_store_put($big)['ok'])
+        && empty(photo_store_put('https://example.org/a.jpg')['ok']);
+})());
+/* One door for every intake path, because each of them used to get this wrong
+ * in its own way: apply.php truncated a data URL to 512 characters of base64,
+ * reshoot refused it, gate_register dropped it. */
+chk('photo_intake_url takes either shape and never returns something unstorable', (function () use ($png) {
+    $hosted = photo_intake_url('https://res.cloudinary.com/demo/image/upload/sample.jpg');
+    $inline = photo_intake_url($png(600, 750));
+    return $hosted === 'https://res.cloudinary.com/demo/image/upload/sample.jpg'
+        && photo_is_stored_locally($inline)
+        && photo_intake_url('') === ''
+        && photo_intake_url('javascript:alert(1)') === ''      // not a photo
+        && photo_intake_url('data:text/html;base64,PGI+') === ''
+        && strlen(photo_intake_url('https://example.org/' . str_repeat('a', 900))) === 512;
+})());
+/* Write-on-intake plus a refusable intake means abandoned originals, and a
+ * shared host with a disk quota is not a good place to learn that. */
+chk('the sweep deletes what nothing references, and keeps what something does', (function () use ($png) {
+    $keep = photo_store_put($png(640, 800));
+    $drop = photo_store_put($png(660, 800));
+    // A row that genuinely exists — pointing at an invented studentId would
+    // update nothing and the "kept" file would be an orphan like the other.
+    $sid = (string)(db_row("SELECT studentId FROM summer_students ORDER BY id LIMIT 1")['studentId'] ?? '');
+    if ($sid === '') return false;
+    db_update('summer_students', ['photoUrl' => (string)$keep['url']], ['studentId' => $sid]);
+    // Age both past the candidacy window; a fresh file is deliberately never a
+    // candidate, so a photo mid-flight cannot be swept out from under the
+    // request that is creating it.
+    foreach ([$keep['id'], $drop['id']] as $id) @touch(photo_store_path((string)$id), time() - 30 * 86400);
+    $n = photo_store_sweep(7, 100);
+    return $n >= 1 && is_file(photo_store_path((string)$keep['id'])) && !is_file(photo_store_path((string)$drop['id']));
+})());
+chk('…and a file younger than the window is never a candidate', (function () use ($png) {
+    $fresh = photo_store_put($png(680, 800));
+    photo_store_sweep(7, 100);
+    return is_file(photo_store_path((string)$fresh['id']));
+})());
 
 // ── Centre capacity → waitlist, and bulk import (run last: they add centres/students) ──
 chk('centre capacity waitlists once full', (function () {

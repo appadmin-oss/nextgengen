@@ -134,6 +134,22 @@ object-src 'none'"
     Header set Cache-Control "no-cache, must-revalidate"
     Header unset Expires
   </FilesMatch>
+  # FINGERPRINTED entry files — app.4f2a1b9c33.min.js, styles.<tag>.css. The
+  # name contains a hash of the file's own contents, so these bytes are the only
+  # bytes that URL will ever have: cache for a year and never revalidate. This
+  # is the pair to the rule above, and it has to come AFTER it so the hashed
+  # names are not caught by the fixed-name pattern (app.<tag>.min.js does not
+  # match ^app\.min\.js$, but the generic .js rule above it would apply the
+  # weaker must-revalidate).
+  #
+  # `immutable` is the part that matters: without it a browser still sends a
+  # conditional request on a hard reload and pays a round trip to be told
+  # nothing changed. A deploy is picked up because index.html — served no-cache
+  # — points at different names, not because anything expired.
+  <FilesMatch "\.[0-9a-f]{10}\.(min\.)?(js|css)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+    Header unset Expires
+  </FilesMatch>
   # The API. Live data, sessions and children's records — never cacheable by
   # the browser or by anything between us and it. Mirrors the no-store header
   # PHP sends, so the answer is the same even if a rewrite serves a JSON file

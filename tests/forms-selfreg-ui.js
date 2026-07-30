@@ -239,6 +239,40 @@ function makeBigPhoto() {
     if (sentBody > 0 && sentBody < 1000000) ok(`the request body is ${Math.round(sentBody / 1024)}KB — inside a 1MB body limit even for an incompressible photo`);
     else bad(`the request body was ${Math.round(sentBody / 1024)}KB, which is what produced the 413`);
 
+    /* THE PHOTO SURVIVES. Cloudinary is opt-in and this deployment has none, so
+       the inline headshot used to be handed to photo_ingest, refused for not
+       being https, and dropped — a registration with no photo, and a review desk
+       showing an empty frame for the one thing it exists to look at. The bytes
+       are now held locally and served from a stable URL. Fetched here rather
+       than merely read off the row, because a URL in a column that 404s is
+       exactly as useless as no URL at all. */
+    const stored = php(`echo (string) (db_row("SELECT photoUrl FROM summer_students WHERE fullName LIKE 'Ada%' LIMIT 1")['photoUrl'] ?? '');`);
+    if (/^\/api\/public\/photo\.php\?p=[0-9a-f]{32}\.jpg$/.test(stored)) ok('the headshot is stored locally and the row points at it');
+    else bad(`photoUrl is not a served image: "${stored}"`);
+    if (stored.length <= 512) ok('…and the URL fits the column MySQL enforces (512)');
+    else bad(`photoUrl is ${stored.length} chars — MySQL rejects it with 1406`);
+    const served = await page.evaluate(async (u) => {
+      const r = await fetch(u, { cache: 'no-store' });
+      const b = await r.blob();
+      return { status: r.status, type: r.headers.get('content-type'), cc: r.headers.get('cache-control'), bytes: b.size };
+    }, stored);
+    if (served.status === 200 && /^image\//.test(served.type || '') && served.bytes > 10000)
+      ok(`…and it actually serves (${served.status}, ${served.type}, ${Math.round(served.bytes / 1024)}KB)`);
+    else bad(`the stored photo did not serve: ${JSON.stringify(served)}`);
+    if (/immutable/.test(served.cc || '')) ok('…cacheable forever, because the id IS the bytes');
+    else bad(`the photo was not served immutable (${served.cc})`);
+    // A crafted id must not reach outside the store, and a wrong one must not
+    // reveal whether some other photo exists.
+    const probes = await page.evaluate(async () => {
+      const out = {};
+      for (const p of ['../../config.php', 'x'.repeat(32) + '.jpg', '']) {
+        out[p || '(empty)'] = (await fetch('/api/public/photo.php?p=' + encodeURIComponent(p), { cache: 'no-store' })).status;
+      }
+      return out;
+    });
+    if (Object.values(probes).every(s => s === 404)) ok('a crafted or unknown photo id is a flat 404');
+    else bad(`photo.php answered a crafted id: ${JSON.stringify(probes)}`);
+
     const row = php(`$r = db_row("SELECT dob, age, regStatus FROM summer_students WHERE fullName LIKE 'Ada%' LIMIT 1");`
       + `echo ($r['dob'] ?? '') . '|' . (int)($r['age'] ?? 0) . '|' . ($r['regStatus'] ?? '');`);
     const want = `${DOB}|${php(`echo dob_age(${JSON.stringify(DOB)});`)}|self_pending`;

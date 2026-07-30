@@ -105,6 +105,82 @@ process.on('exit', cleanup);
       fetchAt > -1 && apiAt > fetchAt && /startsWith\('\/api\/'\)\)\s*return/.test(sw));
     ok('…and bails out before it can answer from any cache',
       apiAt > -1 && cacheAt > -1 && apiAt < sw.indexOf('respondWith', fetchAt));
+
+    /* ── Fingerprinted filenames ──────────────────────────────────────────
+     * Freshness now rests on the NAME, not on the worker being trusted to
+     * revalidate: a changed file is a URL the browser has never seen, so it
+     * must fetch it. Everything below is what makes that true end to end, and
+     * every one of them is a silent failure if it regresses — the build
+     * succeeds and only a returning visitor sees last month's bundle.
+     */
+    const html = fs.readFileSync(path.join(ROOT, 'dist', 'index.html'), 'utf8');
+    const man = JSON.parse(fs.readFileSync(path.join(ROOT, 'dist', 'build-manifest.json'), 'utf8'));
+    const TAGGED = /^[a-z-]+\.[0-9a-f]{10}\.(min\.)?(js|css)$/;
+    const ENTRIES = ['app.min.js', 'styles.css', 'styles-app.css', 'data.js', 'photos.js', 'api-client.js', 'outbox.js'];
+
+    ok('the manifest maps every entry file to a fingerprinted name',
+      man.assets && ENTRIES.every(f => TAGGED.test(String(man.assets[f] || ''))));
+    ok('…and each hashed file is actually in dist/',
+      man.assets && ENTRIES.every(f => fs.existsSync(path.join(ROOT, 'dist', man.assets[f]))));
+    // The point of the whole exercise: nothing the browser is TOLD to load has
+    // a fixed name, because a fixed name is the thing that can go stale.
+    ok('index.html references only the fingerprinted names',
+      ENTRIES.every(f => html.includes(man.assets[f]))
+      && !/(?:src|href)="(?:\.\/)?(app\.min\.js|styles\.css|styles-app\.css|data\.js|photos\.js|api-client\.js|outbox\.js)"/.test(html));
+    ok('the service worker precaches the fingerprinted names, not the plain ones',
+      ENTRIES.every(f => sw.includes("'/" + man.assets[f] + "'")));
+    // The journal shell is the one other page that loads the shared client. It
+    // was the gap: left plain, it would be the single surface still able to run
+    // a stale api-client.js.
+    const jHtml = fs.readFileSync(path.join(ROOT, 'dist', 'journal', 'index.html'), 'utf8');
+    ok('the journal shell loads the fingerprinted api-client too',
+      jHtml.includes(man.assets['api-client.js']) && !/src="\/api-client\.js"/.test(jHtml));
+    // Plain copies still ship: something out there hard-codes them, and a 404
+    // on a script tag is a blank page.
+    /* The plain names still ship — and, crucially, are REWRITTEN each build.
+       dist/ is a drop-in folder that is not wiped between builds and root files
+       are not pruned, so a plain name that stopped being written would freeze at
+       whatever the last build produced: a file that looks current and serves an
+       old bundle to anything referencing it by name. A missing file 404s loudly;
+       a stale one is the exact failure this whole change exists to prevent. */
+    ok('the plain names still ship for anything that hard-codes them',
+      ENTRIES.every(f => fs.existsSync(path.join(ROOT, 'dist', f))));
+    ok('…and the plain bundle is the CURRENT bundle, not a leftover',
+      fs.readFileSync(path.join(ROOT, 'dist', 'app.min.js'), 'utf8')
+        === fs.readFileSync(path.join(ROOT, 'dist', man.assets['app.min.js']), 'utf8'));
+    // …and fingerprinted files from earlier builds are swept, or dist/ grows by
+    // ~4MB a deploy and fills with dead files that look like live ones.
+    ok('fingerprinted files from earlier builds are swept',
+      fs.readdirSync(path.join(ROOT, 'dist'))
+        .filter(f => /^app\.[0-9a-f]{10}\.min\.js$/.test(f)).length === 1);
+    // A hashed URL must never be caught by the network-first rule — its whole
+    // value is that it never needs revalidating.
+    ok('a hashed asset is served cache-first, and the plain name network-first',
+      /FINGERPRINTED\s*=\s*\/\\\.\[0-9a-f\]\{10\}/.test(sw)
+      && sw.indexOf('FINGERPRINTED.test') < sw.indexOf('NETWORK_FIRST.test'));
+    // The .htaccess pair: immutable for hashed, revalidate for fixed.
+    const ht = fs.readFileSync(path.join(ROOT, 'dist', '.htaccess'), 'utf8');
+    ok('.htaccess serves hashed assets immutable, after the fixed-name rule',
+      /\[0-9a-f\]\{10\}/.test(ht) && /max-age=31536000, immutable/.test(ht)
+      && ht.lastIndexOf('no-cache, must-revalidate') < ht.indexOf('max-age=31536000, immutable')
+        + ht.slice(ht.indexOf('max-age=31536000, immutable')).length);
+
+    /* ── The precache must survive one bad entry ───────────────────────────
+     * cache.addAll() is a single promise over the whole list, so ONE entry that
+     * 404s rejects it and nothing at all is cached — leaving a worker that is
+     * installed, active and holding an empty cache. The first offline
+     * navigation then had no shell and answered 504 "Offline and not cached"
+     * for an ordinary URL. */
+    // Comments stripped first: the worker EXPLAINS why addAll is wrong, and
+    // grepping the raw source for the name matches the explanation.
+    const swCode = sw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    ok('the precache tolerates a single failed entry instead of caching nothing',
+      !/\.addAll\s*\(/.test(swCode) && /PRECACHE\.map\(/.test(swCode));
+    /* And a navigation ALWAYS gets a document. Falling through to a 504 renders
+       the browser's own error page over a working offline app. */
+    ok('an offline navigation falls back to the shell, and never to a bare 504',
+      /ignoreSearch/.test(sw) && /OFFLINE_HTML/.test(sw)
+      && /shellResponse\(\)/.test(sw));
   } catch (e) {
     fail++; console.error('  ✗ harness error: ' + (e && e.message));
   } finally { cleanup(); }

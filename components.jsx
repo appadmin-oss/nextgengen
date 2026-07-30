@@ -1291,18 +1291,23 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     setBusy(true); setErr("");
     try {
       const file = blob instanceof File ? blob : new File([blob], name || "headshot.jpg", { type: "image/jpeg" });
-      const up = await NGGApi.uploadFile(file, "headshot");
-      // Face-centred crop + auto colour/lighting (Cloudinary URL transform).
+      /* Uploads when a cloud is configured, hands the image back inline when one
+         is not — so "paste an image link instead" stops being the only option on
+         a site whose Cloudinary keys were never set. The server accepts either
+         shape (photo_intake_url) and stores the bytes itself. */
+      const up = await NGGApi.uploadOrInline(file, "headshot");
+      // Face-centred crop + auto colour/lighting (Cloudinary URL transform); a
+      // no-op on an inline image, which the server pipeline edits instead.
       onChange(cldEnhance(up.url));
       stop(); setMode("idle");
     } catch (e) {
       const code = e.code || "";
       setErr(
-        code === "uploads_disabled" ? "Photo uploads aren't switched on for this site yet — paste an image link instead."
+        /photo_too_large/.test(e.message || "") ? "That photo is too large to send — use your camera's 'medium' size, or a smaller file."
         : code === "csrf_failed" ? "Your session expired — refresh the page, then try the photo again."
         : code === "rate_limited" ? "Too many tries in a row — wait a moment and try again."
-        : /network/.test(e.message || "") ? "Network hiccup uploading the photo — check the connection and try again."
-        : "Couldn't upload that photo — try again, or paste an image link instead."
+        : /network/.test(e.message || "") ? "Network hiccup sending the photo — check the connection and try again."
+        : "Couldn't use that photo — try again, or paste an image link instead."
       );
     } finally { setBusy(false); }
   };
@@ -1511,7 +1516,7 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
       const im = await loadImageEl(URL.createObjectURL(file));
       const check = await validateHeadshot(im, im.naturalWidth, im.naturalHeight);
       if (!check.ok) { setErr(check.reason); setBusy(""); return; }
-      const up = await NGGApi.uploadFile(file, "headshot");
+      const up = await NGGApi.uploadOrInline(file, "headshot");
       const r = await NGGApi.admin.photos.replace(target.subjectType, target.subjectId, up.url);
       onSaved && onSaved(r.editedUrl || up.url); onClose && onClose();
     } catch (e) { setErr("Couldn't replace — " + (e.code || e.message)); setBusy(""); }
@@ -1579,9 +1584,10 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
       const blob = await T.toBlob(canvas, "image/jpeg", 0.92);
       if (!blob) throw new Error("encode_failed");
       const file = new File([blob], "headshot.jpg", { type: "image/jpeg" });
-      // Upload as a fresh source and point the subject at it. No Cloudinary
-      // transform is involved — the frame is already exactly what we want.
-      const up = await NGGApi.uploadFile(file, "headshot");
+      // Send as a fresh source and point the subject at it. No Cloudinary
+      // transform is involved — the frame is already exactly what we want, and
+      // with no cloud configured the bytes travel inline and the server holds them.
+      const up = await NGGApi.uploadOrInline(file, "headshot");
       const r = await NGGApi.admin.photos.replace(target.subjectType, target.subjectId, up.url);
       onSaved && onSaved(r.editedUrl || up.url); onClose && onClose();
     } catch (e) {

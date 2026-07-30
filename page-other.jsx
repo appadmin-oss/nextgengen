@@ -2965,6 +2965,17 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
 
    Keyboard: A approves, R focuses the reason box, ← → move. A coordinator
    with three hundred of these should not have to reach for a mouse. */
+/* Refusals that mean "unlock the desk again", not "something is broken".
+   require_session answers `unauthorized` when there is no session and
+   `session_expired` when a kiosk one has idled out — twelve hours is a normal
+   working day, so the second is the one a real reviewer hits, and it was the one
+   nobody checked for. `forbidden` is the gate-mismatch case: a session for
+   another desk is not a session for this one, and re-unlocking is the fix.
+   `suspended` is deliberately NOT here: that needs an admin, and offering a
+   password box would just let somebody type the right password and be refused
+   again for a reason nobody told them. */
+const DESK_RELOCK = ["unauthorized", "session_expired", "forbidden"];
+
 function ReviewDeskPage() {
   const g = new URLSearchParams(window.location.search).get("g") || "";
   const auth = (window.useAuth || (() => null))();
@@ -3002,7 +3013,13 @@ function ReviewDeskPage() {
       .then(r => { setD(r); setState("ready"); })
       .catch(e => {
         const c = e.code || e.message;
-        if (c === "unauthorized" || c === "forbidden") setState("locked");
+        /* An expired desk session is the SAME situation as a locked one: the
+           link is fine, the person just has to unlock it again. It arrives as
+           `session_expired` rather than `unauthorized` (see require_session),
+           which this only checked for — so a reviewer whose 12-hour kiosk
+           session had timed out got "couldn't load, check your connection" for
+           a connection that was fine, and no way back except knowing to reload. */
+        if (DESK_RELOCK.indexOf(c) !== -1) { setState("locked"); setUnlockErr(c === "session_expired" ? "The desk session timed out. Unlock it again to carry on — nothing is lost." : ""); }
         else if (c === "gate_invalid") setState("bad");
         else setState("error");
       });
@@ -3304,6 +3321,18 @@ function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
             <div className="mono" style={{ ...mut, fontSize: 12.5, marginTop: 5 }}>{r.studentId}{r.submittedAt ? " · submitted " + String(r.submittedAt).slice(0, 10) : ""}{(() => {
               const w = waitedFor(r.submittedAt); return w && !decided ? " · " + w.text : "";
             })()}</div>
+            {/* Age and the date it came from, together. The age is what a
+                reviewer checks against the photograph in front of them; the date
+                is what makes that check possible — an age on its own cannot be
+                wrong in a way anybody can see, and this programme has a floor
+                and a ceiling on it. */}
+            {(r.dob || r.age) && (
+              <div style={{ ...mut, fontSize: 12.5, marginTop: 3 }}>
+                {r.age ? "Age " + r.age : "Age not given"}
+                {r.dob ? " · born " + String(r.dob) : " · no date of birth on file"}
+                {r.dob && r.age && (r.age < 5 || r.age > 19) ? " ⚠ outside the programme's age range" : ""}
+              </div>
+            )}
 
             {/* WHICH records it collides with. The chip on its own was a dead
                 end dressed as a warning: a reviewer still had to go and search
@@ -3499,7 +3528,9 @@ function GatePage() {
       .then(r => { setCtx(r); setState("ready"); })
       .catch(e => {
         const c = e.code || e.message;
-        if (c === "unauthorized") setState("need-auth");
+        // Same reasoning as the review desk: a timed-out session is a re-unlock,
+        // not a network error, and it does not arrive as `unauthorized`.
+        if (DESK_RELOCK.indexOf(c) !== -1 && c !== "forbidden") setState("need-auth");
         else { setErr(c === "gate_invalid" ? "This gate link has been closed or revoked. Ask an admin for a fresh one." : c === "forbidden" ? "Your account doesn't have staff access." : "Couldn't load the gate — check your connection.") ; setState("error"); }
       });
   }, [g]);
@@ -3839,7 +3870,7 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
          reached anyone who could act on it.
          Two cases now, told apart by whether a response arrived at all. */
       else if (c === "gate_invalid") { setErrors({ _: "This desk link is no longer valid — it may have been revoked or used up. Ask an admin for a fresh gate link." }); }
-      else if (c === "csrf_failed" || c === "unauthorized") { setErrors({ _: "The desk session has expired. Reload the page and unlock the desk again — the draft is safe on this device." }); }
+      else if (c === "csrf_failed" || DESK_RELOCK.indexOf(c) !== -1) { setErrors({ _: "The desk session has expired. Reload the page and unlock the desk again — the draft is safe on this device." }); }
       else if (c === "in_flight") { setErrors({ _: "Still sending — give it a moment. It finishes on its own; don't re-send or you'll be waiting on two of them." }); }
       /* Queued by the outbox: banked on this device, and it will keep trying by
          itself. This replaces the advice that used to be given after a timeout —
@@ -4026,29 +4057,27 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
     setBusy(true); setUErr("");
     try {
       const file = new File([blob], "headshot.jpg", { type: "image/jpeg" });
-      // Gate registration is a public flow with no session, so the unsigned
-      // (public) upload is the primary path. When it isn't set up — or a staff
-      // member is signed in at a kiosk — fall back to the signed member path.
-      let up;
-      try {
-        up = await NGGApi.uploadPublic(file);
-      } catch (pe) {
-        up = await NGGApi.uploadFile(file, "headshot");
-      }
+      /* Uploads when a cloud is configured, carries the image in the submission
+         when one is not. It used to try the unsigned path, then the signed one,
+         then give up with "photo uploads aren't set up on this server yet" —
+         which on a deployment with no Cloudinary was every registration, so no
+         child got a photograph and the review desk had nothing to look at.
+         Cloudinary is opt-in; a desk that cannot take a photo without it is not. */
+      const up = await NGGApi.uploadOrInline(file, "headshot");
       // Face-centred crop + auto colour/lighting via Cloudinary URL transforms —
-      // a fast, free client preview; the server pipeline does the professional
-      // edit (including a clean studio backdrop) and an editor can re-upload.
+      // a fast, free client preview; a no-op on an inline image, and the server
+      // pipeline still does the professional edit when there is a cloud to do it.
       setPhotoUrl(cldEnhance(up.url));
       closeCam();
     } catch (e) {
       // Surface the real reason — a vague message can't be diagnosed or fixed.
       const msg = String((e && (e.message || e.code)) || "");
-      if (/disabled|not.?configured|no_cloud|no_secret|missing/i.test(msg) || /_(400|401|403)\b/.test(msg))
-        setUErr("Photo uploads aren't set up on this server yet — Cloudinary keys/preset are missing. Skip for now; an editor can add the photo later.");
+      if (/photo_too_large/.test(msg))
+        setUErr("That photo is too large to send. Take it again — the camera's 'medium' size setting works best.");
       else if (/network|failed to fetch|timeout/i.test(msg))
         setUErr("Couldn't reach the photo service — check the connection and try again.");
       else
-        setUErr("Upload failed (" + (msg || "unknown error") + "). You can skip and add the photo later.");
+        setUErr("Couldn't use that photo (" + (msg || "unknown error") + "). Try again, or skip and add it later.");
     } finally { setBusy(false); }
   };
   const capture = () => {
@@ -4231,9 +4260,10 @@ function ReshootPage() {
   const upload = async (file) => {
     setUploading(true); setUErr("");
     try {
-      let up;
-      try { up = await NGGApi.uploadPublic(file); }
-      catch (pe) { up = await NGGApi.uploadFile(file, "headshot"); }
+      /* Hosted when there is a cloud, inline when there is not. reshoot_submit
+         accepts either — a guardian who did what the email asked must not be
+         told their photograph is bad because nobody set three config keys. */
+      const up = await NGGApi.uploadOrInline(file, "headshot");
       setPhotoUrl(cldEnhance(up.url));
     } catch (e) {
       const m = String((e && (e.message || e.code)) || "");
@@ -4747,6 +4777,70 @@ function cardFacePhoto(url, w, h) {
   return url.slice(0, i + 8) + params.join(",") + "/" + rest;
 }
 
+/* ── Centre colour, made context-aware ───────────────────────────────────────
+ * A centre's colour is chosen by an admin in a colour picker, so it can be
+ * anything: NGG green, a deep maroon, or a pale yellow. Everything that sat on
+ * top of it was hard-coded to white text with a drop shadow, which is fine for
+ * two of those three and illegible for the third — and the card is PRINTED, so
+ * nobody finds out until a box of two hundred arrives with an unreadable band.
+ *
+ * These three helpers make the card read its own colours and adapt.
+ */
+function cardRgb(hex) {
+  const h = String(hex || "").replace("#", "").trim();
+  const s = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
+  if (!/^[0-9a-fA-F]{6}$/.test(s)) return null;
+  return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
+}
+/** Ink that stays legible on `hex`, plus the shadow and hairline that go with
+ *  it. Relative luminance (sRGB, gamma-corrected), thresholded a little EARLIER
+ *  than the screen-perfect 0.5 because ink on card stock reads darker than a
+ *  backlit pixel — a mid-tone that just about carries white on a monitor does
+ *  not carry it in print. */
+function cardInk(hex) {
+  const rgb = cardRgb(hex);
+  if (!rgb) return { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
+  const lin = rgb.map(v => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+  const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  return L > 0.42
+    // Light centre colour → dark ink, and NO shadow: a shadow under dark text
+    // on a pale ground is just smudge.
+    ? { ink: "#10131a", shadow: "none", hairline: "rgba(0,0,0,.35)", light: true }
+    : { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
+}
+/** Are two card colours close enough to merge into one shape? Redmean distance
+ *  — cheap, and markedly better than plain RGB at matching what an eye does.
+ *  Used where a tier colour frames a centre colour: a maroon Lead Mentor border
+ *  around a red centre band reads as a single blob, and the fix is a visible
+ *  separator rather than hoping the palette never collides. */
+function cardColorsClash(a, b) {
+  const x = cardRgb(a), y = cardRgb(b);
+  if (!x || !y) return false;
+  const rm = (x[0] + y[0]) / 2, dr = x[0] - y[0], dg = x[1] - y[1], db = x[2] - y[2];
+  return Math.sqrt((2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db) < 120;
+}
+/* The centre a card should SHOW, which is not always the centre it has.
+ *
+ * A roving mentor, an ops volunteer or a programme-wide coordinator genuinely
+ * has no single site. Dropping the band for them left two different card
+ * geometries in one print run — and a card with a gap where every other card
+ * has a colour reads as a misprint, not as "works everywhere". So they get the
+ * programme's own mark instead, which is the true answer. */
+const CARD_ALL_CENTRES = { name: "All centres", code: "NGG", color: "#1b2b6b", every: true };
+function cardCentreOf(card) {
+  const c = card && card.centre;
+  if (c && (c.name || c.code)) return c;
+  return card && card.tier ? CARD_ALL_CENTRES : null;   // volunteers only; a student always has one
+}
+/** Letter-spacing and size that keep a centre name on one line. "Egbeda" and
+ *  "Ikotun-Egbe Community Hall" are both legal names, and the second used to
+ *  run off the end of the band under `whiteSpace: nowrap`. */
+function centreBandFont(name, base, px) {
+  const n = ((name || "").trim().length) || 1;
+  const scale = n > 14 ? Math.max(0.62, 14 / n) : 1;
+  return { fontSize: px(base * scale), letterSpacing: px(2.2 * scale) };
+}
+
 /* Which centre a card belongs to, readable across a room.
  *
  * The student card already carried the centre colour as a bar along the
@@ -4764,6 +4858,9 @@ function cardFacePhoto(url, w, h) {
 function CardCentreRing({ centre, size, px, radius, children }) {
   const c = centre || {};
   const tint = c.color || "#76B043";
+  // Ink chosen from the colour rather than assumed white — see cardInk. A pale
+  // centre colour used to print a white code on a near-white chip.
+  const ink = cardInk(tint);
   const band = Math.max(2, px(14));           // scales with the card
   const chipH = Math.max(7, px(38));
   return (
@@ -4783,10 +4880,15 @@ function CardCentreRing({ centre, size, px, radius, children }) {
                       height: chipH, minWidth: chipH * 2, padding: `0 ${px(13)}px`, borderRadius: chipH,
                       background: tint, border: `${Math.max(1, px(5))}px solid #fff`,
                       display: "grid", placeItems: "center", boxSizing: "border-box",
+                      /* A pale chip against the white border and the white card
+                         disappears into both, so a light colour gets its own
+                         hairline. Nothing changes for a dark one. */
+                      outline: ink.light ? `${Math.max(1, px(2))}px solid ${ink.hairline}` : "none",
+                      outlineOffset: `-${Math.max(1, px(5)) + Math.max(1, px(2))}px`,
                       boxShadow: `0 ${px(4)}px ${px(10)}px rgba(0,0,0,.18)` }}>
           <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: chipH * 0.6,
-                         letterSpacing: px(1), color: "#fff", lineHeight: 1, whiteSpace: "nowrap",
-                         textShadow: "0 1px 2px rgba(0,0,0,.4)" }}>{c.code}</span>
+                         letterSpacing: px(1), color: ink.ink, lineHeight: 1, whiteSpace: "nowrap",
+                         textShadow: ink.shadow }}>{c.code}</span>
         </div>
       ) : null}
     </div>
@@ -4829,12 +4931,20 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
       <div style={{ border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff", marginTop: px(13), flex: "none" }}>
         <CardQR token={card.token} size={px(104)}/>
       </div>
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: centre.color || "#76B043",
-                    display: "grid", placeItems: "center" }}>
-        {centre.name ? <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(15),
-          letterSpacing: px(2.2), color: "#fff", textTransform: "uppercase", lineHeight: 1,
-          textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>{centre.name}</span> : null}
-      </div>
+      {(() => {
+        // Same three adaptations as the volunteer band: ink from the colour, and
+        // a name that shrinks rather than running off the end of the card.
+        const ink = cardInk(centre.color || "#76B043");
+        const fit = centreBandFont(centre.name, 15, px);
+        return (
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: centre.color || "#76B043",
+                        display: "grid", placeItems: "center", overflow: "hidden" }}>
+            {centre.name ? <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: fit.fontSize,
+              letterSpacing: fit.letterSpacing, color: ink.ink, textTransform: "uppercase", lineHeight: 1,
+              whiteSpace: "nowrap", textShadow: ink.shadow }}>{centre.name}</span> : null}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -4846,6 +4956,19 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
   const tier = card.tier || {};                 // same hazard as centre, above
   const tint = tier.color || "#00225F";
+  /* The centre this card should show — a real one, or the programme mark for
+     somebody who genuinely works across all of them. Always something, so a
+     print run has one card geometry rather than two (see cardCentreOf). */
+  const centre = cardCentreOf(card);
+  const cTint = (centre && centre.color) || "#76B043";
+  const cInk = cardInk(cTint);
+  /* Does the centre colour disappear into the tier frame it sits inside? A
+     maroon Lead Mentor border around a red centre band merges into one shape,
+     and the palette is admin-editable so no fixed pairing can be relied on.
+     When they clash the centre elements get a white keyline — visible against
+     both, and cheap. */
+  const clash = cardColorsClash(cTint, tint);
+  const keyline = clash ? `${Math.max(1, px(3))}px solid #fff` : "none";
   // Headshot keeps its 450:354 aspect (never stretched) and scales with the card.
   const hsH = Math.min(354, Math.max(150, Math.round(H * 0.34)));
   const hsW = Math.round(hsH * 450 / 354);
@@ -4863,26 +4986,31 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
       </div>
       {/* Content column inside the panel — reflows to any card height. */}
       <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box",
-                    padding: px(94) + "px " + px(40) + "px " + px(card.centre ? 68 : 28) + "px" }}>
+                    padding: px(94) + "px " + px(40) + "px " + px(centre ? 68 : 28) + "px" }}>
         {/* The headshot in the CENTRE's colour, not the tier's. The card is
             already tier-coloured all over; repeating that around the photo
             would say the same thing twice and the thing a coordinator
             actually needs — which site this person belongs to — still would
             not be on the card anywhere. */}
         <div style={{ position: "relative", width: px(hsW), height: px(hsH), flex: "none" }}>
-          {card.centre ? (
+          {centre ? (
             <>
-              <div style={{ position: "absolute", inset: 0, borderRadius: px(22), background: card.centre.color || "#76B043",
+              <div style={{ position: "absolute", inset: 0, borderRadius: px(22), background: cTint,
+                            // Only when the two colours would merge; a no-op otherwise.
+                            outline: keyline, outlineOffset: `-${Math.max(1, px(3))}px`,
                             boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)` }}/>
               <div style={{ position: "absolute", inset: px(11), borderRadius: px(14), overflow: "hidden",
                             background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)" }}>
                 {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
               </div>
               <div style={{ position: "absolute", right: px(-6), top: px(-6), height: px(38), minWidth: px(72), padding: `0 ${px(12)}px`,
-                            borderRadius: px(38), background: card.centre.color || "#76B043", border: `${Math.max(1, px(4))}px solid #fff`,
+                            borderRadius: px(38), background: cTint, border: `${Math.max(1, px(4))}px solid #fff`,
+                            // A pale chip vanishes into its own white border.
+                            outline: cInk.light ? `${Math.max(1, px(2))}px solid ${cInk.hairline}` : "none",
+                            outlineOffset: `-${Math.max(1, px(4)) + Math.max(1, px(2))}px`,
                             display: "grid", placeItems: "center", boxSizing: "border-box" }}>
                 <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(21), letterSpacing: px(1),
-                               color: "#fff", lineHeight: 1, whiteSpace: "nowrap", textShadow: "0 1px 2px rgba(0,0,0,.35)" }}>{card.centre.code}</span>
+                               color: cInk.ink, lineHeight: 1, whiteSpace: "nowrap", textShadow: cInk.shadow }}>{centre.code}</span>
               </div>
             </>
           ) : (
@@ -4912,22 +5040,27 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
           student card has two. A band across the foot of the panel gives the
           volunteer card the same pair: a colour you find across a room and a
           name you read in the hand. */}
-      {card.centre && (
+      {centre && (() => {
         /* Inset px(6) from the panel and rounded px(6) tighter, so it is
            CONCENTRIC with the panel and a hairline of white always shows
            between the band and the frame. Flush looked better until you put a
            maroon Lead Mentor frame round a red centre and the two merged into
            one shape — the gutter is what keeps the card legible whatever
-           pair of colours the hierarchy table happens to hold. */
-        <div style={{ position: "absolute", left: px(28), right: px(28), bottom: px(28), height: px(38),
-                      borderRadius: `${px(6)}px ${px(6)}px ${px(24)}px ${px(24)}px`,
-                      background: card.centre.color || "#76B043",
-                      display: "grid", placeItems: "center", overflow: "hidden" }}>
-          <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(18), letterSpacing: px(2.2),
-                         color: "#fff", textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap",
-                         textShadow: "0 1px 2px rgba(0,0,0,.4)" }}>{card.centre.name}</span>
-        </div>
-      )}
+           pair of colours the hierarchy table happens to hold.
+           When the two are close enough to merge ANYWAY, `clash` adds a keyline
+           on top of the gutter. */
+        const fit = centreBandFont(centre.name, 18, px);
+        return (
+          <div style={{ position: "absolute", left: px(28), right: px(28), bottom: px(28), height: px(38),
+                        borderRadius: `${px(6)}px ${px(6)}px ${px(24)}px ${px(24)}px`,
+                        background: cTint, outline: keyline, outlineOffset: `-${Math.max(1, px(3))}px`,
+                        display: "grid", placeItems: "center", overflow: "hidden" }}>
+            <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: fit.fontSize, letterSpacing: fit.letterSpacing,
+                           color: cInk.ink, textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap",
+                           textShadow: cInk.shadow }}>{centre.name}</span>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -4944,8 +5077,13 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
   // spare goes to the thing the front only says once.
   const isVol = !!card.tier;
   const key = card.studentId || card.volunteerId || card.displayId;
+  /* Role, qualified by faculty when there is one. "INSTRUCTOR" is the least
+     identifying thing you can print on a card at a site where every third
+     person is one; "INSTRUCTOR · MUSIC" is what everybody is actually asking. */
+  const volRole = [String(card.role || (card.tier && card.tier.name) || "").toUpperCase(),
+                   String(card.faculty || "").toUpperCase()].filter(Boolean).join(" · ");
   const midRow = isVol
-    ? ["ROLE", String(card.role || (card.tier && card.tier.name) || "").toUpperCase(), "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm-9 9a9 9 0 0 1 18 0"]
+    ? ["ROLE", volRole, "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm-9 9a9 9 0 0 1 18 0"]
     : ["CENTRE", ((card.centre && card.centre.name) || "").toUpperCase(), "M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11Zm0-8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"];
   const rows = [
     ["WEBSITE", program.website, "M2 12a10 10 0 1 0 20 0 10 10 0 0 0-20 0Zm2 0h16M12 2c3 3.5 3 16.5 0 20-3-3.5-3-16.5 0-20Z"],

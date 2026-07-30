@@ -42,6 +42,15 @@ function rate_limit_default(string $op): ?array {
         'selfreg.read'       => ['max' => 120, 'window' => 60],
         'selfreg.submit'     => ['max' => 40,  'window' => 300],
         'selfreg.desk'       => ['max' => 240, 'window' => 60],   // a reviewer works fast; the password is the real control
+        /* Images, and they are requested in BULK by the page rather than one at
+         * a time by a person: a review queue is 25 headshots, a printed card
+         * sheet is 40, and a whole centre shares one address. The default
+         * 60/minute turned the second page of a queue into broken frames, which
+         * is indistinguishable from the photos being missing. The real control
+         * here is that the id is an unguessable HMAC of the bytes — this is a
+         * runaway ceiling, nothing finer. */
+        'photo'              => ['max' => 600, 'window' => 60],
+        'qr'                 => ['max' => 300, 'window' => 60],
         // Starting a round writes a row and generates a question set. The limit
         // is keyed on IP, and a whole centre shares one connection — a class of
         // thirty children opening the arcade together is the NORMAL case, not

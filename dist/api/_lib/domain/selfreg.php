@@ -260,10 +260,17 @@ function selfreg_submit(array $p): array {
     if (empty($res['ok'])) return $res;
     $studentId = (string)$res['studentId'];
 
-    /* gate_register has already run the photo through the pipeline and stored the
-     * hosted URL on the row, so read it back rather than ingesting a second
-     * time — the old second call uploaded every headshot twice. */
-    $hosted = (string)(db_row('SELECT photoUrl FROM summer_students WHERE studentId = ?', [$studentId])['photoUrl'] ?? '');
+    /* gate_register has already stored the photo and run the pipeline, so read
+     * the resulting URL back rather than ingesting a second time — the old
+     * second call uploaded every headshot twice.
+     *
+     * Expanded to an absolute URL before the vision check, because that check
+     * makes an outbound request: a relative `/api/public/photo.php?p=…` is
+     * exactly the thing a model cannot fetch, and passing one meant the AI half
+     * of the verdict was silently skipped on every self-registration while
+     * still reporting itself as having run. */
+    $stored = (string)(db_row('SELECT photoUrl FROM summer_students WHERE studentId = ?', [$studentId])['photoUrl'] ?? '');
+    $hosted = function_exists('photo_store_absolute') ? photo_store_absolute($stored) : $stored;
     $verdict = photo_validate($photo, $hosted);
     db_update('summer_students', [
         'regStatus' => 'self_pending',
@@ -369,7 +376,7 @@ function selfreg_queue(array $p): array {
      * is bounded by the page size either way; the verdict filter is applied
      * after the read and the count is reported separately so the pager cannot
      * claim more than it will show. */
-    $rows = db_all("SELECT studentId, displayId, fullName, firstName, lastName, age, sex, centre, track,
+    $rows = db_all("SELECT studentId, displayId, fullName, firstName, lastName, dob, age, sex, centre, track,
                            guardianName, guardianPhone, parentEmail, photoUrl, regStatus, photoCheck,
                            submittedVia, enrolledAt, formVersion, formData,
                            reviewedById, reviewedAt, reviewNote
@@ -457,7 +464,9 @@ function selfreg_queue(array $p): array {
             'displayId' => (string)($r['displayId'] ?? ''),
             'firstName' => (string)($r['firstName'] ?? ''), 'lastName' => (string)($r['lastName'] ?? ''),
             'answers' => $answers,
-            'age' => (int)$r['age'], 'sex' => (string)($r['sex'] ?? ''),
+            // Both: the age is what a reviewer checks at a glance, the date is
+            // what makes it checkable and what the record has to keep.
+            'dob' => (string)($r['dob'] ?? ''), 'age' => (int)$r['age'], 'sex' => (string)($r['sex'] ?? ''),
             'centre' => (string)$r['centre'], 'course' => (string)$r['track'],
             'guardianName' => (string)($r['guardianName'] ?? ''),
             'guardianPhone' => (string)($r['guardianPhone'] ?? ''),

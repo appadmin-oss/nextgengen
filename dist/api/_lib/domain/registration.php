@@ -1297,21 +1297,42 @@ function gate_register(array $p): array {
     db_exec('UPDATE gate_links SET usedCount = usedCount + 1 WHERE gateId = ?', [$gate['gateId']]);
     audit('registration.create', (string)($p['byId'] ?? ''), $studentId, ['gate' => $gate['gateId'], 'geoOk' => $regGeoOk], (string)($p['ip'] ?? ''));
 
-    // Photo pipeline: ingest the captured headshot and run the free-AI triage →
-    // identity-safe Cloudinary edit → auto-approve / editor-queue. Best-effort —
-    // a pipeline hiccup must never fail the registration itself.
-    $photoUrl = (string)($p['photoUrl'] ?? '');
+    /* Photo. Two steps, and the ORDER is the whole point.
+     *
+     * First the bytes are put somewhere they can be served from. The public
+     * self-registration form posts its headshot inline, as a data: URL, because
+     * it has no session and cannot use the signed upload path — and a data URL
+     * cannot go in this column (VARCHAR(512), and MySQL is strict). It used to
+     * be handed straight to photo_ingest, which refuses anything that is not
+     * https, so on a deployment without Cloudinary — which is every deployment
+     * until somebody sets three keys — the bytes were dropped. The registration
+     * succeeded and the reviewer got an empty frame for the one thing the review
+     * desk exists to look at. photo_store_put keeps the original and gives back
+     * a short, stable URL that works with no cloud account at all.
+     *
+     * Then the governed pipeline runs on top of it — AI triage, the
+     * identity-safe Cloudinary edit, the editor queue — fed the ABSOLUTE url,
+     * because both the model and Cloudinary have to fetch the image. When that
+     * path completes, photo_apply_to_subject replaces photoUrl with the edited
+     * hosted version. Local first, hosted when there is a host: at no point is
+     * there no photo.
+     *
+     * Best-effort throughout. A pipeline hiccup must never fail a registration.
+     */
+    $photoUrl = function_exists('photo_intake_url')
+        ? photo_intake_url((string)($p['photoUrl'] ?? ''))
+        : '';
+    // The insert above deliberately left this column empty when the client sent
+    // the image inline (a data: URL will not fit a VARCHAR(512)); now that the
+    // bytes are stored there is a short URL to put in it.
+    if ($photoUrl !== '') db_update('summer_students', ['photoUrl' => $photoUrl], ['studentId' => $studentId]);
     if ($photoUrl !== '' && function_exists('photo_ingest')) {
         try {
-            $ing = photo_ingest('student', $studentId, $photoUrl, (string)($p['byId'] ?? ''));
-            if (!empty($ing['ok'])) {
-                /* Write the HOSTED url back. This is what fills the column for a
-                 * self-registration, whose inline data: URL was deliberately not
-                 * stored above — without this the row would keep no photo at all. */
-                $hosted = substr((string)($ing['url'] ?? ''), 0, 512);
-                if ($hosted !== '') db_update('summer_students', ['photoUrl' => $hosted], ['studentId' => $studentId]);
-                if (function_exists('photo_process')) photo_process($ing['assetId']);
-            }
+            // photo_ingest needs a URL an outside service can GET. A relative
+            // one is ours to expand; anything already absolute passes through.
+            $source = function_exists('photo_store_absolute') ? photo_store_absolute($photoUrl) : $photoUrl;
+            $ing = $source !== '' ? photo_ingest('student', $studentId, $source, (string)($p['byId'] ?? '')) : ['ok' => false];
+            if (!empty($ing['ok']) && function_exists('photo_process')) photo_process($ing['assetId']);
         } catch (Throwable $e) { error_log('[gate_register] photo pipeline: ' . $e->getMessage()); }
     }
 
@@ -1684,11 +1705,31 @@ function reshoot_submit(array $p): array {
     if ($t === '') return ['ok' => false, 'error' => 'link_invalid'];
     $s = db_row('SELECT * FROM summer_students WHERE photoToken = ? LIMIT 1', [$t]);
     if (!$s) return ['ok' => false, 'error' => 'link_invalid'];
-    $url = (string)($p['photoUrl'] ?? '');
-    if ($url === '' || !preg_match('#^https://#', $url)) return ['ok' => false, 'error' => 'bad_photo'];
-    if (!function_exists('photo_ingest')) return ['ok' => false, 'error' => 'pipeline_unavailable'];
-    $ing = photo_ingest('student', (string)$s['studentId'], $url, 'guardian');
-    if (empty($ing['ok'])) return $ing;
+    /* Whatever the guardian's browser could manage: a hosted URL if a cloud is
+     * configured, the image itself if not. This used to demand https and answer
+     * `bad_photo` otherwise — so on a deployment with no Cloudinary the retake
+     * link a guardian had been emailed could not be completed at all, and the
+     * reason it gave blamed their photograph. */
+    $url = function_exists('photo_intake_url')
+        ? photo_intake_url((string)($p['photoUrl'] ?? ''))
+        : (string)($p['photoUrl'] ?? '');
+    if ($url === '') return ['ok' => false, 'error' => 'bad_photo'];
+    // The retake IS the new photo — apply it whether or not the governed
+    // pipeline can run, or a guardian who did what they were asked would see
+    // the old picture on the card indefinitely.
+    db_update('summer_students', ['photoUrl' => photo_store_relativise($url), 'updatedAt' => now_iso()], ['studentId' => (string)$s['studentId']]);
+    if (!function_exists('photo_ingest')) {
+        audit('photo.reshoot', 'guardian', (string)$s['studentId'], ['stored' => true, 'pipeline' => false], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'status' => 'captured', 'version' => 1];
+    }
+    $source = function_exists('photo_store_absolute') ? photo_store_absolute($url) : $url;
+    $ing = $source !== '' ? photo_ingest('student', (string)$s['studentId'], $source, 'guardian') : ['ok' => false];
+    if (empty($ing['ok'])) {
+        // Stored and applied; only the AI/Cloudinary pass could not run. That is
+        // an editor's problem, not the guardian's, so it is not an error to them.
+        audit('photo.reshoot', 'guardian', (string)$s['studentId'], ['stored' => true, 'pipeline' => (string)($ing['error'] ?? 'failed')], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'status' => 'captured', 'version' => 1];
+    }
     $pr = function_exists('photo_process') ? photo_process($ing['assetId']) : ['status' => 'captured'];
     audit('photo.reshoot', 'guardian', (string)$s['studentId'], ['assetId' => $ing['assetId'], 'v' => $ing['version']], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'status' => $pr['status'] ?? 'analyzing', 'version' => $ing['version']];
@@ -1754,7 +1795,7 @@ function admin_registrations_list(array $p): array {
     // Oldest first for the pending queue (chase the longest wait), newest first
     // for everything else (the usual "what just happened" reading).
     $order = ($status === 'parent_pending') ? 'id ASC' : 'id DESC';
-    $rows = db_all("SELECT studentId, fullName, centre, track, regStatus, guardianName, guardianPhone,
+    $rows = db_all("SELECT studentId, fullName, dob, age, centre, track, regStatus, guardianName, guardianPhone,
                            parentEmail, enrolledAt, remindedAt, verifiedAt, photoUrl, token
                     FROM summer_students WHERE $whereSql ORDER BY $order LIMIT ? OFFSET ?",
                    array_merge($args, [$pageSize, ($page - 1) * $pageSize]));

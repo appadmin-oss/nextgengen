@@ -101,6 +101,13 @@ function admin_volunteer_cards_data(array $p): array {
             'volunteerId' => $v['volunteerId'],
             'firstName' => $first, 'surname' => $surname,
             'role' => (string)$v['role'],
+            /* The faculty an instructor teaches in. On the card because "role"
+               alone is the least identifying thing about them at a site: every
+               third person there is an instructor, and which subject is what a
+               coordinator, a parent and a child are all actually asking. Empty
+               for roles where it means nothing, so the card can leave it out
+               rather than print a blank. */
+            'faculty' => (string)($v['faculty'] ?? ''),
             'tier' => ['name' => $tier['name'], 'code' => $tier['code'], 'color' => $tier['color']],
             'centre' => $cRow
                 ? ['name' => (string)$cRow['name'], 'code' => (string)$cRow['code'], 'color' => (string)($cRow['color'] ?: '#76B043')]
@@ -540,8 +547,16 @@ function admin_volunteer_update(array $p): array {
     $d = is_array($p['data'] ?? null) ? $p['data'] : [];
     $row = ['updatedAt' => now_iso()];
     if (array_key_exists('fullName', $d)) { $name = trim((string)$d['fullName']); if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name']; $row['fullName'] = substr($name, 0, 120); }
-    foreach (['firstName' => 80, 'lastName' => 80, 'phone' => 48, 'centre' => 48, 'faculty' => 80, 'photoUrl' => 512] as $f => $max) {
+    foreach (['firstName' => 80, 'lastName' => 80, 'phone' => 48, 'centre' => 48, 'faculty' => 80] as $f => $max) {
         if (array_key_exists($f, $d)) $row[$f] = substr(trim((string)$d[$f]), 0, $max);
+    }
+    /* Not a plain substr like the rest: with no cloud configured an editor's
+       browser sends the image itself, and truncating a data: URL at 512
+       characters stores a fragment of base64 that can never render. */
+    if (array_key_exists('photoUrl', $d)) {
+        $row['photoUrl'] = function_exists('photo_intake_url')
+            ? photo_intake_url((string)$d['photoUrl'])
+            : substr(trim((string)$d['photoUrl']), 0, 512);
     }
     if (array_key_exists('email', $d)) {
         $em = trim((string)$d['email']);

@@ -1,1 +1,19 @@
-Require all denied
+# Nothing in here is web-servable. It holds the SQLite database, the cached QR
+# PNGs, and — since the local photo store — children's headshots. Those reach a
+# browser only through api/public/photo.php, which serves them under an
+# unguessable id with a fixed content type.
+#
+# Both syntaxes, because the wrong one is not a smaller mistake. `Require` is
+# Apache 2.4 (mod_authz_core) and hard-fails a 2.2 host with a 500 on every
+# request under this path; `Order`/`Deny` is 2.2 and is ignored by 2.4 unless
+# mod_access_compat happens to be loaded. A shared host can be either, so
+# guarding both is the difference between a working deny and a directory of
+# children's photographs served to anyone who guesses the path.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
+Options -Indexes

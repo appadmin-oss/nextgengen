@@ -1999,7 +1999,15 @@ function SummerPending({ onChange }) {
           <tbody>
             {rows.map(r => (
               <tr key={r.studentId}>
-                <td><b>{r.fullName}</b><div className="mono admin-cell-sub">{r.studentId}{r.track ? " · " + r.track : ""}</div></td>
+                <td><b>{r.fullName}</b><div className="mono admin-cell-sub">{r.studentId}{r.track ? " · " + r.track : ""}</div>
+                  {/* The birthday, and whether there is one. A row with only an
+                      age is a row whose age is wrong next season, and this is
+                      where you can see which rows those are. */}
+                  <div className="mono admin-cell-sub">
+                    {r.dob ? r.dob + " · " + adminDobAge(r.dob) + "y"
+                      : r.age ? r.age + "y · no date of birth"
+                      : "no age on file"}
+                  </div></td>
                 <td className="mono" style={{ fontSize: 12 }}>{r.centre || "—"}</td>
                 <td className="mono" style={{ fontSize: 12 }}>{r.parentEmail || r.guardianPhone || "—"}</td>
                 {/* How long they have waited and when they were last chased —
@@ -2052,7 +2060,8 @@ function SummerCardsLink() {
 }
 
 function SummerEnroll({ cohort, blank, onDone }) {
-  const [d, setD] = React.useState({ fullName: "", age: 12, centre: "Egbeda", track: "", guardianName: "", guardianPhone: "", token: "", photoUrl: "" });
+  const BLANK_ENROL = { fullName: "", dob: "", age: 12, centre: "Egbeda", track: "", guardianName: "", guardianPhone: "", token: "", photoUrl: "" };
+  const [d, setD] = React.useState(BLANK_ENROL);
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(null);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -2060,10 +2069,12 @@ function SummerEnroll({ cohort, blank, onDone }) {
     e.preventDefault(); setBusy(true);
     try {
       const r = await NGGApi.admin.summer.enroll(d);
-      setDone(r); setD({ fullName: "", age: 12, centre: "Egbeda", track: "", guardianName: "", guardianPhone: "", token: "", photoUrl: "" });
+      setDone(r); setD(BLANK_ENROL);
       toast.success("Enrolled " + r.studentId); onDone();
     } catch (e) {
-      const map = { no_qr_available: "No blank QR cards left — mint a batch in the QR cards tab first.", qr_already_used: "That QR card is already assigned.", qr_not_found: "QR token not found." };
+      const map = { no_qr_available: "No blank QR cards left — mint a batch in the QR cards tab first.", qr_already_used: "That QR card is already assigned.", qr_not_found: "QR token not found.",
+        bad_dob: "That date of birth puts the child outside the programme's 5–19 range — check the year.",
+        bad_age: "Age must be between 5 and 19 — or give a date of birth and we'll work it out." };
       toast.error(map[e.code] || e.code || e.message);
     } finally { setBusy(false); }
   };
@@ -2077,9 +2088,20 @@ function SummerEnroll({ cohort, blank, onDone }) {
       {blank === 0 && <div className="admin-anchor-warn">⚠ No blank QR cards. Mint a batch in the “QR cards” tab before enrolling.</div>}
       <form onSubmit={submit} className="admin-fields">
         <Field label="Full name" value={d.fullName} onChange={v => set("fullName", v)} required/>
+        {/* Date of birth first, and the age it implies shown live beside it.
+            This form only ever took a typed age and never stored a birthday, so
+            a child enrolled here had no date while a child who registered
+            themselves did — and an age is right for exactly one season.
+            The age box stays because a desk sometimes genuinely only has an age
+            (a parent on the phone, a paper list from a school), but the date
+            wins whenever it is given. */}
         <div className="admin-fields-row">
-          <Field label="Age" value={d.age} onChange={v => set("age", v)} type="number"/>
+          <Field label="Date of birth" value={d.dob} onChange={v => set("dob", v)} type="date"/>
+          <Field label={d.dob ? "Age (from the date)" : "Age"} value={d.dob ? String(adminDobAge(d.dob)) : d.age}
+            onChange={v => set("age", v)} type="number" disabled={!!d.dob}/>
           <FieldCentre value={d.centre} onChange={v => set("centre", v)}/>
+        </div>
+        <div className="admin-fields-row">
           <Field label="Track" value={d.track} onChange={v => set("track", v)} placeholder="Music, Tech…"/>
         </div>
         <div className="admin-fields-row">
@@ -6852,13 +6874,28 @@ function downloadCsv(name, rows) {
 // Tiny field components
 // ============================================================================
 
-function Field({ label, value, onChange, type, placeholder, required }) {
+function Field({ label, value, onChange, type, placeholder, required, disabled, hint }) {
   return (
     <label className="admin-field">
       <span>{label}{required && <em>*</em>}</span>
-      <input type={type || "text"} className="admin-input" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} required={required}/>
+      <input type={type || "text"} className="admin-input" value={value == null ? "" : value} disabled={!!disabled}
+        onChange={(e) => onChange(e.target.value)} placeholder={placeholder} required={required}
+        style={disabled ? { opacity: .7, cursor: "not-allowed" } : undefined}/>
+      {hint && <span className="admin-hint" style={{ margin: 0 }}>{hint}</span>}
     </label>
   );
+}
+/* Age from an ISO date, matching dob_age() on the server so the number an admin
+   sees while typing is the number that gets stored. Returns "" for a date that
+   is not one yet, rather than a nonsense age for a half-typed year. */
+function adminDobAge(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso || ""))) return "";
+  const b = new Date(iso + "T00:00:00Z"), now = new Date();
+  if (isNaN(b.getTime()) || b.getTime() > now.getTime()) return "";
+  let a = now.getUTCFullYear() - b.getUTCFullYear();
+  const m = now.getUTCMonth() - b.getUTCMonth();
+  if (m < 0 || (m === 0 && now.getUTCDate() < b.getUTCDate())) a--;
+  return a;
 }
 function FieldTextarea({ label, value, onChange, rows }) {
   return (

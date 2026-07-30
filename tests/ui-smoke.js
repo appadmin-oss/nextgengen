@@ -198,6 +198,20 @@ const LEADERBOARD = {
     { volunteerId: 'VOL-MEN-26-003', displayId: 'VOL-MEN-26-003', firstName: 'OLD', surname: 'RECORD',
       role: 'Mentor', tier: { name: 'Mentor', code: 'MEN', color: '#00225F' }, token: 'V3', photoUrl: '',
       centre: null },
+    /* A PALE centre colour. The band and the code chip were hard-coded to white
+       text with a drop shadow, which is fine on maroon and unreadable on this —
+       and the card is printed, so nobody finds out until a box of two hundred
+       arrives. The colour is admin-chosen in a picker, so this is not a corner
+       case, it is one click away. */
+    { volunteerId: 'VOL-INS-26-004', displayId: 'VOL-INS-26-004', firstName: 'PALE', surname: 'CENTRE',
+      role: 'Instructor', faculty: 'Music', tier: { name: 'Instructor', code: 'INS', color: '#00225F' }, token: 'V4', photoUrl: '',
+      centre: { name: 'Sunshine Annexe', code: 'SA', color: '#F7E36B' } },
+    /* A centre colour a shade away from the TIER colour it is framed by, and a
+       name too long for a fixed-size band. Both used to fail silently: the two
+       colours merged into one shape, and the name ran off the end of the card. */
+    { volunteerId: 'VOL-MEN-26-005', displayId: 'VOL-MEN-26-005', firstName: 'CLASH', surname: 'LONGNAME',
+      role: 'Mentor', tier: { name: 'Mentor', code: 'MEN', color: '#00225F' }, token: 'V5', photoUrl: '',
+      centre: { name: 'Ikotun-Egbe Community Hall', code: 'IEC', color: '#0A2A6E' } },
   ] };
   window.NGGApi = deep({
     imageTools: function () {
@@ -316,11 +330,24 @@ const LEADERBOARD = {
   } else if (b === 'gatephoto') {
     window.__uploaded = [];
     window.NGGApi.uploadPublic = function (f) { window.__uploaded.push(f.name || 'blob'); return Promise.resolve({ url: 'https://res.cloudinary.com/x/image/upload/v1/p.jpg' }); };
+    /* What the component actually calls. It uploads when a cloud is configured
+       and hands the image back INLINE when one is not — Cloudinary is opt-in, and
+       a desk that cannot take a photo without it is not. uploads=off is the
+       fresh-deployment case, which is the one that used to say "photo uploads
+       aren't set up on this server yet" and leave the child with no photograph. */
+    window.NGGApi.uploadOrInline = function (f) {
+      window.__uploaded.push(f.name || 'blob');
+      if (new URLSearchParams(location.search).get('uploads') === 'off') {
+        return Promise.resolve({ url: 'data:image/png;base64,iVBORw0KGgo=', inline: true });
+      }
+      return Promise.resolve({ url: 'https://res.cloudinary.com/x/image/upload/v1/p.jpg', inline: false });
+    };
     props = { photoUrl: '', setPhotoUrl: function (u) { window.__photo = u; }, onBack: function () {}, onNext: function () {},
               card: {}, gold: '#f5b026', goldInk: '#2b2100', mut: {} };
   } else if (b === 'capture') {
     window.__uploaded = [];
     window.NGGApi.uploadFile = function (f) { window.__uploaded.push(f.name || 'blob'); return Promise.resolve({ url: 'https://res.cloudinary.com/x/image/upload/v1/p.jpg' }); };
+    window.NGGApi.uploadOrInline = function (f) { window.__uploaded.push(f.name || 'blob'); return Promise.resolve({ url: 'https://res.cloudinary.com/x/image/upload/v1/p.jpg', inline: false }); };
     props = { value: '', onChange: function (u) { window.__photo = u; }, size: 96, label: 'Photo' };
   } else if (b === 'fieldupload') {
     window.__cfg = new URLSearchParams(location.search).get('uploads') || 'on';
@@ -1126,9 +1153,17 @@ const LEADERBOARD = {
       return cards.map(card => {
         const bd = band(card), pn = panel(card);
         const bb = bd && bd.getBoundingClientRect(), pb = pn && pn.getBoundingClientRect();
+        // The band's own text, so "is this legible on that colour" is
+        // answerable rather than assumed.
+        const bandSpan = bd && bd.querySelector('span');
+        const bs = bandSpan && getComputedStyle(bandSpan);
         return { text: card.innerText.replace(/\s+/g, ' ').trim(),
                  band: bd ? bd.innerText.trim() : '',
                  bandColor: bd ? hex(getComputedStyle(bd).backgroundColor) : '',
+                 bandInk: bs ? hex(bs.color) : '',
+                 bandShadow: bs ? bs.textShadow : '',
+                 bandFontPx: bs ? Math.round(parseFloat(bs.fontSize) * 100) / 100 : 0,
+                 bandOutline: bd ? getComputedStyle(bd).outlineStyle : '',
                  frame: hex(getComputedStyle(card).backgroundColor),
                  // Smallest white margin between the band and the panel edge on
                  // the three sides that face the frame. null when there is no
@@ -1196,11 +1231,11 @@ const LEADERBOARD = {
        to a different roster would silently hide two of the three volunteers,
        and the header would still read as if that were everybody. */
     ok('switching roster clears the filter rather than carrying it over',
-      (await studio.locator('.card-pair').count()) === 3
-      && !/of 3 volunteers ready/.test(await studio.evaluate(() => document.body.innerText)));
+      (await studio.locator('.card-pair').count()) === 5
+      && !/of 5 volunteers ready/.test(await studio.evaluate(() => document.body.innerText)));
     const volFronts = (await centreOnCard('.card-pair .idcard')).filter((_, i) => i % 2 === 0);
     ok('the volunteer card carries the same centre band (' + volFronts.length + ' cards)',
-      volFronts.length === 3 && volFronts[0].band === 'EGBEDA' && volFronts[1].band === 'IJAIYE');
+      volFronts.length === 5 && volFronts[0].band === 'EGBEDA' && volFronts[1].band === 'IJAIYE');
     ok('…and the same code chip on the headshot',
       /\bEG\b/.test(volFronts[0].text) && /\bIJ\b/.test(volFronts[1].text));
     /* Two facts, two places. The frame stays the TIER colour — role is what a
@@ -1216,8 +1251,30 @@ const LEADERBOARD = {
        them, whatever pair the hierarchy table happens to hold. */
     ok('…and a white gutter keeping the two colours from merging (' + volFronts[0].gutter + 'px)',
       volFronts[0].gutter >= 2 && volFronts[1].gutter >= 2);
-    ok('…and a volunteer filed before centres existed still gets a card',
-      volFronts[2].band === '' && /OLD/.test(volFronts[2].text));
+    /* A volunteer with no single site — a roving mentor, ops, a record filed
+       before centres existed — used to get no band at all, which left two
+       different card geometries in one print run. A card with a gap where every
+       other card has a colour reads as a misprint, not as "works everywhere",
+       so it now carries the programme's own mark, which is the true answer. */
+    ok('…and a volunteer with no single centre gets the programme mark, not a hole',
+      /OLD/.test(volFronts[2].text) && /ALL CENTRES/i.test(volFronts[2].band)
+      && volFronts[2].bandColor === '#1b2b6b');
+    /* Contrast read off the colour instead of assumed. A pale centre carried
+       white text with a drop shadow, on a printed card. */
+    ok('…a pale centre colour flips the band to dark ink and drops the shadow',
+      volFronts[3].band === 'SUNSHINE ANNEXE' && volFronts[3].bandColor === '#f7e36b'
+      && volFronts[3].bandInk === '#10131a' && volFronts[3].bandShadow === 'none');
+    ok('…while a dark centre keeps white ink and its shadow',
+      volFronts[1].bandInk === '#ffffff' && /rgb/.test(volFronts[1].bandShadow));
+    /* Two nearly-identical colours meeting: the white gutter is not enough when
+       the frame and the band are a shade apart, so a keyline is added — and
+       only then, because an outline on every card would be noise. */
+    ok('…a centre colour close to the tier frame gains a keyline',
+      volFronts[4].bandOutline === 'solid' && volFronts[1].bandOutline === 'none');
+    // A long centre name shrinks rather than running off the end of the card.
+    ok('…and a long centre name is scaled to fit instead of overflowing',
+      volFronts[4].band === 'IKOTUN-EGBE COMMUNITY HALL'
+      && volFronts[4].bandFontPx > 0 && volFronts[4].bandFontPx < volFronts[1].bandFontPx);
     // Same filter, same problem, the other roster.
     await studio.getByLabel('Filter cards by centre').selectOption({ label: '⚠ No centre on file · 1' });
     await studio.waitForTimeout(500);
@@ -1562,6 +1619,29 @@ const LEADERBOARD = {
       && /cloudinary/.test(await gp.evaluate(() => window.__photo || '')));
     ok('…which also closes the camera overlay',
       await gp.locator('[role="dialog"]').count() === 0);
+
+    /* And the same picker on a deployment with NO cloud configured. Cloudinary
+       needs three keys in config.php, so this is the state every deployment is
+       in until somebody sets them — and the desk used to answer "photo uploads
+       aren't set up on this server yet, skip for now", which meant no child got
+       a photograph and the review desk had nothing to look at. The image now
+       travels in the submission and the server holds it. */
+    const gpNo = await camCtx.newPage();
+    await gpNo.goto(BASE + '/tests/_boards_fixture.html?board=gatephoto&mode=ok&uploads=off', { waitUntil: 'networkidle' });
+    await gpNo.evaluate(() => {
+      const i = document.querySelector('input[type=file]');
+      const dt = new DataTransfer();
+      dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'nocloud.png', { type: 'image/png' }));
+      i.files = dt.files;
+      i.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await gpNo.waitForTimeout(400);
+    const noCloud = await gpNo.evaluate(() => ({ photo: window.__photo || '', body: document.body.innerText }));
+    ok('with no cloud configured the photo still lands, carried inline',
+      /^data:image\//.test(noCloud.photo));
+    ok('…and the desk does not tell the operator to skip it',
+      !/aren't set up|not set up|skip for now/i.test(noCloud.body));
+    await gpNo.close();
     await camCtx.close();
     const camCtx2 = await browser.newContext({ permissions: ['camera'] });
 

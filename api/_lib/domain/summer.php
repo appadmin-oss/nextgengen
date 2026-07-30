@@ -166,8 +166,21 @@ function admin_summer_enroll(array $p): array {
     $d = $p['data'] ?? [];
     $name = trim((string)($d['fullName'] ?? ''));
     if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name'];
-    $age = (int)($d['age'] ?? 0);
-    if ($age < 5 || $age > 19) return ['ok' => false, 'error' => 'bad_age'];
+    /* Date of birth is what we ask for; age is what every band, report and
+     * eligibility rule downstream reads, so it is DERIVED and stored alongside.
+     *
+     * This path took only a typed age and never wrote dob at all — so a child
+     * enrolled by an admin, or through a CSV import, had a birthday of nothing
+     * while a child who registered themselves had one. The date is optional here
+     * because a desk sometimes genuinely only has an age (a parent on the phone,
+     * a paper list from a school), and refusing the enrolment over it would be
+     * worse than an empty column. When a date IS given it wins: an age typed
+     * next to a birthday that disagrees with it is a typo, not a second opinion.
+     */
+    $dob = trim((string)($d['dob'] ?? ''));
+    if ($dob !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) return ['ok' => false, 'error' => 'bad_dob'];
+    $age = $dob !== '' ? dob_age($dob) : (int)($d['age'] ?? 0);
+    if ($age < REG_MIN_AGE || $age > REG_MAX_AGE) return ['ok' => false, 'error' => $dob !== '' ? 'bad_dob' : 'bad_age'];
     $c = summer_ensure_cohort();
 
     // Pick the QR token: an explicit one (must be blank) or the oldest blank.
@@ -196,7 +209,7 @@ function admin_summer_enroll(array $p): array {
     $waitlisted = empty($p['force']) && function_exists('centre_is_full') && centre_is_full($centre, $c['cohortId']);
     db_insert('summer_students', [
         'studentId' => $studentId, 'cohortId' => $c['cohortId'], 'token' => $token, 'handle' => $handle,
-        'fullName' => $name, 'age' => $age, 'centre' => $centre,
+        'fullName' => $name, 'dob' => $dob, 'age' => $age, 'centre' => $centre,
         'track' => substr((string)($d['track'] ?? ''), 0, 64), 'photoUrl' => (string)($d['photoUrl'] ?? ''),
         'guardianName' => substr((string)($d['guardianName'] ?? ''), 0, 255), 'guardianPhone' => substr((string)($d['guardianPhone'] ?? ''), 0, 48),
         'parentEmail' => substr(trim((string)($d['parentEmail'] ?? '')), 0, 160),
@@ -220,6 +233,9 @@ function admin_summer_import(array $p): array {
         if (!is_array($r)) { $failed++; $results[] = ['row' => $i + 1, 'ok' => false, 'error' => 'bad_row']; continue; }
         $res = admin_summer_enroll(['requesterId' => $p['requesterId'] ?? '', 'ip' => $p['ip'] ?? '', 'data' => [
             'fullName' => (string)($r['fullName'] ?? ''), 'age' => (int)($r['age'] ?? 0),
+            // Carried through so an import can supply a real birthday rather
+            // than only an age that is right for one season.
+            'dob' => (string)($r['dob'] ?? ''),
             'centre' => (string)($r['centre'] ?? ''), 'track' => (string)($r['track'] ?? ''),
             'guardianName' => (string)($r['guardianName'] ?? ''), 'guardianPhone' => (string)($r['guardianPhone'] ?? ''),
             'parentEmail' => (string)($r['parentEmail'] ?? ''),

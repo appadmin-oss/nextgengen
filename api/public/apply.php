@@ -43,11 +43,19 @@ if ($kind === 'teen') {
     $payload['centre']  = v_safe_text($body['centre'] ?? '', 60);
     $payload['track']   = v_safe_text($body['track'] ?? '', 60);
     $payload['program'] = v_safe_text($body['program'] ?? '', 16);
-    $payload['photoUrl'] = v_safe_text($body['photoUrl'] ?? '', 512);
+    /* A hosted URL when the browser had a cloud to upload to, the image itself
+       when it did not. v_safe_text used to truncate an inline data: URL at 512
+       characters, storing a fragment of base64 that could never render — a
+       broken photo on every application on a deployment with no Cloudinary. */
+    $payload['photoUrl'] = photo_intake_url((string)($body['photoUrl'] ?? ''));
 } elseif ($kind === 'volunteer') {
     v_require($body, ['role']);
     $payload['role']    = v_safe_text($body['role'] ?? '', 24);
-    $payload['photoUrl'] = v_safe_text($body['photoUrl'] ?? '', 512);
+    /* A hosted URL when the browser had a cloud to upload to, the image itself
+       when it did not. v_safe_text used to truncate an inline data: URL at 512
+       characters, storing a fragment of base64 that could never render — a
+       broken photo on every application on a deployment with no Cloudinary. */
+    $payload['photoUrl'] = photo_intake_url((string)($body['photoUrl'] ?? ''));
     // Home centre is required; mentors/instructors also pick a faculty. Forward
     // both (plus the optional public-visibility opt-in) so the domain can
     // validate against the live centre/faculty catalogues.

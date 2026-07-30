@@ -253,4 +253,11 @@ function web_cron_maintenance(): void {
     // got, only touches days strictly before today, and the unique index on
     // (person, kind, date) means a double run cannot become a double strike.
     if (function_exists('policy_sweep_absences')) policy_sweep_absences();
+    /* Locally-held images nothing references any more — a rejected application,
+     * a duplicate registration, an original replaced by a retake. The store is
+     * write-on-intake and an intake can be refused after the bytes have landed,
+     * so without this a shared host's disk quota fills over a season. Bounded,
+     * conservative (a week old before it is even a candidate) and it does
+     * nothing at all if it cannot read what is referenced. */
+    if (function_exists('photo_store_sweep')) photo_store_sweep(7, 200);
 }

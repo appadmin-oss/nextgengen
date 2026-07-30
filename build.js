@@ -56,6 +56,35 @@ const ORDER = [
 
 function log(...a) { console.log('[build]', ...a); }
 
+/* ── Fingerprinted asset names ───────────────────────────────────────────────
+ * The entry files used to ship under fixed names — app.min.js, styles.css — and
+ * freshness rested entirely on the service worker being network-first for them
+ * plus a no-store header from .htaccess. Both are real, and both are things a
+ * host, a proxy or a CDN in front of us can quietly override; when one does, a
+ * browser serves last month's bundle against this month's API and there is
+ * nothing in the response to tell it otherwise.
+ *
+ * A name that contains a hash of the file's own contents removes the question.
+ * A changed file is a different URL the browser has never seen, so it MUST
+ * fetch it; an unchanged file keeps its URL and can be cached for a year with
+ * `immutable` and never revalidated at all. index.html is the only thing served
+ * no-cache, and it is what points at the current names.
+ *
+ * Per-file hashes, not one build id across all of them: a CSS-only deploy
+ * should not make every visitor re-download a 1.3MB bundle that did not change.
+ */
+function fileTag(contents) {
+  return crypto.createHash('sha256').update(contents).digest('hex').slice(0, 10);
+}
+/** `styles.css` + a tag → `styles.4f2a1b9c33.css`. Multi-part extensions are
+ *  kept intact so `app.min.js` becomes `app.<tag>.min.js`, not `app.min.<tag>.js`
+ *  — the second would break the `.min.js` suffix matching that tooling and the
+ *  .htaccess rules key on. */
+function hashedName(name, tag) {
+  const i = name.indexOf('.');
+  return i === -1 ? `${name}.${tag}` : `${name.slice(0, i)}.${tag}${name.slice(i)}`;
+}
+
 /* Every file a browser may hold in a cache, hashed in a stable order.
    Sorted paths and path-plus-content (not content alone) so that renaming or
    removing a file changes the id just as much as editing one does. */
@@ -153,17 +182,50 @@ async function build() {
    * churn for nothing. */
   const buildId = hashClientAssets(minified.code);
 
-  const code = minified.code + `\n//# sourceMappingURL=app.min.js.map\n`;
+  /* ── Fingerprint every entry file ────────────────────────────────────────
+   * `assets` maps the name the source refers to → the hashed name shipped.
+   * The bundle is hashed on its own bytes; the sibling scripts and the two
+   * stylesheets on theirs, so a CSS-only deploy does not re-issue a 1.3MB
+   * bundle nobody needs to download again.
+   */
+  const bundleTag = fileTag(minified.code);
+  const assets = { 'app.min.js': hashedName('app.min.js', bundleTag) };
+
+  // The map name goes in the bundle's sourceMappingURL, so it has to be
+  // decided before the code is written.
+  const mapName = assets['app.min.js'] + '.map';
+  const code = minified.code + `\n//# sourceMappingURL=${mapName}\n`;
+  fs.writeFileSync(path.join(DIST, assets['app.min.js']), code);
+  if (minified.map) fs.writeFileSync(path.join(DIST, mapName), minified.map);
+  /* The plain name as well, and this one matters more than the other plain
+     copies. dist/ is a drop-in deploy folder that is not wiped between builds
+     and root files are not pruned, so the moment this stopped being written it
+     froze at whatever the last pre-fingerprint build produced — leaving a
+     dist/app.min.js that LOOKS current and serves last week's bundle to
+     anything referencing it by name (the test fixtures do, and so would any
+     bookmark or integration). A missing file 404s loudly; a stale one is the
+     exact failure this whole change exists to prevent. */
   fs.writeFileSync(path.join(DIST, 'app.min.js'), code);
-  if (minified.map) fs.writeFileSync(path.join(DIST, 'app.min.js.map'), minified.map);
+
+  /* The sibling classic scripts and the stylesheets: copied under a hashed
+     name. Copied, not moved — the source tree keeps the plain names, which is
+     what dev mode (in-browser Babel, no build step) loads. */
+  const FINGERPRINTED = ['styles.css', 'styles-app.css', 'data.js', 'photos.js', 'api-client.js', 'outbox.js'];
+  for (const f of FINGERPRINTED) {
+    const src = path.join(ROOT, f);
+    if (!fs.existsSync(src)) continue;
+    const body = fs.readFileSync(src);
+    assets[f] = hashedName(f, fileTag(body));
+    fs.writeFileSync(path.join(DIST, assets[f]), body);
+  }
 
   const outSize = Buffer.byteLength(code);
   const gzSize = zlib.gzipSync(code).length;
-  log(`compiled ${ORDER.length} files → app.min.js (${(outSize / 1024).toFixed(1)} KB, ${(gzSize / 1024).toFixed(1)} KB gzip) build ${buildId} in ${Date.now() - t0}ms`);
+  log(`compiled ${ORDER.length} files → ${assets['app.min.js']} (${(outSize / 1024).toFixed(1)} KB, ${(gzSize / 1024).toFixed(1)} KB gzip) build ${buildId} in ${Date.now() - t0}ms`);
 
   // Produce the production index.html: same head as dev (fonts, meta,
   // SEO, boot screen) but with the babel script removed and the .jsx
-  // tags replaced by a single <script src="app.min.js"> with defer.
+  // tags replaced by a single <script src="app.<hash>.min.js"> with defer.
   const dev = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   let prod = dev;
 
@@ -171,16 +233,23 @@ async function build() {
   prod = prod.replace(/<script src="vendor\/babel\.min\.js"><\/script>\s*/g, '');
   prod = prod.replace(/<script type="text\/babel" src="[^"]+"><\/script>\s*/g, '');
 
-  // Insert a single bundled script + a preload right after the React tags
+  const A = (f) => assets[f] || f;
+  // Insert the bundled scripts + a preload right after the React tags
   prod = prod.replace(
     /(<script src="vendor\/react-dom\.production\.min\.js"><\/script>\s*)/,
-    `$1<link rel="modulepreload" href="app.min.js"/>\n<script defer src="data.js"></script>\n<script defer src="photos.js"></script>\n<script defer src="api-client.js"></script>\n<script defer src="outbox.js"></script>\n<script defer src="app.min.js"></script>\n`
+    `$1<link rel="modulepreload" href="${A('app.min.js')}"/>\n`
+    + ['data.js', 'photos.js', 'api-client.js', 'outbox.js', 'app.min.js']
+        .map(f => `<script defer src="${A(f)}"></script>`).join('\n') + '\n'
   );
   // Remove the now-duplicated data.js/photos.js/api-client.js script tags
   prod = prod.replace(/<script src="data\.js"><\/script>\s*/g, '');
   prod = prod.replace(/<script src="photos\.js"><\/script>\s*/g, '');
   prod = prod.replace(/<script src="api-client\.js"><\/script>\s*/g, '');
   prod = prod.replace(/<script src="outbox\.js"><\/script>\s*/g, '');
+  // Point the stylesheet links at the fingerprinted copies.
+  for (const css of ['styles.css', 'styles-app.css']) {
+    prod = prod.split(`href="${css}"`).join(`href="${A(css)}"`);
+  }
 
   // Mark the build so we can spot which version a page is running
   prod = prod.replace(/<head>/, `<head>\n<meta name="ngg-build" content="${buildId}"/>`);
@@ -190,6 +259,14 @@ async function build() {
 
   // Copy through everything the prod HTML references. Keeps `dist/` a
   // self-contained drop-in deploy target.
+  //
+  // The PLAIN entry names ship as well as the fingerprinted ones. Nothing the
+  // browser loads from index.html points at them any more, but a deep link, a
+  // bookmarked script URL or an integration that hard-codes /api-client.js
+  // would 404 without them, and a 404 there is a blank page. They are served
+  // must-revalidate (see .htaccess) rather than immutable, because a fixed name
+  // whose contents change is exactly the thing that cannot be cached — which is
+  // the whole reason the hashed copies exist.
   const staticAssets = [
     'styles.css', 'styles-app.css',
     'data.js', 'photos.js', 'api-client.js', 'outbox.js',
@@ -211,7 +288,7 @@ async function build() {
   }
 
   // Second build target: the Anchor Journal PWA (its own bundle + shell).
-  await buildJournal(buildId);
+  await buildJournal(buildId, assets);
   for (const junk of ['api/storage/ngg.db', 'api/storage/ngg.db-wal', 'api/storage/ngg.db-shm', 'api/config.php']) {
     const p = path.join(DIST, junk);
     if (fs.existsSync(p)) fs.rmSync(p, { force: true });
@@ -223,21 +300,51 @@ async function build() {
     }
   }
 
-  // Deterministic cache-busting: stamp the build id into the service worker's
-  // CACHE_VERSION so every deploy invalidates the old static cache on the next
-  // visit — without renaming assets (the SW precaches them by path).
+  /* Stamp the service worker: the cache version, and the precache list rewritten
+     to the fingerprinted names.
+     The version alone was doing all the work before — it invalidated the old
+     cache on the next visit, but the entries inside were fixed paths, so the
+     worker still had to be trusted to revalidate them. Precaching the hashed
+     names means a cache hit is BY DEFINITION the right file: the name says which
+     bytes it is. */
   const swPath = path.join(DIST, 'service-worker.js');
   if (fs.existsSync(swPath)) {
     let sw = fs.readFileSync(swPath, 'utf8');
     sw = sw.replace(/const CACHE_VERSION = '[^']*';/, `const CACHE_VERSION = 'ngg-${buildId}';`);
+    for (const [plain, hashed] of Object.entries(assets)) {
+      sw = sw.split(`'/${plain}'`).join(`'/${hashed}'`);
+    }
     fs.writeFileSync(swPath, sw);
   }
 
+  /* Sweep fingerprinted files from previous builds.
+   *
+   * dist/ is a drop-in deploy folder and root files are not pruned by the
+   * directory mirror, so without this every build leaves another 1.3MB bundle
+   * and 3MB map behind — a folder somebody FTPs up, growing by ~4MB a deploy
+   * and full of dead files that look like live ones.
+   *
+   * Nothing references an old hashed name: index.html is served no-cache and
+   * names the current set, so a reload always asks for these. The only window
+   * where a stale one could be wanted is a deferred script fetch landing in the
+   * seconds a deploy is being copied, which the plain names cover. */
+  const current = new Set(Object.values(assets).concat(Object.values(assets).map(a => a + '.map')));
+  let swept = 0;
+  for (const f of fs.readdirSync(DIST)) {
+    if (!/\.[0-9a-f]{10}\.(min\.)?(js|css)(\.map)?$/.test(f) || current.has(f)) continue;
+    fs.rmSync(path.join(DIST, f), { force: true });
+    swept++;
+  }
+  if (swept) log(`swept ${swept} fingerprinted file(s) from earlier builds`);
+
   // Build manifest — ops visibility + a machine-readable record of the deploy.
+  // `assets` is the plain→fingerprinted map, which is what an operator needs to
+  // answer "which bundle is this browser running" from a support report.
   const manifest = {
     buildId,
     builtAt: new Date().toISOString(),
-    bundle: { file: 'app.min.js', bytes: outSize, gzipBytes: gzSize, files: ORDER.length },
+    bundle: { file: assets['app.min.js'], bytes: outSize, gzipBytes: gzSize, files: ORDER.length },
+    assets,
     node: process.version,
   };
   fs.writeFileSync(path.join(DIST, 'build-manifest.json'), JSON.stringify(manifest, null, 2));
@@ -267,7 +374,7 @@ function validateOrderAgainstIndex() {
 // Compile the standalone Anchor Journal PWA: JSX → minified bundle, a
 // Babel-free prod shell, and a build-stamped service worker. Runs as an
 // independent target so the marketing bundle and the app never couple.
-async function buildJournal(buildId) {
+async function buildJournal(buildId, assets) {
   const srcDir = path.join(ROOT, 'journal');
   const outDir = path.join(DIST, 'journal');
   if (!fs.existsSync(path.join(srcDir, 'app.jsx'))) return;
@@ -288,6 +395,10 @@ async function buildJournal(buildId) {
   html = html.replace(/<script[^>]*src="\/vendor\/babel\.min\.js"[^>]*><\/script>\s*/g, '');
   html = html.replace(/<script type="text\/babel" src="\/journal\/app\.jsx"><\/script>\s*/g, '');
   html = html.replace(/(<script[^>]* src="\/api-client\.js"[^>]*><\/script>\s*)/, `$1<script defer src="/journal/app.min.js"></script>\n`);
+  // The journal shell loads the shared API client too — point it at the
+  // fingerprinted copy, or this one shell would keep the un-hashed name alive
+  // and be the single page that can still run a stale client.
+  if (assets && assets['api-client.js']) html = html.split('/api-client.js"').join('/' + assets['api-client.js'] + '"');
   html = html.replace(/<head>/, `<head>\n<meta name="ngg-build" content="${buildId}"/>`);
   fs.writeFileSync(path.join(outDir, 'index.html'), html);
 
@@ -296,6 +407,7 @@ async function buildJournal(buildId) {
   if (fs.existsSync(swPath)) {
     let sw = fs.readFileSync(swPath, 'utf8');
     sw = sw.replace(/const CACHE_VERSION = '[^']*';/, `const CACHE_VERSION = 'aj-${buildId}';`);
+    if (assets && assets['api-client.js']) sw = sw.split("'/api-client.js'").join("'/" + assets['api-client.js'] + "'");
     fs.writeFileSync(swPath, sw);
   }
   // The JSX source isn't needed in prod.

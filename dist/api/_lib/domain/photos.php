@@ -191,6 +191,219 @@ function photo_pipeline_alert(string $reason, array $detail = []): void {
     audit('photo.alert', null, $reason, $detail, '');
 }
 
+/* ── Local image store ──────────────────────────────────────────────────────
+ * Cloudinary is opt-in: it needs three keys in config.php, and until somebody
+ * sets them there is nowhere to host an image. Everything above assumes a
+ * hosted URL, which was fine for every surface that uploads directly — and
+ * silently wrong for the one that does not.
+ *
+ * The public self-registration form posts its headshot INLINE, as a data: URL,
+ * because it has no session and cannot use the signed upload path. That data
+ * URL cannot go in `summer_students.photoUrl` (VARCHAR(512), and MySQL is
+ * strict), and `photo_ingest` refuses anything that is not https — so on a
+ * deployment without Cloudinary the bytes had nowhere to go and were dropped.
+ * The registration succeeded and the reviewer got an empty frame, which is
+ * exactly the wrong failure: the one thing the review desk exists to look at.
+ *
+ * So we hold the original ourselves. Content-addressed, so re-sending the same
+ * photo stores it once and the URL never has to change; served by
+ * api/public/photo.php with a one-year immutable cache.
+ *
+ * The id is an HMAC of the bytes under the app's cookie secret, not a bare
+ * hash. A bare hash would let anyone holding a copy of a child's photograph
+ * confirm it is in the system and fetch it back; keyed, the id is
+ * unguessable without the secret, so the URL behaves as a capability. Nothing
+ * enumerable, and no database round trip to serve an image.
+ */
+const PHOTO_STORE_MAX_BYTES = 6000000;   // a resampled headshot is ~150KB
+const PHOTO_STORE_TYPES = ['jpeg' => 'jpg', 'jpg' => 'jpg', 'png' => 'png', 'webp' => 'webp'];
+
+function photo_store_dir(): string {
+    $base = (string)($GLOBALS['CONFIG']['db']['sqlite_path'] ?? '');
+    $dir = ($base !== '' ? dirname($base) : (__DIR__ . '/../../storage')) . '/photos';
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    return $dir;
+}
+
+/** The on-disk path for a store id. Validated, so a crafted id cannot escape. */
+function photo_store_path(string $id): string {
+    if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', $id)) return '';
+    return photo_store_dir() . '/' . $id;
+}
+
+function photo_store_url(string $id): string {
+    return $id === '' ? '' : '/api/public/photo.php?p=' . rawurlencode($id);
+}
+
+/** Absolute form, for anything off-site that has to FETCH the image — the
+ *  vision model and Cloudinary both do. Empty when no origin is configured,
+ *  which is the honest answer rather than a URL nobody can resolve. */
+function photo_store_absolute(string $relOrId): string {
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    if ($origin === '' || $relOrId === '') return '';
+    if (preg_match('#^https?://#i', $relOrId)) return $relOrId;
+    return $origin . (strpos($relOrId, '/') === 0 ? $relOrId : photo_store_url($relOrId));
+}
+
+/**
+ * Persist an inline data: URL and return its stable URL.
+ *
+ * Validated on the bytes, not on the declared type: a `data:image/jpeg` header
+ * costs nothing to write and this is an unauthenticated intake path. The
+ * extension we store under comes from what getimagesize actually found.
+ */
+function photo_store_put(string $dataUrl): array {
+    if (!preg_match('#^data:image/([a-z0-9.+-]+);base64,#i', $dataUrl, $m)) return ['ok' => false, 'error' => 'not_data_url'];
+    $raw = base64_decode(substr($dataUrl, strpos($dataUrl, ',') + 1) ?: '', true);
+    if ($raw === false || strlen($raw) < 100) return ['ok' => false, 'error' => 'unreadable'];
+    if (strlen($raw) > PHOTO_STORE_MAX_BYTES) return ['ok' => false, 'error' => 'too_large'];
+
+    $ext = '';
+    if (function_exists('getimagesizefromstring')) {
+        $info = @getimagesizefromstring($raw);
+        $byType = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp'];
+        if (is_array($info) && isset($byType[(int)($info[2] ?? 0)])) $ext = $byType[(int)$info[2]];
+    }
+    // No GD/exif build to ask? Fall back to the declared type, but only for the
+    // three we are willing to serve — never to whatever the caller wrote.
+    if ($ext === '') $ext = PHOTO_STORE_TYPES[strtolower($m[1])] ?? '';
+    if ($ext === '') return ['ok' => false, 'error' => 'unsupported_type'];
+
+    $secret = (string)($GLOBALS['CONFIG']['cookie_secret'] ?? 'ngg');
+    $id = substr(hash_hmac('sha256', $raw, $secret), 0, 32) . '.' . $ext;
+    $path = photo_store_path($id);
+    if ($path === '') return ['ok' => false, 'error' => 'bad_id'];
+    // Content-addressed: an identical re-send is already on disk. Writing it
+    // again would be correct but pointless, and a partial write would not be.
+    if (!is_file($path)) {
+        $tmp = $path . '.' . rand_hex(4) . '.part';
+        if (@file_put_contents($tmp, $raw) === false) return ['ok' => false, 'error' => 'write_failed'];
+        if (!@rename($tmp, $path)) { @unlink($tmp); return ['ok' => false, 'error' => 'write_failed']; }
+    }
+    return ['ok' => true, 'id' => $id, 'url' => photo_store_url($id),
+            'absolute' => photo_store_absolute($id), 'bytes' => strlen($raw), 'ext' => $ext];
+}
+
+/** Is this one of ours? Accepts either form, because the pipeline is handed the
+ *  absolute URL (an outside service has to fetch it) and hands back whatever it
+ *  was given. */
+function photo_is_stored_locally(string $url): bool {
+    return (bool)preg_match('#(?:^|://[^/]+)/api/public/photo\.php\?p=[0-9a-f]{32}\.(?:jpg|png|webp)$#', $url);
+}
+
+/** Store the RELATIVE form on a record. A saved absolute URL bakes in today's
+ *  hostname, so moving the site — or serving it on both a bare and a www
+ *  domain — silently breaks every photo already on file. The absolute form is
+ *  built on demand for the two things that genuinely need it: an email, and an
+ *  outside service that has to fetch the image. */
+function photo_store_relativise(string $url): string {
+    if (!photo_is_stored_locally($url)) return $url;
+    $q = strpos($url, '/api/public/photo.php');
+    return $q === false ? $url : substr($url, $q);
+}
+
+/**
+ * Delete stored images nothing points at any more.
+ *
+ * The store is write-on-intake, and an intake can be refused after the bytes
+ * have landed — a rejected application, a duplicate registration, a photo
+ * replaced by a retake. Content-addressing means a re-send costs nothing, but
+ * abandoned originals would accumulate forever on a shared host with a disk
+ * quota, and "the site stopped working" from a full disk is a bad way to find
+ * out about a design decision.
+ *
+ * Deliberately conservative:
+ *  - A file must be older than $days before it is even a candidate, so a photo
+ *    mid-flight between being stored and being written to its row is never
+ *    swept out from under the request that is creating it.
+ *  - Every column that can hold one of these URLs is consulted, and if ANY of
+ *    those reads throws, the sweep does nothing at all. Deleting a child's only
+ *    photograph because a query failed is not a tradeoff worth making.
+ *  - Bounded per run, because this is driven by ordinary web traffic.
+ */
+function photo_store_sweep(int $days = 7, int $limit = 200): int {
+    $dir = photo_store_dir();
+    if (!is_dir($dir)) return 0;
+    $cut = time() - max(1, $days) * 86400;
+
+    $files = [];
+    foreach ((array)@scandir($dir) as $f) {
+        if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', (string)$f)) continue;
+        $path = $dir . '/' . $f;
+        if (!is_file($path) || @filemtime($path) > $cut) continue;
+        $files[] = $f;
+        if (count($files) >= $limit) break;
+    }
+    if (!$files) return 0;
+
+    /* Everywhere a stored URL can legitimately live. A column missed here is a
+     * photo deleted while something still shows it, so this list is the whole
+     * safety of the sweep — hence the all-or-nothing failure below. */
+    $sources = [
+        ['summer_students', 'photoUrl'],
+        ['volunteers', 'photoUrl'],
+        ['applications', 'photoUrl'],
+        ['photo_assets', 'sourceUrl'],
+        ['photo_assets', 'editedUrl'],
+        ['members', 'photoUrl'],
+    ];
+    $referenced = [];
+    foreach ($sources as [$table, $col]) {
+        try {
+            foreach (db_all("SELECT $col v FROM $table WHERE $col LIKE '%/api/public/photo.php?p=%'") as $r) {
+                if (preg_match('/p=([0-9a-f]{32}\.(?:jpg|png|webp))/', (string)$r['v'], $m)) $referenced[$m[1]] = true;
+            }
+        } catch (Throwable $e) {
+            // A missing column or a broken connection means we do not know what
+            // is referenced. Do nothing rather than guess.
+            error_log('[photo_store_sweep] aborted, cannot read ' . $table . '.' . $col . ': ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    $gone = 0;
+    foreach ($files as $f) {
+        if (isset($referenced[$f])) continue;
+        if (@unlink($dir . '/' . $f)) $gone++;
+    }
+    if ($gone > 0) audit('photo.store.swept', null, '', ['deleted' => $gone], '');
+    return $gone;
+}
+
+/**
+ * The single door every intake path puts a photo through.
+ *
+ * A client hands over one of two things and the difference is not its problem:
+ * a hosted URL, when a cloud is configured and the browser uploaded straight to
+ * it, or the image itself as an inline data: URL, when there is no cloud to
+ * upload to. Every endpoint that took a photo used to accept only the first —
+ * apply.php truncated a data URL to 512 characters of nonsense, reshoot_submit
+ * refused it as `bad_photo`, gate_register dropped it — so on a deployment
+ * without Cloudinary, which is every deployment until somebody sets three keys,
+ * photographs quietly did not work anywhere.
+ *
+ * Returns a URL that is safe to put in a VARCHAR(512), or '' if there was
+ * nothing usable. Never throws: a photo is never worth failing a registration
+ * over.
+ */
+function photo_intake_url(string $incoming, int $max = 512): string {
+    $u = trim($incoming);
+    if ($u === '') return '';
+    if (preg_match('#^data:#i', $u)) {
+        try {
+            $st = photo_store_put($u);
+            return !empty($st['ok']) ? (string)$st['url'] : '';
+        } catch (Throwable $e) {
+            error_log('[photo_intake_url] ' . $e->getMessage());
+            return '';
+        }
+    }
+    // Already hosted somewhere. Only http(s) and our own served path are URLs;
+    // anything else (javascript:, file:, a bare filename) is not a photo.
+    if (!preg_match('#^(https?://|/api/public/photo\.php\?)#i', $u)) return '';
+    return substr($u, 0, $max);
+}
+
 /* ── Ingest + process ─────────────────────────────────────────────────────── */
 
 /** Create a governed asset for a freshly captured image (versions on re-capture). */
@@ -413,10 +626,22 @@ function admin_photo_replace(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
     $subjectType = (string)($p['subjectType'] ?? '');
     $subjectId = (string)($p['subjectId'] ?? '');
-    $sourceUrl = (string)($p['sourceUrl'] ?? '');
+    /* Hosted URL or the image itself — the editor's browser sends whichever it
+     * could manage, and with no cloud configured that is the image. Stored
+     * first so there is always something to point the record at, even when the
+     * governed pipeline cannot run. */
+    $sourceUrl = photo_intake_url((string)($p['sourceUrl'] ?? ''));
     if ($subjectId === '') return ['ok' => false, 'error' => 'missing_subject'];
-    $ing = photo_ingest($subjectType, $subjectId, $sourceUrl, $g['requester']['memberId']);
-    if (empty($ing['ok'])) return $ing;
+    if ($sourceUrl === '') return ['ok' => false, 'error' => 'bad_source'];
+    $ing = photo_ingest($subjectType, $subjectId, photo_store_absolute($sourceUrl) ?: $sourceUrl, $g['requester']['memberId']);
+    if (empty($ing['ok'])) {
+        // No pipeline (no cloud, no reachable origin) is not a reason to refuse
+        // an editor's replacement — apply it and say the edit did not run.
+        photo_apply_to_subject(['subjectType' => $subjectType, 'subjectId' => $subjectId, 'editedUrl' => $sourceUrl]);
+        audit('photo.replaced', $g['requester']['memberId'], ($subjectType . ':' . $subjectId),
+            ['applied' => $sourceUrl, 'pipeline' => (string)($ing['error'] ?? 'failed')], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'assetId' => '', 'status' => 'captured', 'editedUrl' => $sourceUrl];
+    }
     $proc = photo_process($ing['assetId']);
     // An admin-initiated replace is authoritative: apply it to the card/profile
     // straight away even when analysis routed it to review. Adult volunteer
@@ -434,7 +659,10 @@ function admin_photo_replace(array $p): array {
 /** Push the approved (edited) image back onto the subject's record so the ID
  *  card + profile always render the approved photo. Best-effort. */
 function photo_apply_to_subject(array $a): void {
-    $url = (string)($a['editedUrl'] ?? '') ?: (string)($a['sourceUrl'] ?? '');
+    // Relativised: the pipeline is handed the absolute URL because Cloudinary
+    // and the vision model have to fetch it, and it hands the same string back.
+    // Writing that into the row would bake today's hostname into every record.
+    $url = photo_store_relativise((string)($a['editedUrl'] ?? '') ?: (string)($a['sourceUrl'] ?? ''));
     if ($url === '') return;
     try {
         if ($a['subjectType'] === 'student')        db_update('summer_students', ['photoUrl' => $url, 'updatedAt' => now_iso()], ['studentId' => $a['subjectId']]);
