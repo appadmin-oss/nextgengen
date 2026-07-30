@@ -30,6 +30,9 @@ if ($method === 'GET') {
         'lat'   => $b['lat'] ?? null,
         'lng'   => $b['lng'] ?? null,
         'ip'    => client_ip(),
+        // Retry key: minted once when the form opened, carried on every attempt,
+        // so a re-send after a timeout replays rather than re-registers.
+        'submissionId' => $b['submissionId'] ?? '',
     ]);
 } else {
     json_error('method_not_allowed', 405);

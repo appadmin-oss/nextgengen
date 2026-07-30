@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 69;
+const NGG_SCHEMA_TARGET = 70;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1726,6 +1726,39 @@ function db_migrate(PDO $db): void {
             ALTER TABLE summer_students ADD COLUMN reviewedAt TEXT DEFAULT '';
             ALTER TABLE summer_students ADD COLUMN reviewNote TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_sstu_reg_centre ON summer_students(regStatus, centre);
+        ",
+
+        /* Idempotent intake — so a retry is safe.
+         *
+         * Nothing in the intake path carried a submission key, which made every
+         * retry a gamble: either it created a second child, or it tripped the
+         * name+parent-contact duplicate heuristic and stopped with a warning
+         * about a registration that had in fact worked. That is why a timeout
+         * was so expensive — the honest advice after one was "ask an admin
+         * whether this went through", which is not advice a family can act on.
+         *
+         * The client mints a submissionId once, when the form is opened, and
+         * carries it on every attempt. The UNIQUE index is the lock: a request
+         * claims the key before doing the work, so two concurrent submissions
+         * cannot both register. A completed row replays its stored result
+         * verbatim, so retry #2 returns the same studentId retry #1 created
+         * rather than a second child.
+         *
+         * Only SUCCESS is retained. A refusal releases the key, because a
+         * family correcting a validation error resubmits with the SAME id and
+         * must not be handed the old refusal forever.
+         */
+        70 => "
+            CREATE TABLE IF NOT EXISTS intake_submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                submissionId TEXT UNIQUE NOT NULL,
+                op TEXT DEFAULT '',
+                status TEXT DEFAULT 'pending',
+                resultJson TEXT DEFAULT '',
+                createdAt TEXT DEFAULT '',
+                completedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_intake_status ON intake_submissions(status, createdAt);
         ",
     ];
 

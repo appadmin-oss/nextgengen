@@ -13,7 +13,8 @@ if ($method === 'GET') {
     $res = gs_call('reshoot.context', ['t' => (string)($_GET['t'] ?? '')]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
-    $res = gs_call('reshoot.submit', ['t' => (string)($b['t'] ?? ''), 'photoUrl' => (string)($b['photoUrl'] ?? ''), 'ip' => client_ip()]);
+    $res = gs_call('reshoot.submit', ['t' => (string)($b['t'] ?? ''), 'photoUrl' => (string)($b['photoUrl'] ?? ''),
+        'submissionId' => (string)($b['submissionId'] ?? ''), 'ip' => client_ip()]);
 } else {
     json_error('method_not_allowed', 405);
 }

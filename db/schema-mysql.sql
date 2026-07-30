@@ -1205,3 +1205,21 @@ ALTER TABLE summer_students ADD COLUMN reviewNote TEXT;
 CREATE INDEX idx_sstu_reg_centre ON summer_students(regStatus, centre);
 
 INSERT INTO schema_version (version) VALUES (69) ON DUPLICATE KEY UPDATE version = version;
+
+-- 70: idempotent intake. A client-minted submissionId, carried on every attempt,
+-- so a retry after a timeout replays the original result instead of registering
+-- a second child. The UNIQUE index is the lock: a request claims the key before
+-- doing the work. Only success is retained — a refusal releases the key, because
+-- a family fixing a validation error resubmits with the same id.
+CREATE TABLE IF NOT EXISTS intake_submissions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  submissionId VARCHAR(64) UNIQUE NOT NULL,
+  op VARCHAR(48) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'pending',
+  resultJson TEXT,
+  createdAt VARCHAR(40) DEFAULT '',
+  completedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_intake_status (status, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (70) ON DUPLICATE KEY UPDATE version = version;

@@ -130,7 +130,7 @@ object-src 'none'"
   # MUST come after the generic .js/.css rules so it wins for these names.
   # (Basenames also match the Journal PWA's copies under /journal/ — app.min.js,
   # app.css, index.html, manifest.webmanifest.)
-  <FilesMatch "^(index\.html|app\.min\.js|app\.css|api-client\.js|data\.js|photos\.js|styles\.css|styles-app\.css|manifest\.webmanifest)$">
+  <FilesMatch "^(index\.html|app\.min\.js|app\.css|api-client\.js|outbox\.js|data\.js|photos\.js|styles\.css|styles-app\.css|manifest\.webmanifest)$">
     Header set Cache-Control "no-cache, must-revalidate"
     Header unset Expires
   </FilesMatch>

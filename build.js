@@ -9,7 +9,7 @@
 
    Use `node build.js` locally or in CI. Upload the contents of
    `dist/` plus the existing static assets (api/, assets/, *.css,
-   data.js, photos.js, api-client.js, vendor/react*.js, robots.txt,
+   data.js, photos.js, api-client.js, outbox.js, vendor/react*.js, robots.txt,
    sitemap.xml, manifest.webmanifest) to the host.
 
    Reads:  *.jsx (load order matches index.html script tags)
@@ -60,7 +60,7 @@ function log(...a) { console.log('[build]', ...a); }
    Sorted paths and path-plus-content (not content alone) so that renaming or
    removing a file changes the id just as much as editing one does. */
 const CACHED_FILES = ['styles.css', 'styles-app.css', 'data.js', 'photos.js',
-                      'api-client.js', 'manifest.webmanifest'];
+                      'api-client.js', 'outbox.js', 'manifest.webmanifest'];
 const CACHED_DIRS = ['vendor', 'assets'];
 
 function walkFiles(dir, acc) {
@@ -174,12 +174,13 @@ async function build() {
   // Insert a single bundled script + a preload right after the React tags
   prod = prod.replace(
     /(<script src="vendor\/react-dom\.production\.min\.js"><\/script>\s*)/,
-    `$1<link rel="modulepreload" href="app.min.js"/>\n<script defer src="data.js"></script>\n<script defer src="photos.js"></script>\n<script defer src="api-client.js"></script>\n<script defer src="app.min.js"></script>\n`
+    `$1<link rel="modulepreload" href="app.min.js"/>\n<script defer src="data.js"></script>\n<script defer src="photos.js"></script>\n<script defer src="api-client.js"></script>\n<script defer src="outbox.js"></script>\n<script defer src="app.min.js"></script>\n`
   );
   // Remove the now-duplicated data.js/photos.js/api-client.js script tags
   prod = prod.replace(/<script src="data\.js"><\/script>\s*/g, '');
   prod = prod.replace(/<script src="photos\.js"><\/script>\s*/g, '');
   prod = prod.replace(/<script src="api-client\.js"><\/script>\s*/g, '');
+  prod = prod.replace(/<script src="outbox\.js"><\/script>\s*/g, '');
 
   // Mark the build so we can spot which version a page is running
   prod = prod.replace(/<head>/, `<head>\n<meta name="ngg-build" content="${buildId}"/>`);
@@ -191,7 +192,7 @@ async function build() {
   // self-contained drop-in deploy target.
   const staticAssets = [
     'styles.css', 'styles-app.css',
-    'data.js', 'photos.js', 'api-client.js',
+    'data.js', 'photos.js', 'api-client.js', 'outbox.js',
     'manifest.webmanifest', 'sitemap.xml', 'robots.txt',
     'service-worker.js',
     '.htaccess',

@@ -341,7 +341,28 @@ function backend_dispatch(string $op, array $args = []): array {
     }
     $fn = $map[$op];
     try {
-        $res = $fn($args);
+        /* Intake writes are idempotent when the client supplies a submissionId.
+         *
+         * Declared here, in one place, rather than wrapped inside each of the
+         * five handlers: this is the single seam every op already passes
+         * through, so an intake path cannot be given a retry-safe client and
+         * quietly miss the server half. Anything not on this list behaves
+         * exactly as before, and so does any request without a submissionId.
+         *
+         * Only ops that CREATE a person or a message belong here. A read is
+         * already idempotent, and an admin action has a human watching it. */
+        static $intakeOps = [
+            'gate.register'  => 1,   // staff desk registration
+            'selfreg.submit' => 1,   // the public sign-up link
+            'public.apply'   => 1,   // teen + volunteer intake
+            'public.contact' => 1,   // notifies admins on every send
+            'reshoot.submit' => 1,   // guardian photo re-take
+        ];
+        if (isset($intakeOps[$op]) && function_exists('intake_once')) {
+            $res = intake_once((string)($args['submissionId'] ?? ''), $op, fn() => $fn($args));
+        } else {
+            $res = $fn($args);
+        }
         if (!is_array($res)) return ['ok' => false, 'error' => 'bad_handler'];
         if (!isset($res['ok'])) $res['ok'] = true;
         return $res;

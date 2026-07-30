@@ -1,7 +1,7 @@
 /* ================================================================
    NGG — service worker.
    - Network-first for HTML AND the app's fixed-name bundles (app.min.js,
-     api-client.js, data.js, photos.js, styles). They keep the same name across
+     api-client.js, outbox.js, data.js, photos.js, styles). Same name across
      deploys, so caching them first is exactly what makes "my changes aren't
      showing" happen. Online → always fresh; offline → last-good from cache.
    - Cache-first ONLY for truly immutable assets (vendored libs, fonts, images).
@@ -10,12 +10,12 @@
      runs immediately (no stale admin).
    ================================================================ */
 
-const CACHE_VERSION = 'ngg-ac9678852f';
+const CACHE_VERSION = 'ngg-1d84ab4d7f';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
 // Fixed-name entry bundles — always revalidated against the network.
-const NETWORK_FIRST = /\/(index\.html|app\.min\.js|api-client\.js|data\.js|photos\.js|styles\.css|styles-app\.css)$/;
+const NETWORK_FIRST = /\/(index\.html|app\.min\.js|api-client\.js|outbox\.js|data\.js|photos\.js|styles\.css|styles-app\.css)$/;
 
 const PRECACHE = [
   '/',
@@ -25,6 +25,7 @@ const PRECACHE = [
   '/data.js',
   '/photos.js',
   '/api-client.js',
+  '/outbox.js',
   '/app.min.js',
   '/vendor/react.production.min.js',
   '/vendor/react-dom.production.min.js',

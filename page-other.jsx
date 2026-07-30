@@ -2,6 +2,27 @@
    NGG — Media + Parents + Volunteers + Join
    ================================================================ */
 
+/* Send an intake form through the offline outbox (see outbox.js).
+ *
+ * Banks the submission on this device BEFORE attempting it, attaches a
+ * submissionId so a retry replays server-side rather than creating a second
+ * record, and keeps trying until the server has actually accepted it. On a
+ * network failure the rejection carries `queued: true`, which means the work is
+ * safe and will go on its own — a very different thing to tell someone than
+ * "check your connection and try again".
+ *
+ * Falls back to a direct call when outbox.js has not loaded (an older cached
+ * bundle, or a browser with no storage at all). The form still works; it just
+ * loses the banking, which is the pre-existing behaviour rather than a new
+ * failure mode. */
+function sendIntake(op, payload, formKey) {
+  if (window.outbox && window.NGGApi && window.NGGApi.__outboxOps && window.NGGApi.__outboxOps[op]) {
+    return window.outbox.intake(op, payload, formKey);
+  }
+  const direct = (window.NGGApi && window.NGGApi.__outboxOps && window.NGGApi.__outboxOps[op]) || null;
+  return direct ? direct(payload) : Promise.reject(new Error("unavailable"));
+}
+
 /* Whole years from an ISO date-of-birth (YYYY-MM-DD) to today. Returns -1 for
    an empty/invalid/future date. Shared by the volunteer + apply intake forms so
    date-of-birth is validated the same way the backend validates it. */
@@ -429,14 +450,14 @@ function MentorApplySection() {
     if (d.dob === "" || age < 16 || age > 100) { setErr("Enter a valid date of birth — volunteers must be 16 or older."); return; }
     setBusy(true);
     try {
-      await NGGApi.public.apply({
+      await sendIntake("public.apply", {
         kind: "mentor",
         firstName: d.firstName.trim(), lastName: d.lastName.trim(), otherName: d.otherName.trim(),
         sex: d.sex,
         email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         role: d.role,
         why: d.why.trim(),
-      });
+      }, "ngg_apply_mentor");
       setSent(true);
       if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Application received");
     } catch (e2) {
@@ -689,7 +710,7 @@ function JoinPage({ setPage }) {
     // Final step — actually submit the application.
     setBusy(true);
     try {
-      const r = await NGGApi.public.apply({
+      const r = await sendIntake("public.apply", {
         kind: "teen",
         program: program,
         firstName: data.firstName.trim(),
@@ -958,10 +979,10 @@ function ContactPage({ setPage }) {
     if (d.message.trim().length < 10) { setErr("Please write at least a sentence so we can help."); return; }
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.public.contact({
+      const r = await sendIntake("public.contact", {
         name: d.name.trim(), email: d.email.trim(), phone: d.phone.trim(),
         purpose: d.purpose, subject: d.subject.trim(), message: d.message.trim(), website: d.website,
-      });
+      }, "ngg_contact");
       setSent(r.ref || "received");
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (ex) {
@@ -1800,14 +1821,14 @@ function VolunteerRegisterPage({ setPage }) {
     if (!ready || busy) return;
     setBusy(true); setErr("");
     try {
-      const r = await NGGApi.public.apply({
+      const r = await sendIntake("public.apply", {
         kind: "volunteer", role,
         firstName: d.firstName.trim(), lastName: d.lastName.trim(), otherName: d.otherName.trim(),
         sex: d.sex,
         email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         why: d.why.trim(), photoUrl: d.photoUrl || "", courses: role === "instructor" ? courses : [],
         centre, faculty: needsFaculty ? faculty : "", visibilityConsent,
-      });
+      }, "ngg_apply_volunteer");
       setDone(r && r.ref ? r.ref : true);
       setDoneWa((r && r.whatsapp) || "");
       if (typeof toast !== "undefined") toast.success("We'll write back within a week.", "Registration received");
@@ -2609,11 +2630,22 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
     if (v.ok) setPhoto(dataUrl);
   };
 
+  /* Banked before it is sent, and sent through the outbox rather than straight
+     at the network — see outbox.js. The submissionId is minted once per form
+     fill and survives a reload, so a re-send after a timeout replays the
+     original registration instead of creating a second child. */
   const submit = async () => {
     setBusy(true); setErr(""); setErrors({});
+    const sid = window.outbox ? window.outbox.submissionId(draftKey) : "";
+    const payload = { gate: g, data: form, photo, submissionId: sid };
     try {
-      const r = await NGGApi.public.selfreg.submit({ gate: g, data: form, photo });
+      const r = window.outbox
+        ? await window.outbox.send("selfreg.submit", payload, { label: regDisplayName(form) })
+        : await NGGApi.public.selfreg.submit(payload);
       try { localStorage.removeItem(draftKey); } catch (_) {}
+      // A fresh id for the next child, or a sibling registration would replay
+      // this one's result straight back.
+      if (window.outbox) window.outbox.resetSubmissionId(draftKey);
       setDone(r); setStep(3);
     } catch (e) {
       const c = e.code || e.message;
@@ -2621,8 +2653,14 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
       else if (c === "photo_rejected") { setStep(1); setPhoto(""); setPhotoMsg({ ok: false, issues: ["That photo can't be used for an ID card. Please take another."] }); }
       else if (c === "duplicate_suspect") setErr("Someone has already registered this child with the same contact details. Speak to your centre coordinator rather than registering twice.");
       else if (c === "closed") setErr("Registration has just closed. Ask your centre coordinator when it reopens.");
+      else if (c === "in_flight") setErr("This form is already being sent — give it a moment rather than sending it twice.");
+      /* Queued, not lost. The outbox has it on this device and will keep trying
+         on its own, so the honest thing to say is "it will go", not "try again"
+         — and certainly not "check your connection", which is what sent
+         families round the retry loop that duplicated records. */
+      else if (e.queued) setErr("Saved on this device — the connection dropped, so we'll finish sending it automatically. You can close this page.");
       else if (c === "rate_limited") setErr("That's a few submissions in a short time. Wait a couple of minutes and try again.");
-      else setErr("We couldn't send that. Check your connection — nothing you typed has been lost.");
+      else setErr("We couldn't send that (" + (c || "unknown") + "). It's saved on this device — tell your centre coordinator what this says.");
       setBusy(false);
     }
   };
@@ -3635,9 +3673,20 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
 
   const submit = async (force) => {
     setBusy(true); setErrors({}); setDupe(null);
+    /* Same outbox as the public form. A field desk on a tethered hotspot is the
+       case this exists for: the row is banked before the attempt, so a timeout
+       costs the queue nothing, and the submissionId makes the re-send a replay
+       rather than a second registration. `force` deliberately gets a NEW id —
+       overriding a duplicate warning is a decision to create another record. */
+    const sid = window.outbox ? (force ? "" : window.outbox.submissionId(draftKey)) : "";
     try {
-      const r = await NGGApi.public.gate.register(g, form, photoUrl, !!force, { lat: geo.lat, lng: geo.lng });
+      const payload = { gate: g, data: form, photoUrl, force: !!force,
+                        lat: geo.lat, lng: geo.lng, submissionId: sid };
+      const r = window.outbox && !force
+        ? await window.outbox.send("gate.register", payload, { label: regDisplayName(form) })
+        : await NGGApi.public.gate.register(g, form, photoUrl, !!force, { lat: geo.lat, lng: geo.lng, submissionId: sid });
       try { localStorage.removeItem(draftKey); } catch (_) {}
+      if (window.outbox) window.outbox.resetSubmissionId(draftKey);
       setDone(r);
     } catch (e) {
       /* The refusal payload lives on e.data — api-client sets err.data to the
@@ -3662,14 +3711,22 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
          Two cases now, told apart by whether a response arrived at all. */
       else if (c === "gate_invalid") { setErrors({ _: "This desk link is no longer valid — it may have been revoked or used up. Ask an admin for a fresh gate link." }); }
       else if (c === "csrf_failed" || c === "unauthorized") { setErrors({ _: "The desk session has expired. Reload the page and unlock the desk again — the draft is safe on this device." }); }
+      else if (c === "in_flight") { setErrors({ _: "This registration is already being sent. Give it a moment rather than sending it again." }); }
+      /* Queued by the outbox: banked on this device, and it will keep trying by
+         itself. This replaces the advice that used to be given after a timeout —
+         "check with an admin before re-registering, in case this one went
+         through" — which was honest but unactionable at a busy desk. The desk
+         can now move to the next child, because the submissionId guarantees the
+         retry replays rather than registers twice. */
+      else if (e.queued) {
+        setErrors({ _: "Saved on this device — the connection dropped, so it will finish sending on its own. Carry on with the next child." });
+      }
       /* status 0 is the client's marker for "no response arrived at all" —
          DNS, refused, TLS, or our own abort. It is falsy, and the code in that
          case is a truthy 'network'/'timeout', so the order here matters: test
          for it explicitly or a genuine outage gets reported as a refusal. */
       else if (e.status === 0 || c === "network" || c === "timeout") {
-        setErrors({ _: c === "timeout"
-          ? "The server took too long to answer. Your draft is safe — check with an admin before re-registering, in case this one went through."
-          : "Couldn't reach the server — check the connection and try again. The draft is safe on this device." });
+        setErrors({ _: "Couldn't reach the server. The registration is saved on this device and will send itself when the connection returns." });
       }
       else {
         // The server answered and refused. Say what it said; a code nobody can
@@ -4057,8 +4114,12 @@ function ReshootPage() {
   const submit = async () => {
     if (!photoUrl || busy) return;
     setBusy(true); setUErr("");
-    try { await NGGApi.public.reshoot.submit(t, photoUrl); setState("done"); }
-    catch (e) { setUErr(e.code === "bad_photo" ? "That photo didn't come through — try again." : "Couldn't send the photo — try again."); }
+    try { await sendIntake("reshoot.submit", { t, photoUrl }, "ngg_reshoot_" + t); setState("done"); }
+    catch (e) {
+      setUErr(e.queued
+        ? "Saved on this device — the connection dropped, so we'll finish sending the photo automatically."
+        : e.code === "bad_photo" ? "That photo didn't come through — try again." : "Couldn't send the photo — try again.");
+    }
     finally { setBusy(false); }
   };
   const first = ctx && ctx.student ? String(ctx.student.name || "").split(" ")[0] : "";

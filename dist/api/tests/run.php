@@ -2150,6 +2150,82 @@ chk('gate: revoked link stops working', (function () use ($GATE) {
     backend_dispatch('admin.gates.revoke', ['requesterId' => 'NGG-2025-0099', 'gateId' => $GATE['gateId']]);
     return backend_dispatch('gate.context', ['gate' => $GATE['gateId']])['error'] === 'gate_invalid';
 })());
+/* ── Idempotent intake ──────────────────────────────────────────────────────
+ * What makes a retry safe, and therefore what makes the offline outbox
+ * possible. Without it a re-send after a timeout either created a second child
+ * or reported a failure for a registration that had already worked. */
+chk('intake: no submissionId behaves exactly as before', (function () {
+    $n = 0;
+    $r = intake_once('', 'test.op', function () use (&$n) { $n++; return ['ok' => true, 'n' => $n]; });
+    $r2 = intake_once('', 'test.op', function () use (&$n) { $n++; return ['ok' => true, 'n' => $n]; });
+    // Two calls, two runs — an absent key must not start deduplicating.
+    return $n === 2 && $r['n'] === 1 && $r2['n'] === 2;
+})());
+chk('intake: a garbage submissionId is ignored rather than trusted', (function () {
+    $n = 0;
+    intake_once('../../etc/passwd', 'test.op', function () use (&$n) { $n++; return ['ok' => true]; });
+    intake_once('short', 'test.op', function () use (&$n) { $n++; return ['ok' => true]; });
+    return $n === 2 && intake_submission_id('../../etc/passwd') === '' && intake_submission_id('short') === '';
+})());
+chk('intake: the same submissionId runs the work exactly once', (function () {
+    $sid = 'sub_' . rand_hex(12);
+    $n = 0;
+    $mk = function () use (&$n) { $n++; return ['ok' => true, 'studentId' => 'STU-' . $n]; };
+    $a = intake_once($sid, 'test.op', $mk);
+    $b = intake_once($sid, 'test.op', $mk);
+    // The retry gets the FIRST result back, not a second registration.
+    return $n === 1 && $a['studentId'] === 'STU-1' && $b['studentId'] === 'STU-1'
+        && empty($a['replayed']) && !empty($b['replayed']);
+})());
+chk('intake: a REFUSAL releases the key so a corrected resubmit works', (function () {
+    $sid = 'sub_' . rand_hex(12);
+    $bad = intake_once($sid, 'test.op', fn() => ['ok' => false, 'errors' => ['age' => 'Required.']]);
+    // Same id, now with good data — must run, not replay the refusal for ever.
+    $good = intake_once($sid, 'test.op', fn() => ['ok' => true, 'studentId' => 'STU-OK']);
+    return !empty($bad['errors']) && !empty($good['ok']) && ($good['studentId'] ?? '') === 'STU-OK';
+})());
+chk('intake: a concurrent second attempt is refused, not run twice', (function () {
+    $sid = 'sub_' . rand_hex(12);
+    $inner = null;
+    // Re-enter with the same id from INSIDE the work — the claim is already
+    // held, which is the same state a truly concurrent request would see.
+    intake_once($sid, 'test.op', function () use ($sid, &$inner) {
+        $inner = intake_once($sid, 'test.op', fn() => ['ok' => true, 'studentId' => 'DOUBLE']);
+        return ['ok' => true, 'studentId' => 'FIRST'];
+    });
+    return ($inner['error'] ?? '') === 'in_flight';
+})());
+chk('intake: a claim abandoned by a dead request is reclaimable', (function () {
+    $sid = 'sub_' . rand_hex(12);
+    db_insert('intake_submissions', ['submissionId' => $sid, 'op' => 'test.op', 'status' => 'pending',
+        'resultJson' => '', 'createdAt' => gmdate('Y-m-d\TH:i:s\Z', time() - (INTAKE_CLAIM_IDLE + 60)), 'completedAt' => '']);
+    $r = intake_once($sid, 'test.op', fn() => ['ok' => true, 'studentId' => 'RECLAIMED']);
+    // A crash mid-submit must not lock a family out for ever.
+    return ($r['studentId'] ?? '') === 'RECLAIMED';
+})());
+chk('intake: a throw releases the key and still reaches the caller', (function () {
+    $sid = 'sub_' . rand_hex(12);
+    $threw = false;
+    try { intake_once($sid, 'test.op', function () { throw new RuntimeException('boom'); }); }
+    catch (Throwable $e) { $threw = true; }
+    return $threw && db_row('SELECT id FROM intake_submissions WHERE submissionId = ?', [$sid]) === null;
+})());
+chk('intake: gate.register is idempotent end to end through dispatch', (function () {
+    // Its own gate: the shared $GATE is revoked by an earlier assertion.
+    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Idempotency desk']);
+    $sid = 'sub_' . rand_hex(12);
+    $d = ['fullName' => 'Idem Child', 'age' => 13, 'faculty' => 'Music', 'course' => 'Guitar',
+          'centre' => 'Main', 'parentName' => 'Mrs Idem', 'parentPhone' => '08031117777'];
+    $a = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => $d, 'submissionId' => $sid]);
+    $b = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => $d, 'submissionId' => $sid]);
+    $count = (int) db_row("SELECT COUNT(*) c FROM summer_students WHERE fullName = 'Idem Child'")['c'];
+    $same = !empty($a['ok']) && !empty($b['ok']) && $a['studentId'] === $b['studentId'];
+    db_exec("DELETE FROM summer_students WHERE fullName = 'Idem Child'");
+    // One row, and both attempts naming it — NOT a duplicate_suspect warning
+    // about a registration that had in fact succeeded.
+    return $same && $count === 1 && !empty($b['replayed']);
+})());
+
 chk('gate: an active link cannot be deleted — only revoked', (function () {
     $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Deletable desk']);
     $r = backend_dispatch('admin.gates.delete', ['requesterId' => 'NGG-2025-0099', 'gateId' => $g['gateId']]);

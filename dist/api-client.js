@@ -332,6 +332,9 @@
         register: (gate, data, photoUrl, force, opts) => request('/public/gate.php', { body: {
           action: 'register', gate, data, photoUrl, force,
           lat: opts && opts.lat, lng: opts && opts.lng, geoOverride: !!(opts && opts.geoOverride),
+          // Retry key. Without it a re-send after a timeout registers the child
+          // a second time; with it the server replays the original result.
+          submissionId: (opts && opts.submissionId) || '',
         } }),
         // scannedAt is only set when flushing a scan banked while offline, so
         // punctuality is graded at the moment the card was presented rather
@@ -362,7 +365,7 @@
       },
       reshoot: {
         context: (t) => request('/public/reshoot.php' + qs({ t })),
-        submit:  (t, photoUrl) => request('/public/reshoot.php', { body: { t, photoUrl } }),
+        submit:  (t, photoUrl, submissionId) => request('/public/reshoot.php', { body: { t, photoUrl, submissionId: submissionId || '' } }),
       },
       circle: {
         // The child's name is required, not optional: the code alone no longer
@@ -648,6 +651,25 @@
     }
     return parts.length ? '?' + parts.join('&') : '';
   }
+
+  /* Replayable intake ops, addressed by name.
+   *
+   * The outbox persists a queued submission across reloads, so it cannot hold a
+   * function reference — it stores an op NAME and a plain payload, and looks the
+   * sender up here when it drains. Each takes exactly one serialisable object
+   * for that reason.
+   *
+   * These names match the server's intake list in api/_lib/backend.php, which
+   * is what makes a replay idempotent: every payload carries a submissionId and
+   * intake_once() returns the original result instead of acting twice. Adding an
+   * op here without adding it there would make retries duplicate records. */
+  API.__outboxOps = {
+    'selfreg.submit': (p) => request('/public/selfreg.php', { body: p }),
+    'gate.register':  (p) => request('/public/gate.php', { body: Object.assign({ action: 'register' }, p) }),
+    'public.apply':   (p) => request('/public/apply.php', { body: p }),
+    'public.contact': (p) => request('/public/contact.php', { body: p }),
+    'reshoot.submit': (p) => request('/public/reshoot.php', { body: p }),
+  };
 
   global.NGGApi = API;
   global.NGGApiBase = BASE;

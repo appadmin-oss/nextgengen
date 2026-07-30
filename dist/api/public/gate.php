@@ -28,6 +28,9 @@ if ($method === 'GET') {
         $res = gs_call('gate.register', [
             'gate' => $b['gate'] ?? '', 'data' => $b['data'] ?? [], 'photoUrl' => $b['photoUrl'] ?? '',
             'force' => !empty($b['force']), 'byId' => $s['mid'], 'ip' => $ip,
+            // Retry key: a desk that re-sends after a timeout replays the
+            // original result instead of registering the child twice.
+            'submissionId' => $b['submissionId'] ?? '',
             // Geo capture from the device; only a full admin may override.
             'lat' => $b['lat'] ?? null, 'lng' => $b['lng'] ?? null,
             'isAdmin' => $isAdmin, 'geoOverride' => $isAdmin && !empty($b['geoOverride']),

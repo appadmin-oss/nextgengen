@@ -294,6 +294,84 @@ function cache_remember(string $key, int $ttl, callable $fn, string $stamp = '')
     return $fresh;
 }
 
+/* ── Idempotent intake ────────────────────────────────────────────────────────
+ *
+ * Run $fn at most once for a given client-minted $submissionId, and replay the
+ * stored result for every later attempt with the same id.
+ *
+ * This is what makes retrying an intake form safe, and therefore what makes an
+ * offline outbox possible. Without it a retry after a timeout either created a
+ * second child or tripped the name+parent-contact duplicate heuristic and
+ * reported a failure for a registration that had actually worked.
+ *
+ * Three cases, in the order they matter:
+ *
+ *  - No usable id → run $fn exactly as before. An older cached bundle that
+ *    knows nothing about submissionId keeps working; this is additive.
+ *  - A COMPLETED id → replay the stored result. Retry #2 returns the studentId
+ *    that retry #1 created, so the family sees the success that already exists.
+ *  - An in-flight id → refuse with 'in_flight'. The claim is inserted BEFORE
+ *    the work, and the UNIQUE index makes that atomic, so two concurrent
+ *    submissions of the same form cannot both register a child. A claim
+ *    abandoned by a died request is reclaimable after IDLE seconds — otherwise
+ *    a crash mid-submit would lock that family out permanently.
+ *
+ * Only success is retained. A refusal releases the key, because a family
+ * correcting a validation error resubmits with the SAME id and must not be
+ * handed the old refusal for ever.
+ */
+const INTAKE_CLAIM_IDLE = 120;
+
+function intake_submission_id(string $raw): string {
+    $sid = trim($raw);
+    return preg_match('/^[A-Za-z0-9_-]{8,64}$/', $sid) ? $sid : '';
+}
+
+function intake_once(string $submissionId, string $op, callable $fn): array {
+    $sid = intake_submission_id($submissionId);
+    if ($sid === '') return $fn();
+
+    $row = db_row('SELECT status, resultJson, createdAt FROM intake_submissions WHERE submissionId = ?', [$sid]);
+    if ($row) {
+        if ((string)$row['status'] === 'done') {
+            $prev = json_decode((string)$row['resultJson'], true);
+            // `replayed` lets a caller tell "already done" from "just done" —
+            // the form can then say "already sent" rather than claim it sent twice.
+            if (is_array($prev) && !empty($prev['ok'])) return ['replayed' => true] + $prev;
+            // A 'done' row we cannot decode is not worth blocking a family over.
+            db_exec('DELETE FROM intake_submissions WHERE submissionId = ?', [$sid]);
+        } else {
+            $age = time() - (strtotime((string)$row['createdAt']) ?: 0);
+            if ($age < INTAKE_CLAIM_IDLE) return ['ok' => false, 'error' => 'in_flight'];
+            // Stale claim from a request that died. Take it over.
+            db_update('intake_submissions', ['createdAt' => now_iso()], ['submissionId' => $sid]);
+        }
+    } else {
+        try {
+            db_insert('intake_submissions', ['submissionId' => $sid, 'op' => $op,
+                'status' => 'pending', 'resultJson' => '', 'createdAt' => now_iso(), 'completedAt' => '']);
+        } catch (Throwable $e) {
+            // Lost the insert race: the other request owns this submission.
+            return ['ok' => false, 'error' => 'in_flight'];
+        }
+    }
+
+    try {
+        $res = $fn();
+    } catch (Throwable $e) {
+        db_exec('DELETE FROM intake_submissions WHERE submissionId = ?', [$sid]);
+        throw $e;
+    }
+
+    if (!empty($res['ok'])) {
+        db_update('intake_submissions', ['status' => 'done', 'completedAt' => now_iso(),
+            'resultJson' => json_encode($res, JSON_UNESCAPED_SLASHES)], ['submissionId' => $sid]);
+    } else {
+        db_exec('DELETE FROM intake_submissions WHERE submissionId = ?', [$sid]);
+    }
+    return $res;
+}
+
 function setting_raw(string $key): ?string {
     $row = db_row('SELECT settingValue FROM settings WHERE settingKey = ?', [$key]);
     return $row ? (string)$row['settingValue'] : null;

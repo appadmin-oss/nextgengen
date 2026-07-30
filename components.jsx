@@ -1041,15 +1041,32 @@ function humanizeError(message, code) {
 
 function OfflineBanner() {
   const [off, setOff] = React.useState(typeof navigator !== "undefined" && navigator.onLine === false);
+  /* Anything the outbox is still holding. This is shown whether or not the
+     device is offline, because the submission that actually gets lost is the
+     one that looked fine and then timed out — so "3 waiting to send" has to be
+     visible to someone whose connection appears perfectly healthy. */
+  const [queued, setQueued] = React.useState(0);
   React.useEffect(() => {
     const up = () => setOff(false), down = () => setOff(true);
     window.addEventListener("online", up); window.addEventListener("offline", down);
-    return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); };
+    const un = window.outbox ? window.outbox.subscribe(rows => setQueued(rows.length)) : null;
+    return () => {
+      window.removeEventListener("online", up); window.removeEventListener("offline", down);
+      if (un) un();
+    };
   }, []);
-  if (!off) return null;
+  if (!off && !queued) return null;
   return (
     <div className="offline-banner" role="status" aria-live="polite">
-      <span className="offline-dot" aria-hidden="true"/> You're offline — showing the latest saved view. Changes sync when you reconnect.
+      <span className="offline-dot" aria-hidden="true"/>
+      {queued > 0
+        ? <>
+            {queued} {queued === 1 ? "submission is" : "submissions are"} saved on this device and still sending
+            {off ? " — they'll go when you're back online." : " — this finishes on its own, you can close the page."}
+            {" "}
+            <button type="button" className="offline-retry" onClick={() => window.outbox && window.outbox.flush()}>Try now</button>
+          </>
+        : "You're offline — showing the latest saved view. Changes sync when you reconnect."}
     </div>
   );
 }
