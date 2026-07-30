@@ -4646,3 +4646,12 @@ section p[style*="var(--ink-500)"] {
 .cm-pj-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .cm-pj-row .cm-pj-lab { flex: 1 1 130px; }
 @media (max-width: 620px) { .cm-pj { padding: 14px 14px 60px; } }
+
+/* Surfaces that own the whole screen (see OWN_CHROME_PAGES in app.jsx): the
+   staff console and portals, the gate desk, the guardian pages and the public
+   registration form. The floating helpers are positioned for a normal page with
+   a footer below it; over a full-screen form they land on top of content — on a
+   phone the ⌘K hint sat directly on a field's help text. Belt and braces with
+   CommandHint's own check, so a float added later is suppressed by default. */
+body.own-chrome .cmdk-hint,
+body.own-chrome .fab-top { display: none; }

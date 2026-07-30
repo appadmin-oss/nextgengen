@@ -22,7 +22,7 @@
   {
     "name": "05-diagnostics-run-now",
     "label": "Diagnostics · per-job \"Run now\" and the stale-cache warning",
-    "kb": 432
+    "kb": 433
   },
   {
     "name": "06-journal-staff",
@@ -42,17 +42,17 @@
   {
     "name": "08-public-signup",
     "label": "Public sign-up on a phone — the form that would not submit",
-    "kb": 287
+    "kb": 280
   },
   {
     "name": "09-public-signup-errors",
     "label": "A refusal names the fields — no more \"check your connection\"",
-    "kb": 330
+    "kb": 322
   },
   {
     "name": "10-outbox-queued",
     "label": "Offline: banked on the device, and the banner says so",
-    "kb": 323
+    "kb": 314
   },
   {
     "name": "11-journal-shared",

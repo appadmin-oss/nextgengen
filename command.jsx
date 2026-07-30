@@ -130,7 +130,15 @@ function CommandHint() {
   //  · auto-hides after ~14s so it never lingers over content,
   //  · shows at most a few times ever, then bows out for good,
   //  · is fully dismissible.
-  const appChrome = () => typeof document !== "undefined" && (document.body.classList.contains("cm-app") || /^\/(community|nextadmin|admin)/.test(location.pathname));
+  /* `own-chrome` is set by the router from OWN_CHROME_PAGES (see app.jsx), which
+     is the single list of surfaces that draw their own full screen. It replaces a
+     regex that only knew about /community and /admin — so the hint used to float
+     over the gate desk, the guardian pages and the public registration form,
+     where on a phone it landed directly on a field's help text. */
+  const appChrome = () => typeof document !== "undefined" && (
+    document.body.classList.contains("own-chrome") ||
+    document.body.classList.contains("cm-app") ||
+    /^\/(community|nextadmin|admin)/.test(location.pathname));
   const seen = () => { try { return parseInt(localStorage.getItem("ngg.cmdk.seen") || "0", 10); } catch (_) { return 0; } };
   const [hidden, setHidden] = React.useState(
     (typeof localStorage !== "undefined" && localStorage.getItem("ngg.cmdk.dismissed") === "1") || seen() >= 3 || appChrome()

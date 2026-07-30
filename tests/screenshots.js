@@ -303,6 +303,20 @@ function seed() {
       const ctx = await phone(null);
       const page = await ctx.newPage();
       await goto(page, '/apply?g=' + GATE_SELF, 'input, select');
+      /* The floating ⌘K hint used to land on top of a field's help text here.
+         Assert it, rather than only photographing it: a capture run nobody reads
+         closely is a poor guard against a float creeping back. */
+      const floats = await page.evaluate(() => {
+        const bad = [];
+        if (!document.body.classList.contains('own-chrome')) bad.push('own-chrome class missing');
+        for (const sel of ['.cmdk-hint', '.fab-top']) {
+          const el = document.querySelector(sel);
+          if (el && getComputedStyle(el).display !== 'none') bad.push(sel + ' is visible');
+        }
+        return bad;
+      });
+      if (floats.length) console.error('  ✗ floating helpers overlap the public form: ' + floats.join(', '));
+      else console.log('  · no floating helpers over the public form (own-chrome honoured)');
       await shoot(page, '08-public-signup', 'Public sign-up on a phone — the form that would not submit');
 
       // A refusal now names the fields instead of blaming the connection.

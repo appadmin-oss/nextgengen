@@ -46,6 +46,17 @@ const PAGE_META = {
   "journal-entry": { title: "From the programme journal · NGG",       desc: "" },
 };
 
+/* Pages that draw their OWN full-screen chrome — no topnav, no footer.
+ *
+ * One list, because it is needed in three places that had drifted apart: the
+ * render branch below, and (via the `own-chrome` body class it sets) both the
+ * CSS that suppresses the floating helpers and CommandHint's own check. That
+ * check used to be a regex matching only /community and /admin, so the ⌘K hint
+ * floated over every one of these surfaces — most visibly over the public
+ * registration form, where it sat on top of a field's help text on a phone. */
+const OWN_CHROME_PAGES = ["admin", "summer-admin", "club-admin", "circle", "mentor",
+  "apply", "review", "gate", "verify", "reshoot", "cards", "certificate", "journal-entry"];
+
 /* ---- 404 fallback — when a hash doesn't match any registered page ---- */
 function NotFound({ setPage }) {
   return (
@@ -222,6 +233,8 @@ function App() {
     // Make the current route addressable from CSS (e.g. hide the topnav
     // Apply button while we're already on the Join page).
     document.body.setAttribute("data-page", page);
+    // Lets CSS and CommandHint agree on "this surface owns the whole screen".
+    document.body.classList.toggle("own-chrome", OWN_CHROME_PAGES.includes(page));
   }, [page]);
 
   // React to browser back/forward via the History API.
@@ -282,7 +295,7 @@ function App() {
 
   // The staff console/portals, the guardian Circle portal, the gate desk and
   // the parent verification page use their own chrome — no topnav/footer.
-  if (page === "admin" || page === "summer-admin" || page === "club-admin" || page === "circle" || page === "mentor" || page === "apply" || page === "review" || page === "gate" || page === "verify" || page === "reshoot" || page === "cards" || page === "certificate" || page === "journal-entry") {
+  if (OWN_CHROME_PAGES.includes(page)) {
     return (
       <div className="app-shell app-shell-admin">
         <SkipLink/>
