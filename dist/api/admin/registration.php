@@ -52,4 +52,9 @@ if (empty($res['ok'])) {
     echo json_encode(['ok' => false] + array_diff_key($res, ['ok' => 1]), JSON_UNESCAPED_SLASHES);
     exit;
 }
+/* Centre edits feed the public centre list and the stats block, and neither was
+   purged before — so renaming a centre or adding one left the public site
+   showing the old set until the TTL rolled. Enrolling changes the counts. */
+if (in_array($action ?? '', ['centre_upsert', 'centre_delete'], true))      cache_invalidate('centres');
+elseif (in_array($action ?? '', ['gate_create', 'remind_bulk'], true))      cache_invalidate('students');
 unset($res['ok']); json_ok($res);

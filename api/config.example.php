@@ -273,12 +273,21 @@ return [
     // Cache settings (filesystem cache, keyed by op + arg hash). Reduces
     // Apps Script round-trips for public reads.
     'cache_dir' => __DIR__ . '/_cache',
+    // Every op read with useCache = true needs an entry here, or the read is
+    // simply uncached (gs_cache_read bails on a non-positive TTL, and since the
+    // write now honours the same rule, nothing is stored either). The admin
+    // writes that change these purge them immediately via cache_invalidate(),
+    // so the TTL is a backstop rather than the mechanism — which is why these
+    // can be generous without a save appearing not to have happened.
     'cache_ttl' => [
         'public.stats'     => 300,  // 5 min
         'public.events'    => 120,
         'public.posts'     => 120,
         'public.session'   => 300,
         'public.anchorContent' => 300,
+        'public.centres'   => 300,  // centre list; purged on centre_upsert/delete
+        'community.showcase' => 180, // admin-featured posts; purged on feature/hide
+        'post.get'         => 120,  // a single post by slug; purged with public.posts
         'default'          => 0,    // 0 = no cache
     ],
 

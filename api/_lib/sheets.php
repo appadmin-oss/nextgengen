@@ -64,3 +64,43 @@ function gs_cache_purge(string $op): void {
         @unlink($f);
     }
 }
+
+/**
+ * Which admin write invalidates which cached public read.
+ *
+ * The relationship used to live at the call sites, which meant it lived in
+ * three of them: posts, events and anchor content each remembered to purge,
+ * and every other admin write that changes a cached public read simply left
+ * the stale copy in place until its TTL expired. That is the "I saved it and
+ * the site still shows the old one" class of bug, and it is invisible in
+ * development where the TTL passes before anyone looks.
+ *
+ * Declared as a map so the question "what goes stale when I change this?" has
+ * one answer in one place, and adding a cached read means adding a line here
+ * rather than auditing every endpoint.
+ *
+ * Keys are cache-invalidation topics, not op names — one write often
+ * invalidates several reads, and one read is often invalidated by several
+ * writes.
+ */
+function gs_cache_topics(): array {
+    return [
+        'posts'    => ['public.posts', 'post.get'],
+        'events'   => ['public.events'],
+        'anchor'   => ['public.anchorContent'],
+        // A centre's name, code and colour drive the public centre list AND the
+        // stats block that counts them.
+        'centres'  => ['public.centres', 'public.stats'],
+        // Featuring or hiding a post changes the public Showcase.
+        'community' => ['community.showcase'],
+        // Enrolment counts feed the public stats block.
+        'students' => ['public.stats'],
+    ];
+}
+
+/** Purge every cached read affected by one or more topics. */
+function cache_invalidate($topics): void {
+    foreach ((array)$topics as $topic) {
+        foreach (gs_cache_topics()[$topic] ?? [] as $op) gs_cache_purge($op);
+    }
+}

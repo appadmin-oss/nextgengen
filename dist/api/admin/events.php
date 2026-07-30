@@ -26,7 +26,7 @@ if ($method === 'POST') {
     ]);
     if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
     unset($res['ok']);
-    gs_cache_purge('public.events');
+    cache_invalidate('events');
     json_ok($res);
 }
 

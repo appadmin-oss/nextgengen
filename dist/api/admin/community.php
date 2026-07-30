@@ -22,5 +22,9 @@ if ($method === 'GET') {
     json_error('method_not_allowed', 405);
 }
 if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+/* Featuring, hiding or removing a post changes the public Showcase, which is a
+   cached read — moderating something offensive and having it stay on the public
+   page for the rest of the TTL is the failure that matters here. */
+if ($method === 'POST') cache_invalidate('community');
 unset($res['ok']);
 json_ok($res);

@@ -5620,6 +5620,45 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         return !file_exists(gs_cache_path($op, []))     // nothing written
             && gs_cache_read($op, []) === null;         // and nothing to read
     })());
+    /* Invalidation is declared in one map rather than remembered at each call
+       site — it was remembered at three, and every other admin write that
+       changes a cached public read left the stale copy in place. */
+    chk('cache_invalidate purges every read a topic affects', (function () {
+        global $CONFIG;
+        $CONFIG['cache_ttl']['public.posts'] = 120;
+        $CONFIG['cache_ttl']['post.get'] = 120;
+        gs_cache_write('public.posts', [], ['ok' => true, 'posts' => []]);
+        gs_cache_write('post.get', ['slug' => 'x'], ['ok' => true, 'post' => []]);
+        if (gs_cache_read('public.posts', []) === null) return false;      // primed
+        if (gs_cache_read('post.get', ['slug' => 'x']) === null) return false;
+        cache_invalidate('posts');
+        // BOTH go: editing a post changes the list AND that post's own read.
+        return gs_cache_read('public.posts', []) === null
+            && gs_cache_read('post.get', ['slug' => 'x']) === null;
+    })());
+    chk('every topic names only ops the SHIPPED config actually caches', (function () {
+        /* Checked against config.example.php, not the test harness's stub
+           config: the shipped TTL map is the contract a deployment inherits, and
+           a topic pointing at an op with no TTL there is a purge that can never
+           do anything — a silent no-op pretending to be invalidation. */
+        $example = @include dirname(__DIR__) . '/config.example.php';
+        $ttls = is_array($example) ? ($example['cache_ttl'] ?? []) : [];
+        if (!$ttls) return false;
+        foreach (gs_cache_topics() as $topic => $ops) {
+            foreach ($ops as $op) {
+                if ((int)($ttls[$op] ?? 0) <= 0) {
+                    fwrite(STDERR, "\n  topic '$topic' names op '$op', which config.example.php does not cache\n");
+                    return false;
+                }
+            }
+        }
+        return true;
+    })());
+    chk('an unknown topic is a no-op, not a crash', (function () {
+        cache_invalidate('no_such_topic');
+        cache_invalidate(['posts', 'no_such_topic']);
+        return true;
+    })());
     chk('gs_cache_write does write when the op has a positive TTL', (function () {
         global $CONFIG;
         $op = 'test.cache.' . rand_hex(4);

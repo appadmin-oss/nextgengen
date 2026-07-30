@@ -16,7 +16,7 @@ if ($method === 'POST') {
     $body = read_json_body();
     $res = gs_call('admin.anchor.set', ['requesterId' => $s['mid'], 'data' => $body['data'] ?? $body, 'ip' => client_ip()]);
     if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
-    gs_cache_purge('public.anchorContent');
+    cache_invalidate('anchor');
     unset($res['ok']);
     json_ok($res);
 }

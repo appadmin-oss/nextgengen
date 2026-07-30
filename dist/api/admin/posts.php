@@ -28,7 +28,8 @@ if ($method === 'POST') {
     ]);
     if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
     unset($res['ok']);
-    gs_cache_purge('public.posts');
+    // A post edit also changes the single-post read (post.get by slug).
+    cache_invalidate('posts');
     json_ok($res);
 }
 
