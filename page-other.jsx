@@ -5198,8 +5198,13 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
      added for. A separator has to be seen from where the card is read. */
   const keyline = clash ? `${Math.max(2, px(6))}px solid #fff` : "none";
   const keyOff = `-${Math.max(2, px(6))}px`;
-  // Headshot keeps its 450:354 aspect (never stretched) and scales with the card.
-  const hsH = Math.min(354, Math.max(150, Math.round(H * 0.34)));
+  /* Headshot keeps its 450:354 aspect (never stretched) and scales with the card.
+   * 0.38 of the height rather than 0.34: with the code badge gone there is no
+   * element notched into the frame's corner competing for that space, and the
+   * flex spacers were spending it on emptiness between the photograph and the
+   * name. On an ID the face is the point — it should be the largest thing on the
+   * card, not a thumbnail with margins. */
+  const hsH = Math.min(354, Math.max(150, Math.round(H * 0.38)));
   const hsW = Math.round(hsH * 450 / 354);
   return (
     <div className="idcard" style={{ width: px(590), height: px(H), background: tint, position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
@@ -5239,7 +5244,7 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
         <div style={{ position: "relative", width: px(hsW), height: px(hsH), flex: "none" }}>
           {centre ? (
             <>
-              <div style={{ position: "absolute", inset: 0, borderRadius: px(26), background: cTint,
+              <div style={{ position: "absolute", inset: 0, borderRadius: px(18), background: cTint,
                             // Only when the two colours would merge; a no-op otherwise.
                             outline: keyline, outlineOffset: keyOff,
                             boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)` }}/>
@@ -5248,19 +5253,9 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
                   border, and half the 28 it briefly grew to — with the panel now
                   outlined in the same colour, a heavy frame here is the same fact
                   stated twice and it crowded the headshot. */}
-              <div style={{ position: "absolute", inset: px(14), borderRadius: px(13), overflow: "hidden",
+              <div style={{ position: "absolute", inset: px(14), borderRadius: px(9), overflow: "hidden",
                             background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)" }}>
                 {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
-              </div>
-              <div style={{ position: "absolute", right: px(-10), top: px(-10), height: px(50), minWidth: px(92), padding: `0 ${px(15)}px`,
-                            borderRadius: px(50), background: cTint, border: `${Math.max(1, px(5))}px solid #fff`,
-                            // A pale chip vanishes into its own white border.
-                            outline: cInk.light ? `${Math.max(1, px(2))}px solid ${cInk.hairline}` : "none",
-                            outlineOffset: `-${Math.max(1, px(5)) + Math.max(1, px(2))}px`,
-                            display: "grid", placeItems: "center", boxSizing: "border-box",
-                            boxShadow: `0 ${px(4)}px ${px(12)}px rgba(0,0,0,.20)` }}>
-                <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(28), letterSpacing: px(1),
-                               color: cInk.ink, lineHeight: 1, whiteSpace: "nowrap", textShadow: cInk.shadow }}>{centre.code}</span>
               </div>
             </>
           ) : (
@@ -5297,8 +5292,14 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
                 are what carry the centre at a distance, and this is only here so
                 the answer is also readable in words. At heading size it competed
                 with the role line and made a spare card look crowded. */}
-            <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 700, ...centreBandFont(centre.name, 12, px, 400),
-                           color: "#6A7180", textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap" }}>{centre.name}</span>
+            {/* The code joins the caption now that the badge is gone. Colour is
+                not a label — one man in twelve cannot read it, print drifts
+                between batches, and a photocopy has none of it — so the two
+                characters a coordinator calls out have to be somewhere. */}
+            <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 700, ...centreBandFont((centre.code ? centre.code + " · " : "") + centre.name, 12, px, 400),
+                           color: "#6A7180", textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap" }}>
+              {centre.code ? <span style={{ color: "#101010" }}>{centre.code + " \u00b7 "}</span> : null}{centre.name}
+            </span>
           </div>
         )}
       </div>

@@ -86,7 +86,7 @@ var VOLS = [
   { volunteerId: 'VOL-LED-26-001', displayId: 'VOL-LED-26-001', firstName: 'TUNDE', surname: 'BAKARE',
     role: 'Lead Mentor', tier: { name: 'Lead Mentor', code: 'LED', color: '#8A1538' }, token: 'V1',
     photoUrl: face(1, 900, 708), centre: { name: 'Egbeda', code: 'EG', color: '#D64545' },
-    cap: ['Ordinary case — red centre, maroon tier frame', 'The centre is the thin line round the white panel, the border on the photo, and the code chip. Red inside maroon measures 158 on a redmean scale — close enough to merge at arm\\'s length — so the line takes a white keyline inside it.'] },
+    cap: ['Ordinary case — red centre, maroon tier frame', 'The centre is the thin line round the white panel, the border on the photo, and the code beside the name. Red inside maroon measures 158 on a redmean scale — close enough to merge at arm\\'s length — so the line takes a white keyline inside it.'] },
   { volunteerId: 'VOL-MEN-26-002', displayId: 'VOL-MEN-26-002', firstName: 'NGOZI', surname: 'EZE',
     role: 'Mentor', tier: { name: 'Mentor', code: 'MEN', color: '#00225F' }, token: 'V2',
     photoUrl: face(2, 900, 708), centre: { name: 'Ijaiye', code: 'IJ', color: '#2E7DD1' },
@@ -94,7 +94,7 @@ var VOLS = [
   { volunteerId: 'VOL-INS-26-004', displayId: 'VOL-INS-26-004', firstName: 'AMAKA', surname: 'OKONJO',
     role: 'Instructor', faculty: 'Music', tier: { name: 'Instructor', code: 'INS', color: '#00225F' }, token: 'V4',
     photoUrl: face(4, 900, 708), centre: { name: 'Sunshine Annexe', code: 'SA', color: '#F7E36B' },
-    cap: ['A pale centre colour', 'The name now sits on white rather than on the colour, so a pale centre reads as easily as a dark one — this used to print white-on-yellow. The chip still derives its ink and gains a hairline so it does not vanish into its own white border.'] },
+    cap: ['A pale centre colour', 'The name and code sit on white rather than on the colour, so a pale centre reads as easily as a dark one — this used to print white-on-yellow ink derived from the colour itself.'] },
   { volunteerId: 'VOL-MEN-26-005', displayId: 'VOL-MEN-26-005', firstName: 'CHIDI', surname: 'NWANKWO',
     role: 'Mentor', tier: { name: 'Mentor', code: 'MEN', color: '#00225F' }, token: 'V5',
     photoUrl: face(5, 900, 708), centre: { name: 'Ikotun-Egbe Community Hall', code: 'IEC', color: '#0A2A6E' },
@@ -125,7 +125,7 @@ function View() {
       e('div', { className: 'row' },
         e('div', { className: 'lane', style: { width: 590 * S } },
           e(window.VolunteerCardFront, { card: VOLS[0], S: S }),
-          e('div', { className: 'cap' }, e('b', null, 'Volunteer · Lead Mentor at Egbeda'), 'Maroon frame = role. The red line round the panel, the photo border and the chip = centre.')),
+          e('div', { className: 'cap' }, e('b', null, 'Volunteer · Lead Mentor at Egbeda'), 'Maroon frame = role. The red line round the panel and the photo border = centre, with the code spelled out beneath.')),
         e('div', { className: 'lane', style: { width: 590 * S } },
           e(window.CardFront, { card: STUDENT, program: PROGRAM, S: S }),
           e('div', { className: 'cap' }, e('b', null, 'Child · Egbeda'), 'The same red, the same EG code, the same name. The child\\'s card keeps its foot band; the volunteer\\'s carries the line instead, because its outer edge is already spoken for by role.')),
@@ -137,7 +137,7 @@ function View() {
     // What a lanyard rack looks like — the actual test of "obvious".
     return e('div', { className: 'sheet' },
       e('h1', null, 'Five volunteers, four centres — as they arrive at a gate'),
-      e('p', null, 'The question this design has to answer from arm\\'s length: which of these people are mine? Centre colour as a thin line round the white panel and a border on the photo, centre code on the chip, centre name spelled out beside a dot of the colour. Role stays the outer frame.'),
+      e('p', null, 'The question this design has to answer from arm\\'s length: which of these people are mine? Centre colour as a thin line round the white panel and a border on the photo; the code and the name spelled out beneath the role, beside a dot of the colour. Role stays the outer frame.'),
       e('div', { className: 'row' }, VOLS.map(function (c, i) { return e(Card, { key: i, card: c, S: S }); })));
   }
   return e('div', { className: 'sheet' },

@@ -1191,8 +1191,15 @@ const LEADERBOARD = {
                      return b.width > 3 && b.width < 14 && Math.abs(b.width - b.height) < 2
                        && st.borderRadius.indexOf('50%') === 0 && /^rgb\(/.test(st.backgroundColor);
                    });
-                   const label = dot && dot.parentElement && dot.parentElement.querySelector('span:last-child');
-                   return { name: label ? label.innerText.trim() : '',
+                   /* The label span now CONTAINS a nested span for the centre
+                      code, so `span:last-child` returns the code rather than the
+                      label. Read the row's own text and split the two apart. */
+                   const label = dot && dot.parentElement
+                     && Array.from(dot.parentElement.children).filter(n => n !== dot).pop();
+                   const whole = label ? label.innerText.trim() : '';
+                   const parts = whole.split('\u00b7').map(x => x.trim()).filter(Boolean);
+                   return { name: parts.length > 1 ? parts.slice(1).join(' · ') : whole,
+                            code: parts.length > 1 ? parts[0] : '',
                             dot: dot ? hex(getComputedStyle(dot).backgroundColor) : '',
                             ink: label ? hex(getComputedStyle(label).color) : '',
                             fontPx: label ? Math.round(parseFloat(getComputedStyle(label).fontSize) * 100) / 100 : 0 };
@@ -1381,6 +1388,13 @@ const LEADERBOARD = {
     /* Colour is not a label: one man in twelve cannot read it, print drifts
        between batches, and a photocopy has none of it. The band used to spell
        the centre out, so removing it had to keep the name somewhere. */
+    /* The code used to hang off the photo frame as a badge. It is spelled out
+       beside the centre name now — colour is not a label, so the two characters a
+       coordinator calls out still have to be somewhere, and the frame goes back to
+       being a plain rectangle. */
+    ok('…the centre code beside the name, not as a badge on the frame',
+      volFronts[0].centreLine.code === 'EG' && volFronts[1].centreLine.code === 'IJ'
+      && volFronts[3].centreLine.code === 'SA');
     ok('…and the centre is still spelled out, next to a dot of its colour',
       volFronts[0].centreLine.name === 'EGBEDA' && volFronts[0].centreLine.dot === '#d64545'
       && volFronts[1].centreLine.name === 'IJAIYE' && volFronts[1].centreLine.dot === '#2e7dd1');
