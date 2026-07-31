@@ -1654,13 +1654,20 @@ function student_send_id(string $studentId): array {
     $channels = [];
     $email = trim((string)($s['parentEmail'] ?? ''));
     if (function_exists('email_template') && function_exists('send_mail') && $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        /* Encode one if there is not a hosted copy yet, so the email carries a
-           scannable code rather than only a link. Before this the automatic path
-           had no browser to render one and quietly sent the link alone. */
+        /* The QR is ALWAYS referenced now, and it is always an image.
+         *
+         * This used to be conditional on a hosted file existing at send time, so a
+         * family whose PNG had not been cached got a message with no code in it and
+         * no way to tell. Two things changed: the file is encoded here if it is
+         * missing, and api/public/qr.php encodes on demand as well — so the URL
+         * resolves even for messages sent before any of this existed, and even if
+         * the storage directory is later cleared.
+         *
+         * That makes the conditional the wrong shape: withholding the <img> to
+         * avoid a broken image is only correct while the URL can 404, and it no
+         * longer can. */
         qr_ensure_cached((string)$s['token']);
-        $qrHtml = qr_cache_exists((string)$s['token'])
-            ? '<div style="text-align:center;margin:6px 0 14px"><img src="' . esc_html(qr_public_url((string)$s['token'])) . '" width="180" height="180" alt="Check-in QR for ' . $first . '" style="width:180px;height:180px;border:1px solid #e4e4e4;border-radius:12px;padding:8px;background:#fff"/><div style="font:400 12px monospace;color:#888;margin-top:6px">Scan at any centre to check in</div></div>'
-            : '';
+        $qrHtml = '<div style="text-align:center;margin:6px 0 14px"><img src="' . esc_html(qr_public_url((string)$s['token'])) . '" width="180" height="180" alt="Check-in QR for ' . $first . '" style="width:180px;height:180px;border:1px solid #e4e4e4;border-radius:12px;padding:8px;background:#fff"/><div style="font:400 12px monospace;color:#888;margin-top:6px">Scan at any centre to check in</div></div>';
         $html = email_template([
             'title' => $first . "'s Genius ID",
             'intro' => 'Hello' . (!empty($s['guardianName']) ? ' ' . esc_html((string)$s['guardianName']) : '') . " — here is {$first}'s Next Generation Genius ID.",
@@ -1796,25 +1803,43 @@ function admin_id_resend_bulk(array $p): array {
 function admin_id_qr_gaps(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT studentId, fullName, centre, token, parentEmail, guardianPhone
+    $rows = db_all("SELECT studentId, fullName, centre, token, parentEmail, guardianPhone, guardianName
                     FROM summer_students
                     WHERE cohortId = ? AND regStatus = 'verified' AND token != '' ORDER BY id ASC", [$c['cohortId']]);
-    $missing = []; $unreachable = 0;
+    $missing = []; $unreachableList = []; $total = 0;
     foreach ($rows as $r) {
-        if (qr_cache_exists((string)$r['token'])) continue;
-        $reachable = trim((string)($r['parentEmail'] ?? '')) !== '' || trim((string)($r['guardianPhone'] ?? '')) !== '';
-        if (!$reachable) { $unreachable++; continue; }
-        if (count($missing) < 50) {
+        $noQr = !qr_cache_exists((string)$r['token']);
+        if ($noQr) $total++;
+        $email = trim((string)($r['parentEmail'] ?? ''));
+        $phone = trim((string)($r['guardianPhone'] ?? ''));
+        if ($email === '' && $phone === '') {
+            /* LISTED, not just counted.
+             *
+             * These are the families the ID never reached and never will: no email
+             * and no phone on the record, usually because the row predates the form
+             * asking for either, or because a desk skipped it. Sending harder does
+             * nothing for them — the only fix is a contact — and a bare count told
+             * an admin a number without telling them whose. Naming them is what
+             * makes the problem finishable. */
+            if (count($unreachableList) < 200) {
+                $unreachableList[] = ['studentId' => (string)$r['studentId'],
+                    'fullName' => (string)$r['fullName'],
+                    'centre' => (string)($r['centre'] ?? ''),
+                    'guardianName' => (string)($r['guardianName'] ?? ''),
+                    'hasQr' => !$noQr];
+            }
+            continue;
+        }
+        if ($noQr && count($missing) < 50) {
             $missing[] = ['studentId' => (string)$r['studentId'], 'fullName' => (string)$r['fullName'],
                           'centre' => (string)($r['centre'] ?? '')];
         }
     }
-    $total = 0;
-    foreach ($rows as $r) if (!qr_cache_exists((string)$r['token'])) $total++;
     return ['ok' => true, 'verified' => count($rows), 'missingQr' => $total,
             // Named separately: these cannot be fixed by sending, only by getting
             // a contact for the family.
-            'unreachable' => $unreachable, 'sample' => $missing,
+            'unreachable' => count($unreachableList), 'unreachableList' => $unreachableList,
+            'sample' => $missing,
             'encoder' => function_exists('qr_encode_png')];
 }
 

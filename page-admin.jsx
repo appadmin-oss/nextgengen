@@ -1881,6 +1881,64 @@ function SummerGates() {
  * could not be found at all, so their link could never be resent. Search,
  * filter and paging are all server-side now, because across a hundred centres
  * the cohort is far too large to ship to a browser and filter there. */
+/* One family whose ID was issued and never delivered, with the field that fixes
+ * it and a send in the same press.
+ *
+ * Two calls rather than one new endpoint: the student writer already validates an
+ * email and a phone, and a second path that wrote contacts would be a second
+ * place for that validation to drift. The send is the existing resend, so the
+ * message, the QR and the audit line are identical to every other ID that goes
+ * out — a family reached late should not receive a different email.
+ */
+function LostContactRow({ u, onDone }) {
+  const [email, setEmail] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const ready = /.+@.+\..+/.test(email.trim()) || phone.trim().length >= 7;
+
+  const saveAndSend = async () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    try {
+      const data = {};
+      if (email.trim()) data.parentEmail = email.trim();
+      if (phone.trim()) data.guardianPhone = phone.trim();
+      await NGGApi.admin.summer.studentUpdate(u.studentId, data);
+      const res = await NGGApi.admin.registration.resendId("student", u.studentId, "");
+      const ch = res.channels || [];
+      /* If the contact saved but nothing went out, say exactly that. "Saved" on
+         its own would read as delivered, and this is the one row on the screen
+         where delivery is the whole point. */
+      if (ch.length) toast.success(u.fullName + " — sent by " + ch.join(" + "));
+      else toast.error("Contact saved, but nothing could be sent. Check the address.");
+      if (onDone) onDone();
+    } catch (e) {
+      toast.error(e.code === "bad_email" ? "That email address is not valid."
+        : e.code === "no_id" ? "No ID issued for this child yet."
+        : (e.code || e.message));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <tr>
+      <td><b>{u.fullName}</b>
+        <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{u.studentId}{u.centre ? " · " + u.centre : ""}</div></td>
+      <td style={{ fontSize: 12.5 }}>{u.guardianName || <span style={{ color: "var(--ink-400)" }}>not recorded</span>}</td>
+      <td><input className="admin-input" style={{ width: "100%", minWidth: 170 }} value={email} type="email"
+        placeholder="guardian@example.com" onChange={e => setEmail(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") saveAndSend(); }} aria-label={"Email for " + u.fullName}/></td>
+      <td><input className="admin-input" style={{ width: "100%", minWidth: 130 }} value={phone}
+        placeholder="0803…" onChange={e => setPhone(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") saveAndSend(); }} aria-label={"Phone for " + u.fullName}/></td>
+      <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+        <button className="btn btn-primary btn-sm" disabled={!ready || busy} onClick={saveAndSend}>
+          {busy ? "Sending…" : "Save & send"}
+        </button>
+      </td>
+    </tr>
+  );
+}
+
 /* Render the check-in QR to a PNG so a resent email can embed it — the same
  * encoder the ID cards use. Returns "" if the encoder cannot load, and the email
  * then carries the link alone rather than failing.
@@ -1935,6 +1993,7 @@ function SummerPending({ onChange }) {
   const [ticked, setTicked] = React.useState(() => new Set());
   const [sheet, setSheet] = React.useState(null);   // { rows: [] }
   const [gaps, setGaps] = React.useState(null);     // verified families with no hosted QR
+  const [showLost, setShowLost] = React.useState(false);
 
   const load = React.useCallback(() => NGGApi.admin.registration
     .list({ q: q.trim(), status, centre, page })
@@ -2070,10 +2129,44 @@ function SummerPending({ onChange }) {
           <button className="btn btn-ghost btn-sm" disabled={bulk} onClick={() => resendBulk("all")}>
             Resend to all verified
           </button>
-          {gaps.unreachable > 0 && (
+        </div>
+      )}
+
+      {/* THE FAMILIES THE ID NEVER REACHED, and a place to fix it.
+          No email and no phone on the record — usually a row that predates the
+          form asking for either, or a desk that skipped it. Sending harder does
+          nothing for them; the only fix is a contact. Counting them told an admin
+          a number without telling them whose, which is not a task anybody can
+          finish, so they are listed here with the field that fixes them. */}
+      {status === "verified" && gaps && gaps.unreachable > 0 && (
+        <div style={{ marginBottom: 10, background: "rgba(245,176,38,.12)",
+                      border: "1px solid rgba(245,176,38,.45)", borderRadius: 12, padding: "10px 14px" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <b style={{ fontSize: 13.5 }}>
+              {gaps.unreachable} verified {gaps.unreachable === 1 ? "family has" : "families have"} no email or phone on file
+            </b>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowLost(v => !v)}>
+              {showLost ? "Hide" : "Show and fix"}
+            </button>
             <span className="admin-hint" style={{ margin: 0 }}>
-              {gaps.unreachable} more have no email or phone on file — sending cannot fix those, only a contact can.
+              Their ID was issued but never delivered. Add a contact and it sends immediately.
             </span>
+          </div>
+          {showLost && (
+            <div className="admin-table-wrap" style={{ marginTop: 10 }}>
+              <table className="admin-table">
+                <thead><tr><th>Student</th><th>Guardian</th><th>Email</th><th>Phone</th><th></th></tr></thead>
+                <tbody>
+                  {(gaps.unreachableList || []).map(u => <LostContactRow key={u.studentId} u={u}
+                    onDone={() => { loadGaps(); load(); }}/>)}
+                </tbody>
+              </table>
+              {gaps.unreachable > (gaps.unreachableList || []).length && (
+                <p className="admin-hint" style={{ margin: "8px 0 0" }}>
+                  Showing the first {(gaps.unreachableList || []).length}. Fix these and the rest appear.
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}

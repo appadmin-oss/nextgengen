@@ -2456,6 +2456,63 @@ chk('the gaps read counts who is missing a QR without sending anything', (functi
     return !empty($r['ok']) && isset($r['verified'], $r['missingQr'], $r['unreachable'], $r['sample'])
         && $r['encoder'] === true;
 })());
+chk('families with no contact are LISTED, not just counted', (function () use ($GATE) {
+    /* Counting them told an admin a number without telling them whose, which is
+       not a task anybody can finish. These are the children whose ID was issued
+       and never delivered — no email and no phone, usually a row from before the
+       form asked for either. Sending harder does nothing; only a contact does. */
+    $reg = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'Lost Contact Kid', 'age' => 12,
+        'dob' => gmdate('Y-m-d', strtotime('-12 years -9 months')),
+        'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+        'parentName' => 'Mrs Lost', 'parentPhone' => '08030000401']]);
+    if (empty($reg['studentId'])) return false;
+    $sid = (string)$reg['studentId'];
+    backend_dispatch('admin.registration.consent.record', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $sid, 'method' => 'paper', 'guardianName' => 'Mrs Lost',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    // Now lose both contacts, which is the shape the real rows are in.
+    db_update('summer_students', ['parentEmail' => '', 'guardianPhone' => ''], ['studentId' => $sid]);
+
+    $r = backend_dispatch('admin.id.qrgaps', ['requesterId' => 'NGG-2025-0099']);
+    $mine = array_values(array_filter($r['unreachableList'] ?? [], fn($x) => $x['studentId'] === $sid));
+    /* Asserted on the id, not the name: registration keeps a first and a last
+       name and drops the middle, so "Lost Contact Kid" is stored as "Lost Kid".
+       A test that pinned the composed name would be testing the name rule. */
+    return !empty($r['ok']) && count($mine) === 1
+        && $mine[0]['fullName'] !== ''
+        // The guardian's NAME is carried even though the contact is not — it is
+        // what a coordinator uses to work out who to ring.
+        && $mine[0]['guardianName'] === 'Mrs Lost'
+        // And they are excluded from the missing-QR list, because sending is not
+        // the fix for them and mixing the two hides both problems.
+        && !array_filter($r['sample'] ?? [], fn($x) => $x['studentId'] === $sid);
+})());
+chk('…and adding a contact makes the ID deliverable, through the existing writer', (function () {
+    /* Two calls rather than a new endpoint: the student writer already validates
+       an address, and a second path that wrote contacts would be a second place
+       for that validation to drift. */
+    $r = backend_dispatch('admin.id.qrgaps', ['requesterId' => 'NGG-2025-0099']);
+    $lost = array_values(array_filter($r['unreachableList'] ?? [], fn($x) => ($x['guardianName'] ?? '') === 'Mrs Lost'));
+    if (!$lost) return true;
+    $sid = $lost[0]['studentId'];
+    $bad = backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $sid, 'data' => ['parentEmail' => 'not-an-address']]);
+    $up = backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $sid, 'data' => ['parentEmail' => 'found@example.com']]);
+    $GLOBALS['__mail_sink'] = [];
+    $send = backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => $sid]);
+    $sent = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => ($m['to'] ?? '') === 'found@example.com'));
+    unset($GLOBALS['__mail_sink']);
+    $after = backend_dispatch('admin.id.qrgaps', ['requesterId' => 'NGG-2025-0099']);
+    $still = array_filter($after['unreachableList'] ?? [], fn($x) => $x['studentId'] === $sid);
+    return ($bad['error'] ?? '') === 'bad_email'      // a typo is refused, not stored
+        && !empty($up['ok']) && !empty($send['ok'])
+        && count($sent) === 1                          // the ID actually went out
+        && in_array('email', $send['channels'] ?? [], true)
+        && !$still;                                    // and they leave the list
+})());
 chk('bulk resend targets only the families missing a QR, and says what is left', (function () {
     $st = db_all("SELECT studentId, token FROM summer_students WHERE token != '' AND regStatus = 'verified' AND parentEmail != '' LIMIT 2");
     if (count($st) < 1) return true;

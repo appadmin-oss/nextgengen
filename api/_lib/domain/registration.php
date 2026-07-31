@@ -1803,25 +1803,43 @@ function admin_id_resend_bulk(array $p): array {
 function admin_id_qr_gaps(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT studentId, fullName, centre, token, parentEmail, guardianPhone
+    $rows = db_all("SELECT studentId, fullName, centre, token, parentEmail, guardianPhone, guardianName
                     FROM summer_students
                     WHERE cohortId = ? AND regStatus = 'verified' AND token != '' ORDER BY id ASC", [$c['cohortId']]);
-    $missing = []; $unreachable = 0;
+    $missing = []; $unreachableList = []; $total = 0;
     foreach ($rows as $r) {
-        if (qr_cache_exists((string)$r['token'])) continue;
-        $reachable = trim((string)($r['parentEmail'] ?? '')) !== '' || trim((string)($r['guardianPhone'] ?? '')) !== '';
-        if (!$reachable) { $unreachable++; continue; }
-        if (count($missing) < 50) {
+        $noQr = !qr_cache_exists((string)$r['token']);
+        if ($noQr) $total++;
+        $email = trim((string)($r['parentEmail'] ?? ''));
+        $phone = trim((string)($r['guardianPhone'] ?? ''));
+        if ($email === '' && $phone === '') {
+            /* LISTED, not just counted.
+             *
+             * These are the families the ID never reached and never will: no email
+             * and no phone on the record, usually because the row predates the form
+             * asking for either, or because a desk skipped it. Sending harder does
+             * nothing for them — the only fix is a contact — and a bare count told
+             * an admin a number without telling them whose. Naming them is what
+             * makes the problem finishable. */
+            if (count($unreachableList) < 200) {
+                $unreachableList[] = ['studentId' => (string)$r['studentId'],
+                    'fullName' => (string)$r['fullName'],
+                    'centre' => (string)($r['centre'] ?? ''),
+                    'guardianName' => (string)($r['guardianName'] ?? ''),
+                    'hasQr' => !$noQr];
+            }
+            continue;
+        }
+        if ($noQr && count($missing) < 50) {
             $missing[] = ['studentId' => (string)$r['studentId'], 'fullName' => (string)$r['fullName'],
                           'centre' => (string)($r['centre'] ?? '')];
         }
     }
-    $total = 0;
-    foreach ($rows as $r) if (!qr_cache_exists((string)$r['token'])) $total++;
     return ['ok' => true, 'verified' => count($rows), 'missingQr' => $total,
             // Named separately: these cannot be fixed by sending, only by getting
             // a contact for the family.
-            'unreachable' => $unreachable, 'sample' => $missing,
+            'unreachable' => count($unreachableList), 'unreachableList' => $unreachableList,
+            'sample' => $missing,
             'encoder' => function_exists('qr_encode_png')];
 }
 
