@@ -1,0 +1,555 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Level 7b — the analyst chat.
+ *
+ * The panel in insight.php answers four fixed questions well and nothing else.
+ * A coordinator's actual question is narrower and stranger than any of them:
+ * "why did Ayobo fall off after week two", "is it worth moving Wednesday",
+ * "which of these two centres should get the new mentor". A panel cannot be
+ * asked that. This can.
+ *
+ * WHAT MAKES THIS DIFFERENT FROM A CHATBOX OVER THE DATA
+ *
+ * A single model call with a database attached is a machine for producing
+ * confident wrong answers about small numbers, and a youth programme's numbers
+ * are all small. Four things here exist to stop that, and they are the whole
+ * design:
+ *
+ *  1. PLAN FIRST, VISIBLY. A router decides which lenses the question actually
+ *     needs and says so. "Why" pulls mechanism; "should we" pulls action and
+ *     risk; anything comparing groups pulls equity. The plan is returned to the
+ *     screen, so the answer arrives with its own method attached rather than as
+ *     an oracle. It also stops the cost: three lenses instead of four is a
+ *     quarter off every turn, and most questions need two.
+ *
+ *  2. THE SAME EVIDENCE, SCRUBBED ONCE. Every lens reads the identical
+ *     aggregate payload insight_evidence() builds — no lens gets its own query,
+ *     so no lens can quietly reach a child. The scrub gate runs on the encoded
+ *     bytes that are actually sent.
+ *
+ *  3. GROUNDING IS CHECKED, NOT TRUSTED. Every number a claim cites is looked
+ *     for in the evidence. A figure that is not there is flagged on the answer
+ *     itself. This is the part that makes the feature safe to put in front of a
+ *     funder: an invented figure is labelled as invented instead of being
+ *     indistinguishable from a real one. It is also the part a model cannot do
+ *     for itself, so it is done in PHP against the payload.
+ *
+ *  4. THE QUESTION IS TREATED AS UNTRUSTED INPUT. It is typed by a human who
+ *     may well type a child's name, and it is about to leave the building. It
+ *     goes through the same privacy gate as the evidence, and it is refused —
+ *     not silently stripped — so the person learns not to do it again.
+ *
+ * Turns are persisted (migration 74). An answer that cost four provider calls
+ * should survive a refresh, the same question tends to recur across
+ * coordinators, and an answer somebody acted on has to stay auditable next to
+ * the evidence fingerprint it was grounded in.
+ */
+
+/* Which lens answers which kind of question. The router chooses from these by
+ * key; the briefs and profiles are the panel's, so a lens behaves identically
+ * whether it was reached from the panel or from a question. One roster, not
+ * two that drift. */
+const ICHAT_MAX_TURN_CHARS   = 600;   // a question, not an essay
+const ICHAT_MAX_LENSES       = 3;     // beyond three the answers repeat and the bill does not
+const ICHAT_HISTORY_TURNS    = 4;     // enough for "and the other one?" to resolve
+const ICHAT_TURNS_PER_HOUR   = 30;    // per admin; this spends money
+const ICHAT_ROUTER_PROFILE   = 'insight_router';
+const ICHAT_ANSWER_PROFILE   = 'insight_answer';
+
+/** A number as a reader would write it, for grounding checks. */
+function ichat_numbers(string $text): array {
+    if (!preg_match_all('/-?\d+(?:\.\d+)?/', $text, $m)) return [];
+    $out = [];
+    foreach ($m[0] as $n) {
+        $f = (float)$n;
+        // Years and small counts are not claims about the data; 2026 and "two
+        // centres" would match everything and flag nothing.
+        if ($f >= 1900 && $f <= 2100 && strpos($n, '.') === false) continue;
+        $out[(string)$n] = $f;
+    }
+    return $out;
+}
+
+/**
+ * Does every figure in this claim appear in the evidence?
+ *
+ * Rounded comparison, because a model writing "about 71%" from 71.8 is being
+ * helpful rather than wrong, and because the evidence carries one decimal.
+ * Tolerance is deliberately generous in the direction of not crying wolf: a
+ * check that flags honest rounding is a check somebody switches off.
+ *
+ * Returns the figures it could NOT find. Empty means grounded.
+ */
+function ichat_ungrounded(string $text, array $haystack): array {
+    $want = ichat_numbers($text);
+    if (!$want) return [];
+    $miss = [];
+    foreach ($want as $raw => $v) {
+        /* How close counts as "the same number" depends on how it was WRITTEN.
+         * A model that writes "about 71%" from 71.8 has rounded — or truncated,
+         * which is just as common — and either is honest reporting, so a figure
+         * written without a decimal is matched to within a whole unit. A figure
+         * written WITH one is a precise quote and is held to it: "71.2%" when
+         * the evidence says 71.8 is a different claim, not a rounding. */
+        $loose = strpos((string)$raw, '.') === false ? 1.0 : 0.06;
+        $found = false;
+        foreach ($haystack as $h) {
+            if (abs($h - $v) < $loose) { $found = true; break; }
+            /* A difference the model computed itself — "27 points behind" from
+               two rates that ARE in the evidence — is grounded even though the
+               subtraction is not. Checked against every pair would be O(n²) on
+               a few hundred numbers; checked against differences from the same
+               value is enough to catch the common case without that. */
+            foreach ($haystack as $h2) {
+                if (abs(abs($h - $h2) - $v) < $loose) { $found = true; break 2; }
+            }
+        }
+        if (!$found) $miss[] = (string)$raw;
+    }
+    return array_slice($miss, 0, 8);
+}
+
+/** Every number anywhere in the evidence, flattened once per turn. */
+function ichat_evidence_numbers($node, array &$out = []): array {
+    if (is_array($node)) {
+        foreach ($node as $v) ichat_evidence_numbers($v, $out);
+    } elseif (is_int($node) || is_float($node)) {
+        $out[] = (float)$node;
+    } elseif (is_string($node)) {
+        foreach (ichat_numbers($node) as $v) $out[] = $v;
+    }
+    return $out;
+}
+
+/* ── The router ───────────────────────────────────────────────────────────── */
+
+/**
+ * Which lenses does this question need, and can it be answered at all?
+ *
+ * A cheap call whose only job is to plan. It is separate from the answer for a
+ * reason worth stating: a model asked to plan and answer in one breath does
+ * neither, and the plan is the part a reader needs in order to judge the answer.
+ *
+ * The heuristic fallback is not decoration. If the router call fails the turn
+ * still has to run, and running every lens is both the expensive answer and the
+ * wrong one.
+ */
+function ichat_route(string $question, array $ev): array {
+    $keys = array_column(INSIGHT_ANALYSTS, 'key');
+    $sys = "You are routing one question to a panel of analysts reading aggregate data from a youth "
+         . "education programme. You do NOT answer it.\n\n"
+         . "The analysts:\n"
+         . "- mechanism: names the concrete operational cause of a pattern (timetable, transport, term dates).\n"
+         . "- action: proposes changes a coordinator could make in a week with no new budget.\n"
+         . "- risk: finds where the evidence would mislead somebody acting on it.\n"
+         . "- equity: compares segments — which age band, sex or centre is behind, and is the gap real.\n\n"
+         . "Pick the FEWEST lenses that genuinely answer the question — one is often right, three is the "
+         . "maximum, and picking a lens that merely might say something is how a panel becomes noise.\n"
+         . "Always include `risk` when the question asks for a decision or a comparison, because that is "
+         . "where a small-sample answer does damage.\n"
+         . "Set answerable=false when the evidence cannot address the question at all — it holds attendance "
+         . "rates, segments by age and sex, weekday patterns, retention by intake, and centre readiness. It "
+         . "holds nothing about money, staff names, individual children, or anything outside the date range.\n\n"
+         . "Reply with JSON only: {\"lenses\":[\"mechanism\"],\"why\":\"one sentence\","
+         . "\"answerable\":true,\"unanswerable_because\":\"\",\"restated\":\"the question in one precise sentence\"}";
+
+    $r = ai_classify($sys, json_encode([
+        'question' => $question,
+        'evidence_shape' => ichat_shape($ev),
+    ], JSON_UNESCAPED_SLASHES), 500, ICHAT_ROUTER_PROFILE);
+
+    if (!empty($r['ok']) && is_array($r['data'] ?? null)) {
+        $picked = array_values(array_intersect($keys, array_map('strval', (array)($r['data']['lenses'] ?? []))));
+        if ($picked) {
+            return [
+                'lenses' => array_slice($picked, 0, ICHAT_MAX_LENSES),
+                'why' => mb_substr(trim((string)($r['data']['why'] ?? '')), 0, 300),
+                'restated' => mb_substr(trim((string)($r['data']['restated'] ?? '')), 0, 300),
+                'answerable' => ($r['data']['answerable'] ?? true) !== false,
+                'unanswerable' => mb_substr(trim((string)($r['data']['unanswerable_because'] ?? '')), 0, 300),
+                'by' => 'router', 'provider' => (string)($r['provider'] ?? ''),
+            ];
+        }
+    }
+    /* Keyword fallback. Crude on purpose — it only has to be better than "run
+       everything", and it is, because a question containing "should" really
+       does want action and risk. */
+    $q = mb_strtolower($question);
+    $has = fn(array $w) => (bool)array_filter($w, fn($x) => mb_strpos($q, $x) !== false);
+    $pick = [];
+    if ($has(['why', 'cause', 'because', 'reason', 'explain', 'drop', 'fell', 'fall'])) $pick[] = 'mechanism';
+    if ($has(['should', 'what do', 'how do', 'fix', 'improve', 'do about', 'next', 'plan'])) $pick[] = 'action';
+    if ($has(['gap', 'girls', 'boys', 'age', 'behind', 'worse', 'compare', 'versus', ' vs ', 'between'])) $pick[] = 'equity';
+    if ($has(['should', 'compare', 'versus', ' vs ', 'trust', 'real', 'sure', 'confident', 'between'])) $pick[] = 'risk';
+    if (!$pick) $pick = ['mechanism', 'risk'];
+    return ['lenses' => array_slice(array_values(array_unique($pick)), 0, ICHAT_MAX_LENSES),
+            'why' => 'Routed on the wording of the question — the planning call was unavailable.',
+            'restated' => '', 'answerable' => true, 'unanswerable' => '',
+            'by' => 'fallback', 'provider' => ''];
+}
+
+/** What the evidence contains, without the values — enough to route on, and
+ *  cheap enough to send on every turn. */
+function ichat_shape(array $ev): array {
+    return [
+        'range' => $ev['range'] ?? [],
+        'centres' => array_map(fn($c) => (string)$c['centre'], (array)($ev['centres'] ?? [])),
+        'segmentRows' => array_map(fn($r) => (string)$r['row'], (array)($ev['segments'] ?? [])),
+        'hasWeekday' => !empty($ev['weekday']),
+        'hasRetention' => !empty($ev['retention']),
+        'computedFindings' => array_map(fn($f) => (string)$f['title'], (array)($ev['computed'] ?? [])),
+    ];
+}
+
+/* ── The answer ───────────────────────────────────────────────────────────── */
+
+/** One lens, answering THIS question rather than its standing brief. */
+function ichat_ask_lens(array $a, string $question, string $evidenceJson, array $history): array {
+    $sys = "You are one of several independent analysts reading the SAME aggregate evidence from a Nigerian "
+         . "youth education programme, and you are answering a specific question a centre coordinator asked.\n\n"
+         . "Your lens: " . $a['brief'] . "\n\n"
+         . "RULES, all binding:\n"
+         . "- Answer the question that was asked. If your lens has nothing to say about it, return no points. "
+         . "An empty answer from the wrong lens is worth more than a padded one.\n"
+         . "- Every point must cite a number that is present in the evidence. If it is not there, you do not know it.\n"
+         . "- Group sizes are given. A difference resting on a handful of children is not a finding — say so instead.\n"
+         . "- 'child-days' are attendance opportunities, not distinct children. Repeat visits by the same few "
+         . "people are not independent evidence.\n"
+         . "- You are reading aggregates. You will see no names and must not speculate about individuals.\n"
+         . "- Write for a coordinator. Short sentences, no jargon, no hedging padding.\n\n"
+         . "Reply with JSON only: {\"points\":[{\"point\":\"one or two sentences\",\"evidence\":\"the numbers you used\","
+         . "\"confidence\":\"high|medium|low\"}]}. At most 3 points.";
+
+    $payload = ['question' => $question, 'evidence' => json_decode($evidenceJson, true)];
+    if ($history) $payload['earlier_in_this_conversation'] = $history;
+
+    $r = ai_classify($sys, json_encode($payload, JSON_UNESCAPED_SLASHES) ?: '{}', 1100, $a['profile']);
+    if (empty($r['ok']) || !is_array($r['data']['points'] ?? null)) {
+        return ['key' => $a['key'], 'label' => $a['label'], 'ok' => false,
+                'error' => (string)($r['error'] ?? 'no_points'), 'points' => []];
+    }
+    $points = [];
+    foreach (array_slice($r['data']['points'], 0, 3) as $c) {
+        $t = trim((string)($c['point'] ?? ''));
+        if ($t === '') continue;
+        $points[] = [
+            'point' => mb_substr($t, 0, 700),
+            'evidence' => mb_substr(trim((string)($c['evidence'] ?? '')), 0, 300),
+            'confidence' => in_array(($c['confidence'] ?? ''), ['high', 'medium', 'low'], true) ? (string)$c['confidence'] : 'low',
+        ];
+    }
+    return ['key' => $a['key'], 'label' => $a['label'], 'ok' => true,
+            'provider' => (string)($r['provider'] ?? ''), 'points' => $points];
+}
+
+/**
+ * Compose one answer from the lenses.
+ *
+ * May only use what the lenses said. The rule is the panel's and it matters more
+ * here: in a chat the composed paragraph is the only thing most people read, so
+ * a composer allowed to add would be an unreviewed analyst speaking with the
+ * authority of a conclusion.
+ */
+function ichat_compose(string $question, array $lenses, string $evidenceJson): array {
+    $input = [];
+    foreach ($lenses as $l) {
+        if (empty($l['ok'])) continue;
+        foreach ($l['points'] as $i => $p) $input[] = ['id' => $l['key'] . '.' . $i, 'lens' => $l['label']] + $p;
+    }
+    if (!$input) return ['ok' => false, 'error' => 'no_points', 'answer' => '', 'claims' => []];
+
+    $sys = "Several independent analysts answered one question from the same evidence. Write the answer the "
+         . "coordinator reads.\n\n"
+         . "- You may ONLY use what the analysts wrote. Never add a point of your own, never strengthen one.\n"
+         . "- Lead with the direct answer to the question in one or two sentences. If the analysts disagree, "
+         . "say that plainly — a clean answer that hides a disagreement is the worst outcome here.\n"
+         . "- Where two lenses reached the same point independently, say so; that is the strongest thing you have.\n"
+         . "- Where a point rests on few children, keep that caveat. Do not tidy it away.\n"
+         . "- No preamble, no 'great question', no restating the question back.\n\n"
+         . "Reply with JSON only: {\"answer\":\"2-5 sentences of plain prose\","
+         . "\"claims\":[{\"claim\":\"one sentence\",\"lenses\":[\"\"],\"evidence\":\"the numbers\","
+         . "\"confidence\":\"high|medium|low\",\"agreed\":true}],"
+         . "\"followups\":[\"a question this answer suggests asking next\"]}";
+
+    $r = ai_classify($sys, json_encode(['question' => $question, 'analyst_points' => $input,
+        'evidence' => json_decode($evidenceJson, true)], JSON_UNESCAPED_SLASHES) ?: '{}', 1600, ICHAT_ANSWER_PROFILE);
+
+    if (empty($r['ok']) || !is_array($r['data'] ?? null)) {
+        /* The lenses ran. Hand their points back as the answer rather than
+         * nothing — one failed composition must not discard three calls that
+         * worked, and an unpolished list of grounded points is still useful. */
+        return ['ok' => false, 'error' => (string)($r['error'] ?? 'compose_failed'),
+                'answer' => '', 'claims' => array_map(fn($p) => [
+                    'claim' => $p['point'], 'lenses' => [$p['lens']], 'evidence' => $p['evidence'],
+                    'confidence' => $p['confidence'], 'agreed' => false], $input),
+                'followups' => []];
+    }
+    $d = $r['data'];
+    $claims = [];
+    foreach ((array)($d['claims'] ?? []) as $c) {
+        $t = trim((string)($c['claim'] ?? ''));
+        if ($t === '') continue;
+        $claims[] = ['claim' => mb_substr($t, 0, 400),
+                     'lenses' => array_slice(array_map(fn($x) => mb_substr((string)$x, 0, 40), (array)($c['lenses'] ?? [])), 0, 4),
+                     'evidence' => mb_substr(trim((string)($c['evidence'] ?? '')), 0, 300),
+                     'confidence' => in_array(($c['confidence'] ?? ''), ['high', 'medium', 'low'], true) ? (string)$c['confidence'] : 'low',
+                     'agreed' => !empty($c['agreed'])];
+    }
+    return ['ok' => true, 'answer' => mb_substr(trim((string)($d['answer'] ?? '')), 0, 1600),
+            'claims' => $claims,
+            'followups' => array_slice(array_map(fn($x) => mb_substr(trim((string)$x), 0, 160), (array)($d['followups'] ?? [])), 0, 3),
+            'provider' => (string)($r['provider'] ?? '')];
+}
+
+/* ── Threads ──────────────────────────────────────────────────────────────── */
+
+function ichat_thread_new(string $ownerId, string $centre, string $rangeLabel, string $title): array {
+    $tid = 'IQ-' . strtoupper(bin2hex(random_bytes(6)));
+    db_insert('insight_threads', ['threadId' => $tid, 'title' => mb_substr($title, 0, 200),
+        'ownerId' => $ownerId, 'centre' => $centre, 'rangeLabel' => $rangeLabel, 'turns' => 0,
+        'createdAt' => now_iso(), 'updatedAt' => now_iso(), 'archivedAt' => '']);
+    return db_row("SELECT * FROM insight_threads WHERE threadId = ? LIMIT 1", [$tid]) ?: [];
+}
+
+/** One turn, shaped for the screen. Stored JSON is decoded here so no caller
+ *  has to know it was ever a string. */
+function ichat_turn_out(array $r): array {
+    $j = fn($k) => json_decode((string)($r[$k] ?? ''), true) ?: [];
+    return [
+        'seq' => (int)$r['seq'],
+        'question' => (string)$r['question'],
+        'answer' => (string)($r['answer'] ?? ''),
+        'plan' => $j('planJson'),
+        'claims' => $j('claimsJson'),
+        'checks' => $j('checksJson'),
+        'evidenceFp' => (string)($r['evidenceFp'] ?? ''),
+        'rangeLabel' => (string)($r['rangeLabel'] ?? ''),
+        'status' => (string)($r['status'] ?? 'ok'),
+        'error' => (string)($r['error'] ?? ''),
+        'providers' => array_values(array_filter(explode(',', (string)($r['providers'] ?? '')))),
+        'ms' => (int)($r['ms'] ?? 0),
+        'at' => (string)($r['createdAt'] ?? ''),
+    ];
+}
+
+/** The last few turns, flattened for the model. Answers only — a model does not
+ *  need the plan or the grounding checks to resolve "and the other centre?". */
+function ichat_history(string $threadId): array {
+    $rows = db_all("SELECT question, answer FROM insight_turns WHERE threadId = ? AND status = 'ok'
+                    ORDER BY seq DESC LIMIT " . ICHAT_HISTORY_TURNS, [$threadId]);
+    $out = [];
+    foreach (array_reverse($rows) as $r) {
+        $out[] = ['asked' => (string)$r['question'], 'answered' => mb_substr((string)$r['answer'], 0, 600)];
+    }
+    return $out;
+}
+
+/**
+ * An hourly per-admin budget, in the cache.
+ *
+ * Deliberately fail-OPEN on a cache problem. A coordinator locked out of the
+ * analyst because a cache directory went read-only is a worse failure than a few
+ * extra provider calls, and the cost ceiling that actually matters is the
+ * provider's own key limit rather than this.
+ */
+function ichat_budget_ok(string $memberId): bool {
+    $slot = (int)floor(time() / 3600);
+    $key = 'ichat_budget_' . substr(sha1($memberId), 0, 12) . '_' . $slot;
+    $now = cache_get($key, 7200);
+    $used = is_array($now) ? (int)($now['n'] ?? 0) : 0;
+    if ($used >= ICHAT_TURNS_PER_HOUR) return false;
+    cache_put($key, ['n' => $used + 1]);
+    return true;
+}
+
+/* ── The ops ──────────────────────────────────────────────────────────────── */
+
+/** List this admin's threads, newest first. */
+function insight_chat_threads(array $p): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+    $me = (string)($g['requester']['memberId'] ?? '');
+    $rows = db_all("SELECT threadId, title, centre, rangeLabel, turns, createdAt, updatedAt
+                    FROM insight_threads WHERE ownerId = ? AND (archivedAt IS NULL OR archivedAt = '')
+                    ORDER BY updatedAt DESC LIMIT 40", [$me]);
+    return ['ok' => true, 'threads' => array_map(fn($r) => [
+        'threadId' => (string)$r['threadId'], 'title' => (string)$r['title'],
+        'centre' => (string)$r['centre'], 'rangeLabel' => (string)$r['rangeLabel'],
+        'turns' => (int)$r['turns'], 'updatedAt' => (string)$r['updatedAt'],
+    ], $rows)];
+}
+
+/** One thread with its turns. */
+function insight_chat_thread(array $p): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+    $tid = trim((string)($p['threadId'] ?? ''));
+    $t = db_row("SELECT * FROM insight_threads WHERE threadId = ? LIMIT 1", [$tid]);
+    if (!$t) return ['ok' => false, 'error' => 'not_found'];
+    // A thread belongs to the admin who opened it. Nothing here is a secret from
+    // another admin, but a shared inbox of half-finished conversations is noise.
+    if ((string)$t['ownerId'] !== (string)($g['requester']['memberId'] ?? '')) return ['ok' => false, 'error' => 'not_yours'];
+    $turns = db_all("SELECT * FROM insight_turns WHERE threadId = ? ORDER BY seq ASC", [$tid]);
+    return ['ok' => true, 'thread' => [
+        'threadId' => (string)$t['threadId'], 'title' => (string)$t['title'],
+        'centre' => (string)$t['centre'], 'rangeLabel' => (string)$t['rangeLabel'],
+        'turns' => array_map('ichat_turn_out', $turns),
+    ]];
+}
+
+function insight_chat_archive(array $p): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+    $tid = trim((string)($p['threadId'] ?? ''));
+    $t = db_row("SELECT * FROM insight_threads WHERE threadId = ? LIMIT 1", [$tid]);
+    if (!$t) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$t['ownerId'] !== (string)($g['requester']['memberId'] ?? '')) return ['ok' => false, 'error' => 'not_yours'];
+    db_update('insight_threads', ['archivedAt' => now_iso(), 'updatedAt' => now_iso()], ['threadId' => $tid]);
+    return ['ok' => true];
+}
+
+/**
+ * Ask one question. The whole pipeline, in the order a reader would want it
+ * explained: gate, scrub, plan, ask, compose, check, store.
+ */
+function insight_chat_ask(array $p): array {
+    $t0 = microtime(true);
+    $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+    $me = (string)($g['requester']['memberId'] ?? '');
+
+    $question = trim((string)($p['question'] ?? ''));
+    if (mb_strlen($question) < 6) return ['ok' => false, 'error' => 'question_too_short'];
+    if (mb_strlen($question) > ICHAT_MAX_TURN_CHARS) return ['ok' => false, 'error' => 'question_too_long'];
+
+    /* THE QUESTION IS UNTRUSTED INPUT, and it is about to leave the building.
+     * Refused rather than silently stripped: somebody who types a child's name
+     * into an AI box needs to be told, once, that this is not the place. The
+     * same gate the evidence goes through, on the same rules. */
+    $leak = insight_scrub(json_encode(['q' => $question], JSON_UNESCAPED_SLASHES) ?: '');
+    if ($leak) {
+        return ['ok' => false, 'error' => 'question_identifies_someone', 'reasons' => $leak];
+    }
+
+    /* Rate-limited per ADMIN, not per IP.
+     *
+     * rate_limit_check() is the wrong tool here twice over: it keys on the client
+     * IP, and a centre behind one NAT would share a budget between coordinators;
+     * and it terminates the response with a 429, which is right for a route and
+     * wrong for something that has already decided to answer. This is a plain
+     * hourly bucket in the cache, per member, and it exists because every turn
+     * spends real money on somebody else's API key. */
+    if (!ichat_budget_ok($me)) return ['ok' => false, 'error' => 'rate_limited',
+        'note' => 'That is ' . ICHAT_TURNS_PER_HOUR . ' questions in an hour. The panel above is still free to read — it is already paid for.'];
+
+    if (!ai_enabled(ICHAT_ANSWER_PROFILE) && !ai_enabled(INSIGHT_ANALYSTS[0]['profile']) && !ai_enabled('default')) {
+        return ['ok' => false, 'error' => 'ai_disabled'];
+    }
+
+    $ev = insight_evidence($p);
+    if (!empty($ev['empty'])) return ['ok' => false, 'error' => 'no_evidence'];
+
+    /* THE GATE. Encode once, check that encoding, send exactly those bytes. */
+    $evidenceJson = json_encode($ev, JSON_UNESCAPED_SLASHES) ?: '{}';
+    $evLeak = insight_scrub($evidenceJson);
+    if ($evLeak) {
+        ops_record('error', 'insight.privacy', 'Refused to send analytics to an AI provider — the payload contained identifying data.', implode('; ', $evLeak));
+        return ['ok' => false, 'error' => 'privacy_refused', 'reasons' => $evLeak];
+    }
+    $fp = insight_fingerprint($ev);
+
+    // Thread: continue one, or open one titled with the question that started it.
+    $tid = trim((string)($p['threadId'] ?? ''));
+    $thread = $tid !== '' ? db_row("SELECT * FROM insight_threads WHERE threadId = ? LIMIT 1", [$tid]) : null;
+    if ($thread && (string)$thread['ownerId'] !== $me) return ['ok' => false, 'error' => 'not_yours'];
+    if (!$thread) {
+        $thread = ichat_thread_new($me, (string)($p['centre'] ?? ''),
+            (string)($ev['range']['label'] ?? ''), $question);
+        if (!$thread) return ['ok' => false, 'error' => 'thread_failed'];
+    }
+    $tid = (string)$thread['threadId'];
+    $seq = (int)db_row("SELECT COALESCE(MAX(seq), 0) s FROM insight_turns WHERE threadId = ?", [$tid])['s'] + 1;
+    $history = $seq > 1 ? ichat_history($tid) : [];
+
+    // 1 · Plan.
+    $plan = ichat_route($question, $ev);
+    if (empty($plan['answerable'])) {
+        /* Stored as a turn, not thrown away. "This data cannot answer that" is a
+           real answer and the most useful one a coordinator can get before
+           building a decision on top of a number that is not there. */
+        $store = [
+            'threadId' => $tid, 'seq' => $seq, 'askedById' => $me, 'question' => $question,
+            'answer' => (string)($plan['unanswerable'] ?: 'This evidence cannot answer that question.'),
+            'planJson' => json_encode($plan, JSON_UNESCAPED_SLASHES), 'claimsJson' => '[]', 'checksJson' => '[]',
+            'evidenceFp' => $fp, 'rangeLabel' => (string)($ev['range']['label'] ?? ''),
+            'status' => 'unanswerable', 'error' => '', 'providers' => (string)($plan['provider'] ?? ''),
+            'ms' => (int)round((microtime(true) - $t0) * 1000), 'createdAt' => now_iso(),
+        ];
+        db_insert('insight_turns', $store);
+        db_update('insight_threads', ['turns' => $seq, 'updatedAt' => now_iso()], ['threadId' => $tid]);
+        return ['ok' => true, 'threadId' => $tid, 'turn' => ichat_turn_out($store)];
+    }
+
+    // 2 · Ask the chosen lenses. A provider that is down loses one lens, not the turn.
+    $byKey = [];
+    foreach (INSIGHT_ANALYSTS as $a) $byKey[$a['key']] = $a;
+    $lenses = [];
+    foreach ($plan['lenses'] as $k) {
+        if (!isset($byKey[$k])) continue;
+        $lenses[] = ichat_ask_lens($byKey[$k], $question, $evidenceJson, $history);
+    }
+    $ran = array_values(array_filter($lenses, fn($l) => !empty($l['ok'])));
+
+    // 3 · Compose.
+    $comp = $ran ? ichat_compose($question, $lenses, $evidenceJson)
+                 : ['ok' => false, 'error' => 'all_lenses_failed', 'answer' => '', 'claims' => [], 'followups' => []];
+
+    /* 4 · Check the grounding. Every figure in the answer and in each claim is
+     * looked for in the evidence. This is the difference between a chat over
+     * data and an analyst: an answer whose numbers cannot be found says so, on
+     * itself, rather than looking exactly like one whose numbers can. */
+    $haystack = ichat_evidence_numbers($ev);
+    $checks = [];
+    $ungroundedAnswer = ichat_ungrounded((string)$comp['answer'], $haystack);
+    foreach ($comp['claims'] as $i => $c) {
+        $miss = ichat_ungrounded($c['claim'] . ' ' . $c['evidence'], $haystack);
+        if ($miss) $checks[] = ['claim' => $i, 'unverified' => $miss];
+    }
+    $grounded = !$ungroundedAnswer && !$checks;
+
+    $providers = array_values(array_unique(array_filter(array_merge(
+        [(string)($plan['provider'] ?? ''), (string)($comp['provider'] ?? '')],
+        array_map(fn($l) => (string)($l['provider'] ?? ''), $ran)))));
+
+    $store = [
+        'threadId' => $tid, 'seq' => $seq, 'askedById' => $me, 'question' => $question,
+        'answer' => (string)$comp['answer'],
+        'planJson' => json_encode($plan + [
+            'lensesRan' => array_map(fn($l) => ['key' => $l['key'], 'label' => $l['label'],
+                'ok' => !empty($l['ok']), 'points' => count($l['points'] ?? []),
+                'error' => (string)($l['error'] ?? '')], $lenses),
+            'composed' => !empty($comp['ok']),
+            'followups' => $comp['followups'] ?? [],
+        ], JSON_UNESCAPED_SLASHES),
+        'claimsJson' => json_encode($comp['claims'], JSON_UNESCAPED_SLASHES),
+        'checksJson' => json_encode(['grounded' => $grounded, 'answerUnverified' => $ungroundedAnswer,
+            'claims' => $checks, 'evidenceNumbers' => count($haystack)], JSON_UNESCAPED_SLASHES),
+        'evidenceFp' => $fp, 'rangeLabel' => (string)($ev['range']['label'] ?? ''),
+        'status' => $ran ? 'ok' : 'failed',
+        'error' => $ran ? '' : mb_substr((string)($comp['error'] ?? ''), 0, 200),
+        'providers' => mb_substr(implode(',', $providers), 0, 200),
+        'ms' => (int)round((microtime(true) - $t0) * 1000),
+        'createdAt' => now_iso(),
+    ];
+    db_insert('insight_turns', $store);
+    db_update('insight_threads', ['turns' => $seq, 'updatedAt' => now_iso()], ['threadId' => $tid]);
+    audit('insight.chat', $me, $tid, ['seq' => $seq, 'lenses' => count($ran), 'grounded' => $grounded], (string)($p['ip'] ?? ''));
+
+    return ['ok' => true, 'threadId' => $tid, 'turn' => ichat_turn_out($store),
+            'lenses' => array_map(fn($l) => [
+                'key' => $l['key'], 'label' => $l['label'], 'ok' => !empty($l['ok']),
+                'points' => $l['points'] ?? [], 'error' => (string)($l['error'] ?? ''),
+            ], $lenses)];
+}

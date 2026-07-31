@@ -1283,3 +1283,49 @@ ALTER TABLE summer_students ADD COLUMN dob VARCHAR(12) DEFAULT '';
 ALTER TABLE summer_students ADD COLUMN photoAskedAt VARCHAR(40) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (73) ON DUPLICATE KEY UPDATE version = version;
+
+-- 74: the analyst chat — a thread per conversation, a row per turn.
+--
+-- Persisted rather than kept in the browser for three reasons that all matter
+-- here: the answer cost real money to produce and should not evaporate on a
+-- refresh; a question one coordinator asked is usually a question the next one
+-- has too; and an answer that was acted on has to stay auditable — with the
+-- evidence fingerprint it was grounded in, so "the numbers have moved since" is
+-- something the screen can state rather than guess.
+--
+-- No column here holds a child. The question is scrubbed before it is stored, on
+-- the same gate that scrubs it before it is sent to a provider.
+CREATE TABLE IF NOT EXISTS insight_threads (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  threadId VARCHAR(48) NOT NULL UNIQUE,
+  title VARCHAR(200) DEFAULT '',
+  ownerId VARCHAR(64) NOT NULL,
+  centre VARCHAR(80) DEFAULT '',
+  rangeLabel VARCHAR(80) DEFAULT '',
+  turns INT DEFAULT 0,
+  createdAt VARCHAR(40), updatedAt VARCHAR(40), archivedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_ithreads_owner (ownerId, updatedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS insight_turns (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  threadId VARCHAR(48) NOT NULL,
+  seq INT NOT NULL,
+  askedById VARCHAR(64) NOT NULL,
+  question TEXT NOT NULL,
+  answer TEXT,
+  planJson TEXT,
+  claimsJson TEXT,
+  checksJson TEXT,
+  evidenceFp VARCHAR(32) DEFAULT '',
+  rangeLabel VARCHAR(80) DEFAULT '',
+  status VARCHAR(24) DEFAULT 'ok',
+  error VARCHAR(200) DEFAULT '',
+  providers VARCHAR(200) DEFAULT '',
+  tokens INT DEFAULT 0,
+  ms INT DEFAULT 0,
+  createdAt VARCHAR(40),
+  UNIQUE KEY idx_iturns_seq (threadId, seq)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (74) ON DUPLICATE KEY UPDATE version = version;

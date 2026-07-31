@@ -249,6 +249,26 @@ Two things to know before switching it on:
   `api/_lib/domain/insight.php`. If you see "Refused to send" on that screen,
   that gate has fired and it is a bug to report, not a retry.
 
+**Analytics → Level 7b · Ask the analysts** is the same panel, asked your own
+question. It adds two profiles: `insight_router`, which only decides which lenses
+a question needs and should be the cheapest model you have; and `insight_answer`,
+which composes the reply and is the one place worth a capable model — it has to
+hold a disagreement between two analysts without tidying it away, and that is
+exactly what a small model does.
+
+- **A turn is two to five completions**, budgeted at 30 questions per admin per
+  hour. Nothing is pre-warmed and nothing is cached: a question is asked once and
+  the answer is stored, so re-reading a thread costs nothing.
+- **Every figure in an answer is checked against the evidence** and anything not
+  found is marked on the answer itself. Honest rounding passes; a precise quote
+  that does not match does not. If you see "some figures in this answer are not in
+  the evidence", the model did arithmetic rather than reading — check it against
+  the tables above before acting on it.
+- **Your question goes through the same privacy gate as the figures.** Type a
+  child's name and the turn is refused outright, before anything is sent. That is
+  deliberate: stripping it quietly would teach nobody anything.
+- Threads are stored per admin and readable only by the admin who opened them.
+
 ## Step 5 — Sign-in flow
 
 1. Click **Sign in**, enter the admin email.

@@ -548,6 +548,15 @@
          longer timeout is the point of it: a panel of four analysts plus a
          synthesis pass will not finish inside the default write ceiling. */
       analyticsInsight: (q, force) => request('/admin/analytics.php' + qs(Object.assign({ view: 'insight', force: force ? '1' : '' }, q || {})), { timeout: 180000 }),
+      /* Level 7b · the analyst chat. Reads are cheap GETs; asking is a POST
+         because it spends money and writes a turn. The same long timeout as the
+         panel and for the same reason — a router pass, up to three lenses and a
+         composition will not finish inside the default write ceiling, and a
+         client that gives up at 30s bills for work it then discards. */
+      insightChatThreads: () => request('/admin/analytics.php' + qs({ view: 'chat', op: 'threads' })),
+      insightChatThread: (threadId) => request('/admin/analytics.php' + qs({ view: 'chat', op: 'thread', threadId })),
+      insightChatAsk: (data) => request('/admin/analytics.php', { body: { action: 'insight.ask', ...(data || {}) }, timeout: 180000 }),
+      insightChatArchive: (threadId) => request('/admin/analytics.php', { body: { action: 'insight.archive', threadId } }),
       analyticsDrill: (metric, filters) => request('/admin/analytics.php', { body: { action: 'drilldown', metric, ...(filters || {}) } }),
       activityAdd:  (data) => request('/admin/analytics.php', { body: { action: 'activity.add', ...data } }),
       championsMint: (period) => request('/admin/analytics.php', { body: { action: 'champions.mint', period: period || '' } }),

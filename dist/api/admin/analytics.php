@@ -12,6 +12,29 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $res = gs_call('analytics.activity.add', array_merge($in, ['requesterId' => $s['mid']]));
     } elseif ($action === 'champions.mint') {
         $res = gs_call('admin.champions.mint', ['requesterId' => $s['mid'], 'period' => $in['period'] ?? '', 'ip' => client_ip()]);
+    } elseif ($action === 'insight.ask') {
+        /* Level 7b · asking the analyst panel a question. A POST because it
+         * spends money on every call and writes a turn — neither belongs on
+         * something a browser will replay from history or prefetch. */
+        $res = gs_call('analytics.insight.ask', [
+            'requesterId' => $s['mid'],
+            'question' => $in['question'] ?? '',
+            'threadId' => $in['threadId'] ?? '',
+            'centre' => $in['centre'] ?? '',
+            'week' => $in['week'] ?? '', 'range' => $in['week'] ?? '',
+            'ip' => client_ip(),
+        ]);
+        if (empty($res['ok'])) {
+            http_response_code(400);
+            header('Content-Type: application/json; charset=utf-8');
+            /* These refusals carry detail the screen needs: WHICH field would
+               have identified somebody, or that the hourly budget is spent. A
+               bare code sends an admin to the logs for something we can say. */
+            echo json_encode(['ok' => false] + array_diff_key($res, ['ok' => 1]), JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+    } elseif ($action === 'insight.archive') {
+        $res = gs_call('analytics.insight.archive', ['requesterId' => $s['mid'], 'threadId' => $in['threadId'] ?? '']);
     } else {
         json_error('unknown_action', 400);
     }
@@ -65,6 +88,25 @@ if (($_GET['view'] ?? '') === 'insight') {
         echo json_encode(['ok' => false] + array_diff_key($res, ['ok' => 1]), JSON_UNESCAPED_SLASHES);
         exit;
     }
+    unset($res['ok']); json_ok($res);
+}
+
+/* Level 7b · the analyst chat.
+ *
+ * Reads are GETs and cheap. Asking is a POST — it spends money, it writes a
+ * turn, and it must not be replayable from a link in a browser's history. No
+ * cache_remember on any of it: a thread is a record of what was said, and a
+ * cached thread would hide the turn that was just added to it. */
+if (($_GET['view'] ?? '') === 'chat') {
+    $op = (string)($_GET['op'] ?? 'threads');
+    if ($op === 'threads') {
+        $res = gs_call('analytics.insight.threads', ['requesterId' => $s['mid']]);
+    } elseif ($op === 'thread') {
+        $res = gs_call('analytics.insight.thread', ['requesterId' => $s['mid'], 'threadId' => $_GET['threadId'] ?? '']);
+    } else {
+        json_error('bad_op', 400);
+    }
+    if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
     unset($res['ok']); json_ok($res);
 }
 

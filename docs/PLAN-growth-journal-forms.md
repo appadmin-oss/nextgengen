@@ -665,3 +665,64 @@ chosen because nothing already on the page could substitute for it:
 
 All three refuse to print below the ten-child floor rather than returning a
 number, and all three appear in the published method list.
+
+### 9 · Level 7b — the analyst chat
+
+The panel answers four standing questions well and nothing else. A coordinator's
+real question is narrower: "why did Ayobo fall off after week two", "which of
+these two centres should get the new mentor". A panel cannot be asked that.
+
+A single model call with a database attached is a machine for producing confident
+wrong answers about small numbers, and every number here is small. Four things
+exist to stop that, and they are the whole design:
+
+- **Plan first, visibly.** A cheap router pass decides which lenses the question
+  actually needs and says so on the answer — "why" pulls mechanism, "should we"
+  pulls action and risk, anything comparing groups pulls equity. It is separate
+  from the answer because a model asked to plan and answer in one breath does
+  neither, and the plan is what a reader needs in order to weigh the answer. It
+  also halves the cost: most questions need two lenses, not four. If the router
+  call fails, a keyword fallback runs and **says it fell back** rather than
+  implying a plan.
+- **The same evidence, scrubbed once.** Every lens reads the identical aggregate
+  payload `insight_evidence()` builds. No lens gets its own query, so no lens can
+  quietly reach a child. The gate runs on the encoded bytes that are sent.
+- **Grounding is checked, not trusted.** Every figure in the answer and in each
+  claim is looked for in the evidence, and anything not found is flagged on the
+  answer itself. This is the part that makes the feature safe in front of a
+  funder: an invented figure is labelled as invented rather than being
+  indistinguishable from a real one. Tolerance depends on how the figure was
+  written — "about 71%" from 71.8 is honest rounding and passes, "71.2%" is a
+  precise quote and is held to it — because a check that cries wolf is a check
+  somebody switches off, and then the real fabrications get through too.
+  Differences the model computed itself from two figures that ARE present count
+  as grounded.
+- **The question is untrusted input.** It is typed by a human who may well type a
+  child's name, and it is about to leave the building. It goes through the same
+  privacy gate as the evidence and is **refused, not stripped** — silently
+  removing a name teaches nobody anything and they will type it again on a
+  surface with no gate in front of it.
+
+Turns are persisted (migration 74, mirrored into `db/schema-mysql.sql`): an
+answer that cost four provider calls should survive a refresh, the question one
+coordinator asked is usually the next one's too, and an answer somebody acted on
+has to stay auditable next to the evidence fingerprint it was grounded in. A
+thread is readable only by the admin who opened it.
+
+Failure is partial everywhere. One provider down costs one lens; a failed
+composition hands back the lens points rather than nothing; a question the
+evidence cannot answer is **stored as that answer**, because "this data cannot
+tell you that" is the most useful thing a coordinator can hear before building a
+decision on a number that is not there.
+
+Budgeted per admin (30 turns/hour) rather than per IP — `rate_limit_check()` keys
+on the client IP, so one centre behind a single NAT would share a budget between
+its coordinators, and it terminates the response, which is right for a route and
+wrong for a handler. The budget fails open on a cache problem: a coordinator
+locked out because a directory went read-only is a worse failure than a few extra
+calls.
+
+Two new profiles in `ai.profiles`. `insight_router` wants the cheapest model you
+have — it runs every turn and produces about forty tokens. `insight_answer` is
+the one place worth a capable model: it has to hold a disagreement between two
+analysts without tidying it away, which is exactly what a small model does.

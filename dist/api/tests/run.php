@@ -70,7 +70,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'analytics-depth', 'growth', 'insight', 'journal', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'analytics-depth', 'growth', 'insight', 'insight-chat', 'journal', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/sheets.php';
 require $ROOT . '/_lib/webcron.php';
@@ -2878,6 +2878,228 @@ chk('…and an unchanged set of numbers is answered from cache without calling a
     $i = $second['insight'] ?? [];
     if (!empty($i['disabled']) || !empty($i['empty'])) return true;
     return $noNew && !empty($i['cached']);
+})());
+
+/* ── Level 7b · the analyst chat ──────────────────────────────────────────────
+ * The pipeline is router → lenses → composer → grounding check, and each stage
+ * is tested for the thing it exists to prevent rather than for happy-path shape.
+ */
+
+/* Configured profiles, so ai_enabled() lets the turn reach the stub.
+ *
+ * The chat refuses BEFORE calling anything when no provider is configured — an
+ * error, not a soft "disabled" panel, because a chat box with nothing behind it
+ * is worse than no chat box. Correct in production; in a test it means the mock
+ * is never reached, so the profiles are declared here. */
+function __ichat_config_on(): array {
+    $keep = $GLOBALS['CONFIG']['ai'] ?? null;
+    $profiles = ['default' => ['provider' => 'groq', 'api_key' => 'k']];
+    foreach (INSIGHT_ANALYSTS as $a) $profiles[$a['profile']] = ['provider' => 'groq', 'api_key' => 'k'];
+    $profiles[ICHAT_ROUTER_PROFILE] = ['provider' => 'groq', 'api_key' => 'k'];
+    $profiles[ICHAT_ANSWER_PROFILE] = ['provider' => 'groq', 'api_key' => 'k'];
+    $GLOBALS['CONFIG']['ai'] = ['profiles' => $profiles];
+    return [$keep];
+}
+function __ichat_config_off(array $saved): void { $GLOBALS['CONFIG']['ai'] = $saved[0]; }
+
+/* A stub that behaves like the real pipeline: routes, answers, composes. */
+function __ichat_mock(array $opts = []): callable {
+    return function ($profile, $system, $turns) use ($opts) {
+        if ($profile === ICHAT_ROUTER_PROFILE) {
+            if (!empty($opts['routerDown'])) return ['ok' => false, 'error' => 'ai_http_500'];
+            return ['ok' => true, 'provider' => 'stub-router', 'text' => json_encode(
+                ($opts['route'] ?? ['lenses' => ['mechanism', 'risk'], 'why' => 'w', 'answerable' => true, 'restated' => 'r']))];
+        }
+        if ($profile === ICHAT_ANSWER_PROFILE) {
+            if (!empty($opts['composerDown'])) return ['ok' => false, 'error' => 'ai_network'];
+            return ['ok' => true, 'provider' => 'stub-answer', 'text' => json_encode([
+                'answer' => (string)($opts['answer'] ?? 'Wednesday is the weak day.'),
+                'claims' => $opts['claims'] ?? [['claim' => 'Wednesday is weakest.', 'lenses' => ['a', 'b'],
+                                                'evidence' => 'e', 'confidence' => 'medium', 'agreed' => true]],
+                'followups' => ['And on Saturdays?'],
+            ])];
+        }
+        return ['ok' => true, 'provider' => 'stub-' . $profile, 'text' => json_encode(['points' => [
+            ['point' => 'Wednesday runs lowest.', 'evidence' => 'e', 'confidence' => 'medium'],
+        ]])];
+    };
+}
+
+chk('the chat routes to the lenses the question needs, and no more', (function () {
+    $seen = [];
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = function ($profile, $sys, $turns) use (&$seen) {
+        $seen[] = $profile;
+        return (__ichat_mock())($profile, $sys, $turns);
+    };
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'Why does Wednesday run so much lower than Saturday?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($r['ok'])) return ($r['error'] ?? '') === 'no_evidence';   // no data in range is a valid shape
+    $plan = $r['turn']['plan'] ?? [];
+    /* Two lenses asked, not four. A panel that runs everything on every question
+       is the expensive answer and the noisy one — a lens with nothing to say
+       still produces three plausible sentences. */
+    $lensProfiles = array_values(array_filter($seen, fn($p) => strpos((string)$p, 'insight_') === 0
+        && $p !== ICHAT_ROUTER_PROFILE && $p !== ICHAT_ANSWER_PROFILE));
+    return in_array(ICHAT_ROUTER_PROFILE, $seen, true)
+        && in_array(ICHAT_ANSWER_PROFILE, $seen, true)
+        && count($lensProfiles) === 2
+        && count($plan['lenses'] ?? []) === 2
+        && ($plan['by'] ?? '') === 'router';
+})());
+
+chk('…and the plan is on the answer, so a reader can weigh it', (function () {
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock();
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'Which centre should get the next mentor?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($r['ok'])) return true;
+    $t = $r['turn'];
+    // Never an oracle: the lenses consulted, why, and what each returned.
+    return isset($t['plan']['lensesRan'], $t['plan']['why'], $t['checks'], $t['evidenceFp'])
+        && $t['answer'] !== '' && count($t['claims']) >= 1
+        && ($t['plan']['lensesRan'][0]['ok'] ?? false) === true;
+})());
+
+/* THE ONE THAT MATTERS. A model that quotes a figure which is not in the
+ * evidence must not be indistinguishable from one that quotes a real one. */
+chk('a figure that is not in the evidence is flagged on the answer', (function () {
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock([
+        // 91.7% appears nowhere in a fixture with this data.
+        'answer' => 'Ayobo is running at 91.7%, well ahead of the others.',
+        'claims' => [['claim' => 'Ayobo reaches 91.7%.', 'lenses' => ['a'], 'evidence' => '91.7', 'confidence' => 'high', 'agreed' => false]],
+    ]);
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'How is Ayobo doing against the others this period?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($r['ok'])) return true;
+    $c = $r['turn']['checks'] ?? [];
+    return ($c['grounded'] ?? true) === false
+        && in_array('91.7', $c['answerUnverified'] ?? [], true)
+        && count($c['claims'] ?? []) === 1;
+})());
+chk('…while honest rounding is not called a fabrication', (function () {
+    /* A check that flags "about 71%" drawn from 71.8 is a check somebody turns
+       off, and then the real fabrications get through too. */
+    $hay = [71.8, 44.4, 12.0];
+    return ichat_ungrounded('About 71% on Wednesday, against 44%.', $hay) === []
+        && ichat_ungrounded('A 27-point gap.', $hay) === []          // 71.8 - 44.4, computed
+        && ichat_ungrounded('Attendance hit 88%.', $hay) === ['88'];
+})());
+chk('…and a year or a small count is never treated as a claim about the data', (function () {
+    // "in 2026" and "two centres" would otherwise flag on every answer.
+    return ichat_ungrounded('In 2026 the two centres both improved.', [44.4]) === [];
+})());
+
+chk('the question is refused — not stripped — when it identifies somebody', (function () {
+    $called = 0;
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = function ($p, $s, $t) use (&$called) { $called++; return (__ichat_mock())($p, $s, $t); };
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'Why has chidi.okafor@example.org stopped coming on Wednesdays?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    /* Nothing was sent, and the person is told. Silently removing the name
+       teaches nobody anything and they will type it again on a surface with no
+       gate in front of it. */
+    return empty($r['ok']) && ($r['error'] ?? '') === 'question_identifies_someone'
+        && $called === 0 && !empty($r['reasons']);
+})());
+
+chk('a question the evidence cannot answer is stored as that answer, not as an error', (function () {
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock(['route' => ['lenses' => ['mechanism'], 'answerable' => false,
+        'unanswerable_because' => 'This evidence holds attendance only — it says nothing about money.']]);
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'How much did the transport subsidy cost us last term?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($r['ok'])) return true;
+    /* "This data cannot answer that" is the most useful thing a coordinator can
+       hear before building a decision on a number that is not there — so it is a
+       turn in the thread, not a red box that disappears. */
+    return ($r['turn']['status'] ?? '') === 'unanswerable'
+        && strpos((string)$r['turn']['answer'], 'attendance only') !== false
+        && ($r['turn']['claims'] === []);
+})());
+
+chk('the router going down costs the routing, not the turn', (function () {
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock(['routerDown' => true]);
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'Why did the second week drop so sharply?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($r['ok'])) return true;
+    $plan = $r['turn']['plan'] ?? [];
+    // Keyword fallback, and it SAYS it fell back rather than implying a plan.
+    return ($plan['by'] ?? '') === 'fallback' && in_array('mechanism', $plan['lenses'] ?? [], true)
+        && $r['turn']['answer'] !== '';
+})());
+chk('…and a failed composition hands back the lens points rather than nothing', (function () {
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock(['composerDown' => true]);
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'Why is Wednesday weak?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($r['ok'])) return true;
+    // Two working lens calls must not be discarded because a third failed.
+    return count($r['turn']['claims'] ?? []) >= 1 && ($r['turn']['plan']['composed'] ?? true) === false;
+})());
+
+chk('a thread keeps its turns in order, and carries them into the next question', (function () {
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock();
+    $a = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'question' => 'Why is Wednesday weak?']);
+    if (empty($a['ok'])) { unset($GLOBALS['__ai_mock']); return true; }
+    $sawHistory = false;
+    $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) use (&$sawHistory) {
+        // "And Saturday?" only resolves if the earlier turn travelled with it.
+        if (strpos(json_encode($turns), 'earlier_in_this_conversation') !== false) $sawHistory = true;
+        return (__ichat_mock())($profile, $system, $turns);
+    };
+    $b = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'And what about Saturday?', 'threadId' => $a['threadId']]);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    $t = backend_dispatch('analytics.insight.thread', ['requesterId' => 'NGG-2025-0099', 'threadId' => $a['threadId']]);
+    $turns2 = $t['thread']['turns'] ?? [];
+    return !empty($b['ok']) && $sawHistory && count($turns2) === 2
+        && $turns2[0]['seq'] === 1 && $turns2[1]['seq'] === 2
+        && $turns2[0]['question'] !== $turns2[1]['question'];
+})());
+chk('…and a thread is only readable by the admin who opened it', (function () {
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock();
+    $a = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'question' => 'Why is Wednesday weak?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($a['ok'])) return true;
+    $other = backend_dispatch('analytics.insight.thread', ['requesterId' => 'NGG-2025-0098', 'threadId' => $a['threadId']]);
+    // Either the other admin is not an admin at all, or the thread is not theirs.
+    return empty($other['ok']);
+})());
+chk('the ask op is admin-gated', backend_dispatch('analytics.insight.ask', ['requesterId' => '', 'question' => 'Why is Wednesday weak?'])['ok'] !== true);
+chk('a one-word question is refused before anything is spent', (function () {
+    $called = 0;
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = function ($p, $s, $t) use (&$called) { $called++; return (__ichat_mock())($p, $s, $t); };
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'question' => 'why']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    return empty($r['ok']) && $called === 0;
+})());
+chk('an hourly budget stops a runaway from spending a programme\'s API key', (function () {
+    /* Not rate_limit_check(): that keys on the client IP, so one centre behind a
+       single NAT would share a budget between its coordinators, and it terminates
+       the response, which is right for a route and wrong here. */
+    $slot = (int)floor(time() / 3600);
+    $key = 'ichat_budget_' . substr(sha1('NGG-2025-0099'), 0, 12) . '_' . $slot;
+    cache_put($key, ['n' => ICHAT_TURNS_PER_HOUR]);
+    $called = 0;
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = function ($p, $s, $t) use (&$called) { $called++; return (__ichat_mock())($p, $s, $t); };
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'question' => 'Why is Wednesday weak?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    cache_put($key, ['n' => 0]);
+    return empty($r['ok']) && ($r['error'] ?? '') === 'rate_limited' && $called === 0;
 })());
 
 /* ── The providers ───────────────────────────────────────────────────────── */

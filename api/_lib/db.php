@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 73;
+const NGG_SCHEMA_TARGET = 74;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1864,6 +1864,51 @@ function db_migrate(PDO $db): void {
          */
         73 => "
             ALTER TABLE summer_students ADD COLUMN photoAskedAt TEXT DEFAULT '';
+        ",
+        /* 74: the analyst chat.
+         *
+         * A thread per conversation and a row per turn. Persisted rather than
+         * kept in the browser for three reasons that all matter here: the answer
+         * cost real money to produce and should not evaporate on a refresh; a
+         * question one coordinator asked is usually a question the next one has
+         * too; and an answer that was acted on has to remain auditable — with
+         * the evidence fingerprint it was grounded in, so "the numbers have moved
+         * since" is a statement the screen can make rather than a guess.
+         *
+         * No column here holds a child. The question is scrubbed before it is
+         * stored, on the same gate that scrubs it before it is sent. */
+        74 => "
+            CREATE TABLE IF NOT EXISTS insight_threads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                threadId TEXT NOT NULL UNIQUE,
+                title TEXT DEFAULT '',
+                ownerId TEXT NOT NULL,
+                centre TEXT DEFAULT '',
+                rangeLabel TEXT DEFAULT '',
+                turns INTEGER DEFAULT 0,
+                createdAt TEXT, updatedAt TEXT, archivedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_ithreads_owner ON insight_threads (ownerId, updatedAt);
+            CREATE TABLE IF NOT EXISTS insight_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                threadId TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                askedById TEXT NOT NULL,
+                question TEXT NOT NULL,
+                answer TEXT DEFAULT '',
+                planJson TEXT DEFAULT '',
+                claimsJson TEXT DEFAULT '',
+                checksJson TEXT DEFAULT '',
+                evidenceFp TEXT DEFAULT '',
+                rangeLabel TEXT DEFAULT '',
+                status TEXT DEFAULT 'ok',
+                error TEXT DEFAULT '',
+                providers TEXT DEFAULT '',
+                tokens INTEGER DEFAULT 0,
+                ms INTEGER DEFAULT 0,
+                createdAt TEXT
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_iturns_seq ON insight_turns (threadId, seq);
         ",
     ];
 

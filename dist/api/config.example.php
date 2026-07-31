@@ -191,6 +191,19 @@ return [
             'insight_risk'      => ['provider' => 'openrouter', 'api_key' => '', 'model' => 'deepseek/deepseek-chat'],
             'insight_equity'    => ['provider' => 'groq',       'api_key' => '', 'model' => 'llama-3.3-70b-versatile'],
             'insight_synth'     => ['provider' => 'anthropic',  'api_key' => '', 'model' => 'claude-sonnet-4-5-20250929'],
+            /* Level 7b · the analyst chat.
+             *
+             * 'insight_router' only decides which lenses a question needs, so it
+             * wants the cheapest, fastest model you have — it runs on every turn
+             * and produces about forty tokens. Spending a large model there buys
+             * nothing; the lens calls are where the thinking happens.
+             *
+             * 'insight_answer' composes the reply the coordinator actually reads
+             * and is the one place worth a capable model: it has to hold a
+             * disagreement between two analysts without tidying it away, which
+             * is exactly what a small model does. */
+            'insight_router'    => ['provider' => 'groq',       'api_key' => '', 'model' => 'llama-3.1-8b-instant'],
+            'insight_answer'    => ['provider' => 'anthropic',  'api_key' => '', 'model' => 'claude-sonnet-4-5-20250929'],
         ],
     ],
 

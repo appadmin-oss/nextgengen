@@ -230,6 +230,13 @@ function backend_dispatch(string $op, array $args = []): array {
             // Level 7 — the analyst panel. Several models, different lenses,
             // different providers, and only what more than one of them reached.
             'analytics.insight'        => 'insight_panel',
+            /* Level 7b — the analyst chat. Ask the same panel a question it was
+             * not designed for. Reads are cheap; `ask` spends money on every
+             * call and is budgeted per admin inside the handler. */
+            'analytics.insight.ask'     => 'insight_chat_ask',
+            'analytics.insight.threads' => 'insight_chat_threads',
+            'analytics.insight.thread'  => 'insight_chat_thread',
+            'analytics.insight.archive' => 'insight_chat_archive',
             /* The Programme Journal. Writes need the `journal` capability (the
              * journalist role); reads are filtered by the viewer's visibility
              * level inside the handler, which is why the feed and the memories

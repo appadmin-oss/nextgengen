@@ -43,7 +43,7 @@ function php(snippet) {
   const domains = ['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2',
     'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations',
     'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor',
-    'instructor', 'ops', 'analytics', 'growth', 'journal', 'profiles', 'community', 'arcade'];
+    'instructor', 'ops', 'analytics', 'growth', 'insight', 'insight-chat', 'journal', 'profiles', 'community', 'arcade'];
   const code = `<?php $GLOBALS['CONFIG']=require ${JSON.stringify(CFG)};`
     + `function client_ip(){return '127.0.0.1';} function client_ua(){return 'shots';}`
     + req('response.php') + req('db.php') + req('util.php') + req('mailer.php')
@@ -333,6 +333,50 @@ function seed() {
         await zone2.screenshot({ path: file });
         shots.push({ name: '22-student-ids-real', label: 'Summer student IDs from the same database, for comparison', kb: Math.round(fs.statSync(file).size / 1024) });
         console.log('  ✓ 22-student-ids-real.png  (' + shots[shots.length - 1].kb + ' KB) — student IDs, real rows');
+      }
+      await ctx.close();
+    }
+
+    /* ── 1c · The analyst chat, mid-conversation ─────────────────────────────
+     * Seeded with a real turn written straight into the thread tables, so the
+     * capture shows the pane as a coordinator sees it after asking — the plan,
+     * the claims, the grounding line — without spending a provider call to take
+     * a screenshot. */
+    {
+      php(`db_insert('insight_threads', ['threadId'=>'IQ-SHOT01','title'=>'Which centre should get the next mentor?','ownerId'=>'NGG-2026-0001','centre'=>'','rangeLabel'=>'All weeks','turns'=>1,'createdAt'=>now_iso(),'updatedAt'=>now_iso(),'archivedAt'=>'']);`
+        + `db_insert('insight_turns', ['threadId'=>'IQ-SHOT01','seq'=>1,'askedById'=>'NGG-2026-0001',`
+        + `'question'=>'Which centre should get the next mentor, and what in this data says so?',`
+        + `'answer'=>"Alimosho, on the evidence here — but the margin is thinner than it looks.\n\nAlimosho runs at 58.3% against a programme average of 71.8%, the widest shortfall of the three, and its weakest weekday sits 22 points below its best. Two lenses reached that independently. The caveat both raised: it rests on four children, so the gap cannot be distinguished from chance yet, and a mentor placed on this alone is a bet rather than a correction.",`
+        + `'planJson'=>json_encode(['lenses'=>['mechanism','equity','risk'],'by'=>'router','why'=>'A placement decision comparing centres — mechanism for the cause, equity for the gap, risk because a decision resting on four children is where small samples do damage.','restated'=>'Which centre has the greatest unmet need this period, and is the evidence strong enough to act on?','composed'=>true,'followups'=>['What would make the Alimosho gap testable?','Is the weekday pattern the same at Ayobo?'],'lensesRan'=>[['key'=>'mechanism','label'=>'What is causing this','ok'=>true,'points'=>2,'error'=>''],['key'=>'equity','label'=>'Who is being left behind','ok'=>true,'points'=>2,'error'=>''],['key'=>'risk','label'=>'What this is missing','ok'=>true,'points'=>1,'error'=>'']]]),`
+        + `'claimsJson'=>json_encode([['claim'=>'Alimosho is 13.5 points behind the programme average, the widest shortfall of the three centres.','lenses'=>['Who is being left behind','What is causing this'],'evidence'=>'58.3% vs 71.8%','confidence'=>'medium','agreed'=>true],['claim'=>'Its weakest weekday runs 22 points below its best, which points at the timetable rather than at engagement.','lenses'=>['What is causing this'],'evidence'=>'22.2% Mon vs 44.4% Fri','confidence'=>'medium','agreed'=>false],['claim'=>'The gap rests on four children and cannot be told apart from chance yet.','lenses'=>['What this is missing'],'evidence'=>'4 children, 48 child-days','confidence'=>'high','agreed'=>false]]),`
+        + `'checksJson'=>json_encode(['grounded'=>true,'answerUnverified'=>[],'claims'=>[],'evidenceNumbers'=>184]),`
+        + `'evidenceFp'=>'8f2c41d0a7b39e55','rangeLabel'=>'All weeks','status'=>'ok','error'=>'','providers'=>'groq,anthropic','ms'=>18400,'createdAt'=>now_iso()]);`);
+
+      const ctx = await desktop(adminTok);
+      const page = await ctx.newPage();
+      await page.setViewportSize({ width: 1180, height: 1500 });
+      await goto(page, '/nextadmin', '.admin-shell');
+      await page.evaluate(() => window.__adminSection && window.__adminSection('dashboard'));
+      await page.waitForSelector('#an-chat', { timeout: 30000 }).catch(() => {});
+      await page.waitForTimeout(2600);
+      // Open the seeded thread, then the method disclosure under its answer.
+      const chip = await page.$('#an-chat .an-chip');
+      if (chip) { await chip.click(); await page.waitForTimeout(1600); }
+      const how = await page.$('#an-chat button:has-text("How this was produced")');
+      if (how) { await how.click(); await page.waitForTimeout(800); }
+      /* An element screenshot still paints whatever overlays that box, so any
+         fixed-position app chrome lands on the pane and reads as part of it. */
+      await page.evaluate(() => {
+        document.querySelectorAll('body *').forEach(n => {
+          if (getComputedStyle(n).position === 'fixed' && !n.closest('#an-chat')) n.style.display = 'none';
+        });
+      });
+      const pane = await page.$('#an-chat');
+      if (pane) {
+        const file = path.join(OUT, '23-analyst-chat.png');
+        await pane.screenshot({ path: file });
+        shots.push({ name: '23-analyst-chat', label: 'Level 7b · the analyst chat — the plan, the claims and the grounding check on the answer', kb: Math.round(fs.statSync(file).size / 1024) });
+        console.log('  ✓ 23-analyst-chat.png  (' + shots[shots.length - 1].kb + ' KB) — analyst chat');
       }
       await ctx.close();
     }

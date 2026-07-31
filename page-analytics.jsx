@@ -728,6 +728,12 @@ function AnalyticsWorkspace() {
     {/* ── Level 7 · what a panel of analysts makes of levels 1–6 ── */}
     <AnInsight filters={filters}/>
 
+    {/* ── Level 7b · the same panel, asked something specific ──
+        Below the panel deliberately: the standing questions are answered before
+        anybody starts asking their own, so a coordinator reads the four things
+        that are true whether or not they thought to ask. */}
+    <AnChat filters={filters}/>
+
     {/* Downloads & reports */}
     <section className="an-sec" style={{ marginBottom: 40 }}>
       <div className="an-eyebrow">Reporting</div>
@@ -1180,6 +1186,289 @@ function AnInsight({ filters }) {
           </div>
         </details>
       </>}
+    </section>
+  );
+}
+
+/* ── Level 7b · the analyst chat ─────────────────────────────────────────────
+ * The panel answers four fixed questions. A coordinator's real question is
+ * narrower and stranger than any of them, and this is where it goes.
+ *
+ * The pane is built around one idea: an answer arrives WITH its method. The plan
+ * (which lenses were consulted, and why), the grounding check (which figures were
+ * found in the evidence and which were not), and the range it was drawn from are
+ * all on the turn — not in a log, not behind a support request. A generated
+ * paragraph that looks exactly like a computed one is the failure mode this
+ * screen exists to avoid.
+ */
+function AnChat({ filters }) {
+  const [threads, setThreads] = React.useState([]);
+  const [thread, setThread] = React.useState(null);   // { threadId, turns: [] }
+  const [q, setQ] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState(null);         // { code, text, reasons }
+  const [showPlan, setShowPlan] = React.useState({});
+  const endRef = React.useRef(null);
+
+  const loadThreads = React.useCallback(() => {
+    NGGApi.admin.insightChatThreads().then(r => setThreads(r.threads || [])).catch(() => {});
+  }, []);
+  React.useEffect(() => { loadThreads(); }, [loadThreads]);
+  React.useEffect(() => {
+    // A new answer is at the bottom and can be several paragraphs; landing the
+    // reader at the top of it means they scroll to find what they just asked for.
+    if (endRef.current) endRef.current.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [thread && thread.turns && thread.turns.length]);
+
+  const openThread = async (threadId) => {
+    setErr(null);
+    try { const r = await NGGApi.admin.insightChatThread(threadId); setThread(r.thread || null); }
+    catch (e) { setErr({ code: e.code, text: e.code || e.message }); }
+  };
+
+  const ask = async (text) => {
+    const question = (text != null ? text : q).trim();
+    if (question.length < 6 || busy) return;
+    setBusy(true); setErr(null);
+    /* The question goes on screen before the answer exists. Two model rounds is
+       twenty seconds or more, and a composer that clears itself into an empty
+       pane looks like it dropped the question. */
+    const optimistic = { seq: -1, question, answer: "", pending: true };
+    setThread(t => t ? { ...t, turns: [...(t.turns || []), optimistic] } : { threadId: "", turns: [optimistic] });
+    setQ("");
+    try {
+      const r = await NGGApi.admin.insightChatAsk({
+        question, threadId: (thread && thread.threadId) || "",
+        centre: filters.centre || "", week: filters.week || "",
+      });
+      // Re-read rather than splice: the server owns the sequence, the thread
+      // title and — on the first turn — the thread id itself.
+      const full = await NGGApi.admin.insightChatThread(r.threadId);
+      setThread(full.thread || null);
+      loadThreads();
+    } catch (e) {
+      const reasons = (e.data && e.data.reasons) || [];
+      setErr({
+        code: e.code,
+        reasons,
+        text: e.code === "question_identifies_someone"
+          /* Refused, not stripped. Somebody who typed a child's name needs to be
+             told once, plainly, that this is not the place — quietly removing it
+             teaches nothing and they will do it again on a surface that has no
+             gate. */
+          ? "That question names or identifies someone (" + reasons.join(", ") + "). Nothing was sent. Ask about a centre, an age band or a period instead — the analyst only ever sees counts and rates."
+          : e.code === "rate_limited" ? ((e.data && e.data.note) || "Too many questions this hour.")
+          : e.code === "ai_disabled" ? "No AI provider is configured, so there is no analyst to ask. Levels 1–6 above are unaffected — they are computed, not generated."
+          : e.code === "no_evidence" ? "There is nothing to analyse in this range yet."
+          : e.code === "privacy_refused"
+          ? "Refused to send: the payload would have contained " + reasons.join(", ") + ". Nothing was sent. This is a bug — report it."
+          : e.code === "timeout" ? "The analyst did not finish in time. The question was not charged for and nothing was saved — try a narrower one."
+          : (e.code || e.message),
+      });
+      // Drop the optimistic turn; the real one was never written.
+      setThread(t => t ? { ...t, turns: (t.turns || []).filter(x => !x.pending) } : null);
+    } finally { setBusy(false); }
+  };
+
+  const conf = (c) => ({ high: "an-chip-good", medium: "an-chip-warn", low: "an-chip-mut" }[c] || "an-chip-mut");
+  const turns = (thread && thread.turns) || [];
+
+  /* Starters, and they are not decoration. An empty box invites "how are we
+     doing", which is the one question the evidence genuinely cannot answer;
+     these are shaped like the questions that get useful answers. */
+  const STARTERS = [
+    "Which centre should get the next mentor, and what in this data says so?",
+    "Why does attendance fall off in the second week of an intake?",
+    "Is the gap between the age bands big enough to act on?",
+    "What would you change about the timetable on the strength of this?",
+  ];
+
+  return (
+    <section className="an-sec" id="an-chat">
+      <div className="an-eyebrow">Level 7b · Ask the analysts</div>
+      <h2 className="an-h">A question the panel was not designed for.</h2>
+      <p className="an-sub">
+        The panel above answers four standing questions. This asks yours. A router picks the fewest lenses
+        that genuinely apply and <b>says which</b>; each answers from the same aggregate figures; one pass
+        composes the reply and is allowed only to use what they said. Then every number in the answer is
+        looked for in the evidence, and any it cannot find is <b>marked on the answer itself</b>.
+        {" "}No child's name, id or contact is ever sent — not in the figures, and not in your question.
+      </p>
+
+      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "minmax(0,1fr)" }}>
+        {/* Earlier conversations. Persisted because each answer cost real model
+            calls and because the question one coordinator asked is usually the
+            question the next one has. */}
+        {threads.length > 0 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <span className="an-sub" style={{ fontSize: 12, margin: 0 }}>Earlier:</span>
+            {threads.slice(0, 6).map(t => (
+              <button key={t.threadId} className="an-chip"
+                onClick={() => openThread(t.threadId)}
+                style={{ cursor: "pointer", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                         border: thread && thread.threadId === t.threadId ? "1px solid var(--navy-900)" : undefined }}>
+                {t.title || "Untitled"} · {t.turns}
+              </button>
+            ))}
+            {thread && <button className="btn btn-ghost btn-sm" onClick={() => { setThread(null); setErr(null); }}>New question</button>}
+          </div>
+        )}
+
+        {turns.length === 0 && !busy && (
+          <div className="an-card" style={{ padding: 16 }}>
+            <div style={{ display: "grid", gap: 8 }}>
+              {STARTERS.map((t, i) => (
+                <button key={i} onClick={() => ask(t)} disabled={busy}
+                  style={{ textAlign: "left", padding: "11px 13px", borderRadius: 10, cursor: "pointer",
+                           border: "1px solid var(--line-cool-soft,#e6e9f0)", background: "transparent", fontSize: 14, lineHeight: 1.45 }}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {turns.map((t, i) => (
+          <div key={t.seq === -1 ? "pending" : t.seq} style={{ display: "grid", gap: 8 }}>
+            {/* The question, as asked. */}
+            <div style={{ justifySelf: "end", maxWidth: "min(680px, 92%)", background: "var(--navy-900,#16223e)", color: "#fff",
+                          padding: "11px 15px", borderRadius: "14px 14px 4px 14px", fontSize: 14.5, lineHeight: 1.5 }}>
+              {t.question}
+            </div>
+
+            {t.pending && <div className="an-card" style={{ padding: 16, maxWidth: "min(760px, 96%)" }}>
+              <div className="dash-spinner"/>
+              <p className="an-sub" style={{ marginTop: 10, marginBottom: 0 }}>
+                Planning, then asking each lens, then composing. This is model calls, not a database query — twenty seconds or so.
+              </p>
+            </div>}
+
+            {!t.pending && (
+              <div className="an-card" style={{ padding: 16, maxWidth: "min(760px, 96%)",
+                     borderLeft: "4px solid " + (t.status === "unanswerable" ? AN_TONE.warn
+                       : (t.checks && t.checks.grounded === false) ? AN_TONE.bad : "var(--navy-900,#16223e)") }}>
+                {/* Grounding first, because it changes how everything under it
+                    should be read. An answer whose figures cannot be found in the
+                    evidence is not a worse answer, it is a different KIND of
+                    thing, and it must not look identical to one that checks out. */}
+                {t.checks && t.checks.grounded === false && (
+                  <p style={{ margin: "0 0 10px", fontSize: 13, lineHeight: 1.55, color: AN_TONE.bad, fontWeight: 600 }}>
+                    Some figures in this answer are not in the evidence
+                    {(t.checks.answerUnverified || []).length ? <> ({t.checks.answerUnverified.join(", ")})</> : null}.
+                    {" "}Treat those as the model's arithmetic, not as data — check them against the tables above before acting.
+                  </p>
+                )}
+                {t.status === "unanswerable" && (
+                  <p style={{ margin: "0 0 8px", fontSize: 12.5, fontWeight: 700, color: AN_TONE.warn }}>
+                    This evidence cannot answer that
+                  </p>
+                )}
+
+                <p style={{ margin: 0, fontSize: 14.8, lineHeight: 1.62, whiteSpace: "pre-wrap" }}>{t.answer}</p>
+
+                {(t.claims || []).length > 0 && (
+                  <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                    {t.claims.map((c, j) => {
+                      const bad = (t.checks && (t.checks.claims || []).some(x => x.claim === j));
+                      return (
+                        <div key={j} style={{ padding: "10px 12px", borderRadius: 10,
+                               border: "1px solid " + (bad ? "rgba(239,68,68,.45)" : "var(--line-cool-soft,#e6e9f0)"),
+                               background: bad ? "rgba(239,68,68,.05)" : "transparent" }}>
+                          {/* The chip stays on the first line beside the claim.
+                              With wrap it dropped under a long claim and read as
+                              a stray button rather than as that claim's grade. */}
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                            <span style={{ fontSize: 14, lineHeight: 1.5, flex: "1 1 auto", minWidth: 0 }}>{c.claim}</span>
+                            <span className={"an-chip " + conf(c.confidence)} style={{ flex: "none" }}>{c.confidence}</span>
+                          </div>
+                          {c.evidence && <p className="mono an-sub" style={{ margin: "4px 0 0", fontSize: 11.5 }}>{c.evidence}</p>}
+                          <p className="an-sub" style={{ margin: "4px 0 0", fontSize: 11.5 }}>
+                            {c.agreed && (c.lenses || []).length > 1
+                              ? <b>Reached independently by {c.lenses.join(" · ")}</b>
+                              : <>From {(c.lenses || []).join(" · ") || "one lens"} only — corroborated by nothing else here.</>}
+                            {bad && <> · <span style={{ color: AN_TONE.bad }}>a figure here is not in the evidence</span></>}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Follow-ups the answer itself suggests. Cheaper than a blank box
+                    and they keep the conversation on questions the data can take. */}
+                {t.plan && (t.plan.followups || []).length > 0 && (
+                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>
+                    {t.plan.followups.map((f, j) => (
+                      <button key={j} className="an-chip" onClick={() => ask(f)} disabled={busy}
+                        style={{ cursor: "pointer", maxWidth: 340, textAlign: "left" }}>{f}</button>
+                    ))}
+                  </div>
+                )}
+
+                {/* The method, one click away. Not buried in a log: a reader who
+                    doubts an answer needs to see what produced it, and a reader
+                    who trusts it should be able to find out what it cost. */}
+                <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }}
+                  onClick={() => setShowPlan(p => ({ ...p, [t.seq]: !p[t.seq] }))}>
+                  {showPlan[t.seq] ? "Hide how this was produced" : "How this was produced"}
+                </button>
+                {showPlan[t.seq] && t.plan && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line-cool-soft,#eef0f4)", fontSize: 12.5, lineHeight: 1.6, color: "var(--ink-600)" }}>
+                    {t.plan.restated && <p style={{ margin: "0 0 6px" }}><b>Read as:</b> {t.plan.restated}</p>}
+                    <p style={{ margin: "0 0 6px" }}>
+                      <b>Lenses:</b>{" "}
+                      {(t.plan.lensesRan || []).map(l => l.label + (l.ok ? " (" + l.points + ")" : " — no answer")).join(" · ") || "—"}
+                      {t.plan.why ? <> — {t.plan.why}</> : null}
+                      {t.plan.by === "fallback" && <> <i>Chosen by keyword: the planning call was unavailable.</i></>}
+                    </p>
+                    <p style={{ margin: "0 0 6px" }}>
+                      <b>Grounding:</b>{" "}
+                      {t.checks && t.checks.grounded
+                        ? <>every figure in this answer was found in the evidence ({t.checks.evidenceNumbers} numbers checked against).</>
+                        : <>{((t.checks && t.checks.claims) || []).length + (((t.checks && t.checks.answerUnverified) || []).length ? 1 : 0)} place(s) cite a figure that is not in the evidence.</>}
+                    </p>
+                    <p className="mono" style={{ margin: 0, fontSize: 11.5 }}>
+                      {t.rangeLabel ? t.rangeLabel + " · " : ""}evidence {t.evidenceFp || "—"}
+                      {t.providers && t.providers.length ? " · " + t.providers.join(", ") : ""}
+                      {t.ms ? " · " + (t.ms / 1000).toFixed(1) + "s" : ""}
+                      {t.plan.composed === false ? " · composition failed, showing raw lens points" : ""}
+                    </p>
+                    {/* An answer is grounded in the numbers as they were. Saying so
+                        is the difference between a record and a stale quote. */}
+                    <p className="an-sub" style={{ margin: "6px 0 0", fontSize: 11.5 }}>
+                      Grounded in the figures as they stood then. If the numbers have moved since, ask again rather than trusting this.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        <div ref={endRef}/>
+
+        {err && (
+          <div className="an-card" style={{ padding: 14, borderLeft: "4px solid " + (err.code === "question_identifies_someone" ? AN_TONE.bad : AN_TONE.warn) }}>
+            <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55 }}>{err.text}</p>
+          </div>
+        )}
+
+        {/* The composer. Enter sends, shift+Enter breaks a line — the convention
+            everybody already has, and the box is for a sentence not an essay. */}
+        <div className="an-card" style={{ padding: 12, display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <textarea value={q} onChange={e => setQ(e.target.value)} rows={2} maxLength={600}
+            placeholder="Ask about a centre, an age band, a weekday, an intake…"
+            aria-label="Ask the analysts a question"
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
+            style={{ flex: "1 1 300px", minWidth: 220, resize: "vertical", padding: "10px 12px", borderRadius: 10, fontSize: 14.5,
+                     lineHeight: 1.5, border: "1px solid var(--line-cool-soft,#e6e9f0)", fontFamily: "inherit" }}/>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span className="an-sub mono" style={{ margin: 0, fontSize: 11 }}>{q.length}/600</span>
+            <button className="btn btn-primary btn-sm" onClick={() => ask()} disabled={busy || q.trim().length < 6}>
+              {busy ? "Thinking…" : "Ask"}
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
