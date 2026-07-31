@@ -166,6 +166,10 @@ function backend_dispatch(string $op, array $args = []): array {
              * link — mail clients strip data: URIs and there is no encoder on
              * the server. */
             'admin.qr.warm'                     => 'admin_qr_cache_warm',
+            /* Resending in bulk, and the read that tells you how many need it
+             * before you press anything. */
+            'admin.id.resend.bulk'              => 'admin_id_resend_bulk',
+            'admin.id.qrgaps'                   => 'admin_id_qr_gaps',
             'admin.registrations.remindBulk' => 'admin_registrations_remind_bulk',
             'admin.centres.list'          => 'admin_centres_list',
             'admin.centres.upsert'        => 'admin_centres_upsert',

@@ -708,6 +708,11 @@
            no browser present (a parent clicking a consent link at 2am) can still
            embed a scannable code rather than only a link. */
         qrWarm: (items) => request('/admin/registration.php', { body: { action: 'qr_warm', items }, timeout: 120000 }),
+        /* How many verified families are holding an ID email with no scannable
+           code, and the action that fixes it. Read first, send second — a bulk
+           whose size you cannot see before pressing it is one people press once. */
+        qrGaps: () => request('/admin/registration.php' + qs({ view: 'qrgaps' })),
+        resendIdBulk: (scope, centre) => request('/admin/registration.php', { body: { action: 'resend_id_bulk', scope, centre: centre || '' }, timeout: 120000 }),
         consents: (studentId) => request('/admin/registration.php' + qs({ view: 'consents', studentId })),
         consentRecord: (data) => request('/admin/registration.php', { body: { action: 'consent_record', ...(data || {}) } }),
         consentBulk: (data) => request('/admin/registration.php', { body: { action: 'consent_bulk', ...(data || {}) }, timeout: 120000 }),

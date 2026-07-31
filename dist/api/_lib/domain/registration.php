@@ -1593,6 +1593,37 @@ function qr_cache_dir(): string {
 }
 function qr_cache_path(string $token): string { return qr_cache_dir() . '/' . sha1($token) . '.png'; }
 function qr_cache_exists(string $token): bool { return $token !== '' && is_file(qr_cache_path($token)); }
+
+/**
+ * Make sure a hosted QR exists for this token, encoding one if it does not.
+ *
+ * This is what turned the ID email from "a link, and a QR if somebody happened to
+ * open the card studio first" into "a QR". The browser-rendered cache is still
+ * used when it is there — it is the same code, and re-encoding 300 tokens on a
+ * shared host to produce identical bytes is waste — but a miss is no longer a
+ * missing QR, it is one encode.
+ */
+function qr_ensure_cached(string $token): bool {
+    if ($token === '') return false;
+    if (qr_cache_exists($token)) return true;
+    $png = qr_encode_png(qr_payload_for($token), 8);
+    if ($png === '') return false;
+    $path = qr_cache_path($token);
+    // Written via a temp file: a half-written PNG served to a mail client is a
+    // broken image in an email nobody can re-send from.
+    $tmp = $path . '.' . getmypid() . '.tmp';
+    if (@file_put_contents($tmp, $png) === false) return false;
+    if (!@rename($tmp, $path)) { @unlink($tmp); return false; }
+    return true;
+}
+
+/** What a token's QR encodes: the profile URL, not the bare token — so an
+ *  ordinary phone camera opens the child's page, and the kiosk decoder pulls the
+ *  token back out. Must match CardQR in the client exactly. */
+function qr_payload_for(string $token): string {
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    return $origin . '/q/' . $token;
+}
 /** Persist a client-rendered QR PNG (a data: URL). Validates it's a real,
  *  reasonably-sized PNG before writing — never trust the bytes blindly. */
 function qr_cache_store(string $token, string $dataUrl): bool {
@@ -1623,7 +1654,10 @@ function student_send_id(string $studentId): array {
     $channels = [];
     $email = trim((string)($s['parentEmail'] ?? ''));
     if (function_exists('email_template') && function_exists('send_mail') && $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        // Embed the scannable QR when we have a hosted copy for this token.
+        /* Encode one if there is not a hosted copy yet, so the email carries a
+           scannable code rather than only a link. Before this the automatic path
+           had no browser to render one and quietly sent the link alone. */
+        qr_ensure_cached((string)$s['token']);
         $qrHtml = qr_cache_exists((string)$s['token'])
             ? '<div style="text-align:center;margin:6px 0 14px"><img src="' . esc_html(qr_public_url((string)$s['token'])) . '" width="180" height="180" alt="Check-in QR for ' . $first . '" style="width:180px;height:180px;border:1px solid #e4e4e4;border-radius:12px;padding:8px;background:#fff"/><div style="font:400 12px monospace;color:#888;margin-top:6px">Scan at any centre to check in</div></div>'
             : '';
@@ -1686,6 +1720,102 @@ function admin_qr_cache_warm(array $p): array {
     }
     if ($stored) audit('admin.qr.warm', (string)($g['requester']['memberId'] ?? ''), '', ['stored' => $stored], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'stored' => $stored, 'skipped' => $skipped];
+}
+
+/**
+ * Resend the ID to every verified student — or every one still missing a QR.
+ *
+ * The single resend is for a parent on the phone. This is for the case that
+ * actually happened: a cohort verified before the ID email carried a QR at all,
+ * three hundred families holding a message with a link in it, and no screen
+ * anywhere that would send the rest.
+ *
+ * `scope` is the whole point:
+ *  · `missing_qr` — only children whose token has no hosted QR image yet. This is
+ *    the repair pass, and after the server-side encoder it is usually empty,
+ *    which is the correct answer to "who did we shortchange".
+ *  · `all` — every verified student, whatever they already received. Wasteful by
+ *    design and occasionally what you want after changing the email itself.
+ *
+ * Bounded per call and reports what is left, because three hundred emails is not a
+ * request, it is a job. Deferred past the response for the same reason.
+ */
+const ID_RESEND_SWEEP_MAX = 200;
+
+function admin_id_resend_bulk(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $me = (string)($g['requester']['memberId'] ?? '');
+    $scope = (string)($p['scope'] ?? 'missing_qr');
+    if (!in_array($scope, ['missing_qr', 'all'], true)) return ['ok' => false, 'error' => 'bad_scope'];
+
+    $c = summer_ensure_cohort();
+    $where = ["cohortId = ?", "regStatus = 'verified'", "token != ''"]; $args = [$c['cohortId']];
+    $centre = trim((string)($p['centre'] ?? ''));
+    if ($centre !== '') { $where[] = 'centre = ?'; $args[] = $centre; }
+    /* Only families we can actually reach. A "sent 300" that counted 90 children
+       with no email and no phone would be a number nobody could act on. */
+    $where[] = "((parentEmail IS NOT NULL AND parentEmail != '') OR (guardianPhone IS NOT NULL AND guardianPhone != ''))";
+    $rows = db_all("SELECT studentId, token FROM summer_students WHERE " . implode(' AND ', $where)
+                   . " ORDER BY id ASC", $args);
+
+    $targets = [];
+    foreach ($rows as $r) {
+        // The repair pass asks the filesystem, not the database — "has a hosted
+        // QR" is a fact about the cache, and that is where it is kept.
+        if ($scope === 'missing_qr' && qr_cache_exists((string)$r['token'])) continue;
+        $targets[] = (string)$r['studentId'];
+    }
+    $remaining = max(0, count($targets) - ID_RESEND_SWEEP_MAX);
+    $batch = array_slice($targets, 0, ID_RESEND_SWEEP_MAX);
+    if (!$batch) {
+        return ['ok' => true, 'queued' => 0, 'remaining' => 0, 'scope' => $scope,
+                'note' => $scope === 'missing_qr'
+                    ? 'Every verified student already has a scannable QR on file.'
+                    : 'No verified students with a contact on file' . ($centre !== '' ? ' at ' . $centre : '') . '.'];
+    }
+
+    audit('admin.id.resend.bulk', $me, $centre ?: 'all', ['scope' => $scope, 'count' => count($batch),
+        'remaining' => $remaining], (string)($p['ip'] ?? ''));
+    after_response('admin.id.resend.bulk', function () use ($batch) {
+        foreach ($batch as $id) {
+            // qr_ensure_cached() runs inside student_send_id(), so a child with no
+            // hosted image gets one encoded on the way out.
+            try { student_send_id($id); } catch (\Throwable $e) { error_log('[id.resend.bulk] ' . $id . ': ' . $e->getMessage()); }
+        }
+    });
+    return ['ok' => true, 'queued' => count($batch), 'remaining' => $remaining, 'scope' => $scope];
+}
+
+/**
+ * How many verified students are missing a scannable QR.
+ *
+ * Its own read, because the admin screen needs to be able to say "nine of these
+ * families got a link with no code" without sending anything — a bulk action whose
+ * size you cannot see before pressing it is one people press once and never again.
+ */
+function admin_id_qr_gaps(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $c = summer_ensure_cohort();
+    $rows = db_all("SELECT studentId, fullName, centre, token, parentEmail, guardianPhone
+                    FROM summer_students
+                    WHERE cohortId = ? AND regStatus = 'verified' AND token != '' ORDER BY id ASC", [$c['cohortId']]);
+    $missing = []; $unreachable = 0;
+    foreach ($rows as $r) {
+        if (qr_cache_exists((string)$r['token'])) continue;
+        $reachable = trim((string)($r['parentEmail'] ?? '')) !== '' || trim((string)($r['guardianPhone'] ?? '')) !== '';
+        if (!$reachable) { $unreachable++; continue; }
+        if (count($missing) < 50) {
+            $missing[] = ['studentId' => (string)$r['studentId'], 'fullName' => (string)$r['fullName'],
+                          'centre' => (string)($r['centre'] ?? '')];
+        }
+    }
+    $total = 0;
+    foreach ($rows as $r) if (!qr_cache_exists((string)$r['token'])) $total++;
+    return ['ok' => true, 'verified' => count($rows), 'missingQr' => $total,
+            // Named separately: these cannot be fixed by sending, only by getting
+            // a contact for the family.
+            'unreachable' => $unreachable, 'sample' => $missing,
+            'encoder' => function_exists('qr_encode_png')];
 }
 
 /** Admin: resend a student's or volunteer's ID. Gated per kind (students →
@@ -2205,20 +2335,32 @@ function admin_registration_consent_record_bulk(array $p): array {
 function admin_registration_consents(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $studentId = trim((string)($p['studentId'] ?? ''));
-    $s = db_row("SELECT studentId, fullName, regStatus, guardianName, parentEmail, guardianPhone,
-                        consentSignedName, consentSignedAt, verifiedAt
-                 FROM summer_students WHERE studentId = ? LIMIT 1", [$studentId]);
-    if (!$s) return ['ok' => false, 'error' => 'not_found'];
-    $rows = db_all("SELECT type, status, method, actorName, recordedById, createdAt
-                    FROM consents WHERE studentId = ? ORDER BY id ASC", [$studentId]);
+
+    /* The permission list and the method list do not belong to a child — they are
+     * the programme's, and the form needs them before it knows which children it is
+     * about. Asking for them WITHOUT a studentId is therefore legitimate, and it is
+     * exactly what the sweep does: "record consent for everyone waiting" has no
+     * single student to probe.
+     *
+     * Requiring one here shipped a dialog with an empty method dropdown, no
+     * permissions to tick and a disabled button — the form rendered, so it looked
+     * like a styling problem rather than a missing payload. */
+    $s = $studentId !== ''
+        ? db_row("SELECT studentId, fullName, regStatus, guardianName, parentEmail, guardianPhone,
+                         consentSignedName, consentSignedAt, verifiedAt
+                  FROM summer_students WHERE studentId = ? LIMIT 1", [$studentId])
+        : null;
+    if ($studentId !== '' && !$s) return ['ok' => false, 'error' => 'not_found'];
+    $rows = $s ? db_all("SELECT type, status, method, actorName, recordedById, createdAt
+                         FROM consents WHERE studentId = ? ORDER BY id ASC", [$studentId]) : [];
     return ['ok' => true,
-        'student' => ['studentId' => (string)$s['studentId'], 'fullName' => (string)$s['fullName'],
+        'student' => $s ? ['studentId' => (string)$s['studentId'], 'fullName' => (string)$s['fullName'],
                       'regStatus' => (string)$s['regStatus'],
                       'guardianName' => (string)($s['guardianName'] ?? ''),
                       'parentEmail' => (string)($s['parentEmail'] ?? ''),
                       'guardianPhone' => (string)($s['guardianPhone'] ?? ''),
                       'signedName' => (string)($s['consentSignedName'] ?? ''),
-                      'signedAt' => (string)($s['consentSignedAt'] ?? '')],
+                      'signedAt' => (string)($s['consentSignedAt'] ?? '')] : null,
         'types' => array_map(fn($t, $m) => ['type' => $t, 'label' => $m['label'],
                                             'required' => (int)$m['p'] === 0,
                                             'mustAnswer' => !empty($m['mustAnswer'])],

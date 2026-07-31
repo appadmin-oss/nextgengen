@@ -297,6 +297,76 @@ function php(body) {
   is(/no-store/.test(cacheHdrs.pub), `a public API read is no-store, not cacheable ("${cacheHdrs.pub}")`);
   is(/no-store/.test(cacheHdrs.auth), `an auth API read is no-store too ("${cacheHdrs.auth}")`);
 
+  /* ── The SERVER's encoder, read by the kiosks' own decoder ─────────────────
+   * The QR in an ID email is now produced in PHP, because the case that needed
+   * it most — an ID issued when a parent clicks a consent link at 2am — has no
+   * browser to render one. An encoder is only correct if a real reader agrees, so
+   * the server's PNG is decoded here with jsQR, the same decoder the kiosks load,
+   * and the text has to come back byte-identical.
+   *
+   * Every version boundary is covered, because three of the four bugs this found
+   * were invisible below a size threshold: a reversed Reed-Solomon generator, a
+   * format area that blanked two timing modules, and a version-information block
+   * written with its rows inverted (which decoded perfectly up to 41x41 and on
+   * nothing above it). */
+  const serverQr = (() => {
+    const cases = [];
+    // Short, a mid-size real payload, and the exact capacity of each version that
+    // changes something structural: 7 adds the version block, 10 widens the
+    // character count to 16 bits, 20 is the last supported.
+    [[1, 14], [4, 62], [6, 106], [7, 122], [9, 180], [10, 213], [14, 362], [20, 666]].forEach(([v, cap]) => {
+      cases.push({ v, text: 'https://x.org/q/' + 'A'.repeat(Math.max(1, cap - 16)) });
+    });
+    cases.push({ v: 1, text: 'https://n.co/q/A' });
+    cases.push({ v: 3, text: 'https://next.afrovanguard.org.ng/q/SUMQR-TEST123' });
+    return cases.map(c => {
+      const b64 = php(`echo base64_encode(qr_encode_png(${JSON.stringify(c.text)}, 6));`);
+      return { ...c, b64 };
+    });
+  })();
+  const decoded = await page.evaluate(async (items) => {
+    const out = [];
+    for (const it of items) {
+      if (!it.b64) { out.push({ text: null, note: 'empty png' }); continue; }
+      const img = new Image();
+      try {
+        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = 'data:image/png;base64,' + it.b64; });
+      } catch (_) { out.push({ text: null, note: 'image would not load' }); continue; }
+      const cv = document.createElement('canvas');
+      cv.width = img.width; cv.height = img.height;
+      cv.getContext('2d').drawImage(img, 0, 0);
+      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+      const r = window.jsQR(d.data, cv.width, cv.height);
+      out.push({ text: r ? r.data : null, dim: cv.width });
+    }
+    return out;
+  }, serverQr.map(c => ({ b64: c.b64 })));
+  const badQr = serverQr.filter((c, i) => (decoded[i] || {}).text !== c.text);
+  is(badQr.length === 0,
+    'the server-side encoder is read back correctly by jsQR at every version (' + serverQr.length + ' payloads)');
+  if (badQr.length) console.error('        failed at v' + badQr.map(c => c.v).join(', v'));
+
+  /* And it agrees with the BROWSER encoder about what it encoded — not
+     module-for-module (the mask each picks may differ) but as text, which is the
+     only thing a scanner reports. Two encoders that disagree here would be found
+     at a gate on a Saturday morning. */
+  const agree = await page.evaluate((text) => {
+    const q = window.qrcode(0, 'M'); q.addData(text); q.make();
+    const n = q.getModuleCount(), scale = 6, quiet = 4, px = (n + quiet * 2) * scale;
+    const cv = document.createElement('canvas'); cv.width = cv.height = px;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, px, px);
+    ctx.fillStyle = '#000';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      if (q.isDark(r, c)) ctx.fillRect((c + quiet) * scale, (r + quiet) * scale, scale, scale);
+    }
+    const d = ctx.getImageData(0, 0, px, px);
+    const res = window.jsQR(d.data, px, px);
+    return res ? res.data : null;
+  }, 'https://next.afrovanguard.org.ng/q/SUMQR-TEST123');
+  is(agree === 'https://next.afrovanguard.org.ng/q/SUMQR-TEST123',
+    'the browser encoder decodes to the same text, so both agree at level M');
+
   is(pageErrs.length === 0, 'no uncaught page errors across the whole chain');
   if (pageErrs.length) console.error('       ', pageErrs.slice(0, 3).join(' | '));
 

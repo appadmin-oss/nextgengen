@@ -64,6 +64,7 @@ function client_ip() { return '127.0.0.1'; }
 
 require $ROOT . '/_lib/response.php';
 require $ROOT . '/_lib/db.php';
+require $ROOT . '/_lib/qr-encode.php';
 require $ROOT . '/_lib/util.php';
 require $ROOT . '/_lib/mailer.php';
 require $ROOT . '/_lib/anchor-content.php';
@@ -2339,7 +2340,129 @@ chk('…and recording consent at a desk sends it exactly once too', (function ()
     return count($ids) === 1;
 })());
 
+/* ── The server-side QR encoder ────────────────────────────────────────────────
+ * The maths and the tables are checked here; that the output is a QR a real reader
+ * accepts is checked in tests/scanners.test.js, which decodes it with jsQR — the
+ * same decoder the kiosks load. An encoder is only correct if a reader agrees.
+ */
+chk('the QR tables agree with themselves', qr_self_check() === []);
+chk('the Reed-Solomon generator matches the published polynomial', (function () {
+    /* The first draft built this lowest-degree-first while the division expects
+       the monic leading coefficient at index 0. The polynomial was correct and
+       every codeword it produced was wrong — invisible until a reader refuses the
+       code, which is exactly what happened. */
+    [$exp, $log] = qr_gf();
+    $g = qr_rs_generator(10);
+    $want = [0, 251, 67, 46, 61, 118, 70, 64, 94, 32, 45];
+    if (count($g) !== count($want)) return false;
+    foreach ($g as $i => $c) if ($log[$c] !== $want[$i]) return false;
+    return true;
+})());
+chk('a version is picked from the payload length, smallest first', (function () {
+    return qr_pick_version(10) === 1 && qr_pick_version(14) === 1 && qr_pick_version(15) === 2
+        && qr_pick_version(62) === 4 && qr_pick_version(666) === 20
+        // Past every supported version it refuses rather than guessing.
+        && qr_pick_version(700) === 0;
+})());
+chk('the encoder produces a real PNG at every version', (function () {
+    foreach ([1, 4, 7, 10, 14, 20] as $v) {
+        $len = qr_capacity($v);
+        $png = qr_encode_png(str_repeat('A', $len), 4);
+        if ($png === '' || substr($png, 0, 8) !== "\x89PNG\r\n\x1a\n") return false;
+        // IHDR width must be (modules + 8 quiet) * scale.
+        $size = 21 + ($v - 1) * 4;
+        $w = unpack('N', substr($png, 16, 4))[1];
+        if ($w !== ($size + 8) * 4) return false;
+    }
+    return true;
+})());
+chk('…and refuses, rather than throwing, on something it cannot hold', (function () {
+    return qr_encode_png(str_repeat('A', 900)) === '' && qr_encode_png('') === '';
+})());
+chk('the timing pattern survives the format reservation', (function () {
+    /* Two modules — (6,8) and (8,6) — where the format area crosses the timing
+       patterns. Reserving the crossing as format blanked them, and no reader on
+       earth decodes that. */
+    [$size, $m] = qr_matrix('HELLO');
+    for ($i = 8; $i < $size - 8; $i++) {
+        if ($m[6][$i] !== ($i % 2 === 0 ? 1 : 0)) return false;
+        if ($m[$i][6] !== ($i % 2 === 0 ? 1 : 0)) return false;
+    }
+    // And the dark module, which the reservation loop used to walk over.
+    return $m[$size - 8][8] === 1;
+})());
+chk('a version-7 code carries version information in the right rows', (function () {
+    /* Versions 1-6 have no version area, so a reversed row index decoded fine up
+       to 41x41 and on nothing above it. A bug behind a size threshold is one a
+       short test payload never reaches. */
+    [$size, $m] = qr_matrix(str_repeat('A', qr_capacity(7)));
+    if ($size !== 45) return false;
+    $vb = QR_VERSION_BITS[7];
+    for ($i = 0; $i < 18; $i++) {
+        $bit = ($vb >> $i) & 1;
+        if ($m[intdiv($i, 3)][$size - 11 + $i % 3] !== $bit) return false;
+        if ($m[$size - 11 + $i % 3][intdiv($i, 3)] !== $bit) return false;
+    }
+    return true;
+})());
+
 /* ── The hosted QR the automatic email needs ───────────────────────────────── */
+chk('an ID email encodes its own QR when nothing has cached one', (function () {
+    /* This is the whole point of the encoder. Before it, an ID issued with no
+       browser present — a parent clicking a consent link at 2am — sent a link and
+       no code, and no screen anywhere said which families those were. */
+    $st = db_row("SELECT studentId, token FROM summer_students WHERE token != '' AND parentEmail != '' LIMIT 1");
+    if (!$st) return true;
+    @unlink(qr_cache_path((string)$st['token']));
+    $GLOBALS['__mail_sink'] = [];
+    $r = student_send_id((string)$st['studentId']);
+    $mail = $GLOBALS['__mail_sink'];
+    unset($GLOBALS['__mail_sink']);
+    $hosted = qr_cache_exists((string)$st['token']);
+    $body = $mail ? (string)($mail[count($mail) - 1]['html'] ?? $mail[count($mail) - 1]['body'] ?? '') : '';
+    return !empty($r['ok']) && $hosted
+        // …and the email references the hosted image rather than only the link.
+        && strpos($body, 'qr.php?t=') !== false;
+})());
+chk('…and an already-cached QR is reused rather than re-encoded', (function () {
+    $st = db_row("SELECT token FROM summer_students WHERE token != '' LIMIT 1");
+    if (!$st) return true;
+    $tok = (string)$st['token'];
+    qr_ensure_cached($tok);
+    $before = filemtime(qr_cache_path($tok));
+    clearstatcache();
+    $again = qr_ensure_cached($tok);
+    // Same file, untouched: re-encoding 300 tokens to produce identical bytes on a
+    // shared host is waste, and the browser-rendered copy is the same code anyway.
+    return $again && filemtime(qr_cache_path($tok)) === $before;
+})());
+chk('the gaps read counts who is missing a QR without sending anything', (function () {
+    $r = backend_dispatch('admin.id.qrgaps', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && isset($r['verified'], $r['missingQr'], $r['unreachable'], $r['sample'])
+        && $r['encoder'] === true;
+})());
+chk('bulk resend targets only the families missing a QR, and says what is left', (function () {
+    $st = db_all("SELECT studentId, token FROM summer_students WHERE token != '' AND regStatus = 'verified' AND parentEmail != '' LIMIT 2");
+    if (count($st) < 1) return true;
+    foreach ($st as $x) @unlink(qr_cache_path((string)$x['token']));
+    $r = backend_dispatch('admin.id.resend.bulk', ['requesterId' => 'NGG-2025-0099', 'scope' => 'missing_qr']);
+    if (empty($r['ok'])) return false;
+    // Under CLI after_response runs inline, so by now each has an encoded QR and a
+    // second pass has nothing left to do — which is the correct answer, not zero
+    // dressed up as an error.
+    $second = backend_dispatch('admin.id.resend.bulk', ['requesterId' => 'NGG-2025-0099', 'scope' => 'missing_qr']);
+    return ($r['queued'] ?? 0) >= 1 && ($r['scope'] ?? '') === 'missing_qr'
+        && ($second['queued'] ?? -1) === 0
+        && strpos((string)($second['note'] ?? ''), 'already has a scannable QR') !== false;
+})());
+chk('…and a bad scope is refused rather than treated as "all"', (function () {
+    return backend_dispatch('admin.id.resend.bulk', ['requesterId' => 'NGG-2025-0099', 'scope' => 'everyone'])['error'] === 'bad_scope';
+})());
+chk('bulk resend and the gaps read are both admin-gated', (function () {
+    return backend_dispatch('admin.id.resend.bulk', ['requesterId' => '', 'scope' => 'all'])['ok'] !== true
+        && backend_dispatch('admin.id.qrgaps', ['requesterId' => ''])['ok'] !== true;
+})());
+
 chk('a screen that has drawn a QR can hand it over for the emails that have no browser', (function () {
     /* Mail clients strip data: URIs, so an in-email QR must be a hosted PNG — and
        there is no encoder on the server, only the one the card studio has just
@@ -2483,6 +2606,20 @@ chk('the consent ledger is readable without SQL, with the permission list', (fun
         && count($r['methods']) === count(CONSENT_DESK_METHODS)
         && count($r['ledger']) >= count(CONSENT_TYPES)
         && $r['student']['regStatus'] === 'verified';
+})());
+chk('the permission list can be read WITHOUT a child, for the sweep', (function () {
+    /* "Record consent for everyone waiting" has no single student to probe, and
+       requiring one shipped a dialog with an empty method dropdown, no permissions
+       to tick and a dead button. The form rendered, so it read as a styling
+       problem rather than a missing payload. */
+    $r = backend_dispatch('admin.registration.consents', ['requesterId' => 'NGG-2025-0099', 'studentId' => '']);
+    return !empty($r['ok']) && $r['student'] === null
+        && count($r['types']) === count(CONSENT_TYPES)
+        && count($r['methods']) === count(CONSENT_DESK_METHODS);
+})());
+chk('…while a studentId that does not exist is still an error', (function () {
+    return backend_dispatch('admin.registration.consents', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => 'SUM-NOPE-999'])['error'] === 'not_found';
 })());
 chk('recording a consent needs the summer capability', (function () use ($PC1) {
     return backend_dispatch('admin.registration.consent.record', ['requesterId' => '',

@@ -88,6 +88,7 @@ if ($__logDir !== '' && is_dir($__logDir) && is_writable($__logDir)) {
 
 require_once __DIR__ . '/response.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/qr-encode.php';
 require_once __DIR__ . '/util.php';
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/anchor-content.php';

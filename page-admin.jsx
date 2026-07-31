@@ -1934,6 +1934,7 @@ function SummerPending({ onChange }) {
      and a second dialog for the plural case would drift from the singular one. */
   const [ticked, setTicked] = React.useState(() => new Set());
   const [sheet, setSheet] = React.useState(null);   // { rows: [] }
+  const [gaps, setGaps] = React.useState(null);     // verified families with no hosted QR
 
   const load = React.useCallback(() => NGGApi.admin.registration
     .list({ q: q.trim(), status, centre, page })
@@ -1944,6 +1945,12 @@ function SummerPending({ onChange }) {
   // against the whole cohort.
   React.useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
   React.useEffect(() => { NGGApi.admin.registration.centres().then(r => setCentres(r.centres || [])).catch(() => {}); }, []);
+  /* Only read when the verified tab is open. It walks the cohort's QR cache on
+     disk, which is cheap but not free, and nobody on the pending tab is asking. */
+  const loadGaps = React.useCallback(() => {
+    NGGApi.admin.registration.qrGaps().then(setGaps).catch(() => setGaps(null));
+  }, []);
+  React.useEffect(() => { if (status === "verified") loadGaps(); }, [status, loadGaps]);
   React.useEffect(() => { setPage(1); }, [q, status, centre]);
   /* A tick means "this child, whose form I am holding". Carrying ticks across a
      filter change would let a selection made on one page be recorded against
@@ -1972,6 +1979,28 @@ function SummerPending({ onChange }) {
   };
 
   const resendId = (r) => adminResendStudentId(r, setBusy);
+
+  /* Resend in bulk. `missing_qr` is the repair pass — only the families whose
+     token has no hosted QR image — and `all` is every verified student, which is
+     wasteful by design and occasionally what you want after changing the email. */
+  const resendBulk = async (scope) => {
+    const n = scope === "missing_qr" ? (gaps && gaps.missingQr) || 0 : (counts.verified || 0);
+    if (!(await dialog.confirm({
+      title: scope === "missing_qr" ? "Send the QR to " + n + " families?" : "Resend the ID to all " + n + " verified?",
+      body: scope === "missing_qr"
+        ? "These families received their ID email before it carried a scannable code. This sends it again, with the QR."
+        : "Emails every verified student's ID and QR again, including families who already have it.",
+      cta: "Send",
+    }))) return;
+    setBulk(true);
+    try {
+      const r = await NGGApi.admin.registration.resendIdBulk(scope, centre);
+      toast.success(r.queued
+        ? r.queued + " on the way" + (r.remaining ? " · " + r.remaining + " left, run it again" : "")
+        : (r.note || "Nothing to send."));
+      setTimeout(() => { loadGaps(); load(); }, 900);
+    } catch (e) { toast.error(e.code || e.message); } finally { setBulk(false); }
+  };
 
   if (err) return <ErrorState title="Couldn't load" code={err} onRetry={load}/>;
   const rows = (data && data.registrations) || [];
@@ -2018,11 +2047,36 @@ function SummerPending({ onChange }) {
             interface will never clear. The sheet still asks how it was given and
             which permissions, and each child still keeps their own guardian. */}
         {status === "parent_pending" && (counts.parent_pending || 0) > 0 && (
-          <button className="btn btn-ghost btn-sm" onClick={() => setSheet({ scope: "all_pending", count: counts.parent_pending, centre })}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setSheet({ scope: "all_pending", count: counts.parent_pending, centre, rows: pendingRows.slice(0, 1) })}>
             Record consent for all {counts.parent_pending}{centre ? " at " + centre : ""}
           </button>
         )}
       </div>
+
+      {/* The families holding an ID email with no scannable code.
+          Nothing on any screen said who they were, so nobody could fix it: the
+          roster showed a token and the email had gone out, which looks finished.
+          The count is read before anything is sent — a bulk action whose size you
+          cannot see before pressing it is one people press once and never again. */}
+      {status === "verified" && gaps && gaps.missingQr > 0 && (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10,
+                      background: "rgba(76,111,255,.08)", border: "1px solid rgba(76,111,255,.35)",
+                      borderRadius: 12, padding: "10px 14px" }}>
+          <b style={{ fontSize: 13.5 }}>{gaps.missingQr} verified {gaps.missingQr === 1 ? "family has" : "families have"} an ID email with no scannable QR</b>
+          <button className="btn btn-primary btn-sm" disabled={bulk}
+            onClick={() => resendBulk("missing_qr")}>
+            {bulk ? "Sending…" : "Send the QR to those " + gaps.missingQr}
+          </button>
+          <button className="btn btn-ghost btn-sm" disabled={bulk} onClick={() => resendBulk("all")}>
+            Resend to all verified
+          </button>
+          {gaps.unreachable > 0 && (
+            <span className="admin-hint" style={{ margin: 0 }}>
+              {gaps.unreachable} more have no email or phone on file — sending cannot fix those, only a contact can.
+            </span>
+          )}
+        </div>
+      )}
 
       {/* The bulk bar, and it only appears once rows are TICKED.
           There is no "record consent for all 40 pending" button, and the absence
@@ -4000,6 +4054,12 @@ function MemberCapsEditor({ member }) {
   const [centres, setCentres] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   React.useEffect(() => { NGGApi.admin.registration.centres().then(r => setCentres(r.centres || [])).catch(() => {}); }, []);
+  /* Only read when the verified tab is open. It walks the cohort's QR cache on
+     disk, which is cheap but not free, and nobody on the pending tab is asking. */
+  const loadGaps = React.useCallback(() => {
+    NGGApi.admin.registration.qrGaps().then(setGaps).catch(() => setGaps(null));
+  }, []);
+  React.useEffect(() => { if (status === "verified") loadGaps(); }, [status, loadGaps]);
   const toggle = (c) => setExtra(s => { const n = new Set(s); n.has(c) ? n.delete(c) : n.add(c); return n; });
   const toggleScope = (id) => setScope(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const save = async () => {

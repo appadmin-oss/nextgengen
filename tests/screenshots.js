@@ -46,7 +46,7 @@ function php(snippet) {
     'instructor', 'ops', 'analytics', 'growth', 'insight', 'insight-chat', 'journal', 'profiles', 'community', 'arcade'];
   const code = `<?php $GLOBALS['CONFIG']=require ${JSON.stringify(CFG)};`
     + `function client_ip(){return '127.0.0.1';} function client_ua(){return 'shots';}`
-    + req('response.php') + req('db.php') + req('util.php') + req('mailer.php')
+    + req('qr-encode.php') + req('response.php') + req('db.php') + req('util.php') + req('mailer.php')
     + req('anchor-content.php') + req('ai.php') + req('bus.php') + req('sms.php')
     + domains.map(d => `require ${JSON.stringify(ROOT + '/api/_lib/domain/' + d + '.php')};`).join('')
     + req('backend.php') + req('sheets.php') + req('webcron.php') + req('session.php')
