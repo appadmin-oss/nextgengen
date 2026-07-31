@@ -2275,6 +2275,179 @@ chk('registrations list carries consent + pending queue; remind only for pending
     if (!$mine || !in_array('participation', $mine[0]['consents'], true)) return false;
     return backend_dispatch('admin.registrations.remind', ['requesterId' => 'NGG-2025-0099', 'studentId' => $REG['studentId']])['error'] === 'not_pending';
 })());
+/* ── Consent given off-line ───────────────────────────────────────────────────
+ * A desk registration waits for a parent to click a link, and most do. The ones
+ * who do not are a guardian with no email address, a phone that cannot open the
+ * link, or a paper form filled in at the centre — and those children used to
+ * stay pending forever and never get an ID. The tests below are all about what
+ * recording it off-line must NOT be allowed to become.
+ */
+$PC1 = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+    'fullName' => 'Paper Consent', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -2 months')),
+    'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+    'parentName' => 'Mrs Adeyemi', 'parentPhone' => '08030000001']]);
+
+chk('recording a consent off-line is not a "mark verified" switch', (function () use ($PC1) {
+    /* A consent has content: which permissions, whose, and how. Every one of
+       these refusals is a field that a verify-button would have thrown away. */
+    $base = ['requesterId' => 'NGG-2025-0099', 'studentId' => $PC1['studentId']];
+    $noMethod = backend_dispatch('admin.registration.consent.record', $base + ['guardianName' => 'Mrs Adeyemi', 'consents' => ['participation' => true]]);
+    $noName = backend_dispatch('admin.registration.consent.record', $base + ['method' => 'paper', 'consents' => ['participation' => true]]);
+    $noConsents = backend_dispatch('admin.registration.consent.record', $base + ['method' => 'paper', 'guardianName' => 'Mrs Adeyemi', 'consents' => []]);
+    return ($noMethod['error'] ?? '') === 'method_required'
+        && ($noName['error'] ?? '') === 'guardian_name_required'
+        && ($noConsents['error'] ?? '') === 'consents_incomplete'
+        // Still pending: not one of those attempts half-wrote anything.
+        && db_row("SELECT regStatus FROM summer_students WHERE studentId = ?", [$PC1['studentId']])['regStatus'] === 'parent_pending';
+})());
+chk('…a free choice must be answered either way, not defaulted', (function () use ($PC1) {
+    /* media and site_visibility are p=1 mustAnswer: refusing them must never cost
+       a child their place, so they are required to be ANSWERED and never required
+       to be granted. A form that silently defaulted them to "no" would record a
+       refusal the family never made. */
+    $r = backend_dispatch('admin.registration.consent.record', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $PC1['studentId'], 'method' => 'paper', 'guardianName' => 'Mrs Adeyemi',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true, 'trips' => true, 'comms' => true]]);
+    return ($r['error'] ?? '') === 'consents_incomplete'
+        && in_array('media', $r['missing'] ?? [], true)
+        && in_array('site_visibility', $r['missing'] ?? [], true);
+})());
+chk('a complete off-line consent verifies the child and issues the ID', (function () use ($PC1) {
+    $r = backend_dispatch('admin.registration.consent.record', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $PC1['studentId'], 'method' => 'paper', 'guardianName' => 'Mrs Adeyemi',
+        'note' => 'Filed in the Egbeda folder',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => false, 'site_visibility' => false, 'trips' => true, 'comms' => true]]);
+    if (empty($r['ok'])) return false;
+    $s = db_row("SELECT regStatus, token, consentSignedName, reviewedById FROM summer_students WHERE studentId = ?", [$PC1['studentId']]);
+    $led = db_all("SELECT type, status, method, actorName, recordedById FROM consents WHERE studentId = ?", [$PC1['studentId']]);
+    $byType = []; foreach ($led as $c) $byType[$c['type']] = $c;
+    return $s['regStatus'] === 'verified' && !empty($s['token'])
+        /* The guardian is recorded as the actor and the STAFF MEMBER separately.
+           Conflating them would record staff as having consented for a family. */
+        && $s['consentSignedName'] === 'Mrs Adeyemi'
+        && $byType['participation']['actorName'] === 'Mrs Adeyemi'
+        && $byType['participation']['recordedById'] === 'NGG-2025-0099'
+        /* And the METHOD is distinct from a parent clicking the link. A
+           safeguarding review has to be able to tell a signed form from a click;
+           a ledger that flattened the two would be worse than one with gaps. */
+        && $byType['participation']['method'] === 'desk_paper'
+        // The family's actual answers, including the two they declined.
+        && $byType['media']['status'] === 'declined'
+        && $byType['site_visibility']['status'] === 'declined'
+        && $byType['trips']['status'] === 'granted';
+})());
+chk('…and recording it twice is a no-op rather than a second ledger entry', (function () use ($PC1) {
+    $before = (int)db_row("SELECT COUNT(*) c FROM consents WHERE studentId = ?", [$PC1['studentId']])['c'];
+    $r = backend_dispatch('admin.registration.consent.record', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $PC1['studentId'], 'method' => 'paper', 'guardianName' => 'Mrs Adeyemi',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    $after = (int)db_row("SELECT COUNT(*) c FROM consents WHERE studentId = ?", [$PC1['studentId']])['c'];
+    // Not an error — the desk's job is done — but the ledger must not grow, and
+    // the family's real answers must not be overwritten by a second attempt.
+    return !empty($r['already']) && $after === $before;
+})());
+chk('a public self-registration is sent to the review desk, not verified here', (function () use ($GATE) {
+    $sg = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Consent selfreg', 'kind' => 'self']);
+    $sub = backend_dispatch('selfreg.submit', ['gate' => $sg['gateId'], 'consent' => true, 'data' => [
+        'fullName' => 'Self Consent Kid', 'dob' => gmdate('Y-m-d', strtotime('-11 years -1 month')),
+        'centre' => 'Main', 'faculty' => 'AI & Technology', 'course' => 'Practical Coding',
+        'parentName' => 'Mrs Self', 'parentPhone' => '08030000009']]);
+    if (empty($sub['ok'])) return true;   // gate config differs; nothing to assert
+    /* A different question — has this SUBMISSION been reviewed — and it has its
+       own desk with the photograph and the submitted answers side by side.
+       Answering it here would be answering the wrong question. */
+    $r = backend_dispatch('admin.registration.consent.record', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $sub['studentId'], 'method' => 'paper', 'guardianName' => 'Mrs Self',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    return ($r['error'] ?? '') === 'use_review_desk';
+})());
+chk('the consent ledger is readable without SQL, with the permission list', (function () use ($PC1) {
+    $r = backend_dispatch('admin.registration.consents', ['requesterId' => 'NGG-2025-0099', 'studentId' => $PC1['studentId']]);
+    if (empty($r['ok'])) return false;
+    /* The permission list comes from the server so the parent form, the desk form
+       and the ledger agree about what a consent consists of. Three hard-coded
+       copies would drift, and the one that drifts is the record. */
+    $types = array_column($r['types'], 'type');
+    $required = array_values(array_filter($r['types'], fn($t) => !empty($t['required'])));
+    $mustAnswer = array_values(array_filter($r['types'], fn($t) => !empty($t['mustAnswer'])));
+    return count($types) === count(CONSENT_TYPES) && in_array('participation', $types, true)
+        && count($required) === 3 && count($mustAnswer) === 2
+        && count($r['methods']) === count(CONSENT_DESK_METHODS)
+        && count($r['ledger']) >= count(CONSENT_TYPES)
+        && $r['student']['regStatus'] === 'verified';
+})());
+chk('recording a consent needs the summer capability', (function () use ($PC1) {
+    return backend_dispatch('admin.registration.consent.record', ['requesterId' => '',
+        'studentId' => $PC1['studentId'], 'method' => 'paper', 'guardianName' => 'X'])['ok'] !== true;
+})());
+
+/* ── Bulk, and the shape that keeps it honest ─────────────────────────────── */
+chk('bulk consent takes an explicit list, never a filter the server expands', (function () use ($GATE) {
+    $ids = [];
+    foreach (['Bulk One', 'Bulk Two'] as $i => $name) {
+        $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+            'fullName' => $name, 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -1 month')),
+            'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+            'parentName' => 'Guardian ' . $i, 'parentPhone' => '0803000010' . $i]]);
+        $ids[] = $r['studentId'];
+    }
+    $none = backend_dispatch('admin.registration.consent.bulk', ['requesterId' => 'NGG-2025-0099',
+        'method' => 'paper', 'consents' => ['participation' => true]]);
+    $r = backend_dispatch('admin.registration.consent.bulk', ['requesterId' => 'NGG-2025-0099',
+        'studentIds' => $ids, 'method' => 'paper',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => false, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    if (empty($r['ok'])) return false;
+    $rows = db_all("SELECT studentId, regStatus, consentSignedName FROM summer_students WHERE studentId IN (?, ?)", $ids);
+    $signed = array_column($rows, 'consentSignedName', 'studentId');
+    return ($none['error'] ?? '') === 'no_students'
+        && count($r['recorded']) === 2 && $r['skipped'] === []
+        && count(array_filter($rows, fn($x) => $x['regStatus'] === 'verified')) === 2
+        /* Each child's OWN guardian. Twenty families did not all send the same
+           person, and stamping one name across them would be the lie this shape
+           exists to prevent. */
+        && $signed[$ids[0]] === 'Guardian 0' && $signed[$ids[1]] === 'Guardian 1';
+})());
+chk('…and a child with no guardian on file is skipped and named, not invented', (function () use ($GATE) {
+    /* There is nobody to record as having consented, so nothing is recorded —
+       and the desk is told which child, so they can go and ask. */
+    $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'No Guardian', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -4 months')),
+        'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+        'parentName' => 'Temp Name', 'parentPhone' => '08030000099']]);
+    /* Then emptied, which is the shape a real row arrives in: an older record
+       from before the field was required, or a name cleared during an edit. The
+       form itself will not accept a blank one. */
+    db_update('summer_students', ['guardianName' => ''], ['studentId' => $r['studentId']]);
+    $b = backend_dispatch('admin.registration.consent.bulk', ['requesterId' => 'NGG-2025-0099',
+        'studentIds' => [$r['studentId']], 'method' => 'paper',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    $skipped = $b['skipped'][0] ?? [];
+    return !empty($b['ok']) && $b['recorded'] === []
+        && ($skipped['reason'] ?? '') === 'no_guardian_on_file'
+        && ($skipped['name'] ?? '') === 'No Guardian'
+        && db_row("SELECT regStatus FROM summer_students WHERE studentId = ?", [$r['studentId']])['regStatus'] === 'parent_pending'
+        // And nothing was written to the ledger for them.
+        && (int)db_row("SELECT COUNT(*) c FROM consents WHERE studentId = ?", [$r['studentId']])['c'] === 0;
+})());
+chk('…bulk is capped, so one call cannot verify a cohort', (function () {
+    $r = backend_dispatch('admin.registration.consent.bulk', ['requesterId' => 'NGG-2025-0099',
+        'studentIds' => array_map(fn($i) => 'SUM-FAKE-' . $i, range(1, CONSENT_BULK_MAX + 1)),
+        'method' => 'paper', 'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+            'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    return ($r['error'] ?? '') === 'too_many' && ($r['max'] ?? 0) === CONSENT_BULK_MAX;
+})());
+chk('…and bulk enforces the same consent rules as one at a time', (function () {
+    $r = backend_dispatch('admin.registration.consent.bulk', ['requesterId' => 'NGG-2025-0099',
+        'studentIds' => ['SUM-WHATEVER'], 'method' => 'paper',
+        'consents' => ['participation' => true]]);
+    return ($r['error'] ?? '') === 'consents_incomplete';
+})());
+
 chk('gate: revoked link stops working', (function () use ($GATE) {
     backend_dispatch('admin.gates.revoke', ['requesterId' => 'NGG-2025-0099', 'gateId' => $GATE['gateId']]);
     return backend_dispatch('gate.context', ['gate' => $GATE['gateId']])['error'] === 'gate_invalid';

@@ -1287,27 +1287,41 @@ function AnChat({ filters }) {
     <section className="an-sec" id="an-chat">
       <div className="an-eyebrow">Level 7b · Ask the analysts</div>
       <h2 className="an-h">A question the panel was not designed for.</h2>
-      <p className="an-sub">
-        The panel above answers four standing questions. This asks yours. A router picks the fewest lenses
-        that genuinely apply and <b>says which</b>; each answers from the same aggregate figures; one pass
-        composes the reply and is allowed only to use what they said. Then every number in the answer is
-        looked for in the evidence, and any it cannot find is <b>marked on the answer itself</b>.
-        {" "}No child's name, id or contact is ever sent — not in the figures, and not in your question.
+      {/* Two sentences, then a disclosure. The first version put six sentences of
+          method above the composer, which is the wrong order: somebody arriving
+          here wants to type a question, and the machinery matters when they doubt
+          an answer — which is where it now lives, on the turn itself. */}
+      <p className="an-sub" style={{ maxWidth: 620 }}>
+        The panel above answers four standing questions. This one answers yours, from the same figures,
+        and shows its working. <b>No child's name, id or contact is ever sent</b> — not in the numbers, and
+        not in your question.
       </p>
+      <details style={{ marginBottom: 16 }}>
+        <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--ink-500)" }}>How it works</summary>
+        <p className="an-sub" style={{ margin: "8px 0 0", maxWidth: 620, fontSize: 12.5 }}>
+          A router picks the fewest lenses that genuinely apply and says which. Each answers from the same
+          aggregate figures, on its own provider. One pass composes the reply and may use only what they said.
+          Then every number in the answer is looked for in the evidence, and any it cannot find is marked on
+          the answer. A question the figures cannot address is told to you as such rather than answered anyway.
+        </p>
+      </details>
 
-      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "minmax(0,1fr)" }}>
+      <div style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0,1fr)", maxWidth: 880 }}>
         {/* Earlier conversations. Persisted because each answer cost real model
             calls and because the question one coordinator asked is usually the
             question the next one has. */}
         {threads.length > 0 && (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <span className="an-sub" style={{ fontSize: 12, margin: 0 }}>Earlier:</span>
-            {threads.slice(0, 6).map(t => (
-              <button key={t.threadId} className="an-chip"
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
+            {threads.slice(0, 4).map(t => (
+              <button key={t.threadId} className="an-chip" title={t.title}
                 onClick={() => openThread(t.threadId)}
-                style={{ cursor: "pointer", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                /* display:block, because `an-chip` is inline-flex and
+                   text-overflow does not apply to a flex container — the title
+                   was clipped mid-word with no ellipsis to say so. */
+                style={{ cursor: "pointer", maxWidth: 200, display: "block", overflow: "hidden",
+                         textOverflow: "ellipsis", whiteSpace: "nowrap",
                          border: thread && thread.threadId === t.threadId ? "1px solid var(--navy-900)" : undefined }}>
-                {t.title || "Untitled"} · {t.turns}
+                {t.title || "Untitled"}
               </button>
             ))}
             {thread && <button className="btn btn-ghost btn-sm" onClick={() => { setThread(null); setErr(null); }}>New question</button>}
@@ -1344,8 +1358,8 @@ function AnChat({ filters }) {
             </div>}
 
             {!t.pending && (
-              <div className="an-card" style={{ padding: 16, maxWidth: "min(760px, 96%)",
-                     borderLeft: "4px solid " + (t.status === "unanswerable" ? AN_TONE.warn
+              <div className="an-card" style={{ padding: "18px 20px", maxWidth: "100%",
+                     borderLeft: "3px solid " + (t.status === "unanswerable" ? AN_TONE.warn
                        : (t.checks && t.checks.grounded === false) ? AN_TONE.bad : "var(--navy-900,#16223e)") }}>
                 {/* Grounding first, because it changes how everything under it
                     should be read. An answer whose figures cannot be found in the
@@ -1366,79 +1380,85 @@ function AnChat({ filters }) {
 
                 <p style={{ margin: 0, fontSize: 14.8, lineHeight: 1.62, whiteSpace: "pre-wrap" }}>{t.answer}</p>
 
+                {/* The claims, as a quiet list rather than three bordered cards.
+                    Boxing each one gave every claim the visual weight of a
+                    finding and made a three-claim answer look like a dashboard;
+                    a rule down the left says "this belongs to the answer above"
+                    without competing with it. Only an UNGROUNDED claim gets a
+                    box, because that one genuinely is a different kind of thing. */}
                 {(t.claims || []).length > 0 && (
-                  <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                  <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
                     {t.claims.map((c, j) => {
                       const bad = (t.checks && (t.checks.claims || []).some(x => x.claim === j));
                       return (
-                        <div key={j} style={{ padding: "10px 12px", borderRadius: 10,
-                               border: "1px solid " + (bad ? "rgba(239,68,68,.45)" : "var(--line-cool-soft,#e6e9f0)"),
-                               background: bad ? "rgba(239,68,68,.05)" : "transparent" }}>
-                          {/* The chip stays on the first line beside the claim.
-                              With wrap it dropped under a long claim and read as
-                              a stray button rather than as that claim's grade. */}
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                            <span style={{ fontSize: 14, lineHeight: 1.5, flex: "1 1 auto", minWidth: 0 }}>{c.claim}</span>
-                            <span className={"an-chip " + conf(c.confidence)} style={{ flex: "none" }}>{c.confidence}</span>
+                        <div key={j} style={{ paddingLeft: 12,
+                               borderLeft: "2px solid " + (bad ? AN_TONE.bad : "var(--line-cool-soft,#e6e9f0)") }}>
+                          <div style={{ fontSize: 14, lineHeight: 1.55 }}>{c.claim}</div>
+                          <div className="an-sub" style={{ margin: "3px 0 0", fontSize: 11.5, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+                            {c.evidence && <span className="mono">{c.evidence}</span>}
+                            <span>
+                              {c.agreed && (c.lenses || []).length > 1
+                                ? <b style={{ color: AN_TONE.good }}>two lenses agreed</b>
+                                : <>one lens only</>}
+                            </span>
+                            <span>{c.confidence} confidence</span>
+                            {bad && <b style={{ color: AN_TONE.bad }}>figure not in the evidence</b>}
                           </div>
-                          {c.evidence && <p className="mono an-sub" style={{ margin: "4px 0 0", fontSize: 11.5 }}>{c.evidence}</p>}
-                          <p className="an-sub" style={{ margin: "4px 0 0", fontSize: 11.5 }}>
-                            {c.agreed && (c.lenses || []).length > 1
-                              ? <b>Reached independently by {c.lenses.join(" · ")}</b>
-                              : <>From {(c.lenses || []).join(" · ") || "one lens"} only — corroborated by nothing else here.</>}
-                            {bad && <> · <span style={{ color: AN_TONE.bad }}>a figure here is not in the evidence</span></>}
-                          </p>
                         </div>
                       );
                     })}
                   </div>
                 )}
 
-                {/* Follow-ups the answer itself suggests. Cheaper than a blank box
-                    and they keep the conversation on questions the data can take. */}
-                {t.plan && (t.plan.followups || []).length > 0 && (
-                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>
-                    {t.plan.followups.map((f, j) => (
-                      <button key={j} className="an-chip" onClick={() => ask(f)} disabled={busy}
-                        style={{ cursor: "pointer", maxWidth: 340, textAlign: "left" }}>{f}</button>
-                    ))}
-                  </div>
-                )}
-
-                {/* The method, one click away. Not buried in a log: a reader who
-                    doubts an answer needs to see what produced it, and a reader
-                    who trusts it should be able to find out what it cost. */}
-                <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }}
-                  onClick={() => setShowPlan(p => ({ ...p, [t.seq]: !p[t.seq] }))}>
-                  {showPlan[t.seq] ? "Hide how this was produced" : "How this was produced"}
-                </button>
+                {/* One footer row: what to ask next, and how this was produced.
+                    Two stacked rows of buttons under every answer read as a
+                    toolbar and buried the answer above them. */}
+                <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center", marginTop: 16,
+                              paddingTop: 12, borderTop: "1px solid var(--line-cool-soft,#eef0f4)" }}>
+                  {(((t.plan || {}).followups) || []).map((f, j) => (
+                    <button key={j} className="an-chip" onClick={() => ask(f)} disabled={busy}
+                      style={{ cursor: "pointer", maxWidth: 320, display: "block", overflow: "hidden",
+                               textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                      title={f}>{f}</button>
+                  ))}
+                  {/* The method, one click away. Not buried in a log: a reader who
+                      doubts an answer needs to see what produced it. */}
+                  <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }}
+                    onClick={() => setShowPlan(p => ({ ...p, [t.seq]: !p[t.seq] }))}>
+                    {showPlan[t.seq] ? "Hide method" : "Method"}
+                  </button>
+                </div>
                 {showPlan[t.seq] && t.plan && (
-                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line-cool-soft,#eef0f4)", fontSize: 12.5, lineHeight: 1.6, color: "var(--ink-600)" }}>
-                    {t.plan.restated && <p style={{ margin: "0 0 6px" }}><b>Read as:</b> {t.plan.restated}</p>}
-                    <p style={{ margin: "0 0 6px" }}>
-                      <b>Lenses:</b>{" "}
-                      {(t.plan.lensesRan || []).map(l => l.label + (l.ok ? " (" + l.points + ")" : " — no answer")).join(" · ") || "—"}
-                      {t.plan.why ? <> — {t.plan.why}</> : null}
-                      {t.plan.by === "fallback" && <> <i>Chosen by keyword: the planning call was unavailable.</i></>}
-                    </p>
-                    <p style={{ margin: "0 0 6px" }}>
-                      <b>Grounding:</b>{" "}
+                  /* A definition list, not five paragraphs. Somebody opening this
+                     is checking one specific thing — which lenses, or whether the
+                     numbers held — and prose makes them read all of it to find
+                     either. */
+                  <dl style={{ margin: "12px 0 0", display: "grid", gridTemplateColumns: "auto minmax(0,1fr)",
+                               gap: "6px 14px", fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-600)" }}>
+                    {t.plan.restated && <><dt style={{ fontWeight: 700 }}>Read as</dt><dd style={{ margin: 0 }}>{t.plan.restated}</dd></>}
+                    <dt style={{ fontWeight: 700 }}>Lenses</dt>
+                    <dd style={{ margin: 0 }}>
+                      {(t.plan.lensesRan || []).map(l => l.label + (l.ok ? "" : " (no answer)")).join(" · ") || "—"}
+                      {t.plan.why ? <div className="an-sub" style={{ fontSize: 11.5, marginTop: 2 }}>{t.plan.why}</div> : null}
+                      {t.plan.by === "fallback" && <div className="an-sub" style={{ fontSize: 11.5, marginTop: 2 }}>Chosen by keyword — the planning call was unavailable.</div>}
+                    </dd>
+                    <dt style={{ fontWeight: 700 }}>Numbers</dt>
+                    <dd style={{ margin: 0 }}>
                       {t.checks && t.checks.grounded
-                        ? <>every figure in this answer was found in the evidence ({t.checks.evidenceNumbers} numbers checked against).</>
-                        : <>{((t.checks && t.checks.claims) || []).length + (((t.checks && t.checks.answerUnverified) || []).length ? 1 : 0)} place(s) cite a figure that is not in the evidence.</>}
-                    </p>
-                    <p className="mono" style={{ margin: 0, fontSize: 11.5 }}>
-                      {t.rangeLabel ? t.rangeLabel + " · " : ""}evidence {t.evidenceFp || "—"}
+                        ? <>all checked against the evidence ({t.checks.evidenceNumbers} figures)</>
+                        : <span style={{ color: AN_TONE.bad }}>{((t.checks && t.checks.claims) || []).length + (((t.checks && t.checks.answerUnverified) || []).length ? 1 : 0)} place(s) cite a figure that is not there</span>}
+                    </dd>
+                    <dt style={{ fontWeight: 700 }}>Drawn from</dt>
+                    <dd className="mono" style={{ margin: 0, fontSize: 11.5 }}>
+                      {t.rangeLabel || "—"} · {t.evidenceFp || "—"}
                       {t.providers && t.providers.length ? " · " + t.providers.join(", ") : ""}
                       {t.ms ? " · " + (t.ms / 1000).toFixed(1) + "s" : ""}
-                      {t.plan.composed === false ? " · composition failed, showing raw lens points" : ""}
-                    </p>
-                    {/* An answer is grounded in the numbers as they were. Saying so
-                        is the difference between a record and a stale quote. */}
-                    <p className="an-sub" style={{ margin: "6px 0 0", fontSize: 11.5 }}>
-                      Grounded in the figures as they stood then. If the numbers have moved since, ask again rather than trusting this.
-                    </p>
-                  </div>
+                      {t.plan.composed === false ? " · composition failed, raw lens points shown" : ""}
+                      {/* An answer is grounded in the numbers as they were. Saying
+                          so is the difference between a record and a stale quote. */}
+                      <div className="an-sub" style={{ fontSize: 11, marginTop: 3 }}>as the figures stood then — ask again if they have moved</div>
+                    </dd>
+                  </dl>
                 )}
               </div>
             )}
@@ -1454,19 +1474,20 @@ function AnChat({ filters }) {
 
         {/* The composer. Enter sends, shift+Enter breaks a line — the convention
             everybody already has, and the box is for a sentence not an essay. */}
-        <div className="an-card" style={{ padding: 12, display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+        {/* One field and one button. The character counter is hidden until it is
+            nearly relevant — a permanent 0/600 next to an empty box is noise
+            about a limit nobody is near. */}
+        <div className="an-card" style={{ padding: 8, display: "flex", gap: 8, alignItems: "flex-end" }}>
           <textarea value={q} onChange={e => setQ(e.target.value)} rows={2} maxLength={600}
             placeholder="Ask about a centre, an age band, a weekday, an intake…"
             aria-label="Ask the analysts a question"
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
-            style={{ flex: "1 1 300px", minWidth: 220, resize: "vertical", padding: "10px 12px", borderRadius: 10, fontSize: 14.5,
-                     lineHeight: 1.5, border: "1px solid var(--line-cool-soft,#e6e9f0)", fontFamily: "inherit" }}/>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span className="an-sub mono" style={{ margin: 0, fontSize: 11 }}>{q.length}/600</span>
-            <button className="btn btn-primary btn-sm" onClick={() => ask()} disabled={busy || q.trim().length < 6}>
-              {busy ? "Thinking…" : "Ask"}
-            </button>
-          </div>
+            style={{ flex: "1 1 auto", minWidth: 0, resize: "vertical", padding: "10px 12px", borderRadius: 10, fontSize: 14.5,
+                     lineHeight: 1.5, border: "1px solid transparent", background: "transparent", fontFamily: "inherit", outline: "none" }}/>
+          {q.length > 450 && <span className="an-sub mono" style={{ margin: 0, fontSize: 11, flex: "none" }}>{600 - q.length}</span>}
+          <button className="btn btn-primary btn-sm" style={{ flex: "none" }} onClick={() => ask()} disabled={busy || q.trim().length < 6}>
+            {busy ? "Thinking…" : "Ask"}
+          </button>
         </div>
       </div>
     </section>

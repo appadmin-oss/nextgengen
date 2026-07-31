@@ -1329,3 +1329,15 @@ CREATE TABLE IF NOT EXISTS insight_turns (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (74) ON DUPLICATE KEY UPDATE version = version;
+
+-- 75: which member of staff recorded a consent.
+--
+-- A consent given on paper at a desk and one a parent clicked in an email are
+-- not the same evidence, and the ledger already separates them by `method`. What
+-- it could not say was WHO took the paper one — the first question a
+-- safeguarding review asks, because an in-person consent is only as good as the
+-- person who witnessed it. Empty for rows written by the parent link, where the
+-- actor is the parent and is already named.
+ALTER TABLE consents ADD COLUMN recordedById VARCHAR(64) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (75) ON DUPLICATE KEY UPDATE version = version;

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 74;
+const NGG_SCHEMA_TARGET = 75;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -104,6 +104,37 @@ function db_apply_mysql_schema(PDO $db): void {
         error_log('[db] schema_meta check: ' . $e->getMessage()); // fall through and try to apply
     }
 
+    /* ONE request replays the mirror. The rest carry on.
+     *
+     * This is the deploy stampede, and it takes a site down rather than slowing
+     * it. The moment the mirror's hash changes, EVERY in-flight request sees a
+     * stale hash and every one of them starts replaying ~200 statements of DDL.
+     * MySQL takes a metadata lock per ALTER, so they serialise: the first is slow,
+     * the tenth waits for nine others, and PHP-FPM's pool fills with requests
+     * that are all doing the same work. From the outside every page and every API
+     * call simply hangs — which is exactly what a browser reports as "504
+     * Offline and not cached" once a service worker gives up on it.
+     *
+     * GET_LOCK with a zero timeout: whoever gets it applies the schema, everybody
+     * else returns immediately and runs against the schema as it is. That is safe
+     * because this mirror is additive-only — a request that runs one deploy's
+     * worth of statements behind is reading tables that already exist — and the
+     * next request after the holder finishes sees the new hash and skips.
+     *
+     * Fails open. A host without GET_LOCK (or a permission problem) gets the old
+     * behaviour rather than no schema at all. */
+    $lockName = 'ngg_schema_' . substr($hash, 0, 16);
+    $holdsLock = false;
+    try {
+        $q = $db->query("SELECT GET_LOCK(" . $db->quote($lockName) . ", 0)");
+        $got = $q ? $q->fetchColumn() : null;
+        // 1 = acquired, 0 = somebody else has it, NULL = error.
+        if ($got !== null && (int)$got === 0) return;      // another request is applying it
+        $holdsLock = ($got !== null);
+    } catch (Throwable $e) {
+        error_log('[db] schema lock unavailable, applying without it: ' . $e->getMessage());
+    }
+
     // Run additive structural DDL AND the seed INSERTs. The mirror's INSERTs are
     // all idempotent (ON DUPLICATE KEY UPDATE), so replaying them is safe —
     // excluding them previously meant no-SSH MySQL hosts never got the seed rows
@@ -134,6 +165,11 @@ function db_apply_mysql_schema(PDO $db): void {
         error_log('[db] schema_meta write: ' . $e->getMessage());
     }
     if (!$allOk) error_log('[db] mysql schema applied with errors — see log; marked "partial" in schema_meta.');
+    if ($holdsLock) {
+        // Released explicitly. A connection-scoped lock would be freed when the
+        // request ends anyway, but a persistent PDO connection outlives it.
+        try { $db->exec("DO RELEASE_LOCK(" . $db->quote($lockName) . ")"); } catch (Throwable $e) {}
+    }
 }
 
 // ── Migration engine: shared, driver-aware, idempotent ────────────────────
@@ -1909,6 +1945,18 @@ function db_migrate(PDO $db): void {
                 createdAt TEXT
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_iturns_seq ON insight_turns (threadId, seq);
+        ",
+        /* 75: which member of staff recorded a consent.
+         *
+         * A consent given on paper at a desk and a consent a parent clicked in
+         * an email are not the same evidence, and the ledger already separates
+         * them by `method`. What it could not say was WHO took the paper one —
+         * and that is the first question a safeguarding review asks, because an
+         * in-person consent is only as good as the person who witnessed it.
+         * Empty for every row written by the parent link, where the actor is the
+         * parent and is already named. */
+        75 => "
+            ALTER TABLE consents ADD COLUMN recordedById TEXT DEFAULT '';
         ",
     ];
 

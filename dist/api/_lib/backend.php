@@ -155,6 +155,12 @@ function backend_dispatch(string $op, array $args = []): array {
             'gate.unlock'                 => 'gate_unlock',
             'admin.registrations.list'    => 'admin_registrations_list',
             'admin.registrations.remind'  => 'admin_registrations_remind',
+            /* Recording a consent a family gave off-line — on paper, in person or
+             * by phone. Deliberately per-child and deliberately not a
+             * "mark verified" switch; see the domain function. */
+            'admin.registration.consent.record' => 'admin_registration_consent_record',
+            'admin.registration.consent.bulk'   => 'admin_registration_consent_record_bulk',
+            'admin.registration.consents'       => 'admin_registration_consents',
             'admin.registrations.remindBulk' => 'admin_registrations_remind_bulk',
             'admin.centres.list'          => 'admin_centres_list',
             'admin.centres.upsert'        => 'admin_centres_upsert',

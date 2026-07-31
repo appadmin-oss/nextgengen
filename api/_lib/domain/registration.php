@@ -1875,6 +1875,262 @@ function admin_registrations_remind_bulk(array $p): array {
     return ['ok' => true, 'queued' => count($ids)];
 }
 
+/* ── Recording a consent that was given off-line ──────────────────────────────
+ *
+ * A desk registration parks at `parent_pending` and waits for a parent to click
+ * a link. Most do. The ones who do not are not edge cases: a guardian with no
+ * email address, a phone that cannot open the link, a paper form filled in at
+ * the centre while the child stood there. Until now those children stayed
+ * pending forever and never got an ID, and the only workaround was editing the
+ * database.
+ *
+ * So an admin can record the consent instead — and the point of this function is
+ * everything it refuses to let them do while recording it.
+ *
+ *  · It is NOT a "mark verified" button. A consent has content: which
+ *    permissions were granted, who gave them, and how. A button that skipped
+ *    that would turn the consent ledger into a field that says "yes" and destroy
+ *    the only record the programme has that anybody agreed to anything.
+ *  · The METHOD is recorded and is different from the parent link's. A
+ *    safeguarding review has to be able to tell a signed form from a click, and
+ *    a ledger that flattens the two is worse than one with gaps in it.
+ *  · The STAFF MEMBER is recorded (migration 75). An in-person consent is only
+ *    as good as the person who witnessed it.
+ *  · The required permissions must actually be granted, and the ones that must be
+ *    ANSWERED must be answered either way — the same rules the parent link
+ *    enforces, because a family who says no to photographs at a desk has said no.
+ *
+ * There IS a bulk version below, and its shape is the whole argument. A
+ * coordinator with a stack of twenty signed paper forms on the desk is doing one
+ * real thing twenty times, and making them click through twenty dialogs does not
+ * make the record truer — it makes them stop using the feature. What would make
+ * the record false is different, and that is what the bulk version refuses:
+ *
+ *  · It takes an EXPLICIT list of children. Never "everybody pending", never a
+ *    filter the server expands, because the difference between those is the
+ *    difference between twenty forms somebody is holding and forty children
+ *    somebody has not thought about.
+ *  · It uses each child's OWN guardian on file, not one name typed once. Twenty
+ *    families did not all send the same person, and stamping one name across them
+ *    would be the lie.
+ *  · A child with no guardian on file is SKIPPED and named in the result. There
+ *    is nobody to record as having consented, so nothing is recorded.
+ */
+const CONSENT_DESK_METHODS = [
+    'paper'     => 'Signed paper form, on file at the centre',
+    'in_person' => 'Given in person to staff at the centre',
+    'phone'     => 'Given by phone to staff',
+];
+
+function admin_registration_consent_record(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $me = (string)($g['requester']['memberId'] ?? '');
+
+    $studentId = trim((string)($p['studentId'] ?? ''));
+    $s = db_row("SELECT * FROM summer_students WHERE studentId = ? LIMIT 1", [$studentId]);
+    if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$s['regStatus'] === 'verified') return ['ok' => true, 'already' => true];
+    /* A public self-registration is a different question — has this submission
+       been reviewed — and it has its own desk with the photograph and the
+       submitted answers side by side. Sending an admin there beats answering the
+       wrong question here. */
+    if ((string)$s['regStatus'] === 'self_pending') {
+        return ['ok' => false, 'error' => 'use_review_desk'];
+    }
+    if ((string)$s['regStatus'] !== 'parent_pending') {
+        return ['ok' => false, 'error' => 'not_pending', 'regStatus' => (string)$s['regStatus']];
+    }
+
+    $method = (string)($p['method'] ?? '');
+    if (!isset(CONSENT_DESK_METHODS[$method])) return ['ok' => false, 'error' => 'method_required'];
+
+    /* Who gave it. Not the admin's name — the admin is the witness, and conflating
+       the two would record staff as having consented on a family's behalf. */
+    $actor = trim((string)($p['guardianName'] ?? ''));
+    if (mb_strlen($actor) < 3) return ['ok' => false, 'error' => 'guardian_name_required'];
+    $actor = mb_substr($actor, 0, 160);
+
+    /* The same consent rules the parent link enforces, because the answers mean
+       the same thing whichever desk they were given at. */
+    $consents = is_array($p['consents'] ?? null) ? $p['consents'] : [];
+    $missing = [];
+    foreach (CONSENT_TYPES as $type => $meta) {
+        $answered = array_key_exists($type, $consents);
+        if ((int)$meta['p'] === 0 && empty($consents[$type])) { $missing[] = $type; continue; }
+        if (!empty($meta['mustAnswer']) && !$answered) $missing[] = $type;
+    }
+    if ($missing) return ['ok' => false, 'error' => 'consents_incomplete', 'missing' => $missing];
+
+    $note = mb_substr(trim((string)($p['note'] ?? '')), 0, 300);
+
+    foreach (CONSENT_TYPES as $type => $meta) {
+        db_insert('consents', ['studentId' => $studentId, 'type' => $type,
+            'status' => !empty($consents[$type]) ? 'granted' : 'declined',
+            // 'desk_paper' | 'desk_in_person' | 'desk_phone' — never 'parent_link'.
+            'method' => 'desk_' . $method,
+            'actorName' => $actor, 'signatureUrl' => '',
+            'recordedById' => $me, 'createdAt' => now_iso()]);
+    }
+
+    db_update('summer_students', [
+        'regStatus' => 'verified', 'verifiedAt' => now_iso(),
+        'consentSignedName' => $actor, 'consentSignedAt' => now_iso(),
+        'reviewedById' => $me, 'reviewedAt' => now_iso(),
+        'reviewNote' => $note !== '' ? $note : CONSENT_DESK_METHODS[$method],
+        'updatedAt' => now_iso(),
+    ], ['studentId' => $studentId]);
+
+    // The same issuance gate as every other path, so the photo hold and the QR
+    // pool behave identically however the consent arrived.
+    $issue = registration_issue_id($studentId);
+    if (!empty($issue['issued']) || !empty($issue['already'])) {
+        // The family still gets the ID; they just did not get here by email.
+        after_response('registration.deskConsent.sendId', function () use ($studentId) {
+            try { student_send_id($studentId); } catch (\Throwable $e) { error_log('[deskConsent] ' . $e->getMessage()); }
+        });
+    }
+
+    audit('registration.consent.desk', $me, $studentId,
+        ['method' => $method, 'granted' => array_keys(array_filter($consents)), 'idHeld' => !empty($issue['held'])],
+        (string)($p['ip'] ?? ''));
+    event_emit('registration.verified', ['ref' => $studentId, 'name' => (string)$s['fullName'],
+        'course' => (string)($s['track'] ?? ''), 'status' => 'verified', 'feedback' => '']);
+
+    return ['ok' => true, 'studentId' => $studentId, 'regStatus' => 'verified',
+            'method' => CONSENT_DESK_METHODS[$method],
+            'idIssued' => !empty($issue['issued']) || !empty($issue['already']),
+            'photoPending' => !empty($issue['held']) && ($issue['reason'] ?? '') === 'photo_pending'];
+}
+
+/**
+ * The same record, for an explicitly chosen list of children.
+ *
+ * One method and one set of answers across the selection — which is what a stack
+ * of identical signed forms actually is — but each child's own guardian, and each
+ * child checked individually against the same rules the single version applies.
+ * Bounded, so one click cannot verify a cohort.
+ */
+const CONSENT_BULK_MAX = 60;
+
+function admin_registration_consent_record_bulk(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $me = (string)($g['requester']['memberId'] ?? '');
+
+    $ids = array_values(array_unique(array_filter(array_map(
+        fn($x) => trim((string)$x), (array)($p['studentIds'] ?? [])))));
+    if (!$ids) return ['ok' => false, 'error' => 'no_students'];
+    /* Explicitly capped rather than paged. A bulk consent is somebody working
+       through a physical stack; sixty is already more than one sitting, and a
+       ceiling is what stops a scripted client verifying a whole cohort. */
+    if (count($ids) > CONSENT_BULK_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CONSENT_BULK_MAX];
+
+    $method = (string)($p['method'] ?? '');
+    if (!isset(CONSENT_DESK_METHODS[$method])) return ['ok' => false, 'error' => 'method_required'];
+
+    $consents = is_array($p['consents'] ?? null) ? $p['consents'] : [];
+    $missing = [];
+    foreach (CONSENT_TYPES as $type => $meta) {
+        $answered = array_key_exists($type, $consents);
+        if ((int)$meta['p'] === 0 && empty($consents[$type])) { $missing[] = $type; continue; }
+        if (!empty($meta['mustAnswer']) && !$answered) $missing[] = $type;
+    }
+    if ($missing) return ['ok' => false, 'error' => 'consents_incomplete', 'missing' => $missing];
+
+    $note = mb_substr(trim((string)($p['note'] ?? '')), 0, 300);
+    $recorded = []; $skipped = [];
+    $issuedIds = [];
+
+    foreach ($ids as $studentId) {
+        $s = db_row("SELECT studentId, fullName, track, regStatus, guardianName FROM summer_students WHERE studentId = ? LIMIT 1", [$studentId]);
+        if (!$s) { $skipped[] = ['studentId' => $studentId, 'reason' => 'not_found']; continue; }
+        if ((string)$s['regStatus'] === 'verified') { $skipped[] = ['studentId' => $studentId, 'name' => (string)$s['fullName'], 'reason' => 'already_verified']; continue; }
+        if ((string)$s['regStatus'] === 'self_pending') { $skipped[] = ['studentId' => $studentId, 'name' => (string)$s['fullName'], 'reason' => 'use_review_desk']; continue; }
+        if ((string)$s['regStatus'] !== 'parent_pending') { $skipped[] = ['studentId' => $studentId, 'name' => (string)$s['fullName'], 'reason' => 'not_pending']; continue; }
+
+        /* Each child's own guardian. No guardian on file means there is nobody to
+           record as having consented, and inventing one — or reusing the last
+           name typed — would put a fabrication in the consent ledger. */
+        $actor = mb_substr(trim((string)($s['guardianName'] ?? '')), 0, 160);
+        if (mb_strlen($actor) < 3) {
+            $skipped[] = ['studentId' => $studentId, 'name' => (string)$s['fullName'], 'reason' => 'no_guardian_on_file'];
+            continue;
+        }
+
+        foreach (CONSENT_TYPES as $type => $meta) {
+            db_insert('consents', ['studentId' => $studentId, 'type' => $type,
+                'status' => !empty($consents[$type]) ? 'granted' : 'declined',
+                'method' => 'desk_' . $method, 'actorName' => $actor, 'signatureUrl' => '',
+                'recordedById' => $me, 'createdAt' => now_iso()]);
+        }
+        db_update('summer_students', [
+            'regStatus' => 'verified', 'verifiedAt' => now_iso(),
+            'consentSignedName' => $actor, 'consentSignedAt' => now_iso(),
+            'reviewedById' => $me, 'reviewedAt' => now_iso(),
+            'reviewNote' => $note !== '' ? $note : CONSENT_DESK_METHODS[$method],
+            'updatedAt' => now_iso(),
+        ], ['studentId' => $studentId]);
+
+        $issue = registration_issue_id($studentId);
+        if (!empty($issue['issued']) || !empty($issue['already'])) $issuedIds[] = $studentId;
+        $recorded[] = ['studentId' => $studentId, 'name' => (string)$s['fullName'],
+                       'guardian' => $actor,
+                       'idIssued' => !empty($issue['issued']) || !empty($issue['already']),
+                       'photoPending' => !empty($issue['held']) && ($issue['reason'] ?? '') === 'photo_pending'];
+        event_emit('registration.verified', ['ref' => $studentId, 'name' => (string)$s['fullName'],
+            'course' => (string)($s['track'] ?? ''), 'status' => 'verified', 'feedback' => '']);
+    }
+
+    /* One deferred pass for the whole batch. Twenty SMTP round-trips in the
+       request is a coordinator staring at a spinner and a gateway timeout that
+       loses the response to work already committed. */
+    if ($issuedIds) {
+        after_response('registration.deskConsent.sendIds', function () use ($issuedIds) {
+            foreach ($issuedIds as $id) {
+                try { student_send_id($id); } catch (\Throwable $e) { error_log('[deskConsent.bulk] ' . $id . ': ' . $e->getMessage()); }
+            }
+        });
+    }
+
+    audit('registration.consent.desk.bulk', $me, '', ['method' => $method,
+        'recorded' => array_column($recorded, 'studentId'), 'skipped' => count($skipped),
+        'granted' => array_keys(array_filter($consents))], (string)($p['ip'] ?? ''));
+
+    return ['ok' => true, 'recorded' => $recorded, 'skipped' => $skipped,
+            'method' => CONSENT_DESK_METHODS[$method]];
+}
+
+/** The consent ledger for one child, so a desk can see what is already on file
+ *  before recording anything — and so an audit can read it without SQL. */
+function admin_registration_consents(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $studentId = trim((string)($p['studentId'] ?? ''));
+    $s = db_row("SELECT studentId, fullName, regStatus, guardianName, parentEmail, guardianPhone,
+                        consentSignedName, consentSignedAt, verifiedAt
+                 FROM summer_students WHERE studentId = ? LIMIT 1", [$studentId]);
+    if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    $rows = db_all("SELECT type, status, method, actorName, recordedById, createdAt
+                    FROM consents WHERE studentId = ? ORDER BY id ASC", [$studentId]);
+    return ['ok' => true,
+        'student' => ['studentId' => (string)$s['studentId'], 'fullName' => (string)$s['fullName'],
+                      'regStatus' => (string)$s['regStatus'],
+                      'guardianName' => (string)($s['guardianName'] ?? ''),
+                      'parentEmail' => (string)($s['parentEmail'] ?? ''),
+                      'guardianPhone' => (string)($s['guardianPhone'] ?? ''),
+                      'signedName' => (string)($s['consentSignedName'] ?? ''),
+                      'signedAt' => (string)($s['consentSignedAt'] ?? '')],
+        'types' => array_map(fn($t, $m) => ['type' => $t, 'label' => $m['label'],
+                                            'required' => (int)$m['p'] === 0,
+                                            'mustAnswer' => !empty($m['mustAnswer'])],
+                             array_keys(CONSENT_TYPES), array_values(CONSENT_TYPES)),
+        'methods' => array_map(fn($k, $v) => ['key' => $k, 'label' => $v],
+                               array_keys(CONSENT_DESK_METHODS), array_values(CONSENT_DESK_METHODS)),
+        'ledger' => array_map(fn($r) => [
+            'type' => (string)$r['type'], 'status' => (string)$r['status'],
+            'method' => (string)$r['method'], 'actorName' => (string)$r['actorName'],
+            'recordedById' => (string)($r['recordedById'] ?? ''), 'at' => (string)$r['createdAt'],
+        ], $rows)];
+}
+
 function admin_registrations_remind(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $studentId = (string)($p['studentId'] ?? '');

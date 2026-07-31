@@ -2,7 +2,7 @@
   {
     "name": "01-growth-needs-support",
     "label": "Level 5 · who needs support, with reason codes",
-    "kb": 409
+    "kb": 446
   },
   {
     "name": "02-growth-by-centre",
@@ -25,9 +25,19 @@
     "kb": 1504
   },
   {
+    "name": "24-consent-pending",
+    "label": "Awaiting a parent — select the forms you are holding",
+    "kb": 466
+  },
+  {
+    "name": "25-consent-recorder",
+    "label": "Recording an off-line consent — method, permissions, and each child's own guardian",
+    "kb": 199
+  },
+  {
     "name": "23-analyst-chat",
     "label": "Level 7b · the analyst chat — the plan, the claims and the grounding check on the answer",
-    "kb": 462
+    "kb": 280
   },
   {
     "name": "04-gate-links",
@@ -37,12 +47,12 @@
   {
     "name": "00-analytics-full",
     "label": "The whole analytics workspace, all levels",
-    "kb": 3224
+    "kb": 3227
   },
   {
     "name": "13-depth",
     "label": "Level 6 · comparison, cross-tabs, confidence intervals, findings",
-    "kb": 930
+    "kb": 944
   },
   {
     "name": "05-diagnostics-run-now",

@@ -19,6 +19,9 @@ if ($method === 'GET') {
     elseif ($view === 'centres')     $res = gs_call('admin.centres.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'catalogue')   $res = gs_call('admin.academy.catalogue.get', ['requesterId' => $s['mid']]);
     elseif ($view === 'cards')       $res = gs_call('admin.cards.data', ['requesterId' => $s['mid'], 'studentId' => (string)($_GET['studentId'] ?? '')]);
+    /* The consent ledger for one child — what is already on file, and the
+       permission list a desk has to work through before recording anything. */
+    elseif ($view === 'consents')    $res = gs_call('admin.registration.consents', ['requesterId' => $s['mid'], 'studentId' => (string)($_GET['studentId'] ?? '')]);
     elseif ($view === 'hierarchy')   $res = gs_call('admin.hierarchy.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'vcards')      $res = gs_call('admin.vcards.data', ['requesterId' => $s['mid'], 'volunteerId' => (string)($_GET['volunteerId'] ?? '')]);
     else json_error('unknown_view', 400);
@@ -39,6 +42,12 @@ if ($method === 'GET') {
     elseif ($action === 'remind')      $res = gs_call('admin.registrations.remind', ['requesterId' => $s['mid'], 'studentId' => $b['studentId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'remind_bulk') $res = gs_call('admin.registrations.remindBulk', ['requesterId' => $s['mid'],
         'centre' => $b['centre'] ?? '', 'quietDays' => $b['quietDays'] ?? 1, 'limit' => $b['limit'] ?? 100, 'ip' => $ip]);
+    elseif ($action === 'consent_record') $res = gs_call('admin.registration.consent.record', ['requesterId' => $s['mid'],
+        'studentId' => $b['studentId'] ?? '', 'method' => $b['method'] ?? '', 'guardianName' => $b['guardianName'] ?? '',
+        'consents' => $b['consents'] ?? [], 'note' => $b['note'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'consent_bulk') $res = gs_call('admin.registration.consent.bulk', ['requesterId' => $s['mid'],
+        'studentIds' => $b['studentIds'] ?? [], 'method' => $b['method'] ?? '',
+        'consents' => $b['consents'] ?? [], 'note' => $b['note'] ?? '', 'ip' => $ip]);
     elseif ($action === 'resend_id')   { rate_limit_check('id.resend'); $res = gs_call('admin.id.resend', ['requesterId' => $s['mid'], 'kind' => $b['kind'] ?? 'student', 'id' => $b['id'] ?? '', 'qrPng' => $b['qrPng'] ?? '', 'ip' => $ip]); }
     elseif ($action === 'centre_upsert') $res = gs_call('admin.centres.upsert', ['requesterId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => $ip]);
     elseif ($action === 'centre_delete') $res = gs_call('admin.centres.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'ip' => $ip]);
@@ -59,5 +68,7 @@ if (empty($res['ok'])) {
    purged before — so renaming a centre or adding one left the public site
    showing the old set until the TTL rolled. Enrolling changes the counts. */
 if (in_array($action ?? '', ['centre_upsert', 'centre_delete'], true))      cache_invalidate('centres');
-elseif (in_array($action ?? '', ['gate_create', 'remind_bulk'], true))      cache_invalidate('students');
+/* Recording a consent verifies the child, which changes the verified count, the
+   pending queue and the card studio's roster. All three read cached students. */
+elseif (in_array($action ?? '', ['gate_create', 'remind_bulk', 'consent_record', 'consent_bulk'], true)) cache_invalidate('students');
 unset($res['ok']); json_ok($res);

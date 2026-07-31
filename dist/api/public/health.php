@@ -19,6 +19,25 @@
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 
+/* ?fast=1 — is PHP alive, without touching the database.
+ *
+ * The probe you reach for when the site hangs is the probe that hangs, because
+ * every other check here opens a connection and the failure that takes a site
+ * down is usually on the far side of that connection: a pool full of requests
+ * waiting on a lock, a replaying schema, a database that has stopped answering.
+ * A liveness answer that needs the database cannot tell "PHP is stuck" from
+ * "the database is stuck", and those have opposite remedies.
+ *
+ * So: 200 and nothing else. If this answers instantly while the rest of the site
+ * hangs, the web server and PHP are fine and the problem is below them. */
+if (($_GET['fast'] ?? '') === '1') {
+    header('Content-Type: application/json');
+    header('Cache-Control: no-store, max-age=0');
+    echo json_encode(['ok' => true, 'php' => true, 'db' => null,
+        'note' => 'Liveness only — the database was deliberately not contacted.'], JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
 $h = ops_health_public();
 header('Content-Type: application/json');
 header('Cache-Control: no-store, max-age=0');

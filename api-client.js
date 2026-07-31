@@ -697,6 +697,16 @@
         requestMissing: (limit, quietDays) => request('/admin/photos.php', { body: { action: 'request_missing', limit, quietDays } }),
       },
       registration: {
+        /* Consent given off-line — on paper, in person or by phone.
+           `consents(studentId)` returns what is already on file plus the
+           permission list; `consentRecord` writes one child's; `consentBulk`
+           writes an explicitly selected list of them. None of these is a
+           "verify" call: each carries which permissions were granted, who gave
+           them and how, because that is what a consent is and a boolean in its
+           place would destroy the only record the programme has. */
+        consents: (studentId) => request('/admin/registration.php' + qs({ view: 'consents', studentId })),
+        consentRecord: (data) => request('/admin/registration.php', { body: { action: 'consent_record', ...(data || {}) } }),
+        consentBulk: (data) => request('/admin/registration.php', { body: { action: 'consent_bulk', ...(data || {}) }, timeout: 120000 }),
         formsList:  () => request('/admin/registration.php' + qs({ view: 'forms' })),
         form:       (formId) => request('/admin/registration.php' + qs({ view: 'form', formId: formId || 'summer-reg' })),
         publishForm: (formId, fields, name) => request('/admin/registration.php', { body: { action: 'publish_form', formId, fields, name } }),

@@ -1892,6 +1892,11 @@ function SummerPending({ onChange }) {
   const [page, setPage] = React.useState(1);
   const [centres, setCentres] = React.useState([]);
   const [bulk, setBulk] = React.useState(false);
+  /* Recording a consent a family gave off-line. `sheet` holds either one child
+     or a ticked selection — the same form either way, because it is the same act
+     and a second dialog for the plural case would drift from the singular one. */
+  const [ticked, setTicked] = React.useState(() => new Set());
+  const [sheet, setSheet] = React.useState(null);   // { rows: [] }
 
   const load = React.useCallback(() => NGGApi.admin.registration
     .list({ q: q.trim(), status, centre, page })
@@ -1903,6 +1908,10 @@ function SummerPending({ onChange }) {
   React.useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
   React.useEffect(() => { NGGApi.admin.registration.centres().then(r => setCentres(r.centres || [])).catch(() => {}); }, []);
   React.useEffect(() => { setPage(1); }, [q, status, centre]);
+  /* A tick means "this child, whose form I am holding". Carrying ticks across a
+     filter change would let a selection made on one page be recorded against
+     children the admin never looked at. */
+  React.useEffect(() => { setTicked(new Set()); }, [q, status, centre, page]);
 
   const remind = async (id) => {
     setBusy(id);
@@ -1952,6 +1961,8 @@ function SummerPending({ onChange }) {
 
   if (err) return <ErrorState title="Couldn't load" code={err} onRetry={load}/>;
   const rows = (data && data.registrations) || [];
+  const pendingRows = rows.filter(r => r.regStatus === "parent_pending");
+  const tickedRows = pendingRows.filter(r => ticked.has(r.studentId));
   const counts = (data && data.counts) || {};
   const total = (data && data.total) || 0;
   const pageSize = (data && data.pageSize) || 25;
@@ -1990,6 +2001,25 @@ function SummerPending({ onChange }) {
         )}
       </div>
 
+      {/* The bulk bar, and it only appears once rows are TICKED.
+          There is no "record consent for all 40 pending" button, and the absence
+          is the design: a stack of twenty signed forms on the desk is a real
+          thing, and forty children nobody has looked at is not. */}
+      {tickedRows.length > 0 && (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10,
+                      background: "rgba(255,206,84,.14)", border: "1px solid rgba(245,176,38,.45)",
+                      borderRadius: 12, padding: "10px 14px" }}>
+          <b style={{ fontSize: 13.5 }}>{tickedRows.length} selected</b>
+          <button className="btn btn-primary btn-sm" onClick={() => setSheet({ rows: tickedRows })}>
+            Record consent for {tickedRows.length}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setTicked(new Set())}>Clear</button>
+          <span className="admin-hint" style={{ margin: 0 }}>
+            One method and one set of permissions across the selection — each child keeps their own guardian's name.
+          </span>
+        </div>
+      )}
+
       {data === null ? <div className="dash-spinner"/> :
         rows.length === 0 ? (
           <div className="admin-empty">
@@ -2001,10 +2031,23 @@ function SummerPending({ onChange }) {
           Showing {rows.length} of {total}{centre ? " at " + centre : ""}. Consent + QR bind happen automatically when the parent confirms.
         </p>
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Student</th><th>Centre</th><th>Parent contact</th><th>Waiting</th><th>Status</th><th></th></tr></thead>
+          <thead><tr>
+            {status === "parent_pending" && <th style={{ width: 30 }}>
+              <input type="checkbox" aria-label="Select every row on this page"
+                checked={pendingRows.length > 0 && ticked.size === pendingRows.length}
+                onChange={() => setTicked(t => t.size === pendingRows.length ? new Set() : new Set(pendingRows.map(x => x.studentId)))}/>
+            </th>}
+            <th>Student</th><th>Centre</th><th>Parent contact</th><th>Waiting</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {rows.map(r => (
-              <tr key={r.studentId}>
+              <tr key={r.studentId} style={ticked.has(r.studentId) ? { background: "rgba(255,206,84,.12)" } : undefined}>
+                {status === "parent_pending" && <td>
+                  {r.regStatus === "parent_pending" && (
+                    <input type="checkbox" checked={ticked.has(r.studentId)}
+                      aria-label={"Select " + r.fullName}
+                      onChange={() => setTicked(t => { const n = new Set(t); if (n.has(r.studentId)) n.delete(r.studentId); else n.add(r.studentId); return n; })}/>
+                  )}
+                </td>}
                 <td><b>{r.fullName}</b><div className="mono admin-cell-sub">{r.studentId}{r.track ? " · " + r.track : ""}</div>
                   {/* The birthday, and whether there is one. A row with only an
                       age is a row whose age is wrong next season, and this is
@@ -2035,6 +2078,12 @@ function SummerPending({ onChange }) {
                 <td>{badge(r.regStatus)}</td>
                 <td style={{ textAlign: "right" }}>
                   {r.regStatus === "parent_pending" && <button className="btn btn-ghost btn-sm" disabled={busy === r.studentId} onClick={() => remind(r.studentId)}>{busy === r.studentId ? "…" : "Resend link"}</button>}
+                  {/* The way out for a family the link will never reach: no email
+                      address, a phone that cannot open it, or a paper form filled
+                      in at the centre while the child stood there. Those children
+                      used to stay pending forever and never got an ID. */}
+                  {r.regStatus === "parent_pending" && <button className="btn btn-ghost btn-sm" style={{ marginLeft: 6 }}
+                    onClick={() => setSheet({ rows: [r] })}>Record consent</button>}
                   {r.regStatus === "verified" && r.token && <button className="btn btn-ghost btn-sm" disabled={busy === r.studentId} onClick={() => resendId(r)}>{busy === r.studentId ? "…" : "Resend ID + QR"}</button>}
                 </td>
               </tr>
@@ -2050,6 +2099,224 @@ function SummerPending({ onChange }) {
         )}
         </>
       )}
+
+      {sheet && <ConsentRecorder rows={sheet.rows}
+        onClose={() => setSheet(null)}
+        onDone={() => { setSheet(null); setTicked(new Set()); load(); if (onChange) onChange(); }}/>}
+    </div>
+  );
+}
+
+/* ── Recording a consent a family gave off-line ────────────────────────────────
+ *
+ * A desk registration waits for a parent to click a link, and most do. The ones
+ * who do not are not edge cases — a guardian with no email address, a phone that
+ * cannot open the link, a paper form filled in at the centre — and until now
+ * those children stayed pending forever and never got an ID.
+ *
+ * This is deliberately NOT a "mark verified" button. A consent has content: which
+ * permissions were granted, who gave them, and how. A switch that skipped all
+ * three would turn the consent ledger into a field that says "yes" and destroy
+ * the only record the programme has that anybody agreed to anything. So the form
+ * asks the same questions the parent link asks, in the same order, and the
+ * server enforces the same rules.
+ */
+function ConsentRecorder({ rows, onClose, onDone }) {
+  const many = rows.length > 1;
+  const [meta, setMeta] = React.useState(null);      // types + methods, from the server
+  const [method, setMethod] = React.useState("paper");
+  const [guardian, setGuardian] = React.useState(rows[0] ? (rows[0].guardianName || "") : "");
+  const [answers, setAnswers] = React.useState({});
+  const [note, setNote] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [result, setResult] = React.useState(null);
+
+  /* The permission list comes from the server, not from a copy in here. The
+     parent-facing form, this form and the ledger have to agree about what a
+     consent consists of, and three hard-coded lists would drift. */
+  React.useEffect(() => {
+    NGGApi.admin.registration.consents(rows[0].studentId)
+      .then(r => {
+        setMeta(r);
+        // Required permissions default to granted; the free choices start UNSET
+        // so somebody has to record what the family actually said.
+        const seed = {};
+        (r.types || []).forEach(t => { if (t.required) seed[t.type] = true; });
+        setAnswers(seed);
+        if (!many && r.student && r.student.guardianName) setGuardian(r.student.guardianName);
+      })
+      .catch(() => setMeta({ types: [], methods: [] }));
+  }, []);
+
+  const types = (meta && meta.types) || [];
+  const methods = (meta && meta.methods) || [];
+  // Every free choice has to be answered either way — the same rule the parent
+  // link enforces, because a family who says no to photographs has said no.
+  const unanswered = types.filter(t => t.mustAnswer && answers[t.type] === undefined);
+  const missingRequired = types.filter(t => t.required && !answers[t.type]);
+  const ready = types.length > 0 && !unanswered.length && !missingRequired.length
+    && (many || guardian.trim().length >= 3);
+
+  const submit = async () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    try {
+      const consents = {};
+      types.forEach(t => { consents[t.type] = !!answers[t.type]; });
+      if (many) {
+        const r = await NGGApi.admin.registration.consentBulk({
+          studentIds: rows.map(x => x.studentId), method, consents, note,
+        });
+        setResult(r);
+        // Not a toast-and-close: a partial result has to be READ. Some children
+        // will have no guardian on file and those were skipped, and closing over
+        // that would leave somebody believing all twenty were done.
+        if (!(r.skipped || []).length) { toast.success(r.recorded.length + " recorded."); onDone(); }
+      } else {
+        const r = await NGGApi.admin.registration.consentRecord({
+          studentId: rows[0].studentId, method, guardianName: guardian.trim(), consents, note,
+        });
+        toast.success(r.idIssued ? "Consent recorded — ID issued." : "Consent recorded.");
+        onDone();
+      }
+    } catch (e) {
+      const map = {
+        method_required: "Choose how the consent was given.",
+        guardian_name_required: "Whose consent is this? Give the guardian's name as it appears on the form.",
+        consents_incomplete: "Some permissions are unanswered — every one has to be recorded either way.",
+        use_review_desk: "That is a public sign-up awaiting review. Open the review desk instead, where the photo and the submitted answers are side by side.",
+        not_pending: "That registration is not awaiting a parent any more — reload the list.",
+        too_many: "Too many at once. Select a smaller batch.",
+      };
+      toast.error(map[e.code] || e.code || e.message);
+    } finally { setBusy(false); }
+  };
+
+  const Row = ({ children }) => <div style={{ marginBottom: 14 }}>{children}</div>;
+
+  return (
+    <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,10,24,.6)", display: "grid",
+               placeItems: "center", padding: 18, overflowY: "auto" }}>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 560, width: "100%",
+                    maxHeight: "92vh", overflowY: "auto" }}>
+        <h3 style={{ margin: "0 0 4px", fontSize: 19 }}>
+          {many ? "Record consent for " + rows.length + " children" : "Record consent"}
+        </h3>
+        <p className="admin-hint" style={{ marginTop: 0 }}>
+          {many
+            ? "One method and one set of permissions across the selection. Each child keeps their own guardian's name from their record — a child with no guardian on file is skipped rather than recorded against somebody else."
+            : <>For <b>{rows[0].fullName}</b> · {rows[0].studentId}. Use this when the family gave consent off-line and the emailed link will never reach them.</>}
+        </p>
+
+        {result ? (
+          /* The partial result. A bulk that half-worked is the case worth
+             designing for; a toast saying "done" over eleven of twenty is how
+             nine children silently stay pending. */
+          <div>
+            <p style={{ fontSize: 14, margin: "0 0 8px" }}>
+              <b>{(result.recorded || []).length} recorded.</b>
+              {(result.skipped || []).length ? <> {(result.skipped || []).length} skipped.</> : null}
+            </p>
+            {(result.skipped || []).length > 0 && (
+              <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid var(--line-cool-soft,#e6e9f0)", borderRadius: 10, padding: 10, marginBottom: 12 }}>
+                {result.skipped.map((x, i) => (
+                  <div key={i} style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+                    <b>{x.name || x.studentId}</b> — {{
+                      no_guardian_on_file: "no guardian on the record, so there is nobody to record as having consented. Add the guardian first.",
+                      already_verified: "already verified.",
+                      use_review_desk: "a public sign-up — use the review desk.",
+                      not_pending: "not awaiting a parent.",
+                      not_found: "no such record.",
+                    }[x.reason] || x.reason}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-primary btn-sm" onClick={onDone}>Done</button>
+            </div>
+          </div>
+        ) : !meta ? <div className="dash-spinner"/> : (
+        <>
+          <Row>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 4, color: "#333" }}>How was it given?</label>
+            <select className="admin-select" style={{ width: "100%" }} value={method} onChange={e => setMethod(e.target.value)}>
+              {methods.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+            </select>
+            {/* Why the method is a field and not an assumption: a safeguarding
+                review has to be able to tell a signed form from a click, and a
+                ledger that flattens the two is worse than one with gaps in it. */}
+            <p className="admin-hint" style={{ margin: "4px 0 0" }}>
+              Stored on the consent record, and kept distinct from a parent clicking the emailed link. Your name is recorded as the staff member who took it.
+            </p>
+          </Row>
+
+          {!many && (
+            <Row>
+              <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 4, color: "#333" }}>Guardian's name, as given</label>
+              <input className="admin-input" style={{ width: "100%" }} value={guardian}
+                onChange={e => setGuardian(e.target.value)} placeholder="e.g. Mrs Folake Eze"/>
+              <p className="admin-hint" style={{ margin: "4px 0 0" }}>
+                The person who consented — not your name. You are the witness, they are the guardian.
+              </p>
+            </Row>
+          )}
+
+          <Row>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 4, color: "#333" }}>What they agreed to</label>
+            <div style={{ display: "grid", gap: 6, marginTop: 4 }}>
+              {types.map(t => (
+                <div key={t.type} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                       padding: "8px 10px", borderRadius: 9,
+                       border: "1px solid " + ((t.mustAnswer && answers[t.type] === undefined) ? "rgba(245,176,38,.6)" : "var(--line-cool-soft,#e6e9f0)") }}>
+                  <span style={{ flex: "1 1 170px", fontSize: 13.5 }}>
+                    {t.label}
+                    {t.required && <span className="admin-hint" style={{ marginLeft: 6 }}>required</span>}
+                  </span>
+                  {t.required ? (
+                    <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+                      <input type="checkbox" checked={!!answers[t.type]}
+                        onChange={e => setAnswers(a => Object.assign({}, a, { [t.type]: e.target.checked }))}/>
+                      Granted
+                    </label>
+                  ) : (
+                    /* Yes AND no, both explicit. A single tickbox left unticked
+                       cannot tell "they said no" from "nobody asked", and those
+                       are different records. */
+                    <span style={{ display: "inline-flex", gap: 6 }}>
+                      {[["Yes", true], ["No", false]].map(([label, val]) => (
+                        <button key={label} type="button"
+                          onClick={() => setAnswers(a => Object.assign({}, a, { [t.type]: val }))}
+                          className={"btn btn-sm " + (answers[t.type] === val ? "btn-primary" : "btn-ghost")}>{label}</button>
+                      ))}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            {unanswered.length > 0 && (
+              <p className="admin-hint" style={{ margin: "6px 0 0", color: "#8a5a00" }}>
+                {unanswered.length} still unanswered. These are free choices — refusing must never cost a child their place, so they have to be recorded either way rather than defaulted.
+              </p>
+            )}
+          </Row>
+
+          <Row>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 4, color: "#333" }}>Note (optional)</label>
+            <input className="admin-input" style={{ width: "100%" }} value={note} maxLength={300}
+              onChange={e => setNote(e.target.value)} placeholder="e.g. Form collected at the Saturday desk, filed in the Egbeda folder"/>
+          </Row>
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
+            <button className="btn btn-primary btn-sm" onClick={submit} disabled={!ready || busy}>
+              {busy ? "Recording…" : many ? "Record for " + rows.length : "Record consent"}
+            </button>
+          </div>
+        </>
+        )}
+      </div>
     </div>
   );
 }

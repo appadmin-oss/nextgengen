@@ -108,6 +108,46 @@ button{margin-top:20px;padding:12px 22px;border:0;border-radius:12px;background:
 <h1>You're offline</h1><p>This page hasn't been opened on this device before, so there's no copy saved here yet. Anything you'd already filled in is safe.</p>
 <button onclick="location.reload()">Try again</button>`;
 
+/* A SLOW server is not an offline browser, and answering as though it were is
+ * how a struggling deploy becomes a dead site.
+ *
+ * `fetch()` here had no ceiling, so when the origin stopped answering — a deploy
+ * replaying schema, a full PHP-FPM pool, anything — every navigation sat pending
+ * for minutes and then reported "Offline and not cached" while a perfectly good
+ * shell sat in the cache the whole time. The browser's own network panel showed
+ * it plainly: 28 requests, 1.7 kB transferred, five minutes to finish.
+ *
+ * So the network gets a deadline, and missing it is treated exactly like being
+ * offline: serve what we have. The deadline is generous enough that a slow phone
+ * on a slow link still wins the race, and short enough that a stuck origin does
+ * not hold the screen hostage. Only for documents and fixed-name bundles — /api/
+ * is never intercepted, so live data keeps whatever timeout the client sets. */
+const SW_NET_TIMEOUT_MS = 9000;
+
+/* The status line is the only diagnostic that reaches somebody's network panel
+ * on a phone, and "Offline and not cached" sent everybody hunting a connection
+ * problem while the origin was the thing that was stuck. Name which happened. */
+function swWhy(err) {
+  return (err && err.message === 'sw_network_timeout')
+    ? 'Server did not answer in time'
+    : 'Offline and not cached';
+}
+
+function fetchWithin(req, ms) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error('sw_network_timeout'));
+    }, ms);
+    fetch(req).then(
+      (res) => { if (settled) return; settled = true; clearTimeout(timer); resolve(res); },
+      (err) => { if (settled) return; settled = true; clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -129,14 +169,14 @@ self.addEventListener('fetch', (event) => {
       const hit = await caches.match(req);
       if (hit) return hit;
       try {
-        const res = await fetch(req);
+        const res = await fetchWithin(req, SW_NET_TIMEOUT_MS);
         if (res && res.status === 200 && res.type === 'basic') {
           const copy = res.clone();
           caches.open(RUNTIME_CACHE).then(c => c.put(req, copy));
         }
         return res;
-      } catch (_) {
-        return new Response('', { status: 504, statusText: 'Offline and not cached' });
+      } catch (e) {
+        return new Response('', { status: 504, statusText: swWhy(e) });
       }
     })());
     return;
@@ -147,16 +187,16 @@ self.addEventListener('fetch', (event) => {
   if (isNav || NETWORK_FIRST.test(url.pathname)) {
     event.respondWith((async () => {
       try {
-        const res = await fetch(req);
+        const res = await fetchWithin(req, SW_NET_TIMEOUT_MS);
         if (res && res.status === 200 && res.type === 'basic') {
           const copy = res.clone();
           caches.open(RUNTIME_CACHE).then(c => c.put(req, copy));
         }
         return res;
-      } catch (_) {
+      } catch (e) {
         const hit = await caches.match(req, { ignoreSearch: isNav });
         if (hit) return hit;
-        if (!isNav) return new Response('', { status: 504, statusText: 'Offline and not cached' });
+        if (!isNav) return new Response('', { status: 504, statusText: swWhy(e) });
         /* A navigation ALWAYS gets a document. Falling through to a 504 here
            renders the browser's own "site can't be reached" page over a working
            offline app, and it did so for any route the shell had not been cached
@@ -177,12 +217,12 @@ self.addEventListener('fetch', (event) => {
         caches.open(RUNTIME_CACHE).then(c => c.put(req, copy));
       }
       return res;
-    }).catch(() =>
+    }).catch((e) =>
       // This branch is only reached when the cache MISSED (hit was falsy) and
       // the network then failed, so the old `() => hit` resolved with undefined
       // — which rejects the respondWith and surfaces as an opaque fetch error
       // rather than a response. Answer with a real one instead.
-      new Response('', { status: 504, statusText: 'Offline and not cached' })
+      new Response('', { status: 504, statusText: swWhy(e) })
     ))
   );
 });

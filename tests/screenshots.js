@@ -113,6 +113,19 @@ function seed() {
       s += `db_insert('infractions', ['personId'=>'${sid}','personType'=>'student','kind'=>'lateness','date'=>gmdate('Y-m-d', time()-${n * 3}*86400),'note'=>'Arrived after the second bell','createdAt'=>now_iso()]);`;
     }
   });
+  /* Desk registrations still waiting on a parent — the queue the consent
+     recorder exists for. One has no guardian on file, which is the row a bulk
+     record has to skip rather than invent a name for. */
+  [['Ifeoma Nwachukwu', 'Mrs Nwachukwu', 'Egbeda', 6],
+   ['Sade Balogun', 'Mr Balogun', 'Alimosho', 11],
+   ['Tobi Ogun', '', 'Ayobo', 3]].forEach(([name, guardian, centre, waited], i) => {
+    s += `db_insert('summer_students', ['studentId'=>'SUM-26-P0${i}','cohortId'=>'C1','fullName'=>${JSON.stringify(name)},`
+      + `'age'=>12,'dob'=>gmdate('Y-m-d', strtotime('-12 years -2 months')),'centre'=>${JSON.stringify(centre)},'track'=>'STEM',`
+      + `'status'=>'active','regStatus'=>'parent_pending','guardianName'=>${JSON.stringify(guardian)},`
+      + `'guardianPhone'=>'080300001${i}','parentEmail'=>${JSON.stringify(guardian ? 'g' + i + '@example.org' : '')},`
+      + `'enrolledAt'=>gmdate('Y-m-d\\TH:i:s\\Z', time()-${waited}*86400),'updatedAt'=>now_iso()]);`;
+  });
+
   // A couple of pending self-registrations, so the review queue is not empty.
   s += `db_insert('summer_students', ['studentId'=>'SUM-26-900','cohortId'=>'C1','fullName'=>'Blessing Eze','age'=>12,'centre'=>'Alimosho','track'=>'Arts','status'=>'active','regStatus'=>'self_pending','submittedVia'=>'${GATE_SELF}','guardianName'=>'Mrs Eze','guardianPhone'=>'08031234567','parentEmail'=>'eze@example.org','enrolledAt'=>now_iso(),'updatedAt'=>now_iso()]);`;
 
@@ -333,6 +346,39 @@ function seed() {
         await zone2.screenshot({ path: file });
         shots.push({ name: '22-student-ids-real', label: 'Summer student IDs from the same database, for comparison', kb: Math.round(fs.statSync(file).size / 1024) });
         console.log('  ✓ 22-student-ids-real.png  (' + shots[shots.length - 1].kb + ' KB) — student IDs, real rows');
+      }
+      await ctx.close();
+    }
+
+    /* ── 1b2 · Recording a consent a family gave off-line ────────────────────
+     * The queue where a desk registration waits for a parent to click a link,
+     * and the sheet for the ones it will never reach. */
+    {
+      const ctx = await desktop(adminTok);
+      const page = await ctx.newPage();
+      await page.setViewportSize({ width: 1280, height: 1000 });
+      await goto(page, '/nextadmin', '.admin-shell');
+      await page.evaluate(() => window.__adminSection && window.__adminSection('registration', 'pending'));
+      await page.waitForTimeout(1400);
+      // The section opens on its own default tab; click through to the queue.
+      const pt = await page.$('.admin-anchor-tab:has-text("Pending sign-ups")');
+      if (pt) { await pt.click(); await page.waitForTimeout(2200); }
+      // Tick two rows so the bulk bar is visible, then open the sheet.
+      const boxes = await page.$$('.admin-table tbody input[type=checkbox]');
+      for (const b of boxes.slice(0, 2)) { await b.click(); await page.waitForTimeout(200); }
+      await page.waitForTimeout(600);
+      await shoot(page, '24-consent-pending', 'Awaiting a parent — select the forms you are holding');
+      const rec = await page.$('button:has-text("Record consent for")');
+      if (rec) {
+        await rec.click();
+        await page.waitForTimeout(1600);
+        const sheet = await page.$('div[role=dialog] > div');
+        if (sheet) {
+          const file = path.join(OUT, '25-consent-recorder.png');
+          await sheet.screenshot({ path: file });
+          shots.push({ name: '25-consent-recorder', label: 'Recording an off-line consent — method, permissions, and each child\'s own guardian', kb: Math.round(fs.statSync(file).size / 1024) });
+          console.log('  ✓ 25-consent-recorder.png  (' + shots[shots.length - 1].kb + ' KB) — consent recorder');
+        }
       }
       await ctx.close();
     }
