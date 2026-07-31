@@ -341,6 +341,24 @@ function seed() {
       await ctx.close();
     }
 
+    // ── 5a · The closed intake — the screen a family gets after the date ─────
+    {
+      /* Past its closing date the public link used to say "this link isn't open,
+         ask for the current one" — for a link that is correct and an intake that
+         is over. This is the screen that replaced it. */
+      php(`db_insert('centres', ['centreId'=>'CT9','name'=>'Ijaiye','code'=>'IJY','status'=>'active','color'=>'#2e7dd1','area'=>'Ijaiye-Ojokoro','address'=>'4 Community Hall Road, Ijaiye','meetDays'=>'Mon - Fri','meetTime'=>'9am - 2pm','createdAt'=>now_iso()]);`
+        + `setting_set('selfreg_closed_note', 'The July intake filled up in four days. September places open next.', 'seed');`
+        + `setting_set('selfreg_reopens', '2026-09-01', 'seed');`
+        + `db_update('gate_links', ['expiresAt' => gmdate('Y-m-d\\TH:i:s\\Z', time() - 3600)], ['gateId' => '${GATE_SELF}']);`);
+      const ctx = await phone(null);
+      const page = await ctx.newPage();
+      await goto(page, '/apply?g=' + GATE_SELF, 'h1');
+      await shoot(page, '15-signup-closed', 'Sign-ups closed — where to go instead, not a dead end');
+      await ctx.close();
+      php(`db_update('gate_links', ['expiresAt' => ''], ['gateId' => '${GATE_SELF}']);`
+        + `setting_set('selfreg_closed_note', '', 'seed'); setting_set('selfreg_reopens', '', 'seed');`);
+    }
+
     // ── 5b · Consent: one tick, one document, publication kept separate ──────
     {
       const ctx = await phone(null);

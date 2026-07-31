@@ -158,8 +158,29 @@ function selfreg_gate(string $gateId, string $kind): ?array {
  *  consents spelled out — because the family should read what they are
  *  agreeing to on the way in, not for the first time in an email. */
 function selfreg_context(array $p): array {
-    $gate = selfreg_gate((string)($p['gate'] ?? ''), 'self');
-    if (!$gate) return ['ok' => false, 'error' => 'gate_invalid'];
+    $gid = (string)($p['gate'] ?? '');
+    $gate = selfreg_gate($gid, 'self');
+    if (!$gate) {
+        /* An EXPIRED public link is a closed intake, not a bad link.
+         *
+         * gate_resolve treats both the same and returns null, so a family
+         * arriving one day after the closing date got "this link isn't open —
+         * ask your centre coordinator for the current one". There is no current
+         * one; the intake is over. That sends somebody chasing a link that does
+         * not exist instead of telling them the door is closed and where the
+         * other one is. Expiry IS the close switch — the admin already sets it
+         * with "How long should this link work?" — so it renders the closed
+         * screen with the centres on it.
+         *
+         * A revoked or non-existent link stays `gate_invalid`: that one really
+         * is the wrong link, and saying "we are closed" about a URL somebody
+         * mistyped would be a lie. */
+        if (selfreg_gate_expired($gid)) {
+            return ['ok' => true, 'expired' => true, 'open' => false,
+                    'closed' => selfreg_closed_notice()];
+        }
+        return ['ok' => false, 'error' => 'gate_invalid'];
+    }
     $ctx = gate_context(['gate' => (string)($p['gate'] ?? '')]);
     if (empty($ctx['ok'])) return $ctx;
     $ctx['selfServe'] = true;
@@ -171,6 +192,9 @@ function selfreg_context(array $p): array {
     // A cap the admin controls, so a link that leaks cannot be used to fill
     // the review queue with thousands of rows overnight.
     $ctx['open'] = selfreg_is_open();
+    // Only when it is shut — a family on an open form has no use for it, and it
+    // is a second query plus the whole centre list.
+    if (!$ctx['open']) $ctx['closed'] = selfreg_closed_notice();
     return $ctx;
 }
 
@@ -179,6 +203,94 @@ function selfreg_context(array $p): array {
 function selfreg_is_open(): bool {
     $s = setting_raw('selfreg_closed');
     return trim((string)$s) !== '1';
+}
+
+/** Is this a real, un-revoked PUBLIC link whose validity window has simply
+ *  passed? The one case that must read as "we are closed" rather than "your link
+ *  is wrong" — the family has the right link and the intake is over. */
+function selfreg_gate_expired(string $gateId): bool {
+    if ($gateId === '') return false;
+    $g = db_row("SELECT kind, status, expiresAt FROM gate_links WHERE gateId = ? LIMIT 1", [$gateId]);
+    return $g
+        && trim((string)($g['kind'] ?? '')) === 'self'
+        && (string)$g['status'] === 'active'
+        && trim((string)($g['expiresAt'] ?? '')) !== ''
+        && (string)$g['expiresAt'] < now_iso();
+}
+
+/**
+ * What a family sees when the online door is shut.
+ *
+ * A closed sign-up is not an error and must not read like one. The family has
+ * done nothing wrong, the link they were given still works, and — this is the
+ * part that matters — there is almost always still a way in: every centre
+ * registers children at the door. So the closed screen's job is to hand them
+ * that, with the addresses and the days, rather than to apologise and stop.
+ *
+ * Everything here is admin-editable, because the true reason changes: an intake
+ * that filled up needs different wording from a season that has ended, and
+ * "closed" with no reason invites a family to keep refreshing.
+ */
+function selfreg_closed_notice(): array {
+    $note = trim((string)setting_raw('selfreg_closed_note'));
+    $reopens = trim((string)setting_raw('selfreg_reopens'));
+    /* Centres to walk into. Name, area and meeting days only — enough to find
+     * the place and turn up on a day somebody is there. Deliberately not the
+     * lead volunteer's phone number: this page is public and that is a person's
+     * mobile, not a switchboard. */
+    $centres = [];
+    foreach (db_all("SELECT name, area, address, meetDays, meetTime, whatsappUrl
+                     FROM centres WHERE status = 'active' ORDER BY name") as $c) {
+        $centres[] = [
+            'name' => (string)$c['name'], 'area' => (string)($c['area'] ?? ''),
+            'address' => (string)($c['address'] ?? ''),
+            'meetDays' => (string)($c['meetDays'] ?? ''), 'meetTime' => (string)($c['meetTime'] ?? ''),
+            'whatsappUrl' => (string)($c['whatsappUrl'] ?? ''),
+        ];
+    }
+    return [
+        'note' => mb_substr($note, 0, 600),
+        'reopens' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $reopens) ? $reopens : '',
+        'centres' => $centres,
+        'contact' => (string)(idcard_program()['phone'] ?? ''),
+    ];
+}
+
+/**
+ * Open or close the public sign-up link.
+ *
+ * A separate control from revoking the gate. Revoking kills the URL, so a family
+ * who already has it gets "this link isn't valid" — which reads as though they
+ * were sent something wrong. Closing keeps the link working and answers the
+ * question they actually have: is this still open, and what do I do instead.
+ */
+function admin_selfreg_set_open(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $open = !empty($p['open']);
+    $by = (string)$g['requester']['memberId'];
+    setting_set('selfreg_closed', $open ? '' : '1', $by);
+    if (array_key_exists('note', $p)) setting_set('selfreg_closed_note', mb_substr(trim((string)$p['note']), 0, 600), $by);
+    if (array_key_exists('reopens', $p)) {
+        $r = trim((string)$p['reopens']);
+        // A date or nothing. A malformed one would render as a promise nobody made.
+        setting_set('selfreg_reopens', preg_match('/^\d{4}-\d{2}-\d{2}$/', $r) ? $r : '', $by);
+    }
+    audit('selfreg.' . ($open ? 'opened' : 'closed'), $by, '', ['reopens' => (string)($p['reopens'] ?? '')], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'open' => $open] + selfreg_state();
+}
+
+/** The current door state, for the admin console. */
+function selfreg_state(): array {
+    return [
+        'open' => selfreg_is_open(),
+        'note' => (string)setting_raw('selfreg_closed_note'),
+        'reopens' => (string)setting_raw('selfreg_reopens'),
+    ];
+}
+
+function admin_selfreg_state(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    return ['ok' => true] + selfreg_state();
 }
 
 /** The consent wording, as the public form shows it. One source, so the form
@@ -256,8 +368,15 @@ function selfreg_record_consents(string $studentId, bool $publication, string $a
 function selfreg_submit(array $p): array {
     $gateId = (string)($p['gate'] ?? '');
     $gate = selfreg_gate($gateId, 'self');
-    if (!$gate) return ['ok' => false, 'error' => 'gate_invalid'];
-    if (!selfreg_is_open()) return ['ok' => false, 'error' => 'closed'];
+    if (!$gate) {
+        // Finished the form after the closing date — same distinction as above,
+        // and the same alternative rather than a bare "invalid link".
+        if (selfreg_gate_expired($gateId)) return ['ok' => false, 'error' => 'closed', 'closed' => selfreg_closed_notice()];
+        return ['ok' => false, 'error' => 'gate_invalid'];
+    }
+    // Closed mid-fill: carry the notice, so the family gets the alternative on
+    // the spot rather than a bare code after five minutes of typing.
+    if (!selfreg_is_open()) return ['ok' => false, 'error' => 'closed', 'closed' => selfreg_closed_notice()];
 
     /* Consent, before a row exists. Checked here and not merely in the UI: the
      * endpoint is public and a submission with no consent is not a registration

@@ -1703,8 +1703,14 @@ function SummerGates() {
   };
   const setValidity = async (g) => {
     const v = await dialog.prompt({
-      title: "How long should this link work?",
-      body: "Days from now, or a date (YYYY-MM-DD) — a date means the end of that day. Blank or 0 means it never expires. Expiry is enforced on the desk itself, not just hidden here.",
+      title: g.kind === "self" ? "When should sign-ups close?" : "How long should this link work?",
+      body: (g.kind === "self"
+        /* For a PUBLIC link this control is the close switch, so say so here
+           rather than leaving an admin to discover it. Past the date the family
+           does not get "invalid link" — they get a closed-intake page listing
+           the centres they can walk into, which is the point. */
+        ? "Days from now, or a date (YYYY-MM-DD) — a date means the end of that day. Blank or 0 means it never closes.\n\nAfter this, the link still works: families see \u201cOnline sign-up is closed just now\u201d with your centres, their addresses and meeting days, so they can register in person. Nobody is told their link is broken."
+        : "Days from now, or a date (YYYY-MM-DD) — a date means the end of that day. Blank or 0 means it never expires. Expiry is enforced on the desk itself, not just hidden here."),
       cta: "Save", placeholder: "e.g. 7  or  2026-08-31",
       value: g.expiresAt ? String(g.expiresAt).slice(0, 10) : "", required: false,
     });

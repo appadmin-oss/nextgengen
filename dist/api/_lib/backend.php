@@ -356,6 +356,11 @@ function backend_dispatch(string $op, array $args = []): array {
             'selfreg.context'         => 'selfreg_context',
             'selfreg.submit'          => 'selfreg_submit',
             'selfreg.queue'           => 'selfreg_queue',
+            // Open/close the public sign-up link. A different act from revoking
+            // the gate: revoking kills the URL, closing keeps it working and
+            // tells the family where to go instead.
+            'admin.selfreg.state'     => 'admin_selfreg_state',
+            'admin.selfreg.setOpen'   => 'admin_selfreg_set_open',
             'selfreg.approve'         => 'selfreg_approve',
             'selfreg.approveBulk'     => 'selfreg_approve_bulk',
             'selfreg.reject'          => 'selfreg_reject',

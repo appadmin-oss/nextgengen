@@ -6424,6 +6424,62 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         // every existing count that keys on those is untouched by definition.
         return (int)db_row("SELECT COUNT(*) c FROM summer_students WHERE regStatus='self_pending'")['c'] >= 1;
     })());
+    /* An EXPIRED public link is a closed intake, not a broken link.
+     *
+     * gate_resolve returns null for both, so a family arriving the day after the
+     * closing date used to be told "this link isn't open — ask your centre
+     * coordinator for the current one". There is no current one; the intake is
+     * over, and that message sends somebody chasing a link that does not exist.
+     * The link's own end date is the close switch, and past it the family gets
+     * the closed screen with the centres they can walk into. */
+    chk('a public link past its closing date reads as closed, not as invalid', (function () use ($SELF) {
+        db_update('gate_links', ['expiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 3600)], ['gateId' => $SELF['gateId']]);
+        $ctx = backend_dispatch('selfreg.context', ['gate' => $SELF['gateId']]);
+        $sub = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'data' => ['firstName' => 'X'], 'photo' => 'x']);
+        db_update('gate_links', ['expiresAt' => ''], ['gateId' => $SELF['gateId']]);
+        return !empty($ctx['ok']) && ($ctx['expired'] ?? false) === true && ($ctx['open'] ?? true) === false
+            // …and it hands over the alternative rather than stopping at "no".
+            && is_array($ctx['closed'] ?? null) && array_key_exists('centres', $ctx['closed'])
+            // Finishing the form after the date gets the same, not a bare code.
+            && ($sub['error'] ?? '') === 'closed' && is_array($sub['closed'] ?? null);
+    })());
+    chk('…while a revoked or unknown link is still an invalid link, not a closed intake', (function () {
+        // Saying "we are closed" about a URL somebody mistyped would be a lie.
+        $bogus = backend_dispatch('selfreg.context', ['gate' => 'GL-DOES-NOT-EXIST']);
+        return ($bogus['error'] ?? '') === 'gate_invalid';
+    })());
+    chk('…and the closed notice carries somewhere to actually go', (function () {
+        backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => [
+            'name' => 'Closedtown', 'code' => 'CTW', 'color' => '#123456',
+            'area' => 'Egbeda', 'address' => '12 Test Road', 'meetDays' => 'Mon–Fri', 'meetTime' => '9am–2pm']]);
+        $n = selfreg_closed_notice();
+        db_exec("DELETE FROM centres WHERE name = 'Closedtown'");
+        foreach ($n['centres'] as $c) {
+            if ($c['name'] !== 'Closedtown') continue;
+            // Enough to find the place and turn up on a day somebody is there.
+            return $c['address'] === '12 Test Road' && $c['meetDays'] === 'Mon–Fri'
+                // And deliberately NOT the lead volunteer's mobile: this page is
+                // public and that is a person, not a switchboard.
+                && !array_key_exists('leadVolunteerId', $c) && !array_key_exists('phone', $c);
+        }
+        return false;
+    })());
+    chk('an admin can also pause every public link at once, and set the words families read', (function () use ($SELF) {
+        $r = backend_dispatch('admin.selfreg.setOpen', ['requesterId' => 'NGG-2025-0099', 'open' => false,
+            'note' => 'This intake filled up in four days.', 'reopens' => '2026-09-01']);
+        $ctx = backend_dispatch('selfreg.context', ['gate' => $SELF['gateId']]);
+        $bad = backend_dispatch('admin.selfreg.setOpen', ['requesterId' => 'NGG-2025-0099', 'open' => false, 'reopens' => 'soon-ish']);
+        backend_dispatch('admin.selfreg.setOpen', ['requesterId' => 'NGG-2025-0099', 'open' => true, 'note' => '', 'reopens' => '']);
+        return !empty($r['ok']) && ($ctx['open'] ?? true) === false
+            && ($ctx['closed']['note'] ?? '') === 'This intake filled up in four days.'
+            && ($ctx['closed']['reopens'] ?? '') === '2026-09-01'
+            // A date we cannot parse is dropped, not shown — it would render as
+            // a promise nobody made.
+            && ($bad['reopens'] ?? 'x') === '';
+    })());
+    chk('…and only a summer-capable admin can touch the door',
+        (backend_dispatch('admin.selfreg.setOpen', ['requesterId' => 'NGG-2025-0001', 'open' => false])['error'] ?? '') === 'forbidden');
+
     chk('an admin can close the public door without revoking the link', (function () use ($SELF, $form, $good) {
         setting_set('selfreg_closed', '1', 'test');
         $shut = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'data' => $form, 'photo' => $good]);

@@ -699,6 +699,13 @@
         gateRotation: (gateId, rotateDays, notifyEmail, expiryDays) => request('/admin/registration.php', { body: { action: 'gate_rotation', gateId, rotateDays, notifyEmail: notifyEmail || '', expiryDays: expiryDays || 0 } }),
         gateRevoke: (gateId) => request('/admin/registration.php', { body: { action: 'gate_revoke', gateId } }),
         gateDelete: (gateId) => request('/admin/registration.php', { body: { action: 'gate_delete', gateId } }),
+        /* The public sign-up door.
+           The normal way to close it is the LINK'S OWN end date (gateValidity) —
+           per-intake, already in the UI, and what an admin reaches for. These
+           two are the global override for pausing every public link at once, and
+           for the note families read on the closed screen. */
+        selfregState: () => request('/admin/registration.php' + qs({ view: 'selfreg' })),
+        selfregSetOpen: (open, note, reopens) => request('/admin/registration.php', { body: { action: 'selfreg_open', open: !!open, note: note || '', reopens: reopens || '' } }),
         // Search/filter/page are server-side: at a hundred centres the cohort is
         // far too large to ship to the browser and filter there.
         list:       (opts) => request('/admin/registration.php' + qs(Object.assign({ view: 'registrations' }, opts || {}))),

@@ -6,7 +6,8 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'registrations');
-    if ($view === 'forms')           $res = gs_call('admin.forms.list', ['requesterId' => $s['mid']]);
+    if ($view === 'selfreg')         $res = gs_call('admin.selfreg.state', ['requesterId' => $s['mid']]);
+    elseif ($view === 'forms')       $res = gs_call('admin.forms.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'form')        $res = gs_call('admin.forms.get', ['requesterId' => $s['mid'], 'formId' => (string)($_GET['formId'] ?? 'summer-reg')]);
     elseif ($view === 'gates')       $res = gs_call('admin.gates.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'registrations') $res = gs_call('admin.registrations.list', [
@@ -33,6 +34,8 @@ if ($method === 'GET') {
     elseif ($action === 'gate_rotation') $res = gs_call('admin.gates.rotation', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'rotateDays' => $b['rotateDays'] ?? 0, 'expiryDays' => $b['expiryDays'] ?? 0, 'notifyEmail' => $b['notifyEmail'] ?? '', 'ip' => $ip]);
     elseif ($action === 'gate_revoke') $res = gs_call('admin.gates.revoke', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'gate_delete') $res = gs_call('admin.gates.delete', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'selfreg_open') $res = gs_call('admin.selfreg.setOpen', ['requesterId' => $s['mid'], 'ip' => $ip,
+        'open' => !empty($b['open']), 'note' => $b['note'] ?? '', 'reopens' => $b['reopens'] ?? '']);
     elseif ($action === 'remind')      $res = gs_call('admin.registrations.remind', ['requesterId' => $s['mid'], 'studentId' => $b['studentId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'remind_bulk') $res = gs_call('admin.registrations.remindBulk', ['requesterId' => $s['mid'],
         'centre' => $b['centre'] ?? '', 'quietDays' => $b['quietDays'] ?? 1, 'limit' => $b['limit'] ?? 100, 'ip' => $ip]);
