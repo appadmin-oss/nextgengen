@@ -2543,82 +2543,42 @@ function ParentVerifyPage() {
      email — and it says plainly which ones are optional.
    · The end state says what happens next and when, because the one thing this
      flow cannot do is confirm a place. */
-/* The closed door, and the way in that is still open.
+/* The closed door.
  *
- * Ordered by what the family can act on: walk in somewhere (with where and
- * when), then when this form reopens if anybody has said, then who to ask. The
- * admin's own note goes above all of it when there is one, because the true
- * reason changes — a full intake and a finished season need different words, and
- * "closed" with no reason invites somebody to keep refreshing. */
-function SelfRegClosed({ info, gold, goldInk }) {
-  const centres = info.centres || [];
-  const card = { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14 };
-  const mut = { color: "rgba(230,238,255,.62)" };
-  const when = (() => {
-    if (!info.reopens) return "";
-    const d = new Date(info.reopens + "T00:00:00");
-    if (isNaN(d.getTime())) return "";
-    return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
-  })();
-
-  return <>
-    <div style={{ marginBottom: 18 }}>
+ * One generic message that is true for every family, and nothing else. The first
+ * version listed every centre with its address and meeting days — which is a
+ * wall of detail for somebody who only needs to know the form is shut and to go
+ * to their own centre, goes stale the moment a centre moves, and publishes the
+ * programme's whole physical footprint on a public page.
+ *
+ * The only variable part is the note an admin writes, because the reason changes
+ * and "closed" with no reason invites somebody to keep refreshing.
+ */
+function SelfRegClosed({ info, gold }) {
+  const mut = { color: "rgba(230,238,255,.68)" };
+  return (
+    <div style={{ padding: "60px 0" }}>
       <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>NGG SUMMER SCHOOL</div>
-      <h1 style={{ fontSize: 25, margin: "6px 0 0", fontWeight: 800 }}>Online sign-up is closed just now</h1>
-      <p style={{ ...mut, fontSize: 15, lineHeight: 1.6, marginTop: 10 }}>
-        Your link is fine and nothing you did is wrong — we've paused the online form.
-        {centres.length > 0
-          ? " You can still register your child in person, at any centre below."
-          : " Your centre coordinator can still register your child in person."}
+      <h1 style={{ fontSize: 25, margin: "8px 0 0", fontWeight: 800, lineHeight: 1.2 }}>Online sign-up is closed</h1>
+      <p style={{ ...mut, fontSize: 15.5, lineHeight: 1.65, marginTop: 12 }}>
+        Your link is fine and nothing you did is wrong — we've closed the online form for now.
+      </p>
+      <p style={{ ...mut, fontSize: 15.5, lineHeight: 1.65, marginTop: 10 }}>
+        You can still register your child <b style={{ color: "#fff" }}>in person at your nearest NGG centre</b>.
+        Bring your child; it takes a few minutes at the desk, there's nothing to print and nothing to pay.
+        Your centre coordinator can also tell you when sign-ups reopen.
+      </p>
+      {info.note && (
+        <div style={{ marginTop: 18, padding: 15, borderRadius: 14,
+                      background: "rgba(255,206,84,.08)", border: "1px solid rgba(255,206,84,.4)" }}>
+          <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.6 }}>{info.note}</p>
+        </div>
+      )}
+      <p style={{ ...mut, fontSize: 13, lineHeight: 1.6, marginTop: 18 }}>
+        Keep this link — it's the same one, and it will work again when sign-ups reopen.
       </p>
     </div>
-
-    {/* The admin's own words, when there are any — the real reason beats any
-        wording shipped in a build. */}
-    {info.note && (
-      <div style={{ ...card, padding: 15, marginBottom: 14, borderColor: "rgba(255,206,84,.4)", background: "rgba(255,206,84,.08)" }}>
-        <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.6 }}>{info.note}</p>
-      </div>
-    )}
-
-    {centres.length > 0 && (
-      <div style={{ ...card, padding: 16, marginBottom: 14 }}>
-        <div style={{ fontWeight: 800, fontSize: 15.5, marginBottom: 3 }}>Register in person</div>
-        <p style={{ ...mut, fontSize: 13.5, margin: "0 0 12px", lineHeight: 1.55 }}>
-          Bring your child. It takes a few minutes at the desk — no form to print, nothing to pay.
-        </p>
-        <div style={{ display: "grid", gap: 10 }}>
-          {centres.map((c, i) => (
-            <div key={i} style={{ paddingTop: i ? 10 : 0, borderTop: i ? "1px solid rgba(255,255,255,.09)" : "none" }}>
-              <div style={{ fontWeight: 700, fontSize: 14.5 }}>{c.name}{c.area ? <span style={{ ...mut, fontWeight: 400 }}> · {c.area}</span> : null}</div>
-              {c.address && <div style={{ ...mut, fontSize: 13, marginTop: 2, lineHeight: 1.5 }}>{c.address}</div>}
-              {(c.meetDays || c.meetTime) && (
-                <div style={{ fontSize: 13, marginTop: 3, color: "#a7e8c6" }}>
-                  {[c.meetDays, c.meetTime].filter(Boolean).join(" · ")}
-                </div>
-              )}
-              {c.whatsappUrl && <a href={c.whatsappUrl} target="_blank" rel="noopener noreferrer"
-                style={{ color: gold, fontSize: 13, fontWeight: 700, display: "inline-block", marginTop: 4 }}>Message this centre ↗</a>}
-            </div>
-          ))}
-        </div>
-      </div>
-    )}
-
-    {when && (
-      <div style={{ ...card, padding: 15, marginBottom: 14 }}>
-        <div style={{ fontWeight: 700, fontSize: 14.5 }}>Online sign-up reopens {when}</div>
-        <p style={{ ...mut, fontSize: 13, margin: "4px 0 0", lineHeight: 1.5 }}>
-          Keep this link — it's the same one, and it will work again from that day. There's nothing to sign up for in the meantime.
-        </p>
-      </div>
-    )}
-
-    <p style={{ ...mut, fontSize: 13, lineHeight: 1.6 }}>
-      Questions{info.contact ? <> — call <a href={"tel:" + info.contact} style={{ color: gold, fontWeight: 700 }}>{info.contact}</a></> : null}
-      {info.contact ? ", or ask" : " — ask"} the coordinator who sent you this link.
-    </p>
-  </>;
+  );
 }
 
 function SelfRegisterPage() {
@@ -2660,7 +2620,7 @@ function SelfRegisterPage() {
      leaves the one thing they need unsaid: every centre still registers children
      at the door. So the door comes first, with addresses and days, and the online
      form being shut is the second sentence rather than the whole page. */
-  if (state === "closed") return shell(<SelfRegClosed info={(ctx && ctx.closed) || {}} gold={gold} goldInk={goldInk}/>);
+  if (state === "closed") return shell(<SelfRegClosed info={(ctx && ctx.closed) || {}} gold={gold}/>);
   if (state === "error") return notice("We couldn't load the form",
     "Check your connection and refresh. Nothing you typed has been lost.");
 
@@ -2831,13 +2791,11 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
       else if (c === "duplicate_suspect") setErr("Someone has already registered this child with the same contact details. Speak to your centre coordinator rather than registering twice.");
       else if (c === "closed") {
         /* Closed while they were filling it in. They have typed everything and
-           the draft is still on the device — so give them the way in, not a
-           one-line refusal after five minutes of work. */
+           the draft is still on the device — so say both, rather than refusing in
+           one line after five minutes of work. */
         const ci = (e.data && e.data.closed) || {};
-        const where = (ci.centres || []).slice(0, 3).map(x => x.name).join(", ");
         setErr("Online sign-up closed while you were filling this in — sorry. Your answers are saved on this device. "
-          + (where ? "You can register in person at " + where + (ci.centres.length > 3 ? " or any other centre." : ".")
-                   : "Your centre coordinator can register your child in person.")
+          + "You can register your child in person at your nearest NGG centre."
           + (ci.note ? " " + ci.note : ""));
       }
       /* Not a dead end: the server is still working on THIS submission, and the

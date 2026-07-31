@@ -1206,6 +1206,9 @@ function AnDepth({ filters }) {
   const h = d.headline || {};
   const ct = d.crosstab || { rows: [], cols: [] };
   const wd = d.weekday || { days: [], centres: [] };
+  const sp = d.spread || null;
+  const dose = d.dose || [];
+  const pw = d.power || null;
 
   return (
     <section className="an-sec" id="an-depth">
@@ -1398,6 +1401,124 @@ function AnDepth({ filters }) {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* What the headline rate hides. One average describes two opposite
+          programmes, and the average is the statistic guaranteed not to show it. */}
+      {sp && (
+        <div className="an-card" style={{ marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>Who the average is made of</h3>
+          <p className="an-sub" style={{ marginTop: 0 }}>
+            “70% attendance” is either everyone coming seven days in ten, or half the children coming almost every day
+            while the other half barely come at all. Those are different programmes with the same number.
+          </p>
+          {!sp.ok
+            ? <div className="an-empty">{sp.text}</div>
+            : (
+              <>
+                <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-400)', fontWeight: 700 }}>Spread</div>
+                    <b style={{ fontSize: 20, color: sp.shape === 'even' ? AN_TONE.good : sp.shape === 'uneven' ? AN_TONE.warn : AN_TONE.bad }}>
+                      {sp.shape}
+                    </b>
+                    <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>Gini {sp.gini}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-400)', fontWeight: 700 }}>Median child</div>
+                    <b style={{ fontSize: 20 }}>{sp.median}%</b>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{sp.n} children</div>
+                  </div>
+                  {/* Thirds, against what an even spread would hold — the form a
+                      coordinator can act on, unlike a bare coefficient. */}
+                  <div style={{ flex: '1 1 260px', minWidth: 240 }}>
+                    <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-400)', fontWeight: 700, marginBottom: 6 }}>
+                      Share of all attendance
+                    </div>
+                    {[['Best-attending third', sp.topThirdShare, AN_TONE.good],
+                      ['Weakest third', sp.bottomThirdShare, AN_TONE.bad]].map(([label, val, tone]) => (
+                      <div key={label} style={{ marginBottom: 7 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 2 }}>
+                          <span style={{ color: 'var(--ink-600)' }}>{label}</span>
+                          <b className="mono">{val}%</b>
+                        </div>
+                        <div style={{ position: 'relative', height: 8, borderRadius: 4, background: '#eef1f6' }}>
+                          <div style={{ position: 'absolute', inset: 0, width: Math.min(100, val) + '%', borderRadius: 4, background: tone }}/>
+                          {/* Where an even spread would sit, so the bars are read against something. */}
+                          <div title={'Even spread: ' + sp.evenShare + '%'}
+                               style={{ position: 'absolute', top: -2, bottom: -2, left: Math.min(100, sp.evenShare) + '%', width: 2, background: 'var(--ink-500)' }}/>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Vertical mark = {sp.evenShare}%, where an even spread would put each third.</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink-600)' }}>{sp.text}</div>
+              </>
+            )}
+        </div>
+      )}
+
+      {/* Dose against outcome. The finding worth having is the absence of one. */}
+      {dose.length > 0 && (
+        <div className="an-card" style={{ marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>Does attending more actually help?</h3>
+          <p className="an-sub" style={{ marginTop: 0 }}>
+            Each child’s own attendance rate against their own outcome. If the children who come twice as often do no
+            better, attendance is not the lever it is assumed to be — and that is worth knowing before another term is
+            spent pushing it.
+          </p>
+          <div className="an-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 12 }}>
+            {dose.map(x => {
+              const tone = x.verdict === 'associated' ? AN_TONE.good
+                : (x.verdict === 'not_significant' || x.verdict === 'trivial') ? AN_TONE.warn : 'var(--ink-400)';
+              const pill = x.verdict === 'associated' ? 'association'
+                : x.verdict === 'trivial' ? 'negligible'
+                : x.verdict === 'not_significant' ? 'none found' : 'not measurable';
+              return (
+                <div key={x.key} style={{ border: '1px solid rgba(0,0,0,.08)', borderRadius: 10, padding: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                    <b style={{ fontSize: 14 }}>{x.outcome}</b>
+                    <span className="an-pill" style={{ background: 'rgba(0,0,0,.05)', color: tone }}>{pill}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)', marginBottom: 6 }}>Measured as {x.unit}</div>
+                  {x.ok ? (
+                    <div className="mono" style={{ fontSize: 12, color: 'var(--ink-500)', marginBottom: 6 }}>
+                      r = {x.r} · r² = {x.r2} · p = {x.p} · n = {x.n}
+                    </div>
+                  ) : null}
+                  <div style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink-600)' }}>{x.text}</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 6 }}>
+                    {x.covered} of {x.of} children have {x.has}. The rest are left out, not counted as zero.
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* What this cohort could even have found — the note "not significant" needs. */}
+      {pw && pw.ok && (
+        <div className="an-card" style={{ marginBottom: 16, borderLeft: '3px solid ' + (pw.blind ? AN_TONE.bad : AN_TONE.warn) }}>
+          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* Past ~50 points the figure is a verdict on the cohort, not a
+                threshold, and printing it big reads as a broken calculation. */}
+            <div style={{ minWidth: 190 }}>
+              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-400)', fontWeight: 700 }}>
+                Smallest gap this data could see
+              </div>
+              {pw.blind
+                ? <>
+                    <b style={{ fontSize: 19, color: AN_TONE.bad, lineHeight: 1.2, display: 'block' }}>Nothing realistic</b>
+                    <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>needs ~{Math.round(pw.mde)} pts</div>
+                  </>
+                : <b style={{ fontSize: 26 }}>{pw.mde} pts</b>}
+              <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{pw.power}% power · {pw.children} children per group</div>
+            </div>
+            <div style={{ flex: '1 1 300px', fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink-600)' }}>{pw.text}</div>
           </div>
         </div>
       )}

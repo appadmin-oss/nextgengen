@@ -6439,7 +6439,7 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         db_update('gate_links', ['expiresAt' => ''], ['gateId' => $SELF['gateId']]);
         return !empty($ctx['ok']) && ($ctx['expired'] ?? false) === true && ($ctx['open'] ?? true) === false
             // …and it hands over the alternative rather than stopping at "no".
-            && is_array($ctx['closed'] ?? null) && array_key_exists('centres', $ctx['closed'])
+            && is_array($ctx['closed'] ?? null)
             // Finishing the form after the date gets the same, not a bare code.
             && ($sub['error'] ?? '') === 'closed' && is_array($sub['closed'] ?? null);
     })());
@@ -6448,34 +6448,31 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         $bogus = backend_dispatch('selfreg.context', ['gate' => 'GL-DOES-NOT-EXIST']);
         return ($bogus['error'] ?? '') === 'gate_invalid';
     })());
-    chk('…and the closed notice carries somewhere to actually go', (function () {
+    /* One generic message, and the admin's optional note. The first version
+     * enumerated every centre with its address and meeting days — a wall of
+     * detail for somebody who only needs to know the form is shut, stale the
+     * moment a centre moves, and the programme's whole physical footprint on a
+     * page anyone with a link can open. */
+    chk('…and the closed notice publishes nothing about the programme\'s sites', (function () {
         backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => [
             'name' => 'Closedtown', 'code' => 'CTW', 'color' => '#123456',
-            'area' => 'Egbeda', 'address' => '12 Test Road', 'meetDays' => 'Mon–Fri', 'meetTime' => '9am–2pm']]);
+            'area' => 'Egbeda', 'address' => '12 Test Road', 'meetDays' => 'Mon–Fri']]);
+        setting_set('selfreg_closed_note', 'Back in September.', 'test');
         $n = selfreg_closed_notice();
+        $json = json_encode($n);
+        setting_set('selfreg_closed_note', '', 'test');
         db_exec("DELETE FROM centres WHERE name = 'Closedtown'");
-        foreach ($n['centres'] as $c) {
-            if ($c['name'] !== 'Closedtown') continue;
-            // Enough to find the place and turn up on a day somebody is there.
-            return $c['address'] === '12 Test Road' && $c['meetDays'] === 'Mon–Fri'
-                // And deliberately NOT the lead volunteer's mobile: this page is
-                // public and that is a person, not a switchboard.
-                && !array_key_exists('leadVolunteerId', $c) && !array_key_exists('phone', $c);
-        }
-        return false;
+        return array_keys($n) === ['note'] && $n['note'] === 'Back in September.'
+            && strpos((string)$json, 'Closedtown') === false
+            && strpos((string)$json, '12 Test Road') === false;
     })());
     chk('an admin can also pause every public link at once, and set the words families read', (function () use ($SELF) {
         $r = backend_dispatch('admin.selfreg.setOpen', ['requesterId' => 'NGG-2025-0099', 'open' => false,
-            'note' => 'This intake filled up in four days.', 'reopens' => '2026-09-01']);
+            'note' => 'This intake filled up in four days.']);
         $ctx = backend_dispatch('selfreg.context', ['gate' => $SELF['gateId']]);
-        $bad = backend_dispatch('admin.selfreg.setOpen', ['requesterId' => 'NGG-2025-0099', 'open' => false, 'reopens' => 'soon-ish']);
-        backend_dispatch('admin.selfreg.setOpen', ['requesterId' => 'NGG-2025-0099', 'open' => true, 'note' => '', 'reopens' => '']);
+        backend_dispatch('admin.selfreg.setOpen', ['requesterId' => 'NGG-2025-0099', 'open' => true, 'note' => '']);
         return !empty($r['ok']) && ($ctx['open'] ?? true) === false
-            && ($ctx['closed']['note'] ?? '') === 'This intake filled up in four days.'
-            && ($ctx['closed']['reopens'] ?? '') === '2026-09-01'
-            // A date we cannot parse is dropped, not shown — it would render as
-            // a promise nobody made.
-            && ($bad['reopens'] ?? 'x') === '';
+            && ($ctx['closed']['note'] ?? '') === 'This intake filled up in four days.';
     })());
     chk('…and only a summer-capable admin can touch the door',
         (backend_dispatch('admin.selfreg.setOpen', ['requesterId' => 'NGG-2025-0001', 'open' => false])['error'] ?? '') === 'forbidden');
@@ -7444,6 +7441,232 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             }
         }
         return true;
+    })());
+})();
+
+/* ── Level 6 depth, part two: dose–response, statistical power, concentration ──
+ *
+ * The three questions the tables cannot answer however carefully they are read:
+ * does attending more actually help, what could this cohort even have detected,
+ * and who is the headline average made of. Same discipline as above — the maths
+ * is tested without fixtures so a failure points at the formula. */
+(function () {
+    // ── Dose–response ────────────────────────────────────────────────────────
+    chk('depth: dose–response refuses to run on a handful of children', (function () {
+        $r = an_correlate([10, 20, 30, 40, 50], [1, 2, 3, 4, 5]);
+        // A perfect r on five children is exactly the shape that must NOT print.
+        return $r['ok'] === false && $r['verdict'] === 'too_few_people'
+            && strpos($r['text'], 'not a relationship') !== false;
+    })());
+    chk('depth: a real dose–response is found, and stated as association not cause', (function () {
+        $r = an_correlate(range(10, 21), range(30, 41));
+        return !empty($r['ok']) && $r['verdict'] === 'associated' && $r['r'] > 0.99 && $r['p'] < 0.001
+            && strpos($r['text'], 'association, not cause') !== false;
+    })());
+    chk('depth: an outcome everyone shares is "no variation", not r = 0', (function () {
+        // Twelve children, identical grade. r is undefined here; reporting 0 would
+        // read as "attendance does not matter" from data that cannot say either way.
+        $r = an_correlate(range(1, 12), array_fill(0, 12, 55));
+        return $r['ok'] === false && $r['verdict'] === 'no_variation'
+            && strpos($r['text'], 'nothing to relate') !== false;
+    })());
+    chk('depth: noise is reported as no association, and points at the power note', (function () {
+        $r = an_correlate(range(1, 12), [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2]);
+        return !empty($r['ok']) && $r['verdict'] === 'not_significant' && empty($r['significant'])
+            && strpos($r['text'], 'not proof there is none') !== false
+            && strpos($r['text'], 'detectable-effect') !== false;
+    })());
+
+    // ── Statistical power ────────────────────────────────────────────────────
+    chk('depth: the detectable effect shrinks as the cohort grows', (function () {
+        $small = an_detectable(70.0, 10);
+        $big = an_detectable(70.0, 160);
+        return !empty($small['ok']) && !empty($big['ok']) && $small['mde'] > $big['mde'];
+    })());
+    chk('depth: quadrupling the children halves the detectable effect', (function () {
+        // The sentence the panel prints, checked against the arithmetic behind it.
+        $a = an_detectable(70.0, 20)['mde'];
+        $b = an_detectable(70.0, 80)['mde'];
+        return abs($a / $b - 2.0) < 0.02;
+    })());
+    chk('depth: a real threshold is stated as one — a 20-point gap at 80 children', (function () {
+        /* The number that makes "no significant difference" readable: a 15-point
+           gap here could be real and still invisible, and a panel that omits this
+           invites the opposite conclusion. */
+        $r = an_detectable(70.0, 80);
+        return $r['mde'] > 15.0 && $r['mde'] < 25.0 && $r['power'] === 80 && empty($r['blind'])
+            && strpos($r['text'], 'not absent — it is invisible here') !== false;
+    })());
+    chk('depth: at this programme\'s size the figure is a verdict, not a threshold', (function () {
+        /* Ten children per group already asks for ~57 points, and five for ~81.
+           Printed as an ordinary threshold that reads as a broken calculation, and
+           a coordinator who dismisses it also dismisses the warning it carries. */
+        foreach ([10, 5] as $per) {
+            $r = an_detectable(70.0, $per);
+            if (empty($r['ok']) || empty($r['blind']) || $r['mde'] <= 50.0) return false;
+            if (strpos($r['text'], 'no realistic gap could be shown at all') === false) return false;
+            if (strpos($r['text'], 'unresolved rather than as evidence of no difference') === false) return false;
+        }
+        return true;
+    })());
+    chk('depth: too few children to state a detectable effect at all', (function () {
+        return an_detectable(70.0, 1)['ok'] === false;
+    })());
+
+    // ── Concentration ────────────────────────────────────────────────────────
+    chk('depth: a level programme is called even', (function () {
+        $r = an_concentration(array_fill(0, 12, 70.0));
+        return !empty($r['ok']) && $r['shape'] === 'even' && $r['gini'] < 0.01
+            && strpos($r['text'], 'describes most children') !== false;
+    })());
+    chk('depth: half the children carrying all the attendance is called very uneven', (function () {
+        /* Both of these average 50%. One is a healthy programme and one is a
+           retention emergency, and the headline rate is identical. */
+        $even = an_concentration(array_fill(0, 12, 50.0));
+        $split = an_concentration(array_merge(array_fill(0, 6, 100.0), array_fill(0, 6, 0.0)));
+        return $even['shape'] === 'even' && $split['shape'] === 'very uneven'
+            && $split['topThirdShare'] > 60.0 && $split['bottomThirdShare'] === 0.0
+            && abs($split['evenShare'] - 33.3) < 0.2
+            && strpos($split['text'], 'weakest third') !== false;
+    })());
+    chk('depth: a spread below the child floor is refused, not printed', (function () {
+        return an_concentration([10.0, 90.0, 50.0])['ok'] === false;
+    })());
+    chk('depth: nobody attending is not a spread', (function () {
+        $r = an_concentration(array_fill(0, 12, 0.0));
+        return $r['ok'] === false && strpos($r['text'], 'Nobody attended') !== false;
+    })());
+
+    // ── The per-child join ───────────────────────────────────────────────────
+    $mkUnits = function (int $n, int $days, callable $attend): array {
+        $dayList = [];
+        for ($i = 0; $i < $days; $i++) $dayList[] = gmdate('Y-m-d', strtotime("2026-05-04 +$i day"));
+        $students = []; $present = [];
+        for ($k = 1; $k <= $n; $k++) {
+            $sid = 'DOSE-' . $k;
+            $students[] = ['studentId' => $sid, 'centre' => 'Egbeda', 'enrolledAt' => '2026-05-01T00:00:00Z'];
+            foreach ($dayList as $di => $d) if ($attend($k, $di)) $present[$sid][$d] = true;
+        }
+        return ['days' => $dayList, 'students' => $students, 'present' => $present];
+    };
+
+    chk('depth: a child with no opportunity-days is left out, not entered as 0%', (function () use ($mkUnits) {
+        $u = $mkUnits(12, 10, fn($k, $d) => $d < $k);
+        // A thirteenth child who enrolled after the window closed.
+        $u['students'][] = ['studentId' => 'DOSE-LATE', 'enrolledAt' => '2026-09-01T00:00:00Z'];
+        $rates = an_child_rates($u);
+        return count($rates) === 12 && !isset($rates['DOSE-LATE']);
+    })());
+
+    // Twelve children attending 1..12 of twelve days, so the dose really varies.
+    $units = $mkUnits(12, 12, fn($k, $d) => $d < $k);
+    foreach ($units['students'] as $s) {
+        db_insert('summer_students', ['studentId' => $s['studentId'], 'cohortId' => 'DOSE-C', 'centre' => 'Egbeda',
+            'track' => 'Tech', 'status' => 'active', 'enrolledAt' => $s['enrolledAt'], 'updatedAt' => now_iso()]);
+    }
+    // Grades for ten of the twelve, rising with attendance.
+    db_insert('assignments', ['assignmentId' => 'DOSE-A1', 'title' => 'Dose', 'week' => 1, 'points' => 100, 'createdAt' => now_iso()]);
+    for ($k = 1; $k <= 10; $k++) {
+        db_insert('assignment_submissions', ['submissionId' => 'DOSE-S' . $k, 'assignmentId' => 'DOSE-A1',
+            'memberId' => 'DOSE-' . $k, 'status' => 'graded', 'grade' => 40 + $k * 4,
+            'submittedAt' => now_iso(), 'gradedAt' => now_iso(), 'createdAt' => now_iso()]);
+    }
+    // One star on every day each child actually attended.
+    foreach ($units['present'] as $sid => $days) {
+        foreach (array_keys($days) as $d) {
+            db_insert('member_stars', ['subjectId' => $sid, 'subjectType' => 'student', 'givenById' => 'NGG-2025-0099',
+                'stars' => 1, 'category' => 'effort', 'centre' => 'Egbeda', 'date' => $d, 'createdAt' => now_iso()]);
+        }
+    }
+
+    $panels = an_dose_response($units);
+    $byKey = []; foreach ($panels as $p) $byKey[$p['key']] = $p;
+
+    chk('depth: a child with no recorded outcome is excluded, not counted as zero', (function () use ($byKey) {
+        /* Ten of twelve have a grade. Entering the other two as zero would
+           manufacture the very association the panel exists to test — and the
+           coverage line has to say so on screen, not just in the code. */
+        $g = $byKey['grade'] ?? null;
+        return $g && $g['covered'] === 10 && $g['of'] === 12 && $g['n'] === 10;
+    })());
+    chk('depth: attendance and grades rising together is found as an association', (function () use ($byKey) {
+        $g = $byKey['grade'] ?? null;
+        return $g && !empty($g['ok']) && $g['verdict'] === 'associated' && $g['r'] > 0.9;
+    })());
+    chk('depth: stars per day attended is not a restatement of attendance', (function () use ($byKey) {
+        /* The trap this denominator exists for. One star per attended day means a
+           raw star total correlates with attendance at r = 1.0 by construction —
+           and so does stars-per-opportunity-day, which is why that denominator was
+           wrong too. Per day attended is a flat 1.0 for every child, so the panel
+           correctly reports it has nothing to relate rather than a perfect finding. */
+        $s = $byKey['stars'] ?? null;
+        return $s && $s['ok'] === false && $s['verdict'] === 'no_variation';
+    })());
+
+    // ── Findings and payload ─────────────────────────────────────────────────
+    chk('depth: an absent dose–response is raised as a warning, not left as a null result', (function () {
+        $f = an_findings(['dose' => [[
+            'key' => 'grade', 'outcome' => 'Assignment grades', 'unit' => 'average graded score',
+            'has' => 'a graded score', 'covered' => 14, 'of' => 20,
+            'ok' => true, 'verdict' => 'not_significant', 'text' => 'No association.',
+        ]]]);
+        foreach ($f as $x) if ($x['code'] === 'dose_flat') {
+            return $x['severity'] === 'warn' && strpos($x['detail'], 'what happens') !== false;
+        }
+        return false;
+    })());
+    chk('depth: a concentrated average is raised as a finding about two groups', (function () {
+        $sp = an_concentration(array_merge(array_fill(0, 6, 100.0), array_fill(0, 6, 0.0)));
+        $f = an_findings(['spread' => $sp]);
+        foreach ($f as $x) if ($x['code'] === 'attendance_concentrated') return $x['severity'] === 'bad';
+        return false;
+    })());
+    chk('depth: a flat period carries the size of the gap it could have seen', (function () {
+        /* Without this the screen says "level" and a coordinator reads "nothing
+           changed", from a cohort that could not have seen a 20-point move. */
+        $now = ['hit' => 45, 'opp' => 60, 'n' => 20] + an_ci(45, 60);
+        $prev = ['hit' => 43, 'opp' => 60, 'n' => 20] + an_ci(43, 60);
+        $f = an_findings(['now' => $now, 'prev' => $prev, 'power' => an_detectable(75.0, 40)]);
+        foreach ($f as $x) if ($x['code'] === 'period_flat') return strpos($x['detail'], 'invisible here') !== false;
+        return false;
+    })());
+    chk('depth: a flat period on a blind cohort says so instead of naming a threshold', (function () {
+        $now = ['hit' => 45, 'opp' => 60, 'n' => 20] + an_ci(45, 60);
+        $prev = ['hit' => 43, 'opp' => 60, 'n' => 20] + an_ci(43, 60);
+        $f = an_findings(['now' => $now, 'prev' => $prev, 'power' => an_detectable(75.0, 8)]);
+        foreach ($f as $x) if ($x['code'] === 'period_flat') return strpos($x['detail'], 'unresolved') !== false;
+        return false;
+    })());
+    chk('depth: the coverage sentence reads as English for every outcome', (function () {
+        /* "children have a average graded score" shipped once. The phrase that
+           follows "have" cannot be the same string as the axis label. */
+        $f = an_findings(['dose' => [[
+            'key' => 'stars', 'outcome' => 'Mentor stars', 'unit' => 'stars per day attended',
+            'has' => 'stars on record', 'covered' => 14, 'of' => 20,
+            'ok' => true, 'verdict' => 'associated', 'text' => 'Found.',
+        ]]]);
+        foreach ($f as $x) if ($x['code'] === 'dose_response') {
+            return strpos($x['detail'], 'do not have stars on record') !== false
+                && strpos($x['detail'], 'stars per day attended') === false;
+        }
+        return false;
+    })());
+    chk('depth: the empty state names the dose and spread checks it could not run', (function () {
+        $f = an_findings([]);
+        return count($f) === 1 && $f[0]['code'] === 'nothing_testable'
+            && strpos($f[0]['detail'], 'attending and doing better') !== false
+            && strpos($f[0]['detail'], 'uneven spread') !== false;
+    })());
+    chk('depth: the op returns spread, dose–response and detectable effect', (function () {
+        $r = backend_dispatch('analytics.depth', ['requesterId' => 'NGG-2025-0099']);
+        if (empty($r['ok'])) return false;
+        $d = $r['depth'];
+        if (!empty($d['empty'])) return true;
+        if (!isset($d['spread'], $d['dose'], $d['power']) || !is_array($d['dose'])) return false;
+        // Every dose panel must carry its coverage, so the screen can say who is in it.
+        foreach ($d['dose'] as $p) if (!isset($p['covered'], $p['of'], $p['outcome'], $p['unit'], $p['has'], $p['text'])) return false;
+        // And the method list must explain all three, or they are unreadable numbers.
+        return isset($d['method']['power'], $d['method']['dose'], $d['method']['spread']);
     })());
 })();
 

@@ -221,38 +221,21 @@ function selfreg_gate_expired(string $gateId): bool {
 /**
  * What a family sees when the online door is shut.
  *
- * A closed sign-up is not an error and must not read like one. The family has
- * done nothing wrong, the link they were given still works, and — this is the
- * part that matters — there is almost always still a way in: every centre
- * registers children at the door. So the closed screen's job is to hand them
- * that, with the addresses and the days, rather than to apologise and stop.
+ * One generic message, deliberately. The first version listed every centre with
+ * its address and meeting days — accurate, and the wrong thing: it is a wall of
+ * detail for somebody who only needs to know the form is shut and to go to their
+ * own centre, it goes stale the moment a centre moves or changes its hours, and
+ * on a public page it publishes the programme's whole physical footprint to
+ * anyone who guesses a link.
  *
- * Everything here is admin-editable, because the true reason changes: an intake
- * that filled up needs different wording from a season that has ended, and
- * "closed" with no reason invites a family to keep refreshing.
+ * So the screen says the one thing that is true for every family, and the only
+ * variable part is the optional note an admin writes — because the reason
+ * changes (an intake that filled up needs different words from a season that has
+ * ended) and "closed" with no reason invites somebody to keep refreshing.
  */
 function selfreg_closed_notice(): array {
-    $note = trim((string)setting_raw('selfreg_closed_note'));
-    $reopens = trim((string)setting_raw('selfreg_reopens'));
-    /* Centres to walk into. Name, area and meeting days only — enough to find
-     * the place and turn up on a day somebody is there. Deliberately not the
-     * lead volunteer's phone number: this page is public and that is a person's
-     * mobile, not a switchboard. */
-    $centres = [];
-    foreach (db_all("SELECT name, area, address, meetDays, meetTime, whatsappUrl
-                     FROM centres WHERE status = 'active' ORDER BY name") as $c) {
-        $centres[] = [
-            'name' => (string)$c['name'], 'area' => (string)($c['area'] ?? ''),
-            'address' => (string)($c['address'] ?? ''),
-            'meetDays' => (string)($c['meetDays'] ?? ''), 'meetTime' => (string)($c['meetTime'] ?? ''),
-            'whatsappUrl' => (string)($c['whatsappUrl'] ?? ''),
-        ];
-    }
     return [
-        'note' => mb_substr($note, 0, 600),
-        'reopens' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $reopens) ? $reopens : '',
-        'centres' => $centres,
-        'contact' => (string)(idcard_program()['phone'] ?? ''),
+        'note' => mb_substr(trim((string)setting_raw('selfreg_closed_note')), 0, 600),
     ];
 }
 
@@ -269,13 +252,12 @@ function admin_selfreg_set_open(array $p): array {
     $open = !empty($p['open']);
     $by = (string)$g['requester']['memberId'];
     setting_set('selfreg_closed', $open ? '' : '1', $by);
+    /* The note, and only the note. A reopening DATE was here and is deliberately
+     * gone: the closed screen no longer promises one, because a date set in
+     * August and forgotten in October is worse than telling a family to ask
+     * their coordinator, who actually knows. */
     if (array_key_exists('note', $p)) setting_set('selfreg_closed_note', mb_substr(trim((string)$p['note']), 0, 600), $by);
-    if (array_key_exists('reopens', $p)) {
-        $r = trim((string)$p['reopens']);
-        // A date or nothing. A malformed one would render as a promise nobody made.
-        setting_set('selfreg_reopens', preg_match('/^\d{4}-\d{2}-\d{2}$/', $r) ? $r : '', $by);
-    }
-    audit('selfreg.' . ($open ? 'opened' : 'closed'), $by, '', ['reopens' => (string)($p['reopens'] ?? '')], (string)($p['ip'] ?? ''));
+    audit('selfreg.' . ($open ? 'opened' : 'closed'), $by, '', ['note' => trim((string)($p['note'] ?? '')) !== ''], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'open' => $open] + selfreg_state();
 }
 
@@ -284,7 +266,6 @@ function selfreg_state(): array {
     return [
         'open' => selfreg_is_open(),
         'note' => (string)setting_raw('selfreg_closed_note'),
-        'reopens' => (string)setting_raw('selfreg_reopens'),
     ];
 }
 

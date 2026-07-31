@@ -22,17 +22,17 @@
   {
     "name": "00-analytics-full",
     "label": "The whole analytics workspace, all levels",
-    "kb": 2831
+    "kb": 3158
   },
   {
     "name": "13-depth",
     "label": "Level 6 · comparison, cross-tabs, confidence intervals, findings",
-    "kb": 611
+    "kb": 930
   },
   {
     "name": "05-diagnostics-run-now",
     "label": "Diagnostics · per-job \"Run now\" and the stale-cache warning",
-    "kb": 464
+    "kb": 461
   },
   {
     "name": "06-journal-staff",
@@ -62,7 +62,7 @@
   {
     "name": "15-signup-closed",
     "label": "Sign-ups closed — where to go instead, not a dead end",
-    "kb": 227
+    "kb": 175
   },
   {
     "name": "14-selfreg-consent",

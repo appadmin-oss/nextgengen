@@ -35,7 +35,7 @@ if ($method === 'GET') {
     elseif ($action === 'gate_revoke') $res = gs_call('admin.gates.revoke', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'gate_delete') $res = gs_call('admin.gates.delete', ['requesterId' => $s['mid'], 'gateId' => $b['gateId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'selfreg_open') $res = gs_call('admin.selfreg.setOpen', ['requesterId' => $s['mid'], 'ip' => $ip,
-        'open' => !empty($b['open']), 'note' => $b['note'] ?? '', 'reopens' => $b['reopens'] ?? '']);
+        'open' => !empty($b['open']), 'note' => $b['note'] ?? '']);
     elseif ($action === 'remind')      $res = gs_call('admin.registrations.remind', ['requesterId' => $s['mid'], 'studentId' => $b['studentId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'remind_bulk') $res = gs_call('admin.registrations.remindBulk', ['requesterId' => $s['mid'],
         'centre' => $b['centre'] ?? '', 'quietDays' => $b['quietDays'] ?? 1, 'limit' => $b['limit'] ?? 100, 'ip' => $ip]);

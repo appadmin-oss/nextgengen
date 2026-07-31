@@ -705,7 +705,7 @@
            two are the global override for pausing every public link at once, and
            for the note families read on the closed screen. */
         selfregState: () => request('/admin/registration.php' + qs({ view: 'selfreg' })),
-        selfregSetOpen: (open, note, reopens) => request('/admin/registration.php', { body: { action: 'selfreg_open', open: !!open, note: note || '', reopens: reopens || '' } }),
+        selfregSetOpen: (open, note) => request('/admin/registration.php', { body: { action: 'selfreg_open', open: !!open, note: note || '' } }),
         // Search/filter/page are server-side: at a hundred centres the cohort is
         // far too large to ship to the browser and filter there.
         list:       (opts) => request('/admin/registration.php' + qs(Object.assign({ view: 'registrations' }, opts || {}))),

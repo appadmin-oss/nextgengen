@@ -413,6 +413,223 @@ function an_retention(array $centres, int $maxWeeks = 8): array {
  * What the page thinks, stated. Every finding carries the figures behind it and
  * a severity, so the reader can check it rather than take it on trust.
  */
+/* ── Does the programme actually do anything? ────────────────────────────────
+ * Every level above this one measures ATTENDANCE. None of them asks the question
+ * the programme exists to answer: does a child who comes more often do better?
+ *
+ * That is a dose–response question, and it is answerable from data already here —
+ * attendance as the dose, graded work and staff stars as the outcome. It is also
+ * the easiest place in the whole workspace to mislead somebody, so the caveat is
+ * computed alongside the number rather than written underneath it: children who
+ * attend more are not a random sample of children, so this can never be read as
+ * "attending causes better work". It is an association, and the honest use of it
+ * is to notice when the association is ABSENT — a programme where the children
+ * who come twice as often do no better has something wrong with the sessions.
+ */
+
+/** Pearson correlation with a two-sided p-value, or a stated refusal. Deliberately
+ *  not Spearman: the point is to be readable next to a scatter of real values, and
+ *  a rank correlation on 12 children invites more confidence than it earns. */
+function an_correlate(array $xs, array $ys): array {
+    $n = count($xs);
+    if ($n !== count($ys) || $n < AN_MIN_CHILDREN) {
+        return ['ok' => false, 'verdict' => 'too_few_people', 'n' => $n,
+                'text' => $n . ' children with both a dose and an outcome. Below ' . AN_MIN_CHILDREN
+                        . ' this is a picture of a handful of individuals, not a relationship.'];
+    }
+    $mx = array_sum($xs) / $n; $my = array_sum($ys) / $n;
+    $sxy = 0.0; $sxx = 0.0; $syy = 0.0;
+    for ($i = 0; $i < $n; $i++) {
+        $dx = $xs[$i] - $mx; $dy = $ys[$i] - $my;
+        $sxy += $dx * $dy; $sxx += $dx * $dx; $syy += $dy * $dy;
+    }
+    if ($sxx <= 0 || $syy <= 0) {
+        return ['ok' => false, 'verdict' => 'no_variation', 'n' => $n,
+                'text' => 'Everyone has the same ' . ($sxx <= 0 ? 'attendance' : 'outcome') . ', so there is nothing to relate.'];
+    }
+    $r = $sxy / sqrt($sxx * $syy);
+    $r = max(-0.999999, min(0.999999, $r));
+    /* t = r·sqrt((n-2)/(1-r²)) against a normal approximation. Exact for large n
+     * and slightly generous below ~30, which is why the child-count floor above
+     * matters more than the precision here. */
+    $t = $r * sqrt(($n - 2) / (1 - $r * $r));
+    $pv = 2 * (1 - an_norm_cdf(abs($t)));
+    $strength = abs($r) < 0.2 ? 'none to speak of' : (abs($r) < 0.4 ? 'weak' : (abs($r) < 0.6 ? 'moderate' : 'strong'));
+    $dir = $r > 0 ? 'higher' : 'lower';
+    return [
+        'ok' => true, 'n' => $n, 'r' => round($r, 3), 'r2' => round($r * $r, 3), 'p' => round($pv, 4),
+        'significant' => $pv < 0.05,
+        'verdict' => $pv < 0.05 ? ($strength === 'none to speak of' ? 'trivial' : 'associated') : 'not_significant',
+        'text' => $pv < 0.05
+            ? 'Children who attend more score ' . $dir . ' — a ' . $strength . ' association (r=' . round($r, 2)
+              . ', p=' . round($pv, 3) . ') across ' . $n . ' children. Attendance explains about '
+              . round($r * $r * 100) . '% of the variation in outcome, which leaves ' . round((1 - $r * $r) * 100)
+              . '% it does not. This is association, not cause: children who come more often differ in other ways too.'
+            : 'No association this data can distinguish from chance (r=' . round($r, 2) . ', p=' . round($pv, 2)
+              . ', ' . $n . ' children). That is not proof there is none — see the detectable-effect note.',
+    ];
+}
+
+/**
+ * What this data could even have found.
+ *
+ * The single most useful thing to know about a small cohort, and the thing
+ * "not significant" is routinely misread as. With 12 children you could not have
+ * detected a 15-point gap however real it was — so reporting "no significant
+ * difference" without this invites a coordinator to conclude there is no
+ * difference, which is a different claim and often a false one.
+ *
+ * Two-proportion, two-sided, 80% power at α=0.05, using the standard
+ * approximation: MDE ≈ (z_{α/2} + z_β)·sqrt(2·p̄(1−p̄)/n_per_group). The child
+ * count is the n, not child-days — repeat visits by the same person are not
+ * independent observations, and using days here is exactly how a 3-child centre
+ * ends up with a confident p-value.
+ */
+function an_detectable(float $baseRate, int $childrenPerGroup): array {
+    if ($childrenPerGroup < 2) {
+        return ['ok' => false, 'text' => 'Too few children to say what a difference would have to be before this data could see it.'];
+    }
+    $p = max(0.05, min(0.95, $baseRate / 100));
+    $z = 1.959964 + 0.8416212;                       // α/2 = 0.025, power = 0.80
+    $mde = $z * sqrt(2 * $p * (1 - $p) / $childrenPerGroup) * 100;
+    /* Past about 50 points the number stops being a threshold and starts being a
+     * verdict on the cohort — no attendance gap a real programme has is 60 points
+     * wide, so "a gap would need to be 80 points" reads as arithmetic gone wrong
+     * rather than as the plain statement it is. Say the plain thing instead. */
+    $blind = $mde >= 50;
+    return [
+        'ok' => true, 'mde' => round($mde, 1), 'children' => $childrenPerGroup, 'power' => 80,
+        'blind' => $blind,
+        'text' => $blind
+            ? 'At this size no realistic gap could be shown at all. The arithmetic asks for about ' . round($mde)
+              . ' points, which is wider than any difference this programme could actually have. Every comparison '
+              . 'above should be read as unresolved rather than as evidence of no difference, and the fix is more '
+              . 'children per group — roughly four times as many to halve that figure.'
+            : 'At this size a gap would have to be about ' . round($mde) . ' points before this data could '
+              . 'reliably show it. Anything smaller than that is not absent — it is invisible here. '
+              . 'To halve that number you need roughly four times as many children per group.',
+    ];
+}
+
+/**
+ * What the headline rate hides.
+ *
+ * "70% attendance" describes two completely different programmes: everyone coming
+ * about seven days in ten, or half the children coming almost every day while the
+ * other half barely come at all. The first is a healthy programme; the second is
+ * a retention emergency wearing the same number. Nothing above this distinguishes
+ * them, and the average is the one statistic guaranteed not to.
+ *
+ * Gini over per-child attendance, plus the share of all attendance contributed by
+ * the top and bottom thirds, which is the form a coordinator can act on.
+ */
+function an_concentration(array $rates): array {
+    $n = count($rates);
+    if ($n < AN_MIN_CHILDREN) {
+        return ['ok' => false, 'n' => $n,
+                'text' => $n . ' children — too few for a spread to mean anything.'];
+    }
+    sort($rates);
+    $total = array_sum($rates);
+    if ($total <= 0) return ['ok' => false, 'n' => $n, 'text' => 'Nobody attended in this range.'];
+    // Gini = (2·Σ i·x_i)/(n·Σ x_i) − (n+1)/n over sorted values.
+    $acc = 0.0;
+    foreach ($rates as $i => $v) $acc += ($i + 1) * $v;
+    $gini = (2 * $acc) / ($n * $total) - ($n + 1) / $n;
+    $third = max(1, (int)floor($n / 3));
+    $bottomShare = array_sum(array_slice($rates, 0, $third)) / $total * 100;
+    $topShare = array_sum(array_slice($rates, -$third)) / $total * 100;
+    $even = $third / $n * 100;                        // what each third would hold if attendance were level
+    $shape = $gini < 0.15 ? 'even' : ($gini < 0.30 ? 'uneven' : 'very uneven');
+    return [
+        'ok' => true, 'n' => $n, 'gini' => round($gini, 3), 'shape' => $shape,
+        'topThirdShare' => round($topShare, 1), 'bottomThirdShare' => round($bottomShare, 1),
+        'evenShare' => round($even, 1),
+        'median' => round($rates[(int)floor($n / 2)], 1),
+        'text' => $shape === 'even'
+            ? 'Attendance is spread fairly evenly — the headline rate describes most children rather than averaging two different groups.'
+            : 'Attendance is ' . $shape . ': the best-attending third accounts for ' . round($topShare)
+              . '% of all attendance and the weakest third for ' . round($bottomShare) . '%, where an even spread would be '
+              . round($even) . '% each. The headline rate is an average of two different experiences, and improving it '
+              . 'means reaching the weakest third rather than the middle.',
+    ];
+}
+
+/** Per-child attendance rate over a unit set, keyed by studentId. Opportunity-days
+ *  of zero are dropped rather than counted as 0% — a child enrolled after the
+ *  window closed did not fail to attend. */
+function an_child_rates(array $units): array {
+    $out = [];
+    foreach ($units['students'] as $s) {
+        [$hit, $opp] = an_student_units($s, $units['days'], $units['present']);
+        if ($opp === 0) continue;
+        $out[(string)$s['studentId']] = $hit / $opp * 100;
+    }
+    return $out;
+}
+
+/**
+ * Dose against outcome, for each outcome the programme actually records.
+ *
+ * The dose is the child's own attendance rate; the outcome is their average
+ * graded score and their mentor stars. Both are joined per child, so a child
+ * with no graded work is absent from the grade panel rather than entered as a
+ * zero — scoring nothing is not the same as scoring badly, and treating it as
+ * the same manufactures the association the panel exists to test.
+ *
+ * Stars are divided by DAYS ATTENDED rather than summed. A star can only be
+ * awarded on a day the child is present, so a raw total rises with attendance by
+ * construction and the correlation would be a restatement of the dose rather than
+ * a finding about it. Dividing by opportunity-days does not fix that either —
+ * stars-per-opportunity is attendance multiplied by recognition-per-visit, so the
+ * dose is still inside the outcome. Per day attended is the only denominator that
+ * asks the intended question: when this child does come, are they recognised more?
+ */
+function an_dose_response(array $units): array {
+    $rates = an_child_rates($units);
+    if (!$rates) return [];
+    $ids = array_keys($rates);
+    $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
+
+    $att = [];
+    foreach ($units['students'] as $s) {
+        [$h, $o] = an_student_units($s, $units['days'], $units['present']);
+        if ($o > 0) $att[(string)$s['studentId']] = $h;
+    }
+
+    $grades = [];
+    foreach (db_all("SELECT memberId sid, AVG(grade) g FROM assignment_submissions
+                     WHERE grade IS NOT NULL AND memberId IN $in GROUP BY memberId", $ids) as $r) {
+        $grades[(string)$r['sid']] = (float)$r['g'];
+    }
+    $stars = [];
+    foreach (db_all("SELECT subjectId sid, COALESCE(SUM(stars),0) s FROM member_stars
+                     WHERE subjectType = 'student' AND subjectId IN $in GROUP BY subjectId", $ids) as $r) {
+        $stars[(string)$r['sid']] = (float)$r['s'];
+    }
+
+    /* `unit` is what the outcome axis measures; `has` is the same thing phrased to
+     * follow "children have", because the two do not survive being the same string
+     * — "children have a average graded score" is how that reads on screen. */
+    $panels = [];
+    foreach ([['grade', 'Assignment grades', 'average graded score', 'a graded score', $grades, false],
+              ['stars', 'Mentor stars', 'stars per day attended', 'stars on record', $stars, true]] as [$key, $label, $unit, $has, $vals, $perDay]) {
+        $xs = []; $ys = [];
+        foreach ($vals as $sid => $v) {
+            if (!isset($rates[$sid])) continue;
+            // A child with stars but no attended days in the window cannot yield a
+            // per-visit figure; they are dropped rather than divided by a fudge.
+            if ($perDay && (int)($att[$sid] ?? 0) <= 0) continue;
+            $xs[] = $rates[$sid];
+            $ys[] = $perDay ? $v / (int)$att[$sid] : $v;
+        }
+        $c = an_correlate($xs, $ys);
+        $panels[] = ['key' => $key, 'outcome' => $label, 'unit' => $unit, 'has' => $has,
+                     'covered' => count($xs), 'of' => count($rates)] + $c;
+    }
+    return $panels;
+}
+
 /** "a, b and c" — so a sentence listing checks reads like one. */
 function an_join(array $parts): string {
     $n = count($parts);
@@ -428,7 +645,8 @@ function an_findings(array $ctx): array {
     /* Which checks were ABLE to run, so the empty state can tell "we looked and
      * found nothing" apart from "at this size nothing could be looked at". They
      * read identically to a coordinator and mean opposite things. */
-    $ran = ['period' => false, 'weekday' => false, 'retention' => false];
+    $ran = ['period' => false, 'weekday' => false, 'retention' => false,
+            'dose' => false, 'spread' => false];
 
     if ($now && $prev && $now['n'] > 0 && $prev['n'] > 0) {
         $cmp = an_compare_rates((int)$now['hit'], (int)$now['opp'], (int)$prev['hit'], (int)$prev['opp'],
@@ -440,9 +658,13 @@ function an_findings(array $ctx): array {
                 'title' => 'Attendance is ' . $dir . ' ' . abs(round($cmp['diff'])) . ' points on the previous period',
                 'detail' => $cmp['text'] . ' Measured on the same number of days either side.'];
         } elseif (($cmp['verdict'] ?? '') === 'not_significant') {
+            /* "Level" is the claim most at risk of being over-read, so it carries
+             * the size of the gap this data could have seen. Without that, a flat
+             * result reads as evidence nothing changed. */
+            $pw = $ctx['power'] ?? null;
             $f[] = ['severity' => 'info', 'code' => 'period_flat',
                 'title' => 'Attendance is level against the previous period',
-                'detail' => $cmp['text']];
+                'detail' => $cmp['text'] . (!empty($pw['ok']) ? ' ' . $pw['text'] : '')];
         }
     }
 
@@ -490,6 +712,44 @@ function an_findings(array $ctx): array {
         }
     }
 
+    /* Dose–response. The finding worth raising is the ABSENCE of one: if the
+     * children who come twice as often do no better, attendance is not the lever
+     * anybody thinks it is, and pushing attendance harder will not move outcomes.
+     * The presence of one is reported too, but as information rather than proof —
+     * children who attend more differ in every other way as well. */
+    foreach (($ctx['dose'] ?? []) as $d) {
+        if (($d['verdict'] ?? '') === 'too_few_people' || ($d['verdict'] ?? '') === 'no_variation') continue;
+        $ran['dose'] = true;
+        if (($d['verdict'] ?? '') === 'associated') {
+            $f[] = ['severity' => 'good', 'code' => 'dose_response',
+                'title' => 'Children who attend more do better on ' . lcfirst($d['outcome']),
+                'detail' => $d['text'] . ' Measured on ' . $d['covered'] . ' of ' . $d['of']
+                    . ' children — the rest do not have ' . ($d['has'] ?? 'a recorded outcome')
+                    . ', and are left out rather than counted as zero.'];
+        } elseif (($d['verdict'] ?? '') === 'not_significant' || ($d['verdict'] ?? '') === 'trivial') {
+            $f[] = ['severity' => 'warn', 'code' => 'dose_flat',
+                'title' => 'Attending more does not show up in ' . lcfirst($d['outcome']),
+                'detail' => $d['text'] . ' Across the ' . $d['covered'] . ' children who have '
+                    . ($d['has'] ?? 'a recorded outcome') . ' as well as an attendance rate. If more attendance is not producing more learning, '
+                    . 'the question is what happens in the sessions rather than how many of them a child reaches.'];
+        }
+    }
+
+    // What the headline rate hides — the average is the statistic guaranteed not to show it.
+    $sp = $ctx['spread'] ?? null;
+    if (!empty($sp['ok'])) {
+        $ran['spread'] = true;
+        if (($sp['shape'] ?? '') === 'very uneven') {
+            $f[] = ['severity' => 'bad', 'code' => 'attendance_concentrated',
+                'title' => 'The attendance rate is an average of two different groups',
+                'detail' => $sp['text']];
+        } elseif (($sp['shape'] ?? '') === 'uneven') {
+            $f[] = ['severity' => 'warn', 'code' => 'attendance_uneven',
+                'title' => 'Attendance is unevenly spread across children',
+                'detail' => $sp['text']];
+        }
+    }
+
     /* How much of this is even readable yet. Stated as a finding rather than
      * buried, because "we cannot tell" is the single most useful thing to know
      * about a small cohort, and every panel above will otherwise be over-read. */
@@ -518,7 +778,9 @@ function an_findings(array $ctx): array {
         $did = []; $couldNot = [];
         foreach ([['period', 'a move against the previous period'],
                   ['weekday', 'a weekday gap'],
-                  ['retention', 'a retention cliff']] as [$k, $label]) {
+                  ['retention', 'a retention cliff'],
+                  ['dose', 'a link between attending and doing better'],
+                  ['spread', 'an uneven spread of attendance across children']] as [$k, $label]) {
             if ($ran[$k]) $did[] = $label; else $couldNot[] = $label;
         }
         if (!$did) {
@@ -601,9 +863,18 @@ function analytics_depth(array $p): array {
     }
     usort($perCentre, fn($a, $b) => ($b['ci']['rate'] ?? -1) <=> ($a['ci']['rate'] ?? -1));
 
+    /* Spread, dose–response and detectable effect — the three questions the tables
+     * above cannot answer no matter how carefully they are read. */
+    $spread = an_concentration(array_values(an_child_rates($unitsNow)));
+    $dose = an_dose_response($unitsNow);
+    /* Halved, because the MDE is stated per group and the comparison a reader
+     * makes here is one half of the cohort against the other. */
+    $power = an_detectable((float)($now['rate'] ?? 0), intdiv((int)$now['n'], 2));
+
     $findings = an_findings([
         'now' => $now, 'prev' => $prev, 'weekday' => $weekday,
         'retention' => $retention, 'crosstab' => $crosstab,
+        'dose' => $dose, 'spread' => $spread, 'power' => $power,
     ]);
 
     return ['ok' => true, 'depth' => [
@@ -623,6 +894,9 @@ function analytics_depth(array $p): array {
         'dims' => ['gender' => 'Gender', 'age' => 'Age band', 'track' => 'Track', 'centre' => 'Centre'],
         'weekday' => $weekday,
         'retention' => $retention,
+        'spread' => $spread,
+        'dose' => $dose,
+        'power' => $power,
         'findings' => $findings,
         'method' => [
             'unit' => 'Every rate is present-days divided by opportunity-days — programme days the child was actually enrolled for. One definition across every panel, so a rate here means the same as a rate there.',
@@ -630,6 +904,9 @@ function analytics_depth(array $p): array {
             'test' => 'Two-proportion z-test, and only above 10 observations AND ' . AN_MIN_CHILDREN . ' distinct children per side. Below either, the honest answer is "unknown" and a p-value would imply otherwise.',
             'clustering' => 'The denominator is child-days, and child-days are not independent — a child who comes on Monday is far more likely than chance to come on Tuesday. That makes every interval here somewhat narrower than the truth, so tests additionally require a real number of distinct children: three children over twenty days is 60 child-days, and a z-test on 60 would return a confident p-value derived from three people.',
             'thin' => 'A cell whose interval is wider than 25 points is marked thin: readable as a total, not as evidence on its own.',
+            'power' => 'The detectable effect is a two-proportion calculation at 80% power and α=0.05, on the number of children rather than child-days. It answers the question "not significant" leaves open: how big would a difference have to be before this cohort could show it at all.',
+            'dose' => 'Dose–response is a Pearson correlation between a child\'s own attendance rate and their own outcome, joined per child. Children with no recorded outcome are excluded rather than entered as zero. Stars are divided by days attended, because a raw total would correlate with attendance by construction. A correlation here is an association and not a cause: children who attend more differ in other ways too.',
+            'spread' => 'Spread is a Gini coefficient over per-child attendance rates, with the share of all attendance held by the best- and weakest-attending thirds. It exists because one headline rate describes two opposite programmes — everyone coming most days, or half the children coming almost always and half barely at all.',
         ],
     ]];
 }

@@ -615,3 +615,53 @@ drop shadow. Centre colours are picked by an admin, so:
 - Long centre names scale to fit rather than running off the end.
 - An instructor's **faculty** joins their role on the back: "INSTRUCTOR" is the
   least identifying thing you can print at a site where every third person is one.
+
+### 7 · Closing the public sign-up, through validity rather than beside it
+
+There was already a mechanism that decides whether a public link accepts
+submissions: the gate's validity window. Adding a separate global "closed" flag
+would have created a second source of truth about the same question, and the
+first time the two disagreed nobody would know which one was authoritative. So
+closing sign-ups **is** expiring the gate — `selfreg_gate_expired()` is the only
+check, and the admin action sets validity.
+
+The screen a parent then sees is deliberately generic. An earlier cut listed
+centres with addresses and a reopening date, which is wrong on both counts: the
+list goes stale silently, and a date the programme has not committed to becomes a
+promise. It now says the link is fine, that nothing they did is wrong, that they
+can register in person at their nearest NGG centre, and that the link will work
+again — plus one optional free-text note an admin can set for the current
+closure.
+
+### 8 · Level 6 deepened — dose–response, power, and who the average is made of
+
+Level 6 could compare periods, segments, weekdays and intakes, but every panel
+answered "what happened" and none answered "so what". Three additions, each
+chosen because nothing already on the page could substitute for it:
+
+- **Dose–response** (`an_correlate`, `an_dose_response`). Each child's own
+  attendance rate against their own outcome — average graded score, and mentor
+  stars per day attended. The finding worth having is the *absence* of an
+  association: if the children who come twice as often do no better, more
+  attendance is not the lever, and the question becomes what happens in the
+  sessions. Children with no recorded outcome are excluded rather than entered as
+  zero, and the screen states the coverage, because scoring nothing is not
+  scoring badly and treating it as such manufactures the association.
+  Stars are divided by **days attended**, not days enrolled — a star can only be
+  given on a day the child is present, so a raw total (and equally a
+  per-opportunity-day rate) has the dose baked into the outcome and the
+  correlation would restate the input.
+- **Minimum detectable effect** (`an_detectable`). What "not significant" leaves
+  open. At ten children per group nothing under about 25 points is visible, so a
+  real 15-point gap and no gap at all produce the same verdict. Keyed on the
+  number of children, not child-days, for the same clustering reason the z-test
+  is. A flat period result now carries this sentence rather than standing alone.
+- **Concentration** (`an_concentration`). A Gini over per-child rates plus the
+  share of attendance held by the best- and weakest-attending thirds. "50%
+  attendance" is either everyone coming half the time or half the children
+  coming always and half never — a healthy programme and a retention emergency
+  wearing the same number, and the average is the one statistic guaranteed not to
+  tell them apart.
+
+All three refuse to print below the ten-child floor rather than returning a
+number, and all three appear in the published method list.
