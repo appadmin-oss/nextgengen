@@ -59,6 +59,43 @@ function sessionDaysToStart(session) {
   return Math.max(0, d);
 }
 
+/* ── Ink that a background can actually carry ────────────────────────────────
+ *
+ * Centres, hierarchy tiers and community channels all carry a colour an admin
+ * picked in a colour picker, so it can be anything: NGG green, a deep maroon, or
+ * a pale yellow. Every surface built on one of those colours hard-coded white
+ * text with a drop shadow, which is right for two of those three and unreadable
+ * for the third — and a shadow under white text on pale yellow does not rescue
+ * it, it just makes a smudge. "It usually works" is not a rule; this is.
+ *
+ * Relative luminance (sRGB, gamma-corrected), thresholded at 0.42 rather than
+ * the screen-perfect 0.5 because ink on card stock reads darker than a backlit
+ * pixel — a mid-tone that just carries white on a monitor does not carry it in
+ * print, and the ID card shares this function with the screen.
+ *
+ * Returns the ink, the shadow that belongs with it (none under dark ink — a
+ * shadow there is just smudge), and a hairline for when a pale fill needs an
+ * edge of its own against a white surface.
+ */
+function inkRgb(hex) {
+  const h = String(hex || "").replace("#", "").trim();
+  const s = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
+  if (!/^[0-9a-fA-F]{6}$/.test(s)) return null;
+  return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
+}
+function inkOn(hex) {
+  const rgb = inkRgb(hex);
+  // Unparseable (a CSS keyword, an rgba() string, a missing value) keeps the old
+  // behaviour rather than guessing: white with a shadow, which is what every
+  // caller did unconditionally before.
+  if (!rgb) return { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
+  const lin = rgb.map(v => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+  const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  return L > 0.42
+    ? { ink: "#10131a", shadow: "none", hairline: "rgba(0,0,0,.35)", light: true }
+    : { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
+}
+
 /* ---- Brand mark — uses actual logo PNG ---- */
 function BrandLogo({ size = 36, style = {} }) {
   return (
@@ -2021,6 +2058,6 @@ function SignaturePad({ value, onChange, height = 150, label = "Signature" }) {
 Object.assign(window, {
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
-  usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart,
+  usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart, inkOn,
   Uploader, A11ySettingsPanel, A11yNavButton, PhotoEditor, PhotoCapture, ImageLightbox, SignaturePad,
 });

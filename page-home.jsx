@@ -1191,7 +1191,7 @@ function StatusPage({ setPage, previewConfig }) {
               </div>
               {sorted.map((c, i) => (
                 <div key={c.code} className="centre-row">
-                  <span className="c-rank" style={{ width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 13, color: "#fff", background: c.color }}>{i + 1}</span>
+                  <span className="c-rank" style={{ width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 13, color: inkOn(c.color).ink, background: c.color }}>{i + 1}</span>
                   <span className="c-name" style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
                     <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16, color: "#0a1130" }}>{c.name}</b>
                     <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.06em", color: "#8088a6", marginTop: 3 }}>{c.code}</span>
@@ -1410,7 +1410,7 @@ function StatusPage({ setPage, previewConfig }) {
             <div className="podium">
               {podium.map((p, i) => (
                 <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 160, maxWidth: "40vw" }}>
-                  <span style={{ width: p.avatarSize, height: p.avatarSize, borderRadius: "50%", display: "grid", placeItems: "center", position: "relative", overflow: "hidden", fontFamily: "'Sora'", fontWeight: 800, fontSize: 22, color: "#fff", background: p.color, border: "3px solid " + p.medalColor, boxShadow: "0 0 0 4px rgba(255,255,255,0.06)" }}>
+                  <span style={{ width: p.avatarSize, height: p.avatarSize, borderRadius: "50%", display: "grid", placeItems: "center", position: "relative", overflow: "hidden", fontFamily: "'Sora'", fontWeight: 800, fontSize: 22, color: inkOn(p.color).ink, background: p.color, border: "3px solid " + p.medalColor, boxShadow: "0 0 0 4px rgba(255,255,255,0.06)" }}>
                     {p.initial}
                     {p.photo ? <img src={p.photo} alt="" loading="lazy" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}
                   </span>
@@ -1492,7 +1492,7 @@ function LbRow({ m }) {
     <div className="lb-row">
       <span className="lb-rank" style={{ width: 34, height: 34, borderRadius: 10, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 14, background: m.rankBg, color: m.rankColor }}>{m.rank}</span>
       <span className="lb-id" style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-        <span style={{ width: 38, height: 38, flexShrink: 0, borderRadius: "50%", display: "grid", placeItems: "center", position: "relative", overflow: "hidden", fontFamily: "'Sora'", fontWeight: 800, fontSize: 15, color: "#fff", background: m.color }}>
+        <span style={{ width: 38, height: 38, flexShrink: 0, borderRadius: "50%", display: "grid", placeItems: "center", position: "relative", overflow: "hidden", fontFamily: "'Sora'", fontWeight: 800, fontSize: 15, color: inkOn(m.color).ink, background: m.color }}>
           {m.initial}
           {/* The initial stays underneath: if the photo 404s the avatar
               degrades to the same monogram everyone else has, rather than a
@@ -1776,7 +1776,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
               </div>
               {sorted.map((c, i) => (
                 <div key={c.centreId} className="centre-row">
-                  <span className="c-rank" style={{ width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 13, color: "#fff", background: c.color }}>{i + 1}</span>
+                  <span className="c-rank" style={{ width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", fontFamily: "'Sora'", fontWeight: 800, fontSize: 13, color: inkOn(c.color).ink, background: c.color }}>{i + 1}</span>
                   <span className="c-name" style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
                     <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16, color: "#0a1130" }}>{c.name}</b>
                     <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.06em", color: "#8088a6", marginTop: 3 }}>{c.code}</span>

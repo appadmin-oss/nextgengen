@@ -952,13 +952,21 @@ function CentreRing({ centre, centres, url, name, size }) {
   const c = (centres || {})[centre];
   const px = size || 56;
   const tint = c ? c.color : "rgba(12,20,50,0.18)";
+  /* The code chip and the initial both sit ON the centre colour, and both used
+     to be white with a drop shadow regardless of what that colour was. A shadow
+     does not rescue white on the pale yellow an admin can pick in one click — it
+     smudges it. The ink comes from the colour now, and a pale chip gets a
+     hairline so it still reads as a chip against the white ring and the white
+     row behind it. */
+  const ink = inkOn(c ? c.color : "");
   return (
     <span className="centre-ring" style={{ width: px, height: px, borderColor: tint }}
       title={centre || "No centre set"}>
       {url
         ? <img src={url} alt="" className="centre-ring-img"/>
-        : <span className="centre-ring-img centre-ring-fallback" style={{ background: tint }}>{(name || "?").charAt(0)}</span>}
-      {c && <span className="centre-ring-code mono" style={{ background: c.color }}>{c.code}</span>}
+        : <span className="centre-ring-img centre-ring-fallback" style={{ background: tint, color: ink.ink }}>{(name || "?").charAt(0)}</span>}
+      {c && <span className="centre-ring-code mono" style={{ background: c.color, color: ink.ink, textShadow: ink.shadow,
+                                                            outline: ink.light ? "1px solid " + ink.hairline : "none", outlineOffset: -3 }}>{c.code}</span>}
     </span>
   );
 }
@@ -4263,7 +4271,7 @@ function AdminCommunityQueue({ onChange }) {
             {d.posts.map(p => (
               <div className="admin-app" key={p.postId}>
                 <div className="admin-app-top">
-                  <div><div className="admin-cell-name">{p.author} <span className="chip" style={{ background: p.color, color: "#fff" }}>{p.channel}</span> {p.pinned && <span className="chip chip-lime">📌 pinned</span>} {p.featured && <span className="chip chip-lime">✨ showcase</span>} {p.reportCount > 0 && <span className="chip chip-crimson">🚩 {p.reportCount}</span>}</div>
+                  <div><div className="admin-cell-name">{p.author} <span className="chip" style={{ background: p.color, color: inkOn(p.color).ink }}>{p.channel}</span> {p.pinned && <span className="chip chip-lime">📌 pinned</span>} {p.featured && <span className="chip chip-lime">✨ showcase</span>} {p.reportCount > 0 && <span className="chip chip-crimson">🚩 {p.reportCount}</span>}</div>
                     <div className="mono admin-cell-sub">{fmtDate(p.createdAt)}{p.centre ? " · " + p.centre : ""}{p.mediaType !== "none" ? " · " + p.mediaType : ""}</div></div>
                   <span className={"chip status-" + (p.status === "published" ? "published" : p.status === "removed" ? "archived" : "draft")}>{p.status}</span>
                 </div>
@@ -4345,7 +4353,7 @@ function AdminCommunityChannels() {
           <thead><tr><th>Channel</th><th>Kind</th><th>Posts</th><th>Status</th><th></th></tr></thead>
           <tbody>{d.channels.map(c => (
             <tr key={c.channelId}>
-              <td><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 22, height: 22, borderRadius: 6, display: "grid", placeItems: "center", background: c.color, color: "#fff", fontSize: 12 }}>{c.icon || "#"}</span><b>{c.name}</b>{c.pinned && <span className="chip chip-lime">pinned</span>}</span></td>
+              <td><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 22, height: 22, borderRadius: 6, display: "grid", placeItems: "center", background: c.color, color: inkOn(c.color).ink, fontSize: 12 }}>{c.icon || "#"}</span><b>{c.name}</b>{c.pinned && <span className="chip chip-lime">pinned</span>}</span></td>
               <td className="mono admin-cell-sub">{c.kind}</td>
               <td>{c.total || 0}</td>
               <td>{c.status === "active" ? <span className="chip chip-lime">active</span> : <span className="chip status-archived">archived</span>}</td>

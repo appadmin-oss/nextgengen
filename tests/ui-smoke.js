@@ -1521,6 +1521,36 @@ const LEADERBOARD = {
       rules.fitShort === 50 && rules.fitLong < 50
       && Math.abs(17 * 0.62 * rules.fitLong - 424) < 1
       && rules.fitPill < 18 && 29 * (0.62 * rules.fitPill + 3.2) <= 360.5);
+    /* ── Ink that a background can carry, everywhere and not just on the card ──
+     * The card reads its own colours; the screen surfaces built on the SAME
+     * admin-picked colours — centre rings, channel chips, ranked centre badges —
+     * were hard-coded white with a drop shadow. The shadow was doing the arguing:
+     * it does not rescue white text on a pale colour, it smudges it. The rule now
+     * lives in one place, so print and screen cannot disagree about when a colour
+     * is pale.
+     */
+    const ink = await studio.evaluate(() => ({
+      navy: window.inkOn('#00225F'),
+      paleCentre: window.inkOn('#F7E36B'),
+      gold: window.inkOn('#f5b026'),
+      junk: window.inkOn('teal'),
+      short: window.inkOn('#fff'),
+      // One function, not two copies: the card delegates to it.
+      sameAsCard: JSON.stringify(window.inkOn('#F7E36B')) === JSON.stringify(window.cardInk('#F7E36B')),
+      /* And the change is load-bearing, not theoretical: this is the avatar
+         palette the community and the leaderboard actually ship, and these many
+         of its entries cannot carry white text. */
+      lightInAvatarPalette: ['#f5b026', '#b07cff', '#2f9e44', '#3b5bdb', '#ff5a3c', '#17a2b8', '#e8a92b', '#6a3fc0']
+        .filter(c => window.inkOn(c).light).length,
+    }));
+    ok('one ink rule serves both the printed card and the screen',
+      ink.sameAsCard === true && ink.navy.ink === '#fff' && ink.paleCentre.ink === '#10131a');
+    ok('…with no shadow under dark ink, because a shadow there is just smudge',
+      ink.paleCentre.shadow === 'none' && ink.navy.shadow !== 'none');
+    ok('…a three-digit hex is read like a six-digit one, and junk falls back to white',
+      ink.short.light === true && ink.junk.ink === '#fff' && ink.junk.light === false);
+    ok('…and it is load-bearing: ' + ink.lightInAvatarPalette + ' of 8 shipped avatar colours cannot carry white',
+      ink.lightInAvatarPalette >= 2);
     // Same filter, same problem, the other roster.
     await studio.getByLabel('Filter cards by centre').selectOption({ label: '⚠ No centre on file · 1' });
     await studio.waitForTimeout(500);

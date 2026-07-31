@@ -498,7 +498,8 @@ function cmColor(seed) { const p = ["#e4032b", "#f5b026", "#2f9e44", "#b07cff", 
 function cmAvatar(name, seed, photo, extraClass) {
   const cls = "cm-avatar" + (extraClass ? " " + extraClass : "");
   if (photo) return <span className={cls + " cm-avatar-photo"} aria-hidden="true"><img src={cmOpt(photo, 96)} alt="" loading="lazy"/></span>;
-  return <span className={cls} style={{ background: cmColor(seed) }} aria-hidden="true">{cmInitial(name)}</span>;
+  const bg = cmColor(seed);
+  return <span className={cls} style={{ background: bg, color: inkOn(bg).ink }} aria-hidden="true">{cmInitial(name)}</span>;
 }
 
 function CommunityPage({ setPage }) {
@@ -740,7 +741,7 @@ function CommunityPublic({ setPage, auth }) {
                 {leaders.map((m, i) => (
                   <button key={m.memberId || i} onClick={() => setPanel(m)} style={{ width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", border: "none", borderBottom: i < leaders.length - 1 ? "1px solid var(--line-cool-soft,#eef0f4)" : "none", background: "none" }}>
                     <span className="display" style={{ width: 24, fontWeight: 800, fontSize: 15, color: i < 3 ? "var(--gold-600,#a07400)" : "var(--ink-400)" }}>{i + 1}</span>
-                    <span className="display" style={{ width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 15, color: "#fff", background: colorFor(m.first), flex: "none" }}>{(m.first[0] || "?").toUpperCase()}</span>
+                    <span className="display" style={{ width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 15, color: inkOn(colorFor(m.first)).ink, background: colorFor(m.first), flex: "none" }}>{(m.first[0] || "?").toUpperCase()}</span>
                     <span style={{ flex: 1, minWidth: 0 }}><b className="display" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink-900)" }}>{nameOf(m)}</b><span className="mono" style={{ display: "block", fontSize: 10.5, color: "var(--ink-400)", marginTop: 2 }}>{m.centre || "—"} · LVL {m.level}</span></span>
                     <span className="mono" style={{ fontSize: 12.5, color: "var(--gold-600,#a07400)", fontWeight: 600 }}>{(m.xp || 0).toLocaleString()} XP</span>
                   </button>
@@ -762,7 +763,7 @@ function CommunityPublic({ setPage, auth }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>
                 {filtered.map((m, i) => (
                   <button key={m.memberId || i} onClick={() => setPanel(m)} style={{ textAlign: "left", cursor: "pointer", fontFamily: "inherit", background: "#fff", border: "1px solid var(--line-cool,#e5e8ee)", borderRadius: 14, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
-                    <span className="display" style={{ width: 44, height: 44, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 16, color: "#fff", background: colorFor(m.first) }}>{(m.first[0] || "?").toUpperCase()}</span>
+                    <span className="display" style={{ width: 44, height: 44, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 16, color: inkOn(colorFor(m.first)).ink, background: colorFor(m.first) }}>{(m.first[0] || "?").toUpperCase()}</span>
                     <span style={{ minWidth: 0 }}>
                       <b className="display" style={{ fontWeight: 700, fontSize: 14.5, color: "var(--ink-900)", display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nameOf(m)}</b>
                       <span className="mono" style={{ fontSize: 10, color: "var(--ink-400)" }}>{m.centre || "—"} · LVL {m.level}</span>
@@ -801,7 +802,7 @@ function CommunityPublic({ setPage, auth }) {
         <div style={{ position: "fixed", top: 0, right: 0, height: "100%", width: 360, maxWidth: "92vw", background: "#fff", zIndex: 51, boxShadow: "-16px 0 40px rgba(12,20,50,0.25)", animation: "ngg-panel-in .25s cubic-bezier(.2,.8,.2,1)", overflowY: "auto" }}>
           <div style={{ padding: "20px 20px 0", display: "flex", justifyContent: "flex-end" }}><button onClick={() => setPanel(null)} style={{ border: "none", background: "var(--cream-100,#f3ecdb)", width: 32, height: 32, borderRadius: "50%", cursor: "pointer", fontSize: 16, color: "var(--ink-500)" }}><i className="ph ph-x"/></button></div>
           <div style={{ padding: "8px 28px 28px", textAlign: "center" }}>
-            <span className="display" style={{ width: 84, height: 84, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 30, color: "#fff", background: colorFor(panel.first), margin: "0 auto" }}>{(panel.first[0] || "?").toUpperCase()}</span>
+            <span className="display" style={{ width: 84, height: 84, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 30, color: inkOn(colorFor(panel.first)).ink, background: colorFor(panel.first), margin: "0 auto" }}>{(panel.first[0] || "?").toUpperCase()}</span>
             <h3 className="display" style={{ fontWeight: 800, fontSize: 20, margin: "14px 0 3px" }}>{nameOf(panel)}</h3>
             <div className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>{panel.centre || "—"} · Level {panel.level}</div>
             <div style={{ display: "flex", justifyContent: "center", gap: 8, margin: "16px 0" }}>
@@ -1120,7 +1121,7 @@ function CommunityApp({ setPage, auth }) {
         <main className="cm-col">
           <header className={"cm-hd" + (isChat ? " cm-hd-chat" : "")}>
             <button className="cm-hd-burger" onClick={() => setSbOpen(true)} aria-label="Open channels" aria-expanded={sbOpen}>☰</button>
-            {isChat && activeChannel && <span className="cm-hd-badge" style={{ background: activeChannel.color }} aria-hidden="true">{activeChannel.icon}</span>}
+            {isChat && activeChannel && <span className="cm-hd-badge" style={{ background: activeChannel.color, color: inkOn(activeChannel.color).ink }} aria-hidden="true">{activeChannel.icon}</span>}
             <div className="cm-hd-title">
               <div className="cm-hd-line">
                 {!isChat && <span className="cm-hd-ic" aria-hidden="true">{headIcon}</span>}
@@ -1877,7 +1878,7 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
             <div className="cm-mention-menu" role="listbox" aria-label="People to mention">
               {ment.items.map((pp, i) => (
                 <button key={pp.handle} role="option" aria-selected={i === mentIdx} className={"cm-mention-item" + (i === mentIdx ? " is-active" : "")} onMouseDown={e => e.preventDefault()} onMouseEnter={() => setMentIdx(i)} onClick={() => pickMention(pp.handle)}>
-                  <span className={"cm-avatar cm-avatar-sm" + (pp.kind === "all" ? " cm-avatar-all" : "")} style={pp.kind === "all" ? {} : { background: cmColor(pp.handle) }} aria-hidden="true">{pp.kind === "all" ? "📣" : cmInitial(pp.name || pp.handle)}</span>
+                  <span className={"cm-avatar cm-avatar-sm" + (pp.kind === "all" ? " cm-avatar-all" : "")} style={pp.kind === "all" ? {} : { background: cmColor(pp.handle), color: inkOn(cmColor(pp.handle)).ink }} aria-hidden="true">{pp.kind === "all" ? "📣" : cmInitial(pp.name || pp.handle)}</span>
                   <span><b>@{pp.handle}</b>{pp.name ? " · " + pp.name : ""}{pp.centre ? " · " + pp.centre : ""}{pp.kind === "mentor" ? <span className="cm-ment-badge">mentor</span> : null}</span>
                 </button>
               ))}

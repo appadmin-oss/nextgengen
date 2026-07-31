@@ -613,7 +613,7 @@ function ApplySuccessCard({ variant = "application", refCode, whatsapp, centreNa
       <div className="asc-steps">
         {cfg.steps.map(s => (
           <div key={s.n} style={{ border: "1px solid #eef0f4", borderRadius: 14, padding: "16px 14px", textAlign: "left" }}>
-            <span style={{ width: 30, height: 30, borderRadius: 9, display: "inline-grid", placeItems: "center", fontFamily: sora, fontWeight: 800, fontSize: 13, color: "#fff", background: s.color }}>{s.n}</span>
+            <span style={{ width: 30, height: 30, borderRadius: 9, display: "inline-grid", placeItems: "center", fontFamily: sora, fontWeight: 800, fontSize: 13, color: inkOn(s.color).ink, background: s.color }}>{s.n}</span>
             <div style={{ fontFamily: sora, fontWeight: 700, fontSize: 14, color: "#0a1130", marginTop: 12 }}>{s.title}</div>
             <div style={{ fontSize: 12.5, color: "#5a6488", lineHeight: 1.45, marginTop: 5 }}>{s.desc}</div>
           </div>
@@ -4969,21 +4969,15 @@ function cardRgb(hex) {
   if (!/^[0-9a-fA-F]{6}$/.test(s)) return null;
   return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
 }
-/** Ink that stays legible on `hex`, plus the shadow and hairline that go with
- *  it. Relative luminance (sRGB, gamma-corrected), thresholded a little EARLIER
- *  than the screen-perfect 0.5 because ink on card stock reads darker than a
- *  backlit pixel — a mid-tone that just about carries white on a monitor does
- *  not carry it in print. */
+/** Ink that stays legible on `hex`, plus the shadow and hairline that go with it.
+ *
+ *  The rule itself lives in components.jsx as `inkOn`, because the same
+ *  admin-picked colours turn up on the screen — centre rings, channel chips,
+ *  ranked centre badges — and a printed card and a roster row that disagree about
+ *  when a colour is "pale" is a bug nobody would think to look for. This name
+ *  stays because the card is where the threshold was reasoned about. */
 function cardInk(hex) {
-  const rgb = cardRgb(hex);
-  if (!rgb) return { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
-  const lin = rgb.map(v => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
-  const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
-  return L > 0.42
-    // Light centre colour → dark ink, and NO shadow: a shadow under dark text
-    // on a pale ground is just smudge.
-    ? { ink: "#10131a", shadow: "none", hairline: "rgba(0,0,0,.35)", light: true }
-    : { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
+  return inkOn(hex);
 }
 /** Are two card colours close enough to merge into one shape? Redmean distance
  *  — cheap, and markedly better than plain RGB at matching what an eye does.

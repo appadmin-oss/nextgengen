@@ -4518,8 +4518,10 @@ section p[style*="var(--ink-500)"] {
   border-radius: 999px; border: 2px solid white;
   color: white; font-size: 10px; font-weight: 800; letter-spacing: 0.02em;
   line-height: 1.4; text-align: center;
-  /* The code stays legible on a pale centre colour: a dark outline rather
-     than a second colour choice per centre, which would need maintaining. */
+  /* White and the shadow are only the fallback for an unparseable colour. The
+     real ink comes from inkOn(centre.color) inline, because a shadow does not
+     rescue white text on the pale yellow an admin can pick in one click — it
+     smudges it. */
   text-shadow: 0 0 2px rgba(0, 0, 0, 0.55);
 }
 
@@ -4579,8 +4581,10 @@ section p[style*="var(--ink-500)"] {
   font-weight: 800;
   letter-spacing: 0.04em;
   line-height: 1.4;
-  /* The code is small by necessity — it rides on a photo. Give it a shadow so
-     it stays legible over a light centre colour as well as a dark one. */
+  /* The code is small by necessity — it rides on a photo. White plus a shadow is
+     the fallback for an unparseable colour; the ink that actually ships is
+     inkOn(centre.color), set inline, because a shadow under white on a pale
+     centre colour is a smudge rather than a rescue. */
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
   white-space: nowrap;
 }
