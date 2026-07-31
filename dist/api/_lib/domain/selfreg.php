@@ -83,6 +83,15 @@ function photo_shape_check(string $dataUrl): array {
  * ask, is not a thing this should be able to do.
  */
 function photo_validate(string $dataUrl, string $hostedUrl = ''): array {
+    /* The browser may have uploaded the image straight to the cloud rather than
+     * sending it here — that is the better path when a cloud is configured, and
+     * it means we never see the bytes. The shape check cannot run on an image we
+     * do not hold, so it is skipped and SAID to be skipped: a verdict that
+     * silently came from none of the checks must not read like a pass. */
+    if ($dataUrl === '' && $hostedUrl !== '') {
+        $out = ['width' => 0, 'height' => 0, 'bytes' => 0, 'issues' => [], 'source' => 'hosted', 'score' => null];
+        return photo_validate_ai($out, $hostedUrl);
+    }
     $shape = photo_shape_check($dataUrl);
     $out = [
         'width' => $shape['width'], 'height' => $shape['height'], 'bytes' => $shape['bytes'] ?? 0,
@@ -90,6 +99,14 @@ function photo_validate(string $dataUrl, string $hostedUrl = ''): array {
     ];
     if (!empty($shape['fatal'])) return $out + ['verdict' => 'fail'];
 
+    return photo_validate_ai($out, $hostedUrl);
+}
+
+/** The model's half of the verdict, and the pass/check/fail rule. Split out so
+ *  a cloud-uploaded photo — where we never see the bytes and the shape check
+ *  cannot run — goes through exactly the same judgement as an inline one. */
+function photo_validate_ai(array $out, string $hostedUrl): array {
+    $skippedShape = ($out['source'] ?? '') === 'hosted';
     if ($hostedUrl !== '' && function_exists('ai_enabled') && ai_enabled('photo')) {
         $r = ai_photo_review($hostedUrl);
         if (!empty($r['ok']) && is_array($r['data'] ?? null)) {
@@ -98,12 +115,14 @@ function photo_validate(string $dataUrl, string $hostedUrl = ''): array {
             $out['issues'] = array_values(array_unique(array_merge($out['issues'], $flags)));
             $out['score'] = is_numeric($d['score'] ?? null) ? (int)$d['score'] : null;
             $out['notes'] = array_slice(array_map('strval', (array)($d['issues'] ?? [])), 0, 6);
-            $out['source'] = 'ai';
+            $out['source'] = $skippedShape ? 'ai_only' : 'ai';
         } else {
             // Say so. A verdict that silently came from half the checks reads
             // identically to one that came from all of them.
-            $out['source'] = 'shape_ai_unavailable';
+            $out['source'] = $skippedShape ? 'unchecked' : 'shape_ai_unavailable';
         }
+    } elseif ($skippedShape) {
+        $out['source'] = 'unchecked';
     }
 
     /* Anything in this list means a person genuinely cannot be identified from
@@ -116,6 +135,10 @@ function photo_validate(string $dataUrl, string $hostedUrl = ''): array {
     $has = fn(array $set) => (bool)array_intersect($set, $out['issues']);
     $verdict = $has($hard) ? 'fail' : ($has($soft) ? 'check' : 'pass');
     if ($out['score'] !== null && $out['score'] < 40 && $verdict === 'pass') $verdict = 'check';
+    /* Nothing actually examined it. That is a "have a look", never a pass —
+     * the reviewer is the only check that ran, so the screen must not tell
+     * them a machine already approved it. */
+    if (($out['source'] ?? '') === 'unchecked' && $verdict === 'pass') $verdict = 'check';
     return $out + ['verdict' => $verdict];
 }
 
@@ -242,8 +265,19 @@ function selfreg_submit(array $p): array {
     if (empty($p['consent'])) return ['ok' => false, 'error' => 'consent_required'];
     $publication = !empty($p['publication']);
 
+    /* Two shapes, because the browser decides which it can manage.
+     *
+     * With a cloud configured it uploads straight there and sends us a URL —
+     * that is the better path and the one every other surface uses: the CDN,
+     * the derivative transforms, and no image bytes in the request body. With
+     * no cloud it sends the image itself and we hold it.
+     *
+     * This form used to ALWAYS inline, even on a deployment paying for
+     * Cloudinary — the one surface in the app that never used it. */
     $photo = (string)($p['photo'] ?? '');
-    if ($photo === '') return ['ok' => false, 'error' => 'photo_required'];
+    $hostedIn = (string)($p['photoUrl'] ?? '');
+    if (!preg_match('#^https?://#i', $hostedIn)) $hostedIn = '';   // ours to build, not the caller's to choose
+    if ($photo === '' && $hostedIn === '') return ['ok' => false, 'error' => 'photo_required'];
     /* Checked before anything is written: a submission with an unusable photo
      * is not a row to clean up later, it is a retake to ask for now.
      *
@@ -251,12 +285,18 @@ function selfreg_submit(array $p): array {
      * rule — "unusable" has to mean one thing. Shape only at this point: the
      * image is not hosted yet, and a family should not wait on a model round
      * trip to be told their photo is 90 pixels wide. */
-    $check = photo_validate($photo);
-    if ($check['verdict'] === 'fail') return ['ok' => false, 'error' => 'photo_rejected', 'photo' => $check];
+    if ($photo !== '') {
+        $check = photo_validate($photo);
+        if ($check['verdict'] === 'fail') return ['ok' => false, 'error' => 'photo_rejected', 'photo' => $check];
+    }
 
     /* gate_register does the real work. `defer` stops it sending the guardian
-     * anything — nothing reaches a family until a human has looked. */
-    $res = gate_register($p + ['selfServe' => true, 'photoUrl' => $photo]);
+     * anything — nothing reaches a family until a human has looked.
+     *
+     * array_merge, not `+`: the union operator keeps the LEFT operand's key, so
+     * with `photoUrl` now arriving on $p an inline submission would have handed
+     * gate_register the empty hosted URL instead of the image. */
+    $res = gate_register(array_merge($p, ['selfServe' => true, 'photoUrl' => $photo !== '' ? $photo : $hostedIn]));
     if (empty($res['ok'])) return $res;
     $studentId = (string)$res['studentId'];
 

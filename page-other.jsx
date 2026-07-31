@@ -2594,7 +2594,8 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
   const [step, setStep] = React.useState(0);   // 0 details · 1 photo · 2 consent · 3 done
   const [form, setForm] = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey)) || {}; } catch (_) { return {}; } });
   const [errors, setErrors] = React.useState({});
-  const [photo, setPhoto] = React.useState("");
+  const [photo, setPhoto] = React.useState("");        // inline image (no cloud)
+  const [photoHosted, setPhotoHosted] = React.useState("");  // uploaded URL (cloud)
   const [photoMsg, setPhotoMsg] = React.useState(null);
   const [agreed, setAgreed] = React.useState(false);
   const [publication, setPublication] = React.useState(false);
@@ -2629,33 +2630,43 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
     img.src = dataUrl;
   });
 
-  /* This is the ONE headshot in the whole site that travels inline, inside the
-     submission JSON, because a public self-registration has no session and the
-     signed-upload paths the desk uses aren't open to it. So the file a phone
-     hands over IS the request body — and a modern phone hands over 4–12MB,
-     which base64 inflates by a further third. Every server in front of PHP
-     caps that: Apache LimitRequestBody, nginx client_max_body_size,
-     post_max_size. The result was a 413 with no message, on the last tap of a
-     five-minute form.
-     Resampling here fixes it at the source rather than asking every host to
-     raise a limit. 1000px on the long edge at q0.78 is comfortably above what
-     a printed ID card needs (the card art is delivered at 900px) and lands
-     around 80–150KB for a real photograph; the budget it is sized against is
-     nginx's client_max_body_size default of 1MB, which is the tightest limit
-     in common use. The optimiser is optional — if /vendor/image-tools.js can't
-     load we send the original and let the size check below be what speaks. */
-  const PHOTO_SOFT_BYTES = 1400000;
-  const shrink = async (file) => {
-    const type = (file && file.type) || "";
-    if (!/^image\//.test(type) || /^image\/(gif|svg\+xml)$/.test(type)) return file;
+  /* Last-resort inline encoder, for a client bundle too old to have
+     uploadOrInline. Same budget as the one in api-client.js: 1000px/q0.78 keeps
+     a real photograph near 150KB, inside nginx's 1MB body default. */
+  const selfregInlinePhoto = async (file) => {
+    let out = file;
     try {
       const tools = await NGGApi.imageTools();
       const r = await tools.prepare(file, { maxPx: 1000, quality: 0.78 });
-      if (r.skipped || !r.blob) return file;
-      return r.blob;
-    } catch (_) { return file; }
+      if (!r.skipped && r.blob) out = r.blob;
+    } catch (_) { /* no optimiser — send what we have and let the size check speak */ }
+    const url = await new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(String(fr.result || ""));
+      fr.onerror = () => rej(new Error("unreadable_image"));
+      fr.readAsDataURL(out);
+    });
+    if (url.length > 1400000) throw new Error("photo_too_large");
+    return url;
   };
 
+  /* The headshot, by whichever route this deployment actually has.
+     
+     This form used to ALWAYS embed the image in the submission JSON, on the
+     reasoning that a public sign-up has no session and so cannot use the signed
+     upload path. True — but it skipped the UNSIGNED one, which exists precisely
+     for surfaces with no account and which the volunteer application already
+     uses. The result was the only screen in the app that never touched
+     Cloudinary even on a deployment paying for it: no CDN, no face-aware crop,
+     no AI edit, and a megabyte of base64 through PHP on every registration.
+
+     uploadOrInline picks: the cloud when one is configured, the image itself
+     when not. Inline is still a first-class path — Cloudinary is opt-in and a
+     form that cannot take a photo without it is not acceptable — and it is
+     resampled to 1000px/q0.78 first, which is comfortably above what a printed
+     ID card needs (the card art is delivered at 900px) and lands around
+     80–150KB against nginx's 1MB client_max_body_size default. That resampling
+     is what fixed the bare 413 on the last tap of a five-minute form. */
   const takeFile = async (file) => {
     setPhotoMsg(null); setErr("");
     if (!file) return;
@@ -2663,18 +2674,35 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
     // is not a headshot, but a 9MB one shrinks fine and used to be refused.
     if (file.size > 30000000) { setPhotoMsg({ ok: false, issues: ["That file is over 30MB. Most phones have a 'medium' size option in the camera settings."] }); return; }
     setPhotoMsg({ ok: true, working: true, issues: [] });
-    const small = await shrink(file);
-    const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result || "")); r.readAsDataURL(small); });
-    /* Checked on the shrunk result, not the original, and stated in the terms
-       the person can act on. Silence here is what produced the 413. */
-    if (dataUrl.length > PHOTO_SOFT_BYTES) {
-      setPhotoMsg({ ok: false, issues: ["That photo is still too large to send (" + Math.round(dataUrl.length / 1048576) + "MB). Set your camera to a smaller size, or take the photo again."] });
-      setPhoto("");
+    let up;
+    try {
+      /* Guarded against an OLDER api-client.js than this bundle expects — which
+         is not hypothetical on a site that has had caching trouble: index.html
+         and the client are separate files, and a proxy holding one but not the
+         other is exactly the mismatch fingerprinted filenames were added to
+         stop. Without this the family gets "uploadOrInline is not a function"
+         where a photo should be. Inline is the correct fallback anyway. */
+      up = typeof NGGApi.uploadOrInline === "function"
+        ? await NGGApi.uploadOrInline(file, "headshot")
+        : { url: await selfregInlinePhoto(file), inline: true };
+    } catch (e) {
+      const m = String((e && (e.message || e.code)) || "");
+      setPhotoMsg({ ok: false, issues: [/photo_too_large/.test(m)
+        ? "That photo is too large to send. Set your camera to a smaller size, or take it again."
+        : "We couldn't use that photo (" + (m || "unknown") + "). Try another one."] });
+      setPhoto(""); setPhotoHosted("");
       return;
     }
-    const v = await inspect(dataUrl);
+    /* Inspected locally either way, so a family is told about a 90-pixel avatar
+       here rather than after a round trip. A hosted URL is same-origin-agnostic
+       and loads fine in an <img>; only the data URL needs no network at all. */
+    const v = await inspect(up.url);
     setPhotoMsg(v);
-    setPhoto(v.ok ? dataUrl : "");
+    if (!v.ok) { setPhoto(""); setPhotoHosted(""); return; }
+    // `photo` is the image, `photoHosted` is a URL — the server takes either and
+    // the preview renders both, so the rest of the form does not care which.
+    setPhoto(up.inline ? up.url : "");
+    setPhotoHosted(up.inline ? "" : up.url);
   };
 
   /* Banked before it is sent, and sent through the outbox rather than straight
@@ -2690,7 +2718,9 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
     }
     setBusy(true); setErr(""); setErrors({});
     const sid = window.outbox ? window.outbox.submissionId(draftKey) : "";
-    const payload = { gate: g, data: form, photo, consent: true, publication, submissionId: sid };
+    // One of the two is set, never both — see takeFile. The server accepts
+    // either and the reviewer's screen cannot tell the difference.
+    const payload = { gate: g, data: form, photo, photoUrl: photoHosted, consent: true, publication, submissionId: sid };
     try {
       const r = window.outbox
         ? await window.outbox.send("selfreg.submit", payload, { label: regDisplayName(form) })
@@ -2703,14 +2733,14 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
     } catch (e) {
       const c = e.code || e.message;
       if (e.data && e.data.errors) { setErrors(e.data.errors); setStep(0); setErr("Please check the highlighted answers."); }
-      else if (c === "photo_rejected") { setStep(1); setPhoto(""); setPhotoMsg({ ok: false, issues: ["That photo can't be used for an ID card. Please take another."] }); }
+      else if (c === "photo_rejected") { setStep(1); setPhoto(""); setPhotoHosted(""); setPhotoMsg({ ok: false, issues: ["That photo can't be used for an ID card. Please take another."] }); }
       else if (c === "consent_required") setErr("Please tick the consent box before sending.");
       /* 413 is the server refusing to READ the request, so nothing inside it —
          including a helpful error — ever comes back. The photo is the only
          thing in this payload big enough to cause it, and it is now shrunk on
          the way in, so this is the belt to that braces: name the cause and the
          fix instead of showing a bare status code. */
-      else if (c === "http_413" || /\b413\b/.test(String(c || ""))) { setStep(1); setPhoto(""); setPhotoMsg({ ok: false, issues: ["That photo was too large for the server to accept. Take it again — the camera's 'medium' size setting works best."] }); setErr("The photo was too large to send. Please take another."); }
+      else if (c === "http_413" || /\b413\b/.test(String(c || ""))) { setStep(1); setPhoto(""); setPhotoHosted(""); setPhotoMsg({ ok: false, issues: ["That photo was too large for the server to accept. Take it again — the camera's 'medium' size setting works best."] }); setErr("The photo was too large to send. Please take another."); }
       else if (c === "duplicate_suspect") setErr("Someone has already registered this child with the same contact details. Speak to your centre coordinator rather than registering twice.");
       else if (c === "closed") setErr("Registration has just closed. Ask your centre coordinator when it reopens.");
       /* Not a dead end: the server is still working on THIS submission, and the
@@ -2730,6 +2760,10 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
 
   const named = regDisplayName(form);
   const steps = ["Details", "Photo", "Consent", "Done"];
+  /* The preview, and the thing every "have they chosen a photo yet" check reads.
+     Exactly one of the two is ever set, and an <img> renders both, so nothing
+     below this line has to know whether a cloud was involved. */
+  const photoSrc = photo || photoHosted;
   // The age the server will derive, shown back for checking. -1 means the date
   // isn't a date yet, and `age` covers a form an admin published before the
   // date-of-birth field replaced the typed one.
@@ -2815,15 +2849,15 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
           <p style={{ ...mut, fontSize: 13.5, margin: "0 0 10px", lineHeight: 1.55 }}>
             Head and shoulders, facing the camera, in good light. A plain wall behind is best. It goes on a printed card, so a blurry one will be sent back.
           </p>
-          {photo
-            ? <img src={photo} alt="The photo you chose" style={{ width: 150, height: 190, objectFit: "cover", borderRadius: 12, display: "block", margin: "0 auto 10px" }}/>
+          {photoSrc
+            ? <img src={photoSrc} alt="The photo you chose" style={{ width: 150, height: 190, objectFit: "cover", borderRadius: 12, display: "block", margin: "0 auto 10px" }}/>
             : <div style={{ width: 150, height: 190, borderRadius: 12, margin: "0 auto 10px", display: "grid", placeItems: "center",
                             border: "2px dashed rgba(255,255,255,.22)", color: "rgba(230,238,255,.4)", fontSize: 13 }}>No photo yet</div>}
           <input ref={fileRef} type="file" accept="image/*" capture="user" style={{ display: "none" }}
             onChange={e => takeFile(e.target.files && e.target.files[0])}/>
           <button onClick={() => fileRef.current && fileRef.current.click()}
             style={{ width: "100%", padding: 13, minHeight: 48, borderRadius: 11, border: "1px solid rgba(255,255,255,.3)", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>
-            {photo ? "Take a different photo" : "📷 Take or choose a photo"}
+            {photoSrc ? "Take a different photo" : "📷 Take or choose a photo"}
           </button>
           {/* The reason, on this step, while the camera is still open. */}
           {photoMsg && !photoMsg.ok && (
@@ -2840,8 +2874,8 @@ function SelfRegisterForm({ g, ctx, draftKey, gold, goldInk }) {
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={() => setStep(0)} style={{ padding: 13, minHeight: 48, borderRadius: 12, border: "1px solid rgba(255,255,255,.24)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Back</button>
-          <button onClick={() => setStep(2)} disabled={!photo}
-            style={{ flex: 1, padding: 14, minHeight: 48, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15.5, cursor: "pointer", opacity: photo ? 1 : .5 }}>
+          <button onClick={() => setStep(2)} disabled={!photoSrc}
+            style={{ flex: 1, padding: 14, minHeight: 48, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15.5, cursor: "pointer", opacity: photoSrc ? 1 : .5 }}>
             Continue → Consent
           </button>
         </div>
@@ -3309,7 +3343,21 @@ function ReviewPhoto({ r }) {
       </div>
     );
   }
-  return <div style={{ ...box, background: "rgba(255,255,255,.07)", color: "rgba(230,238,255,.45)", fontSize: 13 }}>No photo</div>;
+  /* No photoUrl and no flag either way. This form cannot be submitted without a
+     photo, so "the family sent none" is not a possible explanation on this
+     screen — the honest reading is that this submission arrived under a version
+     that discarded the image, which is unrecoverable and needs a retake. Saying
+     "No photo" here blamed the family for something the software did. */
+  return (
+    <div style={{ ...box, background: "rgba(245,176,38,.10)", border: "1px solid rgba(245,176,38,.35)", color: "#ffce54" }}>
+      <div>
+        <div style={{ fontWeight: 800, marginBottom: 4 }}>No photo on file</div>
+        <div style={{ color: "rgba(230,238,255,.7)" }}>This form can't be sent without one, so the image was
+        lost before it reached the record. It can't be recovered — approve on the answers and send a retake
+        link, or ask the family to register again.</div>
+      </div>
+    </div>
+  );
 }
 
 /* The list's 42×54 thumbnail. Same three states as ReviewPhoto, compressed to
@@ -3327,7 +3375,9 @@ function ReviewThumb({ r }) {
     return <div title={failed ? "This photo won't load — open the record" : "The server did not save this photo"}
       style={{ ...box, background: "rgba(255,90,60,.16)", border: "1px solid rgba(255,120,100,.5)", color: "#ffb3a3" }}>⚠</div>;
   }
-  return <div style={{ ...box, background: "rgba(255,255,255,.08)" }}/>;
+  // Same reasoning as ReviewPhoto: on this screen an absent photo is a lost one.
+  return <div title="No photo on file — the image was lost before it reached the record"
+    style={{ ...box, background: "rgba(245,176,38,.12)", border: "1px solid rgba(245,176,38,.4)", color: "#ffce54", fontSize: 14 }}>?</div>;
 }
 
 function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {

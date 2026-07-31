@@ -26,7 +26,11 @@ if ($method === 'GET') {
     $res = gs_call('selfreg.submit', [
         'gate'  => $b['gate'] ?? '',
         'data'  => $b['data'] ?? [],
-        'photo' => $b['photo'] ?? '',
+        // Either shape: the image itself, or a URL the browser already uploaded
+        // it to. Dropping the second here is what made this form the only one
+        // in the app that never used Cloudinary even when it was configured.
+        'photo'    => $b['photo'] ?? '',
+        'photoUrl' => $b['photoUrl'] ?? '',
         'lat'   => $b['lat'] ?? null,
         'lng'   => $b['lng'] ?? null,
         // The one consent tick, and the separate publication answer. Forwarded

@@ -2831,6 +2831,15 @@ const LEADERBOARD = {
       window.__sent = [];
       const stub = {
         auth: { me: () => Promise.reject(Object.assign(new Error('u'), { code: 'unauthorized' })) },
+        /* What the photo step calls. It uploads when a cloud is configured and
+           hands the image back inline when not — this fixture is the no-cloud
+           case, which is every deployment until three keys are set. */
+        uploadOrInline: (file) => new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res({ url: String(r.result || ''), inline: true });
+          r.onerror = () => rej(new Error('unreadable_image'));
+          r.readAsDataURL(file);
+        }),
         public: {
           selfreg: {
             context: () => Promise.resolve({ open: true, selfServe: true, gate: { name: 'Public link' },
@@ -2962,7 +2971,12 @@ const LEADERBOARD = {
       const inp = document.querySelector('input[type=file]');
       inp.files = dt.files; inp.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    await srP.waitForTimeout(600);
+    /* Longer than it was: the photo now goes through uploadOrInline, which asks
+       the server whether a cloud is configured and lazily loads the resampler
+       before it can judge anything. Waiting for the verdict text rather than a
+       fixed delay, so this does not become a flaky timing test. */
+    await srP.waitForFunction(() => !/Getting the photo ready/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+    await srP.waitForTimeout(400);
     const photoText = await srP.evaluate(() => document.body.innerText);
     /* Judged here, while the camera is still open. Being told at the end that
        something ten minutes ago was wrong is the worst moment to hear it. */

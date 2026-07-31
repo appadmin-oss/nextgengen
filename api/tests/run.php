@@ -6066,6 +6066,39 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         $u = (string)(db_row("SELECT photoUrl FROM summer_students WHERE studentId=?", [$SID])['photoUrl'] ?? '');
         return strpos($u, 'data:') !== 0 && strlen($u) <= 512;
     })());
+    /* Cloudinary IS configured on plenty of deployments, and this form was the
+     * only surface in the app that never used it — it always embedded the image
+     * in the submission instead, so a programme paying for a CDN, a face-aware
+     * crop and an identity-safe edit got none of them on the one photo that ends
+     * up printed on a child's card. The browser now uploads when it can and
+     * sends a URL; the server has to take either shape. */
+    chk('a photo already uploaded to a cloud is accepted as a URL', (function () use ($SELF, $form, $good) {
+        $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'force' => true,
+            'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/hosted-kid.jpg',
+            'data' => array_merge($form, ['fullName' => 'Hosted Photo', 'parentName' => 'Mr Hosted',
+                'parentPhone' => '08035554444', 'parentEmail' => 'hosted@example.com'])]);
+        if (empty($r['ok'])) return false;
+        $u = (string)db_row('SELECT photoUrl FROM summer_students WHERE studentId = ?', [$r['studentId']])['photoUrl'];
+        return $u === 'https://res.cloudinary.com/demo/image/upload/v1/hosted-kid.jpg';
+    })());
+    /* …and the verdict must not claim a check it could not run. We never see the
+     * bytes of a cloud-uploaded image, so the shape check is skipped — reporting
+     * that as `pass` would tell a reviewer a machine approved a photo nothing
+     * looked at. It is a "have a look" instead. */
+    chk('…and its verdict says nothing examined it, rather than passing it', (function () {
+        $c = safe_json((string)db_row("SELECT photoCheck FROM summer_students WHERE fullName = 'Hosted Photo' LIMIT 1")['photoCheck']);
+        return is_array($c) && ($c['source'] ?? '') === 'unchecked' && ($c['verdict'] ?? '') === 'check'
+            && ($c['stored'] ?? null) === true;
+    })());
+    chk('…but a URL that is not one is refused, not stored', (function () use ($SELF, $form) {
+        foreach (['javascript:alert(1)', '/etc/passwd', 'data:text/html;base64,PGI+'] as $bad) {
+            $r = backend_dispatch('selfreg.submit', ['gate' => $SELF['gateId'], 'consent' => true, 'force' => true,
+                'photoUrl' => $bad, 'data' => array_merge($form, ['fullName' => 'Bad URL'])]);
+            if (($r['error'] ?? '') !== 'photo_required') return false;
+        }
+        return true;
+    })());
+
     /* The consent ledger, written at submit time.
      *
      * The guardian filling this form IS the person whose consent is needed, so
