@@ -367,6 +367,36 @@ function php(body) {
   is(agree === 'https://next.afrovanguard.org.ng/q/SUMQR-TEST123',
     'the browser encoder decodes to the same text, so both agree at level M');
 
+  /* ── An email sent months ago still shows its QR ───────────────────────────
+   * Every ID email carries an <img> pointing at api/public/qr.php. That endpoint
+   * used to 404 on a cache miss, which is a broken-image icon in a message nobody
+   * can re-send from — and permanent, because the file it was waiting for was
+   * never going to appear. Messages sent before the encoder existed, a storage
+   * directory cleared between hosts, a failed write: all ordinary, all the same
+   * result. It encodes on demand now, so this deletes the cached file and asks
+   * over HTTP exactly as a mail client would. */
+  php(`@unlink(qr_cache_path('${STU_TOKEN}'));`);
+  const healed = await page.evaluate(async (url) => {
+    const r = await fetch(url, { cache: 'reload' });
+    if (!r.ok) return { status: r.status, text: null };
+    const blob = await r.blob();
+    const bmp = await createImageBitmap(blob);
+    const cv = document.createElement('canvas');
+    cv.width = bmp.width; cv.height = bmp.height;
+    cv.getContext('2d').drawImage(bmp, 0, 0);
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+    const q = window.jsQR(d.data, cv.width, cv.height);
+    return { status: r.status, type: blob.type, text: q ? q.data : null };
+  }, BASE + '/api/public/qr.php?t=' + STU_TOKEN);
+  is(healed.status === 200 && healed.type === 'image/png',
+    'the QR endpoint answers with a PNG even when nothing has cached one (' + healed.status + ')');
+  is(typeof healed.text === 'string' && healed.text.indexOf('/q/' + STU_TOKEN) !== -1,
+    'and it decodes to that student\'s profile URL, so an old email heals itself');
+  // A token bound to nothing is still refused — this is not a QR-for-anything.
+  const bogus = await page.evaluate(async (url) => (await fetch(url, { cache: 'reload' })).status,
+    BASE + '/api/public/qr.php?t=NOT-A-REAL-TOKEN-AT-ALL');
+  is(bogus === 404, 'a token bound to no record is still refused (' + bogus + ')');
+
   is(pageErrs.length === 0, 'no uncaught page errors across the whole chain');
   if (pageErrs.length) console.error('       ', pageErrs.slice(0, 3).join(' | '));
 

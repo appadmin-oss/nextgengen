@@ -1654,13 +1654,20 @@ function student_send_id(string $studentId): array {
     $channels = [];
     $email = trim((string)($s['parentEmail'] ?? ''));
     if (function_exists('email_template') && function_exists('send_mail') && $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        /* Encode one if there is not a hosted copy yet, so the email carries a
-           scannable code rather than only a link. Before this the automatic path
-           had no browser to render one and quietly sent the link alone. */
+        /* The QR is ALWAYS referenced now, and it is always an image.
+         *
+         * This used to be conditional on a hosted file existing at send time, so a
+         * family whose PNG had not been cached got a message with no code in it and
+         * no way to tell. Two things changed: the file is encoded here if it is
+         * missing, and api/public/qr.php encodes on demand as well — so the URL
+         * resolves even for messages sent before any of this existed, and even if
+         * the storage directory is later cleared.
+         *
+         * That makes the conditional the wrong shape: withholding the <img> to
+         * avoid a broken image is only correct while the URL can 404, and it no
+         * longer can. */
         qr_ensure_cached((string)$s['token']);
-        $qrHtml = qr_cache_exists((string)$s['token'])
-            ? '<div style="text-align:center;margin:6px 0 14px"><img src="' . esc_html(qr_public_url((string)$s['token'])) . '" width="180" height="180" alt="Check-in QR for ' . $first . '" style="width:180px;height:180px;border:1px solid #e4e4e4;border-radius:12px;padding:8px;background:#fff"/><div style="font:400 12px monospace;color:#888;margin-top:6px">Scan at any centre to check in</div></div>'
-            : '';
+        $qrHtml = '<div style="text-align:center;margin:6px 0 14px"><img src="' . esc_html(qr_public_url((string)$s['token'])) . '" width="180" height="180" alt="Check-in QR for ' . $first . '" style="width:180px;height:180px;border:1px solid #e4e4e4;border-radius:12px;padding:8px;background:#fff"/><div style="font:400 12px monospace;color:#888;margin-top:6px">Scan at any centre to check in</div></div>';
         $html = email_template([
             'title' => $first . "'s Genius ID",
             'intro' => 'Hello' . (!empty($s['guardianName']) ? ' ' . esc_html((string)$s['guardianName']) : '') . " — here is {$first}'s Next Generation Genius ID.",

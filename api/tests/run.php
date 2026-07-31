@@ -2436,6 +2436,21 @@ chk('…and an already-cached QR is reused rather than re-encoded', (function ()
     // shared host is waste, and the browser-rendered copy is the same code anyway.
     return $again && filemtime(qr_cache_path($tok)) === $before;
 })());
+chk('the email always references the QR, because the URL always resolves', (function () {
+    /* The <img> used to be withheld when no PNG was cached at send time, which is
+       only the right call while the URL can 404. It cannot now: qr.php encodes on
+       demand. Withholding it meant a family got a message with no code and nothing
+       said so. */
+    $st = db_row("SELECT studentId, token FROM summer_students WHERE token != '' AND parentEmail != '' LIMIT 1");
+    if (!$st) return true;
+    @unlink(qr_cache_path((string)$st['token']));
+    $GLOBALS['__mail_sink'] = [];
+    student_send_id((string)$st['studentId']);
+    $mail = $GLOBALS['__mail_sink'];
+    unset($GLOBALS['__mail_sink']);
+    $body = $mail ? (string)($mail[count($mail) - 1]['html'] ?? $mail[count($mail) - 1]['body'] ?? '') : '';
+    return strpos($body, 'qr.php?t=') !== false && strpos($body, '<img') !== false;
+})());
 chk('the gaps read counts who is missing a QR without sending anything', (function () {
     $r = backend_dispatch('admin.id.qrgaps', ['requesterId' => 'NGG-2025-0099']);
     return !empty($r['ok']) && isset($r['verified'], $r['missingQr'], $r['unreachable'], $r['sample'])
