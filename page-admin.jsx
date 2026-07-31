@@ -6719,8 +6719,33 @@ function AdminPhotos() {
   const [err, setErr] = React.useState("");
   const [busyId, setBusyId] = React.useState("");
   const [zoom, setZoom] = React.useState("");
-  const load = () => NGGApi.admin.photos.queue().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  /* Children with NO photograph, which the queue above structurally cannot show
+     — it lists photo ASSETS, and these have none. Every registration that
+     arrived before the image store existed lost its headshot at submit time and
+     cannot be recovered, so the only fix is to ask those families again. */
+  const [missing, setMissing] = React.useState(null);
+  const [asking, setAsking] = React.useState(false);
+  const loadMissing = () => NGGApi.admin.photos.missing(200).then(setMissing).catch(() => setMissing(null));
+  const load = () => { loadMissing(); return NGGApi.admin.photos.queue().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message)); };
   React.useEffect(() => { load(); }, []);
+
+  const askMissing = async () => {
+    const n = (missing && missing.students || []).filter(s => s.reachable && !s.askedAt).length;
+    const go = await dialog.confirm({
+      title: "Send retake links",
+      body: "Emails each guardian a one-tap link to take a new photo. " + n + " famil" + (n === 1 ? "y is" : "ies are") +
+            " due — anyone asked in the last 3 days is skipped, so pressing this again continues rather than asking twice." +
+            " Sent in batches of 50; press again for the next batch.",
+      cta: "Send " + Math.min(50, n),
+    });
+    if (!go) return;
+    setAsking(true);
+    try {
+      const r = await NGGApi.admin.photos.requestMissing(50, 3);
+      toast.success(r.asked ? "Asked " + r.asked + " famil" + (r.asked === 1 ? "y" : "ies") + (r.remaining ? " · " + r.remaining + " still due" : " · that's everyone") : (r.message || "Nobody was due."));
+      loadMissing();
+    } catch (e) { toast.error(e.code || e.message); } finally { setAsking(false); }
+  };
 
   const claim = async (a) => { setBusyId(a.assetId); try { await NGGApi.admin.photos.claim(a.assetId); toast.success("Claimed — you're reviewing this one."); load(); } catch (e) { toast.error(e.code === "already_claimed" ? "Another editor already claimed it." : (e.code || e.message)); } finally { setBusyId(""); } };
   const approve = async (a) => {
@@ -6762,6 +6787,56 @@ function AdminPhotos() {
         <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
       </div>
       <p className="admin-hint">The free AI only <b>flags</b> problems; Cloudinary <b>enhances</b> — it never alters the person. Approve the edit, request a retake, or (for unusable/inappropriate uploads) reject. You can paste a corrected image URL when approving.</p>
+
+      {/* The children this queue cannot show. A card with no face on it is not a
+          smaller problem than a badly-lit one, and it is invisible here because
+          there is no asset to list — so it needs its own block, above the
+          queue, with the one action that fixes it. */}
+      {missing && missing.total > 0 && (
+        <div className="admin-card" style={{ padding: 16, marginBottom: 16, borderColor: "rgba(245,176,38,.45)", background: "rgba(245,176,38,.06)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <h3 className="admin-h3" style={{ margin: 0 }}>
+              {missing.total} child{missing.total === 1 ? "" : "ren"} with no photo on file
+            </h3>
+            <button className="btn btn-primary btn-sm" disabled={asking} onClick={askMissing}>
+              {asking ? "Sending…" : "Send retake links"}
+            </button>
+          </div>
+          <p className="admin-hint" style={{ marginTop: 6 }}>
+            {(() => {
+              const rows = missing.students || [];
+              const self = rows.filter(s => s.selfRegistered).length;
+              const unreachable = rows.filter(s => !s.reachable).length;
+              const asked = rows.filter(s => s.askedAt).length;
+              return <>
+                {self > 0 && <><b>{self}</b> registered themselves — that form cannot be submitted without a photo, so those images
+                were lost before reaching the record and cannot be recovered. </>}
+                Each link lets a guardian take a new one on their phone in under a minute.
+                {asked > 0 && <> {asked} already asked.</>}
+                {unreachable > 0 && <> <b>{unreachable} have no email on file</b> and cannot be reached this way — a coordinator
+                has to photograph them at the centre.</>}
+              </>;
+            })()}
+          </p>
+          <div className="admin-table-wrap" style={{ maxHeight: 260, overflow: "auto" }}>
+            <table className="admin-table">
+              <thead><tr><th>Child</th><th>Centre</th><th>Registered</th><th>Guardian</th><th>Asked</th></tr></thead>
+              <tbody>
+                {(missing.students || []).map(sx => (
+                  <tr key={sx.studentId}>
+                    <td><b>{sx.fullName}</b><div className="mono admin-cell-sub">{sx.displayId || sx.studentId}{sx.selfRegistered ? " · self-registered" : ""}</div></td>
+                    <td className="mono" style={{ fontSize: 12 }}>{sx.centre || "—"}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{(sx.registeredAt || "").slice(0, 10) || "—"}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{sx.reachable ? sx.parentEmail : <span style={{ color: "#b3001b" }}>no email</span>}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{sx.askedAt ? sx.askedAt.slice(0, 10) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {missing.shown < missing.total && <p className="admin-cell-sub" style={{ marginTop: 6 }}>Showing the {missing.shown} most recent of {missing.total}.</p>}
+        </div>
+      )}
       {err ? <ErrorState title="Couldn't load the queue" code={err} onRetry={load}/> :
         data === null ? <div className="dash-spinner"/> :
         (data.queue || []).length === 0 ? <div className="admin-empty">Nothing waiting — clean photos auto-approve and only flagged ones land here. 🎉</div> :

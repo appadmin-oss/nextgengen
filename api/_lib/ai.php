@@ -27,6 +27,22 @@ declare(strict_types=1);
  *   ]
  */
 
+/* Every provider a profile may name. Fixed constants with fixed https hosts —
+ * a profile supplies a KEY and a MODEL, never a URL, so no configuration change
+ * can point this at an arbitrary server.
+ *
+ * openrouter is the one that scales: a single key reaches hundreds of models
+ * from every major lab, so adding a model is a config line rather than a
+ * deploy. anthropic is direct because a programme paying for it should not be
+ * paying a proxy margin too. */
+const AI_PROVIDERS = ['groq', 'gemini', 'anthropic', 'openrouter'];
+const AI_DEFAULT_MODEL = [
+    'groq'       => 'llama-3.1-8b-instant',
+    'gemini'     => 'gemini-1.5-flash',
+    'anthropic'  => 'claude-haiku-4-5-20251001',
+    'openrouter' => 'meta-llama/llama-3.1-8b-instruct',
+];
+
 function ai_config(): array {
     $cfg = $GLOBALS['CONFIG']['ai'] ?? null;
     return is_array($cfg) ? $cfg : [];
@@ -37,10 +53,19 @@ function ai_default_candidates(): array {
     $c = ai_config();
     $out = [];
     $pref = strtolower((string)($c['provider'] ?? ''));
-    $groq   = !empty($c['groq_api_key'])   ? ['provider' => 'groq',   'api_key' => (string)$c['groq_api_key'],   'model' => (string)($c['groq_model'] ?? 'llama-3.1-8b-instant')] : null;
-    $gemini = !empty($c['gemini_api_key']) ? ['provider' => 'gemini', 'api_key' => (string)$c['gemini_api_key'], 'model' => (string)($c['gemini_model'] ?? 'gemini-1.5-flash')] : null;
-    $ordered = $pref === 'gemini' ? [$gemini, $groq] : [$groq, $gemini];
-    foreach ($ordered as $p) if ($p) $out[] = $p;
+    /* Every provider the flat block can name, preference first and the rest as
+     * fallbacks. It used to know only two, so a deployment that set an Anthropic
+     * or OpenRouter key here and nothing else read as "AI disabled" — with no
+     * message saying so, because a missing key is a legitimate state. */
+    $byName = [];
+    foreach (AI_PROVIDERS as $prov) {
+        $key = (string)($c[$prov . '_api_key'] ?? '');
+        if ($key === '') continue;
+        $byName[$prov] = ['provider' => $prov, 'api_key' => $key,
+                          'model' => (string)($c[$prov . '_model'] ?? AI_DEFAULT_MODEL[$prov])];
+    }
+    if ($pref !== '' && isset($byName[$pref])) { $out[] = $byName[$pref]; unset($byName[$pref]); }
+    foreach ($byName as $p) $out[] = $p;
     return $out;
 }
 
@@ -52,11 +77,11 @@ function ai_profile_candidates(string $profile = 'default'): array {
     $c = ai_config();
     $out = [];
     $push = function ($p) use (&$out) {
-        if (is_array($p) && !empty($p['api_key']) && in_array(($p['provider'] ?? ''), ['groq', 'gemini'], true)) {
+        if (is_array($p) && !empty($p['api_key']) && in_array(($p['provider'] ?? ''), AI_PROVIDERS, true)) {
             $out[] = [
                 'provider' => (string)$p['provider'],
                 'api_key' => (string)$p['api_key'],
-                'model' => (string)($p['model'] ?? (($p['provider'] === 'groq') ? 'llama-3.1-8b-instant' : 'gemini-1.5-flash')),
+                'model' => (string)($p['model'] ?? (AI_DEFAULT_MODEL[$p['provider']] ?? '')),
             ];
         }
     };
@@ -111,6 +136,47 @@ function ai_http_post(string $url, string $body, array $headers): array {
 
 /** One call against one concrete provider candidate. $turns: [{role,text}]. */
 function ai_call_candidate(array $cand, string $system, array $turns, int $maxTokens, float $temp): array {
+    /* Anthropic. Its own shape: the system prompt is a top-level field rather
+     * than a message, and the reply is a content BLOCK LIST — taking
+     * choices[0].message.content off it would silently return nothing. */
+    if ($cand['provider'] === 'anthropic') {
+        $msgs = [];
+        foreach ($turns as $t) $msgs[] = ['role' => (($t['role'] ?? '') === 'coach' ? 'assistant' : 'user'), 'content' => (string)($t['text'] ?? '')];
+        if (!$msgs) $msgs[] = ['role' => 'user', 'content' => ''];
+        $body = json_encode(['model' => $cand['model'], 'max_tokens' => $maxTokens, 'temperature' => $temp,
+                             'system' => $system, 'messages' => $msgs], JSON_UNESCAPED_SLASHES);
+        $r = ai_http_post('https://api.anthropic.com/v1/messages', $body, [
+            'x-api-key: ' . $cand['api_key'], 'anthropic-version: 2023-06-01', 'Content-Type: application/json',
+        ]);
+        if (!$r['ok']) return $r;
+        $j = json_decode($r['body'], true);
+        $text = '';
+        foreach ((array)($j['content'] ?? []) as $blk) {
+            if (($blk['type'] ?? '') === 'text') $text .= (string)($blk['text'] ?? '');
+        }
+        return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'anthropic'] : ['ok' => false, 'error' => 'ai_empty'];
+    }
+
+    /* OpenRouter — OpenAI-shaped, and the reason "and much more" needs no
+     * further code: one key reaches hundreds of models from every major lab,
+     * so a new model is a config change rather than a deploy. The two extra
+     * headers are its attribution convention, not authentication. */
+    if ($cand['provider'] === 'openrouter') {
+        $msgs = [['role' => 'system', 'content' => $system]];
+        foreach ($turns as $t) $msgs[] = ['role' => (($t['role'] ?? '') === 'coach' ? 'assistant' : 'user'), 'content' => (string)($t['text'] ?? '')];
+        $body = json_encode(['model' => $cand['model'], 'max_tokens' => $maxTokens, 'temperature' => $temp, 'messages' => $msgs], JSON_UNESCAPED_SLASHES);
+        $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+        $r = ai_http_post('https://openrouter.ai/api/v1/chat/completions', $body, array_filter([
+            'Authorization: Bearer ' . $cand['api_key'], 'Content-Type: application/json',
+            $origin !== '' ? 'HTTP-Referer: ' . $origin : null,
+            'X-Title: Next Generation Genius',
+        ]));
+        if (!$r['ok']) return $r;
+        $j = json_decode($r['body'], true);
+        $text = $j['choices'][0]['message']['content'] ?? '';
+        return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'openrouter'] : ['ok' => false, 'error' => 'ai_empty'];
+    }
+
     if ($cand['provider'] === 'groq') {
         $msgs = [['role' => 'system', 'content' => $system]];
         foreach ($turns as $t) $msgs[] = ['role' => (($t['role'] ?? '') === 'coach' ? 'assistant' : 'user'), 'content' => (string)($t['text'] ?? '')];
@@ -140,8 +206,18 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
     return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'gemini'] : ['ok' => false, 'error' => 'ai_empty'];
 }
 
-/** Walk the profile's candidate chain until one answers. Never throws. */
+/** Walk the profile's candidate chain until one answers. Never throws.
+ *
+ *  Test seam: $GLOBALS['__ai_mock'] — fn($profile, $system, $turns) => result.
+ *  Multi-model orchestration cannot be verified against live providers (cost,
+ *  network, and answers that differ every run), and the parts worth testing —
+ *  which lens got which provider, what survives synthesis, what happens when one
+ *  provider is down — are all above the HTTP call. Mirrors the __ai_photo_mock
+ *  seam that already exists for the photo pipeline. */
 function ai_run(string $profile, string $system, array $turns, int $maxTokens, float $temp): array {
+    if (isset($GLOBALS['__ai_mock']) && is_callable($GLOBALS['__ai_mock'])) {
+        return ($GLOBALS['__ai_mock'])($profile, $system, $turns);
+    }
     $cands = ai_profile_candidates($profile);
     if (!$cands) return ['ok' => false, 'error' => 'ai_disabled'];
     $last = ['ok' => false, 'error' => 'ai_disabled'];

@@ -137,11 +137,21 @@ return [
     'ai' => [
         // Default profile (legacy flat block — used when a purpose below has
         // no key of its own):
-        'provider'       => 'groq',                    // preference: 'groq' | 'gemini'
+        'provider'       => 'groq',                    // preference: groq | gemini | anthropic | openrouter
         'groq_api_key'   => '',                        // leave empty to disable
         'groq_model'     => 'llama-3.1-8b-instant',
         'gemini_api_key' => '',                        // leave empty to disable
         'gemini_model'   => 'gemini-1.5-flash',
+        // Paid providers. Anything not set is simply skipped, and every
+        // provider listed here is a fallback for every other — one exhausted
+        // key degrades speed, not capability.
+        'anthropic_api_key'  => '',
+        'anthropic_model'    => 'claude-haiku-4-5-20251001',
+        // OpenRouter is the "and everything else": one key reaches hundreds of
+        // models from every major lab, so trying a different one is a config
+        // line rather than a deploy. Model ids look like 'vendor/model'.
+        'openrouter_api_key' => '',
+        'openrouter_model'   => 'meta-llama/llama-3.1-8b-instruct',
 
         // Pro allocation — one key per purpose so a rate-limited or leaked
         // key degrades ONE feature. Every entry optional; each may carry a
@@ -156,6 +166,31 @@ return [
             'analysis'   => ['provider' => 'gemini', 'api_key' => '', 'model' => 'gemini-1.5-flash'],
             // Cheap pre-screen of free text before storage.
             'moderation' => ['provider' => 'groq', 'api_key' => '', 'model' => 'llama-3.1-8b-instant'],
+
+            /* Level 7 · the analyst panel (Analytics → "What a panel of
+             * analysts makes of this").
+             *
+             * Four lenses read the SAME aggregate evidence and a fifth pass
+             * keeps only what at least two of them reached independently. Point
+             * each lens at a DIFFERENT provider or model where you can: four
+             * lenses on one model is one opinion four times, and the agreement
+             * between them then means nothing. The screen reports how many
+             * distinct providers actually answered, so this is visible rather
+             * than assumed.
+             *
+             * Each is optional and falls back to the default block. A strong
+             * model is worth it for 'insight_synth', which does the cutting.
+             *
+             * Nothing identifying is sent — see api/_lib/domain/insight.php.
+             * The payload is counts, rates and confidence intervals, and a
+             * second pass refuses the whole run rather than send a name, an id,
+             * a contact or a date of birth.
+             */
+            'insight_mechanism' => ['provider' => 'anthropic',  'api_key' => '', 'model' => 'claude-haiku-4-5-20251001'],
+            'insight_action'    => ['provider' => 'gemini',     'api_key' => '', 'model' => 'gemini-1.5-flash'],
+            'insight_risk'      => ['provider' => 'openrouter', 'api_key' => '', 'model' => 'deepseek/deepseek-chat'],
+            'insight_equity'    => ['provider' => 'groq',       'api_key' => '', 'model' => 'llama-3.3-70b-versatile'],
+            'insight_synth'     => ['provider' => 'anthropic',  'api_key' => '', 'model' => 'claude-sonnet-4-5-20250929'],
         ],
     ],
 

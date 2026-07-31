@@ -543,6 +543,11 @@
       analyticsGrowth: (centre, weeks) => request('/admin/analytics.php' + qs({ view: 'growth', centre: centre || '', weeks: weeks || '' })),
       // Level 6 · comparison, segmentation, rigour, narrative.
       analyticsDepth: (q) => request('/admin/analytics.php' + qs(Object.assign({ view: 'depth' }, q || {}))),
+      /* Level 7 — several model calls per run, so it is asked for explicitly
+         and never fetched with the page. `force` re-runs a cached panel. The
+         longer timeout is the point of it: a panel of four analysts plus a
+         synthesis pass will not finish inside the default write ceiling. */
+      analyticsInsight: (q, force) => request('/admin/analytics.php' + qs(Object.assign({ view: 'insight', force: force ? '1' : '' }, q || {})), { timeout: 180000 }),
       analyticsDrill: (metric, filters) => request('/admin/analytics.php', { body: { action: 'drilldown', metric, ...(filters || {}) } }),
       activityAdd:  (data) => request('/admin/analytics.php', { body: { action: 'activity.add', ...data } }),
       championsMint: (period) => request('/admin/analytics.php', { body: { action: 'champions.mint', period: period || '' } }),
@@ -677,6 +682,10 @@
         // Re-edit ANY image (by assetId, or by subject for already-live photos).
         edit:    (target, spec) => request('/admin/photos.php', { body: Object.assign({ action: 'edit', spec }, target) }),
         replace: (subjectType, subjectId, sourceUrl) => request('/admin/photos.php', { body: { action: 'replace', subjectType, subjectId, sourceUrl } }),
+        /* Children with NO photograph on file — a different question from the
+           review queue, which can only show photos that exist. */
+        missing: (limit) => request('/admin/photos.php' + qs({ view: 'missing', limit })),
+        requestMissing: (limit, quietDays) => request('/admin/photos.php', { body: { action: 'request_missing', limit, quietDays } }),
       },
       registration: {
         formsList:  () => request('/admin/registration.php' + qs({ view: 'forms' })),

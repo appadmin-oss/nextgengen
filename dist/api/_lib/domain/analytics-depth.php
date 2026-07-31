@@ -413,13 +413,27 @@ function an_retention(array $centres, int $maxWeeks = 8): array {
  * What the page thinks, stated. Every finding carries the figures behind it and
  * a severity, so the reader can check it rather than take it on trust.
  */
+/** "a, b and c" — so a sentence listing checks reads like one. */
+function an_join(array $parts): string {
+    $n = count($parts);
+    if ($n === 0) return '';
+    if ($n === 1) return $parts[0];
+    return implode(', ', array_slice($parts, 0, -1)) . ' and ' . $parts[$n - 1];
+}
+
 function an_findings(array $ctx): array {
     $f = [];
     $now = $ctx['now'] ?? null; $prev = $ctx['prev'] ?? null;
 
+    /* Which checks were ABLE to run, so the empty state can tell "we looked and
+     * found nothing" apart from "at this size nothing could be looked at". They
+     * read identically to a coordinator and mean opposite things. */
+    $ran = ['period' => false, 'weekday' => false, 'retention' => false];
+
     if ($now && $prev && $now['n'] > 0 && $prev['n'] > 0) {
         $cmp = an_compare_rates((int)$now['hit'], (int)$now['opp'], (int)$prev['hit'], (int)$prev['opp'],
                                 (int)$now['n'], (int)$prev['n']);
+        if (($cmp['verdict'] ?? '') !== 'too_few_people') $ran['period'] = true;
         if (($cmp['verdict'] ?? '') === 'significant') {
             $dir = $cmp['diff'] > 0 ? 'up' : 'down';
             $f[] = ['severity' => $cmp['diff'] > 0 ? 'good' : 'bad', 'code' => 'period_move',
@@ -445,6 +459,7 @@ function an_findings(array $ctx): array {
             $lo = $vals[0]; $hi = $vals[count($vals) - 1];
             $t = an_compare_rates((int)$hi['hit'], (int)$hi['opp'], (int)$lo['hit'], (int)$lo['opp'],
                                   (int)($hi['children'] ?? 0), (int)($lo['children'] ?? 0));
+            if (($t['verdict'] ?? '') !== 'too_few_people') $ran['weekday'] = true;
             if (empty($t['significant'])) continue;
             $i = array_search($lo, $row['cells'], true);
             $j = array_search($hi, $row['cells'], true);
@@ -461,6 +476,9 @@ function an_findings(array $ctx): array {
         $curve = $c['curve'];
         for ($k = 1; $k < count($curve); $k++) {
             $drop = $curve[$k - 1]['rate'] - $curve[$k]['rate'];
+            // A five-child floor: below it a single child leaving is a 20+ point
+            // "cliff", and reporting that as one would be noise dressed as a finding.
+            if ($curve[$k]['n'] >= 5) $ran['retention'] = true;
             if ($drop >= 30 && $curve[$k]['n'] >= 5) {
                 $f[] = ['severity' => 'bad', 'code' => 'retention_cliff',
                     'title' => 'The ' . $c['cohort'] . ' intake drops sharply in week ' . $k,
@@ -485,10 +503,35 @@ function an_findings(array $ctx): array {
             'detail' => $thin . ' of ' . $total . ' cells have a confidence interval wider than 25 points. '
                 . 'The totals are sound; the individual cells are not yet evidence, and are marked so.'];
     }
+    /* The empty state, and it must not overclaim.
+     *
+     * "No retention cliff" is a positive statement about the data. When the
+     * retention check could not run — every intake below the five-child floor,
+     * where one child leaving reads as a 30-point drop — the screen was making
+     * that claim anyway, sitting directly above a table visibly going 100% →
+     * 67% → 0%. A coordinator reading "no cliff" next to that either stops
+     * trusting the panel or, worse, believes it.
+     *
+     * So the fallback names only the checks that actually ran, and says plainly
+     * which ones could not. */
     if (!$f) {
-        $f[] = ['severity' => 'info', 'code' => 'nothing_notable',
-            'title' => 'Nothing stands out in this period',
-            'detail' => 'No significant move against the previous period, no weekday gap, no retention cliff.'];
+        $did = []; $couldNot = [];
+        foreach ([['period', 'a move against the previous period'],
+                  ['weekday', 'a weekday gap'],
+                  ['retention', 'a retention cliff']] as [$k, $label]) {
+            if ($ran[$k]) $did[] = $label; else $couldNot[] = $label;
+        }
+        if (!$did) {
+            $f[] = ['severity' => 'info', 'code' => 'nothing_testable',
+                'title' => 'Not enough data yet to say anything',
+                'detail' => 'None of the checks could run at this size — not ' . an_join($couldNot)
+                    . '. The tables above are what happened; they are not yet evidence of a pattern.'];
+        } else {
+            $f[] = ['severity' => 'info', 'code' => 'nothing_notable',
+                'title' => 'Nothing stands out in this period',
+                'detail' => 'No ' . an_join($did) . '.'
+                    . ($couldNot ? ' ' . ucfirst(an_join($couldNot)) . ' could not be tested at this size — that is not the same as none being there.' : '')];
+        }
     }
     return $f;
 }

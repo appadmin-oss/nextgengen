@@ -485,6 +485,7 @@ function AnalyticsWorkspace() {
       <a href="#an-exec">① Executive</a><a href="#an-ops">② Operations</a>
       <a href="#an-research">③ Research</a><a href="#an-evidence">④ Evidence</a>
       <a href="#an-growth">⑤ Growth potential</a><a href="#an-depth">⑥ Depth</a>
+      <a href="#an-insight">⑦ Analyst panel</a>
     </nav>
 
     {/* ── Level 1 · Executive ── */}
@@ -723,6 +724,9 @@ function AnalyticsWorkspace() {
 
     {/* ── Level 6 · Depth — comparison, segmentation, rigour, narrative ── */}
     <AnDepth filters={filters}/>
+
+    {/* ── Level 7 · what a panel of analysts makes of levels 1–6 ── */}
+    <AnInsight filters={filters}/>
 
     {/* Downloads & reports */}
     <section className="an-sec" style={{ marginBottom: 40 }}>
@@ -1035,6 +1039,148 @@ function AnHeatCell({ ci }) {
       {ci.rate}%
       <div style={{ fontWeight: 500, fontSize: 9.5, opacity: 0.8 }}>n={ci.n}</div>
     </td>
+  );
+}
+
+/* ── Level 7 · the analyst panel ─────────────────────────────────────────────
+ * Everything above is computed. This is the only part of the workspace a model
+ * wrote, and the screen says so in those words — a generated paragraph that
+ * looks like the computed ones above it would borrow their authority.
+ *
+ * Never fetched with the page. It is several model calls, so a coordinator asks
+ * for it, and the result is cached against the numbers it was drawn from.
+ */
+function AnInsight({ filters }) {
+  const [d, setD] = React.useState(null);
+  const [state, setState] = React.useState("idle");   // idle|loading|ready|error
+  const [err, setErr] = React.useState("");
+  const [open, setOpen] = React.useState("");
+
+  const run = async (force) => {
+    setState("loading"); setErr("");
+    try {
+      const r = await NGGApi.admin.analyticsInsight({ centre: filters.centre || "", week: filters.week || "" }, force);
+      setD(r.insight || null); setState("ready");
+    } catch (e) {
+      /* The privacy refusal is not a generic failure and must not read like
+         one: it means the payload would have carried something identifying,
+         which is a defect to fix, not a retry to press. */
+      const reasons = (e.data && e.data.reasons) || [];
+      setErr(e.code === "privacy_refused"
+        ? "Refused to send: the payload would have contained " + reasons.join(", ") + ". Nothing was sent. This is a bug — report it."
+        : (e.code || e.message));
+      setState("error");
+    }
+  };
+
+  const conf = (c) => ({ high: "an-chip-good", medium: "an-chip-warn", low: "an-chip-mut" }[c] || "an-chip-mut");
+
+  return (
+    <section className="an-sec" id="an-insight">
+      <div className="an-eyebrow">Level 7 · Analyst panel</div>
+      <h2 className="an-h">What a panel of analysts makes of this.</h2>
+      <p className="an-sub">
+        Everything above is <b>computed</b>. This is the only part written by a model — several of them,
+        reading the same aggregate numbers through different lenses, on different providers. Only what
+        two or more reached <i>independently</i> is shown as agreed; the rest is listed as contested,
+        because a point one model made and the others did not is not a finding.
+        {" "}No child's name, id or contact is sent — the panel sees counts and rates only.
+      </p>
+
+      {state === "idle" && (
+        <div className="an-card" style={{ padding: 18 }}>
+          <p style={{ margin: "0 0 12px" }}>Runs several model calls over the figures above. Takes up to a minute.</p>
+          <button className="btn btn-primary btn-sm" onClick={() => run(false)}>Ask the panel</button>
+        </div>
+      )}
+      {state === "loading" && <div className="an-card" style={{ padding: 18 }}><div className="dash-spinner"/>
+        <p className="an-sub" style={{ marginTop: 10 }}>Four lenses and a synthesis pass — this is not a spinner over a database query.</p></div>}
+      {state === "error" && <div className="an-card" style={{ padding: 18, borderColor: "rgba(179,0,27,.4)" }}>
+        <p style={{ margin: 0, color: "#b3001b" }}>{err}</p>
+        <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={() => run(false)}>Try again</button>
+      </div>}
+
+      {state === "ready" && d && (d.disabled || d.empty || d.failed) && (
+        <div className="an-card" style={{ padding: 18 }}>
+          <p style={{ margin: 0 }}>{d.note}</p>
+        </div>
+      )}
+
+      {state === "ready" && d && !d.disabled && !d.empty && !d.failed && <>
+        {d.headline && <div className="an-card" style={{ padding: 18, marginBottom: 14, borderLeft: "4px solid var(--navy-900)" }}>
+          <b style={{ fontSize: 17 }}>{d.headline}</b>
+        </div>}
+
+        {/* How much independence there actually was. Four lenses on ONE provider
+            is one opinion four times, and "two analysts agreed" would then mean
+            nothing — so the count of distinct providers is stated, not implied. */}
+        <p className="an-sub" style={{ marginTop: 0 }}>
+          {d.lensesRan} of {d.lensesTotal} lenses answered
+          {d.providers && d.providers.length
+            ? <> across <b>{d.providers.length}</b> provider{d.providers.length === 1 ? "" : "s"} ({d.providers.join(", ")})
+                {d.providers.length === 1 && <> — <b>agreement here is weak evidence</b>: give each lens its own
+                provider in <code>ai.profiles</code> and they stop being the same opinion.</>}</>
+            : null}
+          {!d.synthesised && <> · the synthesis pass failed, so these are the raw lens claims.</>}
+          {d.cached && <> · cached from {(d.generatedAt || "").replace("T", " ").slice(0, 16)}</>}
+          {" "}<button className="btn btn-ghost btn-sm" onClick={() => run(true)}>Re-run</button>
+        </p>
+
+        {(d.agreed || []).length > 0 && <>
+          <h3 className="an-h3">Agreed by more than one lens</h3>
+          <div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
+            {d.agreed.map((c, i) => (
+              <div key={i} className="an-card" style={{ padding: 15 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <b style={{ fontSize: 15.5 }}>{c.headline}</b>
+                  <span className={"an-chip " + conf(c.confidence)}>{c.confidence}</span>
+                </div>
+                <p className="an-sub" style={{ margin: "6px 0 0" }}>{c.why}</p>
+                {c.action && <p style={{ margin: "8px 0 0", fontSize: 14 }}><b>Do:</b> {c.action}</p>}
+                {(c.lenses || []).length > 0 && <p className="an-sub" style={{ margin: "6px 0 0", fontSize: 12 }}>
+                  Reached independently by: {c.lenses.join(" · ")}</p>}
+              </div>
+            ))}
+          </div>
+        </>}
+
+        {(d.contested || []).length > 0 && <>
+          <h3 className="an-h3">Only one lens said this</h3>
+          <p className="an-sub" style={{ marginTop: 0 }}>Not dismissed — but nothing else corroborated it, so treat it as a question rather than an answer.</p>
+          <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+            {d.contested.map((c, i) => (
+              <div key={i} className="an-card" style={{ padding: 12 }}>
+                <b style={{ fontSize: 14 }}>{c.headline}</b>
+                <p className="an-sub" style={{ margin: "4px 0 0", fontSize: 13 }}>{c.note || c.reasoning}{c.lens ? " — " + c.lens : ""}</p>
+              </div>
+            ))}
+          </div>
+        </>}
+
+        {/* Every raw claim, per lens, behind a disclosure. A synthesis nobody can
+            audit is a summary you have to take on faith. */}
+        <details>
+          <summary style={{ cursor: "pointer", fontSize: 13.5 }}>Show each lens in full ({(d.panel || []).length})</summary>
+          <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+            {(d.panel || []).map(a => (
+              <div key={a.key} className="an-card" style={{ padding: 13 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <b>{a.label}</b>
+                  <span className="an-sub" style={{ fontSize: 12 }}>{a.ok ? a.provider : "did not answer (" + a.error + ")"}</span>
+                </div>
+                {(a.claims || []).map((c, i) => (
+                  <div key={i} style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--line-cool-soft,#eef0f4)" }}>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{c.headline}</div>
+                    <p className="an-sub" style={{ margin: "3px 0 0", fontSize: 13 }}>{c.reasoning}</p>
+                    {c.evidence && <p className="mono an-sub" style={{ margin: "3px 0 0", fontSize: 11.5 }}>{c.evidence}</p>}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </details>
+      </>}
+    </section>
   );
 }
 

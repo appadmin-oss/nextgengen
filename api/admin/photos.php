@@ -6,7 +6,11 @@ $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
-    $res = gs_call('admin.photo.queue', ['requesterId' => $s['mid']]);
+    // ?view=missing lists children with NO photograph on file — a different
+    // question from the review queue, which only shows photos that exist.
+    $res = (string)($_GET['view'] ?? '') === 'missing'
+        ? gs_call('admin.photos.missing', ['requesterId' => $s['mid'], 'limit' => (int)($_GET['limit'] ?? 200)])
+        : gs_call('admin.photo.queue', ['requesterId' => $s['mid']]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
@@ -17,6 +21,8 @@ if ($method === 'GET') {
     elseif ($action === 'retake')  $res = gs_call('admin.photo.retake', $base + ['reason' => $b['reason'] ?? '']);
     elseif ($action === 'reject')  $res = gs_call('admin.photo.reject', $base + ['reason' => $b['reason'] ?? '']);
     elseif ($action === 'edit')    $res = gs_call('admin.photo.edit', ['requesterId' => $s['mid'], 'ip' => $ip, 'assetId' => $b['assetId'] ?? '', 'subjectType' => $b['subjectType'] ?? '', 'subjectId' => $b['subjectId'] ?? '', 'spec' => $b['spec'] ?? []]);
+    elseif ($action === 'request_missing') $res = gs_call('admin.photos.requestMissing', ['requesterId' => $s['mid'], 'ip' => $ip,
+        'limit' => $b['limit'] ?? 50, 'quietDays' => $b['quietDays'] ?? 3]);
     elseif ($action === 'replace') $res = gs_call('admin.photo.replace', ['requesterId' => $s['mid'], 'ip' => $ip, 'subjectType' => $b['subjectType'] ?? '', 'subjectId' => $b['subjectId'] ?? '', 'sourceUrl' => $b['sourceUrl'] ?? '']);
     else json_error('unknown_action', 400);
 } else {

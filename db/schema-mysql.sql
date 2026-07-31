@@ -1274,4 +1274,12 @@ INSERT INTO schema_version (version) VALUES (71) ON DUPLICATE KEY UPDATE version
 -- places.
 ALTER TABLE summer_students ADD COLUMN dob VARCHAR(12) DEFAULT '';
 
-INSERT INTO schema_version (version) VALUES (72) ON DUPLICATE KEY UPDATE version = version;
+-- 73: when we last ASKED a family for a photo we do not have. Registrations from
+-- before the image store lost their headshot at submit time and cannot be
+-- recovered, so those families have to be asked again — a bounded, resumable
+-- operation, which needs a marker. Its own column rather than reusing
+-- remindedAt (which means "we chased the consent"): one would silently reset the
+-- other and the roster's waiting-time column would start lying.
+ALTER TABLE summer_students ADD COLUMN photoAskedAt VARCHAR(40) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (73) ON DUPLICATE KEY UPDATE version = version;

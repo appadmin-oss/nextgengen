@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 72;
+const NGG_SCHEMA_TARGET = 73;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1848,6 +1848,22 @@ function db_migrate(PDO $db): void {
          */
         72 => "
             ALTER TABLE summer_students ADD COLUMN dob TEXT DEFAULT '';
+        ",
+        /* When we last ASKED a family for a photo we do not have.
+         *
+         * Registrations that arrived before the image store existed lost their
+         * headshot at submit time — the bytes were discarded and cannot be
+         * recovered, so the only fix is to ask those families again. That has to
+         * be a bounded, resumable operation: a coordinator with two hundred
+         * affected children will press the button, lose the connection, and
+         * press it again, and none of those families should be emailed twice.
+         *
+         * Its own column rather than reusing `remindedAt`, which means "we
+         * chased the consent" — one would silently reset the other and the
+         * roster's waiting-time column would start lying.
+         */
+        73 => "
+            ALTER TABLE summer_students ADD COLUMN photoAskedAt TEXT DEFAULT '';
         ",
     ];
 

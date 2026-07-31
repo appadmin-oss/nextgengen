@@ -608,6 +608,94 @@ function photo_process(string $assetId): array {
     return ['ok' => true, 'status' => $row['status'], 'score' => $score, 'flags' => $flags, 'aiUsed' => $edit['aiUsed'], 'editedUrl' => $edit['url']];
 }
 
+/* ── Children whose photograph never made it ─────────────────────────────────
+ * Every registration that arrived before the image store existed lost its
+ * headshot at submit time: the bytes were handed to a pipeline that refused
+ * anything that was not already hosted, and were dropped. Nothing can recover
+ * them — the image was never written anywhere — so the only honest fix is to
+ * ask those families again.
+ *
+ * That has to be findable and it has to be bulk. A coordinator is not going to
+ * open two hundred records to notice which ones are blank, and the review desk
+ * only shows what is still pending; children already approved and issued a card
+ * are exactly the ones with a card that has no face on it.
+ */
+
+/** Everyone with no photograph on file, newest first, with whether they can
+ *  actually be reached and when they were last asked. */
+function admin_photos_missing(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $limit = max(1, min(500, (int)($p['limit'] ?? 200)));
+    $rows = db_all("SELECT studentId, displayId, fullName, centre, track, regStatus, submittedVia,
+                           parentEmail, guardianPhone, enrolledAt, photoAskedAt
+                    FROM summer_students
+                    WHERE (photoUrl IS NULL OR photoUrl = '') AND status != 'inactive'
+                    ORDER BY id DESC LIMIT ?", [$limit]);
+    $out = [];
+    foreach ($rows as $r) {
+        $email = trim((string)($r['parentEmail'] ?? ''));
+        $out[] = [
+            'studentId' => (string)$r['studentId'], 'displayId' => (string)($r['displayId'] ?? ''),
+            'fullName' => (string)$r['fullName'], 'centre' => (string)($r['centre'] ?? ''),
+            'course' => (string)($r['track'] ?? ''), 'regStatus' => (string)($r['regStatus'] ?? ''),
+            // Self-registered means the family definitely SENT one — it was lost.
+            // A desk registration may simply never have had a photo taken.
+            'selfRegistered' => trim((string)($r['submittedVia'] ?? '')) !== '',
+            'reachable' => $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) !== false,
+            'parentEmail' => $email,
+            'registeredAt' => (string)($r['enrolledAt'] ?? ''),
+            'askedAt' => (string)($r['photoAskedAt'] ?? ''),
+        ];
+    }
+    $total = (int)(db_row("SELECT COUNT(*) c FROM summer_students
+                           WHERE (photoUrl IS NULL OR photoUrl = '') AND status != 'inactive'")['c'] ?? 0);
+    return ['ok' => true, 'students' => $out, 'total' => $total, 'shown' => count($out)];
+}
+
+/**
+ * Email those families a retake link.
+ *
+ * Bounded and resumable, because the realistic use is two hundred children and a
+ * coordinator who will lose the connection halfway and press the button again:
+ *
+ *  - `quietDays` skips anyone already asked recently, so a second press
+ *    continues rather than emailing the same families twice.
+ *  - `limit` caps one run; the caller presses again for the next batch and the
+ *    quiet period makes that safe.
+ *  - photoAskedAt is stamped BEFORE the send, so a message that goes out and
+ *    then times out is never sent twice. Better a family missed this round than
+ *    one emailed four times about their child's photograph.
+ *  - Nobody unreachable is counted as asked.
+ */
+function admin_photos_request_missing(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $limit = max(1, min(200, (int)($p['limit'] ?? 50)));
+    $quietDays = max(0, min(90, (int)($p['quietDays'] ?? 3)));
+    $cut = gmdate('Y-m-d\TH:i:s\Z', time() - $quietDays * 86400);
+
+    $rows = db_all("SELECT studentId, fullName, parentEmail FROM summer_students
+                    WHERE (photoUrl IS NULL OR photoUrl = '') AND status != 'inactive'
+                      AND parentEmail != '' AND (photoAskedAt IS NULL OR photoAskedAt = '' OR photoAskedAt < ?)
+                    ORDER BY id DESC LIMIT ?", [$cut, $limit]);
+    if (!$rows) return ['ok' => true, 'asked' => 0, 'remaining' => 0, 'message' => 'Nobody is due — everyone reachable has been asked recently.'];
+
+    $asked = 0; $failed = 0;
+    foreach ($rows as $r) {
+        $id = (string)$r['studentId'];
+        db_update('summer_students', ['photoAskedAt' => now_iso()], ['studentId' => $id]);
+        try {
+            reshoot_notify_guardian($id, 'We do not have a photo on file for ' . explode(' ', (string)$r['fullName'])[0] . '.');
+            $asked++;
+        } catch (Throwable $e) { $failed++; error_log('[photos.request_missing] ' . $id . ': ' . $e->getMessage()); }
+    }
+    $remaining = (int)(db_row("SELECT COUNT(*) c FROM summer_students
+                               WHERE (photoUrl IS NULL OR photoUrl = '') AND status != 'inactive'
+                                 AND parentEmail != '' AND (photoAskedAt IS NULL OR photoAskedAt = '' OR photoAskedAt < ?)",
+                              [$cut])['c'] ?? 0);
+    audit('photos.request_missing', (string)$g['requester']['memberId'], '', ['asked' => $asked, 'failed' => $failed], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'asked' => $asked, 'failed' => $failed, 'remaining' => $remaining];
+}
+
 /* ── Editor queue + transitions ───────────────────────────────────────────── */
 
 function photo_public(array $a): array {

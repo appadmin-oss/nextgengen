@@ -45,6 +45,29 @@ if (($_GET['view'] ?? '') === 'depth') {
     unset($res['ok']); json_ok($res);
 }
 
+/* Level 7 · the analyst panel. Several model calls per run, so it is NEVER
+ * fetched with the page: the client asks for it explicitly and can force a
+ * re-run. Its own caching lives in the domain (fingerprinted on the evidence),
+ * so there is deliberately no cache_remember wrapper here — two caches with
+ * different rules over one expensive thing is how you get an answer nobody can
+ * explain the age of. */
+if (($_GET['view'] ?? '') === 'insight') {
+    $res = gs_call('analytics.insight', [
+        'requesterId' => $s['mid'], 'centre' => $_GET['centre'] ?? '',
+        'week' => $_GET['week'] ?? '', 'range' => $_GET['week'] ?? '',
+        'force' => ($_GET['force'] ?? '') === '1', 'ip' => client_ip(),
+    ]);
+    if (empty($res['ok'])) {
+        http_response_code(400);
+        header('Content-Type: application/json; charset=utf-8');
+        // The privacy refusal carries its reasons — an admin needs to see WHICH
+        // field would have leaked, not just that something did.
+        echo json_encode(['ok' => false] + array_diff_key($res, ['ok' => 1]), JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+    unset($res['ok']); json_ok($res);
+}
+
 if (($_GET['view'] ?? '') === 'growth') {
     $centre = (string)($_GET['centre'] ?? '');
     $weeks  = (string)($_GET['weeks'] ?? '');

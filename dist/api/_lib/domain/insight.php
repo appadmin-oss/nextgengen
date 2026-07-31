@@ -1,0 +1,422 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Level 7 — a panel of analysts, not a summariser.
+ *
+ * Levels 1–6 compute. They say what happened, to whom, how big the difference
+ * is and whether it survives a test. What they cannot do is the thing a good
+ * analyst does with the same table: notice that two panels disagree, name the
+ * mechanism that would explain both, say what to do on Monday, and say what
+ * would prove them wrong.
+ *
+ * WHY A PANEL AND NOT ONE CALL. One model given one prompt produces one
+ * confident story, and a confident story about children's attendance is exactly
+ * the output that should not be trusted. So several analysts read the SAME
+ * evidence through deliberately different lenses, on deliberately different
+ * providers where the deployment has more than one key, and a separate pass
+ * keeps only what at least two of them independently reached. A claim that one
+ * model made and the others did not is reported as contested, not as insight.
+ * The disagreement is the product.
+ *
+ * ── THE PRIVACY BOUNDARY ─────────────────────────────────────────────────────
+ * Nothing about an identifiable child ever leaves this server. Not a name, not
+ * an id, not a handle, not a guardian's contact, not a free-text note. The
+ * analysts receive `insight_evidence()` — counts, rates, confidence intervals
+ * and coded reasons — and that function is the ONLY thing that builds their
+ * input. `insight_scrub()` is a second, independent pass over the encoded
+ * payload that fails the whole run rather than send something that looks like a
+ * name or an id, because a privacy control that depends on every future caller
+ * remembering it is not a control.
+ *
+ * This matters more here than anywhere else in the codebase: these requests
+ * leave the building, go to a third party, and may be retained by them. A child
+ * cannot consent to that and their guardian was never asked.
+ *
+ * ── COST ─────────────────────────────────────────────────────────────────────
+ * A panel run is several completions. It is therefore NOT computed per page
+ * view: it runs on demand or from the web-cron, is cached against a fingerprint
+ * of the evidence, and returns the cached answer unchanged until the underlying
+ * numbers move. An admin can force a re-run.
+ */
+
+/* The lenses. Each is a genuinely different question, not a rephrasing — a
+ * panel of near-identical prompts is one analyst with extra steps and extra
+ * cost. The `profile` is what routes each to its own provider/key when the
+ * deployment has more than one, so "independent" means independent. */
+const INSIGHT_ANALYSTS = [
+    [
+        'key' => 'mechanism', 'label' => 'What is causing this',
+        'profile' => 'insight_mechanism',
+        'brief' => 'You are looking for MECHANISM. For the largest differences in the evidence, name the '
+                 . 'concrete operational cause that would produce exactly that pattern — a timetable, a '
+                 . 'transport route, a term date, a class that is too full, a teacher absent. Prefer a '
+                 . 'mundane logistical explanation to a motivational one. If two panels disagree, the '
+                 . 'explanation that reconciles both is worth more than one that fits either alone.',
+    ],
+    [
+        'key' => 'action', 'label' => 'What to do on Monday',
+        'profile' => 'insight_action',
+        'brief' => 'You are looking for ACTION. Propose changes a centre coordinator could make within a '
+                 . 'week, with no new budget and no new staff. Each must name who does it, what changes, '
+                 . 'and the number in this evidence that would move if it worked. Reject anything that '
+                 . 'amounts to "increase engagement" or "improve communication".',
+    ],
+    [
+        'key' => 'risk', 'label' => 'What this is missing',
+        'profile' => 'insight_risk',
+        'brief' => 'You are the SCEPTIC. Find where this evidence would mislead someone acting on it: '
+                 . 'a rate resting on very few children, a comparison against a period that is not '
+                 . 'comparable, a segment whose total hides two opposite groups, survivorship in a '
+                 . 'retention curve. Say which specific number should not be acted on, and why.',
+    ],
+    [
+        'key' => 'equity', 'label' => 'Who is being left behind',
+        'profile' => 'insight_equity',
+        'brief' => 'You are looking for EQUITY. Compare the segments against each other and against the '
+                 . 'whole: which age band, sex or centre is doing materially worse, and is the gap big '
+                 . 'enough to be real given the group sizes shown? A gap you cannot distinguish from '
+                 . 'noise must be reported as such, not as a finding.',
+    ],
+];
+
+/* The synthesis pass. Deliberately a separate call with a separate brief: its
+ * job is to CUT, not to add. */
+const INSIGHT_SYNTH_PROFILE = 'insight_synth';
+
+const INSIGHT_MAX_CLAIMS   = 6;     // per analyst — a long list is a thinking-less list
+const INSIGHT_CACHE_TTL    = 21600; // 6h; the fingerprint below invalidates sooner when numbers move
+
+/* ── The privacy boundary ─────────────────────────────────────────────────── */
+
+/**
+ * Refuse to send anything that looks like it identifies a person.
+ *
+ * A belt to insight_evidence()'s braces, and deliberately paranoid: it runs on
+ * the ENCODED payload, so it catches a field somebody adds later without
+ * thinking about this file. Returns the list of reasons it would refuse —
+ * empty means safe to send.
+ */
+/* Fields that may legitimately hold a calendar date: the reporting window and
+ * the cohort/period labels. A date ANYWHERE ELSE is treated as a birthday,
+ * because in a cohort of ten children a birthday identifies one of them as
+ * surely as a name does. Allow-list rather than deny-list: a field added later
+ * is refused by default, which is the direction this has to fail in. */
+const INSIGHT_DATE_FIELDS = ['from', 'to', 'label', 'generatedAt', 'intake', 'cohort', 'week', 'day', 'range'];
+
+/* Keys that carry a person, whatever the value happens to be today. */
+const INSIGHT_PERSON_FIELDS = ['fullName', 'firstName', 'lastName', 'otherName', 'guardianName',
+    'parentEmail', 'guardianPhone', 'email', 'phone', 'handle', 'studentId', 'volunteerId',
+    'memberId', 'displayId', 'photoUrl', 'notes', 'reviewNote', 'dob'];
+
+function insight_scrub(string $payload): array {
+    $bad = [];
+    /* Textual pass — identifiers and contacts, which are unambiguous wherever
+     * they appear. */
+    if (preg_match('/\b(SUM|NGG|VOL|PH|GL|PT|SUMQR)-[A-Za-z0-9-]{3,}/', $payload, $m)) $bad[] = 'a record id (' . $m[0] . ')';
+    if (preg_match('/\bC\d+-\d{4}\b/', $payload, $m)) $bad[] = 'a student id (' . $m[0] . ')';
+    if (preg_match('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/', $payload)) $bad[] = 'an email address';
+    if (preg_match('/(\+?234|\b0)[789]\d{9}\b/', $payload)) $bad[] = 'a phone number';
+
+    /* Structural pass — walk the decoded payload so a date is judged by the
+     * field it sits in. A flat regex for dates flagged the programme's own
+     * reporting window, which is not a fact about any child; being merely
+     * strict is not the same as being right, and a gate that cries wolf is one
+     * somebody eventually loosens. */
+    $walk = function ($node, string $key) use (&$walk, &$bad) {
+        if (is_array($node)) {
+            foreach ($node as $k => $v) $walk($v, is_string($k) ? $k : $key);
+            return;
+        }
+        if (in_array($key, INSIGHT_PERSON_FIELDS, true)) { $bad[] = 'a ' . $key . ' field'; return; }
+        if (is_string($node) && preg_match('/\b(19|20)\d{2}-\d{2}-\d{2}\b/', $node, $m)
+            && !in_array($key, INSIGHT_DATE_FIELDS, true)) {
+            $bad[] = 'a date in "' . $key . '" (' . $m[0] . '), which reads as a birthday';
+        }
+    };
+    $decoded = json_decode($payload, true);
+    if (!is_array($decoded)) {
+        // Undecodable means unauditable. Refuse rather than send bytes nothing
+        // has been able to inspect.
+        $bad[] = 'a payload that could not be parsed for review';
+    } else {
+        $walk($decoded, '');
+        // Keys are checked structurally above, but a person-field nested in a
+        // string blob would slip past — so the flat check stays as a backstop.
+        foreach (INSIGHT_PERSON_FIELDS as $k) {
+            if (strpos($payload, '"' . $k . '"') !== false) $bad[] = 'a ' . $k . ' field';
+        }
+    }
+    return array_values(array_unique($bad));
+}
+
+/**
+ * Everything the analysts see, and nothing else.
+ *
+ * Built from the already-computed Level 6 depth output plus the centre-level
+ * growth readiness — both of which are aggregates by construction. The
+ * student-level growth index is deliberately NOT included: it is a score
+ * attached to a named child, and no third party is getting that.
+ */
+function insight_evidence(array $p): array {
+    $depth = function_exists('analytics_depth') ? analytics_depth($p) : ['ok' => false];
+    $ev = ['generatedAt' => now_iso(), 'range' => [], 'overall' => null,
+           'centres' => [], 'segments' => [], 'weekday' => [], 'retention' => [], 'computed' => []];
+    if (empty($depth['ok']) || !empty($depth['depth']['empty'])) return $ev + ['empty' => true];
+    $d = $depth['depth'];
+
+    $ev['range'] = ['from' => (string)($d['range']['from'] ?? ''), 'to' => (string)($d['range']['to'] ?? ''),
+                    'label' => (string)($d['range']['label'] ?? '')];
+    $ev['overall'] = $d['period'] ?? null;
+    foreach (($d['centres'] ?? []) as $c) {
+        $ev['centres'][] = ['centre' => (string)$c['centre'], 'rate' => $c['rate'],
+                            'ci' => [$c['lo'] ?? null, $c['hi'] ?? null],
+                            'childDays' => $c['opp'] ?? 0, 'children' => $c['children'] ?? 0,
+                            'vsProgramme' => $c['delta'] ?? null, 'verdict' => (string)($c['verdict'] ?? '')];
+    }
+    foreach (($d['crosstab']['rows'] ?? []) as $r) {
+        $cells = [];
+        foreach ((array)($r['cells'] ?? []) as $i => $c) {
+            if (!$c) continue;
+            $cells[] = ['column' => (string)(($d['crosstab']['columns'][$i] ?? '')), 'rate' => $c['rate'],
+                        'childDays' => $c['opp'] ?? 0, 'children' => $c['children'] ?? 0,
+                        'tooThin' => !empty($c['thin'])];
+        }
+        $ev['segments'][] = ['row' => (string)($r['label'] ?? ''), 'cells' => $cells];
+    }
+    foreach (($d['weekday']['centres'] ?? []) as $r) {
+        $days = [];
+        foreach ((array)($r['cells'] ?? []) as $i => $c) {
+            if (!$c) continue;
+            $days[] = ['day' => (string)($d['weekday']['days'][$i] ?? ''), 'rate' => $c['rate'], 'n' => $c['opp'] ?? 0];
+        }
+        $ev['weekday'][] = ['centre' => (string)($r['centre'] ?? ''), 'days' => $days];
+    }
+    foreach (($d['retention']['cohorts'] ?? []) as $c) {
+        $ev['retention'][] = ['intake' => (string)($c['cohort'] ?? ''), 'size' => $c['size'] ?? 0,
+                              'curve' => array_map(fn($x) => ['week' => $x['week'] ?? null, 'rate' => $x['rate'] ?? null, 'n' => $x['n'] ?? null],
+                                                   (array)($c['curve'] ?? []))];
+    }
+    $ev['computed'] = array_map(fn($f) => ['severity' => (string)$f['severity'], 'title' => (string)$f['title']],
+                                (array)($d['findings'] ?? []));
+
+    /* Centre-level readiness only. growth_workspace also returns a per-CHILD
+     * index with names attached; that is the single most sensitive thing this
+     * codebase computes and it does not leave the server. */
+    if (function_exists('growth_workspace')) {
+        $g = growth_workspace($p);
+        foreach (($g['growth']['centres'] ?? []) as $c) {
+            $ev['centreReadiness'][] = ['centre' => (string)($c['centre'] ?? ''), 'score' => $c['score'] ?? null,
+                                        'constraint' => (string)($c['constraint'] ?? ''), 'children' => $c['children'] ?? 0];
+        }
+    }
+    return $ev;
+}
+
+/* ── The panel ────────────────────────────────────────────────────────────── */
+
+/** The rules every analyst is held to, whatever their lens. */
+function insight_system(array $a): string {
+    return "You are one of several independent analysts reading the SAME evidence from a Nigerian youth "
+         . "education programme. Your specific brief: " . $a['brief'] . "\n\n"
+         . "RULES, all of them binding:\n"
+         . "- Every claim must cite a number that is present in the evidence. If it is not there, you do not know it.\n"
+         . "- Group sizes are given. A difference resting on a handful of children is not a finding; say so instead of reporting it.\n"
+         . "- 'child-days' are attendance opportunities, not distinct children. Repeat visits by the same few people are not independent evidence.\n"
+         . "- You are reading aggregates. You will see no names and must not speculate about individuals.\n"
+         . "- Write for a centre coordinator, not a data scientist. Short sentences. No jargon, no hedging padding.\n"
+         . "- Returning fewer claims is better than padding. An empty list is a valid and useful answer.\n\n"
+         . "Reply with JSON only: {\"claims\":[{\"headline\":\"under 90 chars\",\"reasoning\":\"2-3 sentences\","
+         . "\"evidence\":\"the numbers you used\",\"confidence\":\"high|medium|low\","
+         . "\"action\":\"what to do, or empty\"}]}. At most " . INSIGHT_MAX_CLAIMS . " claims.";
+}
+
+/** Run one analyst. Never throws; a provider that is down loses one lens. */
+function insight_run_analyst(array $a, string $evidenceJson): array {
+    $r = ai_classify(insight_system($a), $evidenceJson, 1600, $a['profile']);
+    if (empty($r['ok']) || !is_array($r['data']['claims'] ?? null)) {
+        return ['key' => $a['key'], 'label' => $a['label'], 'ok' => false,
+                'error' => (string)($r['error'] ?? 'no_claims'), 'claims' => []];
+    }
+    $claims = [];
+    foreach (array_slice($r['data']['claims'], 0, INSIGHT_MAX_CLAIMS) as $c) {
+        $head = trim((string)($c['headline'] ?? ''));
+        if ($head === '') continue;
+        $claims[] = [
+            'headline' => mb_substr($head, 0, 140),
+            'reasoning' => mb_substr(trim((string)($c['reasoning'] ?? '')), 0, 600),
+            'evidence' => mb_substr(trim((string)($c['evidence'] ?? '')), 0, 300),
+            'confidence' => in_array(($c['confidence'] ?? ''), ['high', 'medium', 'low'], true) ? (string)$c['confidence'] : 'low',
+            'action' => mb_substr(trim((string)($c['action'] ?? '')), 0, 400),
+        ];
+    }
+    return ['key' => $a['key'], 'label' => $a['label'], 'ok' => true,
+            'provider' => (string)($r['provider'] ?? ''), 'claims' => $claims];
+}
+
+/**
+ * The synthesis pass — which claims survive more than one analyst.
+ *
+ * Separate call, separate brief, and it may only CUT and MERGE. Letting the
+ * synthesiser add its own claims would put an unreviewed fifth analyst at the
+ * top of the page wearing the authority of a summary.
+ */
+function insight_synthesise(array $panel, string $evidenceJson): array {
+    $input = [];
+    foreach ($panel as $a) {
+        if (empty($a['ok'])) continue;
+        foreach ($a['claims'] as $i => $c) {
+            $input[] = ['id' => $a['key'] . '.' . $i, 'lens' => $a['label']] + $c;
+        }
+    }
+    if (count($input) < 2) return ['agreed' => [], 'contested' => $input, 'ok' => false, 'error' => 'too_few_claims'];
+
+    $sys = "Several independent analysts read the same evidence. You are merging their claims. You may ONLY "
+         . "group, cut and rank what they wrote — never add a claim of your own, and never strengthen one.\n\n"
+         . "- AGREED: a substantive point at least two different lenses reached independently. Merge those into one entry "
+         . "and list which lenses. This is the important output.\n"
+         . "- CONTESTED: a point only one lens made, or where two lenses conflict. Say what the disagreement is.\n"
+         . "- Drop anything vague, unactionable, or not grounded in a number.\n\n"
+         . "Reply with JSON only: {\"agreed\":[{\"headline\":\"\",\"why\":\"2-3 sentences\",\"lenses\":[\"\"],"
+         . "\"action\":\"\",\"confidence\":\"high|medium|low\"}],\"contested\":[{\"headline\":\"\",\"lens\":\"\",\"note\":\"\"}],"
+         . "\"headline\":\"one sentence: the single most important thing here\"}";
+
+    $r = ai_classify($sys, json_encode(['evidence' => json_decode($evidenceJson, true), 'claims' => $input], JSON_UNESCAPED_SLASHES), 1800, INSIGHT_SYNTH_PROFILE);
+    if (empty($r['ok']) || !is_array($r['data'] ?? null)) {
+        // The panel still ran. Hand back its claims unsynthesised rather than
+        // nothing — one failed call must not discard four that worked.
+        return ['agreed' => [], 'contested' => $input, 'ok' => false, 'error' => (string)($r['error'] ?? 'synth_failed')];
+    }
+    $d = $r['data'];
+    $agreed = [];
+    foreach ((array)($d['agreed'] ?? []) as $c) {
+        $h = trim((string)($c['headline'] ?? ''));
+        if ($h === '') continue;
+        $agreed[] = ['headline' => mb_substr($h, 0, 160),
+                     'why' => mb_substr(trim((string)($c['why'] ?? '')), 0, 700),
+                     'lenses' => array_slice(array_map(fn($x) => mb_substr((string)$x, 0, 40), (array)($c['lenses'] ?? [])), 0, 4),
+                     'action' => mb_substr(trim((string)($c['action'] ?? '')), 0, 400),
+                     'confidence' => in_array(($c['confidence'] ?? ''), ['high', 'medium', 'low'], true) ? (string)$c['confidence'] : 'low'];
+    }
+    $contested = [];
+    foreach ((array)($d['contested'] ?? []) as $c) {
+        $h = trim((string)($c['headline'] ?? ''));
+        if ($h === '') continue;
+        $contested[] = ['headline' => mb_substr($h, 0, 160), 'lens' => mb_substr((string)($c['lens'] ?? ''), 0, 40),
+                        'note' => mb_substr(trim((string)($c['note'] ?? '')), 0, 400)];
+    }
+    return ['ok' => true, 'agreed' => $agreed, 'contested' => $contested,
+            'headline' => mb_substr(trim((string)($d['headline'] ?? '')), 0, 240),
+            'provider' => (string)($r['provider'] ?? '')];
+}
+
+/** A stable fingerprint of the evidence, so the cache turns over when — and
+ *  only when — the numbers a reader would act on have moved. */
+function insight_fingerprint(array $ev): string {
+    $copy = $ev; unset($copy['generatedAt']);
+    return substr(sha1(json_encode($copy, JSON_UNESCAPED_SLASHES) ?: ''), 0, 16);
+}
+
+/* ── The op ───────────────────────────────────────────────────────────────── */
+
+/**
+ * The background worker: keep the programme-wide panel warm.
+ *
+ * Called from maintenance, so a coordinator opening Analytics on Monday reads
+ * an answer rather than watching four model calls. Bounded hard, because unlike
+ * every other cron job here this one spends money:
+ *
+ *  - Programme-wide only. Per-centre panels stay on demand; pre-computing one
+ *    per centre would multiply the bill by the number of centres to answer
+ *    questions nobody has asked.
+ *  - The fingerprint does the real limiting. Identical numbers mean the cached
+ *    panel is still current and nothing is called at all, so a quiet week costs
+ *    nothing however often this runs.
+ *  - Off entirely unless an admin turns it on. Spending a programme's API
+ *    budget is not something to start doing because a version shipped.
+ */
+function insight_prewarm(): void {
+    if (setting_raw('insight_prewarm') !== '1') return;
+    if (!ai_enabled(INSIGHT_ANALYSTS[0]['profile']) && !ai_enabled('default')) return;
+    try {
+        // A synthetic requester with the analytics capability; the op gates on
+        // it, and there is no signed-in admin on a cron tick.
+        $r = insight_panel(['requesterId' => setting_raw('insight_prewarm_as') ?: '', 'centre' => '']);
+        if (empty($r['ok'])) ops_record('warn', 'insight.prewarm', 'Panel pre-warm did not run.', (string)($r['error'] ?? ''));
+    } catch (Throwable $e) {
+        ops_record('warn', 'insight.prewarm', 'Panel pre-warm threw.', $e->getMessage());
+    }
+}
+
+/**
+ * Level 7. Returns the cached panel unless the evidence has changed or the
+ * caller forces a re-run.
+ */
+function insight_panel(array $p): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+
+    $ev = insight_evidence($p);
+    if (!empty($ev['empty'])) {
+        return ['ok' => true, 'insight' => ['empty' => true,
+            'note' => 'There is nothing to analyse in this range yet.']];
+    }
+    /* Cached against a FINGERPRINT of the evidence, not just a clock: several
+     * model calls per run is not something to repeat because a coordinator
+     * refreshed the page, and equally not something to keep serving after the
+     * numbers underneath have moved. The key is per centre+range; the stamp is
+     * the evidence itself. */
+    $fp = insight_fingerprint($ev);
+    $key = 'insight_panel_' . substr(sha1((string)($p['centre'] ?? '') . '|' . (string)($p['range'] ?? '')), 0, 12);
+
+    if (empty($p['force'])) {
+        $hit = cache_get($key, INSIGHT_CACHE_TTL, $fp);
+        if (is_array($hit)) return ['ok' => true, 'insight' => $hit + ['cached' => true]];
+    }
+
+    if (!ai_enabled(INSIGHT_ANALYSTS[0]['profile']) && !ai_enabled('default')) {
+        return ['ok' => true, 'insight' => ['disabled' => true,
+            'note' => 'No AI provider is configured. Levels 1–6 are unaffected — they are computed, not generated.']];
+    }
+
+    /* THE GATE. Encode once, check that encoding, and send exactly the bytes
+     * that were checked. Encoding twice would leave room for the two to differ. */
+    $evidenceJson = json_encode($ev, JSON_UNESCAPED_SLASHES) ?: '{}';
+    $leak = insight_scrub($evidenceJson);
+    if ($leak) {
+        ops_record('error', 'insight.privacy', 'Refused to send analytics to an AI provider — the payload contained identifying data.', implode('; ', $leak));
+        return ['ok' => false, 'error' => 'privacy_refused', 'reasons' => $leak];
+    }
+
+    $panel = [];
+    foreach (INSIGHT_ANALYSTS as $a) $panel[] = insight_run_analyst($a, $evidenceJson);
+    $ran = array_values(array_filter($panel, fn($x) => !empty($x['ok'])));
+    if (!$ran) {
+        return ['ok' => true, 'insight' => ['failed' => true,
+            'note' => 'Every analyst call failed. The computed levels above are unaffected.',
+            'panel' => $panel]];
+    }
+    $synth = insight_synthesise($panel, $evidenceJson);
+
+    $out = [
+        'fingerprint' => $fp,
+        'generatedAt' => now_iso(),
+        'range' => $ev['range'],
+        'headline' => (string)($synth['headline'] ?? ''),
+        'agreed' => $synth['agreed'] ?? [],
+        'contested' => $synth['contested'] ?? [],
+        'synthesised' => !empty($synth['ok']),
+        'panel' => array_map(fn($a) => [
+            'key' => $a['key'], 'label' => $a['label'], 'ok' => !empty($a['ok']),
+            'provider' => (string)($a['provider'] ?? ''), 'error' => (string)($a['error'] ?? ''),
+            'claims' => $a['claims'],
+        ], $panel),
+        // Named so a reader can weigh it: four lenses on one provider is one
+        // opinion four times, and the screen should not imply otherwise.
+        'providers' => array_values(array_unique(array_filter(array_map(fn($a) => (string)($a['provider'] ?? ''), $ran)))),
+        'lensesRan' => count($ran), 'lensesTotal' => count(INSIGHT_ANALYSTS),
+    ];
+    cache_put($key, $out, $fp);
+    audit('insight.panel', (string)($g['requester']['memberId'] ?? ''), '', ['fp' => $fp, 'lenses' => count($ran)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'insight' => $out];
+}

@@ -212,6 +212,43 @@ Setting `cloudinary` is still worth doing for a real deployment — it brings th
 CDN, the face-aware crop and the identity-safe enhancement pass, and it keeps
 image bytes out of your database backups.
 
+### AI providers and the analyst panel
+
+Four providers are supported and every one is optional: **Groq**, **Google
+Gemini**, **Anthropic**, and **OpenRouter**. Anything you leave blank is skipped,
+and each acts as a fallback for the others — one exhausted key costs speed, not
+capability. With none set, every AI feature degrades to deterministic behaviour
+and says so; nothing invents an answer.
+
+OpenRouter is worth a key on its own: one credential reaches hundreds of models
+from every major lab, so trying a different model is a config line rather than a
+deploy.
+
+**Analytics → Level 7 · Analyst panel** is the one feature that uses several
+models at once. Four lenses (mechanism, action, scepticism, equity) read the same
+figures, and a fifth pass keeps only what two or more reached *independently*.
+Point each lens at a **different provider** in `ai.profiles` — four lenses on one
+model is one opinion four times, and their agreeing then tells you nothing. The
+screen reports how many distinct providers actually answered and warns when the
+answer is one.
+
+Two things to know before switching it on:
+
+- **It spends money.** A run is five completions. It is never computed with the
+  page: a coordinator asks for it, and the result is cached against a fingerprint
+  of the numbers it was drawn from, so an unchanged week costs nothing however
+  often it is opened. To pre-warm it from the background cron, set
+  `insight_prewarm = 1` and `insight_prewarm_as = <an admin memberId>` in
+  settings; it is off by default because spending a programme's API budget should
+  be a decision, not a side effect of upgrading.
+- **Nothing identifying leaves the server.** The panel receives counts, rates and
+  confidence intervals only — no name, id, handle, contact, note or date of
+  birth. A second, independent pass inspects the encoded payload and **fails the
+  whole run** rather than send something that looks like a person, and the
+  per-child growth score is excluded outright. See
+  `api/_lib/domain/insight.php`. If you see "Refused to send" on that screen,
+  that gate has fired and it is a bug to report, not a retry.
+
 ## Step 5 — Sign-in flow
 
 1. Click **Sign in**, enter the admin email.

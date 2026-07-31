@@ -2,52 +2,52 @@
   {
     "name": "01-growth-needs-support",
     "label": "Level 5 · who needs support, with reason codes",
-    "kb": 363
+    "kb": 409
   },
   {
     "name": "02-growth-by-centre",
     "label": "Level 5 · per-centre readiness + named constraint",
-    "kb": 301
+    "kb": 300
   },
   {
     "name": "03-growth-method",
     "label": "Level 5 · published weights and method",
-    "kb": 487
+    "kb": 490
   },
   {
     "name": "04-gate-links",
     "label": "Gate links · three kinds, Delete only on the revoked row",
-    "kb": 598
+    "kb": 597
   },
   {
     "name": "00-analytics-full",
     "label": "The whole analytics workspace, all levels",
-    "kb": 2649
+    "kb": 2695
   },
   {
     "name": "13-depth",
     "label": "Level 6 · comparison, cross-tabs, confidence intervals, findings",
-    "kb": 603
+    "kb": 602
   },
   {
     "name": "05-diagnostics-run-now",
     "label": "Diagnostics · per-job \"Run now\" and the stale-cache warning",
-    "kb": 431
+    "kb": 462
   },
   {
     "name": "06-journal-staff",
     "label": "Programme journal as STAFF · memories rail, all visibilities",
-    "kb": 469
+    "kb": 470
   },
   {
     "name": "06b-journal-entries",
     "label": "The record itself · kinds, status, visibility, people tagged",
-    "kb": 317
+    "kb": 316
   },
   {
     "name": "07-journal-member",
     "label": "Same journal as a MEMBER · staff-only entries not present",
-    "kb": 460
+    "kb": 459
   },
   {
     "name": "08-public-signup",

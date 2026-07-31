@@ -260,4 +260,9 @@ function web_cron_maintenance(): void {
      * conservative (a week old before it is even a candidate) and it does
      * nothing at all if it cannot read what is referenced. */
     if (function_exists('photo_store_sweep')) photo_store_sweep(7, 200);
+    /* Keep the analyst panel warm, so Monday morning reads an answer instead of
+     * watching four model calls. Off unless an admin turns it on — this is the
+     * one background job that spends money — and a no-op when the numbers have
+     * not moved, because the panel is cached against a fingerprint of them. */
+    if (function_exists('insight_prewarm')) insight_prewarm();
 }

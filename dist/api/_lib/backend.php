@@ -227,6 +227,9 @@ function backend_dispatch(string $op, array $args = []): array {
             // Comparison, segmentation, rigour and narrative. Its own op for the
             // same reason as growth: it must not be paid for on every load.
             'analytics.depth'          => 'analytics_depth',
+            // Level 7 — the analyst panel. Several models, different lenses,
+            // different providers, and only what more than one of them reached.
+            'analytics.insight'        => 'insight_panel',
             /* The Programme Journal. Writes need the `journal` capability (the
              * journalist role); reads are filtered by the viewer's visibility
              * level inside the handler, which is why the feed and the memories
@@ -264,6 +267,11 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.photo.claim'         => 'photo_claim',
             'admin.photo.approve'       => 'photo_approve',
             'admin.photo.retake'        => 'photo_request_retake',
+            // Children with no photograph on file, and the bulk ask that fixes
+            // them. Registrations from before the image store lost their
+            // headshot at submit time and cannot be recovered any other way.
+            'admin.photos.missing'      => 'admin_photos_missing',
+            'admin.photos.requestMissing' => 'admin_photos_request_missing',
             'admin.photo.reject'        => 'photo_reject',
             'admin.photo.edit'          => 'admin_photo_edit',
             'admin.photo.replace'       => 'admin_photo_replace',

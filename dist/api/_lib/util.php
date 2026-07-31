@@ -236,6 +236,43 @@ function setting_get(string $key) {
  * A stale entry is served if the recompute throws, because a board that is
  * thirty seconds out of date is worth more than an error page.
  */
+/** The memo file for a key — one definition, so a reader and a writer cannot
+ *  disagree about where it lives. */
+function cache_path(string $key): string {
+    global $CONFIG;
+    return ($CONFIG['cache_dir'] ?? sys_get_temp_dir()) . '/_memo/'
+         . preg_replace('/[^a-z0-9_.-]/i', '', $key) . '.json';
+}
+
+/** Read a memo without computing anything. Null on a miss, an expired entry, or
+ *  a stamp that no longer matches. For callers that need to know whether a
+ *  cached answer EXISTS — an expensive job that should be offered rather than
+ *  silently started, say — which cache_remember cannot express. */
+function cache_get(string $key, int $ttl = 0, string $stamp = '') {
+    $path = cache_path($key);
+    $age = @filemtime($path);
+    if (!$age) return null;
+    if ($ttl > 0 && (time() - $age) >= $ttl) return null;
+    $raw = @file_get_contents($path);
+    if ($raw === false) return null;
+    $hit = json_decode($raw, true);
+    if (!is_array($hit)) return null;
+    if (isset($hit['__v'], $hit['__d'])) return (string)$hit['__v'] === $stamp ? $hit['__d'] : null;
+    return $stamp === '' ? $hit : null;
+}
+
+/** Write a memo directly. Same write-then-rename as cache_remember, so a
+ *  concurrent reader never sees half a file. */
+function cache_put(string $key, $value, string $stamp = ''): bool {
+    if (!is_array($value)) return false;
+    $path = cache_path($key);
+    @mkdir(dirname($path), 0755, true);
+    $tmp = $path . '.' . getmypid() . '.tmp';
+    $store = $stamp === '' ? $value : ['__v' => $stamp, '__d' => $value];
+    if (@file_put_contents($tmp, json_encode($store, JSON_UNESCAPED_SLASHES)) === false) return false;
+    return @rename($tmp, $path);
+}
+
 function cache_remember(string $key, int $ttl, callable $fn, string $stamp = '') {
     global $CONFIG;
     $dir = ($CONFIG['cache_dir'] ?? sys_get_temp_dir()) . '/_memo';

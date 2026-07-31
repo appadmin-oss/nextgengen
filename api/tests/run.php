@@ -70,7 +70,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'analytics-depth', 'growth', 'journal', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'analytics-depth', 'growth', 'insight', 'journal', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/sheets.php';
 require $ROOT . '/_lib/webcron.php';
@@ -2709,6 +2709,258 @@ chk('re-shoot: an inline photo works with no cloud configured, and is applied', 
         && is_file(photo_store_path(substr($u, strrpos($u, '=') + 1)));
 })());
 unset($GLOBALS['__ai_photo_mock'], $GLOBALS['__mail_sink']);
+
+/* ── Level 7 · the analyst panel, and the boundary it must never cross ───────
+ * These requests LEAVE THE BUILDING. They go to a third party who may retain
+ * them, about children who cannot consent to that and guardians who were never
+ * asked. So the privacy gate is tested harder than the feature: it is the only
+ * part where being wrong is not recoverable by a deploy.
+ */
+chk('a name, an id, a contact or a date of birth is refused before any call is made', (function () {
+    $cases = [
+        '{"child":"Amaka Okafor","studentId":"C1-0001"}'        => 'student id',
+        '{"rows":[{"fullName":"x"}]}'                            => 'fullName field',
+        '{"contact":"parent@example.com"}'                       => 'email',
+        '{"phone":"08031112222"}'                                => 'phone',
+        '{"born":"2013-04-02"}'                                  => 'date of birth',
+        '{"ref":"SUM-2026-0269"}'                                => 'record id',
+        '{"who":"NGG-2025-0099"}'                                => 'member id',
+        '{"note":"","reviewNote":"he was upset"}'                => 'reviewNote field',
+    ];
+    foreach ($cases as $payload => $_why) {
+        if (!insight_scrub($payload)) return false;
+    }
+    return true;
+})());
+chk('…while aggregates with no person in them pass', (function () {
+    $ok = '{"centres":[{"centre":"Egbeda","rate":74.5,"ci":[60.5,84.7],"childDays":47,"children":3}],'
+        . '"segments":[{"row":"12-13","cells":[{"column":"Female","rate":95,"children":1,"tooThin":true}]}],'
+        . '"weekday":[{"centre":"Ayobo","days":[{"day":"Mon","rate":44.4,"n":9}]}]}';
+    return insight_scrub($ok) === [];
+})());
+/* The gate has to hold on the REAL evidence builder, not just on strings a test
+ * made up — the whole risk is a field somebody adds to that builder later
+ * without thinking about this file. */
+chk('the real evidence payload carries nothing identifying', (function () {
+    $ev = insight_evidence(['requesterId' => 'NGG-2025-0099']);
+    $json = json_encode($ev, JSON_UNESCAPED_SLASHES);
+    $leak = insight_scrub((string)$json);
+    if ($leak) { fwrite(STDERR, '    insight leak: ' . implode('; ', $leak) . "\n"); return false; }
+    return true;
+})());
+/* The per-child growth index is the most sensitive thing this codebase
+ * computes: a predictive score attached to a named child. It is deliberately
+ * absent from the evidence — only centre-level readiness goes. */
+chk('…and no per-child growth score is in it, only centre-level readiness', (function () {
+    $ev = insight_evidence(['requesterId' => 'NGG-2025-0099']);
+    return !isset($ev['students']) && !isset($ev['needsSupport'])
+        && (!isset($ev['centreReadiness']) || is_array($ev['centreReadiness']));
+})());
+chk('the panel is admin-gated like every other analytics level',
+    (backend_dispatch('analytics.insight', ['requesterId' => ''])['ok'] ?? false) !== true);
+/* With no key configured this must be a stated absence, not an error and not a
+ * fabricated answer — levels 1-6 are computed and unaffected. */
+chk('with no AI configured the panel says so and invents nothing', (function () {
+    $r = backend_dispatch('analytics.insight', ['requesterId' => 'NGG-2025-0099']);
+    if (empty($r['ok'])) return false;
+    $i = $r['insight'];
+    return (!empty($i['disabled']) || !empty($i['empty']))
+        && empty($i['agreed']) && empty($i['headline']);
+})());
+/* Four lenses on one model is one opinion four times. The screen has to be able
+ * to say which, so the provider list is part of the contract. */
+chk('the panel declares distinct lenses, and each is separately routable', (function () {
+    $keys = array_column(INSIGHT_ANALYSTS, 'key');
+    $profiles = array_column(INSIGHT_ANALYSTS, 'profile');
+    $briefs = array_column(INSIGHT_ANALYSTS, 'brief');
+    return count($keys) >= 3
+        && count(array_unique($keys)) === count($keys)
+        && count(array_unique($profiles)) === count($profiles)   // each can take its own key
+        && count(array_unique($briefs)) === count($briefs)       // genuinely different questions
+        && INSIGHT_SYNTH_PROFILE !== $profiles[0];               // the cutter is not one of the writers
+})());
+
+/* The orchestration itself, against a stubbed provider. Multi-model behaviour
+ * cannot be tested against live APIs — cost, network, and an answer that differs
+ * every run — but everything worth testing is above the HTTP call: which lens
+ * got which provider, what survives synthesis, and what happens when one is
+ * down. */
+chk('the panel runs every lens, and only what two of them agreed reaches the top', (function () {
+    $seen = [];
+    $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) use (&$seen) {
+        $seen[] = $profile;
+        if ($profile === INSIGHT_SYNTH_PROFILE) {
+            return ['ok' => true, 'provider' => 'anthropic', 'text' => json_encode([
+                'headline' => 'Wednesday transport is the constraint.',
+                'agreed' => [['headline' => 'Wednesday is the weak day', 'why' => 'Two lenses reached it.',
+                              'lenses' => ['What is causing this', 'What to do on Monday'],
+                              'action' => 'Move the Wednesday session.', 'confidence' => 'medium']],
+                'contested' => [['headline' => 'Only equity said this', 'lens' => 'Who is being left behind', 'note' => 'Nothing corroborated it.']],
+            ])];
+        }
+        return ['ok' => true, 'provider' => 'stub-' . $profile, 'text' => json_encode(['claims' => [
+            ['headline' => 'Wednesday is the weak day', 'reasoning' => 'r', 'evidence' => '44%', 'confidence' => 'medium', 'action' => 'a'],
+        ]])];
+    };
+    $r = backend_dispatch('analytics.insight', ['requesterId' => 'NGG-2025-0099', 'force' => true]);
+    unset($GLOBALS['__ai_mock']);
+    if (empty($r['ok'])) return false;
+    $i = $r['insight'];
+    if (!empty($i['disabled']) || !empty($i['empty'])) return true;   // no data in this range; nothing to assert
+    // Every lens was asked, on its OWN profile, plus a separate synthesis pass.
+    foreach (INSIGHT_ANALYSTS as $a2) if (!in_array($a2['profile'], $seen, true)) return false;
+    return in_array(INSIGHT_SYNTH_PROFILE, $seen, true)
+        && count($i['agreed'] ?? []) === 1
+        && count($i['contested'] ?? []) === 1
+        && ($i['lensesRan'] ?? 0) === count(INSIGHT_ANALYSTS)
+        // Each lens's raw claims stay auditable — a synthesis nobody can check
+        // is a summary you have to take on faith.
+        && count($i['panel'] ?? []) === count(INSIGHT_ANALYSTS);
+})());
+chk('…one provider being down costs one lens, not the panel', (function () {
+    $GLOBALS['__ai_mock'] = function ($profile) {
+        if ($profile === INSIGHT_ANALYSTS[0]['profile']) return ['ok' => false, 'error' => 'ai_http_429'];
+        if ($profile === INSIGHT_SYNTH_PROFILE) return ['ok' => true, 'provider' => 'x', 'text' => json_encode(['headline' => 'h', 'agreed' => [], 'contested' => []])];
+        return ['ok' => true, 'provider' => 'x', 'text' => json_encode(['claims' => [['headline' => 'still here', 'reasoning' => 'r', 'confidence' => 'low']]])];
+    };
+    $r = backend_dispatch('analytics.insight', ['requesterId' => 'NGG-2025-0099', 'force' => true]);
+    unset($GLOBALS['__ai_mock']);
+    if (empty($r['ok'])) return false;
+    $i = $r['insight'];
+    if (!empty($i['disabled']) || !empty($i['empty'])) return true;
+    $failed = array_values(array_filter($i['panel'], fn($a2) => empty($a2['ok'])));
+    return ($i['lensesRan'] ?? 0) === count(INSIGHT_ANALYSTS) - 1
+        && count($failed) === 1 && ($failed[0]['error'] ?? '') === 'ai_http_429';
+})());
+chk('…and a failed synthesis hands back the raw claims rather than nothing', (function () {
+    $GLOBALS['__ai_mock'] = function ($profile) {
+        if ($profile === INSIGHT_SYNTH_PROFILE) return ['ok' => false, 'error' => 'ai_network'];
+        return ['ok' => true, 'provider' => 'x', 'text' => json_encode(['claims' => [['headline' => 'kept', 'reasoning' => 'r', 'confidence' => 'low']]])];
+    };
+    $r = backend_dispatch('analytics.insight', ['requesterId' => 'NGG-2025-0099', 'force' => true]);
+    unset($GLOBALS['__ai_mock']);
+    $i = $r['insight'] ?? [];
+    if (!empty($i['disabled']) || !empty($i['empty'])) return true;
+    // Four working calls must not be discarded because a fifth failed.
+    return ($i['synthesised'] ?? true) === false && count($i['contested'] ?? []) >= 1;
+})());
+/* The panel is several paid calls. Repeating them because somebody refreshed
+ * the page is a bill, not a feature. */
+chk('…and an unchanged set of numbers is answered from cache without calling anything', (function () {
+    $calls = 0;
+    $GLOBALS['__ai_mock'] = function ($profile) use (&$calls) {
+        $calls++;
+        if ($profile === INSIGHT_SYNTH_PROFILE) return ['ok' => true, 'provider' => 'x', 'text' => json_encode(['headline' => 'h', 'agreed' => [], 'contested' => []])];
+        return ['ok' => true, 'provider' => 'x', 'text' => json_encode(['claims' => [['headline' => 'c', 'reasoning' => 'r', 'confidence' => 'low']]])];
+    };
+    backend_dispatch('analytics.insight', ['requesterId' => 'NGG-2025-0099', 'force' => true]);
+    $after = $calls;
+    $second = backend_dispatch('analytics.insight', ['requesterId' => 'NGG-2025-0099']);
+    $noNew = ($calls === $after);
+    unset($GLOBALS['__ai_mock']);
+    $i = $second['insight'] ?? [];
+    if (!empty($i['disabled']) || !empty($i['empty'])) return true;
+    return $noNew && !empty($i['cached']);
+})());
+
+/* ── The providers ───────────────────────────────────────────────────────── */
+chk('a profile can name anthropic or openrouter, and gets a sane default model', (function () {
+    $keep = $GLOBALS['CONFIG']['ai'] ?? null;
+    $GLOBALS['CONFIG']['ai'] = ['profiles' => [
+        'p_ant' => ['provider' => 'anthropic', 'api_key' => 'k1'],
+        'p_or'  => ['provider' => 'openrouter', 'api_key' => 'k2', 'model' => 'vendor/some-model'],
+        'p_bad' => ['provider' => 'not-a-provider', 'api_key' => 'k3'],
+    ]];
+    $ant = ai_profile_candidates('p_ant');
+    $or  = ai_profile_candidates('p_or');
+    $bad = ai_profile_candidates('p_bad');
+    $GLOBALS['CONFIG']['ai'] = $keep;
+    return count($ant) === 1 && $ant[0]['provider'] === 'anthropic' && $ant[0]['model'] !== ''
+        && count($or) === 1 && $or[0]['model'] === 'vendor/some-model'
+        // An unknown provider is skipped entirely — never guessed at, and never
+        // used to build a URL.
+        && $bad === [];
+})());
+chk('…and the flat key block accepts them too, preference first', (function () {
+    $keep = $GLOBALS['CONFIG']['ai'] ?? null;
+    $GLOBALS['CONFIG']['ai'] = ['provider' => 'openrouter',
+        'anthropic_api_key' => 'a', 'openrouter_api_key' => 'o', 'groq_api_key' => 'g'];
+    $c = ai_default_candidates();
+    $GLOBALS['CONFIG']['ai'] = $keep;
+    // All three usable, the preferred one first — a deployment that set only an
+    // Anthropic key used to read as "AI disabled" with nothing saying so.
+    return count($c) === 3 && $c[0]['provider'] === 'openrouter'
+        && count(array_unique(array_column($c, 'provider'))) === 3;
+})());
+
+/* ── The children whose photograph never made it ─────────────────────────────
+ * Every registration from before the image store lost its headshot at submit
+ * time: the bytes went to a pipeline that refused anything not already hosted,
+ * and were dropped. Nothing recovers them, so the only fix is to ask those
+ * families again — and that has to be findable and bulk, because a coordinator
+ * will not open two hundred records to notice which ones are blank.
+ */
+chk('the missing-photo list finds children with no image, and says who is reachable', (function () {
+    $sid = (string)(db_row("SELECT studentId FROM summer_students ORDER BY id LIMIT 1")['studentId'] ?? '');
+    if ($sid === '') return false;
+    db_update('summer_students', ['photoUrl' => '', 'parentEmail' => 'lostphoto@example.com', 'photoAskedAt' => ''], ['studentId' => $sid]);
+    $r = backend_dispatch('admin.photos.missing', ['requesterId' => 'NGG-2025-0099']);
+    if (empty($r['ok'])) return false;
+    foreach ($r['students'] as $s2) {
+        if ($s2['studentId'] !== $sid) continue;
+        return $s2['reachable'] === true && $r['total'] >= 1;
+    }
+    return false;
+})());
+chk('…and a child WITH a photo is not in it', (function () use ($SRC) {
+    $sid = (string)(db_row("SELECT studentId FROM summer_students WHERE photoUrl != '' ORDER BY id LIMIT 1")['studentId'] ?? '');
+    if ($sid === '') return true;   // nothing to prove against
+    foreach (backend_dispatch('admin.photos.missing', ['requesterId' => 'NGG-2025-0099'])['students'] as $s2) {
+        if ($s2['studentId'] === $sid) return false;
+    }
+    return true;
+})());
+/* Bounded and resumable, because the realistic use is two hundred children and
+ * somebody who loses the connection halfway and presses again. Nobody should be
+ * emailed twice about their child's photograph. */
+chk('asking is idempotent within the quiet period — a second press does not re-ask', (function () {
+    $GLOBALS['__mail_sink'] = [];
+    $first = backend_dispatch('admin.photos.requestMissing', ['requesterId' => 'NGG-2025-0099', 'limit' => 50, 'quietDays' => 3]);
+    $sentFirst = count($GLOBALS['__mail_sink']);
+    $GLOBALS['__mail_sink'] = [];
+    $second = backend_dispatch('admin.photos.requestMissing', ['requesterId' => 'NGG-2025-0099', 'limit' => 50, 'quietDays' => 3]);
+    $sentSecond = count($GLOBALS['__mail_sink']);
+    unset($GLOBALS['__mail_sink']);
+    return ($first['asked'] ?? 0) >= 1 && $sentFirst >= 1
+        && ($second['asked'] ?? 0) === 0 && $sentSecond === 0;
+})());
+chk('…and every family asked gets a working retake link, not just an email', (function () {
+    $s2 = db_row("SELECT studentId, photoToken, photoAskedAt FROM summer_students
+                  WHERE photoAskedAt != '' AND (photoUrl IS NULL OR photoUrl = '') LIMIT 1");
+    if (!$s2) return false;
+    // The token has to actually open the retake page, or the email is a dead end.
+    $ctx = backend_dispatch('reshoot.context', ['t' => (string)$s2['photoToken']]);
+    return trim((string)$s2['photoToken']) !== '' && !empty($ctx['ok']) && ($ctx['awaiting'] ?? false) === true;
+})());
+chk('…and somebody with no email is never counted as asked', (function () {
+    backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 2]);   // enrolling consumes the blank pool
+    $r = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => [
+        'fullName' => 'No Email Kid', 'dob' => gmdate('Y-m-d', strtotime('-12 years')), 'centre' => 'Egbeda']]);
+    if (empty($r['ok'])) return false;
+    db_update('summer_students', ['photoUrl' => '', 'parentEmail' => ''], ['studentId' => $r['studentId']]);
+    backend_dispatch('admin.photos.requestMissing', ['requesterId' => 'NGG-2025-0099', 'limit' => 50, 'quietDays' => 3]);
+    $row = db_row('SELECT photoAskedAt FROM summer_students WHERE studentId = ?', [$r['studentId']]);
+    // Listed as a problem, but flagged unreachable rather than silently "done".
+    $listed = false;
+    foreach (backend_dispatch('admin.photos.missing', ['requesterId' => 'NGG-2025-0099'])['students'] as $s2) {
+        if ($s2['studentId'] === $r['studentId']) { $listed = true; if ($s2['reachable'] !== false) return false; }
+    }
+    return $listed && trim((string)$row['photoAskedAt']) === '';
+})());
+chk('the bulk ask is gated by the summer capability', (function () {
+    return (backend_dispatch('admin.photos.requestMissing', ['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'forbidden'
+        && (backend_dispatch('admin.photos.missing', ['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'forbidden';
+})());
 
 /* ── The local image store ───────────────────────────────────────────────────
  * The whole point of it: a deployment with no Cloudinary must still be able to
