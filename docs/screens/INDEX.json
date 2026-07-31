@@ -15,6 +15,16 @@
     "kb": 490
   },
   {
+    "name": "21-volunteer-ids-real",
+    "label": "Volunteer IDs as the studio renders them from the database",
+    "kb": 769
+  },
+  {
+    "name": "22-student-ids-real",
+    "label": "Summer student IDs from the same database, for comparison",
+    "kb": 1504
+  },
+  {
     "name": "04-gate-links",
     "label": "Gate links · three kinds, Delete only on the revoked row",
     "kb": 597
@@ -22,7 +32,7 @@
   {
     "name": "00-analytics-full",
     "label": "The whole analytics workspace, all levels",
-    "kb": 3158
+    "kb": 3156
   },
   {
     "name": "13-depth",
@@ -32,7 +42,7 @@
   {
     "name": "05-diagnostics-run-now",
     "label": "Diagnostics · per-job \"Run now\" and the stale-cache warning",
-    "kb": 461
+    "kb": 460
   },
   {
     "name": "06-journal-staff",
@@ -87,17 +97,17 @@
   {
     "name": "16-volunteer-id-lineup",
     "label": "Five volunteers, four centres — the arm's-length test",
-    "kb": 625
+    "kb": 652
   },
   {
     "name": "17-volunteer-id-vs-student",
     "label": "The same centre on a volunteer card and a child's card, plus the back",
-    "kb": 681
+    "kb": 703
   },
   {
     "name": "18-volunteer-id-detail",
     "label": "One card at full scale — keyline, chip and band",
-    "kb": 175
+    "kb": 178
   },
   {
     "name": "19-cards-print-range",

@@ -1169,6 +1169,34 @@ const LEADERBOARD = {
                  bandFontPx: bs ? Math.round(parseFloat(bs.fontSize) * 100) / 100 : 0,
                  bandOutline: bd ? getComputedStyle(bd).outlineStyle : '',
                  frame: hex(getComputedStyle(card).backgroundColor),
+                 /* The volunteer card's centre device, which is no longer a foot
+                    band: a thin line in the centre colour round the inside of the
+                    white panel, plus the centre name in plain type with a dot of
+                    the colour beside it. A band is a solid block at ONE edge —
+                    the edge a lanyard sleeve covers and the edge that gets tucked
+                    under on a table. A line is on all four. */
+                 panelLine: pn ? (getComputedStyle(pn).boxShadow.match(/rgba?\([^)]*\)/) || [''])[0] : '',
+                 panelLinePx: pn ? (function () {
+                   // "rgb(...) 0px 0px 0px 3.5px inset" — the spread is the weight.
+                   const m = getComputedStyle(pn).boxShadow.match(/(\d+(?:\.\d+)?)px\s+inset/);
+                   return m ? Math.round(parseFloat(m[1]) * 100) / 100 : 0;
+                 })() : 0,
+                 // Every inset ring on the panel, so a keyline can be told from one.
+                 panelRings: pn ? (getComputedStyle(pn).boxShadow.match(/inset/g) || []).length : 0,
+                 /* The centre name where it now lives. Read off the dot's sibling
+                    rather than by position, so the assertion survives a re-layout. */
+                 centreLine: (function () {
+                   const dot = Array.from(card.querySelectorAll('span')).find(d => {
+                     const b = d.getBoundingClientRect(), st = getComputedStyle(d);
+                     return b.width > 3 && b.width < 14 && Math.abs(b.width - b.height) < 2
+                       && st.borderRadius.indexOf('50%') === 0 && /^rgb\(/.test(st.backgroundColor);
+                   });
+                   const label = dot && dot.parentElement && dot.parentElement.querySelector('span:last-child');
+                   return { name: label ? label.innerText.trim() : '',
+                            dot: dot ? hex(getComputedStyle(dot).backgroundColor) : '',
+                            ink: label ? hex(getComputedStyle(label).color) : '',
+                            fontPx: label ? Math.round(parseFloat(getComputedStyle(label).fontSize) * 100) / 100 : 0 };
+                 })(),
                  // Smallest white margin between the band and the panel edge on
                  // the three sides that face the frame. null when there is no
                  // inner panel at all (the student card is one white plane).
@@ -1336,55 +1364,56 @@ const LEADERBOARD = {
       (await studio.locator('.card-pair').count()) === 5
       && !/of 5 volunteers ready/.test(await studio.evaluate(() => document.body.innerText)));
     const volFronts = (await centreOnCard('.card-pair .idcard')).filter((_, i) => i % 2 === 0);
-    ok('the volunteer card carries the same centre band (' + volFronts.length + ' cards)',
-      volFronts.length === 5 && volFronts[0].band === 'EGBEDA' && volFronts[1].band === 'IJAIYE');
-    ok('…and the same code chip on the headshot',
-      /\bEG\b/.test(volFronts[0].text) && /\bIJ\b/.test(volFronts[1].text));
+    /* The volunteer card's centre device is a thin LINE round the white panel,
+       not a foot band. A band is a solid block at one edge — the edge a lanyard
+       sleeve covers and the edge that gets tucked under on a table — and it took
+       a sixteenth of the card away from the content to say one word. */
+    ok('the volunteer card has no coloured foot band (' + volFronts.length + ' cards)',
+      volFronts.length === 5 && volFronts.every(c => !c.band));
+    ok('…the centre is a thin line round the white panel instead',
+      volFronts[0].panelLine === 'rgb(214, 69, 69)' && volFronts[1].panelLine === 'rgb(46, 125, 209)'
+      && volFronts[0].panelLinePx > 0 && volFronts[0].panelLinePx <= 6);
     /* Two facts, two places. The frame stays the TIER colour — role is what a
-       volunteer gets stopped and asked about — so the band has to be the only
-       thing carrying the centre, and it must not merge into the frame. That is
-       exactly what a maroon Lead Mentor frame round a red Egbeda band did. */
-    ok('…without the centre band eating the role colour the frame carries',
-      volFronts[0].frame === '#8a1538' && volFronts[0].bandColor === '#d64545'
-      && volFronts[1].frame === '#00225f' && volFronts[1].bandColor === '#2e7dd1');
-    /* Two colours meeting with no seam read as one shape, and card 0 is the
-       worst case on purpose: a maroon Lead Mentor frame round a red Egbeda
-       band. The band is inset inside the panel so white always shows between
-       them, whatever pair the hierarchy table happens to hold. */
-    ok('…and a white gutter keeping the two colours from merging (' + volFronts[0].gutter + 'px)',
-      volFronts[0].gutter >= 2 && volFronts[1].gutter >= 2);
+       volunteer gets stopped and asked about — so the line has to be the only
+       thing carrying the centre, and it must not merge into the frame. */
+    ok('…without the centre line eating the role colour the frame carries',
+      volFronts[0].frame === '#8a1538' && volFronts[1].frame === '#00225f');
+    /* Colour is not a label: one man in twelve cannot read it, print drifts
+       between batches, and a photocopy has none of it. The band used to spell
+       the centre out, so removing it had to keep the name somewhere. */
+    ok('…and the centre is still spelled out, next to a dot of its colour',
+      volFronts[0].centreLine.name === 'EGBEDA' && volFronts[0].centreLine.dot === '#d64545'
+      && volFronts[1].centreLine.name === 'IJAIYE' && volFronts[1].centreLine.dot === '#2e7dd1');
     /* A volunteer with no single site — a roving mentor, ops, a record filed
-       before centres existed — used to get no band at all, which left two
+       before centres existed — used to get nothing at all, which left two
        different card geometries in one print run. A card with a gap where every
-       other card has a colour reads as a misprint, not as "works everywhere",
-       so it now carries the programme's own mark, which is the true answer. */
+       other card has a colour reads as a misprint, not as "works everywhere". */
     ok('…and a volunteer with no single centre gets the programme mark, not a hole',
-      /OLD/.test(volFronts[2].text) && /ALL CENTRES/i.test(volFronts[2].band)
-      && volFronts[2].bandColor === '#1b2b6b');
-    /* Contrast read off the colour instead of assumed. A pale centre carried
-       white text with a drop shadow, on a printed card. */
-    ok('…a pale centre colour flips the band to dark ink and drops the shadow',
-      volFronts[3].band === 'SUNSHINE ANNEXE' && volFronts[3].bandColor === '#f7e36b'
-      && volFronts[3].bandInk === '#10131a' && volFronts[3].bandShadow === 'none');
-    ok('…while a dark centre keeps white ink and its shadow',
-      volFronts[1].bandInk === '#ffffff' && /rgb/.test(volFronts[1].bandShadow));
-    /* Colours that meet and merge get a keyline. The threshold used to be 120,
-       which is roughly "the same colour" — and the pair that caused the problem
-       in the first place, a red Egbeda band inside a maroon Lead Mentor frame,
-       measures 158 and sailed straight through it. Card 0 is that pair. */
-    ok('…a centre colour close to the tier frame gains a keyline',
-      volFronts[4].bandOutline === 'solid' && volFronts[0].bandOutline === 'solid'
-      && volFronts[1].bandOutline === 'none');
+      /OLD/.test(volFronts[2].text) && /ALL CENTRES/i.test(volFronts[2].centreLine.name)
+      && volFronts[2].panelLine === 'rgb(27, 43, 107)');
+    /* The name sits on white now, so it is black on every card — which is the
+       point of moving it off the colour. The pale-centre trap the band had
+       (white ink on yellow, discovered when the box of cards arrived) cannot
+       occur here, and the dot still carries the colour faithfully. */
+    ok('…a pale centre reads as easily as a dark one, because the name is not on it',
+      volFronts[3].centreLine.name === 'SUNSHINE ANNEXE' && volFronts[3].centreLine.dot === '#f7e36b'
+      && volFronts[3].centreLine.ink === volFronts[1].centreLine.ink);
+    /* Two near-identical colours meeting still need a seam. The threshold used
+       to be 120, roughly "the same colour" — and the pair that caused the
+       problem, a red Egbeda inside a maroon Lead Mentor frame, measures 158 and
+       sailed straight through it. Card 0 is that pair, card 4 the two navies. */
+    ok('…a centre colour close to the tier frame gains a white keyline',
+      volFronts[4].panelRings === 2 && volFronts[0].panelRings === 2
+      && volFronts[1].panelRings === 1);
     /* A long centre name uses the room rather than giving it up.
        The previous assertion here required the long name to render SMALLER than
        a short one, and it passed — on a formula that shrank "Ikotun-Egbe
-       Community Hall" to 62% while a third of the band sat empty either side,
+       Community Hall" to 62% while a third of the line sat empty either side,
        making the longest name on the sheet the least legible thing on it. The
-       test was locking in the defect. What actually matters is that it fits on
-       one line at full size, and only shrinks when it genuinely cannot. */
-    ok('…and a long centre name fills the band rather than shrinking inside it',
-      volFronts[4].band === 'IKOTUN-EGBE COMMUNITY HALL'
-      && Math.abs(volFronts[4].bandFontPx - volFronts[1].bandFontPx) < 0.5);
+       test was locking in the defect. */
+    ok('…and a long centre name fills its line rather than shrinking inside it',
+      volFronts[4].centreLine.name === 'IKOTUN-EGBE COMMUNITY HALL'
+      && Math.abs(volFronts[4].centreLine.fontPx - volFronts[1].centreLine.fontPx) < 0.5);
     /* The rules themselves, not their shadow on the pixels. */
     const rules = await studio.evaluate(() => {
       const id = n => n, W = 496;

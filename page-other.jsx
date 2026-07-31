@@ -5203,8 +5203,18 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
   const hsW = Math.round(hsH * 450 / 354);
   return (
     <div className="idcard" style={{ width: px(590), height: px(H), background: tint, position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
-      {/* White inner panel — the tier colour reads as a full-bleed border. */}
-      <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), background: "#fff", borderRadius: px(30) }}/>
+      {/* White inner panel — the tier colour reads as a full-bleed border, and a
+          thin line in the CENTRE colour runs round the inside of it.
+          This replaces the coloured foot band. The band was a solid block of
+          colour at one edge, which is the edge a lanyard sleeve covers and the
+          edge that gets tucked under on a table; a line round the whole panel is
+          present on all four sides, so no orientation hides it, and it does not
+          take a sixteenth of the card away from the content. Drawn as an inset
+          shadow rather than a border so the panel's geometry is unchanged and
+          nothing below has to be re-laid out around it. */}
+      <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), background: "#fff", borderRadius: px(30),
+                    boxShadow: centre ? `inset 0 0 0 ${Math.max(1, px(7))}px ${cTint}`
+                      + (clash ? `, inset 0 0 0 ${Math.max(2, px(11))}px #fff` : "") : "none" }}/>
       {/* STS badge, straddling the top edge of the panel. */}
       <div style={{ position: "absolute", top: px(2), left: "50%", transform: "translateX(-50%)", width: px(116), height: px(116), zIndex: 2 }}>
         <div style={{ position: "absolute", inset: px(8), borderRadius: "50%", background: tint, boxShadow: `0 ${px(6)}px ${px(16)}px rgba(0,0,0,.18)`, display: "grid", placeItems: "center" }}>
@@ -5220,7 +5230,7 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
       </div>
       {/* Content column inside the panel — reflows to any card height. */}
       <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box",
-                    padding: px(94) + "px " + px(40) + "px " + px(centre ? 90 : 28) + "px" }}>
+                    padding: px(94) + "px " + px(40) + "px " + px(34) + "px" }}>
         {/* The headshot in the CENTRE's colour, not the tier's. The card is
             already tier-coloured all over; repeating that around the photo
             would say the same thing twice and the thing a coordinator
@@ -5233,15 +5243,12 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
                             // Only when the two colours would merge; a no-op otherwise.
                             outline: keyline, outlineOffset: keyOff,
                             boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)` }}/>
-              {/* 28 units of centre colour round the photo, not 11.
-                  This is the border, and it is the signal that survives a
-                  lanyard sleeve — a foot band is the first thing a sleeve or a
-                  tucked bottom edge hides, so the frame has to carry the
-                  identification on its own. At 11 it read as a photo mount:
-                  present, but nobody would call it a coloured border. Matched to
-                  the weight of the ring on the student card, which is the one
-                  everybody on site already recognises. */}
-              <div style={{ position: "absolute", inset: px(28), borderRadius: px(10), overflow: "hidden",
+              {/* 14 units of centre colour round the photo. Thicker than the 11
+                  it shipped with, which read as a photo mount rather than a
+                  border, and half the 28 it briefly grew to — with the panel now
+                  outlined in the same colour, a heavy frame here is the same fact
+                  stated twice and it crowded the headshot. */}
+              <div style={{ position: "absolute", inset: px(14), borderRadius: px(13), overflow: "hidden",
                             background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)" }}>
                 {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
               </div>
@@ -5275,45 +5282,21 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
           <span style={{ margin: `0 ${px(8)}px`, color: "#B9BFCB" }}>|</span>
           <span style={{ fontWeight: 500 }}>{card.role || tier.name || ""}</span>
         </div>
-      </div>
-      {/* The centre band, the same device the student card uses.
-          The card's outer frame is the TIER colour and always will be — role
-          is what a volunteer is stopped and asked about. But that left the
-          centre living only on the photo ring, which is one signal where the
-          student card has two. A band across the foot of the panel gives the
-          volunteer card the same pair: a colour you find across a room and a
-          name you read in the hand. */}
-      {centre && (() => {
-        /* Inset px(6) from the panel and rounded px(6) tighter, so it is
-           CONCENTRIC with the panel and a hairline of white always shows
-           between the band and the frame. Flush looked better until you put a
-           maroon Lead Mentor frame round a red centre and the two merged into
-           one shape — the gutter is what keeps the card legible whatever
-           pair of colours the hierarchy table happens to hold.
-           When the two are close enough to merge ANYWAY, `clash` adds a keyline
-           on top of the gutter. */
-        /* 26 base, in a 56-unit band. At 18-in-38 the centre name printed
-           smaller than the word "VOLUNTEER" directly above it, which put the
-           least useful line on the card above the most useful one: everybody
-           holding one of these is a volunteer, and the only open question is
-           whose site they belong to. */
-        const fit = centreBandFont(centre.name, 26, px, 496);
-        return (
-          <div style={{ position: "absolute", left: px(28), right: px(28), bottom: px(28), height: px(56),
-                        borderRadius: `${px(6)}px ${px(6)}px ${px(24)}px ${px(24)}px`,
-                        background: cTint, outline: keyline, outlineOffset: keyOff,
-                        display: "grid", placeItems: "center", overflow: "hidden",
-                        /* The gutter of white is a gap, not a line, and a gap
-                           reads as "nothing here" against a dark frame. An inner
-                           hairline gives the band an actual edge on every card,
-                           independent of whether the two colours clash. */
-                        boxShadow: `inset 0 0 0 ${Math.max(1, px(2))}px ${cInk.hairline}` }}>
-            <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: fit.fontSize, letterSpacing: fit.letterSpacing,
-                           color: cInk.ink, textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap",
-                           textShadow: cInk.shadow }}>{centre.name}</span>
+        {/* The centre, written out. The coloured band used to carry this and the
+            band is gone; the outline round the panel says WHICH centre in colour,
+            and colour is not a label — one man in twelve cannot read it, print
+            drifts between batches, and a photocopy has none of it. So the name
+            stays, in plain type, with a dot of the colour to tie the two
+            together. */}
+        {centre && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: px(9), marginTop: px(9), flex: "none", maxWidth: "100%" }}>
+            <span style={{ width: px(15), height: px(15), borderRadius: "50%", background: cTint, flex: "none",
+                           boxShadow: `0 0 0 ${Math.max(1, px(2))}px ${cInk.light ? "rgba(0,0,0,.22)" : "rgba(255,255,255,.9)"}` }}/>
+            <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, ...centreBandFont(centre.name, 22, px, 420),
+                           color: "#101010", textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap" }}>{centre.name}</span>
           </div>
-        );
-      })()}
+        )}
+      </div>
     </div>
   );
 }

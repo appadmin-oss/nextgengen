@@ -62,6 +62,7 @@ function cleanup() {
   try { if (server) process.kill(-server.pid); } catch (_) {}
   try { fs.unlinkSync(CFG); } catch (_) {}
   try { fs.unlinkSync(DB); } catch (_) {}
+  try { fs.rmSync(path.join(__dirname, '_faces'), { recursive: true, force: true }); } catch (_) {}
   try { fs.rmSync(CACHE, { recursive: true, force: true }); } catch (_) {}
 }
 
@@ -100,7 +101,7 @@ function seed() {
   ];
   kids.forEach(([name, centre, age, pattern, stars, infractions], i) => {
     const sid = 'SUM-26-' + String(i + 1).padStart(3, '0');
-    s += `db_insert('summer_students', ['studentId'=>'${sid}','cohortId'=>'C1','token'=>'','handle'=>'k${i}','fullName'=>${JSON.stringify(name)},'age'=>${age},'gender'=>'${i % 2 ? 'M' : 'F'}','centre'=>${JSON.stringify(centre)},'track'=>'${['STEM', 'Arts', 'Coding'][i % 3]}','status'=>'active','regStatus'=>'verified','enrolledAt'=>gmdate('Y-m-d\\TH:i:s\\Z', time()-${28 - (i % 3) * 7}*86400),'updatedAt'=>now_iso()]);`;
+    s += `db_insert('summer_students', ['studentId'=>'${sid}','cohortId'=>'C1','token'=>'SUMQR-${i}','handle'=>'k${i}','fullName'=>${JSON.stringify(name)},'age'=>${age},'gender'=>'${i % 2 ? 'M' : 'F'}','centre'=>${JSON.stringify(centre)},'track'=>'${['STEM', 'Arts', 'Coding'][i % 3]}','status'=>'active','regStatus'=>'verified','enrolledAt'=>gmdate('Y-m-d\\TH:i:s\\Z', time()-${28 - (i % 3) * 7}*86400),'updatedAt'=>now_iso()]);`;
     pattern.forEach((days, w) => {
       const back = pattern.length - 1 - w;
       for (let d = 0; d < days; d++) {
@@ -131,6 +132,24 @@ function seed() {
   });
   s += `journal_set_tags('PJ-2026-0001', [['personId'=>'NGG-2026-0001','name'=>'Amara Okonkwo','role'=>'raised'],['personId'=>'free:board','name'=>'Programme board','role'=>'advised']]);`
     + `journal_set_tags('PJ-2026-0003', [['personId'=>'M-AYO-0','name'=>'Coach AYO0','role'=>'reported'],['personId'=>'free:transport','name'=>'Transport contact','role'=>'resolved it']]);`;
+
+  /* Volunteers, so the ID card studio has a real roster to render.
+     One per centre plus a roving coordinator with no site, because the card the
+     design has to get right is the one for somebody who belongs everywhere. */
+  const vols = [
+    ['VOL-ADM-26-001', 'Tunde Bakare', 'admin', 'Egbeda', ''],
+    ['VOL-MEN-26-002', 'Ngozi Adeyemi', 'mentor', 'Alimosho', ''],
+    ['VOL-INS-26-003', 'Amaka Okonjo', 'instructor', 'Ayobo', 'Music'],
+    ['VOL-MEN-26-004', 'Chidi Nwankwo', 'mentor', 'Egbeda', ''],
+    ['VOL-INS-26-005', 'Adaeze Obi', 'instructor', '', ''],
+  ];
+  vols.forEach(([vid, name, role, centre, faculty], i) => {
+    s += `db_insert('volunteers', ['volunteerId'=>'${vid}','fullName'=>${JSON.stringify(name)},'email'=>'v${i}@example.org','role'=>'${role}','centre'=>${JSON.stringify(centre)},'faculty'=>${JSON.stringify(faculty)},'token'=>'VQR-${i}','photoUrl'=>'','status'=>'active','safeguarding'=>'cleared','createdAt'=>gmdate('Y-m-d\\TH:i:s\\Z', time()-${20 - i * 3}*86400),'updatedAt'=>now_iso()]);`;
+  });
+
+  /* The card's own branding block, so the back does not print "127.0.0.1" as
+     the programme website. */
+  s += `setting_set('idcard', ['program'=>'NGG','year'=>'2026','motto'=>'GROW','website'=>'nextgengenius.org','phone'=>'+234 800 000 0000','widthMm'=>54,'heightMm'=>75]);`;
 
   // A couple of ops events so Diagnostics is not an empty table.
   s += `ops_record('cron', 'deliveries_dispatch', 'ran');`
@@ -238,6 +257,82 @@ function seed() {
         await g3.screenshot({ path: file });
         shots.push({ name: '03-growth-method', label: 'Level 5 · published weights and method', kb: Math.round(fs.statSync(file).size / 1024) });
         console.log('  ✓ 03-growth-method.png — published methodology');
+      }
+      await ctx.close();
+    }
+
+    /* ── 1b · The ID cards, from the database ────────────────────────────────
+     * Rendered by the real studio off real rows, not a fixture: three centres
+     * with the colours an admin actually set, three hierarchy tiers, and a
+     * volunteer with no single site. */
+    {
+      const ctx = await desktop(adminTok);
+      const page = await ctx.newPage();
+      await page.setViewportSize({ width: 1680, height: 1200 });
+      /* Real headshots on the real rows. An empty gradient frame flatters the
+         design: the whole question about a coloured border round a photograph is
+         whether it still reads once there is a face inside it. Drawn in-page and
+         written to disk, so the capture has no network dependency. */
+      const faceDir = path.join(ROOT, 'tests', '_faces');
+      fs.mkdirSync(faceDir, { recursive: true });
+      const blank = await ctx.newPage();
+      await blank.setContent('<body></body>');
+      for (let i = 1; i <= 5; i++) {
+        const dataUrl = await blank.evaluate((seed) => {
+          const c = document.createElement('canvas'); c.width = 900; c.height = 708;
+          const x = c.getContext('2d'), hue = (seed * 47) % 360;
+          const g = x.createLinearGradient(0, 0, 0, 708);
+          g.addColorStop(0, `hsl(${hue},34%,76%)`); g.addColorStop(1, `hsl(${(hue + 40) % 360},28%,54%)`);
+          x.fillStyle = g; x.fillRect(0, 0, 900, 708);
+          x.fillStyle = `hsl(${(hue + 200) % 360},22%,32%)`;
+          x.beginPath(); x.ellipse(450, 750, 378, 269, 0, 0, 7); x.fill();
+          x.fillStyle = `hsl(28,42%,${46 + (seed % 4) * 6}%)`;
+          x.beginPath(); x.ellipse(450, 368, 180, 184, 0, 0, 7); x.fill();
+          x.beginPath(); x.ellipse(450, 566, 108, 113, 0, 0, 7); x.fill();
+          return c.toDataURL('image/png');
+        }, i);
+        fs.writeFileSync(path.join(faceDir, 'f' + i + '.png'),
+          Buffer.from(dataUrl.split(',')[1], 'base64'));
+      }
+      await blank.close();
+      php(`$vs = db_all("SELECT volunteerId FROM volunteers ORDER BY id ASC");`
+        + `foreach ($vs as $i => $v) db_update('volunteers', ['photoUrl' => '/tests/_faces/f' . ($i + 1) . '.png'], ['volunteerId' => $v['volunteerId']]);`);
+
+      // The studio is its own route, not an admin section.
+      await goto(page, '/cards', '.print-zone');
+      await page.waitForSelector('.card-pair', { timeout: 30000 }).catch(() => {});
+      await page.waitForTimeout(2200);
+      const volTab = await page.$('button:has-text("Volunteers")');
+      if (volTab) { await volTab.click(); await page.waitForTimeout(2200); }
+      // The per-card controls float over the artwork. They belong to the studio,
+      // not to the card, and in a picture of the card they are just clutter.
+      const hideChrome = () => page.evaluate(() => {
+        document.querySelectorAll('.print-zone .no-print').forEach(n => { n.style.display = 'none'; });
+        /* An element screenshot still renders whatever is painted over that box,
+           so any fixed-position app chrome — sync indicator, scroll button —
+           lands on top of a card and reads as part of the artwork. */
+        document.querySelectorAll('body *').forEach(n => {
+          if (getComputedStyle(n).position === 'fixed' && !n.closest('.print-zone')) n.style.display = 'none';
+        });
+      });
+      await hideChrome();
+      const zone = await page.$('.print-zone');
+      if (zone) {
+        const file = path.join(OUT, '21-volunteer-ids-real.png');
+        await zone.screenshot({ path: file });
+        shots.push({ name: '21-volunteer-ids-real', label: 'Volunteer IDs as the studio renders them from the database', kb: Math.round(fs.statSync(file).size / 1024) });
+        console.log('  ✓ 21-volunteer-ids-real.png  (' + shots[shots.length - 1].kb + ' KB) — volunteer IDs, real rows');
+      }
+      // The children's cards from the same rows, for the side-by-side.
+      const stuTab = await page.$('button:has-text("Summer students")');
+      if (stuTab) { await stuTab.click(); await page.waitForTimeout(2200); }
+      await hideChrome();
+      const zone2 = await page.$('.print-zone');
+      if (zone2) {
+        const file = path.join(OUT, '22-student-ids-real.png');
+        await zone2.screenshot({ path: file });
+        shots.push({ name: '22-student-ids-real', label: 'Summer student IDs from the same database, for comparison', kb: Math.round(fs.statSync(file).size / 1024) });
+        console.log('  ✓ 22-student-ids-real.png  (' + shots[shots.length - 1].kb + ' KB) — student IDs, real rows');
       }
       await ctx.close();
     }
