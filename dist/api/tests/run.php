@@ -459,6 +459,17 @@ $vc = (function () use ($vcards, $volId) { foreach ($vcards['cards'] as $c) if (
 chk('volunteer card carries the tier colour + code + split name', $vc
     && $vc['tier']['code'] === 'INS' && preg_match('/^#[0-9A-Fa-f]{6}$/', (string)$vc['tier']['color']) === 1
     && $vc['firstName'] !== '' && $vc['token'] === $volTok);
+/* The printed expiry. The token is bound in qr_codes with the programme's
+ * validity policy applied, exactly like a student's — but the card payload never
+ * read it back, so VALID TO was silently absent on every volunteer card while the
+ * gate was already turning expired ones away. A desk that cannot see the date has
+ * to scan to find out what the card itself should have said. */
+chk('…and the expiry its own QR row was issued with', $vc
+    && array_key_exists('expiresAt', $vc)
+    && $vc['expiresAt'] === (string)(db_row('SELECT expiresAt FROM qr_codes WHERE token = ?', [$volTok])['expiresAt'] ?? '')
+    // Not a vacuous match of two empty strings: the default policy is 90 days,
+    // so there IS a date here, and it has to be the one the token was issued with.
+    && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$vc['expiresAt']) === 1);
 /* Not printed on the card, and that is the point: it is what lets the studio cut
    a print run by date. A real run is "the ones who registered since the last
    batch", and with no date on the card record the only way to say that was to

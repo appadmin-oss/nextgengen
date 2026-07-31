@@ -83,6 +83,20 @@ function admin_volunteer_cards_data(array $p): array {
     $params = [];
     if (!empty($p['volunteerId'])) { $where .= ' AND volunteerId = ?'; $params[] = (string)$p['volunteerId']; }
     $rows = db_all("SELECT * FROM volunteers WHERE $where ORDER BY id ASC LIMIT 500", $params);
+    /* Printed expiry. A volunteer's check-in token is bound in qr_codes with the
+     * programme's validity policy applied, exactly like a student's — but the
+     * card payload never read it back, so both the front's VALID TO field and the
+     * back's VALID TO row were silently absent on every volunteer card while the
+     * gate was already refusing expired ones. One batched lookup rather than a
+     * query per card. */
+    $expiryOf = [];
+    $tokens = array_values(array_filter(array_map(fn($v) => (string)$v['token'], $rows)));
+    if ($tokens) {
+        $in = '(' . implode(',', array_fill(0, count($tokens), '?')) . ')';
+        foreach (db_all("SELECT token, expiresAt FROM qr_codes WHERE token IN $in", $tokens) as $q) {
+            $expiryOf[(string)$q['token']] = (string)($q['expiresAt'] ?? '');
+        }
+    }
     $cards = [];
     foreach ($rows as $v) {
         $tier = vol_tier_for((string)$v['role']);
@@ -114,6 +128,9 @@ function admin_volunteer_cards_data(array $p): array {
                 : ($c !== '' ? ['name' => $c, 'code' => strtoupper(substr($c, 0, 3)), 'color' => '#76B043'] : null),
             'displayId' => (string)$v['volunteerId'],
             'token' => (string)$v['token'],
+            // Blank when the programme runs with no expiry, and the card leaves
+            // the field out entirely rather than printing an empty row.
+            'expiresAt' => (string)($expiryOf[(string)$v['token']] ?? ''),
             'photoUrl' => (string)$v['photoUrl'],
             // Not printed — this is what lets the studio cut a run by date.
             'enrolledAt' => (string)($v['createdAt'] ?? ''),

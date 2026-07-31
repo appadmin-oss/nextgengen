@@ -4987,9 +4987,12 @@ function cardInk(hex) {
 }
 /** Are two card colours close enough to merge into one shape? Redmean distance
  *  — cheap, and markedly better than plain RGB at matching what an eye does.
- *  Used where a tier colour frames a centre colour: a maroon Lead Mentor border
- *  around a red centre band reads as a single blob, and the fix is a visible
- *  separator rather than hoping the palette never collides.
+ *
+ *  This no longer has anything to do with the card's own geometry: the centre
+ *  colour and the tier colour are never adjacent on it (see VolunteerCardFront),
+ *  so there is nothing on the artwork for them to merge INTO. What remains is
+ *  the failure the colour device exists to prevent — two CENTRES, or two TIERS,
+ *  that look alike — which is a picker-time warning, not a render-time one.
  *
  *  The threshold is 200, not the 120 this shipped with. 120 is roughly "the
  *  same colour"; the pair that actually caused the problem — #D64545 centre
@@ -5007,26 +5010,24 @@ function cardColorsClash(a, b) {
 /**
  * Which existing card colours a proposed one would collide with.
  *
- * Two directions matter and they fail differently. A centre colour close to
- * ANOTHER CENTRE'S makes two sites indistinguishable, which defeats the whole
- * device. A centre colour close to a TIER colour merges the band into the frame
- * that surrounds it on the volunteer card — survivable, because the keyline
- * exists, but never as good as a colour of its own. Both are worth saying; the
- * wording differs because the remedy does.
+ * One direction matters now: a centre colour close to ANOTHER CENTRE'S (or a
+ * tier close to another tier) makes two of them indistinguishable, which defeats
+ * the whole device. The cross-check against the OTHER list is gone with the
+ * geometry that motivated it — a centre colour and a tier colour no longer touch
+ * anywhere on the card, so "these two merge into one shape" is no longer a thing
+ * that can happen, and warning about it would be telling an admin to avoid a
+ * pairing that renders perfectly well.
  *
- * `own` is the list the new colour joins, `other` the list it will sit inside or
- * around on a card. Anything already carrying this exact colour is skipped: an
- * admin editing Egbeda should not be told Egbeda is too close to Egbeda.
+ * `own` is the list the new colour joins. Anything already carrying this exact
+ * colour is skipped: an admin editing Egbeda should not be told Egbeda is too
+ * close to Egbeda.
  */
-function colourNeighbours(colour, own, other, isVol) {
+function colourNeighbours(colour, own) {
   const hit = [];
   const norm = String(colour || "").trim().toLowerCase();
   (own || []).forEach(u => {
     if (String(u.color || "").trim().toLowerCase() === norm) return;
     if (cardColorsClash(colour, u.color)) hit.push({ name: u.name, sameList: true });
-  });
-  (other || []).forEach(u => {
-    if (cardColorsClash(colour, u.color)) hit.push({ name: u.name + (isVol ? " (centre)" : " (tier)"), sameList: false });
   });
   return hit.slice(0, 4);
 }
@@ -5064,6 +5065,34 @@ function centreBandFont(name, base, px, availUnits = 470) {
   const size = Math.max(base * 0.55, Math.min(base, fit));
   // Tracking tightens with the type so a shrunk name does not read as gappy.
   return { fontSize: px(size), letterSpacing: px(track * (size / base)) };
+}
+/** The same solve, in design units, for a string with FIXED tracking.
+ *
+ *  Inter advances about 0.62 em per glyph at the weights this card uses, so a
+ *  line of n characters at `size` with `track` units between them needs
+ *  n·(0.62·size + track) units of width. Solved for size and capped at `base`,
+ *  that is the largest type that still fits — the caller decides the floor,
+ *  because what should happen below it differs per field. */
+function cardFit(text, base, avail, track = 0) {
+  const n = ((text || "").trim().length) || 1;
+  return Math.min(base, (avail - n * track) / (n * 0.62));
+}
+/** The foot band, whose tracking is PROPORTIONAL to its own size (0.2 em), so
+ *  the per-glyph advance is a constant 0.82 em and the solve collapses to
+ *  `avail / (n · 0.82)`.
+ *
+ *  The band spans the full card width rather than sitting inside the content
+ *  gutter, so it has 520 units to work with. It still has a floor, and the floor
+ *  is the point: with a fixed 5-unit track and a `base · 0.5` floor,
+ *  "IEC · IKOTUN-EGBE COMMUNITY HALL" solved to 13 units — about 1.1 mm, under
+ *  4 pt — which made the longest centre name on the sheet the smallest type on
+ *  the card. Below the floor the answer is not smaller type, it is a second
+ *  line, so `split` says which one the caller is getting. */
+function footBandFit(text, avail = 520, base = 25, floor = 22) {
+  const n = ((text || "").trim().length) || 1;
+  const raw = avail / (n * 0.82);
+  const size = Math.max(floor, Math.min(base, raw));
+  return { size, track: size * 0.2, split: raw < floor };
 }
 
 /* Which centre a card belongs to, readable across a room.
@@ -5174,134 +5203,159 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
   );
 }
 
-/* Volunteer front — the whole card is the hierarchy-tier colour, with a white
-   inner panel. STS badge top, headshot/illustration, name, QR, VOLUNTEER|ROLE.
-   Same 590×1004 canvas as the student card so both print at 54×92mm. */
+/* Volunteer front, per the build spec.
+ *
+ * The card carries two admin-picked colours and the whole design is arranged so
+ * they never touch:
+ *
+ *   centre.color — the card background, which IS the frame on all four edges,
+ *                  and the foot band, which is the same continuous shape.
+ *   tier.color   — the 92-unit disc at the top and the role pill. Both sit fully
+ *                  inside the white panel.
+ *
+ * That is the entire mechanism. There is no contrast test between them, no
+ * conditional keyline and no fallback path, because there is no seam for a
+ * keyline to defend: a centre colour identical to the tier colour renders
+ * correctly. The only adaptive rule left is cardInk(), which picks the ink for
+ * type sitting ON either colour.
+ *
+ * Geometry is in design units on a 590-wide grid (H = 920 at 50×78 mm). Three
+ * `flex: 1 1 0` spacers absorb any other proportion, so nothing is ever
+ * stretched. */
 function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
   const tier = card.tier || {};                 // same hazard as centre, above
-  const tint = tier.color || "#00225F";
+  const tTint = tier.color || "#00225F";
+  const tInk = cardInk(tTint);
   /* The centre this card should show — a real one, or the programme mark for
-     somebody who genuinely works across all of them. Always something, so a
-     print run has one card geometry rather than two (see cardCentreOf). */
-  const centre = cardCentreOf(card);
-  const cTint = (centre && centre.color) || "#76B043";
+     somebody who genuinely works across all of them. Never nothing: the centre
+     colour is the card's background here, so a missing centre would mean a
+     second card geometry in the same print run, which reads as a misprint rather
+     than as "works everywhere" (see cardCentreOf). */
+  const centre = cardCentreOf(card) || CARD_ALL_CENTRES;
+  const cTint = centre.color || "#76B043";
   const cInk = cardInk(cTint);
-  /* Does the centre colour disappear into the tier frame it sits inside? A
-     maroon Lead Mentor border around a red centre band merges into one shape,
-     and the palette is admin-editable so no fixed pairing can be relied on.
-     When they clash the centre elements get a white keyline — visible against
-     both, and cheap. */
-  const clash = cardColorsClash(cTint, tint);
-  /* 6 units, not 3. At studio scale 3 came out under two pixels — present in
-     the DOM, invisible to the eye, and therefore doing none of the work it was
-     added for. A separator has to be seen from where the card is read. */
-  const keyline = clash ? `${Math.max(2, px(6))}px solid #fff` : "none";
-  const keyOff = `-${Math.max(2, px(6))}px`;
-  /* Headshot keeps its 450:354 aspect (never stretched) and scales with the card.
-   * 0.38 of the height rather than 0.34: with the code badge gone there is no
-   * element notched into the frame's corner competing for that space, and the
-   * flex spacers were spending it on emptiness between the photograph and the
-   * name. On an ID the face is the point — it should be the largest thing on the
-   * card, not a thumbnail with margins. */
-  const hsH = Math.min(354, Math.max(150, Math.round(H * 0.38)));
-  const hsW = Math.round(hsH * 450 / 354);
+  /* Role, qualified by faculty when there is one. "INSTRUCTOR" alone identifies
+     nobody at a site where every third person is one. */
+  const role = [String(card.role || tier.name || "").trim(), String(card.faculty || "").trim()]
+    .filter(Boolean).join(" · ").toUpperCase();
+  /* The four variable-length strings, each sized from the room it actually has.
+     The surname floors at half its base and stays on one line — a surname long
+     enough to hit that floor is a data problem worth seeing, not one worth
+     hiding. The first name takes the same floor for the opposite reason: it has
+     no floor in the spec, and unfloored it would solve to a couple of units and
+     vanish, which hides the same problem instead of showing it. */
+  const fnSize = Math.max(33 * 0.5, cardFit(card.firstName, 33, 420));
+  const snSize = Math.max(50 * 0.5, cardFit(card.surname, 50, 424));
+  const roleSize = Math.max(18 * 0.5, cardFit(role, 18, 360, 3.2));
+  /* The photograph is 404 × 318 units on the design grid, and the three spacers
+     absorb a TALLER card. A shorter one they cannot absorb — the default admin
+     proportion is 54 × 75 mm, which is H = 819, ninety units short of the grid
+     this was drawn on — so the frame scales down on its own aspect rather than
+     letting the column overflow the panel. Everything else on the card is type
+     at a legibility floor and must not shrink. */
+  const colH = H - 30 - 112 - 96 - 44;         // panel, less the column's padding
+  const fixed = fnSize * 1.1 + snSize * 1.04 + 2 + 46 + 20 + 98 + 3 * 14;
+  const phH = Math.round(Math.max(150, Math.min(318, colH - fixed)));
+  const phW = Math.round(phH * 404 / 318);
+  const field = (label, value, big) => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: px(5) }}>
+      <span style={{ fontSize: px(11), fontWeight: 600, letterSpacing: px(2.4), textTransform: "uppercase", color: "#aeb4c0", lineHeight: 1 }}>{label}</span>
+      <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontVariantNumeric: "tabular-nums",
+                     fontSize: px(big ? 21 : 15), fontWeight: 500, color: big ? CARD_NAVY : "#5b6478", lineHeight: 1 }}>{value}</span>
+    </div>
+  );
   return (
-    <div className="idcard" style={{ width: px(590), height: px(H), background: tint, position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
-      {/* White inner panel — the tier colour reads as a full-bleed border, and a
-          thin line in the CENTRE colour runs round the inside of it.
-          This replaces the coloured foot band. The band was a solid block of
-          colour at one edge, which is the edge a lanyard sleeve covers and the
-          edge that gets tucked under on a table; a line round the whole panel is
-          present on all four sides, so no orientation hides it, and it does not
-          take a sixteenth of the card away from the content. Drawn as an inset
-          shadow rather than a border so the panel's geometry is unchanged and
-          nothing below has to be re-laid out around it. */}
-      <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), background: "#fff", borderRadius: px(30),
-                    boxShadow: centre ? `inset 0 0 0 ${Math.max(1, px(3))}px ${cTint}`
-                      + (clash ? `, inset 0 0 0 ${Math.max(2, px(6))}px #fff` : "") : "none" }}/>
-      {/* STS badge, straddling the top edge of the panel. */}
-      <div style={{ position: "absolute", top: px(2), left: "50%", transform: "translateX(-50%)", width: px(116), height: px(116), zIndex: 2 }}>
-        <div style={{ position: "absolute", inset: px(8), borderRadius: "50%", background: tint, boxShadow: `0 ${px(6)}px ${px(16)}px rgba(0,0,0,.18)`, display: "grid", placeItems: "center" }}>
-          <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(34), letterSpacing: px(1), color: "#fff" }}>STS</span>
-        </div>
-        {/* Clipped to its own disc. The supplied SVG carries a near-white
-            square across its full canvas — invisible against a screen, and a
-            faint grey box around the badge once it is printed on card stock.
-            The artwork inside it is a circle, so a circular clip loses nothing
-            and removes the box without touching the asset. */}
-        <img src="/assets/idcard/logo-sts.svg" alt="Street-To-Stardom" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", borderRadius: "50%", clipPath: "circle(48% at 50% 50%)" }}
-          onError={e => { e.target.style.display = "none"; }}/>
-      </div>
-      {/* Content column inside the panel — reflows to any card height. */}
-      <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box",
-                    padding: px(118) + "px " + px(40) + "px " + px(34) + "px" }}>
-        {/* The headshot in the CENTRE's colour, not the tier's. The card is
-            already tier-coloured all over; repeating that around the photo
-            would say the same thing twice and the thing a coordinator
-            actually needs — which site this person belongs to — still would
-            not be on the card anywhere. */}
-        <div style={{ position: "relative", width: px(hsW), height: px(hsH), flex: "none" }}>
-          {centre ? (
-            <>
-              <div style={{ position: "absolute", inset: 0, borderRadius: px(18), background: cTint,
-                            // Only when the two colours would merge; a no-op otherwise.
-                            outline: keyline, outlineOffset: keyOff,
-                            boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)` }}/>
-              {/* 14 units of centre colour round the photo. Thicker than the 11
-                  it shipped with, which read as a photo mount rather than a
-                  border, and half the 28 it briefly grew to — with the panel now
-                  outlined in the same colour, a heavy frame here is the same fact
-                  stated twice and it crowded the headshot. */}
-              <div style={{ position: "absolute", inset: px(14), borderRadius: px(9), overflow: "hidden",
-                            background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)" }}>
-                {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
-              </div>
-            </>
-          ) : (
-            <div style={{ position: "absolute", inset: 0, borderRadius: px(22), overflow: "hidden", background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)", boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)` }}>
-              {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
+    <div className="idcard" style={{ width: px(590), height: px(H), background: cTint, position: "relative", overflow: "hidden", fontFamily: '"Inter", system-ui, sans-serif', flex: "none" }}>
+      {/* The white panel. Plain — no inset outline, no keyline. Its only job is
+          to hold the two colours apart; the centre reads off the frame around it,
+          which is simply the card's background showing through on all four edges.
+          Bleed is therefore a straight extension of the same colour, with no
+          artwork anywhere near the trim. */}
+      <div style={{ position: "absolute", top: px(30), left: px(30), right: px(30), bottom: px(112), background: "#fff", borderRadius: px(22) }}/>
+      {/* Foot band, spanning the full width — it is the same continuous shape as
+          the frame. Painted in the centre colour rather than left transparent
+          over an identical background: the paint is the same either way, and an
+          element that owns its colour can be measured — by a test, and by anyone
+          reading this — instead of inferred from what sits behind it. */}
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(112), background: cTint, color: cInk.ink,
+                    display: "grid", placeItems: "center", overflow: "hidden" }}>
+        {(() => {
+          const code = String(centre.code || "").toUpperCase();
+          const name = String(centre.name || "").toUpperCase();
+          const line = (code ? code + "  ·  " : "") + name;
+          const one = footBandFit(line, 520, 25, 22);
+          const sp = (size, track, weight) => ({
+            fontWeight: weight, fontSize: px(size), letterSpacing: px(track),
+            /* The trailing track sits after the last glyph and shifts a centred
+               line left by that much; an equal indent puts it back. */
+            textIndent: px(track), lineHeight: 1, whiteSpace: "nowrap", textShadow: cInk.shadow,
+          });
+          if (!one.split) return <span style={sp(one.size, one.track, 600)}>{line}</span>;
+          /* Too long for one legible line, so the code takes a line of its own
+             and the name gets the full width beneath it. Two lines at 22 units
+             beat one line at 13. */
+          const two = footBandFit(name, 520, 23, 18);
+          return (
+            <div style={{ display: "grid", justifyItems: "center", gap: px(7) }}>
+              {code ? <span style={sp(25, 5, 800)}>{code}</span> : null}
+              <span style={sp(two.size, two.track, 600)}>{name}</span>
             </div>
-          )}
+          );
+        })()}
+      </div>
+      {/* STS disc, straddling the top edge of the panel. The 9-unit white ring is
+          what lets it overlap the frame and still read as a disc — including when
+          the tier colour is pale. */}
+      <div style={{ position: "absolute", top: px(2), left: "50%", transform: "translateX(-50%)", width: px(110), height: px(110), zIndex: 2,
+                    borderRadius: "50%", background: "#fff", display: "grid", placeItems: "center" }}>
+        <div style={{ position: "relative", width: px(92), height: px(92), borderRadius: "50%", background: tTint, display: "grid", placeItems: "center" }}>
+          {/* Ink from the tier colour rather than assumed white — a pale tier
+              printed a white STS on a near-white disc. Only ever seen if the SVG
+              below it fails to load. */}
+          <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(28), letterSpacing: px(1), color: tInk.ink }}>STS</span>
+          {/* Clipped to its own disc. The supplied SVG carries a near-white
+              square across its full canvas — invisible against a screen, and a
+              faint grey box around the badge once it is printed on card stock.
+              The artwork inside it is a circle, so a circular clip loses nothing
+              and removes the box without touching the asset. */}
+          <img src="/assets/idcard/logo-sts.svg" alt="Street-To-Stardom" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", borderRadius: "50%", clipPath: "circle(46% at 50% 50%)" }}
+            onError={e => { e.target.style.display = "none"; }}/>
         </div>
-        <div style={{ flex: "1 1 0", minHeight: px(6) }}/>
-        <div style={{ textAlign: "center", fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
-        <div style={{ textAlign: "center", fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.surname, 46, 12)), lineHeight: 1.02, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.surname || " "}</div>
-        <div style={{ width: px(360), maxWidth: "92%", height: 1, background: "#E4E4E4", marginTop: px(12), flex: "none" }}/>
-        <div style={{ border: `${Math.max(1, px(3))}px solid #101010`, borderRadius: px(16), padding: px(8), background: "#fff", marginTop: px(14), flex: "none" }}>
-          <CardQR token={card.token} size={px(112)}/>
+      </div>
+      {/* Content column, inset to the panel. The three spacers are what let it
+          reflow to any card height without stretching a single element. */}
+      <div style={{ position: "absolute", top: px(30), left: px(30), right: px(30), bottom: px(112), display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box",
+                    padding: px(96) + "px " + px(48) + "px " + px(44) + "px" }}>
+        <div style={{ flex: "1 1 0", minHeight: px(14) }}/>
+        {/* A plain plate at the panel's own radius — no coloured mount, no
+            keyline, no shadow. The crop is baked into the delivered URL at the
+            frame's own aspect because html2canvas ignores object-fit, so a
+            mismatch that looks right on screen distorts in the exported PNG. */}
+        <div style={{ width: px(phW), height: px(phH), borderRadius: px(22), overflow: "hidden", background: "#eef0f4", flex: "none" }}>
+          {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, phW * 2, phH * 2)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
         </div>
-        <div style={{ flex: "1 1 0", minHeight: px(6) }}/>
-        <div style={{ textAlign: "center", fontSize: px(24), letterSpacing: px(1.2), color: "#101010", textTransform: "uppercase", flex: "none" }}>
-          <span style={{ fontWeight: 800 }}>Volunteer</span>
-          <span style={{ margin: `0 ${px(8)}px`, color: "#B9BFCB" }}>|</span>
-          <span style={{ fontWeight: 500 }}>{card.role || tier.name || ""}</span>
+        <div style={{ flex: "1 1 0", minHeight: px(14) }}/>
+        {/* Sentence case, light, grey — the quiet half of the pair. */}
+        <div style={{ textAlign: "center", fontWeight: 400, fontSize: px(fnSize), lineHeight: 1.1, color: "#5b6478", letterSpacing: px(0.4), whiteSpace: "nowrap", flex: "none" }}>{card.firstName}</div>
+        {/* …and the only shouted word on the card. */}
+        <div style={{ textAlign: "center", fontWeight: 800, fontSize: px(snSize), lineHeight: 1.04, color: CARD_NAVY, textTransform: "uppercase", letterSpacing: px(-1.2), whiteSpace: "nowrap", flex: "none", marginTop: px(2) }}>{card.surname || " "}</div>
+        {/* Role pill in the tier colour — hug width, so a long role grows the
+            pill rather than shrinking the type until the 360-unit ceiling. */}
+        <div style={{ display: "grid", placeItems: "center", height: px(46), padding: `0 ${px(26)}px`, borderRadius: px(23), marginTop: px(20), flex: "none", background: tTint }}>
+          <span style={{ fontWeight: 700, fontSize: px(roleSize), letterSpacing: px(3.2), textIndent: px(3.2), textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap", color: tInk.ink, textShadow: tInk.shadow }}>{role}</span>
         </div>
-        {/* The centre, written out. The coloured band used to carry this and the
-            band is gone; the outline round the panel says WHICH centre in colour,
-            and colour is not a label — one man in twelve cannot read it, print
-            drifts between batches, and a photocopy has none of it. So the name
-            stays, in plain type, with a dot of the colour to tie the two
-            together. */}
-        {centre && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: px(7), marginTop: px(11), flex: "none", maxWidth: "100%" }}>
-            <span style={{ width: px(9), height: px(9), borderRadius: "50%", background: cTint, flex: "none",
-                           boxShadow: `0 0 0 ${Math.max(1, px(1.5))}px ${cInk.light ? "rgba(0,0,0,.22)" : "rgba(255,255,255,.9)"}` }}/>
-            {/* Deliberately the smallest type on the card. It is a caption on the
-                colour, not a heading: the line round the panel and the code chip
-                are what carry the centre at a distance, and this is only here so
-                the answer is also readable in words. At heading size it competed
-                with the role line and made a spare card look crowded. */}
-            {/* The code joins the caption now that the badge is gone. Colour is
-                not a label — one man in twelve cannot read it, print drifts
-                between batches, and a photocopy has none of it — so the two
-                characters a coordinator calls out have to be somewhere. */}
-            <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 700, ...centreBandFont((centre.code ? centre.code + " · " : "") + centre.name, 12, px, 400),
-                           color: "#6A7180", textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap" }}>
-              {centre.code ? <span style={{ color: "#101010" }}>{centre.code + " \u00b7 "}</span> : null}{centre.name}
-            </span>
+        <div style={{ flex: "1 1 0", minHeight: px(14) }}/>
+        <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: px(22), flex: "none" }}>
+          <CardQR token={card.token} size={px(98)}/>
+          <span style={{ width: Math.max(1, px(1)), height: px(74), background: "#e6e8ee", flex: "none" }}/>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: px(14), flex: "none" }}>
+            {field("Volunteer ID", card.displayId || card.volunteerId || "", true)}
+            {/* Omitted entirely rather than printed blank: a programme running
+                with no expiry has no date to put here. */}
+            {card.expiresAt ? field("Valid to", String(card.expiresAt).slice(0, 10)) : null}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -5315,8 +5369,8 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
   const pt = (n) => n * S * (H / CARD_DESIGN_H);
   // The back is shared by students and volunteers; the 3rd row is a CENTRE
   // for students and the ROLE for volunteers. A volunteer's centre is on the
-  // front twice over (photo ring + foot band), so the one line the back can
-  // spare goes to the thing the front only says once.
+  // front twice over (the frame and the foot band it is continuous with), so the
+  // one line the back can spare goes to the thing the front only says once.
   const isVol = !!card.tier;
   const key = card.studentId || card.volunteerId || card.displayId;
   /* Role, qualified by faculty when there is one. "INSTRUCTOR" is the least
@@ -6131,21 +6185,19 @@ function CardStudio() {
         <button onClick={addUnit} disabled={mName.trim().length < 2 || !mCode.trim()} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>{isVol ? "Add tier" : "Add centre"}</button>
       </div>
       {/* Say it here, where it is still free to change.
-          The card does everything it can with a bad pair — a keyline round the
-          band, ink chosen from the luminance — but two navies a shade apart are
-          two navies a shade apart, and no amount of hairline makes a volunteer
-          card readable from a doorway. This is the only moment where the fix
-          costs one click instead of a reprint, so the collision is named here
-          rather than discovered at the guillotine. */}
+          The card does everything it can with a bad pair — ink chosen from the
+          luminance, the code written out in words — but two navies a shade apart
+          are two navies a shade apart, and nothing on the artwork makes them
+          readable from a doorway. This is the only moment where the fix costs one
+          click instead of a reprint, so the collision is named here rather than
+          discovered at the guillotine. */}
       {(() => {
-        const near = colourNeighbours(mColor, units, isVol ? centres : tiers, isVol);
+        const near = colourNeighbours(mColor, units);
         if (!near.length) return null;
         return (
           <p style={{ fontSize: 12.5, lineHeight: 1.55, margin: "10px 0 0", color: "#ffd48a" }}>
             <b>That colour is close to {near.map(n => n.name).join(", ")}.</b>{" "}
-            {near.some(n => n.sameList)
-              ? "Two " + (isVol ? "tiers" : "centres") + " that look alike defeat the point of colouring by " + (isVol ? "tier" : "centre") + " — nobody can tell the cards apart across a room. "
-              : "A " + (isVol ? "centre" : "tier") + " colour this close to a " + (isVol ? "tier" : "centre") + " colour merges into one shape on the card; it still prints, with a white keyline holding the two apart, but it is never as clear as a colour of its own. "}
+            {"Two " + (isVol ? "tiers" : "centres") + " that look alike defeat the point of colouring by " + (isVol ? "tier" : "centre") + " — nobody can tell the cards apart across a room. "}
             Pick something further away if you can.
           </p>
         );
@@ -7194,4 +7246,4 @@ Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegiste
      inferred from pixels. Both of these shipped with a bug that a rendering
      assertion had actually LOCKED IN — the long-name test asserted the shrunk
      size was smaller, which it was, because the formula was wrong. */
-  cardColorsClash, centreBandFont, colourNeighbours, cardInk });
+  cardColorsClash, centreBandFont, cardFit, footBandFit, colourNeighbours, cardInk });

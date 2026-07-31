@@ -195,27 +195,31 @@ const LEADERBOARD = {
   var VOLS = { program: PROGRAM, cards: [
     { volunteerId: 'VOL-MEN-26-001', displayId: 'VOL-MEN-26-001', firstName: 'TUNDE', surname: 'BAKARE',
       role: 'Lead Mentor', tier: { name: 'Lead Mentor', code: 'LED', color: '#8A1538' }, token: 'V1', photoUrl: '',
-      centre: { name: 'Egbeda', code: 'EG', color: '#D64545' } },
+      expiresAt: '2026-10-29', centre: { name: 'Egbeda', code: 'EG', color: '#D64545' } },
     { volunteerId: 'VOL-MEN-26-002', displayId: 'VOL-MEN-26-002', firstName: 'NGOZI', surname: 'EZE',
       role: 'Mentor', tier: { name: 'Mentor', code: 'MEN', color: '#00225F' }, token: 'V2', photoUrl: '',
-      centre: { name: 'Ijaiye', code: 'IJ', color: '#2E7DD1' } },
+      expiresAt: '2026-10-29', centre: { name: 'Ijaiye', code: 'IJ', color: '#2E7DD1' } },
+    /* No centre AND no expiry: the programme mark stands in for the first, and
+       the second has to be absent from the card rather than a blank row. */
     { volunteerId: 'VOL-MEN-26-003', displayId: 'VOL-MEN-26-003', firstName: 'OLD', surname: 'RECORD',
       role: 'Mentor', tier: { name: 'Mentor', code: 'MEN', color: '#00225F' }, token: 'V3', photoUrl: '',
       centre: null },
-    /* A PALE centre colour. The band and the code chip were hard-coded to white
-       text with a drop shadow, which is fine on maroon and unreadable on this —
-       and the card is printed, so nobody finds out until a box of two hundred
-       arrives. The colour is admin-chosen in a picker, so this is not a corner
-       case, it is one click away. */
+    /* A PALE centre colour. The band was hard-coded to white text with a drop
+       shadow, which is fine on maroon and unreadable on this — and the card is
+       printed, so nobody finds out until a box of two hundred arrives. The colour
+       is admin-chosen in a picker, so this is not a corner case, it is one click
+       away. */
     { volunteerId: 'VOL-INS-26-004', displayId: 'VOL-INS-26-004', firstName: 'PALE', surname: 'CENTRE',
       role: 'Instructor', faculty: 'Music', tier: { name: 'Instructor', code: 'INS', color: '#00225F' }, token: 'V4', photoUrl: '',
-      centre: { name: 'Sunshine Annexe', code: 'SA', color: '#F7E36B' } },
-    /* A centre colour a shade away from the TIER colour it is framed by, and a
-       name too long for a fixed-size band. Both used to fail silently: the two
-       colours merged into one shape, and the name ran off the end of the card. */
-    { volunteerId: 'VOL-MEN-26-005', displayId: 'VOL-MEN-26-005', firstName: 'CLASH', surname: 'LONGNAME',
-      role: 'Mentor', tier: { name: 'Mentor', code: 'MEN', color: '#00225F' }, token: 'V5', photoUrl: '',
-      centre: { name: 'Ikotun-Egbe Community Hall', code: 'IEC', color: '#0A2A6E' } },
+      expiresAt: '2026-10-29', centre: { name: 'Sunshine Annexe', code: 'SA', color: '#F7E36B' } },
+    /* A centre colour IDENTICAL to the tier colour, and a name too long for one
+       band line. The first used to need a keyline holding two touching colours
+       apart; the two never touch now, so it has to render like any other card.
+       The second used to run off the end of the card, and then — once it was
+       being shrunk to fit — came out as the smallest type on the sheet. */
+    { volunteerId: 'VOL-CRD-26-005', displayId: 'VOL-CRD-26-005', firstName: 'SAME', surname: 'LONGNAME',
+      role: 'Coordinator', tier: { name: 'Coordinator', code: 'CRD', color: '#0A2A6E' }, token: 'V5', photoUrl: '',
+      expiresAt: '2026-10-29', centre: { name: 'Ikotun-Egbe Community Hall', code: 'IEC', color: '#0A2A6E' } },
   ] };
   window.NGGApi = deep({
     imageTools: function () {
@@ -1133,12 +1137,16 @@ const LEADERBOARD = {
         const m = String(c).match(/\d+/g);
         return m ? '#' + m.slice(0, 3).map(n => (+n).toString(16).padStart(2, '0')).join('') : '';
       };
-      // The band is the widest solid-coloured box at the foot of a card.
+      /* The band is the widest solid-coloured box at the foot of a card. The
+         height ceiling is 0.16 of the card, not 0.12: the volunteer band is 112
+         units of 920 (13.7% of the DEFAULT 54×75 proportion), so the old bound
+         found the student's 28-unit band and silently reported "no band" on every
+         volunteer card — which an assertion would have read as a pass. */
       const band = (card) => {
         const r = card.getBoundingClientRect();
         return Array.from(card.querySelectorAll('div')).filter(d => {
           const b = d.getBoundingClientRect(), bg = getComputedStyle(d).backgroundColor;
-          return b.width > r.width * 0.55 && b.height > 4 && b.height < r.height * 0.12
+          return b.width > r.width * 0.55 && b.height > 4 && b.height < r.height * 0.16
             && b.bottom > r.bottom - r.height * 0.14 && /^rgb\(/.test(bg)
             && bg !== 'rgb(255, 255, 255)';
         }).sort((a, z) => z.getBoundingClientRect().width - a.getBoundingClientRect().width)[0];
@@ -1175,34 +1183,45 @@ const LEADERBOARD = {
                     the colour beside it. A band is a solid block at ONE edge —
                     the edge a lanyard sleeve covers and the edge that gets tucked
                     under on a table. A line is on all four. */
-                 panelLine: pn ? (getComputedStyle(pn).boxShadow.match(/rgba?\([^)]*\)/) || [''])[0] : '',
-                 panelLinePx: pn ? (function () {
-                   // "rgb(...) 0px 0px 0px 3.5px inset" — the spread is the weight.
-                   const m = getComputedStyle(pn).boxShadow.match(/(\d+(?:\.\d+)?)px\s+inset/);
-                   return m ? Math.round(parseFloat(m[1]) * 100) / 100 : 0;
-                 })() : 0,
-                 // Every inset ring on the panel, so a keyline can be told from one.
+                 /* The volunteer card's centre device is the card BACKGROUND —
+                    which is the frame on all four edges — continuing into the
+                    foot band. So a plain panel is the thing to check: an inset
+                    ring on it would mean the old centre-coloured outline, or a
+                    keyline, was still being drawn. */
                  panelRings: pn ? (getComputedStyle(pn).boxShadow.match(/inset/g) || []).length : 0,
-                 /* The centre name where it now lives. Read off the dot's sibling
-                    rather than by position, so the assertion survives a re-layout. */
-                 centreLine: (function () {
-                   const dot = Array.from(card.querySelectorAll('span')).find(d => {
+                 // One line, or two when the code and name cannot share one.
+                 bandLines: bd ? bd.innerText.trim().split('\n').filter(Boolean).length : 0,
+                 /* The role pill: the only other place the TIER colour appears,
+                    and it sits fully inside the white panel so it never meets the
+                    centre colour. Found by shape — a hug-width rounded box in a
+                    solid colour — rather than by position. */
+                 pill: (function () {
+                   const r = card.getBoundingClientRect();
+                   const el = Array.from(card.querySelectorAll('div')).filter(d => {
                      const b = d.getBoundingClientRect(), st = getComputedStyle(d);
-                     return b.width > 3 && b.width < 14 && Math.abs(b.width - b.height) < 2
-                       && st.borderRadius.indexOf('50%') === 0 && /^rgb\(/.test(st.backgroundColor);
+                     return b.height > 8 && b.height < r.height * 0.09 && b.width < r.width * 0.9
+                       && b.width > b.height && parseFloat(st.borderRadius) >= b.height / 2 - 1
+                       && /^rgb\(/.test(st.backgroundColor) && st.backgroundColor !== 'rgb(255, 255, 255)'
+                       && d.innerText.trim().length > 0;
+                   })[0];
+                   const sp = el && el.querySelector('span');
+                   return { text: el ? el.innerText.trim() : '',
+                            color: el ? hex(getComputedStyle(el).backgroundColor) : '',
+                            ink: sp ? hex(getComputedStyle(sp).color) : '',
+                            fontPx: sp ? Math.round(parseFloat(getComputedStyle(sp).fontSize) * 100) / 100 : 0 };
+                 })(),
+                 /* The credential footer, read as label → value pairs. A blank
+                    "VALID TO" row is a different failure from a missing one, and
+                    only reading the pairs can tell them apart. */
+                 credential: (function () {
+                   const out = {};
+                   Array.from(card.querySelectorAll('span')).forEach(s => {
+                     const t = s.innerText.trim();
+                     if (!/^(VOLUNTEER ID|VALID TO)$/i.test(t)) return;
+                     const v = s.nextElementSibling;
+                     out[t.toUpperCase()] = v ? v.innerText.trim() : '';
                    });
-                   /* The label span now CONTAINS a nested span for the centre
-                      code, so `span:last-child` returns the code rather than the
-                      label. Read the row's own text and split the two apart. */
-                   const label = dot && dot.parentElement
-                     && Array.from(dot.parentElement.children).filter(n => n !== dot).pop();
-                   const whole = label ? label.innerText.trim() : '';
-                   const parts = whole.split('\u00b7').map(x => x.trim()).filter(Boolean);
-                   return { name: parts.length > 1 ? parts.slice(1).join(' · ') : whole,
-                            code: parts.length > 1 ? parts[0] : '',
-                            dot: dot ? hex(getComputedStyle(dot).backgroundColor) : '',
-                            ink: label ? hex(getComputedStyle(label).color) : '',
-                            fontPx: label ? Math.round(parseFloat(getComputedStyle(label).fontSize) * 100) / 100 : 0 };
+                   return out;
                  })(),
                  // Smallest white margin between the band and the panel edge on
                  // the three sides that face the frame. null when there is no
@@ -1371,63 +1390,73 @@ const LEADERBOARD = {
       (await studio.locator('.card-pair').count()) === 5
       && !/of 5 volunteers ready/.test(await studio.evaluate(() => document.body.innerText)));
     const volFronts = (await centreOnCard('.card-pair .idcard')).filter((_, i) => i % 2 === 0);
-    /* The volunteer card's centre device is a thin LINE round the white panel,
-       not a foot band. A band is a solid block at one edge — the edge a lanyard
-       sleeve covers and the edge that gets tucked under on a table — and it took
-       a sixteenth of the card away from the content to say one word. */
-    ok('the volunteer card has no coloured foot band (' + volFronts.length + ' cards)',
-      volFronts.length === 5 && volFronts.every(c => !c.band));
-    ok('…the centre is a thin line round the white panel instead',
-      volFronts[0].panelLine === 'rgb(214, 69, 69)' && volFronts[1].panelLine === 'rgb(46, 125, 209)'
-      && volFronts[0].panelLinePx > 0 && volFronts[0].panelLinePx <= 6);
-    /* Two facts, two places. The frame stays the TIER colour — role is what a
-       volunteer gets stopped and asked about — so the line has to be the only
-       thing carrying the centre, and it must not merge into the frame. */
-    ok('…without the centre line eating the role colour the frame carries',
-      volFronts[0].frame === '#8a1538' && volFronts[1].frame === '#00225f');
-    /* Colour is not a label: one man in twelve cannot read it, print drifts
-       between batches, and a photocopy has none of it. The band used to spell
-       the centre out, so removing it had to keep the name somewhere. */
-    /* The code used to hang off the photo frame as a badge. It is spelled out
-       beside the centre name now — colour is not a label, so the two characters a
-       coordinator calls out still have to be somewhere, and the frame goes back to
-       being a plain rectangle. */
-    ok('…the centre code beside the name, not as a badge on the frame',
-      volFronts[0].centreLine.code === 'EG' && volFronts[1].centreLine.code === 'IJ'
-      && volFronts[3].centreLine.code === 'SA');
-    ok('…and the centre is still spelled out, next to a dot of its colour',
-      volFronts[0].centreLine.name === 'EGBEDA' && volFronts[0].centreLine.dot === '#d64545'
-      && volFronts[1].centreLine.name === 'IJAIYE' && volFronts[1].centreLine.dot === '#2e7dd1');
+    /* Two admin-picked colours, four places, and they never meet. The CENTRE
+       colour is the card background — which is the frame on all four edges — and
+       the foot band the frame runs into. The TIER colour is the disc and the role
+       pill, both fully inside the white panel. */
+    ok('the volunteer card frames itself in its centre colour (' + volFronts.length + ' cards)',
+      volFronts.length === 5 && volFronts[0].frame === '#d64545' && volFronts[1].frame === '#2e7dd1'
+      && volFronts[3].frame === '#f7e36b');
+    ok('…and the foot band is the same colour, because it is the same shape',
+      volFronts[0].bandColor === '#d64545' && volFronts[1].bandColor === '#2e7dd1'
+      && volFronts[3].bandColor === '#f7e36b');
+    /* Colour is not a label — one man in twelve cannot read it, print drifts
+       between batches, and a photocopy has none of it — so the band spells the
+       centre out, code first, which is what a coordinator calls across a hall. */
+    ok('…with the code and the centre written out on it',
+      /^EG\b/.test(volFronts[0].band) && /EGBEDA$/.test(volFronts[0].band)
+      && /^IJ\b/.test(volFronts[1].band) && /IJAIYE$/.test(volFronts[1].band));
+    /* The band ink is chosen from the colour underneath it, which is the whole
+       reason cardInk exists: the pale yellow centre used to print white on
+       near-white, and nobody found out until the box arrived. */
+    ok('…in ink the colour can actually carry, dark on a pale centre',
+      volFronts[3].bandInk === '#10131a' && volFronts[3].bandShadow === 'none'
+      && volFronts[0].bandInk === '#ffffff');
+    /* The role, which is the other thing a volunteer gets stopped and asked
+       about, in the tier colour — inside the panel, never touching the frame. */
+    ok('the role is a pill in the tier colour, inside the white panel',
+      volFronts[0].pill.text === 'LEAD MENTOR' && volFronts[0].pill.color === '#8a1538'
+      && volFronts[1].pill.text === 'MENTOR' && volFronts[1].pill.color === '#00225f');
+    // "INSTRUCTOR" alone identifies nobody where every third person is one.
+    ok('…qualified by faculty when there is one, and with no trailing dot when not',
+      volFronts[3].pill.text === 'INSTRUCTOR · MUSIC' && !/·/.test(volFronts[1].pill.text));
+    /* Nothing on the card is adjacent any more, so the conditional keyline and
+       the panel's centre-coloured outline are both gone. An inset ring on the
+       panel would mean one of them is still firing. */
+    ok('…and the panel is plain white, with no keyline or outline left on it',
+      volFronts.every(c => c.panelRings === 0));
+    /* The case that used to need the keyline: a centre colour EQUAL to the tier
+       colour. Legal, and now simply correct — the two never touch, so there is
+       nothing to hold apart. */
+    ok('…so a centre colour equal to the tier colour renders like any other card',
+      volFronts[4].frame === '#0a2a6e' && volFronts[4].pill.color === '#0a2a6e'
+      && volFronts[4].panelRings === 0);
     /* A volunteer with no single site — a roving mentor, ops, a record filed
        before centres existed — used to get nothing at all, which left two
        different card geometries in one print run. A card with a gap where every
        other card has a colour reads as a misprint, not as "works everywhere". */
-    ok('…and a volunteer with no single centre gets the programme mark, not a hole',
-      /OLD/.test(volFronts[2].text) && /ALL CENTRES/i.test(volFronts[2].centreLine.name)
-      && volFronts[2].panelLine === 'rgb(27, 43, 107)');
-    /* The name sits on white now, so it is black on every card — which is the
-       point of moving it off the colour. The pale-centre trap the band had
-       (white ink on yellow, discovered when the box of cards arrived) cannot
-       occur here, and the dot still carries the colour faithfully. */
-    ok('…a pale centre reads as easily as a dark one, because the name is not on it',
-      volFronts[3].centreLine.name === 'SUNSHINE ANNEXE' && volFronts[3].centreLine.dot === '#f7e36b'
-      && volFronts[3].centreLine.ink === volFronts[1].centreLine.ink);
-    /* Two near-identical colours meeting still need a seam. The threshold used
-       to be 120, roughly "the same colour" — and the pair that caused the
-       problem, a red Egbeda inside a maroon Lead Mentor frame, measures 158 and
-       sailed straight through it. Card 0 is that pair, card 4 the two navies. */
-    ok('…a centre colour close to the tier frame gains a white keyline',
-      volFronts[4].panelRings === 2 && volFronts[0].panelRings === 2
-      && volFronts[1].panelRings === 1);
-    /* A long centre name uses the room rather than giving it up.
-       The previous assertion here required the long name to render SMALLER than
-       a short one, and it passed — on a formula that shrank "Ikotun-Egbe
-       Community Hall" to 62% while a third of the line sat empty either side,
-       making the longest name on the sheet the least legible thing on it. The
-       test was locking in the defect. */
-    ok('…and a long centre name fills its line rather than shrinking inside it',
-      volFronts[4].centreLine.name === 'IKOTUN-EGBE COMMUNITY HALL'
-      && Math.abs(volFronts[4].centreLine.fontPx - volFronts[1].centreLine.fontPx) < 0.5);
+    ok('a volunteer with no single centre gets the programme mark, not a hole',
+      /OLD/.test(volFronts[2].text) && volFronts[2].frame === '#1b2b6b'
+      && volFronts[2].bandColor === '#1b2b6b' && /ALL CENTRES$/.test(volFronts[2].band));
+    /* The band spans the full 590 units, not the content gutter, so it has 520 to
+       work with — and below its floor the answer is a second line, not smaller
+       type. With a fixed track and a base·0.5 floor this name solved to 13 units:
+       about 1.1mm, under 4pt, the smallest type on the card. */
+    ok('a centre name too long for one band line splits, rather than shrinking to 4pt',
+      volFronts[4].bandLines === 2 && /^IEC/.test(volFronts[4].band)
+      && /IKOTUN-EGBE COMMUNITY HALL$/.test(volFronts[4].band)
+      && volFronts[4].bandFontPx >= volFronts[1].bandFontPx * 0.85);
+    ok('…while every name that does fit stays on one line',
+      [0, 1, 2, 3].every(i => volFronts[i].bandLines === 1));
+    /* The credential footer. A blank VALID TO row is a different failure from an
+       absent one, so both are asserted: the date when there is one, and nothing
+       at all for a programme running with no expiry. */
+    ok('the card carries its ID and its expiry where a desk can read them',
+      volFronts[0].credential['VOLUNTEER ID'] === 'VOL-MEN-26-001'
+      && volFronts[0].credential['VALID TO'] === '2026-10-29');
+    ok('…and no expiry means no row, not a blank one',
+      volFronts[2].credential['VOLUNTEER ID'] === 'VOL-MEN-26-003'
+      && !('VALID TO' in volFronts[2].credential));
     /* The rules themselves, not their shadow on the pixels. */
     const rules = await studio.evaluate(() => {
       const id = n => n, W = 496;
@@ -1447,9 +1476,18 @@ const LEADERBOARD = {
         clashNavies: window.cardColorsClash('#0A2A6E', '#00225F'),
         clashBlueNavy: window.cardColorsClash('#2E7DD1', '#00225F'),
         clashYellowNavy: window.cardColorsClash('#F7E36B', '#00225F'),
-        sameList: window.colourNeighbours('#D64545', [{ name: 'Egbeda', color: '#D64545' }, { name: 'Ikeja', color: '#D94A4A' }], [], false),
-        crossList: window.colourNeighbours('#0A2A6E', [], [{ name: 'Mentor', color: '#00225F' }], false),
-        clear: window.colourNeighbours('#12A150', [{ name: 'Egbeda', color: '#D64545' }], [{ name: 'Mentor', color: '#00225F' }], false),
+        sameList: window.colourNeighbours('#D64545', [{ name: 'Egbeda', color: '#D64545' }, { name: 'Ikeja', color: '#D94A4A' }]),
+        clear: window.colourNeighbours('#12A150', [{ name: 'Egbeda', color: '#D64545' }]),
+        /* The foot band's own solve, in design units. 520 is the full card width
+           less its 35-unit clearance — the band is NOT inside the content
+           gutter, which is exactly the mistake that produced 13-unit type. */
+        bandShort: window.footBandFit('EG  ·  EGBEDA', 520, 25, 22),
+        bandLong: window.footBandFit('IEC  ·  IKOTUN-EGBE COMMUNITY HALL', 520, 25, 22),
+        bandSplitName: window.footBandFit('IKOTUN-EGBE COMMUNITY HALL', 520, 23, 18),
+        // …and the one-line solve the names and the pill share.
+        fitShort: window.cardFit('Bakare', 50, 424),
+        fitLong: window.cardFit('Oyelaran-Oyeyinka', 50, 424),
+        fitPill: window.cardFit('INSTRUCTOR · CREATIVE WRITING', 18, 360, 3.2),
       };
     });
     ok('a centre name is sized from the space available, not a magic character count',
@@ -1459,18 +1497,30 @@ const LEADERBOARD = {
     ok('the clash test catches the pair that caused this, not just identical colours',
       rules.clashRedMaroon === true && rules.clashNavies === true
       && rules.clashBlueNavy === false && rules.clashYellowNavy === false);
-    /* Said at the picker, where the fix is one click rather than a reprint. The
-       two directions fail differently, so they are reported differently: two
-       centres that look alike defeat the device outright; a centre close to a
-       TIER colour still prints, held apart by the keyline. */
-    ok('a colliding colour is named at the picker, and the two collisions told apart',
+    /* Said at the picker, where the fix is one click rather than a reprint. Only
+       ONE direction is a collision now: two centres (or two tiers) that look
+       alike defeat the device outright. A centre colour close to a TIER colour
+       used to be warned about because the two touched on the card; they no
+       longer do, and warning about a pairing that renders perfectly well would
+       send an admin off to change a colour for no reason. */
+    ok('a colliding colour is named at the picker',
       rules.sameList.length === 1 && rules.sameList[0].name === 'Ikeja' && rules.sameList[0].sameList === true
-      && rules.crossList.length === 1 && rules.crossList[0].sameList === false
-      && /\(tier\)$/.test(rules.crossList[0].name)
       && rules.clear.length === 0);
     // Editing a centre must not report that it is too close to itself.
     ok('…and a colour is never flagged against the row that already holds it',
-      (await studio.evaluate(() => window.colourNeighbours('#D64545', [{ name: 'Egbeda', color: '#d64545' }], [], false).length)) === 0);
+      (await studio.evaluate(() => window.colourNeighbours('#D64545', [{ name: 'Egbeda', color: '#d64545' }]).length)) === 0);
+    /* The band's solve, as a rule. A short line sits at the base size; a long one
+       comes down but never below the floor, and asks to be split instead. */
+    ok('the foot band sizes from 520 units, and asks for a second line at its floor',
+      rules.bandShort.size === 25 && rules.bandShort.split === false
+      && rules.bandShort.track === 5
+      && rules.bandLong.split === true && rules.bandLong.size === 22
+      && rules.bandSplitName.split === false && rules.bandSplitName.size > 18);
+    // Never above base, and the fitted size must actually fit the width given.
+    ok('…and the one-line solve caps at base, then shrinks only as much as it must',
+      rules.fitShort === 50 && rules.fitLong < 50
+      && Math.abs(17 * 0.62 * rules.fitLong - 424) < 1
+      && rules.fitPill < 18 && 29 * (0.62 * rules.fitPill + 3.2) <= 360.5);
     // Same filter, same problem, the other roster.
     await studio.getByLabel('Filter cards by centre').selectOption({ label: '⚠ No centre on file · 1' });
     await studio.waitForTimeout(500);
