@@ -115,6 +115,8 @@ function admin_volunteer_cards_data(array $p): array {
             'displayId' => (string)$v['volunteerId'],
             'token' => (string)$v['token'],
             'photoUrl' => (string)$v['photoUrl'],
+            // Not printed — this is what lets the studio cut a run by date.
+            'enrolledAt' => (string)($v['createdAt'] ?? ''),
         ];
     }
     return ['ok' => true, 'cards' => $cards, 'program' => idcard_program()];

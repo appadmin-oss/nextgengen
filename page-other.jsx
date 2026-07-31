@@ -4989,13 +4989,48 @@ function cardInk(hex) {
  *  — cheap, and markedly better than plain RGB at matching what an eye does.
  *  Used where a tier colour frames a centre colour: a maroon Lead Mentor border
  *  around a red centre band reads as a single blob, and the fix is a visible
- *  separator rather than hoping the palette never collides. */
+ *  separator rather than hoping the palette never collides.
+ *
+ *  The threshold is 200, not the 120 this shipped with. 120 is roughly "the
+ *  same colour"; the pair that actually caused the problem — #D64545 centre
+ *  inside a #8A1538 tier — measures 158 and sailed through it. Two colours a
+ *  reviewer describes as "both red" do not have to be near-identical to merge
+ *  at arm's length under a fluorescent tube, which is the condition the card is
+ *  read in. Over-applying a hairline costs nothing; under-applying it costs a
+ *  print run. */
 function cardColorsClash(a, b) {
   const x = cardRgb(a), y = cardRgb(b);
   if (!x || !y) return false;
   const rm = (x[0] + y[0]) / 2, dr = x[0] - y[0], dg = x[1] - y[1], db = x[2] - y[2];
-  return Math.sqrt((2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db) < 120;
+  return Math.sqrt((2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db) < 200;
 }
+/**
+ * Which existing card colours a proposed one would collide with.
+ *
+ * Two directions matter and they fail differently. A centre colour close to
+ * ANOTHER CENTRE'S makes two sites indistinguishable, which defeats the whole
+ * device. A centre colour close to a TIER colour merges the band into the frame
+ * that surrounds it on the volunteer card — survivable, because the keyline
+ * exists, but never as good as a colour of its own. Both are worth saying; the
+ * wording differs because the remedy does.
+ *
+ * `own` is the list the new colour joins, `other` the list it will sit inside or
+ * around on a card. Anything already carrying this exact colour is skipped: an
+ * admin editing Egbeda should not be told Egbeda is too close to Egbeda.
+ */
+function colourNeighbours(colour, own, other, isVol) {
+  const hit = [];
+  const norm = String(colour || "").trim().toLowerCase();
+  (own || []).forEach(u => {
+    if (String(u.color || "").trim().toLowerCase() === norm) return;
+    if (cardColorsClash(colour, u.color)) hit.push({ name: u.name, sameList: true });
+  });
+  (other || []).forEach(u => {
+    if (cardColorsClash(colour, u.color)) hit.push({ name: u.name + (isVol ? " (centre)" : " (tier)"), sameList: false });
+  });
+  return hit.slice(0, 4);
+}
+
 /* The centre a card should SHOW, which is not always the centre it has.
  *
  * A roving mentor, an ops volunteer or a programme-wide coordinator genuinely
@@ -5011,11 +5046,24 @@ function cardCentreOf(card) {
 }
 /** Letter-spacing and size that keep a centre name on one line. "Egbeda" and
  *  "Ikotun-Egbe Community Hall" are both legal names, and the second used to
- *  run off the end of the band under `whiteSpace: nowrap`. */
-function centreBandFont(name, base, px) {
+ *  run off the end of the band under `whiteSpace: nowrap`.
+ *
+ *  Sized from the space actually available, not from a magic character count.
+ *  The first version shrank on `14 / n` with a 0.62 floor, which was fitted to
+ *  one band at one size — so when the band grew, the longest name on the sheet
+ *  came out as the SMALLEST text on it, while a third of the band sat empty
+ *  either side. Backwards: length is a reason to use the room, not to give it
+ *  up. Inter at weight 800 in caps advances about 0.62em per character, so the
+ *  width a name needs is n·(0.62·size + tracking) and the size that fits is
+ *  that solved for size — never above `base`, and floored so a pathological
+ *  name degrades rather than disappears. */
+function centreBandFont(name, base, px, availUnits = 470) {
   const n = ((name || "").trim().length) || 1;
-  const scale = n > 14 ? Math.max(0.62, 14 / n) : 1;
-  return { fontSize: px(base * scale), letterSpacing: px(2.2 * scale) };
+  const track = 2.2;
+  const fit = (availUnits - n * track) / (n * 0.62);
+  const size = Math.max(base * 0.55, Math.min(base, fit));
+  // Tracking tightens with the type so a shrunk name does not read as gappy.
+  return { fontSize: px(size), letterSpacing: px(track * (size / base)) };
 }
 
 /* Which centre a card belongs to, readable across a room.
@@ -5112,7 +5160,7 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
         // Same three adaptations as the volunteer band: ink from the colour, and
         // a name that shrinks rather than running off the end of the card.
         const ink = cardInk(centre.color || "#76B043");
-        const fit = centreBandFont(centre.name, 15, px);
+        const fit = centreBandFont(centre.name, 15, px, 540);
         return (
           <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: centre.color || "#76B043",
                         display: "grid", placeItems: "center", overflow: "hidden" }}>
@@ -5145,7 +5193,11 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
      When they clash the centre elements get a white keyline — visible against
      both, and cheap. */
   const clash = cardColorsClash(cTint, tint);
-  const keyline = clash ? `${Math.max(1, px(3))}px solid #fff` : "none";
+  /* 6 units, not 3. At studio scale 3 came out under two pixels — present in
+     the DOM, invisible to the eye, and therefore doing none of the work it was
+     added for. A separator has to be seen from where the card is read. */
+  const keyline = clash ? `${Math.max(2, px(6))}px solid #fff` : "none";
+  const keyOff = `-${Math.max(2, px(6))}px`;
   // Headshot keeps its 450:354 aspect (never stretched) and scales with the card.
   const hsH = Math.min(354, Math.max(150, Math.round(H * 0.34)));
   const hsW = Math.round(hsH * 450 / 354);
@@ -5158,12 +5210,17 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
         <div style={{ position: "absolute", inset: px(8), borderRadius: "50%", background: tint, boxShadow: `0 ${px(6)}px ${px(16)}px rgba(0,0,0,.18)`, display: "grid", placeItems: "center" }}>
           <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(34), letterSpacing: px(1), color: "#fff" }}>STS</span>
         </div>
-        <img src="/assets/idcard/logo-sts.svg" alt="Street-To-Stardom" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+        {/* Clipped to its own disc. The supplied SVG carries a near-white
+            square across its full canvas — invisible against a screen, and a
+            faint grey box around the badge once it is printed on card stock.
+            The artwork inside it is a circle, so a circular clip loses nothing
+            and removes the box without touching the asset. */}
+        <img src="/assets/idcard/logo-sts.svg" alt="Street-To-Stardom" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", borderRadius: "50%", clipPath: "circle(48% at 50% 50%)" }}
           onError={e => { e.target.style.display = "none"; }}/>
       </div>
       {/* Content column inside the panel — reflows to any card height. */}
       <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box",
-                    padding: px(94) + "px " + px(40) + "px " + px(centre ? 68 : 28) + "px" }}>
+                    padding: px(94) + "px " + px(40) + "px " + px(centre ? 90 : 28) + "px" }}>
         {/* The headshot in the CENTRE's colour, not the tier's. The card is
             already tier-coloured all over; repeating that around the photo
             would say the same thing twice and the thing a coordinator
@@ -5172,21 +5229,30 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
         <div style={{ position: "relative", width: px(hsW), height: px(hsH), flex: "none" }}>
           {centre ? (
             <>
-              <div style={{ position: "absolute", inset: 0, borderRadius: px(22), background: cTint,
+              <div style={{ position: "absolute", inset: 0, borderRadius: px(26), background: cTint,
                             // Only when the two colours would merge; a no-op otherwise.
-                            outline: keyline, outlineOffset: `-${Math.max(1, px(3))}px`,
+                            outline: keyline, outlineOffset: keyOff,
                             boxShadow: `0 ${px(10)}px ${px(26)}px rgba(27,43,107,.14)` }}/>
-              <div style={{ position: "absolute", inset: px(11), borderRadius: px(14), overflow: "hidden",
+              {/* 28 units of centre colour round the photo, not 11.
+                  This is the border, and it is the signal that survives a
+                  lanyard sleeve — a foot band is the first thing a sleeve or a
+                  tucked bottom edge hides, so the frame has to carry the
+                  identification on its own. At 11 it read as a photo mount:
+                  present, but nobody would call it a coloured border. Matched to
+                  the weight of the ring on the student card, which is the one
+                  everybody on site already recognises. */}
+              <div style={{ position: "absolute", inset: px(28), borderRadius: px(10), overflow: "hidden",
                             background: "linear-gradient(180deg,#dff0fb 52%,#8fbb3f 92%)" }}>
                 {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 708)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
               </div>
-              <div style={{ position: "absolute", right: px(-6), top: px(-6), height: px(38), minWidth: px(72), padding: `0 ${px(12)}px`,
-                            borderRadius: px(38), background: cTint, border: `${Math.max(1, px(4))}px solid #fff`,
+              <div style={{ position: "absolute", right: px(-10), top: px(-10), height: px(50), minWidth: px(92), padding: `0 ${px(15)}px`,
+                            borderRadius: px(50), background: cTint, border: `${Math.max(1, px(5))}px solid #fff`,
                             // A pale chip vanishes into its own white border.
                             outline: cInk.light ? `${Math.max(1, px(2))}px solid ${cInk.hairline}` : "none",
-                            outlineOffset: `-${Math.max(1, px(4)) + Math.max(1, px(2))}px`,
-                            display: "grid", placeItems: "center", boxSizing: "border-box" }}>
-                <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(21), letterSpacing: px(1),
+                            outlineOffset: `-${Math.max(1, px(5)) + Math.max(1, px(2))}px`,
+                            display: "grid", placeItems: "center", boxSizing: "border-box",
+                            boxShadow: `0 ${px(4)}px ${px(12)}px rgba(0,0,0,.20)` }}>
+                <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(28), letterSpacing: px(1),
                                color: cInk.ink, lineHeight: 1, whiteSpace: "nowrap", textShadow: cInk.shadow }}>{centre.code}</span>
               </div>
             </>
@@ -5226,12 +5292,22 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
            pair of colours the hierarchy table happens to hold.
            When the two are close enough to merge ANYWAY, `clash` adds a keyline
            on top of the gutter. */
-        const fit = centreBandFont(centre.name, 18, px);
+        /* 26 base, in a 56-unit band. At 18-in-38 the centre name printed
+           smaller than the word "VOLUNTEER" directly above it, which put the
+           least useful line on the card above the most useful one: everybody
+           holding one of these is a volunteer, and the only open question is
+           whose site they belong to. */
+        const fit = centreBandFont(centre.name, 26, px, 496);
         return (
-          <div style={{ position: "absolute", left: px(28), right: px(28), bottom: px(28), height: px(38),
+          <div style={{ position: "absolute", left: px(28), right: px(28), bottom: px(28), height: px(56),
                         borderRadius: `${px(6)}px ${px(6)}px ${px(24)}px ${px(24)}px`,
-                        background: cTint, outline: keyline, outlineOffset: `-${Math.max(1, px(3))}px`,
-                        display: "grid", placeItems: "center", overflow: "hidden" }}>
+                        background: cTint, outline: keyline, outlineOffset: keyOff,
+                        display: "grid", placeItems: "center", overflow: "hidden",
+                        /* The gutter of white is a gap, not a line, and a gap
+                           reads as "nothing here" against a dark frame. An inner
+                           hairline gives the band an actual edge on every card,
+                           independent of whether the two colours clash. */
+                        boxShadow: `inset 0 0 0 ${Math.max(1, px(2))}px ${cInk.hairline}` }}>
             <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: fit.fontSize, letterSpacing: fit.letterSpacing,
                            color: cInk.ink, textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap",
                            textShadow: cInk.shadow }}>{centre.name}</span>
@@ -5353,6 +5429,19 @@ function CardStudio() {
      and before this there was no way to see them coming: you found out at the
      guillotine, with the run already cut. */
   const [pick, setPick] = React.useState("");
+  /* Which slice of the batch goes to the printer.
+   *
+   * "Everybody" is the rarest print run there is. A real one is the children who
+   * registered since the last batch went out, or the block of IDs a coordinator
+   * was given, or the eleven cards that came back creased. Without a way to say
+   * that, the studio's only honest option was to print all 300 again — so people
+   * printed all 300 again, and the cost of a reprint is paid in card stock. */
+  const [rmode, setRmode] = React.useState("");        // "" | date | number | pick
+  const [dFrom, setDFrom] = React.useState(""); const [dTo, setDTo] = React.useState("");
+  const [nFrom, setNFrom] = React.useState(""); const [nTo, setNTo] = React.useState("");
+  const [chosen, setChosen] = React.useState(() => new Set());
+  const [paste, setPaste] = React.useState("");
+  const [pasteMsg, setPasteMsg] = React.useState("");
   // Card proportion (mm) — admin-set, applies to preview, PNG/PDF export + print.
   const [sizeW, setSizeW] = React.useState(54); const [sizeH, setSizeH] = React.useState(75);
   const [sizeMsg, setSizeMsg] = React.useState("");
@@ -5384,7 +5473,11 @@ function CardStudio() {
 
   const isVol = mode === "volunteers";
   const resetInputs = () => { setMName(""); setMCode(""); setMColor(isVol ? "#00225F" : "#76B043"); };
-  const switchMode = (m) => { setMode(m); setMsg(""); setMName(""); setMCode(""); setPick(""); setMColor(m === "volunteers" ? "#00225F" : "#76B043"); };
+  const clearRange = () => { setRmode(""); setDFrom(""); setDTo(""); setNFrom(""); setNTo(""); setChosen(new Set()); setPaste(""); setPasteMsg(""); };
+  /* Same reason the centre filter clears: a range carried across rosters hides
+     most of the new one, and the header would still read as if that were
+     everybody. The IDs do not even overlap between the two. */
+  const switchMode = (m) => { setMode(m); setMsg(""); setMName(""); setMCode(""); setPick(""); clearRange(); setMColor(m === "volunteers" ? "#00225F" : "#76B043"); };
 
   const addUnit = async () => {
     setMsg("");
@@ -5523,9 +5616,12 @@ function CardStudio() {
   const cardName = (card) => (card.displayId || card.studentId || card.volunteerId || "card").replace(/[^\w.-]+/g, "-");
   const setName = () => (isVol ? "volunteer" : "student") + "-id-cards";
 
-  const exportPairPng = async (i) => {
-    if (exp) return;
-    const card = cards[i];
+  /* Takes the CARD, not an index. The preview list and the print list are no
+     longer the same array — in pick mode you are looking at every candidate and
+     printing only the ticked ones — and an index into the wrong one downloads
+     somebody else's card. */
+  const exportPairPng = async (card) => {
+    if (exp || !card) return;
     try {
       setExp("Rendering…");
       const CE = await ensureLib();
@@ -5720,9 +5816,44 @@ function CardStudio() {
   const centreCounts = allCards.reduce((m, c) => {
     const n = cardCentre(c); if (n) m[n] = (m[n] || 0) + 1; return m;
   }, {});
-  const cards = pick === NO_CENTRE ? allCards.filter(c => !cardCentre(c))
+  const inCentre = pick === NO_CENTRE ? allCards.filter(c => !cardCentre(c))
     : pick ? allCards.filter(c => cardCentre(c) === pick)
     : allCards;
+  /* Range, applied AFTER the centre filter, because that is the order a
+     coordinator says it in: "Egbeda, the ones from last week". */
+  const cardId = (c) => String(c.studentId || c.volunteerId || "");
+  /* The number a human means by "cards 40 to 80" is the sequence in the printed
+     ID — NGG/26/0041 — not a row id and not a position in this list, which
+     shifts every time somebody else registers. Last run of digits, so both
+     NGG/26/0041 and VOL-MEN-26-004 answer. */
+  const cardSeq = (c) => {
+    const m = String(c.displayId || "").match(/(\d+)(?!.*\d)/);
+    return m ? parseInt(m[1], 10) : null;
+  };
+  const cardDay = (c) => String(c.enrolledAt || "").slice(0, 10);
+  /* Computed plainly, NOT in a useMemo. This sits below the early returns for
+     the loading and need-auth states, and a hook after a conditional return is
+     React error #310 — the studio mounted blank. It is a filter over at most 500
+     rows; memoising it was buying nothing and cost the whole screen. */
+  const cards = (() => {
+    if (rmode === "date" && (dFrom || dTo)) {
+      /* A card with no date on file is EXCLUDED from a date range, not swept in.
+         Those are the oldest records in the system; including them silently
+         would make "print this week's intake" quietly reprint the founders. */
+      return inCentre.filter(c => {
+        const d = cardDay(c);
+        if (!d) return false;
+        return (!dFrom || d >= dFrom) && (!dTo || d <= dTo);
+      });
+    }
+    if (rmode === "number" && (nFrom || nTo)) {
+      const lo = nFrom === "" ? -Infinity : Number(nFrom);
+      const hi = nTo === "" ? Infinity : Number(nTo);
+      return inCentre.filter(c => { const n = cardSeq(c); return n !== null && n >= lo && n <= hi; });
+    }
+    if (rmode === "pick") return inCentre.filter(c => chosen.has(cardId(c)));
+    return inCentre;
+  })();
   const program = ((isVol ? vdata : data) && (isVol ? vdata : data).program) || {};
   // Physical card proportion (admin-set). The artwork's design canvas is 590×1004
   // (≈54×92mm); we keep the 590px width and derive the canvas height from the
@@ -5748,6 +5879,9 @@ function CardStudio() {
         .print-zone { position: absolute; left: 0; top: 0; background: #fff; }
         .idcard { width: ${cardW}mm !important; height: ${cardH}mm !important; page-break-inside: avoid; box-shadow: none !important; }
         .card-pair { gap: 4mm; margin: 3mm; page-break-inside: avoid; float: left; }
+        /* Dimming is a screen affordance; on paper it has to be absent, or a
+           reprint of eleven cards comes out as the whole run at 34% opacity. */
+        .card-unpicked { display: none !important; }
       }
     `}</style>
     <div className="no-print" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 18, marginBottom: 18 }}>
@@ -5823,7 +5957,114 @@ function CardStudio() {
           ⚠ {noCentreCount} with no centre
         </button>
       )}
+      <span style={{ width: 1, height: 26, background: "rgba(255,255,255,.16)", margin: "0 4px" }}/>
+      {/* Range. Three ways of saying "not everybody", because coordinators say
+          it three ways: by when they registered, by the ID block they were
+          given, and by pointing at the ones that came back creased. */}
+      <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "rgba(230,238,255,.7)" }}>
+        Range
+        <select value={rmode} onChange={e => { const v = e.target.value; clearRange(); setRmode(v); }} aria-label="Print a range of cards"
+          style={{ minHeight: 40, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (rmode ? gold : "rgba(255,255,255,.18)"), background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13, fontWeight: 700 }}>
+          <option value="">Whole batch</option>
+          <option value="date">By date registered</option>
+          <option value="number">By ID number</option>
+          <option value="pick">Pick individually</option>
+        </select>
+      </label>
+      {rmode === "date" && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "rgba(230,238,255,.7)" }}>
+          <input type="date" value={dFrom} onChange={e => setDFrom(e.target.value)} aria-label="Registered from"
+            style={{ minHeight: 40, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}/>
+          to
+          <input type="date" value={dTo} onChange={e => setDTo(e.target.value)} aria-label="Registered to"
+            style={{ minHeight: 40, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}/>
+          {/* The run people actually want, one click instead of two date pickers. */}
+          {[["Last 7 days", 7], ["Last 30 days", 30]].map(([label, days]) => (
+            <button key={days} onClick={() => {
+              const t = new Date(); const f = new Date(t.getTime() - (days - 1) * 86400000);
+              setDFrom(f.toISOString().slice(0, 10)); setDTo(t.toISOString().slice(0, 10));
+            }} style={{ minHeight: 34, padding: "6px 11px", borderRadius: 99, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
+          ))}
+        </span>
+      )}
+      {rmode === "number" && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "rgba(230,238,255,.7)" }}>
+          <input type="number" min={1} value={nFrom} onChange={e => setNFrom(e.target.value)} placeholder="from" aria-label="ID number from"
+            style={{ width: 92, minHeight: 40, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13, fontFamily: "var(--font-mono, monospace)" }}/>
+          to
+          <input type="number" min={1} value={nTo} onChange={e => setNTo(e.target.value)} placeholder="to" aria-label="ID number to"
+            style={{ width: 92, minHeight: 40, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13, fontFamily: "var(--font-mono, monospace)" }}/>
+        </span>
+      )}
+      {rmode === "pick" && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "rgba(230,238,255,.7)" }}>
+          <b className="mono" style={{ color: chosen.size ? "#6fdc9d" : "rgba(230,238,255,.55)" }}>{chosen.size} picked</b>
+          <button onClick={() => setChosen(new Set(chosen.size === inCentre.length ? [] : inCentre.map(cardId)))}
+            style={{ minHeight: 34, padding: "6px 11px", borderRadius: 99, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+            {chosen.size === inCentre.length ? "Clear all" : "Select all " + inCentre.length}
+          </button>
+        </span>
+      )}
     </div>
+    {/* What the range came out as, said in words next to the numbers.
+        A filter that silently returns nothing looks identical to a roster that
+        is empty, and the first is a typo in a date field while the second means
+        stop and go fix the data. */}
+    {rmode && (
+      <div className="no-print" style={{ background: cards.length ? "rgba(255,255,255,.06)" : "rgba(245,176,38,.12)",
+             border: "1px solid " + (cards.length ? "rgba(255,255,255,.14)" : "rgba(245,176,38,.4)"),
+             borderRadius: 12, padding: "12px 14px", marginBottom: 22, maxWidth: 760 }}>
+        <div style={{ fontWeight: 800, fontSize: 13.5, color: cards.length ? "#eef2fb" : "#ffce54" }}>
+          {cards.length
+            ? "Printing " + cards.length + " of " + inCentre.length + (pick ? " in this batch" : "")
+            : "Nothing matches this range"}
+        </div>
+        <p style={{ margin: "5px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "rgba(230,238,255,.72)" }}>
+          {rmode === "date" && (dFrom || dTo)
+            ? <>Registered {dFrom ? <>from <b>{dFrom}</b></> : "up to"} {dTo ? <>to <b>{dTo}</b></> : dFrom ? "onwards" : ""}.{" "}
+                {(() => {
+                  /* Named, not hidden. These are the oldest records in the system
+                     and a date range cannot speak about them either way. */
+                  const undated = inCentre.filter(c => !cardDay(c)).length;
+                  return undated ? <><b>{undated}</b> {undated === 1 ? "card has" : "cards have"} no registration date on file and {undated === 1 ? "is" : "are"} left out of any date range — print those with{" "}<em>Whole batch</em> or by picking them.</> : null;
+                })()}</>
+            : rmode === "number" && (nFrom || nTo)
+            ? <>ID numbers {nFrom || "the start"} to {nTo || "the end"} — read off the number printed on the card ({isVol ? "VOL-MEN-26-0" : "NGG/26/00"}<b>42</b>), not the position in this list, which moves every time somebody registers.</>
+            : rmode === "pick"
+            ? <>Tick the cards you want below. Useful for a reprint: the eleven that came back creased, not the whole run again.</>
+            : <>Choose the dates, numbers or cards on the right. Until then this is the whole batch.</>}
+        </p>
+        {rmode === "pick" && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
+            {/* Because the list of IDs usually arrives as a message, not as a
+                mental note — pasting it beats hunting 200 previews for twelve. */}
+            <input value={paste} onChange={e => setPaste(e.target.value)} placeholder="…or paste IDs: NGG/26/0041, NGG/26/0043"
+              aria-label="Paste card IDs"
+              style={{ flex: "1 1 260px", minWidth: 200, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}/>
+            <button onClick={() => {
+              /* Matched on the ID or the printed display ID, case- and
+                 separator-insensitive, because the list is copied out of a
+                 WhatsApp message and will not be tidy. */
+              const norm = (x) => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+              const wanted = paste.split(/[\s,;]+/).map(norm).filter(Boolean);
+              if (!wanted.length) { setPasteMsg("Nothing to match."); return; }
+              const next = new Set(chosen); const miss = [];
+              wanted.forEach(w => {
+                const hit = inCentre.find(c => norm(c.displayId) === w || norm(cardId(c)) === w
+                  // A bare number matches the sequence, so "41, 43" works.
+                  || (/^\d+$/.test(w) && cardSeq(c) === parseInt(w, 10)));
+                if (hit) next.add(cardId(hit)); else miss.push(w);
+              });
+              setChosen(next);
+              setPasteMsg(miss.length
+                ? (wanted.length - miss.length) + " matched · not in this batch: " + miss.slice(0, 6).join(", ") + (miss.length > 6 ? " +" + (miss.length - 6) : "")
+                : wanted.length + " matched.");
+            }} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid " + gold, background: "transparent", color: gold, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Add these</button>
+            {pasteMsg && <span className="mono" style={{ fontSize: 12, color: /not in this batch|Nothing/.test(pasteMsg) ? "#ffce54" : "#6fdc9d" }}>{pasteMsg}</span>}
+          </div>
+        )}
+      </div>
+    )}
     {pick === NO_CENTRE && (
       <div className="no-print" style={{ background: "rgba(245,176,38,.12)", border: "1px solid rgba(245,176,38,.4)", borderRadius: 12, padding: "12px 14px", marginBottom: 22, maxWidth: 720 }}>
         <div style={{ fontWeight: 800, fontSize: 13.5, color: "#ffce54" }}>{noCentreCount === 1 ? "This card prints" : "These " + noCentreCount + " cards print"} without a centre</div>
@@ -5851,6 +6092,26 @@ function CardStudio() {
         <input type="color" value={mColor} onChange={e => setMColor(e.target.value)} style={{ width: 46, height: 40, border: "none", borderRadius: 10, background: "none", cursor: "pointer" }} aria-label="Card colour"/>
         <button onClick={addUnit} disabled={mName.trim().length < 2 || !mCode.trim()} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>{isVol ? "Add tier" : "Add centre"}</button>
       </div>
+      {/* Say it here, where it is still free to change.
+          The card does everything it can with a bad pair — a keyline round the
+          band, ink chosen from the luminance — but two navies a shade apart are
+          two navies a shade apart, and no amount of hairline makes a volunteer
+          card readable from a doorway. This is the only moment where the fix
+          costs one click instead of a reprint, so the collision is named here
+          rather than discovered at the guillotine. */}
+      {(() => {
+        const near = colourNeighbours(mColor, units, isVol ? centres : tiers, isVol);
+        if (!near.length) return null;
+        return (
+          <p style={{ fontSize: 12.5, lineHeight: 1.55, margin: "10px 0 0", color: "#ffd48a" }}>
+            <b>That colour is close to {near.map(n => n.name).join(", ")}.</b>{" "}
+            {near.some(n => n.sameList)
+              ? "Two " + (isVol ? "tiers" : "centres") + " that look alike defeat the point of colouring by " + (isVol ? "tier" : "centre") + " — nobody can tell the cards apart across a room. "
+              : "A " + (isVol ? "centre" : "tier") + " colour this close to a " + (isVol ? "tier" : "centre") + " colour merges into one shape on the card; it still prints, with a white keyline holding the two apart, but it is never as clear as a colour of its own. "}
+            Pick something further away if you can.
+          </p>
+        );
+      })()}
       {msg && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "10px 0 0" }}>{msg}</p>}
     </div>
 
@@ -5895,8 +6156,27 @@ function CardStudio() {
       </div>
     )}
     <div className="print-zone" ref={zoneRef} style={{ display: exp ? "none" : "flex", flexWrap: "wrap", gap: 26 }}>
-      {!exp && cards.map((card, i) => (
-        <div key={card.studentId || card.volunteerId} className="card-pair" style={{ position: "relative" }}>
+      {/* In pick mode the preview shows every candidate, because a list that
+          removed each card as you ticked it would leave you unable to tick a
+          second one. Unpicked pairs are dimmed on screen and dropped from the
+          print sheet by `.card-unpicked`. */}
+      {!exp && (rmode === "pick" ? inCentre : cards).map((card) => {
+        const key = cardId(card);
+        const picked = rmode !== "pick" || chosen.has(key);
+        return (
+        <div key={key} className={"card-pair" + (picked ? "" : " card-unpicked")} style={{ position: "relative", opacity: picked ? 1 : .34 }}>
+          {rmode === "pick" && (
+            <label className="no-print" title={picked ? "Printing this one" : "Not in this run"}
+              style={{ position: "absolute", top: -12, left: -8, zIndex: 3, display: "inline-flex", alignItems: "center", gap: 6,
+                       height: 30, padding: "0 12px", borderRadius: 15, cursor: "pointer",
+                       background: picked ? gold : "#2f3f6b", color: picked ? "#2b2100" : "#eef2fb",
+                       fontWeight: 800, fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>
+              <input type="checkbox" checked={picked} aria-label={"Print " + (card.displayId || key)}
+                onChange={() => setChosen(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; })}
+                style={{ width: 15, height: 15, accentColor: "#2b2100", cursor: "pointer" }}/>
+              {picked ? "Printing" : "Skip"}
+            </label>
+          )}
           <div className="no-print" style={{ position: "absolute", top: -12, right: -8, zIndex: 2, display: "flex", gap: 6 }}>
             <button onClick={() => setEditPhoto(card)} title="Re-crop, adjust or replace this photo"
               style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>Edit photo</button>
@@ -5904,7 +6184,7 @@ function CardStudio() {
               style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>
               {resending === (isVol ? card.volunteerId : card.studentId) ? "Sending…" : "Resend ID"}
             </button>
-            <button onClick={() => exportPairPng(i)} disabled={!!exp} title="Download this card as PNG (front + back)"
+            <button onClick={() => exportPairPng(card)} disabled={!!exp} title="Download this card as PNG (front + back)"
               style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>↓</button>
           </div>
           <SafeBlock fallback={<CardDrawFailed id={card.displayId || card.studentId || card.volunteerId}/>}>
@@ -5914,7 +6194,8 @@ function CardStudio() {
             <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5} H={CANVAS_H}/></div>
           </SafeBlock>
         </div>
-      ))}
+        );
+      })}
       {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>{isVol ? "No active volunteers yet — cards appear here the moment one is approved." : "No verified students yet — cards appear here the moment a parent consents."}</p>}
     </div>
     {editPhoto && (
@@ -6870,4 +7151,9 @@ function LegalPage({ setPage }) {
   );
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, InstructorRoster, CertificatePage, LegalPage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio, MentorPortal, SelfRegisterPage, ReviewDeskPage, CardFront, VolunteerCardFront, CardBack });
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, InstructorRoster, CertificatePage, LegalPage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio, MentorPortal, SelfRegisterPage, ReviewDeskPage, CardFront, VolunteerCardFront, CardBack,
+  /* Pure helpers, exported so the card rules can be tested as rules rather than
+     inferred from pixels. Both of these shipped with a bug that a rendering
+     assertion had actually LOCKED IN — the long-name test asserted the shrunk
+     size was smaller, which it was, because the formula was wrong. */
+  cardColorsClash, centreBandFont, colourNeighbours, cardInk });

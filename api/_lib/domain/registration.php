@@ -2413,6 +2413,12 @@ function admin_cards_data(array $p): array {
             // Printed on the card so the holder and the desk can both see it.
             'expiresAt' => $expiryOf[(string)$s['studentId']] ?? '',
             'photoUrl' => (string)$s['photoUrl'],
+            /* Not printed — this is what lets the studio cut a run by date.
+               A print run is almost never "everybody": it is the children who
+               registered since the last batch went to the printer, and without
+               a date on the card record the only way to express that was to
+               tick a hundred boxes by hand. */
+            'enrolledAt' => (string)($s['enrolledAt'] ?? ''),
         ];
     }
     return ['ok' => true, 'cards' => $cards, 'program' => idcard_program()];

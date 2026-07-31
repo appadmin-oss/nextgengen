@@ -458,6 +458,23 @@ $vc = (function () use ($vcards, $volId) { foreach ($vcards['cards'] as $c) if (
 chk('volunteer card carries the tier colour + code + split name', $vc
     && $vc['tier']['code'] === 'INS' && preg_match('/^#[0-9A-Fa-f]{6}$/', (string)$vc['tier']['color']) === 1
     && $vc['firstName'] !== '' && $vc['token'] === $volTok);
+/* Not printed on the card, and that is the point: it is what lets the studio cut
+   a print run by date. A real run is "the ones who registered since the last
+   batch", and with no date on the card record the only way to say that was to
+   tick a hundred boxes by hand — so nobody did, and the whole roster reprinted. */
+chk('every card carries a registration date the print studio can range on', $vc
+    && array_key_exists('enrolledAt', $vc)
+    && (function () {
+        $cards = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099'])['cards'] ?? [];
+        if (!$cards) return true;
+        foreach ($cards as $c) {
+            if (!array_key_exists('enrolledAt', $c)) return false;
+            // Either empty (an old row) or a real ISO date — never a placeholder.
+            $d = (string)$c['enrolledAt'];
+            if ($d !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}/', $d)) return false;
+        }
+        return true;
+    })());
 chk('tier delete removes it', backend_dispatch('admin.hierarchy.delete', ['requesterId' => 'NGG-2025-0099', 'tierId' => $newTier['tierId']])['ok'] === true
     && count(backend_dispatch('admin.hierarchy.list', ['requesterId' => 'NGG-2025-0099'])['tiers']) === 3);
 

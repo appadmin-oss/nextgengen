@@ -180,6 +180,10 @@ const LEADERBOARD = {
     return { studentId: 'SUM-' + n, displayId: 'NGG/26/' + ('000' + n).slice(-4),
              firstName: (n === 7 ? 'ZEBRA' : 'NAME' + n), surname: 'SUR' + n,
              track: 'Arts', token: 'T' + n, photoUrl: '',
+             /* Registration dates, so a print run can be cut by "since the last
+                batch". #13 has NONE, which is the shape the oldest rows hold and
+                the case a date range cannot speak about either way. */
+             enrolledAt: n === 13 ? '' : '2026-07-' + ('0' + (n % 28 + 1)).slice(-2) + 'T09:00:00Z',
              // #13 has no centre at all — the shape a partial row arrives in.
              centre: n === 13 ? undefined
                : (n % 2 ? { name: 'Ijaiye', code: 'IJ', color: '#2E7DD1' }
@@ -1225,6 +1229,104 @@ const LEADERBOARD = {
     ok('…in a sentence that survives a count of one',
       /1 of 30 verified students ready/.test(noneText) && /This card prints without a centre/.test(noneText));
 
+    /* ── Printing a RANGE, not the roster ────────────────────────────────────
+     * "Everybody" is the rarest print run there is. The real ones are: the
+     * children who registered since the last batch went to the printer, the
+     * block of ID numbers a coordinator was handed, and the eleven cards that
+     * came back creased. With no way to say any of that, the only honest option
+     * was to reprint all thirty — so people reprinted all thirty, and the cost
+     * of that is paid in card stock.
+     */
+    await batch.selectOption({ label: 'All centres · 30' });
+    await studio.waitForTimeout(400);
+    const rangeSel = studio.getByLabel('Print a range of cards');
+
+    await rangeSel.selectOption('date');
+    await studio.getByLabel('Registered from').fill('2026-07-02');
+    await studio.getByLabel('Registered to').fill('2026-07-06');
+    await studio.waitForTimeout(500);
+    ok('a run can be cut by registration date (' + (await studio.locator('.card-pair').count()) + ')',
+      (await studio.locator('.card-pair').count()) === 7);
+    const dateText = await studio.evaluate(() => document.body.innerText);
+    ok('…and the header counts the slice against the batch, not the roster',
+      /Printing 7 of 30/.test(dateText) && /7 of 30 verified students ready/.test(dateText));
+    /* The card with no date is left OUT of a date range and SAID so. Sweeping it
+       in would make "print this week's intake" quietly reprint the oldest record
+       in the system; dropping it silently would lose a child a card. */
+    ok('…a card with no registration date is excluded, and the omission is named',
+      /no registration date on file/.test(dateText) && /\b1 card has\b/.test(dateText));
+
+    // A range that matches nothing must not look like an empty roster.
+    await studio.getByLabel('Registered from').fill('2027-01-01');
+    await studio.getByLabel('Registered to').fill('2027-01-02');
+    await studio.waitForTimeout(450);
+    ok('…and a range matching nothing says so rather than looking like an empty roster',
+      (await studio.locator('.card-pair').count()) === 0
+      && /Nothing matches this range/.test(await studio.evaluate(() => document.body.innerText)));
+
+    await rangeSel.selectOption('number');
+    await studio.getByLabel('ID number from').fill('5');
+    await studio.getByLabel('ID number to').fill('9');
+    await studio.waitForTimeout(500);
+    const numText = await studio.evaluate(() => document.body.innerText);
+    ok('a run can be cut by the ID number printed on the card (' + (await studio.locator('.card-pair').count()) + ')',
+      (await studio.locator('.card-pair').count()) === 5 && /Printing 5 of 30/.test(numText));
+    /* Read off the printed number, not the row's position — which shifts every
+       time somebody else registers, so "cards 5 to 9" would mean something
+       different on Tuesday. */
+    ok('…matching the number in the ID, not the position in the list',
+      /NGG\/26\/0005/.test(numText) && /NGG\/26\/0009/.test(numText)
+      && !/NGG\/26\/0004/.test(numText) && !/NGG\/26\/0010/.test(numText));
+    // Switching mode must not leave the previous range half-applied.
+    await rangeSel.selectOption('date');
+    await studio.waitForTimeout(400);
+    ok('…and switching range mode clears the previous one instead of stacking',
+      (await studio.locator('.card-pair').count()) === 30);
+
+    await rangeSel.selectOption('pick');
+    await studio.waitForTimeout(500);
+    /* Every candidate stays on screen while picking. A list that removed each
+       card as it was ticked would let you choose exactly one. */
+    ok('picking individually keeps every candidate visible to pick from',
+      (await studio.locator('.card-pair').count()) === 30
+      && (await studio.locator('.card-pair.card-unpicked').count()) === 30);
+    await studio.getByLabel('Print NGG/26/0003').check();
+    await studio.getByLabel('Print NGG/26/0007').check();
+    await studio.waitForTimeout(400);
+    ok('…and the run is what was ticked (' + (await studio.locator('.card-pair:not(.card-unpicked)').count()) + ')',
+      (await studio.locator('.card-pair:not(.card-unpicked)').count()) === 2
+      && (await studio.locator('.card-pair.card-unpicked').count()) === 28
+      && /2 picked/.test(await studio.evaluate(() => document.body.innerText)));
+    /* And the unticked ones must be GONE from the sheet, not faded on it.
+       Dimming is a screen affordance; printed at 34% opacity it is still a
+       thirty-card run on thirty pieces of card. */
+    ok('…with the unticked cards dropped from the print sheet, not dimmed on it',
+      (await studio.evaluate(() => {
+        const el = document.querySelector('.card-pair.card-unpicked');
+        return el ? [...document.styleSheets].some(sh => {
+          try { return [...sh.cssRules].some(r => /card-unpicked/.test(r.cssText) && /display:\s*none/.test(r.cssText)); }
+          catch (_) { return false; }
+        }) : false;
+      })) === true);
+    /* The list of IDs arrives as a message, not as a mental note. Pasting it
+       beats hunting two hundred previews for twelve, and it has to survive the
+       formatting a WhatsApp message applies to it. */
+    await studio.getByLabel('Paste card IDs').fill('ngg/26/0011  NGG-26-0012, 13');
+    await studio.getByRole('button', { name: 'Add these' }).click();
+    await studio.waitForTimeout(450);
+    ok('…or pasted in, untidy separators and all',
+      (await studio.locator('.card-pair:not(.card-unpicked)').count()) === 5
+      && /3 matched/.test(await studio.evaluate(() => document.body.innerText)));
+    // An ID that is not in this batch has to be reported, not quietly dropped.
+    await studio.getByLabel('Paste card IDs').fill('NGG/26/0999');
+    await studio.getByRole('button', { name: 'Add these' }).click();
+    await studio.waitForTimeout(450);
+    ok('…and an ID that is not in the batch is named rather than silently ignored',
+      /not in this batch: NGG260999/.test(await studio.evaluate(() => document.body.innerText))
+      && (await studio.locator('.card-pair:not(.card-unpicked)').count()) === 5);
+    await rangeSel.selectOption('');
+    await studio.waitForTimeout(400);
+
     await studio.getByRole('button', { name: /^Volunteers/ }).click();
     await studio.waitForTimeout(700);
     /* The filter belongs to the batch on the table. Carrying "no centre" over
@@ -1266,15 +1368,66 @@ const LEADERBOARD = {
       && volFronts[3].bandInk === '#10131a' && volFronts[3].bandShadow === 'none');
     ok('…while a dark centre keeps white ink and its shadow',
       volFronts[1].bandInk === '#ffffff' && /rgb/.test(volFronts[1].bandShadow));
-    /* Two nearly-identical colours meeting: the white gutter is not enough when
-       the frame and the band are a shade apart, so a keyline is added — and
-       only then, because an outline on every card would be noise. */
+    /* Colours that meet and merge get a keyline. The threshold used to be 120,
+       which is roughly "the same colour" — and the pair that caused the problem
+       in the first place, a red Egbeda band inside a maroon Lead Mentor frame,
+       measures 158 and sailed straight through it. Card 0 is that pair. */
     ok('…a centre colour close to the tier frame gains a keyline',
-      volFronts[4].bandOutline === 'solid' && volFronts[1].bandOutline === 'none');
-    // A long centre name shrinks rather than running off the end of the card.
-    ok('…and a long centre name is scaled to fit instead of overflowing',
+      volFronts[4].bandOutline === 'solid' && volFronts[0].bandOutline === 'solid'
+      && volFronts[1].bandOutline === 'none');
+    /* A long centre name uses the room rather than giving it up.
+       The previous assertion here required the long name to render SMALLER than
+       a short one, and it passed — on a formula that shrank "Ikotun-Egbe
+       Community Hall" to 62% while a third of the band sat empty either side,
+       making the longest name on the sheet the least legible thing on it. The
+       test was locking in the defect. What actually matters is that it fits on
+       one line at full size, and only shrinks when it genuinely cannot. */
+    ok('…and a long centre name fills the band rather than shrinking inside it',
       volFronts[4].band === 'IKOTUN-EGBE COMMUNITY HALL'
-      && volFronts[4].bandFontPx > 0 && volFronts[4].bandFontPx < volFronts[1].bandFontPx);
+      && Math.abs(volFronts[4].bandFontPx - volFronts[1].bandFontPx) < 0.5);
+    /* The rules themselves, not their shadow on the pixels. */
+    const rules = await studio.evaluate(() => {
+      const id = n => n, W = 496;
+      const f = (name, avail) => window.centreBandFont(name, 26, id, avail || W);
+      const width = (name, avail) => {
+        const r = f(name, avail);
+        return name.length * (0.62 * r.fontSize + r.letterSpacing);
+      };
+      return {
+        short: f('Egbeda').fontSize,
+        long: f('Ikotun-Egbe Community Hall').fontSize,
+        longFits: width('Ikotun-Egbe Community Hall') <= W,
+        absurd: f('Ago-Palace Way Learning Centre Annexe B').fontSize,
+        absurdFits: width('Ago-Palace Way Learning Centre Annexe B') <= W,
+        floor: 26 * 0.55,
+        clashRedMaroon: window.cardColorsClash('#D64545', '#8A1538'),
+        clashNavies: window.cardColorsClash('#0A2A6E', '#00225F'),
+        clashBlueNavy: window.cardColorsClash('#2E7DD1', '#00225F'),
+        clashYellowNavy: window.cardColorsClash('#F7E36B', '#00225F'),
+        sameList: window.colourNeighbours('#D64545', [{ name: 'Egbeda', color: '#D64545' }, { name: 'Ikeja', color: '#D94A4A' }], [], false),
+        crossList: window.colourNeighbours('#0A2A6E', [], [{ name: 'Mentor', color: '#00225F' }], false),
+        clear: window.colourNeighbours('#12A150', [{ name: 'Egbeda', color: '#D64545' }], [{ name: 'Mentor', color: '#00225F' }], false),
+      };
+    });
+    ok('a centre name is sized from the space available, not a magic character count',
+      rules.short === 26 && rules.long === 26 && rules.longFits);
+    ok('…and a name that genuinely cannot fit shrinks, with a floor',
+      rules.absurd < 26 && rules.absurd >= rules.floor && rules.absurdFits);
+    ok('the clash test catches the pair that caused this, not just identical colours',
+      rules.clashRedMaroon === true && rules.clashNavies === true
+      && rules.clashBlueNavy === false && rules.clashYellowNavy === false);
+    /* Said at the picker, where the fix is one click rather than a reprint. The
+       two directions fail differently, so they are reported differently: two
+       centres that look alike defeat the device outright; a centre close to a
+       TIER colour still prints, held apart by the keyline. */
+    ok('a colliding colour is named at the picker, and the two collisions told apart',
+      rules.sameList.length === 1 && rules.sameList[0].name === 'Ikeja' && rules.sameList[0].sameList === true
+      && rules.crossList.length === 1 && rules.crossList[0].sameList === false
+      && /\(tier\)$/.test(rules.crossList[0].name)
+      && rules.clear.length === 0);
+    // Editing a centre must not report that it is too close to itself.
+    ok('…and a colour is never flagged against the row that already holds it',
+      (await studio.evaluate(() => window.colourNeighbours('#D64545', [{ name: 'Egbeda', color: '#d64545' }], [], false).length)) === 0);
     // Same filter, same problem, the other roster.
     await studio.getByLabel('Filter cards by centre').selectOption({ label: '⚠ No centre on file · 1' });
     await studio.waitForTimeout(500);
