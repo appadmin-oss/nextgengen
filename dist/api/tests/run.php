@@ -2541,6 +2541,117 @@ chk('bulk resend targets only the families missing a QR, and says what is left',
 chk('…and a bad scope is refused rather than treated as "all"', (function () {
     return backend_dispatch('admin.id.resend.bulk', ['requesterId' => 'NGG-2025-0099', 'scope' => 'everyone'])['error'] === 'bad_scope';
 })());
+/* ── Children who were never issued an ID at all ─────────────────────────────
+ *
+ * The reported bug. Every read and every repair on this screen filtered
+ * `token != ''`, so a verified child with no ID was invisible to the count AND to
+ * the sweep — the two things an admin could do about the problem both skipped
+ * exactly the children who had it. Pressing "resend to all" changed nothing, and
+ * nothing said why.
+ */
+chk('a verified child with no ID at all is COUNTED, not filtered out of the report', (function () use ($GATE) {
+    $reg = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'Never Issued', 'age' => 11,
+        'dob' => gmdate('Y-m-d', strtotime('-11 years -4 months')),
+        'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+        'parentName' => 'Mr Never', 'parentEmail' => 'never@example.com', 'parentPhone' => '08030000501']]);
+    $sid = (string)($reg['studentId'] ?? '');
+    if ($sid === '') return false;
+    backend_dispatch('admin.registration.consent.record', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $sid, 'method' => 'paper', 'guardianName' => 'Mr Never',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    /* Now put the row in the state the real ones are in: verified, active, and
+       holding no token. This is what a photo hold that was later released by a
+       rejection, or by the gate setting being switched off, leaves behind. */
+    $tok = (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$sid])['token'] ?? '');
+    if ($tok !== '') db_update('qr_codes', ['status' => 'blank', 'studentId' => '', 'assignedName' => ''], ['token' => $tok]);
+    db_update('summer_students', ['token' => ''], ['studentId' => $sid]);
+
+    $r = backend_dispatch('admin.id.qrgaps', ['requesterId' => 'NGG-2025-0099']);
+    $mine = array_values(array_filter($r['unissuedList'] ?? [], fn($x) => $x['studentId'] === $sid));
+    return !empty($r['ok']) && ($r['noId'] ?? 0) >= 1 && ($r['noIdReady'] ?? 0) >= 1
+        && count($mine) === 1 && $mine[0]['reason'] === ''   // nothing is holding them
+        // The other half of "why has this child no ID", said separately because
+        // the remedy is different: this one needs the family, not a button.
+        && array_key_exists('awaitingConsent', $r);
+})());
+chk('…and the bulk send ISSUES one for them, rather than walking past them', (function () {
+    $sid = (string)(db_row("SELECT studentId FROM summer_students WHERE fullName LIKE 'Never%' AND (token IS NULL OR token = '') LIMIT 1")['studentId'] ?? '');
+    if ($sid === '') return false;
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('admin.id.resend.bulk', ['requesterId' => 'NGG-2025-0099', 'scope' => 'all']);
+    $mail = $GLOBALS['__mail_sink']; unset($GLOBALS['__mail_sink']);
+    $tok = (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$sid])['token'] ?? '');
+    return !empty($r['ok']) && ($r['issued'] ?? 0) >= 1
+        && $tok !== ''                                       // a token is actually bound now
+        /* Issued AND delivered in one act — the whole point of putting the send
+           inside the issuance gate — and EXACTLY once. The resend pass runs after
+           the issuing pass and queries by `token != ''`, which this child now
+           matches, so without a guard one press would mail the family twice. */
+        && count(array_filter($mail, fn($m) => ($m['to'] ?? '') === 'never@example.com')) === 1;
+})());
+chk('…and pressing it again is an ordinary resend, with nothing left to issue', (function () {
+    $sid = (string)(db_row("SELECT studentId FROM summer_students WHERE parentEmail = 'never@example.com' LIMIT 1")['studentId'] ?? '');
+    if ($sid === '') return false;
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('admin.id.resend.bulk', ['requesterId' => 'NGG-2025-0099', 'scope' => 'all']);
+    $mail = $GLOBALS['__mail_sink']; unset($GLOBALS['__mail_sink']);
+    return ($r['issued'] ?? -1) === 0
+        && count(array_filter($mail, fn($m) => ($m['to'] ?? '') === 'never@example.com')) === 1;
+})());
+chk('a child held on a photo is reported as held, not counted as sent', (function () use ($GATE) {
+    $reg = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'Photo Held', 'age' => 10,
+        'dob' => gmdate('Y-m-d', strtotime('-10 years -2 months')),
+        'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+        'parentName' => 'Mrs Held', 'parentEmail' => 'held@example.com', 'parentPhone' => '08030000502']]);
+    $sid = (string)($reg['studentId'] ?? '');
+    if ($sid === '') return false;
+    setting_set('photo_gate_issuance', '1');
+    db_insert('photo_assets', ['assetId' => 'PA-held-1', 'subjectType' => 'student', 'subjectId' => $sid,
+        'sourceUrl' => 'https://example.org/a.jpg', 'editedUrl' => '', 'status' => 'pending_review',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    backend_dispatch('admin.registration.consent.record', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $sid, 'method' => 'paper', 'guardianName' => 'Mrs Held',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    $gaps = backend_dispatch('admin.id.qrgaps', ['requesterId' => 'NGG-2025-0099']);
+    $r = backend_dispatch('admin.id.resend.bulk', ['requesterId' => 'NGG-2025-0099', 'scope' => 'all']);
+    $held = array_values(array_filter($r['held'] ?? [], fn($x) => $x['studentId'] === $sid));
+    $tok = (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$sid])['token'] ?? '');
+    setting_set('photo_gate_issuance', '0');
+    return ($gaps['heldPhoto'] ?? 0) >= 1
+        && count($held) === 1 && $held[0]['reason'] === 'photo_pending'
+        && $tok === '';                                      // and nothing was issued
+})());
+chk('rejecting a photo releases the ID hold, because a rejected photo is no photo', (function () use ($GATE) {
+    /* The gate holds only while an asset is IN the pipeline, and it excludes
+       'rejected' from that set — so by its own rule a rejected photo stops
+       blocking. Nothing retried it, so the rule and the behaviour disagreed and
+       the child sat in the roster with no ID for the rest of the programme. */
+    $reg = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'Reject Released', 'age' => 13,
+        'dob' => gmdate('Y-m-d', strtotime('-13 years -1 month')),
+        'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+        'parentName' => 'Mr Rej', 'parentEmail' => 'rej@example.com', 'parentPhone' => '08030000503']]);
+    $sid = (string)($reg['studentId'] ?? '');
+    if ($sid === '') return false;
+    setting_set('photo_gate_issuance', '1');
+    db_insert('photo_assets', ['assetId' => 'PA-rej-1', 'subjectType' => 'student', 'subjectId' => $sid,
+        'sourceUrl' => 'https://example.org/b.jpg', 'editedUrl' => '', 'status' => 'pending_review',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    backend_dispatch('admin.registration.consent.record', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $sid, 'method' => 'paper', 'guardianName' => 'Mr Rej',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    $heldTok = (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$sid])['token'] ?? '');
+    $rej = backend_dispatch('admin.photo.reject', ['requesterId' => 'NGG-2025-0099',
+        'assetId' => 'PA-rej-1', 'reason' => 'Not the child']);
+    $after = (string)(db_row('SELECT token FROM summer_students WHERE studentId = ?', [$sid])['token'] ?? '');
+    setting_set('photo_gate_issuance', '0');
+    return $heldTok === '' && !empty($rej['ok']) && $after !== '';
+})());
 chk('bulk resend and the gaps read are both admin-gated', (function () {
     return backend_dispatch('admin.id.resend.bulk', ['requesterId' => '', 'scope' => 'all'])['ok'] !== true
         && backend_dispatch('admin.id.qrgaps', ['requesterId' => ''])['ok'] !== true;

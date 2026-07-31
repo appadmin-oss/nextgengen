@@ -602,7 +602,7 @@ function photo_process(string $assetId): array {
     audit('photo.' . ($needsHuman ? 'ai_analyzed' : 'auto_approved'), $provider ? 'ai:' . $provider : 'ai', $assetId, ['score' => $score, 'flags' => $flags, 'aiUsed' => $edit['aiUsed']], '');
     if (!$needsHuman) {
         photo_apply_to_subject(array_merge($a, ['editedUrl' => $edit['url']]));
-        photo_after_approve($a);
+        photo_retry_issuance($a);
         @event_emit('photo.approved', ['ref' => $assetId, 'subjectType' => $a['subjectType'], 'subjectId' => $a['subjectId'], 'auto' => true]);
     }
     return ['ok' => true, 'status' => $row['status'], 'score' => $score, 'flags' => $flags, 'aiUsed' => $edit['aiUsed'], 'editedUrl' => $edit['url']];
@@ -737,15 +737,20 @@ function photo_approve(array $p): array {
     $edited = trim((string)($p['editedUrl'] ?? '')) ?: (string)$a['editedUrl'];
     db_update('photo_assets', ['status' => 'approved', 'editedUrl' => $edited, 'reviewedBy' => $g['requester']['memberId'], 'reviewedAt' => now_iso(), 'decisionNote' => substr((string)($p['note'] ?? ''), 0, 300), 'autoApproved' => 0, 'updatedAt' => now_iso()], ['assetId' => $assetId]);
     photo_apply_to_subject(array_merge($a, ['editedUrl' => $edited]));
-    photo_after_approve($a);
+    photo_retry_issuance($a);
     audit('photo.approved', $g['requester']['memberId'], $assetId, [], (string)($p['ip'] ?? ''));
     @event_emit('photo.approved', ['ref' => $assetId, 'subjectType' => $a['subjectType'], 'subjectId' => $a['subjectId'], 'auto' => false]);
     return ['ok' => true];
 }
 
-/** Once a photo is approved, retry the issuance gate for its student subject —
- *  the ID is bound if consent is already in (photo_gate_issuance flow). */
-function photo_after_approve(array $a): void {
+/** Retry the issuance gate for a photo's student subject.
+ *
+ *  Called after any decision that CHANGES whether the gate holds — approval
+ *  (there is now an approved photo) and rejection (there is now no photo in the
+ *  pipeline at all, which the gate treats the same as never having had one).
+ *  Both release the hold; neither used to retry it on rejection, so half of the
+ *  transitions out of "held" left the child held forever. */
+function photo_retry_issuance(array $a): void {
     if (($a['subjectType'] ?? '') === 'student' && function_exists('registration_issue_id')) {
         try { registration_issue_id((string)$a['subjectId']); } catch (Throwable $e) {}
     }
@@ -778,6 +783,14 @@ function photo_reject(array $p): array {
     if (!$a) return ['ok' => false, 'error' => 'not_found'];
     db_update('photo_assets', ['status' => 'rejected', 'reviewedBy' => $g['requester']['memberId'], 'reviewedAt' => now_iso(), 'decisionNote' => $reason, 'updatedAt' => now_iso()], ['assetId' => $assetId]);
     audit('photo.rejected', $g['requester']['memberId'], $assetId, ['reason' => $reason], (string)($p['ip'] ?? ''));
+    /* Rejecting releases the issuance hold, because the gate's own rule says a
+     * rejected photo is not a photo: it holds only while an asset is in the
+     * pipeline, and 'rejected' is excluded from that set. Nothing retried the
+     * gate here, so the rule and the behaviour disagreed — a verified child whose
+     * photo was rejected sat in the roster with no ID for the rest of the
+     * programme, and no screen said why, because "held on a photo" was no longer
+     * true of them. Approval already retries; rejection has to as well. */
+    photo_retry_issuance($a);
     return ['ok' => true];
 }
 

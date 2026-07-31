@@ -3238,9 +3238,44 @@ function SummerRoster({ cohortId }) {
   const [q, setQ] = React.useState("");
   const [openId, setOpenId] = React.useState("");
   const [consentFor, setConsentFor] = React.useState(null);
-  const [only, setOnly] = React.useState("all");   // all | pending | noconsent | withdrawn
+  const [only, setOnly] = React.useState("all");   // all | pending | noconsent | withdrawn | noid
+  const [gaps, setGaps] = React.useState(null);
+  const [bulk, setBulk] = React.useState(false);
   const load = () => NGGApi.admin.summer.students(q, cohortId).then(r => setList(r.students || [])).catch(() => setList([]));
+  const loadGaps = () => NGGApi.admin.registration.qrGaps().then(setGaps).catch(() => setGaps(null));
   React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q]);
+  React.useEffect(() => { loadGaps(); /* eslint-disable-next-line */ }, []);
+  /* Send every ID this cohort is owed, from the screen where somebody notices
+     they are missing.
+     One press covers both halves of the problem, because from the roster they
+     look the same: a child with no ID at all is ISSUED one (which sends it), and
+     a child who has one gets it again. The action reports the two separately, and
+     names the children it could not help, because "sent 312" over a run that
+     issued nine and skipped four held children reads as finished when it is not. */
+  const sendAll = async () => {
+    const ready = gaps ? (gaps.noIdReady || 0) : 0;
+    const have = gaps ? (gaps.verified || 0) : 0;
+    if (!(await dialog.confirm({
+      title: "Send IDs to " + (ready + have) + " " + (ready + have === 1 ? "child" : "children") + "?",
+      body: (ready ? ready + " " + (ready === 1 ? "child has" : "children have") + " no ID yet — they will be issued one and sent it. " : "")
+        + (have ? have + " already " + (have === 1 ? "has one and will be sent it again" : "have one and will be sent it again") + ". " : "")
+        + "Families with no email and no phone on file cannot be reached and are not counted.",
+      cta: "Send",
+    }))) return;
+    setBulk(true);
+    try {
+      const r = await NGGApi.admin.registration.resendIdBulk("all", "");
+      const held = (r.held || []).length;
+      const parts = [];
+      if (r.issued) parts.push(r.issued + " newly issued");
+      if (r.queued) parts.push(r.queued + " resent");
+      if (r.remaining) parts.push(r.remaining + " left — run it again");
+      toast.success(parts.length ? parts.join(" · ") : (r.note || "Nothing to send."));
+      // Said separately and not as a success: nothing was sent to these.
+      if (held) toast.error(held + " still held — " + [...new Set((r.held || []).map(h => h.reason))].join(", ").replace(/_/g, " "));
+      setTimeout(() => { loadGaps(); load(); }, 900);
+    } catch (e) { toast.error(e.code || e.message); } finally { setBulk(false); }
+  };
   const setStatus = async (studentId, status) => {
     // Destructive / credential-issuing transitions need a confirm — a stray
     // pick shouldn't withdraw a student or mint a real graduation certificate.
@@ -3257,6 +3292,8 @@ function SummerRoster({ cohortId }) {
   const rows = (list || []).filter(s => {
     if (only === "pending") return s.regStatus === "parent_pending";
     if (only === "noconsent") return !s.consentComplete;
+    // Active children with nothing bound — the ones the complaint was about.
+    if (only === "noid") return s.status === "active" && !s.token;
     if (only === "withdrawn") return s.status !== "active";
     return true;
   });
@@ -3268,10 +3305,35 @@ function SummerRoster({ cohortId }) {
           <option value="all">Everyone</option>
           <option value="pending">Awaiting parent consent</option>
           <option value="noconsent">Missing a required consent</option>
+          {/* The complaint this screen could not answer: WHICH children have no
+              ID. It was a fact about the roster with no way to ask for it. */}
+          <option value="noid">No ID issued</option>
           <option value="withdrawn">Not active</option>
         </select>
         <button className="btn btn-ghost btn-sm" disabled={!rows.length} onClick={() => downloadCsv("summer-students", rows.map(s => ({ studentId: s.studentId, displayId: s.displayId, fullName: s.fullName, handle: s.handle, age: s.age, centre: s.centre, faculty: s.faculty, track: s.track, school: s.school || "", schoolType: s.schoolType || "", guardianName: s.guardianName, guardianPhone: s.guardianPhone, parentEmail: s.parentEmail, regStatus: s.regStatus, consent: s.consentComplete ? "complete" : "incomplete", status: s.status, attendance: s.attendanceCount })))}>Export CSV{rows.length !== (list || []).length ? " (" + rows.length + ")" : ""}</button>
+        <button className="btn btn-primary btn-sm" disabled={bulk} onClick={sendAll} style={{ marginLeft: "auto" }}
+          title="Issues an ID to every verified child who has none, and re-sends it to every child who already has one">
+          {bulk ? "Sending…" : "Send IDs to everyone"}
+        </button>
       </div>
+      {/* What the button is for, before it is pressed. A bulk action whose size
+          you cannot see is one people press once and never again — and the three
+          numbers are three different problems, so they are never added up:
+          `ready` is this button, `heldPhoto` is a photo decision, and
+          `awaitingConsent` is the family or a desk recording a paper form. */}
+      {gaps && (gaps.noId > 0 || gaps.awaitingConsent > 0) && (
+        <div style={{ marginBottom: 12, fontSize: 13, lineHeight: 1.55,
+                      background: gaps.noIdReady > 0 ? "rgba(176,53,53,.07)" : "rgba(76,111,255,.08)",
+                      border: "1px solid " + (gaps.noIdReady > 0 ? "rgba(176,53,53,.35)" : "rgba(76,111,255,.35)"),
+                      borderRadius: 12, padding: "10px 14px" }}>
+          {gaps.noId > 0 && <>
+            <b>{gaps.noId} verified {gaps.noId === 1 ? "child has" : "children have"} no ID.</b>{" "}
+            {gaps.noIdReady > 0 && <>{gaps.noIdReady} can be issued right now — that is what this button does. </>}
+            {gaps.heldPhoto > 0 && <>{gaps.heldPhoto} {gaps.heldPhoto === 1 ? "is" : "are"} held waiting on a photo decision, which sending cannot fix. </>}
+          </>}
+          {gaps.awaitingConsent > 0 && <>{gaps.awaitingConsent} {gaps.awaitingConsent === 1 ? "child is" : "children are"} still awaiting consent — an ID cannot be issued until that is recorded.</>}
+        </div>
+      )}
       {list === null ? <div className="dash-spinner"/> :
         rows.length === 0 ? <div className="admin-empty">{(list || []).length ? "No child matches that filter." : "No students enrolled yet."}</div> :
         <div className="admin-table-wrap"><table className="admin-table">
@@ -3280,7 +3342,16 @@ function SummerRoster({ cohortId }) {
             <React.Fragment key={s.studentId}>
             <tr>
               <td className="mono">{s.displayId || s.studentId}
-                <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}><a href={"/s/" + s.handle} target="_blank" rel="noopener noreferrer">/s/{s.handle}</a></div></td>
+                <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}><a href={"/s/" + s.handle} target="_blank" rel="noopener noreferrer">/s/{s.handle}</a></div>
+                {/* Said on the row, not only in a filter. A missing ID was a
+                    silent state: the roster looked identical whether a child had
+                    one or not, so it was only ever discovered when a parent rang
+                    up or a gate turned the child away. */}
+                {s.status === "active" && !s.token && (
+                  <div className="mono" style={{ fontSize: 11, color: "#b03535", fontWeight: 700 }}>
+                    {s.regStatus === "verified" ? "no ID issued" : "no ID — consent pending"}
+                  </div>
+                )}</td>
               <td>{s.fullName}<div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{s.age != null ? s.age + " yrs" : "age not set"}</div></td>
               {/* The guardian is the single most-needed piece of information on
                   this screen and it was not on it — every follow-up call meant

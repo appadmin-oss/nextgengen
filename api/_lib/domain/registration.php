@@ -1529,17 +1529,36 @@ function parent_verify_submit(array $p): array {
  * both the consent flow and the photo-approval hook — the last one to satisfy
  * the gate issues the ID.
  */
+/**
+ * Why this student has no ID — '' when nothing is stopping one being issued.
+ *
+ * The gate's conditions, asked WITHOUT performing the write, so a screen can say
+ * "nine children are ready, two are held on a photo" before anybody presses
+ * anything. Extracted from registration_issue_id rather than restated, because a
+ * second copy of these conditions is how a screen ends up promising an outcome
+ * the writer then refuses.
+ */
+function registration_issue_reason(string $studentId): string {
+    $s = db_row('SELECT regStatus, token FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
+    if (!$s) return 'not_found';
+    if (!empty($s['token'])) return 'already';
+    if ((string)$s['regStatus'] !== 'verified') return 'consent_pending';
+    // Photo gate: only holds when the toggle is on AND a photo is actually in the
+    // pipeline for this student — a registration with no photo is never blocked,
+    // and a REJECTED one counts as no photo (see photo_retry_issuance).
+    if (setting_raw('photo_gate_issuance') === '1' && function_exists('photo_approved_for')) {
+        $hasPhoto = db_row("SELECT id FROM photo_assets WHERE subjectType = 'student' AND subjectId = ? AND status NOT IN ('rejected','superseded') LIMIT 1", [$studentId]);
+        if ($hasPhoto && !photo_approved_for('student', $studentId)) return 'photo_pending';
+    }
+    return '';
+}
+
 function registration_issue_id(string $studentId): array {
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$studentId]);
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     if (!empty($s['token'])) return ['ok' => true, 'already' => true, 'token' => (string)$s['token']];
-    if ((string)$s['regStatus'] !== 'verified') return ['ok' => true, 'held' => true, 'reason' => 'consent_pending'];
-    // Photo gate: only hold when the toggle is on AND a photo is actually in the
-    // pipeline for this student — a registration with no photo is never blocked.
-    if (setting_raw('photo_gate_issuance') === '1' && function_exists('photo_approved_for')) {
-        $hasPhoto = db_row("SELECT id FROM photo_assets WHERE subjectType = 'student' AND subjectId = ? AND status NOT IN ('rejected','superseded') LIMIT 1", [$studentId]);
-        if ($hasPhoto && !photo_approved_for('student', $studentId)) return ['ok' => true, 'held' => true, 'reason' => 'photo_pending'];
-    }
+    $why = registration_issue_reason($studentId);
+    if ($why !== '') return ['ok' => true, 'held' => true, 'reason' => $why];
     // Bind the ID/QR (mint a blank if the pool is dry).
     $qr = db_row("SELECT * FROM qr_codes WHERE status = 'blank' ORDER BY id ASC LIMIT 1");
     if (!$qr) {
@@ -1756,12 +1775,41 @@ function admin_id_resend_bulk(array $p): array {
     if (!in_array($scope, ['missing_qr', 'all'], true)) return ['ok' => false, 'error' => 'bad_scope'];
 
     $c = summer_ensure_cohort();
-    $where = ["cohortId = ?", "regStatus = 'verified'", "token != ''"]; $args = [$c['cohortId']];
     $centre = trim((string)($p['centre'] ?? ''));
-    if ($centre !== '') { $where[] = 'centre = ?'; $args[] = $centre; }
     /* Only families we can actually reach. A "sent 300" that counted 90 children
        with no email and no phone would be a number nobody could act on. */
-    $where[] = "((parentEmail IS NOT NULL AND parentEmail != '') OR (guardianPhone IS NOT NULL AND guardianPhone != ''))";
+    $reachable = "((parentEmail IS NOT NULL AND parentEmail != '') OR (guardianPhone IS NOT NULL AND guardianPhone != ''))";
+
+    /* ── Children with no ID come FIRST, and are issued rather than resent ─────
+     *
+     * This is what the reported bug was. The query filtered `token != ''`, so
+     * "resend to everyone" walked straight past every child who had never been
+     * issued one — the only children for whom the button was the actual fix. You
+     * could press it all day and the roster would not change.
+     *
+     * They need registration_issue_id(), not student_send_id(): there is no token
+     * to send yet. Issuance binds one and sends it in the same act, and it refuses
+     * on its own terms when a gate still holds — so a child awaiting consent or a
+     * photo decision is reported as held here rather than quietly counted as done.
+     */
+    $issued = []; $held = [];
+    if ($scope === 'all') {
+        $uw = ["cohortId = ?", "status = 'active'", "regStatus = 'verified'", "(token IS NULL OR token = '')", $reachable];
+        $ua = [$c['cohortId']];
+        if ($centre !== '') { $uw[] = 'centre = ?'; $ua[] = $centre; }
+        foreach (db_all("SELECT studentId FROM summer_students WHERE " . implode(' AND ', $uw)
+                        . " ORDER BY id ASC LIMIT " . ID_RESEND_SWEEP_MAX, $ua) as $r) {
+            $sid = (string)$r['studentId'];
+            $why = registration_issue_reason($sid);
+            if ($why !== '') { $held[] = ['studentId' => $sid, 'reason' => $why]; continue; }
+            $res = registration_issue_id($sid);          // binds the token AND sends
+            if (!empty($res['issued']) || !empty($res['already'])) $issued[] = $sid;
+            else $held[] = ['studentId' => $sid, 'reason' => (string)($res['reason'] ?? 'unknown')];
+        }
+    }
+
+    $where = ["cohortId = ?", "regStatus = 'verified'", "token != ''", $reachable]; $args = [$c['cohortId']];
+    if ($centre !== '') { $where[] = 'centre = ?'; $args[] = $centre; }
     $rows = db_all("SELECT studentId, token FROM summer_students WHERE " . implode(' AND ', $where)
                    . " ORDER BY id ASC", $args);
 
@@ -1770,27 +1818,37 @@ function admin_id_resend_bulk(array $p): array {
         // The repair pass asks the filesystem, not the database — "has a hosted
         // QR" is a fact about the cache, and that is where it is kept.
         if ($scope === 'missing_qr' && qr_cache_exists((string)$r['token'])) continue;
+        // Issued a moment ago, and issuance already sent it. Sending again here
+        // would mail the same family twice for one press.
+        if (in_array((string)$r['studentId'], $issued, true)) continue;
         $targets[] = (string)$r['studentId'];
     }
     $remaining = max(0, count($targets) - ID_RESEND_SWEEP_MAX);
     $batch = array_slice($targets, 0, ID_RESEND_SWEEP_MAX);
-    if (!$batch) {
-        return ['ok' => true, 'queued' => 0, 'remaining' => 0, 'scope' => $scope,
+    if (!$batch && !$issued) {
+        return ['ok' => true, 'queued' => 0, 'issued' => 0, 'held' => $held, 'remaining' => 0, 'scope' => $scope,
                 'note' => $scope === 'missing_qr'
                     ? 'Every verified student already has a scannable QR on file.'
-                    : 'No verified students with a contact on file' . ($centre !== '' ? ' at ' . $centre : '') . '.'];
+                    : ($held
+                        ? 'Nobody could be sent an ID: ' . count($held) . ' ' . (count($held) === 1 ? 'child is' : 'children are') . ' still held.'
+                        : 'No verified students with a contact on file' . ($centre !== '' ? ' at ' . $centre : '') . '.')];
     }
 
     audit('admin.id.resend.bulk', $me, $centre ?: 'all', ['scope' => $scope, 'count' => count($batch),
-        'remaining' => $remaining], (string)($p['ip'] ?? ''));
-    after_response('admin.id.resend.bulk', function () use ($batch) {
-        foreach ($batch as $id) {
-            // qr_ensure_cached() runs inside student_send_id(), so a child with no
-            // hosted image gets one encoded on the way out.
-            try { student_send_id($id); } catch (\Throwable $e) { error_log('[id.resend.bulk] ' . $id . ': ' . $e->getMessage()); }
-        }
-    });
-    return ['ok' => true, 'queued' => count($batch), 'remaining' => $remaining, 'scope' => $scope];
+        'issued' => count($issued), 'held' => count($held), 'remaining' => $remaining], (string)($p['ip'] ?? ''));
+    if ($batch) {
+        after_response('admin.id.resend.bulk', function () use ($batch) {
+            foreach ($batch as $id) {
+                // qr_ensure_cached() runs inside student_send_id(), so a child with no
+                // hosted image gets one encoded on the way out.
+                try { student_send_id($id); } catch (\Throwable $e) { error_log('[id.resend.bulk] ' . $id . ': ' . $e->getMessage()); }
+            }
+        });
+    }
+    /* Three numbers, not one total. "Sent 312" over a run that issued 9 new IDs
+       and could not touch 4 held children reads as complete when it is not. */
+    return ['ok' => true, 'queued' => count($batch), 'issued' => count($issued),
+            'held' => $held, 'remaining' => $remaining, 'scope' => $scope];
 }
 
 /**
@@ -1803,6 +1861,40 @@ function admin_id_resend_bulk(array $p): array {
 function admin_id_qr_gaps(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
+    /* ── Children with NO ID AT ALL ──────────────────────────────────────────
+     *
+     * The reported problem, and the one this screen could not see: every read and
+     * every repair here filtered on `token != ''`, so a verified child who was
+     * never issued an ID was invisible to the count AND to the sweep. The two
+     * things an admin could do about it — look, and fix — both skipped exactly the
+     * children who needed it.
+     *
+     * They get there because issuance is retried only by the events that release
+     * its gate. A child held on a pending photo whose photo is then rejected, or
+     * one held while `photo_gate_issuance` was on and it is later switched off, is
+     * eligible from that moment and nothing runs again to notice. The reject path
+     * is fixed at source (see photo_retry_issuance); the setting change and any
+     * historical row are what the sweep is for.
+     *
+     * The reason comes from the issuance gate itself rather than being guessed
+     * here, so the number on the screen and what the button will do cannot
+     * disagree. */
+    $unissued = []; $heldPhoto = 0; $ready = 0;
+    foreach (db_all("SELECT studentId, fullName, centre FROM summer_students
+                     WHERE cohortId = ? AND status = 'active' AND regStatus = 'verified' AND (token IS NULL OR token = '')
+                     ORDER BY id ASC LIMIT 400", [$c['cohortId']]) as $r) {
+        $why = registration_issue_reason((string)$r['studentId']);
+        if ($why === 'photo_pending') $heldPhoto++; else $ready++;
+        if (count($unissued) < 50) {
+            $unissued[] = ['studentId' => (string)$r['studentId'], 'fullName' => (string)$r['fullName'],
+                           'centre' => (string)($r['centre'] ?? ''), 'reason' => $why];
+        }
+    }
+    // Not a fault and not fixable from here — the parent has not consented yet —
+    // but it is the other half of "why has this child no ID", so it is said too.
+    $awaitingConsent = (int)(db_row("SELECT COUNT(*) n FROM summer_students
+                                     WHERE cohortId = ? AND status = 'active' AND regStatus != 'verified'", [$c['cohortId']])['n'] ?? 0);
+
     $rows = db_all("SELECT studentId, fullName, centre, token, parentEmail, guardianPhone, guardianName
                     FROM summer_students
                     WHERE cohortId = ? AND regStatus = 'verified' AND token != '' ORDER BY id ASC", [$c['cohortId']]);
@@ -1840,6 +1932,12 @@ function admin_id_qr_gaps(array $p): array {
             // a contact for the family.
             'unreachable' => count($unreachableList), 'unreachableList' => $unreachableList,
             'sample' => $missing,
+            /* Three different problems, three numbers, because the remedy differs:
+               `noId` is a button press, `heldPhoto` needs a photo decision, and
+               `awaitingConsent` needs the family (or a desk recording a paper
+               form). One combined "missing ID" figure would hide which. */
+            'noId' => $ready + $heldPhoto, 'noIdReady' => $ready, 'heldPhoto' => $heldPhoto,
+            'unissuedList' => $unissued, 'awaitingConsent' => $awaitingConsent,
             'encoder' => function_exists('qr_encode_png')];
 }
 

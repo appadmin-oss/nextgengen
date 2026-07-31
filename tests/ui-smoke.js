@@ -236,6 +236,17 @@ const LEADERBOARD = {
       cards: function () { return window.__fail === 'all' ? offline() : Promise.resolve(ROSTER); },
       volunteerCards: function () { return window.__fail === 'all' ? offline() : Promise.resolve(VOLS); },
       centres: function () { return Promise.resolve({ centres: [] }); },
+      /* The roster's own read: how many children have no ID, split by what would
+         actually fix it. Two ready, one held on a photo, one awaiting consent. */
+      qrGaps: function () { return Promise.resolve({ ok: true, verified: 1, missingQr: 0, unreachable: 0,
+        unreachableList: [], sample: [], noId: 3, noIdReady: 2, heldPhoto: 1,
+        unissuedList: [{ studentId: 'STU-4', fullName: 'Dele Delta', centre: 'Egbeda', reason: '' }],
+        awaitingConsent: 1, encoder: true }); },
+      resendIdBulk: function (scope, centre) {
+        window.__bulk = { scope: scope, centre: centre };
+        return Promise.resolve({ ok: true, issued: 2, queued: 1, remaining: 0,
+                                 held: [{ studentId: 'STU-9', reason: 'photo_pending' }], scope: scope });
+      },
       // A secondary endpoint failing must not take the roster down with it.
       hierarchy: function () { return window.__fail ? offline() : Promise.resolve({ tiers: [] }); },
       /* Gate links, as the panel loads them — one of each door, because
@@ -412,7 +423,16 @@ const LEADERBOARD = {
         centre: 'Ijaiye', track: 'Piano', faculty: 'Music', guardianName: '', guardianPhone: '',
         parentEmail: 'c@ex.co', notes: '', status: 'withdrawn', regStatus: 'verified',
         attendanceCount: 3, consentComplete: false, consents: { participation: 'declined' } },
+      /* Verified, active, consented — and holding no token. The reported bug: the
+         roster looked identical to a child who had an ID, so it was only ever
+         discovered when a parent rang up or a gate turned the child away. */
+      { studentId: 'STU-4', displayId: 'EG-26-004', fullName: 'Dele Delta', handle: 'dele', age: 11,
+        centre: 'Egbeda', track: 'Piano', faculty: 'Music', guardianName: 'Mr Delta', guardianPhone: '08031110004',
+        parentEmail: 'd@ex.co', notes: '', status: 'active', regStatus: 'verified', token: '',
+        attendanceCount: 2, consentComplete: true, consents: { participation: 'granted' } },
     ];
+    // STU-1 has one; nobody else does. The roster has to tell them apart.
+    KIDS[0].token = 'SUMQR-STU1';
     window.NGGApi.admin.summer = {
       students: function () { return Promise.resolve({ students: KIDS }); },
       studentUpdate: function (id, data) { window.__saved = { id: id, data: data }; return Promise.resolve({ ok: true }); },
@@ -2318,15 +2338,65 @@ const LEADERBOARD = {
     ok('…and each child\'s consent standing', /Complete/.test(roBody) && /Awaiting parent/.test(roBody) && /Incomplete/.test(roBody));
 
     const roRows = () => ro.locator('.admin-table tbody tr').count();
-    ok('all three children are listed', await roRows() === 3);
+    ok('all four children are listed', await roRows() === 4);
     await ro.selectOption('select[aria-label="Filter children"]', 'pending');
     await ro.waitForTimeout(150);
     ok('filtering to awaiting-parent narrows to the one', await roRows() === 1);
     await ro.selectOption('select[aria-label="Filter children"]', 'noconsent');
     await ro.waitForTimeout(150);
     ok('filtering to missing-consent finds both', await roRows() === 2);
+
+    /* ── Children with no ID ──────────────────────────────────────────────────
+     * The reported problem. A missing ID was a silent state: the roster looked
+     * identical whether a child had one or not, so it was only ever discovered
+     * when a parent rang up or a gate turned the child away. There was no way to
+     * ask WHICH children, and the bulk action skipped exactly them.
+     */
+    await ro.selectOption('select[aria-label="Filter children"]', 'noid');
+    await ro.waitForTimeout(200);
+    ok('the roster can be asked which children have no ID', await roRows() === 2);
+    const noIdText = await ro.evaluate(() => Array.from(document.querySelectorAll('.admin-table tbody tr'))
+      .map(r => r.innerText.replace(/\s+/g, ' ')).join(' | '));
+    ok('…and says so on the row, distinguishing "never issued" from "consent pending"',
+      /Bode Beta/.test(noIdText) && /Dele Delta/.test(noIdText)
+      && /no ID — consent pending/.test(noIdText) && /no ID issued/.test(noIdText)
+      // The withdrawn child is not a gap to chase, and the one WITH a token is not either.
+      && !/Chidi/.test(noIdText) && !/Amina/.test(noIdText));
     await ro.selectOption('select[aria-label="Filter children"]', 'all');
     await ro.waitForTimeout(150);
+
+    /* The size of the job, before the button is pressed, split by what would
+       actually fix each part — a bulk action whose size you cannot see is one
+       people press once and never again. */
+    roBody = await ro.evaluate(() => document.body.innerText);
+    ok('the roster states how many have no ID, and what would fix each part',
+      /3 verified children have no ID/.test(roBody)
+      && /2 can be issued right now/.test(roBody)
+      && /1 (is|are) held waiting on a photo decision/.test(roBody)
+      && /1 child is still awaiting consent/.test(roBody));
+
+    /* Pressing it: one action covering both halves, reported as two numbers.
+       The toast host is mounted by App, which this fixture does not have, so the
+       messages are captured at the call rather than read off the page — it is the
+       string the component composes either way. */
+    await ro.evaluate(() => {
+      window.__said = { ok: [], bad: [] };
+      window.dialog.confirm = () => Promise.resolve(true);
+      window.toast.success = (m) => window.__said.ok.push(String(m));
+      window.toast.error = (m) => window.__said.bad.push(String(m));
+    });
+    await ro.getByRole('button', { name: 'Send IDs to everyone' }).click();
+    await ro.waitForTimeout(500);
+    const bulkCall = await ro.evaluate(() => window.__bulk);
+    ok('…and the bulk send goes out for everyone, not just one centre',
+      !!bulkCall && bulkCall.scope === 'all' && !bulkCall.centre);
+    const said = await ro.evaluate(() => window.__said);
+    ok('…reporting what was issued and what was resent as separate numbers',
+      said.ok.length === 1 && /2 newly issued/.test(said.ok[0]) && /1 resent/.test(said.ok[0]));
+    /* Held children are named as a failure, not folded into the success line.
+       "Sent 312" over a run that could not touch four of them reads as finished. */
+    ok('…and the children it could not help are said separately, as a failure',
+      said.bad.length === 1 && /1 still held/.test(said.bad[0]) && /photo pending/.test(said.bad[0]));
 
     // The bug: open Edit, save, and the guardian details survive.
     await ro.getByRole('button', { name: 'Edit' }).first().click();
