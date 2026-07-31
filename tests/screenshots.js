@@ -372,6 +372,15 @@ function seed() {
       if (rec) {
         await rec.click();
         await page.waitForTimeout(1600);
+        // Grant everything, which is what a completed paper form means.
+        const grant = await page.$('button:has-text("Grant everything")');
+        if (grant) { await grant.click(); await page.waitForTimeout(500); }
+        // Fixed app chrome paints over an element screenshot; it is not the sheet.
+        await page.evaluate(() => {
+          document.querySelectorAll('body *').forEach(n => {
+            if (getComputedStyle(n).position === 'fixed' && !n.closest('div[role=dialog]')) n.style.display = 'none';
+          });
+        });
         const sheet = await page.$('div[role=dialog] > div');
         if (sheet) {
           const file = path.join(OUT, '25-consent-recorder.png');

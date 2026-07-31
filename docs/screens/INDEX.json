@@ -32,7 +32,7 @@
   {
     "name": "25-consent-recorder",
     "label": "Recording an off-line consent — method, permissions, and each child's own guardian",
-    "kb": 199
+    "kb": 191
   },
   {
     "name": "23-analyst-chat",
@@ -47,7 +47,7 @@
   {
     "name": "00-analytics-full",
     "label": "The whole analytics workspace, all levels",
-    "kb": 3227
+    "kb": 3228
   },
   {
     "name": "13-depth",

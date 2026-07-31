@@ -2264,7 +2264,23 @@ function ConsentRecorder({ rows, onClose, onDone }) {
           )}
 
           <Row>
-            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, marginBottom: 4, color: "#333" }}>What they agreed to</label>
+            <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", marginBottom: 6 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: "#333" }}>What they agreed to</label>
+              {/* One click for the common case, which is a paper form with
+                  everything ticked. It is an affirmative act by the person who is
+                  holding that form — which is exactly the standard the free
+                  choices have to meet — so it is a shortcut through the clicking,
+                  not through the rule. What it is NOT is a default: an unopened
+                  form still submits nothing. */}
+              <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }}
+                onClick={() => { const a = {}; types.forEach(t => { a[t.type] = true; }); setAnswers(a); }}>
+                Grant everything
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm"
+                onClick={() => { const a = {}; types.forEach(t => { a[t.type] = !!t.required; }); setAnswers(a); }}>
+                Required only
+              </button>
+            </div>
             <div style={{ display: "grid", gap: 6, marginTop: 4 }}>
               {types.map(t => (
                 <div key={t.type} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
@@ -2297,7 +2313,8 @@ function ConsentRecorder({ rows, onClose, onDone }) {
             </div>
             {unanswered.length > 0 && (
               <p className="admin-hint" style={{ margin: "6px 0 0", color: "#8a5a00" }}>
-                {unanswered.length} still unanswered. These are free choices — refusing must never cost a child their place, so they have to be recorded either way rather than defaulted.
+                {unanswered.length} still unanswered. These are free choices — refusing must never cost a child their place, so they are recorded either way rather than defaulted.
+                {" "}If the form in your hand has them all ticked, use <b>Grant everything</b>.
               </p>
             )}
           </Row>
