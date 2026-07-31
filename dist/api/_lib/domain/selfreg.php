@@ -709,9 +709,10 @@ function selfreg_approve(array $p): array {
      *
      * After the response, because a reviewer clearing a queue of two hundred
      * must not wait on SMTP, and only when issuance actually happened. */
-    if (!empty($issue['issued']) || !empty($issue['already'])) {
-        after_response('selfreg.sendId', function () use ($id) { student_send_id($id); });
-    }
+    /* The send moved into registration_issue_id(), which is the gate this call
+       just went through — so a second send here would mail the family twice.
+       Kept as a comment rather than deleted silently, because "why does the
+       review desk not send the ID" is the obvious next question. */
 
     audit('selfreg.approve', 'gate:' . (string)$gate['gateId'], $id,
         ['idHeld' => !empty($issue['held']), 'reason' => (string)($issue['reason'] ?? '')], (string)($p['ip'] ?? ''));

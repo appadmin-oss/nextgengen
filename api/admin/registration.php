@@ -49,6 +49,7 @@ if ($method === 'GET') {
         'studentIds' => $b['studentIds'] ?? [], 'method' => $b['method'] ?? '',
         'scope' => $b['scope'] ?? '', 'centre' => $b['centre'] ?? '',
         'consents' => $b['consents'] ?? [], 'note' => $b['note'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'qr_warm')     $res = gs_call('admin.qr.warm', ['requesterId' => $s['mid'], 'items' => $b['items'] ?? [], 'ip' => $ip]);
     elseif ($action === 'resend_id')   { rate_limit_check('id.resend'); $res = gs_call('admin.id.resend', ['requesterId' => $s['mid'], 'kind' => $b['kind'] ?? 'student', 'id' => $b['id'] ?? '', 'qrPng' => $b['qrPng'] ?? '', 'ip' => $ip]); }
     elseif ($action === 'centre_upsert') $res = gs_call('admin.centres.upsert', ['requesterId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => $ip]);
     elseif ($action === 'centre_delete') $res = gs_call('admin.centres.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'ip' => $ip]);

@@ -1881,6 +1881,43 @@ function SummerGates() {
  * could not be found at all, so their link could never be resent. Search,
  * filter and paging are all server-side now, because across a hundred centres
  * the cohort is far too large to ship to a browser and filter there. */
+/* Render the check-in QR to a PNG so a resent email can embed it — the same
+ * encoder the ID cards use. Returns "" if the encoder cannot load, and the email
+ * then carries the link alone rather than failing.
+ *
+ * Module scope, because the pending queue and the roster both need it. It lived
+ * inside the pending panel, so the roster — where staff actually look a child up
+ * when a parent phones to say the ID never arrived — had no way to resend at all. */
+async function adminQrPngData(token) {
+  try {
+    const lib = await ensureQREncoder(); if (!lib) return "";
+    const qr = lib(0, "M"); qr.addData((location.origin || "") + "/q/" + String(token)); qr.make();
+    const n = qr.getModuleCount(), cell = 8, margin = 16, size = n * cell + margin * 2;
+    const cv = document.createElement("canvas"); cv.width = cv.height = size;
+    const ctx = cv.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, size, size);
+    ctx.save(); ctx.translate(margin, margin); qr.renderTo2dContext(ctx, cell); ctx.restore();
+    return cv.toDataURL("image/png");
+  } catch (_) { return ""; }
+}
+
+/** Resend one student's ID + QR. `setBusy` is the caller's row-level spinner. */
+async function adminResendStudentId(r, setBusy) {
+  if (!(await dialog.confirm({
+    title: "Resend " + (r.fullName || "this student") + "'s ID?",
+    body: "Emails the digital ID and the scannable QR to the parent, and texts a link by SMS if a number is on file.",
+    cta: "Send",
+  }))) return;
+  if (setBusy) setBusy(r.studentId);
+  try {
+    const qrPng = r.token ? await adminQrPngData(r.token) : "";
+    const res = await NGGApi.admin.registration.resendId("student", r.studentId, qrPng);
+    const ch = res.channels || [];
+    toast.success(ch.length ? "Sent by " + ch.join(" + ") + (res.qr ? " (with QR)" : "") : "No email or phone on file — nothing sent.");
+  } catch (e) {
+    toast.error(e.code === "no_id" ? "No ID issued yet — that needs consent first." : (e.code || e.message));
+  } finally { if (setBusy) setBusy(""); }
+}
+
 function SummerPending({ onChange }) {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -1934,30 +1971,7 @@ function SummerPending({ onChange }) {
     } catch (e) { toast.error(e.code || e.message); } finally { setBulk(false); }
   };
 
-  // Render the check-in QR to a PNG so the resent email can embed it (same
-  // encoder the ID cards use). Returns "" if the encoder can't load.
-  const qrPngData = async (token) => {
-    try {
-      const lib = await ensureQREncoder(); if (!lib) return "";
-      const qr = lib(0, "M"); qr.addData((location.origin || "") + "/q/" + String(token)); qr.make();
-      const n = qr.getModuleCount(), cell = 8, margin = 16, size = n * cell + margin * 2;
-      const cv = document.createElement("canvas"); cv.width = cv.height = size;
-      const ctx = cv.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, size, size);
-      ctx.save(); ctx.translate(margin, margin); qr.renderTo2dContext(ctx, cell); ctx.restore();
-      return cv.toDataURL("image/png");
-    } catch (_) { return ""; }
-  };
-  const resendId = async (r) => {
-    if (!(await dialog.confirm({ title: "Resend " + (r.fullName || "this student") + "'s ID?", body: "Emails the digital ID and the scannable QR to the parent, and texts a link by SMS if a number is on file.", cta: "Send" }))) return;
-    setBusy(r.studentId);
-    try {
-      const qrPng = r.token ? await qrPngData(r.token) : "";
-      const res = await NGGApi.admin.registration.resendId("student", r.studentId, qrPng);
-      const ch = res.channels || [];
-      toast.success(ch.length ? "Sent by " + ch.join(" + ") + (res.qr ? " (with QR)" : "") : "No email or phone on file — nothing sent.");
-    } catch (e) { toast.error(e.code === "no_id" ? "No ID issued yet." : (e.code || e.message)); }
-    finally { setBusy(""); }
-  };
+  const resendId = (r) => adminResendStudentId(r, setBusy);
 
   if (err) return <ErrorState title="Couldn't load" code={err} onRetry={load}/>;
   const rows = (data && data.registrations) || [];
@@ -3065,6 +3079,7 @@ function ConsentRecord({ studentId, name, onClose }) {
 
 function SummerRoster({ cohortId }) {
   const [list, setList] = React.useState(null);
+  const [sending, setSending] = React.useState("");
   const [q, setQ] = React.useState("");
   const [openId, setOpenId] = React.useState("");
   const [consentFor, setConsentFor] = React.useState(null);
@@ -3143,6 +3158,16 @@ function SummerRoster({ cohortId }) {
               </td>
               <td><select className="admin-select" value={s.status} onChange={e => setStatus(s.studentId, e.target.value)}><option value="active">active</option><option value="withdrawn">withdrawn</option><option value="graduated">graduated</option><option value="promoted">promoted</option><option value="waitlisted">waitlisted</option></select></td>
               <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+                {/* Where staff actually stand when a parent phones to say the ID
+                    never arrived. The action existed only in the pending queue —
+                    a screen you leave the moment a child is verified, which is
+                    exactly when the ID is the thing being asked about. */}
+                {s.token
+                  ? <><button className="btn btn-ghost btn-sm" disabled={sending === s.studentId}
+                      onClick={() => adminResendStudentId(s, setSending)}>
+                      {sending === s.studentId ? "…" : "Resend ID"}
+                    </button>{" "}</>
+                  : null}
                 <button className="btn btn-ghost btn-sm" onClick={() => setConsentFor(s)}>Consent</button>{" "}
                 <button className="btn btn-ghost btn-sm" onClick={() => setOpenId(openId === s.studentId ? "" : s.studentId)}>{openId === s.studentId ? "Close" : "Edit"}</button>
               </td>

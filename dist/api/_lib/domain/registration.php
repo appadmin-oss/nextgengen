@@ -1552,7 +1552,32 @@ function registration_issue_id(string $studentId): array {
     card_display_id(db_row('SELECT * FROM summer_students WHERE studentId = ?', [$s['studentId']]) ?: $s);
     audit('registration.id_issued', null, $studentId, ['token' => $qr['token']], '');
     event_emit('registration.id_issued', ['ref' => $studentId, 'name' => (string)$s['fullName'], 'token' => (string)$qr['token']]);
-    return ['ok' => true, 'issued' => true, 'token' => (string)$qr['token']];
+    /* THE ID GOES OUT WHEN THE ID IS ISSUED.
+     *
+     * This used to be the caller's job, and three of the five callers did it. The
+     * two that did not were the parent-consent link — the path most families
+     * actually take — and the photo-hold release, so a parent could click the
+     * link, have the child verified, have a QR bound to their name, and never
+     * receive it. The desk had no idea: the roster showed a token, so it looked
+     * done.
+     *
+     * Moving the send here makes "issued" and "sent" the same event by
+     * construction. This is the single gate every path funnels through, and it
+     * only reaches this line on the branch that actually binds a token — an
+     * already-issued student returns earlier, so pressing anything twice cannot
+     * mail a family twice.
+     *
+     * Deferred past the response: a parent submitting consent must not wait on
+     * SMTP, and a coordinator clearing a queue of two hundred must not either. */
+    $issuedToken = (string)$qr['token'];
+    if (function_exists('after_response')) {
+        after_response('registration.issueId.send', function () use ($studentId) {
+            try { student_send_id($studentId); } catch (\Throwable $e) { error_log('[issueId.send] ' . $studentId . ': ' . $e->getMessage()); }
+        });
+    } else {
+        try { student_send_id($studentId); } catch (\Throwable $e) { error_log('[issueId.send] ' . $studentId . ': ' . $e->getMessage()); }
+    }
+    return ['ok' => true, 'issued' => true, 'token' => $issuedToken, 'sending' => true];
 }
 
 /* ── Emailable QR image cache ────────────────────────────────────────────────
@@ -1619,6 +1644,48 @@ function student_send_id(string $studentId): array {
         if (!empty($r['ok'])) $channels[] = 'sms';
     }
     return ['ok' => true, 'channels' => $channels, 'url' => $url, 'displayId' => $displayId];
+}
+
+/**
+ * Cache QR images for a batch of tokens.
+ *
+ * The reason this exists is unglamorous and decides whether the automatic ID
+ * email carries a scannable code or just a link. Mail clients strip `data:` URIs,
+ * so an in-email QR has to be a hosted PNG — and there is no QR encoder on the
+ * server, only the vendored one the browser already uses to draw the cards. A
+ * resend has a browser to render one; an ID issued at 2am when a parent clicks a
+ * consent link does not.
+ *
+ * So the card studio, which has just rendered every token's QR on screen anyway,
+ * hands them over. After one visit every token in the cohort has a hosted image,
+ * and every ID mailed from then on embeds it. Cheap, and it fixes the case that
+ * has no browser in it by borrowing one from earlier.
+ *
+ * Only tokens that belong to a real record are accepted, and the PNG bytes are
+ * validated (magic number, size bounds) before anything is written.
+ */
+function admin_qr_cache_warm(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $items = is_array($p['items'] ?? null) ? $p['items'] : [];
+    if (!$items) return ['ok' => false, 'error' => 'no_items'];
+    if (count($items) > 600) return ['ok' => false, 'error' => 'too_many'];
+
+    $stored = 0; $skipped = 0;
+    foreach ($items as $it) {
+        $token = trim((string)($it['token'] ?? ''));
+        $png = (string)($it['qrPng'] ?? '');
+        if ($token === '' || $png === '') { $skipped++; continue; }
+        // Never an open QR-cache-for-anything: the token has to be bound already.
+        $known = db_row('SELECT 1 FROM qr_codes WHERE token = ? LIMIT 1', [$token])
+              || db_row('SELECT 1 FROM summer_students WHERE token = ? LIMIT 1', [$token])
+              || db_row('SELECT 1 FROM volunteers WHERE token = ? LIMIT 1', [$token]);
+        if (!$known) { $skipped++; continue; }
+        // Already hosted — a studio visit should not rewrite 300 identical files.
+        if (qr_cache_exists($token)) { $skipped++; continue; }
+        if (qr_cache_store($token, $png)) $stored++; else $skipped++;
+    }
+    if ($stored) audit('admin.qr.warm', (string)($g['requester']['memberId'] ?? ''), '', ['stored' => $stored], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'stored' => $stored, 'skipped' => $skipped];
 }
 
 /** Admin: resend a student's or volunteer's ID. Gated per kind (students →
@@ -1982,13 +2049,10 @@ function admin_registration_consent_record(array $p): array {
 
     // The same issuance gate as every other path, so the photo hold and the QR
     // pool behave identically however the consent arrived.
+    /* The send is inside the issuance gate now, so there is nothing to do here.
+       It was a second call at this call site, which after the move would have
+       mailed the family twice. */
     $issue = registration_issue_id($studentId);
-    if (!empty($issue['issued']) || !empty($issue['already'])) {
-        // The family still gets the ID; they just did not get here by email.
-        after_response('registration.deskConsent.sendId', function () use ($studentId) {
-            try { student_send_id($studentId); } catch (\Throwable $e) { error_log('[deskConsent] ' . $e->getMessage()); }
-        });
-    }
 
     audit('registration.consent.desk', $me, $studentId,
         ['method' => $method, 'granted' => array_keys(array_filter($consents)), 'idHeld' => !empty($issue['held'])],
@@ -2116,16 +2180,8 @@ function admin_registration_consent_record_bulk(array $p): array {
             'course' => (string)($s['track'] ?? ''), 'status' => 'verified', 'feedback' => '']);
     }
 
-    /* One deferred pass for the whole batch. Twenty SMTP round-trips in the
-       request is a coordinator staring at a spinner and a gateway timeout that
-       loses the response to work already committed. */
-    if ($issuedIds) {
-        after_response('registration.deskConsent.sendIds', function () use ($issuedIds) {
-            foreach ($issuedIds as $id) {
-                try { student_send_id($id); } catch (\Throwable $e) { error_log('[deskConsent.bulk] ' . $id . ': ' . $e->getMessage()); }
-            }
-        });
-    }
+    /* No send here either: the issuance gate defers one per child already. A
+       second pass over $issuedIds would double every message in the batch. */
 
     /* Audited as what it was. A sweep and a ticked batch are the same writes and
        different decisions, and six months later the only way to tell them apart

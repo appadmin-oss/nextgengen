@@ -161,6 +161,11 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.registration.consent.record' => 'admin_registration_consent_record',
             'admin.registration.consent.bulk'   => 'admin_registration_consent_record_bulk',
             'admin.registration.consents'       => 'admin_registration_consents',
+            /* Hosted QR images, handed over by whichever screen has just drawn
+             * them. Without these an automatically-issued ID email can only
+             * link — mail clients strip data: URIs and there is no encoder on
+             * the server. */
+            'admin.qr.warm'                     => 'admin_qr_cache_warm',
             'admin.registrations.remindBulk' => 'admin_registrations_remind_bulk',
             'admin.centres.list'          => 'admin_centres_list',
             'admin.centres.upsert'        => 'admin_centres_upsert',

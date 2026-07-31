@@ -2275,6 +2275,111 @@ chk('registrations list carries consent + pending queue; remind only for pending
     if (!$mine || !in_array('participation', $mine[0]['consents'], true)) return false;
     return backend_dispatch('admin.registrations.remind', ['requesterId' => 'NGG-2025-0099', 'studentId' => $REG['studentId']])['error'] === 'not_pending';
 })());
+/* ── The ID goes out when the ID is issued ────────────────────────────────────
+ *
+ * This used to be the caller's job and three of five callers did it. The two that
+ * did not were the parent-consent link — the path most families actually take —
+ * and the photo-hold release, so a parent could click the link, have the child
+ * verified, have a QR bound to their name, and never receive it. The roster showed
+ * a token, so from the desk it looked done.
+ */
+chk('verifying by the parent link sends the ID, once', (function () use ($GATE) {
+    $reg = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'Sends On Verify', 'age' => 12,
+        'dob' => gmdate('Y-m-d', strtotime('-12 years -6 months')),
+        'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+        'parentName' => 'Mrs Sends', 'parentPhone' => '08030000301', 'parentEmail' => 'sends@example.com']]);
+    if (empty($reg['studentId'])) return false;
+    $vt = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$reg['studentId']])['verifyToken'];
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('parent.verify.submit', ['t' => $vt, 'consents' => [
+        'participation' => true, 'medical' => true, 'data' => true,
+        'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    $sent = $GLOBALS['__mail_sink'];
+    unset($GLOBALS['__mail_sink']);
+    if (empty($r['ok'])) return false;
+    /* Under CLI after_response() runs inline, so the send is observable here.
+       Exactly one Genius ID message, to the guardian on file. */
+    $ids = array_values(array_filter($sent, fn($m) => stripos((string)($m['subject'] ?? ''), 'Genius ID') !== false));
+    return count($ids) === 1 && ($ids[0]['to'] ?? '') === 'sends@example.com';
+})());
+chk('…and a second verification attempt does not mail them again', (function () use ($GATE) {
+    $reg = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'Once Only', 'age' => 12,
+        'dob' => gmdate('Y-m-d', strtotime('-12 years -7 months')),
+        'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+        'parentName' => 'Mrs Once', 'parentPhone' => '08030000302', 'parentEmail' => 'once@example.com']]);
+    $vt = db_row('SELECT verifyToken FROM summer_students WHERE studentId = ?', [$reg['studentId']])['verifyToken'];
+    backend_dispatch('parent.verify.submit', ['t' => $vt, 'consents' => [
+        'participation' => true, 'medical' => true, 'data' => true,
+        'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    $GLOBALS['__mail_sink'] = [];
+    backend_dispatch('parent.verify.submit', ['t' => $vt, 'consents' => ['participation' => true]]);
+    $again = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => stripos((string)($m['subject'] ?? ''), 'Genius ID') !== false));
+    unset($GLOBALS['__mail_sink']);
+    /* The gate returns early once a token is bound, and the send lives past that
+       return — so pressing anything twice cannot mail a family twice. */
+    return count($again) === 0;
+})());
+chk('…and recording consent at a desk sends it exactly once too', (function () use ($GATE) {
+    /* The desk paths used to send it themselves. After the move that call would
+       have been a SECOND send, and the family would get two of everything. */
+    $reg = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+        'fullName' => 'Desk Once', 'age' => 12,
+        'dob' => gmdate('Y-m-d', strtotime('-12 years -8 months')),
+        'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+        'parentName' => 'Mrs Desk', 'parentPhone' => '08030000303', 'parentEmail' => 'deskonce@example.com']]);
+    $GLOBALS['__mail_sink'] = [];
+    backend_dispatch('admin.registration.consent.record', ['requesterId' => 'NGG-2025-0099',
+        'studentId' => $reg['studentId'], 'method' => 'paper', 'guardianName' => 'Mrs Desk',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    $ids = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => stripos((string)($m['subject'] ?? ''), 'Genius ID') !== false));
+    unset($GLOBALS['__mail_sink']);
+    return count($ids) === 1;
+})());
+
+/* ── The hosted QR the automatic email needs ───────────────────────────────── */
+chk('a screen that has drawn a QR can hand it over for the emails that have no browser', (function () {
+    /* Mail clients strip data: URIs, so an in-email QR must be a hosted PNG — and
+       there is no encoder on the server, only the one the card studio has just
+       used to draw every card. An ID issued when a parent clicks a link at 2am has
+       no browser to borrow, so the studio lends its own. */
+    $tok = db_row("SELECT token FROM summer_students WHERE token != '' LIMIT 1")['token'] ?? '';
+    if ($tok === '') return true;
+    @unlink(qr_cache_path($tok));
+    // A 24x24 PNG — qr_cache_store refuses anything under 60 bytes.
+    $im = imagecreatetruecolor(24, 24);
+    imagefill($im, 0, 0, imagecolorallocate($im, 255, 255, 255));
+    ob_start(); imagepng($im); $png = ob_get_clean(); imagedestroy($im);
+    $dataUrl = 'data:image/png;base64,' . base64_encode($png);
+
+    $r = backend_dispatch('admin.qr.warm', ['requesterId' => 'NGG-2025-0099',
+        'items' => [['token' => $tok, 'qrPng' => $dataUrl]]]);
+    $stored = qr_cache_exists($tok);
+    // A second pass must not rewrite what is already hosted.
+    $r2 = backend_dispatch('admin.qr.warm', ['requesterId' => 'NGG-2025-0099',
+        'items' => [['token' => $tok, 'qrPng' => $dataUrl]]]);
+    // And a token belonging to nothing is never cached — no QR-for-anything.
+    $r3 = backend_dispatch('admin.qr.warm', ['requesterId' => 'NGG-2025-0099',
+        'items' => [['token' => 'NOT-A-REAL-TOKEN', 'qrPng' => $dataUrl]]]);
+    @unlink(qr_cache_path($tok));
+    return !empty($r['ok']) && ($r['stored'] ?? 0) === 1 && $stored
+        && ($r2['stored'] ?? -1) === 0 && ($r2['skipped'] ?? 0) === 1
+        && ($r3['stored'] ?? -1) === 0;
+})());
+chk('…and junk that is not a PNG is refused rather than written', (function () {
+    $tok = db_row("SELECT token FROM summer_students WHERE token != '' LIMIT 1")['token'] ?? '';
+    if ($tok === '') return true;
+    @unlink(qr_cache_path($tok));
+    $r = backend_dispatch('admin.qr.warm', ['requesterId' => 'NGG-2025-0099',
+        'items' => [['token' => $tok, 'qrPng' => 'data:image/png;base64,' . base64_encode('not a png at all, just some bytes here to pad it out past sixty characters')]]]);
+    $bad = qr_cache_exists($tok);
+    @unlink(qr_cache_path($tok));
+    return ($r['stored'] ?? -1) === 0 && !$bad;
+})());
+chk('the QR warm op is admin-gated', backend_dispatch('admin.qr.warm', ['requesterId' => '', 'items' => [['token' => 'x', 'qrPng' => 'y']]])['ok'] !== true);
+
 /* ── Consent given off-line ───────────────────────────────────────────────────
  * A desk registration waits for a parent to click a link, and most do. The ones
  * who do not are a guardian with no email address, a phone that cannot open the

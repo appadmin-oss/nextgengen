@@ -726,3 +726,43 @@ Two new profiles in `ai.profiles`. `insight_router` wants the cheapest model you
 have — it runs every turn and produces about forty tokens. `insight_answer` is
 the one place worth a capable model: it has to hold a disagreement between two
 analysts without tidying it away, which is exactly what a small model does.
+
+### 10 · The ID goes out when the ID is issued
+
+Reported as "QR should be sent after verification", and it was a real gap rather
+than a preference. Sending the ID was the caller's job, and three of the five
+callers did it. The two that did not were **the parent-consent link** — the path
+most families actually take — and **the photo-hold release**. So a parent could
+click the link, have the child verified, have a QR bound to their name, and never
+receive it; the roster showed a token, so from the desk it looked done.
+
+The send now lives inside `registration_issue_id()`, which is the single issuance
+gate every path funnels through, and it sits past the early return that fires when
+a token already exists. "Issued" and "sent" are therefore the same event by
+construction rather than by remembering at five call sites, the photo-hold release
+is fixed for free, and pressing anything twice cannot mail a family twice. The
+three call sites that used to send were changed to stop — after the move, each
+would have been a second send.
+
+Deferred past the response: a parent submitting consent must not wait on SMTP, and
+neither must a coordinator clearing a queue of two hundred.
+
+**The hosted QR.** Mail clients strip `data:` URIs, so an in-email QR has to be a
+hosted PNG — and there is no QR encoder on the server, only the vendored one the
+browser uses to draw the cards. A *resend* has a browser and hands one over; an ID
+issued at 2am when a parent clicks a link does not. So the card studio, which has
+just drawn every token's QR on screen anyway, posts them to `admin.qr.warm` in the
+background. After one visit every token in the cohort has a hosted image and every
+ID mailed from then on embeds a scannable code. Tokens must already belong to a
+real record, the PNG bytes are validated, and tokens already hosted are skipped so
+a second visit writes nothing.
+
+Until that first studio visit the email carries the link alone — `/q/<token>` opens
+the digital ID and shows the code. Embedding on the very first automatic send would
+need a server-side encoder, which is the honest next step if it matters.
+
+**Resend from the roster.** The action existed only in the pending queue — a screen
+staff leave the moment a child is verified, which is exactly when the ID becomes
+the thing being asked about. It is on the roster row now, where somebody stands
+when a parent phones to say it never arrived, sharing one implementation with the
+pending queue rather than a second that drifts.

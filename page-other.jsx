@@ -5460,6 +5460,55 @@ function CardStudio() {
     catch (e) { setSizeMsg("Couldn't save — need staff permission."); }
   };
 
+  /* Warm the hosted QR cache, once, in the background.
+   *
+   * Unglamorous and it decides something real: mail clients strip `data:` URIs,
+   * so an in-email QR has to be a hosted PNG, and there is no QR encoder on the
+   * server — only the vendored one this screen has just used to draw every card.
+   * An ID issued with a browser present (a resend) can hand one over; an ID
+   * issued when a parent clicks a consent link at 2am cannot.
+   *
+   * So this screen lends its encoder. After one visit every token in the roster
+   * has a hosted image and every ID mailed from then on embeds a scannable code
+   * rather than only a link. Fire-and-forget, after paint, and the server skips
+   * tokens it already holds so a second visit writes nothing. */
+  const warmedQr = React.useRef(false);
+  React.useEffect(() => {
+    if (warmedQr.current || state !== "ready") return;
+    const tokens = [...((data && data.cards) || []), ...((vdata && vdata.cards) || [])]
+      .map(c => String(c.token || "")).filter(Boolean);
+    if (!tokens.length) return;
+    warmedQr.current = true;
+    const t = setTimeout(async () => {
+      try {
+        if (!window.qrcode) {
+          await new Promise((res) => {
+            let sc = document.getElementById("ngg-qrlib");
+            if (!sc) { sc = document.createElement("script"); sc.id = "ngg-qrlib"; sc.src = "/vendor/qrcode.min.js"; document.head.appendChild(sc); }
+            sc.addEventListener("load", res, { once: true });
+            setTimeout(res, 6000);   // never hang the page on a missing vendor file
+          });
+        }
+        if (!window.qrcode) return;
+        const origin = window.location.origin;
+        const items = [];
+        tokens.forEach(tok => {
+          try {
+            const q = window.qrcode(0, "M");
+            q.addData(origin + "/q/" + tok); q.make();
+            items.push({ token: tok, qrPng: q.createDataURL(8, 0) });
+          } catch (_) {}
+        });
+        // Batched, because 300 tokens is a 3MB body and one request is kinder
+        // than 300 — but not one 300-token body either.
+        for (let i = 0; i < items.length; i += 60) {
+          try { await NGGApi.admin.registration.qrWarm(items.slice(i, i + 60)); } catch (_) { break; }
+        }
+      } catch (_) {}
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [state, data, vdata]);
+
   const isVol = mode === "volunteers";
   const resetInputs = () => { setMName(""); setMCode(""); setMColor(isVol ? "#00225F" : "#76B043"); };
   const clearRange = () => { setRmode(""); setDFrom(""); setDTo(""); setNFrom(""); setNTo(""); setChosen(new Set()); setPaste(""); setPasteMsg(""); };

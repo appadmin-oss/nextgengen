@@ -704,6 +704,10 @@
            "verify" call: each carries which permissions were granted, who gave
            them and how, because that is what a consent is and a boolean in its
            place would destroy the only record the programme has. */
+        /* Hand over QR images the screen has already drawn, so an ID issued with
+           no browser present (a parent clicking a consent link at 2am) can still
+           embed a scannable code rather than only a link. */
+        qrWarm: (items) => request('/admin/registration.php', { body: { action: 'qr_warm', items }, timeout: 120000 }),
         consents: (studentId) => request('/admin/registration.php' + qs({ view: 'consents', studentId })),
         consentRecord: (data) => request('/admin/registration.php', { body: { action: 'consent_record', ...(data || {}) } }),
         consentBulk: (data) => request('/admin/registration.php', { body: { action: 'consent_bulk', ...(data || {}) }, timeout: 120000 }),
