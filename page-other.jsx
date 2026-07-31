@@ -5213,8 +5213,8 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
           shadow rather than a border so the panel's geometry is unchanged and
           nothing below has to be re-laid out around it. */}
       <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), background: "#fff", borderRadius: px(30),
-                    boxShadow: centre ? `inset 0 0 0 ${Math.max(1, px(7))}px ${cTint}`
-                      + (clash ? `, inset 0 0 0 ${Math.max(2, px(11))}px #fff` : "") : "none" }}/>
+                    boxShadow: centre ? `inset 0 0 0 ${Math.max(1, px(3))}px ${cTint}`
+                      + (clash ? `, inset 0 0 0 ${Math.max(2, px(6))}px #fff` : "") : "none" }}/>
       {/* STS badge, straddling the top edge of the panel. */}
       <div style={{ position: "absolute", top: px(2), left: "50%", transform: "translateX(-50%)", width: px(116), height: px(116), zIndex: 2 }}>
         <div style={{ position: "absolute", inset: px(8), borderRadius: "50%", background: tint, boxShadow: `0 ${px(6)}px ${px(16)}px rgba(0,0,0,.18)`, display: "grid", placeItems: "center" }}>
@@ -5230,7 +5230,7 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
       </div>
       {/* Content column inside the panel — reflows to any card height. */}
       <div style={{ position: "absolute", top: px(22), left: px(22), right: px(22), bottom: px(22), display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box",
-                    padding: px(94) + "px " + px(40) + "px " + px(34) + "px" }}>
+                    padding: px(118) + "px " + px(40) + "px " + px(34) + "px" }}>
         {/* The headshot in the CENTRE's colour, not the tier's. The card is
             already tier-coloured all over; repeating that around the photo
             would say the same thing twice and the thing a coordinator
@@ -5289,11 +5289,16 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
             stays, in plain type, with a dot of the colour to tie the two
             together. */}
         {centre && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: px(9), marginTop: px(9), flex: "none", maxWidth: "100%" }}>
-            <span style={{ width: px(15), height: px(15), borderRadius: "50%", background: cTint, flex: "none",
-                           boxShadow: `0 0 0 ${Math.max(1, px(2))}px ${cInk.light ? "rgba(0,0,0,.22)" : "rgba(255,255,255,.9)"}` }}/>
-            <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, ...centreBandFont(centre.name, 22, px, 420),
-                           color: "#101010", textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap" }}>{centre.name}</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: px(7), marginTop: px(11), flex: "none", maxWidth: "100%" }}>
+            <span style={{ width: px(9), height: px(9), borderRadius: "50%", background: cTint, flex: "none",
+                           boxShadow: `0 0 0 ${Math.max(1, px(1.5))}px ${cInk.light ? "rgba(0,0,0,.22)" : "rgba(255,255,255,.9)"}` }}/>
+            {/* Deliberately the smallest type on the card. It is a caption on the
+                colour, not a heading: the line round the panel and the code chip
+                are what carry the centre at a distance, and this is only here so
+                the answer is also readable in words. At heading size it competed
+                with the role line and made a spare card look crowded. */}
+            <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 700, ...centreBandFont(centre.name, 12, px, 400),
+                           color: "#6A7180", textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap" }}>{centre.name}</span>
           </div>
         )}
       </div>
