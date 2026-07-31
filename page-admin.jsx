@@ -1036,7 +1036,7 @@ function MentorPromote({ centres, onClose, onDone }) {
         <div className="admin-fields-row">
           <FieldSelect label="Centre" value={centre} onChange={setCentre}
             options={[{ value: "", label: "— every centre —" }].concat(Object.keys(centres || {}).map(n => ({ value: n, label: n })))}/>
-          <Field label={rank === "lead" ? "Department (ignored for a lead)" : "Department (blank = the whole centre)"}
+          <Field label={rank === "lead" ? "Faculty (ignored for a lead)" : "Faculty (blank = the whole centre)"}
             value={dept} onChange={setDept}/>
         </div>
         <p className="admin-hint">
@@ -1999,6 +1999,15 @@ function SummerPending({ onChange }) {
             {bulk ? "Sending…" : "Resend to all waiting"}
           </button>
         )}
+        {/* The whole queue at once — for a programme that collected consent on
+            paper at intake and has four hundred waiting that a stack-at-a-time
+            interface will never clear. The sheet still asks how it was given and
+            which permissions, and each child still keeps their own guardian. */}
+        {status === "parent_pending" && (counts.parent_pending || 0) > 0 && (
+          <button className="btn btn-ghost btn-sm" onClick={() => setSheet({ scope: "all_pending", count: counts.parent_pending, centre })}>
+            Record consent for all {counts.parent_pending}{centre ? " at " + centre : ""}
+          </button>
+        )}
       </div>
 
       {/* The bulk bar, and it only appears once rows are TICKED.
@@ -2100,7 +2109,7 @@ function SummerPending({ onChange }) {
         </>
       )}
 
-      {sheet && <ConsentRecorder rows={sheet.rows}
+      {sheet && <ConsentRecorder rows={sheet.rows} scope={sheet.scope} scopeCount={sheet.count} scopeCentre={sheet.centre}
         onClose={() => setSheet(null)}
         onDone={() => { setSheet(null); setTicked(new Set()); load(); if (onChange) onChange(); }}/>}
     </div>
@@ -2121,11 +2130,14 @@ function SummerPending({ onChange }) {
  * asks the same questions the parent link asks, in the same order, and the
  * server enforces the same rules.
  */
-function ConsentRecorder({ rows, onClose, onDone }) {
-  const many = rows.length > 1;
+function ConsentRecorder({ rows, scope, scopeCount, scopeCentre, onClose, onDone }) {
+  const sweep = scope === "all_pending";
+  const list = rows || [];
+  const many = sweep || list.length > 1;
+  const count = sweep ? (scopeCount || 0) : list.length;
   const [meta, setMeta] = React.useState(null);      // types + methods, from the server
   const [method, setMethod] = React.useState("paper");
-  const [guardian, setGuardian] = React.useState(rows[0] ? (rows[0].guardianName || "") : "");
+  const [guardian, setGuardian] = React.useState(list[0] ? (list[0].guardianName || "") : "");
   const [answers, setAnswers] = React.useState({});
   const [note, setNote] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -2135,7 +2147,10 @@ function ConsentRecorder({ rows, onClose, onDone }) {
      parent-facing form, this form and the ledger have to agree about what a
      consent consists of, and three hard-coded lists would drift. */
   React.useEffect(() => {
-    NGGApi.admin.registration.consents(rows[0].studentId)
+    /* The permission list is the same whichever child it is fetched for — the
+       sweep has no single child, so it borrows the first pending row's. */
+    const probe = list[0] && list[0].studentId;
+    (probe ? NGGApi.admin.registration.consents(probe) : Promise.resolve({ types: [], methods: [] }))
       .then(r => {
         setMeta(r);
         // Required permissions default to granted; the free choices start UNSET
@@ -2164,17 +2179,18 @@ function ConsentRecorder({ rows, onClose, onDone }) {
       const consents = {};
       types.forEach(t => { consents[t.type] = !!answers[t.type]; });
       if (many) {
-        const r = await NGGApi.admin.registration.consentBulk({
-          studentIds: rows.map(x => x.studentId), method, consents, note,
-        });
+        const r = await NGGApi.admin.registration.consentBulk(sweep
+          ? { scope: "all_pending", centre: scopeCentre || "", method, consents, note }
+          : { studentIds: list.map(x => x.studentId), method, consents, note });
         setResult(r);
-        // Not a toast-and-close: a partial result has to be READ. Some children
-        // will have no guardian on file and those were skipped, and closing over
-        // that would leave somebody believing all twenty were done.
-        if (!(r.skipped || []).length) { toast.success(r.recorded.length + " recorded."); onDone(); }
+        /* Not a toast-and-close: a partial result has to be READ. Some children
+           will have no guardian on file and those were skipped, and a sweep of a
+           queue longer than one batch leaves a remainder — closing over either
+           would leave somebody believing the queue was cleared. */
+        if (!(r.skipped || []).length && !r.remaining) { toast.success(r.recorded.length + " recorded."); onDone(); }
       } else {
         const r = await NGGApi.admin.registration.consentRecord({
-          studentId: rows[0].studentId, method, guardianName: guardian.trim(), consents, note,
+          studentId: list[0].studentId, method, guardianName: guardian.trim(), consents, note,
         });
         toast.success(r.idIssued ? "Consent recorded — ID issued." : "Consent recorded.");
         onDone();
@@ -2201,12 +2217,15 @@ function ConsentRecorder({ rows, onClose, onDone }) {
       <div style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 560, width: "100%",
                     maxHeight: "92vh", overflowY: "auto" }}>
         <h3 style={{ margin: "0 0 4px", fontSize: 19 }}>
-          {many ? "Record consent for " + rows.length + " children" : "Record consent"}
+          {sweep ? "Record consent for everyone waiting"
+            : many ? "Record consent for " + count + " children" : "Record consent"}
         </h3>
         <p className="admin-hint" style={{ marginTop: 0 }}>
-          {many
+          {sweep
+            ? <>All <b>{count}</b> registration{count === 1 ? "" : "s"} still awaiting a parent{scopeCentre ? <> at <b>{scopeCentre}</b></> : null}. One method and one set of permissions across all of them; each child keeps their own guardian's name from their record, and a child with no guardian on file is skipped and listed rather than recorded against somebody else.</>
+            : many
             ? "One method and one set of permissions across the selection. Each child keeps their own guardian's name from their record — a child with no guardian on file is skipped rather than recorded against somebody else."
-            : <>For <b>{rows[0].fullName}</b> · {rows[0].studentId}. Use this when the family gave consent off-line and the emailed link will never reach them.</>}
+            : <>For <b>{list[0].fullName}</b> · {list[0].studentId}. Use this when the family gave consent off-line and the emailed link will never reach them.</>}
         </p>
 
         {result ? (
@@ -2217,6 +2236,7 @@ function ConsentRecorder({ rows, onClose, onDone }) {
             <p style={{ fontSize: 14, margin: "0 0 8px" }}>
               <b>{(result.recorded || []).length} recorded.</b>
               {(result.skipped || []).length ? <> {(result.skipped || []).length} skipped.</> : null}
+              {result.remaining ? <> <b>{result.remaining} still waiting</b> — run it again to take the next batch.</> : null}
             </p>
             {(result.skipped || []).length > 0 && (
               <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid var(--line-cool-soft,#e6e9f0)", borderRadius: 10, padding: 10, marginBottom: 12 }}>
@@ -2328,7 +2348,7 @@ function ConsentRecorder({ rows, onClose, onDone }) {
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
             <button className="btn btn-primary btn-sm" onClick={submit} disabled={!ready || busy}>
-              {busy ? "Recording…" : many ? "Record for " + rows.length : "Record consent"}
+              {busy ? "Recording…" : many ? "Record for " + count : "Record consent"}
             </button>
           </div>
         </>

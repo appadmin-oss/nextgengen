@@ -2011,18 +2011,54 @@ function admin_registration_consent_record(array $p): array {
  * Bounded, so one click cannot verify a cohort.
  */
 const CONSENT_BULK_MAX = 60;
+/* The everyone-at-once ceiling. Higher than the ticked-selection cap because the
+ * work is the same per child and the caller has asked for the whole queue; still
+ * bounded, so one request cannot run for minutes and time out halfway through
+ * with no way to tell what got written. The response says what is left. */
+const CONSENT_SWEEP_MAX = 400;
 
 function admin_registration_consent_record_bulk(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $me = (string)($g['requester']['memberId'] ?? '');
 
-    $ids = array_values(array_unique(array_filter(array_map(
-        fn($x) => trim((string)$x), (array)($p['studentIds'] ?? [])))));
-    if (!$ids) return ['ok' => false, 'error' => 'no_students'];
-    /* Explicitly capped rather than paged. A bulk consent is somebody working
-       through a physical stack; sixty is already more than one sitting, and a
-       ceiling is what stops a scripted client verifying a whole cohort. */
-    if (count($ids) > CONSENT_BULK_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CONSENT_BULK_MAX];
+    /* Two ways in.
+     *
+     * A ticked SELECTION is the honest default: somebody working through a stack
+     * of forms, naming the children in front of them.
+     *
+     * `scope: all_pending` is the whole queue, and it exists because a programme
+     * that collected consent on paper at intake has a queue of four hundred that
+     * a stack-at-a-time interface will never clear. The safeguards that matter
+     * survive either way and are per child, not per request: each child's own
+     * guardian is recorded, a child with no guardian on file is skipped and
+     * named, and the ledger records the method and the staff member. What
+     * changes is only who names the list. */
+    $scope = (string)($p['scope'] ?? '');
+    $centre = trim((string)($p['centre'] ?? ''));
+    $sweep = $scope === 'all_pending';
+    $remaining = 0;
+
+    if ($sweep) {
+        $c = summer_ensure_cohort();
+        $where = ["cohortId = ?", "regStatus = 'parent_pending'"]; $args = [$c['cohortId']];
+        if ($centre !== '') { $where[] = 'centre = ?'; $args[] = $centre; }
+        $sql = "SELECT studentId FROM summer_students WHERE " . implode(' AND ', $where) . " ORDER BY id ASC";
+        $all = array_column(db_all($sql, $args), 'studentId');
+        $ids = array_slice($all, 0, CONSENT_SWEEP_MAX);
+        $remaining = max(0, count($all) - count($ids));
+        if (!$ids) return ['ok' => true, 'recorded' => [], 'skipped' => [], 'remaining' => 0,
+                           'note' => 'Nobody is waiting on a parent' . ($centre !== '' ? ' at ' . $centre : '') . '.'];
+    } else {
+        $ids = array_values(array_unique(array_filter(array_map(
+            fn($x) => trim((string)$x), (array)($p['studentIds'] ?? [])))));
+        if (!$ids) return ['ok' => false, 'error' => 'no_students'];
+        /* Explicitly capped rather than paged. A ticked bulk is somebody working
+           through a physical stack; sixty is already more than one sitting, and a
+           ceiling is what stops a scripted client verifying a whole cohort by
+           enumerating ids. The sweep above is the deliberate, named way to do
+           that, and it is auditable as one. */
+        if (count($ids) > CONSENT_BULK_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CONSENT_BULK_MAX];
+    }
 
     $method = (string)($p['method'] ?? '');
     if (!isset(CONSENT_DESK_METHODS[$method])) return ['ok' => false, 'error' => 'method_required'];
@@ -2091,11 +2127,20 @@ function admin_registration_consent_record_bulk(array $p): array {
         });
     }
 
-    audit('registration.consent.desk.bulk', $me, '', ['method' => $method,
-        'recorded' => array_column($recorded, 'studentId'), 'skipped' => count($skipped),
-        'granted' => array_keys(array_filter($consents))], (string)($p['ip'] ?? ''));
+    /* Audited as what it was. A sweep and a ticked batch are the same writes and
+       different decisions, and six months later the only way to tell them apart
+       is this line. */
+    audit($sweep ? 'registration.consent.desk.sweep' : 'registration.consent.desk.bulk', $me,
+        $sweep ? ($centre !== '' ? $centre : 'all centres') : '',
+        ['method' => $method, 'recorded' => array_column($recorded, 'studentId'),
+         'skipped' => count($skipped), 'remaining' => $remaining,
+         'granted' => array_keys(array_filter($consents))], (string)($p['ip'] ?? ''));
 
     return ['ok' => true, 'recorded' => $recorded, 'skipped' => $skipped,
+            'scope' => $sweep ? 'all_pending' : 'selection',
+            // How many the caller still has to come back for, so a queue of 900
+            // does not look finished after 400.
+            'remaining' => $remaining,
             'method' => CONSENT_DESK_METHODS[$method]];
 }
 

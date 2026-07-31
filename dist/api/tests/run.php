@@ -2434,6 +2434,61 @@ chk('…and a child with no guardian on file is skipped and named, not invented'
         // And nothing was written to the ledger for them.
         && (int)db_row("SELECT COUNT(*) c FROM consents WHERE studentId = ?", [$r['studentId']])['c'] === 0;
 })());
+chk('the whole pending queue can be swept in one action', (function () use ($GATE) {
+    /* A programme that collected consent on paper at intake has a queue a
+       stack-at-a-time interface will never clear. The safeguards that matter are
+       per child, not per request, so they survive the sweep intact — which is
+       what the assertions below check, not merely that it ran. */
+    $made = [];
+    foreach ([0, 1, 2] as $i) {
+        $r = backend_dispatch('gate.register', ['gate' => $GATE['gateId'], 'data' => [
+            'fullName' => 'Sweep Kid ' . $i, 'age' => 12,
+            'dob' => gmdate('Y-m-d', strtotime('-12 years -5 months')),
+            'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'centre' => 'Main',
+            'parentName' => 'Sweep Guardian ' . $i, 'parentPhone' => '0803000020' . $i]]);
+        $made[] = $r['studentId'];
+    }
+    // One of them loses its guardian, so the sweep has something to skip.
+    db_update('summer_students', ['guardianName' => ''], ['studentId' => $made[2]]);
+
+    $before = (int)db_row("SELECT COUNT(*) c FROM summer_students WHERE regStatus = 'parent_pending'")['c'];
+    if ($before < 3) return false;
+    $r = backend_dispatch('admin.registration.consent.bulk', ['requesterId' => 'NGG-2025-0099',
+        'scope' => 'all_pending', 'method' => 'paper',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    if (empty($r['ok'])) return false;
+
+    $rows = db_all("SELECT studentId, regStatus, consentSignedName FROM summer_students WHERE studentId IN (?, ?, ?)", $made);
+    $by = []; foreach ($rows as $x) $by[$x['studentId']] = $x;
+    return ($r['scope'] ?? '') === 'all_pending'
+        // Nobody is left waiting who had a guardian on file.
+        && (int)db_row("SELECT COUNT(*) c FROM summer_students WHERE regStatus = 'parent_pending' AND guardianName != ''")['c'] === 0
+        && $by[$made[0]]['regStatus'] === 'verified' && $by[$made[1]]['regStatus'] === 'verified'
+        /* Each child's OWN guardian, across a sweep the caller never enumerated.
+           This is the property that makes the sweep defensible: one name stamped
+           on four hundred families would be a fabrication in the consent ledger. */
+        && $by[$made[0]]['consentSignedName'] === 'Sweep Guardian 0'
+        && $by[$made[1]]['consentSignedName'] === 'Sweep Guardian 1'
+        // And the one with no guardian is still pending, and was named.
+        && $by[$made[2]]['regStatus'] === 'parent_pending'
+        && count(array_filter($r['skipped'], fn($x) => ($x['reason'] ?? '') === 'no_guardian_on_file')) >= 1;
+})());
+chk('…a sweep of an empty queue says so rather than reporting a success', (function () {
+    $r = backend_dispatch('admin.registration.consent.bulk', ['requesterId' => 'NGG-2025-0099',
+        'scope' => 'all_pending', 'centre' => 'Nowhere At All', 'method' => 'paper',
+        'consents' => ['participation' => true, 'medical' => true, 'data' => true,
+                       'media' => true, 'site_visibility' => true, 'trips' => true, 'comms' => true]]);
+    return !empty($r['ok']) && $r['recorded'] === [] && ($r['remaining'] ?? -1) === 0
+        && strpos((string)($r['note'] ?? ''), 'Nobody is waiting') !== false;
+})());
+chk('…and a sweep is audited as a sweep, not as a ticked batch', (function () {
+    $row = db_row("SELECT event FROM audit_log WHERE event = 'registration.consent.desk.sweep' ORDER BY id DESC LIMIT 1");
+    /* Same writes, different decision. Six months later this line is the only
+       way to tell "somebody worked through a stack" from "somebody cleared the
+       queue in one click". */
+    return !empty($row);
+})());
 chk('…bulk is capped, so one call cannot verify a cohort', (function () {
     $r = backend_dispatch('admin.registration.consent.bulk', ['requesterId' => 'NGG-2025-0099',
         'studentIds' => array_map(fn($i) => 'SUM-FAKE-' . $i, range(1, CONSENT_BULK_MAX + 1)),

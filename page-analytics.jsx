@@ -14,7 +14,20 @@
 
 // ── design tokens (chart palette layered on the site's variables) ────────────
 const AN_TONE = { good: "#16a34a", warn: "#f59e0b", bad: "#ef4444", info: "#4C6FFF" };
-const AN_SERIES = ["#4C6FFF", "#16a34a", "#f5b026", "#a855f7", "#ec4899", "#14b8a6", "#f97316", "#64748b"];
+/* Categorical series colours, in a FIXED order and never cycled.
+ *
+ * The previous set was picked by eye and failed on measurement: its teal and its
+ * pink sat 3.7 apart in OKLab under deuteranopia — one reader in twelve saw two
+ * series as one colour — the amber fell outside the readable lightness band, the
+ * slate read as grey rather than as a colour, and three of the eight were under
+ * 3:1 against a white card. All five checks pass on this set (lightness band,
+ * chroma floor, adjacent CVD separation ≥ 8, normal-vision separation ≥ 15,
+ * contrast ≥ 3:1); the worst adjacent pair is now 10.2 for deutan.
+ *
+ * The ORDER is part of the fix, not decoration: the checks are on adjacent pairs,
+ * so reordering these breaks them. A ninth series is never a generated hue — it
+ * folds into "Other" or the chart becomes small multiples. */
+const AN_SERIES = ["#3B5BDB", "#C2410C", "#0E9F6E", "#A21CAF", "#4D7C0F", "#0369A1", "#BE123C", "#6D28D9"];
 const AN_RATE_TONE = (r) => (r >= 80 ? AN_TONE.good : r >= 55 ? AN_TONE.warn : AN_TONE.bad);
 const AN_RATE_LABEL = (r) => (r >= 80 ? "On track" : r >= 55 ? "Watch" : "Needs attention");
 
@@ -129,7 +142,36 @@ function AnKpi({ icon, value, label, foot, trend, onClick }) {
   </div>;
 }
 
-// ── charts (lightweight SVG) ─────────────────────────────────────────────────
+/* ── charts (lightweight SVG) ─────────────────────────────────────────────────
+ *
+ * Shared conventions, because a screen where every chart makes its own choices
+ * reads as several screens: 2px strokes, markers no smaller than 8px across with
+ * a 2px surface ring so overlapping points stay countable, a recessive grid, and
+ * a hover layer on everything that has marks. A static SVG chart in a browser is
+ * a chart with its detail thrown away — the numbers behind a point were only ever
+ * reachable by exporting the report.
+ */
+const AN_GRID = "#eef0f4";      // recessive: present, never competing with a mark
+const AN_AXIS_INK = "#8088a6";
+const AN_MARK_R = 4.5;          // 9px across — above the 8px floor
+const AN_STROKE = 2;
+
+/* One tooltip, shared. Positioned in the CARD's coordinates rather than the
+   page's, so it cannot be clipped by the section's own overflow. */
+function AnTip({ tip }) {
+  if (!tip) return null;
+  return (
+    <div style={{ position: "absolute", left: tip.left, top: tip.top, transform: "translate(-50%,-100%)",
+                  pointerEvents: "none", zIndex: 5, background: "var(--navy-900,#0c1432)", color: "#fff",
+                  padding: "7px 10px", borderRadius: 8, fontSize: 12, lineHeight: 1.45, whiteSpace: "nowrap",
+                  boxShadow: "0 6px 18px rgba(10,17,48,.28)" }}>
+      {tip.lines.map((l, i) => (
+        <div key={i} style={{ fontWeight: i === 0 ? 700 : 400, opacity: i === 0 ? 1 : .82 }}>{l}</div>
+      ))}
+    </div>
+  );
+}
+
 function AnArea({ data, height }) {
   const h = height || 150, w = 640, pad = 6;
   if (!data || !data.length) return <div className="an-empty">No attendance in this range yet.</div>;
@@ -139,14 +181,36 @@ function AnArea({ data, height }) {
   const pts = data.map((d, i) => [pad + i * step, y(d.present)]);
   const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   const area = line + ` L${pad + (data.length - 1) * step} ${h - pad} L${pad} ${h - pad} Z`;
-  return <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" role="img" aria-label="Attendance trend">
-    <defs><linearGradient id="anfill" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stopColor="#4C6FFF" stopOpacity="0.28"/><stop offset="1" stopColor="#4C6FFF" stopOpacity="0"/>
-    </linearGradient></defs>
-    <path d={area} fill="url(#anfill)"/>
-    <path d={line} fill="none" stroke="#4C6FFF" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
-    {pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r={data.length > 20 ? 0 : 3} fill="#fff" stroke="#4C6FFF" strokeWidth="2"/>)}
-  </svg>;
+  const tone = AN_SERIES[0];
+  const [hi, setHi] = React.useState(-1);
+  /* Nearest-point crosshair rather than per-mark hit targets: on a 90-day trend
+     the marks are 6px apart and hitting one is luck, so the whole plot answers
+     and the answer is whichever day is closest. */
+  const onMove = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * w;
+    setHi(step ? Math.max(0, Math.min(data.length - 1, Math.round((x - pad) / step))) : 0);
+  };
+  const p = hi >= 0 ? pts[hi] : null;
+  return <div style={{ position: "relative" }}>
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none"
+      role="img" aria-label="Attendance trend" style={{ display: "block", touchAction: "pan-y" }}
+      onMouseMove={onMove} onMouseLeave={() => setHi(-1)} onTouchStart={onMove} onTouchMove={onMove}>
+      <defs><linearGradient id="anfill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor={tone} stopOpacity="0.24"/><stop offset="1" stopColor={tone} stopOpacity="0"/>
+      </linearGradient></defs>
+      <path d={area} fill="url(#anfill)"/>
+      <path d={line} fill="none" stroke={tone} strokeWidth={AN_STROKE} strokeLinejoin="round" strokeLinecap="round"/>
+      {p && <line x1={p[0]} y1={pad} x2={p[0]} y2={h - pad} stroke={AN_AXIS_INK} strokeWidth="1" strokeDasharray="3 3"/>}
+      {/* A marker on every point is noise past twenty; the hovered one always shows. */}
+      {pts.map((q, i) => (i === hi || data.length <= 20)
+        ? <circle key={i} cx={q[0]} cy={q[1]} r={i === hi ? AN_MARK_R + 1 : AN_MARK_R} fill={tone} stroke="#fff" strokeWidth="2"/>
+        : null)}
+    </svg>
+    <AnTip tip={p ? { left: (p[0] / w * 100) + "%", top: p[1] - 10,
+      lines: [anFmt(data[hi].present) + " present", data[hi].date || data[hi].label || "",
+              data[hi].late ? anFmt(data[hi].late) + " late" : ""].filter(Boolean) } : null}/>
+  </div>;
 }
 
 function AnLine({ data, xKey, yKey, label, color }) {
@@ -158,16 +222,36 @@ function AnLine({ data, xKey, yKey, label, color }) {
   const y = v => h - pad - ((v - min) / (max - min || 1)) * (h - pad * 2 - 12);
   const pts = data.map((d, i) => [pad + i * step, y(d[yKey])]);
   const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-  return <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} role="img" aria-label={label}>
-    <path d={line} fill="none" stroke={color || "#16a34a"} strokeWidth="2.5" strokeLinejoin="round"/>
-    {pts.map((p, i) => <g key={i}>
-      <circle cx={p[0]} cy={p[1]} r="3.5" fill={color || "#16a34a"}/>
-      <text x={p[0]} y={h - 1} fontSize="9" fill="#8088a6" textAnchor="middle">{xKey ? data[i][xKey] : i + 1}</text>
-    </g>)}
-  </svg>;
+  const tone = color || AN_SERIES[2];
+  const [hi, setHi] = React.useState(-1);
+  const onMove = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * w;
+    setHi(step ? Math.max(0, Math.min(data.length - 1, Math.round((x - pad) / step))) : 0);
+  };
+  /* Every x label on a 30-week series overlaps into a grey smear. Thin to
+     roughly eight, which is what a reader can actually use. */
+  const every = Math.max(1, Math.ceil(data.length / 8));
+  const p = hi >= 0 ? pts[hi] : null;
+  return <div style={{ position: "relative" }}>
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} role="img" aria-label={label}
+      style={{ display: "block", touchAction: "pan-y" }}
+      onMouseMove={onMove} onMouseLeave={() => setHi(-1)} onTouchStart={onMove} onTouchMove={onMove}>
+      {p && <line x1={p[0]} y1={pad} x2={p[0]} y2={h - pad - 12} stroke={AN_AXIS_INK} strokeWidth="1" strokeDasharray="3 3"/>}
+      <path d={line} fill="none" stroke={tone} strokeWidth={AN_STROKE} strokeLinejoin="round" strokeLinecap="round"/>
+      {pts.map((q, i) => <g key={i}>
+        <circle cx={q[0]} cy={q[1]} r={i === hi ? AN_MARK_R + 1 : AN_MARK_R} fill={tone} stroke="#fff" strokeWidth="2"/>
+        {(i % every === 0 || i === data.length - 1) &&
+          <text x={q[0]} y={h - 1} fontSize="9" fill={AN_AXIS_INK} textAnchor="middle">{xKey ? data[i][xKey] : i + 1}</text>}
+      </g>)}
+    </svg>
+    <AnTip tip={p ? { left: (p[0] / w * 100) + "%", top: p[1] - 10,
+      lines: [String(data[hi][yKey]), xKey ? String(data[hi][xKey]) : "point " + (hi + 1)] } : null}/>
+  </div>;
 }
 
 function AnDonut({ segments, unit }) {
+  const [hi, setHi] = React.useState(-1);
   const total = segments.reduce((s, x) => s + x.value, 0);
   if (!total) return <div className="an-empty">No data recorded.</div>;
   let acc = 0; const R = 54, C = 2 * Math.PI * R;
@@ -175,43 +259,92 @@ function AnDonut({ segments, unit }) {
     <svg width="130" height="130" viewBox="0 0 130 130" role="img" aria-label="Distribution">
       <g transform="rotate(-90 65 65)">
         {segments.map((s, i) => {
-          const frac = s.value / total, len = frac * C, off = acc * C; acc += frac;
+          const frac = s.value / total, off = acc * C; acc += frac;
+          /* A 2px gap of surface between fills. Without it two adjacent segments
+             of similar weight read as one arc, which is the whole failure mode a
+             donut already flirts with. Only taken from segments big enough to
+             afford it — a 1% sliver minus 2px is nothing at all. */
+          const raw = frac * C;
+          const len = Math.max(1, raw - (raw > 6 ? 2 : 0));
           return <circle key={i} cx="65" cy="65" r={R} fill="none" stroke={s.color || AN_SERIES[i % AN_SERIES.length]}
-            strokeWidth="18" strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-off}/>;
+            strokeWidth="18" strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-off}
+            opacity={hi < 0 || hi === i ? 1 : .35} style={{ transition: "opacity .12s" }}/>;
         })}
       </g>
       <text x="65" y="61" textAnchor="middle" fontSize="22" fontWeight="800" fill="#0a1130">{anFmt(total)}</text>
       <text x="65" y="78" textAnchor="middle" fontSize="9" fill="#8088a6" style={{ letterSpacing: ".1em" }}>{(unit || "TOTAL").toUpperCase()}</text>
     </svg>
     <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-      {segments.map((s, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-        <span style={{ width: 11, height: 11, borderRadius: 3, background: s.color || AN_SERIES[i % AN_SERIES.length] }}/>
-        <b>{s.label}</b><span style={{ color: "var(--ink-500)" }}>{anFmt(s.value)} · {Math.round(s.value / total * 100)}%</span>
-      </div>)}
+      {/* The legend IS the hit target. The arcs are 18px of stroke on a 130px
+          circle and a small segment is a sliver nobody can hover; a row of text
+          is a comfortable target and it carries the label, so identity never
+          rests on colour alone. */}
+      {segments.map((s, i) => (
+        <div key={i} onMouseEnter={() => setHi(i)} onMouseLeave={() => setHi(-1)}
+          style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "default",
+                   padding: "2px 6px", margin: "-2px -6px", borderRadius: 7,
+                   background: hi === i ? "var(--cream-100,#f3ecdb)" : "transparent" }}>
+          <span style={{ width: 11, height: 11, borderRadius: 3, flex: "none", background: s.color || AN_SERIES[i % AN_SERIES.length] }}/>
+          <b>{s.label}</b><span style={{ color: "var(--ink-500)" }}>{anFmt(s.value)} · {Math.round(s.value / total * 100)}%</span>
+        </div>
+      ))}
     </div>
   </div>;
 }
 
-function AnScatter({ points, corr }) {
+function AnScatter({ points, corr, centres }) {
   const h = 260, w = 420, pad = 34;
+  const [hi, setHi] = React.useState(-1);
   if (!points || !points.length) return <div className="an-empty">No graded students in this range yet.</div>;
   const cx = v => pad + (v / 100) * (w - pad * 2);
   const cy = v => h - pad - (v / 100) * (h - pad * 2);
-  const centreColor = {}; let ci = 0;
-  return <div>
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} role="img" aria-label="Attendance vs performance">
+  /* Colour follows the CENTRE, not the order its first point happens to appear
+     in. The old `ci++` assigned slots as it walked the list, so filtering out one
+     centre repainted every centre after it — the same site was blue on Monday and
+     orange on Tuesday, which makes the legend worse than no legend. Keyed off the
+     programme's full centre list where it is available, and off the sorted set of
+     centres present otherwise, so the mapping is stable either way. */
+  const order = (centres && centres.length ? centres.slice()
+    : Array.from(new Set(points.map(p => p.centre))).sort());
+  const colourOf = (name) => {
+    const i = order.indexOf(name);
+    return AN_SERIES[(i < 0 ? order.length : i) % AN_SERIES.length];
+  };
+  const present = order.filter(c => points.some(p => p.centre === c));
+  const hp = hi >= 0 ? points[hi] : null;
+  return <div style={{ position: "relative" }}>
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} role="img" aria-label="Attendance vs performance"
+      style={{ display: "block" }} onMouseLeave={() => setHi(-1)}>
       {[0, 25, 50, 75, 100].map(g => <g key={g}>
-        <line x1={pad} y1={cy(g)} x2={w - pad} y2={cy(g)} stroke="#eef0f4"/>
+        <line x1={pad} y1={cy(g)} x2={w - pad} y2={cy(g)} stroke={AN_GRID}/>
         <text x={pad - 6} y={cy(g) + 3} fontSize="9" fill="#b8bfd6" textAnchor="end">{g}</text>
         <text x={cx(g)} y={h - pad + 14} fontSize="9" fill="#b8bfd6" textAnchor="middle">{g}</text>
       </g>)}
-      {points.map((p, i) => {
-        if (!(p.centre in centreColor)) centreColor[p.centre] = AN_SERIES[ci++ % AN_SERIES.length];
-        return <circle key={i} cx={cx(p.x)} cy={cy(p.y)} r="5" fill={centreColor[p.centre]} fillOpacity="0.75" stroke="#fff"/>;
-      })}
+      {points.map((p, i) => (
+        /* A 2px surface ring, so two children on the same rate are two dots
+           rather than one blob — which is exactly the region a scatter like this
+           is crowded in. */
+        <circle key={i} cx={cx(p.x)} cy={cy(p.y)} r={i === hi ? AN_MARK_R + 2 : AN_MARK_R}
+          fill={colourOf(p.centre)} fillOpacity={hi < 0 || i === hi ? .85 : .35}
+          stroke="#fff" strokeWidth="2" style={{ cursor: "default" }}
+          onMouseEnter={() => setHi(i)}/>
+      ))}
       <text x={w / 2} y={h - 4} fontSize="10" fill="#5a6488" textAnchor="middle">Attendance rate →</text>
       <text x={12} y={h / 2} fontSize="10" fill="#5a6488" textAnchor="middle" transform={`rotate(-90 12 ${h / 2})`}>Avg grade →</text>
     </svg>
+    <AnTip tip={hp ? { left: (cx(hp.x) / w * 100) + "%", top: cy(hp.y) - 10,
+      lines: [hp.centre || "Unassigned", hp.x + "% attendance · grade " + hp.y] } : null}/>
+    {/* A legend, because two or more series must never be identified by colour
+        alone — and this chart had none at all. */}
+    {present.length > 1 && (
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 6 }}>
+        {present.map(c => (
+          <span key={c} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--ink-600)" }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: colourOf(c) }}/>{c}
+          </span>
+        ))}
+      </div>
+    )}
     {corr !== null && corr !== undefined && <p className="an-sub" style={{ marginTop: 8 }}>
       Pearson correlation <b style={{ color: corr >= 0.4 ? AN_TONE.good : corr <= -0.4 ? AN_TONE.bad : "var(--ink-700)" }}>r = {corr}</b>
       {" "}— {Math.abs(corr) >= 0.6 ? "strong" : Math.abs(corr) >= 0.3 ? "moderate" : "weak"} {corr >= 0 ? "positive" : "negative"} link between attendance and academic performance.
@@ -263,9 +396,9 @@ function AnFilterBar({ filters, opts, onChange, views, onSaveView, onApplyView, 
       <select value={filters.centre} onChange={e => set("centre", e.target.value)}>
         <option value="">All centres</option>{opts.centres.map(c => <option key={c} value={c}>{c}</option>)}
       </select></div>
-    <div className="an-field"><label>Department</label>
+    <div className="an-field"><label>Faculty</label>
       <select value={filters.department} onChange={e => set("department", e.target.value)}>
-        <option value="">All departments</option>{opts.departments.map(d => <option key={d} value={d}>{d}</option>)}
+        <option value="">All faculties</option>{opts.departments.map(d => <option key={d} value={d}>{d}</option>)}
       </select></div>
     <div className="an-field"><label>Category</label>
       <select value={filters.category} onChange={e => set("category", e.target.value)}>
@@ -354,7 +487,7 @@ function AnActivityDrawer({ opts, defaults, onClose, onSaved }) {
             <input type="date" value={form.date} onChange={e => set("date", e.target.value)}/></div>
           <div className="an-field" style={{ gap: 5 }}><label>Centre</label>
             <select value={form.centre} onChange={e => set("centre", e.target.value)}><option value="">— select —</option>{opts.centres.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-          <div className="an-field" style={{ gap: 5 }}><label>Department</label>
+          <div className="an-field" style={{ gap: 5 }}><label>Faculty</label>
             <select value={form.department} onChange={e => set("department", e.target.value)}><option value="">— none —</option>{opts.departments.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
           <div className="an-field" style={{ gap: 5 }}><label>Participants</label>
             <input type="number" min="0" value={form.participants} onChange={e => set("participants", e.target.value)} placeholder="0"/></div>
@@ -496,7 +629,7 @@ function AnalyticsWorkspace() {
       <div className="an-grid an-kpis">
         <AnKpi icon="🎓" value={anFmt(ex.totalStudents)} label="Total students" foot={`${anFmt(ex.presentToday)} present today`}/>
         <AnKpi icon="🏫" value={anFmt(ex.centres)} label="Centres running"/>
-        <AnKpi icon="🧩" value={anFmt(ex.departments)} label="Departments"/>
+        <AnKpi icon="🧩" value={anFmt(ex.departments)} label="Faculties"/>
         <AnKpi icon="📈" value={ex.attendanceRate + "%"} label="Attendance rate" trend={ex.weeklyGrowth}
           foot="vs last week" onClick={() => openDrill("present-today", "Present today")}/>
         <AnKpi icon="📝" value={anFmt(ex.assessments.total)} label="Assessments" foot={`${anFmt(ex.assessments.graded)} graded · ${anFmt(ex.assessments.pending)} pending`}
@@ -569,7 +702,7 @@ function AnalyticsWorkspace() {
         <div className="an-card">
           <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Teacher activity</h3>
           {op.teacherActivity.length === 0 ? <div className="an-empty">No mentor activity logged in range.</div>
-            : <table className="an-tbl"><thead><tr><th>Mentor</th><th>Dept</th><th>Stars</th><th>Ratings</th><th>Activities</th></tr></thead>
+            : <table className="an-tbl"><thead><tr><th>Mentor</th><th>Faculty</th><th>Stars</th><th>Ratings</th><th>Activities</th></tr></thead>
               <tbody>{op.teacherActivity.map((t, i) => <tr key={i}><td><b>{t.name}</b></td><td>{t.department || "—"}</td><td>{t.starsGiven}</td><td>{t.ratings}</td><td>{t.activities}</td></tr>)}</tbody></table>}
         </div>
         <div style={{ display: "grid", gap: 14 }}>
@@ -604,7 +737,7 @@ function AnalyticsWorkspace() {
         <div className="an-card">
           <h3 style={{ margin: "0 0 2px", fontSize: 15 }}>Attendance vs performance</h3>
           <p className="an-sub" style={{ margin: "0 0 6px" }}>Each dot is a student, coloured by centre.</p>
-          <AnScatter points={re.scatter} corr={re.correlation}/>
+          <AnScatter points={re.scatter} corr={re.correlation} centres={(ws.options && ws.options.centres) || []}/>
         </div>
         <div style={{ display: "grid", gap: 14 }}>
           <div className="an-card"><h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Gender analysis</h3>
@@ -1862,7 +1995,7 @@ async function exportPdf(ws) {
     doc.setTextColor(20); y += 26; doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text("Executive summary", 40, y);
     doc.setFont("helvetica", "normal"); doc.setFontSize(10); y += 16;
     const kv = [
-      ["Total students", ex.totalStudents], ["Centres", ex.centres], ["Departments", ex.departments],
+      ["Total students", ex.totalStudents], ["Centres", ex.centres], ["Faculties", ex.departments],
       ["Attendance rate", ex.attendanceRate + "%"], ["Weekly growth", (ex.weeklyGrowth > 0 ? "+" : "") + ex.weeklyGrowth + "%"],
       ["Assessments", `${ex.assessments.total} (${ex.assessments.graded} graded)`], ["Activities", ex.activities],
       ["Best centre", ex.bestCentre ? `${ex.bestCentre.name} (${ex.bestCentre.rate}%)` : "—"],
