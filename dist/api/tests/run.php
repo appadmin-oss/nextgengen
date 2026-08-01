@@ -2819,6 +2819,55 @@ chk('bootstrap loads every domain file, so a new one cannot pass tests and 404 l
     return $missing === [];
 })());
 
+/* ── The organisation, not only the summer programme ─────────────────────────
+ *
+ * Everything built so far served the summer cohort, and NGG exists the other
+ * eleven months of the year: a launch to announce, a centre opening, a donor
+ * report, certificates to award. A designer that can only make ID cards says the
+ * organisation is only a summer programme.
+ */
+chk('a poster is a design this system accepts, not an ID card with fields removed', (function () {
+    $t = ['name' => 'Centre opening', 'kind' => 'graphic', 'w' => 877, 'h' => 1240,
+          'wMm' => 210, 'hMm' => 297, 'safe' => 50, 'bleedMm' => 3,
+          'elements' => [
+              ['id' => 'band', 'type' => 'rect', 'x' => 0, 'y' => 0, 'w' => 877, 'h' => 400, 'role' => 'background',
+               'fill' => ['type' => 'linear', 'angle' => 90,
+                          'stops' => [['offset' => 0, 'color' => '#0C1432'], ['offset' => 1, 'color' => '#1B2B6B']]]],
+              ['id' => 'head', 'type' => 'text', 'x' => 50, 'y' => 300, 'w' => 777, 'h' => 140, 'text' => 'We are opening in Ikotun'],
+              ['id' => 'ink', 'type' => 'path', 'x' => 60, 'y' => 900, 'w' => 300, 'h' => 80, 'd' => 'M 0 0 L 100 40'],
+          ]];
+    $save = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => $t]);
+    if (empty($save['ok'])) return false;
+    $pub = backend_dispatch('admin.card.template.publish', ['requesterId' => 'NGG-2025-0099', 'templateId' => $save['templateId']]);
+    // No QR, no surname, no displayId — and that is correct for a poster.
+    return !empty($pub['ok'])
+        && count(array_filter($pub['problems'] ?? [], fn($x) => $x['level'] === 'error')) === 0;
+})());
+chk('…while a CARD without a QR is still refused, so the rules did not just get weaker', (function () {
+    $t = ['name' => 'Card no qr', 'kind' => 'student', 'w' => 590, 'h' => 972, 'wMm' => 54, 'hMm' => 89,
+          'elements' => [['id' => 'a', 'type' => 'text', 'x' => 50, 'y' => 50, 'w' => 400, 'h' => 40, 'text' => '{{surname}}']]];
+    $save = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => $t]);
+    $pub = backend_dispatch('admin.card.template.publish', ['requesterId' => 'NGG-2025-0099', 'templateId' => $save['templateId']]);
+    return ($pub['error'] ?? '') === 'preflight';
+})());
+chk('millimetres come from the design\'s own trim size, not from the width of a card', (function () {
+    /* The bug this replaced: every mm figure divided by 54/590 — the width of an
+       ID card — so the same 98-unit QR measured 9mm whether it sat on a card or
+       on an A4 sheet. On A4 it is 23mm and perfectly fine; the old rule would
+       have warned about it forever. */
+    $card = ['w' => 590, 'wMm' => 54];
+    $a4 = ['w' => 877, 'wMm' => 210];
+    return abs(ctpl_mm_per_unit($card) * 98 - 8.97) < 0.1
+        && abs(ctpl_mm_per_unit($a4) * 98 - 23.5) < 0.5;
+})());
+chk('a design bigger than anything printable is still refused', (function () {
+    $r = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => [
+        'name' => 'Absurd', 'kind' => 'graphic', 'w' => 900, 'h' => 900, 'wMm' => 40000, 'hMm' => 40000,
+        'elements' => [],
+    ]]);
+    return ($r['error'] ?? '') === 'invalid' && in_array('sizeMm', $r['fields'] ?? [], true);
+})());
+
 chk('designs are gated on people, not on summer', (function () {
     /* Deliberately a different capability from the roster: the staff who verify
        children and the staff who decide what a credential looks like are

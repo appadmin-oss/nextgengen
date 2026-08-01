@@ -43,7 +43,7 @@ const PAGE_META = {
   verify:     { title: "Confirm your child's registration · NGG",     desc: "" },
   reshoot:    { title: "A new photo · NGG",                           desc: "" },
   cards:      { title: "ID Card Studio · NGG",                        desc: "" },
-  designer:   { title: "ID Designer · NGG",                           desc: "" },
+  designer:   { title: "Design Studio · NGG",                         desc: "" },
   "journal-entry": { title: "From the programme journal · NGG",       desc: "" },
 };
 

@@ -297,6 +297,149 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     ok('…and a standard design is saved as a copy, not over the original',
       after.sent === 'sys-volunteer-front' && after.adopted === 'ctpl-test1');
 
+    /* ── 9. It is not only an ID card designer ──────────────────────────────
+       The whole product had been built around the summer programme; NGG has a
+       poster to make, a certificate to award and a status to post, and none of
+       those is a 54mm card with a QR on it. The credential rules must not apply
+       to them, and — the part that was actually broken — the millimetre maths
+       must come from the template's OWN trim size rather than from the width of
+       an ID card. */
+    const graphic = await page.evaluate(() => {
+      const a4 = window.TPL_PRESETS.find(p => p.id === 'poster-a4');
+      const t = window.dsnFromPreset(a4);
+      const problems = window.tplPreflight(t, [], window.TPL_REQUIRED[t.kind] || []);
+      const card = window.TPL_SYSTEM.find(x => x.id === 'sys-volunteer-front');
+      return {
+        kind: t.kind, wMm: t.wMm, hMm: t.hMm,
+        // A starting design, not a blank rectangle.
+        elements: t.elements.length,
+        headline: !!t.elements.find(e => e.id === 'headline'),
+        gradient: !!t.elements.find(e => e.fill && typeof e.fill === 'object'),
+        errors: problems.filter(p => p.level === 'error').length,
+        // 98 units is 9mm on a 54mm card and 23mm on a 210mm A4 sheet. One
+        // constant for both is the bug this replaced.
+        mmCard: window.tplMmPerUnit(card) * 98,
+        mmA4: window.tplMmPerUnit(t) * 98,
+        presets: window.TPL_PRESETS.length,
+        brand: window.TPL_BRAND.colors.length,
+      };
+    });
+    ok('a poster is a first-class design, not an ID card with the fields removed',
+      graphic.kind === 'graphic' && graphic.wMm === 210 && graphic.hMm === 297
+      && graphic.elements >= 6 && graphic.headline === true);
+    ok('…and the credential rules do not fire on it (no QR is not an error)',
+      graphic.errors === 0);
+    ok('…while millimetres come from the design\'s own size, not from a card\'s',
+      Math.abs(graphic.mmCard - 8.97) < 0.1 && Math.abs(graphic.mmA4 - 23.5) < 0.5);
+    ok('…with ' + graphic.presets + ' sizes and an NGG brand palette of ' + graphic.brand,
+      graphic.presets >= 10 && graphic.brand >= 6);
+    ok('…and a gradient survives the schema as data, not as a library object',
+      graphic.gradient === true);
+
+    /* ── 10. The editor behaves like an editor ──────────────────────────────
+       Undo, duplicate, align and free-hand strokes all have to round-trip
+       through the template, because the template is what gets saved. A feature
+       that only exists on the canvas is a feature that disappears on reload. */
+    const editing = await page.evaluate(() => {
+      const t = window.dsnFromPreset(window.TPL_PRESETS.find(p => p.id === 'social-sq'));
+      // Alignment is pure maths on the document, so it can be checked directly.
+      const el = t.elements.find(e => e.id === 'headline');
+      const centred = Math.round((t.w - el.w) / 2);
+      return { w: t.w, elW: el.w, centred, kind: t.kind };
+    });
+    ok('a social square is square and its content is centrable',
+      editing.w === 1080 && editing.centred >= 0);
+
+    // Free-hand strokes become path ELEMENTS, not a baked bitmap.
+    const drew = await page.evaluate(async () => {
+      const t = window.dsnFromPreset(window.TPL_PRESETS.find(p => p.id === 'social-sq'));
+      t.elements.push({ id: 'ink', type: 'path', d: 'M 0 0 L 100 100 L 200 0', x: 100, y: 100, w: 200, h: 100,
+                        stroke: '#E4155F', strokeWidth: 6, fill: 'none' });
+      const c = new window.fabric.StaticCanvas(document.createElement('canvas'));
+      await window.tplToFabric(window.tplResolve(t, {}), window.fabric, c, { scale: 0.4 });
+      const p = c.getObjects().find(o => o.nggId === 'ink');
+      const out = { drawn: !!p, type: p && p.type, stroke: p && p.stroke };
+      c.dispose();
+      return out;
+    });
+    ok('a free-hand stroke is a path element the renderer draws, not a bitmap',
+      drew.drawn === true && drew.type === 'path' && drew.stroke === '#E4155F');
+
+    // Locked and hidden are honoured by the renderer, not just by the UI.
+    const state = await page.evaluate(async () => {
+      const t = window.dsnFromPreset(window.TPL_PRESETS.find(p => p.id === 'poster-a4'));
+      t.elements.find(e => e.id === 'headline').hidden = true;
+      t.elements.find(e => e.id === 'body').locked = true;
+      const c = new window.fabric.Canvas(document.createElement('canvas'));
+      await window.tplToFabric(window.tplResolve(t, {}), window.fabric, c, { scale: 0.3, selectable: true });
+      const ids = c.getObjects().map(o => o.nggId);
+      const body = c.getObjects().find(o => o.nggId === 'body');
+      const out = { hiddenGone: ids.indexOf('headline') === -1, lockedPresent: !!body, lockedFrozen: body && !body.selectable };
+      c.dispose();
+      return out;
+    });
+    ok('hidden means not drawn, and locked means drawn but not draggable',
+      state.hiddenGone && state.lockedPresent && state.lockedFrozen);
+
+    /* A PDF at the design's real trim size. The card studio's export is a batch
+       imposition; this is one sheet a printer can use, and its page has to BE
+       210×297mm rather than "some pixels". */
+    const pdf = await page.evaluate(async () => {
+      await window.loadVendor('jspdf');
+      const t = window.dsnFromPreset(window.TPL_PRESETS.find(p => p.id === 'poster-a4'));
+      const raster = await window.dsnRaster(t, {}, window.fabric, 150);
+      const doc = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: [t.wMm, t.hMm] });
+      doc.addImage(raster.url, 'PNG', 0, 0, t.wMm, t.hMm, undefined, 'FAST');
+      const size = doc.internal.pageSize;
+      return { w: Math.round(size.getWidth()), h: Math.round(size.getHeight()),
+               px: raster.w, bytes: doc.output('blob').size };
+    });
+    ok('a poster exports as a real A4 page (' + pdf.w + ' × ' + pdf.h + 'mm), not as pixels',
+      pdf.w === 210 && pdf.h === 297 && pdf.bytes > 1000);
+    ok('…rastered at the DPI asked for (' + pdf.px + 'px across at 150 DPI)',
+      Math.abs(pdf.px - 210 / 25.4 * 150) < 3);
+
+    /* ── 11. Two redraws must not race ──────────────────────────────────────
+       Images resolve asynchronously, so a redraw started a frame after another
+       can clear the canvas while the first one's objects are still in flight.
+       The card never showed it — its photo is empty, so both passes are
+       synchronous — and a poster with a logo on it came out completely blank.
+       Drive two redraws back to back and check the canvas is not empty. */
+    await page.selectOption('select[aria-label="Open a design"]', '__preset-poster-a4');
+    await page.waitForTimeout(1600);
+    const raced = await page.evaluate(async () => {
+      // Two overlapping renders into one canvas, the later one winning.
+      const t = window.dsnFromPreset(window.TPL_PRESETS.find(p => p.id === 'poster-a4'));
+      const c = new window.fabric.StaticCanvas(document.createElement('canvas'));
+      let token = 0;
+      const draw = () => {
+        const mine = ++token;
+        c.clear();
+        return window.tplToFabric(window.tplResolve(t, {}), window.fabric, c,
+          { scale: 0.4, shouldPaint: () => token === mine });
+      };
+      const a = draw();
+      const b = draw();
+      await Promise.all([a, b]);
+      return { objects: c.getObjects().length, expected: t.elements.length };
+    });
+    /* EXACTLY the element count, not "at least". Without the guard both renders
+       paint into the same canvas and you get every object twice — which still
+       looks like a poster, and is why ">= 6" would have passed a broken build. */
+    ok('two overlapping redraws paint the design once, not twice (' + raced.objects + ' objects)',
+      raced.objects === raced.expected);
+    const painted = await page.evaluate(() => {
+      /* And the on-screen canvas actually has ink on it: sample the middle of the
+         top band, which the poster paints navy. A blank canvas reads white. */
+      const cv = document.querySelector('.dsn-canvas-host canvas');
+      if (!cv) return null;
+      const ctx = cv.getContext('2d');
+      const d = ctx.getImageData(Math.round(cv.width / 2), Math.round(cv.height * 0.12), 1, 1).data;
+      return { r: d[0], g: d[1], b: d[2] };
+    });
+    ok('…and the poster on screen is not a blank sheet (rgb ' + (painted ? [painted.r, painted.g, painted.b].join(',') : '?') + ')',
+      !!painted && painted.r < 120 && painted.b > painted.r);
+
     ok('no uncaught page errors across the whole session', errs.length === 0);
     if (errs.length) console.error('       ', errs.slice(0, 4).join(' | '));
     await page.close();

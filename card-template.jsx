@@ -78,10 +78,16 @@ function tplResolve(template, row) {
   const out = {
     id: t.id || "", name: t.name || "", kind: t.kind || "student",
     w: Number(t.w) || 590, h: Number(t.h) || 972,
+    /* How big it is in the real world. This used to be assumed — every mm
+       calculation divided by 54/590, the width of an ID card — which is fine
+       while the only thing this renders is an ID card and wrong the moment it
+       renders an A4 poster, where the same 98 units is 15mm rather than 9. */
+    wMm: Number(t.wMm) || 54, hMm: Number(t.hMm) || 0,
     bleedMm: Number(t.bleedMm) || 0, safe: Number(t.safe) || 30,
     background: tplBindValue(t.background || "#ffffff", row),
     elements: [],
   };
+  if (!out.hMm) out.hMm = Math.round(out.wMm * out.h / out.w * 10) / 10;
   (t.elements || []).forEach((el, i) => {
     const e = {};
     Object.keys(el).forEach(k => { e[k] = tplBindValue(el[k], row); });
@@ -130,7 +136,35 @@ function tplToFabric(resolved, fabric, canvas, opts) {
   canvas.setDimensions({ width: px(resolved.w), height: px(resolved.h) });
   canvas.backgroundColor = resolved.background || "#ffffff";
 
-  const jobs = resolved.elements.map(el => {
+  /* ── Paint ────────────────────────────────────────────────────────────────
+     A fill is a colour string, or a gradient object. Kept as data in the schema
+     rather than as a Fabric instance, so a design is still a plain JSON document
+     that a PHP validator can read and a future renderer can honour. */
+  const paint = (v, el) => {
+    if (!v || typeof v === "string") return v || null;
+    if (v.type === "linear" || v.type === "radial") {
+      const stops = (v.stops || []).map(st => ({ offset: Number(st.offset) || 0, color: st.color || "#000" }));
+      const w = px(el.w) || 1, h = px(el.h) || 1;
+      // Angle in degrees, 0 = left→right, measured clockwise like every design tool.
+      const a = ((Number(v.angle) || 0) % 360) * Math.PI / 180;
+      const co = v.type === "radial"
+        ? { r1: 0, r2: Math.max(w, h) / 2, x1: w / 2, y1: h / 2, x2: w / 2, y2: h / 2 }
+        : { x1: w / 2 - Math.cos(a) * w / 2, y1: h / 2 - Math.sin(a) * h / 2,
+            x2: w / 2 + Math.cos(a) * w / 2, y2: h / 2 + Math.sin(a) * h / 2 };
+      return new fabric.Gradient({ type: v.type === "radial" ? "radial" : "linear", coords: co, colorStops: stops });
+    }
+    return null;
+  };
+  const shade = (el) => {
+    const sh = el.shadow;
+    if (!sh) return null;
+    return new fabric.Shadow({
+      color: sh.color || "rgba(0,0,0,.28)",
+      blur: px(Number(sh.blur) || 0), offsetX: px(Number(sh.x) || 0), offsetY: px(Number(sh.y) || 0),
+    });
+  };
+
+  const jobs = resolved.elements.filter(el => !el.hidden).map(el => {
     const common = {
       /* Fabric 7 defaults originX/originY to "center", where 5 and 6 defaulted to
          "left"/"top". Left implicit, every element renders offset by half its own
@@ -140,14 +174,19 @@ function tplToFabric(resolved, fabric, canvas, opts) {
       originX: "left", originY: "top",
       left: px(el.x), top: px(el.y), angle: Number(el.rotation) || 0,
       opacity: el.opacity == null ? 1 : Number(el.opacity),
-      selectable, evented: selectable, hasControls: selectable,
+      shadow: shade(el),
+      // A locked layer still draws and still exports; it just cannot be nudged
+      // by a stray drag, which is what "lock" means to anyone who has used a
+      // design tool.
+      selectable: selectable && !el.locked, evented: selectable && !el.locked,
+      hasControls: selectable && !el.locked,
       // Carried through so the designer can map a canvas object back to the
       // element it came from without keeping a parallel index.
       nggId: el.id, nggType: el.type, nggBind: el.bind || "",
     };
     if (el.type === "rect" || el.type === "shape") {
       return new fabric.Rect(Object.assign({}, common, {
-        width: px(el.w), height: px(el.h), fill: el.fill || "#000000",
+        width: px(el.w), height: px(el.h), fill: paint(el.fill, el) || "#000000",
         rx: px(el.radius || 0), ry: px(el.radius || 0),
         stroke: el.stroke || null, strokeWidth: px(el.strokeWidth || 0),
       }));
@@ -156,7 +195,7 @@ function tplToFabric(resolved, fabric, canvas, opts) {
       return new fabric.Ellipse(Object.assign({}, common, {
         // rx/ry are radii, so a bounding box of w×h in the schema is w/2, h/2 here.
         rx: px((Number(el.w) || 0) / 2), ry: px((Number(el.h) || 0) / 2),
-        fill: el.fill || "#000000", stroke: el.stroke || null, strokeWidth: px(el.strokeWidth || 0),
+        fill: paint(el.fill, el) || "#000000", stroke: el.stroke || null, strokeWidth: px(el.strokeWidth || 0),
       }));
     }
     if (el.type === "line") {
@@ -170,7 +209,7 @@ function tplToFabric(resolved, fabric, canvas, opts) {
         fontFamily: el.font || "Inter",
         fontSize: px(size),
         fontWeight: el.weight || 400,
-        fill: el.color || "#101010",
+        fill: paint(el.color, el) || "#101010",
         textAlign: el.align || "left",
         charSpacing: (Number(el.letterSpacing) || 0) / (size || 1) * 1000, // fabric uses 1/1000 em
         lineHeight: Number(el.lineHeight) || 1.1,
@@ -182,6 +221,22 @@ function tplToFabric(resolved, fabric, canvas, opts) {
          this a fitted line that shrank would drift up the card. */
       if (el.vAlign === "middle" && el.h) t.set({ top: px(el.y) + (px(el.h) - t.height) / 2 });
       return t;
+    }
+    if (el.type === "path") {
+      /* What the pencil leaves behind. Stored as SVG path data in the element's
+         own coordinate space, so it scales with the card like everything else
+         instead of being baked into a bitmap at whatever zoom it was drawn at. */
+      const p = new fabric.Path(String(el.d || ""), Object.assign({}, common, {
+        fill: el.fill && el.fill !== "none" ? paint(el.fill, el) : null,
+        stroke: el.stroke || "#101010", strokeWidth: px(el.strokeWidth || 2),
+        strokeLineCap: "round", strokeLineJoin: "round",
+      }));
+      // The path's own bounds are wherever it was drawn; x/y in the schema say
+      // where it belongs.
+      p.set({ left: px(el.x), top: px(el.y) });
+      if (el.w && p.width) p.set({ scaleX: px(el.w) / p.width });
+      if (el.h && p.height) p.set({ scaleY: px(el.h) / p.height });
+      return p;
     }
     if (el.type === "image" || el.type === "qr") {
       const url = el.type === "qr"
@@ -226,6 +281,16 @@ function tplToFabric(resolved, fabric, canvas, opts) {
   });
 
   return Promise.all(jobs).then(objs => {
+    /* Only paint if this render is still the current one.
+     *
+     * Images resolve asynchronously, so two redraws started a frame apart can
+     * finish out of order: the second one clears the canvas, then the FIRST
+     * one's objects arrive and are added to a canvas that is about to be cleared
+     * again — or worse, the second clears after the first has painted and the
+     * card is simply blank. It only shows up on designs that load an image,
+     * which is why the ID card looked fine and a poster with a logo on it came
+     * out white. The caller owns the token; without one, always paint. */
+    if (o.shouldPaint && !o.shouldPaint()) return canvas;
     objs.filter(Boolean).forEach(ob => canvas.add(ob));
     canvas.renderAll();
     return canvas;
@@ -259,7 +324,11 @@ function tplToFabric(resolved, fabric, canvas, opts) {
  */
 const TPL_QR_GOOD_MODULE_MM = 0.40;
 const TPL_QR_MIN_MODULE_MM = 0.30;
-const TPL_MM_PER_UNIT = 54 / 590;  // the 590-unit grid on a 54mm-wide card
+/** Millimetres per design unit, from the template's own trim size. */
+function tplMmPerUnit(t) {
+  const w = Number((t && t.w) || 590) || 590;
+  return (Number((t && t.wMm) || 54) || 54) / w;
+}
 
 /** How many modules across a QR of this payload needs. Asks the real encoder
  *  when it is on the page; falls back to version 3 (29 modules), which is what
@@ -304,11 +373,13 @@ function tplPreflight(template, rows, requiredFields) {
   });
 
   const qr = els.filter(e => e.type === "qr");
-  if (!qr.length) add("error", "No QR — the card cannot be scanned at a gate");
+  // Only a credential needs one. A poster with a QR is welcome to have one and
+  // it is still checked for size; a poster without one is simply a poster.
+  if (!qr.length && t.kind !== "graphic") add("error", "No QR — the card cannot be scanned at a gate");
   if (qr.length > 1) add("error", "Two QR codes — a scanner reads whichever it sees first");
   const origin = (typeof window !== "undefined" && window.location) ? window.location.origin : "";
   qr.forEach(q => {
-    const mm = Math.min(Number(q.w) || 0, Number(q.h) || 0) * TPL_MM_PER_UNIT;
+    const mm = Math.min(Number(q.w) || 0, Number(q.h) || 0) * tplMmPerUnit(t);
     // The longest token in the batch, because that is the one that decides the
     // version — proofing on the shortest would pass a code the longest cannot use.
     const longest = (rows || []).reduce((a, r) => {
@@ -416,15 +487,79 @@ const TPL_SYSTEM = [
   },
 ];
 
+/* ── What NGG actually needs to make ─────────────────────────────────────────
+ *
+ * This tool started as an ID card designer, which is the same mistake the rest
+ * of the product has been making: everything built so far serves the SUMMER
+ * PROGRAMME, and Next Generation Genius is an organisation that exists the other
+ * eleven months of the year. It has a launch to announce, a centre opening, a
+ * donor report, volunteers to recruit, certificates to award and a WhatsApp
+ * status to post — none of which is a 54mm card with a QR on it.
+ *
+ * So the designer takes a size, and an ID card is one of the sizes. Every preset
+ * carries its REAL dimensions in millimetres, because that is what decides
+ * export resolution, what "0.4mm per QR square" means, and whether 12pt type is
+ * readable — all of which were previously hard-coded to the width of an ID card.
+ */
+const TPL_PRESETS = [
+  { id: "id-card",     group: "Credentials", name: "ID card (54 × 75mm)", kind: "student",   w: 590, h: 819,  wMm: 54,  hMm: 75,  safe: 30, bleedMm: 3 },
+  { id: "id-card-tall",group: "Credentials", name: "ID card (54 × 89mm)", kind: "student",   w: 590, h: 972,  wMm: 54,  hMm: 89,  safe: 30, bleedMm: 3 },
+  { id: "certificate", group: "Print",       name: "Certificate (A4 landscape)", kind: "graphic", w: 1240, h: 877, wMm: 297, hMm: 210, safe: 60, bleedMm: 3 },
+  { id: "poster-a4",   group: "Print",       name: "Poster (A4 portrait)", kind: "graphic",  w: 877, h: 1240, wMm: 210, hMm: 297, safe: 50, bleedMm: 3 },
+  { id: "poster-a3",   group: "Print",       name: "Poster (A3 portrait)", kind: "graphic",  w: 877, h: 1240, wMm: 297, hMm: 420, safe: 60, bleedMm: 3 },
+  { id: "flyer-a5",    group: "Print",       name: "Flyer (A5 portrait)", kind: "graphic",   w: 620, h: 877,  wMm: 148, hMm: 210, safe: 40, bleedMm: 3 },
+  { id: "banner",      group: "Print",       name: "Roll-up banner (850 × 2000mm)", kind: "graphic", w: 850, h: 2000, wMm: 850, hMm: 2000, safe: 60, bleedMm: 10 },
+  { id: "social-sq",   group: "Social",      name: "Social square (1080 × 1080)", kind: "graphic", w: 1080, h: 1080, wMm: 274, hMm: 274, safe: 60, bleedMm: 0 },
+  { id: "social-story",group: "Social",      name: "Story / status (1080 × 1920)", kind: "graphic", w: 1080, h: 1920, wMm: 274, hMm: 488, safe: 90, bleedMm: 0 },
+  { id: "social-wide", group: "Social",      name: "Wide post (1200 × 630)", kind: "graphic", w: 1200, h: 630, wMm: 305, hMm: 160, safe: 50, bleedMm: 0 },
+  { id: "letterhead",  group: "Documents",   name: "Letterhead (A4)", kind: "graphic",       w: 877, h: 1240, wMm: 210, hMm: 297, safe: 60, bleedMm: 0 },
+];
+
+/* NGG's own colours and marks, so anything made here is on-brand without
+   anybody having to remember a hex. Taken from the values the product already
+   ships — the same navy and crimson the cards and the site use. */
+const TPL_BRAND = {
+  colors: [
+    { name: "NGG navy", hex: "#1B2B6B" },
+    { name: "Deep navy", hex: "#0C1432" },
+    { name: "NGG crimson", hex: "#E4155F" },
+    { name: "Gold", hex: "#F5B026" },
+    { name: "Leaf", hex: "#76B043" },
+    { name: "Sky", hex: "#3B5BDB" },
+    { name: "Ink", hex: "#101010" },
+    { name: "Paper", hex: "#FFFFFF" },
+  ],
+  logos: [
+    { name: "NGG lockup", url: "/assets/idcard/logo-lockup.png" },
+    { name: "Street-To-Stardom", url: "/assets/idcard/logo-sts.svg" },
+    { name: "NGG mark", url: "/assets/logo.png" },
+  ],
+};
+
+/* One curated, self-hosted list. Not a 3,000-font picker: a print run in a font
+   nobody has licensed is a legal problem, not a feature, and these are the faces
+   the rest of the product already loads. */
+const TPL_FONTS = [
+  { name: "Inter", stack: '"Inter", system-ui, sans-serif' },
+  { name: "Sora", stack: '"Sora", "Inter", sans-serif' },
+  { name: "Georgia", stack: 'Georgia, "Times New Roman", serif' },
+  { name: "Monospace", stack: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
+];
+
 /** Required fields per card kind — what preflight refuses to publish without.
  *  A card with no name or no QR is not a card, it is a coloured rectangle. */
 const TPL_REQUIRED = {
   student: ["surname", "token", "displayId"],
   volunteer: ["surname", "token", "displayId", "role"],
+  /* A poster has no child to identify, so none of the credential rules apply to
+     it. Running them anyway would mean every poster refused to publish for want
+     of a QR — which is how a tool teaches people to bypass its own checks. */
+  graphic: [],
 };
 
 Object.assign(window, {
-  TPL_FIELDS, TPL_SYSTEM, TPL_REQUIRED, TPL_MM_PER_UNIT, tplQrModules,
+  TPL_FIELDS, TPL_SYSTEM, TPL_REQUIRED, TPL_PRESETS, TPL_BRAND, TPL_FONTS,
+  tplMmPerUnit, tplQrModules,
   TPL_QR_GOOD_MODULE_MM, TPL_QR_MIN_MODULE_MM,
   tplBindValue, tplResolve, tplFitSize, tplToFabric, tplPreflight,
 });

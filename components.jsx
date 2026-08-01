@@ -138,6 +138,9 @@ const VENDOR_LIBS = {
     global: "tui",
     isolates: ["fabric"],
   },
+  // Already vendored for the card studio's batch PDF; the designer wants it too,
+  // for a single sheet at its real trim size with crop marks.
+  jspdf: { js: ["/vendor/jspdf.umd.min.js"], global: "jspdf" },
 };
 const _vendorLoads = {};
 function loadVendorAsset(url, kind) {

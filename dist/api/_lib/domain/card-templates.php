@@ -32,8 +32,11 @@ declare(strict_types=1);
  *  client cannot fill a shared host's disk one autosave at a time. */
 const CTPL_MAX_BYTES = 512 * 1024;
 const CTPL_MAX_ELEMENTS = 200;
-const CTPL_KINDS = ['student', 'volunteer'];
-const CTPL_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'text', 'image', 'qr'];
+/* 'graphic' is everything that is not a credential — a poster, a certificate, a
+   social post, a letterhead. It exists because this organisation is not only a
+   summer programme, and a design tool that can only make ID cards says it is. */
+const CTPL_KINDS = ['student', 'volunteer', 'graphic'];
+const CTPL_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'text', 'image', 'qr', 'path', 'group'];
 
 /** Which capability may change what a credential looks like.
  *
@@ -58,7 +61,13 @@ function ctpl_validate(array $t): array {
     if ($name === '' || mb_strlen($name) > 120) $errors[] = 'name';
     if (!in_array((string)($t['kind'] ?? ''), CTPL_KINDS, true)) $errors[] = 'kind';
     $w = (int)($t['w'] ?? 0); $h = (int)($t['h'] ?? 0);
-    if ($w < 100 || $w > 4000 || $h < 100 || $h > 4000) $errors[] = 'size';
+    if ($w < 100 || $w > 8000 || $h < 100 || $h > 8000) $errors[] = 'size';
+    /* The real-world size, which decides export resolution and every millimetre
+       check. Bounded generously — a roll-up banner is 2 metres tall — but not
+       unbounded: a template claiming 40 metres would ask the browser to render a
+       raster nothing can hold. */
+    $wMm = (float)($t['wMm'] ?? 54); $hMm = (float)($t['hMm'] ?? 0);
+    if ($wMm < 10 || $wMm > 3000 || $hMm < 0 || $hMm > 3000) $errors[] = 'sizeMm';
 
     $els = $t['elements'] ?? null;
     if (!is_array($els)) { $errors[] = 'elements'; $els = []; }
@@ -235,7 +244,13 @@ function admin_card_template_delete(array $p): array {
  * more, smaller squares in the same space. Mirrors card-template.jsx. */
 const CTPL_QR_GOOD_MODULE_MM = 0.40;
 const CTPL_QR_MIN_MODULE_MM = 0.30;
-const CTPL_MM_PER_UNIT = 54 / 590;
+/** Millimetres per design unit, from the template's OWN trim size — not from the
+ *  width of an ID card, which is what this assumed while an ID card was the only
+ *  thing it could make. The same 98 units is 9mm on a card and 15mm on A4. */
+function ctpl_mm_per_unit(array $t): float {
+    $w = (float)($t['w'] ?? 590) ?: 590.0;
+    return ((float)($t['wMm'] ?? 54) ?: 54.0) / $w;
+}
 
 function ctpl_preflight(array $t): array {
     $problems = [];
@@ -254,9 +269,10 @@ function ctpl_preflight(array $t): array {
             }
         }
     }
-    $required = ((string)($t['kind'] ?? 'student')) === 'volunteer'
-        ? ['surname', 'token', 'displayId', 'role']
-        : ['surname', 'token', 'displayId'];
+    $kind = (string)($t['kind'] ?? 'student');
+    $required = $kind === 'graphic' ? []
+        : ($kind === 'volunteer' ? ['surname', 'token', 'displayId', 'role']
+                                 : ['surname', 'token', 'displayId']);
     foreach ($required as $f) {
         // `role` is satisfied by either field that prints it.
         if ($f === 'role' && (isset($bound['role']) || isset($bound['roleFaculty']))) continue;
@@ -264,7 +280,10 @@ function ctpl_preflight(array $t): array {
     }
 
     $qr = array_values(array_filter($els, fn($e) => ($e['type'] ?? '') === 'qr'));
-    if (!$qr) $add('error', 'No QR — the card cannot be scanned at a gate');
+    // A poster is not a credential. Running the credential rules on one would
+    // refuse every poster for want of a QR, which teaches people to route around
+    // the checks that matter.
+    if (!$qr && $kind !== 'graphic') $add('error', 'No QR — the card cannot be scanned at a gate');
     if (count($qr) > 1) $add('error', 'Two QR codes — a scanner reads whichever it sees first');
     /* Ask our own encoder how many modules a real payload needs, rather than
        assuming a version — it is the same function that produces the printed
@@ -276,7 +295,7 @@ function ctpl_preflight(array $t): array {
         if ($v > 0) $modules = 17 + 4 * $v;
     }
     foreach ($qr as $q) {
-        $mm = min((float)($q['w'] ?? 0), (float)($q['h'] ?? 0)) * CTPL_MM_PER_UNIT;
+        $mm = min((float)($q['w'] ?? 0), (float)($q['h'] ?? 0)) * ctpl_mm_per_unit($t);
         $per = $modules > 0 ? $mm / $modules : 0.0;
         if ($per < CTPL_QR_MIN_MODULE_MM) {
             $add('error', 'The QR is ' . number_format($mm, 1) . 'mm, which is ' . number_format($per, 2)
