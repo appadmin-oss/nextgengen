@@ -144,12 +144,122 @@ function ops_health(): array {
         if ($n > 0) $checks['photosOnRecord'] = ['ok' => $blank === 0, 'checked' => $n, 'missing' => $blank];
     } catch (Throwable $e) { /* not worth a failed health check */ }
 
+    /* Is the media cloud actually connected?
+     *
+     * Nothing checked this, and the client is built to survive it being gone:
+     * uploadOrInline() catches every upload failure and quietly stores the image
+     * in the database instead. That is the right behaviour — a family must be
+     * able to register at 9pm whatever Cloudinary is doing — but it means a
+     * disconnected cloud looks exactly like a working one from every screen in
+     * the product. It was reported as "uploads do not save to Cloudinary
+     * anymore", which is the only way anybody could have noticed.
+     *
+     * So this asks Cloudinary, with the configured credentials, rather than
+     * checking that three strings are non-empty. The distinction matters: wrong
+     * keys and no keys are different problems with different fixes, and until
+     * now both presented as silence. */
+    $checks['cloudinary'] = ops_cloudinary_health();
+
+    /* …and whether the fallback is actually firing. The check above can pass at
+     * this instant while every upload for a fortnight went to the database —
+     * a credit ceiling that has since reset, a key rotated back. Counted from
+     * what was STORED, which cannot be argued with. */
+    try {
+        $r = db_row("SELECT COUNT(*) n, SUM(CASE WHEN photoUrl LIKE 'data:%' OR photoUrl LIKE '/api/public/photo%' THEN 1 ELSE 0 END) local
+                     FROM (SELECT photoUrl FROM summer_students WHERE photoUrl != '' ORDER BY id DESC LIMIT 50) t");
+        $n = (int)($r['n'] ?? 0); $local = (int)($r['local'] ?? 0);
+        if ($n > 0) {
+            $checks['photoStorage'] = [
+                // Not an error when there is no cloud configured — that is a
+                // supported way to run this, and saying "fail" would train
+                // people to ignore the panel.
+                'ok' => $local === 0 || empty($checks['cloudinary']['configured']),
+                'checked' => $n, 'local' => $local,
+                'note' => $local > 0 && !empty($checks['cloudinary']['configured'])
+                    ? $local . ' of the last ' . $n . ' photographs were kept on this server, not in the cloud'
+                    : '',
+            ];
+        }
+    } catch (Throwable $e) { /* not worth a failed health check */ }
+
     $ok = true;
     foreach ($checks as $c) if (empty($c['ok'])) $ok = false;
     // The cron being quiet is worth showing and not worth paging about at 3am;
     // a read-only database or a schema behind the code is neither.
     $serving = !empty($checks['db']['ok']) && !empty($checks['schema']['ok']);
     return ['ok' => $ok, 'serving' => $serving, 'schema' => $schema, 'checks' => $checks, 'cron' => $cron];
+}
+
+/**
+ * Ask Cloudinary whether it will actually accept our credentials.
+ *
+ * Four distinguishable states, because they have four different fixes and until
+ * now they all looked the same from the outside:
+ *
+ *   not_configured  no keys on this host — a supported way to run, photos are
+ *                   kept locally on purpose. Reported ok.
+ *   unreachable     the network or the proxy, not us.
+ *   bad_credentials Cloudinary answered 401 — the keys are wrong or rotated.
+ *                   This is the state that reads as "it just stopped working".
+ *   exhausted       the credit ceiling. Uploads fail; nothing is misconfigured.
+ *   ok              connected, with the usage figure so the next exhaustion is
+ *                   visible before it happens rather than after.
+ *
+ * Cached for five minutes: this runs on every diagnostics load and on the health
+ * probe, and an outbound HTTP call on a shared host is not free.
+ */
+function ops_cloudinary_health(): array {
+    $cfg = $GLOBALS['CONFIG']['cloudinary'] ?? [];
+    $configured = !empty($cfg['cloud_name']) && !empty($cfg['api_key']) && !empty($cfg['api_secret']);
+    if (!$configured) {
+        return ['ok' => true, 'configured' => false, 'state' => 'not_configured',
+                'detail' => 'No Cloudinary keys on this host — photographs are stored locally.'];
+    }
+    $cached = cache_get('ops.cloudinary', 300);
+    if (is_array($cached)) return $cached;
+
+    $out = ['ok' => false, 'configured' => true, 'state' => 'unknown', 'cloud' => (string)$cfg['cloud_name']];
+    // Test seam, so the states above can be exercised without a network.
+    if (isset($GLOBALS['__cloudinary_ping_mock']) && is_callable($GLOBALS['__cloudinary_ping_mock'])) {
+        $res = ($GLOBALS['__cloudinary_ping_mock'])();
+    } elseif (function_exists('curl_init')) {
+        $ch = curl_init('https://api.cloudinary.com/v1_1/' . $cfg['cloud_name'] . '/usage');
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8,
+                                CURLOPT_USERPWD => $cfg['api_key'] . ':' . $cfg['api_secret']]);
+        $body = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+        $res = ['code' => $code, 'body' => is_string($body) ? $body : '', 'error' => $err];
+    } else {
+        $res = ['code' => 0, 'body' => '', 'error' => 'curl unavailable'];
+    }
+
+    $code = (int)($res['code'] ?? 0);
+    if ($code === 401 || $code === 403) {
+        $out['state'] = 'bad_credentials';
+        $out['detail'] = 'Cloudinary refused these keys (HTTP ' . $code . '). Uploads are silently falling back to local storage.';
+    } elseif ($code === 420 || $code === 429) {
+        $out['state'] = 'exhausted';
+        $out['detail'] = 'Cloudinary is rate-limiting or the plan is exhausted (HTTP ' . $code . ').';
+    } elseif ($code >= 200 && $code < 300) {
+        $d = json_decode((string)($res['body'] ?? ''), true);
+        $pct = null;
+        if (is_array($d)) {
+            foreach (['credits', 'storage', 'bandwidth'] as $k) {
+                if (isset($d[$k]['used_percent'])) { $pct = (float)$d[$k]['used_percent']; break; }
+            }
+        }
+        $out['ok'] = true;
+        $out['state'] = 'ok';
+        $out['usedPercent'] = $pct;
+        $out['detail'] = $pct === null ? 'Connected.' : 'Connected — ' . round($pct) . '% of the plan used.';
+    } else {
+        $out['state'] = 'unreachable';
+        $out['detail'] = 'Could not reach Cloudinary' . ($res['error'] ? ': ' . substr((string)$res['error'], 0, 120) : ' (HTTP ' . $code . ').');
+    }
+    cache_put('ops.cloudinary', $out);
+    return $out;
 }
 
 /** The public probe payload — enough for a monitor, nothing about the people

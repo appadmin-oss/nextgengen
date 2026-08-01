@@ -70,6 +70,17 @@ function csrf_require(): void {
     // Cloudinary signature for the fixed `headshot` folder and is IP
     // rate-limited, so it carries no privilege to protect against CSRF.
     if (preg_match('#/api/public/upload-headshot-sign\\.php$#', $path)) return;
+    /* Telemetry beacon: "a configured media cloud refused an upload, so the
+     * image was kept locally". Exempt for the same reason as the signer above —
+     * it is fired from the anonymous intake surfaces — and for one of its own:
+     * navigator.sendBeacon cannot set a header, so an X-NGG-CSRF check makes the
+     * report undeliverable from exactly the pages that most need to send it.
+     *
+     * There is no privilege to ride. It writes one clamped ops_events row about
+     * a failure that has ALREADY been handled, has no read side, is IP
+     * rate-limited, and collapses repeats into a hit count — the worst a forger
+     * achieves is telling us something is broken. */
+    if (preg_match('#/api/public/upload-fallback\\.php$#', $path))  return;
 
     $cookie = $_COOKIE[csrf_cookie_name()] ?? '';
     $header = $_SERVER['HTTP_X_NGG_CSRF'] ?? '';

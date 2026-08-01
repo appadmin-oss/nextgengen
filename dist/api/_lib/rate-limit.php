@@ -23,6 +23,11 @@ function rate_limit_default(string $op): ?array {
         'summer.profile'     => ['max' => 12, 'window' => 300],   // a minor's name + photo + attendance, by guessable handle
         'student.login'      => ['max' => 8,  'window' => 300],   // ID-card credential check — brute-force ceiling
         'community.post'     => ['max' => 12, 'window' => 60],    // feed post/comment write rate
+        /* Telemetry, not an action: the client reports once per page when a
+           configured media cloud refused an upload. Sized so a whole centre on
+           one WiFi during a broken deployment still gets its warnings recorded —
+           the point of this signal is that it arrives while the cloud is down. */
+        'upload.fallback'    => ['max' => 30, 'window' => 300],
         // The public self-registration link. Its own buckets, so a queue of
         // families filling in the form cannot lock out the check-in desk they
         // are standing in front of.

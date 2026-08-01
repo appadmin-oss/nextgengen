@@ -270,18 +270,47 @@
     const cfg = await getConfig();
     const canPublic = !!(cfg && cfg.publicUpload && cfg.publicUpload.enabled);
     const canSigned = !!(cfg && cfg.uploads && cfg.uploads.enabled);
+    /* WHY the cloud was not used, carried back to the caller and reported.
+     *
+     * These catches used to be bare. Falling back is right — a family must be
+     * able to finish registering at 9pm whatever Cloudinary is doing — but
+     * swallowing the reason meant a disconnected cloud looked identical to a
+     * working one from every screen in the product, for as long as nobody
+     * happened to open the Cloudinary dashboard. The fallback stays; the silence
+     * does not. */
+    let why = '';
     if (canPublic) {
       try { return Object.assign({ inline: false }, await uploadPublic(await shrinkForUpload(file, kind), onProgress)); }
-      catch (_) { /* fall through — a configured cloud that refused is still a cloud we cannot use right now */ }
+      catch (e) { why = 'public: ' + (e && e.message || 'failed'); }
     }
     if (canSigned) {
       try { return Object.assign({ inline: false }, await uploadFile(file, kind, onProgress)); }
-      catch (_) { /* same */ }
+      catch (e) { why = (why ? why + '; ' : '') + 'signed: ' + (e && e.message || 'failed'); }
     }
     if (onProgress) onProgress(50);
     const url = await inlineImage(file);
     if (onProgress) onProgress(100);
-    return { url: url, inline: true, bytes: url.length };
+    // Only a fault when a cloud was configured and still could not be used. No
+    // cloud at all is a supported way to run this and must not cry wolf.
+    if (why && (canPublic || canSigned)) reportUploadFallback(kind, why);
+    return { url: url, inline: true, bytes: url.length, fallbackReason: why };
+  }
+
+  /* Tell the server, once per page, that a configured cloud refused an upload.
+     Fire-and-forget and never allowed to break the thing the user was doing —
+     the whole point of the fallback is that the registration still completes. */
+  let _fallbackTold = false;
+  function reportUploadFallback(kind, why) {
+    if (_fallbackTold) return;
+    _fallbackTold = true;
+    try {
+      const body = JSON.stringify({ kind: kind, reason: String(why).slice(0, 300) });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(BASE + "/public/upload-fallback.php", new Blob([body], { type: 'application/json' }));
+      } else {
+        fetch(BASE + "/public/upload-fallback.php", { method: 'POST', body: body, keepalive: true }).catch(() => {});
+      }
+    } catch (_) { /* never let telemetry break an upload */ }
   }
 
   const API = {

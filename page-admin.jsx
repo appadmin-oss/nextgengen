@@ -4598,6 +4598,47 @@ function AdminOps() {
           </div>
         )}
 
+        {/* The media cloud. Nothing checked this, and the client is built to
+            survive it being gone — uploadOrInline() stores the image locally
+            whenever Cloudinary cannot be used. That is right, and it meant a
+            disconnected cloud looked identical to a working one everywhere in
+            the product. This says which of the four states it is in, because
+            they have four different fixes. */}
+        {c.cloudinary && (
+          <div style={{ marginBottom: 18 }}>
+            <h3 className="admin-h3">Media cloud</h3>
+            <div className="admin-tiles">
+              {light(!!c.cloudinary.ok, "Cloudinary", c.cloudinary.detail || "")}
+              {c.photoStorage && light(!!c.photoStorage.ok, "Where photos landed",
+                c.photoStorage.note || (c.photoStorage.local + " of the last " + c.photoStorage.checked + " kept locally"))}
+            </div>
+            {c.cloudinary.state === "bad_credentials" && (
+              <p className="admin-hint" style={{ marginTop: 6 }}>
+                Cloudinary is refusing these keys. Check <code>cloudinary</code> in <code>api/config.php</code> against
+                the Cloud name, API key and API secret on the Cloudinary dashboard — a rotated secret is the usual
+                cause. Uploads are still being accepted and stored on this server in the meantime, so nothing has been
+                lost; they simply are not in the cloud.
+              </p>
+            )}
+            {c.cloudinary.state === "exhausted" && (
+              <p className="admin-hint" style={{ marginTop: 6 }}>
+                The plan is rate-limited or out of credit. Uploads are landing on this server until it resets.
+              </p>
+            )}
+            {c.cloudinary.state === "unreachable" && (
+              <p className="admin-hint" style={{ marginTop: 6 }}>
+                This host could not reach Cloudinary at all — usually outbound HTTPS being blocked rather than
+                anything wrong with the account.
+              </p>
+            )}
+            {c.cloudinary.state === "not_configured" && (
+              <p className="admin-cell-sub" style={{ marginTop: 6 }}>
+                Running without a media cloud is supported: every photograph is kept on this server instead.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="admin-section-head" style={{ marginTop: 4 }}>
           <h3 className="admin-h3">Background jobs</h3>
           <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => runCron("all")}>Run all now</button>

@@ -90,6 +90,11 @@ function php(body) {
     'cookie_samesite' => 'Lax',
     'cache_dir' => ${JSON.stringify(CACHE)},
     'rate_limits' => ['default' => ['max' => 100000, 'window' => 60]],
+    /* Dummy keys, never called: their only job is to make this host COUNT as
+       one with a media cloud, which is the branch worth testing. A host with no
+       cloud is meant to stay silent about local storage, and the PHP suite
+       covers that side. */
+    'cloudinary' => ['cloud_name' => 'test-cloud', 'api_key' => 'k', 'api_secret' => 's'],
     'session_ttl' => 604800,
     'kiosk_ttl' => 43200,
     'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
@@ -396,6 +401,26 @@ function php(body) {
   const bogus = await page.evaluate(async (url) => (await fetch(url, { cache: 'reload' })).status,
     BASE + '/api/public/qr.php?t=NOT-A-REAL-TOKEN-AT-ALL');
   is(bogus === 404, 'a token bound to no record is still refused (' + bogus + ')');
+
+  /* ── The upload fallback reports itself, over HTTP ─────────────────────────
+   * When a configured media cloud refuses an upload the client keeps the image
+   * locally and carries on, which is right. It used to do so in complete
+   * silence — a cloud with rotated keys looked exactly like a working one from
+   * every screen. Tested at the HTTP layer because a domain test cannot see a
+   * missing route file, and this endpoint is only ever reached by a beacon that
+   * nothing is waiting on: a 404 here would be invisible forever. */
+  php(`db_exec("DELETE FROM ops_events WHERE source = 'cloudinary.upload'");`);
+  const beacon = await page.evaluate(async (url) => {
+    const r = await fetch(url, { method: 'POST', body: JSON.stringify({ kind: 'headshot', reason: 'signed: upload_failed_401' }) });
+    return { status: r.status, body: await r.text() };
+  }, BASE + '/api/public/upload-fallback.php');
+  is(beacon.status === 200, 'the upload-fallback beacon has a route to land on (' + beacon.status + ')');
+  const recorded = php(`$r = db_row("SELECT kind, detail FROM ops_events WHERE source = 'cloudinary.upload' LIMIT 1"); echo $r ? $r['kind'] . '|' . $r['detail'] : '';`).trim();
+  /* Recorded only when a cloud is CONFIGURED — the test host has keys in its
+     config, so this is the interesting branch. A deployment deliberately
+     running without a cloud must stay quiet, which the PHP suite covers. */
+  is(/^warn\|kind=headshot/.test(recorded) && recorded.indexOf('401') !== -1,
+    'and a refused upload becomes a warning an admin can see (' + (recorded || 'nothing recorded') + ')');
 
   is(pageErrs.length === 0, 'no uncaught page errors across the whole chain');
   if (pageErrs.length) console.error('       ', pageErrs.slice(0, 3).join(' | '));

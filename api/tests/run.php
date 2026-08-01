@@ -2826,6 +2826,93 @@ chk('bootstrap loads every domain file, so a new one cannot pass tests and 404 l
  * report, certificates to award. A designer that can only make ID cards says the
  * organisation is only a summer programme.
  */
+/* ── The media cloud, and the silence around it ──────────────────────────────
+ *
+ * Reported as "Cloudinary seems disconnected, the uploads do not save to
+ * Cloudinary anymore". The uploads were not failing — the client falls back to
+ * storing the image locally whenever the cloud cannot be used, which is right,
+ * and nothing anywhere reported that it had happened. A cloud with rotated keys
+ * behaved exactly like a healthy one from every screen in the product.
+ */
+chk('a host with no Cloudinary keys is healthy, not broken', (function () {
+    $keep = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $GLOBALS['CONFIG']['cloudinary'] = [];
+    $h = ops_cloudinary_health();
+    $GLOBALS['CONFIG']['cloudinary'] = $keep;
+    // Running without a cloud is a supported deployment. Flagging it would teach
+    // people to ignore the panel, which costs you the warning that matters.
+    return $h['ok'] === true && $h['configured'] === false && $h['state'] === 'not_configured';
+})());
+chk('…and keys Cloudinary refuses are reported as refused, not as silence', (function () {
+    $keep = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'ngg', 'api_key' => 'k', 'api_secret' => 's'];
+    cache_put('ops.cloudinary', null);
+    @unlink(cache_path('ops.cloudinary'));
+    $GLOBALS['__cloudinary_ping_mock'] = fn() => ['code' => 401, 'body' => '', 'error' => ''];
+    $h = ops_cloudinary_health();
+    unset($GLOBALS['__cloudinary_ping_mock']);
+    @unlink(cache_path('ops.cloudinary'));
+    $GLOBALS['CONFIG']['cloudinary'] = $keep;
+    return $h['ok'] === false && $h['state'] === 'bad_credentials'
+        && strpos($h['detail'], 'falling back') !== false;   // says what it MEANS, not just what happened
+})());
+chk('…an exhausted plan and an unreachable host are told apart', (function () {
+    $keep = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'ngg', 'api_key' => 'k', 'api_secret' => 's'];
+    $states = [];
+    foreach ([[420, '', ''], [0, '', 'could not connect']] as $r) {
+        @unlink(cache_path('ops.cloudinary'));
+        $GLOBALS['__cloudinary_ping_mock'] = fn() => ['code' => $r[0], 'body' => $r[1], 'error' => $r[2]];
+        $states[] = ops_cloudinary_health()['state'];
+    }
+    unset($GLOBALS['__cloudinary_ping_mock']);
+    @unlink(cache_path('ops.cloudinary'));
+    $GLOBALS['CONFIG']['cloudinary'] = $keep;
+    /* Four states because they have four different fixes: rotate a key, wait for
+       a plan to reset, open a firewall, or nothing at all. */
+    return $states === ['exhausted', 'unreachable'];
+})());
+chk('…and a working cloud reports how much of the plan is left', (function () {
+    $keep = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'ngg', 'api_key' => 'k', 'api_secret' => 's'];
+    @unlink(cache_path('ops.cloudinary'));
+    $GLOBALS['__cloudinary_ping_mock'] = fn() => ['code' => 200,
+        'body' => json_encode(['credits' => ['used_percent' => 62.4]]), 'error' => ''];
+    $h = ops_cloudinary_health();
+    unset($GLOBALS['__cloudinary_ping_mock']);
+    @unlink(cache_path('ops.cloudinary'));
+    $GLOBALS['CONFIG']['cloudinary'] = $keep;
+    // Visible BEFORE the ceiling is hit, rather than after uploads start failing.
+    return $h['ok'] === true && $h['state'] === 'ok' && abs(($h['usedPercent'] ?? 0) - 62.4) < 0.01
+        && strpos($h['detail'], '62%') !== false;
+})());
+chk('the health check is cached, so the diagnostics page is not an outbound call per load', (function () {
+    $keep = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'ngg', 'api_key' => 'k', 'api_secret' => 's'];
+    @unlink(cache_path('ops.cloudinary'));
+    $calls = 0;
+    $GLOBALS['__cloudinary_ping_mock'] = function () use (&$calls) { $calls++; return ['code' => 200, 'body' => '{}', 'error' => '']; };
+    ops_cloudinary_health(); ops_cloudinary_health(); ops_cloudinary_health();
+    unset($GLOBALS['__cloudinary_ping_mock']);
+    @unlink(cache_path('ops.cloudinary'));
+    $GLOBALS['CONFIG']['cloudinary'] = $keep;
+    return $calls === 1;
+})());
+chk('a silent fallback to local storage becomes a recorded warning', (function () {
+    /* The whole point. The upload already succeeded from the family's side; what
+       was missing was anybody knowing it had not reached the cloud. */
+    db_exec("DELETE FROM ops_events WHERE source = 'cloudinary.upload'");
+    $keep = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'ngg', 'api_key' => 'k', 'api_secret' => 's'];
+    ops_record('warn', 'cloudinary.upload', 'Upload fell back to local storage', 'kind=headshot · signed: upload_failed_401');
+    ops_record('warn', 'cloudinary.upload', 'Upload fell back to local storage', 'kind=headshot · signed: upload_failed_401');
+    $GLOBALS['CONFIG']['cloudinary'] = $keep;
+    $row = db_row("SELECT hits, detail FROM ops_events WHERE source = 'cloudinary.upload' LIMIT 1");
+    // Collapsed into a hit count: a broken deployment must not fill the table
+    // one family at a time, and "how many" is the useful number anyway.
+    return $row && (int)$row['hits'] === 2 && strpos((string)$row['detail'], '401') !== false;
+})());
+
 chk('a poster is a design this system accepts, not an ID card with fields removed', (function () {
     $t = ['name' => 'Centre opening', 'kind' => 'graphic', 'w' => 877, 'h' => 1240,
           'wMm' => 210, 'hMm' => 297, 'safe' => 50, 'bleedMm' => 3,
