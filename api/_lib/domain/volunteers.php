@@ -97,46 +97,72 @@ function admin_volunteer_cards_data(array $p): array {
             $expiryOf[(string)$q['token']] = (string)($q['expiresAt'] ?? '');
         }
     }
+    $centres = centre_index();
     $cards = [];
     foreach ($rows as $v) {
-        $tier = vol_tier_for((string)$v['role']);
-        // Two names only on the printed ID: first given name + surname.
-        $names = preg_split('/\s+/', trim((string)$v['fullName'])) ?: [''];
-        $first = array_shift($names);
-        $surname = $names ? (string)array_pop($names) : '';
-        /* The centre, which this card never carried. A volunteer card was
-         * coloured by TIER — what they do — and said nothing about WHERE, so
-         * at a centre with forty volunteers on site nobody could tell at a
-         * glance who belonged to their own. The tier colour stays; the centre
-         * arrives as a ring and a code on the face. */
-        $c = trim((string)($v['centre'] ?? ''));
-        $cRow = $c !== '' ? db_row("SELECT name, code, color FROM centres WHERE name = ? OR code = ? LIMIT 1", [$c, $c]) : null;
-        $cards[] = [
-            'volunteerId' => $v['volunteerId'],
-            'firstName' => $first, 'surname' => $surname,
-            'role' => (string)$v['role'],
-            /* The faculty an instructor teaches in. On the card because "role"
-               alone is the least identifying thing about them at a site: every
-               third person there is an instructor, and which subject is what a
-               coordinator, a parent and a child are all actually asking. Empty
-               for roles where it means nothing, so the card can leave it out
-               rather than print a blank. */
-            'faculty' => (string)($v['faculty'] ?? ''),
-            'tier' => ['name' => $tier['name'], 'code' => $tier['code'], 'color' => $tier['color']],
-            'centre' => $cRow
-                ? ['name' => (string)$cRow['name'], 'code' => (string)$cRow['code'], 'color' => (string)($cRow['color'] ?: '#76B043')]
-                : ($c !== '' ? ['name' => $c, 'code' => strtoupper(substr($c, 0, 3)), 'color' => '#76B043'] : null),
-            'displayId' => (string)$v['volunteerId'],
-            'token' => (string)$v['token'],
-            // Blank when the programme runs with no expiry, and the card leaves
-            // the field out entirely rather than printing an empty row.
-            'expiresAt' => (string)($expiryOf[(string)$v['token']] ?? ''),
-            'photoUrl' => (string)$v['photoUrl'],
-            // Not printed — this is what lets the studio cut a run by date.
-            'enrolledAt' => (string)($v['createdAt'] ?? ''),
-        ];
+        $cards[] = card_row_volunteer($v, $centres, (string)($expiryOf[(string)$v['token']] ?? ''));
     }
     return ['ok' => true, 'cards' => $cards, 'program' => idcard_program()];
+}
+
+/**
+ * One volunteer, in the shape everything that DRAWS a volunteer expects.
+ *
+ * Shared with the design studio's data merge for the same reason as
+ * card_row_student: two copies of a payload mapping is how a card ends up
+ * printing without its expiry date for months while both copies look complete.
+ *
+ * `$centres` is the whole centre table from centre_index(), so a run of 200
+ * volunteers resolves 200 centres without 200 queries.
+ */
+function card_row_volunteer(array $v, array $centres, string $expiry): array {
+    $tier = vol_tier_for((string)($v['role'] ?? ''));
+    /* Two names only on the printed ID: first given name + surname.
+       This now prefers the firstName/lastName the application actually asked
+       for, falling back to splitting fullName — the same rule a child's card
+       has always used, and a change for volunteers, whose card split fullName
+       unconditionally. A split names "Ada Chi Nwosu Eze" as Ada Eze; the
+       columns are what the person wrote. Every volunteer created from an
+       application has them (see volunteer creation below), so the fallback is
+       only for rows that predate the fields. */
+    $first = trim((string)($v['firstName'] ?? ''));
+    $surname = trim((string)($v['lastName'] ?? ''));
+    if ($first === '' && $surname === '') {
+        $names = preg_split('/\s+/', trim((string)($v['fullName'] ?? ''))) ?: [''];
+        $first = (string)array_shift($names);
+        $surname = $names ? (string)array_pop($names) : '';
+    }
+    /* The centre, which this card never carried. A volunteer card was
+     * coloured by TIER — what they do — and said nothing about WHERE, so
+     * at a centre with forty volunteers on site nobody could tell at a
+     * glance who belonged to their own. The tier colour stays; the centre
+     * arrives as a ring and a code on the face. */
+    $c = trim((string)($v['centre'] ?? ''));
+    $cRow = $c !== '' ? ($centres[mb_strtolower($c)] ?? null) : null;
+    return [
+        'volunteerId' => $v['volunteerId'],
+        'firstName' => $first, 'surname' => $surname,
+        'role' => (string)($v['role'] ?? ''),
+        /* The faculty an instructor teaches in. On the card because "role"
+           alone is the least identifying thing about them at a site: every
+           third person there is an instructor, and which subject is what a
+           coordinator, a parent and a child are all actually asking. Empty
+           for roles where it means nothing, so the card can leave it out
+           rather than print a blank. */
+        'faculty' => (string)($v['faculty'] ?? ''),
+        'tier' => ['name' => $tier['name'], 'code' => $tier['code'], 'color' => $tier['color']],
+        'centre' => $cRow
+            ? ['name' => $cRow['name'], 'code' => $cRow['code'], 'color' => $cRow['color']]
+            : ($c !== '' ? ['name' => $c, 'code' => strtoupper(substr($c, 0, 3)), 'color' => '#76B043'] : null),
+        'displayId' => (string)$v['volunteerId'],
+        'token' => (string)($v['token'] ?? ''),
+        // Blank when the programme runs with no expiry, and the card leaves
+        // the field out entirely rather than printing an empty row.
+        'expiresAt' => $expiry,
+        'photoUrl' => (string)($v['photoUrl'] ?? ''),
+        // Not printed — this is what lets the studio cut a run by date.
+        'enrolledAt' => (string)($v['createdAt'] ?? ''),
+    ];
 }
 
 function volunteer_public(array $v, bool $withAttendance = false): array {

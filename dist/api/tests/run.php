@@ -8978,5 +8978,160 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     })());
 })();
 
+/* ── Data merge: one design, many people ─────────────────────────────────────
+ *
+ * Last in the file on purpose. These tests insert children, and every earlier
+ * assertion about "the roster" would have to be re-read against a roster this
+ * block had changed.
+ *
+ * The thing under test is not the filtering — it is WHO the merge can see. The
+ * studio's only roster read used to be admin.cards.data, which exists to feed a
+ * card printer and is hard-bound to "has an ID card". A child who attended all
+ * twelve days and whose card was never issued is exactly the child a
+ * certificate is for, and to that read they did not exist.
+ */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    $co = summer_ensure_cohort();
+    $cohortId = (string)$co['cohortId'];
+
+    // Three children in one centre: one with a card, one without, one who never
+    // came. Distinctive names so the search filter has something exact to find.
+    $mk = function (string $id, string $first, string $last, string $token, string $photo, string $track, string $when) use ($cohortId) {
+        db_insert('summer_students', [
+            'studentId' => $id, 'cohortId' => $cohortId, 'token' => $token,
+            'fullName' => $first . ' ' . $last, 'firstName' => $first, 'lastName' => $last,
+            'centre' => 'Ijaiye', 'track' => $track, 'photoUrl' => $photo,
+            'regStatus' => 'verified', 'status' => 'active',
+            'enrolledAt' => $when, 'daysPresent' => 99,   // a deliberate lie; see below
+        ]);
+    };
+    $mk('MRG-A', 'Zubaida', 'Merglet', 'SUMQR-MRGA', 'https://x/a.jpg', 'Piano', '2026-06-01T09:00:00Z');
+    $mk('MRG-B', 'Yakubu', 'Merglet', '',            '',                'Piano', '2026-06-08T09:00:00Z');
+    $mk('MRG-C', 'Xola',   'Mergson', 'SUMQR-MRGC', 'https://x/c.jpg', 'Coding', '2026-07-02T09:00:00Z');
+    /* A real assigned card for MRG-A, with an expiry. Without one the merge row
+       and the card row would agree on `expiresAt` trivially (both empty), and
+       the drift test below would pass against a merge that had stopped reading
+       qr_codes — which is the exact bug that hid on the volunteer card. */
+    db_insert('qr_codes', ['token' => 'SUMQR-MRGA', 'cohortId' => $cohortId, 'status' => 'assigned',
+        'studentId' => 'MRG-A', 'expiresAt' => '2026-10-29', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+    // Real attendance, for two of the three.
+    foreach ([['MRG-A', 5], ['MRG-B', 3]] as [$sid, $days]) {
+        for ($i = 1; $i <= $days; $i++) {
+            db_insert('attendance', ['cohortId' => $cohortId, 'studentId' => $sid,
+                'date' => sprintf('2026-06-%02d', $i), 'checkInAt' => now_iso(), 'createdAt' => now_iso()]);
+        }
+    }
+    $rows = fn(array $f) => backend_dispatch('admin.merge.rows', ['requesterId' => $ADM] + $f);
+    $find = function (array $r, string $key) {
+        foreach ($r['rows'] ?? [] as $x) if ($x['key'] === $key) return $x;
+        return null;
+    };
+
+    chk('merge: a child with no ID card is invisible to the card payload and present in a merge', (function () use ($rows, $find, $ADM) {
+        $cards = backend_dispatch('admin.cards.data', ['requesterId' => $ADM])['cards'] ?? [];
+        $inCards = false;
+        foreach ($cards as $c) if ($c['studentId'] === 'MRG-B') $inCards = true;
+        $m = $rows(['q' => 'Merglet']);
+        /* THE acceptance test for this whole file. Not "the filter works" —
+           "the certificate run includes the child whose photo was rejected". */
+        return $inCards === false && $find($m, 'MRG-B') !== null && $find($m, 'MRG-A') !== null;
+    })());
+
+    chk('merge: attendance is counted from the register, not read from the cached column', (function () use ($rows, $find) {
+        $m = $rows([]);
+        $a = $find($m, 'MRG-A'); $b = $find($m, 'MRG-B'); $c = $find($m, 'MRG-C');
+        /* daysPresent says 99 for all three. A certificate that prints "attended
+           11 of 12 days" has to be true on the day it prints, not on the day of
+           the last sweep — so this reads the register. */
+        return $a && $b && $c && $a['attended'] === 5 && $b['attended'] === 3 && $c['attended'] === 0;
+    })());
+
+    chk('merge: "attended at least N" is the filter a certificate run is made of', (function () use ($rows, $find) {
+        $m = $rows(['attendedMin' => 4]);
+        return $find($m, 'MRG-A') !== null && $find($m, 'MRG-B') === null && $find($m, 'MRG-C') === null;
+    })());
+
+    chk('merge: card issuance, photograph, course and date are filters, not preconditions', (function () use ($rows, $find) {
+        $noCard = $rows(['issued' => 'no']);
+        $noPhoto = $rows(['photo' => 'no']);
+        $coding = $rows(['track' => 'Coding']);
+        $july = $rows(['from' => '2026-07-01']);
+        return $find($noCard, 'MRG-B') !== null && $find($noCard, 'MRG-A') === null
+            && $find($noPhoto, 'MRG-B') !== null && $find($noPhoto, 'MRG-A') === null
+            && $find($coding, 'MRG-C') !== null && $find($coding, 'MRG-A') === null
+            && $find($july, 'MRG-C') !== null && $find($july, 'MRG-A') === null;
+    })());
+
+    chk('merge: the count and the rows come from one predicate, so they cannot disagree', (function () use ($rows) {
+        foreach ([[], ['track' => 'Piano'], ['attendedMin' => 4], ['q' => 'Mergson'], ['issued' => 'no']] as $f) {
+            $m = $rows($f);
+            if (count($m['rows']) !== $m['matched']) return false;
+        }
+        return true;
+    })());
+
+    chk('merge: the facets stay whole when a filter is applied', (function () use ($rows) {
+        $all = $rows([]);
+        $one = $rows(['track' => 'Coding']);
+        /* A course picker that drops every other course the moment you choose
+           one is a picker you cannot change your mind in. Facets are computed
+           over the whole audience, deliberately. */
+        return in_array('Piano', $one['facets']['tracks'], true)
+            && $one['facets']['tracks'] === $all['facets']['tracks']
+            && $one['facets']['maxAttended'] === $all['facets']['maxAttended'];
+    })());
+
+    chk('merge: a run cut short by the limit says so rather than coming back quietly short', (function () use ($rows) {
+        $m = $rows(['q' => 'Merglet', 'limit' => 1]);
+        // A silently truncated print run is a child without a certificate.
+        return $m['matched'] === 2 && count($m['rows']) === 1 && $m['truncated'] === true;
+    })());
+
+    chk('merge: a merged row and a printed card are the same child, built by the same function', (function () use ($rows, $find, $ADM) {
+        $cards = backend_dispatch('admin.cards.data', ['requesterId' => $ADM])['cards'] ?? [];
+        $card = null;
+        foreach ($cards as $c) if ($c['studentId'] === 'MRG-A') $card = $c;
+        $m = $find($rows(['q' => 'Zubaida']), 'MRG-A');
+        if (!$card || !$m) return false;
+        /* The reason card_row_student exists. Two hand-written copies of this
+           mapping is how the volunteer card printed no expiry date for months
+           while both copies looked complete on their own. */
+        foreach (['firstName', 'surname', 'displayId', 'token', 'photoUrl', 'track', 'expiresAt', 'enrolledAt'] as $k) {
+            if (($card[$k] ?? null) !== ($m[$k] ?? null)) return false;
+        }
+        // Named explicitly, because an expiry silently absent from one of two
+        // payload builders is the precise failure this guards against.
+        return $card['centre'] === $m['centre'] && $m['expiresAt'] === '2026-10-29';
+    })());
+
+    chk('merge: volunteers are their own audience, with tier colour and no borrowed attendance', (function () use ($rows) {
+        $m = $rows(['audience' => 'volunteers']);
+        if (empty($m['ok']) || $m['audience'] !== 'volunteers') return false;
+        if (!count($m['rows'])) return true;                 // no volunteers on this run
+        $v = $m['rows'][0];
+        /* Zero rather than a number borrowed from somewhere else: a volunteer's
+           days are duty days in a different table with a different meaning, and
+           a certificate that printed check-ins as "days attended" would be
+           wrong in a way nobody could see. */
+        return isset($v['tier']['color']) && $v['tier']['color'] !== '' && $v['attended'] === 0
+            && $v['key'] === $v['displayId'];
+    })());
+
+    chk('merge: exporting a roster needs the capability that guards reading it', (function () {
+        /* The studio is gated on 'people' — deciding what a credential looks
+           like. A merge EXPORTS 240 children's names and faces as a file, so
+           the roster capability has to hold here too. */
+        $anon = backend_dispatch('admin.merge.rows', ['requesterId' => '']);
+        $bogus = backend_dispatch('admin.merge.rows', ['requesterId' => 'NGG-2025-0001']);
+        return ($anon['ok'] ?? false) !== true && ($bogus['ok'] ?? false) !== true;
+    })());
+
+    chk('merge: an unknown audience falls back to children rather than leaking everything', (function () use ($rows) {
+        $m = $rows(['audience' => 'donors']);
+        return !empty($m['ok']) && $m['audience'] === 'students';
+    })());
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -156,6 +156,87 @@ function dsnDownload(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+/* ── Data merge ───────────────────────────────────────────────────────────────
+   One design, many people. The studio could always draw a certificate; until
+   this it could not draw two hundred and forty of them, which is the only
+   number that matters in November.
+
+   Everything here runs in the browser, on the same Fabric canvas that drew the
+   proof on screen — so a merged certificate cannot differ from the thing the
+   designer approved. That is the same single-renderer rule the rest of this
+   file is built on, applied to a batch. */
+
+/* Every page is held in memory until the file is written, because a browser
+   cannot stream a zip or a PDF to disk. This is the ceiling before the tab
+   dies — and rather than guess at it up front, the run MEASURES the first page
+   and extrapolates, so an A4 poster at 600dpi is stopped at page one with a
+   real number instead of at page ninety with a crash. */
+const DSN_MERGE_BUDGET = 350 * 1024 * 1024;
+
+function dsnRowName(r) {
+  return [r.firstName, r.surname].filter(Boolean).join(" ").trim() || r.displayId || r.key || "unnamed";
+}
+
+/**
+ * How many of this piece gang up on one A4 sheet.
+ *
+ * Mirrors the grid arithmetic in CardExport's compose(), deliberately, because
+ * the answer decides whether the imposed option is offered at all — and
+ * compose() clamps its grid to at least 1×1, so asking it to impose an A4
+ * poster on an A4 sheet does not fail, it returns a sheet with the artwork
+ * hanging off three edges. Better to not offer it.
+ */
+function dsnPerSheet(tpl, sheetW, sheetH) {
+  const w = Number(tpl.wMm) || 54, h = Number(tpl.hMm) || 89;
+  const bleed = Number(tpl.bleedMm) || 0;
+  const gutter = Math.max(2 * bleed, 2);
+  // clearance in compose(): bleed + markGap + markLen, floored at the 10mm
+  // default margin. A crop mark inside that band prints on the finished piece.
+  const margin = Math.max(10, bleed + 1.5 + 4);
+  const fit = (pw, ph) => Math.max(0, Math.floor((pw - 2 * margin + gutter) / (w + gutter)))
+                        * Math.max(0, Math.floor((ph - 2 * margin + gutter) / (h + gutter)));
+  return Math.max(fit(sheetW || 210, sheetH || 297), fit(sheetH || 297, sheetW || 210));
+}
+
+/** A filename per person that a coordinator can match to a child by eye. */
+function dsnRowFile(tpl, r, i) {
+  const who = String(r.displayId || r.key || "").replace(/\W+/g, "-").replace(/^-|-$/g, "");
+  return dsnFileName(tpl) + "-" + (who || String(i + 1));
+}
+
+/**
+ * What the DATA will do to this design — said before the run, not discovered
+ * on paper.
+ *
+ * tplPreflight answers "is this design printable"; this answers "is this design
+ * printable FOR THESE PEOPLE". They are different questions and only the second
+ * one catches the thing that actually goes wrong in a merge: a design that is
+ * perfect and a roster where eleven children have no photograph on file, which
+ * prints eleven certificates with a grey rectangle where a face should be and
+ * says nothing at all about it.
+ */
+function dsnMergeAudit(tpl, rows) {
+  if (!tpl || !rows || !rows.length) return [];
+  const fields = [];
+  const seen = {};
+  // Scan the whole document rather than a list of known-bindable properties —
+  // a binding can live on any string property, including the background.
+  (JSON.stringify(tpl).match(/\{\{\s*[\w.]+\s*\}\}/g) || []).forEach(m => {
+    const k = m.replace(/[{}\s]/g, "");
+    if (!seen[k]) { seen[k] = 1; fields.push(k); }
+  });
+  const out = [];
+  fields.forEach(k => {
+    const F = window.TPL_FIELDS[k];
+    // A colour field always resolves (it has a default), so an empty one is not
+    // a hole in the data — only text and images can genuinely be missing.
+    if (!F || F.isColor) return;
+    const blank = rows.filter(r => !String(F.get(r) || "").trim());
+    if (blank.length) out.push({ field: k, label: F.label, count: blank.length, who: blank.slice(0, 5).map(dsnRowName) });
+  });
+  return out;
+}
+
 function DesignerPage() {
   /* Read through window, the way CardStudio does. `useAuth` is a top-level
      binding in the bundle, so a test fixture that stubs window.useAuth would be
@@ -177,6 +258,19 @@ function DesignerPage() {
   const [assets, setAssets] = React.useState(null);      // the design asset library
   const [assetFolder, setAssetFolder] = React.useState("");
   const [drawing, setDrawing] = React.useState(false);
+  /* ── Data merge ────────────────────────────────────────────────────────────
+     `mergeOpen` is the panel; `merge` is what the roster read came back with.
+     Two pieces of state rather than one, because the read is triggered BY the
+     panel being open and writing the result into the same value would make the
+     effect depend on its own output. */
+  const [mergeOpen, setMergeOpen] = React.useState(false);
+  const [merge, setMerge] = React.useState(null);
+  const [mf, setMf] = React.useState({ audience: "students", centre: "", track: "", role: "",
+                                       q: "", from: "", to: "", attendedMin: 0, photo: "", issued: "" });
+  const [picked, setPicked] = React.useState([]);      // the keys actually in the run
+  const [mdpi, setMdpi] = React.useState(300);
+  const [run, setRun] = React.useState(null);          // { i, n, note } while a batch is rendering
+  const runCancel = React.useRef(false);
   const hostRef = React.useRef(null);
   const canvasRef = React.useRef(null);
   const fileRef = React.useRef(null);
@@ -215,6 +309,28 @@ function DesignerPage() {
   }, [isSignedIn]);
   const loadAssets = (folder) => NGGApi.admin.registration.assets(folder === undefined ? assetFolder : folder)
     .then(r => setAssets(r.assets || [])).catch(() => setAssets([]));
+
+  /* The merge roster. Re-read whenever a filter changes, debounced, because the
+     search box changes it on every keystroke. Selecting everything that matched
+     is the default: a run is almost always "these people", and an operator who
+     wants fewer unticks a few rather than ticking two hundred. */
+  const mkey = JSON.stringify(mf);
+  React.useEffect(() => {
+    if (!mergeOpen || !isSignedIn) return;
+    let dead = false;
+    const t = setTimeout(() => {
+      NGGApi.admin.registration.mergeRows(mf).then(r => {
+        if (dead) return;
+        setMerge({ rows: r.rows || [], facets: r.facets || {}, total: r.total || 0,
+                   matched: r.matched || 0, truncated: !!r.truncated, limit: r.limit || 0, error: "" });
+        setPicked((r.rows || []).map(x => x.key));
+      }).catch(e => {
+        if (!dead) { setMerge({ rows: [], facets: {}, total: 0, matched: 0, error: e.code || e.message || "could not read the roster" }); setPicked([]); }
+      });
+    }, 220);
+    return () => { dead = true; clearTimeout(t); };
+  }, [mergeOpen, isSignedIn, mkey]);
+  const setFilter = (k, v) => setMf(p => ({ ...p, [k]: v }));
 
   /* ── The canvas ───────────────────────────────────────────────────────────
      Rebuilt from the template on every change rather than mutated in place.
@@ -751,6 +867,150 @@ function DesignerPage() {
     } catch (e) { toast.error(e.message || "export failed"); } finally { setBusy(""); }
   };
 
+  /* ── The batch ─────────────────────────────────────────────────────────────
+     One design × N people → one file. Three shapes, because three genuinely
+     different things happen to the output:
+
+       pdf    one page per person at the real trim size, with crop marks. This
+              is what goes to a print shop for certificates.
+       sheet  imposed on A4 with bleed, marks and a colour bar — the card
+              studio's prepress module, unchanged, because a second imposition
+              engine written for posters is a second place for the bleed
+              arithmetic to be wrong.
+       zip    a PNG per person, named for the child. This is what gets emailed.
+
+     Rendered one at a time on the same Fabric renderer that drew the proof,
+     yielding to the event loop between people so a run of 240 does not lock the
+     tab, and cancellable, because somebody WILL start a 600-page run at 600dpi.
+  */
+  const mergeRows = () => ((merge && merge.rows) || []).filter(r => picked.indexOf(r.key) !== -1);
+
+  const runMerge = async (mode) => {
+    const rows = mergeRows();
+    if (!tpl || !libs || !rows.length || run) return;
+
+    /* The same rule that guards publishing, re-run against THESE people: the
+       QR module size depends on the longest token in the batch, so a design
+       that passed against the sample can still be unscannable for this run. */
+    const bad = window.tplPreflight(tpl, rows, window.TPL_REQUIRED[tpl.kind] || []).filter(p => p.level === "error");
+    if (bad.length) { toast.error(bad[0].message, "Not printable for these " + rows.length); return; }
+
+    const holes = dsnMergeAudit(tpl, rows);
+    if (holes.length) {
+      const body = holes.map(h => h.count + " of " + rows.length + " have no " + h.label.toLowerCase()
+        + " — " + h.who.join(", ") + (h.count > h.who.length ? ", …" : "")).join("\n");
+      const go = await dialog.confirm({
+        title: "Some of these people are missing data",
+        body: body + "\n\nThose pieces will print with the field blank.",
+        cta: "Run anyway",
+      });
+      if (!go) return;
+    }
+
+    runCancel.current = false;
+    setRun({ i: 0, n: rows.length, note: "" });
+    const failed = [];
+    let stopped = "";
+    try {
+      const bleedMm = Number(tpl.bleedMm) || 0;
+      const wMm = Number(tpl.wMm) || 54, hMm = Number(tpl.hMm) || 89;
+      const CE = mode === "pdf" ? null : await loadVendor("cardExport");
+      let doc = null;
+      const faces = [], files = [];
+      let bytes = 0, pages = 0;
+
+      for (let i = 0; i < rows.length; i++) {
+        if (runCancel.current) { stopped = "cancelled"; break; }
+        setRun({ i, n: rows.length, note: dsnRowName(rows[i]) });
+        let px = null;
+        try { px = await dsnRaster(tpl, rows[i], libs.fabric, mdpi); }
+        catch (e) { failed.push(dsnRowName(rows[i])); }
+        if (px) {
+          /* Measure, then extrapolate. A pre-flight guess at "is this run too
+             big" needs the page size, the DPI and the compressibility of the
+             artwork, and gets the last one wrong every time — a flat
+             certificate and a full-bleed photograph differ by 20×. One real
+             page is worth more than any estimate. */
+          bytes += Math.round(px.url.length * 0.75);
+          if (i === 0 && bytes * rows.length > DSN_MERGE_BUDGET) {
+            stopped = "too_big";
+            const each = Math.round(bytes / 1024 / 1024 * 10) / 10;
+            toast.error("At " + mdpi + "dpi each piece is about " + each + "MB, so " + rows.length
+              + " of them will not fit in the browser's memory. Lower the resolution, or split the run.",
+              "This run is too large");
+            break;
+          }
+          if (mode === "pdf") {
+            if (!doc) {
+              await loadVendor("jspdf");
+              const jsPDF = window.jspdf && window.jspdf.jsPDF;
+              if (!jsPDF) throw new Error("the PDF library is not loaded");
+              const pw = wMm + bleedMm * 2, ph = hMm + bleedMm * 2;
+              doc = new jsPDF({ orientation: pw >= ph ? "landscape" : "portrait", unit: "mm", format: [pw, ph] });
+            } else {
+              doc.addPage([wMm + bleedMm * 2, hMm + bleedMm * 2],
+                (wMm + bleedMm * 2) >= (hMm + bleedMm * 2) ? "landscape" : "portrait");
+            }
+            doc.addImage(px.url, "PNG", bleedMm, bleedMm, wMm, hMm, undefined, "FAST");
+            if (bleedMm > 0) dsnCropMarks(doc, wMm + bleedMm * 2, hMm + bleedMm * 2, bleedMm);
+            pages++;
+          } else if (mode === "sheet") {
+            /* Real bleed rather than art stopping at the trim: the imposition
+               places against the bleed box, and a piece with none of it comes
+               back from the guillotine with a white hairline down one edge. */
+            const face = bleedMm > 0
+              ? await CE.addBleed(px.url, bleedMm * (px.w / wMm), { mode: "clamp", type: "image/jpeg", quality: 0.95 })
+              : { dataUrl: px.url, wPx: px.w, hPx: px.h, bleedPx: 0 };
+            faces.push({ dataUrl: face.dataUrl, wPx: face.wPx, hPx: face.hPx,
+                         bleedPx: face.bleedPx, trimWPx: px.w, trimHPx: px.h });
+          } else {
+            files.push({ name: dsnRowFile(tpl, rows[i], i) + ".png", bytes: CE.dataUrlToBytes(px.url) });
+          }
+        }
+        // Yield, so the progress line actually paints and the tab stays alive.
+        await new Promise(r => setTimeout(r, 0));
+      }
+
+      // Counted, not inferred: a cancelled or budget-stopped run has fewer
+      // pieces than "everybody minus the failures", and reporting the second
+      // number would tell an operator the file holds people it does not.
+      const made = mode === "pdf" ? pages : mode === "sheet" ? faces.length : files.length;
+      if (stopped !== "too_big" && made > 0) {
+        setRun({ i: rows.length, n: rows.length, note: "writing the file…" });
+        await new Promise(r => setTimeout(r, 0));
+        const stem = dsnFileName(tpl) + "-" + made;
+        if (mode === "pdf") {
+          doc.save(stem + ".pdf");
+        } else if (mode === "sheet") {
+          const pdf = await CE.buildImpositionPDF(faces, {
+            sheet: "A4", trimW_mm: wMm, trimH_mm: hMm, bleed_mm: bleedMm, safe_mm: 3,
+            marks: true, layers: true, intent: "FOGRA39", jobName: tpl.name,
+            date: new Date().toISOString().slice(0, 10),
+          });
+          CE.download(pdf, stem + "-imposed.pdf", "application/pdf");
+        } else {
+          const zip = await CE.zipStore(files);
+          CE.download(zip, stem + ".zip", "application/zip");
+        }
+      }
+
+      /* Say exactly what came out, and name what did not. A batch that is
+         quietly three short is three children without a certificate, and the
+         only person who could notice is the one holding the file. */
+      if (stopped === "cancelled") toast.success("Stopped after " + made + " of " + rows.length + ".", "Run cancelled");
+      else if (stopped !== "too_big") {
+        if (failed.length) {
+          toast.error(failed.length + " could not be rendered and are NOT in the file: "
+            + failed.slice(0, 6).join(", ") + (failed.length > 6 ? ", …" : ""), made + " of " + rows.length + " exported");
+        } else {
+          toast.success(made + (made === 1 ? " piece" : " pieces") + " at " + mdpi + "dpi.", "Batch ready");
+        }
+      }
+    } catch (e) {
+      toast.error(e.message || "the batch failed");
+    } finally { setRun(null); runCancel.current = false; }
+  };
+
   /* The studio's own shell rather than a new one — the designer is the same
      surface as the card studio and a second chrome would read as a second app. */
   const shell = (ch) => (
@@ -826,6 +1086,11 @@ function DesignerPage() {
             <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportPdf(300)}>PDF</button>
             {/* Vector, for a printer that wants type as type rather than pixels. */}
             <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={exportSvg}>SVG</button>
+            {/* The one that makes this worth having in November: the same three
+                exports, but once per child on a filtered roster. */}
+            <button className={"btn btn-sm " + (mergeOpen ? "btn-primary" : "btn-ghost")} disabled={!!busy}
+              aria-expanded={mergeOpen} onClick={() => setMergeOpen(o => !o)}
+              title="One design, one per person, from the roster">Batch…</button>
           </div>
         </>}
       </div>
@@ -868,6 +1133,131 @@ function DesignerPage() {
       )}
 
       {!tpl && <div className="admin-empty">Pick a design to open, or start a new one.</div>}
+
+      {/* ── Data merge ───────────────────────────────────────────────────────
+          One design, one piece per person. Above the canvas rather than in a
+          modal because the point of a run is that you can still SEE what is
+          being run — the proof is a few centimetres below the tick list. */}
+      {tpl && mergeOpen && (
+        <div className="dsn-merge">
+          <div className="dsn-merge-head">
+            <b>Batch — one {tpl.kind === "graphic" ? "piece" : "card"} per person</b>
+            <span className="dsn-merge-note">
+              {merge ? (merge.matched + " of " + merge.total + " match · " + picked.length + " in the run") : "reading the roster…"}
+            </span>
+            <button className="btn btn-ghost btn-sm" onClick={() => setMergeOpen(false)}>Close</button>
+          </div>
+
+          <div className="dsn-merge-filters">
+            <label className="dsn-prop"><span>Who</span>
+              <select value={mf.audience} onChange={e => setFilter("audience", e.target.value)}>
+                <option value="students">Children</option>
+                <option value="volunteers">Volunteers</option>
+              </select></label>
+            <label className="dsn-prop"><span>Centre</span>
+              <select value={mf.centre} onChange={e => setFilter("centre", e.target.value)}>
+                <option value="">Every centre</option>
+                {((merge && merge.facets && merge.facets.centres) || []).map(c => <option key={c} value={c}>{c}</option>)}
+              </select></label>
+            {mf.audience === "students"
+              ? <label className="dsn-prop"><span>Course</span>
+                  <select value={mf.track} onChange={e => setFilter("track", e.target.value)}>
+                    <option value="">Every course</option>
+                    {((merge && merge.facets && merge.facets.tracks) || []).map(c => <option key={c} value={c}>{c}</option>)}
+                  </select></label>
+              : <label className="dsn-prop"><span>Role</span>
+                  <select value={mf.role} onChange={e => setFilter("role", e.target.value)}>
+                    <option value="">Every role</option>
+                    {((merge && merge.facets && merge.facets.roles) || []).map(c => <option key={c} value={c}>{c}</option>)}
+                  </select></label>}
+            {/* The filter a certificate run is actually made of. Counted from
+                the attendance table on every read, not from the cached
+                daysPresent column, which is stale the moment a scan is fixed. */}
+            {mf.audience === "students" && (
+              <label className="dsn-prop"><span>Attended at least</span>
+                <input type="number" min={0} max={Math.max(0, (merge && merge.facets && merge.facets.maxAttended) || 0)}
+                  value={mf.attendedMin} onChange={e => setFilter("attendedMin", Math.max(0, Number(e.target.value) || 0))}/></label>
+            )}
+            <label className="dsn-prop"><span>Photograph</span>
+              <select value={mf.photo} onChange={e => setFilter("photo", e.target.value)}>
+                <option value="">Either</option><option value="yes">On file</option><option value="no">Missing</option>
+              </select></label>
+            <label className="dsn-prop"><span>ID card</span>
+              <select value={mf.issued} onChange={e => setFilter("issued", e.target.value)}>
+                <option value="">Either</option><option value="yes">Issued</option><option value="no">Not issued</option>
+              </select></label>
+            <label className="dsn-prop"><span>Registered from</span>
+              <input type="date" value={mf.from} onChange={e => setFilter("from", e.target.value)}/></label>
+            <label className="dsn-prop"><span>to</span>
+              <input type="date" value={mf.to} onChange={e => setFilter("to", e.target.value)}/></label>
+            <label className="dsn-prop dsn-merge-q"><span>Find</span>
+              <input value={mf.q} placeholder="name or ID" onChange={e => setFilter("q", e.target.value)}/></label>
+          </div>
+
+          {merge && merge.error && <p className="dsn-hint" style={{ color: "#ff9a9a" }}>{merge.error}</p>}
+          {merge && merge.truncated && (
+            <p className="dsn-hint" style={{ color: "#ffce54" }}>
+              {merge.matched} people match but only the first {merge.limit} are listed. Narrow the filters and run it in two.
+            </p>
+          )}
+
+          {merge && merge.rows.length > 0 && <>
+            <div className="dsn-merge-picks">
+              <button className="btn btn-ghost btn-sm" onClick={() => setPicked(merge.rows.map(r => r.key))}>All</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setPicked([])}>None</button>
+              <button className="btn btn-ghost btn-sm"
+                onClick={() => setPicked(merge.rows.filter(r => picked.indexOf(r.key) === -1).map(r => r.key))}>Invert</button>
+              <span className="dsn-merge-note">{picked.length} of {merge.rows.length} ticked</span>
+            </div>
+            <div className="dsn-merge-list">
+              {merge.rows.map(r => {
+                const on = picked.indexOf(r.key) !== -1;
+                return (
+                  <label key={r.key} className={"dsn-merge-row" + (on ? " is-on" : "")}>
+                    <input type="checkbox" checked={on} aria-label={"Include " + dsnRowName(r)}
+                      onChange={() => setPicked(p => on ? p.filter(x => x !== r.key) : p.concat([r.key]))}/>
+                    <span className="dsn-merge-who">{dsnRowName(r)}</span>
+                    <span className="dsn-merge-meta">{r.displayId}</span>
+                    <span className="dsn-merge-meta">{(r.centre && r.centre.name) || "—"}</span>
+                    {mf.audience === "students" && <span className="dsn-merge-meta">{r.attended} day{r.attended === 1 ? "" : "s"}</span>}
+                    {/* Said on the row rather than only in the summary: this is
+                        the thing an operator scans the list for. */}
+                    {!r.photoUrl && <span className="dsn-merge-flag">no photo</span>}
+                    {!r.token && <span className="dsn-merge-flag">no card</span>}
+                  </label>
+                );
+              })}
+            </div>
+          </>}
+          {merge && merge.rows.length === 0 && !merge.error &&
+            <p className="dsn-hint">Nobody matches these filters.</p>}
+
+          <div className="dsn-merge-run">
+            <label className="dsn-prop"><span>Resolution</span>
+              <select value={mdpi} onChange={e => setMdpi(Number(e.target.value))} disabled={!!run}>
+                <option value={150}>150dpi · proof</option>
+                <option value={300}>300dpi · print</option>
+                <option value={600}>600dpi · fine</option>
+              </select></label>
+            <button className="btn btn-primary btn-sm" disabled={!!run || !picked.length} onClick={() => runMerge("pdf")}
+              title="One page per person, at the real trim size">PDF · a page each</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => runMerge("sheet")}
+              disabled={!!run || !picked.length || dsnPerSheet(tpl) < 2}
+              title={dsnPerSheet(tpl) < 2
+                ? "An A4 sheet holds one of these — use “a page each”"
+                : dsnPerSheet(tpl) + " to an A4 sheet, with bleed and crop marks, for a print shop"}>
+              PDF · imposed sheet</button>
+            <button className="btn btn-ghost btn-sm" disabled={!!run || !picked.length} onClick={() => runMerge("zip")}
+              title="A PNG per person, named for them">ZIP of images</button>
+            {run && <>
+              <span className="dsn-merge-note" role="status">
+                {run.note === "writing the file…" ? run.note : "Rendering " + (run.i + 1) + " of " + run.n + " — " + run.note}
+              </span>
+              <button className="btn btn-ghost btn-sm" onClick={() => { runCancel.current = true; }}>Stop</button>
+            </>}
+          </div>
+        </div>
+      )}
 
       {tpl && (
         <div className="dsn-grid">
@@ -1150,4 +1540,5 @@ function DesignerPage() {
   );
 }
 
-Object.assign(window, { DesignerPage, dsnBlank, dsnFromPreset, dsnQrUrl, dsnRaster, dsnFileName, DSN_SAMPLE });
+Object.assign(window, { DesignerPage, dsnBlank, dsnFromPreset, dsnQrUrl, dsnRaster, dsnFileName, DSN_SAMPLE,
+                        dsnMergeAudit, dsnRowName, dsnRowFile, dsnPerSheet });

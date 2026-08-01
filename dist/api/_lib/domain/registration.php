@@ -3011,39 +3011,82 @@ function admin_cards_data(array $p): array {
     }
     $cards = [];
     foreach ($rows as $s) {
-        $ctr = $centres[strtolower((string)$s['centre'])] ?? null;
-        /* The printed ID carries exactly TWO names: first given name + surname.
-         * Prefer the parts the family actually gave us — the space-split below
-         * is a guess, and it gets a double-barrelled surname wrong and a
-         * surname-first entry backwards, on a card that costs money to
-         * reprint. It stays as the fallback for rows registered before the
-         * form asked for the two separately. */
-        $first = trim((string)($s['firstName'] ?? ''));
-        $surname = trim((string)($s['lastName'] ?? ''));
-        if ($first === '' && $surname === '') {
-            $names = preg_split('/\s+/', trim((string)$s['fullName'])) ?: [''];
-            $first = array_shift($names);
-            $surname = $names ? (string)array_pop($names) : '';
-        }
-        $cards[] = [
-            'studentId' => $s['studentId'],
-            'firstName' => $first, 'surname' => $surname,
-            'track' => (string)$s['track'],
-            'centre' => ['name' => $ctr['name'] ?? (string)$s['centre'], 'code' => $ctr['code'] ?? 'ST', 'color' => $ctr['color'] ?? '#76B043'],
-            'displayId' => card_display_id($s),
-            'token' => (string)$s['token'],
-            // Printed on the card so the holder and the desk can both see it.
-            'expiresAt' => $expiryOf[(string)$s['studentId']] ?? '',
-            'photoUrl' => (string)$s['photoUrl'],
-            /* Not printed — this is what lets the studio cut a run by date.
-               A print run is almost never "everybody": it is the children who
-               registered since the last batch went to the printer, and without
-               a date on the card record the only way to express that was to
-               tick a hundred boxes by hand. */
-            'enrolledAt' => (string)($s['enrolledAt'] ?? ''),
-        ];
+        $cards[] = card_row_student($s, $centres[strtolower((string)$s['centre'])] ?? null,
+            $expiryOf[(string)$s['studentId']] ?? '');
     }
     return ['ok' => true, 'cards' => $cards, 'program' => idcard_program()];
+}
+
+/**
+ * One child, in the shape everything that DRAWS a child expects.
+ *
+ * Its own function because there are now two callers — the card studio's print
+ * run and the design studio's data merge — and a second hand-written copy of
+ * this mapping is a guarantee that the two eventually disagree. That is not
+ * hypothetical: the volunteer card printed no expiry date for months because
+ * one of two payload builders read `qr_codes.expiresAt` and the other did not,
+ * and nothing said so because both looked complete on their own.
+ *
+ * `$ctr` is the centres row for this child (or null when the centre they name
+ * is not on file), `$expiry` the assigned card's expiry — both looked up in
+ * batch by the caller, because a print run of 300 must not be 300 queries.
+ */
+function card_row_student(array $s, ?array $ctr, string $expiry): array {
+    /* The printed ID carries exactly TWO names: first given name + surname.
+     * Prefer the parts the family actually gave us — the space-split below
+     * is a guess, and it gets a double-barrelled surname wrong and a
+     * surname-first entry backwards, on a card that costs money to
+     * reprint. It stays as the fallback for rows registered before the
+     * form asked for the two separately. */
+    $first = trim((string)($s['firstName'] ?? ''));
+    $surname = trim((string)($s['lastName'] ?? ''));
+    if ($first === '' && $surname === '') {
+        $names = preg_split('/\s+/', trim((string)($s['fullName'] ?? ''))) ?: [''];
+        $first = (string)array_shift($names);
+        $surname = $names ? (string)array_pop($names) : '';
+    }
+    return [
+        'studentId' => $s['studentId'],
+        'firstName' => $first, 'surname' => $surname,
+        'track' => (string)($s['track'] ?? ''),
+        'centre' => ['name' => $ctr['name'] ?? (string)($s['centre'] ?? ''), 'code' => $ctr['code'] ?? 'ST', 'color' => $ctr['color'] ?? '#76B043'],
+        'displayId' => card_display_id($s),
+        'token' => (string)($s['token'] ?? ''),
+        // Printed on the card so the holder and the desk can both see it.
+        'expiresAt' => $expiry,
+        'photoUrl' => (string)($s['photoUrl'] ?? ''),
+        /* Not printed — this is what lets the studio cut a run by date.
+           A print run is almost never "everybody": it is the children who
+           registered since the last batch went to the printer, and without
+           a date on the card record the only way to express that was to
+           tick a hundred boxes by hand. */
+        'enrolledAt' => (string)($s['enrolledAt'] ?? ''),
+    ];
+}
+
+/**
+ * Every centre, indexed by lower-cased name AND code, for the callers that have
+ * to resolve a free-text centre against the table once per person. One read
+ * instead of one query per row: the volunteer card payload used to do the
+ * latter, which is 300 queries for a print run of 300 on a shared host.
+ */
+function centre_index(bool $activeOnly = false): array {
+    $sql = 'SELECT name, code, color, status FROM centres' . ($activeOnly ? " WHERE status = 'active'" : '');
+    $rows = db_all($sql);
+    $out = [];
+    // Names in a first pass, codes in a second, so a centre whose NAME is "EG"
+    // is never shadowed by a different centre whose CODE is EG.
+    foreach ($rows as $c) {
+        $out[mb_strtolower((string)$c['name'])] =
+            ['name' => (string)$c['name'], 'code' => (string)$c['code'], 'color' => (string)($c['color'] ?: '#76B043')];
+    }
+    foreach ($rows as $c) {
+        $k = mb_strtolower((string)$c['code']);
+        if ($k !== '' && !isset($out[$k])) {
+            $out[$k] = ['name' => (string)$c['name'], 'code' => (string)$c['code'], 'color' => (string)($c['color'] ?: '#76B043')];
+        }
+    }
+    return $out;
 }
 
 // Program/branding identity block for the ID cards — admin-editable via the

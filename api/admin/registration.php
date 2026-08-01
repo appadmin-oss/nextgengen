@@ -32,6 +32,15 @@ if ($method === 'GET') {
         'folder' => (string)($_GET['folder'] ?? ''), 'q' => (string)($_GET['q'] ?? '')]);
     elseif ($view === 'assetUsage')  $res = gs_call('admin.design.asset.usage', ['requesterId' => $s['mid'],
         'assetId' => (string)($_GET['assetId'] ?? '')]);
+    // Who a design run covers — see api/_lib/domain/merge.php.
+    elseif ($view === 'merge')       $res = gs_call('admin.merge.rows', ['requesterId' => $s['mid'],
+        'audience' => (string)($_GET['audience'] ?? 'students'),
+        'centre' => (string)($_GET['centre'] ?? ''), 'track' => (string)($_GET['track'] ?? ''),
+        'role' => (string)($_GET['role'] ?? ''), 'q' => (string)($_GET['q'] ?? ''),
+        'from' => (string)($_GET['from'] ?? ''), 'to' => (string)($_GET['to'] ?? ''),
+        'attendedMin' => (int)($_GET['attendedMin'] ?? 0),
+        'photo' => (string)($_GET['photo'] ?? ''), 'issued' => (string)($_GET['issued'] ?? ''),
+        'limit' => (int)($_GET['limit'] ?? 0)]);
     else json_error('unknown_view', 400);
 } elseif ($method === 'POST') {
     $b = read_json_body();

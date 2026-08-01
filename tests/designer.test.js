@@ -97,6 +97,28 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     templates: function () { return Promise.resolve({ templates: window.__tplList || [] }); },
     cards: P({ cards: CARDS }),
     volunteerCards: P({ cards: [] }),
+    /* The merge roster. Deliberately NOT the same list as cards(): the whole
+       point of the merge read is that it sees people the card payload cannot,
+       so MRG-3 has no token and MRG-2 has no photograph. Filtering is asserted
+       on the server; here we only record what the screen asked for. */
+    mergeRows: function (f) {
+      window.__mergeQuery = f;
+      return Promise.resolve({
+        ok: true, audience: (f && f.audience) || 'students', total: 3, matched: 3, truncated: false, limit: 600,
+        facets: { centres: ['Egbeda', 'Ijaiye'], tracks: ['Coding', 'Piano'], roles: [], maxAttended: 9 },
+        rows: [
+          { key: 'MRG-1', studentId: 'MRG-1', displayId: 'NGG-26-0101', firstName: 'Amina', surname: 'Alpha',
+            track: 'Piano', token: 'MT1', photoUrl: '', attended: 9, enrolledAt: '2026-06-01T09:00:00Z',
+            centre: { name: 'Egbeda', code: 'EG', color: '#D64545' } },
+          { key: 'MRG-2', studentId: 'MRG-2', displayId: 'NGG-26-0102', firstName: 'Bola', surname: 'Beta',
+            track: 'Coding', token: 'MT2', photoUrl: '', attended: 4, enrolledAt: '2026-06-02T09:00:00Z',
+            centre: { name: 'Ijaiye', code: 'IJ', color: '#76B043' } },
+          { key: 'MRG-3', studentId: 'MRG-3', displayId: 'NGG-26-0103', firstName: 'Chidi', surname: 'Gamma',
+            track: 'Piano', token: '', photoUrl: '', attended: 0, enrolledAt: '2026-06-03T09:00:00Z',
+            centre: { name: 'Egbeda', code: 'EG', color: '#D64545' } },
+        ],
+      });
+    },
     /* Mirrors the server's fork rule rather than always returning the same id:
        saving a sys- design creates a copy, and the screen has to say so. */
     templateSave: function (id, t) {
@@ -127,16 +149,23 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
      required" and nothing else, which looks like a broken designer rather than a
      stub that lost a race. */
   window.useAuth = function () { return { isSignedIn: true, openSignIn: function () {} }; };
-  /* Same reason: safety.jsx assigns window.toast and window.dialog as the bundle
-     loads, so stubs set before it are silently replaced and every message the
-     screen produces goes to a toast host that is not mounted. */
-  window.toast = { success: function (m) { (window.__said = window.__said || []).push(String(m)); },
-                   error: function (m) { (window.__bad = window.__bad || []).push(String(m)); } };
-  window.dialog = { confirm: function () { return Promise.resolve(true); } };
   /* NOT #root: app.jsx mounts the whole SPA into that id as the bundle loads, so
      a fixture sharing it gets two React roots writing to one container — the
-     designer, then the app's error boundary underneath it. */
-  ReactDOM.createRoot(document.getElementById('dsn-root')).render(React.createElement(window.DesignerPage));
+     designer, then the app's error boundary underneath it.
+
+     The REAL toast and dialog hosts, not stubs. "toast" and "dialog" are
+     top-level bindings inside the bundle, so assigning window.toast here does
+     not intercept anything the designer calls — it only looks like it does. The
+     consequence is worse than a silent stub: dialog.confirm resolves through a
+     listener set that a fixture without DialogHost never joins, so an awaited
+     dialog.confirm never settles and the code under test simply stops, with no
+     error and nothing on screen to say why. Mounting the hosts makes every
+     message the screen produces a thing the test can read. */
+  ReactDOM.createRoot(document.getElementById('dsn-root')).render(
+    React.createElement(React.Fragment, null,
+      React.createElement(window.DesignerPage),
+      React.createElement(window.DialogHost),
+      React.createElement(window.ToastHost)));
 </script>
 </body></html>`);
 
@@ -487,7 +516,9 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     await page.waitForTimeout(2500);
     const placed = await page.evaluate(() => {
       const img = (window.__lastTpl || { elements: [] }).elements.filter(e => e.type === 'image');
-      return { sent: window.__uploaded, images: img.map(e => e.src), bad: window.__bad || [] };
+      // Read the real toast host, so a failure says what the screen said.
+      const bad = Array.from(document.querySelectorAll('.toast, .toast-msg')).map(e => e.textContent);
+      return { sent: window.__uploaded, images: img.map(e => e.src), bad };
     });
     ok('an uploaded image goes to the library, not into the design',
       !!placed.sent && (!!placed.sent.dataUrl || !!placed.sent.url));
@@ -500,6 +531,103 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
       placed.images.length >= 2
       && placed.images.some(u => u.indexOf('/api/public/photo.php') === 0)
       && placed.images.every(u => !/^data:/.test(u)));
+
+    /* ── 13. Data merge: one design, many people ────────────────────────────
+       The studio could always draw a certificate; the question is whether it
+       can draw two hundred and forty of them. Driven end to end — the roster
+       read, the tick list, the audit that names who is missing data, and a real
+       zip whose entries are counted out of the bytes. */
+    await page.selectOption('select[aria-label="Open a design"]', '__new_student');
+    await page.waitForTimeout(1200);
+    await page.click('button:has-text("Batch…")');
+    await page.waitForSelector('.dsn-merge-row', { timeout: 8000 });
+    const merged = await page.evaluate(() => ({
+      rows: document.querySelectorAll('.dsn-merge-row').length,
+      ticked: document.querySelectorAll('.dsn-merge-row.is-on').length,
+      flags: Array.from(document.querySelectorAll('.dsn-merge-flag')).map(e => e.textContent),
+      asked: window.__mergeQuery,
+    }));
+    ok('the batch panel reads its own roster and ticks everybody by default',
+      merged.rows === 3 && merged.ticked === 3 && merged.asked && merged.asked.audience === 'students');
+    /* The flags are the thing an operator scans for. Three "no photo" and one
+       "no card" — and the "no card" row is the acceptance test for the whole
+       feature: a child the card payload cannot see is in this run. */
+    ok('…including the people an ID-card read cannot see, flagged on the row',
+      merged.flags.filter(f => f === 'no card').length === 1
+      && merged.flags.filter(f => f === 'no photo').length === 3);
+
+    /* Imposition is offered only where it means something. compose() clamps its
+       grid to at least 1×1, so asking it to gang an A4 poster onto an A4 sheet
+       does not fail — it returns a sheet with the artwork hanging off three
+       edges, which is the kind of file a print shop phones about. */
+    const gang = await page.evaluate(() => ({
+      card: window.dsnPerSheet({ wMm: 54, hMm: 92, bleedMm: 3 }),
+      a4: window.dsnPerSheet({ wMm: 210, hMm: 297, bleedMm: 3 }),
+      a5: window.dsnPerSheet({ wMm: 148, hMm: 210, bleedMm: 3 }),
+      offered: !document.querySelector('button[title*="A4 sheet"]').disabled,
+    }));
+    /* An A5 gangs 1-up at best (two of them are 296mm across, wider than A4
+       less its margins), so it is not offered either — "a page each" already
+       does one-up, and does it without pretending to be prepress. */
+    ok('ID cards gang ' + gang.card + '-up on A4; A5 and larger are not offered imposition',
+      gang.card >= 6 && gang.a4 === 0 && gang.a5 === 1 && gang.offered === true);
+
+    // A filter reaches the server rather than being applied to a stale list.
+    await page.fill('.dsn-merge-q input', 'Beta');
+    await page.waitForTimeout(500);
+    ok('…and a filter is a new read, not a client-side sieve over old rows',
+      (await page.evaluate(() => (window.__mergeQuery || {}).q)) === 'Beta');
+    await page.fill('.dsn-merge-q input', '');
+    await page.waitForTimeout(500);
+
+    // Drop one person, then run. Two pieces must come out, not three.
+    await page.click('.dsn-merge-row:nth-child(3) input[type=checkbox]');
+    await page.selectOption('.dsn-merge-run select', '150');
+    await page.click('button:has-text("ZIP of images")');
+
+    /* The run stops to say what the DATA will do to the design. This is the
+       check tplPreflight cannot make: the design is fine, the roster is the
+       problem, and two grey rectangles where a face should be is not something
+       to discover on paper. */
+    await page.waitForSelector('.dialog-card', { timeout: 10000 });
+    const asked = await page.evaluate(() => ({
+      title: document.querySelector('.dialog-h').textContent,
+      body: (document.querySelector('.dialog-p') || {}).textContent || '',
+    }));
+    ok('…and it stops to name which of them have no photograph on file',
+      /missing data/i.test(asked.title) && /2 of 2/.test(asked.body)
+      && /photograph/i.test(asked.body) && /Amina Alpha/.test(asked.body));
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: 60000 }),
+      page.click('.dialog-actions .btn-primary'),
+    ]);
+    const zipPath = await download.path();
+    const zip = fs.readFileSync(zipPath);
+    // Central-directory headers: one per entry, counted out of the real bytes.
+    let entries = 0;
+    for (let i = 0; i + 4 <= zip.length; i++) {
+      if (zip[i] === 0x50 && zip[i + 1] === 0x4b && zip[i + 2] === 0x01 && zip[i + 3] === 0x02) entries++;
+    }
+    const names = zip.toString('latin1');
+    ok('a batch of ' + entries + ' renders one real image per person, named for them',
+      entries === 2 && names.indexOf('NGG-26-0101.png') !== -1 && names.indexOf('NGG-26-0102.png') !== -1
+      && names.indexOf('NGG-26-0103') === -1 && zip.length > 4000);
+
+    /* And the prepress route, through the card studio's own imposition rather
+       than a second engine written for posters. Both cards must land on ONE
+       sheet — a merge that emitted a page per card would be the "a page each"
+       button wearing prepress clothing. */
+    await page.click('button:has-text("PDF · imposed sheet")');
+    await page.waitForSelector('.dialog-card', { timeout: 10000 });
+    const [sheetDl] = await Promise.all([
+      page.waitForEvent('download', { timeout: 60000 }),
+      page.click('.dialog-actions .btn-primary'),
+    ]);
+    const sheetPdf = fs.readFileSync(await sheetDl.path()).toString('latin1');
+    ok('…and an imposed sheet is one A4 page carrying both, with marks and layers',
+      sheetPdf.slice(0, 5) === '%PDF-' && /\/Count 1\b/.test(sheetPdf)
+      && sheetPdf.indexOf('/OCProperties') !== -1);
 
     ok('no uncaught page errors across the whole session', errs.length === 0);
     if (errs.length) console.error('       ', errs.slice(0, 4).join(' | '));

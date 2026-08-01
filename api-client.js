@@ -798,6 +798,15 @@
         assetUpload:  (data) => request('/admin/registration.php', { body: { action: 'asset_upload', ...(data || {}) }, timeout: 120000 }),
         assetRename:  (assetId, name) => request('/admin/registration.php', { body: { action: 'asset_rename', assetId, name } }),
         assetDelete:  (assetId, force) => request('/admin/registration.php', { body: { action: 'asset_delete', assetId, force: !!force } }),
+        /* Data merge: the people one design run covers. NOT the card payload —
+           that one only returns children who already hold an ID, which is the
+           wrong population for a certificate. See api/_lib/domain/merge.php. */
+        mergeRows:    (f) => request('/admin/registration.php' + qs({ view: 'merge',
+                        audience: (f && f.audience) || 'students', centre: (f && f.centre) || '',
+                        track: (f && f.track) || '', role: (f && f.role) || '', q: (f && f.q) || '',
+                        from: (f && f.from) || '', to: (f && f.to) || '',
+                        attendedMin: (f && f.attendedMin) || 0, photo: (f && f.photo) || '',
+                        issued: (f && f.issued) || '', limit: (f && f.limit) || 0 })),
         // Resend a student's or volunteer's ID (email + SMS where on file).
         // qrPng (optional data URL) is cached server-side so the email can embed
         // the scannable QR via the hosted /api/public/qr.php image.

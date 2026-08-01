@@ -141,6 +141,11 @@ const VENDOR_LIBS = {
   // Already vendored for the card studio's batch PDF; the designer wants it too,
   // for a single sheet at its real trim size with crop marks.
   jspdf: { js: ["/vendor/jspdf.umd.min.js"], global: "jspdf" },
+  /* The card studio's prepress module — imposition, bleed, crop marks, real
+     zips. The design studio's data merge produces exactly the artefacts this
+     already knows how to lay out, and a second imposition engine written for
+     posters would be a second place for the bleed arithmetic to be wrong. */
+  cardExport: { js: ["/vendor/card-export.js"], global: "CardExport" },
 };
 const _vendorLoads = {};
 function loadVendorAsset(url, kind) {

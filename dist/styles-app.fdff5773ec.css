@@ -4860,3 +4860,53 @@ body.own-chrome .fab-top { display: none; }
   background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.72));
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* ── Data merge ──────────────────────────────────────────────────────────────
+   One design, one piece per person. It sits above the canvas rather than in a
+   modal so the proof is still on screen while a run is being cut — the whole
+   value of a merge is knowing what the two hundred and fortieth one looks
+   like. */
+.dsn-merge {
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045); padding: 14px 16px; margin-bottom: 14px;
+}
+.dsn-merge-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.dsn-merge-head b { font-size: 14px; }
+.dsn-merge-note {
+  flex: 1; font: 400 12px var(--font-mono, monospace); color: rgba(230, 238, 255, 0.6);
+}
+.dsn-merge-filters {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px 10px;
+}
+.dsn-merge-filters .dsn-prop { margin-bottom: 0; }
+.dsn-merge-q { grid-column: span 2; }
+.dsn-merge-picks { display: flex; align-items: center; gap: 6px; margin: 12px 0 8px; }
+/* A tick list, not a table: the operator is scanning for the flags, and rows
+   that wrap into columns fit three hundred children on one screen. */
+.dsn-merge-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px;
+  max-height: 260px; overflow-y: auto; padding-right: 4px;
+}
+.dsn-merge-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.04);
+  font-size: 12.5px; cursor: pointer; min-width: 0;
+}
+.dsn-merge-row.is-on { border-color: rgba(245, 176, 38, 0.55); background: rgba(245, 176, 38, 0.1); }
+.dsn-merge-who { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsn-merge-meta {
+  font: 400 10.5px var(--font-mono, monospace); color: rgba(230, 238, 255, 0.5);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 90px;
+}
+/* Amber, not red: a child with no photograph is not an error, it is a fact the
+   operator has to decide about before three hundred pieces are printed. */
+.dsn-merge-flag {
+  font: 700 9px var(--font-mono, monospace); letter-spacing: .06em; text-transform: uppercase;
+  color: #ffce54; border: 1px solid rgba(255, 206, 84, 0.42); border-radius: 5px;
+  padding: 2px 5px; white-space: nowrap;
+}
+.dsn-merge-run {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.dsn-merge-run .dsn-prop { margin-bottom: 0; min-width: 150px; }

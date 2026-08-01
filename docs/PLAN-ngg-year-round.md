@@ -216,12 +216,43 @@ Clip an image to any shape, not just a rounded rectangle; corner-radius per
 corner; background removal on a placed photograph (Cloudinary is already
 integrated); blur and duotone.
 
-### 4.6 Data merge — the feature that ties this back to §3
+### 4.6 Data merge — the feature that ties this back to §3 — **built**
 
 Pick a published template, pick a filtered roster, generate one design per
 person, export the batch. This already half-exists in the card studio for IDs;
 generalising it is what makes the studio produce **certificates for 240 children
 and 30 volunteer badges** rather than one card at a time.
+
+Shipped as a Batch panel in the studio, over a new roster read
+(`api/_lib/domain/merge.php`, `admin.merge.rows`). Three things are worth
+recording, because each was a decision rather than a detail:
+
+- **Card issuance is a filter, not a precondition.** The studio's only roster
+  read was `admin.cards.data`, which exists to feed a card printer and is bound
+  to `regStatus = 'verified' AND token != ''`. That is the wrong population for
+  a certificate: a child who attended every day and whose card was never issued
+  — because a photograph was rejected — is exactly who a certificate is for, and
+  to that read they did not exist.
+- **Attendance is counted from the register, not read from
+  `summer_students.daysPresent`,** which is a cache and is stale the moment a
+  scan is corrected. "Attended at least N days" is the filter a certificate run
+  is actually made of, so it has to be true on the day it prints.
+- **One row builder, two callers.** `card_row_student` and `card_row_volunteer`
+  were extracted from the card payloads and are now shared, so a merged
+  certificate and a printed ID cannot disagree about a name or an expiry. The
+  volunteer card printed no expiry for months precisely because two copies of
+  that mapping existed and only one of them read `qr_codes`.
+
+Output is one page per person at the real trim size, an imposed A4 sheet through
+the card studio's existing prepress module (offered only where the piece
+actually gangs up), or a ZIP of PNGs named for each child. Rendering runs in the
+browser on the same Fabric canvas that drew the proof, measures the first page
+and refuses a run that will not fit in memory, and stops before it starts to say
+which people are missing a photograph.
+
+**Still open here:** volunteer duty days are not counted (they live in
+`attendance_duty` and mean something different from a child's check-in), and a
+run is capped at 600 people.
 
 ### 4.7 Charts from real data
 
@@ -248,14 +279,16 @@ house.
 
 ## 5. What I would do first
 
-1. **§4.1, the asset library.** It is a bug, it is small, and every other design
-   feature is worth less while a photograph cannot be saved.
-2. **§3 Phase 1, people and involvements.** Everything in §3 waits on it, and
-   every week it is delayed is another cohort of children entered as records
-   that cannot be connected to their own past.
-3. **§4.6, data merge** — because it turns the studio from a nice tool into the
-   thing that produces 240 certificates in November, which is exactly the
-   year-round work this audit is about.
+1. ~~**§4.1, the asset library.**~~ **Done.** It was a bug, it was small, and
+   every other design feature was worth less while a photograph could not be
+   saved.
+2. ~~**§4.6, data merge.**~~ **Done** — taken before Phase 1 because it is
+   continuous with the asset library and needs nothing from the identity work.
+   It turns the studio from a nice tool into the thing that produces 240
+   certificates in November.
+3. **§3 Phase 1, people and involvements.** Everything else in §3 waits on it,
+   and every week it is delayed is another cohort of children entered as records
+   that cannot be connected to their own past. **This is now the next thing.**
 
 §3 Phase 1 is the one with real risk: it moves identity for every child in the
 system. It should ship behind the compatibility view described above, with the
