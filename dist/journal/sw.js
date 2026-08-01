@@ -5,7 +5,7 @@
    the build id by build.js so each deploy invalidates the old shell.
    ============================================================================ */
 
-const CACHE_VERSION = 'aj-b83d206e18';
+const CACHE_VERSION = 'aj-512c598238';
 const SHELL = CACHE_VERSION + '-shell';
 
 const PRECACHE = [
@@ -33,7 +33,7 @@ const PRECACHE = [
   '/assets/fonts/space-mono-latin-700-normal.woff2',
   '/vendor/react.production.min.js',
   '/vendor/react-dom.production.min.js',
-  '/api-client.15f8abc49d.js',
+  '/api-client.0509d1d7a6.js',
   '/assets/logo.png',
   '/assets/seasonal-icon.js',
 ];

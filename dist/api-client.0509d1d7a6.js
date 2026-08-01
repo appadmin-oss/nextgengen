@@ -750,6 +750,16 @@
         hierarchyUpsert: (data) => request('/admin/registration.php', { body: { action: 'hierarchy_upsert', data } }),
         hierarchyDelete: (tierId) => request('/admin/registration.php', { body: { action: 'hierarchy_delete', tierId } }),
         volunteerCards:  (volunteerId) => request('/admin/registration.php' + qs({ view: 'vcards', volunteerId })),
+        /* ID card designs. `save` writes a draft; `publish` freezes the copy a
+           print run reads, and refuses on a preflight error — a check that only
+           ran in the browser is one a crafted request skips, and what it guards
+           is three hundred pieces of card. */
+        templates:       (kind) => request('/admin/registration.php' + qs({ view: 'templates', kind: kind || '' })),
+        template:        (templateId) => request('/admin/registration.php' + qs({ view: 'template', templateId })),
+        templateSave:    (templateId, template) => request('/admin/registration.php', { body: { action: 'template_save', templateId: templateId || '', template } }),
+        templatePublish: (templateId) => request('/admin/registration.php', { body: { action: 'template_publish', templateId } }),
+        templateCheck:   (template) => request('/admin/registration.php', { body: { action: 'template_check', template } }),
+        templateDelete:  (templateId) => request('/admin/registration.php', { body: { action: 'template_delete', templateId } }),
         // Resend a student's or volunteer's ID (email + SMS where on file).
         // qrPng (optional data URL) is cached server-side so the email can embed
         // the scannable QR via the hosted /api/public/qr.php image.

@@ -170,6 +170,16 @@ function backend_dispatch(string $op, array $args = []): array {
              * before you press anything. */
             'admin.id.resend.bulk'              => 'admin_id_resend_bulk',
             'admin.id.qrgaps'                   => 'admin_id_qr_gaps',
+            /* ID card designs. Gated on 'people', not 'summer': the staff who
+               verify children and the staff who decide what a credential looks
+               like are different jobs, and the second can invalidate every card
+               at a gate. */
+            'admin.card.templates'              => 'admin_card_templates',
+            'admin.card.template.get'           => 'admin_card_template_get',
+            'admin.card.template.save'          => 'admin_card_template_save',
+            'admin.card.template.publish'       => 'admin_card_template_publish',
+            'admin.card.template.check'         => 'admin_card_template_check',
+            'admin.card.template.delete'        => 'admin_card_template_delete',
             'admin.registrations.remindBulk' => 'admin_registrations_remind_bulk',
             'admin.centres.list'          => 'admin_centres_list',
             'admin.centres.upsert'        => 'admin_centres_upsert',

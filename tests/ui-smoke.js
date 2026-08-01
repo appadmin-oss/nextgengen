@@ -941,7 +941,17 @@ const LEADERBOARD = {
        the grid existing at all. */
     const rg = await browser.newPage();
     await rg.goto(BASE + '/tests/_boards_fixture.html?board=summer&mode=ok&css=1', { waitUntil: 'networkidle' });
-    await rg.waitForTimeout(700);
+    /* Wait for the FONTS, not for a stopwatch. These assertions measure where a
+       footer sits, and a card whose name is still in the fallback face wraps
+       differently from one that is not — so a fixed 700ms passed most of the
+       time and failed when the machine was busy, which is the worst kind of red.
+       document.fonts.ready is the actual precondition. */
+    await rg.waitForFunction(() => document.fonts && document.fonts.status === 'loaded', { timeout: 15000 }).catch(() => {});
+    await rg.waitForFunction(() => {
+      const c = document.querySelectorAll('.roster-grid > .member-card');
+      return c.length >= 4 && c[0].getBoundingClientRect().width > 0;
+    }, { timeout: 15000 });
+    await rg.waitForTimeout(200);
     const cardGeom = await rg.evaluate(() => {
       const cards = Array.from(document.querySelectorAll('.roster-grid > .member-card'));
       const tiles = cards.map(c => c.querySelector('div[style*="aspect-ratio"], div[style*="aspectRatio"]') || c.firstElementChild);

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 75;
+const NGG_SCHEMA_TARGET = 76;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1957,6 +1957,37 @@ function db_migrate(PDO $db): void {
          * parent and is already named. */
         75 => "
             ALTER TABLE consents ADD COLUMN recordedById TEXT DEFAULT '';
+        ",
+        /* 76: ID card designs, as data.
+         *
+         * The card artwork was code — the layout lived in JSX and only the data
+         * varied per child, so changing where the QR sits meant a deploy. A
+         * template is the same document with the layout moved into the row.
+         *
+         * `schemaJson` is the whole design; it is deliberately one column rather
+         * than a table of elements, because a design is only ever read and
+         * written whole and an element table would buy joins we never make.
+         *
+         * `version` increments on publish and a print run records the version it
+         * used, so a card can be reproduced exactly a year later — which is the
+         * difference between a design tool and a credential system. */
+        76 => "
+            CREATE TABLE IF NOT EXISTS card_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                templateId TEXT UNIQUE,
+                name TEXT,
+                kind TEXT DEFAULT 'student',
+                status TEXT DEFAULT 'draft',
+                version INTEGER DEFAULT 1,
+                schemaJson TEXT DEFAULT '',
+                publishedJson TEXT DEFAULT '',
+                createdById TEXT DEFAULT '',
+                updatedById TEXT DEFAULT '',
+                createdAt TEXT,
+                updatedAt TEXT,
+                publishedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_ctpl_kind ON card_templates (kind, status);
         ",
     ];
 

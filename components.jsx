@@ -96,6 +96,91 @@ function inkOn(hex) {
     : { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
 }
 
+/* ── Heavy design libraries, fetched only when a screen actually opens ───────
+ *
+ * Fabric, Filerobot and TUI come to about 2 MB between them — twice the whole
+ * rest of the app. They belong to one admin screen that most people never open,
+ * and this app is used on 3G at centres, so none of them may be in the bundle or
+ * in the service worker's precache. They are fetched on demand, once, and then
+ * they are in the HTTP cache like any other hashed asset.
+ *
+ * Each entry names the global it defines, which is also how we detect that a
+ * script has finished: a <script onload> fires before an IIFE has necessarily
+ * assigned its export, and the CSS has to be counted too or the first paint of
+ * an editor is unstyled.
+ *
+ * The version numbers are here rather than only in vendor-build.js because this
+ * is the file that has to be right at RUNTIME — if the vendored file is ever
+ * swapped for a different major, the global check below is what fails loudly.
+ */
+const VENDOR_LIBS = {
+  // Fabric 7.4.0 — the design canvas. UMD, defines window.fabric.
+  fabric: { js: ["/vendor/fabric.min.js"], global: "fabric" },
+  // Filerobot 5.0.0 — the photo editor. Built by vendor-build.js with React
+  // aliased to our page globals, so it must load AFTER React (it always does:
+  // React is in the document head, this is fetched from a click).
+  filerobot: {
+    js: ["/vendor/filerobot-image-editor.min.js"],
+    css: ["/vendor/filerobot-image-editor.min.css"],
+    global: "FilerobotImageEditor",
+    needs: () => !!(window.React && window.ReactDOM && window.ReactDOM.createRoot),
+  },
+  /* TUI Image Editor 3.15.3 — the second photo engine. Its colour picker is a
+     genuine external, so it loads first, in order.
+     THE ONE REAL COLLISION IN ALL OF THIS: TUI's dist has Fabric 4.6.0 bundled
+     inside its webpack closure AND publishes it to window.fabric as it
+     evaluates. Load TUI after the designer and window.fabric silently drops from
+     7.4.0 to 4.6.0 — every subsequent Fabric 7 call fails with a "not a
+     constructor" a long way from the cause. `isolates` is the fix: see below. */
+  tui: {
+    js: ["/vendor/tui-color-picker.min.js", "/vendor/tui-image-editor.min.js"],
+    css: ["/vendor/tui-color-picker.min.css", "/vendor/tui-image-editor.min.css"],
+    global: "tui",
+    isolates: ["fabric"],
+  },
+};
+const _vendorLoads = {};
+function loadVendorAsset(url, kind) {
+  return new Promise((resolve, reject) => {
+    const sel = kind === "css" ? 'link[href="' + url + '"]' : 'script[src="' + url + '"]';
+    if (document.querySelector(sel)) return resolve();
+    const el = document.createElement(kind === "css" ? "link" : "script");
+    if (kind === "css") { el.rel = "stylesheet"; el.href = url; } else { el.src = url; el.async = false; }
+    el.addEventListener("load", () => resolve(), { once: true });
+    el.addEventListener("error", () => reject(new Error("could not load " + url)), { once: true });
+    document.head.appendChild(el);
+  });
+}
+/** Load a design library on demand. Resolves with its global; the same call
+ *  twice returns the same promise rather than fetching a megabyte twice. */
+function loadVendor(name) {
+  const spec = VENDOR_LIBS[name];
+  if (!spec) return Promise.reject(new Error("unknown library: " + name));
+  if (window[spec.global]) return Promise.resolve(window[spec.global]);
+  if (_vendorLoads[name]) return _vendorLoads[name];
+  if (spec.needs && !spec.needs()) return Promise.reject(new Error(name + " needs React on the page first"));
+  _vendorLoads[name] = (async () => {
+    /* Globals this library is known to trample, saved before it evaluates and
+       put back after. TUI publishes its bundled Fabric 4.6.0 to window.fabric,
+       which would silently downgrade the Fabric 7 the designer is holding — and
+       the failure surfaces much later, as a "not a constructor" on an unrelated
+       line. It keeps its own internal reference, so restoring ours costs it
+       nothing. Cheaper and far more predictable than an iframe. */
+    const saved = (spec.isolates || []).map(k => [k, window[k], Object.prototype.hasOwnProperty.call(window, k)]);
+    // Stylesheets in parallel; scripts in ORDER, because tui-image-editor reads
+    // tui.colorPicker at evaluation time.
+    await Promise.all((spec.css || []).map(u => loadVendorAsset(u, "css")));
+    for (const u of spec.js) await loadVendorAsset(u, "js");
+    saved.forEach(([k, v, had]) => { if (had) window[k] = v; else delete window[k]; });
+    if (!window[spec.global]) throw new Error(name + " loaded but did not define window." + spec.global);
+    return window[spec.global];
+  })();
+  // A failed load must not be cached as a permanent failure: the usual cause is
+  // a flaky connection at a centre, and the fix is pressing the button again.
+  _vendorLoads[name].catch(() => { delete _vendorLoads[name]; });
+  return _vendorLoads[name];
+}
+
 /* ---- Brand mark — uses actual logo PNG ---- */
 function BrandLogo({ size = 36, style = {} }) {
   return (
@@ -2059,5 +2144,6 @@ Object.assign(window, {
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart, inkOn,
+  loadVendor, VENDOR_LIBS,
   Uploader, A11ySettingsPanel, A11yNavButton, PhotoEditor, PhotoCapture, ImageLightbox, SignaturePad,
 });

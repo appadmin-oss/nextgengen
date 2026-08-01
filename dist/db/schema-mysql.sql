@@ -1341,3 +1341,33 @@ INSERT INTO schema_version (version) VALUES (74) ON DUPLICATE KEY UPDATE version
 ALTER TABLE consents ADD COLUMN recordedById VARCHAR(64) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (75) ON DUPLICATE KEY UPDATE version = version;
+
+-- 76: ID card designs, as data.
+--
+-- The card artwork was code — the layout lived in JSX and only the data varied
+-- per child, so changing where the QR sits meant a deploy. A template is the
+-- same document with the layout moved into the row.
+--
+-- schemaJson is the whole design in one column rather than a table of elements,
+-- because a design is only ever read and written whole; an element table would
+-- buy joins we never make. version increments on publish and a print run records
+-- the version it used, so a card can be reproduced exactly a year later — the
+-- difference between a design tool and a credential system.
+CREATE TABLE IF NOT EXISTS card_templates (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  templateId VARCHAR(64) UNIQUE,
+  name VARCHAR(160),
+  kind VARCHAR(24) DEFAULT 'student',
+  status VARCHAR(24) DEFAULT 'draft',
+  version INT DEFAULT 1,
+  schemaJson MEDIUMTEXT,
+  publishedJson MEDIUMTEXT,
+  createdById VARCHAR(64) DEFAULT '',
+  updatedById VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40),
+  updatedAt VARCHAR(40),
+  publishedAt VARCHAR(40) DEFAULT '',
+  KEY idx_ctpl_kind (kind, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (76) ON DUPLICATE KEY UPDATE version = version;

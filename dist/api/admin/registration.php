@@ -25,6 +25,9 @@ if ($method === 'GET') {
     elseif ($view === 'consents')    $res = gs_call('admin.registration.consents', ['requesterId' => $s['mid'], 'studentId' => (string)($_GET['studentId'] ?? '')]);
     elseif ($view === 'hierarchy')   $res = gs_call('admin.hierarchy.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'vcards')      $res = gs_call('admin.vcards.data', ['requesterId' => $s['mid'], 'volunteerId' => (string)($_GET['volunteerId'] ?? '')]);
+    // ID card designs — see api/_lib/domain/card-templates.php.
+    elseif ($view === 'templates')   $res = gs_call('admin.card.templates', ['requesterId' => $s['mid'], 'kind' => (string)($_GET['kind'] ?? '')]);
+    elseif ($view === 'template')    $res = gs_call('admin.card.template.get', ['requesterId' => $s['mid'], 'templateId' => (string)($_GET['templateId'] ?? '')]);
     else json_error('unknown_view', 400);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -43,6 +46,14 @@ if ($method === 'GET') {
     elseif ($action === 'remind')      $res = gs_call('admin.registrations.remind', ['requesterId' => $s['mid'], 'studentId' => $b['studentId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'remind_bulk') $res = gs_call('admin.registrations.remindBulk', ['requesterId' => $s['mid'],
         'centre' => $b['centre'] ?? '', 'quietDays' => $b['quietDays'] ?? 1, 'limit' => $b['limit'] ?? 100, 'ip' => $ip]);
+    elseif ($action === 'template_save')    $res = gs_call('admin.card.template.save', ['requesterId' => $s['mid'],
+        'templateId' => $b['templateId'] ?? '', 'template' => $b['template'] ?? null, 'ip' => $ip]);
+    elseif ($action === 'template_publish') $res = gs_call('admin.card.template.publish', ['requesterId' => $s['mid'],
+        'templateId' => $b['templateId'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'template_check')   $res = gs_call('admin.card.template.check', ['requesterId' => $s['mid'],
+        'templateId' => $b['templateId'] ?? '', 'template' => $b['template'] ?? null, 'ip' => $ip]);
+    elseif ($action === 'template_delete')  $res = gs_call('admin.card.template.delete', ['requesterId' => $s['mid'],
+        'templateId' => $b['templateId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'consent_record') $res = gs_call('admin.registration.consent.record', ['requesterId' => $s['mid'],
         'studentId' => $b['studentId'] ?? '', 'method' => $b['method'] ?? '', 'guardianName' => $b['guardianName'] ?? '',
         'consents' => $b['consents'] ?? [], 'note' => $b['note'] ?? '', 'ip' => $ip]);

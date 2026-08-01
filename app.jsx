@@ -7,7 +7,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","centres","club","community","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","apply","review","verify","reshoot","cards","certificate","legal","journal-entry"];
+const PAGE_IDS = ["home","summer","centres","club","community","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","apply","review","verify","reshoot","cards","designer","certificate","legal","journal-entry"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
@@ -43,6 +43,7 @@ const PAGE_META = {
   verify:     { title: "Confirm your child's registration · NGG",     desc: "" },
   reshoot:    { title: "A new photo · NGG",                           desc: "" },
   cards:      { title: "ID Card Studio · NGG",                        desc: "" },
+  designer:   { title: "ID Designer · NGG",                           desc: "" },
   "journal-entry": { title: "From the programme journal · NGG",       desc: "" },
 };
 
@@ -55,7 +56,7 @@ const PAGE_META = {
  * floated over every one of these surfaces — most visibly over the public
  * registration form, where it sat on top of a field's help text on a phone. */
 const OWN_CHROME_PAGES = ["admin", "summer-admin", "club-admin", "circle", "mentor",
-  "apply", "review", "gate", "verify", "reshoot", "cards", "certificate", "journal-entry"];
+  "apply", "review", "gate", "verify", "reshoot", "cards", "designer", "certificate", "journal-entry"];
 
 /* ---- 404 fallback — when a hash doesn't match any registered page ---- */
 function NotFound({ setPage }) {
@@ -288,6 +289,7 @@ function App() {
     verify:     <ParentVerifyPage/>,
     reshoot:    <ReshootPage/>,
     cards:      <CardStudio/>,
+    designer:   <DesignerPage/>,
     certificate: <CertificatePage/>,
     "journal-entry": <JournalEntryPage/>,
     legal:      <LegalPage setPage={setPage}/>,

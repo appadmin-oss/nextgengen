@@ -41,6 +41,7 @@ const ORDER = [
   'command.jsx',
   'tweaks-panel.jsx',
   'components.jsx',
+  'card-template.jsx',
   'page-home.jsx',
   'page-club.jsx',
   'page-anchor.jsx',
@@ -50,6 +51,7 @@ const ORDER = [
   'page-dashboard.jsx',
   'page-book.jsx',
   'page-analytics.jsx',
+  'page-designer.jsx',
   'page-admin.jsx',
   'app.jsx',
 ];

@@ -4659,3 +4659,132 @@ section p[style*="var(--ink-500)"] {
    CommandHint's own check, so a float added later is suppressed by default. */
 body.own-chrome .cmdk-hint,
 body.own-chrome .fab-top { display: none; }
+
+/* ============================================================
+   ID DESIGNER
+   Three columns: layers, canvas, properties. The canvas column
+   is the only one that grows — the rails hold controls whose
+   width is set by their content, and a designer needs the card
+   as large as the screen allows, not a fair split.
+   ============================================================ */
+.dsn-grid {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+/* The designer runs on the studio's navy shell, and .btn-ghost / .admin-select
+   are drawn for the LIGHT admin console — a ghost button there is dark ink on a
+   transparent background, which on navy is invisible rather than subtle. Scoped
+   here rather than changed globally, because every other screen using them is on
+   white and is correct as it is. */
+.dsn-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.dsn-bar .btn-ghost {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent; color: #eef2fb;
+}
+.dsn-bar .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+.dsn-bar .btn-primary { background: #f5b026; color: #2b2100; border: none; }
+.dsn-bar .btn-primary:disabled { opacity: 0.45; }
+.dsn-bar .admin-select, .dsn-bar .admin-input {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+.dsn-bar .admin-select option, .dsn-bar .admin-select optgroup { color: #16223e; }
+.dsn-rail .btn-ghost {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: transparent; color: #eef2fb;
+}
+.dsn-rail .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+@media (max-width: 1080px) { .dsn-grid { grid-template-columns: 1fr; } }
+.dsn-rail {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 12px;
+  max-height: 620px;
+  overflow-y: auto;
+}
+.dsn-rail-head {
+  font: 700 10px var(--font-mono, monospace);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(230, 238, 255, 0.6);
+  margin-bottom: 8px;
+}
+.dsn-layer {
+  display: flex; align-items: center; gap: 7px;
+  width: 100%; padding: 7px 9px; margin-bottom: 4px;
+  border-radius: 9px; border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.05); color: #eef2fb;
+  font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+}
+.dsn-layer:hover { background: rgba(255, 255, 255, 0.1); }
+.dsn-layer.is-on { border-color: #f5b026; background: rgba(245, 176, 38, 0.16); }
+.dsn-layer-type {
+  font: 700 9px var(--font-mono, monospace); letter-spacing: 0.08em;
+  text-transform: uppercase; color: rgba(230, 238, 255, 0.5); flex: none;
+}
+.dsn-layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A bound element is the whole point of the tool, so it is marked in the layer
+   list rather than only discoverable by selecting it. */
+.dsn-bound {
+  flex: none; font: 700 9px var(--font-mono, monospace); letter-spacing: 0.06em;
+  padding: 2px 5px; border-radius: 5px; background: rgba(111, 220, 157, 0.2); color: #6fdc9d;
+}
+.dsn-adds { display: flex; flex-wrap: wrap; gap: 6px; }
+.dsn-stage {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px; padding: 18px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.dsn-canvas-host { line-height: 0; box-shadow: 0 18px 46px rgba(0, 0, 0, 0.42); border-radius: 6px; overflow: hidden; }
+.dsn-stage-note { font: 400 11.5px var(--font-mono, monospace); color: rgba(230, 238, 255, 0.5); }
+.dsn-hint { font-size: 12.5px; color: rgba(230, 238, 255, 0.55); line-height: 1.5; }
+/* minmax(0, 1fr), not 1fr: a grid track sized 1fr has an automatic MINIMUM of
+   its content, so a number input with a default size pushes the column wider
+   than the rail and the second one is simply cut off the edge. */
+.dsn-props { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-bottom: 10px; }
+.dsn-props input, .dsn-props select { min-width: 0; width: 100%; box-sizing: border-box; }
+.dsn-prop-wide input, .dsn-prop-wide select { min-width: 0; width: 100%; box-sizing: border-box; }
+.dsn-rail { overflow-x: hidden; }
+.dsn-prop, .dsn-prop-wide { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.dsn-prop span, .dsn-prop-wide span {
+  font: 700 9.5px var(--font-mono, monospace); letter-spacing: 0.1em;
+  text-transform: uppercase; color: rgba(230, 238, 255, 0.55);
+}
+.dsn-prop input, .dsn-prop-wide input, .dsn-prop select, .dsn-prop-wide select {
+  padding: 7px 9px; border-radius: 8px; font-size: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.07); color: #fff;
+}
+.dsn-prop input[type="color"] { padding: 2px; height: 32px; }
+.dsn-check {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; color: rgba(230, 238, 255, 0.8); margin-bottom: 7px; cursor: pointer;
+}
+/* Preflight. Colour-coded, but never colour ALONE — the heading says which
+   state it is in, because one reader in twelve cannot tell the border colours
+   apart and this is the panel that decides whether 300 cards print. */
+.dsn-flight {
+  margin-top: 16px; padding: 12px 16px; border-radius: 12px;
+  font-size: 13px; line-height: 1.55;
+  background: rgba(111, 220, 157, 0.08); border: 1px solid rgba(111, 220, 157, 0.35);
+}
+.dsn-flight.is-warn { background: rgba(245, 176, 38, 0.09); border-color: rgba(245, 176, 38, 0.4); }
+.dsn-flight.is-bad { background: rgba(255, 90, 90, 0.09); border-color: rgba(255, 90, 90, 0.42); }
+.dsn-flight ul { margin: 7px 0 0; padding-left: 18px; }
+.dsn-flight li { margin: 3px 0; color: rgba(230, 238, 255, 0.78); }
+.dsn-flight li.is-bad { color: #ff9a9a; }
+/* The photo editors mount into a panel that is always in the DOM: Filerobot
+   calls createRoot on it, and a display:none element has no layout for it to
+   measure — the same reason the card exporter stages off-screen. */
+.dsn-photo { margin-top: 18px; display: none; }
+.dsn-photo.is-open { display: block; }
+.dsn-photo-bar {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  font-size: 13.5px; color: #eef2fb;
+}
+.dsn-photo-bar b { flex: 1; }

@@ -71,7 +71,15 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'analytics-depth', 'growth', 'insight', 'insight-chat', 'journal', 'profiles', 'community', 'arcade'] as $d) require $ROOT . "/_lib/domain/$d.php";
+/* Every domain file, discovered rather than listed.
+ *
+ * This used to be a hand-maintained copy of the list in bootstrap.php, and a
+ * copy of a list is a list that goes out of date: adding a domain file and
+ * forgetting this one made every op in it dispatch as "unknown" — with the
+ * failure landing on the new tests, which reads as "my code is broken" rather
+ * than "the harness cannot see my code". Globbing cannot drift. They are
+ * function and const declarations, so load order does not matter. */
+foreach (glob($ROOT . '/_lib/domain/*.php') ?: [] as $__f) require $__f;
 require $ROOT . '/_lib/backend.php';
 require $ROOT . '/_lib/sheets.php';
 require $ROOT . '/_lib/webcron.php';
@@ -1153,11 +1161,32 @@ chk('a second checkout is idempotent', backend_dispatch('admin.summer.checkout',
 chk('checkout without a check-in is refused', backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-2025-0099', 'token' => $enr2['token']])['error'] === 'not_checked_in');
 // Absence alert emails guardians of students absent today (enr2 is absent + has email).
 chk('absence alert emails absent students\' guardians', (function () {
+    /* Today is declared a programme day for the length of this assertion.
+     *
+     * The sweep refuses to run on a non-programme day, which is correct — mailing
+     * every guardian "we missed them" on a Sunday is the loudest way to lose
+     * their trust. But it made this test depend on which day of the week somebody
+     * ran the suite: green Monday to Friday, red every weekend, for a behaviour
+     * that has nothing to do with the calendar. A test that fails two days in
+     * seven teaches people to ignore a red suite. */
+    setting_set('programme', ['enabled' => true, 'startDate' => '', 'endDate' => '',
+                              'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'test');
     $GLOBALS['__mail_sink'] = [];
     $r = backend_dispatch('admin.summer.absence.alert', ['requesterId' => 'NGG-2025-0099']);
     $hit = count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-guardian@example.com')) === 1;
     unset($GLOBALS['__mail_sink']);
+    setting_set('programme', null, 'test');
     return !empty($r['ok']) && $r['sent'] >= 1 && $hit;
+})());
+/* …and the refusal itself, which the assertion above deliberately steps around.
+   Pinned to a Sunday rather than to "today", so it tests the rule on every day
+   of the week instead of only on the two when it happens to be true. */
+chk('…and refuses to run the sweep on a day the programme does not meet', (function () {
+    setting_set('programme', ['enabled' => true, 'startDate' => '', 'endDate' => '',
+                              'weekdays' => [1, 2, 3, 4, 5], 'holidays' => [attendance_today()], 'extraDays' => []], 'test');
+    $r = backend_dispatch('admin.summer.absence.alert', ['requesterId' => 'NGG-2025-0099']);
+    setting_set('programme', null, 'test');
+    return ($r['error'] ?? '') === 'not_a_programme_day' && ($r['sent'] ?? -1) === 0;
 })());
 
 // Attendance analytics (Phase 2 dashboard) — Kofi is enrolled + checked in above.
@@ -2652,6 +2681,152 @@ chk('rejecting a photo releases the ID hold, because a rejected photo is no phot
     setting_set('photo_gate_issuance', '0');
     return $heldTok === '' && !empty($rej['ok']) && $after !== '';
 })());
+/* ── ID card designs, as data ────────────────────────────────────────────────
+ *
+ * The artwork was code: the layout lived in JSX and only the data varied, so
+ * moving the QR two millimetres meant a deploy. These assert the two things that
+ * make a template system safe for a credential rather than a drawing app —
+ * publishing is a separate act from saving, and the preflight that guards it
+ * runs where it cannot be skipped.
+ */
+$TPL_OK = [
+    'name' => 'Test student card', 'kind' => 'student', 'w' => 590, 'h' => 972, 'safe' => 30,
+    'background' => '#ffffff',
+    'elements' => [
+        ['id' => 'surname', 'type' => 'text', 'x' => 80, 'y' => 400, 'w' => 430, 'h' => 56, 'text' => '{{surname}}', 'size' => 50],
+        ['id' => 'idv', 'type' => 'text', 'x' => 80, 'y' => 500, 'w' => 430, 'h' => 30, 'text' => '{{displayId}}', 'size' => 18],
+        ['id' => 'qr', 'type' => 'qr', 'x' => 240, 'y' => 600, 'w' => 220, 'h' => 220, 'token' => '{{token}}'],
+    ],
+];
+chk('a design saves, and comes back with the bindings intact', (function () use ($TPL_OK) {
+    $r = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => $TPL_OK]);
+    if (empty($r['ok'])) return false;
+    $GLOBALS['__tplId'] = $r['templateId'];
+    $g = backend_dispatch('admin.card.template.get', ['requesterId' => 'NGG-2025-0099', 'templateId' => $r['templateId']]);
+    $el = $g['template']['schema']['elements'][0] ?? [];
+    return ($el['text'] ?? '') === '{{surname}}' && $g['template']['status'] === 'draft'
+        && $g['template']['published'] === null;   // saving is not publishing
+})());
+chk('…and publishing freezes a separate copy that print runs read', (function () {
+    $id = $GLOBALS['__tplId'] ?? '';
+    $r = backend_dispatch('admin.card.template.publish', ['requesterId' => 'NGG-2025-0099', 'templateId' => $id]);
+    $g = backend_dispatch('admin.card.template.get', ['requesterId' => 'NGG-2025-0099', 'templateId' => $id]);
+    return !empty($r['ok']) && ($g['template']['status'] ?? '') === 'published'
+        && is_array($g['template']['published'] ?? null)
+        && ($g['template']['published']['elements'][0]['text'] ?? '') === '{{surname}}';
+})());
+chk('…so editing a published design does not change what is printing', (function () use ($TPL_OK) {
+    /* The whole reason publish is a separate act. A draft is whatever somebody
+       last typed; leaving an editor open must not change three hundred cards. */
+    $id = $GLOBALS['__tplId'] ?? '';
+    $edited = $TPL_OK;
+    $edited['elements'][0]['text'] = '{{firstName}}';
+    backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'templateId' => $id, 'template' => $edited]);
+    $g = backend_dispatch('admin.card.template.get', ['requesterId' => 'NGG-2025-0099', 'templateId' => $id]);
+    return ($g['template']['schema']['elements'][0]['text'] ?? '') === '{{firstName}}'
+        && ($g['template']['published']['elements'][0]['text'] ?? '') === '{{surname}}';
+})());
+chk('a design with no QR is refused at publish, not discovered at the guillotine', (function () use ($TPL_OK) {
+    $bad = $TPL_OK;
+    $bad['name'] = 'No QR';
+    $bad['elements'] = array_values(array_filter($bad['elements'], fn($e) => $e['type'] !== 'qr'));
+    $s = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => $bad]);
+    $p = backend_dispatch('admin.card.template.publish', ['requesterId' => 'NGG-2025-0099', 'templateId' => $s['templateId']]);
+    $msgs = implode(' | ', array_column($p['problems'] ?? [], 'message'));
+    return ($p['error'] ?? '') === 'preflight' && strpos($msgs, 'No QR') !== false;
+})());
+chk('…and so is a QR whose squares are too small for a camera', (function () use ($TPL_OK) {
+    /* The check is on MODULE size, not overall size — one dark square in
+       millimetres is what a camera actually resolves. 40 units is 3.7mm across,
+       which at 29 modules is 0.13mm a square: fine on a screen at 4x zoom,
+       unreadable the moment it is printed. The earlier version of this rule used
+       an invented 18mm overall floor and refused the card this programme already
+       prints and already scans. */
+    $bad = $TPL_OK; $bad['name'] = 'Tiny QR';
+    $bad['elements'][2]['w'] = 40; $bad['elements'][2]['h'] = 40;
+    $s = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => $bad]);
+    $p = backend_dispatch('admin.card.template.publish', ['requesterId' => 'NGG-2025-0099', 'templateId' => $s['templateId']]);
+    $msgs = implode(' | ', array_column($p['problems'] ?? [], 'message'));
+    return ($p['error'] ?? '') === 'preflight' && strpos($msgs, 'per square') !== false;
+})());
+chk('…while the QR on the card we already print passes, with the warning it deserves', (function () {
+    /* The regression this rule was written badly enough to cause once: the
+       standard volunteer card's QR is 98 units, about 9mm, or 0.31mm a square.
+       That is real and it scans — it is also close enough to the floor to be
+       worth saying, so it warns rather than either blocking or staying silent. */
+    $t = ['name' => 'Real card', 'kind' => 'volunteer', 'w' => 590, 'h' => 972, 'safe' => 30,
+          'elements' => [
+              ['id' => 's', 'type' => 'text', 'x' => 80, 'y' => 400, 'w' => 430, 'h' => 56, 'text' => '{{surname}}'],
+              ['id' => 'r', 'type' => 'text', 'x' => 80, 'y' => 470, 'w' => 430, 'h' => 40, 'text' => '{{roleFaculty}}'],
+              ['id' => 'i', 'type' => 'text', 'x' => 80, 'y' => 520, 'w' => 430, 'h' => 30, 'text' => '{{displayId}}'],
+              ['id' => 'q', 'type' => 'qr', 'x' => 128, 'y' => 700, 'w' => 98, 'h' => 98, 'token' => '{{token}}'],
+          ]];
+    $p = ctpl_preflight($t);
+    $errs = array_filter($p, fn($x) => $x['level'] === 'error');
+    $warns = implode(' ', array_column(array_filter($p, fn($x) => $x['level'] === 'warn'), 'message'));
+    return $errs === [] && strpos($warns, 'comfortable floor') !== false;
+})());
+chk('…and a card that never shows the child\'s name', (function () use ($TPL_OK) {
+    $bad = $TPL_OK; $bad['name'] = 'Nameless';
+    $bad['elements'][0]['text'] = 'Fixed heading';
+    $s = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => $bad]);
+    $p = backend_dispatch('admin.card.template.publish', ['requesterId' => 'NGG-2025-0099', 'templateId' => $s['templateId']]);
+    return ($p['error'] ?? '') === 'preflight'
+        && strpos(implode(' ', array_column($p['problems'] ?? [], 'message')), 'surname') !== false;
+})());
+chk('saving a standard design forks it, so there is always a card to fall back to', (function () use ($TPL_OK) {
+    $t = $TPL_OK; $t['name'] = 'Student ID — front';
+    $r = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099',
+        'templateId' => 'sys-student-front', 'template' => $t]);
+    return !empty($r['ok']) && !empty($r['forked']) && $r['templateId'] !== 'sys-student-front'
+        && strpos($r['templateId'], 'ctpl-') === 0
+        // Renamed, so a list of designs never shows two rows with one name.
+        && strpos((string)(backend_dispatch('admin.card.template.get', ['requesterId' => 'NGG-2025-0099',
+             'templateId' => $r['templateId']])['template']['name'] ?? ''), '(copy)') !== false;
+})());
+chk('…and a standard design cannot be deleted', (function () {
+    return backend_dispatch('admin.card.template.delete', ['requesterId' => 'NGG-2025-0099',
+        'templateId' => 'sys-student-front'])['error'] === 'system_template';
+})());
+chk('a design that could not be rendered is refused at save', (function () {
+    $r = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => [
+        'name' => 'Broken', 'kind' => 'student', 'w' => 590, 'h' => 972,
+        'elements' => [['id' => 'a', 'type' => 'not_a_type', 'x' => 0, 'y' => 0]],
+    ]]);
+    /* And an image src that would taint the canvas. A template is drawn and then
+       exported with toDataURL(); a cross-origin or javascript: src makes that
+       export return nothing at all, silently. */
+    $u = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => [
+        'name' => 'Bad src', 'kind' => 'student', 'w' => 590, 'h' => 972,
+        'elements' => [['id' => 'a', 'type' => 'image', 'x' => 0, 'y' => 0, 'w' => 10, 'h' => 10,
+                        'src' => 'javascript:alert(1)']],
+    ]]);
+    return ($r['error'] ?? '') === 'invalid' && ($u['error'] ?? '') === 'invalid'
+        && in_array('element.0.src', $u['fields'] ?? [], true);
+})());
+/* The other half of that drift. The harness globs the domain directory, so a new
+   file is always loaded HERE — which means a file missing from bootstrap.php's
+   explicit list would pass every test and 404 in production, the worst possible
+   split. Assert the list covers the directory. */
+chk('bootstrap loads every domain file, so a new one cannot pass tests and 404 live', (function () use ($ROOT) {
+    $src = (string)@file_get_contents($ROOT . '/_lib/bootstrap.php');
+    $missing = [];
+    foreach (glob($ROOT . '/_lib/domain/*.php') ?: [] as $f) {
+        $name = basename($f, '.php');
+        if (strpos($src, "'" . $name . "'") === false) $missing[] = $name;
+    }
+    if ($missing) fwrite(STDERR, "       bootstrap.php is missing: " . implode(', ', $missing) . "\n");
+    return $missing === [];
+})());
+
+chk('designs are gated on people, not on summer', (function () {
+    /* Deliberately a different capability from the roster: the staff who verify
+       children and the staff who decide what a credential looks like are
+       different jobs, and the second can invalidate every card at a gate. */
+    return backend_dispatch('admin.card.templates', ['requesterId' => ''])['ok'] !== true
+        && backend_dispatch('admin.card.template.save', ['requesterId' => '', 'template' => []])['ok'] !== true;
+})());
+
 chk('bulk resend and the gaps read are both admin-gated', (function () {
     return backend_dispatch('admin.id.resend.bulk', ['requesterId' => '', 'scope' => 'all'])['ok'] !== true
         && backend_dispatch('admin.id.qrgaps', ['requesterId' => ''])['ok'] !== true;
