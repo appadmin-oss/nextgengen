@@ -174,6 +174,8 @@ function DesignerPage() {
   const [photoTool, setPhotoTool] = React.useState("");  // "" | "filerobot" | "tui"
   const [selIds, setSelIds] = React.useState([]);        // multi-select, ids in template order
   const [zoom, setZoom] = React.useState(0);             // 0 = fit the stage
+  const [assets, setAssets] = React.useState(null);      // the design asset library
+  const [assetFolder, setAssetFolder] = React.useState("");
   const [drawing, setDrawing] = React.useState(false);
   const hostRef = React.useRef(null);
   const canvasRef = React.useRef(null);
@@ -209,7 +211,10 @@ function DesignerPage() {
       NGGApi.admin.registration.cards().then(r => r.cards || []).catch(() => []),
       NGGApi.admin.registration.volunteerCards().then(r => r.cards || []).catch(() => []),
     ]).then(([a, b]) => setRows(a.concat(b)));
+    loadAssets();
   }, [isSignedIn]);
+  const loadAssets = (folder) => NGGApi.admin.registration.assets(folder === undefined ? assetFolder : folder)
+    .then(r => setAssets(r.assets || [])).catch(() => setAssets([]));
 
   /* ── The canvas ───────────────────────────────────────────────────────────
      Rebuilt from the template on every change rather than mutated in place.
@@ -368,6 +373,10 @@ function DesignerPage() {
   }, [libs, tpl, row, selId, selIds, zoom, drawing]);
 
   React.useEffect(() => { redraw(); }, [redraw]);
+  /* The live document, for the browser suite. A design tool's correctness is
+     about what ends up in the SAVED document, and a test that read the canvas
+     instead would pass on a design that saves as something else. */
+  React.useEffect(() => { window.__lastTpl = tpl; }, [tpl]);
   React.useEffect(() => () => { if (canvasRef.current) { canvasRef.current.dispose(); canvasRef.current = null; } }, []);
 
   // Preflight runs as you drag, not only at publish — a problem you learn about
@@ -475,32 +484,66 @@ function DesignerPage() {
       : { ...e, x: (+e.x || 0) + dx, y: (+e.y || 0) + dy }) }));
   };
 
-  /* An image from the designer's own machine. Resampled before it becomes a data
-     URL: a 6MB phone photo pasted into a template is 8MB of base64 in a JSON
-     column, and the same resampler every other upload path in this app already
-     goes through is right here. */
+  /* An image from the designer's own machine.
+   *
+   * It goes to the ASSET LIBRARY and the design gets a URL. It used to become a
+   * data: URL inside the design, which is the bug that made this feature
+   * necessary: a design is capped at 512KB and a 1600px photograph is about
+   * 548KB once base64-encoded, so a poster with one photo on it failed to save
+   * with `too_large` and the work was lost. Bytes living once also means the
+   * same logo on ten posters is one file rather than ten copies. */
   const addImageFile = async (file) => {
     if (!file) return;
     setBusy("upload");
     try {
-      const tools = await NGGApi.imageTools();
-      // prepare() is the resampler every other upload in this app goes through:
-      // decode → pica downscale → JPEG. Reused rather than reimplemented so an
-      // image dropped into a design behaves like an image uploaded anywhere else.
-      const out = await tools.prepare(file, { maxPx: 1600, quality: 0.82 });
-      const url = await new Promise((res, rej) => {
+      placeAsset(await uploadToLibrary(file));
+    } catch (e) { toast.error(e.message || "could not read that image"); } finally { setBusy(""); }
+  };
+
+  /** File → library row. Prefers the cloud when there is one, because a poster
+   *  background served off a shared host's disk is a slow page for everyone;
+   *  falls back to the same local store every headshot uses when there is not.
+   *  Either way the caller gets an asset with a URL and does not branch. */
+  const uploadToLibrary = async (file, folder) => {
+    const tools = await NGGApi.imageTools();
+    // The shared resampler — decode → pica → encode — so an image dropped into
+    // a design behaves like an image uploaded anywhere else in this app.
+    const out = await tools.prepare(file, { maxPx: 2200, quality: 0.85 });
+    const blob = out.blob || file;
+    const name = String(file.name || "image").replace(/\.[a-z0-9]+$/i, "").slice(0, 120) || "image";
+    const payload = { name, folder: folder || "general", width: out.width || 0, height: out.height || 0,
+                      bytes: blob.size || 0, mime: blob.type || "" };
+    let cloud = null;
+    try { cloud = await NGGApi.uploadFile(new File([blob], name + ".jpg", { type: blob.type || "image/jpeg" }), "design"); }
+    catch (_) { /* no cloud, or it refused — the local store is not a failure */ }
+    if (cloud && cloud.url) {
+      payload.url = cloud.url;
+    } else {
+      payload.dataUrl = await new Promise((res, rej) => {
         const fr = new FileReader();
         fr.onload = () => res(String(fr.result));
         fr.onerror = () => rej(new Error("could not read that image"));
-        fr.readAsDataURL(out.blob || file);
+        fr.readAsDataURL(blob);
       });
-      pushHistory();
-      const id = "image-" + Math.random().toString(36).slice(2, 7);
-      setTpl(p => ({ ...p, elements: p.elements.concat([{
-        id, type: "image", x: 80, y: 80, w: 300, h: 300, fit: "cover", src: url, fill: "#eef0f4",
-      }]) }));
-      setSelId(id); setSelIds([id]);
-    } catch (e) { toast.error(e.message || "could not read that image"); } finally { setBusy(""); }
+    }
+    const r = await NGGApi.admin.registration.assetUpload(payload);
+    if (!r.asset) throw new Error("the library refused that image");
+    setAssets(prev => (prev || []).some(a => a.assetId === r.asset.assetId) ? prev : [r.asset].concat(prev || []));
+    if (r.deduped) toast.success("Already in the library — reusing it rather than storing a second copy");
+    return r.asset;
+  };
+
+  /** Drop a library asset onto the canvas, at its own aspect ratio. */
+  const placeAsset = (asset) => {
+    if (!asset || !asset.url) return;
+    pushHistory();
+    const id = "image-" + Math.random().toString(36).slice(2, 7);
+    const ratio = asset.width && asset.height ? asset.width / asset.height : 1;
+    const w = 320, h = Math.round(w / (ratio || 1));
+    setTpl(p => ({ ...p, elements: p.elements.concat([{
+      id, type: "image", x: 80, y: 80, w, h, fit: "cover", src: asset.url, fill: "#eef0f4",
+    }]) }));
+    setSelId(id); setSelIds([id]);
   };
 
   /* Keyboard, because a design tool without one is a toy. Deliberately inert
@@ -873,6 +916,34 @@ function DesignerPage() {
                   }}/>
               ))}
             </div>
+            {/* ── The asset library ──────────────────────────────────────────
+                Pictures live here once and designs point at them. Before this a
+                placed image was written into the design as base64, and a design
+                is capped at 512KB — so a poster with one photograph on it could
+                not be saved at all. Click to place; the same file uploaded twice
+                is deduplicated rather than stored again. */}
+            <div className="dsn-rail-head" style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ flex: 1 }}>Library</span>
+              <button className="dsn-tool" title="Upload an image"
+                onClick={() => fileRef.current && fileRef.current.click()}>+</button>
+            </div>
+            <select className="admin-select" aria-label="Filter the library" value={assetFolder}
+              style={{ width: "100%", marginBottom: 8, fontSize: 12, padding: "6px 8px" }}
+              onChange={e => { setAssetFolder(e.target.value); loadAssets(e.target.value); }}>
+              <option value="">Everything</option>
+              {["logo", "photo", "texture", "icon", "general"].map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+            {assets === null ? <p className="dsn-hint">Loading…</p>
+              : assets.length === 0 ? <p className="dsn-hint">Nothing here yet. Upload an image and it is reusable in every design.</p>
+              : <div className="dsn-assets">
+                  {assets.map(a => (
+                    <button key={a.assetId} className="dsn-asset" title={a.name + (a.local ? " · on this server" : " · in the cloud")}
+                      onClick={() => placeAsset(a)}>
+                      <img src={a.url} alt="" loading="lazy"/>
+                      <span className="dsn-asset-name">{a.name}</span>
+                    </button>
+                  ))}
+                </div>}
             <div className="dsn-adds" style={{ marginTop: 8 }}>
               {window.TPL_BRAND.logos.map(l => (
                 <button key={l.url} className="btn btn-ghost btn-sm" onClick={() => {

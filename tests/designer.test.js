@@ -76,7 +76,20 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
       apply: function () { return Promise.resolve({}); },
     });
   }
-  window.NGGApi = deep({ admin: deep({ registration: {
+  window.NGGApi = deep({
+    /* Real enough to drive the library path. The deep() proxy would hand back
+       {} for these, so tools.prepare would be undefined and the upload would
+       die in a catch whose toast goes to a host this fixture does not mount —
+       invisible, and indistinguishable from "the feature did nothing". The
+       resampler itself is covered in ui-smoke. */
+    imageTools: function () {
+      return Promise.resolve({
+        prepare: function (file) { return Promise.resolve({ blob: file, width: 400, height: 300 }); },
+      });
+    },
+    // No cloud in the fixture, so the library takes the local path.
+    uploadFile: function () { return Promise.reject(new Error('uploads_disabled')); },
+    admin: deep({ registration: {
     /* Stateful, like the real endpoint: after a save the new design is in the
        list. A stub that always returns [] leaves the picker with no option
        matching the id the screen just adopted, so it renders empty — which is
@@ -94,6 +107,17 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
       return Promise.resolve({ ok: true, templateId: newId, forked: forked });
     },
     templatePublish: P({ ok: true, version: 1 }),
+    /* The asset library, stateful like the real one: upload puts a row in and
+       the list returns it, so "place from the library" can be driven end to
+       end. Deduping is asserted on the server; here we only need it to behave. */
+    assets: function () { return Promise.resolve({ assets: window.__assets || [], folders: [], total: 0, bytes: 0 }); },
+    assetUpload: function (d) {
+      window.__uploaded = d;
+      var a = { assetId: 'ast-1', name: d.name, url: '/api/public/photo.php?p=deadbeef.png',
+                folder: d.folder, width: 400, height: 300, bytes: 1234, local: !!d.dataUrl };
+      window.__assets = [a];
+      return Promise.resolve({ ok: true, asset: a, deduped: false });
+    },
   } }), public: deep({}) });
 </script>
 <script src="/dist/app.min.js"></script>
@@ -439,6 +463,43 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     });
     ok('…and the poster on screen is not a blank sheet (rgb ' + (painted ? [painted.r, painted.g, painted.b].join(',') : '?') + ')',
       !!painted && painted.r < 120 && painted.b > painted.r);
+
+    /* ── 12. A placed image is a URL, never bytes in the design ─────────────
+       The bug the library exists for: a design is capped at 512KB and one
+       1600px photograph is about 548KB base64, so inlining meant a poster with
+       a photo on it could not be saved. Asserted on what the designer PUTS in
+       the document, because that is what gets sent to the server. */
+    await page.selectOption('select[aria-label="Open a design"]', '__preset-poster-a4');
+    await page.waitForTimeout(1400);
+    await page.evaluate(() => { window.__assets = []; });
+    /* setInputFiles rather than a hand-built change event: React's onChange for a
+       file input rides the native event the browser emits when a file is really
+       chosen, and a synthetic one does not reproduce it. Playwright drives the
+       real path. */
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAZAAAAEsCAYAAAA1Ll1yAAAA' +
+      'AXNSR0IArs4c6QAAAKxJREFUeF7twQEBAAAAgiD/r25IQAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+      'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+      'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4N8AKvwAAeLqjIYAAAAA' +
+      'SUVORK5CYII=', 'base64');
+    await page.setInputFiles('.dsn-tools input[type=file]',
+      { name: 'backdrop.png', mimeType: 'image/png', buffer: png });
+    await page.waitForTimeout(2500);
+    const placed = await page.evaluate(() => {
+      const img = (window.__lastTpl || { elements: [] }).elements.filter(e => e.type === 'image');
+      return { sent: window.__uploaded, images: img.map(e => e.src), bad: window.__bad || [] };
+    });
+    ok('an uploaded image goes to the library, not into the design',
+      !!placed.sent && (!!placed.sent.dataUrl || !!placed.sent.url));
+    if (!placed.sent) console.error('        no upload; errors:', JSON.stringify(placed.bad));
+    /* Two images now — the preset's logo and the one just placed — and the
+       placed one must be the LIBRARY url. Checking only "no data: URLs" would
+       pass on the preset's logo alone if the upload silently did nothing, which
+       is exactly how the first version of this test lied. */
+    ok('…and the element placed on the canvas holds a library URL, not base64',
+      placed.images.length >= 2
+      && placed.images.some(u => u.indexOf('/api/public/photo.php') === 0)
+      && placed.images.every(u => !/^data:/.test(u)));
 
     ok('no uncaught page errors across the whole session', errs.length === 0);
     if (errs.length) console.error('       ', errs.slice(0, 4).join(' | '));

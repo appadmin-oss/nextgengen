@@ -789,6 +789,15 @@
         templatePublish: (templateId) => request('/admin/registration.php', { body: { action: 'template_publish', templateId } }),
         templateCheck:   (template) => request('/admin/registration.php', { body: { action: 'template_check', template } }),
         templateDelete:  (templateId) => request('/admin/registration.php', { body: { action: 'template_delete', templateId } }),
+        /* The design asset library. An image placed in a design is a URL into
+           here, never bytes inside the design — a design is capped at 512KB and
+           one 1600px photograph is 548KB base64, so inlining meant a poster with
+           a photo on it could not be saved at all. */
+        assets:       (folder, q) => request('/admin/registration.php' + qs({ view: 'assets', folder: folder || '', q: q || '' })),
+        assetUsage:   (assetId) => request('/admin/registration.php' + qs({ view: 'assetUsage', assetId })),
+        assetUpload:  (data) => request('/admin/registration.php', { body: { action: 'asset_upload', ...(data || {}) }, timeout: 120000 }),
+        assetRename:  (assetId, name) => request('/admin/registration.php', { body: { action: 'asset_rename', assetId, name } }),
+        assetDelete:  (assetId, force) => request('/admin/registration.php', { body: { action: 'asset_delete', assetId, force: !!force } }),
         // Resend a student's or volunteer's ID (email + SMS where on file).
         // qrPng (optional data URL) is cached server-side so the email can embed
         // the scannable QR via the hosted /api/public/qr.php image.

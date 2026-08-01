@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 76;
+const NGG_SCHEMA_TARGET = 77;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -1988,6 +1988,41 @@ function db_migrate(PDO $db): void {
                 publishedAt TEXT DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_ctpl_kind ON card_templates (kind, status);
+        ",
+        /* 77: the design asset library.
+         *
+         * Placed images were data: URLs written into the design itself, and a
+         * design is capped at 512KB — so a 1600px photograph, which is 400KB of
+         * JPEG and 548KB once base64-encoded, could not be saved AT ALL. A
+         * poster with a photo on it failed with `too_large` and the work was
+         * lost. This is that bug's fix and the right architecture regardless:
+         * bytes live once, designs reference them, and the same logo used on ten
+         * posters is stored once rather than ten times.
+         *
+         * `sha` is the content hash, so re-uploading the same file finds the
+         * existing row instead of making a second copy. `storeId` is set when
+         * the bytes are on this server and empty when they are in the cloud —
+         * both are just a URL to a design, which is what lets a deployment
+         * switch between them without touching a single template. */
+        77 => "
+            CREATE TABLE IF NOT EXISTS design_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                assetId TEXT UNIQUE,
+                name TEXT DEFAULT '',
+                url TEXT DEFAULT '',
+                storeId TEXT DEFAULT '',
+                sha TEXT DEFAULT '',
+                mime TEXT DEFAULT '',
+                width INTEGER DEFAULT 0,
+                height INTEGER DEFAULT 0,
+                bytes INTEGER DEFAULT 0,
+                folder TEXT DEFAULT '',
+                uploadedById TEXT DEFAULT '',
+                createdAt TEXT,
+                archivedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_dasset_sha ON design_assets (sha);
+            CREATE INDEX IF NOT EXISTS idx_dasset_folder ON design_assets (folder, archivedAt);
         ",
     ];
 

@@ -180,6 +180,14 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.card.template.publish'       => 'admin_card_template_publish',
             'admin.card.template.check'         => 'admin_card_template_check',
             'admin.card.template.delete'        => 'admin_card_template_delete',
+            /* The design asset library. Images placed in a design used to be
+               data: URLs inside the design itself, which capped a poster at one
+               small photograph — see api/_lib/domain/design-assets.php. */
+            'admin.design.assets'               => 'admin_design_assets',
+            'admin.design.asset.upload'         => 'admin_design_asset_upload',
+            'admin.design.asset.rename'         => 'admin_design_asset_rename',
+            'admin.design.asset.delete'         => 'admin_design_asset_delete',
+            'admin.design.asset.usage'          => 'admin_design_asset_usage',
             'admin.registrations.remindBulk' => 'admin_registrations_remind_bulk',
             'admin.centres.list'          => 'admin_centres_list',
             'admin.centres.upsert'        => 'admin_centres_upsert',

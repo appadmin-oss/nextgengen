@@ -2913,6 +2913,100 @@ chk('a silent fallback to local storage becomes a recorded warning', (function (
     return $row && (int)$row['hits'] === 2 && strpos((string)$row['detail'], '401') !== false;
 })());
 
+/* ── The asset library ───────────────────────────────────────────────────────
+ *
+ * The bug it exists to fix, first, so the fix is anchored to the failure: a
+ * placed image was a data: URL inside the design, and a design is capped at
+ * 512KB. One 1600px photograph is around 400KB of JPEG — 548KB base64 — so a
+ * poster with a photo on it could not be saved AT ALL.
+ */
+$DASSET_PNG = (function () {
+    // A real PNG, big enough that base64-ing it into a design is the problem.
+    $im = @imagecreatetruecolor(400, 300);
+    if (!$im) return '';
+    for ($x = 0; $x < 400; $x += 2) for ($y = 0; $y < 300; $y += 2) {
+        imagesetpixel($im, $x, $y, imagecolorallocate($im, ($x * 7) % 255, ($y * 11) % 255, ($x + $y) % 255));
+    }
+    ob_start(); imagepng($im); $raw = (string)ob_get_clean(); imagedestroy($im);
+    return 'data:image/png;base64,' . base64_encode($raw);
+})();
+chk('a design carrying a whole photograph inline is refused — the bug the library fixes', (function () {
+    // Half a megabyte of base64 in one element, which is one ordinary photo.
+    $fat = 'data:image/png;base64,' . str_repeat('A', 520 * 1024);
+    $r = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => [
+        'name' => 'Poster with a photo', 'kind' => 'graphic', 'w' => 877, 'h' => 1240, 'wMm' => 210, 'hMm' => 297,
+        'elements' => [['id' => 'bg', 'type' => 'image', 'x' => 0, 'y' => 0, 'w' => 877, 'h' => 1240, 'src' => $fat]],
+    ]]);
+    return ($r['error'] ?? '') === 'too_large';
+})());
+chk('…so an image goes to the library and the design holds only a URL', (function () use ($DASSET_PNG) {
+    if ($DASSET_PNG === '') return true;                       // no GD on this host
+    $up = backend_dispatch('admin.design.asset.upload', ['requesterId' => 'NGG-2025-0099',
+        'name' => 'Launch backdrop', 'folder' => 'photo', 'dataUrl' => $DASSET_PNG]);
+    if (empty($up['ok'])) return false;
+    $GLOBALS['__assetId'] = $up['asset']['assetId'];
+    $GLOBALS['__assetUrl'] = $up['asset']['url'];
+    $save = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => [
+        'name' => 'Poster that saves', 'kind' => 'graphic', 'w' => 877, 'h' => 1240, 'wMm' => 210, 'hMm' => 297,
+        'elements' => [['id' => 'bg', 'type' => 'image', 'x' => 0, 'y' => 0, 'w' => 877, 'h' => 1240,
+                        'src' => $up['asset']['url']]],
+    ]]);
+    // Dimensions read from the bytes, not trusted from the client.
+    return !empty($save['ok']) && $up['asset']['width'] === 400 && $up['asset']['height'] === 300
+        && $up['asset']['local'] === true && $up['asset']['bytes'] > 100;
+})());
+chk('the same file uploaded twice is one file, not two', (function () use ($DASSET_PNG) {
+    if ($DASSET_PNG === '') return true;
+    $before = (int)(db_row("SELECT COUNT(*) n FROM design_assets WHERE archivedAt = ''")['n'] ?? 0);
+    $again = backend_dispatch('admin.design.asset.upload', ['requesterId' => 'NGG-2025-0099',
+        'name' => 'A different name', 'dataUrl' => $DASSET_PNG]);
+    $after = (int)(db_row("SELECT COUNT(*) n FROM design_assets WHERE archivedAt = ''")['n'] ?? 0);
+    /* The point of a library rather than a folder: the same logo dropped into
+       eleven posters is one file. Content-addressed, so the name does not
+       matter — the bytes do. */
+    return !empty($again['deduped']) && $after === $before
+        && $again['asset']['assetId'] === ($GLOBALS['__assetId'] ?? '');
+})());
+chk('deleting an asset a design still uses is refused, and names the designs', (function () {
+    $id = $GLOBALS['__assetId'] ?? '';
+    if ($id === '') return true;
+    $r = backend_dispatch('admin.design.asset.delete', ['requesterId' => 'NGG-2025-0099', 'assetId' => $id]);
+    /* Deleting a picture eleven posters use would break eleven posters silently:
+       they still save, still publish, and render a grey box nobody notices until
+       it prints. Naming them is what makes the decision the admin's. */
+    return ($r['error'] ?? '') === 'in_use'
+        && count($r['usedBy'] ?? []) >= 1
+        && ($r['usedBy'][0]['name'] ?? '') === 'Poster that saves';
+})());
+chk('…and forcing it archives rather than deletes, so last November still renders', (function () {
+    $id = $GLOBALS['__assetId'] ?? '';
+    if ($id === '') return true;
+    $r = backend_dispatch('admin.design.asset.delete', ['requesterId' => 'NGG-2025-0099', 'assetId' => $id, 'force' => true]);
+    $row = db_row('SELECT archivedAt, storeId FROM design_assets WHERE assetId = ?', [$id]);
+    $gone = backend_dispatch('admin.design.assets', ['requesterId' => 'NGG-2025-0099']);
+    $listed = array_filter($gone['assets'] ?? [], fn($a) => $a['assetId'] === $id);
+    // Out of the picker, still on disk: a print run from last year has to render.
+    return !empty($r['ok']) && (string)$row['archivedAt'] !== '' && $listed === []
+        && is_file(photo_store_path((string)$row['storeId']));
+})());
+chk('a cloud URL is recorded without holding the bytes, and junk is refused', (function () {
+    $ok = backend_dispatch('admin.design.asset.upload', ['requesterId' => 'NGG-2025-0099',
+        'name' => 'Cloud shot', 'url' => 'https://res.cloudinary.com/ngg/image/upload/v1/x.jpg',
+        'width' => 1200, 'height' => 800, 'bytes' => 240000, 'mime' => 'image/jpeg']);
+    $bad = backend_dispatch('admin.design.asset.upload', ['requesterId' => 'NGG-2025-0099',
+        'name' => 'Nope', 'url' => 'javascript:alert(1)']);
+    $empty = backend_dispatch('admin.design.asset.upload', ['requesterId' => 'NGG-2025-0099', 'name' => 'Nothing']);
+    /* An image src is drawn into a canvas that is then exported. A src we cannot
+       fetch cleanly produces a BLANK export rather than an error, which is the
+       worst way to find out. */
+    return !empty($ok['ok']) && $ok['asset']['local'] === false
+        && ($bad['error'] ?? '') === 'bad_url' && ($empty['error'] ?? '') === 'nothing_to_store';
+})());
+chk('the library is gated on the same capability as the designs', (function () {
+    return backend_dispatch('admin.design.assets', ['requesterId' => ''])['ok'] !== true
+        && backend_dispatch('admin.design.asset.upload', ['requesterId' => '', 'url' => 'https://x/y.jpg'])['ok'] !== true;
+})());
+
 chk('a poster is a design this system accepts, not an ID card with fields removed', (function () {
     $t = ['name' => 'Centre opening', 'kind' => 'graphic', 'w' => 877, 'h' => 1240,
           'wMm' => 210, 'hMm' => 297, 'safe' => 50, 'bleedMm' => 3,

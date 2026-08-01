@@ -28,6 +28,10 @@ if ($method === 'GET') {
     // ID card designs — see api/_lib/domain/card-templates.php.
     elseif ($view === 'templates')   $res = gs_call('admin.card.templates', ['requesterId' => $s['mid'], 'kind' => (string)($_GET['kind'] ?? '')]);
     elseif ($view === 'template')    $res = gs_call('admin.card.template.get', ['requesterId' => $s['mid'], 'templateId' => (string)($_GET['templateId'] ?? '')]);
+    elseif ($view === 'assets')      $res = gs_call('admin.design.assets', ['requesterId' => $s['mid'],
+        'folder' => (string)($_GET['folder'] ?? ''), 'q' => (string)($_GET['q'] ?? '')]);
+    elseif ($view === 'assetUsage')  $res = gs_call('admin.design.asset.usage', ['requesterId' => $s['mid'],
+        'assetId' => (string)($_GET['assetId'] ?? '')]);
     else json_error('unknown_view', 400);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -54,6 +58,14 @@ if ($method === 'GET') {
         'templateId' => $b['templateId'] ?? '', 'template' => $b['template'] ?? null, 'ip' => $ip]);
     elseif ($action === 'template_delete')  $res = gs_call('admin.card.template.delete', ['requesterId' => $s['mid'],
         'templateId' => $b['templateId'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'asset_upload')     $res = gs_call('admin.design.asset.upload', ['requesterId' => $s['mid'],
+        'name' => $b['name'] ?? '', 'folder' => $b['folder'] ?? 'general', 'dataUrl' => $b['dataUrl'] ?? '',
+        'url' => $b['url'] ?? '', 'bytes' => $b['bytes'] ?? 0, 'width' => $b['width'] ?? 0,
+        'height' => $b['height'] ?? 0, 'mime' => $b['mime'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'asset_rename')     $res = gs_call('admin.design.asset.rename', ['requesterId' => $s['mid'],
+        'assetId' => $b['assetId'] ?? '', 'name' => $b['name'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'asset_delete')     $res = gs_call('admin.design.asset.delete', ['requesterId' => $s['mid'],
+        'assetId' => $b['assetId'] ?? '', 'force' => !empty($b['force']), 'ip' => $ip]);
     elseif ($action === 'consent_record') $res = gs_call('admin.registration.consent.record', ['requesterId' => $s['mid'],
         'studentId' => $b['studentId'] ?? '', 'method' => $b['method'] ?? '', 'guardianName' => $b['guardianName'] ?? '',
         'consents' => $b['consents'] ?? [], 'note' => $b['note'] ?? '', 'ip' => $ip]);

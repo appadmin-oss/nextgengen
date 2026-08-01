@@ -1371,3 +1371,38 @@ CREATE TABLE IF NOT EXISTS card_templates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (76) ON DUPLICATE KEY UPDATE version = version;
+
+-- 77: the design asset library.
+--
+-- Placed images were data: URLs written into the design itself, and a design is
+-- capped at 512KB — so a 1600px photograph, 400KB of JPEG and 548KB once
+-- base64-encoded, could not be saved AT ALL. A poster with a photo on it failed
+-- with `too_large` and the work was lost. This is that bug's fix and the right
+-- architecture regardless: bytes live once, designs reference them, and the same
+-- logo used on ten posters is stored once rather than ten times.
+--
+-- `sha` is the content hash, so re-uploading the same file finds the existing
+-- row instead of making a second copy. `storeId` is set when the bytes are on
+-- this server and empty when they are in the cloud — both are just a URL to a
+-- design, which is what lets a deployment switch between them without touching
+-- a single template.
+CREATE TABLE IF NOT EXISTS design_assets (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  assetId VARCHAR(64) UNIQUE,
+  name VARCHAR(200) DEFAULT '',
+  url TEXT,
+  storeId VARCHAR(64) DEFAULT '',
+  sha VARCHAR(64) DEFAULT '',
+  mime VARCHAR(40) DEFAULT '',
+  width INT DEFAULT 0,
+  height INT DEFAULT 0,
+  bytes INT DEFAULT 0,
+  folder VARCHAR(64) DEFAULT '',
+  uploadedById VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40),
+  archivedAt VARCHAR(40) DEFAULT '',
+  KEY idx_dasset_sha (sha),
+  KEY idx_dasset_folder (folder, archivedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (77) ON DUPLICATE KEY UPDATE version = version;
