@@ -153,6 +153,21 @@ function analytics_workspace(array $p): array {
     }
     $enrolled = count($perStudent);
 
+    /* Evidence artefacts per centre. One read for the whole range rather than
+       one per centre: the count lives inside a JSON column, so it cannot be
+       grouped in SQL portably across SQLite and MySQL, and doing it per centre
+       would be five scans of the same rows. This is what makes the centre table
+       able to say which sites are actually auditable — the number a funder asks
+       for and the one nothing on this page could previously answer. */
+    $evPerCentre = [];
+    foreach (db_all("SELECT centre, evidence FROM activities WHERE date BETWEEN ? AND ?"
+             . ($catFilter ? ' AND category = ?' : ''),
+             $catFilter ? [$from, $to, $catFilter] : [$from, $to]) as $r) {
+        $ev = safe_json((string)($r['evidence'] ?? '[]'));
+        $k = (string)$r['centre'];
+        $evPerCentre[$k] = ($evPerCentre[$k] ?? 0) + (is_array($ev) ? count($ev) : 0);
+    }
+
     // ── per-centre rollups ───────────────────────────────────────────────────
     $byCentre = [];
     foreach ($centres as $c) {
@@ -170,6 +185,7 @@ function analytics_workspace(array $p): array {
             'attendanceRate' => $en ? (int)round(array_sum($rates) / $en) : 0,
             'avgGrade' => $grades ? round(array_sum($grades) / count($grades), 1) : null,
             'activities' => $acts, 'stars' => $stars,
+            'evidence' => (int)($evPerCentre[$name] ?? 0),
         ];
     }
 
@@ -369,8 +385,13 @@ function analytics_workspace(array $p): array {
 
 /**
  * Drill-down: the underlying records behind a KPI. Admin-only (names allowed).
- * metric ∈ present-today | absent-today | low-attendance | top-students |
+ * metric ∈ present-today | absent-today | low-attendance | centre-students |
  *          pending-grading | missing-reports | activities
+ *
+ * The list above used to name `top-students` and `low-attendance`, neither of
+ * which the switch implemented — so a tile wired to either opened an empty
+ * drawer that looked like "no records" rather than like a missing case. Both
+ * are now real, and the default arm returns unknown_metric rather than empty.
  */
 function analytics_drilldown(array $p): array {
     $g = admin_gate($p);
@@ -397,6 +418,25 @@ function analytics_drilldown(array $p): array {
             break;
         case 'activities':
             $rows = db_all("SELECT title name, category, centre, date, facilitatorName FROM activities WHERE date BETWEEN ? AND ? AND (centre = '' OR centre IN $cIn) ORDER BY date DESC LIMIT 100", array_merge([$from, $to], $cNames));
+            break;
+        /* Everyone under the watch line the growth model uses, so the number on
+           the attention card and the list behind it cannot disagree. */
+        case 'low-attendance': {
+            $rows = db_all("SELECT s.fullName name, s.centre, s.track,
+                                   COUNT(a.id) days
+                            FROM summer_students s
+                            LEFT JOIN attendance a ON a.studentId = s.studentId AND a.date BETWEEN ? AND ?
+                            WHERE s.status = 'active' AND s.centre IN $cIn
+                            GROUP BY s.studentId, s.fullName, s.centre, s.track
+                            ORDER BY days ASC, s.fullName ASC LIMIT 100",
+                array_merge([$from, $to], $cNames));
+            break;
+        }
+        // One site's roster, for the Open → on the centre table.
+        case 'centre-students':
+            $rows = db_all("SELECT s.fullName name, s.centre, s.track, s.regStatus status
+                            FROM summer_students s WHERE s.status = 'active' AND s.centre IN $cIn
+                            ORDER BY s.fullName LIMIT 300", $cNames);
             break;
         case 'missing-reports':
             foreach ($centres as $c) {

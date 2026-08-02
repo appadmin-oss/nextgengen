@@ -174,6 +174,10 @@ const VENDOR_LIBS = {
      already knows how to lay out, and a second imposition engine written for
      posters would be a second place for the bleed arithmetic to be wrong. */
   cardExport: { js: ["/vendor/card-export.js"], global: "CardExport" },
+  /* docx 9.7.1 — a real Word file for the Analyst's report draft. Bundled by
+     vendor-build.js because the package is ESM/CJS with no UMD. 414KB, so it is
+     fetched by the Export button and never by the page. */
+  docx: { js: ["/vendor/docx.min.js"], global: "docx" },
 };
 const _vendorLoads = {};
 function loadVendorAsset(url, kind) {

@@ -40,6 +40,121 @@ function anDownload(name, text, mime) {
   a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+function anDownloadBlob(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+/* ── The report draft, as a real Word document ───────────────────────────────
+ *
+ * Built from the same turns the pane shows, and — the whole reason this is not
+ * a Markdown file — it carries the things that get dropped when somebody
+ * retypes a finding into a document: the confidence, the ungrounded warning,
+ * the range it was drawn from, and the evidence fingerprint.
+ *
+ * A finding that arrives in a board paper without its caveat is worse than one
+ * that never arrives, because it will be acted on.
+ *
+ * `d` is the docx namespace, passed in rather than read off window so this is a
+ * pure function a test can drive.
+ */
+async function anBuildDocx(d, rows, opts) {
+  const o = opts || {};
+  const NAVY = "0C1432", GOLD = "7A5600", MUTED = "5A6488", BAD = "B91C1C";
+  const p = (text, x) => new d.Paragraph(Object.assign({ children: [new d.TextRun(Object.assign({ text: String(text == null ? "" : text) }, x && x.run || {}))] }, x && x.para || {}));
+  const kids = [];
+
+  kids.push(new d.Paragraph({
+    children: [new d.TextRun({ text: "NEXT GENERATION GENIUS · ANALYST", bold: true, size: 16, color: GOLD, characterSpacing: 40 })],
+    spacing: { after: 60 },
+  }));
+  kids.push(new d.Paragraph({
+    children: [new d.TextRun({ text: o.title || "Analyst findings", bold: true, size: 40, color: NAVY })],
+    spacing: { after: 60 },
+  }));
+  kids.push(new d.Paragraph({
+    children: [new d.TextRun({
+      text: rows.length + (o.pinned ? " pinned" : "") + " finding" + (rows.length === 1 ? "" : "s")
+        + (o.scope ? " · " + o.scope : "") + " · exported " + (o.stamp || ""),
+      size: 18, color: MUTED,
+    })],
+    spacing: { after: 240 },
+    border: { bottom: { style: d.BorderStyle.SINGLE, size: 6, color: "E5E8EE", space: 8 } },
+  }));
+
+  rows.forEach((t, i) => {
+    const c = anConfidence(t);
+    kids.push(new d.Paragraph({
+      children: [new d.TextRun({ text: (i + 1) + ". " + t.question, bold: true, size: 26, color: NAVY })],
+      spacing: { before: 320, after: 120 },
+    }));
+
+    /* The warning goes ABOVE the answer, in red, and it is not optional. An
+       answer whose figures are not in the evidence must not be able to appear
+       in a document looking like one that checks out. */
+    if (t.checks && t.checks.grounded === false) {
+      kids.push(new d.Paragraph({
+        children: [new d.TextRun({
+          text: "⚠ Some figures in this answer were not found in the evidence"
+            + ((t.checks.answerUnverified || []).length ? " (" + t.checks.answerUnverified.join(", ") + ")" : "")
+            + ". Treat those as the model's arithmetic, not as data.",
+          bold: true, size: 19, color: BAD,
+        })],
+        spacing: { after: 120 },
+        shading: { type: d.ShadingType.CLEAR, fill: "FFF5F5" },
+      }));
+    }
+    if (t.status === "unanswerable") {
+      kids.push(p("This evidence cannot answer that question.",
+        { run: { italics: true, size: 20, color: GOLD }, para: { spacing: { after: 120 } } }));
+    }
+
+    kids.push(p(t.answer || "", { run: { size: 22 }, para: { spacing: { after: 140 }, alignment: d.AlignmentType.JUSTIFIED } }));
+
+    (t.claims || []).forEach(cl => {
+      kids.push(p(cl.claim, { run: { size: 21 }, para: { bullet: { level: 0 }, spacing: { after: 40 } } }));
+      const meta = [cl.evidence, (cl.lenses || []).length > 1 && cl.agreed ? "two lenses agreed" : "one lens",
+                    (cl.confidence || "") + " confidence"].filter(Boolean).join(" · ");
+      kids.push(p(meta, { run: { size: 17, color: MUTED, italics: true }, para: { indent: { left: 720 }, spacing: { after: 80 } } }));
+    });
+
+    /* Provenance on every finding, not once at the end. A document gets cut up
+       — a single finding is pasted into an email — and the line that says where
+       it came from has to travel with the finding, not with the file. */
+    kids.push(new d.Paragraph({
+      children: [new d.TextRun({
+        text: c.pct + "% confidence (" + c.why + ") · drawn from " + (t.rangeLabel || "an unrecorded range")
+          + " · evidence " + (t.evidenceFp || "—")
+          + ((t.plan && (t.plan.lensesRan || []).length)
+              ? " · lenses: " + t.plan.lensesRan.map(l => l.label + (l.ok ? "" : " (no answer)")).join(", ") : ""),
+        size: 16, color: MUTED,
+      })],
+      spacing: { after: 80 },
+      border: { left: { style: d.BorderStyle.SINGLE, size: 12, color: "E8DEC6", space: 8 } },
+      indent: { left: 120 },
+    }));
+  });
+
+  kids.push(new d.Paragraph({
+    children: [new d.TextRun({
+      text: "Produced by the NGG Analyst from aggregate figures as they stood when each answer was given. "
+        + "It holds no child's name, id or contact, and writes no records. Advisory only.",
+      size: 16, color: MUTED, italics: true,
+    })],
+    spacing: { before: 400 },
+    border: { top: { style: d.BorderStyle.SINGLE, size: 6, color: "E5E8EE", space: 8 } },
+  }));
+
+  const doc = new d.Document({
+    creator: "NGG Control Room",
+    title: o.title || "Analyst findings",
+    description: "Findings from the NGG Analyst" + (o.scope ? " · " + o.scope : ""),
+    sections: [{ properties: {}, children: kids }],
+  });
+  return await d.Packer.toBlob(doc);
+}
+
 // One-time scoped stylesheet.
 function AnalyticsStyles() {
   useEffect(() => {
@@ -81,7 +196,80 @@ function AnalyticsStyles() {
 .an-levelnav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px;}
 .an-levelnav a{font:600 12px/1 var(--font-body);text-decoration:none;color:var(--ink-500);padding:7px 12px;border-radius:999px;border:1px solid transparent;}
 .an-levelnav a:hover{background:#fff;border-color:var(--an-line);color:var(--ink-900);}
-.an-sec{margin-top:34px;scroll-margin-top:80px;}
+.an-sec{margin-top:34px;scroll-margin-top:120px;}
+/* ── Needs attention ─────────────────────────────────────────────────────────
+   Three cards, before any of the numbers. Capped at three deliberately: a list
+   of nine things that need attention is a list of nothing that needs attention. */
+.an-attn-sec{margin-top:26px;}
+.an-attn-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.an-attn{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;}
+@media(max-width:900px){.an-attn{grid-template-columns:1fr;}}
+.an-attn-c{display:flex;flex-direction:column;gap:9px;padding:20px 22px 18px;}
+.an-attn-top{display:flex;align-items:center;gap:11px;}
+.an-attn-top b{font:800 24px/1 var(--font-display,sans-serif);letter-spacing:-.02em;}
+.an-attn-g{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px;font-weight:700;flex:none;}
+.an-attn-t{font-size:14.5px;font-weight:600;line-height:1.3;}
+.an-attn-b{margin:0;font-size:13px;line-height:1.55;color:var(--ink-500,#5a6488);}
+.an-attn-a{margin-top:auto;align-self:flex-start;border:0;background:transparent;padding:0;cursor:pointer;
+  font:700 13px inherit;color:var(--navy-700,#1c2a5e);}
+.an-attn-a:hover{color:var(--navy-900);}
+
+/* ── The rail ────────────────────────────────────────────────────────────────
+   One sticky block, not two. The level nav and the filters used to be separate
+   elements and only the filters stuck, so scrolling to Level 5 left you with a
+   filter bar and no way back up. */
+.an-rail{position:sticky;top:0;z-index:30;margin:18px 0;border:1px solid var(--an-line);
+  border-radius:var(--r-md,14px);background:rgba(251,247,237,.94);backdrop-filter:blur(8px);
+  box-shadow:var(--shadow-sm);padding:8px 10px;display:flex;flex-direction:column;gap:6px;}
+.an-rail .an-bar{position:static;margin:0;border:0;border-radius:0;background:transparent;
+  backdrop-filter:none;box-shadow:none;padding:8px 2px 2px;border-top:1px solid var(--line-cool-soft,#eef0f4);}
+.an-rail .an-levelnav{margin:0;padding:2px;}
+
+/* ── Level 1 · the five ──────────────────────────────────────────────────── */
+.an-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));background:#fff;
+  border:1px solid var(--an-line);border-radius:var(--r-md,16px);overflow:hidden;box-shadow:var(--shadow-sm);}
+@media(max-width:1100px){.an-strip{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:560px){.an-strip{grid-template-columns:1fr;}}
+/* border:0 first, then only the divider. Four of these are buttons (the ones
+   that drill) and one is a div: without the reset the buttons carried the UA
+   border on all four sides and the strip read as four boxed cells and a loose
+   fifth. Same reason the background is set rather than inherited. */
+.an-stat{padding:22px 24px;display:flex;flex-direction:column;gap:4px;text-align:left;
+  border:0;border-left:1px solid var(--line-cool-soft,#eef0f4);background:#fff;
+  font:inherit;color:inherit;margin:0;-webkit-appearance:none;appearance:none;}
+.an-stat:first-child{border-left:0;}
+.an-stat.is-live{cursor:pointer;}
+.an-stat.is-live:hover{background:var(--cream-50,#fbf9f4);}
+.an-stat-h{display:flex;align-items:center;gap:9px;margin-bottom:8px;font-size:11px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-500,#5f6785);}
+.an-stat-h span{font-size:15px;}
+.an-stat-v{display:flex;align-items:baseline;gap:10px;}
+.an-stat-v b{font:800 32px/1 var(--font-display,sans-serif);letter-spacing:-.03em;}
+.an-stat-v i{font-style:normal;font-size:12.5px;font-weight:700;}
+.an-stat-n{font-size:12.5px;color:var(--ink-500,#5a6488);margin-top:4px;}
+
+/* ── Level 3 · the argument, then the apparatus ──────────────────────────── */
+.an-research{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;align-items:stretch;}
+@media(max-width:1100px){.an-research{grid-template-columns:1fr;}}
+.an-statrow{display:flex;flex-direction:column;gap:7px;padding:11px 0;border-bottom:1px solid var(--line-cool-soft,#eef0f4);}
+.an-statrow:last-child{border-bottom:0;padding-bottom:0;}
+.an-statrow > div{display:flex;gap:16px;flex-wrap:wrap;font:400 12.5px var(--font-mono,monospace);color:var(--ink-500,#5a6488);}
+.an-statrow b{color:var(--ink-900,#0a1130);}
+
+/* ── The one centre table ────────────────────────────────────────────────── */
+.an-card-h{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:6px;}
+.an-card-stats{display:flex;gap:18px;font-size:13px;color:var(--ink-500,#5a6488);flex-wrap:wrap;}
+.an-card-stats b{color:var(--ink-900,#0a1130);}
+.an-sub-xs{font-size:11px;color:var(--ink-500,#5f6785);margin-top:3px;}
+.an-centres th{background:#fbfcfe;}
+/* NOT .an-bar — that name was already the sticky filter bar, and reusing it
+   wrapped every attendance cell in the filter bar's cream backdrop. */
+.an-meter{display:flex;align-items:center;gap:12px;}
+.an-meter .track{flex:1;height:7px;border-radius:999px;background:var(--cream-100,#f0f2f6);overflow:hidden;}
+.an-meter .track i{display:block;height:100%;border-radius:999px;}
+.an-meter b{width:42px;text-align:right;}
+.an-open{border:0;background:transparent;padding:0;cursor:pointer;font:700 13px inherit;color:var(--navy-700,#1c2a5e);white-space:nowrap;}
+.an-open:hover{color:var(--navy-900);}
 .an-eyebrow{font:700 11px/1 var(--font-mono,monospace);letter-spacing:.16em;text-transform:uppercase;color:var(--gold-700,#7a5600);}
 .an-h{font:800 clamp(22px,3vw,30px)/1.05 var(--font-display,sans-serif);margin:8px 0 2px;letter-spacing:-.01em;}
 .an-sub{color:var(--ink-500);font-size:14px;margin:0 0 16px;max-width:60ch;}
@@ -168,6 +356,127 @@ const AN_STROKE = 2;
 
 /* One tooltip, shared. Positioned in the CARD's coordinates rather than the
    page's, so it cannot be clipped by the section's own overflow. */
+/* One number in the Level 1 strip. Five of these in a bordered row, not nine
+   cards in a grid: nine equal tiles means nothing is the headline, so nothing
+   gets read. */
+function AnStat({ glyph, label, value, delta, note, tone, onClick }) {
+  const C = onClick ? "button" : "div";
+  return (
+    <C className={"an-stat" + (onClick ? " is-live" : "")} onClick={onClick || undefined}
+       type={onClick ? "button" : undefined}>
+      <div className="an-stat-h"><span aria-hidden="true">{glyph}</span>{label}</div>
+      <div className="an-stat-v">
+        <b style={tone ? { color: tone } : undefined}>{value}</b>
+        {delta != null && delta !== 0 &&
+          <i className="mono" style={{ color: delta > 0 ? AN_TONE.good : AN_TONE.bad }}>
+            {delta > 0 ? "▲" : "▼"} {Math.abs(delta)}%
+          </i>}
+      </div>
+      {note && <div className="an-stat-n">{note}</div>}
+    </C>
+  );
+}
+
+/* ── Needs attention ─────────────────────────────────────────────────────────
+ * Three things, before any of the numbers below.
+ *
+ * A page that opens with twenty-eight figures makes the READER do the triage,
+ * and the reader is a coordinator with forty minutes on a Monday. This does the
+ * triage instead, from the workspace that has already loaded — nothing extra is
+ * fetched — and every card leads somewhere rather than merely worrying you.
+ *
+ * Deliberately capped at three. A list of nine things that need attention is a
+ * list of nothing that needs attention.
+ */
+function anAttention(ws) {
+  const ex = ws.executive, op = ws.operations, re = ws.research;
+  const out = [];
+
+  const missing = (op.missingReports || []).length;
+  if (missing) {
+    out.push({
+      key: "reports", tone: AN_TONE.bad, glyph: "!", count: missing,
+      title: missing === 1 ? "A centre has logged nothing today" : missing + " centres have logged nothing today",
+      body: "Without an activity the day leaves no trace, and a day with no trace cannot be shown to a funder. "
+        + (op.missingReports || []).slice(0, 3).join(", ") + ((op.missingReports || []).length > 3 ? ", …" : ""),
+      action: "Open the missing reports", metric: "missing-reports",
+    });
+  }
+
+  const pending = (ex.assessments && ex.assessments.pending) || 0;
+  if (pending) {
+    out.push({
+      key: "grading", tone: pending > 50 ? AN_TONE.bad : AN_TONE.warn, glyph: "❏", count: pending,
+      title: "assessments still ungraded",
+      body: "A submission with no grade is work a child did that nobody has read yet.",
+      action: "Open the grading queue", metric: "pending-grading",
+    });
+  }
+
+  /* Centres under the same 55% watch line the growth model uses. One threshold
+     across the product, so a centre is not "watch" here and "fine" there. */
+  const low = (re.centreComparison || []).filter(c => c.attendanceRate < 55);
+  if (low.length) {
+    out.push({
+      key: "attendance", tone: AN_TONE.bad, glyph: "◔", count: low.length,
+      title: low.length === 1 ? "centre is below the watch line" : "centres are below the watch line",
+      body: low.map(c => c.name + " " + c.attendanceRate + "%").join(" · ") + ". Under 55% the growth model treats a site as at risk of stalling.",
+      action: "See who is not coming", metric: "low-attendance",
+    });
+  }
+
+  // No evidence at all is worse than thin evidence and must not be silent.
+  const noEvidence = (re.centreComparison || []).filter(c => !c.evidence);
+  if (out.length < 3 && noEvidence.length) {
+    out.push({
+      key: "evidence", tone: AN_TONE.warn, glyph: "◲", count: noEvidence.length,
+      title: noEvidence.length === 1 ? "centre has no evidence on file" : "centres have no evidence on file",
+      body: noEvidence.map(c => c.name).join(", ") + " cannot be cited in a donor report for this range.",
+      action: "Log an activity", metric: "",
+    });
+  }
+
+  if (out.length < 3 && (ex.assessments && ex.assessments.total) && !pending) {
+    out.push({
+      key: "clear", tone: AN_TONE.good, glyph: "✓", count: "",
+      title: "Nothing is waiting",
+      body: "Every submission in this range is graded and every centre has reported.",
+      action: "", metric: "",
+    });
+  }
+  return out.slice(0, 3);
+}
+
+function AnAttention({ ws, onDrill, onLog }) {
+  const items = anAttention(ws);
+  if (!items.length) return null;
+  return (
+    <section className="an-sec an-attn-sec" aria-label="Needs attention">
+      <div className="an-attn-h">
+        <h2 className="an-h" style={{ margin: 0 }}>Needs attention</h2>
+        <span className="an-sub" style={{ margin: 0 }}>
+          {items.length === 1 ? "One thing" : items.length === 2 ? "Two things" : "Three things"}, before any of the numbers below.
+        </span>
+      </div>
+      <div className="an-attn">
+        {items.map(it => (
+          <div key={it.key} className="an-card an-attn-c">
+            <div className="an-attn-top">
+              <span className="an-attn-g" style={{ background: it.tone + "1f", color: it.tone }} aria-hidden="true">{it.glyph}</span>
+              {it.count !== "" && <b style={{ color: it.tone }}>{anFmt(it.count)}</b>}
+            </div>
+            <div className="an-attn-t">{it.title}</div>
+            <p className="an-attn-b">{it.body}</p>
+            {it.action && <button className="an-attn-a" onClick={() => it.metric ? onDrill(it.metric, it.title) : onLog()}>
+              {it.action} →
+            </button>}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function AnTip({ tip }) {
   if (!tip) return null;
   return (
@@ -558,9 +867,13 @@ function AnalyticsWorkspace() {
   const onApplyView = (v) => setFilters({ ...AN_BLANK, ...v.filters });
   const onDeleteView = (name) => saveViews(views.filter(v => v.name !== name));
 
-  const openDrill = (metric, title) => {
+  /* `extra` overrides the page filter for one drill — the centre table's
+     Open → asks about ONE site while the page is showing all of them, and
+     without it every row opened the same list. */
+  const openDrill = (metric, title, extra) => {
     setDrill({ open: true, title, rows: null, loading: true });
-    NGGApi.admin.analyticsDrill(metric, filters).then(r => setDrill({ open: true, title, rows: r.rows, loading: false }))
+    NGGApi.admin.analyticsDrill(metric, Object.assign({}, filters, extra || {}))
+      .then(r => setDrill({ open: true, title, rows: r.rows, loading: false }))
       .catch(() => setDrill({ open: true, title, rows: [], loading: false }));
   };
   const showEvidence = (a) => setDrill({ open: true, title: a.title + " — evidence", loading: false,
@@ -637,34 +950,105 @@ function AnalyticsWorkspace() {
       </div>
     </div>
 
-    {/* Sticky filters + level nav */}
-    <AnFilterBar filters={filters} opts={opts} onChange={setFilters}
-      views={views} onSaveView={onSaveView} onApplyView={onApplyView} onDeleteView={onDeleteView}
-      onExport={onExport} onReset={() => setFilters(AN_BLANK)}/>
-    <nav className="an-levelnav" aria-label="Analytics levels">
-      <a href="#an-exec">① Executive</a><a href="#an-ops">② Operations</a>
-      <a href="#an-research">③ Research</a><a href="#an-evidence">④ Evidence</a>
-      <a href="#an-growth">⑤ Growth potential</a><a href="#an-depth">⑥ Depth</a>
-      <a href="#an-insight">⑦ Analyst panel</a>
-    </nav>
+    {/* ── Needs attention ──────────────────────────────────────────────────
+        Three things, before any of the numbers. A page that opens with
+        twenty-eight figures makes the reader do the triage, and the reader is a
+        coordinator with forty minutes. These are derived from the same
+        workspace the numbers below come from — nothing extra is fetched, and
+        nothing here is a number you cannot click through to. */}
+    <AnAttention ws={ws} onDrill={openDrill} onLog={() => setLogOpen(true)}/>
+
+    {/* One sticky block, not two. The level rail and the filters were separate
+        elements and only the filters stuck, so scrolling to Level 5 left you
+        with a filter bar and no way back. */}
+    <div className="an-rail">
+      <nav className="an-levelnav" aria-label="Analytics levels">
+        <a href="#an-exec">Executive</a><a href="#an-research">Research</a>
+        <a href="#an-ops">Operations</a><a href="#an-centres">Centres</a>
+        <a href="#an-evidence">Evidence</a><a href="#an-growth">Growth</a>
+        <a href="#an-depth">Depth</a><a href="#an-insight">Analyst</a>
+      </nav>
+      <AnFilterBar filters={filters} opts={opts} onChange={setFilters}
+        views={views} onSaveView={onSaveView} onApplyView={onApplyView} onDeleteView={onDeleteView}
+        onExport={onExport} onReset={() => setFilters(AN_BLANK)}/>
+    </div>
 
     {/* ── Level 1 · Executive ── */}
     <section className="an-sec" id="an-exec">
       <div className="an-eyebrow">Level 1 · Executive</div>
-      <h2 className="an-h">The headline numbers.</h2>
-      <p className="an-sub">For directors and sponsors — the programme at a glance. Cards with a trend badge move week-on-week; click a live tile to drill into the records behind it.</p>
-      <div className="an-grid an-kpis">
-        <AnKpi icon="🎓" value={anFmt(ex.totalStudents)} label="Total students" foot={`${anFmt(ex.presentToday)} present today`}/>
-        <AnKpi icon="🏫" value={anFmt(ex.centres)} label="Centres running"/>
-        <AnKpi icon="🧩" value={anFmt(ex.departments)} label="Faculties"/>
-        <AnKpi icon="📈" value={ex.attendanceRate + "%"} label="Attendance rate" trend={ex.weeklyGrowth}
-          foot="vs last week" onClick={() => openDrill("present-today", "Present today")}/>
-        <AnKpi icon="📝" value={anFmt(ex.assessments.total)} label="Assessments" foot={`${anFmt(ex.assessments.graded)} graded · ${anFmt(ex.assessments.pending)} pending`}
+      <h2 className="an-h">The programme in five numbers.</h2>
+      {/* Five, in one strip, not nine cards in a grid. Nine equal tiles is a
+          wall — nothing is the headline, so nothing is read. The four that were
+          cut (faculties, weekly growth, best centre, top student) are all still
+          on the page, in the sections where they mean something. */}
+      <div className="an-strip">
+        <AnStat glyph="◯" label="Students" value={anFmt(ex.totalStudents)}
+          note={anFmt(ex.presentToday) + " present today"}
+          onClick={() => openDrill("present-today", "Present today")}/>
+        <AnStat glyph="◔" label="Attendance" value={ex.attendanceRate + "%"} delta={ex.weeklyGrowth}
+          tone={AN_RATE_TONE(ex.attendanceRate)} note="vs last week"
+          onClick={() => openDrill("low-attendance", "Below the watch line")}/>
+        <AnStat glyph="❏" label="Assessments" value={anFmt(ex.assessments.total)}
+          note={anFmt(ex.assessments.graded) + " graded · " + anFmt(ex.assessments.pending) + " pending"}
           onClick={() => openDrill("pending-grading", "Awaiting grading")}/>
-        <AnKpi icon="🎨" value={anFmt(ex.activities)} label="Activities logged" onClick={() => openDrill("activities", "Activities in range")}/>
-        <AnKpi icon="⚡" value={(ex.weeklyGrowth > 0 ? "+" : "") + ex.weeklyGrowth + "%"} label="Weekly growth" trend={ex.weeklyGrowth}/>
-        <AnKpi icon="🏆" value={ex.bestCentre ? ex.bestCentre.name : "—"} label="Best centre" foot={ex.bestCentre ? `${ex.bestCentre.rate}% attendance` : ""}/>
-        <AnKpi icon="⭐" value={ex.bestStudent ? ex.bestStudent.name : "—"} label="Top student" foot={ex.bestStudent ? `${ex.bestStudent.centre} · ${ex.bestStudent.attendanceRate}%` : ""}/>
+        <AnStat glyph="✦" label="Activities" value={anFmt(ex.activities)}
+          note={anFmt(ev.total) + " artefacts logged"}
+          onClick={() => openDrill("activities", "Activities in range")}/>
+        <AnStat glyph="⌂" label="Centres" value={anFmt(ex.centres)}
+          note={ex.bestCentre ? "best " + ex.bestCentre.name + " · " + ex.bestCentre.rate + "%" : ""}/>
+      </div>
+    </section>
+
+    {/* ── Level 3 · Research ── */}
+    <section className="an-sec" id="an-research">
+      <div className="an-eyebrow">Level 3 · Research</div>
+      <h2 className="an-h">Impact measurement.</h2>
+      <p className="an-sub">Promoted above the operational view: this is the panel M&amp;E opens the page for, and it was three scrolls down.</p>
+      {/* The scatter is the argument; everything to its right is the apparatus
+          that makes the argument checkable. A fixed 380px column rather than a
+          half — the summary is a list of six short numbers and giving it half a
+          screen made the chart, which needs the room, too small to read. */}
+      <div className="an-research">
+        <div className="an-card">
+          <h3 style={{ margin: "0 0 2px", fontSize: 17 }}>Attendance vs performance</h3>
+          <p className="an-sub" style={{ margin: "0 0 10px" }}>
+            {anFmt(re.stats.grades.n)} graded students, coloured by centre. Dashed line is the least-squares fit.
+          </p>
+          <AnScatter points={re.scatter} corr={re.correlation} centres={(ws.options && ws.options.centres) || []}/>
+        </div>
+        <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
+          <div className="an-card">
+            <h3 style={{ margin: "0 0 10px", fontSize: 17 }}>Statistical summary</h3>
+            {[["Attendance %", re.stats.attendance], ["Grades", re.stats.grades]].map(([lab, st]) => (
+              <div key={lab} className="an-statrow">
+                <b>{lab}</b>
+                <div>
+                  <span>n <b>{st.n}</b></span><span>μ <b>{st.mean}</b></span><span>M <b>{st.median}</b></span>
+                  <span>σ <b>{st.sd}</b></span><span>{st.min}–{st.max}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="an-card">
+            <h3 style={{ margin: "0 0 2px", fontSize: 17 }}>Longitudinal growth</h3>
+            <p className="an-sub" style={{ margin: "0 0 10px" }}>Average grade by week.</p>
+            <AnLine data={re.longitudinal} xKey="week" yKey="avgGrade" label="Average grade by week" color="#16a34a"/>
+            {re.intervention && <p className="an-sub" style={{ margin: "10px 0 0" }}>
+              Pre (wk {re.intervention.preWeek}) <b>{re.intervention.preGrade}</b> → post (wk {re.intervention.postWeek}) <b>{re.intervention.postGrade}</b> ·
+              <b style={{ color: re.intervention.delta >= 0 ? AN_TONE.good : AN_TONE.bad }}> {re.intervention.delta >= 0 ? "+" : ""}{re.intervention.delta} pts ({re.intervention.improvementPct >= 0 ? "+" : ""}{re.intervention.improvementPct}%)</b></p>}
+          </div>
+        </div>
+      </div>
+      <div className="an-grid an-two" style={{ marginTop: 16 }}>
+        <div className="an-card">
+          <h3 style={{ margin: "0 0 8px", fontSize: 17 }}>Age analysis</h3>
+          <table className="an-tbl"><thead><tr><th>Age band</th><th>Students</th><th>Attendance</th><th>Avg grade</th></tr></thead>
+            <tbody>{re.age.map((a, i) => <tr key={i}><td><b>{a.band}</b></td><td>{a.count}</td><td>{a.attendanceRate}%</td><td>{a.avgGrade ?? "—"}</td></tr>)}</tbody></table>
+        </div>
+        <div className="an-card">
+          <h3 style={{ margin: "0 0 8px", fontSize: 17 }}>Gender analysis</h3>
+          <AnDonut segments={re.gender.map(g => ({ label: g.gender, value: g.count }))} unit="students"/>
+        </div>
       </div>
     </section>
 
@@ -682,28 +1066,47 @@ function AnalyticsWorkspace() {
       </div>
     </section>
 
-    {/* Centre rankings */}
-    <section className="an-sec">
-      <div className="an-eyebrow">Ranked</div>
-      <h2 className="an-h">Centre rankings.</h2>
-      <div className="an-grid an-two">
-        <div className="an-card">
-          <h3 style={{ margin: "0 0 6px", fontSize: 15 }}>By attendance</h3>
-          {rk.centres.map((c, i) => <div key={c.centreId} className="an-rank">
-            <span className="n">{i + 1}</span>
-            <div style={{ minWidth: 120 }}><b>{c.name}</b><div style={{ fontSize: 11, color: "var(--ink-400)" }}>{c.code} · {anFmt(c.enrolled)} students</div></div>
-            <div className="track"><i style={{ width: c.attendanceRate + "%", background: AN_RATE_TONE(c.attendanceRate) }}/></div>
-            <b style={{ width: 44, textAlign: "right", color: AN_RATE_TONE(c.attendanceRate) }}>{c.attendanceRate}%</b>
-          </div>)}
-        </div>
-        <div className="an-card">
-          <h3 style={{ margin: "0 0 6px", fontSize: 15 }}>Top 5 students</h3>
-          {rk.topStudents.length === 0 ? <div className="an-empty">No students yet.</div> : rk.topStudents.map((s, i) => <div key={i} className="an-rank">
-            <span className="n">{i + 1}</span>
-            <div style={{ flex: 1 }}><b>{s.name}</b><div style={{ fontSize: 11, color: "var(--ink-400)" }}>{s.centre}</div></div>
-            <span className="an-pill" style={{ background: "rgba(22,163,74,.12)", color: AN_TONE.good }}>{s.attendanceRate}%</span>
-            {s.avgGrade !== null && <span className="an-pill" style={{ background: "var(--cream-100)", color: "var(--ink-700)" }}>{s.avgGrade} avg</span>}
-          </div>)}
+    {/* ── Centres ──────────────────────────────────────────────────────────
+        ONE table, where there used to be two ranked lists and a comparison
+        grid — three panels showing the same five centres, none of which could
+        answer "which site is behind and on what" without reading all three.
+        The evidence column is new, and is the one a funder actually asks for. */}
+    <section className="an-sec" id="an-centres">
+      <div className="an-eyebrow">Centres</div>
+      <h2 className="an-h">Every site, one table.</h2>
+      <p className="an-sub">Sorted by attendance. The bar is against the 55% watch line the growth model uses.</p>
+      <div className="an-card" style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table className="an-tbl an-centres">
+            <thead><tr>
+              <th>Centre</th><th>Students</th><th>Attendance</th><th>Avg grade</th>
+              <th>Activities</th><th>Evidence</th><th>Stars</th><th/>
+            </tr></thead>
+            <tbody>
+              {re.centreComparison.slice().sort((a, b) => b.attendanceRate - a.attendanceRate).map(c => (
+                <tr key={c.centreId}>
+                  <td><b>{c.name}</b><div className="mono an-sub-xs">{c.code}</div></td>
+                  <td className="mono">{anFmt(c.enrolled)}</td>
+                  <td style={{ minWidth: 190 }}>
+                    <div className="an-meter">
+                      <div className="track"><i style={{ width: Math.min(100, c.attendanceRate) + "%", background: AN_RATE_TONE(c.attendanceRate) }}/></div>
+                      <b className="mono" style={{ color: AN_RATE_TONE(c.attendanceRate) }}>{c.attendanceRate}%</b>
+                    </div>
+                  </td>
+                  <td className="mono">{c.avgGrade ?? "—"}</td>
+                  <td className="mono">{anFmt(c.activities)}</td>
+                  {/* Zero here is not a formatting nicety — it is a centre that
+                      cannot be cited in a donor report, and it should look like
+                      a problem rather than like a dash. */}
+                  <td className="mono" style={{ color: c.evidence ? undefined : AN_TONE.bad, fontWeight: c.evidence ? 400 : 700 }}>
+                    {anFmt(c.evidence || 0)}
+                  </td>
+                  <td className="mono">{anFmt(c.stars)}</td>
+                  <td><button className="an-open" onClick={() => openDrill("centre-students", c.name + " — students", { centre: c.name })}>Open →</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -715,7 +1118,25 @@ function AnalyticsWorkspace() {
       <p className="an-sub">For centre coordinators — the daily pulse of attendance, teaching activity and outstanding work.</p>
       <div className="an-grid an-three">
         <div className="an-card">
-          <h3 style={{ margin: "0 0 2px", fontSize: 15 }}>Daily attendance</h3>
+          {/* Mean, peak and trough beside the title. A line without them is a
+              shape; with them it is a claim somebody can check. */}
+          <div className="an-card-h">
+            <h3 style={{ margin: 0, fontSize: 17 }}>Daily attendance</h3>
+            {(() => {
+              const d = op.daily || [];
+              if (!d.length) return null;
+              const vals = d.map(x => x.present);
+              const mean = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+              const hi = d.reduce((a, b) => (b.present > a.present ? b : a), d[0]);
+              const lo = d.reduce((a, b) => (b.present < a.present ? b : a), d[0]);
+              const day = (x) => String(x.date || "").slice(5);
+              return <div className="an-card-stats">
+                <span>Mean <b className="mono">{anFmt(mean)}</b></span>
+                <span>Peak <b className="mono">{anFmt(hi.present)}</b> {day(hi)}</span>
+                <span>Trough <b className="mono">{anFmt(lo.present)}</b> {day(lo)}</span>
+              </div>;
+            })()}
+          </div>
           <p className="an-sub" style={{ margin: "0 0 10px" }}>Distinct students present each day in range.</p>
           <AnArea data={op.daily}/>
         </div>
@@ -753,55 +1174,6 @@ function AnalyticsWorkspace() {
         <table className="an-tbl"><thead><tr><th>Assessment</th><th>Centre</th><th>Week</th><th>Due</th></tr></thead>
           <tbody>{op.assessmentsDue.map((a, i) => <tr key={i}><td><b>{a.title}</b></td><td>{a.centre || "All"}</td><td>{a.week || "—"}</td><td>{a.dueAt ? a.dueAt.slice(0, 10) : "—"}</td></tr>)}</tbody></table>
       </div>}
-    </section>
-
-    {/* ── Level 3 · Research ── */}
-    <section className="an-sec" id="an-research">
-      <div className="an-eyebrow">Level 3 · Research</div>
-      <h2 className="an-h">Impact measurement.</h2>
-      <p className="an-sub">For M&E and research — the statistical view that turns activity into evidence of impact. Suitable for donor reporting.</p>
-      <div className="an-grid an-two">
-        <div className="an-card">
-          <h3 style={{ margin: "0 0 2px", fontSize: 15 }}>Attendance vs performance</h3>
-          <p className="an-sub" style={{ margin: "0 0 6px" }}>Each dot is a student, coloured by centre.</p>
-          <AnScatter points={re.scatter} corr={re.correlation} centres={(ws.options && ws.options.centres) || []}/>
-        </div>
-        <div style={{ display: "grid", gap: 14 }}>
-          <div className="an-card"><h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Gender analysis</h3>
-            <AnDonut segments={re.gender.map(g => ({ label: g.gender, value: g.count }))} unit="students"/></div>
-          <div className="an-card"><h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Longitudinal growth</h3>
-            <AnLine data={re.longitudinal} xKey="week" yKey="avgGrade" label="Average grade by week" color="#16a34a"/>
-            {re.intervention && <p className="an-sub" style={{ margin: "8px 0 0" }}>
-              Pre (wk {re.intervention.preWeek}) <b>{re.intervention.preGrade}</b> → Post (wk {re.intervention.postWeek}) <b>{re.intervention.postGrade}</b> ·
-              <b style={{ color: re.intervention.delta >= 0 ? AN_TONE.good : AN_TONE.bad }}> {re.intervention.delta >= 0 ? "+" : ""}{re.intervention.delta} pts ({re.intervention.improvementPct >= 0 ? "+" : ""}{re.intervention.improvementPct}%)</b></p>}
-          </div>
-        </div>
-      </div>
-      <div className="an-grid an-two" style={{ marginTop: 14 }}>
-        <div className="an-card">
-          <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Age analysis</h3>
-          <table className="an-tbl"><thead><tr><th>Age band</th><th>Students</th><th>Attendance</th><th>Avg grade</th></tr></thead>
-            <tbody>{re.age.map((a, i) => <tr key={i}><td><b>{a.band}</b></td><td>{a.count}</td><td>{a.attendanceRate}%</td><td>{a.avgGrade ?? "—"}</td></tr>)}</tbody></table>
-        </div>
-        <div className="an-card">
-          <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Statistical summary</h3>
-          <table className="an-tbl"><thead><tr><th>Metric</th><th>n</th><th>Mean</th><th>Median</th><th>SD</th><th>Range</th></tr></thead>
-            <tbody>
-              <tr><td><b>Attendance %</b></td><td>{re.stats.attendance.n}</td><td>{re.stats.attendance.mean}</td><td>{re.stats.attendance.median}</td><td>{re.stats.attendance.sd}</td><td>{re.stats.attendance.min}–{re.stats.attendance.max}</td></tr>
-              <tr><td><b>Grades</b></td><td>{re.stats.grades.n}</td><td>{re.stats.grades.mean}</td><td>{re.stats.grades.median}</td><td>{re.stats.grades.sd}</td><td>{re.stats.grades.min}–{re.stats.grades.max}</td></tr>
-            </tbody></table>
-        </div>
-      </div>
-      <div className="an-card" style={{ marginTop: 14 }}>
-        <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Centre comparison</h3>
-        <div style={{ overflowX: "auto" }}>
-          <table className="an-tbl"><thead><tr><th>Centre</th><th>Students</th><th>Attendance</th><th>Avg grade</th><th>Activities</th><th>Stars</th></tr></thead>
-            <tbody>{re.centreComparison.map(c => <tr key={c.centreId}>
-              <td><b>{c.name}</b></td><td>{anFmt(c.enrolled)}</td>
-              <td><span className="an-pill" style={{ background: "rgba(0,0,0,.03)", color: AN_RATE_TONE(c.attendanceRate) }}>{c.attendanceRate}%</span></td>
-              <td>{c.avgGrade ?? "—"}</td><td>{anFmt(c.activities)}</td><td>{anFmt(c.stars)}</td></tr>)}</tbody></table>
-        </div>
-      </div>
     </section>
 
     {/* V3 Champions (Verbal · Vocal · Visual) */}
@@ -1561,10 +1933,34 @@ function AnalystPane({ onClose }) {
     return out;
   };
 
-  const exportReport = (kind) => {
+  const [exporting, setExporting] = React.useState("");
+
+  const exportReport = async (kind) => {
     const rows = pinned.length ? pinned : turns.filter(t => !t.pending);
-    if (!rows.length) return;
+    if (!rows.length || exporting) return;
     const stamp = new Date().toISOString().slice(0, 10);
+    if (kind === "docx") {
+      /* A real Word file, not an .html renamed .doc.
+         This is where a finding actually goes: into a board paper, a funding
+         application, a centre review. An .html-in-.doc opens with a security
+         warning in Word and is refused outright by Google Docs, and a Markdown
+         file gets retyped — which is how a caveated finding arrives without its
+         caveat. docx is 414KB and is fetched here, by the press of this button,
+         never by the page. */
+      setExporting("docx");
+      try {
+        await loadVendor("docx");
+        const blob = await anBuildDocx(window.docx, rows, {
+          stamp, pinned: pinned.length > 0,
+          scope: liveChips.map(c => c.label).join(" · "),
+          title: (thread && thread.title) || "Analyst findings",
+        });
+        anDownloadBlob("ngg-analyst-" + stamp + ".docx", blob);
+      } catch (e) {
+        toast.error(e.message || "the document could not be built", "Export failed");
+      } finally { setExporting(""); }
+      return;
+    }
     if (kind === "csv") {
       /* CSV because a finding usually ends up in a spreadsheet beside numbers
          from somewhere else, and the provenance has to travel with it or it
@@ -1952,8 +2348,11 @@ function AnalystPane({ onClose }) {
                     );
                   })}
                 <div className="anp-report-out">
-                  <button className="anp-tool is-solid" onClick={() => exportReport("md")}>⭳ Markdown</button>
-                  <button className="anp-tool" onClick={() => exportReport("csv")}>CSV</button>
+                  <button className="anp-tool is-solid" disabled={!!exporting} onClick={() => exportReport("docx")}>
+                    {exporting === "docx" ? "Building…" : "⭳ Word"}
+                  </button>
+                  <button className="anp-tool" disabled={!!exporting} onClick={() => exportReport("csv")}>CSV</button>
+                  <button className="anp-tool" disabled={!!exporting} onClick={() => exportReport("md")}>Markdown</button>
                   <span className="anp-report-note">
                     {pinned.length ? pinned.length + " pinned" : "the whole conversation"} · provenance travels with it
                   </span>
@@ -2433,4 +2832,4 @@ async function exportPdf(ws) {
   } catch (e) { alert("PDF export unavailable: " + (e.message || e)); }
 }
 
-Object.assign(window, { AnalyticsWorkspace, AnalystPane, anConfidence, anSteps });
+Object.assign(window, { AnalyticsWorkspace, AnalystPane, anConfidence, anSteps, anBuildDocx, anAttention });

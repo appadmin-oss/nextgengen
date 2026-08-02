@@ -43,6 +43,12 @@ const PACKAGES = {
   'tui-image-editor': '3.15.3',
   'tui-color-picker': '2.2.6',
   'filerobot-image-editor': '5.0.0',
+  /* Real .docx, for the Analyst pane's report draft. A finding that a
+     coordinator has to retype into Word is a finding that arrives paraphrased,
+     and the alternative — an .html file named .doc — is a file Word opens with
+     a security warning and Google Docs refuses. Published as ESM+CJS with no
+     UMD build, so it goes through the same bundle step as Filerobot. */
+  'docx': '9.7.1',
 };
 
 /* THE TWEAK THAT MAKES FILEROBOT WORK HERE.
@@ -123,6 +129,12 @@ export default { Fragment, jsx, jsxs, jsxDEV };
 window.FilerobotImageEditor = FilerobotImageEditor;
 export default FilerobotImageEditor;
 `,
+  /* docx has no React in it and no globals to collide with, so it is a plain
+     namespace bundle — everything the library exports, under one global. */
+  'entry-docx.js': `import * as docx from "docx";
+window.docx = docx;
+export default docx;
+`,
 };
 
 function log(...a) { console.log('[vendor]', ...a); }
@@ -162,6 +174,21 @@ function build(outDir) {
     '--metafile=' + path.join(work, 'meta.json'),
     '--outfile=' + path.join(outDir, 'filerobot-image-editor.min.js'),
   ], work);
+
+  log('bundling docx');
+  run(fs.existsSync(esbuild) ? esbuild : 'npx', [
+    ...(fs.existsSync(esbuild) ? [] : ['esbuild']),
+    path.join(work, 'entry-docx.js'), '--bundle', '--minify', '--format=iife', '--target=es2019',
+    '--define:process.env.NODE_ENV="production"',
+    '--outfile=' + path.join(outDir, 'docx.min.js'),
+  ], work);
+  const docxOut = fs.readFileSync(path.join(outDir, 'docx.min.js'), 'utf8');
+  /* The two exports the report writer uses. Asserted because a namespace bundle
+     that silently loses a symbol produces "Document is not a constructor" at the
+     moment somebody presses Export, on a machine that is not this one. */
+  for (const sym of ['Packer', 'Document', 'Paragraph', 'TextRun', 'Table']) {
+    if (!docxOut.includes(sym)) throw new Error('docx bundle is missing ' + sym);
+  }
 
   /* The aliases are the point of this script, so they are verified rather than
      assumed — from esbuild's own metafile, not by grepping the output.
@@ -206,6 +233,7 @@ const OUTPUTS = [
   'fabric.min.js', 'tui-image-editor.min.js', 'tui-image-editor.min.css',
   'tui-color-picker.min.js', 'tui-color-picker.min.css',
   'filerobot-image-editor.min.js', 'filerobot-image-editor.min.css',
+  'docx.min.js',
 ];
 
 if (CHECK) {

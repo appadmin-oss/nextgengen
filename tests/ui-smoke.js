@@ -95,6 +95,24 @@ const LEADERBOARD = {
   total: 2,
 };
 
+/* Pull word/document.xml out of a .docx without a zip library.
+   A .docx is a plain ZIP; the local file header is enough to find and inflate
+   one entry, and asserting on the XML is the only way to know a Word file says
+   what the screen said rather than merely being well-formed. */
+function unzipDocumentXml(buf) {
+  const zlib = require('zlib');
+  for (let i = 0; i + 30 < buf.length; i++) {
+    if (buf.readUInt32LE(i) !== 0x04034b50) continue;
+    const nameLen = buf.readUInt16LE(i + 26), extraLen = buf.readUInt16LE(i + 28);
+    if (buf.slice(i + 30, i + 30 + nameLen).toString('latin1') !== 'word/document.xml') continue;
+    const start = i + 30 + nameLen + extraLen;
+    const size = buf.readUInt32LE(i + 18);
+    const raw = buf.slice(start, size ? start + size : undefined);
+    return (buf.readUInt16LE(i + 8) === 8 ? zlib.inflateRawSync(raw) : raw).toString('utf8');
+  }
+  return '';
+}
+
 (async () => {
   const chromium = loadChromium();
   if (!chromium) { console.log('⏭  boards: skipped (playwright not installed)'); process.exit(0); }
@@ -297,9 +315,51 @@ const LEADERBOARD = {
             : b === 'vols' ? 'AdminVolunteers'
             : b === 'gates' ? 'SummerGates'
             : b === 'analyst' ? 'AnalystPane'
+            : b === 'analytics' ? 'AnalyticsWorkspace'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
-  if (b === 'analyst') {
+  if (b === 'analytics') {
+    props = {};
+    var CC = [
+      { centreId: 'c1', name: 'Egbeda', code: 'EG', color: '#3B5BDB', enrolled: 96, presentToday: 88, attendanceRate: 91, avgGrade: 71, activities: 54, stars: 210, evidence: 62 },
+      { centreId: 'c2', name: 'Ijaiye', code: 'IJ', color: '#C2410C', enrolled: 74, presentToday: 60, attendanceRate: 84, avgGrade: 66, activities: 41, stars: 150, evidence: 44 },
+      { centreId: 'c3', name: 'Sunshine', code: 'SU', color: '#0E9F6E', enrolled: 58, presentToday: 34, attendanceRate: 61, avgGrade: 60, activities: 22, stars: 70, evidence: 9 },
+      { centreId: 'c4', name: 'Ayobo Hub', code: 'AY', color: '#A21CAF', enrolled: 38, presentToday: 17, attendanceRate: 47, avgGrade: 55, activities: 12, stars: 30, evidence: 0 },
+    ];
+    window.NGGApi.admin.analytics = function () { return Promise.resolve({ workspace: {
+      generatedAt: '2026-08-02T09:41:00Z',
+      filters: { rangeLabel: 'Weeks 1-6', options: { weeks: ['1', '2'], centres: CC.map(function (c) { return c.name; }), departments: [], categories: [] } },
+      executive: { totalStudents: 266, presentToday: 199, centres: 4, departments: 6, attendanceRate: 78,
+                   weeklyGrowth: 4, activities: 129, assessments: { total: 1204, graded: 938, pending: 266 },
+                   bestCentre: { name: 'Egbeda', rate: 91 }, bestStudent: { name: 'A B', centre: 'Egbeda', attendanceRate: 98 },
+                   program: { week: 4 } },
+      operations: { daily: [{ date: '2026-07-06', present: 268, late: 3, rate: 70 }, { date: '2026-07-07', present: 291, late: 2, rate: 74 },
+                            { date: '2026-07-08', present: 334, late: 1, rate: 84 }],
+                    engagement: { engagementPct: 62, studentsStarred: 140, avgStarsPerStudent: 2.1 },
+                    volunteers: { active: 31, cleared: 28 },
+                    teacherActivity: [{ name: 'M One', department: 'Music', starsGiven: 40, ratings: 12, activities: 9 }],
+                    lessonCompletion: { submitted: 1204, graded: 938, pending: 266 },
+                    missingReports: ['Sunshine', 'Ayobo Hub'], assessmentsDue: [] },
+      research: { scatter: [{ x: 90, y: 70, centre: 'Egbeda' }, { x: 50, y: 55, centre: 'Ayobo Hub' }],
+                  correlation: 0.62,
+                  gender: [{ gender: 'Female', count: 186, attendanceRate: 80, avgGrade: 68 },
+                           { gender: 'Male', count: 152, attendanceRate: 76, avgGrade: 65 }],
+                  age: [{ band: '8-10', count: 90, attendanceRate: 80, avgGrade: 66 }],
+                  centreComparison: CC,
+                  longitudinal: [{ week: 1, avgGrade: 58 }, { week: 4, avgGrade: 67 }],
+                  intervention: { preWeek: 1, preGrade: 58, postWeek: 4, postGrade: 67, delta: 9, improvementPct: 15.5 },
+                  stats: { attendance: { n: 266, mean: 78, median: 80, sd: 14, min: 20, max: 100 },
+                           grades: { n: 289, mean: 66, median: 67, sd: 9, min: 32, max: 96 } } },
+      evidence: { byType: [{ type: 'photo', count: 101 }], total: 163,
+                  gallery: [{ activityId: 'a1', title: 'Tie & dye', category: 'craft', centre: 'Egbeda', date: '2026-07-08', evidence: [{ type: 'photo', url: '' }] }] },
+      rankings: { centres: CC, topStudents: [], awards: [], v3: null },
+      timeline: [],
+    } }); };
+    window.NGGApi.admin.analyticsDrill = function (m, f) { window.__drill = { metric: m, centre: f && f.centre }; return Promise.resolve({ rows: [] }); };
+    window.NGGApi.admin.analyticsGrowth = function () { return Promise.resolve({ growth: null }); };
+    window.NGGApi.admin.analyticsDepth = function () { return Promise.resolve({ depth: { empty: true } }); };
+    window.NGGApi.admin.analyticsInsight = function () { return Promise.resolve({ panel: null }); };
+  } else if (b === 'analyst') {
     /* The docked Analyst. Stubbed at the API boundary rather than at the
        component's, so the pane runs its real pipeline: optimistic turn, thread
        re-read, confidence derived from the claims, grounding check honoured. */
@@ -3838,6 +3898,50 @@ const LEADERBOARD = {
     anTxt = await anp.evaluate(() => document.body.innerText);
     ok('a pinned answer becomes a report draft entry', /Report draft/.test(anTxt) && /Why is Ayobo falling/.test(anTxt));
 
+    /* ── The report draft comes out as a real Word file ───────────────────
+       Not an .html renamed .doc — Word opens those with a security warning and
+       Google Docs refuses them outright, so the finding gets retyped, and a
+       caveated finding that is retyped arrives without its caveat. Checked by
+       unzipping the bytes and reading the OOXML, because "it downloaded" proves
+       nothing about whether Word will open it. */
+    const [docxDl] = await Promise.all([
+      anp.waitForEvent('download', { timeout: 90000 }),
+      anp.click('.anp-tool:has-text("Word")'),
+    ]);
+    const docxBytes = fs.readFileSync(await docxDl.path());
+    const zipTxt = docxBytes.toString('latin1');
+    ok('the report draft exports as a real .docx package',
+      docxBytes[0] === 0x50 && docxBytes[1] === 0x4b
+      && zipTxt.indexOf('[Content_Types].xml') !== -1
+      && zipTxt.indexOf('word/document.xml') !== -1
+      && docxDl.suggestedFilename().endsWith('.docx'));
+
+    /* And the document says what the pane says. An export that drops the
+       provenance is how a finding ends up in a board paper as an unattributed
+       assertion. */
+    const docXml = unzipDocumentXml(docxBytes);
+    ok('…whose text carries the finding, its confidence and where it was drawn from',
+      /Why is Ayobo falling/.test(docXml) && /retention, not teaching/.test(docXml)
+      && /87% confidence/.test(docXml) && /ev-9f2a/.test(docXml) && /Weeks 1-6/.test(docXml));
+
+    /* The one that matters most in a document: an ungrounded answer must not be
+       exportable as though it checked out. Built directly so the warning branch
+       is exercised rather than hoped for. */
+    const warnedB64 = await anp.evaluate(async () => {
+      await window.loadVendor('docx');
+      const bad = Object.assign({}, window.__turn, {
+        checks: { grounded: false, evidenceNumbers: 61, claims: [], answerUnverified: ['41%'] } });
+      const blob = await window.anBuildDocx(window.docx, [bad], { stamp: '2026-08-02', pinned: false, scope: '', title: 'T' });
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      let s = ''; for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
+      return btoa(s);
+    });
+    const warnXml = unzipDocumentXml(Buffer.from(warnedB64, 'base64'));
+    ok('an ungrounded answer exports WITH its warning, in red, above the answer',
+      /were not found in the evidence/.test(warnXml) && /41%/.test(warnXml)
+      && /B91C1C/.test(warnXml)
+      && warnXml.indexOf('not found in the evidence') < warnXml.indexOf('retention, not teaching'));
+
     // The composer's scope chips are the request, not a caption. Target the
     // centre by name — the chips are [range, centre] and removing the wrong one
     // would let this pass while proving nothing.
@@ -3870,6 +3974,74 @@ const LEADERBOARD = {
     ok('a conversation can be put away from the pane it was opened in',
       (await anp.evaluate(() => window.__archived)) === 'th1');
     await anp.close();
+
+    /* ── The analytics page ───────────────────────────────────────────────
+       Redesigned around what a coordinator with forty minutes actually needs:
+       triage first, the research panel promoted above the operational one, five
+       headline numbers instead of nine equal tiles, and ONE centre table where
+       there were two ranked lists and a comparison grid. */
+    const an2 = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+    const an2Errs = [];
+    an2.on('pageerror', e => an2Errs.push(String(e.message)));
+    await an2.goto(BASE + '/tests/_boards_fixture.html?board=analytics&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await an2.waitForSelector('.an-strip', { timeout: 15000 });
+    await an2.waitForTimeout(300);
+    ok('the analytics page mounts with no script error', an2Errs.length === 0);
+    if (an2Errs.length) console.error('       ', an2Errs.slice(0, 3).join(' | '));
+
+    /* Triage, computed rather than decorative — and capped at three, because a
+       list of nine things needing attention is a list of nothing needing it. */
+    const attn = await an2.evaluate(() => Array.from(document.querySelectorAll('.an-attn-c')).map(e => e.innerText));
+    ok('the page opens with three things that need attention, not twenty-eight numbers',
+      attn.length === 3
+      && /2\b[\s\S]*logged nothing today/.test(attn[0])
+      && /266[\s\S]*ungraded/.test(attn[1])
+      && /below the watch line/.test(attn[2]));
+    /* The watch line is 55% across the product. Ayobo (47) is under it and
+       Sunshine (61) is not — a card that counted both would be using a
+       different threshold from the growth model, silently. */
+    ok('…and the watch-line card counts only the centres actually under 55%',
+      /Ayobo Hub 47%/.test(attn[2]) && !/Sunshine/.test(attn[2]));
+
+    ok('Level 1 is five numbers in one strip, not nine tiles in a grid',
+      (await an2.locator('.an-stat').count()) === 5);
+
+    // Research above Operations — the panel M&E opens the page for was three
+    // scrolls down, under the daily-attendance chart.
+    const order = await an2.evaluate(() => Array.from(document.querySelectorAll('.an-sec[id]')).map(e => e.id));
+    ok('Research is promoted above Operations',
+      order.indexOf('an-research') > -1 && order.indexOf('an-research') < order.indexOf('an-ops'));
+
+    /* One table where there were three panels showing the same five centres. */
+    const centres = await an2.evaluate(() => {
+      const t = document.querySelector('.an-centres');
+      return { rows: t.querySelectorAll('tbody tr').length,
+               head: Array.from(t.querySelectorAll('thead th')).map(e => e.textContent),
+               first: t.querySelector('tbody tr').innerText,
+               noRanked: document.body.innerText.indexOf('Centre rankings') === -1 };
+    });
+    ok('one centre table replaces the two ranked lists and the comparison grid',
+      centres.rows === 4 && centres.noRanked && /Egbeda/.test(centres.first));
+    ok('…sorted by attendance, and carrying the evidence count a funder asks for',
+      centres.head.indexOf('Evidence') !== -1 && /91%/.test(centres.first));
+
+    /* A centre with no evidence cannot be cited in a donor report, and that has
+       to look like a problem rather than like a dash. */
+    const zeroEv = await an2.evaluate(() => {
+      const row = Array.from(document.querySelectorAll('.an-centres tbody tr')).find(r => /Ayobo/.test(r.innerText));
+      const cells = row.querySelectorAll('td');
+      const c = cells[5];
+      return { text: c.textContent, weight: getComputedStyle(c).fontWeight, colour: getComputedStyle(c).color };
+    });
+    ok('a centre with zero evidence is marked, not left as a quiet nought',
+      zeroEv.text === '0' && Number(zeroEv.weight) >= 700 && /239|ef4444/i.test(zeroEv.colour));
+
+    // Open → asks about ONE site. Without the override every row opened the same list.
+    await an2.click('.an-centres tbody tr:has-text("Ayobo") .an-open');
+    await an2.waitForFunction(() => !!window.__drill, null, { timeout: 6000 });
+    ok('the centre table drills into that centre, not into the page filter',
+      JSON.stringify(await an2.evaluate(() => window.__drill)) === '{"metric":"centre-students","centre":"Ayobo Hub"}');
+    await an2.close();
 
     /* ── The shell makes room for it ──────────────────────────────────────
        The pane is a TRACK, not an overlay, which only works if the middle
