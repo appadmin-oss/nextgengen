@@ -149,9 +149,10 @@ function ichat_route(string $question, array $ev): array {
          . "maximum, and picking a lens that merely might say something is how a panel becomes noise.\n"
          . "Always include `risk` when the question asks for a decision or a comparison, because that is "
          . "where a small-sample answer does damage.\n"
-         . "Set answerable=false when the evidence cannot address the question at all — it holds attendance "
-         . "rates, segments by age and sex, weekday patterns, retention by intake, and centre readiness. It "
-         . "holds nothing about money, staff names, individual children, or anything outside the date range.\n\n"
+         . "Set answerable=false ONLY when the evidence genuinely cannot address the question — and judge that "
+         . "against the list below, which is generated from the payload you are being given rather than "
+         . "written down beside it. Refusing a question the evidence CAN answer is the worse error of the two.\n\n"
+         . ichat_capabilities(ichat_shape($ev)) . "\n\n"
          . "Reply with JSON only: {\"lenses\":[\"mechanism\"],\"why\":\"one sentence\","
          . "\"answerable\":true,\"unanswerable_because\":\"\",\"restated\":\"the question in one precise sentence\"}";
 
@@ -193,14 +194,68 @@ function ichat_route(string $question, array $ev): array {
 /** What the evidence contains, without the values — enough to route on, and
  *  cheap enough to send on every turn. */
 function ichat_shape(array $ev): array {
+    $centres = (array)($ev['centres'] ?? []);
     return [
         'range' => $ev['range'] ?? [],
-        'centres' => array_map(fn($c) => (string)$c['centre'], (array)($ev['centres'] ?? [])),
+        // The centre rows carry more than a name now, and the router was
+        // refusing centre questions partly because all it could see was names.
+        'centres' => array_map(fn($c) => [
+            'name' => (string)$c['centre'],
+            'has' => array_values(array_filter([
+                isset($c['rate']) ? 'attendance rate + interval' : '',
+                isset($c['avgGrade']) && $c['avgGrade'] !== null ? 'average grade' : '',
+                !empty($c['bySex']) ? 'sex split' : '',
+                isset($c['activities']) ? 'activities + evidence count' : '',
+            ])),
+        ], $centres),
         'segmentRows' => array_map(fn($r) => (string)$r['row'], (array)($ev['segments'] ?? [])),
         'hasWeekday' => !empty($ev['weekday']),
         'hasRetention' => !empty($ev['retention']),
+        'hasLearningBySex' => !empty($ev['learning']['bySex']),
         'computedFindings' => array_map(fn($f) => (string)$f['title'], (array)($ev['computed'] ?? [])),
     ];
+}
+
+/**
+ * What this evidence can and cannot answer, IN ENGLISH, derived from the
+ * payload rather than written down beside it.
+ *
+ * The router used to be told, in a hand-written sentence, that the evidence
+ * "holds attendance rates, segments by age and sex, weekday patterns, retention
+ * by intake, and centre readiness". Two things went wrong with that. It went
+ * stale — learning by sex was added and the sentence did not know — and
+ * "centre readiness" is vague enough that a model asked "why is Ayobo falling"
+ * would conclude there was no centre-specific data and refuse. Users saw a
+ * refusal that named capabilities the evidence actually had.
+ *
+ * A description of a payload that lives anywhere except in the payload will
+ * drift. This one is generated, so it cannot.
+ */
+function ichat_capabilities(array $ev): string {
+    $has = [];
+    $c = (array)($ev['centres'] ?? []);
+    if ($c) {
+        $bits = [];
+        foreach ($c as $x) foreach ((array)($x['has'] ?? []) as $h) $bits[$h] = true;
+        // Named, because "which centre" is the most common question asked here
+        // and a model that cannot see the names assumes there are none.
+        $has[] = 'per-centre figures for ' . count($c) . ' site(s) — '
+               . implode('; ', array_slice(array_map(fn($x) => (string)($x['name'] ?? ''), $c), 0, 12))
+               . ' — covering ' . (implode(', ', array_keys($bits)) ?: 'attendance');
+    }
+    if (!empty($ev['segmentRows'])) $has[] = 'attendance cross-tabulated by ' . implode(' and ', array_slice($ev['segmentRows'], 0, 8));
+    if (!empty($ev['hasWeekday'])) $has[] = 'attendance by weekday, per centre';
+    if (!empty($ev['hasRetention'])) $has[] = 'retention curves by intake';
+    if (!empty($ev['hasLearningBySex'])) $has[] = 'average grade and grading coverage by sex, with the gap';
+    if (!empty($ev['computedFindings'])) $has[] = count($ev['computedFindings']) . ' already-computed findings';
+    $r = (array)($ev['range'] ?? []);
+    $range = trim((string)($r['label'] ?? '')) !== '' ? (string)$r['label'] : (($r['from'] ?? '') . ' to ' . ($r['to'] ?? ''));
+
+    return "THE EVIDENCE HOLDS:\n- " . implode("\n- ", $has ?: ['nothing yet'])
+         . "\n\nAll of it covers " . ($range !== ' to ' ? $range : 'the selected period') . " only, and all of it is "
+         . "aggregate: counts, rates and intervals. It holds NO money, NO staff or child names, and NOTHING "
+         . "outside that period. Answer from what is listed above — if a name appears in the list, that centre "
+         . "IS in the evidence and a question about it is answerable.";
 }
 
 /* ── The answer ───────────────────────────────────────────────────────────── */
@@ -648,9 +703,23 @@ function insight_chat_ask(array $p): array {
         /* Stored as a turn, not thrown away. "This data cannot answer that" is a
            real answer and the most useful one a coordinator can get before
            building a decision on top of a number that is not there. */
+        /* A refusal has to end somewhere useful.
+         *
+         * "This evidence cannot answer that" with nothing after it sends a
+         * coordinator away to guess at a phrasing that might work, and the
+         * commonest cause is not the question at all — it is the pane being
+         * scoped to one centre while they ask about all of them. Both the scope
+         * and the actual contents of the evidence are said here. */
+        $why = (string)($plan['unanswerable'] ?: 'This evidence cannot answer that question.');
+        $scoped = trim((string)($p['centre'] ?? ''));
+        if ($scoped !== '') {
+            $why .= "\n\nNote: this was asked against " . $scoped . " only — remove that chip above the box "
+                  . "to ask across every centre.";
+        }
+        $why .= "\n\n" . ichat_capabilities(ichat_shape($ev));
         $store = [
             'threadId' => $tid, 'seq' => $seq, 'askedById' => $me, 'question' => $question,
-            'answer' => (string)($plan['unanswerable'] ?: 'This evidence cannot answer that question.'),
+            'answer' => $why,
             'planJson' => json_encode($plan, JSON_UNESCAPED_SLASHES), 'claimsJson' => '[]', 'checksJson' => '[]',
             'evidenceFp' => $fp, 'rangeLabel' => (string)($ev['range']['label'] ?? ''),
             'status' => 'unanswerable', 'error' => '', 'providers' => (string)($plan['provider'] ?? ''),

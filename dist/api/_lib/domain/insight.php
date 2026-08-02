@@ -221,6 +221,67 @@ function insight_learning_by_sex(array $p): array {
             'note' => 'Mean of each student\'s own average, so a child who submitted twelve pieces counts once.'];
 }
 
+/**
+ * The per-centre detail the evidence was missing: enrolment, the sex split,
+ * how many are graded and their average, and how much activity was logged.
+ *
+ * Aggregate per SITE, never per child. Five or six centres, four small
+ * aggregates each — cheap enough to build on every evidence read, and the
+ * difference between "Ayobo is at 47%" and being able to say anything about
+ * why.
+ */
+function insight_centre_detail(array $p): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return [];
+    $centres = function_exists('analytics_centres') ? analytics_centres($g['requester'], trim((string)($p['centre'] ?? ''))) : [];
+    $names = array_map(fn($c) => (string)$c['name'], $centres);
+    if (!$names) return [];
+    $in = '(' . implode(',', array_fill(0, count($names), '?')) . ')';
+
+    $out = [];
+    foreach ($names as $n) $out[$n] = ['enrolled' => 0, 'bySex' => ['Male' => 0, 'Female' => 0, 'Not recorded' => 0],
+                                       'graded' => 0, 'avgGrade' => null, 'activities' => 0, 'evidenceItems' => 0];
+
+    foreach (db_all("SELECT centre, sex, gender FROM summer_students WHERE status = 'active' AND centre IN $in", $names) as $r) {
+        $c = (string)$r['centre'];
+        if (!isset($out[$c])) continue;
+        $out[$c]['enrolled']++;
+        $out[$c]['bySex'][sex_label($r)]++;
+    }
+
+    // Mean over STUDENTS, not over submissions — otherwise a centre whose
+    // children submit more looks like a centre whose children learn more.
+    $g2 = [];
+    foreach (db_all("SELECT s.centre, s.studentId, AVG(sub.grade) g
+                     FROM summer_students s
+                     JOIN assignment_submissions sub ON sub.memberId = s.studentId
+                     WHERE s.status = 'active' AND s.centre IN $in AND sub.grade IS NOT NULL
+                     GROUP BY s.centre, s.studentId", $names) as $r) {
+        $g2[(string)$r['centre']][] = (float)$r['g'];
+    }
+    foreach ($g2 as $c => $vals) {
+        if (!isset($out[$c])) continue;
+        $out[$c]['graded'] = count($vals);
+        $out[$c]['avgGrade'] = round(array_sum($vals) / max(1, count($vals)), 1);
+    }
+
+    /* Activity and evidence per site. A centre with no artefacts cannot be
+       cited in a report, and that is a fact about the SITE — exactly the kind
+       of thing somebody asks the analyst about. */
+    $from = (string)($p['from'] ?? ''); $to = (string)($p['to'] ?? '');
+    $hasRange = $from !== '' && $to !== '';
+    $args = $names; if ($hasRange) { $args[] = $from; $args[] = $to; }
+    foreach (db_all("SELECT centre, evidence FROM activities WHERE centre IN $in"
+                    . ($hasRange ? ' AND date BETWEEN ? AND ?' : ''), $args) as $r) {
+        $c = (string)$r['centre'];
+        if (!isset($out[$c])) continue;
+        $out[$c]['activities']++;
+        $e = safe_json((string)($r['evidence'] ?? '[]'));
+        $out[$c]['evidenceItems'] += is_array($e) ? count($e) : 0;
+    }
+    return $out;
+}
+
 function insight_evidence(array $p): array {
     $depth = function_exists('analytics_depth') ? analytics_depth($p) : ['ok' => false];
     $ev = ['generatedAt' => now_iso(), 'range' => [], 'overall' => null,
@@ -232,11 +293,44 @@ function insight_evidence(array $p): array {
     $ev['range'] = ['from' => (string)($d['range']['from'] ?? ''), 'to' => (string)($d['range']['to'] ?? ''),
                     'label' => (string)($d['range']['label'] ?? '')];
     $ev['overall'] = $d['period'] ?? null;
-    foreach (($d['centres'] ?? []) as $c) {
-        $ev['centres'][] = ['centre' => (string)$c['centre'], 'rate' => $c['rate'],
-                            'ci' => [$c['lo'] ?? null, $c['hi'] ?? null],
-                            'childDays' => $c['opp'] ?? 0, 'children' => $c['children'] ?? 0,
-                            'vsProgramme' => $c['delta'] ?? null, 'verdict' => (string)($c['verdict'] ?? '')];
+    /* Per centre: attendance AND learning AND the sex split, in one row.
+     *
+     * This block held attendance only, so a question about one site had a rate,
+     * an interval and nothing to explain it with — and the router, reading a
+     * hand-written sentence that called all of this "centre readiness",
+     * repeatedly decided a centre question could not be answered at all. The
+     * refusal was not wrong about the evidence it was shown; the evidence was
+     * thin. */
+    /* THE BUG BEHIND "the evidence does not hold centre-specific data".
+     *
+     * This read $d['centres']. Level 6 emits $d['perCentre'], and has since it
+     * was written — so the loop iterated nothing and $ev['centres'] was ALWAYS
+     * an empty array. The analyst's refusal was accurate; the payload really
+     * did not have a single centre in it, which is also why every centre
+     * question came back as unanswerable while the page above showed a table of
+     * five sites.
+     *
+     * Nothing caught it because both sides looked right in isolation: depth
+     * produced per-centre rows, insight consumed a per-centre key, and no test
+     * asserted that the key on one side was the key on the other. The
+     * assertions added with this fix check the contents, not the shape.
+     *
+     * The nested `ci` and `test` structures are flattened here rather than
+     * passed through: a model reading {"ci":{"rate":47,"lo":31,"hi":63}} does
+     * arithmetic on the wrapper as often as on the number. */
+    $perCentreExtra = insight_centre_detail($p);
+    foreach (($d['perCentre'] ?? []) as $c) {
+        $name = (string)($c['centre'] ?? '');
+        if ($name === '') continue;
+        $ci = (array)($c['ci'] ?? []);
+        $ev['centres'][] = ['centre' => $name,
+                            'rate' => $ci['rate'] ?? null,
+                            'ci' => [$ci['lo'] ?? null, $ci['hi'] ?? null],
+                            'childDays' => $ci['opp'] ?? 0,
+                            'children' => $c['students'] ?? 0,
+                            'vsProgramme' => $c['vsProgramme'] ?? null,
+                            'verdict' => (string)(($c['test']['verdict'] ?? '') ?: '')]
+                          + ($perCentreExtra[$name] ?? []);
     }
     foreach (($d['crosstab']['rows'] ?? []) as $r) {
         $cells = [];

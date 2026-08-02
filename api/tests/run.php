@@ -4148,6 +4148,106 @@ chk('…and a thread is only readable by the admin who opened it', (function () 
 })());
 chk('the ask op is admin-gated', backend_dispatch('analytics.insight.ask', ['requesterId' => '', 'question' => 'Why is Wednesday weak?'])['ok'] !== true);
 
+chk('the evidence actually HOLDS the centres — the key it read never existed', (function () {
+    /* The reported bug, at its root. insight.php read $d['centres']; Level 6
+       emits $d['perCentre']. The loop iterated nothing, $ev['centres'] was
+       always [], and so the analyst's "this evidence does not hold
+       centre-specific data" was TRUE — while the page above it showed a table
+       of five sites. Both sides looked right in isolation and nothing asserted
+       that one side's key was the other's. */
+    $ev = insight_evidence(['requesterId' => 'NGG-2025-0099']);
+    if (!empty($ev['empty'])) return true;
+    $c = (array)($ev['centres'] ?? []);
+    if (!$c) return false;
+    $first = $c[0];
+    return (string)($first['centre'] ?? '') !== ''
+        // Flattened, not nested: a model reading {"ci":{"rate":47}} does
+        // arithmetic on the wrapper as often as on the number.
+        && array_key_exists('rate', $first) && is_array($first['ci'] ?? null)
+        // …and the detail that lets a centre question be answered rather than
+        // merely acknowledged.
+        && array_key_exists('enrolled', $first) && array_key_exists('bySex', $first)
+        && array_key_exists('avgGrade', $first) && array_key_exists('evidenceItems', $first);
+})());
+
+chk('what the evidence can answer is generated from the evidence, not written beside it', (function () {
+    /* The reported bug. The router was told, in a hand-written sentence, that
+       the evidence held "centre readiness" — vague enough that asked about one
+       site it replied "the evidence does not hold centre-specific data", which
+       was false: per-centre rates, intervals and verdicts were right there.
+       A description of a payload that lives anywhere except in the payload
+       drifts, and this one had. */
+    $ev = insight_evidence(['requesterId' => 'NGG-2025-0099']);
+    if (!empty($ev['empty'])) return true;
+    $cap = ichat_capabilities(ichat_shape($ev));
+    /* The payload must actually CONTAIN centres. It did not: insight.php read
+       $d['centres'] and depth emits $d['perCentre'], so this array was empty in
+       production and the analyst's "no centre-specific data" was true. */
+    $names = array_map(fn($c) => (string)$c['centre'], (array)($ev['centres'] ?? []));
+    if (!$names) return false;
+    // Every centre in the payload is NAMED in the description. A model that
+    // cannot see the names assumes there are none.
+    foreach (array_slice($names, 0, 12) as $n) if (strpos($cap, $n) === false) return false;
+    return strpos($cap, 'per-centre figures') !== false
+        // …and it still states the real boundary rather than dropping it.
+        && strpos($cap, 'NO money') !== false;
+})());
+
+chk('…and the ROUTER is told it, which is where the wrong refusal came from', (function () {
+    /* Asserting on ichat_capabilities() alone would have passed while the
+       router prompt still carried the stale hand-written sentence — which is
+       exactly the bug. So this captures the system prompt the router is
+       actually sent. */
+    $sysSeen = '';
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = function ($profile, $sys, $turns) use (&$sysSeen) {
+        if ($profile === ICHAT_ROUTER_PROFILE) $sysSeen = $sys;
+        return (__ichat_mock())($profile, $sys, $turns);
+    };
+    backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'Which centre is furthest behind and why?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if ($sysSeen === '') return true;                        // AI off on this run
+    $ev = insight_evidence(['requesterId' => 'NGG-2025-0099']);
+    $names = array_map(fn($c) => (string)$c['centre'], (array)($ev['centres'] ?? []));
+    if (!$names) return false;   // the payload must HAVE centres; see insight.php
+    return strpos($sysSeen, 'THE EVIDENCE HOLDS') !== false
+        && strpos($sysSeen, $names[0]) !== false
+        // The sentence that produced "the evidence does not hold centre-specific
+        // data" is gone, not merely supplemented.
+        && strpos($sysSeen, 'centre readiness') === false;
+})());
+
+chk('…and it names each block only while that block is actually present', (function () {
+    /* The drift guard. Adding learning-by-sex to the payload must make the
+       description mention it with nobody editing a string; removing a block
+       must make it stop. */
+    $withLearning = ichat_capabilities(['centres' => [], 'range' => ['label' => 'W1'],
+        'hasLearningBySex' => true, 'segmentRows' => ['Female', 'Male']]);
+    $without = ichat_capabilities(['centres' => [], 'range' => ['label' => 'W1'], 'segmentRows' => []]);
+    return strpos($withLearning, 'grade') !== false && strpos($withLearning, 'Female and Male') !== false
+        && strpos($without, 'grade') === false
+        && strpos($without, 'nothing yet') !== false;
+})());
+
+chk('a refusal says what the evidence DOES hold, and names the scope that narrowed it', (function () {
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock(['route' => ['lenses' => ['mechanism'], 'why' => 'w',
+        'answerable' => false, 'unanswerable_because' => 'No budget data is held.', 'restated' => 'r']]);
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'centre' => 'Ijaiye', 'question' => 'How much did the transport cost last month?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($r['ok'])) return true;
+    $a = (string)($r['turn']['answer'] ?? '');
+    /* "This evidence cannot answer that" and nothing else sends a coordinator
+       away to guess at a phrasing — and the commonest cause is not the question
+       but the pane being scoped to one centre. */
+    return $r['turn']['status'] === 'unanswerable'
+        && strpos($a, 'No budget data is held.') === 0
+        && strpos($a, 'Ijaiye') !== false && strpos($a, 'remove that chip') !== false
+        && strpos($a, 'THE EVIDENCE HOLDS') !== false;
+})());
+
 chk('the analysts can finally see LEARNING by sex, not only attendance', (function () {
     /* The evidence held attendance broken down every way and learning broken
        down no way at all — so the panel could say who turns up and never
