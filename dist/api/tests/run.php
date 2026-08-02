@@ -3986,7 +3986,7 @@ function __ichat_mock(array $opts = []): callable {
                 'claims' => $opts['claims'] ?? [['claim' => 'Wednesday is weakest.', 'lenses' => ['a', 'b'],
                                                 'evidence' => 'e', 'confidence' => 'medium', 'agreed' => true]],
                 'followups' => ['And on Saturdays?'],
-            ])];
+            ] + (isset($opts['data']) ? $opts['data'] : []))];
         }
         return ['ok' => true, 'provider' => 'stub-' . $profile, 'text' => json_encode(['points' => [
             ['point' => 'Wednesday runs lowest.', 'evidence' => 'e', 'confidence' => 'medium'],
@@ -4147,6 +4147,134 @@ chk('…and a thread is only readable by the admin who opened it', (function () 
     return empty($other['ok']);
 })());
 chk('the ask op is admin-gated', backend_dispatch('analytics.insight.ask', ['requesterId' => '', 'question' => 'Why is Wednesday weak?'])['ok'] !== true);
+
+chk('the analysts can finally see LEARNING by sex, not only attendance', (function () {
+    /* The evidence held attendance broken down every way and learning broken
+       down no way at all — so the panel could say who turns up and never
+       whether girls and boys learn the same amount once they do. That is the
+       question serious education funding turns on. */
+    $ev = insight_evidence(['requesterId' => 'NGG-2025-0099']);
+    if (!empty($ev['empty'])) return true;
+    $L = $ev['learning'] ?? null;
+    if (!is_array($L) || !isset($L['bySex'])) return false;
+    foreach ($L['bySex'] as $r) {
+        // Every group carries its coverage, so "12 girls graded of 130" reads as
+        // a coverage problem rather than as a finding about girls.
+        if (!array_key_exists('enrolled', $r) || !array_key_exists('graded', $r)
+            || !array_key_exists('avgGrade', $r) || !array_key_exists('tooThin', $r)) return false;
+    }
+    return true;
+})());
+
+chk('…and a group too small to carry a claim is marked, never merged away', (function () {
+    $ev = insight_evidence(['requesterId' => 'NGG-2025-0099']);
+    if (!empty($ev['empty'])) return true;
+    $rows = $ev['learning']['bySex'] ?? [];
+    $thin = array_filter($rows, fn($r) => $r['graded'] < 5);
+    foreach ($thin as $r) if (empty($r['tooThin'])) return false;
+    // The gap is only stated where BOTH sides are thick enough to mean anything.
+    $gap = $ev['learning']['gap'] ?? null;
+    if ($gap !== null) {
+        $ok = true;
+        foreach ($rows as $r) if (in_array($r['sex'], ['Male', 'Female'], true) && !empty($r['tooThin'])) $ok = false;
+        return $ok;
+    }
+    return true;
+})());
+
+chk('…and it still passes the privacy gate that guards everything sent out', (function () {
+    /* The block is aggregate by construction, but "by construction" is what
+       every leak was before it happened. Run the real scrub over the real
+       encoded payload. */
+    $ev = insight_evidence(['requesterId' => 'NGG-2025-0099']);
+    return insight_scrub(json_encode($ev, JSON_UNESCAPED_SLASHES) ?: '') === [];
+})());
+
+/* ── The answer as data ──────────────────────────────────────────────────────
+ * Tiles, a table and a chart, not only prose. The reason this is safe to add is
+ * the reason it needed adding carefully: a chart is more persuasive than a
+ * paragraph, so it goes through MORE checking, not less.
+ */
+chk('the composer bounds the structured blocks instead of passing them through', (function () {
+    /* What a model actually returns: nine columns in one row and two in the
+       next, two hundred chart points, a tone nobody defined, a bar index off
+       the end of the header. None of that is worth failing a turn over; all of
+       it would break a renderer that trusted it. */
+    $d = ichat_clean_data([
+        'stats' => [['label' => 'Attendance', 'value' => '78%', 'note' => 'up 4', 'tone' => 'good'],
+                    ['label' => '', 'value' => '9'],                       // no label — dropped
+                    ['label' => 'Ungraded', 'value' => '266', 'tone' => 'purple'],  // bad tone
+                    ['label' => 'Fourth', 'value' => '1']],                // over the cap
+        'table' => ['title' => 'Centres', 'columns' => ['Centre', 'Att.', 'Δ', 'x', 'y', 'z'],
+                    'bar' => 1, 'delta' => 9,
+                    'rows' => [['Egbeda', '91', '+3'], ['Ayobo'], ['', '', ''], ...array_fill(0, 9, ['a', 'b', 'c'])]],
+        'chart' => ['kind' => 'spiral', 'label' => 'wk', 'unit' => '%', 'watch' => 55,
+                    'points' => array_merge([['x' => 'w1', 'y' => 68], ['x' => 'w2', 'y' => 'oops'],
+                                             ['x' => 'w3', 'y' => 56], ['x' => 'w4', 'y' => 47]],
+                                            array_fill(0, 30, ['x' => 'x', 'y' => 1]))],
+    ]);
+    /* Capped AFTER filtering, so one unusable entry does not cost a usable one
+       — the "no label" tile is dropped and the fourth still makes the cut. */
+    return count($d['stats']) === 3 && $d['stats'][1]['tone'] === 'neutral'
+        && $d['stats'][2]['label'] === 'Fourth'
+        && count($d['table']['columns']) === 4
+        // The ragged row is PADDED to the header, not dropped — one short row
+        // must not lose the whole table — and the all-empty row is dropped.
+        && count($d['table']['rows']) === 6 && $d['table']['rows'][1] === ['Ayobo', '', '', '']
+        && $d['table']['delta'] === -1 && $d['table']['bar'] === 1
+        && $d['chart']['kind'] === 'line' && count($d['chart']['points']) === 12
+        && $d['chart']['points'][1]['x'] === 'w3';      // the non-numeric y is gone
+})());
+
+chk('a two-point chart is refused — that is a number, not a trend', (function () {
+    $d = ichat_clean_data(['chart' => ['kind' => 'line', 'points' => [['x' => 'a', 'y' => 1], ['x' => 'b', 'y' => 2]]]]);
+    return !isset($d['chart']);
+})());
+
+chk('the structured blocks are grounded against the evidence, exactly like the prose', (function () {
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock(['answer' => 'Attendance is holding.', 'claims' => [],
+        'data' => ['stats' => [['label' => 'Made up', 'value' => '99999', 'tone' => 'bad']]]]);
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'How is attendance holding up this week?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($r['ok'])) return true;
+    $t = $r['turn'];
+    /* DROPPED, not shown with a warning on it. A table with one invented cell
+       is what gets screenshotted into a board paper, and no reader maps "some
+       figures are unverified" onto the third row. The drop is recorded so this
+       is not hiding: the pane says a block was produced and why it is absent. */
+    return empty($t['data']['stats'])
+        && ($t['checks']['grounded'] ?? true) === false
+        && ($t['checks']['dropped'][0]['block'] ?? '') === 'stats'
+        && in_array('99999', $t['checks']['dropped'][0]['unverified'] ?? [], true);
+})());
+
+chk('…and a block whose figures ARE in the evidence survives and is stored', (function () {
+    $cfg = __ichat_config_on();
+    /* Built from the evidence the turn will actually be checked against, so
+       this proves the check passes real data rather than that it is switched
+       off. */
+    $ev = insight_evidence(['requesterId' => 'NGG-2025-0099']);
+    $nums = array_values(array_unique(ichat_evidence_numbers($ev)));
+    if (count($nums) < 4) { __ichat_config_off($cfg); return true; }
+    $GLOBALS['__ai_mock'] = __ichat_mock(['answer' => 'Steady.', 'claims' => [], 'data' => [
+        'stats' => [['label' => 'Rate', 'value' => (string)$nums[0], 'tone' => 'good']],
+        'chart' => ['kind' => 'line', 'label' => 'By week', 'unit' => '',
+                    'points' => [['x' => 'a', 'y' => $nums[0]], ['x' => 'b', 'y' => $nums[1]], ['x' => 'c', 'y' => $nums[2]]]],
+    ]]);
+    $r = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'Give me the weekly shape of attendance please.']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($r['ok'])) return true;
+    // Re-read from the store, so this also proves dataJson round-trips.
+    $back = backend_dispatch('analytics.insight.thread', ['requesterId' => 'NGG-2025-0099', 'threadId' => $r['threadId']]);
+    $turns = $back['thread']['turns'] ?? [];
+    $last = end($turns) ?: [];
+    return count($last['data']['stats'] ?? []) === 1
+        && count($last['data']['chart']['points'] ?? []) === 3
+        && empty($last['checks']['dropped']);
+})());
 chk('a thread can be renamed, archived, and refuses a title that names somebody', (function () {
     $cfg = __ichat_config_on();
     $GLOBALS['__ai_mock'] = __ichat_mock();

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 78;
+const NGG_SCHEMA_TARGET = 79;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2051,6 +2051,19 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_sstu_sex ON summer_students (sex);
             CREATE INDEX IF NOT EXISTS idx_vol_sex ON volunteers (sex);
         ",
+        /* 79 — the analyst's answer as DATA, not only as prose.
+         *
+         * "Attendance fell nine points at Ayobo" is a claim a reader takes on
+         * trust. The same finding as three tiles, a four-point series and a
+         * ranked table is one they can check at a glance and paste into a board
+         * paper without retyping — and retyping is how a caveated finding
+         * arrives without its caveat.
+         *
+         * Stored alongside the prose rather than derived on read, because the
+         * blocks are grounded against the evidence AS IT STOOD, and a turn
+         * re-checked against next week's figures would silently change its
+         * mind about what was verified. */
+        79 => "ALTER TABLE insight_turns ADD COLUMN dataJson TEXT",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

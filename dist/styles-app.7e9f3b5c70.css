@@ -5251,3 +5251,64 @@ body.own-chrome .fab-top { display: none; }
   margin: 0; color: var(--ink-900, #0a1130); text-wrap: pretty;
 }
 .anp-lead-line + .anp-body { margin-top: 8px; }
+
+/* ── The answer, as data ─────────────────────────────────────────────────────
+   Tiles, a table and a chart inside a 420px pane. Every figure in all three
+   went through the same grounding check as the prose; a block with any figure
+   that was not in the evidence never reaches the browser. */
+.anp-tiles { display: flex; gap: 8px; margin-top: 12px; }
+.anp-tile {
+  flex: 1; min-width: 0; position: relative; overflow: hidden;
+  background: #f7f8fb; border-radius: 9px; padding: 9px 10px;
+}
+.anp-tile i { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+.anp-tile b {
+  font-family: var(--font-display, Sora, sans-serif); font-weight: 800;
+  font-size: 18px; line-height: 1; letter-spacing: -0.02em; color: var(--ink-900, #0a1130);
+}
+.anp-tile em { font-style: normal; font-size: 10.5px; font-weight: 700; margin-left: 5px; }
+.anp-tile span {
+  display: block; margin-top: 5px; font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.anp-tbl-wrap { margin-top: 12px; border: 1px solid #eef0f4; border-radius: 10px; overflow: hidden; }
+.anp-tbl-t {
+  font-family: var(--font-mono, monospace); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-500, #5a6488);
+  padding: 8px 10px 0;
+}
+.anp-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.anp-tbl th {
+  text-align: left; font-family: var(--font-mono, monospace); font-weight: 600; font-size: 10px;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-500, #5a6488);
+  padding: 8px 10px; background: #f7f8fb; border-bottom: 1px solid #eef0f4;
+}
+.anp-tbl td { padding: 7px 10px; border-bottom: 1px solid #f4f5f8; }
+.anp-tbl tr:last-child td { border-bottom: 0; }
+.anp-tbl-k { font-weight: 600; color: var(--ink-900, #0a1130); }
+.anp-tbl-bar { display: flex; align-items: center; gap: 7px; }
+.anp-tbl-bar i { flex: 1; min-width: 30px; height: 5px; border-radius: 999px; background: #eef0f4; overflow: hidden; }
+.anp-tbl-bar i b { display: block; height: 100%; border-radius: 999px; background: var(--navy-700, #1c2a5e); }
+.anp-tbl-bar em { font-style: normal; font-family: var(--font-mono, monospace); color: var(--ink-800, #25304a); }
+
+.anp-chart { margin-top: 12px; border: 1px solid #eef0f4; border-radius: 10px; padding: 10px 12px 8px; background: #fcfcfd; }
+.anp-chart-h {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 7px;
+  font-family: var(--font-mono, monospace); font-size: 10px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-500, #5a6488);
+}
+.anp-chart-h span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anp-chart-h b { font-size: 11px; flex: none; }
+
+/* Cream rule, not a red box: "this would be wrong if…" is a condition on the
+   answer, not a fault in it. */
+.anp-caveat {
+  margin-top: 12px; padding: 8px 0 8px 11px; border-left: 2px solid #e8dec6;
+  font-size: 11.5px; line-height: 1.55; color: #5a5443;
+}
+.anp-dropped {
+  margin: 10px 0 0; font-size: 11px; line-height: 1.5; color: #b45309;
+  font-family: var(--font-mono, monospace);
+}

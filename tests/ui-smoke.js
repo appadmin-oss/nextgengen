@@ -382,7 +382,20 @@ function unzipDocumentXml(buf) {
                  confidence: 'high', agreed: true, lenses: ['mechanism', 'risk'] },
                { claim: 'n = 38 is small enough that one session swings it.', evidence: 'centres 5',
                  confidence: 'medium', agreed: false, lenses: ['risk'] }],
-      checks: { grounded: true, evidenceNumbers: 61, claims: [], answerUnverified: [] },
+      checks: { grounded: true, evidenceNumbers: 61, claims: [], answerUnverified: [],
+                dropped: [{ block: 'table', unverified: ['412'] }] },
+      /* The answer as data. Every figure here passed the same grounding check
+         as the prose; the dropped note above is a block that did not. */
+      data: {
+        stats: [{ label: 'Attendance', value: '47%', note: 'down 9', tone: 'bad' },
+                { label: 'Lapsed', value: '14', note: 'of 38', tone: 'warn' },
+                { label: 'Saturdays', value: '2', note: 'sessions', tone: 'neutral' }],
+        chart: { kind: 'line', label: 'Ayobo attendance by week', unit: '%', watch: 55,
+                 points: [{ x: 'wk1', y: 68 }, { x: 'wk2', y: 61 }, { x: 'wk3', y: 56 }, { x: 'wk4', y: 47 }] },
+        table: { title: 'Centres this week', columns: ['Centre', 'Att.', 'Change'], bar: 1, delta: 2,
+                 rows: [['Egbeda', '91', '+3'], ['Ijaiye', '84', '+1'], ['Ayobo Hub', '47', '-9']] },
+        caveat: 'n = 38 is small — one Saturday session swings this centre by about 5 points.',
+      },
     };
     window.__turn = TURN;
     window.NGGApi.admin.insightChatThreads = function () { return Promise.resolve({ threads: window.__threads }); };
@@ -3890,6 +3903,36 @@ function unzipDocumentXml(buf) {
     // Next steps are targets you can press, not suggestions inside a paragraph.
     ok('follow-ups are real targets', await anp.locator('.anp-action').count() === 2);
 
+    /* ── The answer as data ───────────────────────────────────────────────
+       Tiles, a chart and a table rather than a paragraph a reader has to take
+       on trust. Rendered from what the composer returned, never parsed back out
+       of the prose. */
+    const blocks = await anp.evaluate(() => {
+      const tiles = Array.from(document.querySelectorAll('.anp-tile')).map(e => e.innerText.replace(/\n/g, ' '));
+      const svg = document.querySelector('.anp-chart svg');
+      const texts = svg ? Array.from(svg.querySelectorAll('text')).map(t => t.textContent) : [];
+      return { tiles, pts: svg ? svg.querySelectorAll('circle').length : 0, texts,
+               caveat: (document.querySelector('.anp-caveat') || {}).textContent || '',
+               dropped: (document.querySelector('.anp-dropped') || {}).textContent || '',
+               chartH: (document.querySelector('.anp-chart-h') || {}).textContent || '' };
+    });
+    ok('the answer renders as tiles, not only as prose',
+      blocks.tiles.length === 3 && /47%/.test(blocks.tiles[0]) && /down 9/.test(blocks.tiles[0]));
+    /* A bare polyline in a 420px pane says nothing: no scale, no threshold, and
+       no value on the point that matters. All three are cheap and all three are
+       what make it readable at a glance. */
+    ok('…and as a chart with a scale, the watch line and the last value called out',
+      blocks.pts === 4 && blocks.texts.indexOf('watch') !== -1 && blocks.texts.indexOf('47%') !== -1
+      && /-21%/.test(blocks.chartH.replace(/\s+/g, '')));
+    ok('…with the condition that would make the answer wrong kept beside it',
+      /one Saturday session/.test(blocks.caveat));
+    /* The one that matters. A block that was produced and then dropped for
+       citing a figure not in the evidence is SAID — silently omitting it is the
+       honest-looking way to hide a failure, because the reader has no way to
+       know a table was offered and so cannot ask why it is missing. */
+    ok('a withheld block is named, with the figure that got it withheld',
+      /table withheld/.test(blocks.dropped) && /412/.test(blocks.dropped));
+
     /* Pin → report draft → export. This is the actual workflow: nobody asks six
        questions for fun, they ask them because a paper is due. */
     await anp.click('.anp-tool:has-text("Pin")');
@@ -3923,6 +3966,16 @@ function unzipDocumentXml(buf) {
     ok('…whose text carries the finding, its confidence and where it was drawn from',
       /Why is Ayobo falling/.test(docXml) && /retention, not teaching/.test(docXml)
       && /87% confidence/.test(docXml) && /ev-9f2a/.test(docXml) && /Weeks 1-6/.test(docXml));
+    /* And the structured blocks, as a real Word table rather than a line of
+       numbers. This is the point of the .docx over Markdown: the finding lands
+       in the board paper laid out, instead of being retyped off a screenshot
+       with the caveat left behind. */
+    ok('…and the comparison arrives as a real Word table, not a line of numbers',
+      /<w:tbl>/.test(docXml) && /Centres this week/.test(docXml)
+      && /Ayobo Hub/.test(docXml) && /<w:tblHeader/.test(docXml));
+    ok('…including the withheld-block note, so the document cannot look cleaner than the answer',
+      /withheld/.test(docXml) && /one Saturday session/.test(docXml)
+      && /wk1/.test(docXml) && /Lapsed/.test(docXml));
 
     /* The one that matters most in a document: an ungrounded answer must not be
        exportable as though it checked out. Built directly so the warning branch

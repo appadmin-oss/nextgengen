@@ -112,6 +112,57 @@ async function anBuildDocx(d, rows, opts) {
 
     kids.push(p(t.answer || "", { run: { size: 22 }, para: { spacing: { after: 140 }, alignment: d.AlignmentType.JUSTIFIED } }));
 
+    /* The structured blocks go into the document too — as a real Word table,
+       not as a line of numbers. This is the whole point of the .docx: a finding
+       arrives in the board paper with its figures laid out, rather than being
+       retyped from a screenshot with the caveat left behind. */
+    const dd = t.data || {};
+    if ((dd.stats || []).length) {
+      kids.push(new d.Paragraph({
+        children: dd.stats.flatMap((st, k) => [
+          ...(k ? [new d.TextRun({ text: "   ·   ", size: 20, color: MUTED })] : []),
+          new d.TextRun({ text: st.value + " ", bold: true, size: 26, color: NAVY }),
+          new d.TextRun({ text: st.label + (st.note ? " (" + st.note + ")" : ""), size: 19, color: MUTED }),
+        ]),
+        spacing: { after: 140 },
+      }));
+    }
+    if (dd.table) {
+      if (dd.table.title) kids.push(p(dd.table.title, { run: { bold: true, size: 19, color: MUTED }, para: { spacing: { after: 60 } } }));
+      const cell = (text, head) => new d.TableCell({
+        children: [p(text, { run: { size: 18, bold: !!head, color: head ? MUTED : undefined } })],
+        shading: head ? { type: d.ShadingType.CLEAR, fill: "F7F8FB" } : undefined,
+        margins: { top: 60, bottom: 60, left: 90, right: 90 },
+      });
+      kids.push(new d.Table({
+        width: { size: 100, type: d.WidthType.PERCENTAGE },
+        rows: [new d.TableRow({ children: dd.table.columns.map(c => cell(c, true)), tableHeader: true })]
+          .concat(dd.table.rows.map(r => new d.TableRow({ children: r.map(c => cell(c, false)) }))),
+      }));
+      kids.push(p("", { para: { spacing: { after: 140 } } }));
+    }
+    if (dd.chart) {
+      /* The series as text rather than as a picture. An image would need a
+         canvas render and a base64 round-trip for a four-point line; the
+         numbers are what a reader checks anyway, and they stay selectable. */
+      kids.push(p((dd.chart.label ? dd.chart.label + ": " : "")
+        + dd.chart.points.map(pt => pt.x + " " + pt.y + (dd.chart.unit || "")).join("   →   "),
+        { run: { size: 18, color: MUTED, font: "Consolas" }, para: { spacing: { after: 140 } } }));
+    }
+    if (dd.caveat) {
+      kids.push(new d.Paragraph({
+        children: [new d.TextRun({ text: dd.caveat, size: 19, italics: true, color: "5A5443" })],
+        spacing: { after: 140 },
+        border: { left: { style: d.BorderStyle.SINGLE, size: 12, color: "E8DEC6", space: 8 } },
+        indent: { left: 120 },
+      }));
+    }
+    if (t.checks && (t.checks.dropped || []).length) {
+      kids.push(p(t.checks.dropped.map(x => x.block).join(" and ")
+        + " withheld — cited a figure not in the evidence.",
+        { run: { size: 17, color: BAD, italics: true }, para: { spacing: { after: 120 } } }));
+    }
+
     (t.claims || []).forEach(cl => {
       kids.push(p(cl.claim, { run: { size: 21 }, para: { bullet: { level: 0 }, spacing: { after: 40 } } }));
       const meta = [cl.evidence, (cl.lenses || []).length > 1 && cl.agreed ? "two lenses agreed" : "one lens",
@@ -1812,6 +1863,141 @@ function anStepDetail(t) {
     + (t.ms ? " · " + (t.ms / 1000).toFixed(1) + "s" : "");
 }
 
+/* ── The answer, as data ─────────────────────────────────────────────────────
+ *
+ * Tiles, a table and a chart, rendered from what the composer returned rather
+ * than parsed back out of the prose. Every figure in all three went through the
+ * same grounding check as the sentences, and a block with any figure that was
+ * not in the evidence was dropped server-side rather than shown — see the
+ * `dropped` note the pane renders in its place.
+ *
+ * Small on purpose. These live in a 420px pane beside the page they are about,
+ * and a chart that needs a legend to be read is a chart that belongs on the
+ * page, not in the margin.
+ */
+const ANP_TONE = { good: "#15803d", warn: "#b45309", bad: "#b91c1c", neutral: "#5a6488" };
+
+function AnpStats({ stats }) {
+  return (
+    <div className="anp-tiles">
+      {stats.map((s, i) => (
+        <div key={i} className="anp-tile">
+          <i style={{ background: ANP_TONE[s.tone] || ANP_TONE.neutral }}/>
+          <b>{s.value}</b>
+          {s.note && <em style={{ color: ANP_TONE[s.tone] || ANP_TONE.neutral }}>{s.note}</em>}
+          <span style={{ color: ANP_TONE[s.tone] || ANP_TONE.neutral }}>{s.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AnpTable({ table }) {
+  /* A bar column is drawn as a bar as well as a number. The scale is the
+     column's own maximum, not 100 — a table of 41/44/62 read against 100 is
+     four bars that all look the same and say nothing. */
+  const barMax = table.bar >= 0
+    ? Math.max(1, ...table.rows.map(r => Math.abs(parseFloat(r[table.bar])) || 0))
+    : 0;
+  const deltaTone = (v) => {
+    const n = parseFloat(String(v).replace(/[^\d.+-]/g, ""));
+    if (!isFinite(n) || n === 0) return ANP_TONE.neutral;
+    return n > 0 ? ANP_TONE.good : ANP_TONE.bad;
+  };
+  return (
+    <div className="anp-tbl-wrap">
+      {table.title && <div className="anp-tbl-t">{table.title}</div>}
+      <table className="anp-tbl">
+        <thead><tr>{table.columns.map((c, i) => <th key={i}>{c}</th>)}</tr></thead>
+        <tbody>
+          {table.rows.map((r, i) => (
+            <tr key={i}>
+              {r.map((cell, j) => {
+                if (j === table.bar) {
+                  const n = Math.abs(parseFloat(cell)) || 0;
+                  return <td key={j}>
+                    <span className="anp-tbl-bar">
+                      <i><b style={{ width: Math.round(n / barMax * 100) + "%" }}/></i>
+                      <em>{cell}</em>
+                    </span>
+                  </td>;
+                }
+                if (j === table.delta) {
+                  const t = deltaTone(cell);
+                  return <td key={j} className="mono" style={{ color: t, whiteSpace: "nowrap" }}>
+                    {/^\s*-/.test(String(cell)) ? "▼" : /^\s*\+/.test(String(cell)) ? "▲" : ""} {cell}
+                  </td>;
+                }
+                return <td key={j} className={j === 0 ? "anp-tbl-k" : "mono"}>{cell}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** A line or bar series, with a scale, the last value called out, and the watch
+ *  line labelled where there is one. A bare polyline in a narrow pane tells a
+ *  reader nothing: no scale, no threshold, and no value on the point that
+ *  actually matters. All three are cheap. */
+function AnpChart({ chart }) {
+  const pts = chart.points;
+  const ys = pts.map(p => p.y);
+  const rawMax = Math.max(...ys, chart.watch == null ? -Infinity : chart.watch);
+  const rawMin = Math.min(...ys, chart.watch == null ? Infinity : chart.watch);
+  const pad = Math.max(1, (rawMax - rawMin) * 0.15);
+  const max = rawMax + pad, min = Math.max(0, rawMin - pad);
+  const W = 300, H = 108, L = 30, R = 34, T = 8, B = 22;
+  const x = (i) => L + (pts.length === 1 ? 0 : i * (W - L - R) / (pts.length - 1));
+  const y = (v) => H - B - ((v - min) / Math.max(0.001, max - min)) * (H - T - B);
+  const last = pts[pts.length - 1];
+  const down = pts.length > 1 && last.y < pts[0].y;
+  const tone = down ? "#ef4444" : "#16a34a";
+  const line = pts.map((p, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(p.y).toFixed(1)).join(" ");
+  // At most four x labels, or they overlap into a grey smear.
+  const step = Math.max(1, Math.ceil(pts.length / 4));
+  return (
+    <div className="anp-chart">
+      <div className="anp-chart-h">
+        <span>{chart.label}</span>
+        {pts.length > 1 && <b style={{ color: tone }}>
+          {last.y - pts[0].y > 0 ? "+" : ""}{Math.round((last.y - pts[0].y) * 10) / 10}{chart.unit}
+        </b>}
+      </div>
+      <svg viewBox={"0 0 " + W + " " + H} style={{ width: "100%", height: "auto", display: "block", overflow: "visible" }}>
+        {[max, (max + min) / 2, min].map((v, i) => (
+          <text key={"y" + i} x={L - 6} y={y(v) + 3.5} textAnchor="end" fontSize="9" fill="#8891a6"
+            fontFamily="var(--font-mono, monospace)">{Math.round(v)}</text>
+        ))}
+        {chart.watch != null && chart.watch >= min && chart.watch <= max && <>
+          <line x1={L} x2={W - R} y1={y(chart.watch)} y2={y(chart.watch)} stroke="#c9a227" strokeWidth="1" strokeDasharray="4 4"/>
+          <text x={W - R + 4} y={y(chart.watch) + 3.5} fontSize="9" fill="#7a5600" fontWeight="700"
+            fontFamily="var(--font-mono, monospace)">watch</text>
+        </>}
+        {chart.kind === "bar"
+          ? pts.map((p, i) => {
+              const w = Math.max(4, (W - L - R) / pts.length * 0.6);
+              return <rect key={i} x={x(i) - w / 2} y={y(p.y)} width={w} height={Math.max(1, H - B - y(p.y))}
+                fill={tone} opacity="0.85" rx="2"/>;
+            })
+          : <>
+              <path d={line} fill="none" stroke={tone} strokeWidth="2" strokeLinejoin="round"/>
+              {pts.map((p, i) => <circle key={i} cx={x(i)} cy={y(p.y)} r={i === pts.length - 1 ? 4 : 2.6}
+                fill={i === pts.length - 1 ? tone : "#fff"} stroke={tone} strokeWidth="2"/>)}
+            </>}
+        <text x={x(pts.length - 1) + 7} y={y(last.y) + 3.5} fontSize="10" fontWeight="700" fill={tone}
+          fontFamily="var(--font-mono, monospace)">{last.y}{chart.unit}</text>
+        {pts.map((p, i) => (i % step === 0 || i === pts.length - 1) && p.x
+          ? <text key={"x" + i} x={x(i)} y={H - 5} textAnchor="middle" fontSize="9" fill="#8891a6"
+              fontFamily="var(--font-mono, monospace)">{p.x}</text>
+          : null)}
+      </svg>
+    </div>
+  );
+}
+
 function AnalystPane({ onClose }) {
   /* What the open section says it is showing. Not props: the pane outlives any
      one screen, and a screen that announces nothing must produce a pane that
@@ -1926,6 +2112,27 @@ function AnalystPane({ onClose }) {
         + ((t.checks.answerUnverified || []).length ? " (" + t.checks.answerUnverified.join(", ") + ")" : "") + ".", "");
     }
     out.push(t.answer || "", "");
+    const dd = t.data || {};
+    if ((dd.stats || []).length) {
+      out.push(dd.stats.map(x => "**" + x.value + "** " + x.label + (x.note ? " (" + x.note + ")" : "")).join(" · "), "");
+    }
+    if (dd.table) {
+      // A real Markdown table, so it survives a paste into anything that reads
+      // Markdown rather than arriving as a run-on line of numbers.
+      if (dd.table.title) out.push("**" + dd.table.title + "**", "");
+      out.push("| " + dd.table.columns.join(" | ") + " |");
+      out.push("|" + dd.table.columns.map(() => "---").join("|") + "|");
+      dd.table.rows.forEach(r => out.push("| " + r.join(" | ") + " |"));
+      out.push("");
+    }
+    if (dd.chart) {
+      out.push("_" + (dd.chart.label || "Series") + ": "
+        + dd.chart.points.map(pt => pt.x + " " + pt.y + (dd.chart.unit || "")).join(" → ") + "_", "");
+    }
+    if (dd.caveat) out.push("> " + dd.caveat, "");
+    (t.checks && (t.checks.dropped || []).length
+      ? out.push("_" + t.checks.dropped.map(x => x.block).join(" and ")
+          + " withheld — cited a figure not in the evidence._", "") : null);
     (t.claims || []).forEach(x => out.push("- " + x.claim + (x.evidence ? "  \n  `" + x.evidence + "`" : "")
       + "  \n  _" + (x.confidence || "?") + " confidence, " + ((x.lenses || []).length > 1 && x.agreed ? "two lenses agreed" : "one lens") + "_"));
     if ((t.claims || []).length) out.push("");
@@ -2244,6 +2451,27 @@ function AnalystPane({ onClose }) {
                     {m && <div className="anp-body">{m[3]}</div>}
                   </>;
                 })()}
+
+                {/* The answer as data. Tiles first — three figures are read
+                    before any paragraph is — then the chart if the answer is
+                    about a trend, then the table if it is about a comparison. */}
+                {t.data && t.data.stats && <AnpStats stats={t.data.stats}/>}
+                {t.data && t.data.chart && <AnpChart chart={t.data.chart}/>}
+                {t.data && t.data.table && <AnpTable table={t.data.table}/>}
+                {t.data && t.data.caveat &&
+                  <div className="anp-caveat">{t.data.caveat}</div>}
+
+                {/* A block that was produced and then dropped, said out loud.
+                    Silently omitting it would be the honest-looking version of
+                    hiding a failure — the reader has no way to know a table was
+                    offered, so they cannot ask why it is not there. */}
+                {t.checks && (t.checks.dropped || []).length > 0 && (
+                  <p className="anp-dropped">
+                    {t.checks.dropped.map(d => d.block).join(" and ")} withheld — {" "}
+                    {t.checks.dropped.length === 1 ? "it cited a figure" : "they cited figures"} not in the
+                    evidence ({t.checks.dropped.map(d => (d.unverified || []).join(", ")).filter(Boolean).join("; ")}).
+                  </p>
+                )}
 
                 {/* The claims, as a quiet list rather than three bordered cards.
                     Boxing each one gave every claim the visual weight of a

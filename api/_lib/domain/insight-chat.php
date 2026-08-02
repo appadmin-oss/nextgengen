@@ -260,17 +260,46 @@ function ichat_compose(string $question, array $lenses, string $evidenceJson): a
     }
     if (!$input) return ['ok' => false, 'error' => 'no_points', 'answer' => '', 'claims' => []];
 
+    /* The answer is asked for as DATA as well as prose.
+     *
+     * Not decoration: "attendance fell nine points at Ayobo" as a sentence is a
+     * claim a reader has to take on trust, and the same thing as three tiles, a
+     * four-point series and a ranked table is a claim they can check at a
+     * glance — and paste into a board paper without retyping it.
+     *
+     * Every figure in every one of these lands in the same grounding check as
+     * the prose (see below), so a fabricated tile is caught exactly like a
+     * fabricated sentence. That is the whole reason this is safe to add: a
+     * chart is more persuasive than a paragraph, so it needs MORE checking,
+     * not less.
+     *
+     * All four blocks are optional and the model is told to omit rather than
+     * pad — an empty table is worse than no table. */
     $sys = "Several independent analysts answered one question from the same evidence. Write the answer the "
          . "coordinator reads.\n\n"
-         . "- You may ONLY use what the analysts wrote. Never add a point of your own, never strengthen one.\n"
+         . "- You may ONLY use what the analysts wrote and what is in the evidence. Never add a point of your "
+         . "own, never strengthen one, and NEVER invent a number that is not in the evidence.\n"
          . "- Lead with the direct answer to the question in one or two sentences. If the analysts disagree, "
          . "say that plainly — a clean answer that hides a disagreement is the worst outcome here.\n"
          . "- Where two lenses reached the same point independently, say so; that is the strongest thing you have.\n"
          . "- Where a point rests on few children, keep that caveat. Do not tidy it away.\n"
          . "- No preamble, no 'great question', no restating the question back.\n\n"
+         . "ALSO return the answer as data where the evidence supports it. Omit any block you cannot fill "
+         . "honestly — an empty or padded block is worse than none:\n"
+         . "- stats: up to 3 headline figures. `tone` is good|warn|bad|neutral for how it should read.\n"
+         . "- table: a small comparison, at most 6 rows and 4 columns. `bar` marks the column to draw as a "
+         . "bar (0-100 values only). `delta` marks a change column.\n"
+         . "- chart: line|bar, one series over up to 12 labelled points, when the answer is about a trend.\n"
+         . "- caveat: one sentence on what would make this answer wrong.\n\n"
          . "Reply with JSON only: {\"answer\":\"2-5 sentences of plain prose\","
          . "\"claims\":[{\"claim\":\"one sentence\",\"lenses\":[\"\"],\"evidence\":\"the numbers\","
          . "\"confidence\":\"high|medium|low\",\"agreed\":true}],"
+         . "\"stats\":[{\"label\":\"Attendance\",\"value\":\"78%\",\"note\":\"up 4\",\"tone\":\"good\"}],"
+         . "\"table\":{\"title\":\"\",\"columns\":[\"Centre\",\"Att.\",\"Change\"],\"bar\":1,\"delta\":2,"
+         . "\"rows\":[[\"Egbeda\",\"91\",\"+3\"]]},"
+         . "\"chart\":{\"kind\":\"line\",\"label\":\"Ayobo attendance by week\",\"unit\":\"%\","
+         . "\"points\":[{\"x\":\"wk1\",\"y\":68}],\"watch\":55},"
+         . "\"caveat\":\"\","
          . "\"followups\":[\"a question this answer suggests asking next\"]}";
 
     $r = ai_classify($sys, json_encode(['question' => $question, 'analyst_points' => $input,
@@ -299,8 +328,106 @@ function ichat_compose(string $question, array $lenses, string $evidenceJson): a
     }
     return ['ok' => true, 'answer' => mb_substr(trim((string)($d['answer'] ?? '')), 0, 1600),
             'claims' => $claims,
+            'data' => ichat_clean_data($d),
             'followups' => array_slice(array_map(fn($x) => mb_substr(trim((string)$x), 0, 160), (array)($d['followups'] ?? [])), 0, 3),
             'provider' => (string)($r['provider'] ?? '')];
+}
+
+/**
+ * The structured blocks, bounded and typed before anything renders them.
+ *
+ * A model asked for JSON returns approximately JSON: a table with nine columns
+ * in one row and three in the next, a chart with two hundred points, a `tone`
+ * of "positive". None of that is misbehaviour worth failing a turn over — it is
+ * simply why the shape a renderer receives must be built here rather than
+ * passed through. Anything unusable is DROPPED rather than repaired into
+ * something plausible, because a half-invented table is the one artefact on
+ * this screen a reader would never think to doubt.
+ */
+function ichat_clean_data(array $d): array {
+    $out = [];
+
+    $stats = [];
+    foreach ((array)($d['stats'] ?? []) as $st) {
+        if (!is_array($st)) continue;
+        $label = mb_substr(trim((string)($st['label'] ?? '')), 0, 40);
+        $value = mb_substr(trim((string)($st['value'] ?? '')), 0, 20);
+        if ($label === '' || $value === '') continue;
+        $stats[] = ['label' => $label, 'value' => $value,
+                    'note' => mb_substr(trim((string)($st['note'] ?? '')), 0, 40),
+                    'tone' => in_array(($st['tone'] ?? ''), ['good', 'warn', 'bad', 'neutral'], true) ? (string)$st['tone'] : 'neutral'];
+    }
+    // Capped AFTER filtering: capping first means one unusable entry costs a
+    // usable one, which is how a three-tile answer arrives with two tiles.
+    if ($stats) $out['stats'] = array_slice($stats, 0, 3);
+
+    $t = is_array($d['table'] ?? null) ? $d['table'] : null;
+    if ($t) {
+        $cols = array_slice(array_map(fn($c) => mb_substr(trim((string)$c), 0, 24), (array)($t['columns'] ?? [])), 0, 4);
+        $rows = [];
+        foreach ((array)($t['rows'] ?? []) as $r0) {
+            if (!is_array($r0)) continue;
+            // Ragged rows are the common failure. Padded to the header rather
+            // than dropped, so one short row does not lose the whole table.
+            $cells = array_slice(array_map(fn($c) => mb_substr(trim((string)$c), 0, 40), array_values($r0)), 0, count($cols));
+            while (count($cells) < count($cols)) $cells[] = '';
+            if (trim(implode('', $cells)) !== '') $rows[] = $cells;
+        }
+        $rows = array_slice($rows, 0, 6);
+        if (count($cols) >= 2 && count($rows) >= 1) {
+            $bar = isset($t['bar']) ? (int)$t['bar'] : -1;
+            $delta = isset($t['delta']) ? (int)$t['delta'] : -1;
+            $out['table'] = [
+                'title' => mb_substr(trim((string)($t['title'] ?? '')), 0, 80),
+                'columns' => $cols, 'rows' => $rows,
+                // Out-of-range indices become "no bar" rather than an exception
+                // in a renderer that trusted them.
+                'bar' => ($bar >= 0 && $bar < count($cols)) ? $bar : -1,
+                'delta' => ($delta >= 0 && $delta < count($cols)) ? $delta : -1,
+            ];
+        }
+    }
+
+    $c = is_array($d['chart'] ?? null) ? $d['chart'] : null;
+    if ($c) {
+        $pts = [];
+        foreach ((array)($c['points'] ?? []) as $p0) {
+            if (!is_array($p0) || !isset($p0['y']) || !is_numeric($p0['y'])) continue;
+            $pts[] = ['x' => mb_substr(trim((string)($p0['x'] ?? '')), 0, 12), 'y' => round((float)$p0['y'], 2)];
+        }
+        $pts = array_slice($pts, 0, 12);
+        // Two points is not a trend; one is a number that belongs in a tile.
+        if (count($pts) >= 3) {
+            $out['chart'] = [
+                'kind' => ($c['kind'] ?? '') === 'bar' ? 'bar' : 'line',
+                'label' => mb_substr(trim((string)($c['label'] ?? '')), 0, 80),
+                'unit' => mb_substr(trim((string)($c['unit'] ?? '')), 0, 8),
+                'points' => $pts,
+                'watch' => is_numeric($c['watch'] ?? null) ? round((float)$c['watch'], 2) : null,
+            ];
+        }
+    }
+
+    $cav = mb_substr(trim((string)($d['caveat'] ?? '')), 0, 300);
+    if ($cav !== '') $out['caveat'] = $cav;
+    return $out;
+}
+
+/** Every figure inside the structured blocks, as one string, so the grounding
+ *  check that guards the prose guards the tiles and the table too.
+ *
+ *  This is the point of the whole exercise. A chart is more persuasive than a
+ *  paragraph, so an unchecked chart is more dangerous than an unchecked
+ *  paragraph — the structured blocks needed MORE checking to be worth adding,
+ *  not permission to skip it. */
+function ichat_data_text(array $data): string {
+    $bits = [];
+    foreach ((array)($data['stats'] ?? []) as $st) { $bits[] = (string)$st['value']; $bits[] = (string)$st['note']; }
+    $t = $data['table'] ?? null;
+    if (is_array($t)) foreach ($t['rows'] as $r) foreach ($r as $cell) $bits[] = (string)$cell;
+    $c = $data['chart'] ?? null;
+    if (is_array($c)) foreach ($c['points'] as $p) $bits[] = (string)$p['y'];
+    return implode(' ', $bits);
 }
 
 /* ── Threads ──────────────────────────────────────────────────────────────── */
@@ -323,6 +450,7 @@ function ichat_turn_out(array $r): array {
         'answer' => (string)($r['answer'] ?? ''),
         'plan' => $j('planJson'),
         'claims' => $j('claimsJson'),
+        'data' => $j('dataJson'),
         'checks' => $j('checksJson'),
         'evidenceFp' => (string)($r['evidenceFp'] ?? ''),
         'rangeLabel' => (string)($r['rangeLabel'] ?? ''),
@@ -558,7 +686,23 @@ function insight_chat_ask(array $p): array {
         $miss = ichat_ungrounded($c['claim'] . ' ' . $c['evidence'], $haystack);
         if ($miss) $checks[] = ['claim' => $i, 'unverified' => $miss];
     }
-    $grounded = !$ungroundedAnswer && !$checks;
+    /* The structured blocks go through the SAME check, and a block with any
+       figure that is not in the evidence is DROPPED rather than shown with a
+       warning on it.
+       Prose with a flagged number is still readable — the flag sits beside the
+       sentence. A table with one invented cell is not: the warning is above the
+       widget, the widget is what gets screenshotted into a board paper, and no
+       reader maps "some figures are unverified" onto the third row. Dropping is
+       recorded, so this is not hiding — the turn says a table was produced and
+       why it was not shown. */
+    $data = is_array($comp['data'] ?? null) ? $comp['data'] : [];
+    $dropped = [];
+    foreach (['stats', 'table', 'chart'] as $block) {
+        if (!isset($data[$block])) continue;
+        $miss = ichat_ungrounded(ichat_data_text([$block => $data[$block]]), $haystack);
+        if ($miss) { $dropped[] = ['block' => $block, 'unverified' => $miss]; unset($data[$block]); }
+    }
+    $grounded = !$ungroundedAnswer && !$checks && !$dropped;
 
     $providers = array_values(array_unique(array_filter(array_merge(
         [(string)($plan['provider'] ?? ''), (string)($comp['provider'] ?? '')],
@@ -575,8 +719,9 @@ function insight_chat_ask(array $p): array {
             'followups' => $comp['followups'] ?? [],
         ], JSON_UNESCAPED_SLASHES),
         'claimsJson' => json_encode($comp['claims'], JSON_UNESCAPED_SLASHES),
+        'dataJson' => json_encode($data, JSON_UNESCAPED_SLASHES),
         'checksJson' => json_encode(['grounded' => $grounded, 'answerUnverified' => $ungroundedAnswer,
-            'claims' => $checks, 'evidenceNumbers' => count($haystack)], JSON_UNESCAPED_SLASHES),
+            'claims' => $checks, 'dropped' => $dropped, 'evidenceNumbers' => count($haystack)], JSON_UNESCAPED_SLASHES),
         'evidenceFp' => $fp, 'rangeLabel' => (string)($ev['range']['label'] ?? ''),
         'status' => $ran ? 'ok' : 'failed',
         'error' => $ran ? '' : mb_substr((string)($comp['error'] ?? ''), 0, 200),

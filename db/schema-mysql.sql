@@ -1419,3 +1419,11 @@ CREATE INDEX idx_sstu_sex ON summer_students(sex);
 CREATE INDEX idx_vol_sex ON volunteers(sex);
 
 INSERT INTO schema_version (version) VALUES (78) ON DUPLICATE KEY UPDATE version = version;
+
+-- 79: the analyst's answer as data (tiles, table, chart) beside its prose.
+-- Stored, not derived on read: the blocks are grounded against the evidence as
+-- it stood, and re-checking a turn against next week's figures would silently
+-- change its mind about what was verified.
+ALTER TABLE insight_turns ADD COLUMN dataJson TEXT;
+
+INSERT INTO schema_version (version) VALUES (79) ON DUPLICATE KEY UPDATE version = version;

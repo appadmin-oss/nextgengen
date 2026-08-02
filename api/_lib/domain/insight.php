@@ -158,10 +158,74 @@ function insight_scrub(string $payload): array {
  * student-level growth index is deliberately NOT included: it is a score
  * attached to a named child, and no third party is getting that.
  */
+/**
+ * Average grade and attendance by sex, and the gap between them.
+ *
+ * One query, aggregated in PHP because the mean-of-means has to be a mean over
+ * STUDENTS rather than over submissions — a child who submitted twelve pieces
+ * would otherwise count twelve times, and the sex with more diligent submitters
+ * would appear to be the sex that learns more.
+ */
+function insight_learning_by_sex(array $p): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return [];
+    $centres = function_exists('analytics_centres') ? analytics_centres($g['requester'], trim((string)($p['centre'] ?? ''))) : [];
+    $cNames = array_map(fn($c) => (string)$c['name'], $centres);
+    if (!$cNames) return [];
+    $in = '(' . implode(',', array_fill(0, count($cNames), '?')) . ')';
+    $rows = db_all("SELECT s.studentId, s.sex, s.gender, AVG(sub.grade) g, COUNT(sub.id) n
+                    FROM summer_students s
+                    JOIN assignment_submissions sub ON sub.memberId = s.studentId
+                    WHERE s.status = 'active' AND s.centre IN $in AND sub.grade IS NOT NULL
+                    GROUP BY s.studentId, s.sex, s.gender", $cNames);
+    $by = [];
+    foreach ($rows as $r) {
+        $k = sex_label($r);
+        $by[$k] ??= ['sex' => $k, 'graded' => 0, 'submissions' => 0, '_g' => []];
+        $by[$k]['graded']++;
+        $by[$k]['submissions'] += (int)$r['n'];
+        $by[$k]['_g'][] = (float)$r['g'];
+    }
+    // How many children of each sex exist at all, so "graded" can be read
+    // against "enrolled" — 12 girls graded out of 130 is a coverage problem,
+    // not a finding about girls.
+    $enrolled = [];
+    foreach (db_all("SELECT sex, gender FROM summer_students WHERE status = 'active' AND centre IN $in", $cNames) as $r) {
+        $k = sex_label($r);
+        $enrolled[$k] = ($enrolled[$k] ?? 0) + 1;
+    }
+    $out = [];
+    foreach ($by as $k => $v) {
+        $n = count($v['_g']);
+        $out[] = ['sex' => $k, 'enrolled' => (int)($enrolled[$k] ?? 0), 'graded' => $n,
+                  'submissions' => $v['submissions'],
+                  'avgGrade' => $n ? round(array_sum($v['_g']) / $n, 1) : null,
+                  // Marked, never merged away. A group this small cannot carry a
+                  // claim, and saying so is itself the finding.
+                  'tooThin' => $n < 5];
+    }
+    foreach ($enrolled as $k => $cnt) {
+        if (!isset($by[$k])) $out[] = ['sex' => $k, 'enrolled' => $cnt, 'graded' => 0, 'submissions' => 0,
+                                       'avgGrade' => null, 'tooThin' => true];
+    }
+    usort($out, fn($a, $b) => strcmp($a['sex'], $b['sex']));
+    /* The gap, stated once rather than left for a reader to subtract — and only
+       where both sides are thick enough to mean anything. */
+    $m = null; $f = null;
+    foreach ($out as $r) { if ($r['sex'] === 'Male') $m = $r; if ($r['sex'] === 'Female') $f = $r; }
+    $gap = null;
+    if ($m && $f && $m['avgGrade'] !== null && $f['avgGrade'] !== null && !$m['tooThin'] && !$f['tooThin']) {
+        $gap = ['points' => round($f['avgGrade'] - $m['avgGrade'], 1), 'favours' => $f['avgGrade'] >= $m['avgGrade'] ? 'Female' : 'Male'];
+    }
+    return ['bySex' => $out, 'gap' => $gap,
+            'note' => 'Mean of each student\'s own average, so a child who submitted twelve pieces counts once.'];
+}
+
 function insight_evidence(array $p): array {
     $depth = function_exists('analytics_depth') ? analytics_depth($p) : ['ok' => false];
     $ev = ['generatedAt' => now_iso(), 'range' => [], 'overall' => null,
-           'centres' => [], 'segments' => [], 'weekday' => [], 'retention' => [], 'computed' => []];
+           'centres' => [], 'segments' => [], 'weekday' => [], 'retention' => [],
+           'learning' => [], 'computed' => []];
     if (empty($depth['ok']) || !empty($depth['depth']['empty'])) return $ev + ['empty' => true];
     $d = $depth['depth'];
 
@@ -197,6 +261,22 @@ function insight_evidence(array $p): array {
                               'curve' => array_map(fn($x) => ['week' => $x['week'] ?? null, 'rate' => $x['rate'] ?? null, 'n' => $x['n'] ?? null],
                                                    (array)($c['curve'] ?? []))];
     }
+    /* ── Learning, by sex ────────────────────────────────────────────────────
+     * The evidence held attendance broken down every way and learning broken
+     * down no way at all — so the analyst could say who turns up and never
+     * whether they are learning the same amount once they do.
+     *
+     * That is the question serious education funding now turns on. A gender
+     * programme that never measures learning and a learning programme that
+     * never checks whether girls and boys get the same out of it are the two
+     * halves of the gap; this block is the one figure that closes it for us.
+     *
+     * Aggregate by construction — counts and means per group, no child — so it
+     * passes the same scrub as everything else here. Groups under five are kept
+     * but MARKED, never silently merged: "we do not have enough girls graded to
+     * say" is a real finding and hiding it would be the dishonest tidy-up. */
+    $ev['learning'] = insight_learning_by_sex($p);
+
     $ev['computed'] = array_map(fn($f) => ['severity' => (string)$f['severity'], 'title' => (string)$f['title']],
                                 (array)($d['findings'] ?? []));
 
