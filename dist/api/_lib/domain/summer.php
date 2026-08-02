@@ -210,6 +210,10 @@ function admin_summer_enroll(array $p): array {
     db_insert('summer_students', [
         'studentId' => $studentId, 'cohortId' => $c['cohortId'], 'token' => $token, 'handle' => $handle,
         'fullName' => $name, 'dob' => $dob, 'age' => $age, 'centre' => $centre,
+        // The desk-enrolment path. It wrote no sex at all, so a child enrolled
+        // by a coordinator was invisible to every disaggregated report even
+        // after the public form started asking.
+        'sex' => sex_normalise($d['sex'] ?? ''),
         'track' => substr((string)($d['track'] ?? ''), 0, 64), 'photoUrl' => (string)($d['photoUrl'] ?? ''),
         'guardianName' => substr((string)($d['guardianName'] ?? ''), 0, 255), 'guardianPhone' => substr((string)($d['guardianPhone'] ?? ''), 0, 48),
         'parentEmail' => substr(trim((string)($d['parentEmail'] ?? '')), 0, 160),
@@ -269,7 +273,7 @@ function summer_student_admin(array $s, ?string $idExpiry = null): array {
         'guardianName' => (string)($s['guardianName'] ?? ''),
         'guardianPhone' => (string)($s['guardianPhone'] ?? ''),
         'parentEmail' => (string)($s['parentEmail'] ?? ''),
-        'sex' => (string)($s['sex'] ?? ''),
+        'sex' => person_sex($s),
         'notes' => (string)($s['notes'] ?? ''),
         'displayId' => (string)($s['displayId'] ?? ''),
         'token' => (string)($s['token'] ?? ''),
@@ -380,6 +384,11 @@ function admin_summer_student_update(array $p): array {
         if ($em !== '' && !filter_var($em, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
         $row['parentEmail'] = substr($em, 0, 160);
     }
+    /* Editable, and normalised on the way in. This is how a cohort registered
+       before the form asked gets filled in — from the roster, one child at a
+       time, rather than by asking two hundred families again. An unrecognised
+       value clears the field rather than storing a fourth spelling. */
+    if (array_key_exists('sex', $d)) $row['sex'] = sex_normalise($d['sex']);
     if (array_key_exists('status', $d)) {
         if (!in_array((string)$d['status'], ['active', 'withdrawn', 'graduated', 'promoted', 'waitlisted'], true)) return ['ok' => false, 'error' => 'bad_status'];
         $row['status'] = (string)$d['status'];
@@ -1163,7 +1172,7 @@ function admin_summer_consent(array $p): array {
             'displayId' => (string)($s['displayId'] ?? ''),
             'fullName' => (string)$s['fullName'],
             'age' => $s['age'] === null || $s['age'] === '' ? null : (int)$s['age'],
-            'sex' => (string)($s['sex'] ?? ''),
+            'sex' => person_sex($s),
             'centre' => (string)($s['centre'] ?? ''),
             'track' => (string)($s['track'] ?? ''),
             'handle' => (string)($s['handle'] ?? ''),

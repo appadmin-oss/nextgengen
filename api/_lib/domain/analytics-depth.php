@@ -177,7 +177,9 @@ function an_attendance_units(string $from, string $to, array $centres): array {
     if (!$dayList) return ['days' => [], 'students' => [], 'present' => []];
 
     $cIn = $centres ? '(' . implode(',', array_fill(0, count($centres), '?')) . ')' : '';
-    $sql = "SELECT studentId, fullName, centre, age, gender, track, enrolledAt
+    // `sex` first — see person_sex(). Omitting it here made the gender crosstab
+    // report one undifferentiated "Not recorded" row for the whole cohort.
+    $sql = "SELECT studentId, fullName, centre, age, sex, gender, track, enrolledAt
             FROM summer_students WHERE status = 'active'" . ($centres ? " AND centre IN $cIn" : '');
     $students = db_all($sql, $centres);
 
@@ -227,8 +229,11 @@ function an_age_band(int $age): string {
 
 function an_dim_value(array $s, string $dim): string {
     switch ($dim) {
-        case 'gender': $g = strtoupper(trim((string)($s['gender'] ?? '')));
-            return $g === 'M' ? 'Male' : ($g === 'F' ? 'Female' : 'Not recorded');
+        /* Through the one reader. This arm accepted only single-letter "M"/"F"
+           and read the `gender` column, which nothing writes — so the crosstab
+           that is supposed to show whether girls and boys learn differently put
+           every child in "Not recorded" and reported no gap, forever. */
+        case 'gender': return sex_label($s);
         case 'age':    return an_age_band((int)($s['age'] ?? 0));
         case 'track':  return trim((string)($s['track'] ?? '')) ?: 'Unassigned';
         case 'centre': return trim((string)($s['centre'] ?? '')) ?: 'Unassigned';

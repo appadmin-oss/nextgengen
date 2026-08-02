@@ -1406,3 +1406,16 @@ CREATE TABLE IF NOT EXISTS design_assets (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (77) ON DUPLICATE KEY UPDATE version = version;
+
+-- 78: one sex column for a child, and an index to disaggregate on it.
+-- summer_students grew `sex` (34) and `gender` (39) for the same fact, and
+-- nothing ever wrote either — the registration form did not ask — while the
+-- analytics workspace read `gender` and reported every child as "Not recorded".
+-- `sex` is now the single fact; `gender` stays in place (dropping a column on a
+-- live host is the larger risk) and is copied across where `sex` is empty.
+UPDATE summer_students SET sex = gender
+ WHERE (sex IS NULL OR sex = '') AND gender IS NOT NULL AND gender != '';
+CREATE INDEX idx_sstu_sex ON summer_students(sex);
+CREATE INDEX idx_vol_sex ON volunteers(sex);
+
+INSERT INTO schema_version (version) VALUES (78) ON DUPLICATE KEY UPDATE version = version;

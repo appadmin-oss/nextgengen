@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 77;
+const NGG_SCHEMA_TARGET = 78;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2023,6 +2023,33 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_dasset_sha ON design_assets (sha);
             CREATE INDEX IF NOT EXISTS idx_dasset_folder ON design_assets (folder, archivedAt);
+        ",
+        /* 78 — one sex column for a child, and an index to disaggregate on it.
+         *
+         * THE BUG THIS FIXES, exactly: `summer_students` grew a `sex` column in
+         * migration 34 and a `gender` column in migration 39, for the same fact.
+         * Nothing in the product ever wrote either one — the registration form
+         * did not ask — while the analytics workspace read `gender` and produced
+         * a gender panel in which every child was "Not recorded", for every
+         * cohort this system has ever run. It looked correct in the test suite
+         * because the fixtures insert `gender` directly.
+         *
+         * That is not a cosmetic gap. Every serious education funder asks for
+         * outcomes disaggregated by sex, and without it this programme cannot
+         * answer whether girls and boys who attend the same centre learn the
+         * same amount — which is the entire question a fund like the Gender and
+         * Learning Evidence Fund exists to ask.
+         *
+         * `sex` becomes the single fact. `gender` is left in place rather than
+         * dropped (a DROP COLUMN on a live shared host, against a column some
+         * report may still name, is a worse risk than a dead column) and is
+         * copied into `sex` where `sex` is empty, so no answer already given is
+         * lost. person_sex() in util.php is the one reader from here on. */
+        78 => "
+            UPDATE summer_students SET sex = gender
+             WHERE (sex IS NULL OR sex = '') AND gender IS NOT NULL AND gender != '';
+            CREATE INDEX IF NOT EXISTS idx_sstu_sex ON summer_students (sex);
+            CREATE INDEX IF NOT EXISTS idx_vol_sex ON volunteers (sex);
         ",
     ];
 

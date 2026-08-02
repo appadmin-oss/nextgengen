@@ -9009,6 +9009,123 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     })());
 })();
 
+/* ── Sex, and the reason a funder could not be answered ──────────────────────
+ *
+ * The finding this block was written for: `summer_students` had a `sex` column
+ * (migration 34) AND a `gender` column (migration 39) for the same fact,
+ * NOTHING in the product ever wrote either — the registration form did not ask
+ * — and the analytics workspace read `gender`, so the gender panel reported
+ * every child as "Not recorded" for every cohort this system has ever run.
+ *
+ * It passed the suite the whole time, because the analytics fixtures insert
+ * `gender` by hand. These tests go through the real registration route instead,
+ * which is the only way this class of bug is visible.
+ */
+(function () {
+    $ADM = 'NGG-2025-0099';
+
+    chk('sex: one vocabulary, and "not recorded" stays its own answer', (function () {
+        return sex_normalise('M') === 'Male' && sex_normalise('female') === 'Female'
+            && sex_normalise('  Boy ') === 'Male' && sex_normalise('girl') === 'Female'
+            && sex_normalise('') === '' && sex_normalise('prefer not to say') === ''
+            /* Prefers `sex`, falls back to the legacy column, so a row written
+               before migration 78 reads correctly even where the backfill has
+               not run. */
+            && person_sex(['sex' => '', 'gender' => 'F']) === 'Female'
+            && person_sex(['sex' => 'Male', 'gender' => 'F']) === 'Male'
+            && sex_label(['sex' => '']) === 'Not recorded';
+    })());
+
+    chk('sex: the registration form asks, and asks in a locked field', (function () use ($ADM) {
+        $f = backend_dispatch('admin.forms.get', ['requesterId' => $ADM, 'formId' => 'summer-reg'])['form']['fields'] ?? [];
+        $sex = null; foreach ($f as $x) if (($x['key'] ?? '') === 'sex') $sex = $x;
+        $v = backend_dispatch('admin.forms.get', ['requesterId' => $ADM, 'formId' => 'volunteer'])['form']['fields'] ?? [];
+        $vsex = null; foreach ($v as $x) if (($x['key'] ?? '') === 'sex') $vsex = $x;
+        /* Locked, so a republish cannot quietly drop it. A cohort registered
+           without sex can never be disaggregated afterwards — it is not
+           recoverable from a name and re-asking the families is not a plan. */
+        return $sex && !empty($sex['locked']) && $sex['options'] === ['Male', 'Female'] && empty($sex['required'])
+            && $vsex && !empty($vsex['locked']);
+    })());
+
+    chk('sex: a form published before the field existed gets it back on read', (function () {
+        /* The mechanism this codebase already built for exactly this — a live
+           form row written last month has no `sex` key, and serving it verbatim
+           would mean the field ships in code and never reaches a parent. */
+        $fields = array_values(array_filter(form_defaults_for('summer-reg'), fn($f) => ($f['key'] ?? '') !== 'sex'));
+        $back = form_restore_locked($fields, 'summer-reg');
+        $keys = array_column($back, 'key');
+        $i = array_search('sex', $keys, true);
+        // Beside its neighbour, not at a numeric index into a different list.
+        return $i !== false && $keys[$i - 1] === 'dob';
+    })());
+
+    chk('sex: a child registered through the real route arrives with it stored', (function () use ($ADM) {
+        $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? 'Main');
+        $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'name' => 'Sex desk']);
+        $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
+            'fullName' => 'Sex Test Child', 'firstName' => 'Sex', 'lastName' => 'Child',
+            'dob' => gmdate('Y-m-d', strtotime('-12 years -2 months')),
+            'sex' => 'Female',
+            'faculty' => 'Music', 'course' => 'Piano', 'centre' => $centre,
+            'parentName' => 'A Parent', 'parentPhone' => '08030000901']]);
+        if (empty($r['ok'])) return false;
+        $GLOBALS['__sexKid'] = (string)($r['studentId'] ?? '');
+        $row = db_row('SELECT sex FROM summer_students WHERE studentId = ?', [$GLOBALS['__sexKid']]);
+        return $row && (string)$row['sex'] === 'Female';
+    })());
+
+    chk('sex: …and a value off the dropdown is refused rather than stored as a fourth spelling', (function () use ($ADM) {
+        /* The form's own option check runs first — which is right, and is why
+           the normaliser exists for the paths that have no dropdown: the desk
+           enrolment, the roster edit and the CSV import. */
+        $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? 'Main');
+        $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'name' => 'Sex desk 2']);
+        $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
+            'fullName' => 'Bad Sex Child', 'firstName' => 'Bad', 'lastName' => 'Child',
+            'dob' => gmdate('Y-m-d', strtotime('-12 years -2 months')), 'sex' => 'boy',
+            'faculty' => 'Music', 'course' => 'Piano', 'centre' => $centre,
+            'parentName' => 'A Parent', 'parentPhone' => '08030000902']]);
+        return !empty($r['errors']['sex']);
+    })());
+
+    chk('sex: the analytics gender panel counts them, which it never did before', (function () use ($ADM) {
+        db_exec("UPDATE summer_students SET sex = 'Female', gender = '' WHERE studentId LIKE 'SUM-AN-1%'");
+        db_exec("UPDATE summer_students SET sex = 'Male', gender = '' WHERE studentId LIKE 'SUM-AN-2%'");
+        $r = backend_dispatch('analytics.workspace', ['requesterId' => $ADM]);
+        $rows = $r['workspace']['research']['gender'] ?? [];
+        $by = []; foreach ($rows as $x) $by[$x['gender']] = (int)$x['count'];
+        /* THE regression. Before the fix `perStudent` read $s['gender'] — a
+           column nothing writes — so this array was one row, "Not recorded",
+           holding the whole cohort. */
+        return ($by['Female'] ?? 0) >= 1 && ($by['Male'] ?? 0) >= 1;
+    })());
+
+    chk('sex: …and the gender crosstab can finally show a gap', (function () use ($ADM) {
+        $r = backend_dispatch('analytics.depth', ['requesterId' => $ADM, 'rowDim' => 'gender', 'colDim' => 'age']);
+        $d = $r['depth'] ?? [];
+        if (!empty($d['empty'])) return true;
+        $rows = array_column($d['crosstab']['rows'] ?? [], 'label');
+        /* Not one undifferentiated "Not recorded" bucket, which is what this
+           returned for every cohort before the fix — so the panel that exists
+           to show whether girls and boys learn differently could only ever
+           report that there was no difference. */
+        return in_array('Female', $rows, true) && in_array('Male', $rows, true);
+    })());
+
+    chk('sex: a cohort registered before the field existed is fixable from the roster', (function () use ($ADM) {
+        $id = $GLOBALS['__sexKid'] ?? '';
+        if ($id === '') return true;
+        $up = backend_dispatch('admin.summer.student.update', ['requesterId' => $ADM, 'studentId' => $id,
+            'data' => ['sex' => 'M']]);
+        $row = db_row('SELECT sex FROM summer_students WHERE studentId = ?', [$id]);
+        // …and an unrecognised value clears it rather than storing a fourth spelling.
+        backend_dispatch('admin.summer.student.update', ['requesterId' => $ADM, 'studentId' => $id, 'data' => ['sex' => 'other']]);
+        $cleared = db_row('SELECT sex FROM summer_students WHERE studentId = ?', [$id]);
+        return !empty($up['ok']) && (string)$row['sex'] === 'Male' && (string)$cleared['sex'] === '';
+    })());
+})();
+
 /* ── Data merge: one design, many people ─────────────────────────────────────
  *
  * Last in the file on purpose. These tests insert children, and every earlier

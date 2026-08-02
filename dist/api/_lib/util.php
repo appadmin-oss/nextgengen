@@ -12,6 +12,49 @@ function now_iso(): string { return gmdate('Y-m-d\TH:i:s\Z'); }
 
 /** Whole years elapsed from an ISO date (YYYY-MM-DD) to today (UTC). Returns
  *  -1 if the date is unparseable or in the future. */
+/* ── Sex, as one fact with one spelling ──────────────────────────────────────
+ *
+ * Three things were true at once before this: `summer_students` had a `sex`
+ * column AND a `gender` column, nothing wrote either, and the analytics
+ * workspace read `gender` and therefore reported every child as "Not recorded"
+ * in every cohort this system has run.
+ *
+ * SEX_VALUES is the stored vocabulary and it is deliberately short. Everything
+ * downstream of this — the funder-facing disaggregation, the crosstabs, the
+ * evidence pack — counts these values, and a field that arrives as "M", "male",
+ * "Male " and "boy" is four spellings of one number that somebody then
+ * reconstructs by hand the night before a deadline.
+ *
+ * Not recorded is a real answer and stays distinguishable from Male and Female.
+ * A child whose family did not say is not a data error; a report that quietly
+ * folded them into one of the two would be.
+ */
+const SEX_VALUES = ['Male', 'Female'];
+
+/** Normalise anything a form, an import or an old row can hold into SEX_VALUES
+ *  or ''. Empty means not recorded, and stays that way. */
+function sex_normalise($v): string {
+    $s = strtolower(trim((string)$v));
+    if ($s === '') return '';
+    if ($s === 'm' || $s === 'male' || $s === 'boy' || $s === 'man') return 'Male';
+    if ($s === 'f' || $s === 'female' || $s === 'girl' || $s === 'woman') return 'Female';
+    return '';
+}
+
+/** The one reader. Prefers `sex`; falls back to the legacy `gender` column so a
+ *  row written before migration 78 still reports correctly even if the backfill
+ *  has not run on this host yet. */
+function person_sex(array $row): string {
+    $v = sex_normalise($row['sex'] ?? '');
+    return $v !== '' ? $v : sex_normalise($row['gender'] ?? '');
+}
+
+/** For a report line: never blank, always countable. */
+function sex_label(array $row): string {
+    $v = person_sex($row);
+    return $v !== '' ? $v : 'Not recorded';
+}
+
 function dob_age(string $iso): int {
     $iso = trim($iso);
     $t = strtotime($iso . ' 00:00:00 UTC');

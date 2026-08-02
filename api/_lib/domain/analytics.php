@@ -132,7 +132,10 @@ function analytics_workspace(array $p): array {
     $cIn = '(' . implode(',', array_fill(0, count($cNames), '?')) . ')';
 
     // ── per-student rollups (attendance + academic) over the range ───────────
-    $students = db_all("SELECT studentId, fullName, centre, age, gender, track FROM summer_students WHERE status = 'active' AND centre IN $cIn", $cNames);
+    // `sex` as well as the legacy `gender`: person_sex() prefers the first and
+    // falls back to the second, and a SELECT that omits `sex` is why fixing the
+    // reader alone changed nothing.
+    $students = db_all("SELECT studentId, fullName, centre, age, sex, gender, track FROM summer_students WHERE status = 'active' AND centre IN $cIn", $cNames);
     $schoolDays = (int)(db_row('SELECT COUNT(DISTINCT date) c FROM attendance WHERE date BETWEEN ? AND ?', [$from, $to])['c'] ?? 0);
     $attRows = db_all('SELECT studentId, COUNT(DISTINCT date) c FROM attendance WHERE date BETWEEN ? AND ? GROUP BY studentId', [$from, $to]);
     $attById = []; foreach ($attRows as $r) $attById[(string)$r['studentId']] = (int)$r['c'];
@@ -146,7 +149,10 @@ function analytics_workspace(array $p): array {
         $rate = $schoolDays ? (int)round($days / $schoolDays * 100) : 0;
         $perStudent[] = [
             'studentId' => $sid, 'name' => (string)$s['fullName'], 'centre' => (string)$s['centre'],
-            'age' => (int)$s['age'], 'gender' => (string)($s['gender'] ?? ''), 'track' => (string)$s['track'],
+            /* person_sex(), not $s['gender'] — which is the column nothing ever
+               wrote. This line is why the gender panel reported every child as
+               "Not recorded" in every cohort this system has run. */
+            'age' => (int)$s['age'], 'gender' => person_sex($s), 'track' => (string)$s['track'],
             'daysPresent' => $days, 'attendanceRate' => $rate,
             'avgGrade' => $gradeById[$sid]['avg'] ?? null, 'assessments' => $gradeById[$sid]['n'] ?? 0,
         ];

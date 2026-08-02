@@ -3654,7 +3654,7 @@ function StudentEditor({ s, onSaved, onDelete }) {
   })();
   const [f, setF] = React.useState({
     firstName: seedName.firstName, lastName: seedName.lastName,
-    age: s.age != null ? String(s.age) : "", handle: s.handle || "",
+    age: s.age != null ? String(s.age) : "", handle: s.handle || "", sex: s.sex || "",
     centre: s.centre || "", track: s.track || "", guardianName: s.guardianName || "",
     guardianPhone: s.guardianPhone || "", parentEmail: s.parentEmail || "", photoUrl: s.photoUrl || "", notes: s.notes || "",
   });
@@ -3684,6 +3684,17 @@ function StudentEditor({ s, onSaved, onDelete }) {
           {fld("firstName", "First name", { min: 150 })}
           {fld("lastName", "Last name", { min: 150 })}
           {fld("age", "Age", { type: "number" })}
+          {/* Editable here because a whole cohort was registered before the form
+              asked, and filling it in one child at a time from the roster is the
+              only way back — the answer cannot be recovered from a name, and
+              re-asking two hundred families in November is not a plan. */}
+          <div style={{ flex: "1 1 140px", minWidth: 130 }}><span style={lbl}>Sex</span>
+            <select className="admin-input" style={{ width: "100%" }} value={f.sex || ""} onChange={e => set("sex", e.target.value)}>
+              <option value="">Not recorded</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
           {fld("handle", "Public handle", { ph: "auto-slug" })}
           <div style={{ flex: "1 1 180px", minWidth: 150 }}><span style={lbl}>Centre</span>
           <select className="admin-input" style={{ width: "100%" }} value={f.centre || ""} onChange={e => set("centre", e.target.value)}>

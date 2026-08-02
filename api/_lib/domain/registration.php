@@ -214,6 +214,28 @@ function form_default_fields(): array {
         ['key' => 'dob', 'label' => 'Date of birth', 'type' => 'date', 'required' => true, 'locked' => true,
          'help' => 'We work the age out from this — please check it looks right.',
          'adminHelp' => 'Replaces the old free-typed Age. The age is derived on submit and still stored, so every report that reads age is unaffected.'],
+        /* Sex. LOCKED, and asked of every child.
+         *
+         * Two columns for this existed and neither was ever written, because
+         * the form never asked — so the analytics gender panel reported every
+         * child as "Not recorded" in every cohort this programme has run.
+         *
+         * It is locked for the same reason `centre` is: it is not a question an
+         * admin should be able to remove by republishing the form. Every serious
+         * education funder asks for outcomes disaggregated by sex, and a cohort
+         * registered without it can never be disaggregated afterwards — the
+         * answer is not recoverable from a name, and asking two hundred families
+         * again in November is not a plan.
+         *
+         * Two options, because that is the disaggregation the reporting standard
+         * uses and the answer that gets counted. It is NOT required: a family
+         * who would rather not say leaves it blank, and "Not recorded" is
+         * carried through the reports as its own category rather than being
+         * folded into one of the two. */
+        ['key' => 'sex', 'label' => 'Sex', 'type' => 'choice', 'required' => false, 'locked' => true,
+         'options' => SEX_VALUES,
+         'help' => 'Optional. We report attendance and learning separately for girls and boys, which is how we show the programme is reaching both.',
+         'adminHelp' => 'Locked: funder reporting and the gender analysis on the analytics page count off this field, and a cohort registered without it cannot be disaggregated later.'],
         ['key' => 'secCourse', 'label' => 'What they want to learn', 'type' => 'section'],
         // Faculty is asked FIRST and narrows Course. Both are locked keys: the
         // catalogue, the /v-status breakdowns and instructor matching read them.
@@ -266,6 +288,12 @@ function volunteer_default_fields(): array {
     return [
         ['key' => 'role', 'label' => 'Volunteer role', 'type' => 'choice', 'required' => true, 'locked' => true, 'options' => ['Admin / Ops', 'Mentor', 'Instructor']],
         ['key' => 'name', 'label' => 'Full name', 'type' => 'text', 'required' => true, 'locked' => true],
+        // Same rule as a child's, and the same reason: a volunteer body that
+        // cannot be described by sex cannot be reported on either.
+        ['key' => 'sex', 'label' => 'Sex', 'type' => 'choice', 'required' => false, 'locked' => true,
+         'options' => SEX_VALUES,
+         'help' => 'Optional. Used for reporting on who volunteers with us, never for selection.',
+         'adminHelp' => 'Locked: the volunteer body is reported by sex to funders and boards.'],
         ['key' => 'email', 'label' => 'Email', 'type' => 'email', 'required' => true, 'locked' => true],
         ['key' => 'phone', 'label' => 'Phone', 'type' => 'phone', 'required' => false, 'locked' => true,
          'help' => 'Required if you are applying to be an instructor.',
@@ -1273,6 +1301,10 @@ function gate_register(array $p): array {
          * `age` is a cache of it kept because a dozen readers want it. */
         'dob' => (string)($d['dob'] ?? ''),
         'age' => (string)($d['dob'] ?? '') !== '' ? max(0, dob_age((string)$d['dob'])) : (int)($d['age'] ?? 0),
+        /* Normalised on the way in, never on the way out. A column holding "M",
+           "male" and "Male " is three spellings of one number, and the report
+           that has to reconcile them is written the night before a deadline. */
+        'sex' => sex_normalise($d['sex'] ?? ''),
         'centre' => substr((string)($d['centre'] ?? ''), 0, 48), 'track' => substr((string)($d['course'] ?? ''), 0, 64),
         /* A URL, never an image. The staff desk uploads to Cloudinary first and
          * passes a short hosted URL; the PUBLIC sign-up form posts the headshot
