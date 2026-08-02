@@ -108,6 +108,28 @@ function AdminPage({ setPage }) {
   // Expose for the command palette (Cmd-K deep-link to admin sub-section).
   React.useEffect(() => { window.__adminSection = setSection; return () => { window.__adminSection = null; }; }, []);
 
+  /* ── The Analyst pane ─────────────────────────────────────────────────────
+     A third grid TRACK, not an overlay: the page reflows beside it rather than
+     being covered, which is the difference between an assistant you consult
+     while reading and one you consult instead of reading. Its open/closed state
+     is remembered, because a pane that shuts itself on every navigation is one
+     nobody leaves open. ⌘J / Ctrl-J toggles — the shortcut is on the button so
+     it is discoverable rather than folklore. */
+  const [analyst, setAnalyst] = React.useState(() => {
+    try { return localStorage.getItem("ngg.analyst.open") === "1"; } catch { return false; }
+  });
+  React.useEffect(() => { try { localStorage.setItem("ngg.analyst.open", analyst ? "1" : "0"); } catch (_) {} }, [analyst]);
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "j" || e.key === "J")) {
+        e.preventDefault();
+        setAnalyst(a => !a);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   if (loading) return <div className="page admin"><div className="container" style={{padding:"120px 0"}}><div className="dash-spinner"/></div></div>;
   if (!isAdmin) {
     return <div className="page admin">
@@ -141,8 +163,9 @@ function AdminPage({ setPage }) {
 
   return (
     <div className="page admin" data-screen-label="08 Admin">
-      <AdminTopbar section={section} setSection={setSection} setPage={setPage} member={member}/>
-      <div className="admin-shell">
+      <AdminTopbar section={section} setSection={setSection} setPage={setPage} member={member}
+        analyst={analyst} toggleAnalyst={() => setAnalyst(a => !a)}/>
+      <div className={"admin-shell" + (analyst ? " has-analyst" : "")}>
         <AdminNav section={view} setSection={setSection} hasCap={hasCap}/>
         <main className="admin-main">
           {view === "home" && <AdminHome setSection={setSection} hasCap={hasCap} member={member}/>}
@@ -179,6 +202,10 @@ function AdminPage({ setPage }) {
           {view === "community" && <AdminCommunity/>}
           {view === "donations" && <AdminDonations/>}
         </main>
+        {/* The third track. Mounted only when open, so a closed pane costs
+            nothing — it holds an open conversation, a poll of the thread list
+            and a live scope subscription. */}
+        {analyst && <AnalystPane onClose={() => setAnalyst(false)}/>}
       </div>
     </div>
   );
@@ -300,7 +327,7 @@ function adminExpiryLabel(exp) {
   return { text: Math.round(s / 86400) + "d left", warn: false };
 }
 
-function AdminTopbar({ section, setSection, setPage, member }) {
+function AdminTopbar({ section, setSection, setPage, member, analyst, toggleAnalyst }) {
   const { sessionExp, lockAdmin } = (typeof useAuth === "function") ? useAuth() : {};
   const exp = adminExpiryLabel(sessionExp);
   return (
@@ -314,6 +341,13 @@ function AdminTopbar({ section, setSection, setPage, member }) {
       </div>
       <div className="admin-topbar-r">
         <span className="mono" style={{color:"rgba(255,255,255,0.6)"}}>{member.fullName} · {member.role}</span>
+        {/* The Analyst, reachable from every section rather than from the bottom
+            of one. The shortcut is printed on the button because a keystroke
+            nobody can see is a keystroke nobody uses. */}
+        <button className={"admin-analyst-btn" + (analyst ? " is-on" : "")} onClick={toggleAnalyst}
+          aria-pressed={!!analyst} title="Ask the analyst about what you are looking at (⌘J)">
+          ✦ Analyst<kbd>⌘J</kbd>
+        </button>
         {exp && <span className={"admin-session-chip" + (exp.warn ? " warn" : "")} title={sessionExp ? "Your sign-in ends " + new Date(sessionExp * 1000).toLocaleString() : ""}>🔑 {exp.text}</span>}
         {Array.isArray(member.caps) && member.caps.indexOf("summer") !== -1 && (
           <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("summer-admin")}>Summer ↗</button>

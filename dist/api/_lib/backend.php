@@ -274,6 +274,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'analytics.insight.threads' => 'insight_chat_threads',
             'analytics.insight.thread'  => 'insight_chat_thread',
             'analytics.insight.archive' => 'insight_chat_archive',
+            'analytics.insight.rename'  => 'insight_chat_rename',
             /* The Programme Journal. Writes need the `journal` capability (the
              * journalist role); reads are filtered by the viewer's visibility
              * level inside the handler, which is why the feed and the memories

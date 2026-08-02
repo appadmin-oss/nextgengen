@@ -22,6 +22,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             'threadId' => $in['threadId'] ?? '',
             'centre' => $in['centre'] ?? '',
             'week' => $in['week'] ?? '', 'range' => $in['week'] ?? '',
+            // 'quick' caps the panel at one lens. Anything else means the router
+            // decides, up to three.
+            'depth' => $in['depth'] ?? '',
             'ip' => client_ip(),
         ]);
         if (empty($res['ok'])) {
@@ -35,6 +38,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
     } elseif ($action === 'insight.archive') {
         $res = gs_call('analytics.insight.archive', ['requesterId' => $s['mid'], 'threadId' => $in['threadId'] ?? '']);
+    } elseif ($action === 'insight.rename') {
+        $res = gs_call('analytics.insight.rename', ['requesterId' => $s['mid'],
+            'threadId' => $in['threadId'] ?? '', 'title' => $in['title'] ?? '']);
     } else {
         json_error('unknown_action', 400);
     }

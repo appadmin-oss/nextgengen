@@ -4147,6 +4147,37 @@ chk('…and a thread is only readable by the admin who opened it', (function () 
     return empty($other['ok']);
 })());
 chk('the ask op is admin-gated', backend_dispatch('analytics.insight.ask', ['requesterId' => '', 'question' => 'Why is Wednesday weak?'])['ok'] !== true);
+chk('a thread can be renamed, archived, and refuses a title that names somebody', (function () {
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock();
+    $a = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'question' => 'Why is Wednesday weak?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($a['ok'])) return true;
+    $tid = $a['threadId'];
+    /* A generated title reads identically to the other four times somebody asked
+       the same thing, so a conversation nobody can name is one they re-ask —
+       and every re-ask is a fresh round of model calls. */
+    $ok = backend_dispatch('analytics.insight.rename', ['requesterId' => 'NGG-2025-0099', 'threadId' => $tid, 'title' => '  Wednesday   dip  ']);
+    $named = db_row('SELECT title FROM insight_threads WHERE threadId = ?', [$tid]);
+    /* A title is the one free-text field in this subsystem that nothing else
+       checks, and it lives in the same store as the questions — so it goes
+       through the same gate. */
+    $leak = backend_dispatch('analytics.insight.rename', ['requesterId' => 'NGG-2025-0099', 'threadId' => $tid,
+        'title' => 'Tunde Bakare tunde@example.com']);
+    $empty = backend_dispatch('analytics.insight.rename', ['requesterId' => 'NGG-2025-0099', 'threadId' => $tid, 'title' => '   ']);
+    $theirs = backend_dispatch('analytics.insight.rename', ['requesterId' => 'NGG-2025-0098', 'threadId' => $tid, 'title' => 'Mine now']);
+    // Archived threads leave the picker; nothing is deleted.
+    $arch = backend_dispatch('analytics.insight.archive', ['requesterId' => 'NGG-2025-0099', 'threadId' => $tid]);
+    $listed = backend_dispatch('analytics.insight.threads', ['requesterId' => 'NGG-2025-0099'])['threads'] ?? [];
+    $still = db_row('SELECT COUNT(*) n FROM insight_turns WHERE threadId = ?', [$tid]);
+    return !empty($ok['ok']) && (string)$named['title'] === 'Wednesday dip'
+        && ($leak['error'] ?? '') === 'question_identifies_someone'
+        && ($empty['error'] ?? '') === 'title_required'
+        && empty($theirs['ok'])
+        && !empty($arch['ok'])
+        && !array_filter($listed, fn($t) => $t['threadId'] === $tid)
+        && (int)$still['n'] > 0;
+})());
 chk('a one-word question is refused before anything is spent', (function () {
     $called = 0;
     $cfg = __ichat_config_on();

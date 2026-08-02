@@ -296,9 +296,44 @@ const LEADERBOARD = {
             : b === 'roster' ? 'SummerRoster'
             : b === 'vols' ? 'AdminVolunteers'
             : b === 'gates' ? 'SummerGates'
+            : b === 'analyst' ? 'AnalystPane'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
-  if (b === 'photo') {
+  if (b === 'analyst') {
+    /* The docked Analyst. Stubbed at the API boundary rather than at the
+       component's, so the pane runs its real pipeline: optimistic turn, thread
+       re-read, confidence derived from the claims, grounding check honoured. */
+    props = { onClose: function () { window.__closed = true; } };
+    window.nggPublishScope({ section: 'Analytics', centre: 'Ayobo Hub', week: '',
+                             rangeLabel: 'Weeks 1-6', centres: ['Ayobo Hub', 'Egbeda'] });
+    window.__threads = [{ threadId: 'th1', title: 'Ayobo decline', centre: 'Ayobo Hub',
+                          rangeLabel: 'Weeks 1-6', turns: 1, updatedAt: '2026-08-01T09:00:00Z' }];
+    var TURN = {
+      seq: 1, question: 'Why is Ayobo falling?',
+      answer: 'It reads as retention, not teaching. 14 of 38 students have not attended since week 2.',
+      status: 'ok', rangeLabel: 'Weeks 1-6', evidenceFp: 'ev-9f2a', providers: ['mock'], ms: 4200,
+      plan: { restated: 'What explains the Ayobo attendance drop?', by: 'router',
+              why: 'A cause question with a comparison in it.',
+              lensesRan: [{ key: 'mechanism', label: 'Mechanism', ok: true },
+                          { key: 'risk', label: 'Risk', ok: true },
+                          { key: 'equity', label: 'Equity', ok: false }],
+              composed: true, followups: ['List the 14 lapsed students', 'Compare with Egbeda'] },
+      claims: [{ claim: 'The drop is concentrated in Saturday sessions.', evidence: 'attendance 1,140',
+                 confidence: 'high', agreed: true, lenses: ['mechanism', 'risk'] },
+               { claim: 'n = 38 is small enough that one session swings it.', evidence: 'centres 5',
+                 confidence: 'medium', agreed: false, lenses: ['risk'] }],
+      checks: { grounded: true, evidenceNumbers: 61, claims: [], answerUnverified: [] },
+    };
+    window.__turn = TURN;
+    window.NGGApi.admin.insightChatThreads = function () { return Promise.resolve({ threads: window.__threads }); };
+    window.NGGApi.admin.insightChatThread = function () {
+      return Promise.resolve({ thread: { threadId: 'th1', title: 'Ayobo decline', centre: 'Ayobo Hub',
+                                         turns: [window.__turn] } });
+    };
+    window.NGGApi.admin.insightChatAsk = function (d) { window.__asked = d; return Promise.resolve({ threadId: 'th1' }); };
+    window.NGGApi.admin.insightChatArchive = function (id) { window.__archived = id; window.__threads = []; return Promise.resolve({}); };
+    window.NGGApi.admin.insightChatRename = function (id, t) { window.__renamed = [id, t]; return Promise.resolve({ title: t }); };
+  } else if (b === 'photo') {
     var pc = document.createElement('canvas'); pc.width = 800; pc.height = 1000;
     var px = pc.getContext('2d');
     px.fillStyle = '#88a'; px.fillRect(0, 0, 800, 1000);
@@ -686,7 +721,17 @@ const LEADERBOARD = {
     };
   }
   try {
-    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(window[which], props));
+    /* The board, plus the REAL dialog and toast hosts.
+       Not decoration: dialog and toast are top-level bindings inside the
+       bundle, so a fixture that stubs window.dialog intercepts nothing — and an
+       awaited dialog.confirm with no host mounted never settles, so the code
+       under test simply stops with no error and nothing on screen. Any board
+       with a confirm in it would be untestable without these. */
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      React.createElement(React.Fragment, null,
+        React.createElement(window[which], props),
+        window.DialogHost ? React.createElement(window.DialogHost) : null,
+        window.ToastHost ? React.createElement(window.ToastHost) : null));
   } catch (e) { window.__errors.push(String(e && e.message)); }
 </script></body></html>`);
 
@@ -3734,6 +3779,126 @@ const LEADERBOARD = {
        /Granted · Paper form/.test(seededTxt) && /Prior Staff/.test(seededTxt) && /2026-06-01/.test(seededTxt));
     ok('…while the grant nobody has answered still reads as unrecorded',
        /Not recorded/.test(seededTxt));
+
+    /* ── The Analyst pane ─────────────────────────────────────────────────
+       Docked in the shell rather than parked at the bottom of the analytics
+       page. Driven at the API boundary so the real pipeline runs: the scope it
+       was told about, the trace built from what the plan actually did, the
+       confidence derived from the claims, and — the part that matters — an
+       ungrounded answer that cannot be mistaken for a checked one. */
+    const anp = await browser.newPage();
+    const anErrs = [];
+    anp.on('pageerror', e => anErrs.push(String(e.message)));
+    await anp.goto(BASE + '/tests/_boards_fixture.html?board=analyst&mode=ok', { waitUntil: 'networkidle' });
+    await anp.waitForSelector('.anp', { timeout: 15000 });
+    await anp.waitForTimeout(300);
+    ok('the analyst pane mounts with no script error', anErrs.length === 0);
+    if (anErrs.length) console.error('       ', anErrs.slice(0, 3).join(' | '));
+
+    /* It says what it can see. An answer scoped to one centre that does not LOOK
+       scoped is how a centre-level finding gets quoted as programme-wide. */
+    let anTxt = await anp.evaluate(() => document.body.innerText);
+    ok('the pane states the scope it was handed, rather than implying one',
+      /Following this page/.test(anTxt) && /Ayobo Hub/.test(anTxt) && /Weeks 1-6/.test(anTxt));
+
+    await anp.click('.anp-thread-hit');
+    await anp.waitForSelector('.anp-ans', { timeout: 8000 });
+    anTxt = await anp.evaluate(() => document.body.innerText);
+    /* Steps counted from the pipeline, not decoration: plan + 2 lenses that
+       answered + 1 that did not + compose + grounding check = 6. */
+    ok('the trace counts the steps the pipeline actually ran', /Ran 6 steps/.test(anTxt));
+    ok('…and the answer carries its claims and their corroboration',
+      /Saturday sessions/.test(anTxt) && /two lenses agreed/.test(anTxt) && /one lens only/.test(anTxt));
+
+    /* Confidence is DERIVED — from the claim confidences and the grounding
+       check — never asked of the model, which would be a number about itself
+       with no referent. high(1) + medium(.66) = 83%, +4 for the corroborated
+       claim = 87%. */
+    const conf = await anp.evaluate(() => window.anConfidence(window.__turn));
+    ok('confidence is computed from the claims and says how (' + conf.pct + '%)',
+      conf.pct === 87 && /corroborated/.test(conf.why));
+    ok('…and the pane shows that number, not a different one', new RegExp(conf.pct + '%').test(anTxt));
+
+    /* The one that matters. An answer whose figures are not in the evidence must
+       not be able to look like one that checks out — and its confidence must
+       collapse rather than be nudged. */
+    const ungrounded = await anp.evaluate(() => window.anConfidence(
+      Object.assign({}, window.__turn, { checks: { grounded: false, evidenceNumbers: 61, claims: [], answerUnverified: ['41%'] } })));
+    ok('an ungrounded figure caps confidence at 40% instead of shading it',
+      ungrounded.pct === 40 && /not in the evidence/.test(ungrounded.why));
+
+    // Next steps are targets you can press, not suggestions inside a paragraph.
+    ok('follow-ups are real targets', await anp.locator('.anp-action').count() === 2);
+
+    /* Pin → report draft → export. This is the actual workflow: nobody asks six
+       questions for fun, they ask them because a paper is due. */
+    await anp.click('.anp-tool:has-text("Pin")');
+    await anp.waitForSelector('.anp-report', { timeout: 4000 });
+    await anp.click('.anp-report');
+    anTxt = await anp.evaluate(() => document.body.innerText);
+    ok('a pinned answer becomes a report draft entry', /Report draft/.test(anTxt) && /Why is Ayobo falling/.test(anTxt));
+
+    // The composer's scope chips are the request, not a caption. Target the
+    // centre by name — the chips are [range, centre] and removing the wrong one
+    // would let this pass while proving nothing.
+    await anp.click('.anp-chip:has-text("Ayobo Hub") button');
+    await anp.fill('.anp-composer textarea', 'What changed in the second week?');
+    await anp.click('.anp-send');
+    await anp.waitForFunction(() => !!window.__asked, null, { timeout: 8000 });
+    const asked = await anp.evaluate(() => window.__asked);
+    ok('removing a scope chip genuinely drops it from the request',
+      asked.question === 'What changed in the second week?' && asked.centre === '' && asked.depth === 'deep');
+
+    // Quick depth is a real cap on the panel, not a label.
+    await anp.click('.anp-cbtn.is-wide');
+    await anp.waitForSelector('.anp-menu-it', { timeout: 4000 });
+    await anp.click('.anp-menu-it:has-text("One lens")');
+    await anp.fill('.anp-composer textarea', 'Which centre is lowest right now?');
+    await anp.waitForTimeout(120);
+    await anp.click('.anp-send');
+    await anp.waitForTimeout(800);
+    ok('Quick depth reaches the server, where it caps the panel at one lens',
+      (await anp.evaluate(() => (window.__asked || {}).depth)) === 'quick');
+
+    /* Rename and archive were reachable on the server and nowhere in the UI.
+       Archive asks first — through the real dialog host, so this also proves the
+       pane's confirms resolve rather than hanging. */
+    await anp.click('.anp-thread-ic[title="Archive"]');
+    await anp.waitForSelector('.dialog-card', { timeout: 6000 });
+    await anp.click('.dialog-actions .btn-primary');
+    await anp.waitForFunction(() => !!window.__archived, null, { timeout: 8000 });
+    ok('a conversation can be put away from the pane it was opened in',
+      (await anp.evaluate(() => window.__archived)) === 'th1');
+    await anp.close();
+
+    /* ── The shell makes room for it ──────────────────────────────────────
+       The pane is a TRACK, not an overlay, which only works if the middle
+       column can shrink. Grid items default to `min-width: auto`, so a wide
+       table in the middle refuses to and pushes the pane clean off the right
+       edge of the window — the design calls minmax(0,1fr) load-bearing and it
+       is. Measured, because reading the rule proves nothing about the cascade. */
+    const shellFix = path.join(ROOT, 'tests', '_shell_fixture.html');
+    fs.writeFileSync(shellFix, '<!doctype html><html><head><meta charset="utf-8">'
+      + '<link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css">'
+      + '<style>body{margin:0}</style></head><body>'
+      + '<div class="admin-shell has-analyst" style="--analyst-w:420px">'
+      + '<aside class="admin-nav"></aside>'
+      + '<main class="admin-main"><table style="width:2400px"><tr><td>very wide</td></tr></table></main>'
+      + '<aside class="anp"></aside></div></body></html>');
+    const sh = await browser.newPage({ viewport: { width: 1500, height: 900 } });
+    await sh.goto(BASE + '/tests/_shell_fixture.html', { waitUntil: 'networkidle' });
+    await sh.waitForTimeout(250);
+    const box = await sh.evaluate(() => {
+      const r = (s) => { const e = document.querySelector(s); const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, w: b.width }; };
+      return { nav: r('.admin-nav'), main: r('.admin-main'), pane: r('.anp'), vw: window.innerWidth,
+               scroll: document.documentElement.scrollWidth };
+    });
+    await sh.close();
+    try { if (!process.env.KEEP_FIX) fs.unlinkSync(shellFix); } catch (_) {}
+    ok('the analyst is a third track, not an overlay — the page reflows beside it',
+      Math.round(box.pane.w) === 420 && box.pane.r <= box.vw + 1 && box.main.r <= box.pane.l + 1);
+    ok('…and a 2400px table shrinks the middle column instead of pushing the pane off-screen',
+      box.main.w < 900 && box.scroll <= box.vw + 1);
 
   } catch (e) { fail++; console.error('  ✗ harness error: ' + (e && e.message)); }
   // KEEP_FIX=1 leaves tests/_boards_fixture.html on disk so a failing board can

@@ -63,6 +63,16 @@ function AnalyticsStyles() {
 .an-chip{font-size:12px;font-weight:600;padding:7px 11px;border-radius:9px;border:1px solid var(--an-line);background:#fff;color:var(--ink-700,#2a335c);cursor:pointer;display:inline-flex;gap:6px;align-items:center;}
 .an-chip:hover{border-color:var(--ink-300,#b8bfd6);}
 .an-chip.on{background:var(--navy-900,#0c1432);color:#fff;border-color:var(--navy-900);}
+/* A saved conversation: open it, rename it, put it away. Three targets in one
+   chip rather than a chip plus a menu — there are only two verbs and a menu for
+   two verbs is a click somebody has to discover. */
+.an-thread{display:inline-flex;align-items:stretch;border:1px solid var(--an-line);border-radius:9px;overflow:hidden;background:#fff;max-width:280px;}
+.an-thread[data-on="1"]{border-color:var(--navy-900,#0c1432);box-shadow:inset 0 0 0 1px var(--navy-900,#0c1432);}
+.an-thread-hit{flex:1;min-width:0;display:flex;align-items:center;gap:7px;padding:7px 10px;border:0;background:transparent;cursor:pointer;font:600 12px inherit;color:var(--ink-700,#2a335c);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.an-thread-hit:hover{background:var(--cream-100,#f6f4ef);}
+.an-thread-n{flex:none;font-style:normal;font-size:10px;font-weight:700;color:var(--ink-400,#7c86a6);}
+.an-thread-ic{flex:none;width:26px;border:0;border-left:1px solid var(--an-line);background:transparent;cursor:pointer;font-size:11px;color:var(--ink-400,#7c86a6);}
+.an-thread-ic:hover{background:var(--cream-100,#f6f4ef);color:var(--ink-700,#2a335c);}
 .an-menu{position:relative;}
 .an-pop{position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--an-line);border-radius:12px;box-shadow:var(--shadow-lg);padding:6px;min-width:210px;z-index:40;}
 .an-pop button{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;background:none;border:none;padding:8px 10px;border-radius:8px;font-size:13px;color:var(--ink-900);cursor:pointer;}
@@ -564,6 +574,23 @@ function AnalyticsWorkspace() {
       .finally(() => setMinting(false));
   };
 
+  /* Tell the shell's Analyst pane what this screen is showing, so an answer
+     scoped to one centre is visibly scoped and the pane's chips are the real
+     request parameters rather than a caption. Published from the LOADED
+     workspace, not from `filters`, because the range label is the server's — it
+     is what "week 3" actually resolved to. */
+  useEffect(() => {
+    if (!ws) return;
+    nggPublishScope({
+      section: "Analytics",
+      centre: filters.centre || "",
+      week: filters.week || "",
+      rangeLabel: (ws.filters && ws.filters.rangeLabel) || "",
+      centres: ((ws.filters && ws.filters.options && ws.filters.options.centres) || []).slice(0, 20),
+    });
+    return () => nggPublishScope(null);
+  }, [ws, filters.centre, filters.week]);
+
   const onExport = (kind) => {
     if (!ws) return;
     if (kind === "csv") {
@@ -861,11 +888,11 @@ function AnalyticsWorkspace() {
     {/* ── Level 7 · what a panel of analysts makes of levels 1–6 ── */}
     <AnInsight filters={filters}/>
 
-    {/* ── Level 7b · the same panel, asked something specific ──
-        Below the panel deliberately: the standing questions are answered before
-        anybody starts asking their own, so a coordinator reads the four things
-        that are true whether or not they thought to ask. */}
-    <AnChat filters={filters}/>
+    {/* Level 7b — the same panel, asked something specific — used to sit here,
+        at the bottom of seven sections. It is now docked in the shell as the
+        Analyst pane (⌘J), because an assistant you have to scroll past the whole
+        page to reach is one you consult after you have already decided. It
+        follows this page's scope through nggPublishScope, above. */}
 
     {/* Downloads & reports */}
     <section className="an-sec" style={{ marginBottom: 40 }}>
@@ -1323,57 +1350,294 @@ function AnInsight({ filters }) {
   );
 }
 
-/* ── Level 7b · the analyst chat ─────────────────────────────────────────────
- * The panel answers four fixed questions. A coordinator's real question is
+/* ── The Analyst pane ────────────────────────────────────────────────────────
+ *
+ * Level 7 answers four standing questions. A coordinator's real question is
  * narrower and stranger than any of them, and this is where it goes.
  *
- * The pane is built around one idea: an answer arrives WITH its method. The plan
- * (which lenses were consulted, and why), the grounding check (which figures were
- * found in the evidence and which were not), and the range it was drawn from are
- * all on the turn — not in a log, not behind a support request. A generated
- * paragraph that looks exactly like a computed one is the failure mode this
- * screen exists to avoid.
+ * It is DOCKED IN THE SHELL, not parked at the bottom of the analytics page.
+ * That is the substantive change and not a cosmetic one: an assistant you have
+ * to scroll past seven sections to reach is one you consult after you have
+ * already made up your mind. As a third grid track it sits beside whatever is
+ * open, the page reflows rather than being covered, and it follows the section's
+ * own scope — see nggPublishScope in components.jsx.
+ *
+ * Two rules the whole pane is built around:
+ *
+ *   1. An answer arrives WITH its method. The plan (which lenses were consulted
+ *      and why), the grounding check (which figures were found in the evidence
+ *      and which were not), the confidence and how it was arrived at, and the
+ *      range it was drawn from are all on the turn — not in a log, not behind a
+ *      support request. A generated paragraph that looks exactly like a computed
+ *      one is the failure this exists to prevent.
+ *
+ *   2. It cannot act. No edit, no send, no record written. It says so at the
+ *      point of use rather than in a settings page nobody opens.
  */
-function AnChat({ filters }) {
+
+/** How sure this answer is, and — the part that matters — how we got there.
+ *
+ *  The model is NOT asked to score its own confidence: a number a model invents
+ *  about itself is a number with no referent. This is computed from two things
+ *  the pipeline actually knows — how confident each claim said it was, and
+ *  whether every figure in the answer was found in the evidence. The derivation
+ *  is shown next to the number, because an unexplained percentage is decoration.
+ */
+function anConfidence(t) {
+  const claims = (t && t.claims) || [];
+  const W = { high: 1, medium: 0.66, low: 0.33 };
+  const parts = [];
+  let pct;
+  if (!claims.length) {
+    pct = 50;
+    parts.push("no separable claims to score");
+  } else {
+    const mean = claims.reduce((a, c) => a + (W[c.confidence] == null ? 0.5 : W[c.confidence]), 0) / claims.length;
+    pct = Math.round(mean * 100);
+    parts.push(claims.length + " claim" + (claims.length === 1 ? "" : "s") + " averaging " + pct + "%");
+    const agreed = claims.filter(c => c.agreed && (c.lenses || []).length > 1).length;
+    if (agreed) {
+      // Two lenses reaching the same claim independently is the only corroboration
+      // this pipeline can offer, so it is the only thing allowed to raise the number.
+      pct = Math.min(97, pct + agreed * 4);
+      parts.push(agreed + " corroborated by a second lens (+" + agreed * 4 + ")");
+    }
+  }
+  if (t && t.status === "unanswerable") { pct = 0; parts.push("the evidence cannot address the question"); }
+  else if (t && t.checks && t.checks.grounded === false) {
+    // A figure that is not in the evidence is not a small deduction. Capped
+    // rather than nudged, because the answer is a different KIND of thing.
+    pct = Math.min(pct, 40);
+    parts.push("capped at 40% — a figure is not in the evidence");
+  }
+  return { pct, why: parts.join(" · ") };
+}
+
+/** "Ran 4 steps" — counted from what the pipeline actually did, never a
+ *  decorative number. */
+function anSteps(t) {
+  const plan = t.plan || {};
+  const lenses = (plan.lensesRan || []).filter(l => l.ok);
+  const steps = [];
+  steps.push({ ok: true, text: "planned the question" + (plan.by === "fallback" ? " (by keyword — the planning call was unavailable)" : "") });
+  lenses.forEach(l => steps.push({ ok: true, text: "asked the " + l.label.toLowerCase() + " lens" }));
+  (plan.lensesRan || []).filter(l => !l.ok).forEach(l => steps.push({ ok: false, text: l.label.toLowerCase() + " lens returned nothing" }));
+  steps.push({ ok: plan.composed !== false, text: plan.composed === false ? "composition failed — raw lens points shown" : "composed one reply" });
+  steps.push({
+    ok: !(t.checks && t.checks.grounded === false),
+    text: t.checks && t.checks.grounded === false
+      ? "checked the figures — some are not in the evidence"
+      : "checked every figure against the evidence (" + ((t.checks && t.checks.evidenceNumbers) || 0) + " found)",
+  });
+  return steps;
+}
+
+/** The one-line summary on the closed trace strip. */
+function anStepDetail(t) {
+  const plan = t.plan || {};
+  const names = (plan.lensesRan || []).map(l => l.label.toLowerCase());
+  return (names.length ? names.join(" · ") : "no lens answered")
+    + (t.ms ? " · " + (t.ms / 1000).toFixed(1) + "s" : "");
+}
+
+function AnalystPane({ onClose }) {
+  /* What the open section says it is showing. Not props: the pane outlives any
+     one screen, and a screen that announces nothing must produce a pane that
+     says "not scoped" rather than one implying a filter it cannot see. */
+  const scope = useNggScope();
   const [threads, setThreads] = React.useState([]);
   const [thread, setThread] = React.useState(null);   // { threadId, turns: [] }
   const [q, setQ] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState(null);         // { code, text, reasons }
   const [showPlan, setShowPlan] = React.useState({});
+  const [showThreads, setShowThreads] = React.useState(true);
+  const [allThreads, setAllThreads] = React.useState(false);
+  const [copied, setCopied] = React.useState(-1);
+  const [depth, setDepth] = React.useState("deep");   // "deep" | "quick"
+  const [depthOpen, setDepthOpen] = React.useState(false);
+  const [atOpen, setAtOpen] = React.useState(false);
+  const [dropScope, setDropScope] = React.useState({});   // chips the asker removed
+  const [pins, setPins] = React.useState([]);         // pinned turn keys, in order
+  const [reportOpen, setReportOpen] = React.useState(false);
+  const [wide, setWide] = React.useState(() => { try { return localStorage.getItem("ngg.analyst.wide") === "1"; } catch { return false; } });
   const endRef = React.useRef(null);
+  const boxRef = React.useRef(null);
+  const abortRef = React.useRef(null);
 
   const loadThreads = React.useCallback(() => {
     NGGApi.admin.insightChatThreads().then(r => setThreads(r.threads || [])).catch(() => {});
   }, []);
   React.useEffect(() => { loadThreads(); }, [loadThreads]);
   React.useEffect(() => {
-    // A new answer is at the bottom and can be several paragraphs; landing the
-    // reader at the top of it means they scroll to find what they just asked for.
     if (endRef.current) endRef.current.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [thread && thread.turns && thread.turns.length]);
+  }, [thread && thread.turns && thread.turns.length, busy]);
+  React.useEffect(() => { try { localStorage.setItem("ngg.analyst.wide", wide ? "1" : "0"); } catch (_) {} }, [wide]);
+  React.useEffect(() => {
+    // The pane is a grid track, so its width is the shell's business. It is told
+    // here rather than set here, which keeps one element owning the layout.
+    document.documentElement.style.setProperty("--analyst-w", wide ? "620px" : "420px");
+  }, [wide]);
 
   const openThread = async (threadId) => {
     setErr(null);
-    try { const r = await NGGApi.admin.insightChatThread(threadId); setThread(r.thread || null); }
+    try { const r = await NGGApi.admin.insightChatThread(threadId); setThread(r.thread || null); setPins([]); }
     catch (e) { setErr({ code: e.code, text: e.code || e.message }); }
   };
+
+  const archive = async (threadId) => {
+    const go = await dialog.confirm({
+      title: "Put this conversation away?",
+      body: "It stops appearing in the list. The turns are kept — nothing is deleted.",
+      cta: "Archive",
+    });
+    if (!go) return;
+    try {
+      await NGGApi.admin.insightChatArchive(threadId);
+      if (thread && thread.threadId === threadId) setThread(null);
+      loadThreads();
+    } catch (e) { setErr({ code: e.code, text: e.code || e.message }); }
+  };
+
+  /* A title generated from the first question reads identically to the other
+     four times somebody asked the same thing. A conversation you cannot name is
+     one you re-ask instead of re-open, and each re-ask is a round of model
+     calls that costs money. */
+  const rename = async (t) => {
+    const title = await dialog.prompt({
+      title: "Name this conversation", defaultValue: t.title || "",
+      label: "No names — the same rule as the questions themselves", cta: "Rename",
+    });
+    if (title == null) return;
+    try { await NGGApi.admin.insightChatRename(t.threadId, title); loadThreads(); }
+    catch (e) {
+      setErr({ code: e.code, text: e.code === "question_identifies_someone"
+        ? "That title names somebody. Titles live in the same store as the questions and follow the same rule."
+        : (e.code || e.message) });
+    }
+  };
+
+  /* ── Scope ────────────────────────────────────────────────────────────────
+     What the question will actually be asked against, shown as removable chips
+     above the composer. Removing one genuinely drops it from the request rather
+     than hiding it — a chip that is decoration is worse than no chip, because
+     it tells somebody their question was narrowed when it was not. */
+  const chips = [];
+  if (scope && scope.rangeLabel) chips.push({ key: "range", label: scope.rangeLabel });
+  if (scope && scope.centre) chips.push({ key: "centre", label: scope.centre });
+  const liveChips = chips.filter(c => !dropScope[c.key]);
+  const askCentre = dropScope.centre ? "" : ((scope && scope.centre) || "");
+  const askWeek = dropScope.range ? "" : ((scope && scope.week) || "");
+
+  const turns = (thread && thread.turns) || [];
+  const turnKey = (t, i) => (t.seq === -1 ? "pending" : String(t.seq)) + ":" + i;
+
+  /* ── The report draft ─────────────────────────────────────────────────────
+     Pin the answers that are going into something. This is the actual workflow
+     — nobody asks six questions for fun, they ask six questions because a board
+     paper is due on Friday — and until now the only way to get an answer out of
+     this pane was to select the paragraph and hope the claims came too. */
+  const pinned = pins.map(k => turns.find((t, i) => turnKey(t, i) === k)).filter(Boolean);
+  const togglePin = (k) => setPins(p => p.indexOf(k) !== -1 ? p.filter(x => x !== k) : p.concat([k]));
+  const movePin = (k, d) => setPins(p => {
+    const i = p.indexOf(k), j = i + d;
+    if (i < 0 || j < 0 || j >= p.length) return p;
+    const n = p.slice(); n.splice(j, 0, n.splice(i, 1)[0]); return n;
+  });
+
+  const turnMd = (t) => {
+    const c = anConfidence(t);
+    const out = ["## " + t.question, ""];
+    if (t.status === "unanswerable") out.push("> This evidence cannot answer that.", "");
+    if (t.checks && t.checks.grounded === false) {
+      out.push("> ⚠ Some figures in this answer were not found in the evidence"
+        + ((t.checks.answerUnverified || []).length ? " (" + t.checks.answerUnverified.join(", ") + ")" : "") + ".", "");
+    }
+    out.push(t.answer || "", "");
+    (t.claims || []).forEach(x => out.push("- " + x.claim + (x.evidence ? "  \n  `" + x.evidence + "`" : "")
+      + "  \n  _" + (x.confidence || "?") + " confidence, " + ((x.lenses || []).length > 1 && x.agreed ? "two lenses agreed" : "one lens") + "_"));
+    if ((t.claims || []).length) out.push("");
+    out.push("_" + c.pct + "% confidence — " + c.why + ". Drawn from " + (t.rangeLabel || "—") + " · " + (t.evidenceFp || "—") + "._", "");
+    return out;
+  };
+
+  const exportReport = (kind) => {
+    const rows = pinned.length ? pinned : turns.filter(t => !t.pending);
+    if (!rows.length) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (kind === "csv") {
+      /* CSV because a finding usually ends up in a spreadsheet beside numbers
+         from somewhere else, and the provenance has to travel with it or it
+         becomes an unattributed assertion the moment it is pasted. */
+      const out = [["Question", "Answer", "Confidence", "Grounded", "Drawn from", "Evidence"]
+        .map(anCsv).join(",")];
+      rows.forEach(t => {
+        const c = anConfidence(t);
+        out.push([t.question, t.answer, c.pct + "%",
+          t.checks && t.checks.grounded === false ? "NO — a figure is not in the evidence" : "yes",
+          t.rangeLabel || "", t.evidenceFp || ""].map(anCsv).join(","));
+      });
+      anDownload("ngg-analyst-" + stamp + ".csv", out.join("\n"), "text/csv");
+      return;
+    }
+    const lines = ["# Analyst findings — " + stamp, "",
+      "_" + rows.length + (pinned.length ? " pinned" : "") + " finding" + (rows.length === 1 ? "" : "s") +
+      ". Figures as they stood when each answer was given._", ""];
+    rows.forEach(t => lines.push.apply(lines, turnMd(t)));
+    lines.push("---", "_Produced by the NGG Analyst. Advisory only — it holds no personal data and writes no records._");
+    anDownload("ngg-analyst-" + stamp + ".md", lines.join("\n"), "text/markdown");
+  };
+
+  const copyAnswer = (t, i) => {
+    const text = turnMd(t).join("\n");
+    const done = () => { setCopied(i); setTimeout(() => setCopied(-1), 1800); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => {});
+    else {
+      // Older Safari and any non-secure origin. Without this the button is dead
+      // on exactly the machines a coordinator is most likely to be using.
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch (_) {}
+      document.body.removeChild(ta);
+    }
+  };
+
+  /** A citation, for the report that quotes this. Deliberately not the answer:
+   *  it is the provenance, which is the part a reader of the report needs and
+   *  the part that is lost when somebody pastes a sentence. */
+  const cite = (t, i) => {
+    const c = anConfidence(t);
+    const txt = "NGG Analyst, " + (t.rangeLabel || "range unknown")
+      + (thread && thread.centre ? " · " + thread.centre : "")
+      + " (" + c.pct + "% confidence; evidence " + (t.evidenceFp || "—") + "; "
+      + ((t.plan && (t.plan.lensesRan || []).map(l => l.label).join(", ")) || "no lens") + ")";
+    copyText(txt, () => { setCopied(1000 + i); setTimeout(() => setCopied(-1), 1800); });
+  };
+  const copyText = (txt, done) => {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => {});
+    else done();
+  };
+
+  const stop = () => { if (abortRef.current) abortRef.current.abort(); };
 
   const ask = async (text) => {
     const question = (text != null ? text : q).trim();
     if (question.length < 6 || busy) return;
-    setBusy(true); setErr(null);
+    setBusy(true); setErr(null); setAtOpen(false); setDepthOpen(false);
     /* The question goes on screen before the answer exists. Two model rounds is
        twenty seconds or more, and a composer that clears itself into an empty
        pane looks like it dropped the question. */
     const optimistic = { seq: -1, question, answer: "", pending: true };
     setThread(t => t ? { ...t, turns: [...(t.turns || []), optimistic] } : { threadId: "", turns: [optimistic] });
     setQ("");
+    const ctl = typeof AbortController === "function" ? new AbortController() : null;
+    abortRef.current = ctl;
     try {
       const r = await NGGApi.admin.insightChatAsk({
         question, threadId: (thread && thread.threadId) || "",
-        centre: filters.centre || "", week: filters.week || "",
-      });
+        centre: askCentre, week: askWeek, depth,
+      }, ctl && ctl.signal);
       // Re-read rather than splice: the server owns the sequence, the thread
       // title and — on the first turn — the thread id itself.
       const full = await NGGApi.admin.insightChatThread(r.threadId);
@@ -1381,30 +1645,35 @@ function AnChat({ filters }) {
       loadThreads();
     } catch (e) {
       const reasons = (e.data && e.data.reasons) || [];
+      /* Give the question BACK.
+         The composer is cleared the moment the turn goes on screen, and a
+         refusal, a rate limit or a timeout used to drop the optimistic turn and
+         leave an empty box — so the one thing a person definitely wants to do
+         next, try again, meant retyping a sentence they had just typed. Every
+         failure here is recoverable and none of them is the writer's fault. */
+      setQ(prev => (prev.trim() ? prev : question));
       setErr({
         code: e.code,
         reasons,
-        text: e.code === "question_identifies_someone"
+        text: e.code === "cancelled" ? "Stopped. The question is back in the box — nothing was saved."
+          : e.code === "question_identifies_someone"
           /* Refused, not stripped. Somebody who typed a child's name needs to be
              told once, plainly, that this is not the place — quietly removing it
              teaches nothing and they will do it again on a surface that has no
              gate. */
           ? "That question names or identifies someone (" + reasons.join(", ") + "). Nothing was sent. Ask about a centre, an age band or a period instead — the analyst only ever sees counts and rates."
           : e.code === "rate_limited" ? ((e.data && e.data.note) || "Too many questions this hour.")
-          : e.code === "ai_disabled" ? "No AI provider is configured, so there is no analyst to ask. Levels 1–6 above are unaffected — they are computed, not generated."
+          : e.code === "ai_disabled" ? "No AI provider is configured, so there is no analyst to ask. The computed levels on the page are unaffected."
           : e.code === "no_evidence" ? "There is nothing to analyse in this range yet."
           : e.code === "privacy_refused"
           ? "Refused to send: the payload would have contained " + reasons.join(", ") + ". Nothing was sent. This is a bug — report it."
-          : e.code === "timeout" ? "The analyst did not finish in time. The question was not charged for and nothing was saved — try a narrower one."
+          : e.code === "timeout" ? "The analyst did not finish in time. Nothing was saved — try a narrower question, or Quick depth."
           : (e.code || e.message),
       });
-      // Drop the optimistic turn; the real one was never written.
       setThread(t => t ? { ...t, turns: (t.turns || []).filter(x => !x.pending) } : null);
-    } finally { setBusy(false); }
+      setTimeout(() => { if (boxRef.current) boxRef.current.focus(); }, 0);
+    } finally { setBusy(false); abortRef.current = null; }
   };
-
-  const conf = (c) => ({ high: "an-chip-good", medium: "an-chip-warn", low: "an-chip-mut" }[c] || "an-chip-mut");
-  const turns = (thread && thread.turns) || [];
 
   /* Starters, and they are not decoration. An empty box invites "how are we
      doing", which is the one question the evidence genuinely cannot answer;
@@ -1413,129 +1682,189 @@ function AnChat({ filters }) {
     "Which centre should get the next mentor, and what in this data says so?",
     "Why does attendance fall off in the second week of an intake?",
     "Is the gap between the age bands big enough to act on?",
-    "What would you change about the timetable on the strength of this?",
   ];
 
+  /* Has the filter moved under an open conversation? Read off the LAST ANSWER
+     rather than off the thread, because the thread's own label is from its first
+     turn and a thread can already span two ranges. Without this a coordinator
+     reads five answers as one analysis when the third one changed centre. */
+  const drift = (() => {
+    const last = turns.filter(t => !t.pending).slice(-1)[0];
+    if (!last) return null;
+    const was = [last.rangeLabel || "", (thread && thread.centre) || ""].filter(Boolean).join(" · ");
+    const now = liveChips.map(c => c.label).join(" · ");
+    return was && now && was !== now ? { was, now } : null;
+  })();
+
+  const followText = liveChips.length
+    ? liveChips.map(c => c.label).join(" · ")
+    : (scope && scope.section ? "the whole of " + scope.section.toLowerCase() : "everything on file");
+
   return (
-    <section className="an-sec" id="an-chat">
-      <div className="an-eyebrow">Level 7b · Ask the analysts</div>
-      <h2 className="an-h">A question the panel was not designed for.</h2>
-      {/* Two sentences, then a disclosure. The first version put six sentences of
-          method above the composer, which is the wrong order: somebody arriving
-          here wants to type a question, and the machinery matters when they doubt
-          an answer — which is where it now lives, on the turn itself. */}
-      <p className="an-sub" style={{ maxWidth: 620 }}>
-        The panel above answers four standing questions. This one answers yours, from the same figures,
-        and shows its working. <b>No child's name, id or contact is ever sent</b> — not in the numbers, and
-        not in your question.
-      </p>
-      <details style={{ marginBottom: 16 }}>
-        <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--ink-500)" }}>How it works</summary>
-        <p className="an-sub" style={{ margin: "8px 0 0", maxWidth: 620, fontSize: 12.5 }}>
-          A router picks the fewest lenses that genuinely apply and says which. Each answers from the same
-          aggregate figures, on its own provider. One pass composes the reply and may use only what they said.
-          Then every number in the answer is looked for in the evidence, and any it cannot find is marked on
-          the answer. A question the figures cannot address is told to you as such rather than answered anyway.
-        </p>
-      </details>
+    <aside className="anp" aria-label="Analyst">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <header className="anp-head">
+        <b className="anp-title">Analyst</b>
+        <span className="anp-level">Level 7</span>
+        <span style={{ flex: 1 }}/>
+        <button className="anp-new" onClick={() => { setThread(null); setErr(null); setPins([]); }}>＋ New</button>
+        <button className={"anp-ic" + (showThreads ? " is-on" : "")} title="Earlier conversations"
+          aria-pressed={showThreads} onClick={() => setShowThreads(s => !s)}>◷</button>
+        <button className="anp-ic" title={wide ? "Narrow the pane" : "Widen the pane"}
+          onClick={() => setWide(w => !w)}>{wide ? "⇥" : "⇤"}</button>
+        <button className="anp-ic" title="Close (⌘J)" onClick={onClose}>✕</button>
+      </header>
 
-      <div style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0,1fr)", maxWidth: 880 }}>
-        {/* Earlier conversations. Persisted because each answer cost real model
-            calls and because the question one coordinator asked is usually the
-            question the next one has. */}
-        {threads.length > 0 && (
-          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
-            {threads.slice(0, 4).map(t => (
-              <button key={t.threadId} className="an-chip" title={t.title}
-                onClick={() => openThread(t.threadId)}
-                /* display:block, because `an-chip` is inline-flex and
-                   text-overflow does not apply to a flex container — the title
-                   was clipped mid-word with no ellipsis to say so. */
-                style={{ cursor: "pointer", maxWidth: 200, display: "block", overflow: "hidden",
-                         textOverflow: "ellipsis", whiteSpace: "nowrap",
-                         border: thread && thread.threadId === t.threadId ? "1px solid var(--navy-900)" : undefined }}>
-                {t.title || "Untitled"}
+      {/* ── What it can see ────────────────────────────────────────────────
+          Stated, so an answer scoped to one centre is visibly scoped. The chips
+          below the composer are the control; this is the summary. */}
+      <div className="anp-follow">
+        <i className="anp-dot"/>
+        <span className="anp-follow-t">Following this page · <b>{followText}</b></span>
+      </div>
+
+      {/* ── Earlier conversations ──────────────────────────────────────── */}
+      {showThreads && threads.length > 0 && (
+        <div className="anp-threads">
+          <div className="anp-threads-h">
+            <span>Recent threads</span>
+            <span style={{ flex: 1 }}/>
+            {threads.length > 4 && (
+              <button className="anp-link" onClick={() => setAllThreads(a => !a)}>
+                {allThreads ? "Fewer" : "All " + threads.length} ▸
               </button>
-            ))}
-            {thread && <button className="btn btn-ghost btn-sm" onClick={() => { setThread(null); setErr(null); }}>New question</button>}
+            )}
           </div>
-        )}
-
-        {turns.length === 0 && !busy && (
-          <div className="an-card" style={{ padding: 16 }}>
-            <div style={{ display: "grid", gap: 8 }}>
-              {STARTERS.map((t, i) => (
-                <button key={i} onClick={() => ask(t)} disabled={busy}
-                  style={{ textAlign: "left", padding: "11px 13px", borderRadius: 10, cursor: "pointer",
-                           border: "1px solid var(--line-cool-soft,#e6e9f0)", background: "transparent", fontSize: 14, lineHeight: 1.45 }}>
-                  {t}
+          {(allThreads ? threads : threads.slice(0, 4)).map(t => {
+            const on = thread && thread.threadId === t.threadId;
+            return (
+              <div key={t.threadId} className={"anp-thread" + (on ? " is-on" : "")}>
+                <button className="anp-thread-hit" onClick={() => openThread(t.threadId)}
+                  title={t.title + " · " + t.turns + " question" + (t.turns === 1 ? "" : "s") + " · " + t.rangeLabel}>
+                  <i className="anp-thread-dot"/>
+                  <span className="anp-thread-t">{t.title || "Untitled"}</span>
+                  <span className="anp-thread-n">{t.turns}</span>
                 </button>
-              ))}
-            </div>
+                <button className="anp-thread-ic" title="Rename" aria-label={"Rename " + (t.title || "conversation")}
+                  onClick={() => rename(t)}>✎</button>
+                <button className="anp-thread-ic" title="Archive" aria-label={"Archive " + (t.title || "conversation")}
+                  onClick={() => archive(t.threadId)}>✕</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── The conversation ───────────────────────────────────────────── */}
+      <div className="anp-scroll">
+        {turns.length === 0 && !busy && (
+          <div className="anp-starters">
+            <p className="anp-lead">
+              The page answers standing questions. This answers yours, from the same figures, and shows
+              its working. <b>No child's name, id or contact is ever sent</b> — not in the numbers, and not
+              in your question.
+            </p>
+            {STARTERS.map((t, i) => (
+              <button key={i} className="anp-starter" onClick={() => ask(t)} disabled={busy}>{t}</button>
+            ))}
           </div>
         )}
 
-        {turns.map((t, i) => (
-          <div key={t.seq === -1 ? "pending" : t.seq} style={{ display: "grid", gap: 8 }}>
-            {/* The question, as asked. */}
-            <div style={{ justifySelf: "end", maxWidth: "min(680px, 92%)", background: "var(--navy-900,#16223e)", color: "#fff",
-                          padding: "11px 15px", borderRadius: "14px 14px 4px 14px", fontSize: 14.5, lineHeight: 1.5 }}>
-              {t.question}
-            </div>
+        {turns.map((t, i) => {
+          const k = turnKey(t, i);
+          if (t.pending) {
+            return (
+              <div key={k} className="anp-turn">
+                <div className="anp-you"><span className="anp-you-tag">You ▸</span>{t.question}</div>
+              </div>
+            );
+          }
+          const c = anConfidence(t);
+          const steps = anSteps(t);
+          const bad = t.checks && t.checks.grounded === false;
+          return (
+            <div key={k} className="anp-turn">
+              {/* The question, as asked. A quiet mono line, not a bubble: the
+                  analyst is the one doing the talking and should look like it. */}
+              <div className="anp-you">
+                <span className="anp-you-tag">You ▸</span>{t.question}
+                <button className="anp-edit" title="Put this back in the box and change it"
+                  onClick={() => { setQ(t.question); if (boxRef.current) boxRef.current.focus(); }}>✎</button>
+              </div>
 
-            {t.pending && <div className="an-card" style={{ padding: 16, maxWidth: "min(760px, 96%)" }}>
-              <div className="dash-spinner"/>
-              <p className="an-sub" style={{ marginTop: 10, marginBottom: 0 }}>
-                Planning, then asking each lens, then composing. This is model calls, not a database query — twenty seconds or so.
-              </p>
-            </div>}
+              <div className={"anp-ans" + (bad ? " is-bad" : t.status === "unanswerable" ? " is-warn" : "")}
+                aria-live="polite">
+                {/* The trace strip. Closed it is one line of what happened;
+                    open it is every step, including the ones that failed. */}
+                <button className="anp-trace" onClick={() => setShowPlan(p => ({ ...p, [k]: !p[k] }))}
+                  aria-expanded={!!showPlan[k]}>
+                  <span className={"anp-trace-ck" + (bad ? " is-bad" : "")}>{bad ? "!" : "✓"}</span>
+                  <b>Ran {steps.length} step{steps.length === 1 ? "" : "s"}</b>
+                  <span className="anp-trace-d">{anStepDetail(t)}</span>
+                  <span className="anp-trace-ch">{showPlan[k] ? "▴" : "▾"}</span>
+                </button>
+                {showPlan[k] && (
+                  <div className="anp-tracebody">
+                    {t.plan && t.plan.restated && <div className="anp-trace-restated">Read as: {t.plan.restated}</div>}
+                    {steps.map((s, j) => (
+                      <div key={j} className={"anp-step" + (s.ok ? "" : " is-bad")}>
+                        <span>{s.ok ? "✓" : "×"}</span>{s.text}
+                      </div>
+                    ))}
+                    {t.plan && t.plan.why && <div className="anp-trace-why">{t.plan.why}</div>}
+                    <div className="anp-trace-why">Confidence {c.pct}% — {c.why}.</div>
+                    <div className="anp-trace-fp">{t.rangeLabel || "—"} · {t.evidenceFp || "—"}
+                      {t.providers && t.providers.length ? " · " + t.providers.join(", ") : ""}</div>
+                  </div>
+                )}
 
-            {!t.pending && (
-              <div className="an-card" style={{ padding: "18px 20px", maxWidth: "100%",
-                     borderLeft: "3px solid " + (t.status === "unanswerable" ? AN_TONE.warn
-                       : (t.checks && t.checks.grounded === false) ? AN_TONE.bad : "var(--navy-900,#16223e)") }}>
                 {/* Grounding first, because it changes how everything under it
-                    should be read. An answer whose figures cannot be found in the
-                    evidence is not a worse answer, it is a different KIND of
+                    should be read. An answer whose figures cannot be found in
+                    the evidence is not a worse answer, it is a different KIND of
                     thing, and it must not look identical to one that checks out. */}
-                {t.checks && t.checks.grounded === false && (
-                  <p style={{ margin: "0 0 10px", fontSize: 13, lineHeight: 1.55, color: AN_TONE.bad, fontWeight: 600 }}>
-                    Some figures in this answer are not in the evidence
+                {bad && (
+                  <p className="anp-ungrounded">
+                    Some figures here are not in the evidence
                     {(t.checks.answerUnverified || []).length ? <> ({t.checks.answerUnverified.join(", ")})</> : null}.
-                    {" "}Treat those as the model's arithmetic, not as data — check them against the tables above before acting.
+                    {" "}Treat those as the model's arithmetic, not as data.
                   </p>
                 )}
-                {t.status === "unanswerable" && (
-                  <p style={{ margin: "0 0 8px", fontSize: 12.5, fontWeight: 700, color: AN_TONE.warn }}>
-                    This evidence cannot answer that
-                  </p>
-                )}
+                {t.status === "unanswerable" && <p className="anp-unans">This evidence cannot answer that</p>}
 
-                <p style={{ margin: 0, fontSize: 14.8, lineHeight: 1.62, whiteSpace: "pre-wrap" }}>{t.answer}</p>
+                {/* A brief, not a paragraph: the finding as a lead line, then the
+                    reasoning under it. The same rhythm the analytics sections
+                    use, so the pane reads as part of the page — and, more to the
+                    point, so somebody scanning four answers reads four findings
+                    rather than four opening sentences. Split on the first
+                    sentence because that is where a well-composed answer already
+                    puts its conclusion; if there is only one sentence, it is the
+                    lead and there is no body. */}
+                <div className="anp-eyebrow">{t.status === "unanswerable" ? "No answer" : "Answer"}</div>
+                {(() => {
+                  const full = String(t.answer || "");
+                  const m = full.match(/^([\s\S]{20,240}?[.!?])(\s+)([\s\S]+)$/);
+                  return <>
+                    <p className="anp-lead-line">{m ? m[1] : full}</p>
+                    {m && <div className="anp-body">{m[3]}</div>}
+                  </>;
+                })()}
 
                 {/* The claims, as a quiet list rather than three bordered cards.
                     Boxing each one gave every claim the visual weight of a
-                    finding and made a three-claim answer look like a dashboard;
-                    a rule down the left says "this belongs to the answer above"
-                    without competing with it. Only an UNGROUNDED claim gets a
-                    box, because that one genuinely is a different kind of thing. */}
+                    finding; a rule down the left says "this belongs to the answer
+                    above" without competing with it. */}
                 {(t.claims || []).length > 0 && (
-                  <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
-                    {t.claims.map((c, j) => {
-                      const bad = (t.checks && (t.checks.claims || []).some(x => x.claim === j));
+                  <div className="anp-claims">
+                    {t.claims.map((cl, j) => {
+                      const clBad = (t.checks && (t.checks.claims || []).some(x => x.claim === j));
                       return (
-                        <div key={j} style={{ paddingLeft: 12,
-                               borderLeft: "2px solid " + (bad ? AN_TONE.bad : "var(--line-cool-soft,#e6e9f0)") }}>
-                          <div style={{ fontSize: 14, lineHeight: 1.55 }}>{c.claim}</div>
-                          <div className="an-sub" style={{ margin: "3px 0 0", fontSize: 11.5, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
-                            {c.evidence && <span className="mono">{c.evidence}</span>}
-                            <span>
-                              {c.agreed && (c.lenses || []).length > 1
-                                ? <b style={{ color: AN_TONE.good }}>two lenses agreed</b>
-                                : <>one lens only</>}
-                            </span>
-                            <span>{c.confidence} confidence</span>
-                            {bad && <b style={{ color: AN_TONE.bad }}>figure not in the evidence</b>}
+                        <div key={j} className={"anp-claim" + (clBad ? " is-bad" : "")}>
+                          <div className="anp-claim-t">{cl.claim}</div>
+                          <div className="anp-claim-m">
+                            {cl.evidence && <span className="mono">{cl.evidence}</span>}
+                            <span>{cl.agreed && (cl.lenses || []).length > 1 ? "two lenses agreed" : "one lens only"}</span>
+                            <span>{cl.confidence} confidence</span>
+                            {clBad && <b>figure not in the evidence</b>}
                           </div>
                         </div>
                       );
@@ -1543,87 +1872,171 @@ function AnChat({ filters }) {
                   </div>
                 )}
 
-                {/* One footer row: what to ask next, and how this was produced.
-                    Two stacked rows of buttons under every answer read as a
-                    toolbar and buried the answer above them. */}
-                <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center", marginTop: 16,
-                              paddingTop: 12, borderTop: "1px solid var(--line-cool-soft,#eef0f4)" }}>
-                  {(((t.plan || {}).followups) || []).map((f, j) => (
-                    <button key={j} className="an-chip" onClick={() => ask(f)} disabled={busy}
-                      style={{ cursor: "pointer", maxWidth: 320, display: "block", overflow: "hidden",
-                               textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                      title={f}>{f}</button>
-                  ))}
-                  {/* The method, one click away. Not buried in a log: a reader who
-                      doubts an answer needs to see what produced it. */}
-                  <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }}
-                    onClick={() => setShowPlan(p => ({ ...p, [t.seq]: !p[t.seq] }))}>
-                    {showPlan[t.seq] ? "Hide method" : "Method"}
-                  </button>
-                </div>
-                {showPlan[t.seq] && t.plan && (
-                  /* A definition list, not five paragraphs. Somebody opening this
-                     is checking one specific thing — which lenses, or whether the
-                     numbers held — and prose makes them read all of it to find
-                     either. */
-                  <dl style={{ margin: "12px 0 0", display: "grid", gridTemplateColumns: "auto minmax(0,1fr)",
-                               gap: "6px 14px", fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-600)" }}>
-                    {t.plan.restated && <><dt style={{ fontWeight: 700 }}>Read as</dt><dd style={{ margin: 0 }}>{t.plan.restated}</dd></>}
-                    <dt style={{ fontWeight: 700 }}>Lenses</dt>
-                    <dd style={{ margin: 0 }}>
-                      {(t.plan.lensesRan || []).map(l => l.label + (l.ok ? "" : " (no answer)")).join(" · ") || "—"}
-                      {t.plan.why ? <div className="an-sub" style={{ fontSize: 11.5, marginTop: 2 }}>{t.plan.why}</div> : null}
-                      {t.plan.by === "fallback" && <div className="an-sub" style={{ fontSize: 11.5, marginTop: 2 }}>Chosen by keyword — the planning call was unavailable.</div>}
-                    </dd>
-                    <dt style={{ fontWeight: 700 }}>Numbers</dt>
-                    <dd style={{ margin: 0 }}>
-                      {t.checks && t.checks.grounded
-                        ? <>all checked against the evidence ({t.checks.evidenceNumbers} figures)</>
-                        : <span style={{ color: AN_TONE.bad }}>{((t.checks && t.checks.claims) || []).length + (((t.checks && t.checks.answerUnverified) || []).length ? 1 : 0)} place(s) cite a figure that is not there</span>}
-                    </dd>
-                    <dt style={{ fontWeight: 700 }}>Drawn from</dt>
-                    <dd className="mono" style={{ margin: 0, fontSize: 11.5 }}>
-                      {t.rangeLabel || "—"} · {t.evidenceFp || "—"}
-                      {t.providers && t.providers.length ? " · " + t.providers.join(", ") : ""}
-                      {t.ms ? " · " + (t.ms / 1000).toFixed(1) + "s" : ""}
-                      {t.plan.composed === false ? " · composition failed, raw lens points shown" : ""}
-                      {/* An answer is grounded in the numbers as they were. Saying
-                          so is the difference between a record and a stale quote. */}
-                      <div className="an-sub" style={{ fontSize: 11, marginTop: 3 }}>as the figures stood then — ask again if they have moved</div>
-                    </dd>
-                  </dl>
+                {/* Next steps as targets rather than suggestions buried in prose. */}
+                {(((t.plan || {}).followups) || []).length > 0 && (
+                  <div className="anp-actions">
+                    {t.plan.followups.map((f, j) => (
+                      <button key={j} className="anp-action" onClick={() => ask(f)} disabled={busy} title={f}>
+                        <i>?</i><span>{f}</span><em>→</em>
+                      </button>
+                    ))}
+                  </div>
                 )}
-              </div>
-            )}
-          </div>
-        ))}
-        <div ref={endRef}/>
 
-        {err && (
-          <div className="an-card" style={{ padding: 14, borderLeft: "4px solid " + (err.code === "question_identifies_someone" ? AN_TONE.bad : AN_TONE.warn) }}>
-            <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55 }}>{err.text}</p>
+                {/* Confidence, what it read, and why the number is what it is. */}
+                <div className="anp-conf">
+                  <span className="anp-meter" title={c.why}>
+                    {[0, 1, 2, 3, 4].map(s => (
+                      <i key={s} className={c.pct > s * 20 ? "on" : ""}/>
+                    ))}
+                    <b>{c.pct}%</b>
+                  </span>
+                  <span className="anp-sources">
+                    {(t.checks && t.checks.evidenceNumbers) || 0} figures · {t.rangeLabel || "—"}
+                  </span>
+                  <button className="anp-link" onClick={() => setShowPlan(p => ({ ...p, [k]: !p[k] }))}>why?</button>
+                </div>
+
+                <div className="anp-tools">
+                  <button className={"anp-tool" + (pins.indexOf(k) !== -1 ? " is-on" : "")}
+                    onClick={() => togglePin(k)}>⚲ {pins.indexOf(k) !== -1 ? "Pinned" : "Pin"}</button>
+                  <button className="anp-tool" onClick={() => cite(t, i)}>❝ {copied === 1000 + i ? "Copied" : "Cite"}</button>
+                  <button className="anp-tool" onClick={() => copyAnswer(t, i)}>⧉ {copied === i ? "Copied" : "Copy"}</button>
+                  <button className="anp-tool" onClick={() => ask(t.question)} disabled={busy}
+                    title="Ask this again against the figures as they are now">↻ Again</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {busy && (
+          <div className="anp-working">
+            <span>Planning, asking each lens, composing — model calls, not a query.</span>
+            <span style={{ flex: 1 }}/>
+            <button className="anp-stop" onClick={stop}>■ Stop</button>
+            <span className="anp-dots"><i/><i/><i/></span>
           </div>
         )}
 
-        {/* The composer. Enter sends, shift+Enter breaks a line — the convention
-            everybody already has, and the box is for a sentence not an essay. */}
-        {/* One field and one button. The character counter is hidden until it is
-            nearly relevant — a permanent 0/600 next to an empty box is noise
-            about a limit nobody is near. */}
-        <div className="an-card" style={{ padding: 8, display: "flex", gap: 8, alignItems: "flex-end" }}>
-          <textarea value={q} onChange={e => setQ(e.target.value)} rows={2} maxLength={600}
-            placeholder="Ask about a centre, an age band, a weekday, an intake…"
-            aria-label="Ask the analysts a question"
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
-            style={{ flex: "1 1 auto", minWidth: 0, resize: "vertical", padding: "10px 12px", borderRadius: 10, fontSize: 14.5,
-                     lineHeight: 1.5, border: "1px solid transparent", background: "transparent", fontFamily: "inherit", outline: "none" }}/>
-          {q.length > 450 && <span className="an-sub mono" style={{ margin: 0, fontSize: 11, flex: "none" }}>{600 - q.length}</span>}
-          <button className="btn btn-primary btn-sm" style={{ flex: "none" }} onClick={() => ask()} disabled={busy || q.trim().length < 6}>
-            {busy ? "Thinking…" : "Ask"}
-          </button>
-        </div>
+        {err && <div className={"anp-err" + (err.code === "question_identifies_someone" ? " is-bad" : "")}>{err.text}</div>}
+        <div ref={endRef}/>
       </div>
-    </section>
+
+      {/* ── The composer ───────────────────────────────────────────────── */}
+      <div className="anp-foot">
+        {/* The report draft. Nobody asks six questions for fun — they ask six
+            questions because a board paper is due, and the answers have to leave
+            this pane with their provenance attached. */}
+        {(pins.length > 0 || turns.filter(t => !t.pending).length > 1) && (
+          <>
+            <button className="anp-report" onClick={() => setReportOpen(o => !o)} aria-expanded={reportOpen}>
+              ⚲ <b>Report draft</b> <span className="anp-report-n">{pins.length}</span>
+              <span style={{ flex: 1 }}/>{reportOpen ? "▴" : "▾"}
+            </button>
+            {reportOpen && (
+              <div className="anp-reportbody">
+                {pinned.length === 0
+                  ? <p className="anp-report-empty">Nothing pinned. Pin the answers going into the document — or export the whole conversation.</p>
+                  : pins.map((k, n) => {
+                    const t = turns.find((x, i) => turnKey(x, i) === k);
+                    if (!t) return null;
+                    return (
+                      <div key={k} className="anp-pin">
+                        <span className="anp-pin-n">{n + 1}</span>
+                        <span className="anp-pin-t">{t.question}</span>
+                        <button className="anp-pin-ic" title="Up" disabled={n === 0} onClick={() => movePin(k, -1)}>↑</button>
+                        <button className="anp-pin-ic" title="Down" disabled={n === pins.length - 1} onClick={() => movePin(k, 1)}>↓</button>
+                        <button className="anp-pin-ic" title="Remove" onClick={() => togglePin(k)}>✕</button>
+                      </div>
+                    );
+                  })}
+                <div className="anp-report-out">
+                  <button className="anp-tool is-solid" onClick={() => exportReport("md")}>⭳ Markdown</button>
+                  <button className="anp-tool" onClick={() => exportReport("csv")}>CSV</button>
+                  <span className="anp-report-note">
+                    {pinned.length ? pinned.length + " pinned" : "the whole conversation"} · provenance travels with it
+                  </span>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {drift && (
+          <p className="anp-drift">
+            The answers above were drawn from <b>{drift.was}</b>; the page now shows <b>{drift.now}</b>.
+            Start a new question if you want them comparable.
+          </p>
+        )}
+
+        {depthOpen && (
+          <div className="anp-menu">
+            {[["deep", "Deep", "Up to three lenses, and a risk lens on any comparison. Slower, and the one to use for a decision."],
+              ["quick", "Quick", "One lens. Faster and a third of the cost — right for a factual look-up."]].map(([id, lab, note]) => (
+              <button key={id} className={"anp-menu-it" + (depth === id ? " is-on" : "")}
+                onClick={() => { setDepth(id); setDepthOpen(false); }}>
+                <b>{lab}</b><span>{note}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {atOpen && (
+          <div className="anp-menu">
+            <div className="anp-menu-h">Reference a centre — it goes into the question, not into the filter</div>
+            {((scope && scope.centres) || []).slice(0, 8).map(cn => (
+              <button key={cn} className="anp-menu-it" onClick={() => {
+                setQ(v => (v + (v && !/\s$/.test(v) ? " " : "") + cn + " ")); setAtOpen(false);
+                if (boxRef.current) boxRef.current.focus();
+              }}><b>{cn}</b></button>
+            ))}
+            {!((scope && scope.centres) || []).length &&
+              <div className="anp-menu-h">This page has not said which centres it can see.</div>}
+          </div>
+        )}
+
+        <div className="anp-composer">
+          <div className="anp-scope">
+            <span className="anp-scope-l">Asking against</span>
+            {liveChips.map(c => (
+              <span key={c.key} className="anp-chip">{c.label}
+                <button title={"Stop scoping to " + c.label} aria-label={"Remove " + c.label}
+                  onClick={() => setDropScope(d => ({ ...d, [c.key]: true }))}>✕</button>
+              </span>
+            ))}
+            {chips.filter(c => dropScope[c.key]).map(c => (
+              <button key={c.key} className="anp-chip is-off" title="Put this back"
+                onClick={() => setDropScope(d => ({ ...d, [c.key]: false }))}>＋ {c.label}</button>
+            ))}
+            {!liveChips.length && <span className="anp-chip is-all">everything on file</span>}
+          </div>
+          <textarea ref={boxRef} value={q} onChange={e => setQ(e.target.value)} rows={2} maxLength={600}
+            placeholder="Ask about the current view…"
+            aria-label="Ask the analysts a question"
+            onKeyDown={e => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); }
+              if (e.key === "Escape") { if (err) setErr(null); setAtOpen(false); setDepthOpen(false); }
+            }}/>
+          <div className="anp-composer-bar">
+            <button className={"anp-cbtn" + (atOpen ? " is-on" : "")} title="Reference a centre"
+              onClick={() => { setAtOpen(o => !o); setDepthOpen(false); }}>@</button>
+            <button className={"anp-cbtn is-wide" + (depthOpen ? " is-on" : "")} title="How many lenses to consult"
+              onClick={() => { setDepthOpen(o => !o); setAtOpen(false); }}>
+              ☰ {depth === "quick" ? "Quick" : "Deep"} ▾
+            </button>
+            <span style={{ flex: 1 }}/>
+            {q.length > 450 && <span className="anp-count">{600 - q.length}</span>}
+            <span className="anp-send-hint">⏎ send</span>
+            <button className="anp-send" onClick={() => ask()} disabled={busy || q.trim().length < 6}
+              aria-label="Ask">➤</button>
+          </div>
+        </div>
+
+        {/* At the point of use, not in a settings page nobody opens. */}
+        <p className="anp-oath">Advisory only — it never edits a record, sends a message, or sees a name.</p>
+      </div>
+    </aside>
   );
 }
 
@@ -2020,4 +2433,4 @@ async function exportPdf(ws) {
   } catch (e) { alert("PDF export unavailable: " + (e.message || e)); }
 }
 
-Object.assign(window, { AnalyticsWorkspace });
+Object.assign(window, { AnalyticsWorkspace, AnalystPane, anConfidence, anSteps });

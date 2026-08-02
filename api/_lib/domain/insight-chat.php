@@ -411,6 +411,35 @@ function insight_chat_archive(array $p): array {
 }
 
 /**
+ * Rename a thread.
+ *
+ * The title is generated from the first question, which is the right default
+ * and a poor label three weeks later — "Which centre should get the next
+ * mentor…" reads identically to the other four times somebody asked it. A
+ * conversation you cannot name is a conversation you will re-ask instead of
+ * re-open, and each re-ask is a fresh round of model calls.
+ *
+ * Scrubbed like a question, not stored like one: a title is the one field in
+ * this whole subsystem a human types freely and nothing else checks, and it is
+ * the obvious place for "Tunde's attendance problem" to end up.
+ */
+function insight_chat_rename(array $p): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+    $tid = trim((string)($p['threadId'] ?? ''));
+    $t = db_row("SELECT ownerId FROM insight_threads WHERE threadId = ? LIMIT 1", [$tid]);
+    if (!$t) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$t['ownerId'] !== (string)($g['requester']['memberId'] ?? '')) return ['ok' => false, 'error' => 'not_yours'];
+    $title = trim(preg_replace('/\s+/', ' ', (string)($p['title'] ?? '')) ?? '');
+    if ($title === '') return ['ok' => false, 'error' => 'title_required'];
+    $hits = insight_scrub(json_encode(['q' => $title], JSON_UNESCAPED_SLASHES) ?: '');
+    if ($hits) return ['ok' => false, 'error' => 'question_identifies_someone', 'reasons' => $hits];
+    $title = mb_substr($title, 0, 120);
+    db_update('insight_threads', ['title' => $title, 'updatedAt' => now_iso()], ['threadId' => $tid]);
+    return ['ok' => true, 'title' => $title];
+}
+
+/**
  * Ask one question. The whole pipeline, in the order a reader would want it
  * explained: gate, scrub, plan, ask, compose, check, store.
  */
@@ -473,8 +502,20 @@ function insight_chat_ask(array $p): array {
     $seq = (int)db_row("SELECT COALESCE(MAX(seq), 0) s FROM insight_turns WHERE threadId = ?", [$tid])['s'] + 1;
     $history = $seq > 1 ? ichat_history($tid) : [];
 
-    // 1 · Plan.
+    /* 1 · Plan.
+     *
+     * `depth` is the asker's own ceiling on the panel, on top of the router's.
+     * A quick "which centre is lowest" does not need three lenses arguing about
+     * it, and three lenses is three provider calls — the control exists because
+     * the cost is real and the asker is the one who knows which kind of question
+     * they just typed. The router still picks FEWER when fewer will do; this can
+     * only narrow, never widen. */
     $plan = ichat_route($question, $ev);
+    $cap = (string)($p['depth'] ?? '') === 'quick' ? 1 : ICHAT_MAX_LENSES;
+    if (count($plan['lenses']) > $cap) {
+        $plan['lenses'] = array_slice($plan['lenses'], 0, $cap);
+        $plan['cappedBy'] = 'quick';
+    }
     if (empty($plan['answerable'])) {
         /* Stored as a turn, not thrown away. "This data cannot answer that" is a
            real answer and the most useful one a coordinator can get before

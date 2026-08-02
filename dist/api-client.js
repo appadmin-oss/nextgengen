@@ -36,6 +36,15 @@
     const ms = opts.timeout != null ? opts.timeout : (isRead ? 20000 : 60000);
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = ms && ctl ? setTimeout(() => ctl.abort(), ms) : null;
+    /* A caller may also want to cancel. The timeout above is the machine's
+       patience; this is the person's — the analyst chat runs two model rounds
+       and can take half a minute, and somebody who has changed their mind
+       should not have to wait it out. Composed rather than replacing the
+       timeout, so a cancellable call is still bounded. */
+    if (ctl && opts.signal) {
+      if (opts.signal.aborted) ctl.abort();
+      else opts.signal.addEventListener('abort', () => ctl.abort(), { once: true });
+    }
     let res;
     try {
       res = await fetch(BASE + path, {
@@ -57,7 +66,11 @@
       // Aborted, DNS failure, refused connection, TLS error — the request never
       // reached a response. Callers can tell this apart from an API error.
       const aborted = e && (e.name === 'AbortError' || (ctl && ctl.signal.aborted));
-      const err = new Error(aborted ? 'timeout' : 'network');
+      /* "Cancelled" and "timed out" are different events and the caller has to
+         tell them apart: one deserves an error message, the other is the user
+         getting what they asked for. */
+      const byCaller = !!(opts.signal && opts.signal.aborted);
+      const err = new Error(aborted ? (byCaller ? 'cancelled' : 'timeout') : 'network');
       err.code = err.message;
       err.status = 0;
       err.detail = e && e.message;
@@ -584,8 +597,11 @@
          client that gives up at 30s bills for work it then discards. */
       insightChatThreads: () => request('/admin/analytics.php' + qs({ view: 'chat', op: 'threads' })),
       insightChatThread: (threadId) => request('/admin/analytics.php' + qs({ view: 'chat', op: 'thread', threadId })),
-      insightChatAsk: (data) => request('/admin/analytics.php', { body: { action: 'insight.ask', ...(data || {}) }, timeout: 180000 }),
+      /* `signal` so the pane can offer Stop. A question that takes half a minute
+         and cannot be abandoned is a frozen screen with a spinner on it. */
+      insightChatAsk: (data, signal) => request('/admin/analytics.php', { body: { action: 'insight.ask', ...(data || {}) }, timeout: 180000, signal }),
       insightChatArchive: (threadId) => request('/admin/analytics.php', { body: { action: 'insight.archive', threadId } }),
+      insightChatRename: (threadId, title) => request('/admin/analytics.php', { body: { action: 'insight.rename', threadId, title } }),
       analyticsDrill: (metric, filters) => request('/admin/analytics.php', { body: { action: 'drilldown', metric, ...(filters || {}) } }),
       activityAdd:  (data) => request('/admin/analytics.php', { body: { action: 'activity.add', ...data } }),
       championsMint: (period) => request('/admin/analytics.php', { body: { action: 'champions.mint', period: period || '' } }),

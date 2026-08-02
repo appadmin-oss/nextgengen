@@ -77,6 +77,34 @@ function sessionDaysToStart(session) {
  * shadow there is just smudge), and a hairline for when a pale fill needs an
  * edge of its own against a white surface.
  */
+/* ── What the screen is currently looking at ─────────────────────────────────
+ *
+ * The Analyst pane is docked in the admin SHELL, not inside any one section, so
+ * it cannot be handed the analytics filters as props — and it should not be,
+ * because the point of a docked pane is that it follows whatever is open rather
+ * than belonging to one screen.
+ *
+ * So a section announces its scope and the pane displays exactly what it was
+ * told. A section that announces nothing gets a pane that says it is not scoped,
+ * which is the truth and is better than a pane implying a filter it cannot see.
+ */
+const NGG_SCOPE_EVENT = "ngg:scope";
+function nggPublishScope(scope) {
+  window.__nggScope = scope || null;
+  try { window.dispatchEvent(new CustomEvent(NGG_SCOPE_EVENT, { detail: scope || null })); } catch (_) {}
+}
+function useNggScope() {
+  const [s, setS] = React.useState(() => window.__nggScope || null);
+  React.useEffect(() => {
+    const fn = (e) => setS(e.detail || null);
+    window.addEventListener(NGG_SCOPE_EVENT, fn);
+    // A section may have published before this mounted — read the latch too.
+    setS(window.__nggScope || null);
+    return () => window.removeEventListener(NGG_SCOPE_EVENT, fn);
+  }, []);
+  return s;
+}
+
 function inkRgb(hex) {
   const h = String(hex || "").replace("#", "").trim();
   const s = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
@@ -2152,6 +2180,6 @@ Object.assign(window, {
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart, inkOn,
-  loadVendor, VENDOR_LIBS,
+  loadVendor, VENDOR_LIBS, nggPublishScope, useNggScope,
   Uploader, A11ySettingsPanel, A11yNavButton, PhotoEditor, PhotoCapture, ImageLightbox, SignaturePad,
 });
