@@ -55,6 +55,109 @@ function sex_label(array $row): string {
     return $v !== '' ? $v : 'Not recorded';
 }
 
+/* ── School grade, and the transition window ─────────────────────────────────
+ *
+ * WHY THIS IS A NUMBER AND NOT A LABEL.
+ *
+ * A family in Egbeda knows their child is in "JSS 2". A funder's eligibility
+ * rule is written as "grades 7 to 9". Both are the same fact and neither is the
+ * other's spelling, so the form asks in the words a parent uses and the column
+ * stores the internationally comparable number. Ask locally, store globally —
+ * the alternative is a VARCHAR holding "JSS2", "Jss 2", "J.S.S 2" and "Grade 8"
+ * that somebody maps by hand the week a proposal is due.
+ *
+ * THE TRANSITION WINDOW is the reason this exists at all. Gender gaps in
+ * schooling widen sharply at the primary-to-secondary transition, so the
+ * evidence funds that matter to a programme like this one scope their
+ * eligibility to two bands: grades 4–6 (lower to upper primary) and grades 7–9
+ * (upper primary to secondary). Without a grade on the record, "how many of our
+ * children are at the transition point" is not a question this system can
+ * answer, and that is a question an application form asks in its first section.
+ *
+ * Nigeria's ladder: Primary 1–6 = grades 1–6, JSS 1–3 = grades 7–9,
+ * SSS 1–3 = grades 10–12.
+ */
+const GRADE_LABELS = [
+    1 => 'Primary 1', 2 => 'Primary 2', 3 => 'Primary 3',
+    4 => 'Primary 4', 5 => 'Primary 5', 6 => 'Primary 6',
+    7 => 'JSS 1', 8 => 'JSS 2', 9 => 'JSS 3',
+    10 => 'SSS 1', 11 => 'SSS 2', 12 => 'SSS 3',
+];
+
+/* The two windows, as the funds define them. Kept as data rather than as an
+ * if-chain so a report, a filter and a chart cannot each decide differently
+ * where upper primary ends. */
+const GRADE_BANDS = [
+    ['key' => 'primary_1_3',  'label' => 'Primary 1–3',  'from' => 1,  'to' => 3,  'transition' => false],
+    ['key' => 'primary_4_6',  'label' => 'Primary 4–6',  'from' => 4,  'to' => 6,  'transition' => true,
+     'note' => 'Lower to upper primary — where learning foundations are built.'],
+    ['key' => 'jss_7_9',      'label' => 'JSS 1–3',      'from' => 7,  'to' => 9,  'transition' => true,
+     'note' => 'Upper primary to secondary — where gender gaps widen sharply.'],
+    ['key' => 'sss_10_12',    'label' => 'SSS 1–3',      'from' => 10, 'to' => 12, 'transition' => false],
+];
+
+/** Anything a form, an import or a coordinator can type → a grade number, or 0
+ *  for not recorded. Accepts the local ladder and the international one, because
+ *  a CSV from a partner will use whichever its own country uses. */
+function grade_normalise($v): int {
+    if (is_int($v) || (is_string($v) && ctype_digit(trim((string)$v)))) {
+        $n = (int)$v;
+        return ($n >= 1 && $n <= 12) ? $n : 0;
+    }
+    $s = strtolower(trim((string)$v));
+    if ($s === '') return 0;
+    /* Split the word from the number rather than relying on a space. "JSS2",
+       "P4" and "sss1" are what a coordinator actually types into a box, and a
+       \b-anchored match sees none of them. */
+    $s = preg_replace('/[._\-]/', ' ', $s) ?? $s;
+    if (!preg_match('/^\s*([a-z ]*?)\s*(\d+)/', $s, $m)) return 0;
+    $word = trim(preg_replace('/\s+/', ' ', $m[1]) ?? '');
+    $n = (int)$m[2];
+    if ($n < 1) return 0;
+    if (preg_match('/^(p|pry|prim|primary|basic|class|std|standard)$/', $word) && $n <= 6) return $n;
+    if (preg_match('/^(j s s|jss|js|jhs|junior|junior secondary)$/', $word) && $n <= 3) return 6 + $n;
+    if (preg_match('/^(s s s|sss|ss|shs|senior|senior secondary)$/', $word) && $n <= 3) return 9 + $n;
+    // "grade 8" and a bare "8" are the international ladder, taken at face value.
+    if (($word === '' || preg_match('/^(grade|gr|yr|year)$/', $word)) && $n <= 12) return $n;
+    /* Anything else — "nursery 2", "creche", a partner's own scheme — is
+       UNKNOWN rather than guessed. A wrong grade is worse than a missing one:
+       it puts a child inside an eligibility window they are not in, and an
+       application built on that is a misrepresentation to a funder. */
+    return 0;
+}
+
+function grade_label(int $n): string { return GRADE_LABELS[$n] ?? ''; }
+
+/** The band a grade sits in, with whether it is one of the transition windows. */
+function grade_band(int $n): array {
+    foreach (GRADE_BANDS as $b) if ($n >= $b['from'] && $n <= $b['to']) return $b;
+    return ['key' => '', 'label' => 'Not recorded', 'from' => 0, 'to' => 0, 'transition' => false];
+}
+
+/** The one question a fund's eligibility section actually asks. */
+function grade_in_transition(int $n): bool { return $n >= 4 && $n <= 9; }
+
+/** The options the form shows: the local ladder, in order, as a parent reads it. */
+function grade_options(): array { return array_values(GRADE_LABELS); }
+
+/** The stored grade for a row, and — because a grade AGES and a date of birth
+ *  does not — how stale it is.
+ *
+ *  A child registered in Primary 4 in June 2026 is in Primary 5 by September.
+ *  Reporting them as Primary 4 in 2028 is not a rounding error, it is a false
+ *  statement about eligibility, so the year it was recorded travels with it and
+ *  every reader can decide what to do about that. */
+function person_grade(array $row): array {
+    $n = (int)($row['gradeLevel'] ?? 0);
+    $asAt = (string)($row['gradeAsAt'] ?? '');
+    $b = grade_band($n);
+    return ['level' => $n, 'label' => grade_label($n), 'band' => $b['key'], 'bandLabel' => $b['label'],
+            'transition' => $n > 0 && grade_in_transition($n), 'asAt' => $asAt,
+            // Whole school years elapsed since it was recorded, so "as at
+            // registration" can be said out loud rather than assumed.
+            'yearsStale' => $asAt !== '' ? max(0, (int)floor((time() - strtotime($asAt . ' UTC')) / (365.25 * 86400))) : 0];
+}
+
 function dob_age(string $iso): int {
     $iso = trim($iso);
     $t = strtotime($iso . ' 00:00:00 UTC');

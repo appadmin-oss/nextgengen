@@ -212,6 +212,7 @@ function ichat_shape(array $ev): array {
         'hasWeekday' => !empty($ev['weekday']),
         'hasRetention' => !empty($ev['retention']),
         'hasLearningBySex' => !empty($ev['learning']['bySex']),
+        'hasTransitionWindow' => !empty($ev['transition']['bands']),
         'computedFindings' => array_map(fn($f) => (string)$f['title'], (array)($ev['computed'] ?? [])),
     ];
 }
@@ -247,6 +248,7 @@ function ichat_capabilities(array $ev): string {
     if (!empty($ev['hasWeekday'])) $has[] = 'attendance by weekday, per centre';
     if (!empty($ev['hasRetention'])) $has[] = 'retention curves by intake';
     if (!empty($ev['hasLearningBySex'])) $has[] = 'average grade and grading coverage by sex, with the gap';
+    if (!empty($ev['hasTransitionWindow'])) $has[] = 'how many children are at the schooling transition point (grades 4-6 and 7-9), by class band and sex';
     if (!empty($ev['computedFindings'])) $has[] = count($ev['computedFindings']) . ' already-computed findings';
     $r = (array)($ev['range'] ?? []);
     $range = trim((string)($r['label'] ?? '')) !== '' ? (string)$r['label'] : (($r['from'] ?? '') . ' to ' . ($r['to'] ?? ''));

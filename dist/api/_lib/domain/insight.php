@@ -282,11 +282,58 @@ function insight_centre_detail(array $p): array {
     return $out;
 }
 
+/**
+ * Children at the transition point, split by sex and class band.
+ *
+ * Grades 4–6 (lower to upper primary) and 7–9 (upper primary to secondary) are
+ * where gender gaps in schooling widen, which is why the funds this programme
+ * applies to scope eligibility to them. Coverage is reported alongside, because
+ * "62% are in the window" computed over the quarter of children who have a
+ * class on file is a number that would go into an application and be wrong.
+ */
+function insight_transition_window(array $p): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return [];
+    $centres = function_exists('analytics_centres') ? analytics_centres($g['requester'], trim((string)($p['centre'] ?? ''))) : [];
+    $names = array_map(fn($c) => (string)$c['name'], $centres);
+    if (!$names) return [];
+    $in = '(' . implode(',', array_fill(0, count($names), '?')) . ')';
+
+    $bands = [];
+    foreach (GRADE_BANDS as $b) $bands[$b['key']] = ['band' => $b['label'], 'transition' => $b['transition'],
+                                                    'total' => 0, 'female' => 0, 'male' => 0, 'notRecorded' => 0];
+    $recorded = 0; $inWindow = 0; $enrolled = 0;
+    foreach (db_all("SELECT sex, gender, gradeLevel FROM summer_students WHERE status = 'active' AND centre IN $in", $names) as $r) {
+        $enrolled++;
+        $lvl = (int)($r['gradeLevel'] ?? 0);
+        if ($lvl <= 0) continue;
+        $recorded++;
+        if (grade_in_transition($lvl)) $inWindow++;
+        $k = grade_band($lvl)['key'];
+        if (!isset($bands[$k])) continue;
+        $bands[$k]['total']++;
+        $sx = sex_label($r);
+        if ($sx === 'Female') $bands[$k]['female']++;
+        elseif ($sx === 'Male') $bands[$k]['male']++;
+        else $bands[$k]['notRecorded']++;
+    }
+    return [
+        'bands' => array_values(array_filter($bands, fn($b) => $b['total'] > 0)),
+        'inWindow' => $inWindow,
+        'classRecorded' => $recorded,
+        'enrolled' => $enrolled,
+        /* Coverage first, because it decides whether the number above it can be
+           quoted at all. */
+        'coveragePct' => $enrolled ? (int)round($recorded / $enrolled * 100) : 0,
+        'note' => 'Transition windows are grades 4–6 and 7–9. Percentages are of children with a class on file, not of the roster.',
+    ];
+}
+
 function insight_evidence(array $p): array {
     $depth = function_exists('analytics_depth') ? analytics_depth($p) : ['ok' => false];
     $ev = ['generatedAt' => now_iso(), 'range' => [], 'overall' => null,
            'centres' => [], 'segments' => [], 'weekday' => [], 'retention' => [],
-           'learning' => [], 'computed' => []];
+           'learning' => [], 'transition' => [], 'computed' => []];
     if (empty($depth['ok']) || !empty($depth['depth']['empty'])) return $ev + ['empty' => true];
     $d = $depth['depth'];
 
@@ -370,6 +417,11 @@ function insight_evidence(array $p): array {
      * but MARKED, never silently merged: "we do not have enough girls graded to
      * say" is a real finding and hiding it would be the dishonest tidy-up. */
     $ev['learning'] = insight_learning_by_sex($p);
+
+    /* The transition window, by sex. The single table an evidence fund's
+       eligibility section is written against — grades 4–6 and 7–9 — and the
+       one the analysts could not see at all. */
+    $ev['transition'] = insight_transition_window($p);
 
     $ev['computed'] = array_map(fn($f) => ['severity' => (string)$f['severity'], 'title' => (string)$f['title']],
                                 (array)($d['findings'] ?? []));

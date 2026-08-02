@@ -179,7 +179,7 @@ function an_attendance_units(string $from, string $to, array $centres): array {
     $cIn = $centres ? '(' . implode(',', array_fill(0, count($centres), '?')) . ')' : '';
     // `sex` first — see person_sex(). Omitting it here made the gender crosstab
     // report one undifferentiated "Not recorded" row for the whole cohort.
-    $sql = "SELECT studentId, fullName, centre, age, sex, gender, track, enrolledAt
+    $sql = "SELECT studentId, fullName, centre, age, sex, gender, gradeLevel, track, enrolledAt
             FROM summer_students WHERE status = 'active'" . ($centres ? " AND centre IN $cIn" : '');
     $students = db_all($sql, $centres);
 
@@ -234,6 +234,11 @@ function an_dim_value(array $s, string $dim): string {
            that is supposed to show whether girls and boys learn differently put
            every child in "Not recorded" and reported no gap, forever. */
         case 'gender': return sex_label($s);
+        /* Class band, not raw class. Twelve rows of three children each is a
+           crosstab nobody can read and every cell too thin to mean anything;
+           four bands — and two of them are the transition windows a funder's
+           eligibility is written against — is a table with something in it. */
+        case 'grade':  return grade_band((int)($s['gradeLevel'] ?? 0))['label'];
         case 'age':    return an_age_band((int)($s['age'] ?? 0));
         case 'track':  return trim((string)($s['track'] ?? '')) ?: 'Unassigned';
         case 'centre': return trim((string)($s['centre'] ?? '')) ?: 'Unassigned';
@@ -837,8 +842,8 @@ function analytics_depth(array $p): array {
     $now = $tot($unitsNow);
     $prev = $tot($unitsPrev);
 
-    $rowDim = in_array((string)($p['rowDim'] ?? ''), ['gender', 'age', 'track', 'centre'], true) ? (string)$p['rowDim'] : 'age';
-    $colDim = in_array((string)($p['colDim'] ?? ''), ['gender', 'age', 'track', 'centre'], true) ? (string)$p['colDim'] : 'gender';
+    $rowDim = in_array((string)($p['rowDim'] ?? ''), ['gender', 'age', 'grade', 'track', 'centre'], true) ? (string)$p['rowDim'] : 'age';
+    $colDim = in_array((string)($p['colDim'] ?? ''), ['gender', 'age', 'grade', 'track', 'centre'], true) ? (string)$p['colDim'] : 'gender';
     if ($rowDim === $colDim) $colDim = $rowDim === 'gender' ? 'age' : 'gender';
 
     $crosstab = an_crosstab($unitsNow, $rowDim, $colDim);
@@ -896,7 +901,7 @@ function analytics_depth(array $p): array {
         ],
         'perCentre' => $perCentre,
         'crosstab' => $crosstab,
-        'dims' => ['gender' => 'Gender', 'age' => 'Age band', 'track' => 'Track', 'centre' => 'Centre'],
+        'dims' => ['gender' => 'Gender', 'age' => 'Age band', 'grade' => 'Class band', 'track' => 'Track', 'centre' => 'Centre'],
         'weekday' => $weekday,
         'retention' => $retention,
         'spread' => $spread,

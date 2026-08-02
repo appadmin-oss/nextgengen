@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 79;
+const NGG_SCHEMA_TARGET = 80;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2064,6 +2064,30 @@ function db_migrate(PDO $db): void {
          * re-checked against next week's figures would silently change its
          * mind about what was verified. */
         79 => "ALTER TABLE insight_turns ADD COLUMN dataJson TEXT",
+        /* 80 — the school grade, and with it the transition window.
+         *
+         * Stored as a NUMBER on the international ladder (Primary 1–6 = 1–6,
+         * JSS 1–3 = 7–9, SSS 1–3 = 10–12) while the form asks in the words a
+         * Lagos parent uses. Ask locally, store globally: a funder's
+         * eligibility rule is written "grades 7 to 9" and a VARCHAR holding
+         * "JSS2", "Jss 2" and "J.S.S 2" is something somebody maps by hand the
+         * week a proposal is due.
+         *
+         * `gradeAsAt` because a grade AGES and a date of birth does not. A
+         * child registered in Primary 4 in June is in Primary 5 by September,
+         * and reporting them as Primary 4 two years later is not a rounding
+         * error — it is a false statement about eligibility to a funder. The
+         * date it was recorded travels with it so every reader can say "as at
+         * registration" rather than assume it.
+         *
+         * The index is on the level because every question this exists to serve
+         * — how many children are at the transition point, and how do they
+         * differ by sex — filters on a range of it. */
+        80 => "
+            ALTER TABLE summer_students ADD COLUMN gradeLevel INTEGER DEFAULT 0;
+            ALTER TABLE summer_students ADD COLUMN gradeAsAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_sstu_grade ON summer_students (gradeLevel);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

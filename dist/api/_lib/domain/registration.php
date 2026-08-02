@@ -277,6 +277,25 @@ function form_default_fields(): array {
         ['key' => 'schoolType', 'label' => 'School type', 'type' => 'choice', 'required' => false,
          'options' => ['Public', 'Private'],
          'help' => 'Public means a government school (state, LGEA or federal). Optional — leave blank if the child is not in school.'],
+        /* The class the child is in. LOCKED, and asked in the words a Lagos
+         * parent uses rather than as "grade 8" — the column stores the
+         * international number, see grade_normalise() in util.php.
+         *
+         * Why it is locked and why it is here at all: the evidence funds a
+         * programme like this applies to scope their eligibility to two
+         * transition windows, grades 4–6 and 7–9, because that is where gender
+         * gaps in schooling widen. Without a class on the record, "how many of
+         * our children are at the transition point" is unanswerable — and that
+         * is the first section of the application form. It also cannot be
+         * recovered later: age is a poor proxy in a system with repeated years,
+         * and asking two hundred families again is not a plan.
+         *
+         * Optional, like sex. A child out of school leaves it blank, and "Not
+         * recorded" stays its own category rather than being guessed from age. */
+        ['key' => 'grade', 'label' => 'Class', 'type' => 'choice', 'required' => false, 'locked' => true,
+         'options' => grade_options(),
+         'help' => 'The class they are in at school this year. Leave blank if they are not in school.',
+         'adminHelp' => 'Locked: stored as an international grade number (Primary 1–6 → 1–6, JSS → 7–9, SSS → 10–12) so funder eligibility written as "grades 4 to 6" can be answered directly. The date it was recorded is stored with it, because a class ages and a birthday does not.'],
         ['key' => 'allergies', 'label' => 'Allergies or medical notes', 'type' => 'longtext', 'required' => false, 'sensitive' => true, 'help' => 'Visible to program staff only. Never exported.'],
     ];
 }
@@ -1305,6 +1324,11 @@ function gate_register(array $p): array {
            "male" and "Male " is three spellings of one number, and the report
            that has to reconcile them is written the night before a deadline. */
         'sex' => sex_normalise($d['sex'] ?? ''),
+        /* The class, as a number, WITH the day it was true. A grade recorded
+           and then read three years later is a false statement about
+           eligibility, not a stale one. */
+        'gradeLevel' => grade_normalise($d['grade'] ?? ''),
+        'gradeAsAt' => grade_normalise($d['grade'] ?? '') > 0 ? gmdate('Y-m-d') : '',
         'centre' => substr((string)($d['centre'] ?? ''), 0, 48), 'track' => substr((string)($d['course'] ?? ''), 0, 64),
         /* A URL, never an image. The staff desk uploads to Cloudinary first and
          * passes a short hosted URL; the PUBLIC sign-up form posts the headshot

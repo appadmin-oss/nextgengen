@@ -135,7 +135,7 @@ function analytics_workspace(array $p): array {
     // `sex` as well as the legacy `gender`: person_sex() prefers the first and
     // falls back to the second, and a SELECT that omits `sex` is why fixing the
     // reader alone changed nothing.
-    $students = db_all("SELECT studentId, fullName, centre, age, sex, gender, track FROM summer_students WHERE status = 'active' AND centre IN $cIn", $cNames);
+    $students = db_all("SELECT studentId, fullName, centre, age, sex, gender, gradeLevel, gradeAsAt, track FROM summer_students WHERE status = 'active' AND centre IN $cIn", $cNames);
     $schoolDays = (int)(db_row('SELECT COUNT(DISTINCT date) c FROM attendance WHERE date BETWEEN ? AND ?', [$from, $to])['c'] ?? 0);
     $attRows = db_all('SELECT studentId, COUNT(DISTINCT date) c FROM attendance WHERE date BETWEEN ? AND ? GROUP BY studentId', [$from, $to]);
     $attById = []; foreach ($attRows as $r) $attById[(string)$r['studentId']] = (int)$r['c'];
@@ -153,6 +153,7 @@ function analytics_workspace(array $p): array {
                wrote. This line is why the gender panel reported every child as
                "Not recorded" in every cohort this system has run. */
             'age' => (int)$s['age'], 'gender' => person_sex($s), 'track' => (string)$s['track'],
+            'gradeLevel' => (int)($s['gradeLevel'] ?? 0),
             'daysPresent' => $days, 'attendanceRate' => $rate,
             'avgGrade' => $gradeById[$sid]['avg'] ?? null, 'assessments' => $gradeById[$sid]['n'] ?? 0,
         ];
@@ -296,6 +297,40 @@ function analytics_workspace(array $p): array {
         $corr = ($dx > 0 && $dy > 0) ? round($num / sqrt($dx * $dy), 2) : null;
     }
 
+    /* ── The transition window ───────────────────────────────────────────────
+     * Grades 4–6 and 7–9, because that is where gender gaps in schooling widen
+     * and therefore where the evidence funds this programme applies to scope
+     * their eligibility. "How many of our children are at the transition point,
+     * and how are the girls doing against the boys" is the first thing such an
+     * application asks, and it was not a question this system could answer. */
+    $gradeAgg = [];
+    foreach (GRADE_BANDS as $b) $gradeAgg[$b['key']] = ['band' => $b['key'], 'label' => $b['label'],
+        'transition' => $b['transition'], 'count' => 0, 'female' => 0, 'male' => 0, '_rate' => [], '_grade' => []];
+    $gradeAgg[''] = ['band' => '', 'label' => 'Not recorded', 'transition' => false,
+                     'count' => 0, 'female' => 0, 'male' => 0, '_rate' => [], '_grade' => []];
+    foreach ($perStudent as $x) {
+        $k = grade_band((int)($x['gradeLevel'] ?? 0))['key'];
+        if (!isset($gradeAgg[$k])) $k = '';
+        $gradeAgg[$k]['count']++;
+        if ($x['gender'] === 'Female') $gradeAgg[$k]['female']++;
+        if ($x['gender'] === 'Male') $gradeAgg[$k]['male']++;
+        $gradeAgg[$k]['_rate'][] = $x['attendanceRate'];
+        if ($x['avgGrade'] !== null) $gradeAgg[$k]['_grade'][] = $x['avgGrade'];
+    }
+    $gradeAnalysis = [];
+    foreach ($gradeAgg as $v) {
+        if (!$v['count']) continue;
+        $gradeAnalysis[] = ['band' => $v['band'], 'label' => $v['label'], 'transition' => $v['transition'],
+            'count' => $v['count'], 'female' => $v['female'], 'male' => $v['male'],
+            'attendanceRate' => $v['_rate'] ? (int)round(array_sum($v['_rate']) / count($v['_rate'])) : 0,
+            'avgGrade' => $v['_grade'] ? round(array_sum($v['_grade']) / count($v['_grade']), 1) : null];
+    }
+    $inWindow = 0; $windowRecorded = 0;
+    foreach ($perStudent as $x) {
+        $lvl = (int)($x['gradeLevel'] ?? 0);
+        if ($lvl > 0) { $windowRecorded++; if (grade_in_transition($lvl)) $inWindow++; }
+    }
+
     $statSummary = [
         'attendance' => analytics_stats(array_map(fn($x) => $x['attendanceRate'], $perStudent)),
         'grades' => analytics_stats(array_values(array_filter(array_map(fn($x) => $x['avgGrade'], $perStudent), fn($v) => $v !== null))),
@@ -377,6 +412,14 @@ function analytics_workspace(array $p): array {
             'correlation' => $corr,
             'gender' => $genderAnalysis,
             'age' => $ageAnalysis,
+            'grade' => $gradeAnalysis,
+            /* Said as a fraction of those WITH a class on file, never of the
+               whole roster — "18% are at the transition point" when only a
+               quarter have a class recorded is a number that would go into an
+               application and be wrong. */
+            'transitionWindow' => ['inWindow' => $inWindow, 'recorded' => $windowRecorded,
+                                   'enrolled' => count($perStudent),
+                                   'pct' => $windowRecorded ? (int)round($inWindow / $windowRecorded * 100) : null],
             'centreComparison' => $byCentre,
             'longitudinal' => $longitudinal,
             'intervention' => $intervention,

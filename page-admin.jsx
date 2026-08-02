@@ -3655,6 +3655,7 @@ function StudentEditor({ s, onSaved, onDelete }) {
   const [f, setF] = React.useState({
     firstName: seedName.firstName, lastName: seedName.lastName,
     age: s.age != null ? String(s.age) : "", handle: s.handle || "", sex: s.sex || "",
+    grade: (s.grade && s.grade.label) || "",
     centre: s.centre || "", track: s.track || "", guardianName: s.guardianName || "",
     guardianPhone: s.guardianPhone || "", parentEmail: s.parentEmail || "", photoUrl: s.photoUrl || "", notes: s.notes || "",
   });
@@ -3694,6 +3695,21 @@ function StudentEditor({ s, onSaved, onDelete }) {
               <option value="Male">Male</option>
               <option value="Female">Female</option>
             </select>
+          </div>
+          {/* The class. Editable for the same reason sex is — a whole cohort
+              was registered before the form asked — and because a class AGES:
+              a coordinator correcting it in October is telling us what is true
+              in October, which the server re-stamps. */}
+          <div style={{ flex: "1 1 160px", minWidth: 140 }}><span style={lbl}>Class</span>
+            <select className="admin-input" style={{ width: "100%" }} value={f.grade || ""} onChange={e => set("grade", e.target.value)}>
+              <option value="">Not recorded</option>
+              {["Primary 1", "Primary 2", "Primary 3", "Primary 4", "Primary 5", "Primary 6",
+                "JSS 1", "JSS 2", "JSS 3", "SSS 1", "SSS 2", "SSS 3"].map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+            {s.grade && s.grade.level > 0 && s.grade.yearsStale > 0 &&
+              <div style={{ fontSize: 10.5, color: "var(--gold-700, #7a5600)", marginTop: 3 }}>
+                recorded {s.grade.yearsStale} school year{s.grade.yearsStale === 1 ? "" : "s"} ago
+              </div>}
           </div>
           {fld("handle", "Public handle", { ph: "auto-slug" })}
           <div style={{ flex: "1 1 180px", minWidth: 150 }}><span style={lbl}>Centre</span>

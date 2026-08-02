@@ -1427,3 +1427,15 @@ INSERT INTO schema_version (version) VALUES (78) ON DUPLICATE KEY UPDATE version
 ALTER TABLE insight_turns ADD COLUMN dataJson TEXT;
 
 INSERT INTO schema_version (version) VALUES (79) ON DUPLICATE KEY UPDATE version = version;
+
+-- 80: school grade, and with it the transition window.
+-- Stored as a number on the international ladder (Primary 1-6 = 1-6, JSS 1-3 =
+-- 7-9, SSS 1-3 = 10-12) while the form asks in the words a Lagos parent uses:
+-- a funder's eligibility rule reads "grades 7 to 9", and a VARCHAR holding
+-- "JSS2", "Jss 2" and "J.S.S 2" is something somebody maps by hand the week a
+-- proposal is due. gradeAsAt because a grade ages and a date of birth does not.
+ALTER TABLE summer_students ADD COLUMN gradeLevel INT DEFAULT 0;
+ALTER TABLE summer_students ADD COLUMN gradeAsAt VARCHAR(12) DEFAULT '';
+CREATE INDEX idx_sstu_grade ON summer_students(gradeLevel);
+
+INSERT INTO schema_version (version) VALUES (80) ON DUPLICATE KEY UPDATE version = version;

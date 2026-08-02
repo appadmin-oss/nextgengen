@@ -9341,6 +9341,121 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         return in_array('Female', $rows, true) && in_array('Male', $rows, true);
     })());
 
+    /* ── The transition window ───────────────────────────────────────────────
+     * Grades 4–6 and 7–9 — where gender gaps in schooling widen, and therefore
+     * what an evidence fund's eligibility section is written against. Without a
+     * class on the record it is not a question this system can answer, and it
+     * is the first thing such an application asks.
+     */
+    chk('grade: a class is asked in the words a parent uses and stored as a number', (function () {
+        /* Ask locally, store globally. A funder writes "grades 7 to 9"; a Lagos
+           parent knows their child is in JSS 2. A VARCHAR holding both spellings
+           is something somebody maps by hand the week a proposal is due. */
+        return grade_normalise('JSS 2') === 8 && grade_normalise('jss2') === 8
+            && grade_normalise('J.S.S 3') === 9 && grade_normalise('P4') === 4
+            && grade_normalise('Basic 6') === 6 && grade_normalise('grade 8') === 8
+            && grade_normalise('SSS 1') === 10 && grade_normalise(5) === 5
+            /* A wrong grade is worse than a missing one — it puts a child inside
+               an eligibility window they are not in, and an application built on
+               that misrepresents the programme to a funder. */
+            && grade_normalise('nursery 2') === 0 && grade_normalise('creche') === 0
+            && grade_normalise('13') === 0 && grade_normalise('') === 0;
+    })());
+
+    chk('grade: the two transition windows are the funders\' windows, held as data', (function () {
+        return grade_band(3)['transition'] === false && grade_band(4)['transition'] === true
+            && grade_band(6)['transition'] === true && grade_band(7)['transition'] === true
+            && grade_band(9)['transition'] === true && grade_band(10)['transition'] === false
+            && grade_in_transition(4) && grade_in_transition(9)
+            && !grade_in_transition(3) && !grade_in_transition(10) && !grade_in_transition(0)
+            && grade_band(8)['label'] === 'JSS 1–3' && grade_band(0)['label'] === 'Not recorded';
+    })());
+
+    chk('grade: the registration form asks for it, locked, in local words', (function () use ($ADM) {
+        $f = backend_dispatch('admin.forms.get', ['requesterId' => $ADM, 'formId' => 'summer-reg'])['form']['fields'] ?? [];
+        $g = null; foreach ($f as $x) if (($x['key'] ?? '') === 'grade') $g = $x;
+        return $g && !empty($g['locked']) && empty($g['required'])
+            && in_array('JSS 2', $g['options'], true) && in_array('Primary 4', $g['options'], true)
+            && count($g['options']) === 12;
+    })());
+
+    chk('grade: a child registered with a class carries the number AND the day it was true', (function () use ($ADM) {
+        $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? 'Main');
+        $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'name' => 'Grade desk']);
+        $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
+            'fullName' => 'Grade Test Child', 'firstName' => 'Grade', 'lastName' => 'Child',
+            'dob' => gmdate('Y-m-d', strtotime('-13 years -2 months')), 'sex' => 'Male', 'grade' => 'JSS 2',
+            'faculty' => 'Music', 'course' => 'Piano', 'centre' => $centre,
+            'parentName' => 'A Parent', 'parentPhone' => '08030000903']]);
+        if (empty($r['ok'])) return false;
+        $GLOBALS['__gradeKid'] = (string)($r['studentId'] ?? '');
+        $row = db_row('SELECT gradeLevel, gradeAsAt FROM summer_students WHERE studentId = ?', [$GLOBALS['__gradeKid']]);
+        /* The date matters as much as the number. A child registered in Primary
+           4 in June is in Primary 5 by September, and reporting them as Primary
+           4 two years later is a false statement about eligibility, not a stale
+           one. */
+        return $row && (int)$row['gradeLevel'] === 8 && (string)$row['gradeAsAt'] === gmdate('Y-m-d')
+            && person_grade($row)['transition'] === true
+            && person_grade($row)['label'] === 'JSS 2';
+    })());
+
+    chk('grade: a stored class ages, and says so rather than pretending', (function () {
+        $old = ['gradeLevel' => 4, 'gradeAsAt' => gmdate('Y-m-d', strtotime('-3 years'))];
+        $fresh = ['gradeLevel' => 4, 'gradeAsAt' => gmdate('Y-m-d')];
+        return person_grade($old)['yearsStale'] === 3 && person_grade($fresh)['yearsStale'] === 0
+            && person_grade(['gradeLevel' => 0])['yearsStale'] === 0;
+    })());
+
+    chk('grade: the workspace can say how many children are at the transition point', (function () use ($ADM) {
+        $r = backend_dispatch('analytics.workspace', ['requesterId' => $ADM]);
+        $tw = $r['workspace']['research']['transitionWindow'] ?? null;
+        if (!is_array($tw)) return false;
+        /* Reported over children WITH a class on file, never over the roster.
+           "18% are at the transition point" when only a quarter have a class
+           recorded is a number that goes into an application and is wrong. */
+        return array_key_exists('inWindow', $tw) && array_key_exists('recorded', $tw)
+            && array_key_exists('enrolled', $tw)
+            && ($tw['recorded'] === 0 ? $tw['pct'] === null : $tw['pct'] === (int)round($tw['inWindow'] / $tw['recorded'] * 100));
+    })());
+
+    chk('grade: …and cross-tabulate the class band against sex', (function () use ($ADM) {
+        $r = backend_dispatch('analytics.depth', ['requesterId' => $ADM, 'rowDim' => 'grade', 'colDim' => 'gender']);
+        $d = $r['depth'] ?? [];
+        if (!empty($d['empty'])) return true;
+        $rows = array_column($d['crosstab']['rows'] ?? [], 'label');
+        // Bands, not twelve rows of three children each — every cell too thin
+        // to mean anything is a table with nothing in it.
+        return isset($d['dims']['grade']) && $d['crosstab']['rowDim'] === 'grade'
+            && (in_array('JSS 1–3', $rows, true) || in_array('Primary 4–6', $rows, true)
+                || in_array('Not recorded', $rows, true));
+    })());
+
+    chk('grade: the analysts can see the window, and the description says so', (function () use ($ADM) {
+        $ev = insight_evidence(['requesterId' => $ADM]);
+        if (!empty($ev['empty'])) return true;
+        $t = $ev['transition'] ?? null;
+        if (!is_array($t) || !array_key_exists('coveragePct', $t)) return false;
+        $cap = ichat_capabilities(ichat_shape($ev));
+        // Only named while the block is actually populated — the drift rule.
+        if (empty($t['bands'])) return strpos($cap, 'transition point') === false;
+        return strpos($cap, 'transition point') !== false
+            && insight_scrub(json_encode($ev, JSON_UNESCAPED_SLASHES) ?: '') === [];
+    })());
+
+    chk('grade: a cohort registered before the field existed is fixable from the roster', (function () use ($ADM) {
+        $id = $GLOBALS['__gradeKid'] ?? '';
+        if ($id === '') return true;
+        $up = backend_dispatch('admin.summer.student.update', ['requesterId' => $ADM, 'studentId' => $id,
+            'data' => ['grade' => 'Primary 5']]);
+        $row = db_row('SELECT gradeLevel, gradeAsAt FROM summer_students WHERE studentId = ?', [$id]);
+        backend_dispatch('admin.summer.student.update', ['requesterId' => $ADM, 'studentId' => $id, 'data' => ['grade' => 'nursery 1']]);
+        $cleared = db_row('SELECT gradeLevel, gradeAsAt FROM summer_students WHERE studentId = ?', [$id]);
+        // Re-stamped on edit: a coordinator correcting a class in October is
+        // stating what is true in October, not amending the June record.
+        return !empty($up['ok']) && (int)$row['gradeLevel'] === 5 && (string)$row['gradeAsAt'] === gmdate('Y-m-d')
+            && (int)$cleared['gradeLevel'] === 0 && (string)$cleared['gradeAsAt'] === '';
+    })());
+
     chk('sex: a cohort registered before the field existed is fixable from the roster', (function () use ($ADM) {
         $id = $GLOBALS['__sexKid'] ?? '';
         if ($id === '') return true;
