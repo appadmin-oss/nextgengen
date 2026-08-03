@@ -1510,3 +1510,5 @@ CREATE TABLE IF NOT EXISTS assessment_results (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (81) ON DUPLICATE KEY UPDATE version = version;
+
+INSERT INTO schema_version (version) VALUES (82) ON DUPLICATE KEY UPDATE version = version;

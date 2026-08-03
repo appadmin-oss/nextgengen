@@ -9837,6 +9837,32 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             && (int)(db_row("SELECT COUNT(*) c FROM assessment_instruments WHERE catalogueKey = 'egra.orf' AND archivedAt = ''")['c'] ?? 0) === 1;
     })());
 
+    chk('assessment: renaming an instrument does not erase what it is or where it came from', (function () use ($ADM) {
+        /* Provenance arrives by ADOPTION, not by typing, so a save that only
+         * carries a name — a script, an older client, a partial payload — must
+         * not take the citation with it, and must not reset a level ladder to
+         * a mark out of a total. An absent key leaves the value alone; an
+         * empty string still clears it, so a deliberate wipe is still possible. */
+        $a = backend_dispatch('admin.assessment.adopt', ['requesterId' => $ADM, 'keys' => ['aser.reading']]);
+        $iid = $a['created'][0]['instrumentId'] ?? ''; if ($iid === '') return false;
+        $before = db_row('SELECT * FROM assessment_instruments WHERE instrumentId = ?', [$iid]);
+        backend_dispatch('admin.assessment.instrument.save', ['requesterId' => $ADM, 'instrumentId' => $iid,
+            'data' => ['name' => 'ASER reading (Yoruba)', 'domain' => 'literacy', 'maxScore' => 4,
+                       'items' => 4, 'gradeFrom' => 1, 'gradeTo' => 8]]);
+        $after = db_row('SELECT * FROM assessment_instruments WHERE instrumentId = ?', [$iid]);
+        $kept = (string)$after['citation'] === (string)$before['citation']
+            && (string)$after['scale'] === 'level' && (string)$after['unit'] === (string)$before['unit']
+            && (string)$after['source'] === (string)$before['source']
+            && (string)$after['adaptNote'] === (string)$before['adaptNote']
+            && (string)$after['name'] === 'ASER reading (Yoruba)';
+        // …and an explicitly empty value still clears, so this is not a one-way door.
+        backend_dispatch('admin.assessment.instrument.save', ['requesterId' => $ADM, 'instrumentId' => $iid,
+            'data' => ['name' => 'ASER reading (Yoruba)', 'domain' => 'literacy', 'maxScore' => 4,
+                       'items' => 4, 'gradeFrom' => 1, 'gradeTo' => 8, 'citation' => '']]);
+        $wiped = db_row('SELECT citation, scale FROM assessment_instruments WHERE instrumentId = ?', [$iid]);
+        return $kept && (string)$wiped['citation'] === '' && (string)$wiped['scale'] === 'level';
+    })());
+
     chk('assessment: every op is gated on the roster capability', (function () {
         foreach (['admin.assessment.instruments', 'admin.assessment.windows', 'admin.assessment.gains',
                   'admin.assessment.record', 'admin.assessment.sheet', 'admin.assessment.instrument.save',

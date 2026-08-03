@@ -453,19 +453,38 @@ function admin_assessment_instrument_save(array $p): array {
             'items' => max(0, (int)($d['items'] ?? 0)),
             'notes' => mb_substr(trim((string)($d['notes'] ?? '')), 0, 2000),
             'gradeFrom' => $from, 'gradeTo' => $to,
-            'unit' => mb_substr(trim((string)($d['unit'] ?? '')), 0, 64),
-            'scale' => in_array(($d['scale'] ?? ''), ASSESS_SCALES, true) ? (string)$d['scale'] : 'points',
-            'higherIsBetter' => array_key_exists('higherIsBetter', $d) ? (!empty($d['higherIsBetter']) ? 1 : 0) : 1,
-            'source' => mb_substr(trim((string)($d['source'] ?? '')), 0, 255),
-            'sourceUrl' => mb_substr(trim((string)($d['sourceUrl'] ?? '')), 0, 255),
-            'licence' => mb_substr(trim((string)($d['licence'] ?? '')), 0, 255),
-            'citation' => mb_substr(trim((string)($d['citation'] ?? '')), 0, 1000),
-            'adaptNote' => mb_substr(trim((string)($d['adaptNote'] ?? '')), 0, 1000),
             'status' => in_array(($d['status'] ?? ''), ['draft', 'active', 'archived'], true) ? (string)$d['status'] : 'active'];
 
+    /* Provenance and scale are PATCHED, not replaced.
+     *
+     * The rest of this row is replace-the-lot, which is safe for a form that
+     * always posts every field. These nine are different: they arrive on an
+     * instrument by being ADOPTED from the catalogue, not by being typed, so a
+     * caller that only meant to fix a name — a script, an older client, a
+     * partial payload — would silently erase the citation that makes the
+     * result quotable, and reset a words-per-minute instrument to a mark out
+     * of a total, changing what every future report says about it.
+     *
+     * So each one is written only when the caller actually sent the key. An
+     * empty string still clears it; an ABSENT key leaves it alone. */
+    $cur = $id !== '' ? db_row('SELECT * FROM assessment_instruments WHERE instrumentId = ? LIMIT 1', [$id]) : null;
+    if ($id !== '' && !$cur) return ['ok' => false, 'error' => 'not_found'];
+    $keep = fn(string $k, $fallback) => $cur !== null ? ($cur[$k] ?? $fallback) : $fallback;
+    $text = fn(string $k, int $len, $fallback) => array_key_exists($k, $d)
+        ? mb_substr(trim((string)$d[$k]), 0, $len) : (string)$keep($k, $fallback);
+    $row['unit']     = $text('unit', 64, '');
+    $row['source']   = $text('source', 255, '');
+    $row['sourceUrl'] = $text('sourceUrl', 255, '');
+    $row['licence']  = $text('licence', 255, '');
+    $row['citation'] = $text('citation', 1000, '');
+    $row['adaptNote'] = $text('adaptNote', 1000, '');
+    $row['scale'] = array_key_exists('scale', $d)
+        ? (in_array($d['scale'], ASSESS_SCALES, true) ? (string)$d['scale'] : 'points')
+        : ((string)$keep('scale', 'points') ?: 'points');
+    $row['higherIsBetter'] = array_key_exists('higherIsBetter', $d)
+        ? (!empty($d['higherIsBetter']) ? 1 : 0) : (int)$keep('higherIsBetter', 1);
+
     if ($id !== '') {
-        $cur = db_row('SELECT * FROM assessment_instruments WHERE instrumentId = ? LIMIT 1', [$id]);
-        if (!$cur) return ['ok' => false, 'error' => 'not_found'];
         /* THE LOCK. Once a single child has been measured with this instrument,
          * changing what it measures or what it is out of makes every pair built
          * on it incomparable — and the change leaves no trace in the numbers.
