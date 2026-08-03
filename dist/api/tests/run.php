@@ -374,6 +374,76 @@ chk('instructor without a course is rejected', backend_dispatch('public.apply', 
 chk('volunteer admin role applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'admin', 'firstName' => 'Vol', 'lastName' => 'Admin', 'email' => 'vol-admin@example.com', 'phone' => '08031234567', 'dob' => '1990-01-01', 'centre' => 'Testville'])['ok'] === true);
 chk('volunteer centre stored on application', db_row("SELECT centre FROM applications WHERE email = 'vol-admin@example.com'")['centre'] === 'Testville');
 chk('volunteer phone stored normalized', db_row("SELECT phone FROM applications WHERE email = 'vol-admin@example.com'")['phone'] === '+2348031234567');
+/* ── The headshot a browser can actually produce ──────────────────────────────
+ *
+ * This intake accepted ONE shape — an unsigned upload to res.cloudinary.com —
+ * silently blanked everything else, and then refused the application for having
+ * no photo. Cloudinary is opt-in (uploadOrInline carries the image inside the
+ * submission when there is no cloud, and there is a whole local photo store for
+ * exactly that), so on any deployment without it EVERY volunteer registration
+ * failed: the form will not submit without a headshot, the applicant watched
+ * theirs appear on screen, and the server said `photo_required`.
+ */
+(function () {
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-PHOTO'");
+    db_insert('centres', ['centreId' => 'CEN-PHOTO', 'name' => 'Photoville', 'code' => 'PHV', 'color' => '#123456',
+        'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $keep = setting_raw('intake_photo_required');
+    setting_set('intake_photo_required', '1', 'test');       // the production default
+    // These applications are cleaned up below, and so are the bus rows they
+    // queue — a later assertion counts volunteer.applied exactly.
+    $obMax = (int)(db_row('SELECT MAX(id) m FROM outbox')['m'] ?? 0);
+    // A real JPEG: photo_store_put re-decodes and checks the true image type.
+    $jpg = base64_decode('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNCwsLDBkSEw8UHRofHh0aHBwcJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPDs0NDP/wAALCAABAAEBAREA/8QAFAABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKgA/9k=');
+    $phSeq = 0;
+    $apply = function ($email, $photo) use (&$phSeq) {
+        $phSeq++;
+        return backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Female',
+            'role' => 'admin', 'firstName' => 'Photo', 'lastName' => 'Case', 'email' => $email,
+            'phone' => '080522' . sprintf('%05d', 1000 + $phSeq), 'dob' => '1990-01-01',
+            'centre' => 'Photoville', 'why' => 'I care.', 'photoUrl' => $photo]);
+    };
+
+    chk('a volunteer can register with the inline photo a no-cloud deployment produces', (function () use ($apply, $jpg) {
+        $r = $apply('ph-inline@example.com', 'data:image/jpeg;base64,' . base64_encode($jpg));
+        if (empty($r['ok'])) return false;
+        // Stored as OUR served path — the bytes were parsed, not a URL trusted.
+        $row = db_row("SELECT photoUrl FROM applications WHERE email = 'ph-inline@example.com'");
+        return strpos((string)$row['photoUrl'], '/api/public/photo.php?') === 0;
+    })());
+
+    chk('…and with a photo already in the local store, or on the configured CDN', (function () use ($apply) {
+        return !empty($apply('ph-local@example.com', '/api/public/photo.php?p=abc.jpg')['ok'])
+            && !empty($apply('ph-cdn@example.com', 'https://res.cloudinary.com/demo/image/upload/v1/x.jpg')['ok']);
+    })());
+
+    chk('…while an arbitrary remote URL is still refused on an unauthenticated form', (function () use ($apply) {
+        /* This is a public form. Storing an attacker-chosen URL on a volunteer
+         * record, to be rendered later on the public directory, is not a photo
+         * upload — which is why the fix is not simply "accept any https". */
+        foreach (['https://evil.example/x.jpg', 'javascript:alert(1)', 'file:///etc/passwd', 'not-a-url'] as $bad) {
+            if (($apply('ph-bad@example.com', $bad)['error'] ?? '') !== 'photo_required') return false;
+        }
+        return true;
+    })());
+
+    chk('…and a data URL in a format we will not serve is refused, script-bearing ones included', (function () use ($apply) {
+        /* SVG is the one that matters: it is an image to a browser and a script
+         * host to an attacker, and this record is rendered on a public page. */
+        foreach (['data:image/svg+xml;base64,' . base64_encode('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+                  'data:text/html;base64,' . base64_encode('<script>1</script>'),
+                  'data:image/gif;base64,' . base64_encode('GIF89a')] as $bad) {
+            if (($apply('ph-junk@example.com', $bad)['error'] ?? '') !== 'photo_required') return false;
+        }
+        return true;
+    })());
+
+    db_exec("DELETE FROM applications WHERE email LIKE 'ph-%@example.com'");
+    db_exec('DELETE FROM outbox WHERE id > ?', [$obMax]);
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-PHOTO'");
+    setting_set('intake_photo_required', $keep === '' ? '0' : $keep, 'test');
+})();
+
 chk('instructor with valid courses applies clean', backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'instructor', 'firstName' => 'Vol', 'lastName' => 'Teach', 'email' => 'vol-teach@example.com', 'phone' => '08031110002', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'courses' => ['Practical Coding', 'Piano', 'Basket Weaving'], 'visibilityConsent' => true])['ok'] === true);
 chk('instructor faculty stored on application', db_row("SELECT faculty FROM applications WHERE email = 'vol-teach@example.com'")['faculty'] === $vFac);
 chk('volunteer visibility consent stored on application', (int)db_row("SELECT visibilityConsent FROM applications WHERE email = 'vol-teach@example.com'")['visibilityConsent'] === 1);
@@ -10550,6 +10620,37 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             && (backend_dispatch('admin.volunteer.attendance', ['requesterId' => 'NGG-2025-0001'])['ok'] ?? false) !== true;
     })());
 
+    chk('vol attendance: a day the children were scanned and no volunteer was is not everyone\'s absence', (function () use ($D, $today) {
+        /* With no programme calendar the window was every distinct date in the
+         * attendance table — and that table is mostly children. Three hundred
+         * pupils scanned on a Tuesday made Tuesday a day every volunteer had
+         * missed, whether or not one was ever expected, which is how the rates
+         * on this board became indefensible. */
+        $keep = setting_get('programme');
+        setting_set('programme', ['enabled' => false, 'startDate' => '', 'endDate' => '',
+            'weekdays' => [1, 2, 3, 4, 5], 'holidays' => [], 'extraDays' => []], 'test');
+        // A day only children were on: a student check-in, no volunteer mark.
+        $c = summer_ensure_cohort();
+        $kidDay = $D(20);
+        db_exec("DELETE FROM attendance WHERE studentId = 'ATT-KID-1'");
+        db_exec("DELETE FROM summer_students WHERE studentId = 'ATT-KID-1'");
+        db_insert('summer_students', ['studentId' => 'ATT-KID-1', 'cohortId' => (string)$c['cohortId'],
+            'fullName' => 'Kid Only', 'handle' => 'kidonly', 'track' => 'Tech', 'centre' => 'Egbeda',
+            'status' => 'active', 'regStatus' => 'verified']);
+        db_insert('attendance', ['cohortId' => (string)$c['cohortId'], 'studentId' => 'ATT-KID-1', 'token' => '',
+            'date' => $kidDay, 'checkInAt' => $kidDay . 'T08:00:00Z', 'method' => 'qr', 'byId' => 'NGG-2025-0099',
+            'device' => '', 'status' => 'present', 'lateMinutes' => 0, 'redline' => 0, 'halfDay' => 0,
+            'createdAt' => now_iso()]);
+        $O = volunteer_attendance_analysis();
+        db_exec("DELETE FROM attendance WHERE studentId = 'ATT-KID-1'");
+        db_exec("DELETE FROM summer_students WHERE studentId = 'ATT-KID-1'");
+        if (is_array($keep)) setting_set('programme', $keep, 'test');
+        // The children-only day must not be in the volunteers' window at all.
+        return $O['basis'] === 'observed' && $O['from'] > $kidDay
+            && ($O['kpis']['expected'] ?? 0) > 0
+            && ($O['kpis']['sessions'] ?? 0) <= ($O['kpis']['expected'] ?? 0);
+    })());
+
     chk('vol attendance: the public board carries the breakdown but never a volunteerId', (function () use ($lab) {
         backend_dispatch('admin.status.pages.set', ['requesterId' => 'NGG-2025-0099',
             'data' => ['volunteer' => ['published' => true, 'centres' => []]]]);
@@ -10563,6 +10664,71 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $mine = null;
         foreach ($s['directory'] as $v) if ($v['centre'] === $lab && ($v['window']['expected'] ?? 0) === 10 && $v['window']['rate'] === 100) $mine = $v;
         return $mine !== null && $mine['window']['streak'] === 10;
+    })());
+
+    chk('vol status: the headline reconciles with the rows underneath it', (function () {
+        /* It printed "14 active volunteers" above centre rows that added up to
+         * five, with nothing to account for the other nine — so a reader who
+         * totted up the centres got a number that contradicted the headline and
+         * no way to tell which one to trust. Three separate things hid in that
+         * gap and each is now counted: no centre recorded, a centre that is no
+         * longer active, and a centre this board is filtered to hide. */
+        backend_dispatch('admin.status.pages.set', ['requesterId' => 'NGG-2025-0099',
+            'data' => ['volunteer' => ['published' => true, 'centres' => []]]]);
+        $s = backend_dispatch('public.volunteer.status', [])['status'] ?? [];
+        $k = $s['kpis'] ?? [];
+        foreach (['placedVolunteers', 'unplacedVolunteers', 'offBoardVolunteers', 'hiddenVolunteers'] as $f) {
+            if (!array_key_exists($f, $k)) return false;
+        }
+        $sum = $k['placedVolunteers'] + $k['unplacedVolunteers'] + $k['offBoardVolunteers'] + $k['hiddenVolunteers'];
+        if ($sum !== (int)$k['activeVolunteers']) return false;
+        // And the centre rows total the ones the board is actually showing.
+        $rows = 0;
+        foreach ($s['byCentre'] as $c) $rows += (int)$c['attendance']['active'];
+        return $rows === $k['placedVolunteers'] + $k['hiddenVolunteers'];
+    })());
+
+    chk('vol status: a centre\'s attendance is out of its HEADCOUNT, not its filled slots', (function () {
+        /* `active` was the role-need FULFILMENT count. present counts PEOPLE and
+         * filled counts SLOTS, so the two were never the same question — a
+         * centre with three volunteers against two defined slots read "3 of 2 in
+         * today". A volunteer whose role is not one of the three the fulfilment
+         * board tracks fills no slot at all, which is the case that separates
+         * them: they are on the roster and they can walk in. */
+        db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-COACH-1'");
+        $before = backend_dispatch('public.volunteer.status', [])['status'] ?? [];
+        $pick = function ($s) { foreach ($s['byCentre'] as $c) if ((string)$c['name'] === 'Egbeda') return $c; return null; };
+        $b = $pick($before);
+        if (!$b) return true;
+        db_insert('volunteers', ['volunteerId' => 'VOL-COACH-1', 'fullName' => 'Coach Kay',
+            'email' => 'coach@example.com', 'role' => 'coach', 'centre' => 'Egbeda', 'status' => 'active',
+            'safeguarding' => 'cleared', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $after = $pick(backend_dispatch('public.volunteer.status', [])['status'] ?? []);
+        db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-COACH-1'");
+        if (!$after) return false;
+        $ok = ((int)$after['attendance']['active'] === (int)$b['attendance']['active'] + 1)
+            // …and the fulfilment figure is unchanged, because no slot was filled.
+            && ((int)$after['attendance']['filled'] === (int)$b['attendance']['filled']);
+        // Nobody can be present at a centre more often than it has people.
+        $s = backend_dispatch('public.volunteer.status', [])['status'] ?? [];
+        foreach ($s['byCentre'] as $c) if ($c['attendance']['present'] > $c['attendance']['active']) return false;
+        return $ok;
+    })());
+
+    chk('vol status: a role recorded with a capital letter still fills its slot', (function () {
+        /* VOL_ROLES is lower-case. A row saying "Mentor" — an import, an admin
+         * edit — landed in a bucket the board never reads: no slot filled, no
+         * role total, and still counted under "active volunteers". */
+        $idx = volunteer_filled_index();
+        db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-CASE-1'");
+        db_insert('volunteers', ['volunteerId' => 'VOL-CASE-1', 'fullName' => 'Case Test',
+            'email' => 'case@example.com', 'role' => 'Mentor', 'centre' => 'Egbeda', 'status' => 'active',
+            'safeguarding' => 'cleared', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $after = volunteer_filled_index();
+        db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-CASE-1'");
+        $was = $idx['role']['Egbeda|mentor'] ?? 0;
+        return (($after['role']['Egbeda|mentor'] ?? 0) === $was + 1)
+            && !isset($after['role']['Egbeda|Mentor']);
     })());
 
     // Leave the calendar as this suite found it.

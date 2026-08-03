@@ -759,7 +759,12 @@ function volunteer_filled_index(): array {
     $byRole = []; $byFaculty = []; $byCourse = []; $byCentre = [];
     foreach (db_all("SELECT centre, role, faculty, courses FROM volunteers WHERE status = 'active'") as $v) {
         $c = (string)$v['centre']; if ($c === '') continue;
-        $r = (string)$v['role']; $f = (string)($v['faculty'] ?? '');
+        /* Lower-cased, because VOL_ROLES is. A volunteer whose row says "Mentor"
+         * — from an import, or an admin edit — was counted into a bucket the
+         * board never reads, so they filled no slot, appeared in no role total,
+         * and still counted in "active volunteers". One more way the headline
+         * stopped matching the rows underneath it. */
+        $r = strtolower(trim((string)$v['role'])); $f = (string)($v['faculty'] ?? '');
         $byCentre[$c] = ($byCentre[$c] ?? 0) + 1;
         $byRole[$c . '|' . $r] = ($byRole[$c . '|' . $r] ?? 0) + 1;
         if ($f !== '') $byFaculty[$c . '|' . $f] = ($byFaculty[$c . '|' . $f] ?? 0) + 1;
@@ -868,13 +873,22 @@ function volunteer_attendance_days(array $opts = []): array {
                 'termStart' => (string)$cfg['startDate'], 'termEnd' => (string)$cfg['endDate'],
                 'narrowed' => $from !== '' || $to !== ''];
     }
-    // No calendar: the days the roll was actually taken, honestly labelled.
-    $sql = 'SELECT DISTINCT date FROM attendance';
+    /* No calendar: the days the VOLUNTEER roll was actually taken.
+     *
+     * This counted every distinct date in the attendance table, which is
+     * dominated by the children's check-ins — three hundred pupils scanned on a
+     * Tuesday made Tuesday a day every volunteer had missed, whether or not any
+     * volunteer was ever expected. On a site with no programme calendar that
+     * fabricated absences by the dozen and drove every rate on the board
+     * towards nonsense. The join is the whole fix: a day is a volunteer day when
+     * a volunteer was marked on it. */
+    $sql = 'SELECT DISTINCT a.date d FROM attendance a JOIN volunteers v ON v.volunteerId = a.studentId';
     $args = []; $where = [];
-    if ($from !== '') { $where[] = 'date >= ?'; $args[] = $from; }
-    if ($to !== '')   { $where[] = 'date <= ?'; $args[] = $to; }
+    if ($from !== '') { $where[] = 'a.date >= ?'; $args[] = $from; }
+    if ($to !== '')   { $where[] = 'a.date <= ?'; $args[] = $to; }
     if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
-    $rows = db_all($sql . ' ORDER BY date DESC LIMIT ' . (int)VOL_ATT_MAX_DAYS, $args);
+    $rows = array_map(fn($r) => ['date' => $r['d']],
+        db_all($sql . ' ORDER BY a.date DESC LIMIT ' . (int)VOL_ATT_MAX_DAYS, $args));
     $days = array_reverse(array_map(fn($r) => (string)$r['date'], $rows));
     return ['days' => $days, 'basis' => 'observed', 'termStart' => '', 'termEnd' => '',
             'narrowed' => $from !== '' || $to !== ''];
@@ -1202,14 +1216,59 @@ function public_volunteer_status(array $p): array {
         $attByCentre[$cn]['present'] += (int)$r['c'];
         if ((string)$r['st'] === 'late') $attByCentre[$cn]['late'] += (int)$r['c'];
     }
+    // How many active volunteers each centre actually HAS, from the roster.
+    $rosterAt = [];
+    foreach (db_all("SELECT centre, COUNT(*) c FROM volunteers WHERE status = 'active' AND centre <> '' GROUP BY centre") as $r) {
+        $rosterAt[(string)$r['centre']] = (int)$r['c'];
+    }
     $vPresent = 0; $vLate = 0;
     foreach ($byCentre as &$bc) {
         $a = $attByCentre[(string)$bc['name']] ?? ['present' => 0, 'late' => 0];
-        $bc['attendance'] = ['present' => $a['present'], 'late' => $a['late'], 'onTime' => max(0, $a['present'] - $a['late']), 'active' => (int)($bc['filled'] ?? 0)];
+        /* `active` is the HEADCOUNT, not `filled`.
+         *
+         * filled is a fulfilment figure: how many of the role slots an admin
+         * defined are taken. Using it as an attendance denominator conflated two
+         * different questions and produced arithmetic nobody could defend — a
+         * centre with three volunteers and two defined slots read "3 of 2 in
+         * today", because present counts people and filled counts slots. */
+        $bc['attendance'] = ['present' => $a['present'], 'late' => $a['late'],
+            'onTime' => max(0, $a['present'] - $a['late']),
+            'active' => $rosterAt[(string)$bc['name']] ?? 0,
+            'filled' => (int)($bc['filled'] ?? 0)];
         $vPresent += $a['present']; $vLate += $a['late'];
     }
     unset($bc);
-    $kpis = $s['kpis'] + ['presentToday' => $vPresent, 'lateToday' => $vLate, 'onTimeToday' => max(0, $vPresent - $vLate)];
+    /* WHERE THE 14 WENT.
+     *
+     * The board printed "14 active volunteers" above rows that added up to 5,
+     * and left the reader to work out — or not notice — the difference. Three
+     * separate things hid in that gap: volunteers with no centre recorded,
+     * volunteers whose centre is no longer an active one (renamed, closed), and
+     * volunteers the board's own centre filter is hiding. Every attendance
+     * denominator on the page is drawn from the placed ones, so the same nine
+     * people were missing from the rates as well.
+     *
+     * Counted here and stated on the board, because a headline its own rows
+     * contradict is worse than a smaller headline: it makes every other figure
+     * on the page look wrong too, and there is no way for a reader to tell
+     * which one to trust. */
+    $activeRows = db_all("SELECT centre FROM volunteers WHERE status = 'active'");
+    $liveCentres = [];
+    foreach (db_all("SELECT name FROM centres WHERE status = 'active'") as $c) $liveCentres[(string)$c['name']] = true;
+    $shown = []; foreach ($byCentre as $c) $shown[(string)$c['name']] = true;
+    $placed = 0; $unplaced = 0; $offBoard = 0; $hidden = 0;
+    foreach ($activeRows as $v) {
+        $cn = trim((string)($v['centre'] ?? ''));
+        if ($cn === '') { $unplaced++; continue; }
+        if (!isset($liveCentres[$cn])) { $offBoard++; continue; }
+        if (!isset($shown[$cn])) { $hidden++; continue; }
+        $placed++;
+    }
+    $kpis = $s['kpis'] + [
+        'presentToday' => $vPresent, 'lateToday' => $vLate, 'onTimeToday' => max(0, $vPresent - $vLate),
+        'placedVolunteers' => $placed, 'unplacedVolunteers' => $unplaced,
+        'offBoardVolunteers' => $offBoard, 'hiddenVolunteers' => $hidden,
+    ];
 
     /* Today is a snapshot; this is the record. Rates over the window, per
      * centre and per role, so a reader can tell a bad morning from a pattern. */

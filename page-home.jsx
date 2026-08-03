@@ -1618,7 +1618,17 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
 
   const kpis = [
     { icon: "ph-users-three", tintBg: "rgba(124,77,255,0.13)", iconColor: "#6a3fc0", value: ci(k.totalVolunteers), label: "Total volunteers", valueColor: "#0a1130" },
-    { icon: "ph-check-circle", tintBg: "rgba(47,158,68,0.14)", iconColor: "#2f9e44", value: ci(k.activeVolunteers), label: "Active now", valueColor: "#0a1130" },
+    /* "Active now" was printed above rows that added up to fewer people, with
+       nothing to account for the difference — so a reader who totted up the
+       centres found a number that contradicted the headline and had no way to
+       tell which one was wrong. The gap is now named on the tile. */
+    { icon: "ph-check-circle", tintBg: "rgba(47,158,68,0.14)", iconColor: "#2f9e44", value: ci(k.activeVolunteers), label: "Active now", valueColor: "#0a1130",
+      foot: (k.unplacedVolunteers || k.offBoardVolunteers || k.hiddenVolunteers)
+        ? [(k.placedVolunteers || 0) + " placed at a centre below",
+           k.unplacedVolunteers ? k.unplacedVolunteers + " with no centre yet" : "",
+           k.offBoardVolunteers ? k.offBoardVolunteers + " at a closed centre" : "",
+           k.hiddenVolunteers ? k.hiddenVolunteers + " at a centre not shown here" : ""].filter(Boolean).join(" · ")
+        : "", footColor: "#a07400" },
     { icon: "ph-alarm", tintBg: "rgba(245,176,38,0.16)", iconColor: "#a07400", value: ci(vPresent), label: "Present today", valueColor: "#0a1130", foot: vPresent ? (ci(vOnTime) + " on time · " + ci(vLate) + " late") : "roll not taken yet", footColor: vLate > 0 ? "#a07400" : "#2f9e44" },
     { icon: "ph-buildings", tintBg: "rgba(28,42,94,0.08)", iconColor: "#1c2a5e", value: ci(k.centres), label: "Centres", valueColor: "#0a1130" },
     { icon: "ph-target", tintBg: "rgba(59,91,219,0.13)", iconColor: "#3b5bdb", value: ci(totNeed), label: "Total need", valueColor: "#0a1130" },

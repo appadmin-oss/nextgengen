@@ -433,6 +433,51 @@ function intake_photo_required(): bool {
     return setting_raw('intake_photo_required') !== '0';
 }
 
+/**
+ * A headshot arriving on a PUBLIC intake form, in whatever shape the browser
+ * could produce. Returns a URL to store, or '' if there is nothing usable.
+ *
+ * THE BUG THIS EXISTS FOR. This accepted one shape — an unsigned upload to
+ * res.cloudinary.com — silently blanked everything else, and then the check
+ * below refused the application for having no photo. Cloudinary is opt-in
+ * (uploadOrInline falls back to carrying the image INSIDE the submission, and
+ * there is a whole local photo store built for exactly that), so on any
+ * deployment without it every volunteer did everything right, watched their
+ * headshot appear on screen, and was told `photo_required`. Not "sometimes":
+ * every one of them, because the form will not submit without a photo and the
+ * intake would not take the only kind the browser had to give.
+ *
+ * The three shapes, and why each is safe:
+ *   data:        the bytes are in the request. photo_store_put re-decodes them,
+ *                checks the real image type rather than the declared one, and
+ *                content-addresses the file — so what is stored is an image we
+ *                have parsed, not a URL we are trusting.
+ *   our own path the local store's serving URL, already ours.
+ *   Cloudinary   the configured CDN, exactly as before.
+ *
+ * Any other remote URL is still refused. This is an unauthenticated form, and
+ * storing an arbitrary attacker-chosen URL on a volunteer record — to be
+ * rendered later on the public directory — is not a photo upload. That is why
+ * this is its own function rather than a call to photo_intake_url(), which
+ * accepts any https host and is right for the staff-facing paths that use it.
+ */
+function intake_photo_accept(string $incoming): string {
+    $u = trim($incoming);
+    if ($u === '') return '';
+    if (preg_match('#^data:#i', $u)) {
+        try {
+            $st = photo_store_put($u);
+            return !empty($st['ok']) ? (string)$st['url'] : '';
+        } catch (Throwable $e) {
+            error_log('[intake_photo_accept] ' . $e->getMessage());
+            return '';
+        }
+    }
+    if (preg_match('#^/api/public/photo\.php\?#', $u)) return substr($u, 0, 512);
+    if (preg_match('#^https://res\.cloudinary\.com/[A-Za-z0-9_-]+/#', $u)) return substr($u, 0, 512);
+    return '';
+}
+
 function public_apply(array $p): array {
     $kind = (string)($p['kind'] ?? 'teen');
     if (!in_array($kind, ['teen', 'mentor', 'volunteer'], true)) return ['ok' => false, 'error' => 'bad_kind'];
@@ -472,11 +517,7 @@ function public_apply(array $p): array {
     if ($kind !== 'teen' && $dobAge < 16) return ['ok' => false, 'error' => 'dob_too_young'];
 
     $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $courses = []; $faculty = ''; $visibilityConsent = 0;
-    // A short URL to a headshot uploaded (unsigned) to Cloudinary. Optional —
-    // only trusted if it points at the configured Cloudinary CDN host.
-    $photoUrl = trim((string)($p['photoUrl'] ?? ''));
-    if ($photoUrl !== '' && !preg_match('#^https://res\.cloudinary\.com/[A-Za-z0-9_-]+/#', $photoUrl)) $photoUrl = '';
-    if (strlen($photoUrl) > 512) $photoUrl = '';
+    $photoUrl = intake_photo_accept((string)($p['photoUrl'] ?? ''));
     if ($kind === 'teen') {
         // Age is derived from the date of birth, not entered separately.
         $age = $dobAge;
