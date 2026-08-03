@@ -145,11 +145,77 @@
         sc.id = 'ngg-imagetools'; sc.src = '/vendor/image-tools.js';
         document.head.appendChild(sc);
       }
-      sc.addEventListener('load', () => res(window.ImageTools), { once: true });
-      sc.addEventListener('error', () => rej(new Error('image_tools_unavailable')), { once: true });
-      setTimeout(() => rej(new Error('image_tools_timeout')), 20000);
+      let timer = setTimeout(() => rej(new Error('image_tools_timeout')), 20000);
+      sc.addEventListener('load', () => { clearTimeout(timer); res(window.ImageTools); }, { once: true });
+      sc.addEventListener('error', () => { clearTimeout(timer); rej(new Error('image_tools_unavailable')); }, { once: true });
+    });
+    /* A FAILED load must not be remembered as the answer.
+     *
+     * The rejected promise was cached, so one dropped request for
+     * /vendor/image-tools.js — a flaky mobile signal, a proxy, a cold cache on
+     * a bad connection — made every photo attempt for the rest of the page
+     * session fail identically. Retaking, picking another file, pressing the
+     * button again: all refused, because nothing was retrying anything. That
+     * is exactly why the rejections looked random and then became total.
+     *
+     * The <script> element is dropped with it, so the next attempt fetches
+     * again rather than re-listening to a tag that already errored. */
+    _toolsPromise.catch(() => {
+      _toolsPromise = null;
+      const sc = document.getElementById('ngg-imagetools');
+      if (sc && sc.parentNode) sc.parentNode.removeChild(sc);
     });
     return _toolsPromise;
+  }
+
+  /* Shrink with nothing but a canvas.
+   *
+   * The optimiser is lazy-loaded from /vendor, and when that request does not
+   * arrive there was no plan B: the raw 3–12MB camera file went at the wall,
+   * hit the inline size guard and came back "that photo is too large" — for a
+   * photo the device could have shrunk itself, without the network, in about a
+   * frame. Pica's Lanczos pass gives visibly better print pixels and stays the
+   * preferred path; this is the difference between a slightly softer headshot
+   * and no registration.
+   *
+   * `minShortPx` is the server's print floor. Shrinking is meant to get a photo
+   * ACCEPTED, so it must never be what pushes one under the size the gate
+   * refuses — a tall image scaled by its long side can do exactly that.
+   */
+  async function canvasShrink(file, maxPx, quality, minShortPx) {
+    let src = null, url = '', w = 0, h = 0;
+    try {
+      if (typeof createImageBitmap === 'function') {
+        src = await createImageBitmap(file);
+        w = src.width; h = src.height;
+      } else {
+        url = URL.createObjectURL(file);
+        src = await new Promise((res, rej) => {
+          const im = new Image();
+          im.onload = () => res(im);
+          im.onerror = () => rej(new Error('undecodable'));
+          im.src = url;
+        });
+        w = src.naturalWidth; h = src.naturalHeight;
+      }
+      if (!w || !h) return null;
+      let scale = Math.min(1, maxPx / Math.max(w, h));
+      const short = Math.min(w, h);
+      if (minShortPx && short * scale < minShortPx) scale = Math.min(1, minShortPx / short);
+      const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+      const c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      const g = c.getContext('2d');
+      g.imageSmoothingEnabled = true;
+      if ('imageSmoothingQuality' in g) g.imageSmoothingQuality = 'high';
+      g.drawImage(src, 0, 0, cw, ch);
+      return await new Promise(r => c.toBlob(r, 'image/jpeg', quality));
+    } catch (_) {
+      return null;
+    } finally {
+      if (src && src.close) { try { src.close(); } catch (_) {} }
+      if (url) { try { URL.revokeObjectURL(url); } catch (_) {} }
+    }
   }
   async function shrinkForUpload(file, kind) {
     const type = (file && file.type) || '';
@@ -265,6 +331,20 @@
   const INLINE_OK_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
   const typeSendable = (t) => INLINE_OK_TYPES.indexOf(String(t || '').toLowerCase()) !== -1;
 
+  /* The body ceiling. nginx's 1MB client_max_body_size default is the tightest
+     limit in common use, and a 413 on a form's last tap destroys the error
+     message along with the request — so the fit has to be made here. */
+  const INLINE_MAX_CHARS = 1400000;
+  /* Fallback ladder, tried in order until one fits. The first is the size the
+     optimiser would have produced; the rest trade print sharpness for a
+     registration that completes, which is always the right trade. */
+  const INLINE_LADDER = [
+    { maxPx: 1000, quality: 0.78 },
+    { maxPx: 900,  quality: 0.7 },
+    { maxPx: 750,  quality: 0.62 },
+    { maxPx: 600,  quality: 0.55 },
+  ];
+
   async function inlineImage(file) {
     let out = file;
     let prep = null;
@@ -272,24 +352,37 @@
       const tools = await ensureImageTools();
       prep = await tools.prepare(file, SHRINK.inline);
       if (!prep.skipped && prep.blob) out = prep.blob;
-    } catch (_) { /* optimiser unavailable — send what we have */ }
-    /* Refuse HERE, with a name for the problem, rather than posting bytes the
-       server will answer `not_an_image` to.
-       An iPhone on "High Efficiency" saves HEIC. Chrome on Android cannot even
-       decode it, so the converter above hands the original straight back — and
-       the family got a flat rejection at the end of a five-step form, for a
-       photo that is perfectly good and one settings change away from working. */
+    } catch (_) { /* optimiser unavailable — the canvas ladder below covers it */ }
+
+    let dataUrl = typeSendable(out && out.type) ? await blobToDataUrl(out) : '';
+    /* TRY BEFORE REFUSING.
+       Two ways to arrive here needing work: the optimiser never loaded, so
+       `out` is still the raw 3–12MB camera file; or it loaded, skipped, and the
+       result is a format the gate will not take. Both used to be a flat
+       refusal. The device can fix both without the network. */
+    if (dataUrl === '' || dataUrl.length > INLINE_MAX_CHARS) {
+      for (const step of INLINE_LADDER) {
+        const shrunk = await canvasShrink(file, step.maxPx, step.quality, 320);
+        if (!shrunk) break;                      // undecodable — nothing to try
+        const candidate = await blobToDataUrl(shrunk);
+        if (candidate.length <= INLINE_MAX_CHARS) { out = shrunk; dataUrl = candidate; break; }
+        dataUrl = candidate;                     // keep the smallest we reached
+        out = shrunk;
+      }
+    }
+    /* An iPhone on "High Efficiency" saves HEIC, which Chrome on Android cannot
+       decode at all — so neither the optimiser nor the canvas can convert it,
+       and there is nothing left to try. Named here rather than posted for the
+       server to answer `not_an_image` to, so the family gets advice they can
+       act on instead of a rejection at the end of a five-step form. */
     if (!typeSendable(out && out.type)) {
       const e = new Error('photo_format');
       e.code = 'photo_format';
-      e.photoType = (out && out.type) || '';
+      e.photoType = (out && out.type) || (file && file.type) || '';
       e.undecodable = !!(prep && prep.reason === 'undecodable');
       throw e;
     }
-    const dataUrl = await blobToDataUrl(out);
-    // Refuse rather than provoke a 413 the server can never explain, since a
-    // rejected body means no error message survives the round trip.
-    if (dataUrl.length > 1400000) throw new Error('photo_too_large');
+    if (!dataUrl || dataUrl.length > INLINE_MAX_CHARS) throw new Error('photo_too_large');
     return dataUrl;
   }
 
@@ -357,6 +450,9 @@
        hands back the image inline when there is not. Never fails because
        Cloudinary is unconfigured. */
     uploadOrInline: uploadOrInline,
+    // Exposed for the browser test: the no-network fallback shrink, which
+    // decides whether a photo is accepted when the optimiser cannot be fetched.
+    __canvasShrink: canvasShrink,
     auth: {
       gateway: (identifier) => request('/auth/gateway.php', { body: { identifier } }),
       request: (identifier) => request('/auth/request.php', { body: { identifier } }),

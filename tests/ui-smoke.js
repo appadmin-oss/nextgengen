@@ -2494,6 +2494,70 @@ function unzipDocumentXml(buf) {
       soft.tiny.ok === false && soft.floor === 320 && /320 pixels/.test(soft.tiny.reason));
     ok('an unsendable format gets advice a family can act on, naming the format',
       /HEIC/.test(soft.help) && /Most Compatible|JPEG/.test(soft.help));
+
+    /* ── The optimiser not arriving must not refuse the photo ──────────────
+     * /vendor/image-tools.js is lazy-loaded. When that one request does not
+     * arrive — a flaky mobile signal, a proxy, a cold cache on a bad connection
+     * — the raw 3–12MB camera file went at the wall, hit the inline body guard,
+     * and came back "that photo is too large". For a photo the device could
+     * have shrunk itself, without the network, in about a frame.
+     *
+     * And the rejected loader promise was CACHED, so the first failure made
+     * every later attempt on that page fail identically: retaking, picking
+     * another file, pressing the button again, all refused with nothing
+     * retrying anything. Intermittent, then total. */
+    const noTools = await browser.newPage();
+    let toolsTries = 0;
+    await noTools.route('**/vendor/image-tools.js', r => { toolsTries++; r.abort(); });
+    await noTools.goto(BASE + '/tests/_boards_fixture.html?board=capture&mode=ok', { waitUntil: 'networkidle' });
+    await noTools.waitForTimeout(200);
+    const big = await noTools.evaluate(async () => {
+      // The real client, not the fixture stub — inlineImage is what is under test.
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = '/dist/api-client.js'; s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+      // 3000x4000 of noise: a real photograph's high-frequency detail, which is
+      // what makes a phone JPEG megabytes rather than kilobytes.
+      const c = document.createElement('canvas'); c.width = 3000; c.height = 4000;
+      const g = c.getContext('2d');
+      const img = g.createImageData(3000, 4000);
+      for (let i = 0; i < img.data.length; i += 4) {
+        img.data[i] = (Math.random() * 255) | 0; img.data[i + 1] = (Math.random() * 255) | 0;
+        img.data[i + 2] = (Math.random() * 255) | 0; img.data[i + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.95));
+      const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+      const out = { bytes: blob.size, toolsAbsent: !window.ImageTools };
+      try { const r = await window.NGGApi.uploadOrInline(file, 'headshot'); out.ok = true; out.len = (r.url || '').length; }
+      catch (e) { out.ok = false; out.code = e.code || e.message; }
+      // A second go must be a real second go, not the cached refusal.
+      try { const r2 = await window.NGGApi.uploadOrInline(file, 'headshot'); out.retryOk = true; out.retryLen = (r2.url || '').length; }
+      catch (e) { out.retryOk = false; out.retryCode = e.code || e.message; }
+      // A tall image must not be shrunk under the server's 320px print floor —
+      // a shrink meant to get a photo accepted must not create the rejection.
+      const t = document.createElement('canvas'); t.width = 400; t.height = 2400;
+      t.getContext('2d').fillStyle = '#8d5524'; t.getContext('2d').fillRect(0, 0, 400, 2400);
+      const tall = await new Promise(r => t.toBlob(r, 'image/jpeg', 0.9));
+      const shrunk = await window.NGGApi.__canvasShrink(new File([tall], 't.jpg', { type: 'image/jpeg' }), 1000, 0.78, 320);
+      const bmp = shrunk ? await createImageBitmap(shrunk) : null;
+      out.tall = bmp ? { w: bmp.width, h: bmp.height } : null;
+      return out;
+    });
+    ok('a phone photo still goes through when the optimiser cannot be fetched',
+      big.toolsAbsent === true && big.bytes > 3000000 && big.ok === true && big.len < 1400000);
+    /* Two attempts must mean two fetches. The rejected loader promise was
+       cached, so the optimiser was asked for exactly once per page and every
+       later photo silently ran without it — including on the cloud path, where
+       the fallback is to upload the raw 12MB file. A dropped request has to
+       stay a dropped request, not become a decision. */
+    ok('…and a second attempt is a real retry, not the cached failure',
+      big.retryOk === true && big.retryLen > 0 && toolsTries >= 2);
+    ok('…and shrinking never pushes the short side under the print floor',
+      big.tall && big.tall.w >= 320 && big.tall.h > big.tall.w);
+    await noTools.close();
     await camCtx2.close();
 
     /* ── The centre "giant model" hero upload ─────────────────────────────
