@@ -717,6 +717,7 @@
       insightChatAsk: (data, signal) => request('/admin/analytics.php', { body: { action: 'insight.ask', ...(data || {}) }, timeout: 180000, signal }),
       insightChatArchive: (threadId) => request('/admin/analytics.php', { body: { action: 'insight.archive', threadId } }),
       insightChatRename: (threadId, title) => request('/admin/analytics.php', { body: { action: 'insight.rename', threadId, title } }),
+      insightChatReport: (threadId, seqs) => request('/admin/analytics.php', { body: { action: 'insight.report', threadId, seqs: seqs || [] }, timeout: 120000 }),
       /* Baseline/endline learning measurement. The gains read is the only one
          a funder ever sees; the rest is how the scores get in. */
       assessInstruments: () => request('/admin/assessment.php' + qs({ view: 'instruments' })),

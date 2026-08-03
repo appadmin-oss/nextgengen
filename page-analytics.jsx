@@ -83,6 +83,57 @@ async function anBuildDocx(d, rows, opts) {
     border: { bottom: { style: d.BorderStyle.SINGLE, size: 6, color: "E5E8EE", space: 8 } },
   }));
 
+  /* ── What it adds up to, and what would make it wrong ─────────────────────
+     Above the findings, because this is the part that gets read. A transcript
+     leaves the synthesis to the reader, who derives a different one from the
+     one the data supports and is never contradicted. */
+  const rep = o.report || null;
+  const syn = rep && rep.synthesis && rep.synthesis.ok ? rep.synthesis : null;
+  const rck = (rep && rep.checks) || null;
+
+  if (syn) {
+    kids.push(p("WHAT THESE FINDINGS ADD UP TO", { run: { bold: true, size: 16, color: GOLD, characterSpacing: 40 }, para: { spacing: { after: 80 } } }));
+    if (syn.summary) kids.push(p(syn.summary, { run: { size: 22 }, para: { spacing: { after: 140 }, alignment: d.AlignmentType.JUSTIFIED } }));
+    (syn.takeaways || []).forEach(x => kids.push(p(x, { run: { size: 21 }, para: { bullet: { level: 0 }, spacing: { after: 40 } } })));
+    /* A disagreement between findings is the finding. Averaging two answers
+       into one sentence produces a claim that is true of neither. */
+    if (syn.tension) {
+      kids.push(p("Where the findings disagree: " + syn.tension,
+        { run: { size: 20, italics: true, color: GOLD }, para: { spacing: { before: 100, after: 120 } } }));
+    }
+    if ((syn.decisions || []).length) {
+      kids.push(p("WHAT COULD BE DONE", { run: { bold: true, size: 16, color: GOLD, characterSpacing: 40 }, para: { spacing: { before: 160, after: 80 } } }));
+      syn.decisions.forEach(x => {
+        kids.push(p(x.do, { run: { size: 21 }, para: { bullet: { level: 0 }, spacing: { after: 20 } } }));
+        if (x.because) kids.push(p(x.because, { run: { size: 17, italics: true, color: MUTED }, para: { indent: { left: 720 }, spacing: { after: 70 } } }));
+      });
+    }
+  }
+
+  /* The report-level warnings, in red, ABOVE the findings they are about.
+     Every one of these is a defect of the SET rather than of any single answer,
+     which is why nothing in the transcript could carry them: six findings drawn
+     from three snapshots of the data are individually correct and collectively
+     misleading, and that is invisible unless it is stated here. */
+  if (rck && (rck.notes || []).length) {
+    kids.push(p("READ THIS FIRST", { run: { bold: true, size: 16, color: BAD, characterSpacing: 40 }, para: { spacing: { before: 200, after: 80 } } }));
+    rck.notes.forEach(n => kids.push(new d.Paragraph({
+      children: [new d.TextRun({ text: n.text, size: 19, bold: n.level === 'error',
+        color: n.level === 'error' ? BAD : n.level === 'warn' ? GOLD : MUTED })],
+      spacing: { after: 90 },
+      border: { left: { style: d.BorderStyle.SINGLE, size: 12, color: n.level === 'method' ? "E5E8EE" : "E8DEC6", space: 8 } },
+      indent: { left: 120 },
+    })));
+  }
+
+  if (syn || (rck && (rck.notes || []).length)) {
+    kids.push(new d.Paragraph({
+      children: [new d.TextRun({ text: "FINDINGS", bold: true, size: 16, color: MUTED, characterSpacing: 40 })],
+      spacing: { before: 280, after: 40 },
+      border: { bottom: { style: d.BorderStyle.SINGLE, size: 6, color: "E5E8EE", space: 6 } },
+    }));
+  }
+
   rows.forEach((t, i) => {
     const c = anConfidence(t);
     kids.push(new d.Paragraph({
@@ -187,9 +238,22 @@ async function anBuildDocx(d, rows, opts) {
     }));
   });
 
+  /* Limitations as a SECTION, deduped. A funder reads them as one; a caveat
+     printed six times beside six findings is a caveat read none. They stay on
+     the findings too — a document gets cut up and a pasted finding must keep
+     its own caveat — so this is a second appearance, not a move. */
+  if (rck && (rck.limitations || []).length) {
+    kids.push(p("WHAT WOULD MAKE THIS WRONG", { run: { bold: true, size: 16, color: GOLD, characterSpacing: 40 }, para: { spacing: { before: 320, after: 80 } } }));
+    rck.limitations.forEach(x => kids.push(p(x, { run: { size: 19, color: "5A5443" }, para: { bullet: { level: 0 }, spacing: { after: 50 } } })));
+  }
+
   kids.push(new d.Paragraph({
     children: [new d.TextRun({
       text: "Produced by the NGG Analyst from aggregate figures as they stood when each answer was given. "
+        + (rck ? "Drawn from " + rck.snapshots + " snapshot" + (rck.snapshots === 1 ? "" : "s") + " of the data"
+             + ((rck.ranges || []).length ? " over " + rck.ranges.join("; ") : "") + ". " : "")
+        + (syn && syn.provider ? "The opening summary was written by " + syn.provider
+             + " from the findings only, and every figure in it was checked back against them. " : "")
         + "It holds no child's name, id or contact, and writes no records. Advisory only.",
       size: 16, color: MUTED, italics: true,
     })],
@@ -2141,11 +2205,44 @@ function AnalystPane({ onClose }) {
   };
 
   const [exporting, setExporting] = React.useState("");
+  /* ── What the findings add up to ───────────────────────────────────────────
+     The draft was a transcript: N questions in pin order, each honest and
+     traceable, and none of it saying what the set means or whether the set is
+     even about the same data. Built on the server, because the checks that
+     matter here are deterministic and the summary has to pass the same
+     grounding gate as every answer. */
+  const [report, setReport] = React.useState(null);
+  const [repBusy, setRepBusy] = React.useState(false);
+  const [repErr, setRepErr] = React.useState("");
+  const reportRows = pinned.length ? pinned : turns.filter(t => !t.pending);
+  const reportSig = (thread && thread.threadId || "") + "|" + reportRows.map(t => t.seq).join(",");
+  const buildReport = React.useCallback(async () => {
+    if (!thread || !thread.threadId || repBusy) return null;
+    const seqs = reportRows.map(t => t.seq).filter(s => s >= 0);
+    if (seqs.length === 0) return null;
+    setRepBusy(true); setRepErr("");
+    try {
+      const r = await NGGApi.admin.insightChatReport(thread.threadId, seqs);
+      const built = Object.assign({ sig: reportSig }, r.report);
+      setReport(built);
+      return built;
+    } catch (e) {
+      setRepErr(e.code || e.message || "the report could not be built");
+      return null;
+    } finally { setRepBusy(false); }
+  }, [thread && thread.threadId, reportSig, repBusy]);
+  /* Stale the moment the selection changes: a summary of five findings sitting
+     above six is the exact failure this feature exists to prevent. */
+  const reportFresh = report && report.sig === reportSig ? report : null;
 
   const exportReport = async (kind) => {
     const rows = pinned.length ? pinned : turns.filter(t => !t.pending);
     if (!rows.length || exporting) return;
     const stamp = new Date().toISOString().slice(0, 10);
+    // The synthesis and the report-level warnings go INTO the file. Building
+    // them only for the screen would put the caveats where they are least
+    // needed and leave them out of the document that gets circulated.
+    const rep = reportFresh || (rows.length > 1 ? await buildReport() : null);
     if (kind === "docx") {
       /* A real Word file, not an .html renamed .doc.
          This is where a finding actually goes: into a board paper, a funding
@@ -2161,6 +2258,7 @@ function AnalystPane({ onClose }) {
           stamp, pinned: pinned.length > 0,
           scope: liveChips.map(c => c.label).join(" · "),
           title: (thread && thread.title) || "Analyst findings",
+          report: rep,
         });
         anDownloadBlob("ngg-analyst-" + stamp + ".docx", blob);
       } catch (e) {
@@ -2186,7 +2284,31 @@ function AnalystPane({ onClose }) {
     const lines = ["# Analyst findings — " + stamp, "",
       "_" + rows.length + (pinned.length ? " pinned" : "") + " finding" + (rows.length === 1 ? "" : "s") +
       ". Figures as they stood when each answer was given._", ""];
+    const rsyn = rep && rep.synthesis && rep.synthesis.ok ? rep.synthesis : null;
+    const rchk = (rep && rep.checks) || null;
+    if (rsyn) {
+      lines.push("## What these findings add up to", "");
+      if (rsyn.summary) lines.push(rsyn.summary, "");
+      (rsyn.takeaways || []).forEach(x => lines.push("- " + x));
+      if ((rsyn.takeaways || []).length) lines.push("");
+      if (rsyn.tension) lines.push("_Where the findings disagree: " + rsyn.tension + "_", "");
+      if ((rsyn.decisions || []).length) {
+        lines.push("### What could be done", "");
+        rsyn.decisions.forEach(x => lines.push("- " + x.do + (x.because ? "  \n  _" + x.because + "_" : "")));
+        lines.push("");
+      }
+    }
+    if (rchk && (rchk.notes || []).length) {
+      lines.push("## Read this first", "");
+      rchk.notes.forEach(n => lines.push("> " + (n.level === "error" ? "**" + n.text + "**" : n.text), ""));
+    }
+    if (rsyn || (rchk && (rchk.notes || []).length)) lines.push("## Findings", "");
     rows.forEach(t => lines.push.apply(lines, turnMd(t)));
+    if (rchk && (rchk.limitations || []).length) {
+      lines.push("## What would make this wrong", "");
+      rchk.limitations.forEach(x => lines.push("- " + x));
+      lines.push("");
+    }
     lines.push("---", "_Produced by the NGG Analyst. Advisory only — it holds no personal data and writes no records._");
     anDownload("ngg-analyst-" + stamp + ".md", lines.join("\n"), "text/markdown");
   };
@@ -2575,6 +2697,69 @@ function AnalystPane({ onClose }) {
                       </div>
                     );
                   })}
+                {/* The synthesis and the report-level warnings, on screen and
+                    before the export — building them only into the file would
+                    put the caveats where nobody sees them in time to act. */}
+                {reportRows.length >= 2 && (
+                  <div className="anp-synth">
+                    {!reportFresh ? (
+                      <button className="anp-tool" disabled={repBusy} onClick={buildReport}>
+                        {repBusy ? "Reading the set…" : "◈ What do these " + reportRows.length + " add up to?"}
+                      </button>
+                    ) : (
+                      <>
+                        {/* Defects of the SET, not of any one answer — which is
+                            why no finding could carry them. Six answers drawn
+                            from three snapshots are individually correct and
+                            collectively misleading. */}
+                        {(reportFresh.checks.notes || []).map((n, i) => (
+                          <p key={i} className="anp-synth-note" data-level={n.level}>{n.text}</p>
+                        ))}
+                        {reportFresh.synthesis && reportFresh.synthesis.ok ? (
+                          <>
+                            {reportFresh.synthesis.summary && <p className="anp-synth-sum">{reportFresh.synthesis.summary}</p>}
+                            {(reportFresh.synthesis.takeaways || []).length > 0 && (
+                              <ul className="anp-synth-list">
+                                {reportFresh.synthesis.takeaways.map((x, i) => <li key={i}>{x}</li>)}
+                              </ul>
+                            )}
+                            {reportFresh.synthesis.tension && (
+                              <p className="anp-synth-tension"><b>Where they disagree:</b> {reportFresh.synthesis.tension}</p>
+                            )}
+                            {(reportFresh.synthesis.decisions || []).length > 0 && (
+                              <>
+                                <div className="anp-synth-h">What could be done</div>
+                                <ul className="anp-synth-list">
+                                  {reportFresh.synthesis.decisions.map((x, i) => (
+                                    <li key={i}>{x.do}{x.because ? <i> — {x.because}</i> : null}</li>
+                                  ))}
+                                </ul>
+                              </>
+                            )}
+                            {/* Said out loud. A summary that quietly lost a line
+                                for citing a figure that is not in the findings
+                                would read as a complete summary. */}
+                            {(reportFresh.synthesis.dropped || []).length > 0 && (
+                              <p className="anp-synth-note" data-level="error">
+                                {reportFresh.synthesis.dropped.length} line(s) of the summary were withheld for
+                                quoting a figure that is not in these findings.
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="anp-synth-note" data-level="method">
+                            {reportFresh.synthesis && reportFresh.synthesis.error === "ungrounded"
+                              ? "The summary was withheld: every line of it quoted a figure that is not in these findings."
+                              : reportFresh.synthesis && reportFresh.synthesis.error === "rate_limited"
+                              ? "Hourly analyst budget reached — the checks above still hold; the written summary will come back next hour."
+                              : "No summary could be written for this set. The checks above are unaffected."}
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {repErr && <p className="anp-synth-note" data-level="error">Couldn't read the set: {repErr}</p>}
+                  </div>
+                )}
                 <div className="anp-report-out">
                   <button className="anp-tool is-solid" disabled={!!exporting} onClick={() => exportReport("docx")}>
                     {exporting === "docx" ? "Building…" : "⭳ Word"}

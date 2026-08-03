@@ -4523,6 +4523,67 @@ function unzipDocumentXml(buf) {
       && /B91C1C/.test(warnXml)
       && warnXml.indexOf('not found in the evidence') < warnXml.indexOf('retention, not teaching'));
 
+    /* ── The report is a report, not a transcript ─────────────────────────
+     * A numbered list of honest findings still leaves the reader to work out
+     * what the set means and whether the set is even about the same data. The
+     * synthesis and the set-level warnings go ABOVE the findings, and into the
+     * document — a warning that lives only on screen arrives after the decision
+     * it was meant to inform, and one that lives only in the file arrives
+     * before nobody. */
+    const repXml = await anp.evaluate(async () => {
+      await window.loadVendor('docx');
+      const t = window.__turn;
+      const rep = {
+        checks: {
+          findings: 2, snapshots: 2, ranges: ['Weeks 1-6', 'Last 7 days'],
+          mixedEvidence: true, mixedRanges: true,
+          conflicts: [{ label: 'Attendance', values: [{ value: '78%' }, { value: '71%' }] }],
+          ungrounded: [], unanswerable: [], droppedBlocks: 1,
+          limitations: ['Only four children were graded at Ayobo.'],
+          notes: [
+            { level: 'warn', text: 'These 2 findings were drawn from 2 different snapshots of the data.' },
+            { level: 'error', text: '1 of these findings contains a figure that was not found in the evidence.' },
+          ],
+        },
+        synthesis: { ok: true, provider: 'stub-synth',
+          summary: 'Retention is the binding constraint, not teaching quality.',
+          takeaways: ['Ayobo loses children after week three.'],
+          decisions: [{ do: 'Move a mentor to Ayobo.', because: 'it trails on retention' }],
+          tension: 'One lens reads it as staffing, the other as travel.', dropped: [] },
+      };
+      const blob = await window.anBuildDocx(window.docx, [t, t], { stamp: '2026-08-02', pinned: true, scope: '', title: 'T', report: rep });
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      let s = ''; for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
+      return btoa(s);
+    }).then(b64 => unzipDocumentXml(Buffer.from(b64, 'base64')));
+
+    ok('the document opens with what the findings add up to, not with finding one',
+      /WHAT THESE FINDINGS ADD UP TO/.test(repXml)
+      && /binding constraint/.test(repXml)
+      && repXml.indexOf('ADD UP TO') < repXml.indexOf('Why is Ayobo falling'));
+    ok('…and a genuine disagreement between findings is named, not averaged away',
+      /Where the findings disagree/.test(repXml) && /staffing, the other as travel/.test(repXml));
+    ok('…and what could be done comes with which finding supports it',
+      /WHAT COULD BE DONE/.test(repXml) && /Move a mentor to Ayobo/.test(repXml) && /trails on retention/.test(repXml));
+    /* The set-level warnings. No single finding could carry these: two findings
+       from two snapshots are individually correct and collectively misleading,
+       which is invisible unless it is said here. */
+    /* Compared against the first finding's TEXT, not against the word
+       "FINDINGS" — that word also appears in the summary heading above, so the
+       obvious version of this assertion passes on the wrong occurrence. */
+    ok('…the set-level warnings sit above the findings they are about',
+      /READ THIS FIRST/.test(repXml) && /different snapshots/.test(repXml)
+      && repXml.indexOf('READ THIS FIRST') < repXml.indexOf('Why is Ayobo falling'));
+    ok('…limitations arrive as one section rather than six repetitions',
+      /WHAT WOULD MAKE THIS WRONG/.test(repXml) && /four children were graded/.test(repXml)
+      && repXml.indexOf('WHAT WOULD MAKE THIS WRONG') > repXml.indexOf('Why is Ayobo falling'));
+    ok('…and the footer records how many snapshots and who wrote the summary',
+      /2 snapshots of the data/.test(repXml) && /Weeks 1-6; Last 7 days/.test(repXml)
+      && /stub-synth/.test(repXml) && /checked back against them/.test(repXml));
+    // A transcript export must stay a transcript — no invented headings.
+    ok('…while a report with no synthesis gains no headings it cannot fill',
+      /WHAT THESE FINDINGS ADD UP TO/.test(warnXml) === false && /READ THIS FIRST/.test(warnXml) === false);
+
     // The composer's scope chips are the request, not a caption. Target the
     // centre by name — the chips are [range, centre] and removing the wrong one
     // would let this pass while proving nothing.

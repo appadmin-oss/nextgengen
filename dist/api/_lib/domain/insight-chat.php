@@ -810,3 +810,277 @@ function insight_chat_ask(array $p): array {
                 'points' => $l['points'] ?? [], 'error' => (string)($l['error'] ?? ''),
             ], $lenses)];
 }
+
+/* ── The report ──────────────────────────────────────────────────────────────
+ *
+ * WHAT WAS MISSING. Pinning answers produced a TRANSCRIPT: six numbered
+ * questions in the order somebody happened to pin them, each with its own
+ * provenance line. Every finding was honest and traceable, and the document was
+ * still not a report — because the three things a report does that a transcript
+ * cannot were all left to the reader:
+ *
+ *   1. Say what the findings ADD UP TO. A board paper needs one paragraph. A
+ *      reader who has to derive it from six answers derives a different one from
+ *      the one the data supports, and nobody ever finds out.
+ *
+ *   2. Admit that the findings may not be about the same data. Each turn already
+ *      stores its evidence fingerprint and its date range. Six questions asked
+ *      across a week, with the date filter moved in between, produced a document
+ *      that mixed snapshots and looked like one coherent reading of one dataset.
+ *      This is the most dangerous thing on the page precisely because it is
+ *      invisible: nothing in a transcript is wrong, and the whole is.
+ *
+ *   3. Collect the limitations. Caveats were scattered one per finding; a funder
+ *      reads limitations as a section, and a caveat repeated six times in six
+ *      places is a caveat nobody reads once.
+ *
+ * The checks below are DETERMINISTIC — PHP, not a model. A report-level warning
+ * that a model might or might not notice is not a warning. The synthesis is the
+ * only part a model writes, and it goes through the same grounding gate as every
+ * answer: if a figure in it is not in the findings it summarises, it is dropped
+ * rather than shipped with a note, because a summary is the one paragraph
+ * everybody reads and the one nobody checks.
+ */
+
+/** Below this there is nothing to synthesise — one finding is its own summary. */
+const IREP_MIN_FINDINGS = 2;
+
+/** A stat label, reduced so "Attendance rate" and "attendance  rate" collide. */
+function irep_label_key(string $s): string {
+    $s = strtolower(trim($s));
+    $s = preg_replace('/[^a-z0-9]+/', ' ', $s) ?? $s;
+    return trim(preg_replace('/\s+/', ' ', $s) ?? $s);
+}
+
+/** The numeric part of a stat value, or null when it has none ("—", "n/a"). */
+function irep_stat_number(string $v): ?float {
+    if (!preg_match('/-?\d+(?:\.\d+)?/', $v, $m)) return null;
+    return (float)$m[0];
+}
+
+/**
+ * Everything the findings say about themselves, without asking a model.
+ *
+ * Each of these answers a question a reader of the finished document would
+ * otherwise have to ask the person who wrote it.
+ */
+function irep_checks(array $turns): array {
+    $fps = []; $ranges = []; $caveats = []; $ungrounded = []; $unanswerable = []; $dropped = 0;
+    $stats = [];                                  // labelKey => [[label, value, num, question], …]
+    foreach ($turns as $t) {
+        $fp = (string)($t['evidenceFp'] ?? '');
+        if ($fp !== '') $fps[$fp] = true;
+        $rl = (string)($t['rangeLabel'] ?? '');
+        if ($rl !== '') $ranges[$rl] = true;
+        $c = trim((string)(($t['data']['caveat'] ?? '')));
+        if ($c !== '') $caveats[irep_label_key($c)] = $c;      // deduped on meaning, not spacing
+        if (($t['checks']['grounded'] ?? true) === false) $ungrounded[] = (string)$t['question'];
+        if ((string)($t['status'] ?? '') === 'unanswerable') $unanswerable[] = (string)$t['question'];
+        $dropped += count((array)($t['checks']['dropped'] ?? []));
+        foreach ((array)($t['data']['stats'] ?? []) as $st) {
+            $label = trim((string)($st['label'] ?? ''));
+            $value = trim((string)($st['value'] ?? ''));
+            if ($label === '' || $value === '') continue;
+            $stats[irep_label_key($label)][] = ['label' => $label, 'value' => $value,
+                'num' => irep_stat_number($value), 'question' => (string)$t['question']];
+        }
+    }
+
+    /* THE SAME FIGURE, TWICE, DIFFERENT.
+     *
+     * Compared on the STRUCTURED stats rather than on the prose, so this is an
+     * exact finding and not a guess: two answers both carrying a headline called
+     * "Attendance" with different numbers is either a range difference or a
+     * mistake, and a document that prints both without noticing is worse than
+     * one that prints neither. Reported, never resolved — deciding which is
+     * right needs the range, and that is the reader's call. */
+    $conflicts = [];
+    foreach ($stats as $rows) {
+        $seen = [];
+        foreach ($rows as $r) {
+            if ($r['num'] === null) continue;
+            $seen[(string)$r['num']] = $r;
+        }
+        if (count($seen) < 2) continue;
+        $vals = array_values($seen);
+        $conflicts[] = [
+            'label' => $vals[0]['label'],
+            'values' => array_map(fn($v) => ['value' => $v['value'], 'question' => $v['question']], $vals),
+        ];
+    }
+
+    $fpList = array_keys($fps); $rangeList = array_keys($ranges);
+    $notes = [];
+    if (count($fpList) > 1) $notes[] = ['level' => 'warn', 'text' =>
+        'These ' . count($turns) . ' findings were drawn from ' . count($fpList) . ' different snapshots of the '
+        . 'data, taken at different moments. They are not guaranteed to be consistent with one another, and '
+        . 'nothing below reconciles them.'];
+    if (count($rangeList) > 1) $notes[] = ['level' => 'warn', 'text' =>
+        'They also cover ' . count($rangeList) . ' different date ranges (' . implode('; ', array_slice($rangeList, 0, 4))
+        . (count($rangeList) > 4 ? '; …' : '') . '). A figure from one range does not compare with a figure from '
+        . 'another, so any comparison between findings has to be made deliberately rather than read off.'];
+    foreach ($conflicts as $cf) {
+        $notes[] = ['level' => 'warn', 'text' =>
+            'Two findings report "' . $cf['label'] . '" differently: '
+            . implode(' and ', array_map(fn($v) => $v['value'], $cf['values']))
+            . '. Check which range each was drawn from before quoting either.'];
+    }
+    if ($ungrounded) $notes[] = ['level' => 'error', 'text' =>
+        count($ungrounded) . ' of these findings contain a figure that was not found in the evidence. Those are '
+        . 'the model\'s arithmetic, not data, and must not be quoted as measurements.'];
+    if ($dropped > 0) $notes[] = ['level' => 'method', 'text' =>
+        $dropped . ' structured block(s) were withheld from these answers for citing a figure that was not in '
+        . 'the evidence. The prose you are reading is what survived that check.'];
+    if ($unanswerable) $notes[] = ['level' => 'method', 'text' =>
+        count($unanswerable) . ' of the questions could not be answered from this evidence at all. They are kept '
+        . 'here because what a dataset cannot answer is part of what it shows.'];
+
+    return [
+        'findings' => count($turns),
+        'snapshots' => count($fpList), 'ranges' => array_values($rangeList),
+        'mixedEvidence' => count($fpList) > 1, 'mixedRanges' => count($rangeList) > 1,
+        'conflicts' => $conflicts,
+        'ungrounded' => $ungrounded, 'unanswerable' => $unanswerable, 'droppedBlocks' => $dropped,
+        'limitations' => array_values($caveats),
+        'notes' => $notes,
+    ];
+}
+
+/**
+ * The one paragraph a board paper needs, written from the findings and nothing
+ * else — then held to the same grounding standard as every answer.
+ *
+ * The model is given ONLY the pinned findings, never the underlying evidence:
+ * the job is to summarise what was already checked, and handing it the raw
+ * evidence would let it introduce a figure no lens ever put its name to.
+ */
+function irep_synthesis(array $turns, array $checks, string $title): array {
+    $findings = [];
+    foreach ($turns as $t) {
+        $findings[] = [
+            'question' => (string)$t['question'],
+            'answer' => mb_substr((string)($t['answer'] ?? ''), 0, 900),
+            'range' => (string)($t['rangeLabel'] ?? ''),
+            'grounded' => ($t['checks']['grounded'] ?? true) !== false,
+            'headlines' => array_map(fn($s) => trim(($s['value'] ?? '') . ' ' . ($s['label'] ?? '')),
+                array_slice((array)($t['data']['stats'] ?? []), 0, 3)),
+        ];
+    }
+    $sys = "You are writing the opening of a report for the people who run a children's education programme, "
+         . "from findings that have already been checked against the data.\n\n"
+         . "- Use ONLY these findings. Never add a point of your own and NEVER write a number that is not "
+         . "already in one of them.\n"
+         . "- Say what they add up to. If they point in different directions, that IS the finding — say so "
+         . "plainly rather than averaging them into a sentence that is true of nothing.\n"
+         . "- If the findings were drawn from different date ranges or different snapshots, do not compare "
+         . "figures across them.\n"
+         . "- `takeaways` are what a reader should leave with; `decisions` are what somebody could actually do "
+         . "next, and only where a finding supports one. Omit decisions entirely rather than inventing them.\n"
+         . "- No preamble, no restating the title, no 'this report'.\n\n"
+         . "Reply with JSON only: {\"summary\":\"2-4 sentences\","
+         . "\"takeaways\":[\"one sentence each, at most 4\"],"
+         . "\"decisions\":[{\"do\":\"one concrete next step\",\"because\":\"which finding supports it\"}],"
+         . "\"tension\":\"one sentence naming a genuine disagreement between the findings, or empty\"}";
+
+    $r = ai_classify($sys, json_encode(['title' => $title, 'findings' => $findings,
+        'mixed_ranges' => !empty($checks['mixedRanges']), 'mixed_snapshots' => !empty($checks['mixedEvidence']),
+    ], JSON_UNESCAPED_SLASHES) ?: '{}', 900, ICHAT_ANSWER_PROFILE);
+    if (empty($r['ok']) || !is_array($r['data'] ?? null)) {
+        return ['ok' => false, 'error' => (string)($r['error'] ?? 'synthesis_failed')];
+    }
+    $d = $r['data'];
+    $str = fn($v, $n) => mb_substr(trim((string)$v), 0, $n);
+    $out = [
+        'summary' => $str($d['summary'] ?? '', 1200),
+        'takeaways' => array_values(array_filter(array_map(fn($x) => $str($x, 240), array_slice((array)($d['takeaways'] ?? []), 0, 4)))),
+        'decisions' => [],
+        'tension' => $str($d['tension'] ?? '', 300),
+        'provider' => (string)($r['provider'] ?? ''),
+    ];
+    foreach (array_slice((array)($d['decisions'] ?? []), 0, 4) as $dec) {
+        $do = $str($dec['do'] ?? '', 240);
+        if ($do === '') continue;
+        $out['decisions'][] = ['do' => $do, 'because' => $str($dec['because'] ?? '', 240)];
+    }
+
+    /* THE SAME GATE AS EVERY ANSWER, applied to the paragraph everybody reads
+     * and nobody checks. The haystack is the FINDINGS, not the evidence: a
+     * summary may only restate figures that already survived a grounding check
+     * of their own. Anything with an unfindable number is DROPPED — a summary
+     * carrying a warning would still be read as the summary. */
+    $hay = [];
+    ichat_evidence_numbers($findings, $hay);
+    $bad = [];
+    foreach (['summary', 'tension'] as $k) {
+        if ($out[$k] === '') continue;
+        $miss = ichat_ungrounded($out[$k], $hay);
+        if ($miss) { $bad[] = $k . ': ' . implode(', ', $miss); $out[$k] = ''; }
+    }
+    $keptT = [];
+    foreach ($out['takeaways'] as $x) {
+        $miss = ichat_ungrounded($x, $hay);
+        if ($miss) { $bad[] = 'takeaway: ' . implode(', ', $miss); continue; }
+        $keptT[] = $x;
+    }
+    $out['takeaways'] = $keptT;
+    $keptD = [];
+    foreach ($out['decisions'] as $x) {
+        $miss = array_merge(ichat_ungrounded($x['do'], $hay), ichat_ungrounded($x['because'], $hay));
+        if ($miss) { $bad[] = 'decision: ' . implode(', ', $miss); continue; }
+        $keptD[] = $x;
+    }
+    $out['decisions'] = $keptD;
+    $out['dropped'] = $bad;
+    $out['ok'] = $out['summary'] !== '' || $out['takeaways'] || $out['decisions'];
+    if (!$out['ok']) $out['error'] = 'ungrounded';
+    return $out;
+}
+
+/**
+ * Assemble a report from chosen turns of one thread.
+ *
+ * `seqs` is the pinned selection, in the order the reader put them. Absent, the
+ * whole thread is used. The deterministic checks always run; the synthesis is
+ * skipped below IREP_MIN_FINDINGS, because one finding summarising itself is a
+ * model call spent restating a paragraph.
+ */
+function insight_chat_report(array $p): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+    $me = (string)($g['requester']['memberId'] ?? '');
+    $tid = trim((string)($p['threadId'] ?? ''));
+    $t = db_row("SELECT * FROM insight_threads WHERE threadId = ? LIMIT 1", [$tid]);
+    if (!$t) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$t['ownerId'] !== $me) return ['ok' => false, 'error' => 'not_yours'];
+
+    $rows = db_all("SELECT * FROM insight_turns WHERE threadId = ? ORDER BY seq ASC", [$tid]);
+    $bySeq = [];
+    foreach ($rows as $r) $bySeq[(int)$r['seq']] = ichat_turn_out($r);
+
+    $want = array_values(array_filter(array_map('intval', (array)($p['seqs'] ?? []))));
+    $turns = [];
+    if ($want) {
+        // The reader's order, not the thread's. Pin order is an editorial choice.
+        foreach ($want as $s) if (isset($bySeq[$s])) $turns[] = $bySeq[$s];
+    } else {
+        foreach ($bySeq as $tt) if ((string)($tt['status'] ?? '') !== 'failed') $turns[] = $tt;
+    }
+    if (!$turns) return ['ok' => false, 'error' => 'no_findings'];
+
+    $checks = irep_checks($turns);
+    $synth = ['ok' => false, 'error' => 'too_few'];
+    if (count($turns) >= IREP_MIN_FINDINGS) {
+        if (!ichat_budget_ok($me)) $synth = ['ok' => false, 'error' => 'rate_limited'];
+        else $synth = irep_synthesis($turns, $checks, (string)$t['title']);
+    }
+    audit('insight.report', $me, $tid, ['findings' => count($turns), 'synth' => !empty($synth['ok']),
+        'mixed' => !empty($checks['mixedEvidence'])], (string)($p['ip'] ?? ''));
+
+    return ['ok' => true, 'report' => [
+        'threadId' => $tid, 'title' => (string)$t['title'], 'centre' => (string)$t['centre'],
+        'seqs' => array_map(fn($x) => (int)$x['seq'], $turns),
+        'checks' => $checks,
+        'synthesis' => $synth,
+        'minFindings' => IREP_MIN_FINDINGS,
+    ]];
+}

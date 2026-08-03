@@ -4490,6 +4490,159 @@ chk('an hourly budget stops a runaway from spending a programme\'s API key', (fu
     return empty($r['ok']) && ($r['error'] ?? '') === 'rate_limited' && $called === 0;
 })());
 
+/* ── The report ──────────────────────────────────────────────────────────────
+ *
+ * Pinning answers produced a TRANSCRIPT: N questions in pin order, each honest
+ * and traceable. Three things a report does that a transcript cannot were all
+ * left to the reader — what the set adds up to, whether the set is even about
+ * the same data, and what would make it wrong. The checks are deterministic on
+ * purpose: a report-level warning a model might or might not notice is not a
+ * warning.
+ */
+
+/** A turn as ichat_turn_out() shapes it, for the pure checks below. */
+function __rep_turn(array $o): array {
+    return array_merge(['seq' => 1, 'question' => 'q', 'answer' => 'a', 'plan' => [], 'claims' => [],
+        'data' => [], 'checks' => ['grounded' => true], 'evidenceFp' => 'fp-a', 'rangeLabel' => 'Week 1',
+        'status' => 'ok', 'error' => '', 'providers' => [], 'ms' => 1, 'at' => ''], $o);
+}
+
+chk('report: findings drawn from different snapshots say so — the whole is misleading when the parts are not', (function () {
+    /* THE DANGEROUS ONE. Six questions asked across a week, with the date filter
+     * moved in between, produced a document that mixed snapshots and read as one
+     * coherent view of one dataset. Every finding correct; the set not. */
+    $c = irep_checks([
+        __rep_turn(['seq' => 1, 'evidenceFp' => 'fp-a', 'rangeLabel' => 'Last 7 days']),
+        __rep_turn(['seq' => 2, 'evidenceFp' => 'fp-b', 'rangeLabel' => 'This term']),
+    ]);
+    $txt = implode(' | ', array_column($c['notes'], 'text'));
+    return $c['mixedEvidence'] === true && $c['snapshots'] === 2
+        && $c['mixedRanges'] === true && count($c['ranges']) === 2
+        && strpos($txt, 'different snapshots') !== false
+        && strpos($txt, 'different date ranges') !== false
+        && strpos($txt, 'Last 7 days') !== false;
+})());
+
+chk('report: one snapshot and one range raises nothing — the check must not cry wolf', (function () {
+    $c = irep_checks([__rep_turn(['seq' => 1]), __rep_turn(['seq' => 2])]);
+    return $c['mixedEvidence'] === false && $c['mixedRanges'] === false && $c['notes'] === [];
+})());
+
+chk('report: the same headline reported twice with different numbers is named', (function () {
+    /* Compared on the STRUCTURED stats rather than on the prose, so this is an
+     * exact finding and not a guess. A document printing 78% and 71% under the
+     * same word, without noticing, is worse than one printing neither. */
+    $c = irep_checks([
+        __rep_turn(['seq' => 1, 'question' => 'How is attendance?', 'data' => ['stats' => [['label' => 'Attendance rate', 'value' => '78%']]]]),
+        __rep_turn(['seq' => 2, 'question' => 'And at Ayobo?', 'data' => ['stats' => [['label' => 'attendance  rate', 'value' => '71%']]]]),
+    ]);
+    $txt = implode(' | ', array_column($c['notes'], 'text'));
+    return count($c['conflicts']) === 1
+        && count($c['conflicts'][0]['values']) === 2
+        && strpos($txt, 'report "Attendance rate" differently') !== false
+        && strpos($txt, '78%') !== false && strpos($txt, '71%') !== false;
+})());
+
+chk('report: the same headline reported twice with the SAME number is not a conflict', (function () {
+    $c = irep_checks([
+        __rep_turn(['seq' => 1, 'data' => ['stats' => [['label' => 'Attendance', 'value' => '78%']]]]),
+        __rep_turn(['seq' => 2, 'data' => ['stats' => [['label' => 'Attendance', 'value' => 'about 78%']]]]),
+        // A stat with no number at all cannot disagree with anything.
+        __rep_turn(['seq' => 3, 'data' => ['stats' => [['label' => 'Attendance', 'value' => '—']]]]),
+    ]);
+    return $c['conflicts'] === [];
+})());
+
+chk('report: limitations become one deduped section, and the ungrounded ones are counted', (function () {
+    /* A caveat printed six times beside six findings is a caveat read none. */
+    $c = irep_checks([
+        __rep_turn(['seq' => 1, 'data' => ['caveat' => 'Only 4 children were graded.']]),
+        __rep_turn(['seq' => 2, 'data' => ['caveat' => 'only 4 children were graded']]),
+        __rep_turn(['seq' => 3, 'data' => ['caveat' => 'One centre has not reported.'],
+                    'checks' => ['grounded' => false, 'dropped' => [['block' => 'table']]]]),
+        __rep_turn(['seq' => 4, 'status' => 'unanswerable']),
+    ]);
+    $txt = implode(' | ', array_column($c['notes'], 'text'));
+    return count($c['limitations']) === 2
+        && count($c['ungrounded']) === 1 && $c['droppedBlocks'] === 1 && count($c['unanswerable']) === 1
+        && strpos($txt, 'not found in the evidence') !== false
+        && strpos($txt, 'withheld') !== false
+        && strpos($txt, 'could not be answered') !== false;
+})());
+
+chk('report: the summary is held to the same grounding gate as every answer', (function () {
+    /* A summary is the one paragraph everybody reads and nobody checks, so a
+     * figure in it that is not in the findings is DROPPED rather than shipped
+     * with a warning — a summary carrying a caveat still reads as the summary. */
+    $turns = [
+        __rep_turn(['seq' => 1, 'answer' => 'Attendance is 78% across the programme.']),
+        __rep_turn(['seq' => 2, 'answer' => 'Ayobo reaches 71% of its sessions.']),
+    ];
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = function ($profile, $sys, $t) {
+        return ['ok' => true, 'provider' => 'stub-synth', 'text' => json_encode([
+            // 93% is in neither finding. The takeaway is.
+            'summary' => 'Attendance sits at 93% overall, which is strong.',
+            'takeaways' => ['Ayobo is at 71%, behind the programme.', 'A second figure of 42% needs watching.'],
+            'decisions' => [['do' => 'Send a mentor to Ayobo, at 71%.', 'because' => 'it trails']],
+            'tension' => '',
+        ])];
+    };
+    $s = irep_synthesis($turns, ['mixedRanges' => false, 'mixedEvidence' => false], 'T');
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    return $s['summary'] === ''                       // 93% dropped the whole sentence
+        && count($s['takeaways']) === 1               // 42% dropped its line, 71% kept
+        && strpos($s['takeaways'][0], '71%') !== false
+        && count($s['decisions']) === 1               // grounded in 71%
+        && count($s['dropped']) === 2
+        && $s['ok'] === true;                         // something survived, so it still ships
+})());
+
+chk('report: a summary with nothing grounded left is withheld entirely, not shipped empty', (function () {
+    $turns = [__rep_turn(['seq' => 1, 'answer' => 'Attendance is 78%.']), __rep_turn(['seq' => 2, 'answer' => 'Grades average 61.'])];
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = fn($profile, $sys, $t) => ['ok' => true, 'provider' => 'stub', 'text' => json_encode([
+        'summary' => 'Everything is at 99%.', 'takeaways' => ['Also 12345 things.'], 'decisions' => [], 'tension' => '',
+    ])];
+    $s = irep_synthesis($turns, [], 'T');
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    return $s['ok'] === false && ($s['error'] ?? '') === 'ungrounded' && $s['summary'] === '';
+})());
+
+chk('report: the op keeps the reader\'s order and is gated on the thread\'s owner', (function () {
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock();
+    $a = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'question' => 'Why is Wednesday weak?']);
+    if (empty($a['ok'])) { unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg); return true; }
+    $tid = (string)$a['threadId'];
+    backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'threadId' => $tid, 'question' => 'And which centre is furthest behind?']);
+    // Pin order is an editorial choice: 2 then 1 must come back 2 then 1.
+    $r = backend_dispatch('analytics.insight.report', ['requesterId' => 'NGG-2025-0099', 'threadId' => $tid, 'seqs' => [2, 1]]);
+    $mine = backend_dispatch('analytics.insight.report', ['requesterId' => 'NGG-2025-0700', 'threadId' => $tid, 'seqs' => [1]]);
+    $anon = backend_dispatch('analytics.insight.report', ['requesterId' => '', 'threadId' => $tid]);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    return !empty($r['ok']) && ($r['report']['seqs'] ?? []) === [2, 1]
+        && isset($r['report']['checks']['notes'])
+        && ($mine['error'] ?? '') === 'not_yours'
+        && ($anon['ok'] ?? false) !== true;
+})());
+
+chk('report: one finding gets the checks but no model call spent restating it', (function () {
+    $cfg = __ichat_config_on();
+    $called = 0;
+    $GLOBALS['__ai_mock'] = function ($profile, $sys, $t) use (&$called) {
+        if (strpos((string)$sys, 'add up to') !== false) $called++;
+        return (__ichat_mock())($profile, $sys, $t);
+    };
+    $a = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'question' => 'Why is Wednesday weak?']);
+    if (empty($a['ok'])) { unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg); return true; }
+    $r = backend_dispatch('analytics.insight.report', ['requesterId' => 'NGG-2025-0099',
+        'threadId' => (string)$a['threadId'], 'seqs' => [1]]);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    return !empty($r['ok']) && ($r['report']['synthesis']['error'] ?? '') === 'too_few' && $called === 0
+        && ($r['report']['checks']['findings'] ?? 0) === 1;
+})());
+
 /* ── The providers ───────────────────────────────────────────────────────── */
 chk('a profile can name anthropic or openrouter, and gets a sane default model', (function () {
     $keep = $GLOBALS['CONFIG']['ai'] ?? null;

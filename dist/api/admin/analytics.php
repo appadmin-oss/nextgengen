@@ -41,6 +41,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     } elseif ($action === 'insight.rename') {
         $res = gs_call('analytics.insight.rename', ['requesterId' => $s['mid'],
             'threadId' => $in['threadId'] ?? '', 'title' => $in['title'] ?? '']);
+    } elseif ($action === 'insight.report') {
+        $res = gs_call('analytics.insight.report', ['requesterId' => $s['mid'],
+            'threadId' => $in['threadId'] ?? '', 'seqs' => $in['seqs'] ?? [], 'ip' => client_ip()]);
     } else {
         json_error('unknown_action', 400);
     }
