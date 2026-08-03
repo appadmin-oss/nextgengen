@@ -8969,13 +8969,27 @@ function SummerAttendance() {
     } catch (e) { toast.error(e.code === "bad_date" ? "That isn't a date." : (e.code || e.message)); }
     finally { setDayBusy(""); }
   };
+  const [sort, setSort] = React.useState("rate");
+  /* The search is DEBOUNCED and then SENT.
+     It used to filter in the browser, over rows the server had already sorted
+     lowest-rate-first and cut to 300 — so a chip read "47 attending every day"
+     beside an empty table, and typing a name found nothing whenever that child
+     was not among the worst three hundred. */
+  const [qLive, setQLive] = React.useState("");
+  React.useEffect(() => {
+    const t = setTimeout(() => setQ(qLive.trim()), 250);
+    return () => clearTimeout(t);
+  }, [qLive]);
   const opts = React.useMemo(() => {
     const o = {};
     if (range.from) o.from = range.from;
     if (range.to) o.to = range.to;
     if (centre) o.centre = centre;
+    if (q) o.q = q;
+    if (only && only !== "all") o.scenario = only;
+    if (sort && sort !== "rate") o.sort = sort;
     return o;
-  }, [range.from, range.to, centre]);
+  }, [range.from, range.to, centre, q, only, sort]);
   const load = React.useCallback(() => {
     NGGApi.admin.summer.attendance("", opts).then(r => setA(r.attendance)).catch(e => setErr(e.code || e.message));
     /* The volunteer half is additive: a server that does not serve it yet, or a
@@ -9001,31 +9015,18 @@ function SummerAttendance() {
   const maxDay = Math.max(1, ...a.days.map(d => d.present));
   const prog = a.programme || {};
   const closed = prog.enabled && !prog.isProgrammeDay;
-  /* Filters hold across searching, so a coordinator can narrow to "absent
-     today" and then look for one name inside it. One predicate for both
-     registers, so a scenario cannot mean one thing for children and another
-     for volunteers. */
-  const needle = q.trim().toLowerCase();
-  const matchScenario = (r) => {
-    if (only === "absent") return !r.presentToday;
-    if (only === "present") return !!r.presentToday;
-    if (only === "never") return (r.present || 0) === 0;
-    if (only === "atrisk") return (r.rate || 0) < 50;
-    if (only === "late") return (r.lates || 0) > 0;
-    if (only === "half") return (r.halfDays || 0) > 0;
-    if (only === "flagged") return r.state && r.state !== "clear";
-    if (only === "perfect") return (r.rate || 0) >= 100;
-    return true;
-  };
-  const roster = a.roster.filter(r => {
-    if (needle && !((r.fullName || "") + " " + (r.studentId || "") + " " + (r.track || "") + " " + (r.centre || "")).toLowerCase().includes(needle)) return false;
-    return matchScenario(r);
-  });
-  const volRoster = ((vols && vols.roster) || []).filter(r => {
-    if (needle && !((r.fullName || "") + " " + (r.volunteerId || "") + " " + (r.role || "") + " " + (r.centre || "") + " " + (r.faculty || "")).toLowerCase().includes(needle)) return false;
-    return matchScenario(r);
-  });
+  /* The rows ARE the answer now: the search and the situation were applied to
+     the whole register on the server, before the cap, so what arrives is what
+     matched rather than what happened to survive the slice. */
+  const roster = a.roster;
+  const volRoster = (vols && vols.roster) || [];
   const volSum = (vols && vols.summary) || null;
+  // What the cap dropped, said out loud — a truncated register that does not
+  // admit it reads as "this is everyone".
+  const matched = who === "volunteers" ? ((vols && vols.matched) != null ? vols.matched : volRoster.length)
+    : (a.rosterMatched != null ? a.rosterMatched : roster.length);
+  const shownCount = who === "volunteers" ? volRoster.length : roster.length;
+  const truncated = matched > shownCount;
   const win = a.window || {};
   /* Name the window wherever a rate is shown. A bare "Rate" column against an
      unstated span was the main reason this screen was hard to read: 62% of the
@@ -9033,24 +9034,11 @@ function SummerAttendance() {
   const winLabel = win.scope === "range" ? (win.from || "?") + " → " + (win.to || "?")
     : win.scope === "term" ? "term to date · " + (win.from || "?") + " → " + (win.to || "?")
     : "days scanned";
-  const scenarioCount = (k) => {
-    const s = who === "volunteers" ? null : (a.scenarios || {});
-    if (s && s[k] != null) return s[k];
-    // Volunteers are counted client-side; the roster is small and complete.
-    const src = who === "volunteers" ? ((vols && vols.roster) || []) : a.roster;
-    return k === "all" ? src.length : src.filter(matchScenarioFor(k)).length;
-  };
-  function matchScenarioFor(k) {
-    return (r) => k === "absent" ? !r.presentToday
-      : k === "present" ? !!r.presentToday
-      : k === "never" ? (r.present || 0) === 0
-      : k === "atrisk" ? (r.rate || 0) < 50
-      : k === "late" ? (r.lates || 0) > 0
-      : k === "half" ? (r.halfDays || 0) > 0
-      : k === "flagged" ? (r.state && r.state !== "clear")
-      : k === "perfect" ? (r.rate || 0) >= 100
-      : true;
-  }
+  /* Counted over the WHOLE register by the server, never over the drawn page.
+     A chip that counts what is on screen tells you how big the page is, which
+     is the one thing nobody wants to know. */
+  const scenarioCounts = (who === "volunteers" ? (vols && vols.scenarios) : a.scenarios) || {};
+  const scenarioCount = (k) => scenarioCounts[k] != null ? scenarioCounts[k] : null;
   const rangePreset = (days) => {
     const end = win.to || prog.today || "";
     if (!end) return;
@@ -9058,9 +9046,11 @@ function SummerAttendance() {
     if (!t) return;
     setRange({ from: new Date(t - (days - 1) * 86400000).toISOString().slice(0, 10), to: end });
   };
-  const centreOptions = Array.from(new Set(
-    a.roster.map(r => r.centre).concat(((vols && vols.roster) || []).map(r => r.centre)).filter(Boolean)
-  )).sort();
+  /* From the catalogue the server sends, not from the rows. Derived from the
+     roster it collapsed to a single option the moment a centre was picked —
+     because the roster had already been narrowed to that centre — so there was
+     no way to move from one centre to another. */
+  const centreOptions = a.centres || [];
   return (
     <div>
       {prog.enabled && (
@@ -9151,7 +9141,10 @@ function SummerAttendance() {
       <div className="att-controls">
         <div className="att-controls-row">
           <div className="att-seg" role="group" aria-label="Whose attendance">
-            {[["students", "Children", a.roster.length], ["volunteers", "Volunteers", ((vols && vols.roster) || []).length]].map(([k, l, n]) => (
+            {/* The whole register, not the filtered page — a tab that renumbers
+                itself as you filter cannot tell you which register is bigger. */}
+            {[["students", "Children", a.rosterTotal != null ? a.rosterTotal : roster.length],
+              ["volunteers", "Volunteers", (vols && vols.total != null) ? vols.total : volRoster.length]].map(([k, l, n]) => (
               <button key={k} className={"att-seg-btn" + (who === k ? " is-on" : "")} onClick={() => setWho(k)} aria-pressed={who === k}>
                 {l}<span className="att-seg-n">{n}</span>
               </button>
@@ -9159,7 +9152,7 @@ function SummerAttendance() {
           </div>
           <span style={{ flex: 1 }}/>
           <input className="admin-input" style={{ width: 230 }} placeholder={who === "volunteers" ? "Search name, ID, role, centre" : "Search name, ID, track, centre"}
-            value={q} onChange={e => setQ(e.target.value)} aria-label="Search the register"/>
+            value={qLive} onChange={e => setQLive(e.target.value)} aria-label="Search the register"/>
         </div>
 
         <div className="att-controls-row">
@@ -9181,6 +9174,12 @@ function SummerAttendance() {
               {centreOptions.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           )}
+          <select className="admin-select" value={sort} onChange={e => setSort(e.target.value)} aria-label="Sort the register">
+            <option value="rate">Lowest attendance first</option>
+            <option value="best">Highest attendance first</option>
+            <option value="name">By name</option>
+            <option value="seen">Most recently seen</option>
+          </select>
         </div>
 
         {/* Every scenario carries its own count, so choosing one is no longer
@@ -9189,9 +9188,12 @@ function SummerAttendance() {
           {ATT_SCENARIOS.map(s => {
             const n = scenarioCount(s.key);
             return (
-              <button key={s.key} className={"att-chip" + (only === s.key ? " is-on" : "")} data-tone={s.tone || ""}
+              /* Nothing in it? Say so and disable it, rather than offering a
+                 filter whose only outcome is an empty table. */
+              <button key={s.key} className={"att-chip" + (only === s.key ? " is-on" : "") + (n === 0 ? " is-empty" : "")}
+                data-tone={s.tone || ""} disabled={n === 0 && only !== s.key}
                 title={s.hint} aria-pressed={only === s.key} onClick={() => setOnly(s.key)}>
-                {s.label}<span className="att-chip-n">{n}</span>
+                {s.label}<span className="att-chip-n">{n == null ? "…" : n}</span>
               </button>
             );
           })}
@@ -9202,6 +9204,11 @@ function SummerAttendance() {
         <div className="eyebrow" style={{ margin: 0 }}>{who === "volunteers" ? "ATTENDANCE BY VOLUNTEER" : "ATTENDANCE BY CHILD"}</div>
         <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>
           {win.days || 0} day{(win.days || 0) === 1 ? "" : "s"} · {winLabel}
+          {" · "}{matched} match{matched === 1 ? "" : "es"}
+          {/* Said, not implied. A register cut to the cap that does not admit it
+              reads as "this is everyone", which is the wrong thing to believe
+              about a list of children who did not turn up. */}
+          {truncated ? " · showing the first " + shownCount : ""}
         </span>
         <span style={{ flex: 1 }}/>
         <button className="btn btn-ghost btn-sm"
@@ -9218,7 +9225,11 @@ function SummerAttendance() {
       {who === "volunteers" ? (
         !vols ? <div className="admin-empty">Couldn't load volunteer attendance.</div>
         : !volRoster.length ? (
-          <div className="admin-empty">{((vols.roster || []).length) ? "No volunteer matches that filter." : "No active volunteers on the roster yet."}</div>
+          /* Told apart by the WHOLE register, not by the drawn rows. Now that
+             the filter runs on the server, an empty result means nothing
+             matched — reading it as "there are none" tells a coordinator the
+             roster is empty when it is merely filtered. */
+          <div className="admin-empty">{(vols.total || 0) > 0 ? "No volunteer matches that filter." : "No active volunteers on the roster yet."}</div>
         ) : (
         <>
           {volSum && volSum.measurable && (
@@ -9229,8 +9240,13 @@ function SummerAttendance() {
               <AdminTile n={volSum.kpis.reliable} l="Reliable (75%+)"/>
             </div>
           )}
-          <div className="admin-table-wrap"><table className="admin-table">
-            <thead><tr><th>Volunteer</th><th>Role</th><th>Present</th><th>Rate</th><th>On time</th><th>Streak</th><th>Last seen</th><th>Today</th></tr></thead>
+          <div className="admin-table-wrap"><table className="admin-table att-table">
+            <thead><tr>
+              <th>Volunteer</th><th>Role</th>
+              <th>Days in<span className="att-th-sub">of their own open days</span></th>
+              <th>Rate<span className="att-th-sub">{win.ranged ? "in this range" : "since they joined"}</span></th>
+              <th>On time</th><th>Streak</th><th>Last seen</th><th>Today</th>
+            </tr></thead>
             <tbody>{volRoster.map(r => (
               <tr key={r.volunteerId}>
                 <td>{r.fullName}<div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{r.volunteerId}{r.centre ? " · " + r.centre : ""}</div></td>
@@ -9259,23 +9275,42 @@ function SummerAttendance() {
         </>
         )
       ) : !roster.length ? (
-        <div className="admin-empty">{a.roster.length ? "No child matches that filter." : "Nobody is enrolled in this cohort yet."}</div>
+        <div className="admin-empty">{(a.rosterTotal || 0) > 0 ? "No child matches that filter." : "Nobody is enrolled in this cohort yet."}</div>
       ) : (
-      <div className="admin-table-wrap" style={{ marginTop: 8 }}><table className="admin-table">
-        <thead><tr><th>Student</th><th>Track</th><th>Present</th><th>Rate</th><th>Late</th><th>Standing</th><th>Last seen</th><th>Today</th></tr></thead>
+      <div className="admin-table-wrap" style={{ marginTop: 8 }}><table className="admin-table att-table">
+        {/* The headers carry their own units. "Present" and "Rate" against an
+            unstated span is what made this table hard to read: the reader had to
+            hold the window in their head to know what 62% was 62% of. */}
+        <thead><tr>
+          <th>Child</th><th>Track</th>
+          <th>Days in<span className="att-th-sub">of {a.sessionDays} open</span></th>
+          <th>Rate<span className="att-th-sub">{win.ranged ? "in this range" : "this term"}</span></th>
+          <th>Late</th><th>Standing</th>
+          <th>Last seen</th><th>Today</th>
+        </tr></thead>
         <tbody>{roster.map(r => (
-          <tr key={r.studentId}>
+          <tr key={r.studentId} data-risk={r.rate < 50 ? "1" : ""}>
             <td>{r.fullName}<div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{r.studentId}{r.centre ? " · " + r.centre : ""}</div></td>
             <td>{r.track || "—"}</td>
-            <td className="mono">{r.present}/{a.sessionDays}{r.halfDays ? <span title={r.halfDays + " half-day(s) — missed the Musing Period"} style={{ color: "var(--ink-500)" }}> ·{r.halfDays}½</span> : null}</td>
-            <td style={{ minWidth: 120 }}><div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: r.rate + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono">{r.rate}%</span></div></td>
+            {/* A child who has never once appeared is a different problem from
+                one attending badly, and 0/10 read the same as 3/10 at a glance. */}
+            <td className="mono">{(r.present || 0) === 0
+              ? <b style={{ color: "var(--coral)" }}>never</b>
+              : <>{r.present}<span style={{ color: "var(--ink-500)" }}>/{a.sessionDays}</span></>}
+              {r.halfDays ? <span title={r.halfDays + " half-day(s) — missed the Musing Period"} style={{ color: "var(--ink-500)" }}> ·{r.halfDays}½</span> : null}</td>
+            <td style={{ minWidth: 120 }}><div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono">{r.rate}%</span></div></td>
             <td className="mono">{r.lates ? r.lates : "—"}</td>
             <td>{r.state && r.state !== "clear" ? <PolicyStateChip state={r.state}/> : <span className="mono" style={{ color: "var(--ink-500)" }}>—</span>}</td>
-            <td className="mono">{r.lastSeen || "—"}</td>
+            <td className="mono">{r.lastSeen || <span style={{ color: "var(--coral)" }}>never</span>}</td>
             <td>{r.presentToday ? <span className="chip status-published">✓</span> : <span className="chip status-draft">—</span>}</td>
           </tr>
         ))}</tbody>
       </table></div>
+      )}
+      {truncated && who !== "volunteers" && (
+        <p className="admin-hint" style={{ marginTop: 8 }}>
+          {matched} children match; the first {shownCount} are shown. Narrow by centre or situation, or export the CSV for the whole list.
+        </p>
       )}
 
       {a.recent.length > 0 && (

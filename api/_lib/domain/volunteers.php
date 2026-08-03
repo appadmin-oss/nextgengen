@@ -1188,9 +1188,51 @@ function admin_volunteer_attendance(array $p): array {
             'band' => $w['band'] ?? '', 'presentToday' => isset($todayBy[$vid]),
         ];
     }
+    /* Counts over the WHOLE roster, so a chip says how many exist. */
+    $scen = [
+        'all'     => count($rows),
+        'present' => count(array_filter($rows, fn($r) => $r['presentToday'])),
+        'absent'  => count(array_filter($rows, fn($r) => !$r['presentToday'])),
+        'never'   => count(array_filter($rows, fn($r) => ($r['present'] ?? 0) === 0)),
+        'atrisk'  => count(array_filter($rows, fn($r) => ($r['rate'] ?? 0) < 50)),
+        'late'    => count(array_filter($rows, fn($r) => ($r['lates'] ?? 0) > 0)),
+        'half'    => count(array_filter($rows, fn($r) => ($r['halfDays'] ?? 0) > 0)),
+        'flagged' => 0,                       // volunteers carry no policy standing here
+        'perfect' => count(array_filter($rows, fn($r) => ($r['rate'] ?? 0) >= 100)),
+    ];
+    // Search and situation on the server, for the same reason as the children's
+    // register: a filter that runs after a cap answers a different question.
+    $q = mb_strtolower(trim((string)($p['q'] ?? '')));
+    $scenario = (string)($p['scenario'] ?? 'all');
+    $keep = function (array $r) use ($scenario) {
+        switch ($scenario) {
+            case 'present': return !empty($r['presentToday']);
+            case 'absent':  return empty($r['presentToday']);
+            case 'never':   return ($r['present'] ?? 0) === 0;
+            case 'atrisk':  return ($r['rate'] ?? 0) < 50;
+            case 'late':    return ($r['lates'] ?? 0) > 0;
+            case 'half':    return ($r['halfDays'] ?? 0) > 0;
+            case 'flagged': return false;
+            case 'perfect': return ($r['rate'] ?? 0) >= 100;
+            default:        return true;
+        }
+    };
+    $out = [];
+    foreach ($rows as $r) {
+        if (!$keep($r)) continue;
+        if ($q !== '' && mb_strpos(mb_strtolower($r['fullName'] . ' ' . $r['volunteerId'] . ' '
+            . $r['role'] . ' ' . $r['centre'] . ' ' . $r['faculty']), $q) === false) continue;
+        $out[] = $r;
+    }
+    $sort = (string)($p['sort'] ?? 'rate');
+    if ($sort === 'name')     usort($out, fn($x, $y) => strcasecmp($x['fullName'], $y['fullName']));
+    elseif ($sort === 'seen') usort($out, fn($x, $y) => strcmp((string)$y['lastSeen'], (string)$x['lastSeen']));
+    elseif ($sort === 'best') usort($out, fn($x, $y) => ($y['rate'] ?? -1) <=> ($x['rate'] ?? -1));
     // Lowest rate first, same as the student register: the useful end is the top.
-    usort($rows, fn($x, $y) => ($x['rate'] ?? 101) <=> ($y['rate'] ?? 101) ?: strcmp($x['fullName'], $y['fullName']));
-    return ['ok' => true, 'volunteers' => ['summary' => $a, 'roster' => $rows]];
+    else usort($out, fn($x, $y) => ($x['rate'] ?? 101) <=> ($y['rate'] ?? 101) ?: strcmp($x['fullName'], $y['fullName']));
+    return ['ok' => true, 'volunteers' => ['summary' => $a, 'roster' => $out,
+        'total' => count($rows), 'matched' => count($out), 'scenarios' => $scen,
+        'q' => $q, 'scenario' => $scenario, 'sort' => $sort]];
 }
 
 /** Public, PII-free volunteer fulfilment board (powers /v-status). */

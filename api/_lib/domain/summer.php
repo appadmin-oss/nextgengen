@@ -997,7 +997,54 @@ function admin_summer_attendance(array $p): array {
         'flagged' => count(array_filter($roster, fn($r) => ($r['state'] ?? 'clear') !== 'clear')),
         'perfect' => count(array_filter($roster, fn($r) => ($r['rate'] ?? 0) >= 100)),
     ];
-    $roster = array_slice($roster, 0, $cap);
+
+    /* THE SEARCH AND THE SITUATION FILTER RUN HERE, BEFORE THE CAP.
+     *
+     * They used to run in the browser, on rows this function had already sorted
+     * lowest-rate-first and cut to 300 — so the filters were only as good as
+     * that slice. On a real cohort the chip read "47 attending every day" beside
+     * an empty table, because the three hundred worst rates contain nobody on
+     * 100%; and typing a child's name found nothing whenever that child was not
+     * among the worst three hundred. The controls looked live and answered a
+     * different question from the one on screen.
+     *
+     * The counts above are still taken over the WHOLE roster, so a chip always
+     * says how many exist rather than how many happen to be in the page. */
+    $q = mb_strtolower(trim((string)($p['q'] ?? '')));
+    $scenario = (string)($p['scenario'] ?? 'all');
+    $match = function (array $r) use ($scenario) {
+        switch ($scenario) {
+            case 'present': return !empty($r['presentToday']);
+            case 'absent':  return empty($r['presentToday']);
+            case 'never':   return ($r['present'] ?? 0) === 0;
+            case 'atrisk':  return ($r['rate'] ?? 0) < 50;
+            case 'late':    return ($r['lates'] ?? 0) > 0;
+            case 'half':    return ($r['halfDays'] ?? 0) > 0;
+            case 'flagged': return ($r['state'] ?? 'clear') !== 'clear';
+            case 'perfect': return ($r['rate'] ?? 0) >= 100;
+            default:        return true;
+        }
+    };
+    $filtered = [];
+    foreach ($roster as $r) {
+        if (!$match($r)) continue;
+        if ($q !== '') {
+            $hay = mb_strtolower(($r['fullName'] ?? '') . ' ' . ($r['studentId'] ?? '') . ' '
+                . ($r['handle'] ?? '') . ' ' . ($r['track'] ?? '') . ' ' . ($r['centre'] ?? ''));
+            if (mb_strpos($hay, $q) === false) continue;
+        }
+        $filtered[] = $r;
+    }
+    /* Sorted the way the reader asked. Lowest-rate-first is the right default —
+     * the useful end of an attendance register is the bottom — but it makes the
+     * table useless for "did Adaeze come yesterday", which is the other half of
+     * what this screen is for. */
+    $sort = (string)($p['sort'] ?? 'rate');
+    if ($sort === 'name')      usort($filtered, fn($x, $y) => strcasecmp((string)$x['fullName'], (string)$y['fullName']));
+    elseif ($sort === 'seen')  usort($filtered, fn($x, $y) => strcmp((string)$y['lastSeen'], (string)$x['lastSeen']));
+    elseif ($sort === 'best')  usort($filtered, fn($x, $y) => $y['rate'] <=> $x['rate']);
+    $rosterMatched = count($filtered);
+    $roster = array_slice($filtered, 0, $cap);
 
     /* Recent check-ins, with volunteers NAMED.
      *
@@ -1045,7 +1092,15 @@ function admin_summer_attendance(array $p): array {
         // Say what was left out. A truncated list that does not admit it reads
         // as "this is everyone", which is the wrong thing to believe about an
         // attendance register.
-        'rosterTotal' => $rosterTotal, 'rosterCap' => $cap, 'rosterCentre' => $wantCentre,
+        'rosterTotal' => $rosterTotal, 'rosterMatched' => $rosterMatched,
+        'rosterCap' => $cap, 'rosterCentre' => $wantCentre,
+        'q' => $q, 'scenario' => $scenario, 'sort' => $sort,
+        /* The centre list comes from the CATALOGUE, not from the rows.
+         * It was derived in the browser from the roster — which this function
+         * has already narrowed to the chosen centre — so picking Egbeda left
+         * Egbeda as the only option and there was no way to move to another
+         * centre without clearing the filter first. */
+        'centres' => array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name'),
         'atRiskTotal' => count($atRiskAll),
         'programme' => [
             'enabled' => !empty($prog['enabled']),

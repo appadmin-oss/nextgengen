@@ -817,26 +817,71 @@ function unzipDocumentXml(buf) {
     var TODAY2 = new Date().toISOString().slice(0, 10);
     var CLOSED = new URLSearchParams(location.search).get('closed') === '1';
     var NOCAL  = new URLSearchParams(location.search).get('nocal') === '1';
+    /* The stubs FILTER, because the server does. Search and situation moved
+       server-side (they used to run in the browser over a roster already sorted
+       and capped, so a chip could read 47 beside an empty table) — so a fixture
+       that ignores the params would let a client that never sends them pass. */
+    var ATT_KEEP = function (r, scenario) {
+      switch (scenario) {
+        case 'present': return !!r.presentToday;
+        case 'absent':  return !r.presentToday;
+        case 'never':   return (r.present || 0) === 0;
+        case 'atrisk':  return (r.rate || 0) < 50;
+        case 'late':    return (r.lates || 0) > 0;
+        case 'half':    return (r.halfDays || 0) > 0;
+        case 'flagged': return !!(r.state && r.state !== 'clear');
+        case 'perfect': return (r.rate || 0) >= 100;
+        default:        return true;
+      }
+    };
+    var ATT_APPLY = function (rows, o, idKey) {
+      o = o || {};
+      var q = String(o.q || '').toLowerCase();
+      var out = rows.filter(function (r) {
+        if (!ATT_KEEP(r, o.scenario || 'all')) return false;
+        if (q) {
+          var hay = [r.fullName, r[idKey], r.track, r.role, r.centre, r.faculty].join(' ').toLowerCase();
+          if (hay.indexOf(q) === -1) return false;
+        }
+        return true;
+      });
+      if (o.sort === 'name') out.sort(function (a, b) { return String(a.fullName).localeCompare(String(b.fullName)); });
+      else if (o.sort === 'best') out.sort(function (a, b) { return (b.rate || 0) - (a.rate || 0); });
+      else if (o.sort === 'seen') out.sort(function (a, b) { return String(b.lastSeen).localeCompare(String(a.lastSeen)); });
+      return out;
+    };
+    var ATT_COUNTS = function (rows) {
+      var k = {}, keys = ['all','present','absent','never','atrisk','late','half','flagged','perfect'];
+      keys.forEach(function (x) { k[x] = x === 'all' ? rows.length : rows.filter(function (r) { return ATT_KEEP(r, x); }).length; });
+      return k;
+    };
+    var ATT_KIDS = [
+      { studentId: 'SUM-1', fullName: 'Amina Alpha', track: 'Music', centre: 'Ijaiye', present: 10, halfDays: 0, lates: 0, lastSeen: TODAY2, presentToday: true,  rate: 100, state: 'clear',   absences: 0 },
+      { studentId: 'SUM-2', fullName: 'Bode Beta',   track: 'Tech',  centre: 'Egbeda', present: 4,  halfDays: 2, lates: 3, lastSeen: '2026-07-14', presentToday: false, rate: 30,  state: 'dormant', absences: 2 },
+      { studentId: 'SUM-3', fullName: 'Chidi Gamma', track: 'Arts',  centre: 'Ijaiye', present: 9,  halfDays: 0, lates: 1, lastSeen: '2026-07-16', presentToday: false, rate: 90,  state: 'warned',  absences: 1 },
+    ];
     window.NGGApi.admin.summer = {
-      attendance: function () { return Promise.resolve({ attendance: {
+      attendance: function (cohortId, o) { window.__attOpts = o || {}; return Promise.resolve({ attendance: {
         cohort: { cohortId: 'C1', name: 'Summer 2026' },
         today: 2, absentToday: CLOSED ? 0 : 3, activeStudents: 5, sessionDays: 10,
         days: Array.from({ length: 14 }, function (_, i) {
           return { date: '2026-07-' + ('0' + (i + 6)).slice(-2), present: (i % 7 === 5 || i % 7 === 6) ? 0 : 4,
                    programmeDay: !(i % 7 === 5 || i % 7 === 6) };
         }),
-        roster: [
-          { studentId: 'SUM-1', fullName: 'Amina Alpha', track: 'Music', centre: 'Ijaiye', present: 10, halfDays: 0, lates: 0, lastSeen: TODAY2, presentToday: true,  rate: 100, state: 'clear',   absences: 0 },
-          { studentId: 'SUM-2', fullName: 'Bode Beta',   track: 'Tech',  centre: 'Egbeda', present: 4,  halfDays: 2, lates: 3, lastSeen: '2026-07-14', presentToday: false, rate: 30,  state: 'dormant', absences: 2 },
-          { studentId: 'SUM-3', fullName: 'Chidi Gamma', track: 'Arts',  centre: 'Ijaiye', present: 9,  halfDays: 0, lates: 1, lastSeen: '2026-07-16', presentToday: false, rate: 90,  state: 'warned',  absences: 1 },
-        ],
+        roster: ATT_APPLY(ATT_KIDS, o, 'studentId'),
+        rosterTotal: ATT_KIDS.length, rosterMatched: ATT_APPLY(ATT_KIDS, o, 'studentId').length,
+        rosterCap: 300, q: (o && o.q) || '', scenario: (o && o.scenario) || 'all', sort: (o && o.sort) || 'rate',
+        /* The picker's options come from the CATALOGUE, not from the rows — a
+           list derived from a centre-filtered roster collapses to the centre
+           already chosen, and there is then no way to move to another. */
+        centres: ['Egbeda', 'Ijaiye'],
         atRisk: [{ studentId: 'SUM-2', fullName: 'Bode Beta', rate: 30 }],
         recent: [],
-        /* Every scenario's count, so the chip row can be read without picking
-           each one. 'never' is its own case: a child with no check-in at all is
-           a different problem from one attending badly, and it used to hide
-           inside "under 50%". */
-        scenarios: { all: 3, present: 1, absent: 2, atrisk: 1, never: 0, late: 2, half: 1, flagged: 2, perfect: 1 },
+        /* Every scenario's count, over the WHOLE register — a chip that counts
+           the drawn page tells you how big the page is. 'never' is its own case:
+           a child with no check-in at all is a different problem from one
+           attending badly, and it used to hide inside "under 50%". */
+        scenarios: ATT_COUNTS(ATT_KIDS),
         window: { from: '2026-07-06', to: TODAY2, days: 10, ranged: false, scope: NOCAL ? 'observed' : 'term' },
         programme: NOCAL
           ? { enabled: false, isProgrammeDay: true, today: TODAY2, nextDay: '', scannedDays: 10, termStart: '', termEnd: '', remaining: 0 }
@@ -851,6 +896,17 @@ function unzipDocumentXml(buf) {
          which must read as 100%, not as 5 of 10. */
       volunteerAttendance: function (o) {
         window.__volOpts = o || {};
+        var VOLS = [
+          { volunteerId: 'VOL-MEN-26-001', fullName: 'Mentor Mary', role: 'mentor', centre: 'Ijaiye', faculty: 'Tech',
+            joined: '2026-07-06', present: 10, expected: 10, rate: 100, lates: 0, halfDays: 0, onTimePct: 100,
+            streak: 10, lastSeen: TODAY2, band: 'every', presentToday: true },
+          { volunteerId: 'VOL-INS-26-002', fullName: 'Duty Dele', role: 'instructor', centre: 'Egbeda', faculty: 'Arts',
+            joined: '2026-07-20', present: 5, expected: 5, rate: 100, lates: 2, halfDays: 0, onTimePct: 60,
+            streak: 5, lastSeen: TODAY2, band: 'every', presentToday: true },
+          { volunteerId: 'VOL-ADM-26-003', fullName: 'Absent Ada', role: 'admin', centre: 'Ijaiye', faculty: '',
+            joined: '2026-07-06', present: 0, expected: 10, rate: 0, lates: 0, halfDays: 0, onTimePct: null,
+            streak: 0, lastSeen: '', band: 'rare', presentToday: false },
+        ];
         return Promise.resolve({ volunteers: {
           summary: { measurable: true, basis: 'calendar', scope: 'term', days: 10,
                      from: '2026-07-06', to: TODAY2, termStart: '2026-07-06', termEnd: '2026-08-28',
@@ -859,17 +915,10 @@ function unzipDocumentXml(buf) {
                              lateSessions: 3, halfDays: 0, avgLateMinutes: 17, measured: 3, reliable: 2 },
                      trend: [], bands: [], byCentre: [], byRole: [],
                      caveats: ['Expected days are programme days since a volunteer joined. There is no rota in the system, so someone who agreed to come one day a week reads low here.'] },
-          roster: [
-            { volunteerId: 'VOL-MEN-26-001', fullName: 'Mentor Mary', role: 'mentor', centre: 'Ijaiye', faculty: 'Tech',
-              joined: '2026-07-06', present: 10, expected: 10, rate: 100, lates: 0, halfDays: 0, onTimePct: 100,
-              streak: 10, lastSeen: TODAY2, band: 'every', presentToday: true },
-            { volunteerId: 'VOL-INS-26-002', fullName: 'Duty Dele', role: 'instructor', centre: 'Egbeda', faculty: 'Arts',
-              joined: '2026-07-20', present: 5, expected: 5, rate: 100, lates: 2, halfDays: 0, onTimePct: 60,
-              streak: 5, lastSeen: TODAY2, band: 'every', presentToday: true },
-            { volunteerId: 'VOL-ADM-26-003', fullName: 'Absent Ada', role: 'admin', centre: 'Ijaiye', faculty: '',
-              joined: '2026-07-06', present: 0, expected: 10, rate: 0, lates: 0, halfDays: 0, onTimePct: null,
-              streak: 0, lastSeen: '', band: 'rare', presentToday: false },
-          ],
+          roster: ATT_APPLY(VOLS, o, 'volunteerId'),
+          total: VOLS.length, matched: ATT_APPLY(VOLS, o, 'volunteerId').length,
+          scenarios: ATT_COUNTS(VOLS),
+          q: (o && o.q) || '', scenario: (o && o.scenario) || 'all', sort: (o && o.sort) || 'rate',
         } });
       },
       /* One day, opened from its bar. The chart could say a day was thin and
@@ -2208,19 +2257,42 @@ function unzipDocumentXml(buf) {
     ok('…and the counts come from the whole register, not the drawn page',
       (await chip('Absent today').innerText()).indexOf('2') !== -1
       && (await chip('Late arrivals').innerText()).indexOf('2') !== -1);
+    /* A filter with nothing in it is disabled rather than offered — choosing it
+       could only ever produce an empty table, which reads as a broken screen. */
+    ok('…a situation with nobody in it is disabled, not offered',
+      await chip('Never attended').isDisabled() && !(await chip('Absent today').isDisabled()));
+
+    /* ── Reading it ───────────────────────────────────────────────────────
+       "Present" and "Rate" against an unstated span is what made this table
+       hard to read: 62% of the term and 62% of last week look identical. */
+    ok('the rate column says what it is a rate OF, and the days column its total',
+      /of 10 open/.test(attBody) && /this term/.test(attBody));
+    // 0 of 10 and 3 of 10 read the same at a glance, and are different problems.
+    const zeroCell = await att.evaluate(() => {
+      const tr = Array.from(document.querySelectorAll('.att-table tbody tr'))
+        .find(r => /Bode Beta/.test(r.innerText));
+      return tr ? { risk: tr.getAttribute('data-risk'), text: tr.innerText } : null;
+    });
+    ok('…and a child at risk is visible while scanning, not only once read',
+      zeroCell && zeroCell.risk === '1');
 
     await chip('Absent today').click();
     await att.waitForTimeout(140);
     ok('…filters to absent-today', await rows() === 2);
+    /* The search is debounced and then SENT to the server, so these waits have
+       to clear the debounce plus the round trip — a 140ms wait passed only while
+       the filtering happened locally, which is the bug. */
     await att.fill('input[aria-label="Search the register"]', 'bode');
-    await att.waitForTimeout(140);
+    await att.waitForTimeout(600);
     ok('…and a search narrows inside the filter, rather than replacing it', await rows() === 1);
+    ok('…and the search reaches the server rather than sifting the drawn page',
+      (await att.evaluate(() => (window.__attOpts || {}).q)) === 'bode');
     await att.fill('input[aria-label="Search the register"]', 'zzz');
-    await att.waitForTimeout(140);
+    await att.waitForTimeout(600);
     ok('…says so when nothing matches', /No child matches/.test(await att.evaluate(() => document.body.innerText)));
     await att.fill('input[aria-label="Search the register"]', '');
     await chip('Everyone').click();
-    await att.waitForTimeout(140);
+    await att.waitForTimeout(600);
 
     /* ── The volunteers ──────────────────────────────────────────────────
        Their check-ins have been in the same table since the scanner learned to

@@ -5380,3 +5380,14 @@ body.own-chrome .fab-top { display: none; }
   margin: 10px 0 0; font-size: 11px; line-height: 1.5; color: #b45309;
   font-family: var(--font-mono, monospace);
 }
+
+/* ── Reading the register ────────────────────────────────────────────────────
+   The columns state their own units. "Present" and "Rate" against an unstated
+   span was the main reason this table was hard to read: 62% of the term and 62%
+   of last week look identical and are different findings. */
+.att-table th { vertical-align: top; }
+.att-th-sub { display: block; font-family: var(--font-mono, monospace); font-size: 9.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink-500); margin-top: 2px; }
+/* A row that needs attention is visible while scanning, not only once read. */
+.att-table tbody tr[data-risk="1"] td:first-child { box-shadow: inset 3px 0 0 var(--coral, #d0663c); }
+.att-chip.is-empty { opacity: .45; cursor: not-allowed; }
+.att-chip.is-empty:hover { border-color: var(--line, #e6e2d6); }

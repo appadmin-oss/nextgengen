@@ -1770,6 +1770,80 @@ chk('a date range narrows the window, and both sides of the rate with it', (func
         // A reversed range is still a range.
         && $rev['window']['from'] === $from && $rev['window']['to'] === $to;
 })());
+chk('the search and the situation filter run BEFORE the cap, not after it', (function () use ($SU) {
+    /* They ran in the browser, over rows this op had already sorted
+     * lowest-rate-first and cut to 300 — so the filters were only ever as good
+     * as that slice. A chip read "47 attending every day" beside an empty
+     * table, because the three hundred worst rates contain nobody on 100%; and
+     * typing a child's name found nothing whenever that child was not among the
+     * worst three hundred. The controls looked live and answered a different
+     * question from the one on screen.
+     *
+     * Driven with a cap of 1, which is the whole point: with the filter applied
+     * first, one row comes back and it is the RIGHT one. */
+    $all = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU])['attendance'];
+    if (($all['rosterTotal'] ?? 0) < 3) return true;
+    $name = (string)$all['roster'][count($all['roster']) - 1]['fullName'];   // the HIGHEST rate, last in the default sort
+    $hit = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'q' => $name, 'limit' => 20])['attendance'];
+    $names = array_column($hit['roster'], 'fullName');
+    if (!in_array($name, $names, true)) return false;
+    // A search that matches nothing says nothing matched, and says the register
+    // is still there — the two are different facts.
+    $none = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'q' => 'zzzz-no-such-child'])['attendance'];
+    if (count($none['roster']) !== 0 || ($none['rosterMatched'] ?? -1) !== 0) return false;
+    if (($none['rosterTotal'] ?? 0) !== ($all['rosterTotal'] ?? 0)) return false;
+    // The chip counts stay over the whole register, whatever is filtered.
+    return ($none['scenarios']['all'] ?? -1) === ($all['scenarios']['all'] ?? -2);
+})());
+
+chk('…and a situation filter narrows the rows to exactly that situation', (function () use ($SU) {
+    $a = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'scenario' => 'never'])['attendance'];
+    if (($a['scenarios']['never'] ?? 0) === 0) return true;
+    if (count($a['roster']) === 0) return false;
+    foreach ($a['roster'] as $r) if (($r['present'] ?? 0) !== 0) return false;
+    // rosterMatched is the filtered total; rosterTotal stays the register's.
+    return ($a['rosterMatched'] ?? -1) === ($a['scenarios']['never'] ?? -2)
+        && ($a['rosterTotal'] ?? 0) >= ($a['rosterMatched'] ?? 0);
+})());
+
+chk('…and the sort is the reader\'s to choose, since the register is read both ways', (function () use ($SU) {
+    /* Lowest-first is right for "who is falling behind" and useless for "did
+     * Adaeze come yesterday", which is the other half of what this screen is
+     * for. */
+    $low = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'sort' => 'rate'])['attendance']['roster'];
+    $high = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'sort' => 'best'])['attendance']['roster'];
+    $byName = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'sort' => 'name'])['attendance']['roster'];
+    if (count($low) < 2) return true;
+    $names = array_column($byName, 'fullName');
+    $sorted = $names; usort($sorted, 'strcasecmp');
+    return $low[0]['rate'] <= $low[count($low) - 1]['rate']
+        && $high[0]['rate'] >= $high[count($high) - 1]['rate']
+        && $names === $sorted;
+})());
+
+chk('…and the centre picker gets the catalogue, not a list narrowed to the centre already picked', (function () use ($SU) {
+    /* The options were derived in the browser from the roster — which this op
+     * had already narrowed to the chosen centre — so picking one left it as the
+     * only option and there was no way to move to another without clearing the
+     * filter first. */
+    /* Two centres of its own, so the assertion does not depend on how many the
+     * fixture happens to have left standing at this point — the first version
+     * of this test short-circuited on that and passed against the bug. */
+    foreach ([['CEN-PK1', 'Pickerville A'], ['CEN-PK2', 'Pickerville B']] as [$cid, $name]) {
+        db_exec('DELETE FROM centres WHERE centreId = ?', [$cid]);
+        db_insert('centres', ['centreId' => $cid, 'name' => $name, 'code' => substr($cid, -3),
+            'color' => '#334455', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    $live = array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name');
+    // Filter to a centre with NO children in it: derived from the roster, the
+    // list would come back empty and the picker would have nothing to move to.
+    $one = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'centre' => 'Pickerville A'])['attendance'];
+    db_exec("DELETE FROM centres WHERE centreId IN ('CEN-PK1','CEN-PK2')");
+    return ($one['centres'] ?? null) === $live && count($one['centres']) > 1
+        && in_array('Pickerville B', $one['centres'], true)
+        && ($one['rosterCentre'] ?? '') === 'Pickerville A';
+})());
+
 // Leave enforcement off for the rest of the suite so later assertions see the
 // pre-policy behaviour they were written against.
 backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => false]]);
