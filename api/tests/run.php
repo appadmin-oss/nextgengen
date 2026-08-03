@@ -9700,9 +9700,147 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             && isset($by2['AS-P1']) && $by2['AS-P1']['outOfRange'] === true;
     })());
 
+    /* ── The catalogue of published instruments ─────────────────────────────
+     * The machinery above can administer any instrument. What was missing was
+     * the shortlist of ones a reviewer already recognises, with the provenance
+     * attached — because "a test we wrote" is the weakest possible answer to
+     * "measured with what?". */
+
+    chk('assessment: the catalogue ships real instruments with a citation each', (function () use ($ADM) {
+        $r = backend_dispatch('admin.assessment.catalogue', ['requesterId' => $ADM]);
+        if (empty($r['ok']) || count($r['catalogue']) < 12) return false;
+        foreach ($r['catalogue'] as $c) {
+            // An entry with no source, licence or citation is decoration.
+            foreach (['name', 'family', 'source', 'licence', 'citation', 'adapt', 'unit'] as $f) {
+                if (trim((string)($c[$f] ?? '')) === '') return false;
+            }
+            if (!in_array($c['scale'], ASSESS_SCALES, true)) return false;
+            if (!in_array($c['domain'], ASSESS_DOMAINS, true)) return false;
+        }
+        $keys = array_column($r['catalogue'], 'key');
+        // The fund this was assembled for asks about gender AND learning.
+        $domains = array_unique(array_column($r['catalogue'], 'domain'));
+        return count($keys) === count(array_unique($keys))
+            && in_array('literacy', $domains, true) && in_array('numeracy', $domains, true)
+            && in_array('gender_attitudes', $domains, true)
+            && strpos((string)$r['note'], 'local adaptation') !== false;
+    })());
+
+    chk('assessment: adopting carries the provenance onto the instrument', (function () use ($ADM) {
+        $r = backend_dispatch('admin.assessment.adopt', ['requesterId' => $ADM, 'keys' => ['egra.orf']]);
+        if (empty($r['ok']) || count($r['created']) !== 1) return false;
+        $iid = $r['created'][0]['instrumentId'];
+        $GLOBALS['__catOrf'] = $iid;
+        $row = db_row('SELECT * FROM assessment_instruments WHERE instrumentId = ?', [$iid]);
+        return (string)$row['catalogueKey'] === 'egra.orf'
+            && strpos((string)$row['citation'], 'RTI International') !== false
+            && (string)$row['scale'] === 'rate'
+            && strpos((string)$row['unit'], 'per minute') !== false
+            && trim((string)$row['adaptNote']) !== ''
+            && (int)$row['gradeFrom'] === 2 && (int)$row['gradeTo'] === 6;
+    })());
+
+    chk('assessment: adopting the same instrument twice does not mint a second one', (function () use ($ADM) {
+        /* Two instruments for one test split a cohort's results into two
+           half-sized paired sets, each below the floor, with nothing on screen
+           to explain why the numbers halved. */
+        $again = backend_dispatch('admin.assessment.adopt', ['requesterId' => $ADM, 'keys' => ['egra.orf', 'not.a.real.key']]);
+        $n = (int)(db_row("SELECT COUNT(*) c FROM assessment_instruments WHERE catalogueKey = 'egra.orf' AND archivedAt = ''")['c'] ?? 0);
+        return !empty($again['ok']) && $n === 1 && count($again['created']) === 0
+            && count($again['existing']) === 1 && $again['unknown'] === ['not.a.real.key'];
+    })());
+
+    chk('assessment: the catalogue marks what has already been adopted', (function () use ($ADM) {
+        $r = backend_dispatch('admin.assessment.catalogue', ['requesterId' => $ADM]);
+        $orf = null; $other = null;
+        foreach ($r['catalogue'] as $c) { if ($c['key'] === 'egra.orf') $orf = $c; elseif ($other === null) $other = $c; }
+        return $orf && is_array($orf['adopted']) && $orf['adopted']['instrumentId'] === ($GLOBALS['__catOrf'] ?? '')
+            && $other && $other['adopted'] === null;
+    })());
+
+    chk('assessment: a rate is never reported as a percentage of a maximum', (function () use ($ADM) {
+        /* Correct words per minute has no maximum. "The mean rose 4.2% of the
+           paper" is a sentence with nothing behind it, so every percent field
+           comes back null and the raw means carry the result instead. */
+        $iid = $GLOBALS['__catOrf'] ?? ''; if ($iid === '') return false;
+        foreach (['baseline' => [12, 18, 9, 25, 14, 20], 'endline' => [30, 34, 21, 41, 28, 39]] as $phase => $scores) {
+            $w = backend_dispatch('admin.assessment.window.save', ['requesterId' => $ADM, 'data' => [
+                'instrumentId' => $iid, 'phase' => $phase, 'label' => ucfirst($phase)]]);
+            if (empty($w['ok'])) return false;
+            $res = []; foreach ($scores as $k => $s) $res[] = ['studentId' => 'AS-' . ($k + 1), 'score' => $s];
+            backend_dispatch('admin.assessment.record', ['requesterId' => $ADM, 'windowId' => $w['windowId'], 'results' => $res]);
+        }
+        $g = backend_dispatch('admin.assessment.gains', ['requesterId' => $ADM, 'instrumentId' => $iid]);
+        $row = ($g['gains'] ?? [])[0] ?? null;
+        if (!$row) return false;
+        $texts = implode(' | ', array_column($row['caveats'], 'text'));
+        return $row['pctMeaningful'] === false && $row['scale'] === 'rate'
+            && $row['gainPct'] === null && $row['baselineMeanPct'] === null && $row['pairedBaselinePct'] === null
+            // …and the raw means are there, which is the only honest headline.
+            && abs($row['baselineMean'] - 16.33) < 0.02 && abs($row['gain']['mean'] - 15.83) < 0.01
+            && $row['improved'] === true
+            && strpos($texts, 'no maximum') !== false;
+    })());
+
+    chk('assessment: on an instrument where lower is better, the fall is the improvement', (function () use ($ADM) {
+        /* The SDQ total difficulties score. A report that prints "-4.5" under a
+           heading called Gain has said the opposite of what happened, and the
+           attrition direction inverts with it: the higher baseline is the child
+           in MORE difficulty, so leavers who scored higher were the weaker ones. */
+        $a = backend_dispatch('admin.assessment.adopt', ['requesterId' => $ADM, 'keys' => ['sdq.total']]);
+        $iid = $a['created'][0]['instrumentId'] ?? ''; if ($iid === '') return false;
+        foreach (['baseline' => [20, 22, 18, 24, 19, 21], 'endline' => [15, 18, 13, 20, 14, 16]] as $phase => $scores) {
+            $w = backend_dispatch('admin.assessment.window.save', ['requesterId' => $ADM, 'data' => [
+                'instrumentId' => $iid, 'phase' => $phase, 'label' => ucfirst($phase)]]);
+            $res = []; foreach ($scores as $k => $s) $res[] = ['studentId' => 'AS-' . ($k + 1), 'score' => $s];
+            backend_dispatch('admin.assessment.record', ['requesterId' => $ADM, 'windowId' => $w['windowId'], 'results' => $res]);
+        }
+        $g = backend_dispatch('admin.assessment.gains', ['requesterId' => $ADM, 'instrumentId' => $iid]);
+        $row = ($g['gains'] ?? [])[0] ?? null;
+        if (!$row) return false;
+        $texts = implode(' | ', array_column($row['caveats'], 'text'));
+        return $row['higherIsBetter'] === false
+            && $row['gain']['mean'] < 0 && $row['improved'] === true
+            && strpos($texts, 'LOWER score is the better result') !== false;
+    })());
+
+    chk('assessment: the direction of an instrument locks with everything else', (function () use ($ADM) {
+        /* Flip higherIsBetter after results exist and last term's decline
+           becomes this term's improvement, with not one recorded score
+           changed. It belongs in the locked set. */
+        $iid = $GLOBALS['__catOrf'] ?? ''; if ($iid === '') return false;
+        $cur = db_row('SELECT * FROM assessment_instruments WHERE instrumentId = ?', [$iid]);
+        $flip = backend_dispatch('admin.assessment.instrument.save', ['requesterId' => $ADM, 'instrumentId' => $iid,
+            'data' => ['name' => (string)$cur['name'], 'domain' => (string)$cur['domain'], 'maxScore' => (int)$cur['maxScore'],
+                       'items' => (int)$cur['items'], 'gradeFrom' => (int)$cur['gradeFrom'], 'gradeTo' => (int)$cur['gradeTo'],
+                       'scale' => (string)$cur['scale'], 'higherIsBetter' => false]]);
+        $rescale = backend_dispatch('admin.assessment.instrument.save', ['requesterId' => $ADM, 'instrumentId' => $iid,
+            'data' => ['name' => (string)$cur['name'], 'domain' => (string)$cur['domain'], 'maxScore' => (int)$cur['maxScore'],
+                       'items' => (int)$cur['items'], 'gradeFrom' => (int)$cur['gradeFrom'], 'gradeTo' => (int)$cur['gradeTo'],
+                       'scale' => 'points', 'higherIsBetter' => true]]);
+        $after = db_row('SELECT scale, higherIsBetter FROM assessment_instruments WHERE instrumentId = ?', [$iid]);
+        return ($flip['error'] ?? '') === 'locked' && ($rescale['error'] ?? '') === 'locked'
+            && (string)$after['scale'] === 'rate' && (int)$after['higherIsBetter'] === 1;
+    })());
+
+    chk('assessment: a new version keeps the citation and drops the catalogue key', (function () use ($ADM) {
+        $iid = $GLOBALS['__catOrf'] ?? ''; if ($iid === '') return false;
+        $rev = backend_dispatch('admin.assessment.instrument.revise', ['requesterId' => $ADM, 'instrumentId' => $iid]);
+        if (empty($rev['ok'])) return false;
+        $new = db_row('SELECT * FROM assessment_instruments WHERE instrumentId = ?', [$rev['instrumentId']]);
+        /* The citation follows — a v2 of EGRA ORF is still EGRA ORF, and losing
+           it is how a report ends up unable to say what it measured with. The
+           catalogue key does not, or adoption would see the revision and hide
+           the original from the catalogue screen. */
+        return strpos((string)$new['citation'], 'RTI International') !== false
+            && (string)$new['scale'] === 'rate' && (string)$new['catalogueKey'] === ''
+            && (int)(db_row("SELECT COUNT(*) c FROM assessment_instruments WHERE catalogueKey = 'egra.orf' AND archivedAt = ''")['c'] ?? 0) === 1;
+    })());
+
     chk('assessment: every op is gated on the roster capability', (function () {
         foreach (['admin.assessment.instruments', 'admin.assessment.windows', 'admin.assessment.gains',
-                  'admin.assessment.record', 'admin.assessment.sheet', 'admin.assessment.instrument.save'] as $op) {
+                  'admin.assessment.record', 'admin.assessment.sheet', 'admin.assessment.instrument.save',
+                  'admin.assessment.catalogue', 'admin.assessment.adopt'] as $op) {
             if ((backend_dispatch($op, ['requesterId' => ''])['ok'] ?? false) === true) return false;
         }
         return true;

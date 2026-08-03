@@ -376,7 +376,11 @@ function unzipDocumentXml(buf) {
     var GAIN = {
       instrument: { instrumentId: 'AI-1', name: 'EGRA oral reading', domain: 'literacy',
                     domainLabel: 'Literacy', maxScore: 50, items: 20, version: 1, locked: true,
-                    gradeFrom: 4, gradeTo: 9, status: 'active', notes: '' },
+                    gradeFrom: 4, gradeTo: 9, status: 'active', notes: '',
+                    unit: '', scale: 'points', pctMeaningful: true, higherIsBetter: true,
+                    source: '', licence: '', citation: '', adaptNote: '', catalogueKey: '' },
+      pctMeaningful: true, scale: 'points', unit: '', higherIsBetter: true, improved: true,
+      baselineMean: 20.8, endlineMean: 29.0, pairedBaselineMean: 19.0,
       baselineWindow: 'AW-B', endlineWindow: 'AW-E',
       satBaseline: 40, satEndline: 24, paired: 24,
       baselineMeanPct: 41.5, endlineMeanPct: 58.0, pairedBaselinePct: 38.0,
@@ -395,8 +399,59 @@ function unzipDocumentXml(buf) {
         { level: 'warn', text: 'The children who did not return scored 5 points lower at baseline than those who did. The gain below is therefore larger than the cohort as a whole achieved.' },
       ],
     };
+    /* A RATE instrument alongside the marks-out-of-a-total one. Correct words
+       per minute has no maximum, so every percent field is null and the screen
+       has to print the unit — a page that falls back to "0%" here is quietly
+       inventing a denominator. On the SDQ side, higherIsBetter is false, so a
+       negative mean is the improvement and the colour has to follow that
+       rather than the sign. */
+    var RATE = {
+      instrument: { instrumentId: 'AI-2', name: 'SDQ total difficulties', domain: 'sel',
+                    domainLabel: 'Social & emotional', maxScore: 40, items: 20, version: 1, locked: true,
+                    gradeFrom: 4, gradeTo: 12, status: 'active', notes: '',
+                    unit: 'difficulties score (lower is better)', scale: 'points', pctMeaningful: true,
+                    higherIsBetter: false, source: 'Robert Goodman / Youthinmind',
+                    licence: 'Free for non-commercial use', citation: 'Goodman, R. (1997).',
+                    adaptNote: '', catalogueKey: 'sdq.total' },
+      baselineWindow: 'AW-SB', endlineWindow: 'AW-SE',
+      satBaseline: 20, satEndline: 18, paired: 18,
+      baselineMeanPct: 52.5, endlineMeanPct: 40.0, pairedBaselinePct: 52.0,
+      baselineMean: 21.0, endlineMean: 16.0, pairedBaselineMean: 20.8,
+      pctMeaningful: true, scale: 'points', unit: 'difficulties score (lower is better)',
+      higherIsBetter: false, improved: true,
+      gain: { n: 18, mean: -4.5, sd: 2.9, lo: -5.9, hi: -3.1, d: -1.55, significant: true, tooThin: false },
+      gainPct: -11.3, bySex: [], byBand: [], byCentre: [],
+      attrition: { baselineOnly: 2, endlineOnly: 0, bias: null },
+      caveats: [
+        { level: 'method', text: 'On this instrument a LOWER score is the better result, so a negative change is the improvement. Read every figure below with that in mind.' },
+      ],
+    };
+    var CATALOGUE = [
+      { key: 'egra.orf', family: 'EGRA', name: 'EGRA · Oral reading fluency', domain: 'literacy',
+        domainLabel: 'Literacy', unit: 'correct words per minute', scale: 'rate', scaleLabel: 'Rate per minute',
+        maxScore: 200, items: 0, gradeFrom: 2, gradeTo: 6, gradeFromLabel: 'Primary 2', gradeToLabel: 'Primary 6',
+        higherIsBetter: true,
+        notes: 'A short passage read aloud for one minute.',
+        adapt: 'Passage must be levelled to the local curriculum and kept identical between baseline and endline.',
+        source: 'RTI International, for USAID', sourceUrl: 'https://shared.rti.org/',
+        licence: 'Public good — free to download, adapt and use',
+        citation: 'RTI International. (2015). Early Grade Reading Assessment (EGRA) Toolkit, Second Edition.',
+        adopted: null },
+      { key: 'sdq.total', family: 'SDQ', name: 'SDQ · Total difficulties', domain: 'sel',
+        domainLabel: 'Social & emotional', unit: 'difficulties score (lower is better)', scale: 'points',
+        scaleLabel: 'Marks out of a total', maxScore: 40, items: 20, gradeFrom: 4, gradeTo: 12,
+        gradeFromLabel: 'Primary 4', gradeToLabel: 'SSS 3', higherIsBetter: false,
+        notes: 'Twenty items across four difficulty subscales.',
+        adapt: 'Official translations exist for many languages; use one rather than translating afresh.',
+        source: 'Robert Goodman / Youthinmind', sourceUrl: 'https://www.sdqinfo.org/',
+        licence: 'Paper versions free for non-commercial purposes', citation: 'Goodman, R. (1997).',
+        adopted: { instrumentId: 'AI-2', name: 'SDQ total difficulties' } },
+    ];
     window.__gain = GAIN;
-    window.NGGApi.admin.assessGains = function () { return Promise.resolve({ gains: [GAIN] }); };
+    window.NGGApi.admin.assessGains = function () { return Promise.resolve({ gains: [GAIN, RATE] }); };
+    window.NGGApi.admin.assessCatalogue = function () { return Promise.resolve({ catalogue: CATALOGUE,
+      note: 'These are definitions, not papers. Every one still needs the local adaptation described on the entry.' }); };
+    window.NGGApi.admin.assessAdopt = function (keys) { window.__adopted = keys; return Promise.resolve({ created: keys.map(function (k) { return { key: k, instrumentId: 'AI-NEW' }; }), existing: [], unknown: [] }); };
     window.NGGApi.admin.assessInstruments = function () { return Promise.resolve({ instruments: [GAIN.instrument] }); };
     window.NGGApi.admin.assessWindows = function () { return Promise.resolve({ windows: [
       { windowId: 'AW-B', instrumentId: 'AI-1', phase: 'baseline', label: 'Week 1', opensAt: '2026-07-06', closesAt: '2026-07-10', status: 'open', sat: 40, absent: 2 },
@@ -4255,7 +4310,10 @@ function unzipDocumentXml(buf) {
        is the exact mistake this feature exists to prevent, so both are on
        screen and neither can be mistaken for the other. */
     ok('the headline is the per-child gain, with its interval',
-      /\+8\.4/.test(asTxt) && /Mean gain, per child/i.test(asTxt) && /6\.2 to 10\.6/.test(asTxt));
+      /* "Change", not "gain": the tile also carries instruments where a fall is
+         the improvement, and a heading that presumes the direction is how a
+         negative number ends up read as a loss. */
+      /\+8\.4/.test(asTxt) && /Mean change, per child/i.test(asTxt) && /6\.2 to 10\.6/.test(asTxt));
     ok('…beside the paired baseline AND the whole-cohort baseline, distinguished',
       /Their baseline/i.test(asTxt) && /38%/.test(asTxt) && /whole cohort 41\.5%/.test(asTxt));
 
@@ -4278,6 +4336,50 @@ function unzipDocumentXml(buf) {
        becomes a finding about girls. */
     ok('a group too small to carry a claim says so instead of showing a number',
       /too few to say/.test(asTxt) && /clear of zero/.test(asTxt));
+
+    /* An instrument where a FALL is the win. The number is negative, the result
+       is good, and a screen that colours by sign alone says the opposite of
+       what the data shows. */
+    ok('a lower-is-better instrument states which direction is progress',
+      /LOWER score is the better result/.test(asTxt) && /-4\.5/.test(asTxt));
+    const sdqColour = await as.evaluate(() => {
+      const tiles = Array.from(document.querySelectorAll('.admin-tile'));
+      const t = tiles.find(x => /-4\.5/.test(x.innerText));
+      return t ? getComputedStyle(t.querySelector('.admin-tile-n')).color : '';
+    });
+    // #15803d — the same green the +8.4 gain gets, because both are improvements.
+    ok('…and colours the fall as the improvement it is', /21,\s*128,\s*61/.test(sdqColour));
+    ok('the provenance travels with the result, so "measured with what?" is answered',
+      /Robert Goodman/.test(asTxt) && /Goodman, R\. \(1997\)/.test(asTxt));
+
+    /* ── The catalogue ────────────────────────────────────────────────────
+       The shortlist of published instruments. Its whole value is the
+       provenance and the adaptation warning: an entry that shows a name and
+       hides the citation is no better than "a test we wrote". */
+    await as.click('.admin-tab:has-text("Catalogue")');
+    await as.waitForTimeout(200);
+    const catTxt = await as.evaluate(() => document.body.innerText);
+    ok('the catalogue names the publisher, the licence and the citation',
+      /RTI International, for USAID/.test(catTxt) && /Public good/.test(catTxt)
+      && /Early Grade Reading Assessment \(EGRA\) Toolkit/.test(catTxt));
+    ok('…and the local adaptation each one needs before a child sits it',
+      /Before you use it:/.test(catTxt) && /levelled to the local curriculum/.test(catTxt));
+    ok('a rate instrument shows its unit where a mark would show a total',
+      /correct words per minute/.test(catTxt) && catTxt.indexOf('out of 200') === -1);
+    ok('an instrument already in use is marked adopted, not offered again',
+      /adopted/.test(catTxt));
+    const adoptBtns = await as.evaluate(() =>
+      Array.from(document.querySelectorAll('button')).filter(b => b.textContent.trim() === 'Adopt').length);
+    // Two entries, one already adopted — so exactly one Adopt button.
+    ok('…so only the un-adopted entry offers the button', adoptBtns === 1);
+
+    await as.evaluate(() => {
+      const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.trim() === 'Adopt');
+      if (b) b.click();
+    });
+    await as.waitForFunction(() => !!window.__adopted, null, { timeout: 8000 });
+    ok('adopting sends the catalogue key, not a hand-typed instrument',
+      JSON.stringify(await as.evaluate(() => window.__adopted)) === '["egra.orf"]');
 
     // The register: a child outside the instrument's classes is flagged, not dropped.
     await as.click('.admin-tab:has-text("Instruments")');

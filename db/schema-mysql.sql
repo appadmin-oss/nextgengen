@@ -1465,7 +1465,18 @@ CREATE TABLE IF NOT EXISTS assessment_instruments (
   lockedAt VARCHAR(40) DEFAULT '',
   createdById VARCHAR(64) DEFAULT '',
   createdAt VARCHAR(40),
-  archivedAt VARCHAR(40) DEFAULT ''
+  archivedAt VARCHAR(40) DEFAULT '',
+  -- Provenance (migration 82): what this instrument is, and where it came from.
+  unit VARCHAR(64) DEFAULT '',
+  scale VARCHAR(16) DEFAULT 'points',
+  source VARCHAR(255) DEFAULT '',
+  sourceUrl VARCHAR(255) DEFAULT '',
+  licence VARCHAR(255) DEFAULT '',
+  citation TEXT,
+  adaptNote TEXT,
+  catalogueKey VARCHAR(64) DEFAULT '',
+  higherIsBetter TINYINT DEFAULT 1,
+  INDEX idx_ainst_cat (catalogueKey)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS assessment_windows (
@@ -1499,3 +1510,5 @@ CREATE TABLE IF NOT EXISTS assessment_results (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (81) ON DUPLICATE KEY UPDATE version = version;
+
+INSERT INTO schema_version (version) VALUES (82) ON DUPLICATE KEY UPDATE version = version;

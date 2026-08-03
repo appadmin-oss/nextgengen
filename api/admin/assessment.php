@@ -18,6 +18,7 @@ if ($method === 'GET') {
         'windowId' => (string)($_GET['windowId'] ?? ''), 'centre' => (string)($_GET['centre'] ?? '')]);
     elseif ($view === 'gains')     $res = gs_call('admin.assessment.gains', ['requesterId' => $s['mid'],
         'instrumentId' => (string)($_GET['instrumentId'] ?? '')]);
+    elseif ($view === 'catalogue') $res = gs_call('admin.assessment.catalogue', ['requesterId' => $s['mid']]);
     else json_error('unknown_view', 400);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -31,6 +32,8 @@ if ($method === 'GET') {
         'windowId' => $b['windowId'] ?? '', 'data' => $b['data'] ?? [], 'ip' => $ip]);
     elseif ($action === 'record')             $res = gs_call('admin.assessment.record', ['requesterId' => $s['mid'],
         'windowId' => $b['windowId'] ?? '', 'results' => $b['results'] ?? [], 'ip' => $ip]);
+    elseif ($action === 'adopt')              $res = gs_call('admin.assessment.adopt', ['requesterId' => $s['mid'],
+        'keys' => $b['keys'] ?? [], 'ip' => $ip]);
     else json_error('unknown_action', 400);
 } else {
     json_error('method_not_allowed', 405);

@@ -608,6 +608,8 @@
       assessWindows:     () => request('/admin/assessment.php' + qs({ view: 'windows' })),
       assessSheet:       (windowId, centre) => request('/admin/assessment.php' + qs({ view: 'sheet', windowId, centre: centre || '' })),
       assessGains:       (instrumentId) => request('/admin/assessment.php' + qs({ view: 'gains', instrumentId: instrumentId || '' })),
+      assessCatalogue:   () => request('/admin/assessment.php' + qs({ view: 'catalogue' })),
+      assessAdopt:       (keys) => request('/admin/assessment.php', { body: { action: 'adopt', keys } }),
       assessInstrumentSave:   (instrumentId, data) => request('/admin/assessment.php', { body: { action: 'instrument_save', instrumentId: instrumentId || '', data } }),
       assessInstrumentRevise: (instrumentId) => request('/admin/assessment.php', { body: { action: 'instrument_revise', instrumentId } }),
       assessWindowSave:  (windowId, data) => request('/admin/assessment.php', { body: { action: 'window_save', windowId: windowId || '', data } }),

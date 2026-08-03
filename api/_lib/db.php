@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 81;
+const NGG_SCHEMA_TARGET = 82;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2158,6 +2158,40 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_ares_student ON assessment_results (studentId);
             CREATE INDEX IF NOT EXISTS idx_ares_window ON assessment_results (windowId);
             CREATE INDEX IF NOT EXISTS idx_awin_instr ON assessment_windows (instrumentId, phase);
+        ",
+
+        /* WHERE AN INSTRUMENT CAME FROM, AND WHAT ITS NUMBERS MEAN.
+         *
+         * Two gaps that only show up when somebody outside the programme reads
+         * the result.
+         *
+         * A funder's first question about a gain is "measured with what?", and
+         * "a test we wrote" is a worse answer than "EGRA oral reading fluency,
+         * RTI/USAID, second edition". `source`, `licence`, `citation` and
+         * `catalogueKey` carry the provenance so the report can answer it
+         * without anyone reconstructing it from memory a year later.
+         *
+         * `unit` and `scale` exist because percent-of-maximum is not always a
+         * number. Oral reading fluency is correct words per minute; there is no
+         * maximum to be a percentage of, and "the mean rose 4.2% of the paper"
+         * is a sentence with no meaning behind it. scale='points' keeps the
+         * existing percent reporting, 'rate' and 'level' suppress it and report
+         * in the instrument's own unit instead. */
+        82 => "
+            ALTER TABLE assessment_instruments ADD COLUMN unit TEXT DEFAULT '';
+            ALTER TABLE assessment_instruments ADD COLUMN scale TEXT DEFAULT 'points';
+            ALTER TABLE assessment_instruments ADD COLUMN source TEXT DEFAULT '';
+            ALTER TABLE assessment_instruments ADD COLUMN sourceUrl TEXT DEFAULT '';
+            ALTER TABLE assessment_instruments ADD COLUMN licence TEXT DEFAULT '';
+            ALTER TABLE assessment_instruments ADD COLUMN citation TEXT DEFAULT '';
+            ALTER TABLE assessment_instruments ADD COLUMN adaptNote TEXT DEFAULT '';
+            ALTER TABLE assessment_instruments ADD COLUMN catalogueKey TEXT DEFAULT '';
+            /* Not every instrument improves upwards. On the SDQ a FALL in the
+             * total difficulties score is the good result, and a report that
+             * prints '-3.1' under a heading called Gain has said the opposite
+             * of what happened. */
+            ALTER TABLE assessment_instruments ADD COLUMN higherIsBetter INTEGER DEFAULT 1;
+            CREATE INDEX IF NOT EXISTS idx_ainst_cat ON assessment_instruments (catalogueKey);
         ",
     ];
 

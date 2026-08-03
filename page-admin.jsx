@@ -4351,11 +4351,16 @@ function AdminAssessment() {
   const [edit, setEdit] = React.useState(null);      // instrument being edited
   const [sheet, setSheet] = React.useState(null);    // { window, instrument, students }
   const [marks, setMarks] = React.useState({});      // studentId → { score, absent }
+  const [cat, setCat] = React.useState(null);        // published-instrument shortlist
+  const [catNote, setCatNote] = React.useState("");
+  const [catFam, setCatFam] = React.useState("All");
+  const [picked, setPicked] = React.useState({});    // catalogue key → selected
 
   const load = React.useCallback(() => {
     NGGApi.admin.assessInstruments().then(r => setInst(r.instruments || [])).catch(() => setInst([]));
     NGGApi.admin.assessWindows().then(r => setWins(r.windows || [])).catch(() => setWins([]));
     NGGApi.admin.assessGains().then(r => setGains(r.gains || [])).catch(() => setGains([]));
+    NGGApi.admin.assessCatalogue().then(r => { setCat(r.catalogue || []); setCatNote(r.note || ""); }).catch(() => setCat([]));
   }, []);
   React.useEffect(() => { load(); }, [load]);
 
@@ -4426,6 +4431,24 @@ function AdminAssessment() {
 
   const tone = (lvl) => ({ error: "#b91c1c", warn: "#b45309", method: "var(--ink-500,#5a6488)" }[lvl] || "var(--ink-500)");
 
+  const adopt = async (keys) => {
+    if (!keys.length) return;
+    setBusy("adopt");
+    try {
+      const r = await NGGApi.admin.assessAdopt(keys);
+      const made = (r.created || []).length, had = (r.existing || []).length;
+      toast.success(made + " instrument" + (made === 1 ? "" : "s") + " adopted"
+        + (had ? ", " + had + " already in use" : "") + ". Open a baseline sitting when you are ready.");
+      setPicked({}); load();
+    } catch (e) { toast.error(e.code || e.message, "Could not adopt"); } finally { setBusy(""); }
+  };
+  const pickedKeys = Object.keys(picked).filter(k => picked[k]);
+  /* A rate has no maximum to be a percentage of and a ladder's rungs are not
+     equally spaced, so the screen prints the unit in place of "out of N". */
+  const outOf = (i) => i.scale === "rate" ? (i.unit || "per minute")
+    : i.scale === "level" ? (i.unit || "levels")
+    : "out of " + i.maxScore;
+
   return (
     <div>
       <div className="admin-section-head">
@@ -4440,7 +4463,7 @@ function AdminAssessment() {
       </div>
 
       <div className="admin-tabs" role="tablist">
-        {[["gains", "Results"], ["instruments", "Instruments"], ["record", "Record scores"]].map(([k, l]) => (
+        {[["gains", "Results"], ["catalogue", "Catalogue"], ["instruments", "Instruments"], ["record", "Record scores"]].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={"admin-tab" + (tab === k ? " is-active" : "")}
             onClick={() => setTab(k)}>{l}</button>
         ))}
@@ -4459,9 +4482,14 @@ function AdminAssessment() {
             <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
               <h3 className="admin-h3" style={{ margin: 0 }}>{g.instrument.name}</h3>
               <span className="mono" style={{ fontSize: 12, color: "var(--ink-500)" }}>
-                {g.instrument.domainLabel} · out of {g.instrument.maxScore} · v{g.instrument.version}
+                {g.instrument.domainLabel} · {outOf(g.instrument)} · v{g.instrument.version}
               </span>
             </div>
+            {/* Where it came from, next to what it found. A gain with no
+                instrument behind it is the first thing a reviewer discounts. */}
+            {g.instrument.source && <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)", marginTop: 4 }}>
+              {g.instrument.source}{g.instrument.citation ? " · " + g.instrument.citation : ""}
+            </div>}
 
             {/* The headline is the PAIRED difference. The two cohort means sit
                 beside it deliberately: quoting the endline mean against the
@@ -4469,10 +4497,12 @@ function AdminAssessment() {
                 prevent, so both numbers are on screen and labelled. */}
             <div className="admin-tiles" style={{ marginTop: 14 }}>
               <div className="admin-tile" style={{ cursor: "default", alignItems: "flex-start" }}>
-                <div className="admin-tile-n" style={{ color: g.gain.mean > 0 ? "#15803d" : g.gain.mean < 0 ? "#b91c1c" : undefined }}>
+                {/* Coloured by whether the movement is GOOD, not by whether it
+                    is upward — on a difficulties score the fall is the win. */}
+                <div className="admin-tile-n" style={{ color: g.improved === true ? "#15803d" : g.improved === false ? "#b91c1c" : undefined }}>
                   {g.gain.mean === null ? "—" : (g.gain.mean > 0 ? "+" : "") + g.gain.mean}
                 </div>
-                <div className="mono admin-tile-l">Mean gain, per child</div>
+                <div className="mono admin-tile-l">Mean change, per child{g.unit ? " (" + g.unit + ")" : ""}</div>
                 {g.gain.lo !== null && <div className="admin-hint" style={{ margin: 0 }}>
                   95% CI {g.gain.lo} to {g.gain.hi}{g.gain.d !== null ? " · d = " + g.gain.d : ""}
                 </div>}
@@ -4483,15 +4513,20 @@ function AdminAssessment() {
                 <div className="admin-hint" style={{ margin: 0 }}>{g.satBaseline} baseline · {g.satEndline} endline</div>
               </div>
               <div className="admin-tile" style={{ cursor: "default", alignItems: "flex-start" }}>
-                <div className="admin-tile-n">{g.pairedBaselinePct === null ? "—" : g.pairedBaselinePct + "%"}</div>
+                <div className="admin-tile-n">{g.pctMeaningful
+                  ? (g.pairedBaselinePct === null ? "—" : g.pairedBaselinePct + "%")
+                  : (g.pairedBaselineMean === null ? "—" : g.pairedBaselineMean)}</div>
                 <div className="mono admin-tile-l">Their baseline</div>
-                <div className="admin-hint" style={{ margin: 0 }}>whole cohort {g.baselineMeanPct === null ? "—" : g.baselineMeanPct + "%"}</div>
+                <div className="admin-hint" style={{ margin: 0 }}>whole cohort {g.pctMeaningful
+                  ? (g.baselineMeanPct === null ? "—" : g.baselineMeanPct + "%")
+                  : (g.baselineMean === null ? "—" : g.baselineMean)}</div>
               </div>
               <div className="admin-tile" style={{ cursor: "default", alignItems: "flex-start" }}>
                 <div className="admin-tile-n" style={{ color: g.attrition.baselineOnly ? "#b45309" : undefined }}>{g.attrition.baselineOnly}</div>
                 <div className="mono admin-tile-l">Did not return</div>
                 {g.attrition.bias && <div className="admin-hint" style={{ margin: 0 }}>
-                  they scored {g.attrition.bias.leftMean}% vs {g.attrition.bias.stayedMean}%
+                  they scored {g.pctMeaningful ? g.attrition.bias.leftMean + "%" : g.attrition.bias.leftMeanRaw}
+                  {" vs "}{g.pctMeaningful ? g.attrition.bias.stayedMean + "%" : g.attrition.bias.stayedMeanRaw}
                 </div>}
               </div>
             </div>
@@ -4532,23 +4567,93 @@ function AdminAssessment() {
         ))
       )}
 
+      {/* ── Catalogue ───────────────────────────────────────────────────────
+          Published instruments with their provenance. "A test we wrote" is the
+          weakest answer to "measured with what?", and every fund this
+          programme applies to asks the question. Adopting is deliberate and
+          audited, because the choice of measure decides what can be claimed. */}
+      {tab === "catalogue" && (
+        <div className="admin-section">
+          <div className="admin-section-head">
+            <div>
+              <h3 className="admin-h3" style={{ margin: 0 }}>Published instruments</h3>
+              <p className="admin-hint" style={{ margin: "6px 0 0", maxWidth: 760 }}>{catNote}</p>
+            </div>
+            <button className="btn btn-primary btn-sm" disabled={!pickedKeys.length || busy === "adopt"}
+              onClick={() => adopt(pickedKeys)}>
+              {busy === "adopt" ? "Adopting…" : "Adopt " + (pickedKeys.length || "") + " selected"}
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "0 0 14px" }}>
+            {["All"].concat(Array.from(new Set((cat || []).map(c => c.family)))).map(f => (
+              <button key={f} className={"chip" + (catFam === f ? " is-active" : "")} onClick={() => setCatFam(f)}
+                style={{ cursor: "pointer", border: "1px solid var(--line,#e5e8ee)", background: catFam === f ? "var(--ink-900,#0a1130)" : "#fff", color: catFam === f ? "#fff" : "inherit" }}>{f}</button>
+            ))}
+          </div>
+          {cat === null ? <div className="admin-empty">Loading…</div>
+            : cat.length === 0 ? <div className="admin-empty">The catalogue is empty.</div>
+            : <div style={{ display: "grid", gap: 12 }}>
+              {cat.filter(c => catFam === "All" || c.family === catFam).map(c => (
+                <div key={c.key} className="admin-card" style={{ padding: 16, border: "1px solid var(--line,#e5e8ee)", borderRadius: 12, background: "#fff" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                    {!c.adopted && <input type="checkbox" checked={!!picked[c.key]} aria-label={"Adopt " + c.name}
+                      style={{ marginTop: 4 }}
+                      onChange={e => setPicked(x => ({ ...x, [c.key]: e.target.checked }))}/>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                        <b style={{ fontSize: 15 }}>{c.name}</b>
+                        <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>
+                          {c.domainLabel} · {outOf(c)} · {c.gradeFromLabel}–{c.gradeToLabel}
+                        </span>
+                        {c.adopted
+                          ? <span className="mono" style={{ fontSize: 10.5, color: "#15803d" }}>✓ adopted</span>
+                          : null}
+                        {c.higherIsBetter === false && <span className="mono" style={{ fontSize: 10.5, color: "#b45309" }}>lower is better</span>}
+                      </div>
+                      <p style={{ margin: "8px 0 0", fontSize: 13.5, lineHeight: 1.55 }}>{c.notes}</p>
+                      {/* The adaptation note is not fine print: importing another
+                          country's word list measures the wrong thing while
+                          looking rigorous, so it sits at full size. */}
+                      <p style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.55, color: "#b45309" }}>
+                        <b>Before you use it:</b> {c.adapt}
+                      </p>
+                      <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)", marginTop: 10, lineHeight: 1.6 }}>
+                        <div>{c.source}</div>
+                        <div>{c.licence}</div>
+                        <div>{c.citation}</div>
+                        {c.sourceUrl && <a href={c.sourceUrl} target="_blank" rel="noopener noreferrer">{c.sourceUrl}</a>}
+                      </div>
+                    </div>
+                    {!c.adopted && <button className="btn btn-ghost btn-sm" disabled={busy === "adopt"}
+                      onClick={() => adopt([c.key])}>Adopt</button>}
+                  </div>
+                </div>
+              ))}
+            </div>}
+        </div>
+      )}
+
       {/* ── Instruments ─────────────────────────────────────────────────── */}
       {tab === "instruments" && (
         <div className="admin-section">
           <div className="admin-section-head">
             <h3 className="admin-h3" style={{ margin: 0 }}>Instruments</h3>
-            <button className="btn btn-primary btn-sm" onClick={() => setEdit({ name: "", domain: "literacy", maxScore: 50, items: 0, gradeFrom: "", gradeTo: "", notes: "" })}>＋ New instrument</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setTab("catalogue")}>Browse the catalogue</button>
+              <button className="btn btn-primary btn-sm" onClick={() => setEdit({ name: "", domain: "literacy", maxScore: 50, items: 0, gradeFrom: "", gradeTo: "", notes: "", unit: "", scale: "points", higherIsBetter: true, source: "", sourceUrl: "", licence: "", citation: "" })}>＋ New instrument</button>
+            </div>
           </div>
           {inst === null ? <div className="admin-empty">Loading…</div>
             : inst.length === 0 ? <div className="admin-empty">No instrument defined yet.</div>
             : <table className="admin-table">
-                <thead><tr><th>Instrument</th><th>Domain</th><th>Out of</th><th>Classes</th><th>Results</th><th>Sittings</th><th/></tr></thead>
+                <thead><tr><th>Instrument</th><th>Domain</th><th>Scored in</th><th>Classes</th><th>Results</th><th>Sittings</th><th/></tr></thead>
                 <tbody>{inst.map(i => (
                   <tr key={i.instrumentId}>
                     <td><b>{i.name}</b>{i.version > 1 ? <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}> v{i.version}</span> : null}
-                      {i.locked && <div className="mono" style={{ fontSize: 10.5, color: "var(--gold-700,#7a5600)" }}>locked — has results</div>}</td>
+                      {i.locked && <div className="mono" style={{ fontSize: 10.5, color: "var(--gold-700,#7a5600)" }}>locked — has results</div>}
+                      {i.source && <div className="mono" style={{ fontSize: 10.5, color: "var(--ink-500)" }}>{i.source}</div>}</td>
                     <td>{i.domainLabel}</td>
-                    <td className="mono">{i.maxScore}</td>
+                    <td className="mono">{outOf(i)}{i.higherIsBetter === false ? " · lower is better" : ""}</td>
                     <td className="mono">{i.gradeFrom || i.gradeTo ? (i.gradeFrom || "?") + "–" + (i.gradeTo || "?") : "any"}</td>
                     <td className="mono">{i.results}</td>
                     <td className="mono">{i.windows}</td>
@@ -4591,7 +4696,8 @@ function AdminAssessment() {
               <div>
                 <h3 className="admin-h3" style={{ margin: 0 }}>{sheet.instrument.name} · {sheet.window.phase}</h3>
                 <p className="admin-hint" style={{ margin: "4px 0 0" }}>
-                  Out of {sheet.instrument.maxScore}. Leave blank for a child who has not been marked yet;
+                  {sheet.instrument.unit ? "Scored in " + sheet.instrument.unit + ", 0–" + sheet.instrument.maxScore + "."
+                    : "Out of " + sheet.instrument.maxScore + "."} Leave blank for a child who has not been marked yet;
                   tick <b>absent</b> for one who did not sit — that is not a zero, and recording it as one would
                   turn an attendance problem into a learning finding.
                 </p>
@@ -4647,6 +4753,18 @@ function AdminAssessment() {
             options={["literacy", "numeracy", "sel", "gender_attitudes", "other"]}/>
           <Field label="Maximum score" type="number" value={String(edit.maxScore)} onChange={v => setEdit(x => ({ ...x, maxScore: parseInt(v, 10) || 0 }))}/>
           <Field label="Number of items (optional)" type="number" value={String(edit.items || "")} onChange={v => setEdit(x => ({ ...x, items: parseInt(v, 10) || 0 }))}/>
+          {/* Scale decides whether a percentage may be printed at all. A rate
+              has no maximum to be a fraction of; a ladder's rungs are not
+              equally spaced. Both report in their own unit instead. */}
+          <FieldSelect label="Kind of score" value={edit.scale || "points"} onChange={v => setEdit(x => ({ ...x, scale: v }))}
+            options={["points", "rate", "level"]}/>
+          <Field label="Unit — how the score is written (e.g. correct words per minute)" value={edit.unit || ""}
+            onChange={v => setEdit(x => ({ ...x, unit: v }))}/>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0", fontSize: 13.5 }}>
+            <input type="checkbox" checked={edit.higherIsBetter !== false}
+              onChange={e => setEdit(x => ({ ...x, higherIsBetter: e.target.checked }))}/>
+            A higher score is the better result
+          </label>
           <div style={{ display: "flex", gap: 10 }}>
             <FieldSelect label="From class" value={edit.gradeFrom || ""} onChange={v => setEdit(x => ({ ...x, gradeFrom: v }))}
               options={["", "Primary 1", "Primary 2", "Primary 3", "Primary 4", "Primary 5", "Primary 6", "JSS 1", "JSS 2", "JSS 3", "SSS 1", "SSS 2", "SSS 3"]}/>
@@ -4655,6 +4773,14 @@ function AdminAssessment() {
           </div>
           <FieldTextarea label="Notes — how it is administered" rows={3} value={edit.notes || ""}
             onChange={v => setEdit(x => ({ ...x, notes: v }))}/>
+          {/* Provenance is editable even on a home-grown instrument, because
+              "measured with what?" gets asked about those too. */}
+          <Field label="Source — who published it" value={edit.source || ""} onChange={v => setEdit(x => ({ ...x, source: v }))}/>
+          <Field label="Source link" value={edit.sourceUrl || ""} onChange={v => setEdit(x => ({ ...x, sourceUrl: v }))}/>
+          <Field label="Licence" value={edit.licence || ""} onChange={v => setEdit(x => ({ ...x, licence: v }))}/>
+          <FieldTextarea label="Citation" rows={2} value={edit.citation || ""} onChange={v => setEdit(x => ({ ...x, citation: v }))}/>
+          <FieldTextarea label="Local adaptation needed before use" rows={2} value={edit.adaptNote || ""}
+            onChange={v => setEdit(x => ({ ...x, adaptNote: v }))}/>
           <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
             <button className="btn btn-primary" disabled={busy === "inst"} onClick={saveInstrument}>Save</button>
             <button className="btn btn-ghost" onClick={() => setEdit(null)}>Cancel</button>
