@@ -383,6 +383,37 @@ function analytics_workspace(array $p): array {
     $byTypeArr = []; foreach ($byType as $k => $v) $byTypeArr[] = ['type' => $k, 'count' => $v];
     usort($byTypeArr, fn($a, $b) => $b['count'] <=> $a['count']);
 
+    /* ── Retention ───────────────────────────────────────────────────────────
+     * `attendanceRate` is a rate over the selected range: it says how full the
+     * sessions were, not whether the children in them are the children who
+     * enrolled. Those diverge, and they diverge in the flattering direction — a
+     * child who has left stops being counted absent and simply disappears from
+     * the denominator's numerator, so quitting nudges the rate UP. A workspace
+     * that a funder report is written from cannot only carry the rate.
+     *
+     * Same function, same threshold, same window as the register, the public
+     * board and the analyst's evidence — `attendance_retention()`. Scoped to the
+     * centres this admin can see, so it agrees with the table it sits in.
+     *
+     * NOTE the window is the PROGRAMME TERM, not `$from`–`$to`. "Has stopped
+     * coming" is only meaningful against the whole term; asked of a one-week
+     * range it would call every child who missed that week a leaver. The dates
+     * come back in the payload so the UI can say which window it means rather
+     * than letting a reader assume it matches the filter above it. */
+    $retention = function_exists('attendance_retention') ? attendance_retention($cNames) : [];
+    if ($retention) {
+        $retBy = [];
+        foreach ($retention['byCentre'] as $rr) $retBy[(string)$rr['centre']] = $rr;
+        foreach ($byCentre as &$__bc2) {
+            $rr = $retBy[(string)$__bc2['name']] ?? null;
+            $__bc2['stopped']     = $rr ? (int)$rr['stopped'] : 0;
+            $__bc2['neverCame']   = $rr ? (int)$rr['neverCame'] : 0;
+            $__bc2['stillComing'] = $rr ? (int)$rr['stillComing'] : 0;
+            $__bc2['stoppedPct']  = $rr ? (float)$rr['stoppedPct'] : 0.0;
+        }
+        unset($__bc2);
+    }
+
     return ['ok' => true, 'workspace' => [
         'filters' => $filters,
         'generatedAt' => now_iso(),
@@ -421,6 +452,7 @@ function analytics_workspace(array $p): array {
                                    'enrolled' => count($perStudent),
                                    'pct' => $windowRecorded ? (int)round($inWindow / $windowRecorded * 100) : null],
             'centreComparison' => $byCentre,
+            'retention' => $retention,
             'longitudinal' => $longitudinal,
             'intervention' => $intervention,
             'stats' => $statSummary,

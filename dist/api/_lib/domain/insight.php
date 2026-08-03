@@ -455,59 +455,21 @@ function insight_evidence(array $p): array {
 }
 
 /**
- * How many children came and then stopped, per centre, over the open days the
- * register measures.
+ * How many children came and then stopped, per centre.
  *
- * `stoppedRun` is the same threshold the register uses, so a coordinator reading
- * "9 have stopped" on one screen and the analyst quoting nine on the other are
- * talking about the same nine children. Two figures for one idea is how a board
- * paper ends up contradicting the dashboard it was written from.
+ * The definition itself lives with the register that coined it —
+ * `attendance_retention()` in summer.php, beside `ATT_STOPPED_RUN`. This is a
+ * delegation, deliberately not a second implementation: the analyst quoting
+ * "nine have stopped" and the coordinator reading nine off the register have to
+ * mean the same nine children, and the only way to guarantee that is for there
+ * to be one function computing it.
+ *
+ * No centre filter here. The analyst reads the whole programme, which is how
+ * the rest of this payload is scoped.
  */
 function insight_attrition_counts(): array {
-    if (!function_exists('programme_days_elapsed')) return [];
-    $days = programme_days_elapsed();
-    if (!$days) return [];
-    $run = defined('ATT_STOPPED_RUN') ? ATT_STOPPED_RUN : 3;
-    $tail = array_slice($days, -$run);
-    if (count($tail) < $run) return [];                 // too early in the term to say
-    /* Scoped to ACTIVE STUDENTS, with no cohort filter — because that is how
-     * every other figure in this payload is scoped (see analytics_depth, which
-     * reads `summer_students WHERE status = 'active'`). Filtering by the current
-     * cohort here would have made this one block describe a different
-     * population from the rates it sits beside, and returned nothing at all
-     * whenever no cohort was marked active — two numbers for one idea, which is
-     * how a report ends up contradicting the screen it came from. */
-    $from = $days[0]; $to = $days[count($days) - 1];
-
-    // Ever present in the window, and present in the closing run.
-    $ever = []; $recent = [];
-    foreach (db_all("SELECT DISTINCT a.studentId sid FROM attendance a JOIN summer_students s ON s.studentId = a.studentId
-                     WHERE s.status = 'active' AND a.date >= ? AND a.date <= ?", [$from, $to]) as $r) {
-        $ever[(string)$r['sid']] = true;
-    }
-    foreach (db_all("SELECT DISTINCT a.studentId sid FROM attendance a JOIN summer_students s ON s.studentId = a.studentId
-                     WHERE s.status = 'active' AND a.date >= ?", [$tail[0]]) as $r) {
-        $recent[(string)$r['sid']] = true;
-    }
-    $byCentre = []; $stopped = 0; $never = 0; $active = 0;
-    foreach (db_all("SELECT studentId, centre FROM summer_students WHERE status = 'active'") as $s) {
-        $id = (string)$s['studentId']; $cn = (string)($s['centre'] ?? '') ?: '(no centre)';
-        $byCentre[$cn] = $byCentre[$cn] ?? ['centre' => $cn, 'children' => 0, 'stopped' => 0, 'neverCame' => 0];
-        $byCentre[$cn]['children']++; $active++;
-        if (!isset($ever[$id])) { $byCentre[$cn]['neverCame']++; $never++; continue; }
-        if (!isset($recent[$id])) { $byCentre[$cn]['stopped']++; $stopped++; }
-    }
-    foreach ($byCentre as &$row) {
-        $row['stoppedPct'] = $row['children'] > 0 ? round($row['stopped'] / $row['children'] * 100, 1) : 0.0;
-    }
-    unset($row);
-    usort($byCentre, fn($x, $y) => $y['stoppedPct'] <=> $x['stoppedPct']);
-    return [
-        'stoppedRun' => $run, 'openDays' => count($days), 'from' => $from, 'to' => $to,
-        'children' => $active, 'stopped' => $stopped, 'neverCame' => $never,
-        'stoppedPct' => $active > 0 ? round($stopped / $active * 100, 1) : 0.0,
-        'byCentre' => array_values($byCentre),
-    ];
+    if (!function_exists('attendance_retention')) return [];
+    return attendance_retention();
 }
 
 /* ── The panel ────────────────────────────────────────────────────────────── */

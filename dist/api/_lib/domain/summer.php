@@ -851,6 +851,85 @@ const ATT_PATTERN_DAYS = 20;
 /** Consecutive open days missed before "attends badly" becomes "has stopped". */
 const ATT_STOPPED_RUN = 3;
 
+/**
+ * How many children came and then stopped, per centre, over the open days the
+ * register measures.
+ *
+ * This lives HERE, beside `ATT_STOPPED_RUN` and the register that coined it,
+ * because three separate screens now report it: the admin register, the public
+ * status board and the analyst's evidence. A coordinator reading "9 have
+ * stopped" on the dashboard, a parent reading the same figure on the public
+ * board, and a board paper quoting nine must be talking about the same nine
+ * children. Two figures for one idea is how a report ends up contradicting the
+ * screen it was written from, so there is one function and one threshold.
+ *
+ * Counts only, per centre — never a child, no name, no id, no contact. That is
+ * what lets the public board call it without a second, redacted variant.
+ *
+ * `$onlyCentres` limits the population to those centres (empty = every centre).
+ * The public board passes its own centre allow-list so the retention figure
+ * describes the same centres as the rows beside it.
+ *
+ * Returns [] rather than zeroes when it cannot honestly be computed — no
+ * programme calendar, or fewer open days so far than the run it needs. A
+ * caller must treat the empty array as "not yet", not as "nobody left".
+ */
+function attendance_retention(array $onlyCentres = []): array {
+    if (!function_exists('programme_days_elapsed')) return [];
+    $days = programme_days_elapsed();
+    if (!$days) return [];
+    $run = ATT_STOPPED_RUN;
+    $tail = array_slice($days, -$run);
+    if (count($tail) < $run) return [];                 // too early in the term to say
+    /* Scoped to ACTIVE STUDENTS, with no cohort filter — because that is how
+     * every other figure that sits beside this is scoped (see analytics_depth,
+     * which reads `summer_students WHERE status = 'active'`). Filtering by the
+     * current cohort here would have made this one block describe a different
+     * population from the rates next to it, and returned nothing at all
+     * whenever no cohort was marked active. */
+    $from = $days[0]; $to = $days[count($days) - 1];
+
+    $only = array_values(array_filter(array_map('strval', $onlyCentres), fn($n) => $n !== ''));
+    $cIn = $only ? ' AND s.centre IN (' . implode(',', array_fill(0, count($only), '?')) . ')' : '';
+
+    // Ever present in the window, and present in the closing run. Two grouped
+    // queries for the whole programme, not one per centre — the public board
+    // that calls this is polled by a screen at every centre.
+    $ever = []; $recent = [];
+    foreach (db_all("SELECT DISTINCT a.studentId sid FROM attendance a JOIN summer_students s ON s.studentId = a.studentId
+                     WHERE s.status = 'active' AND a.date >= ? AND a.date <= ?" . $cIn,
+                    array_merge([$from, $to], $only)) as $r) {
+        $ever[(string)$r['sid']] = true;
+    }
+    foreach (db_all("SELECT DISTINCT a.studentId sid FROM attendance a JOIN summer_students s ON s.studentId = a.studentId
+                     WHERE s.status = 'active' AND a.date >= ?" . $cIn,
+                    array_merge([$tail[0]], $only)) as $r) {
+        $recent[(string)$r['sid']] = true;
+    }
+    $byCentre = []; $stopped = 0; $never = 0; $active = 0;
+    $rosterIn = $only ? ' AND centre IN (' . implode(',', array_fill(0, count($only), '?')) . ')' : '';
+    foreach (db_all("SELECT studentId, centre FROM summer_students WHERE status = 'active'" . $rosterIn, $only) as $s) {
+        $id = (string)$s['studentId']; $cn = (string)($s['centre'] ?? '') ?: '(no centre)';
+        $byCentre[$cn] = $byCentre[$cn] ?? ['centre' => $cn, 'children' => 0, 'stopped' => 0, 'neverCame' => 0];
+        $byCentre[$cn]['children']++; $active++;
+        if (!isset($ever[$id])) { $byCentre[$cn]['neverCame']++; $never++; continue; }
+        if (!isset($recent[$id])) { $byCentre[$cn]['stopped']++; $stopped++; }
+    }
+    foreach ($byCentre as &$row) {
+        $row['stoppedPct'] = $row['children'] > 0 ? round($row['stopped'] / $row['children'] * 100, 1) : 0.0;
+        $row['stillComing'] = max(0, $row['children'] - $row['stopped'] - $row['neverCame']);
+    }
+    unset($row);
+    usort($byCentre, fn($x, $y) => $y['stoppedPct'] <=> $x['stoppedPct']);
+    return [
+        'stoppedRun' => $run, 'openDays' => count($days), 'from' => $from, 'to' => $to,
+        'children' => $active, 'stopped' => $stopped, 'neverCame' => $never,
+        'stillComing' => max(0, $active - $stopped - $never),
+        'stoppedPct' => $active > 0 ? round($stopped / $active * 100, 1) : 0.0,
+        'byCentre' => array_values($byCentre),
+    ];
+}
+
 function admin_summer_attendance(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();

@@ -446,6 +446,44 @@ function public_status(array $p): array {
         }
     }
 
+    /* ── Retention ────────────────────────────────────────────────────────
+     * The board reported today's attendance rate and nothing about whether the
+     * children counted in it are still coming at all. Those are different
+     * problems with different answers: 80% present of a roster a third of whom
+     * quietly left is a worse programme than 65% present of everyone enrolled,
+     * and the first reads better on a screen. A public board that can only show
+     * the flattering one of the two is not a status board.
+     *
+     * Same function, same threshold, same window as the admin register and the
+     * analyst's evidence — see `attendance_retention()`. Counts only, no child.
+     *
+     * Scoped to the centres the board actually SHOWS, so a board published for
+     * one centre does not display another centre's attrition. `$cNames` rather
+     * than `$only`, because an allow-list may name a centre that has since been
+     * archived — passing the raw list would count that centre's children in the
+     * total with no row beside them to explain where they came from.
+     *
+     * With no allow-list this is every active student, matching `kpis.enrolled`.
+     * With one it is deliberately a narrower population, so `retention.children`
+     * is returned rather than left for the reader to assume it is `enrolled`.
+     *
+     * Empty when there is no programme calendar or the term is younger than the
+     * missed-day run: "not yet measurable", which is not the same claim as
+     * "nobody has left", and the UI must not render it as a zero. */
+    $retention = function_exists('attendance_retention') ? attendance_retention($only ? $cNames : []) : [];
+    if ($retention) {
+        $retBy = [];
+        foreach ($retention['byCentre'] as $__r) $retBy[(string)$__r['centre']] = $__r;
+        foreach ($byCentre as &$__rc) {
+            $r = $retBy[$__rc['name']] ?? null;
+            $__rc['stopped']     = $r ? (int)$r['stopped'] : 0;
+            $__rc['neverCame']   = $r ? (int)$r['neverCame'] : 0;
+            $__rc['stillComing'] = $r ? (int)$r['stillComing'] : 0;
+            $__rc['stoppedPct']  = $r ? (float)$r['stoppedPct'] : 0.0;
+        }
+        unset($__rc);
+    }
+
     return ['ok' => true, 'status' => [
         'today' => $today,
         'generatedAt' => now_iso(),
@@ -475,6 +513,7 @@ function public_status(array $p): array {
             'trend' => $regTrend,
         ],
         'deltas'   => $deltas,
+        'retention' => $retention,
         'byCentre' => $byCentre,
         'trend'    => $trend,
         'members'  => $members,

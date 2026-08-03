@@ -507,6 +507,28 @@ function anAttention(ws) {
   const ex = ws.executive, op = ws.operations, re = ws.research;
   const out = [];
 
+  /* Children who have LEFT go first, ahead of unlogged days and ungraded work,
+     because they are the only item on this band that gets worse while you read
+     it and cannot be recovered by working late. A rate cannot raise this alarm:
+     a child who stops coming leaves the roll rather than showing up as absent,
+     so quitting nudges the attendance rate up. See `attendance_retention()`.
+
+     Absent when the term is too young to measure — a card reading "0 have
+     stopped" on day two would be a reassurance nobody has earned. */
+  const ret = re.retention && re.retention.children > 0 ? re.retention : null;
+  if (ret && ret.stopped > 0) {
+    const worst = (ret.byCentre || []).filter(c => (c.children || 0) >= 5 && (c.stopped || 0) > 0)[0];
+    out.push({
+      key: "retention", tone: ret.stoppedPct >= 10 ? AN_TONE.bad : AN_TONE.warn, glyph: "↘", count: ret.stopped,
+      title: ret.stopped === 1 ? "child came and then stopped" : "children came and then stopped",
+      body: ret.stoppedPct + "% of " + ret.children + " enrolled have missed the last " + ret.stoppedRun
+        + " sessions, measured over the whole term (" + ret.from + " to " + ret.to + ") rather than the range above."
+        + (worst ? " Worst at " + worst.centre + " (" + worst.stopped + " of " + worst.children + ")." : "")
+        + " The attendance rate will not show this: a child who leaves stops being counted absent.",
+      action: "See who is not coming", metric: "low-attendance",
+    });
+  }
+
   const missing = (op.missingReports || []).length;
   if (missing) {
     out.push({
@@ -1022,8 +1044,16 @@ function AnalyticsWorkspace() {
   const onExport = (kind) => {
     if (!ws) return;
     if (kind === "csv") {
-      const rows = [["Centre", "Enrolled", "Present today", "Attendance %", "Avg grade", "Activities", "Stars"]];
-      ws.research.centreComparison.forEach(c => rows.push([c.name, c.enrolled, c.presentToday, c.attendanceRate, c.avgGrade ?? "", c.activities, c.stars]));
+      /* Retention travels with the export or it does not travel at all — the
+         spreadsheet is what gets forwarded, and a sheet carrying only the rate
+         is the misleading half of the picture with a filename on it. Column
+         headers name the window, because the rate and the retention figures are
+         measured over different ones. */
+      const cr = (ws.research.retention && ws.research.retention.children > 0) ? ws.research.retention : null;
+      const rows = [["Centre", "Enrolled", "Present today", "Attendance % (" + (ws.filters.rangeLabel || "range") + ")", "Avg grade", "Activities", "Stars"]
+        .concat(cr ? ["Still coming (term to " + cr.to + ")", "Stopped", "Stopped %", "Never came"] : [])];
+      ws.research.centreComparison.forEach(c => rows.push([c.name, c.enrolled, c.presentToday, c.attendanceRate, c.avgGrade ?? "", c.activities, c.stars]
+        .concat(cr ? [c.stillComing || 0, c.stopped || 0, c.stoppedPct || 0, c.neverCame || 0] : [])));
       anDownload("ngg-centres-" + (ws.filters.rangeLabel || "all") + ".csv", rows.map(r => r.map(anCsv).join(",")).join("\n"), "text/csv");
     } else if (kind === "research") {
       const out = [];
@@ -1046,6 +1076,11 @@ function AnalyticsWorkspace() {
 
   const ex = ws.executive, op = ws.operations, re = ws.research, ev = ws.evidence, rk = ws.rankings;
   const opts = ws.filters.options;
+  /* Retention, or null where the backend could not measure it (no programme
+     calendar, or a term shorter than the missed-day run). Null hides the column
+     rather than printing zeroes — an empty "Stopped" column reads as "nobody has
+     left", which is a claim, and not the one the data supports. */
+  const anRet = (re.retention && re.retention.children > 0) ? re.retention : null;
 
   return <div className="an-wrap">
     <AnalyticsStyles/>
@@ -1189,12 +1224,18 @@ function AnalyticsWorkspace() {
     <section className="an-sec" id="an-centres">
       <div className="an-eyebrow">Centres</div>
       <h2 className="an-h">Every site, one table.</h2>
-      <p className="an-sub">Sorted by attendance. The bar is against the 55% watch line the growth model uses.</p>
+      <p className="an-sub">
+        Sorted by attendance. The bar is against the 55% watch line the growth model uses.
+        {/* Two different windows in one row, so the row has to say so. The rate
+            is the filtered range; "stopped" is the whole term, because a
+            fortnight is too short a window to call anyone a leaver. */}
+        {anRet ? " Attendance is the selected range; Stopped is the whole term (" + anRet.from + " to " + anRet.to + ") — a child who has missed the last " + anRet.stoppedRun + " sessions." : ""}
+      </p>
       <div className="an-card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
           <table className="an-tbl an-centres">
             <thead><tr>
-              <th>Centre</th><th>Students</th><th>Attendance</th><th>Avg grade</th>
+              <th>Centre</th><th>Students</th><th>Attendance</th>{anRet && <th>Stopped</th>}<th>Avg grade</th>
               <th>Activities</th><th>Evidence</th><th>Stars</th><th/>
             </tr></thead>
             <tbody>
@@ -1208,6 +1249,13 @@ function AnalyticsWorkspace() {
                       <b className="mono" style={{ color: AN_RATE_TONE(c.attendanceRate) }}>{c.attendanceRate}%</b>
                     </div>
                   </td>
+                  {/* Read next to the rate on purpose: a centre can sit above the
+                      watch line and still be losing children, and that pairing is
+                      the whole reason this column exists. */}
+                  {anRet && <td className="mono" style={{ color: (c.stopped || 0) > 0 ? AN_TONE.bad : undefined, fontWeight: (c.stopped || 0) > 0 ? 700 : 400 }}>
+                    {(c.stopped || 0) > 0 ? c.stopped + " (" + c.stoppedPct + "%)" : "none"}
+                    {(c.neverCame || 0) > 0 && <div className="an-sub-xs">{c.neverCame} never came</div>}
+                  </td>}
                   <td className="mono">{c.avgGrade ?? "—"}</td>
                   <td className="mono">{anFmt(c.activities)}</td>
                   {/* Zero here is not a formatting nicety — it is a centre that
@@ -3225,17 +3273,26 @@ async function exportPdf(ws) {
       ["Assessments", `${ex.assessments.total} (${ex.assessments.graded} graded)`], ["Activities", ex.activities],
       ["Best centre", ex.bestCentre ? `${ex.bestCentre.name} (${ex.bestCentre.rate}%)` : "—"],
     ];
+    /* This is the page that goes to a funder, so it carries retention next to
+       the rate. Omitted entirely rather than printed as zero where the term is
+       too young to measure it. */
+    const pr = (re.retention && re.retention.children > 0) ? re.retention : null;
+    if (pr) kv.push(["Still coming", `${pr.stillComing} of ${pr.children}`],
+                    ["Came then stopped", `${pr.stopped} (${pr.stoppedPct}%) over ${pr.openDays} sessions`]);
     kv.forEach(([k, v]) => { doc.text(`${k}:`, 48, y); doc.setFont("helvetica", "bold"); doc.text(String(v), 200, y); doc.setFont("helvetica", "normal"); y += 15; });
     y += 12; doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text("Centre comparison", 40, y); y += 8;
     doc.setFontSize(9);
-    const cols = [["Centre", 48], ["Students", 200], ["Att%", 270], ["Grade", 320], ["Acts", 380], ["Stars", 430]];
+    if (pr) { doc.setTextColor(120); y += 12; doc.text(`Att% is ${ws.filters.rangeLabel}; Stopped is the whole term, ${pr.from} to ${pr.to}.`, 48, y); doc.setTextColor(20); }
+    const cols = [["Centre", 48], ["Students", 200], ["Att%", 262], ["Grade", 306], ["Acts", 352], ["Stars", 396]].concat(pr ? [["Stopped", 440]] : []);
     y += 12; doc.setFont("helvetica", "bold"); cols.forEach(([t, x]) => doc.text(t, x, y)); doc.setFont("helvetica", "normal"); y += 4;
-    doc.setDrawColor(220); doc.line(40, y, 480, y); y += 12;
+    doc.setDrawColor(220); doc.line(40, y, 500, y); y += 12;
     re.centreComparison.forEach(c => {
       if (y > 780) { doc.addPage(); y = 56; }
       doc.text(String(c.name).slice(0, 22), 48, y); doc.text(String(c.enrolled), 200, y);
-      doc.text(String(c.attendanceRate), 270, y); doc.text(String(c.avgGrade ?? "—"), 320, y);
-      doc.text(String(c.activities), 380, y); doc.text(String(c.stars), 430, y); y += 14;
+      doc.text(String(c.attendanceRate), 262, y); doc.text(String(c.avgGrade ?? "—"), 306, y);
+      doc.text(String(c.activities), 352, y); doc.text(String(c.stars), 396, y);
+      if (pr) doc.text((c.stopped || 0) > 0 ? `${c.stopped} (${c.stoppedPct}%)` : "none", 440, y);
+      y += 14;
     });
     y += 16; doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text("Statistical summary", 40, y);
     doc.setFont("helvetica", "normal"); doc.setFontSize(9); y += 16;

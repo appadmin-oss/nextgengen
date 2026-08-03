@@ -869,6 +869,18 @@ function StatusPage({ setPage, previewConfig }) {
       deltaIcon: (k.consentPending || 0) > 0 ? "ph-hourglass-medium" : "ph-check",
       deltaText: (k.consentPending || 0) > 0 ? k.consentPending + " pending" : "all in" },
   );
+  /* Retention sits in the same row as the attendance rate on purpose. Read on
+     its own, "82% attendance" invites the wrong conclusion; read beside "9 have
+     stopped coming", it invites the right question. Pushed only when the figure
+     exists — see the note on `ret`. */
+  const retKpi = (rr) => ({
+    icon: "ph-user-minus", tintBg: "rgba(224,49,49,0.10)", iconColor: "#c02c2c",
+    value: sFmt(ci(rr.stillComing)), label: "Still coming", valueColor: "#0a1130",
+    deltaBg: rr.stopped > 0 ? "rgba(224,49,49,0.10)" : "rgba(47,158,68,0.12)",
+    deltaColor: rr.stopped > 0 ? "#e03131" : "#2f9e44",
+    deltaIcon: rr.stopped > 0 ? "ph-user-minus" : "ph-check",
+    deltaText: rr.stopped > 0 ? rr.stopped + " stopped" : "nobody has left",
+  });
 
   /* Registration (intake). Separate from attendance on purpose: attendance
      says how the programme is RUNNING, registration says how it is FILLING,
@@ -888,6 +900,25 @@ function StatusPage({ setPage, previewConfig }) {
     ? [...centresRaw].filter(c => (c.capacity || 0) > 0).sort((a, b) => (b.fill || 0) - (a.fill || 0))
     : [];
   const fillTone = (f) => f >= 100 ? "#e03131" : f >= 85 ? "#e8a92b" : "#2f9e44";
+
+  /* Retention. A rate answers "how many turned up today"; this answers "are the
+     children we enrolled still with us", and the two can point opposite ways —
+     a roster a third of whom quietly stopped coming still posts a healthy rate,
+     because the ones who left are no longer being counted absent, they are just
+     gone. Showing only the first is the flattering half of the picture.
+
+     `null` when the backend cannot measure it yet (no programme calendar, or a
+     term younger than the missed-day run it needs). Rendered as absent, never
+     as 0% — "we cannot say yet" and "nobody has left" are different claims and
+     a board must not print the reassuring one when it means the other. */
+  const ret = (d && d.retention && d.retention.children > 0) ? d.retention : null;
+  const retTone = (p) => p >= 20 ? "#e03131" : p >= 10 ? "#e8a92b" : "#2f9e44";
+  const retCentres = ret ? (ret.byCentre || []).filter(c => (c.children || 0) > 0) : [];
+  const retWorst = retCentres.length ? retCentres[0] : null;
+  // Only worth naming a centre as the worst if it is actually worse than the
+  // programme as a whole and stands on more than a couple of children.
+  const retNameWorst = retWorst && (retWorst.children || 0) >= 5 && (retWorst.stoppedPct || 0) > (ret ? ret.stoppedPct : 0) ? retWorst : null;
+  if (ret) kpis.push(retKpi(ret));
 
   // Centre table (sorted)
   const sorted = [...centresRaw].sort((a, b) => sortKey === "name" ? a.name.localeCompare(b.name) : sortKey === "present" ? (b.present - a.present) : (b.rate - a.rate));
@@ -909,7 +940,14 @@ function StatusPage({ setPage, previewConfig }) {
   const rates = centresRaw.map(c => c.rate);
   const spread = rates.length ? Math.max(...rates) - Math.min(...rates) : 0;
   const best = [...centresRaw].sort((a, b) => b.rate - a.rate)[0] || { name: "—", rate: 0 };
-  const insightsSummary = "Attendance is holding at " + rate + "% " + (momentumDiff >= 0 ? "and trending up week-on-week — " : "— ") + (atRisk.length ? atRisk.length + (atRisk.length === 1 ? " centre needs" : " centres need") + " a closer look before Friday." : "and every centre is on track.");
+  /* The summary leads with the rate, and then — when it is measurable — with
+     retention, because the second sentence is what stops the first from being
+     read as the whole story. A summary that can only ever say the rate is
+     holding is a summary that cannot report the programme losing children. */
+  const insightsSummary = "Attendance is holding at " + rate + "% " + (momentumDiff >= 0 ? "and trending up week-on-week — " : "— ") + (atRisk.length ? atRisk.length + (atRisk.length === 1 ? " centre needs" : " centres need") + " a closer look before Friday." : "and every centre is on track.")
+    + (ret ? (ret.stopped > 0
+        ? " Over the " + ret.openDays + " session" + (ret.openDays === 1 ? "" : "s") + " so far, " + ret.stopped + " of " + ret.children + " children (" + ret.stoppedPct + "%) came and then stopped" + (retNameWorst ? ", most of them at " + retNameWorst.centre : "") + " — worth a call before they are gone for good."
+        : " And over the " + ret.openDays + " session" + (ret.openDays === 1 ? "" : "s") + " so far, nobody who started has stopped coming.") : "");
   const insights = [
     { col: "#2f9e44", edge: "#2f9e44", tintBg: "rgba(47,158,68,0.12)", icon: "ph-trend-up", title: "Momentum", stat: (momentumDiff >= 0 ? "+" : "") + momentumDiff, note: "more students present than three sessions ago — the strongest run this fortnight." },
     { col: "#a07400", edge: "#f5b026", tintBg: "rgba(245,176,38,0.16)", icon: "ph-trophy", title: "Top centre", stat: best.rate + "%", note: best.name + " leads every centre today. A good model for the others." },
@@ -918,6 +956,15 @@ function StatusPage({ setPage, previewConfig }) {
       : { col: "#2f9e44", edge: "#2f9e44", tintBg: "rgba(47,158,68,0.12)", icon: "ph-check-circle", title: "All clear", stat: "0", note: "every centre is above 75% today." },
     { col: "#1c2a5e", edge: "#1c2a5e", tintBg: "rgba(28,42,94,0.08)", icon: "ph-arrows-horizontal", title: "Spread", stat: spread + " pts", note: "between the strongest and weakest centre — tighten this to lift the average." },
   ];
+  /* A fourth card, only where there is a term to measure over. Today's absence
+     and a child who has left need different responses — one is a phone call
+     home tonight, the other is a doorstep visit — so they get separate cards
+     rather than one blended "attendance" figure. */
+  if (ret) insights.push(ret.stopped > 0
+    ? { col: "#c02c2c", edge: "#e03131", tintBg: "rgba(224,49,49,0.10)", icon: "ph-user-minus", title: "Stopped coming", stat: String(ret.stopped),
+        note: "children came at least once and have missed the last " + ret.stoppedRun + " sessions" + (retNameWorst ? ", concentrated at " + retNameWorst.centre + " (" + retNameWorst.stoppedPct + "%)" : "") + ". Absence today is a phone call; this is a visit." }
+    : { col: "#2f9e44", edge: "#2f9e44", tintBg: "rgba(47,158,68,0.12)", icon: "ph-users-three", title: "Nobody lost", stat: sFmt(ret.stillComing),
+        note: "of " + ret.children + " enrolled are still coming — not one child has dropped out of the last " + ret.stoppedRun + " sessions." });
 
   // Leaderboard helpers
   const decorate = (m, rank) => {
@@ -1211,6 +1258,55 @@ function StatusPage({ setPage, previewConfig }) {
           </div>
         </section>
 
+        {/* Retention. Deliberately its own section rather than another column on
+            the table above: that table is today, this is the whole term, and
+            mixing the two scales in one row is how a reader ends up thinking a
+            child who left is a child who is late. */}
+        {ret && <section data-board-section="retention" style={{ padding: "8px 0 44px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#a07400" }}>Over the whole term</div>
+              <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Who is still coming</h2>
+              <p style={{ fontFamily: "'Inter',sans-serif", fontSize: 14.5, lineHeight: 1.6, color: "#5a6488", maxWidth: 700, margin: "10px 0 0" }}>
+                Today's rate counts who turned up. This counts who is still with us: a child who came at
+                least once and has now missed the last {ret.stoppedRun} sessions has stopped, not
+                arrived late. Measured across {ret.openDays} session{ret.openDays === 1 ? "" : "s"} from {ret.from} to {ret.to}.
+              </p>
+            </div>
+
+            <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, overflow: "hidden", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+              <div style={{ padding: "20px 22px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginBottom: 12, flexWrap: "wrap" }}>
+                  <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488" }}>{ret.children} enrolled</span>
+                  <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: "#8088a6" }}>{ret.stillComing} still coming · {ret.stopped} stopped · {ret.neverCame} never started</span>
+                </div>
+                {/* One bar, three states, in the order a term happens. `never
+                    started` is kept apart from `stopped` because a child who
+                    enrolled and never appeared is an intake problem, and one who
+                    came for a fortnight and left is a retention problem. */}
+                <div style={{ display: "flex", height: 36, borderRadius: 10, overflow: "hidden", border: "1px solid #e5e8ee" }}>
+                  <div style={{ flex: Math.max(0.0001, ret.stillComing), background: "#2f9e44", display: ret.stillComing ? "flex" : "none", alignItems: "center", padding: "0 14px", color: "#fff", fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", minWidth: 0 }}><i className="ph ph-check" style={{ marginRight: 6 }}/>{ret.stillComing} still coming</div>
+                  <div style={{ flex: Math.max(0.0001, ret.stopped), background: "#e03131", display: ret.stopped ? "flex" : "none", alignItems: "center", padding: "0 12px", color: "#fff", fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", minWidth: 0 }}>{ret.stopped} stopped</div>
+                  <div style={{ flex: Math.max(0.0001, ret.neverCame), background: "#8088a6", display: ret.neverCame ? "flex" : "none", alignItems: "center", padding: "0 12px", color: "#fff", fontFamily: "'JetBrains Mono'", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", minWidth: 0 }}>{ret.neverCame} never started</div>
+                </div>
+              </div>
+
+              {retCentres.length > 1 && <>
+                <div className="ret-head">{["Centre", "Still coming", "Stopped", "Never started", "Stopped %"].map((h, i) => <span key={i} style={{ textAlign: i ? "right" : "left" }}>{h}</span>)}</div>
+                {retCentres.map(c => (
+                  <div key={c.centre} className="ret-row">
+                    <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}>{c.centre}</b>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: "#2f9e44", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.stillComing}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: (c.stopped || 0) > 0 ? "#c02c2c" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.stopped}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: (c.neverCame || 0) > 0 ? "#5a6488" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.neverCame}</span>
+                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, textAlign: "right", fontVariantNumeric: "tabular-nums", color: retTone(c.stoppedPct || 0) }}>{c.stoppedPct}%</span>
+                  </div>
+                ))}
+              </>}
+            </div>
+          </div>
+        </section>}
+
         <section style={{ background: "#faf6ec", borderTop: "1px solid #e8dec6", borderBottom: "1px solid #e8dec6", padding: "48px 0" }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 22, flexWrap: "wrap" }}>
@@ -1470,9 +1566,18 @@ function StatusPage({ setPage, previewConfig }) {
       <style>{`@keyframes statuspulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,0.55)}70%{box-shadow:0 0 0 8px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}
 .hero-cols{display:grid}@media(max-width:860px){.hero-cols{grid-template-columns:1fr!important;gap:28px!important}}
 .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:920px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.kpi-grid{grid-template-columns:1fr}}
-.insight-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}@media(max-width:1000px){.insight-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.insight-grid{grid-template-columns:1fr}}
+/* auto-fit, not repeat(4): the retention card makes five when there is a term
+   to measure over, and a fixed four columns would leave the fifth stranded on a
+   row of its own — the one card most worth reading, looking like an afterthought. */
+.insight-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:16px}@media(max-width:1000px){.insight-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.insight-grid{grid-template-columns:1fr}}
 @media(max-width:920px){.reg-cols{grid-template-columns:1fr!important}}
 @media(max-width:700px){.reg-centre-row{grid-template-columns:1fr auto!important;grid-template-areas:"name pct" "bar bar" "count count";row-gap:7px}.reg-centre-row>*:nth-child(1){grid-area:name}.reg-centre-row>*:nth-child(2){grid-area:bar}.reg-centre-row>*:nth-child(3){grid-area:count;text-align:left!important}.reg-centre-row>*:nth-child(4){grid-area:pct}}
+.ret-head,.ret-row{display:grid;grid-template-columns:1.6fr 100px 84px 108px 92px;align-items:center;gap:12px;padding:0 22px}
+.ret-head{height:38px;background:#faf6ec;border-top:1px solid #e5e8ee;border-bottom:1px solid #e5e8ee;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:#8088a6}
+.ret-row{min-height:52px;border-bottom:1px solid #eef0f4}.ret-row:last-child{border-bottom:none}
+/* Narrow: the headers go, so each figure carries its own label rather than
+   becoming an unlabelled column of numbers. */
+@media(max-width:700px){.ret-head{display:none}.ret-row{grid-template-columns:1fr;row-gap:4px;padding:14px 18px}.ret-row>*{text-align:left!important}.ret-row>*:nth-child(2)::after{content:" still coming"}.ret-row>*:nth-child(3)::after{content:" stopped"}.ret-row>*:nth-child(4)::after{content:" never came"}.ret-row>*:nth-child(5)::after{content:" of them stopped"}}
 .centre-head,.centre-row{display:grid;grid-template-columns:46px 1.5fr 96px 2.3fr 66px 140px;align-items:center;gap:16px;padding:0 20px}
 .centre-head{height:46px;background:#faf6ec;border-bottom:1px solid #e5e8ee}.centre-row{min-height:66px;border-bottom:1px solid #eef0f4}.centre-row:last-child{border-bottom:none}
 @media(max-width:820px){.centre-head{display:none}.centre-row{grid-template-columns:38px 1fr auto;grid-template-areas:"rank name rate" "rank present status" "bar bar bar";row-gap:10px;padding:16px 18px;min-height:0}.c-rank{grid-area:rank}.c-name{grid-area:name}.c-present{grid-area:present;justify-self:start}.c-bar{grid-area:bar}.c-rate{grid-area:rate;justify-self:end}.c-status{grid-area:status;justify-self:end}}

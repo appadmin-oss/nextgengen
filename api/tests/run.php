@@ -4572,6 +4572,197 @@ chk('a refusal says what the evidence DOES hold, and names the scope that narrow
         'weekdays' => [1, 2, 3, 4, 5], 'holidays' => [], 'extraDays' => []], 'test');
 })();
 
+/* ── One definition of "has stopped coming", on every surface ─────────────────
+ *
+ * The register learned to tell a child who attends badly from one who has left.
+ * The analyst's evidence learned it next. The two remaining places that report a
+ * rate — the PUBLIC board at /s-status and the analytics workspace a funder
+ * report is written from — could not, and a rate is the one figure that hides
+ * this: a child who leaves stops being counted absent and simply drops out of
+ * the numerator AND the denominator, so quitting nudges the rate UP. A board
+ * reading "82% attendance" while a third of the children have gone is not
+ * wrong about the 82%; it is silent about the third.
+ *
+ * The hazard these guard is not "is the figure there" but "is it the SAME
+ * figure". Three surfaces each computing "who has stopped" their own way is how
+ * a board paper ends up contradicting the screen it was written from, so there
+ * is one function — `attendance_retention()` — and these pin every caller to it.
+ *
+ * A calendar of their own, as above: this section runs with the programme
+ * calendar off, and there is nothing to measure against without open days. */
+(function () use ($SUR) {
+    $keep = setting_get('programme');
+    $span = db_row("SELECT MIN(date) a FROM attendance");
+    programme_settings_save(['enabled' => true, 'startDate' => (string)($span['a'] ?? '2026-06-01'),
+        'endDate' => attendance_today(), 'weekdays' => [1, 2, 3, 4, 5, 6, 7],
+        'holidays' => [], 'extraDays' => []], 'test');
+
+    // Two centres of our own, so the figures asserted on are ours rather than
+    // whatever the rest of the suite happens to have left in the roster.
+    backend_dispatch('admin.centres.upsert', ['requesterId' => $SUR, 'data' => ['name' => 'Retentionville A', 'code' => 'RVA', 'color' => '#2f9e44', 'capacity' => 40]]);
+    backend_dispatch('admin.centres.upsert', ['requesterId' => $SUR, 'data' => ['name' => 'Retentionville B', 'code' => 'RVB', 'color' => '#3b5bdb', 'capacity' => 40]]);
+    $days = programme_days_elapsed();
+    $c = summer_ensure_cohort(); $cid = (string)$c['cohortId'];
+    /* A1 came at the start and stopped. A2 comes every open day. A3 never came.
+       B1 stopped, at the OTHER centre — that one child is what makes the centre
+       allow-list assertions below capable of failing. */
+    $ppl = ['RET-A1' => 'Retentionville A', 'RET-A2' => 'Retentionville A',
+            'RET-A3' => 'Retentionville A', 'RET-B1' => 'Retentionville B'];
+    foreach ($ppl as $id => $centre) {
+        db_exec('DELETE FROM attendance WHERE studentId = ?', [$id]);
+        db_exec('DELETE FROM summer_students WHERE studentId = ?', [$id]);
+        db_insert('summer_students', ['studentId' => $id, 'cohortId' => $cid, 'fullName' => 'Retention ' . $id,
+            'handle' => strtolower($id), 'track' => 'Tech', 'centre' => $centre, 'status' => 'active',
+            'regStatus' => 'verified']);
+    }
+    $mark = function (string $id, string $d) use ($cid, $SUR) {
+        db_insert('attendance', ['cohortId' => $cid, 'studentId' => $id, 'token' => '', 'date' => $d,
+            'checkInAt' => $d . 'T08:00:00Z', 'method' => 'qr', 'byId' => $SUR, 'device' => '',
+            'status' => 'present', 'lateMinutes' => 0, 'redline' => 0, 'halfDay' => 0, 'createdAt' => now_iso()]);
+    };
+    $enoughDays = count($days) >= ATT_STOPPED_RUN + 2;
+    if ($enoughDays) {
+        foreach (array_slice($days, 0, 2) as $d) { $mark('RET-A1', $d); $mark('RET-B1', $d); }
+        foreach ($days as $d) $mark('RET-A2', $d);
+    }
+
+    chk('retention: the term-long figure is scoped to the centres asked for', (function () use ($enoughDays) {
+        if (!$enoughDays) return false;                      // the fixture must be measurable
+        $all = attendance_retention();
+        $justA = attendance_retention(['Retentionville A']);
+        if (!$all || !$justA) return false;
+        $rowOf = function (array $r, string $name) {
+            foreach ($r['byCentre'] as $x) if ($x['centre'] === $name) return $x;
+            return null;
+        };
+        $a = $rowOf($all, 'Retentionville A'); $b = $rowOf($all, 'Retentionville B');
+        if (!$a || !$b) return false;
+        // Unscoped: both centres, and each child landed in the right bucket.
+        if ($a['children'] !== 3 || $a['stopped'] !== 1 || $a['neverCame'] !== 1 || $a['stillComing'] !== 1) return false;
+        if ($b['children'] !== 1 || $b['stopped'] !== 1) return false;
+        /* Scoped: B's leaver must be GONE, not merely un-listed. Dropping the
+           allow-list from either the roster query or the attendance queries
+           leaves this asserting on a number that changed. */
+        if (count($justA['byCentre']) !== 1) return false;
+        if ($justA['children'] !== 3 || $justA['stopped'] !== 1) return false;
+        if ($justA['stopped'] === $all['stopped']) return false;   // the filter did something
+        // The parts add up to the whole, on both.
+        return $justA['stopped'] + $justA['neverCame'] + $justA['stillComing'] === $justA['children']
+            && $all['stoppedRun'] === ATT_STOPPED_RUN;
+    })());
+
+    chk('s-status: the public board reports who has LEFT, not only who came today', (function () {
+        $st = public_status([])['status'];
+        $R = $st['retention'] ?? null;
+        if (!is_array($R) || !$R) return false;
+        foreach (['stoppedRun', 'openDays', 'from', 'to', 'children', 'stopped', 'neverCame', 'stillComing', 'stoppedPct', 'byCentre'] as $k) {
+            if (!array_key_exists($k, $R)) return false;
+        }
+        /* THE POINT. Not "the board has a retention figure" but "the board's
+           figure is the register's figure". A second definition here would let
+           the public page and the coordinator's screen disagree about the same
+           children, in public. */
+        if ((int)$R['stoppedRun'] !== ATT_STOPPED_RUN) return false;
+        $mine = attendance_retention();
+        if ($R['stopped'] !== $mine['stopped'] || $R['children'] !== $mine['children']
+            || $R['neverCame'] !== $mine['neverCame']) return false;
+        if ($R['stopped'] < 2) return false;                 // our two leavers are in it
+        // Counts only. This is an unauthenticated page: not one child in it.
+        if (preg_match('/(RET-A|RET-B|Retention RET|@|\+234)/', (string)json_encode($R))) return false;
+        // …and the per-centre rows carry it too, beside today's rate.
+        $seen = false;
+        foreach ($st['byCentre'] as $row) {
+            if (!array_key_exists('stopped', $row) || !array_key_exists('stillComing', $row)
+                || !array_key_exists('neverCame', $row) || !array_key_exists('stoppedPct', $row)) return false;
+            if ($row['name'] === 'Retentionville A' && $row['stopped'] === 1 && $row['neverCame'] === 1) $seen = true;
+        }
+        return $seen;
+    })());
+
+    chk('s-status: a board published for one centre does not show another centre\'s losses', (function () {
+        $keepPages = setting_raw('status_pages');
+        $set = fn(array $centres) => backend_dispatch('admin.status.pages.set', ['requesterId' => 'NGG-2025-0002',
+            'data' => ['attendance' => ['published' => true, 'centres' => $centres]]]);
+        $set(['Retentionville A']);
+        $one = public_status([])['status']['retention'] ?? [];
+        $set([]);
+        $all = public_status([])['status']['retention'] ?? [];
+        if ($keepPages === null) db_exec("DELETE FROM settings WHERE settingKey = 'status_pages'");
+        else setting_set('status_pages', safe_json((string)$keepPages), 'test');
+        if (!$one || !$all) return false;
+        /* B's leaver appears on the unrestricted board and not on A's. Passing
+           the allow-list through is the whole assertion: drop it and `$one`
+           becomes `$all` and these stop differing. */
+        return $one['children'] === 3 && $one['stopped'] === 1
+            && count($one['byCentre']) === 1 && $one['byCentre'][0]['centre'] === 'Retentionville A'
+            && $all['stopped'] > $one['stopped'] && count($all['byCentre']) > 1;
+    })());
+
+    chk('analytics workspace: retention travels with the rate a funder report quotes', (function () {
+        $ws = backend_dispatch('analytics.workspace', ['requesterId' => 'NGG-2025-0099'])['workspace'] ?? [];
+        $R = $ws['research']['retention'] ?? null;
+        if (!is_array($R) || !$R) return false;
+        if ((int)$R['stoppedRun'] !== ATT_STOPPED_RUN) return false;
+        /* Same figure as the register and the public board, not a third one.
+           Compared per centre rather than on the totals, because the workspace
+           is scoped to the centres this admin may see while the register's own
+           call is not — the totals legitimately differ, and asserting on them
+           would only be asserting that this admin can see everything. */
+        $rowOf = function (array $r, string $name) {
+            foreach ($r['byCentre'] as $x) if ($x['centre'] === $name) return $x;
+            return null;
+        };
+        $mineA = $rowOf(attendance_retention(), 'Retentionville A');
+        $wsA = $rowOf($R, 'Retentionville A');
+        if (!$mineA || !$wsA || $mineA !== $wsA) return false;
+        // Internally consistent: the total is the sum of the centres it lists.
+        $sum = 0; foreach ($R['byCentre'] as $x) $sum += (int)$x['children'];
+        if ($sum !== (int)$R['children']) return false;
+        /* The window is the TERM, never the workspace's date range. Asked of a
+           one-day filter, "has stopped coming" would call everyone who missed
+           that day a leaver. */
+        $wk = backend_dispatch('analytics.workspace', ['requesterId' => 'NGG-2025-0099', 'day' => attendance_today()])['workspace'] ?? [];
+        $W = $wk['research']['retention'] ?? null;
+        if (($wk['filters']['rangeLabel'] ?? '') === ($ws['filters']['rangeLabel'] ?? '')) return false;  // the filter took
+        if (!is_array($W) || ($W['from'] ?? '') !== $R['from'] || ($W['openDays'] ?? 0) !== $R['openDays']) return false;
+        // …and it is on the centre rows, so a site above the watch line that is
+        // still losing children is visible in the row rather than only in total.
+        $seen = false;
+        foreach ($ws['research']['centreComparison'] as $row) {
+            if (!array_key_exists('stopped', $row) || !array_key_exists('stillComing', $row)
+                || !array_key_exists('stoppedPct', $row)) return false;
+            if ($row['name'] === 'Retentionville A' && $row['stopped'] === 1 && $row['stillComing'] === 1) $seen = true;
+        }
+        return $seen;
+    })());
+
+    chk('retention says "cannot tell yet" rather than "nobody has left"', (function () {
+        /* The dangerous failure is not an error, it is a reassuring zero. With no
+           programme calendar there are no open days to count a run of absences
+           against, and the honest answer is that the question cannot be answered
+           — which the callers render as an absent panel, not as 0%.
+           Asserted on the EMPTINESS, because `stopped => 0` would sail through a
+           test that only checked the key existed. */
+        $keepInner = setting_get('programme');
+        programme_settings_save(['enabled' => false, 'startDate' => '', 'endDate' => '',
+            'weekdays' => [1, 2, 3, 4, 5], 'holidays' => [], 'extraDays' => []], 'test');
+        $bare = attendance_retention();
+        $board = public_status([])['status']['retention'] ?? null;
+        $ws = backend_dispatch('analytics.workspace', ['requesterId' => 'NGG-2025-0099'])['workspace']['research']['retention'] ?? null;
+        if (is_array($keepInner)) setting_set('programme', $keepInner, 'test');
+        return $bare === [] && $board === [] && $ws === [];
+    })());
+
+    foreach (array_keys($ppl) as $id) {
+        db_exec('DELETE FROM attendance WHERE studentId = ?', [$id]);
+        db_exec('DELETE FROM summer_students WHERE studentId = ?', [$id]);
+    }
+    db_exec("DELETE FROM centres WHERE code IN ('RVA','RVB')");
+    if (is_array($keep)) setting_set('programme', $keep, 'test');
+    else programme_settings_save(['enabled' => false, 'startDate' => '', 'endDate' => '',
+        'weekdays' => [1, 2, 3, 4, 5], 'holidays' => [], 'extraDays' => []], 'test');
+})();
+
 chk('the analysts can finally see LEARNING by sex, not only attendance', (function () {
     /* The evidence held attendance broken down every way and learning broken
        down no way at all — so the panel could say who turns up and never

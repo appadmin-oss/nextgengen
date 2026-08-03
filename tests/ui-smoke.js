@@ -54,11 +54,26 @@ const STATUS = {
     byCentre: [
       { centreId: 'IJ', code: 'IJ', name: 'Ijaiye', color: '#3b5bdb', need: 20, filled: 14, gap: 6,
         present: 30, enrolled: 40, rate: 75, registered: 47, pending: 6, capacity: 60, fill: 78,
+        stopped: 9, neverCame: 2, stillComing: 29, stoppedPct: 22.5,
         attendance: { present: 9, late: 1, onTime: 8, active: 14, rate: 75, sessions: 15, expected: 20, onTimePct: 87 } },
       { centreId: 'EG', code: 'EG', name: 'Egbeda', color: '#2f9e44', need: 30, filled: 22, gap: 8,
         present: 66, enrolled: 80, rate: 83, registered: 90, pending: 13, capacity: 120, fill: 75,
+        stopped: 4, neverCame: 1, stillComing: 75, stoppedPct: 5,
         attendance: { present: 4, late: 0, onTime: 4, active: 22, rate: 100, sessions: 5, expected: 5, onTimePct: 100 } },
     ],
+    /* Retention, shaped exactly as attendance_retention() emits it. Chosen so
+       the two figures on the board point OPPOSITE ways: the headline rate is a
+       healthy 80%, and 13 of 120 children have nonetheless stopped coming —
+       almost all of them at Ijaiye (22.5%), which sits above the watch line on
+       today's rate. If the board can only report the rate, that is invisible. */
+    retention: {
+      stoppedRun: 3, openDays: 18, from: '2026-07-06', to: '2026-07-24',
+      children: 120, stopped: 13, neverCame: 3, stillComing: 104, stoppedPct: 10.8,
+      byCentre: [
+        { centre: 'Ijaiye', children: 40, stopped: 9, neverCame: 2, stillComing: 29, stoppedPct: 22.5 },
+        { centre: 'Egbeda', children: 80, stopped: 4, neverCame: 1, stillComing: 75, stoppedPct: 5 },
+      ],
+    },
     /* The volunteer attendance breakdown, shaped exactly as
        volunteer_attendance_analysis() emits it. 20 of 25 days served with two
        late arrivals, so the page has to show 80% and 90% from the same block
@@ -209,6 +224,22 @@ function unzipDocumentXml(buf) {
           (stripped.status.byCentre || []).forEach(function (c) { delete c.registered; delete c.pending; delete c.capacity; delete c.fill; });
         }
         return Promise.resolve(stripped);
+      }
+      /* ?noret=1 drops the retention block — what a deployment with no
+         programme calendar actually sends. The board must render the
+         attendance figures with the retention panel ABSENT, not with a
+         reassuring 0%: "we cannot say yet" and "nobody has left" are
+         different claims. Also the control proving the panel is driven by
+         the payload rather than hardcoded. */
+      if (window.__mode === 'ok' && new URLSearchParams(location.search).get('noret') === '1') {
+        var nr = JSON.parse(JSON.stringify(payload));
+        if (nr.status) {
+          nr.status.retention = {};
+          (nr.status.byCentre || []).forEach(function (c) {
+            delete c.stopped; delete c.stillComing; delete c.neverCame; delete c.stoppedPct;
+          });
+        }
+        return Promise.resolve(nr);
       }
       // ?empty=1 makes every board return an empty result set, so the
       // no-data states can be driven instead of only imagined.
@@ -1287,6 +1318,77 @@ function unzipDocumentXml(buf) {
     await rn.close();
     ok('a payload with no registration block hides the section (control)', noRegSec === null);
     ok('…and the attendance board still renders beside it', /Centre by centre/.test(noRegBody) && rnErrs.length === 0);
+
+    /* ── The public board reports who has LEFT, not only who came today ────
+     * The fixture is built so the two figures disagree: the headline rate is a
+     * healthy 80% while 13 of 120 children have stopped coming, 9 of them at a
+     * centre sitting ABOVE the watch line on today's rate. A rate cannot raise
+     * that alarm — a child who leaves stops being counted absent, so quitting
+     * nudges the rate up — which is why this is a separate panel and not
+     * another column.
+     *
+     * Scoped to the retention section, so the "13" and "104" asserted on are
+     * that panel's and not some unrelated count elsewhere on a long page. */
+    const rt = await browser.newPage();
+    const rtErrs = [];
+    rt.on('pageerror', e => rtErrs.push(String(e.message)));
+    await rt.goto(BASE + '/tests/_boards_fixture.html?board=status&mode=ok', { waitUntil: 'networkidle' });
+    await rt.waitForTimeout(1600);   // the count-up animation settles first
+    const retRead = await rt.evaluate(() => {
+      const el = document.querySelector('[data-board-section="retention"]');
+      const kg = document.querySelector('.kpi-grid');
+      return {
+        sec: el ? el.innerText : null,
+        rows: el ? Array.from(el.querySelectorAll('.ret-row')).map(r => r.innerText) : [],
+        kpi: kg ? kg.innerText : '',
+        body: document.body.innerText,
+      };
+    });
+    await rt.close();
+
+    ok('/s-status renders a retention section at all', retRead.sec !== null);
+    ok('…naming how many are still coming (104) and how many stopped (13)',
+       /\b104\b/.test(retRead.sec || '') && /\b13\b/.test(retRead.sec || ''));
+    // The threshold has to be stated, or "stopped" is a word with no definition.
+    ok('…and saying what "stopped" MEANS (the last 3 sessions)',
+       /last 3 sessions/i.test(retRead.sec || ''));
+    // The window is the term, not today — a reader must not take it for the
+    // same period as the attendance rate above it.
+    ok('…over the window it was measured on, not today',
+       /18 sessions/.test(retRead.sec || '') && /2026-07-06/.test(retRead.sec || ''));
+    ok('…keeping "never started" apart from "stopped" (3 vs 13)',
+       /never started/i.test(retRead.sec || ''));
+    ok('…and per centre, so the worst site is visible (Ijaiye 22.5%)',
+       retRead.rows.some(r => /Ijaiye/.test(r) && /22\.5%/.test(r))
+       && retRead.rows.some(r => /Egbeda/.test(r) && /\b5%/.test(r)));
+    ok('retention reaches the at-a-glance KPI row beside the rate',
+       /still coming/i.test(retRead.kpi) && /13 stopped/i.test(retRead.kpi));
+    /* The summary sentence is the one thing a passer-by reads. It said only
+       that attendance was holding; it now has to say children are leaving. */
+    ok('…and the summary says children are LEAVING, not just that the rate holds',
+       /came and then stopped/i.test(retRead.body) && /10\.8%/.test(retRead.body));
+    ok('/s-status retention renders with no script error', rtErrs.length === 0);
+    if (rtErrs.length) console.error('      ', rtErrs.slice(0, 3).join(' | '));
+
+    /* The control, and the one that matters most: with no programme calendar
+       the backend sends an EMPTY retention block, and the board must show
+       nothing rather than "0 stopped". A reassuring zero is worse than a
+       missing panel, because somebody would believe it. */
+    const rz = await browser.newPage();
+    const rzErrs = [];
+    rz.on('pageerror', e => rzErrs.push(String(e.message)));
+    await rz.goto(BASE + '/tests/_boards_fixture.html?board=status&mode=ok&noret=1', { waitUntil: 'networkidle' });
+    await rz.waitForTimeout(1200);
+    const rzRead = await rz.evaluate(() => ({
+      sec: document.querySelector('[data-board-section="retention"]'),
+      body: document.body.innerText,
+    }));
+    await rz.close();
+    ok('an empty retention block hides the section (control)', rzRead.sec === null);
+    ok('…and says nothing about anybody having stopped',
+       !/stopped coming/i.test(rzRead.body) && !/still coming/i.test(rzRead.body));
+    ok('…while the attendance board renders as before',
+       /Centre by centre/.test(rzRead.body) && rzErrs.length === 0);
 
     /* ── A name or face appears ONLY with consent ──────────────────────────
      * The backend sends `name`/`photo` as null unless the guardian granted
