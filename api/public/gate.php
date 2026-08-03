@@ -15,9 +15,11 @@ $b = $method === 'POST' ? read_json_body() : [];
 // kiosk session (password-unlocked) bound to exactly THIS gate token.
 $reqGate = $method === 'GET' ? (string)($_GET['g'] ?? '') : (string)($b['gate'] ?? '');
 $isAdmin = is_admin_role($s['role'] ?? '');
-$isKiosk = strtolower((string)($s['role'] ?? '')) === 'kiosk'
-    && ($s['gate'] ?? '') !== '' && $reqGate !== '' && hash_equals((string)$s['gate'], $reqGate);
-if (!$isAdmin && !$isKiosk) json_error('forbidden', 403);
+/* The refusal below is recoverable and the desk page treats it that way: a
+ * `forbidden` here means "unlock this desk", not "this link is broken". A
+ * parent, mentor, volunteer or student signed in on a shared desk phone lands
+ * on it, and the desk password is their way through. */
+if (!gate_operator_ok($s, $reqGate)) json_error('forbidden', 403);
 
 if ($method === 'GET') {
     $res = gs_call('gate.context', ['gate' => (string)($_GET['g'] ?? '')]);

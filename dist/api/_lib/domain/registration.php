@@ -1122,6 +1122,29 @@ function gate_unlock(array $p): array {
     ]];
 }
 
+/**
+ * May THIS session operate THIS gate?
+ *
+ * Two doors, and only two: a staff account, or a kiosk session that was minted
+ * by unlocking this exact gate with its own password. Everything else is a no,
+ * including sessions that look reassuring — a signed-in parent, a mentor, a
+ * volunteer or student holding an ID card, or a staffer who unlocked a
+ * different gate in the same browser. None of those authorise a registration
+ * desk, and the kiosk claim is compared against the gate in the request rather
+ * than merely being present, so one desk's password never opens another's.
+ *
+ * Lifted out of api/public/gate.php so the decision can be tested. It was four
+ * lines in a route file, which is exactly the sort of place a guard drifts
+ * without anyone noticing.
+ */
+function gate_operator_ok(array $session, string $reqGate): bool {
+    if (is_admin_role((string)($session['role'] ?? ''))) return true;
+    if (strtolower((string)($session['role'] ?? '')) !== 'kiosk') return false;
+    $bound = (string)($session['gate'] ?? '');
+    if ($bound === '' || $reqGate === '') return false;
+    return hash_equals($bound, $reqGate);
+}
+
 /** Resolve + validate a gate token (staff session is checked at the route). */
 function gate_resolve(string $gateId): ?array {
     $gate = db_row("SELECT * FROM gate_links WHERE gateId = ? LIMIT 1", [$gateId]);

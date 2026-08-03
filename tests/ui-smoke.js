@@ -369,9 +369,57 @@ function unzipDocumentXml(buf) {
             : b === 'analyst' ? 'AnalystPane'
             : b === 'analytics' ? 'AnalyticsWorkspace'
             : b === 'assess' ? 'AdminAssessment'
+            : b === 'gatedesk' ? 'GatePage'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
-  if (b === 'assess') {
+  if (b === 'gatedesk') {
+    /* The gate desk's locked state. The 'who' param picks who is sitting on the
+       device: nobody, or a signed-in profile with no staff access — the
+       reported bug. GatePage reads window.useAuth at render, which is the one
+       binding in this bundle an override actually intercepts.
+       (No backticks in here: this whole block lives inside a template literal.) */
+    props = {};
+    var who = new URLSearchParams(location.search).get('who') || 'nobody';
+    window.__signedOut = 0;
+    window.__signInOpened = 0;
+    var gateMember = { memberId: 'NGG-2025-0777', fullName: 'Ngozi Parent', email: 'parent@example.com', caps: [] };
+    window.useAuth = function () {
+      return {
+        isSignedIn: who !== 'nobody',
+        member: who !== 'nobody' ? gateMember : null,
+        isAdmin: false, caps: [],
+        openSignIn: function () { window.__signInOpened++; },
+        refresh: function () { return Promise.resolve(); },
+        signOut: function () { window.__signedOut++; return Promise.resolve(); },
+      };
+    };
+    /* Assign the WHOLE auth object, not auth.logout. NGGApi is a deep() proxy
+       and 'auth' is not one of its root keys, so reading window.NGGApi.auth
+       mints a throwaway proxy every time — a property hung on that is lost the
+       moment it is read again, and the call silently resolves to {} instead. */
+    window.NGGApi.auth = {
+      logout: function () { window.__signedOut++; return Promise.resolve({}); },
+      me: function () { return Promise.resolve({ member: null }); },
+    };
+    window.NGGApi.public.gate = {
+      context: function () {
+        // Every code in DESK_RELOCK has to reach the password box, not a dead end.
+        var code = new URLSearchParams(location.search).get('code') || 'forbidden';
+        if (window.__unlocked) return Promise.resolve({
+          gate: { name: 'Egbeda desk', cohortId: 'C1' }, cohort: { cohortId: 'C1', name: 'Summer 2026' },
+          form: { version: 3, fields: [] }, geo: null, centre: 'Egbeda', duty: null, consentTypes: [],
+        });
+        var e = new Error(code); e.code = code; e.status = code === 'forbidden' ? 403 : 401;
+        return Promise.reject(e);
+      },
+      unlock: function (gid, pw) {
+        window.__unlockTried = { gate: gid, password: pw };
+        if (pw !== 'desk-pass-9x') { var e = new Error('bad_password'); e.code = 'bad_password'; return Promise.reject(e); }
+        window.__unlocked = true;
+        return Promise.resolve({ gate: { gateId: gid, name: 'Egbeda desk' } });
+      },
+    };
+  } else if (b === 'assess') {
     props = {};
     var GAIN = {
       instrument: { instrumentId: 'AI-1', name: 'EGRA oral reading', domain: 'literacy',
@@ -4291,6 +4339,90 @@ function unzipDocumentXml(buf) {
     ok('the centre table drills into that centre, not into the page filter',
       JSON.stringify(await an2.evaluate(() => window.__drill)) === '{"metric":"centre-students","centre":"Ayobo Hub"}');
     await an2.close();
+
+    /* ── The gate desk, when somebody else is already signed in ────────────
+     * The reported bug: gate links "did not work" whenever a non-admin profile
+     * was signed in on the device. The server was right to refuse — a
+     * guardian's or a mentor's session is not a registration desk — but the
+     * page turned that recoverable refusal into "Your account doesn't have
+     * staff access" plus a Retry button that could only fail again, and never
+     * showed the desk password box that was the way through all along. */
+    for (const [who, label] of [['nobody', 'nobody signed in'], ['member', 'a non-admin profile signed in']]) {
+      const gd = await browser.newPage();
+      const gdErrs = [];
+      gd.on('pageerror', e => gdErrs.push(String(e.message)));
+      await gd.goto(BASE + '/tests/_boards_fixture.html?board=gatedesk&mode=ok&who=' + who + '&g=GL-TEST',
+        { waitUntil: 'networkidle' });
+      await gd.waitForTimeout(400);
+      ok('/gate mounts clean with ' + label, gdErrs.length === 0);
+      if (gdErrs.length) console.error('       ', gdErrs.slice(0, 3).join(' | '));
+      const gdTxt = await gd.evaluate(() => document.body.innerText);
+      /* THE REGRESSION. The password box has to be on screen in BOTH cases —
+         it is the only door that does not need an account. */
+      const hasBox = (await gd.$$('input[type=password]')).length === 1;
+      ok('/gate offers the desk password with ' + label, hasBox && /Unlock the desk/.test(gdTxt));
+      ok('/gate does not dead-end on "no staff access" with ' + label,
+        gdTxt.indexOf("doesn't have staff access") === -1 && gdTxt.indexOf('Gate unavailable') === -1);
+      /* Everything below TYPES into that box. Bail out on its absence rather
+         than letting a 30s fill() timeout abort the hundred assertions that
+         come after this block — a regression here should read as a failed
+         check, not as a broken harness. */
+      if (!hasBox) { await gd.close(); continue; }
+      if (who === 'member') {
+        // Saying only "sign in" to someone already signed in reads as a broken link.
+        ok('/gate names the profile that is blocking the desk',
+          /Ngozi Parent/.test(gdTxt) && /can't open a registration desk/.test(gdTxt));
+        ok('…and warns that the desk password signs that profile out of the device',
+          /will sign Ngozi Parent out of this device/.test(gdTxt));
+        /* Signing out must not navigate away from the gate — auth.signOut() goes
+           to home, which throws the operator off the link they were sent. */
+        await gd.evaluate(() => {
+          const b = Array.from(document.querySelectorAll('button')).find(x => /Sign in as staff instead/.test(x.textContent || ''));
+          if (b) b.click();
+        });
+        await gd.waitForFunction(() => window.__signedOut > 0, null, { timeout: 8000 });
+        ok('…and signing out stays on the gate instead of bouncing to the home page',
+          /Open the desk/.test(await gd.evaluate(() => document.body.innerText))
+          && (await gd.evaluate(() => window.__signInOpened)) > 0);
+      }
+
+      // The password genuinely opens the desk from this state.
+      await gd.fill('input[type=password]', 'nope');
+      await gd.click('button:has-text("Unlock the desk")');
+      await gd.waitForFunction(() => !!window.__unlockTried, null, { timeout: 8000 });
+      await gd.waitForTimeout(200);
+      ok('/gate reports a wrong desk password without losing the box (' + who + ')',
+        /didn't match/.test(await gd.evaluate(() => document.body.innerText))
+        && (await gd.$$('input[type=password]')).length === 1);
+      await gd.fill('input[type=password]', 'desk-pass-9x');
+      await gd.click('button:has-text("Unlock the desk")');
+      await gd.waitForFunction(() => /Register/.test(document.body.innerText), null, { timeout: 8000 });
+      ok('/gate opens the desk on the right password (' + who + ')',
+        /THE GATE · EGBEDA DESK/.test(await gd.evaluate(() => document.body.innerText)));
+      await gd.close();
+    }
+
+    /* Every relock code reaches the same door. `forbidden` was the one that did
+       not, and it is the one an already-signed-in profile produces. */
+    for (const code of ['forbidden', 'unauthorized', 'session_expired']) {
+      const gc = await browser.newPage();
+      await gc.goto(BASE + '/tests/_boards_fixture.html?board=gatedesk&mode=ok&who=member&code=' + code + '&g=GL-TEST',
+        { waitUntil: 'networkidle' });
+      await gc.waitForTimeout(350);
+      ok('/gate treats ' + code + ' as "unlock this desk", not as a broken link',
+        (await gc.$$('input[type=password]')).length === 1);
+      await gc.close();
+    }
+    /* …and a revoked link still says so plainly rather than inviting a password
+       nobody can make work. */
+    const gb = await browser.newPage();
+    await gb.goto(BASE + '/tests/_boards_fixture.html?board=gatedesk&mode=ok&who=member&code=gate_invalid&g=GL-TEST',
+      { waitUntil: 'networkidle' });
+    await gb.waitForTimeout(350);
+    const gbTxt = await gb.evaluate(() => document.body.innerText);
+    ok('/gate still names a revoked link as revoked, with no password box',
+      /closed or revoked/.test(gbTxt) && (await gb.$$('input[type=password]')).length === 0);
+    await gb.close();
 
     /* ── Baseline & endline ───────────────────────────────────────────────
        The screen that makes the measurement real. What it must not do is let a

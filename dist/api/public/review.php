@@ -18,11 +18,10 @@ rate_limit_check('selfreg.desk', $reqGate);
 
 /* Two ways in, exactly as the gate has: an admin session, or a kiosk session
  * unlocked with THIS gate's password. A kiosk session for a different gate is
- * not a session for this one. */
-$isAdmin = is_admin_role($s['role'] ?? '');
-$isKiosk = strtolower((string)($s['role'] ?? '')) === 'kiosk'
-    && ($s['gate'] ?? '') !== '' && $reqGate !== '' && hash_equals((string)$s['gate'], $reqGate);
-if (!$isAdmin && !$isKiosk) json_error('forbidden', 403);
+ * not a session for this one. Literally the same decision as the gate's, so it
+ * is now literally the same function — two copies of an authorisation check
+ * drift, and the one that drifts is the one nobody is looking at. */
+if (!gate_operator_ok($s, $reqGate)) json_error('forbidden', 403);
 
 if ($method === 'GET') {
     $res = gs_call('selfreg.queue', [

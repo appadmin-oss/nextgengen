@@ -10028,6 +10028,76 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     })());
 })();
 
+/* ── Who may operate a gate desk ─────────────────────────────────────────────
+ *
+ * The bug this block exists for: a gate link "did not work" whenever a
+ * non-admin was already signed in on the device. It worked exactly as
+ * designed — a parent, mentor, volunteer or student session is not a desk
+ * session — but the page turned that recoverable refusal into a dead end with
+ * a Retry button that could only fail again, instead of showing the desk
+ * password box that was the way through the whole time.
+ *
+ * The decision lived as four lines inside two route files, which is why nobody
+ * saw that the two ends disagreed about what `forbidden` meant. It is one
+ * function now, and these are its cases.
+ */
+(function () {
+    $mk = fn(string $role, string $gate = '') => array_filter(['role' => $role, 'gate' => $gate]);
+
+    chk('gate: a staff account opens any gate desk', gate_operator_ok(['role' => 'admin'], 'GL-ONE')
+        && gate_operator_ok(['role' => 'super_admin'], 'GL-ONE'));
+
+    chk('gate: a kiosk session opens the gate it was unlocked for', (function () {
+        return gate_operator_ok(['role' => 'kiosk', 'gate' => 'GL-ONE'], 'GL-ONE') === true;
+    })());
+
+    chk('gate: a kiosk session for another desk is not a session for this one', (function () {
+        /* Two gate links open in one browser is the normal case at a centre.
+         * The kiosk claim is compared against the gate in the REQUEST, so one
+         * desk's password never opens another's. */
+        return gate_operator_ok(['role' => 'kiosk', 'gate' => 'GL-TWO'], 'GL-ONE') === false
+            // …and a kiosk claim with nothing to compare against is not a pass.
+            && gate_operator_ok(['role' => 'kiosk', 'gate' => ''], 'GL-ONE') === false
+            && gate_operator_ok(['role' => 'kiosk', 'gate' => 'GL-ONE'], '') === false;
+    })());
+
+    chk('gate: an ordinary signed-in profile cannot operate a desk', (function () use ($mk) {
+        /* THE REPORTED CASE. Every one of these is a real person on a real
+         * shared phone: a guardian in the Circle, a mentor, a volunteer or
+         * student signed in with their ID card. None of them may register a
+         * child, and the refusal must stay a refusal — the fix for this bug is
+         * on the page, not here. */
+        foreach (['member', 'mentor', 'volunteer', 'student', 'parent', '', 'KIOSK-ish'] as $role) {
+            if (gate_operator_ok($mk($role), 'GL-ONE') !== false) return false;
+            /* And still refused when the session ALSO carries a matching gate
+             * claim. Only session_issue_kiosk mints that claim today, so this
+             * cannot happen yet — which is exactly why it is pinned. A future
+             * session type that carried a gate field would otherwise walk
+             * straight into a registration desk, and the role check that stops
+             * it would look like dead code to whoever removed it. */
+            if (gate_operator_ok(['role' => $role, 'gate' => 'GL-ONE'], 'GL-ONE') !== false) return false;
+        }
+        return true;
+    })());
+
+    chk('gate: the desk password is the way through, and it works over a signed-in profile', (function () {
+        /* The recovery path the page now offers has to actually exist: unlocking
+         * mints a kiosk session for THIS gate, and it does so without needing
+         * the signed-in member to have any staff access at all — gate-unlock.php
+         * never calls require_session(). */
+        $gate = db_row("SELECT gateId FROM gate_links WHERE status = 'active' ORDER BY id DESC LIMIT 1");
+        if (!$gate) return true;
+        $gid = (string)$gate['gateId'];
+        backend_dispatch('admin.gates.setpass', ['requesterId' => 'NGG-2025-0099', 'gateId' => $gid, 'password' => 'desk-pass-9x']);
+        $bad = backend_dispatch('gate.unlock', ['gate' => $gid, 'password' => 'wrong']);
+        $ok = backend_dispatch('gate.unlock', ['gate' => $gid, 'password' => 'desk-pass-9x']);
+        if (($bad['error'] ?? '') !== 'bad_password' || empty($ok['ok'])) return false;
+        // The session that unlock would hand back opens this desk and no other.
+        $sess = ['role' => 'kiosk', 'gate' => (string)$ok['gate']['gateId']];
+        return gate_operator_ok($sess, $gid) === true && gate_operator_ok($sess, 'GL-OTHER') === false;
+    })());
+})();
+
 /* ── Volunteer attendance analysis ──────────────────────────────────────────
  *
  * A ten-day programme window with three volunteers whose behaviour is known

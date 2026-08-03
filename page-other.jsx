@@ -3697,6 +3697,8 @@ function GatePage() {
   const [pw, setPw] = React.useState("");
   const [unlockBusy, setUnlockBusy] = React.useState(false);
   const [unlockErr, setUnlockErr] = React.useState("");
+  const [lockNote, setLockNote] = React.useState("");
+  const [switching, setSwitching] = React.useState(false);
   const draftKey = "ngg_gate_draft_" + g;
 
   const load = React.useCallback(() => {
@@ -3705,15 +3707,54 @@ function GatePage() {
       .then(r => { setCtx(r); setState("ready"); })
       .catch(e => {
         const c = e.code || e.message;
-        // Same reasoning as the review desk: a timed-out session is a re-unlock,
-        // not a network error, and it does not arrive as `unauthorized`.
-        if (DESK_RELOCK.indexOf(c) !== -1 && c !== "forbidden") setState("need-auth");
-        else { setErr(c === "gate_invalid" ? "This gate link has been closed or revoked. Ask an admin for a fresh one." : c === "forbidden" ? "Your account doesn't have staff access." : "Couldn't load the gate — check your connection.") ; setState("error"); }
+        /* Every refusal in DESK_RELOCK means "unlock this desk", not "something
+         * is broken" — including `forbidden`, which this used to route to a
+         * dead end.
+         *
+         * `forbidden` is what the gate route answers whenever the session on
+         * the device is not an admin AND not a kiosk session bound to THIS
+         * gate. Three ordinary situations land there: a parent or mentor
+         * signed into their own account on a shared desk phone, a volunteer
+         * or student signed in with their ID card, and a staffer who unlocked
+         * a DIFFERENT gate in this browser. All three are fixed by typing the
+         * desk password — which the page refused to show them, offering
+         * "Your account doesn't have staff access" and a Retry button that
+         * could only ever fail again. The link looked broken; it never was. */
+        if (DESK_RELOCK.indexOf(c) !== -1) {
+          setLockNote(c === "session_expired" ? "The desk session timed out. Unlock it again to carry on — nothing is lost."
+            : c === "forbidden" ? "" : "");
+          setState("need-auth");
+        } else {
+          setErr(c === "gate_invalid" ? "This gate link has been closed or revoked. Ask an admin for a fresh one."
+            : "Couldn't load the gate — check your connection.");
+          setState("error");
+        }
       });
   }, [g]);
   React.useEffect(() => { load(); }, [load]);
-  // After the operator signs in through the modal, retry automatically.
-  React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(); }, [auth && auth.isSignedIn]);
+  /* After the operator signs in through the modal, retry automatically — but
+   * only on the transition INTO signed-in. Re-running while already signed in
+   * as somebody without access would just re-fetch the same 403. */
+  const wasSignedIn = React.useRef(auth && auth.isSignedIn);
+  React.useEffect(() => {
+    const now = !!(auth && auth.isSignedIn);
+    if (state === "need-auth" && now && !wasSignedIn.current) load();
+    wasSignedIn.current = now;
+  }, [auth && auth.isSignedIn]);
+
+  /* Sign out of the personal account WITHOUT leaving the gate.
+   *
+   * auth.signOut() navigates to home, which on a desk phone throws the
+   * operator off the link they were sent and gives them nothing to go back
+   * to. Here the point of signing out is to carry on at this gate. */
+  const switchAccount = async () => {
+    if (switching) return;
+    setSwitching(true);
+    try { await NGGApi.auth.logout(); } catch (_) {}
+    try { if (auth && auth.refresh) await auth.refresh(); } catch (_) {}
+    setSwitching(false);
+    if (auth && auth.openSignIn) auth.openSignIn();
+  };
 
   // Kiosk unlock — field staff without an admin login open the desk with the
   // gate's password. On success a gate-scoped session is set; reload the gate.
@@ -3742,12 +3783,24 @@ function GatePage() {
   );
 
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
-  if (state === "need-auth") return shell(<div style={{ ...card, padding: 24, marginTop: 48 }}>
+  if (state === "need-auth") {
+    /* Someone IS signed in, and it is not an account that can open this desk.
+     * Saying only "sign in" to a person who is already signed in reads as the
+     * link being broken, so name what happened and give both ways out. */
+    const blockedAs = auth && auth.isSignedIn ? auth.member : null;
+    const who = blockedAs ? (blockedAs.fullName || blockedAs.name || blockedAs.email || "this account") : "";
+    return shell(<div style={{ ...card, padding: 24, marginTop: 48 }}>
     <div style={{ textAlign: "center" }}>
       <div style={{ fontSize: 38 }}>🛡️</div>
       <h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Open the desk</h1>
       <p style={{ color: "rgba(230,238,255,.66)", fontSize: 14, lineHeight: 1.55 }}>This gate link is real — the person operating it just needs to unlock it.</p>
-      <button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Staff sign-in →</button>
+      {lockNote && <p style={{ color: "#ffd58a", fontSize: 13, lineHeight: 1.5, margin: "8px 0 0" }}>{lockNote}</p>}
+      {blockedAs && <p style={{ color: "rgba(230,238,255,.66)", fontSize: 13.5, lineHeight: 1.55, margin: "10px 0 0" }}>
+        This device is signed in as <b style={{ color: "#eef2fb" }}>{who}</b>, which can't open a registration desk.
+        Use the desk password below — it works without an account, and it will sign {who} out of this device.
+      </p>}
+      {!blockedAs && <button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Staff sign-in →</button>}
+      {blockedAs && <button onClick={switchAccount} disabled={switching} style={{ marginTop: 14, padding: "11px 22px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>{switching ? "Signing out…" : "Sign in as staff instead"}</button>}
     </div>
     {/* Desk password — no admin account needed. */}
     <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0 14px", color: "rgba(230,238,255,.4)", fontSize: 11, fontWeight: 700, letterSpacing: ".14em" }}>
@@ -3761,6 +3814,7 @@ function GatePage() {
       <p style={{ color: "rgba(230,238,255,.5)", fontSize: 11.5, textAlign: "center", margin: "2px 0 0", lineHeight: 1.5 }}>Ask your coordinator for the desk password. It works only for this gate and expires automatically.</p>
     </form>
   </div>);
+  }
   if (state === "error") return shell(<div style={{ ...card, padding: 24, marginTop: 60 }}><h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Gate unavailable</h1><p style={{ color: "rgba(230,238,255,.66)", fontSize: 14 }}>{err}</p><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
 
   return shell(<>
