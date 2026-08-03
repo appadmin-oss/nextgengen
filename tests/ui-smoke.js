@@ -53,10 +53,50 @@ const STATUS = {
     },
     byCentre: [
       { centreId: 'IJ', code: 'IJ', name: 'Ijaiye', color: '#3b5bdb', need: 20, filled: 14, gap: 6,
-        present: 30, enrolled: 40, rate: 75, registered: 47, pending: 6, capacity: 60, fill: 78 },
+        present: 30, enrolled: 40, rate: 75, registered: 47, pending: 6, capacity: 60, fill: 78,
+        attendance: { present: 9, late: 1, onTime: 8, active: 14, rate: 75, sessions: 15, expected: 20, onTimePct: 87 } },
       { centreId: 'EG', code: 'EG', name: 'Egbeda', color: '#2f9e44', need: 30, filled: 22, gap: 8,
-        present: 66, enrolled: 80, rate: 83, registered: 90, pending: 13, capacity: 120, fill: 75 },
+        present: 66, enrolled: 80, rate: 83, registered: 90, pending: 13, capacity: 120, fill: 75,
+        attendance: { present: 4, late: 0, onTime: 4, active: 22, rate: 100, sessions: 5, expected: 5, onTimePct: 100 } },
     ],
+    /* The volunteer attendance breakdown, shaped exactly as
+       volunteer_attendance_analysis() emits it. 20 of 25 days served with two
+       late arrivals, so the page has to show 80% and 90% from the same block
+       — a page that reads the wrong key shows a dash, not a plausible number. */
+    attendance: {
+      measurable: true, basis: 'calendar', days: 10, from: '2026-07-15', to: '2026-07-24',
+      pendingDays: 0, windowDays: 30,
+      kpis: { rate: 80, onTimePct: 90, sessions: 20, expected: 25, absences: 5, lateSessions: 2,
+              halfDays: 1, avgLateMinutes: 20, measured: 3, reliable: 2 },
+      trend: [
+        { date: '2026-07-15', label: 'Wed 15 Jul', present: 2, eligible: 2, late: 0, rate: 100 },
+        { date: '2026-07-16', label: 'Thu 16 Jul', present: 2, eligible: 2, late: 1, rate: 100 },
+        { date: '2026-07-17', label: 'Fri 17 Jul', present: 1, eligible: 2, late: 0, rate: 50 },
+        { date: '2026-07-18', label: 'Sat 18 Jul', present: 2, eligible: 2, late: 0, rate: 100 },
+        { date: '2026-07-19', label: 'Sun 19 Jul', present: 1, eligible: 2, late: 0, rate: 50 },
+        { date: '2026-07-20', label: 'Mon 20 Jul', present: 2, eligible: 3, late: 1, rate: 67 },
+        { date: '2026-07-21', label: 'Tue 21 Jul', present: 2, eligible: 3, late: 0, rate: 67 },
+        { date: '2026-07-22', label: 'Wed 22 Jul', present: 3, eligible: 3, late: 0, rate: 100 },
+        { date: '2026-07-23', label: 'Thu 23 Jul', present: 2, eligible: 3, late: 0, rate: 67 },
+        { date: '2026-07-24', label: 'Fri 24 Jul', present: 3, eligible: 3, late: 0, rate: 100 },
+      ],
+      bands: [
+        { key: 'every', min: 90, label: 'Almost every day', color: '#2f9e44', count: 2 },
+        { key: 'reliable', min: 75, label: 'Reliable', color: '#3b5bdb', count: 0 },
+        { key: 'patchy', min: 50, label: 'Patchy', color: '#e8a92b', count: 1 },
+        { key: 'rare', min: 0, label: 'Rarely in', color: '#e03131', count: 0 },
+      ],
+      byCentre: [
+        { centre: 'Egbeda', people: 1, sessions: 5, expected: 5, absences: 0, late: 0, onTime: 5, rate: 100, onTimePct: 100, band: 'every' },
+        { centre: 'Ijaiye', people: 2, sessions: 15, expected: 20, absences: 5, late: 2, onTime: 13, rate: 75, onTimePct: 87, band: 'reliable' },
+      ],
+      byRole: [
+        { role: 'instructor', people: 1, sessions: 5, expected: 5, absences: 0, late: 0, onTime: 5, rate: 100, onTimePct: 100, band: 'every' },
+        { role: 'mentor', people: 2, sessions: 15, expected: 20, absences: 5, late: 2, onTime: 13, rate: 75, onTimePct: 87, band: 'reliable' },
+      ],
+      caveats: ['Expected days are programme days since a volunteer joined. There is no rota in the system, '
+              + 'so someone who agreed to come one day a week reads low here.'],
+    },
     /* Three students covering every consent combination the backend can
        emit. The board must name exactly one of them and picture exactly one
        of them — getting this wrong publishes a child's face without their
@@ -80,7 +120,19 @@ const STATUS = {
         centre: 'Egbe-Idimu', faculty: 'Arts', color: '#b07cff', points: 60, weekPoints: 10, stars: 0, attendance: 0, streak: 0, move: 0 },
     ],
     faculties: ['Tech', 'Arts'],
-    directory: [], deltas: {}, page: { published: true },
+    directory: [
+      { handle: '@ada.o', initial: 'A', role: 'mentor', centre: 'Ijaiye', color: '#3b5bdb', faculty: 'Tech',
+        course: '', face: '', sessions: 24, sinceWk: 1,
+        window: { sessions: 10, expected: 10, rate: 100, late: 2, onTime: 8, onTimePct: 80, streak: 10, band: 'every' } },
+      { handle: '@vol-1a2b', initial: 'M', role: 'mentor', centre: 'Ijaiye', color: '#3b5bdb', faculty: 'Arts',
+        course: '', face: '', sessions: 9, sinceWk: 3,
+        window: { sessions: 5, expected: 10, rate: 50, late: 0, onTime: 5, onTimePct: 100, streak: 0, band: 'patchy' } },
+      /* Joined this morning: no open days yet. The card must not print
+         "0 of 0 days" or divide by it. */
+      { handle: '@vol-9f8e', initial: 'I', role: 'instructor', centre: 'Egbeda', color: '#2f9e44', faculty: 'Tech',
+        course: 'Robotics', face: '', sessions: 0, sinceWk: 1, window: null },
+    ],
+    deltas: {}, page: { published: true },
   },
 };
 
@@ -914,6 +966,54 @@ function unzipDocumentXml(buf) {
       ok(label + ' does not stack requests while one is in flight (' + n0 + ' → ' + n1 + ')', n1 === n0);
       await page.close();
     }
+
+    /* ── /v-status shows the attendance BREAKDOWN, not only today ──────────
+     * The board counted who was in this morning and nothing else, while every
+     * check-in a volunteer had ever made sat in the same table. These read
+     * inside the Attendance tab specifically, so a number from the fulfilment
+     * KPIs elsewhere on the page cannot satisfy them. */
+    const vsp = await browser.newPage();
+    const vspErrs = [];
+    vsp.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) vspErrs.push(m.text()); });
+    vsp.on('pageerror', e => vspErrs.push(String(e.message)));
+    await vsp.goto(BASE + '/tests/_boards_fixture.html?board=vol&mode=ok', { waitUntil: 'networkidle' });
+    await vsp.waitForTimeout(1400);
+
+    await vsp.getByRole('button', { name: /attendance/i }).first().click();
+    await vsp.waitForTimeout(300);
+    const attText = await vsp.evaluate(() => {
+      const v = document.querySelector('.view');
+      return v ? v.innerText : '';
+    });
+    ok('/v-status Attendance tab reports the rate over the window',
+      /80%/.test(attText) && /20 of 25 days served/.test(attText));
+    ok('/v-status separates punctuality from presence',
+      /90%/.test(attText) && /On time/i.test(attText) && /2 late arrivals/.test(attText));
+    ok('/v-status names the days the rate is out of',
+      /10 programme days/.test(attText) && /2026-07-15/.test(attText) && /2026-07-24/.test(attText));
+    ok('/v-status breaks the rate down by centre and by role',
+      /Ijaiye/.test(attText) && /15\/20/.test(attText) && /75%/.test(attText)
+      && /Instructor/.test(attText) && /5\/5/.test(attText));
+    ok('/v-status draws one trend column per measured day',
+      (await vsp.$$('.att-col')).length === 10);
+    ok('/v-status shows the reliability bands with their counts',
+      /Almost every day/.test(attText) && /Patchy/.test(attText));
+    ok('/v-status prints the no-rota caveat where the numbers are',
+      /no rota in the system/.test(attText));
+    ok('/v-status Attendance tab mounts clean', vspErrs.length === 0);
+    if (vspErrs.length) console.error('      ', vspErrs.slice(0, 3).join(' | '));
+
+    await vsp.getByRole('button', { name: /volunteers/i }).first().click();
+    await vsp.waitForTimeout(300);
+    const dirText = await vsp.evaluate(() => {
+      const v = document.querySelector('.vol-grid');
+      return v ? v.innerText : '';
+    });
+    ok('/v-status volunteer cards carry their own attendance, with the denominator',
+      /10 of 10 days/.test(dirText) && /5 of 10 days/.test(dirText) && /10 in a row/.test(dirText));
+    ok('/v-status a volunteer with no open days yet shows no rate at all',
+      dirText.indexOf('0 of 0 days') === -1 && /@vol-9f8e/.test(dirText));
+    await vsp.close();
 
     /* ── /s-status shows REGISTRATION, not only attendance ─────────────────
      * The board reported attendance alone. The API grew a `registration`

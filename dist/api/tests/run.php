@@ -9864,5 +9864,158 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     })());
 })();
 
+/* ── Volunteer attendance analysis ──────────────────────────────────────────
+ *
+ * A ten-day programme window with three volunteers whose behaviour is known
+ * exactly, on a centre name nothing else in this file uses — so the numbers
+ * asserted here are arithmetic, not "whatever the fixture happens to add up
+ * to". Each test names the specific decision it is holding: the denominator,
+ * the join date, the non-programme day, the un-taken roll, the privacy line.
+ */
+(function () {
+    $today = attendance_today();
+    $D = fn(int $n) => gmdate('Y-m-d', (int)strtotime($today . ' -' . $n . ' days'));
+    $lab = 'Attendance Lab';
+    $prevProg = setting_get('programme');
+
+    // Every day counts, so the window is exactly ten days regardless of when
+    // the suite runs — a Monday run and a Saturday run assert the same thing.
+    programme_settings_save(['enabled' => true, 'startDate' => $D(9), 'endDate' => $today,
+        'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'NGG-2025-0099');
+
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'VOL-ATT-%'");
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-ATT-%'");
+    $mkVol = function (string $id, string $role, int $joinedDaysAgo) use ($lab, $D) {
+        db_insert('volunteers', ['volunteerId' => $id, 'fullName' => 'Att ' . $id, 'email' => strtolower($id) . '@example.com',
+            'role' => $role, 'centre' => $lab, 'status' => 'active', 'safeguarding' => 'cleared',
+            'visibilityConsent' => 0, 'createdAt' => $D($joinedDaysAgo) . ' 08:00:00', 'updatedAt' => now_iso()]);
+    };
+    $mark = function (string $id, int $daysAgo, bool $late = false) use ($D) {
+        db_insert('attendance', ['cohortId' => '', 'studentId' => $id, 'token' => '', 'date' => $D($daysAgo),
+            'checkInAt' => $D($daysAgo) . 'T08:00:00Z', 'method' => 'qr', 'byId' => 'NGG-2025-0099', 'device' => '',
+            'status' => $late ? 'late' : 'present', 'lateMinutes' => $late ? 20 : 0, 'redline' => 0, 'halfDay' => 0,
+            'createdAt' => now_iso()]);
+    };
+    $mkVol('VOL-ATT-A', 'mentor', 9);        // perfect, two of them late
+    $mkVol('VOL-ATT-B', 'mentor', 9);        // half the days, none recent
+    $mkVol('VOL-ATT-C', 'instructor', 4);    // joined late, perfect since
+    for ($i = 9; $i >= 0; $i--) $mark('VOL-ATT-A', $i, $i === 3 || $i === 7);
+    for ($i = 9; $i >= 5; $i--) $mark('VOL-ATT-B', $i);
+    for ($i = 4; $i >= 0; $i--) $mark('VOL-ATT-C', $i);
+
+    $labRow = function (array $a) use ($lab) {
+        foreach ($a['byCentre'] as $r) if ($r['centre'] === $lab) return $r;
+        return null;
+    };
+
+    $A = volunteer_attendance_analysis();
+    chk('vol attendance: the window is programme days, not calendar days', $A['measurable'] === true
+        && $A['days'] === 10 && $A['basis'] === 'calendar' && $A['from'] === $D(9) && $A['to'] === $today);
+
+    chk('vol attendance: rate is days served over days the programme ran', (function () use ($A, $labRow) {
+        $r = $labRow($A);
+        // 10 + 5 + 5 served, out of 10 + 10 + 5 open.
+        return $r && $r['people'] === 3 && $r['sessions'] === 20 && $r['expected'] === 25
+            && $r['rate'] === 80 && $r['absences'] === 5;
+    })());
+
+    chk('vol attendance: late counts as present and only moves punctuality', (function () use ($A, $labRow) {
+        $r = $labRow($A);
+        // Two late arrivals out of twenty sessions → 90% on time, rate untouched.
+        return $r && $r['late'] === 2 && $r['onTime'] === 18 && $r['onTimePct'] === 90 && $r['rate'] === 80;
+    })());
+
+    chk('vol attendance: a volunteer is not charged for days before they joined', (function () use ($A) {
+        $c = $A['perVolunteer']['VOL-ATT-C'] ?? null;
+        // Joined on day -4, so five open days, all served — not 5/10.
+        return $c && $c['expected'] === 5 && $c['sessions'] === 5 && $c['rate'] === 100;
+    })());
+
+    chk('vol attendance: streak counts back from the last measured day', (function () use ($A) {
+        $a = $A['perVolunteer']['VOL-ATT-A'] ?? null;
+        $b = $A['perVolunteer']['VOL-ATT-B'] ?? null;
+        // B stopped coming five days ago, so the streak is over — not "5".
+        return $a && $b && $a['streak'] === 10 && $b['streak'] === 0 && $b['rate'] === 50 && $b['band'] === 'patchy';
+    })());
+
+    chk('vol attendance: the trend plots present against who was on the roster that day', (function () use ($A, $today) {
+        $last = $A['trend'][count($A['trend']) - 1] ?? null;
+        if (!$last || $last['date'] !== $today) return false;
+        // Only A and C are in today; B is not. Eligible counts everyone active
+        // programme-wide, so assert the relationship rather than the headcount.
+        return $last['present'] <= $last['eligible'] && $last['present'] >= 2 && count($A['trend']) === 10;
+    })());
+
+    chk('vol attendance: reliability bands only count volunteers with enough days', (function () use ($A) {
+        $by = []; foreach ($A['bands'] as $b) $by[$b['key']] = $b['count'];
+        // A and C are perfect, B is patchy. Everyone here has 3+ open days.
+        return ($by['every'] ?? 0) >= 2 && ($by['patchy'] ?? 0) >= 1 && $A['kpis']['measured'] >= 3;
+    })());
+
+    chk('vol attendance: a cancelled day leaves both sides of the fraction', (function () use ($D, $today, $labRow, $lab) {
+        /* Day -5 becomes a holiday and VOL-ATT-B has a scan on it. The day
+         * leaves the denominator; the scan has to leave the numerator with it,
+         * or B reads 5 served out of 9 open and looks better for having turned
+         * up on a day the programme was closed. */
+        programme_settings_save(['enabled' => true, 'startDate' => $D(9), 'endDate' => $today,
+            'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [$D(5)], 'extraDays' => []], 'NGG-2025-0099');
+        $H = volunteer_attendance_analysis();
+        $b = $H['perVolunteer']['VOL-ATT-B'] ?? null;
+        $r = $labRow($H);
+        $ok = $H['days'] === 9 && $b && $b['expected'] === 9 && $b['sessions'] === 4 && $b['rate'] <= 100
+            && $r && $r['rate'] <= 100;
+        programme_settings_save(['enabled' => true, 'startDate' => $D(9), 'endDate' => $today,
+            'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'NGG-2025-0099');
+        return $ok;
+    })());
+
+    chk('vol attendance: the no-rota caveat is always said out loud', (function () use ($A) {
+        foreach ($A['caveats'] as $c) if (strpos($c, 'no rota') !== false) return true;
+        return false;
+    })());
+
+    chk('vol attendance: with no calendar set, the basis says so rather than counting every day', (function () {
+        setting_set('programme', ['enabled' => false, 'startDate' => '', 'endDate' => '',
+            'weekdays' => [1, 2, 3, 4, 5], 'holidays' => [], 'extraDays' => []], 'NGG-2025-0099');
+        $O = volunteer_attendance_analysis();
+        $said = false;
+        foreach ($O['caveats'] as $c) if (strpos($c, 'calendar has not been set') !== false) $said = true;
+        return $O['basis'] === 'observed' && $said;
+    })());
+
+    chk('vol attendance: a day with no roll taken yet is not an absence', (function () use ($today, $D) {
+        programme_settings_save(['enabled' => true, 'startDate' => $D(9), 'endDate' => $today,
+            'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'NGG-2025-0099');
+        /* Empty today's roll entirely — the state at 7am every morning. Before
+         * the trim, every volunteer's rate dipped and every streak reset. */
+        $held = db_all('SELECT * FROM attendance WHERE date = ?', [$today]);
+        db_exec('DELETE FROM attendance WHERE date = ?', [$today]);
+        $P = volunteer_attendance_analysis();
+        foreach ($held as $row) { unset($row['id']); db_insert('attendance', $row); }
+        $a = $P['perVolunteer']['VOL-ATT-A'] ?? null;
+        return $P['pendingDays'] === 1 && $P['days'] === 9 && $P['to'] === $D(1)
+            && $a && $a['expected'] === 9 && $a['rate'] === 100 && $a['streak'] === 9;
+    })());
+
+    chk('vol attendance: the public board carries the breakdown but never a volunteerId', (function () use ($lab) {
+        backend_dispatch('admin.status.pages.set', ['requesterId' => 'NGG-2025-0099',
+            'data' => ['volunteer' => ['published' => true, 'centres' => []]]]);
+        $r = backend_dispatch('public.volunteer.status', []);
+        $s = $r['status'] ?? [];
+        if (empty($s['attendance']['measurable'])) return false;
+        if (isset($s['attendance']['perVolunteer'])) return false;
+        /* The handle is a hash of the volunteerId. Shipping the id alongside it
+         * would hand anyone the mapping the hash exists to withhold. */
+        if (strpos(json_encode($s), 'VOL-ATT-A') !== false) return false;
+        $mine = null;
+        foreach ($s['directory'] as $v) if ($v['centre'] === $lab && ($v['window']['expected'] ?? 0) === 10 && $v['window']['rate'] === 100) $mine = $v;
+        return $mine !== null && $mine['window']['streak'] === 10;
+    })());
+
+    // Leave the calendar as this suite found it.
+    if (is_array($prevProg)) setting_set('programme', $prevProg, 'NGG-2025-0099');
+    else db_exec("DELETE FROM settings WHERE settingKey = 'programme'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

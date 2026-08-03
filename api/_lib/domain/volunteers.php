@@ -774,6 +774,252 @@ function volunteer_filled_index(): array {
 function volunteer_tone(int $rate): string { return $rate >= 100 ? 'met' : ($rate >= 60 ? 'watch' : 'urgent'); }
 function volunteer_rate(int $filled, int $need): int { return $need > 0 ? (int)round($filled / $need * 100) : ($filled > 0 ? 100 : 100); }
 
+/* ── Volunteer attendance analysis ───────────────────────────────────────────
+ *
+ * Volunteers check into the same roll as the children (summer.php writes their
+ * scan into `attendance` keyed by volunteerId), so the raw material for this
+ * has been accumulating all along — the board simply never counted anything
+ * but today.
+ *
+ * Four decisions this file makes, because each of them changes the numbers and
+ * none of them is obvious from the output:
+ *
+ * 1. THE DENOMINATOR IS PROGRAMME DAYS, NOT CALENDAR DAYS. programme_days_*()
+ *    already knows which days the programme runs; a Sunday is not an absence.
+ *    When no calendar is configured that function returns nothing at all, so
+ *    we fall back to the days the roll was ACTUALLY taken and say so in the
+ *    payload — an unset calendar must not silently turn into "every day".
+ *
+ * 2. EACH VOLUNTEER IS ONLY MEASURED FROM THE DAY THEY JOINED. Someone who
+ *    signed up in week four did not miss weeks one to three.
+ *
+ * 3. A TRAILING DAY ON WHICH NOBODY AT ALL WAS RECORDED IS NOT COUNTED YET.
+ *    Otherwise every volunteer's rate and streak collapse each morning until
+ *    the desk opens the roll, which reads as a real drop and is not one.
+ *    Interior empty days stay — a day the whole team missed is a finding.
+ *
+ * 4. THERE IS NO ROTA IN THIS SYSTEM. Expected days are programme days, so a
+ *    volunteer who only ever committed to Saturdays reads low here through no
+ *    fault of theirs. That is stated in the caveats rather than papered over
+ *    by fitting each person's denominator to their own habits, which would
+ *    make everybody look perfect by construction.
+ */
+
+/** How far back the analysis looks, in programme days. */
+const VOL_ATT_WINDOW = 30;
+/** How many of those days the trend chart plots. */
+const VOL_ATT_TREND = 14;
+/** Below this many rateable volunteers the breakdown is a rumour, not a pattern. */
+const VOL_ATT_MIN_MEASURED = 5;
+
+/** Reliability bands, high to low. Boundaries are inclusive lower bounds. */
+const VOL_ATT_BANDS = [
+    ['key' => 'every',    'min' => 90, 'label' => 'Almost every day', 'color' => '#2f9e44'],
+    ['key' => 'reliable', 'min' => 75, 'label' => 'Reliable',         'color' => '#3b5bdb'],
+    ['key' => 'patchy',   'min' => 50, 'label' => 'Patchy',           'color' => '#e8a92b'],
+    ['key' => 'rare',     'min' => 0,  'label' => 'Rarely in',        'color' => '#e03131'],
+];
+
+function volunteer_att_band(int $rate): array {
+    foreach (VOL_ATT_BANDS as $b) if ($rate >= $b['min']) return $b;
+    return VOL_ATT_BANDS[count(VOL_ATT_BANDS) - 1];
+}
+
+/**
+ * The days the window is measured over, most recent last.
+ *
+ * 'calendar' basis is the honest one. 'observed' is the fallback for a site
+ * that never set the term dates: the distinct dates somebody was marked
+ * present. It answers a slightly different question — "of the days we ran the
+ * roll, how many did you make?" — and the caller has to say which it got.
+ */
+function volunteer_attendance_days(int $limit): array {
+    $cfg = programme_settings();
+    $days = programme_days_elapsed(null, $cfg);
+    if ($days) return ['days' => array_slice($days, -$limit), 'basis' => 'calendar'];
+    $rows = db_all('SELECT DISTINCT date FROM attendance ORDER BY date DESC LIMIT ' . (int)$limit);
+    $days = array_reverse(array_map(fn($r) => (string)$r['date'], $rows));
+    return ['days' => $days, 'basis' => 'observed'];
+}
+
+/**
+ * Attendance over a window for every active volunteer, plus the rollups the
+ * public board draws: trend, reliability bands, per-centre and per-role rates.
+ *
+ * `$only` mirrors the board's centre allow-list (empty = all centres).
+ */
+function volunteer_attendance_analysis(array $only = []): array {
+    $win = volunteer_attendance_days(VOL_ATT_WINDOW);
+    $days = $win['days'];
+    $vols = [];
+    foreach (db_all("SELECT volunteerId, role, centre, createdAt FROM volunteers WHERE status = 'active'") as $v) {
+        if ($only && !in_array((string)$v['centre'], $only, true)) continue;
+        $vols[(string)$v['volunteerId']] = $v;
+    }
+    $empty = [
+        'measurable' => false, 'basis' => $win['basis'], 'days' => 0, 'from' => '', 'to' => '',
+        'kpis' => ['rate' => null, 'onTimePct' => null, 'sessions' => 0, 'expected' => 0, 'absences' => 0,
+                   'lateSessions' => 0, 'halfDays' => 0, 'avgLateMinutes' => null, 'measured' => 0, 'reliable' => 0],
+        'trend' => [], 'bands' => [], 'byCentre' => [], 'byRole' => [], 'perVolunteer' => [],
+        'pendingDays' => 0, 'caveats' => [],
+    ];
+    if (!$days || !$vols) {
+        $empty['caveats'][] = !$days
+            ? 'No programme days have run in this window yet, so there is nothing to measure attendance against.'
+            : 'No active volunteers are on the board for these centres.';
+        return $empty;
+    }
+
+    // Every volunteer attendance row in the window, in one pass.
+    $from = $days[0]; $to = $days[count($days) - 1];
+    $marks = [];      // vid => date => ['late'=>bool,'halfDay'=>bool,'lateMinutes'=>int]
+    $rollOn = [];     // date => how many volunteers were recorded
+    $dayset = array_flip($days);
+    foreach (db_all("SELECT a.studentId vid, a.date d, a.status st, a.lateMinutes lm, a.halfDay hd
+                     FROM attendance a JOIN volunteers v ON v.volunteerId = a.studentId
+                     WHERE a.date >= ? AND a.date <= ? AND v.status = 'active'", [$from, $to]) as $r) {
+        $vid = (string)$r['vid']; $d = (string)$r['d'];
+        /* Only the days and people this window is about get carried. Every
+         * read below walks $days and $vols, so this is a bound on what is
+         * held in memory rather than a correctness gate — the rate cannot
+         * exceed 100% either way, because a cancelled day leaves the
+         * numerator and the denominator together. */
+        if (!isset($dayset[$d]) || !isset($vols[$vid])) continue;
+        $marks[$vid][$d] = ['late' => (string)$r['st'] === 'late', 'halfDay' => (int)($r['hd'] ?? 0) === 1,
+                            'lateMinutes' => max(0, (int)($r['lm'] ?? 0))];
+        $rollOn[$d] = ($rollOn[$d] ?? 0) + 1;
+    }
+
+    /* Decision 3: trim the trailing days nobody has been marked on. Those are
+     * rolls that have not been taken, not days the whole team missed. */
+    $pending = 0;
+    while ($days && empty($rollOn[$days[count($days) - 1]])) { array_pop($days); $pending++; }
+    if (!$days) {
+        $empty['pendingDays'] = $pending;
+        $empty['caveats'][] = 'The roll has not been taken on any day in this window yet.';
+        return $empty;
+    }
+    $to = $days[count($days) - 1];
+
+    $joinOf = [];
+    foreach ($vols as $vid => $v) {
+        $c = substr((string)($v['createdAt'] ?? ''), 0, 10);
+        $joinOf[$vid] = preg_match('/^\d{4}-\d{2}-\d{2}$/', $c) ? $c : '';
+    }
+
+    $per = []; $cAgg = []; $rAgg = []; $bandCount = [];
+    $tSessions = 0; $tExpected = 0; $tLate = 0; $tHalf = 0; $tLateMin = 0;
+    foreach ($vols as $vid => $v) {
+        $join = $joinOf[$vid];
+        $mine = array_values(array_filter($days, fn($d) => $join === '' || $d >= $join));
+        $expected = count($mine);
+        $mk = $marks[$vid] ?? [];
+        $sessions = 0; $late = 0; $half = 0; $lateMin = 0; $lastSeen = '';
+        foreach ($mine as $d) {
+            if (!isset($mk[$d])) continue;
+            $sessions++;
+            if ($mk[$d]['late']) { $late++; $lateMin += $mk[$d]['lateMinutes']; }
+            if ($mk[$d]['halfDay']) $half++;
+            $lastSeen = $d;
+        }
+        // Streak: back from the most recent measured day, until a miss.
+        $streak = 0;
+        for ($i = count($mine) - 1; $i >= 0; $i--) { if (!isset($mk[$mine[$i]])) break; $streak++; }
+        $rate = $expected > 0 ? (int)round($sessions / $expected * 100) : null;
+        $per[$vid] = [
+            'sessions' => $sessions, 'expected' => $expected, 'rate' => $rate,
+            'late' => $late, 'onTime' => max(0, $sessions - $late), 'halfDay' => $half,
+            'onTimePct' => $sessions > 0 ? (int)round(($sessions - $late) / $sessions * 100) : null,
+            'streak' => $streak, 'lastSeen' => $lastSeen,
+            'band' => $rate === null ? '' : volunteer_att_band($rate)['key'],
+        ];
+        $tSessions += $sessions; $tExpected += $expected; $tLate += $late; $tHalf += $half; $tLateMin += $lateMin;
+
+        $cn = (string)($v['centre'] ?? ''); $ro = (string)($v['role'] ?? '');
+        $add = function (array &$bucket, string $key) use ($sessions, $expected, $late) {
+            if ($key === '') return;
+            $bucket[$key] = $bucket[$key] ?? ['people' => 0, 'sessions' => 0, 'expected' => 0, 'late' => 0];
+            $bucket[$key]['people']++; $bucket[$key]['sessions'] += $sessions;
+            $bucket[$key]['expected'] += $expected; $bucket[$key]['late'] += $late;
+        };
+        $add($cAgg, $cn); $add($rAgg, $ro);
+        /* A volunteer with one or two eligible days has no rate worth banding —
+         * one absence would read as 50% "patchy". They are counted as measured
+         * nowhere, which is why `measured` is reported next to the rate. */
+        if ($expected >= 3 && $rate !== null) {
+            $b = volunteer_att_band($rate)['key'];
+            $bandCount[$b] = ($bandCount[$b] ?? 0) + 1;
+        }
+    }
+
+    // Trend: present vs eligible, per day, over the tail of the window.
+    $trend = [];
+    foreach (array_slice($days, -VOL_ATT_TREND) as $d) {
+        $present = 0; $eligible = 0; $lateD = 0;
+        foreach ($vols as $vid => $v) {
+            if ($joinOf[$vid] !== '' && $d < $joinOf[$vid]) continue;
+            $eligible++;
+            if (isset($marks[$vid][$d])) { $present++; if ($marks[$vid][$d]['late']) $lateD++; }
+        }
+        $trend[] = ['date' => $d, 'label' => gmdate('D j M', (int)strtotime($d . ' 00:00:00 UTC')),
+                    'present' => $present, 'eligible' => $eligible, 'late' => $lateD,
+                    'rate' => $eligible > 0 ? (int)round($present / $eligible * 100) : 0];
+    }
+
+    $roll = function (array $agg, string $keyName) {
+        $out = [];
+        foreach ($agg as $k => $a) {
+            $rate = $a['expected'] > 0 ? (int)round($a['sessions'] / $a['expected'] * 100) : null;
+            $out[] = [$keyName => (string)$k, 'people' => $a['people'], 'sessions' => $a['sessions'],
+                      'expected' => $a['expected'], 'absences' => max(0, $a['expected'] - $a['sessions']),
+                      'late' => $a['late'], 'onTime' => max(0, $a['sessions'] - $a['late']),
+                      'rate' => $rate, 'onTimePct' => $a['sessions'] > 0 ? (int)round(($a['sessions'] - $a['late']) / $a['sessions'] * 100) : null,
+                      'band' => $rate === null ? '' : volunteer_att_band($rate)['key']];
+        }
+        usort($out, fn($x, $y) => ($y['rate'] ?? -1) <=> ($x['rate'] ?? -1) ?: strcmp($x[$keyName], $y[$keyName]));
+        return $out;
+    };
+
+    $bands = [];
+    foreach (VOL_ATT_BANDS as $b) $bands[] = $b + ['count' => $bandCount[$b['key']] ?? 0];
+    $measured = array_sum($bandCount);
+
+    $caveats = [];
+    if ($win['basis'] === 'observed') $caveats[] =
+        'The programme calendar has not been set, so this is measured against the days the roll was actually '
+        . 'taken rather than the days the programme was scheduled to run.';
+    $caveats[] =
+        'Expected days are programme days since a volunteer joined. There is no rota in the system, so someone '
+        . 'who agreed to come one day a week reads low here — the number is days served out of days open, not a '
+        . 'judgement on whether they kept their commitment.';
+    if ($pending > 0) $caveats[] =
+        $pending . ' more programme day(s) have opened with no roll taken yet; they are left out rather than '
+        . 'counted as absences.';
+    if ($measured < VOL_ATT_MIN_MEASURED) $caveats[] =
+        'Only ' . $measured . ' volunteer(s) have been on the board long enough (3+ days) to have a rate. '
+        . 'The breakdown below is too thin to read as a pattern.';
+
+    return [
+        'measurable' => true, 'basis' => $win['basis'],
+        'days' => count($days), 'from' => $days[0], 'to' => $to, 'pendingDays' => $pending,
+        'windowDays' => VOL_ATT_WINDOW,
+        'kpis' => [
+            'rate' => $tExpected > 0 ? (int)round($tSessions / $tExpected * 100) : null,
+            'onTimePct' => $tSessions > 0 ? (int)round(($tSessions - $tLate) / $tSessions * 100) : null,
+            'sessions' => $tSessions, 'expected' => $tExpected,
+            'absences' => max(0, $tExpected - $tSessions),
+            'lateSessions' => $tLate, 'halfDays' => $tHalf,
+            'avgLateMinutes' => $tLate > 0 ? (int)round($tLateMin / $tLate) : null,
+            'measured' => $measured,
+            'reliable' => ($bandCount['every'] ?? 0) + ($bandCount['reliable'] ?? 0),
+        ],
+        'trend' => $trend, 'bands' => $bands,
+        'byCentre' => $roll($cAgg, 'centre'), 'byRole' => $roll($rAgg, 'role'),
+        'perVolunteer' => $per,
+        'caveats' => $caveats,
+    ];
+}
+
 /** Full per-centre + global fulfilment structure (shared by public board). */
 function volunteer_status_compute(): array {
     $centres = db_all("SELECT centreId, name, code, color, address, area, leadVolunteerId, meetDays, meetTime FROM centres WHERE status = 'active' ORDER BY name");
@@ -873,11 +1119,32 @@ function public_volunteer_status(array $p): array {
     unset($bc);
     $kpis = $s['kpis'] + ['presentToday' => $vPresent, 'lateToday' => $vLate, 'onTimeToday' => max(0, $vPresent - $vLate)];
 
+    /* Today is a snapshot; this is the record. Rates over the window, per
+     * centre and per role, so a reader can tell a bad morning from a pattern. */
+    $att = volunteer_attendance_analysis($only);
+    $attRate = [];
+    foreach ($att['byCentre'] as $r) $attRate[(string)$r['centre']] = $r;
+    foreach ($byCentre as &$bc2) {
+        $r = $attRate[(string)$bc2['name']] ?? null;
+        $bc2['attendance'] = $bc2['attendance'] + [
+            'rate' => $r['rate'] ?? null, 'sessions' => $r['sessions'] ?? 0,
+            'expected' => $r['expected'] ?? 0, 'onTimePct' => $r['onTimePct'] ?? null,
+        ];
+    }
+    unset($bc2);
+
     // Public volunteer directory — shown by HANDLE. A volunteer's face and first
     // name appear ONLY when they granted the site-visibility consent; everyone
     // else shows an anonymous handle and a role initial. Never a surname, email
     // or phone.
     $colorByCentre = []; foreach ($byCentre as $c) $colorByCentre[(string)$c['name']] = (string)$c['color'];
+    // Lifetime session counts in one query rather than one per volunteer.
+    $lifetime = [];
+    foreach (db_all("SELECT a.studentId vid, COUNT(*) c FROM attendance a
+                     JOIN volunteers v ON v.volunteerId = a.studentId
+                     WHERE v.status = 'active' GROUP BY a.studentId") as $r) {
+        $lifetime[(string)$r['vid']] = (int)$r['c'];
+    }
     $directory = [];
     foreach (db_all("SELECT volunteerId, fullName, firstName, lastName, role, centre, faculty, courses, photoUrl, visibilityConsent, createdAt FROM volunteers WHERE status = 'active' ORDER BY id") as $v) {
         if ($only && !in_array((string)$v['centre'], $only, true)) continue;
@@ -889,16 +1156,28 @@ function public_volunteer_status(array $p): array {
             : ('@vol-' . substr(md5((string)$v['volunteerId']), 0, 4));
         $courses = json_decode((string)($v['courses'] ?? ''), true) ?: [];
         $wk = 1; if (!empty($v['createdAt'])) { $days = (int)floor((time() - strtotime((string)$v['createdAt'])) / 86400); $wk = max(1, (int)floor($days / 7) + 1); }
+        /* The window stats travel with the handle, never with the volunteerId
+         * — the handle is a hash of that id, so shipping both would undo the
+         * pseudonymity the rest of this function is built around. */
+        $w = $att['perVolunteer'][(string)$v['volunteerId']] ?? null;
         $directory[] = [
             'handle' => $handle,
             'initial' => strtoupper(substr($consent ? $first : (string)$v['role'], 0, 1)),
             'role' => (string)$v['role'], 'centre' => (string)$v['centre'], 'color' => $colorByCentre[(string)$v['centre']] ?? '#7c4dff',
             'faculty' => (string)($v['faculty'] ?? ''), 'course' => (string)($courses[0] ?? ''),
             'face' => $consent ? (string)($v['photoUrl'] ?? '') : '',
-            'sessions' => (int)(db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = ?", [(string)$v['volunteerId']])['c'] ?? 0),
+            'sessions' => $lifetime[(string)$v['volunteerId']] ?? 0,
             'sinceWk' => $wk,
+            'window' => $w ? [
+                'sessions' => $w['sessions'], 'expected' => $w['expected'], 'rate' => $w['rate'],
+                'late' => $w['late'], 'onTime' => $w['onTime'], 'onTimePct' => $w['onTimePct'],
+                'streak' => $w['streak'], 'band' => $w['band'],
+            ] : null,
         ];
     }
+
+    // Per-person rows are keyed by volunteerId; the board never sees that key.
+    unset($att['perVolunteer']);
 
     return ['ok' => true, 'status' => [
         'generatedAt' => now_iso(),
@@ -906,6 +1185,7 @@ function public_volunteer_status(array $p): array {
         'program' => ['name' => 'Next Generation Genius', 'year' => (int)gmdate('Y')],
         'kpis' => $kpis,
         'byCentre' => $byCentre,
+        'attendance' => $att,
         'directory' => $directory,
     ]];
 }

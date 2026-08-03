@@ -1581,6 +1581,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
   const k = (d && d.kpis) || {};
   const byCentre = (d && d.byCentre) || [];
   const directory = (d && d.directory) || [];
+  const att = (d && d.attendance) || null;
   const rate = k.fulfillmentRate || 0;
   const totNeed = k.totalNeed || 0, totFilled = k.totalFilled || 0, totGap = k.totalGap || 0;
   // Attendance today (volunteers share the same roll as students).
@@ -1608,9 +1609,10 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
 
   const tabBase = { fontFamily: "'Inter',sans-serif", fontSize: 14.5, fontWeight: 600, padding: "14px 6px", border: "none", background: "none", cursor: "pointer", borderBottom: "2.5px solid transparent", marginBottom: -1, display: "inline-flex", alignItems: "center", marginRight: 6 };
   const tabStyle = (kk) => ({ ...tabBase, color: view === kk ? "#fff" : "rgba(255,255,255,0.55)", borderBottomColor: view === kk ? "#d0ff3a" : "transparent" });
-  const tabs = [["overview", "Overview", "ph-chart-bar"], ["centres", "Centres", "ph-buildings"], ["volunteers", "Volunteers", "ph-identification-card"], ["roles", "Roles", "ph-users-three"]];
+  const tabs = [["overview", "Overview", "ph-chart-bar"], ["centres", "Centres", "ph-buildings"], ["attendance", "Attendance", "ph-calendar-check"], ["volunteers", "Volunteers", "ph-identification-card"], ["roles", "Roles", "ph-users-three"]];
   const heroSub = view === "overview" ? (page.tagline || "A live, public view of volunteer needs across every centre — by role, faculty and course.")
     : view === "centres" ? "Six centres, one team. Explore each centre's roles, faculties and courses."
+    : view === "attendance" ? "Showing up is the work. Days served against days the programme ran — by centre, by role, over time."
     : view === "volunteers" ? "The people giving their time across the programme — shown by handle to protect their privacy."
     : "Every role we run across the programme — and exactly where we still need hands.";
 
@@ -1658,6 +1660,23 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
   const dirList = directory.filter(v => (volCentre === "All" || v.centre === volCentre) && (volRole === "All" || v.role === volRole));
   const centreOpts = ["All", ...byCentre.map(c => c.name)];
 
+  // Attendance breakdown — rate over the window, not the single-day snapshot.
+  const ak = (att && att.kpis) || {};
+  const attTrend = (att && att.trend) || [];
+  const attPeak = Math.max(1, ...attTrend.map(x => x.eligible || 0));
+  const attBands = (att && att.bands) || [];
+  const attBandTotal = attBands.reduce((s, b) => s + (b.count || 0), 0);
+  const attCentres = (att && att.byCentre) || [];
+  const attRoles = (att && att.byRole) || [];
+  const attStats = [
+    { icon: "ph-percent", tintBg: "rgba(47,158,68,0.14)", iconColor: "#2f9e44", value: ak.rate == null ? "—" : ak.rate + "%", label: "Attendance rate", foot: (ak.sessions || 0) + " of " + (ak.expected || 0) + " days served" },
+    { icon: "ph-alarm", tintBg: "rgba(232,169,43,0.16)", iconColor: "#a07400", value: ak.onTimePct == null ? "—" : ak.onTimePct + "%", label: "On time", foot: (ak.lateSessions || 0) + " late arrival" + ((ak.lateSessions || 0) === 1 ? "" : "s") + (ak.avgLateMinutes != null ? " · avg " + ak.avgLateMinutes + " min" : "") },
+    { icon: "ph-shield-check", tintBg: "rgba(59,91,219,0.13)", iconColor: "#3b5bdb", value: String(ak.reliable || 0), label: "Reliable volunteers", foot: "75%+ of their days, of " + (ak.measured || 0) + " measured" },
+    { icon: "ph-user-minus", tintBg: "rgba(224,49,49,0.10)", iconColor: "#c0361c", value: String(ak.absences || 0), label: "Absences", foot: (ak.halfDays || 0) + " half day" + ((ak.halfDays || 0) === 1 ? "" : "s") },
+    { icon: "ph-calendar-blank", tintBg: "rgba(124,77,255,0.13)", iconColor: "#6a3fc0", value: String((att && att.days) || 0), label: "Days measured", foot: att && att.from ? att.from + " → " + att.to : "no days yet" },
+  ];
+  const attRoleRow = (r) => ({ ...r, meta: VS_ROLE_META[r.role] || VS_ROLE_META.admin });
+
   // Centre detail
   const dc = openCentre ? byCentre.find(c => c.centreId === openCentre) : null;
   let detail = null;
@@ -1678,10 +1697,12 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
       roleChips, byRole, showFaculty, hasFaculty: byFaculty.length > 0, facEmpty: showFaculty && byFaculty.length === 0, byFaculty,
       showCourses, hasCourses: byCourse.length > 0, courseEmpty: showCourses && byCourse.length === 0, byCourse,
       items: (dc.items || []),
+      att: dc.attendance || null,
     };
   }
   const showCentreGrid = view === "centres" && !dc;
   const isOverview = view === "overview" && !dc, isRoles = view === "roles" && !dc, isVolunteers = view === "volunteers" && !dc;
+  const isAttendance = view === "attendance" && !dc;
 
   return (
     <div className="page" data-screen-label="Volunteer status">
@@ -1901,6 +1922,18 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                 <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 14, padding: 18 }}><div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 30, color: s[2], fontVariantNumeric: "tabular-nums" }}>{s[0]}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "#5a6488", marginTop: 6 }}>{s[1]}</div></div>
               ))}
             </div>
+            {detail.att && detail.att.expected > 0 && <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "18px 22px", marginTop: 16, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+              <span style={{ width: 40, height: 40, borderRadius: 12, display: "grid", placeItems: "center", fontSize: 20, background: "rgba(47,158,68,0.12)", color: "#2f9e44" }}><i className="ph ph-calendar-check"/></span>
+              <span style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488" }}>Attendance · last {(att && att.days) || 0} programme days</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 5 }}>
+                  <b style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, color: volTone(detail.att.rate || 0), fontVariantNumeric: "tabular-nums" }}>{detail.att.rate == null ? "—" : detail.att.rate + "%"}</b>
+                  <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#5a6488" }}>{detail.att.sessions} of {detail.att.expected} days served{detail.att.onTimePct != null ? " · " + detail.att.onTimePct + "% on time" : ""}</span>
+                </div>
+                <span style={{ display: "block", height: 8, borderRadius: 99, background: "#f1f3f7", overflow: "hidden", marginTop: 10 }}><span style={{ display: "block", height: "100%", width: Math.min(100, detail.att.rate || 0) + "%", background: volTone(detail.att.rate || 0) }}/></span>
+              </span>
+              <button onClick={() => { setOpenCentre(null); setView("attendance"); }} style={{ fontFamily: "inherit", fontWeight: 600, fontSize: 13, padding: "9px 15px", borderRadius: 999, cursor: "pointer", color: "#4a2da0", background: "rgba(74,45,160,0.08)", border: "1px solid rgba(74,45,160,0.2)" }}>Full breakdown →</button>
+            </div>}
             <CentreFindUs meta={dc} accent={dc.color}/>
             <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: 22, marginTop: 20 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
@@ -2003,6 +2036,129 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
         </section>
       </div>}
 
+      {isAttendance && <div className="view">
+        <section style={{ padding: "40px 0 8px" }}>
+          <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
+            {!att || !att.measurable
+              ? <div style={{ border: "1px dashed #d9d2c0", borderRadius: 18, padding: "40px 28px", textAlign: "center", background: "#fff" }}>
+                  <span style={{ width: 52, height: 52, borderRadius: 14, display: "inline-grid", placeItems: "center", fontSize: 26, background: "rgba(124,77,255,0.13)", color: "#6a3fc0" }}><i className="ph ph-calendar-x"/></span>
+                  <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 22, margin: "16px 0 8px" }}>Nothing to measure yet.</h2>
+                  <p style={{ color: "#5a6488", fontSize: 14.5, maxWidth: 520, margin: "0 auto", lineHeight: 1.6 }}>{(att && att.caveats && att.caveats[0]) || "Volunteer attendance appears here once the roll has been taken on at least one programme day."}</p>
+                </div>
+              : <React.Fragment>
+                <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "#7c4dff" }}>Turning up</div>
+                    <h2 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", margin: "8px 0 0" }}>Attendance over the last {att.days} programme day{att.days === 1 ? "" : "s"}</h2>
+                  </div>
+                  <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, padding: "6px 12px", borderRadius: 999, background: att.basis === "calendar" ? "rgba(47,158,68,0.12)" : "rgba(232,169,43,0.16)", color: att.basis === "calendar" ? "#2f9e44" : "#a07400" }}>
+                    <i className={"ph " + (att.basis === "calendar" ? "ph-calendar-check" : "ph-warning")} style={{ marginRight: 6 }}/>
+                    {att.basis === "calendar" ? "Against the programme calendar" : "Against days the roll was taken"}
+                  </span>
+                </div>
+                <div className="att-strip">
+                  {attStats.map((s, i) => (
+                    <div key={i} style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 16, padding: "18px 18px 16px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+                      <span style={{ width: 38, height: 38, borderRadius: 11, display: "grid", placeItems: "center", fontSize: 20, background: s.tintBg, color: s.iconColor }}><i className={"ph " + s.icon}/></span>
+                      <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 34, lineHeight: 1, letterSpacing: "-0.03em", marginTop: 14, fontVariantNumeric: "tabular-nums", color: "#0a1130" }}>{s.value}</div>
+                      <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#5a6488", marginTop: 8 }}>{s.label}</div>
+                      <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6", marginTop: 6, lineHeight: 1.4 }}>{s.foot}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="att-cols" style={{ marginTop: 26 }}>
+                  <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, padding: "20px 22px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+                    <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, margin: "0 0 4px" }}>Day by day</h3>
+                    <p style={{ color: "#8088a6", fontSize: 12.5, margin: "0 0 18px" }}>Volunteers present out of those on the roster that day. The pale band is who was expected.</p>
+                    <div className="att-chart">
+                      {attTrend.map((x, i) => (
+                        <div key={i} className="att-col" title={x.label + " — " + x.present + " of " + x.eligible + " (" + x.rate + "%)"}>
+                          <span className="att-colnum">{x.rate}%</span>
+                          <span className="att-track">
+                            <span className="att-ghost" style={{ height: Math.round((x.eligible / attPeak) * 100) + "%" }}/>
+                            <span className="att-fill" style={{ height: Math.round((x.eligible ? x.present / attPeak : 0) * 100) + "%", background: volTone(x.rate) }}/>
+                            <span className="att-late" style={{ height: Math.round((x.eligible ? x.late / attPeak : 0) * 100) + "%" }}/>
+                          </span>
+                          <span className="att-collabel">{x.label.replace(/ \d{4}$/, "")}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 14, fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6" }}>
+                      <span><i className="ph-fill ph-square" style={{ color: "#2f9e44", marginRight: 5 }}/>Present</span>
+                      <span><i className="ph-fill ph-square" style={{ color: "#e8a92b", marginRight: 5 }}/>Late (part of present)</span>
+                      <span><i className="ph-fill ph-square" style={{ color: "#e5e8ee", marginRight: 5 }}/>Expected</span>
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, padding: "20px 22px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+                    <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, margin: "0 0 4px" }}>How reliable</h3>
+                    <p style={{ color: "#8088a6", fontSize: 12.5, margin: "0 0 18px" }}>{attBandTotal} volunteer{attBandTotal === 1 ? "" : "s"} with at least three days on the board.</p>
+                    {attBandTotal === 0
+                      ? <div style={{ color: "#8088a6", fontSize: 13.5 }}>Nobody has been on the board long enough for a rate yet.</div>
+                      : attBands.map((b, i) => (
+                        <div key={i} style={{ marginBottom: 14 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                            <span style={{ fontSize: 13.5, fontWeight: 600, color: "#2a335c" }}>{b.label}<span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6", marginLeft: 7 }}>{b.min}%+</span></span>
+                            <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, fontWeight: 700, color: b.color }}>{b.count}</span>
+                          </div>
+                          <span style={{ display: "block", height: 9, borderRadius: 99, background: "#f1f3f7", overflow: "hidden" }}>
+                            <span style={{ display: "block", height: "100%", width: Math.round((b.count / Math.max(1, attBandTotal)) * 100) + "%", background: b.color, transition: "width .6s cubic-bezier(.2,.7,.2,1)" }}/>
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                <div className="att-cols" style={{ marginTop: 20 }}>
+                  <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, overflow: "hidden", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+                    <div style={{ padding: "18px 22px 12px" }}><h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, margin: 0 }}>By centre</h3></div>
+                    <div className="att-head">{["Centre", "Served", "Rate", "On time"].map((h, i) => <span key={i} style={{ textAlign: i ? "right" : "left" }}>{h}</span>)}</div>
+                    {attCentres.length === 0 ? <div style={{ padding: "18px 22px", color: "#8088a6", fontSize: 13.5 }}>No centre has a measurable rate yet.</div>
+                      : attCentres.map((r, i) => (
+                        <div key={i} className="att-row">
+                          <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                            <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 14.5, color: "#0a1130", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.centre}</b>
+                            <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6" }}>{r.people} volunteer{r.people === 1 ? "" : "s"} · {r.absences} absence{r.absences === 1 ? "" : "s"}</span>
+                          </span>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: "#5a6488", textAlign: "right" }}>{r.sessions}/{r.expected}</span>
+                          <span style={{ display: "flex", alignItems: "center", gap: 9, justifyContent: "flex-end" }}>
+                            <span style={{ display: "block", width: 74, height: 8, borderRadius: 99, background: "#f1f3f7", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: Math.min(100, r.rate || 0) + "%", background: volTone(r.rate || 0) }}/></span>
+                            <b style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, fontWeight: 700, color: volTone(r.rate || 0), minWidth: 38, textAlign: "right" }}>{r.rate == null ? "—" : r.rate + "%"}</b>
+                          </span>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: (r.onTimePct != null && r.onTimePct < 80) ? "#a07400" : "#5a6488", textAlign: "right" }}>{r.onTimePct == null ? "—" : r.onTimePct + "%"}</span>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, padding: "20px 22px 18px", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+                    <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, margin: "0 0 18px" }}>By role</h3>
+                    {attRoles.length === 0 ? <div style={{ color: "#8088a6", fontSize: 13.5 }}>No role has a measurable rate yet.</div>
+                      : attRoles.map(attRoleRow).map((r, i) => (
+                        <div key={i} style={{ marginBottom: 16 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7, gap: 10 }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 600, color: "#2a335c" }}><i className={"ph " + r.meta.icon} style={{ color: r.meta.color }}/>{r.meta.label}</span>
+                            <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: "#8088a6" }}>{r.sessions}/{r.expected} · <b style={{ color: volTone(r.rate || 0) }}>{r.rate == null ? "—" : r.rate + "%"}</b></span>
+                          </div>
+                          <span style={{ display: "block", height: 9, borderRadius: 99, background: "#f1f3f7", overflow: "hidden" }}>
+                            <span style={{ display: "block", height: "100%", width: Math.min(100, r.rate || 0) + "%", background: r.meta.color, transition: "width .6s cubic-bezier(.2,.7,.2,1)" }}/>
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                {(att.caveats || []).length > 0 && <div style={{ marginTop: 22, border: "1px solid #e5e8ee", borderLeft: "3px solid #7c4dff", borderRadius: 12, background: "#faf8ff", padding: "16px 20px" }}>
+                  <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "#6a3fc0", marginBottom: 10 }}>How to read this</div>
+                  <ul style={{ margin: 0, paddingLeft: 18, color: "#4a5378", fontSize: 13.5, lineHeight: 1.65 }}>
+                    {att.caveats.map((c, i) => <li key={i} style={{ marginBottom: 6 }}>{c}</li>)}
+                  </ul>
+                </div>}
+              </React.Fragment>}
+          </div>
+        </section>
+      </div>}
+
       {isVolunteers && <div className="view">
         <section style={{ padding: "40px 0 56px" }}>
           <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 28px" }}>
@@ -2033,6 +2189,17 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-map-pin" style={{ color: v.color }}/>{v.centre}</span>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-stack"/>{focus}</span>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-calendar-check"/>{v.sessions} sessions · joined Wk {v.sinceWk}</span>
+                      {v.window && v.window.expected > 0 && <span style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><i className="ph ph-chart-line-up"/>{v.window.sessions} of {v.window.expected} days</span>
+                          <b style={{ fontFamily: "'JetBrains Mono'", fontSize: 11.5, color: volTone(v.window.rate || 0) }}>{v.window.rate}%</b>
+                        </span>
+                        <span style={{ display: "block", height: 6, borderRadius: 99, background: "#f1f3f7", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: Math.min(100, v.window.rate || 0) + "%", background: volTone(v.window.rate || 0) }}/></span>
+                        <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6", display: "inline-flex", alignItems: "center", gap: 9 }}>
+                          {v.window.streak > 0 && <span style={{ color: "#e8654a" }}><i className="ph-fill ph-flame" style={{ marginRight: 3 }}/>{v.window.streak} in a row</span>}
+                          <span>{v.window.onTimePct == null ? "no days yet" : v.window.onTimePct + "% on time"}</span>
+                        </span>
+                      </span>}
                     </div>
                   </div>
                 ); })}
@@ -2068,7 +2235,21 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
 .role-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}@media(max-width:900px){.role-grid{grid-template-columns:1fr}}
 .vol-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
 .course-row{display:grid;grid-template-columns:120px 1fr auto;align-items:center;gap:14px;padding:13px 0;border-bottom:1px solid #eef0f4}.course-row:last-child{border-bottom:none}
-@media(max-width:560px){.course-row{grid-template-columns:1fr auto}.course-row>span:first-child{grid-column:1/-1}}`}</style>
+@media(max-width:560px){.course-row{grid-template-columns:1fr auto}.course-row>span:first-child{grid-column:1/-1}}
+.att-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}@media(max-width:1080px){.att-strip{grid-template-columns:repeat(3,1fr)}}@media(max-width:680px){.att-strip{grid-template-columns:repeat(2,1fr)}}@media(max-width:420px){.att-strip{grid-template-columns:1fr}}
+.att-cols{display:grid;grid-template-columns:1.35fr 1fr;gap:18px;align-items:start}@media(max-width:900px){.att-cols{grid-template-columns:1fr}}
+.att-chart{display:flex;align-items:flex-end;gap:6px;height:172px}
+.att-col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%}
+.att-colnum{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8088a6;line-height:1}
+.att-track{position:relative;flex:1;width:100%;max-width:34px;border-radius:6px 6px 0 0;overflow:hidden}
+.att-ghost,.att-fill,.att-late{position:absolute;left:0;right:0;bottom:0;border-radius:6px 6px 0 0}
+.att-ghost{background:#eef0f4}
+.att-late{background:#e8a92b}
+.att-collabel{font-family:'JetBrains Mono',monospace;font-size:9px;color:#8088a6;white-space:nowrap;line-height:1;transform:rotate(-40deg);transform-origin:top right;height:14px}
+.att-head,.att-row{display:grid;grid-template-columns:1.5fr 62px 150px 62px;align-items:center;gap:12px;padding:0 22px}
+.att-head{height:38px;background:#faf6ec;border-top:1px solid #e5e8ee;border-bottom:1px solid #e5e8ee;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:#8088a6}
+.att-row{min-height:58px;border-bottom:1px solid #eef0f4}.att-row:last-child{border-bottom:none}
+@media(max-width:620px){.att-head{display:none}.att-row{grid-template-columns:1fr auto;row-gap:8px;padding:14px 18px}}`}</style>
     </div>
   );
 }
