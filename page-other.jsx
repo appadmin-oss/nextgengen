@@ -4287,7 +4287,13 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
   const uploadBlob = async (blob) => {
     setBusy(true); setUErr("");
     try {
-      const file = new File([blob], "headshot.jpg", { type: "image/jpeg" });
+      /* Keep the REAL type. This used to relabel every blob as image/jpeg,
+         which on a picked HEIC produced a file claiming to be a JPEG while
+         holding HEIC bytes — it sailed past the format check and landed as an
+         image nothing could open, printed blank on the card. The converter
+         needs to see what it actually is in order to convert it. */
+      const type = (blob && blob.type) || "image/jpeg";
+      const file = blob instanceof File ? blob : new File([blob], "headshot.jpg", { type });
       /* Uploads when a cloud is configured, carries the image in the submission
          when one is not. It used to try the unsigned path, then the signed one,
          then give up with "photo uploads aren't set up on this server yet" —
@@ -4303,7 +4309,9 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
     } catch (e) {
       // Surface the real reason — a vague message can't be diagnosed or fixed.
       const msg = String((e && (e.message || e.code)) || "");
-      if (/photo_too_large/.test(msg))
+      if ((e && e.code) === "photo_format")
+        setUErr(photoFormatHelp(e));
+      else if (/photo_too_large/.test(msg))
         setUErr("That photo is too large to send. Take it again — the camera's 'medium' size setting works best.");
       else if (/network|failed to fetch|timeout/i.test(msg))
         setUErr("Couldn't reach the photo service — check the connection and try again.");

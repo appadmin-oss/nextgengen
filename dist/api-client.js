@@ -260,13 +260,32 @@
     });
   }
 
+  /* Formats the server's photo gate accepts. Kept here as well as in
+     image-tools because this is the last point before the bytes leave. */
+  const INLINE_OK_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  const typeSendable = (t) => INLINE_OK_TYPES.indexOf(String(t || '').toLowerCase()) !== -1;
+
   async function inlineImage(file) {
     let out = file;
+    let prep = null;
     try {
       const tools = await ensureImageTools();
-      const r = await tools.prepare(file, SHRINK.inline);
-      if (!r.skipped && r.blob) out = r.blob;
+      prep = await tools.prepare(file, SHRINK.inline);
+      if (!prep.skipped && prep.blob) out = prep.blob;
     } catch (_) { /* optimiser unavailable — send what we have */ }
+    /* Refuse HERE, with a name for the problem, rather than posting bytes the
+       server will answer `not_an_image` to.
+       An iPhone on "High Efficiency" saves HEIC. Chrome on Android cannot even
+       decode it, so the converter above hands the original straight back — and
+       the family got a flat rejection at the end of a five-step form, for a
+       photo that is perfectly good and one settings change away from working. */
+    if (!typeSendable(out && out.type)) {
+      const e = new Error('photo_format');
+      e.code = 'photo_format';
+      e.photoType = (out && out.type) || '';
+      e.undecodable = !!(prep && prep.reason === 'undecodable');
+      throw e;
+    }
     const dataUrl = await blobToDataUrl(out);
     // Refuse rather than provoke a 413 the server can never explain, since a
     // rejected body means no error message survives the round trip.

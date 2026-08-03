@@ -2326,6 +2326,83 @@ function unzipDocumentXml(buf) {
       return v ? { hasStream: !!v.srcObject, w: v.videoWidth, playing: !v.paused } : null;
     });
     ok('the admin photo capture also shows a live stream', pcCam && pcCam.hasStream && pcCam.w > 0 && pcCam.playing);
+
+    /* ── Why SOME photos were rejected in the public sign-up ───────────────
+     * ImageTools.prepare skipped the re-encode on size alone, and every skip
+     * handed back the ORIGINAL FILE. An iPhone on "High Efficiency" saves HEIC;
+     * a small HEIC headshot was under both thresholds, so it skipped, went into
+     * the submission as data:image/heic and the server's photo gate refused it
+     * as `not_an_image`. Large photos were re-encoded on the way past and went
+     * through fine — which is exactly why it only ever hit SOME photos.
+     *
+     * Modelled with real PNG bytes carrying a type the pipeline will not send.
+     * That is the HEIC-on-Safari case precisely: decodable, small, and in a
+     * format the server refuses. */
+    const prep = await pc.evaluate(async () => {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = '/vendor/image-tools.js'; s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+      // A 600x600 PNG: comfortably under maxPx 1000 and under the 350KB floor.
+      const c = document.createElement('canvas'); c.width = 600; c.height = 600;
+      const g = c.getContext('2d');
+      g.fillStyle = '#8d5524'; g.fillRect(0, 0, 600, 600);
+      g.fillStyle = '#3b2a1e'; g.beginPath(); g.arc(300, 260, 120, 0, Math.PI * 2); g.fill();
+      const png = await new Promise(r => c.toBlob(r, 'image/png'));
+      const opts = { maxPx: 1000, quality: 0.78 };
+      const asPng = await window.ImageTools.prepare(new File([png], 'p.png', { type: 'image/png' }), opts);
+      const asHeic = await window.ImageTools.prepare(new File([png], 'p.heic', { type: 'image/heic' }), opts);
+      // Bytes no browser can decode, in a format we cannot send: Chrome/Android
+      // with a HEIC straight off an iPhone.
+      const junk = new Uint8Array(9000); junk[0] = 1;
+      const undec = await window.ImageTools.prepare(new File([junk], 'p.heic', { type: 'image/heic' }), opts);
+      return {
+        pngSkipped: asPng.skipped, pngType: asPng.type, pngBytes: png.size,
+        heicSkipped: asHeic.skipped, heicType: asHeic.type, heicOk: asHeic.typeOk,
+        undecReason: undec.reason, undecTypeOk: undec.typeOk,
+        sendable: window.ImageTools.okTypes,
+      };
+    });
+    // An already-web-sized JPEG/PNG still skips — re-encoding costs a generation.
+    ok('a small photo in a sendable format is still passed through untouched',
+      prep.pngSkipped === true && prep.pngBytes < 350 * 1024);
+    // THE BUG.
+    ok('a small photo in a format the server refuses is converted, not passed through',
+      prep.heicSkipped === false && prep.heicType === 'image/jpeg' && prep.heicOk === true);
+    ok('…and bytes the browser cannot decode are named as such, not sent blind',
+      prep.undecReason === 'undecodable' && prep.undecTypeOk === false);
+    ok('the sendable list matches the server photo gate (jpeg/png/webp)',
+      JSON.stringify(prep.sendable.filter(t => t !== 'image/jpg')) === '["image/jpeg","image/png","image/webp"]');
+
+    /* The advice half. api/_lib/domain/selfreg.php is explicit that only a human
+     * may turn a family away — and then the browser blocked outright on a
+     * luminance mean and on FaceDetector, both of which read darker skin in poor
+     * light worst. A photo of a dark-skinned child in a dim room is the reading
+     * this check is least able to make and was most willing to refuse. */
+    const soft = await pc.evaluate(async () => {
+      const mk = (fill, w, h) => {
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        const g = c.getContext('2d'); g.fillStyle = fill; g.fillRect(0, 0, w, h);
+        // A little structure so the blur check has an edge to find.
+        g.fillStyle = 'rgba(255,255,255,0.10)';
+        for (let i = 0; i < h; i += 7) g.fillRect(0, i, w, 3);
+        return c;
+      };
+      const dark = await window.validateHeadshot(mk('#050505', 600, 750), 600, 750);
+      const flat = await window.validateHeadshot(mk('#7a5a3a', 600, 750), 600, 750);
+      const tiny = await window.validateHeadshot(mk('#7a5a3a', 200, 250), 200, 250);
+      return { dark, flat, tiny, floor: window.HEADSHOT_MIN_PX,
+               help: window.photoFormatHelp({ photoType: 'image/heic' }) };
+    });
+    ok('a very dark photo is advised on, not refused',
+      soft.dark.ok === true && typeof soft.dark.warn === 'string' && soft.dark.warn.length > 0);
+    ok('a normal photo passes with nothing to say', soft.flat.ok === true && !soft.flat.warn);
+    // The one thing that genuinely cannot make a printed card still stops.
+    ok('a photo too small for a printed ID is still refused, at the server\'s floor',
+      soft.tiny.ok === false && soft.floor === 320 && /320 pixels/.test(soft.tiny.reason));
+    ok('an unsendable format gets advice a family can act on, naming the format',
+      /HEIC/.test(soft.help) && /Most Compatible|JPEG/.test(soft.help));
     await camCtx2.close();
 
     /* ── The centre "giant model" hero upload ─────────────────────────────

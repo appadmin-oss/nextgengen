@@ -188,32 +188,68 @@
     return canvas;
   }
 
+  /* Formats the rest of the product will accept. Anything else HAS to be
+   * re-encoded here, whatever its size — see prepare(). */
+  var OK_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  function typeOk(t) { return OK_TYPES.indexOf(String(t || '').toLowerCase()) !== -1; }
+
   /* Shrink-and-encode for upload. Returns the original untouched when it is
-   * already small enough — re-encoding a already-web-sized image only costs a
-   * generation of JPEG quality. */
+   * already small enough AND already a format we accept — re-encoding an
+   * already-web-sized JPEG only costs a generation of quality.
+   *
+   * THAT SECOND CONDITION IS NOT AN OPTIMISATION. This function used to skip on
+   * size alone, and every skip handed back the ORIGINAL FILE. An iPhone set to
+   * "High Efficiency" saves HEIC; a 900px HEIC headshot is comfortably under
+   * both thresholds, so it skipped, went into the submission as
+   * `data:image/heic;base64,…`, and the server's photo gate refused it as
+   * `not_an_image`. Big photos were re-encoded to JPEG on the way past and went
+   * through fine — which is exactly why the failure looked random and only hit
+   * SOME photos.
+   *
+   * The two later escape hatches (`no_gain`, and `undecodable` above) hand back
+   * the original for the same reason and needed the same condition. `reason` is
+   * reported either way so the caller can refuse a format it cannot send rather
+   * than posting bytes the server will reject with a generic message. */
   async function prepare(file, opts) {
     opts = opts || {};
     var maxPx = opts.maxPx || 1600;
     var quality = opts.quality == null ? 0.85 : opts.quality;
     var floorBytes = opts.floorBytes == null ? 350 * 1024 : opts.floorBytes;
     var before = file.size || 0;
+    // A format we cannot send has to be converted no matter how small it is.
+    var mustConvert = !typeOk(file && file.type);
     var dec;
     try { dec = await decode(file); }
-    catch (e) { return { blob: file, width: 0, height: 0, before: before, after: before, skipped: true, reason: 'undecodable' }; }
+    catch (e) {
+      /* Nothing can be done with bytes this browser cannot decode — Chrome on
+       * Android cannot read HEIC at all. Say which it is, so the caller can
+       * give advice ("switch the camera to Most Compatible") instead of letting
+       * the server answer "not an image" three screens later. */
+      return { blob: file, width: 0, height: 0, before: before, after: before, skipped: true,
+               reason: 'undecodable', type: (file && file.type) || '', typeOk: !mustConvert };
+    }
     var long = Math.max(dec.width, dec.height);
-    if (long <= maxPx && before && before <= floorBytes) {
-      return { blob: file, width: dec.width, height: dec.height, before: before, after: before, skipped: true, reason: 'already_small' };
+    if (!mustConvert && long <= maxPx && before && before <= floorBytes) {
+      return { blob: file, width: dec.width, height: dec.height, before: before, after: before,
+               skipped: true, reason: 'already_small', type: file.type, typeOk: true };
     }
     var scale = Math.min(1, maxPx / long);
     var canvas = await resample(dec.source, dec.width * scale, dec.height * scale);
     if (opts.adjust) adjust(canvas, opts.adjust);
     var blob = await toBlob(canvas, 'image/jpeg', quality);
     if (dec.source.close) { try { dec.source.close(); } catch (e) {} }
-    // A pathological source can encode larger than it arrived; keep the smaller.
-    if (!blob || (before && blob.size >= before && long <= maxPx)) {
-      return { blob: file, width: dec.width, height: dec.height, before: before, after: before, skipped: true, reason: 'no_gain' };
+    // A pathological source can encode larger than it arrived; keep the smaller
+    // — but never in exchange for keeping a format we cannot send.
+    if (!blob || (!mustConvert && before && blob.size >= before && long <= maxPx)) {
+      if (blob && mustConvert) {
+        return { blob: blob, width: canvas.width, height: canvas.height, before: before,
+                 after: blob.size, skipped: false, type: 'image/jpeg', typeOk: true };
+      }
+      return { blob: file, width: dec.width, height: dec.height, before: before, after: before,
+               skipped: true, reason: 'no_gain', type: (file && file.type) || '', typeOk: !mustConvert };
     }
-    return { blob: blob, width: canvas.width, height: canvas.height, before: before, after: blob.size, skipped: false };
+    return { blob: blob, width: canvas.width, height: canvas.height, before: before, after: blob.size,
+             skipped: false, type: 'image/jpeg', typeOk: true };
   }
 
   /* Render the crop Cropper hands back, at a chosen output size, resampled
@@ -236,5 +272,7 @@
     ensurePica: ensurePica, ensureCropper: ensureCropper,
     decode: decode, resample: resample, adjust: adjust, toBlob: toBlob,
     prepare: prepare, renderCrop: renderCrop, canvasOf: canvasOf,
+    // Exposed so a caller can check a picked file before doing any work with it.
+    typeOk: typeOk, okTypes: OK_TYPES.slice(),
   };
 })(typeof window !== 'undefined' ? window : this);

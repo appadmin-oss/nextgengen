@@ -1295,14 +1295,42 @@ function cldEnhance(url) {
   return url && url.indexOf("/upload/") !== -1 ? url.replace("/upload/", "/upload/" + CLD_ENHANCE + "/") : url;
 }
 
-/* Client-side headshot validator — a fast, forgiving pre-check before we upload.
-   Rejects only clearly-unusable captures (too dark/blurry, no face, more than
-   one face, off-centre or tiny) with specific guidance; the server AI review
-   (ai_photo_review) is still the authoritative gate. `el` is a loaded <img> or
-   a <canvas>; w/h are its natural pixel dimensions. Returns {ok, reason}. */
+/* What to say when the browser cannot turn a picked file into something the
+   server accepts. Almost always an iPhone on "High Efficiency", which saves
+   HEIC — a format Chrome on Android cannot decode at all. One sentence of
+   advice beats a rejection the family cannot act on. */
+function photoFormatHelp(e) {
+  const t = String((e && e.photoType) || "").replace(/^image\//, "").toUpperCase();
+  const named = t && t !== "" ? "a " + t + " file" : "a format we can't read";
+  return "Your phone saved this as " + named + ". Use the in-app camera button instead, or switch the "
+    + "phone's camera format to “Most Compatible” / JPEG and pick it again.";
+}
+
+/* The floor below which a printed ID really is a blur. Matches PHOTO_MIN_PX in
+   api/_lib/domain/selfreg.php — the two ends used to disagree (360 here, a
+   message promising 400, 320 on the server), so a photo could be turned away
+   by the browser for a size the server would have accepted. */
+const HEADSHOT_MIN_PX = 320;
+
+/* Client-side headshot check — a fast pre-read before we upload.
+   IT ADVISES; IT DOES NOT DECIDE. api/_lib/domain/selfreg.php is explicit that
+   only a human may turn a family away, and then this function did exactly the
+   opposite: a mean-luminance floor and the browser's FaceDetector could block a
+   submission outright, with no override and nobody to appeal to. Both misread
+   darker skin in poor indoor light, which is most of this programme's intake on
+   most evenings — so the check was rejecting the children it was least able to
+   judge.
+   Now it returns {ok, reason} for the two things that genuinely cannot work
+   (unreadable, or smaller than a printable ID), and {ok:true, warn} for
+   everything else, which the caller shows as advice with a way past it. `el` is
+   a loaded <img> or a <canvas>; w/h are its natural pixel dimensions. */
 async function validateHeadshot(el, w, h) {
   try {
-    if (Math.min(w, h) < 360) return { ok: false, reason: "That image is too small — use a larger, clearer photo (at least 400px)." };
+    if (!w || !h) return { ok: false, reason: "Couldn't read that image — try a different photo." };
+    if (Math.min(w, h) < HEADSHOT_MIN_PX) {
+      return { ok: false, reason: "That image is too small for a printed ID — it needs to be at least "
+        + HEADSHOT_MIN_PX + " pixels on the short side. Use a larger photo." };
+    }
     const MAX = 480, s = Math.min(1, MAX / Math.max(w, h));
     const c = document.createElement("canvas"); c.width = Math.max(2, Math.round(w * s)); c.height = Math.max(2, Math.round(h * s));
     const ctx = c.getContext("2d"); ctx.drawImage(el, 0, 0, c.width, c.height);
@@ -1311,26 +1339,32 @@ async function validateHeadshot(el, w, h) {
     let sum = 0;
     for (let i = 0, p = 0; i < data.length; i += 4, p++) { const g = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]; gray[p] = g; sum += g; }
     const mean = sum / N;
-    if (mean < 32) return { ok: false, reason: "Too dark — face a window or add light, then retake." };
-    if (mean > 236) return { ok: false, reason: "Too bright/washed out — move out of direct glare and retake." };
+    /* Advice from here down. A luminance mean is a proxy for "can a person be
+       made out", and a bad one on darker skin indoors — the reading it is worst
+       at, and the one this programme produces most of. */
+    if (mean < 26) return { ok: true, warn: "This looks very dark. If you can, face a window or add light and retake — but you can send it as it is and the desk will decide." };
+    if (mean > 240) return { ok: true, warn: "This looks washed out by glare. Moving out of direct light usually fixes it — or send it and the desk will decide." };
     // Blur: variance of the Laplacian. Low variance = soft/out-of-focus.
     let ls = 0, lsq = 0, n = 0; const W = c.width;
     for (let y = 1; y < c.height - 1; y++) for (let x = 1; x < W - 1; x++) { const idx = y * W + x; const lap = 4 * gray[idx] - gray[idx - 1] - gray[idx + 1] - gray[idx - W] - gray[idx + W]; ls += lap; lsq += lap * lap; n++; }
     const lv = lsq / n - (ls / n) * (ls / n);
-    if (lv < 22) return { ok: false, reason: "Too blurry — hold steady, let the camera focus, then retake." };
-    // Face check where the browser supports it (Chrome/Android — our audience).
+    if (lv < 18) return { ok: true, warn: "This looks soft or out of focus. Hold steady, let the camera focus and retake — or send it and the desk will decide." };
+    /* FaceDetector, where the browser has it at all — it is behind a flag in
+       most builds, so this rarely runs. It stays ADVISORY on purpose: face
+       detection is measurably worse on darker skin, and a browser heuristic
+       must not be the thing that stops a child getting an ID card. */
     if (typeof window.FaceDetector === "function") {
       try {
         const faces = await new window.FaceDetector({ fastMode: true, maxDetectedFaces: 5 }).detect(el);
-        if (!faces || faces.length === 0) return { ok: false, reason: "No face detected — make sure the face is clearly visible and lit." };
-        if (faces.length > 1) return { ok: false, reason: "More than one face — a headshot should show just the one person." };
+        if (!faces || faces.length === 0) return { ok: true, warn: "We couldn't spot a face in this — that is often just the lighting. Check the face is visible, or send it and the desk will decide." };
+        if (faces.length > 1) return { ok: true, warn: "This looks like more than one person. A headshot should show just the one — retake if you can." };
         const b = faces[0].boundingBox, cx = (b.x + b.width / 2) / w, fh = b.height / h;
-        if (fh < 0.16) return { ok: false, reason: "Move closer — the face should fill more of the frame." };
-        if (cx < 0.18 || cx > 0.82) return { ok: false, reason: "Centre the face in the frame and retake." };
-      } catch (e) { /* detector hiccup — fall through, server AI still validates */ }
+        if (fh < 0.16) return { ok: true, warn: "The face is small in the frame. Moving closer makes a better card — or send it as it is." };
+        if (cx < 0.18 || cx > 0.82) return { ok: true, warn: "The face is off to one side. Centring it makes a better card — or send it as it is." };
+      } catch (e) { /* detector hiccup — nothing to report */ }
     }
     return { ok: true };
-  } catch (e) { return { ok: true }; } // never hard-block on a validator error
+  } catch (e) { return { ok: true }; } // never block on a validator error
 }
 
 // Load a URL into an <img> (CORS-enabled) for validation / re-upload.
@@ -1396,6 +1430,10 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   const [mode, setMode] = React.useState("idle"); // idle | camera | link
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
+  /* Advice, not a refusal. The pre-read's soft judgements land here with the
+     blob they are about, so the operator can act on them or send anyway —
+     which is the difference between guidance and a locked door. */
+  const [advice, setAdvice] = React.useState(null);   // { text, send: () => void }
   const [linkVal, setLinkVal] = React.useState("");
   const [zoom, setZoom] = React.useState(false);  // full-screen photo viewer
   const [shot, setShot] = React.useState(null);   // captured still awaiting confirm: {url, blob}
@@ -1450,9 +1488,11 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   const flipCamera = () => startCamera(facing === "user" ? "environment" : "user");
 
   const uploadBlob = async (blob, name) => {
-    setBusy(true); setErr("");
+    setBusy(true); setErr(""); setAdvice(null);
     try {
-      const file = blob instanceof File ? blob : new File([blob], name || "headshot.jpg", { type: "image/jpeg" });
+      // A real File keeps its own type; only a canvas blob needs a name put on
+      // it, and that one genuinely is a JPEG.
+      const file = blob instanceof File ? blob : new File([blob], name || "headshot.jpg", { type: (blob && blob.type) || "image/jpeg" });
       /* Uploads when a cloud is configured, hands the image back inline when one
          is not — so "paste an image link instead" stops being the only option on
          a site whose Cloudinary keys were never set. The server accepts either
@@ -1465,7 +1505,8 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     } catch (e) {
       const code = e.code || "";
       setErr(
-        /photo_too_large/.test(e.message || "") ? "That photo is too large to send — use your camera's 'medium' size, or a smaller file."
+        code === "photo_format" ? photoFormatHelp(e)
+        : /photo_too_large/.test(e.message || "") ? "That photo is too large to send — use your camera's 'medium' size, or a smaller file."
         : code === "csrf_failed" ? "Your session expired — refresh the page, then try the photo again."
         : code === "rate_limited" ? "Too many tries in a row — wait a moment and try again."
         : /network/.test(e.message || "") ? "Network hiccup sending the photo — check the connection and try again."
@@ -1491,12 +1532,17 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     if (facing !== "environment") { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
     ctx.drawImage(v, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    setBusy(true); setErr("");
+    setBusy(true); setErr(""); setAdvice(null);
     const check = await validateHeadshot(c, c.width, c.height);
     setBusy(false);
     if (!check.ok) { setErr(check.reason); return; }   // stay live so they can reframe
     const blob = await canvasToBlob(c, "image/jpeg", 0.9);
     if (!blob) { setErr("Couldn't capture that frame — try again."); return; }
+    /* The still is frozen for review either way. A warning rides along with it
+       rather than sending them back to the live view, because the operator is
+       about to look at the photo themselves and is a better judge than the
+       luminance mean. */
+    if (check.warn) setAdvice({ text: check.warn });
     setShot({ url: c.toDataURL("image/jpeg", 0.9), blob });
   };
   // Accept the reviewed still → upload it. On success uploadBlob stops the
@@ -1505,22 +1551,33 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   const closeCamera = () => { stop(); setShot(null); setMode("idle"); setErr(""); };
   React.useEffect(() => { if (mode !== "camera") setMultiCam(false); }, [mode]);
 
-  // Upload a chosen file — validate it first, then send.
+  /* Upload a chosen file — read it first, then send.
+     A format the browser cannot decode is NOT a dead end here: the file may
+     still be a HEIC that a configured cloud would accept, and the pre-read is
+     advice anyway. So a decode failure hands the file to uploadBlob and lets
+     the pipeline give the specific answer, instead of "try a different photo"
+     for a photo that is fine. */
   const uploadPicked = async (file) => {
-    setBusy(true); setErr("");
+    setBusy(true); setErr(""); setAdvice(null);
+    let check = { ok: true };
+    let url = "";
     try {
-      const im = await loadImageEl(URL.createObjectURL(file));
-      const check = await validateHeadshot(im, im.naturalWidth, im.naturalHeight);
-      if (!check.ok) { setErr(check.reason); setBusy(false); return; }
-      uploadBlob(file, file.name);
-    } catch (e) { setErr("Couldn't read that image — try a different photo."); setBusy(false); }
+      url = URL.createObjectURL(file);
+      const im = await loadImageEl(url);
+      check = await validateHeadshot(im, im.naturalWidth, im.naturalHeight);
+    } catch (e) { /* undecodable here — let the upload pipeline name the reason */ }
+    finally { if (url) { try { URL.revokeObjectURL(url); } catch (_) {} } }
+    if (!check.ok) { setErr(check.reason); setBusy(false); return; }
+    if (check.warn) setAdvice({ text: check.warn, send: () => uploadBlob(file, file.name) });
+    else uploadBlob(file, file.name);
+    if (check.warn) setBusy(false);
   };
 
   // Paste-a-link — load it, validate it, and RE-UPLOAD to Cloudinary so it's a
   // real, enhanced, same-origin-safe headshot (never a raw foreign URL).
   const useLink = async () => {
     const url = linkVal.trim(); if (!url) return;
-    setBusy(true); setErr("");
+    setBusy(true); setErr(""); setAdvice(null);
     try {
       const im = await loadImageEl(url);
       const check = await validateHeadshot(im, im.naturalWidth, im.naturalHeight);
@@ -1529,6 +1586,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
       c.getContext("2d").drawImage(im, 0, 0);
       const blob = await canvasToBlob(c, "image/jpeg", 0.92);
       if (!blob) throw new Error("encode");
+      if (check.warn) { setAdvice({ text: check.warn, send: () => { setLinkVal(""); return uploadBlob(blob, "headshot.jpg"); } }); setBusy(false); return; }
       await uploadBlob(blob, "headshot.jpg");
       setLinkVal("");
     } catch (e) {
@@ -1552,11 +1610,14 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
           {!shot && <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: 12, fontSize: 12.5, color: "#fff", background: "linear-gradient(transparent, rgba(0,0,0,0.65))", textAlign: "center" }}>Line your face up with the oval, then press Capture.</div>}
         </div>
         {err && <div style={{ fontSize: 13, color: "#ffb0b0", maxWidth: 360, textAlign: "center", lineHeight: 1.4 }}>{err}</div>}
+        {/* Advice, in a colour that is not a rejection. The photo stays and
+            "Use photo" still works — that is the whole point. */}
+        {advice && !err && <div style={{ fontSize: 13, color: "#ffe0ad", maxWidth: 360, textAlign: "center", lineHeight: 1.45, padding: "9px 12px", borderRadius: 10, background: "rgba(245,176,38,0.14)", border: "1px solid rgba(245,176,38,0.34)" }}>{advice.text}</div>}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
           {shot ? (
             <>
               <button type="button" className="btn btn-primary" disabled={busy} onClick={acceptShot}>{busy ? "Saving…" : "✓ Use photo"}</button>
-              <button type="button" className="btn" disabled={busy} onClick={() => { setShot(null); setErr(""); }} style={{ color: "#fff", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)" }}>↺ Retake</button>
+              <button type="button" className="btn" disabled={busy} onClick={() => { setShot(null); setErr(""); setAdvice(null); }} style={{ color: "#fff", background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.3)" }}>↺ Retake</button>
             </>
           ) : (
             <>
@@ -1598,6 +1659,19 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
         <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)", marginTop: 8 }}>
           {err ? <span style={{ color: "var(--coral)" }}>{err}</span> : (label + " — the site takes the picture; upload or link are optional. Tap the photo to view it larger.")}
         </div>
+        {/* An uploaded or linked photo the pre-read is unsure about. It has NOT
+            been refused: the operator is told what looks off and can send it
+            anyway, which is the difference between advice and a locked door. */}
+        {advice && advice.send && !err && (
+          <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: "rgba(245,176,38,0.12)", border: "1px solid rgba(245,176,38,0.35)" }}>
+            <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-700,#2a335c)" }}>{advice.text}</div>
+            <div style={{ display: "flex", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
+              <button type="button" className="btn btn-sm btn-primary" disabled={busy}
+                onClick={() => { const go = advice.send; setAdvice(null); go(); }}>{busy ? "Sending…" : "Use it anyway"}</button>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setAdvice(null)}>Pick another</button>
+            </div>
+          </div>
+        )}
       </div>
       {zoom && value && <ImageLightbox url={value} alt={label} onClose={() => setZoom(false)}/>}
     </div>
@@ -1675,13 +1749,22 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
     if (!target.subjectId) { setErr("Can't replace here."); return; }
     setBusy("replace"); setErr("");
     try {
-      const im = await loadImageEl(URL.createObjectURL(file));
-      const check = await validateHeadshot(im, im.naturalWidth, im.naturalHeight);
+      /* Same rule as the public taker: the pre-read may refuse an image that
+         cannot make a printed card, and only advises about the rest. An admin
+         choosing a dim photo on purpose is making a decision, not a mistake. */
+      let check = { ok: true };
+      try {
+        const im = await loadImageEl(URL.createObjectURL(file));
+        check = await validateHeadshot(im, im.naturalWidth, im.naturalHeight);
+      } catch (_) { /* undecodable — let the upload pipeline name the reason */ }
       if (!check.ok) { setErr(check.reason); setBusy(""); return; }
       const up = await NGGApi.uploadOrInline(file, "headshot");
       const r = await NGGApi.admin.photos.replace(target.subjectType, target.subjectId, up.url);
       onSaved && onSaved(r.editedUrl || up.url); onClose && onClose();
-    } catch (e) { setErr("Couldn't replace — " + (e.code || e.message)); setBusy(""); }
+    } catch (e) {
+      setErr(e.code === "photo_format" ? photoFormatHelp(e) : "Couldn't replace — " + (e.code || e.message));
+      setBusy("");
+    }
   };
 
   /* ── Studio: the same edits, done on the device ──────────────────────────
@@ -2186,4 +2269,7 @@ Object.assign(window, {
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart, inkOn,
   loadVendor, VENDOR_LIBS, nggPublishScope, useNggScope,
   Uploader, A11ySettingsPanel, A11yNavButton, PhotoEditor, PhotoCapture, ImageLightbox, SignaturePad,
+  // Exported for the browser tests: both decide whether a family's photo is
+  // accepted, and neither is reachable through a rendered component alone.
+  validateHeadshot, photoFormatHelp, HEADSHOT_MIN_PX,
 });
