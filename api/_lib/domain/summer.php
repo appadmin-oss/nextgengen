@@ -846,6 +846,11 @@ function admin_summer_absence_alert(array $p): array {
 }
 
 // ── Attendance analytics (Phase 2 dashboard) ────────────────────────────────
+/** How many of the most recent open days each child's pattern strip shows. */
+const ATT_PATTERN_DAYS = 20;
+/** Consecutive open days missed before "attends badly" becomes "has stopped". */
+const ATT_STOPPED_RUN = 3;
+
 function admin_summer_attendance(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
@@ -953,16 +958,58 @@ function admin_summer_attendance(array $p): array {
     $todayBy = [];
     foreach (db_all("SELECT studentId FROM attendance WHERE date = ?", [$today]) as $r) $todayBy[(string)$r['studentId']] = true;
     $stateBy = policy_states_for(array_map(fn($s) => (string)$s['studentId'], $students), 'student');
+
+    /* THE SHAPE OF THE ABSENCE, NOT JUST HOW MUCH OF IT.
+     *
+     * A rate hides the difference between the two children a coordinator most
+     * needs to tell apart: one who comes three days a week, every week, and one
+     * who came every day for a fortnight and then stopped. Both land on 60%,
+     * one needs a timetable conversation and the other has left the programme
+     * — and the register showed the same number for each, with a "last seen"
+     * date the reader had to do arithmetic on to notice.
+     *
+     * So each child carries the last few open days as a pattern, and the run of
+     * open days they have missed at the end of it. `missedRun` is the number a
+     * coordinator can act on directly: "missed the last six days" needs no
+     * subtraction and no calendar. */
+    $patternDays = array_slice($windowDays ?: [], -ATT_PATTERN_DAYS);
+    $marks = [];
+    if ($patternDays) {
+        $pFrom = $patternDays[0]; $pTo = $patternDays[count($patternDays) - 1];
+        foreach (db_all("SELECT a.studentId sid, a.date d, a.status st, a.halfDay hd
+                         FROM attendance a JOIN summer_students s ON s.studentId = a.studentId
+                         WHERE s.cohortId = ? AND a.date >= ? AND a.date <= ?", [$cid, $pFrom, $pTo]) as $r) {
+            $marks[(string)$r['sid']][(string)$r['d']] =
+                ((int)($r['hd'] ?? 0) === 1) ? 'half' : (((string)$r['st'] === 'late') ? 'late' : 'in');
+        }
+    }
+    $patternOf = function (string $id) use ($patternDays, $marks) {
+        $mine = $marks[$id] ?? [];
+        $out = []; $run = 0; $ended = false;
+        foreach ($patternDays as $d) $out[] = $mine[$d] ?? 'out';
+        // Counted from the most recent day backwards: the run that is still open.
+        for ($i = count($out) - 1; $i >= 0; $i--) {
+            if ($out[$i] === 'out') { if (!$ended) $run++; }
+            else { $ended = true; break; }
+        }
+        return ['pattern' => $out, 'missedRun' => $run];
+    };
     foreach ($students as $s) {
         $id = (string)$s['studentId'];
         $cnt = $presentBy[$id] ?? 0;
         // A half-day is half an attendance (§ Musing Period), so it must not
         // score the same as a full day in the rate the coordinator reads.
         $credited = max(0, $cnt - ($halfBy[$id] ?? 0) * 0.5);
+        $pat = $patternOf($id);
         $roster[] = [
             'studentId' => $id, 'fullName' => $s['fullName'], 'handle' => $s['handle'],
             'track' => $s['track'], 'centre' => $s['centre'], 'present' => $cnt,
             'halfDays' => $halfBy[$id] ?? 0, 'lates' => $lateBy[$id] ?? 0,
+            'pattern' => $pat['pattern'], 'missedRun' => $pat['missedRun'],
+            /* Came at some point and has since stopped. Distinct from "never
+               appeared" (never started) and from a low rate (may still be
+               coming). This is the one a coordinator phones home about. */
+            'stopped' => $cnt > 0 && $pat['missedRun'] >= ATT_STOPPED_RUN,
             'lastSeen' => $lastBy[$id] ?? '', 'presentToday' => isset($todayBy[$id]),
             'rate' => $sessionDays ? (int)round(min($credited, $sessionDays) / $sessionDays * 100) : 0,
             'state' => $stateBy[$id]['state'] ?? 'clear',
@@ -992,6 +1039,11 @@ function admin_summer_attendance(array $p): array {
         'absent'  => count(array_filter($roster, fn($r) => !$r['presentToday'])),
         'atrisk'  => count($atRiskAll),
         'never'   => count(array_filter($roster, fn($r) => ($r['present'] ?? 0) === 0)),
+        /* Came, then stopped. It hid inside "under 50%" alongside every child
+           who merely attends three days a week — and those two need opposite
+           responses, so one count for both was one count too few. */
+        'stopped' => count(array_filter($roster, fn($r) => !empty($r['stopped']))),
+        'stopped' => count(array_filter($roster, fn($r) => !empty($r['stopped']))),
         'late'    => count(array_filter($roster, fn($r) => ($r['lates'] ?? 0) > 0)),
         'half'    => count(array_filter($roster, fn($r) => ($r['halfDays'] ?? 0) > 0)),
         'flagged' => count(array_filter($roster, fn($r) => ($r['state'] ?? 'clear') !== 'clear')),
@@ -1017,6 +1069,8 @@ function admin_summer_attendance(array $p): array {
             case 'present': return !empty($r['presentToday']);
             case 'absent':  return empty($r['presentToday']);
             case 'never':   return ($r['present'] ?? 0) === 0;
+            case 'stopped': return !empty($r['stopped']);
+            case 'stopped': return !empty($r['stopped']);
             case 'atrisk':  return ($r['rate'] ?? 0) < 50;
             case 'late':    return ($r['lates'] ?? 0) > 0;
             case 'half':    return ($r['halfDays'] ?? 0) > 0;

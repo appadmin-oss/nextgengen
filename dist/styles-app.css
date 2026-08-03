@@ -5391,3 +5391,14 @@ body.own-chrome .fab-top { display: none; }
 .att-table tbody tr[data-risk="1"] td:first-child { box-shadow: inset 3px 0 0 var(--coral, #d0663c); }
 .att-chip.is-empty { opacity: .45; cursor: not-allowed; }
 .att-chip.is-empty:hover { border-color: var(--line, #e6e2d6); }
+
+/* ── The shape of the absence ─────────────────────────────────────────────────
+   A rate cannot tell a child who comes three days a week from one who came
+   every day and then stopped: both land on 60% and need opposite responses. */
+.att-pat { display: inline-flex; gap: 2px; align-items: center; }
+.att-pat i { width: 6px; height: 14px; border-radius: 2px; background: #e3e6ee; display: block; }
+.att-pat i[data-d="in"]   { background: var(--lime-ink, #6e9c1d); }
+.att-pat i[data-d="late"] { background: var(--gold-500, #f5b026); }
+.att-pat i[data-d="half"] { background: var(--gold-500, #f5b026); opacity: .5; }
+.att-pat i[data-d="out"]  { background: #e3e6ee; }
+.att-stopped { font-size: 10.5px; color: var(--coral, #d0663c); font-weight: 600; margin-top: 3px; }

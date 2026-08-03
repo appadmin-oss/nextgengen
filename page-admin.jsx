@@ -8859,10 +8859,39 @@ function PolicyPersonModal({ data, onClose, onChange }) {
    one had anybody in it was to pick it — and "never attended" did not exist at
    all: a child who had not appeared once was hidden inside "under 50%" with
    everybody who was merely struggling. */
+/* The last few open days as a shape.
+   A rate cannot tell a child who comes three days a week, every week, from one
+   who came every day for a fortnight and then stopped — both land on 60%, and
+   they need opposite responses. The strip shows which is which without the
+   reader reconstructing it from a "last seen" date. */
+function AttPattern({ pattern, missedRun }) {
+  const cells = pattern || [];
+  if (!cells.length) return <span className="mono" style={{ color: "var(--ink-500)", fontSize: 11 }}>—</span>;
+  const title = cells.length + " most recent open days, oldest first"
+    + (missedRun ? " · missed the last " + missedRun : "");
+  return (
+    <span className="att-pat" title={title} aria-label={title}>
+      {cells.map((c, i) => <i key={i} data-d={c}/>)}
+    </span>
+  );
+}
+
+/** "Missed the last 6 days" needs no arithmetic; a date does. */
+function attMissedLabel(r) {
+  const n = r.missedRun || 0;
+  if (!n) return "";
+  if ((r.present || 0) === 0) return "never came";
+  return "missed the last " + n + (n === 1 ? " day" : " days");
+}
+
 const ATT_SCENARIOS = [
   { key: "all", label: "Everyone", hint: "the whole register" },
   { key: "absent", label: "Absent today", hint: "no check-in yet today" },
   { key: "present", label: "In today", hint: "checked in today" },
+  /* "Came then stopped" and "never came" and "attends badly" are three
+     different problems that all used to be one number. Ordered so the two that
+     need a phone call today sit before the one that needs a timetable talk. */
+  { key: "stopped", label: "Stopped coming", hint: "was attending, has missed the last few open days", tone: "bad" },
   { key: "never", label: "Never attended", hint: "not one check-in in this window", tone: "bad" },
   { key: "atrisk", label: "Under 50%", hint: "at risk on attendance", tone: "bad" },
   { key: "late", label: "Late arrivals", hint: "has arrived late", tone: "warn" },
@@ -9245,7 +9274,9 @@ function SummerAttendance() {
               <th>Volunteer</th><th>Role</th>
               <th>Days in<span className="att-th-sub">of their own open days</span></th>
               <th>Rate<span className="att-th-sub">{win.ranged ? "in this range" : "since they joined"}</span></th>
-              <th>On time</th><th>Streak</th><th>Last seen</th><th>Today</th>
+              <th>On time</th><th>Streak</th>
+              <th>Pattern<span className="att-th-sub">oldest → newest</span></th>
+              <th>Last seen</th><th>Today</th>
             </tr></thead>
             <tbody>{volRoster.map(r => (
               <tr key={r.volunteerId}>
@@ -9259,6 +9290,8 @@ function SummerAttendance() {
                   : <div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono">{r.rate}%</span></div>}</td>
                 <td className="mono" style={{ color: (r.onTimePct != null && r.onTimePct < 80) ? "var(--gold-700,#7a5600)" : undefined }}>{r.onTimePct == null ? "—" : r.onTimePct + "%"}</td>
                 <td className="mono">{r.streak ? r.streak : "—"}</td>
+                <td><AttPattern pattern={r.pattern} missedRun={r.missedRun}/>
+                  {r.stopped ? <div className="mono att-stopped">{attMissedLabel(r)}</div> : null}</td>
                 <td className="mono">{r.lastSeen || "—"}</td>
                 <td>{r.presentToday ? <span className="chip status-published">✓</span> : <span className="chip status-draft">—</span>}</td>
               </tr>
@@ -9286,6 +9319,7 @@ function SummerAttendance() {
           <th>Days in<span className="att-th-sub">of {a.sessionDays} open</span></th>
           <th>Rate<span className="att-th-sub">{win.ranged ? "in this range" : "this term"}</span></th>
           <th>Late</th><th>Standing</th>
+          <th>Pattern<span className="att-th-sub">oldest → newest</span></th>
           <th>Last seen</th><th>Today</th>
         </tr></thead>
         <tbody>{roster.map(r => (
@@ -9301,6 +9335,9 @@ function SummerAttendance() {
             <td style={{ minWidth: 120 }}><div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono">{r.rate}%</span></div></td>
             <td className="mono">{r.lates ? r.lates : "—"}</td>
             <td>{r.state && r.state !== "clear" ? <PolicyStateChip state={r.state}/> : <span className="mono" style={{ color: "var(--ink-500)" }}>—</span>}</td>
+            <td><AttPattern pattern={r.pattern} missedRun={r.missedRun}/>
+              {r.stopped ? <div className="mono att-stopped">{attMissedLabel(r)}</div>
+                : r.missedRun ? <div className="mono" style={{ fontSize: 10.5, color: "var(--ink-500)" }}>{attMissedLabel(r)}</div> : null}</td>
             <td className="mono">{r.lastSeen || <span style={{ color: "var(--coral)" }}>never</span>}</td>
             <td>{r.presentToday ? <span className="chip status-published">✓</span> : <span className="chip status-draft">—</span>}</td>
           </tr>

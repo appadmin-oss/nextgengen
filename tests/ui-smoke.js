@@ -826,6 +826,7 @@ function unzipDocumentXml(buf) {
         case 'present': return !!r.presentToday;
         case 'absent':  return !r.presentToday;
         case 'never':   return (r.present || 0) === 0;
+        case 'stopped': return !!r.stopped;
         case 'atrisk':  return (r.rate || 0) < 50;
         case 'late':    return (r.lates || 0) > 0;
         case 'half':    return (r.halfDays || 0) > 0;
@@ -855,10 +856,18 @@ function unzipDocumentXml(buf) {
       keys.forEach(function (x) { k[x] = x === 'all' ? rows.length : rows.filter(function (r) { return ATT_KEEP(r, x); }).length; });
       return k;
     };
+    /* Two children on the SAME rate with opposite problems — the case a rate
+       cannot express. Dupe Dara comes three days a week, every week; Bode Beta
+       came every day and then stopped. Both 30%. */
     var ATT_KIDS = [
-      { studentId: 'SUM-1', fullName: 'Amina Alpha', track: 'Music', centre: 'Ijaiye', present: 10, halfDays: 0, lates: 0, lastSeen: TODAY2, presentToday: true,  rate: 100, state: 'clear',   absences: 0 },
-      { studentId: 'SUM-2', fullName: 'Bode Beta',   track: 'Tech',  centre: 'Egbeda', present: 4,  halfDays: 2, lates: 3, lastSeen: '2026-07-14', presentToday: false, rate: 30,  state: 'dormant', absences: 2 },
-      { studentId: 'SUM-3', fullName: 'Chidi Gamma', track: 'Arts',  centre: 'Ijaiye', present: 9,  halfDays: 0, lates: 1, lastSeen: '2026-07-16', presentToday: false, rate: 90,  state: 'warned',  absences: 1 },
+      { studentId: 'SUM-1', fullName: 'Amina Alpha', track: 'Music', centre: 'Ijaiye', present: 10, halfDays: 0, lates: 0, lastSeen: TODAY2, presentToday: true,  rate: 100, state: 'clear',   absences: 0,
+        pattern: ['in','in','in','in','in','in','in','in','in','in'], missedRun: 0, stopped: false },
+      { studentId: 'SUM-2', fullName: 'Bode Beta',   track: 'Tech',  centre: 'Egbeda', present: 4,  halfDays: 2, lates: 3, lastSeen: '2026-07-14', presentToday: false, rate: 30,  state: 'dormant', absences: 2,
+        pattern: ['in','in','late','half','out','out','out','out','out','out'], missedRun: 6, stopped: true },
+      { studentId: 'SUM-3', fullName: 'Chidi Gamma', track: 'Arts',  centre: 'Ijaiye', present: 9,  halfDays: 0, lates: 1, lastSeen: '2026-07-16', presentToday: false, rate: 90,  state: 'warned',  absences: 1,
+        pattern: ['in','in','in','in','in','in','in','in','late','out'], missedRun: 1, stopped: false },
+      { studentId: 'SUM-4', fullName: 'Dupe Dara',   track: 'Tech',  centre: 'Egbeda', present: 3,  halfDays: 0, lates: 0, lastSeen: TODAY2, presentToday: true, rate: 30, state: 'clear', absences: 0,
+        pattern: ['in','out','out','in','out','out','in','out','out','in'], missedRun: 0, stopped: false },
     ];
     window.NGGApi.admin.summer = {
       attendance: function (cohortId, o) { window.__attOpts = o || {}; return Promise.resolve({ attendance: {
@@ -2243,7 +2252,7 @@ function unzipDocumentXml(buf) {
     // Filters have to actually narrow the table, and hold across a search.
     const rows = () => att.locator('.admin-table tbody tr').count();
     const chip = (label) => att.locator('.att-chip', { hasText: label }).first();
-    ok('…lists the whole roster by default (' + await rows() + ')', await rows() === 3);
+    ok('…lists the whole roster by default (' + await rows() + ')', await rows() === 4);
 
     /* THE SCENARIOS. These were one unlabelled dropdown, so the only way to
        learn whether a filter held anybody was to choose it — and on a capped
@@ -2252,8 +2261,9 @@ function unzipDocumentXml(buf) {
        no check-in was hidden inside "under 50%" with everyone merely
        struggling. */
     ok('…offers the situations a coordinator walks in with, each with its count',
-      await att.locator('.att-chip').count() === 9
-      && /Never attended/.test(attBody) && /Half days/.test(attBody) && /Every day/.test(attBody));
+      await att.locator('.att-chip').count() === 10
+      && /Stopped coming/.test(attBody) && /Never attended/.test(attBody)
+      && /Half days/.test(attBody) && /Every day/.test(attBody));
     ok('…and the counts come from the whole register, not the drawn page',
       (await chip('Absent today').innerText()).indexOf('2') !== -1
       && (await chip('Late arrivals').innerText()).indexOf('2') !== -1);
@@ -2276,8 +2286,42 @@ function unzipDocumentXml(buf) {
     ok('…and a child at risk is visible while scanning, not only once read',
       zeroCell && zeroCell.risk === '1');
 
+    /* THE CASE A RATE CANNOT EXPRESS. Bode Beta came every day and stopped;
+       Dupe Dara comes three days a week, every week. Both are on 30%, and they
+       need opposite responses — a phone call home versus a timetable
+       conversation. The register showed one number for both. */
+    const sameRate = await att.evaluate(() => {
+      const pick = (name) => {
+        const tr = Array.from(document.querySelectorAll('.att-table tbody tr')).find(r => new RegExp(name).test(r.innerText));
+        if (!tr) return null;
+        return {
+          text: tr.innerText.replace(/\s+/g, ' '),
+          days: Array.from(tr.querySelectorAll('.att-pat i')).map(i => i.getAttribute('data-d')).join(''),
+        };
+      };
+      return { bode: pick('Bode Beta'), dupe: pick('Dupe Dara') };
+    });
+    ok('two children on the same rate are told apart by their pattern',
+      sameRate.bode && sameRate.dupe
+      && /30%/.test(sameRate.bode.text) && /30%/.test(sameRate.dupe.text)
+      && sameRate.bode.days !== sameRate.dupe.days
+      && /outoutoutoutoutout$/.test(sameRate.bode.days)
+      && /in$/.test(sameRate.dupe.days));
+    ok('…and the one who stopped says so in words, with no date arithmetic',
+      /missed the last 6 days/.test(sameRate.bode.text)
+      && !/missed the last/.test(sameRate.dupe.text));
+
+    await chip('Stopped coming').click();
+    await att.waitForTimeout(600);
+    ok('…and "stopped coming" is its own situation, not a slice of "under 50%"',
+      await rows() === 1
+      && /Bode Beta/.test(await att.evaluate(() => document.body.innerText))
+      && (await att.evaluate(() => (window.__attOpts || {}).scenario)) === 'stopped');
+    await chip('Everyone').click();
+    await att.waitForTimeout(600);
+
     await chip('Absent today').click();
-    await att.waitForTimeout(140);
+    await att.waitForTimeout(600);
     ok('…filters to absent-today', await rows() === 2);
     /* The search is debounced and then SENT to the server, so these waits have
        to clear the debounce plus the round trip — a 140ms wait passed only while

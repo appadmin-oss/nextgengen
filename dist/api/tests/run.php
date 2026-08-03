@@ -1844,6 +1844,54 @@ chk('…and the centre picker gets the catalogue, not a list narrowed to the cen
         && ($one['rosterCentre'] ?? '') === 'Pickerville A';
 })());
 
+chk('a child who stopped coming is told apart from one who attends badly', (function () use ($SU) {
+    /* THE DISTINCTION A RATE CANNOT MAKE. One child comes three days a week,
+     * every week; another came every day for a fortnight and then stopped. Both
+     * land on the same rate, and they need opposite responses — a phone call
+     * home versus a timetable conversation. The register had one number for
+     * both, and a "last seen" date the reader had to do arithmetic on. */
+    $days = programme_days_elapsed();
+    if (count($days) < 8) return false;          // the calendar is on here; see above
+    $c = summer_ensure_cohort(); $cid = (string)$c['cohortId'];
+    foreach (['ATT-STOP', 'ATT-PART'] as $id) {
+        db_exec('DELETE FROM attendance WHERE studentId = ?', [$id]);
+        db_exec('DELETE FROM summer_students WHERE studentId = ?', [$id]);
+        db_insert('summer_students', ['studentId' => $id, 'cohortId' => $cid, 'fullName' => 'Case ' . $id,
+            'handle' => strtolower($id), 'track' => 'Tech', 'centre' => 'Egbeda', 'status' => 'active',
+            'regStatus' => 'verified']);
+    }
+    $mark = function (string $id, string $d) use ($cid, $SU) {
+        db_insert('attendance', ['cohortId' => $cid, 'studentId' => $id, 'token' => '', 'date' => $d,
+            'checkInAt' => $d . 'T08:00:00Z', 'method' => 'qr', 'byId' => $SU, 'device' => '',
+            'status' => 'present', 'lateMinutes' => 0, 'redline' => 0, 'halfDay' => 0, 'createdAt' => now_iso()]);
+    };
+    $n = count($days);
+    // Stopped: the first four open days, nothing since.
+    foreach (array_slice($days, 0, 4) as $d) $mark('ATT-STOP', $d);
+    // Part-time: every other open day, INCLUDING the most recent one.
+    for ($i = $n - 1; $i >= 0 && $i > $n - 9; $i -= 2) $mark('ATT-PART', $days[$i]);
+
+    $a = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'limit' => 1000])['attendance'];
+    $by = []; foreach ($a['roster'] as $r) $by[$r['studentId']] = $r;
+    $stop = $by['ATT-STOP'] ?? null; $part = $by['ATT-PART'] ?? null;
+    $filtered = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'scenario' => 'stopped', 'limit' => 1000])['attendance'];
+    $stoppedIds = array_column($filtered['roster'], 'studentId');
+    foreach (['ATT-STOP', 'ATT-PART'] as $id) {
+        db_exec('DELETE FROM attendance WHERE studentId = ?', [$id]);
+        db_exec('DELETE FROM summer_students WHERE studentId = ?', [$id]);
+    }
+    if (!$stop || !$part) return false;
+    return $stop['stopped'] === true && $part['stopped'] === false
+        // The run is the number somebody acts on; a date is not.
+        && $stop['missedRun'] >= ATT_STOPPED_RUN && $part['missedRun'] === 0
+        // Both have a pattern of the same length — the shape is what differs.
+        && count($stop['pattern']) === count($part['pattern'])
+        && end($stop['pattern']) === 'out' && end($part['pattern']) === 'in'
+        // …and it is its own filter, not a slice of "under 50%".
+        && in_array('ATT-STOP', $stoppedIds, true) && !in_array('ATT-PART', $stoppedIds, true)
+        && ($a['scenarios']['stopped'] ?? 0) >= 1;
+})());
+
 // Leave enforcement off for the rest of the suite so later assertions see the
 // pre-policy behaviour they were written against.
 backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => false]]);
@@ -4451,6 +4499,78 @@ chk('a refusal says what the evidence DOES hold, and names the scope that narrow
         && strpos($a, 'Ijaiye') !== false && strpos($a, 'remove that chip') !== false
         && strpos($a, 'THE EVIDENCE HOLDS') !== false;
 })());
+
+/* ── Who is LEAVING, as opposed to how much attendance there was ─────────────
+ * The evidence held rates and nothing else, so the panel could describe the
+ * AMOUNT of attendance and never that children were leaving. Those are
+ * different questions with opposite answers: a cohort where everyone comes
+ * three days a week and one where a third have stopped entirely both report
+ * 62%, and only one is an emergency. Asked "is anyone slipping away", there was
+ * no figure to reach for and the honest answer was "the evidence cannot tell" —
+ * which was true, and was the bug.
+ *
+ * These enable a calendar of their own. The suite runs this section with the
+ * programme calendar off, and the attrition figure needs open days to count
+ * against — the first version of these tests short-circuited on that and passed
+ * against every mutation. */
+(function () {
+    $keep = setting_get('programme');
+    $span = db_row("SELECT MIN(date) a FROM attendance");
+    programme_settings_save(['enabled' => true, 'startDate' => (string)($span['a'] ?? '2026-06-01'),
+        'endDate' => attendance_today(), 'weekdays' => [1, 2, 3, 4, 5, 6, 7],
+        'holidays' => [], 'extraDays' => []], 'test');
+
+    chk('the analyst can see who is LEAVING, not only how much attendance there was', (function () {
+        $ev = insight_evidence(['requesterId' => 'NGG-2025-0099']);
+        if (!empty($ev['empty'])) return false;
+        $A = $ev['attrition'] ?? null;
+        if (!is_array($A) || !$A) return false;
+        foreach (['stoppedRun', 'openDays', 'children', 'stopped', 'neverCame', 'stoppedPct', 'byCentre'] as $k) {
+            if (!array_key_exists($k, $A)) return false;
+        }
+        /* The SAME threshold the register uses, so "9 have stopped" on the
+         * dashboard and nine quoted by the analyst are the same nine children.
+         * Two figures for one idea is how a board paper contradicts the screen
+         * it was written from. */
+        if ((int)$A['stoppedRun'] !== ATT_STOPPED_RUN) return false;
+        // Counts only. No child's name, id or contact may be anywhere in it.
+        if (preg_match('/(SUM-|STU-|@|\+234)/', (string)json_encode($A))) return false;
+        if (!count($A['byCentre'])) return false;
+        foreach ($A['byCentre'] as $row) {
+            if (!array_key_exists('stoppedPct', $row) || !array_key_exists('children', $row)) return false;
+            if ($row['stopped'] > $row['children']) return false;
+        }
+        return $A['stopped'] + $A['neverCame'] <= $A['children'] && $A['openDays'] > 0;
+    })());
+
+    chk('…and the ROUTER is told it holds that, so the question is not refused', (function () {
+        /* Same failure mode as the centres: a capability the payload has and the
+         * router has never heard of is a question answered "no". Captures the
+         * prompt actually sent rather than asserting on the helper alone. */
+        $sysSeen = '';
+        $cfg = __ichat_config_on();
+        $GLOBALS['__ai_mock'] = function ($profile, $sys, $turns) use (&$sysSeen) {
+            if ($profile === ICHAT_ROUTER_PROFILE) $sysSeen = $sys;
+            return (__ichat_mock())($profile, $sys, $turns);
+        };
+        backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+            'question' => 'Is anyone slipping away from the programme?']);
+        unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+        if ($sysSeen === '') return false;
+        $ev = insight_evidence(['requesterId' => 'NGG-2025-0099']);
+        if (empty($ev['attrition'])) return false;
+        // Generated from the payload, so removing the block removes the sentence.
+        $with = ichat_capabilities(ichat_shape($ev));
+        $without = ichat_capabilities(ichat_shape(array_diff_key($ev, ['attrition' => 1])));
+        return strpos($sysSeen, 'STOPPED coming') !== false
+            && strpos($with, 'STOPPED coming') !== false
+            && strpos($without, 'STOPPED coming') === false;
+    })());
+
+    if (is_array($keep)) setting_set('programme', $keep, 'test');
+    else programme_settings_save(['enabled' => false, 'startDate' => '', 'endDate' => '',
+        'weekdays' => [1, 2, 3, 4, 5], 'holidays' => [], 'extraDays' => []], 'test');
+})();
 
 chk('the analysts can finally see LEARNING by sex, not only attendance', (function () {
     /* The evidence held attendance broken down every way and learning broken

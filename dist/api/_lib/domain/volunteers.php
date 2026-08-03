@@ -826,6 +826,10 @@ const VOL_ATT_MAX_DAYS = 400;
 const VOL_ATT_TREND = 14;
 /** Below this many rateable volunteers the breakdown is a rumour, not a pattern. */
 const VOL_ATT_MIN_MEASURED = 5;
+/** How many of the most recent open days a volunteer's pattern strip shows. */
+const VOL_ATT_PATTERN = 20;
+/** Consecutive open days missed before "serves part-time" becomes "has stopped". */
+const VOL_ATT_STOPPED_RUN = 3;
 
 /** Reliability bands, high to low. Boundaries are inclusive lower bounds. */
 const VOL_ATT_BANDS = [
@@ -978,12 +982,25 @@ function volunteer_attendance_analysis(array $only = [], array $opts = []): arra
         // Streak: back from the most recent measured day, until a miss.
         $streak = 0;
         for ($i = count($mine) - 1; $i >= 0; $i--) { if (!isset($mk[$mine[$i]])) break; $streak++; }
+        /* And its mirror, which is the one somebody acts on. A rate cannot tell
+         * a volunteer who serves two days a week from one who has quietly
+         * stopped turning up — both sit near 40% — and "last seen 14 July"
+         * makes the reader do the arithmetic before they can notice. */
+        $missedRun = 0;
+        for ($i = count($mine) - 1; $i >= 0; $i--) { if (isset($mk[$mine[$i]])) break; $missedRun++; }
+        // The last few open days as a shape, so the pattern is visible at a glance.
+        $pattern = [];
+        foreach (array_slice($mine, -VOL_ATT_PATTERN) as $d) {
+            $pattern[] = !isset($mk[$d]) ? 'out' : ($mk[$d]['halfDay'] ? 'half' : ($mk[$d]['late'] ? 'late' : 'in'));
+        }
         $rate = $expected > 0 ? (int)round($sessions / $expected * 100) : null;
         $per[$vid] = [
             'sessions' => $sessions, 'expected' => $expected, 'rate' => $rate,
             'late' => $late, 'onTime' => max(0, $sessions - $late), 'halfDay' => $half,
             'onTimePct' => $sessions > 0 ? (int)round(($sessions - $late) / $sessions * 100) : null,
-            'streak' => $streak, 'lastSeen' => $lastSeen,
+            'streak' => $streak, 'missedRun' => $missedRun, 'pattern' => $pattern,
+            'stopped' => $sessions > 0 && $missedRun >= VOL_ATT_STOPPED_RUN,
+            'lastSeen' => $lastSeen,
             'band' => $rate === null ? '' : volunteer_att_band($rate)['key'],
         ];
         $tSessions += $sessions; $tExpected += $expected; $tLate += $late; $tHalf += $half; $tLateMin += $lateMin;
@@ -1185,6 +1202,8 @@ function admin_volunteer_attendance(array $p): array {
             'rate' => $w['rate'] ?? null, 'lates' => $w['late'] ?? 0,
             'halfDays' => $w['halfDay'] ?? 0, 'onTimePct' => $w['onTimePct'] ?? null,
             'streak' => $w['streak'] ?? 0, 'lastSeen' => $w['lastSeen'] ?? '',
+            'missedRun' => $w['missedRun'] ?? 0, 'pattern' => $w['pattern'] ?? [],
+            'stopped' => !empty($w['stopped']),
             'band' => $w['band'] ?? '', 'presentToday' => isset($todayBy[$vid]),
         ];
     }
@@ -1194,6 +1213,7 @@ function admin_volunteer_attendance(array $p): array {
         'present' => count(array_filter($rows, fn($r) => $r['presentToday'])),
         'absent'  => count(array_filter($rows, fn($r) => !$r['presentToday'])),
         'never'   => count(array_filter($rows, fn($r) => ($r['present'] ?? 0) === 0)),
+        'stopped' => count(array_filter($rows, fn($r) => !empty($r['stopped']))),
         'atrisk'  => count(array_filter($rows, fn($r) => ($r['rate'] ?? 0) < 50)),
         'late'    => count(array_filter($rows, fn($r) => ($r['lates'] ?? 0) > 0)),
         'half'    => count(array_filter($rows, fn($r) => ($r['halfDays'] ?? 0) > 0)),
@@ -1209,6 +1229,7 @@ function admin_volunteer_attendance(array $p): array {
             case 'present': return !empty($r['presentToday']);
             case 'absent':  return empty($r['presentToday']);
             case 'never':   return ($r['present'] ?? 0) === 0;
+            case 'stopped': return !empty($r['stopped']);
             case 'atrisk':  return ($r['rate'] ?? 0) < 50;
             case 'late':    return ($r['lates'] ?? 0) > 0;
             case 'half':    return ($r['halfDays'] ?? 0) > 0;
