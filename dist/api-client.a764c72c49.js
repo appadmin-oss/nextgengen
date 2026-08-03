@@ -773,6 +773,7 @@
         checkin:      (token, method, device, scannedAt) => request('/admin/summer.php', { body: { action: 'checkin', token, method, device, scannedAt } }),
         attendance:   (cohortId, opts) => request('/admin/summer.php' + qs(Object.assign({ view: 'attendance', cohortId }, opts || {}))),
         volunteerAttendance: (opts) => request('/admin/summer.php' + qs(Object.assign({ view: 'volunteer-attendance' }, opts || {}))),
+        attendanceDay: (date, opts) => request('/admin/summer.php' + qs(Object.assign({ view: 'attendance-day', date }, opts || {}))),
         insights:     (cohortId) => request('/admin/summer.php' + qs({ view: 'insights', cohortId })),
         archive:      (cohortId, compress) => request('/admin/summer.php', { body: { action: 'archive', cohortId, compress: !!compress } }),
         issueCerts:   (status, cohortId) => request('/admin/summer.php', { body: { action: 'issueCerts', status: status || 'graduated', cohortId: cohortId || '' } }),

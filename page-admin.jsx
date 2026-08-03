@@ -8871,6 +8871,74 @@ const ATT_SCENARIOS = [
   { key: "perfect", label: "Every day", hint: "100% of the window", tone: "good" },
 ];
 
+/* One day of the register, opened from its bar.
+   Two lists, because "the centre was half empty on Tuesday" and "two
+   instructors did not come on Tuesday" are the same morning and usually the
+   same story — and the second was invisible on this screen entirely. */
+function AttendanceDayPanel({ day, onClose }) {
+  const [side, setSide] = React.useState("out");   // out | in
+  const c = day.studentCounts || {}, vc = day.volunteerCounts || {};
+  const pick = (rows) => (rows || []).filter(r => (side === "in" ? r.in : !r.in));
+  const kids = pick(day.students), vols = pick(day.volunteers);
+  const list = (rows, empty) => rows.length === 0
+    ? <div className="admin-hint" style={{ margin: "6px 0 0" }}>{empty}</div>
+    : <div className="att-day-names">
+        {rows.map(r => (
+          <span key={r.id} className="att-day-name" data-late={r.status === "late" ? "1" : ""}>
+            {r.name || r.id}
+            {r.meta ? <i className="att-day-meta">{r.meta}</i> : null}
+            {side === "in" && r.at ? <i className="att-day-meta">{r.at}{r.status === "late" ? " · late" + (r.lateMinutes ? " " + r.lateMinutes + "m" : "") : ""}{r.halfDay ? " · ½" : ""}</i> : null}
+          </span>
+        ))}
+      </div>;
+  return (
+    <div className="att-day">
+      <div className="att-day-head">
+        <div>
+          <b>{day.date}</b>
+          {day.programmeDay === false
+            /* Nobody is absent from a day the programme did not run — the whole
+               point of the calendar. Any scans on it are still shown, because a
+               check-in on a closed day is worth seeing. */
+            ? <span className="att-day-tag" data-tone="muted">no session — nobody is absent</span>
+            : <span className="att-day-tag">{c.in || 0} of {c.total || 0} children · {vc.in || 0} of {vc.total || 0} volunteers</span>}
+        </div>
+        <span style={{ flex: 1 }}/>
+        <div className="att-seg" role="group" aria-label="In or out">
+          {[["out", "Not in", (c.out || 0) + (vc.out || 0)], ["in", "Checked in", (c.in || 0) + (vc.in || 0)]].map(([k, l, n]) => (
+            <button key={k} className={"att-seg-btn" + (side === k ? " is-on" : "")} onClick={() => setSide(k)} aria-pressed={side === k}>
+              {l}<span className="att-seg-n">{n}</span>
+            </button>
+          ))}
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close the day">✕</button>
+      </div>
+      {side === "in" && (c.late || vc.late) ? (
+        <div className="admin-hint" style={{ margin: "0 0 8px" }}>{(c.late || 0) + (vc.late || 0)} arrived late{(c.halfDays || vc.halfDays) ? " · " + ((c.halfDays || 0) + (vc.halfDays || 0)) + " half day(s)" : ""}.</div>
+      ) : null}
+      <div className="att-day-cols">
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>CHILDREN · {kids.length}</div>
+          {list(kids, side === "in" ? "No child checked in on this day." : "Every child was in.")}
+        </div>
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>VOLUNTEERS · {vols.length}</div>
+          {/* A volunteer who joined after this date is not on either list — they
+              were not absent from a day they had not started. */}
+          {list(vols, side === "in" ? "No volunteer checked in on this day." : "Every volunteer was in.")}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <button className="btn btn-ghost btn-sm" disabled={!kids.length && !vols.length}
+          onClick={() => downloadCsv("attendance-" + day.date + "-" + side, kids.map(r => ({ kind: "child", id: r.id, name: r.name, detail: r.meta, centre: r.centre, status: r.status, at: r.at, lateMinutes: r.lateMinutes, halfDay: r.halfDay ? "yes" : "no" }))
+            .concat(vols.map(r => ({ kind: "volunteer", id: r.id, name: r.name, detail: r.meta, centre: r.centre, status: r.status, at: r.at, lateMinutes: r.lateMinutes, halfDay: r.halfDay ? "yes" : "no" }))))}>
+          Export this list
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SummerAttendance() {
   const [a, setA] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -8887,6 +8955,20 @@ function SummerAttendance() {
   const [vols, setVols] = React.useState(null);
   const [range, setRange] = React.useState({ from: "", to: "" });   // "" = the whole term
   const [centre, setCentre] = React.useState("");
+  /* One day, opened. The bar chart could say Tuesday was thin and nothing
+     else, and the follow-up question is always WHICH children — which meant
+     exporting the register and reading dates by eye. */
+  const [day, setDay] = React.useState(null);       // { date, ...payload }
+  const [dayBusy, setDayBusy] = React.useState("");
+  const openDay = async (date) => {
+    if (!date) return;
+    setDayBusy(date); setDay(null);
+    try {
+      const r = await NGGApi.admin.summer.attendanceDay(date, centre ? { centre } : {});
+      setDay(r.day);
+    } catch (e) { toast.error(e.code === "bad_date" ? "That isn't a date." : (e.code || e.message)); }
+    finally { setDayBusy(""); }
+  };
   const opts = React.useMemo(() => {
     const o = {};
     if (range.from) o.from = range.from;
@@ -9023,13 +9105,21 @@ function SummerAttendance() {
         {/* A closed day is drawn as closed, not as a collapse in attendance —
             a flat Sunday next to a full Friday used to read as a crisis. */}
         {a.days.map((d, i) => (
-          <div key={i} className={"summer-attbar-col" + (d.programmeDay === false ? " is-closed" : "")}
-            title={d.date + (d.programmeDay === false ? " · no session" : " · " + d.present + " present")}>
+          /* A button, not a div: "which children" is the question every thin
+             bar raises, and it was previously only answerable by exporting the
+             register and reading dates by eye. */
+          <button key={i} type="button"
+            className={"summer-attbar-col" + (d.programmeDay === false ? " is-closed" : "") + (day && day.date === d.date ? " is-open" : "")}
+            onClick={() => openDay(d.date)} disabled={dayBusy === d.date}
+            aria-label={"Open " + d.date + (d.programmeDay === false ? " (no session)" : " — " + d.present + " present")}
+            title={d.date + (d.programmeDay === false ? " · no session" : " · " + d.present + " present") + " — click for the names"}>
             <div className="summer-attbar-track"><div className="summer-attbar-fill" style={{ height: (d.present / maxDay * 100) + "%" }}/></div>
             <span className="summer-attbar-lbl">{d.date.slice(8)}</span>
-          </div>
+          </button>
         ))}
       </div>
+      {dayBusy && <div className="admin-hint" style={{ marginTop: 8 }}>Opening {dayBusy}…</div>}
+      {day && <AttendanceDayPanel day={day} onClose={() => setDay(null)}/>}
 
       {a.atRisk.length > 0 && (
         <div style={{ marginTop: 22 }}>

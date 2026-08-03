@@ -999,7 +999,34 @@ function admin_summer_attendance(array $p): array {
     ];
     $roster = array_slice($roster, 0, $cap);
 
-    $recent = db_all("SELECT a.studentId, a.date, a.checkInAt, a.method, s.fullName FROM attendance a LEFT JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ? ORDER BY a.checkInAt DESC LIMIT 25", [$cid]);
+    /* Recent check-ins, with volunteers NAMED.
+     *
+     * A volunteer's badge QR carries the cohort id, so their scans have always
+     * matched this query — and the join was to summer_students only, so every
+     * one of them rendered as a bare VOL-MEN-26-001 with no name and nothing
+     * saying it was a member of staff rather than a child whose record had gone
+     * missing. Both are resolved now, and each row says which it is. */
+    $recent = db_all("SELECT a.studentId, a.date, a.checkInAt, a.method, a.status, s.fullName
+                      FROM attendance a LEFT JOIN summer_students s ON s.studentId = a.studentId
+                      WHERE a.cohortId = ? ORDER BY a.checkInAt DESC LIMIT 25", [$cid]);
+    $unnamed = [];
+    foreach ($recent as $r) if (($r['fullName'] ?? null) === null) $unnamed[] = (string)$r['studentId'];
+    $volNames = [];
+    if ($unnamed) {
+        $in = '(' . implode(',', array_fill(0, count($unnamed), '?')) . ')';
+        foreach (db_all("SELECT volunteerId, fullName, role FROM volunteers WHERE volunteerId IN $in", $unnamed) as $v) {
+            $volNames[(string)$v['volunteerId']] = ['name' => (string)$v['fullName'], 'role' => (string)$v['role']];
+        }
+    }
+    foreach ($recent as &$r) {
+        $id = (string)$r['studentId'];
+        if (($r['fullName'] ?? null) !== null) { $r['kind'] = 'student'; $r['role'] = ''; continue; }
+        $v = $volNames[$id] ?? null;
+        $r['kind'] = $v ? 'volunteer' : 'unknown';
+        $r['fullName'] = $v ? $v['name'] : '';
+        $r['role'] = $v ? $v['role'] : '';
+    }
+    unset($r);
 
     return ['ok' => true, 'attendance' => [
         'cohort' => $c, 'today' => $presentToday, 'sessionDays' => $sessionDays,
@@ -1029,6 +1056,85 @@ function admin_summer_attendance(array $p): array {
             'termStart' => (string)$prog['startDate'], 'termEnd' => (string)$prog['endDate'],
             'remaining' => !empty($prog['enabled']) ? max(0, count(programme_days_between((string)$prog['startDate'], (string)$prog['endDate'], $prog)) - $sessionDays) : 0,
         ],
+    ]];
+}
+
+/**
+ * One day, named: who was in, who was not, and who was late.
+ *
+ * The fourteen-bar chart could tell a coordinator that Tuesday was thin and
+ * nothing else. The follow-up question is always the same one — WHICH children
+ * — and answering it meant exporting the register and reading dates by eye.
+ *
+ * Volunteers are here too, in their own list, because "the centre was half
+ * empty on Tuesday" and "two instructors did not come on Tuesday" are the same
+ * morning and usually the same story.
+ */
+function admin_summer_attendance_day(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $date = trim((string)($p['date'] ?? ''));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) return ['ok' => false, 'error' => 'bad_date'];
+    $c = summer_ensure_cohort();
+    $cid = trim((string)($p['cohortId'] ?? '')) ?: (string)$c['cohortId'];
+    $centre = trim((string)($p['centre'] ?? ''));
+    $prog = programme_settings();
+    $isDay = programme_is_day($date, $prog);
+
+    // Everyone marked on the day, with how they were marked.
+    $marks = [];
+    foreach (db_all('SELECT studentId, status, lateMinutes, halfDay, checkInAt, method FROM attendance WHERE date = ?', [$date]) as $r) {
+        $marks[(string)$r['studentId']] = $r;
+    }
+
+    $mk = function (array $row, string $id, string $name, string $extra) use ($marks) {
+        $m = $marks[$id] ?? null;
+        return $row + [
+            'name' => $name, 'meta' => $extra,
+            'in' => $m !== null,
+            'status' => $m ? ((string)$m['status'] ?: 'present') : 'absent',
+            'lateMinutes' => $m ? (int)($m['lateMinutes'] ?? 0) : 0,
+            'halfDay' => $m ? ((int)($m['halfDay'] ?? 0) === 1) : false,
+            'at' => $m ? substr((string)($m['checkInAt'] ?? ''), 11, 5) : '',
+            'method' => $m ? (string)($m['method'] ?? '') : '',
+        ];
+    };
+
+    $sSql = "SELECT studentId, fullName, track, centre FROM summer_students WHERE cohortId = ? AND status = 'active'";
+    $sArgs = [$cid];
+    if ($centre !== '') { $sSql .= ' AND centre = ?'; $sArgs[] = $centre; }
+    $students = [];
+    foreach (db_all($sSql . ' ORDER BY fullName', $sArgs) as $s) {
+        $students[] = $mk(['id' => (string)$s['studentId'], 'centre' => (string)$s['centre']],
+            (string)$s['studentId'], (string)$s['fullName'], (string)($s['track'] ?? ''));
+    }
+
+    /* A volunteer who joined AFTER this date was not absent from it. Same rule
+     * as the rate: nobody is marked missing from a day they had not started. */
+    $volunteers = [];
+    $vSql = "SELECT volunteerId, fullName, role, centre, createdAt FROM volunteers WHERE status = 'active'";
+    $vArgs = [];
+    if ($centre !== '') { $vSql .= ' AND centre = ?'; $vArgs[] = $centre; }
+    foreach (db_all($vSql . ' ORDER BY fullName', $vArgs) as $v) {
+        $joined = substr((string)($v['createdAt'] ?? ''), 0, 10);
+        if ($joined !== '' && $joined > $date) continue;
+        $volunteers[] = $mk(['id' => (string)$v['volunteerId'], 'centre' => (string)$v['centre'], 'joined' => $joined],
+            (string)$v['volunteerId'], (string)$v['fullName'], (string)($v['role'] ?? ''));
+    }
+
+    $count = function (array $rows) {
+        $in = 0; $late = 0; $half = 0;
+        foreach ($rows as $r) { if ($r['in']) { $in++; if ($r['status'] === 'late') $late++; if ($r['halfDay']) $half++; } }
+        return ['total' => count($rows), 'in' => $in, 'out' => max(0, count($rows) - $in),
+                'late' => $late, 'onTime' => max(0, $in - $late), 'halfDays' => $half];
+    };
+
+    return ['ok' => true, 'day' => [
+        'date' => $date, 'programmeDay' => $isDay, 'centre' => $centre,
+        /* Nobody is absent from a day the programme did not run. The lists are
+         * still returned — a scan on a closed day is worth seeing — but the
+         * screen must not call the rest of the cohort missing. */
+        'students' => $students, 'volunteers' => $volunteers,
+        'studentCounts' => $count($students), 'volunteerCounts' => $count($volunteers),
     ]];
 }
 

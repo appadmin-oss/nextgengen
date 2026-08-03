@@ -4292,6 +4292,23 @@ section p[style*="var(--ink-500)"] {
   .att-seg { width: 100%; }
   .att-seg-btn { flex: 1; justify-content: center; }
 }
+
+/* ── One day, opened from its bar ─────────────────────────────────────────── */
+.summer-attbar-col { border: none; background: transparent; padding: 0; cursor: pointer; font: inherit; }
+.summer-attbar-col:disabled { cursor: progress; }
+.summer-attbar-col:hover .summer-attbar-track,
+.summer-attbar-col:focus-visible .summer-attbar-track { outline: 2px solid var(--gold-500, #f5b026); outline-offset: 1px; }
+.summer-attbar-col.is-open .summer-attbar-track { outline: 2px solid var(--navy-900, #0c1432); outline-offset: 1px; }
+.att-day { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line, #e6e2d6); border-left: 3px solid var(--navy-900, #0c1432); border-radius: 12px; background: #fff; }
+.att-day-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.att-day-tag { margin-left: 10px; font-family: var(--font-mono); font-size: 11px; color: var(--ink-500); }
+.att-day-tag[data-tone="muted"] { color: var(--gold-700, #7a5600); }
+.att-day-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 720px) { .att-day-cols { grid-template-columns: 1fr; } }
+.att-day-names { display: flex; flex-wrap: wrap; gap: 6px; }
+.att-day-name { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(12,20,50,0.05); font-size: 13px; }
+.att-day-name[data-late="1"] { background: rgba(245,176,38,0.16); }
+.att-day-meta { font-family: var(--font-mono); font-style: normal; font-size: 10.5px; color: var(--ink-500); }
 .summer-insight { margin: 4px 0 18px; padding: 16px 18px; border-radius: 16px; background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(208,255,58,0.06)); border: 1px solid var(--line, #e6e2d6); }
 .summer-insight-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .summer-insight-head .eyebrow { display: inline-flex; align-items: center; gap: 6px; }

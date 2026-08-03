@@ -10184,8 +10184,14 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             'role' => $role, 'centre' => $lab, 'status' => 'active', 'safeguarding' => 'cleared',
             'visibilityConsent' => 0, 'createdAt' => $D($joinedDaysAgo) . ' 08:00:00', 'updatedAt' => now_iso()]);
     };
-    $mark = function (string $id, int $daysAgo, bool $late = false) use ($D) {
-        db_insert('attendance', ['cohortId' => '', 'studentId' => $id, 'token' => '', 'date' => $D($daysAgo),
+    /* The cohort id is on these rows because a real badge QR carries it —
+     * volunteers_assign writes the active cohort onto the qr_codes row, and the
+     * scanner copies it onto the attendance row. Leaving it blank here made a
+     * test about the recent-check-in feed silently vacuous: the feed is scoped
+     * by cohort, so no volunteer row ever reached it. */
+    $attCohort = (string)summer_ensure_cohort()['cohortId'];
+    $mark = function (string $id, int $daysAgo, bool $late = false) use ($D, $attCohort) {
+        db_insert('attendance', ['cohortId' => $attCohort, 'studentId' => $id, 'token' => '', 'date' => $D($daysAgo),
             'checkInAt' => $D($daysAgo) . 'T08:00:00Z', 'method' => 'qr', 'byId' => 'NGG-2025-0099', 'device' => '',
             'status' => $late ? 'late' : 'present', 'lateMinutes' => $late ? 20 : 0, 'redline' => 0, 'halfDay' => 0,
             'createdAt' => now_iso()]);
@@ -10339,6 +10345,51 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             // Per-person rows here are for staff, so the id IS the point.
             && isset($r['volunteers']['summary']['kpis'])
             && !isset($r['volunteers']['summary']['perVolunteer']);
+    })());
+
+    chk('one day drills down to WHO, children and volunteers in separate lists', (function () use ($D, $today) {
+        /* The bar chart could say a day was thin and nothing else, and the
+         * follow-up question is always which people. VOL-ATT-B stopped coming
+         * five days ago, so on the most recent day they are on the not-in list
+         * and VOL-ATT-A is on the in list. */
+        $r = backend_dispatch('admin.summer.attendance.day', ['requesterId' => 'NGG-2025-0099', 'date' => $today]);
+        if (empty($r['ok'])) return false;
+        $by = []; foreach ($r['day']['volunteers'] as $v) $by[$v['id']] = $v;
+        $a = $by['VOL-ATT-A'] ?? null; $b = $by['VOL-ATT-B'] ?? null;
+        return $a && $b && $a['in'] === true && $a['name'] !== '' && $b['in'] === false
+            && $r['day']['volunteerCounts']['in'] >= 2
+            && isset($r['day']['students']) && isset($r['day']['studentCounts']['out'])
+            && $r['day']['programmeDay'] === true;
+    })());
+
+    chk('a day nobody had joined yet does not list them as absent from it', (function () use ($D) {
+        /* VOL-ATT-C joined on day -4. Asking about day -9 must not accuse them
+         * of missing it — the same rule the rate uses, applied to the list. */
+        $r = backend_dispatch('admin.summer.attendance.day', ['requesterId' => 'NGG-2025-0099', 'date' => $D(9)]);
+        $ids = array_column($r['day']['volunteers'], 'id');
+        $late = backend_dispatch('admin.summer.attendance.day', ['requesterId' => 'NGG-2025-0099', 'date' => $D(3)]);
+        $idsLate = array_column($late['day']['volunteers'], 'id');
+        return !in_array('VOL-ATT-C', $ids, true) && in_array('VOL-ATT-C', $idsLate, true)
+            && in_array('VOL-ATT-A', $ids, true);
+    })());
+
+    chk('a day drill-down refuses a date rather than guessing one', (function () {
+        return (backend_dispatch('admin.summer.attendance.day', ['requesterId' => 'NGG-2025-0099', 'date' => 'tuesday'])['error'] ?? '') === 'bad_date'
+            && (backend_dispatch('admin.summer.attendance.day', ['requesterId' => 'NGG-2025-0099', 'date' => ''])['error'] ?? '') === 'bad_date'
+            && (backend_dispatch('admin.summer.attendance.day', ['requesterId' => '', 'date' => '2026-07-06'])['ok'] ?? false) !== true;
+    })());
+
+    chk('the recent check-in feed names volunteers instead of printing their id', (function () use ($today) {
+        /* A volunteer's badge QR carries the cohort id, so their scans always
+         * matched this feed — and it joined summer_students only, so every one
+         * rendered as a bare VOL-… with nothing saying it was a member of staff
+         * rather than a child whose record had gone missing. */
+        $att = backend_dispatch('admin.summer.attendance', ['requesterId' => 'NGG-2025-0099'])['attendance'];
+        $seen = null;
+        foreach ($att['recent'] as $row) if (strpos((string)$row['studentId'], 'VOL-ATT-') === 0) $seen = $row;
+        if ($seen === null) return true;            // no volunteer scan in the last 25
+        return ($seen['kind'] ?? '') === 'volunteer' && trim((string)($seen['fullName'] ?? '')) !== ''
+            && (string)$seen['fullName'] !== (string)$seen['studentId'];
     })());
 
     chk('vol attendance: the admin register is gated on the roster capability', (function () {

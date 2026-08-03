@@ -872,6 +872,26 @@ function unzipDocumentXml(buf) {
           ],
         } });
       },
+      /* One day, opened from its bar. The chart could say a day was thin and
+         nothing else; the follow-up question is always which people, and
+         answering it meant exporting the register and reading dates by eye. */
+      attendanceDay: function (date, o) {
+        window.__dayAsked = { date: date, opts: o || {} };
+        return Promise.resolve({ day: {
+          date: date, programmeDay: true, centre: (o && o.centre) || '',
+          students: [
+            { id: 'SUM-1', name: 'Amina Alpha', meta: 'Music', centre: 'Ijaiye', in: true, status: 'present', lateMinutes: 0, halfDay: false, at: '08:12', method: 'qr' },
+            { id: 'SUM-2', name: 'Bode Beta', meta: 'Tech', centre: 'Egbeda', in: false, status: 'absent', lateMinutes: 0, halfDay: false, at: '', method: '' },
+            { id: 'SUM-3', name: 'Chidi Gamma', meta: 'Arts', centre: 'Ijaiye', in: true, status: 'late', lateMinutes: 24, halfDay: true, at: '09:31', method: 'qr' },
+          ],
+          volunteers: [
+            { id: 'VOL-MEN-26-001', name: 'Mentor Mary', meta: 'mentor', centre: 'Ijaiye', joined: '2026-07-06', in: true, status: 'present', lateMinutes: 0, halfDay: false, at: '07:55', method: 'qr' },
+            { id: 'VOL-ADM-26-003', name: 'Absent Ada', meta: 'admin', centre: 'Ijaiye', joined: '2026-07-06', in: false, status: 'absent', lateMinutes: 0, halfDay: false, at: '', method: '' },
+          ],
+          studentCounts: { total: 3, in: 2, out: 1, late: 1, onTime: 1, halfDays: 1 },
+          volunteerCounts: { total: 2, in: 1, out: 1, late: 0, onTime: 1, halfDays: 0 },
+        } });
+      },
       insights: function () { return Promise.resolve({ insight: '· all good', source: 'rules', aiConfigured: false }); },
       absenceAlert: function () { var e = new Error('not_a_programme_day'); e.code = 'not_a_programme_day'; e.data = { nextDay: '2026-07-20' }; return Promise.reject(e); },
       archive: function () { return Promise.resolve({ students: 0 }); },
@@ -2239,6 +2259,38 @@ function unzipDocumentXml(buf) {
     await att.waitForTimeout(300);
     ok('…and a chosen range is sent to the server rather than filtered in the page',
       JSON.stringify(await att.evaluate(() => window.__volOpts)) === '{"from":"2026-07-13","to":"2026-07-17"}');
+
+    /* ── One day, by name ────────────────────────────────────────────────
+       The chart could say a day was thin and nothing else. "Which children"
+       was only answerable by exporting the register and reading dates by eye. */
+    /* Bail out cleanly rather than letting a 30s click timeout abort the
+       hundreds of assertions after this block — a regression here should read
+       as failed checks, not as a broken harness. */
+    const bar = att.locator('.summer-attbar-col').nth(3);
+    const barLive = await bar.isEnabled().catch(() => false);
+    ok('…the day bars are reachable at all', barLive);
+    let dayTxt = "";
+    if (barLive) {
+      await bar.click();
+      await att.waitForSelector('.att-day', { timeout: 8000 }).catch(() => {});
+      dayTxt = await att.evaluate(() => { const n = document.querySelector('.att-day'); return n ? n.innerText : ""; });
+    }
+    ok('…a day opens from its bar and names who was NOT in, by default',
+      /Bode Beta/.test(dayTxt) && /Absent Ada/.test(dayTxt)
+      && dayTxt.indexOf('Amina Alpha') === -1);
+    ok('…splitting children from volunteers rather than one undifferentiated list',
+      /CHILDREN · 1/.test(dayTxt) && /VOLUNTEERS · 1/.test(dayTxt));
+    ok('…and asks the server for that exact date',
+      (await att.evaluate(() => (window.__dayAsked || {}).date)) === '2026-07-09');
+    let inTxt = "";
+    if (dayTxt) {
+      await att.locator('.att-day .att-seg-btn', { hasText: 'Checked in' }).click();
+      await att.waitForTimeout(150);
+      inTxt = await att.evaluate(() => { const n = document.querySelector('.att-day'); return n ? n.innerText : ""; });
+    }
+    ok('…the other side lists who came, with the time and the lateness',
+      /Amina Alpha/.test(inTxt) && /08:12/.test(inTxt) && /late 24m/.test(inTxt) && /arrived late/.test(inTxt));
+    ok('…and marks the half day rather than counting it as a full one', /½/.test(inTxt));
     await att.close();
 
     // Closed day: the numbers and the guardian email both have to stand down.

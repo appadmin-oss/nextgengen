@@ -14,6 +14,8 @@ if ($method === 'GET') {
         'from' => $_GET['from'] ?? '', 'to' => $_GET['to'] ?? '']);
     elseif ($view === 'volunteer-attendance') $res = gs_call('admin.volunteer.attendance', ['requesterId' => $mid,
         'centre' => $_GET['centre'] ?? '', 'from' => $_GET['from'] ?? '', 'to' => $_GET['to'] ?? '']);
+    elseif ($view === 'attendance-day') $res = gs_call('admin.summer.attendance.day', ['requesterId' => $mid,
+        'cohortId' => $_GET['cohortId'] ?? '', 'date' => $_GET['date'] ?? '', 'centre' => $_GET['centre'] ?? '']);
     elseif ($view === 'insights')   $res = gs_call('admin.summer.insights', ['requesterId' => $mid, 'cohortId' => $_GET['cohortId'] ?? '']);
     elseif ($view === 'consent')    $res = gs_call('admin.summer.consent', ['requesterId' => $mid, 'studentId' => $_GET['studentId'] ?? '']);
     else                          $res = gs_call('admin.summer.overview', ['requesterId' => $mid]);
