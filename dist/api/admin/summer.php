@@ -9,7 +9,11 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'overview');
     if ($view === 'students')     $res = gs_call('admin.summer.students.list', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '', 'cohortId' => $_GET['cohortId'] ?? '']);
     elseif ($view === 'qr')       $res = gs_call('admin.summer.qr.list', ['requesterId' => $mid, 'status' => $_GET['status'] ?? '', 'batch' => $_GET['batch'] ?? '']);
-    elseif ($view === 'attendance') $res = gs_call('admin.summer.attendance', ['requesterId' => $mid, 'cohortId' => $_GET['cohortId'] ?? '']);
+    elseif ($view === 'attendance') $res = gs_call('admin.summer.attendance', ['requesterId' => $mid,
+        'cohortId' => $_GET['cohortId'] ?? '', 'centre' => $_GET['centre'] ?? '',
+        'from' => $_GET['from'] ?? '', 'to' => $_GET['to'] ?? '']);
+    elseif ($view === 'volunteer-attendance') $res = gs_call('admin.volunteer.attendance', ['requesterId' => $mid,
+        'centre' => $_GET['centre'] ?? '', 'from' => $_GET['from'] ?? '', 'to' => $_GET['to'] ?? '']);
     elseif ($view === 'insights')   $res = gs_call('admin.summer.insights', ['requesterId' => $mid, 'cohortId' => $_GET['cohortId'] ?? '']);
     elseif ($view === 'consent')    $res = gs_call('admin.summer.consent', ['requesterId' => $mid, 'studentId' => $_GET['studentId'] ?? '']);
     else                          $res = gs_call('admin.summer.overview', ['requesterId' => $mid]);

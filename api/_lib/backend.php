@@ -96,6 +96,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.summer.student.delete' => 'admin_summer_student_delete',
             'admin.summer.checkin'        => 'summer_checkin',
             'admin.summer.attendance'     => 'admin_summer_attendance',
+            'admin.volunteer.attendance'  => 'admin_volunteer_attendance',
             'admin.summer.certs.issue'    => 'admin_summer_certs_issue',
             'admin.cert.revoke'           => 'admin_cert_revoke',
             'admin.summer.checkout'       => 'summer_checkout',

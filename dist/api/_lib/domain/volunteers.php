@@ -805,8 +805,18 @@ function volunteer_rate(int $filled, int $need): int { return $need > 0 ? (int)r
  *    make everybody look perfect by construction.
  */
 
-/** How far back the analysis looks, in programme days. */
-const VOL_ATT_WINDOW = 30;
+/**
+ * A hard ceiling on how many days one analysis may walk, NOT the default
+ * window. The default is the whole term.
+ *
+ * It used to be the default, sliced to the last 30 programme days — which
+ * quietly answered a different question from the one on screen. A coordinator
+ * looking at the attendance page means "this term", the term start is already
+ * set on the programme page, and a rolling 30-day figure drifts away from it
+ * every morning: come week seven, week one had silently left the numbers with
+ * nothing saying so.
+ */
+const VOL_ATT_MAX_DAYS = 400;
 /** How many of those days the trend chart plots. */
 const VOL_ATT_TREND = 14;
 /** Below this many rateable volunteers the breakdown is a rumour, not a pattern. */
@@ -828,18 +838,46 @@ function volunteer_att_band(int $rate): array {
 /**
  * The days the window is measured over, most recent last.
  *
- * 'calendar' basis is the honest one. 'observed' is the fallback for a site
- * that never set the term dates: the distinct dates somebody was marked
- * present. It answers a slightly different question — "of the days we ran the
- * roll, how many did you make?" — and the caller has to say which it got.
+ * DEFAULT: the whole term as configured on the programme page — start date to
+ * today, programme days only. That is the window a coordinator means, it is
+ * already written down in one place, and it does not move under them.
+ *
+ * `from`/`to` narrow it when somebody asks a narrower question (last week, one
+ * bad Tuesday), and are clamped INSIDE the term: a range that starts before the
+ * programme did would count days it was not open as days a volunteer missed.
+ *
+ * 'calendar' basis is the honest one. 'observed' is the fallback for a site that
+ * never set the term dates: the distinct dates somebody was marked present. It
+ * answers a slightly different question — "of the days we ran the roll, how many
+ * did you make?" — and the caller has to say which it got.
  */
-function volunteer_attendance_days(int $limit): array {
+function volunteer_attendance_days(array $opts = []): array {
     $cfg = programme_settings();
-    $days = programme_days_elapsed(null, $cfg);
-    if ($days) return ['days' => array_slice($days, -$limit), 'basis' => 'calendar'];
-    $rows = db_all('SELECT DISTINCT date FROM attendance ORDER BY date DESC LIMIT ' . (int)$limit);
+    $from = trim((string)($opts['from'] ?? ''));
+    $to   = trim((string)($opts['to'] ?? ''));
+    $ymd  = fn(string $d) => preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) === 1 ? $d : '';
+    $from = $ymd($from); $to = $ymd($to);
+    if ($from !== '' && $to !== '' && $from > $to) [$from, $to] = [$to, $from];
+
+    $term = programme_days_elapsed(null, $cfg);
+    if ($term) {
+        $days = $term;
+        if ($from !== '') $days = array_values(array_filter($days, fn($d) => $d >= $from));
+        if ($to !== '')   $days = array_values(array_filter($days, fn($d) => $d <= $to));
+        return ['days' => array_slice($days, -VOL_ATT_MAX_DAYS), 'basis' => 'calendar',
+                'termStart' => (string)$cfg['startDate'], 'termEnd' => (string)$cfg['endDate'],
+                'narrowed' => $from !== '' || $to !== ''];
+    }
+    // No calendar: the days the roll was actually taken, honestly labelled.
+    $sql = 'SELECT DISTINCT date FROM attendance';
+    $args = []; $where = [];
+    if ($from !== '') { $where[] = 'date >= ?'; $args[] = $from; }
+    if ($to !== '')   { $where[] = 'date <= ?'; $args[] = $to; }
+    if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
+    $rows = db_all($sql . ' ORDER BY date DESC LIMIT ' . (int)VOL_ATT_MAX_DAYS, $args);
     $days = array_reverse(array_map(fn($r) => (string)$r['date'], $rows));
-    return ['days' => $days, 'basis' => 'observed'];
+    return ['days' => $days, 'basis' => 'observed', 'termStart' => '', 'termEnd' => '',
+            'narrowed' => $from !== '' || $to !== ''];
 }
 
 /**
@@ -847,9 +885,10 @@ function volunteer_attendance_days(int $limit): array {
  * public board draws: trend, reliability bands, per-centre and per-role rates.
  *
  * `$only` mirrors the board's centre allow-list (empty = all centres).
+ * `$opts` may carry from/to to narrow the window inside the term.
  */
-function volunteer_attendance_analysis(array $only = []): array {
-    $win = volunteer_attendance_days(VOL_ATT_WINDOW);
+function volunteer_attendance_analysis(array $only = [], array $opts = []): array {
+    $win = volunteer_attendance_days($opts);
     $days = $win['days'];
     $vols = [];
     foreach (db_all("SELECT volunteerId, role, centre, createdAt FROM volunteers WHERE status = 'active'") as $v) {
@@ -1002,7 +1041,11 @@ function volunteer_attendance_analysis(array $only = []): array {
     return [
         'measurable' => true, 'basis' => $win['basis'],
         'days' => count($days), 'from' => $days[0], 'to' => $to, 'pendingDays' => $pending,
-        'windowDays' => VOL_ATT_WINDOW,
+        /* Where the window came from, so the screen can name it instead of
+           printing a day count the reader has to guess the meaning of. */
+        'termStart' => (string)($win['termStart'] ?? ''), 'termEnd' => (string)($win['termEnd'] ?? ''),
+        'narrowed' => !empty($win['narrowed']),
+        'scope' => !empty($win['narrowed']) ? 'range' : ($win['basis'] === 'calendar' ? 'term' : 'observed'),
         'kpis' => [
             'rate' => $tExpected > 0 ? (int)round($tSessions / $tExpected * 100) : null,
             'onTimePct' => $tSessions > 0 ? (int)round(($tSessions - $tLate) / $tSessions * 100) : null,
@@ -1085,6 +1128,55 @@ function volunteer_status_compute(): array {
         ],
         'byCentre' => $byCentre,
     ];
+}
+
+/**
+ * The volunteer half of the attendance register — NAMED, for staff.
+ *
+ * The public board shows handles because it is public. The coordinator's
+ * attendance page showed nothing at all: every query on it joins
+ * summer_students, deliberately, so that volunteer check-ins cannot skew the
+ * children's rate — and the effect was that the people running the centre were
+ * invisible on the one screen about who turned up. Their scans were in the
+ * table the whole time.
+ *
+ * Same window as the students' figures, same definitions, and the same honest
+ * denominator: programme days since the volunteer joined.
+ */
+function admin_volunteer_attendance(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $opts = ['from' => (string)($p['from'] ?? ''), 'to' => (string)($p['to'] ?? '')];
+    $centre = trim((string)($p['centre'] ?? ''));
+    $a = volunteer_attendance_analysis($centre !== '' ? [$centre] : [], $opts);
+    $per = $a['perVolunteer'] ?? [];
+    unset($a['perVolunteer']);
+
+    $rows = [];
+    $today = attendance_today();
+    $in = db_all("SELECT studentId FROM attendance WHERE date = ?", [$today]);
+    $todayBy = []; foreach ($in as $r) $todayBy[(string)$r['studentId']] = true;
+    foreach (db_all("SELECT volunteerId, fullName, firstName, lastName, role, centre, faculty, createdAt
+                     FROM volunteers WHERE status = 'active' ORDER BY fullName") as $v) {
+        $vid = (string)$v['volunteerId'];
+        if ($centre !== '' && (string)$v['centre'] !== $centre) continue;
+        $w = $per[$vid] ?? null;
+        $name = trim((string)($v['fullName'] ?? ''));
+        if ($name === '') $name = trim(((string)($v['firstName'] ?? '')) . ' ' . ((string)($v['lastName'] ?? '')));
+        $rows[] = [
+            'volunteerId' => $vid, 'fullName' => $name ?: $vid,
+            'role' => (string)$v['role'], 'centre' => (string)$v['centre'],
+            'faculty' => (string)($v['faculty'] ?? ''),
+            'joined' => substr((string)($v['createdAt'] ?? ''), 0, 10),
+            'present' => $w['sessions'] ?? 0, 'expected' => $w['expected'] ?? 0,
+            'rate' => $w['rate'] ?? null, 'lates' => $w['late'] ?? 0,
+            'halfDays' => $w['halfDay'] ?? 0, 'onTimePct' => $w['onTimePct'] ?? null,
+            'streak' => $w['streak'] ?? 0, 'lastSeen' => $w['lastSeen'] ?? '',
+            'band' => $w['band'] ?? '', 'presentToday' => isset($todayBy[$vid]),
+        ];
+    }
+    // Lowest rate first, same as the student register: the useful end is the top.
+    usort($rows, fn($x, $y) => ($x['rate'] ?? 101) <=> ($y['rate'] ?? 101) ?: strcmp($x['fullName'], $y['fullName']));
+    return ['ok' => true, 'volunteers' => ['summary' => $a, 'roster' => $rows]];
 }
 
 /** Public, PII-free volunteer fulfilment board (powers /v-status). */

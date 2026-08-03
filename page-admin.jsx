@@ -8854,15 +8854,58 @@ function PolicyPersonModal({ data, onClose, onChange }) {
 }
 
 // ── Attendance analytics dashboard (Phase 2) ────────────────────────────────
+/* The scenarios a coordinator actually walks in with, in the order they matter.
+   They were an unlabelled dropdown of five, so the only way to find out whether
+   one had anybody in it was to pick it — and "never attended" did not exist at
+   all: a child who had not appeared once was hidden inside "under 50%" with
+   everybody who was merely struggling. */
+const ATT_SCENARIOS = [
+  { key: "all", label: "Everyone", hint: "the whole register" },
+  { key: "absent", label: "Absent today", hint: "no check-in yet today" },
+  { key: "present", label: "In today", hint: "checked in today" },
+  { key: "never", label: "Never attended", hint: "not one check-in in this window", tone: "bad" },
+  { key: "atrisk", label: "Under 50%", hint: "at risk on attendance", tone: "bad" },
+  { key: "late", label: "Late arrivals", hint: "has arrived late", tone: "warn" },
+  { key: "half", label: "Half days", hint: "missed the Musing Period", tone: "warn" },
+  { key: "flagged", label: "Warned or worse", hint: "has a standing flag", tone: "bad" },
+  { key: "perfect", label: "Every day", hint: "100% of the window", tone: "good" },
+];
+
 function SummerAttendance() {
   const [a, setA] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [ins, setIns] = React.useState(null);
   const [insBusy, setInsBusy] = React.useState(false);
   const [q, setQ] = React.useState("");
-  const [only, setOnly] = React.useState("all");   // all | absent | atrisk | late | flagged
-  const load = () => NGGApi.admin.summer.attendance().then(r => setA(r.attendance)).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); }, []);
+  const [only, setOnly] = React.useState("all");
+  /* Who the register is about. The volunteers' own check-ins have been in the
+     same table all along — every query on this screen joins summer_students so
+     that they cannot skew the children's rate, and the side effect was that the
+     people running the centre appeared nowhere on the one screen about who
+     turned up. */
+  const [who, setWho] = React.useState("students");   // students | volunteers
+  const [vols, setVols] = React.useState(null);
+  const [range, setRange] = React.useState({ from: "", to: "" });   // "" = the whole term
+  const [centre, setCentre] = React.useState("");
+  const opts = React.useMemo(() => {
+    const o = {};
+    if (range.from) o.from = range.from;
+    if (range.to) o.to = range.to;
+    if (centre) o.centre = centre;
+    return o;
+  }, [range.from, range.to, centre]);
+  const load = React.useCallback(() => {
+    NGGApi.admin.summer.attendance("", opts).then(r => setA(r.attendance)).catch(e => setErr(e.code || e.message));
+    /* The volunteer half is additive: a server that does not serve it yet, or a
+       refusal, leaves that tab empty rather than taking the children's register
+       down with it. */
+    try {
+      const call = NGGApi.admin.summer.volunteerAttendance;
+      if (typeof call === "function") call(opts).then(r => setVols(r.volunteers)).catch(() => setVols(null));
+      else setVols(null);
+    } catch (_) { setVols(null); }
+  }, [opts]);
+  React.useEffect(() => { load(); }, [load]);
   const loadInsights = () => { setInsBusy(true); NGGApi.admin.summer.insights().then(setIns).catch(e => setIns({ insight: "Couldn't generate insights: " + (e.code || e.message), source: "error" })).finally(() => setInsBusy(false)); };
   React.useEffect(() => { loadInsights(); }, []);
   const archive = async (compress) => {
@@ -8877,16 +8920,65 @@ function SummerAttendance() {
   const prog = a.programme || {};
   const closed = prog.enabled && !prog.isProgrammeDay;
   /* Filters hold across searching, so a coordinator can narrow to "absent
-     today" and then look for one name inside it. */
+     today" and then look for one name inside it. One predicate for both
+     registers, so a scenario cannot mean one thing for children and another
+     for volunteers. */
   const needle = q.trim().toLowerCase();
+  const matchScenario = (r) => {
+    if (only === "absent") return !r.presentToday;
+    if (only === "present") return !!r.presentToday;
+    if (only === "never") return (r.present || 0) === 0;
+    if (only === "atrisk") return (r.rate || 0) < 50;
+    if (only === "late") return (r.lates || 0) > 0;
+    if (only === "half") return (r.halfDays || 0) > 0;
+    if (only === "flagged") return r.state && r.state !== "clear";
+    if (only === "perfect") return (r.rate || 0) >= 100;
+    return true;
+  };
   const roster = a.roster.filter(r => {
     if (needle && !((r.fullName || "") + " " + (r.studentId || "") + " " + (r.track || "") + " " + (r.centre || "")).toLowerCase().includes(needle)) return false;
-    if (only === "absent") return !r.presentToday;
-    if (only === "atrisk") return r.rate < 50;
-    if (only === "late") return (r.lates || 0) > 0;
-    if (only === "flagged") return r.state && r.state !== "clear";
-    return true;
+    return matchScenario(r);
   });
+  const volRoster = ((vols && vols.roster) || []).filter(r => {
+    if (needle && !((r.fullName || "") + " " + (r.volunteerId || "") + " " + (r.role || "") + " " + (r.centre || "") + " " + (r.faculty || "")).toLowerCase().includes(needle)) return false;
+    return matchScenario(r);
+  });
+  const volSum = (vols && vols.summary) || null;
+  const win = a.window || {};
+  /* Name the window wherever a rate is shown. A bare "Rate" column against an
+     unstated span was the main reason this screen was hard to read: 62% of the
+     term and 62% of last week are different findings. */
+  const winLabel = win.scope === "range" ? (win.from || "?") + " → " + (win.to || "?")
+    : win.scope === "term" ? "term to date · " + (win.from || "?") + " → " + (win.to || "?")
+    : "days scanned";
+  const scenarioCount = (k) => {
+    const s = who === "volunteers" ? null : (a.scenarios || {});
+    if (s && s[k] != null) return s[k];
+    // Volunteers are counted client-side; the roster is small and complete.
+    const src = who === "volunteers" ? ((vols && vols.roster) || []) : a.roster;
+    return k === "all" ? src.length : src.filter(matchScenarioFor(k)).length;
+  };
+  function matchScenarioFor(k) {
+    return (r) => k === "absent" ? !r.presentToday
+      : k === "present" ? !!r.presentToday
+      : k === "never" ? (r.present || 0) === 0
+      : k === "atrisk" ? (r.rate || 0) < 50
+      : k === "late" ? (r.lates || 0) > 0
+      : k === "half" ? (r.halfDays || 0) > 0
+      : k === "flagged" ? (r.state && r.state !== "clear")
+      : k === "perfect" ? (r.rate || 0) >= 100
+      : true;
+  }
+  const rangePreset = (days) => {
+    const end = win.to || prog.today || "";
+    if (!end) return;
+    const t = Date.parse(end + "T00:00:00Z");
+    if (!t) return;
+    setRange({ from: new Date(t - (days - 1) * 86400000).toISOString().slice(0, 10), to: end });
+  };
+  const centreOptions = Array.from(new Set(
+    a.roster.map(r => r.centre).concat(((vols && vols.roster) || []).map(r => r.centre)).filter(Boolean)
+  )).sort();
   return (
     <div>
       {prog.enabled && (
@@ -8908,7 +9000,9 @@ function SummerAttendance() {
         <AdminTile n={a.today} l="Present today"/>
         <AdminTile n={closed ? "—" : a.absentToday} l={closed ? "Absent (closed)" : "Absent today"}/>
         <AdminTile n={a.activeStudents} l="Active students"/>
-        <AdminTile n={a.sessionDays} l={prog.enabled ? "Programme days run" : "Days scanned"}/>
+        {/* Says WHICH days, because the rate column below is out of this
+            number and a bare count leaves the reader to guess the span. */}
+        <AdminTile n={a.sessionDays} l={win.ranged ? "Days in range" : (prog.enabled ? "Programme days run" : "Days scanned")}/>
       </div>
 
       <div className="summer-insight">
@@ -8922,7 +9016,9 @@ function SummerAttendance() {
         {ins && ins.aiError && <div className="summer-insight-hint">AI call failed ({ins.aiError}) — showing the rule-based summary.</div>}
       </div>
 
-      <div className="eyebrow" style={{ margin: "4px 0 10px" }}>LAST 14 DAYS</div>
+      <div className="eyebrow" style={{ margin: "4px 0 10px" }}>
+        {win.ranged ? "SELECTED DATES · " + a.days.length + " DAY" + (a.days.length === 1 ? "" : "S") : "LAST 14 DAYS"}
+      </div>
       <div className="summer-attbar">
         {/* A closed day is drawn as closed, not as a collapse in attendance —
             a flat Sunday next to a full Friday used to read as a crisis. */}
@@ -8958,22 +9054,122 @@ function SummerAttendance() {
         </span>
       </div>
 
-      <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div className="eyebrow">ATTENDANCE BY STUDENT</div>
-        <span style={{ flex: 1 }}/>
-        <input className="admin-input" style={{ width: 220 }} placeholder="Search name, ID, track, centre"
-          value={q} onChange={e => setQ(e.target.value)} aria-label="Search the roster"/>
-        <select className="admin-select" value={only} onChange={e => setOnly(e.target.value)} aria-label="Filter the roster">
-          <option value="all">Everyone</option>
-          <option value="absent">Absent today</option>
-          <option value="atrisk">Under 50%</option>
-          <option value="late">Has lateness logs</option>
-          <option value="flagged">Warned or worse</option>
-        </select>
-        <button className="btn btn-ghost btn-sm" disabled={!roster.length} onClick={() => downloadCsv("summer-attendance", roster.map(r => ({ studentId: r.studentId, fullName: r.fullName, track: r.track, centre: r.centre, present: r.present, sessionDays: a.sessionDays, rate: r.rate + "%", halfDays: r.halfDays || 0, lates: r.lates || 0, absences: r.absences || 0, state: r.state || "clear", lastSeen: r.lastSeen, presentToday: r.presentToday ? "yes" : "no" })))}>Export CSV{roster.length !== a.roster.length ? " (" + roster.length + ")" : ""}</button>
+      {/* ── The register controls ────────────────────────────────────────────
+          Who it is about, over which dates, in which situation. All three were
+          missing: the screen showed students only, term-to-date only, and hid
+          the scenarios behind an unlabelled dropdown. */}
+      <div className="att-controls">
+        <div className="att-controls-row">
+          <div className="att-seg" role="group" aria-label="Whose attendance">
+            {[["students", "Children", a.roster.length], ["volunteers", "Volunteers", ((vols && vols.roster) || []).length]].map(([k, l, n]) => (
+              <button key={k} className={"att-seg-btn" + (who === k ? " is-on" : "")} onClick={() => setWho(k)} aria-pressed={who === k}>
+                {l}<span className="att-seg-n">{n}</span>
+              </button>
+            ))}
+          </div>
+          <span style={{ flex: 1 }}/>
+          <input className="admin-input" style={{ width: 230 }} placeholder={who === "volunteers" ? "Search name, ID, role, centre" : "Search name, ID, track, centre"}
+            value={q} onChange={e => setQ(e.target.value)} aria-label="Search the register"/>
+        </div>
+
+        <div className="att-controls-row">
+          <span className="eyebrow" style={{ margin: 0 }}>DATES</span>
+          <input className="admin-input" type="date" value={range.from} max={range.to || undefined}
+            onChange={e => setRange(r => ({ ...r, from: e.target.value }))} aria-label="From date"/>
+          <span className="mono" style={{ color: "var(--ink-500)" }}>→</span>
+          <input className="admin-input" type="date" value={range.to} min={range.from || undefined}
+            onChange={e => setRange(r => ({ ...r, to: e.target.value }))} aria-label="To date"/>
+          {[["Today", 1], ["7 days", 7], ["30 days", 30]].map(([l, n]) => (
+            <button key={l} className="btn btn-ghost btn-sm" onClick={() => rangePreset(n)}>{l}</button>
+          ))}
+          <button className="btn btn-ghost btn-sm" disabled={!win.ranged} onClick={() => setRange({ from: "", to: "" })}>
+            Whole term
+          </button>
+          {centreOptions.length > 1 && (
+            <select className="admin-select" value={centre} onChange={e => setCentre(e.target.value)} aria-label="Filter by centre">
+              <option value="">All centres</option>
+              {centreOptions.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+        </div>
+
+        {/* Every scenario carries its own count, so choosing one is no longer
+            the only way to discover whether it has anybody in it. */}
+        <div className="att-chips" role="group" aria-label="Situation">
+          {ATT_SCENARIOS.map(s => {
+            const n = scenarioCount(s.key);
+            return (
+              <button key={s.key} className={"att-chip" + (only === s.key ? " is-on" : "")} data-tone={s.tone || ""}
+                title={s.hint} aria-pressed={only === s.key} onClick={() => setOnly(s.key)}>
+                {s.label}<span className="att-chip-n">{n}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
-      {!roster.length ? (
-        <div className="admin-empty">{a.roster.length ? "No student matches that filter." : "Nobody is enrolled in this cohort yet."}</div>
+
+      <div style={{ marginTop: 18, display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <div className="eyebrow" style={{ margin: 0 }}>{who === "volunteers" ? "ATTENDANCE BY VOLUNTEER" : "ATTENDANCE BY CHILD"}</div>
+        <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>
+          {win.days || 0} day{(win.days || 0) === 1 ? "" : "s"} · {winLabel}
+        </span>
+        <span style={{ flex: 1 }}/>
+        <button className="btn btn-ghost btn-sm"
+          disabled={who === "volunteers" ? !volRoster.length : !roster.length}
+          onClick={() => who === "volunteers"
+            ? downloadCsv("volunteer-attendance", volRoster.map(r => ({ volunteerId: r.volunteerId, fullName: r.fullName, role: r.role, centre: r.centre, faculty: r.faculty, joined: r.joined, present: r.present, expected: r.expected, rate: (r.rate == null ? "" : r.rate + "%"), onTimePct: (r.onTimePct == null ? "" : r.onTimePct + "%"), lates: r.lates, streak: r.streak, lastSeen: r.lastSeen, presentToday: r.presentToday ? "yes" : "no", windowFrom: win.from, windowTo: win.to })))
+            : downloadCsv("summer-attendance", roster.map(r => ({ studentId: r.studentId, fullName: r.fullName, track: r.track, centre: r.centre, present: r.present, sessionDays: a.sessionDays, rate: r.rate + "%", halfDays: r.halfDays || 0, lates: r.lates || 0, absences: r.absences || 0, state: r.state || "clear", lastSeen: r.lastSeen, presentToday: r.presentToday ? "yes" : "no", windowFrom: win.from, windowTo: win.to })))}>
+          Export CSV{who === "volunteers"
+            ? (volRoster.length !== ((vols && vols.roster) || []).length ? " (" + volRoster.length + ")" : "")
+            : (roster.length !== a.roster.length ? " (" + roster.length + ")" : "")}
+        </button>
+      </div>
+
+      {who === "volunteers" ? (
+        !vols ? <div className="admin-empty">Couldn't load volunteer attendance.</div>
+        : !volRoster.length ? (
+          <div className="admin-empty">{((vols.roster || []).length) ? "No volunteer matches that filter." : "No active volunteers on the roster yet."}</div>
+        ) : (
+        <>
+          {volSum && volSum.measurable && (
+            <div className="admin-tiles" style={{ margin: "8px 0 12px" }}>
+              <AdminTile n={(volSum.kpis.rate == null ? "—" : volSum.kpis.rate + "%")} l="Volunteer attendance"/>
+              <AdminTile n={(volSum.kpis.onTimePct == null ? "—" : volSum.kpis.onTimePct + "%")} l="On time"/>
+              <AdminTile n={volSum.kpis.absences} l="Absences"/>
+              <AdminTile n={volSum.kpis.reliable} l="Reliable (75%+)"/>
+            </div>
+          )}
+          <div className="admin-table-wrap"><table className="admin-table">
+            <thead><tr><th>Volunteer</th><th>Role</th><th>Present</th><th>Rate</th><th>On time</th><th>Streak</th><th>Last seen</th><th>Today</th></tr></thead>
+            <tbody>{volRoster.map(r => (
+              <tr key={r.volunteerId}>
+                <td>{r.fullName}<div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{r.volunteerId}{r.centre ? " · " + r.centre : ""}</div></td>
+                <td>{r.role || "—"}{r.faculty ? <div className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>{r.faculty}</div> : null}</td>
+                {/* Their own denominator: programme days since THEY joined, not
+                    the whole window — a volunteer who started in week four did
+                    not miss weeks one to three. */}
+                <td className="mono">{r.present}/{r.expected}{r.joined ? <div style={{ fontSize: 10.5, color: "var(--ink-500)" }}>from {r.joined}</div> : null}</td>
+                <td style={{ minWidth: 120 }}>{r.rate == null ? <span className="mono" style={{ color: "var(--ink-500)" }}>no days yet</span>
+                  : <div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono">{r.rate}%</span></div>}</td>
+                <td className="mono" style={{ color: (r.onTimePct != null && r.onTimePct < 80) ? "var(--gold-700,#7a5600)" : undefined }}>{r.onTimePct == null ? "—" : r.onTimePct + "%"}</td>
+                <td className="mono">{r.streak ? r.streak : "—"}</td>
+                <td className="mono">{r.lastSeen || "—"}</td>
+                <td>{r.presentToday ? <span className="chip status-published">✓</span> : <span className="chip status-draft">—</span>}</td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+          {/* The same caveats the public board carries. A volunteer rate has a
+              denominator that assumes every programme day, and there is no rota
+              in the system to net a part-time arrangement out of it. */}
+          {volSum && (volSum.caveats || []).length > 0 && (
+            <ul style={{ margin: "12px 0 0", paddingLeft: 18 }}>
+              {volSum.caveats.map((c, i) => <li key={i} style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-500)", marginBottom: 4 }}>{c}</li>)}
+            </ul>
+          )}
+        </>
+        )
+      ) : !roster.length ? (
+        <div className="admin-empty">{a.roster.length ? "No child matches that filter." : "Nobody is enrolled in this cohort yet."}</div>
       ) : (
       <div className="admin-table-wrap" style={{ marginTop: 8 }}><table className="admin-table">
         <thead><tr><th>Student</th><th>Track</th><th>Present</th><th>Rate</th><th>Late</th><th>Standing</th><th>Last seen</th><th>Today</th></tr></thead>

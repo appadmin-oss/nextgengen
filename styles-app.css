@@ -4258,6 +4258,40 @@ section p[style*="var(--ink-500)"] {
 .summer-rate { display: flex; align-items: center; gap: 8px; }
 .summer-rate-bar { flex: 1; height: 7px; border-radius: 99px; background: rgba(12,20,50,0.08); overflow: hidden; }
 .summer-rate-fill { height: 100%; border-radius: 99px; }
+
+/* ── The attendance register's controls ──────────────────────────────────────
+   Grouped in one panel rather than strung along a line: who the register is
+   about, over which dates, in which situation. The three used to be a search
+   box and one unlabelled dropdown, with no way to see how many rows a filter
+   held before choosing it. */
+.att-controls { margin-top: 22px; padding: 14px 16px; border: 1px solid var(--line, #e6e2d6); border-radius: 14px; background: var(--paper-50, #fbf9f4); display: flex; flex-direction: column; gap: 12px; }
+.att-controls-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.att-seg { display: inline-flex; padding: 3px; gap: 3px; border-radius: 999px; background: rgba(12,20,50,0.06); }
+.att-seg-btn { font: inherit; font-size: 13.5px; font-weight: 600; padding: 7px 14px; border: none; border-radius: 999px; background: transparent; color: var(--ink-700, #2a335c); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.att-seg-btn.is-on { background: var(--navy-900, #0c1432); color: #fff; }
+.att-seg-n { font-family: var(--font-mono); font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: rgba(12,20,50,0.10); }
+.att-seg-btn.is-on .att-seg-n { background: rgba(255,255,255,0.22); }
+.att-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.att-chip { font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 999px; cursor: pointer; background: #fff; border: 1px solid var(--line, #e6e2d6); color: var(--ink-700, #2a335c); display: inline-flex; align-items: center; gap: 7px; }
+.att-chip:hover { border-color: rgba(12,20,50,0.28); }
+.att-chip-n { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; color: var(--ink-500); }
+.att-chip.is-on { background: var(--navy-900, #0c1432); border-color: var(--navy-900, #0c1432); color: #fff; }
+.att-chip.is-on .att-chip-n { color: rgba(255,255,255,0.75); }
+/* A scenario that is a problem reads as one even before it is selected — but
+   only when it actually has somebody in it, which is why the tone is on the
+   chip and the count is what makes it visible. */
+.att-chip[data-tone="bad"]  .att-chip-n { color: #b91c1c; }
+.att-chip[data-tone="warn"] .att-chip-n { color: #b45309; }
+.att-chip[data-tone="good"] .att-chip-n { color: #15803d; }
+.att-chip.is-on[data-tone="bad"]  { background: #b91c1c; border-color: #b91c1c; }
+.att-chip.is-on[data-tone="warn"] { background: #b45309; border-color: #b45309; }
+.att-chip.is-on[data-tone="good"] { background: #15803d; border-color: #15803d; }
+.att-chip.is-on[data-tone] .att-chip-n { color: rgba(255,255,255,0.8); }
+@media (max-width: 640px) {
+  .att-controls-row > .admin-input[type="date"] { flex: 1 1 42%; min-width: 0; }
+  .att-seg { width: 100%; }
+  .att-seg-btn { flex: 1; justify-content: center; }
+}
 .summer-insight { margin: 4px 0 18px; padding: 16px 18px; border-radius: 16px; background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(208,255,58,0.06)); border: 1px solid var(--line, #e6e2d6); }
 .summer-insight-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .summer-insight-head .eyebrow { display: inline-flex; align-items: center; gap: 6px; }

@@ -831,12 +831,47 @@ function unzipDocumentXml(buf) {
           { studentId: 'SUM-3', fullName: 'Chidi Gamma', track: 'Arts',  centre: 'Ijaiye', present: 9,  halfDays: 0, lates: 1, lastSeen: '2026-07-16', presentToday: false, rate: 90,  state: 'warned',  absences: 1 },
         ],
         atRisk: [{ studentId: 'SUM-2', fullName: 'Bode Beta', rate: 30 }],
-        recent: [], 
+        recent: [],
+        /* Every scenario's count, so the chip row can be read without picking
+           each one. 'never' is its own case: a child with no check-in at all is
+           a different problem from one attending badly, and it used to hide
+           inside "under 50%". */
+        scenarios: { all: 3, present: 1, absent: 2, atrisk: 1, never: 0, late: 2, half: 1, flagged: 2, perfect: 1 },
+        window: { from: '2026-07-06', to: TODAY2, days: 10, ranged: false, scope: NOCAL ? 'observed' : 'term' },
         programme: NOCAL
           ? { enabled: false, isProgrammeDay: true, today: TODAY2, nextDay: '', scannedDays: 10, termStart: '', termEnd: '', remaining: 0 }
           : { enabled: true, isProgrammeDay: !CLOSED, today: TODAY2, nextDay: '2026-07-20', scannedDays: 9,
               termStart: '2026-07-06', termEnd: '2026-08-28', remaining: 30 },
       } }); },
+      /* The volunteers' own register. Their check-ins have always been in the
+         attendance table; this screen simply never read them, because every
+         query on it joins summer_students so volunteer scans cannot skew the
+         children's rate. Each volunteer's denominator is programme days since
+         THEY joined — Duty Dele started on the 20th and has not missed a day,
+         which must read as 100%, not as 5 of 10. */
+      volunteerAttendance: function (o) {
+        window.__volOpts = o || {};
+        return Promise.resolve({ volunteers: {
+          summary: { measurable: true, basis: 'calendar', scope: 'term', days: 10,
+                     from: '2026-07-06', to: TODAY2, termStart: '2026-07-06', termEnd: '2026-08-28',
+                     narrowed: false, pendingDays: 0,
+                     kpis: { rate: 73, onTimePct: 88, sessions: 22, expected: 30, absences: 8,
+                             lateSessions: 3, halfDays: 0, avgLateMinutes: 17, measured: 3, reliable: 2 },
+                     trend: [], bands: [], byCentre: [], byRole: [],
+                     caveats: ['Expected days are programme days since a volunteer joined. There is no rota in the system, so someone who agreed to come one day a week reads low here.'] },
+          roster: [
+            { volunteerId: 'VOL-MEN-26-001', fullName: 'Mentor Mary', role: 'mentor', centre: 'Ijaiye', faculty: 'Tech',
+              joined: '2026-07-06', present: 10, expected: 10, rate: 100, lates: 0, halfDays: 0, onTimePct: 100,
+              streak: 10, lastSeen: TODAY2, band: 'every', presentToday: true },
+            { volunteerId: 'VOL-INS-26-002', fullName: 'Duty Dele', role: 'instructor', centre: 'Egbeda', faculty: 'Arts',
+              joined: '2026-07-20', present: 5, expected: 5, rate: 100, lates: 2, halfDays: 0, onTimePct: 60,
+              streak: 5, lastSeen: TODAY2, band: 'every', presentToday: true },
+            { volunteerId: 'VOL-ADM-26-003', fullName: 'Absent Ada', role: 'admin', centre: 'Ijaiye', faculty: '',
+              joined: '2026-07-06', present: 0, expected: 10, rate: 0, lates: 0, halfDays: 0, onTimePct: null,
+              streak: 0, lastSeen: '', band: 'rare', presentToday: false },
+          ],
+        } });
+      },
       insights: function () { return Promise.resolve({ insight: '· all good', source: 'rules', aiConfigured: false }); },
       absenceAlert: function () { var e = new Error('not_a_programme_day'); e.code = 'not_a_programme_day'; e.data = { nextDay: '2026-07-20' }; return Promise.reject(e); },
       archive: function () { return Promise.resolve({ students: 0 }); },
@@ -2138,16 +2173,72 @@ function unzipDocumentXml(buf) {
 
     // Filters have to actually narrow the table, and hold across a search.
     const rows = () => att.locator('.admin-table tbody tr').count();
+    const chip = (label) => att.locator('.att-chip', { hasText: label }).first();
     ok('…lists the whole roster by default (' + await rows() + ')', await rows() === 3);
-    await att.selectOption('select[aria-label="Filter the roster"]', 'absent');
-    await att.waitForTimeout(120);
+
+    /* THE SCENARIOS. These were one unlabelled dropdown, so the only way to
+       learn whether a filter held anybody was to choose it — and on a capped
+       list the answer could be a misleading "none". Each is now a chip
+       carrying its own count, and "never attended" exists at all: a child with
+       no check-in was hidden inside "under 50%" with everyone merely
+       struggling. */
+    ok('…offers the situations a coordinator walks in with, each with its count',
+      await att.locator('.att-chip').count() === 9
+      && /Never attended/.test(attBody) && /Half days/.test(attBody) && /Every day/.test(attBody));
+    ok('…and the counts come from the whole register, not the drawn page',
+      (await chip('Absent today').innerText()).indexOf('2') !== -1
+      && (await chip('Late arrivals').innerText()).indexOf('2') !== -1);
+
+    await chip('Absent today').click();
+    await att.waitForTimeout(140);
     ok('…filters to absent-today', await rows() === 2);
-    await att.fill('input[aria-label="Search the roster"]', 'bode');
-    await att.waitForTimeout(120);
+    await att.fill('input[aria-label="Search the register"]', 'bode');
+    await att.waitForTimeout(140);
     ok('…and a search narrows inside the filter, rather than replacing it', await rows() === 1);
-    await att.fill('input[aria-label="Search the roster"]', 'zzz');
-    await att.waitForTimeout(120);
-    ok('…says so when nothing matches', /No student matches/.test(await att.evaluate(() => document.body.innerText)));
+    await att.fill('input[aria-label="Search the register"]', 'zzz');
+    await att.waitForTimeout(140);
+    ok('…says so when nothing matches', /No child matches/.test(await att.evaluate(() => document.body.innerText)));
+    await att.fill('input[aria-label="Search the register"]', '');
+    await chip('Everyone').click();
+    await att.waitForTimeout(140);
+
+    /* ── The volunteers ──────────────────────────────────────────────────
+       Their check-ins have been in the same table since the scanner learned to
+       read a badge. Every query on this screen joins summer_students so that
+       they cannot skew the children's rate — and the effect was that the people
+       running the centre appeared nowhere on the one screen about who turned
+       up. */
+    await att.locator('.att-seg-btn', { hasText: 'Volunteers' }).click();
+    await att.waitForTimeout(200);
+    const volBody = await att.evaluate(() => document.body.innerText);
+    ok('…has a volunteers register at all, with names on it',
+      /ATTENDANCE BY VOLUNTEER/.test(volBody) && /Mentor Mary/.test(volBody) && /Absent Ada/.test(volBody));
+    ok('…and shows each volunteer\'s rate, punctuality and streak',
+      /73%/.test(volBody) && /88%/.test(volBody) && await rows() === 3);
+    /* A volunteer who joined in week three did not miss weeks one and two. The
+       denominator is programme days since THEY joined, so 5 of 5 is 100% and
+       must not read as 5 of 10. */
+    ok('…counting each volunteer only from the day they joined',
+      /5\/5/.test(volBody) && /from 2026-07-20/.test(volBody));
+    ok('…and repeats the caveat that there is no rota to net a part-timer out',
+      /no rota in the system/.test(volBody));
+    await chip('Never attended').click();
+    await att.waitForTimeout(140);
+    ok('…the scenarios filter the volunteer register with the same meaning',
+      await rows() === 1 && /Absent Ada/.test(await att.evaluate(() => document.body.innerText)));
+    await chip('Everyone').click();
+    await att.waitForTimeout(140);
+
+    /* ── Dates ───────────────────────────────────────────────────────────
+       There was no way to ask about anything but term-to-date, and no statement
+       of which span the rate column was out of. */
+    ok('…states the window the rate is measured over, not just a day count',
+      /term to date/.test(await att.evaluate(() => document.body.innerText)));
+    await att.fill('input[aria-label="From date"]', '2026-07-13');
+    await att.fill('input[aria-label="To date"]', '2026-07-17');
+    await att.waitForTimeout(300);
+    ok('…and a chosen range is sent to the server rather than filtered in the page',
+      JSON.stringify(await att.evaluate(() => window.__volOpts)) === '{"from":"2026-07-13","to":"2026-07-17"}');
     await att.close();
 
     // Closed day: the numbers and the guardian email both have to stand down.

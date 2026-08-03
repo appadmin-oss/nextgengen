@@ -675,7 +675,8 @@
         // flushing later. The server clamps it to the last 24h so punctuality
         // is graded at the moment the card was presented, not at flush time.
         checkin:      (token, method, device, scannedAt) => request('/admin/summer.php', { body: { action: 'checkin', token, method, device, scannedAt } }),
-        attendance:   (cohortId) => request('/admin/summer.php' + qs({ view: 'attendance', cohortId })),
+        attendance:   (cohortId, opts) => request('/admin/summer.php' + qs(Object.assign({ view: 'attendance', cohortId }, opts || {}))),
+        volunteerAttendance: (opts) => request('/admin/summer.php' + qs(Object.assign({ view: 'volunteer-attendance' }, opts || {}))),
         insights:     (cohortId) => request('/admin/summer.php' + qs({ view: 'insights', cohortId })),
         archive:      (cohortId, compress) => request('/admin/summer.php', { body: { action: 'archive', cohortId, compress: !!compress } }),
         issueCerts:   (status, cohortId) => request('/admin/summer.php', { body: { action: 'issueCerts', status: status || 'graduated', cohortId: cohortId || '' } }),

@@ -865,20 +865,53 @@ function admin_summer_attendance(array $p): array {
      * figures. */
     $scannedDays = $one("SELECT COUNT(DISTINCT a.date) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ?", [$cid]);
     $programmeDays = !empty($prog['enabled']) ? programme_days_elapsed($today, $prog) : [];
-    $sessionDays = !empty($prog['enabled']) ? count($programmeDays) : $scannedDays;
+
+    /* An explicit date range, for the questions a term-to-date figure cannot
+     * answer: how was last week, what happened on that one bad Tuesday, is the
+     * dip since half term real. Clamped INSIDE the term — a range reaching back
+     * before the programme opened would count days it was shut as days a child
+     * missed, which is the same mistake the calendar exists to prevent.
+     *
+     * Absent both, the window is the term as configured on the programme page.
+     * That is where the dates already live, and it does not move underfoot. */
+    $ymd = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) === 1 ? (string)$v : '';
+    $from = $ymd($p['from'] ?? ''); $to = $ymd($p['to'] ?? '');
+    if ($from !== '' && $to !== '' && $from > $to) [$from, $to] = [$to, $from];
+    $ranged = $from !== '' || $to !== '';
+    $windowDays = $programmeDays;
+    if ($ranged && $windowDays) {
+        if ($from !== '') $windowDays = array_values(array_filter($windowDays, fn($d) => $d >= $from));
+        if ($to !== '')   $windowDays = array_values(array_filter($windowDays, fn($d) => $d <= $to));
+    }
+    $winFrom = $windowDays ? $windowDays[0] : $from;
+    $winTo   = $windowDays ? $windowDays[count($windowDays) - 1] : ($to !== '' ? $to : $today);
+    $sessionDays = !empty($prog['enabled']) ? count($windowDays) : $scannedDays;
     $activeStudents = $one("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND status = 'active'", [$cid]);
     $presentToday = $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ? AND a.date = ?", [$cid, $today]);
 
-    // Last 14 calendar days as a series, each tagged with whether the programme
-    // actually ran — so a flat Sunday reads as "closed", not as a collapse.
+    /* The bar series. Unranged it is the last 14 calendar days including the
+     * closed ones, each tagged — a flat Sunday has to read as "closed", not as
+     * a collapse. Ranged it is the days the range actually covers.
+     *
+     * One grouped query instead of one per day: fourteen round trips to draw
+     * fourteen bars, and up to thirty once a range could widen it. */
+    $seriesFrom = $ranged && $winFrom !== '' ? $winFrom : gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC') - 13 * 86400);
+    $seriesTo   = $ranged && $winTo !== '' ? $winTo : $today;
+    $presentPerDay = [];
+    foreach (db_all("SELECT a.date d, COUNT(DISTINCT a.studentId) c
+                     FROM attendance a JOIN summer_students s ON s.studentId = a.studentId
+                     WHERE a.cohortId = ? AND a.date >= ? AND a.date <= ? GROUP BY a.date", [$cid, $seriesFrom, $seriesTo]) as $r) {
+        $presentPerDay[(string)$r['d']] = (int)$r['c'];
+    }
     $days = [];
-    for ($i = 13; $i >= 0; $i--) {
-        $d = gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC') - $i * 86400);
-        $days[] = [
-            'date' => $d,
-            'present' => $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ? AND a.date = ?", [$cid, $d]),
-            'programmeDay' => programme_is_day($d, $prog),
-        ];
+    $t = (int)strtotime($seriesFrom . ' 00:00:00 UTC');
+    $tEnd = (int)strtotime($seriesTo . ' 00:00:00 UTC');
+    // Bounded: a mistyped year must not walk a thousand bars into the page.
+    $span = (int)floor(($tEnd - $t) / 86400) + 1;
+    if ($span > 45) { $t = $tEnd - 44 * 86400; }
+    for (; $t <= $tEnd; $t += 86400) {
+        $d = gmdate('Y-m-d', $t);
+        $days[] = ['date' => $d, 'present' => $presentPerDay[$d] ?? 0, 'programmeDay' => programme_is_day($d, $prog)];
     }
 
     /* Per-student rollup: total present, last seen, attendance rate.
@@ -900,7 +933,18 @@ function admin_summer_attendance(array $p): array {
     // One query per rollup instead of four per student — a 600-student cohort
     // was 2,400 round trips to draw one table.
     $presentBy = []; $lastBy = []; $halfBy = []; $lateBy = [];
-    foreach (db_all("SELECT studentId, COUNT(DISTINCT date) c, MAX(date) last, SUM(halfDay) half, SUM(redline) late FROM attendance WHERE cohortId = ? GROUP BY studentId", [$cid]) as $r) {
+    /* Bounded to the SAME days the rate is out of.
+     *
+     * This counted every scan ever filed against the cohort, against a
+     * denominator of programme days — so a scan on a closed day, or one from
+     * outside a chosen range, pushed the numerator past the denominator and the
+     * rate came out over 100%. The min() below capped it, which turned a
+     * counting error into a silent, confident "100%". Numerator and denominator
+     * now cover the same dates and the cap is only a backstop. */
+    $rollSql = "SELECT studentId, COUNT(DISTINCT date) c, MAX(date) last, SUM(halfDay) half, SUM(redline) late FROM attendance WHERE cohortId = ?";
+    $rollArgs = [$cid];
+    if ($winFrom !== '' && $winTo !== '') { $rollSql .= ' AND date >= ? AND date <= ?'; $rollArgs[] = $winFrom; $rollArgs[] = $winTo; }
+    foreach (db_all($rollSql . ' GROUP BY studentId', $rollArgs) as $r) {
         $presentBy[(string)$r['studentId']] = (int)$r['c'];
         $lastBy[(string)$r['studentId']] = (string)($r['last'] ?? '');
         $halfBy[(string)$r['studentId']] = (int)($r['half'] ?? 0);
@@ -934,6 +978,25 @@ function admin_summer_attendance(array $p): array {
     $atRiskAll = $sessionDays >= 3 ? array_values(array_filter($roster, fn($r) => $r['rate'] < 50)) : [];
     $atRisk = array_slice($atRiskAll, 0, $cap);
     $rosterTotal = count($roster);
+
+    /* How many children each filter would show, counted over the WHOLE roster
+     * before the cap. The filters were an unlabelled dropdown, so choosing one
+     * was the only way to find out whether it had anything in it — and on a
+     * capped list the answer could be "none" for a reason that was not true.
+     * `never` is its own scenario because a child who has not appeared once is
+     * a different problem from one attending badly, and 0% hid inside "under
+     * 50%" with everybody else. */
+    $scenarios = [
+        'all'     => $rosterTotal,
+        'present' => count(array_filter($roster, fn($r) => $r['presentToday'])),
+        'absent'  => count(array_filter($roster, fn($r) => !$r['presentToday'])),
+        'atrisk'  => count($atRiskAll),
+        'never'   => count(array_filter($roster, fn($r) => ($r['present'] ?? 0) === 0)),
+        'late'    => count(array_filter($roster, fn($r) => ($r['lates'] ?? 0) > 0)),
+        'half'    => count(array_filter($roster, fn($r) => ($r['halfDays'] ?? 0) > 0)),
+        'flagged' => count(array_filter($roster, fn($r) => ($r['state'] ?? 'clear') !== 'clear')),
+        'perfect' => count(array_filter($roster, fn($r) => ($r['rate'] ?? 0) >= 100)),
+    ];
     $roster = array_slice($roster, 0, $cap);
 
     $recent = db_all("SELECT a.studentId, a.date, a.checkInAt, a.method, s.fullName FROM attendance a LEFT JOIN summer_students s ON s.studentId = a.studentId WHERE a.cohortId = ? ORDER BY a.checkInAt DESC LIMIT 25", [$cid]);
@@ -946,6 +1009,12 @@ function admin_summer_attendance(array $p): array {
         // cohort absent and email every guardian about it.
         'absentToday' => $isProgrammeDay ? max(0, $activeStudents - $presentToday) : 0,
         'days' => $days, 'roster' => $roster, 'atRisk' => $atRisk, 'recent' => $recent,
+        'scenarios' => $scenarios,
+        /* The window, named. A bare "Rate" column against an unstated span is
+         * the main reason this screen was hard to read: the reader could not
+         * tell whether 62% meant the term or the last fortnight. */
+        'window' => ['from' => $winFrom, 'to' => $winTo, 'days' => $sessionDays,
+                     'ranged' => $ranged, 'scope' => $ranged ? 'range' : (!empty($prog['enabled']) ? 'term' : 'observed')],
         // Say what was left out. A truncated list that does not admit it reads
         // as "this is everyone", which is the wrong thing to believe about an
         // attendance register.

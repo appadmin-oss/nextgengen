@@ -1640,6 +1640,66 @@ chk('nobody is absent on a non-programme day', (function () use ($SU) {
     programme_settings_save($keep, 'test');
     return $a['absentToday'] === 0 && ($alert['error'] ?? '') === 'not_a_programme_day';
 })());
+chk('the window is named, so a rate is not a percentage of an unstated span', (function () use ($att2) {
+    $w = $att2['window'] ?? null;
+    return is_array($w) && $w['scope'] === 'term' && $w['ranged'] === false
+        && $w['from'] === '2026-07-06' && $w['days'] === $att2['sessionDays'];
+})());
+chk('every filter carries its own count, including never-attended on its own', (function () use ($att2) {
+    $s = $att2['scenarios'] ?? null;
+    if (!is_array($s)) return false;
+    foreach (['all', 'present', 'absent', 'atrisk', 'never', 'late', 'half', 'flagged', 'perfect'] as $k) {
+        if (!array_key_exists($k, $s)) return false;
+    }
+    /* A child with no check-in at all used to hide inside "under 50%" with
+     * everybody merely struggling; it is a different problem and gets its own
+     * count. present + absent has to be the whole register, or a chip is lying
+     * about how many rows it holds. */
+    return $s['present'] + $s['absent'] === $s['all'] && $s['never'] <= $s['atrisk'];
+})());
+chk('a date range narrows the window, and both sides of the rate with it', (function () use ($SU) {
+    /* The numerator counted EVERY scan ever filed against the cohort while the
+     * denominator was programme days, so a scan outside the window pushed the
+     * rate past 100% and a min() capped it — a counting error turned into a
+     * confident 100%. Ranged, the two must cover the same dates.
+     *
+     * One child with a check-in on EVERY programme day, so the difference
+     * between "all their scans" and "their scans in this range" is a number the
+     * assertion can name rather than hope for. */
+    $days = programme_days_elapsed();
+    if (count($days) < 4) return true;
+    $c = summer_ensure_cohort();
+    $cid = (string)$c['cohortId'];
+    db_exec("DELETE FROM attendance WHERE studentId = 'ATT-WIN-1'");
+    db_exec("DELETE FROM summer_students WHERE studentId = 'ATT-WIN-1'");
+    db_insert('summer_students', ['studentId' => 'ATT-WIN-1', 'cohortId' => $cid, 'fullName' => 'Window Child',
+        'handle' => 'windowchild', 'track' => 'Tech', 'centre' => 'Egbeda', 'status' => 'active',
+        'regStatus' => 'verified']);
+    foreach ($days as $d) {
+        db_insert('attendance', ['cohortId' => $cid, 'studentId' => 'ATT-WIN-1', 'token' => '', 'date' => $d,
+            'checkInAt' => $d . 'T08:00:00Z', 'method' => 'qr', 'byId' => $SU, 'device' => '',
+            'status' => 'present', 'lateMinutes' => 0, 'redline' => 0, 'halfDay' => 0, 'createdAt' => now_iso()]);
+    }
+    $from = $days[count($days) - 2]; $to = $days[count($days) - 1];
+    $r = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'from' => $from, 'to' => $to])['attendance'];
+    $mine = null;
+    foreach ($r['roster'] as $row) if ($row['studentId'] === 'ATT-WIN-1') $mine = $row;
+    $rev = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU, 'from' => $to, 'to' => $from])['attendance'];
+    $full = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU])['attendance'];
+    $mineFull = null;
+    foreach ($full['roster'] as $row) if ($row['studentId'] === 'ATT-WIN-1') $mineFull = $row;
+    db_exec("DELETE FROM attendance WHERE studentId = 'ATT-WIN-1'");
+    db_exec("DELETE FROM summer_students WHERE studentId = 'ATT-WIN-1'");
+
+    return ($r['window']['scope'] ?? '') === 'range' && $r['window']['from'] === $from && $r['window']['to'] === $to
+        && $r['sessionDays'] === 2
+        /* EXACTLY two, not "all of them, capped". The full-window read is the
+           control: the same child counts every day there. */
+        && $mine && $mine['present'] === 2 && $mine['rate'] === 100
+        && $mineFull && $mineFull['present'] === count($days)
+        // A reversed range is still a range.
+        && $rev['window']['from'] === $from && $rev['window']['to'] === $to;
+})());
 // Leave enforcement off for the rest of the suite so later assertions see the
 // pre-policy behaviour they were written against.
 backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => false]]);
@@ -10229,6 +10289,61 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $a = $P['perVolunteer']['VOL-ATT-A'] ?? null;
         return $P['pendingDays'] === 1 && $P['days'] === 9 && $P['to'] === $D(1)
             && $a && $a['expected'] === 9 && $a['rate'] === 100 && $a['streak'] === 9;
+    })());
+
+    chk('vol attendance: the window is the term from the programme page, not a rolling 30 days', (function () use ($D, $today) {
+        /* A rolling window answers a different question from the one on screen.
+         * The term start is already set on the programme page; a 30-day slice
+         * drifts away from it every morning, so by week seven week one had
+         * silently left the numbers with nothing saying so.
+         *
+         * A FIFTY-day term, because a ten-day one cannot tell the two apart —
+         * which is how the rolling slice survived being tested in the first
+         * place. */
+        programme_settings_save(['enabled' => true, 'startDate' => $D(49), 'endDate' => $today,
+            'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'NGG-2025-0099');
+        $L = volunteer_attendance_analysis();
+        $long = $L['scope'] === 'term' && $L['termStart'] === $D(49) && $L['from'] === $D(49) && $L['days'] === 50;
+        // Back to the ten-day term the rest of this block is written against.
+        programme_settings_save(['enabled' => true, 'startDate' => $D(9), 'endDate' => $today,
+            'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'NGG-2025-0099');
+        $A = volunteer_attendance_analysis();
+        return $long && $A['scope'] === 'term' && $A['termStart'] === $D(9) && $A['from'] === $D(9) && $A['days'] === 10;
+    })());
+
+    chk('vol attendance: a chosen range narrows the window and is clamped inside the term', (function () use ($D, $today, $labRow) {
+        /* A range reaching back before the programme opened would count days it
+         * was shut as days a volunteer missed. */
+        $R = volunteer_attendance_analysis([], ['from' => $D(4), 'to' => $D(2)]);
+        $wide = volunteer_attendance_analysis([], ['from' => '2000-01-01', 'to' => $today]);
+        $a = $R['perVolunteer']['VOL-ATT-A'] ?? null;
+        return $R['scope'] === 'range' && $R['days'] === 3 && $R['from'] === $D(4) && $R['to'] === $D(2)
+            && $a && $a['expected'] === 3 && $a['sessions'] === 3
+            // Clamped: a range before the term cannot invent days.
+            && $wide['days'] === 10 && $wide['from'] === $D(9);
+    })());
+
+    chk('vol attendance: a reversed range is read as a range, not as nothing', (function () use ($D) {
+        $R = volunteer_attendance_analysis([], ['from' => $D(2), 'to' => $D(4)]);
+        return $R['days'] === 3 && $R['from'] === $D(4) && $R['to'] === $D(2);
+    })());
+
+    chk('vol attendance: the admin register names volunteers and counts each from their own start', (function () use ($lab) {
+        $r = backend_dispatch('admin.volunteer.attendance', ['requesterId' => 'NGG-2025-0099']);
+        if (empty($r['ok'])) return false;
+        $by = []; foreach ($r['volunteers']['roster'] as $row) $by[$row['volunteerId']] = $row;
+        $a = $by['VOL-ATT-A'] ?? null; $c = $by['VOL-ATT-C'] ?? null;
+        // Named, unlike the public board, and each with their own denominator.
+        return $a && $c && $a['fullName'] !== '' && $a['expected'] === 10 && $a['rate'] === 100
+            && $c['expected'] === 5 && $c['rate'] === 100 && $c['joined'] !== ''
+            // Per-person rows here are for staff, so the id IS the point.
+            && isset($r['volunteers']['summary']['kpis'])
+            && !isset($r['volunteers']['summary']['perVolunteer']);
+    })());
+
+    chk('vol attendance: the admin register is gated on the roster capability', (function () {
+        return (backend_dispatch('admin.volunteer.attendance', ['requesterId' => ''])['ok'] ?? false) !== true
+            && (backend_dispatch('admin.volunteer.attendance', ['requesterId' => 'NGG-2025-0001'])['ok'] ?? false) !== true;
     })());
 
     chk('vol attendance: the public board carries the breakdown but never a volunteerId', (function () use ($lab) {
