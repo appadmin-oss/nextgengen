@@ -8644,20 +8644,42 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
             'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Growthville', 'track' => 'Tech', 'status' => 'active',
             'regStatus' => 'verified', 'enrolledAt' => gmdate('Y-m-d\TH:i:s\Z', time() - $joinedWeeksAgo * 7 * 86400),
             'updatedAt' => now_iso()]);
+        /* Anchor each week's days to the MONDAY of that ISO week, and use only
+           COMPLETE past weeks (hence +1).
+
+           Counting back day-by-day from time() — which this did — spills into
+           the previous ISO week whenever the suite runs early in a week, and
+           growth_week_keys() buckets by ISO week. On a Monday, four of the five
+           days meant for "this week" landed in the week before it, which
+           inverts the very slope the fixture exists to create. It failed every
+           Monday and Tuesday and passed the rest of the week. Same class of bug
+           as the weekend-flaky absence sweep. */
         foreach (array_reverse($perWeek) as $back => $days) {
+            $weekStart = strtotime('monday this week', time() - ($back + 1) * 7 * 86400);
             for ($d = 0; $d < $days; $d++) {
-                $ts = time() - ($back * 7 * 86400) - ($d * 86400);
+                $ts = $weekStart + $d * 86400;
                 db_insert('attendance', ['cohortId' => 'C-GROWTH', 'studentId' => $id,
                     'date' => gmdate('Y-m-d', $ts), 'checkInAt' => now_iso(), 'method' => 'qr', 'createdAt' => now_iso()]);
             }
         }
     };
-    $mk('G-RISE', 'Rising Child',  [1, 2, 4, 5]);
-    $mk('G-FALL', 'Falling Child', [5, 4, 2, 1]);
+    /* Same four values in opposite order, so the LEVELS are as close as weekly
+       denominators allow while the trajectories are as far apart as possible.
+       Widened from [1,2,4,5] once the window stopped including a partial week:
+       the composite gap has to clear the threshold below on its own merits, not
+       because a clipped bucket happened to help. */
+    $mk('G-RISE', 'Rising Child',  [0, 2, 5, 7]);
+    $mk('G-FALL', 'Falling Child', [7, 5, 2, 0]);
     $mk('G-FLAT', 'Steady Child',  [3, 3, 3, 3]);
     $mk('G-NEW',  'Joined Today',  [0, 0, 0, 2], 0);   // enrolled this week
 
-    $G = backend_dispatch('analytics.growth', ['requesterId' => 'NGG-2025-0099']);
+    /* Read the board AS OF last Sunday, so the window is four whole weeks and
+       the fixture's four-point slope is four points.
+       Without this the window's last bucket is the current, partial week: on a
+       Monday it holds one day for everybody and flattens the very trajectory
+       this fixture exists to create. */
+    $G = backend_dispatch('analytics.growth', ['requesterId' => 'NGG-2025-0099',
+        'asOf' => gmdate('Y-m-d', strtotime('sunday last week'))]);
     $byName = [];
     foreach (($G['growth']['students'] ?? []) as $s) $byName[$s['name']] = $s;
 
@@ -8667,8 +8689,10 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
     chk('growth: THE claim — same level, opposite trajectory, far apart', (function () use ($byName) {
         $r = $byName['Rising Child'] ?? null; $f = $byName['Falling Child'] ?? null;
         if (!$r || !$f || $r['score'] === null || $f['score'] === null) return false;
-        // Levels are close (that is the point of the fixture)…
-        if (abs($r['attLevel'] - $f['attLevel']) > 12) return false;
+        /* Levels are now EXACTLY equal — same four day-counts over four complete
+           weeks with identical denominators — which is the strongest form of
+           this fixture's claim: nothing but the trajectory separates them. */
+        if (abs($r['attLevel'] - $f['attLevel']) > 0.01) return false;
         // …and the index still separates them decisively.
         return $r['score'] - $f['score'] > 10 && $r['attSlope'] > 0 && $f['attSlope'] < 0;
     })());
@@ -9466,6 +9490,222 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         backend_dispatch('admin.summer.student.update', ['requesterId' => $ADM, 'studentId' => $id, 'data' => ['sex' => 'other']]);
         $cleared = db_row('SELECT sex FROM summer_students WHERE studentId = ?', [$id]);
         return !empty($up['ok']) && (string)$row['sex'] === 'Male' && (string)$cleared['sex'] === '';
+    })());
+})();
+
+/* ── Baseline and endline ────────────────────────────────────────────────────
+ *
+ * The programme could report an average coursework grade and call the trend a
+ * learning gain. It is not one: different tasks, different markers, drifting
+ * difficulty, and a different set of children submitting each week. What a
+ * funder means by "we measured learning" is the same instrument administered
+ * twice to the same children, differenced per child — and the tests that matter
+ * here are the ones about what makes that number defensible rather than merely
+ * produced.
+ */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    $c = summer_ensure_cohort();
+
+    chk('assessment: an instrument locks the moment it has measured a child', (function () use ($ADM) {
+        $r = backend_dispatch('admin.assessment.instrument.save', ['requesterId' => $ADM, 'data' => [
+            'name' => 'EGRA oral reading', 'domain' => 'literacy', 'maxScore' => 50, 'items' => 20,
+            'gradeFrom' => 'Primary 4', 'gradeTo' => 'JSS 3']]);
+        if (empty($r['ok'])) return false;
+        $GLOBALS['__instr'] = $r['instrumentId'];
+        // Editable while nothing has been measured with it.
+        $edit = backend_dispatch('admin.assessment.instrument.save', ['requesterId' => $ADM,
+            'instrumentId' => $r['instrumentId'], 'data' => ['name' => 'EGRA oral reading', 'domain' => 'literacy',
+                'maxScore' => 60, 'gradeFrom' => 'Primary 4', 'gradeTo' => 'JSS 3']]);
+        $row = db_row('SELECT maxScore, gradeFrom, gradeTo FROM assessment_instruments WHERE instrumentId = ?', [$r['instrumentId']]);
+        return !empty($edit['ok']) && (int)$row['maxScore'] === 60
+            // Grades normalised through the same helper the registration form uses.
+            && (int)$row['gradeFrom'] === 4 && (int)$row['gradeTo'] === 9;
+    })());
+
+    chk('assessment: a window is one administration, and there is only one per phase', (function () use ($ADM) {
+        $iid = $GLOBALS['__instr'] ?? '';
+        if ($iid === '') return true;
+        $b = backend_dispatch('admin.assessment.window.save', ['requesterId' => $ADM, 'data' => [
+            'instrumentId' => $iid, 'phase' => 'baseline', 'label' => 'Week 1', 'opensAt' => '2026-07-06', 'closesAt' => '2026-07-10']]);
+        $e = backend_dispatch('admin.assessment.window.save', ['requesterId' => $ADM, 'data' => [
+            'instrumentId' => $iid, 'phase' => 'endline', 'label' => 'Week 6', 'opensAt' => '2026-08-10', 'closesAt' => '2026-08-14']]);
+        /* A second baseline for the same test is not a richer dataset. It is an
+           ambiguity about which score pairs with the endline, and it would be
+           resolved silently by whichever row a query happened to read first. */
+        $dupe = backend_dispatch('admin.assessment.window.save', ['requesterId' => $ADM, 'data' => [
+            'instrumentId' => $iid, 'phase' => 'baseline', 'label' => 'Oops']]);
+        $bad = backend_dispatch('admin.assessment.window.save', ['requesterId' => $ADM, 'data' => [
+            'instrumentId' => $iid, 'phase' => 'midline', 'opensAt' => '2026-08-01', 'closesAt' => '2026-07-01']]);
+        $GLOBALS['__wBase'] = $b['windowId'] ?? ''; $GLOBALS['__wEnd'] = $e['windowId'] ?? '';
+        return !empty($b['ok']) && !empty($e['ok'])
+            && ($dupe['error'] ?? '') === 'phase_exists' && ($bad['error'] ?? '') === 'bad_dates';
+    })());
+
+    /* Twelve children with a known pattern, so every number below can be
+       checked by hand rather than merely observed. */
+    $kids = [];
+    for ($i = 1; $i <= 12; $i++) {
+        $id = 'AS-' . $i;
+        db_insert('summer_students', ['studentId' => $id, 'cohortId' => (string)$c['cohortId'],
+            'fullName' => 'Assess Child ' . $i, 'firstName' => 'Assess', 'lastName' => 'Child' . $i,
+            'age' => 12, 'centre' => 'Assessville', 'track' => 'Tech',
+            'sex' => $i % 2 === 0 ? 'Female' : 'Male', 'gradeLevel' => $i <= 6 ? 5 : 8,
+            'gradeAsAt' => gmdate('Y-m-d'), 'status' => 'active', 'regStatus' => 'verified',
+            'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $kids[] = $id;
+    }
+
+    chk('assessment: a score above the paper\'s maximum is refused, not clamped', (function () use ($ADM) {
+        $w = $GLOBALS['__wBase'] ?? ''; if ($w === '') return true;
+        $r = backend_dispatch('admin.assessment.record', ['requesterId' => $ADM, 'windowId' => $w,
+            'results' => [['studentId' => 'AS-1', 'score' => 999], ['studentId' => 'NOPE', 'score' => 10]]]);
+        /* A 55 on a paper marked out of 50 is a transcription error. Clamping it
+           to 50 buries the error inside a number somebody later averages. */
+        return !empty($r['ok']) && $r['saved'] === 0 && count($r['rejected']) === 2;
+    })());
+
+    chk('assessment: absent is not a zero', (function () use ($ADM) {
+        $w = $GLOBALS['__wBase'] ?? ''; if ($w === '') return true;
+        backend_dispatch('admin.assessment.record', ['requesterId' => $ADM, 'windowId' => $w,
+            'results' => [['studentId' => 'AS-12', 'absent' => true]]]);
+        $row = db_row("SELECT score, absent FROM assessment_results WHERE windowId = ? AND studentId = 'AS-12'", [$w]);
+        /* A child who did not sit did not score nothing — they have no score.
+           Recording absence as 0 drags the mean down and turns an attendance
+           problem into a learning finding. The analysis excludes absent rows. */
+        return $row && (int)$row['absent'] === 1;
+    })());
+
+    chk('assessment: recording the first score locks the instrument against silent revision', (function () use ($ADM) {
+        $w = $GLOBALS['__wBase'] ?? ''; $iid = $GLOBALS['__instr'] ?? '';
+        if ($w === '' || $iid === '') return true;
+        /* Baseline: children 1–6 score 20, children 7–11 score 30. */
+        $res = [];
+        for ($i = 1; $i <= 11; $i++) $res[] = ['studentId' => 'AS-' . $i, 'score' => $i <= 6 ? 20 : 30];
+        $rec = backend_dispatch('admin.assessment.record', ['requesterId' => $ADM, 'windowId' => $w, 'results' => $res]);
+        $inst = db_row('SELECT lockedAt FROM assessment_instruments WHERE instrumentId = ?', [$iid]);
+        /* Revising a test after baseline makes every existing pair
+           incomparable, and the revision leaves no trace in the numbers. */
+        $edit = backend_dispatch('admin.assessment.instrument.save', ['requesterId' => $ADM,
+            'instrumentId' => $iid, 'data' => ['name' => 'EGRA oral reading', 'domain' => 'numeracy', 'maxScore' => 60]]);
+        // The NAME stays editable — fixing a typo in a label alters no score.
+        $rename = backend_dispatch('admin.assessment.instrument.save', ['requesterId' => $ADM,
+            'instrumentId' => $iid, 'data' => ['name' => 'EGRA oral reading v1', 'domain' => 'literacy', 'maxScore' => 60,
+                'gradeFrom' => 'Primary 4', 'gradeTo' => 'JSS 3']]);
+        // …and the honest path when a test genuinely must change is a new version.
+        $rev = backend_dispatch('admin.assessment.instrument.revise', ['requesterId' => $ADM, 'instrumentId' => $iid]);
+        return $rec['saved'] === 11 && (string)$inst['lockedAt'] !== ''
+            && ($edit['error'] ?? '') === 'locked' && !empty($edit['note'])
+            && !empty($rename['ok']) && !empty($rev['ok']) && (int)$rev['version'] === 2;
+    })());
+
+    chk('assessment: THE number is the mean of per-child differences, not of two cohorts', (function () use ($ADM) {
+        $we = $GLOBALS['__wEnd'] ?? ''; if ($we === '') return true;
+        /* Endline: children 1–6 return and gain 10 each (20 → 30). Children
+           7–11 — the HIGHER scorers at baseline — do not come back. So:
+             two-cohort comparison: baseline mean 24.5 → endline mean 30, "+5.5"
+             paired difference over the six who sat both: exactly +10
+           The two answers differ, and only the second is a claim about learning. */
+        $res = [];
+        for ($i = 1; $i <= 6; $i++) $res[] = ['studentId' => 'AS-' . $i, 'score' => 30];
+        backend_dispatch('admin.assessment.record', ['requesterId' => $ADM, 'windowId' => $we, 'results' => $res]);
+        $g = backend_dispatch('admin.assessment.gains', ['requesterId' => $ADM, 'instrumentId' => $GLOBALS['__instr']]);
+        $row = ($g['gains'] ?? [])[0] ?? null;
+        if (!$row) return false;
+        $GLOBALS['__gain'] = $row;
+
+        return $row['paired'] === 6 && $row['satBaseline'] === 11 && $row['satEndline'] === 6
+            && abs($row['gain']['mean'] - 10) < 0.01
+            // Zero variance in the differences, so the interval collapses on it.
+            && abs($row['gain']['lo'] - 10) < 0.01 && abs($row['gain']['hi'] - 10) < 0.01
+            && $row['gain']['significant'] === true
+            /* The paired baseline (20) is NOT the cohort baseline (24.5). Both
+               are reported, because quoting the second beside the endline is
+               the mistake this whole file exists to prevent. */
+            && abs($row['pairedBaselinePct'] - 20 / 60 * 100) < 0.2
+            /* 270/11 = 24.545 out of 60 = 40.9%. Not 41.7% — which is what it
+               was when the mean was cast to an int before the division, an
+               error introduced by the code rather than present in the data. */
+            && abs($row['baselineMeanPct'] - 40.9) < 0.05;
+    })());
+
+    chk('assessment: attrition is measured and its DIRECTION named', (function () {
+        $row = $GLOBALS['__gain'] ?? null; if (!$row) return true;
+        $a = $row['attrition'];
+        /* The first question a reviewer asks. Here the leavers scored HIGHER at
+           baseline (30 vs 20), so the +10 gain is if anything an understatement
+           — and the report has to say which way it cuts rather than leave a
+           reader to work it out. */
+        return $a['baselineOnly'] === 5 && is_array($a['bias'])
+            && $a['bias']['direction'] === 'leavers_were_stronger'
+            && $a['bias']['deltaPoints'] < 0;
+    })());
+
+    chk('assessment: …and says so in words, alongside the no-control-group caveat', (function () {
+        $row = $GLOBALS['__gain'] ?? null; if (!$row) return true;
+        $texts = implode(' | ', array_column($row['caveats'], 'text'));
+        $levels = array_column($row['caveats'], 'level');
+        /* The first caveat is always the one that matters most: pre/post with no
+           comparison group measures how much these children changed, not how
+           much of it the programme caused. Nothing in this feature may be
+           phrased as causation. */
+        return in_array('method', $levels, true)
+            && strpos($texts, 'not how much of the change the programme caused') !== false
+            // 6 of 11 came back — under the 70% floor, and said.
+            && strpos($texts, 'came back for the endline') !== false
+            && strpos($texts, 'understatement') !== false;
+    })());
+
+    chk('assessment: the gain splits by sex and by class band', (function () {
+        $row = $GLOBALS['__gain'] ?? null; if (!$row) return true;
+        $bySex = []; foreach ($row['bySex'] as $r) $bySex[$r['group']] = $r;
+        $byBand = []; foreach ($row['byBand'] as $r) $byBand[$r['group']] = $r;
+        /* Three girls and three boys among the six pairs — each under the
+           five-pair floor, so each is MARKED rather than quietly reported. That
+           is the finding: we cannot yet say whether girls gained more. */
+        return count($bySex) === 2 && $bySex['Female']['n'] === 3 && $bySex['Male']['n'] === 3
+            && $bySex['Female']['tooThin'] === true && $bySex['Male']['tooThin'] === true
+            // All six pairs are Primary 4–6; the JSS children never returned.
+            && isset($byBand['Primary 4–6']) && $byBand['Primary 4–6']['n'] === 6;
+    })());
+
+    chk('assessment: a paired mean under the floor is refused rather than quoted', (function () {
+        $st = assess_paired_stats([4, 6, 5]);
+        $ok = assess_paired_stats([4, 6, 5, 5, 5, 5]);
+        return $st['n'] === 3 && $st['tooThin'] === true && $st['significant'] === false
+            && $ok['tooThin'] === false && $ok['n'] === 6
+            && assess_paired_stats([])['mean'] === null;
+    })());
+
+    chk('assessment: an interval that spans zero is not called a change', (function () {
+        /* Movement in both directions and a mean near zero: the honest answer is
+           that this sample cannot distinguish it from noise. */
+        $st = assess_paired_stats([-8, 9, -6, 7, -5, 6, -7, 4]);
+        return $st['significant'] === false && $st['lo'] < 0 && $st['hi'] > 0;
+    })());
+
+    chk('assessment: the sheet flags a child the instrument was not written for', (function () use ($ADM) {
+        $w = $GLOBALS['__wBase'] ?? ''; if ($w === '') return true;
+        $sh = backend_dispatch('admin.assessment.sheet', ['requesterId' => $ADM, 'windowId' => $w, 'centre' => 'Assessville']);
+        $by = []; foreach ($sh['students'] ?? [] as $s) $by[$s['studentId']] = $s;
+        db_insert('summer_students', ['studentId' => 'AS-P1', 'cohortId' => (string)summer_ensure_cohort()['cohortId'],
+            'fullName' => 'Too Young', 'centre' => 'Assessville', 'gradeLevel' => 1, 'status' => 'active',
+            'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $sh2 = backend_dispatch('admin.assessment.sheet', ['requesterId' => $ADM, 'windowId' => $w, 'centre' => 'Assessville']);
+        $by2 = []; foreach ($sh2['students'] ?? [] as $s) $by2[$s['studentId']] = $s;
+        /* Flagged, not excluded. Silently dropping a child shrinks the sample
+           with nothing on screen to show it happened. */
+        return isset($by['AS-1']) && $by['AS-1']['outOfRange'] === false
+            && $by['AS-1']['result']['score'] === 20
+            && isset($by2['AS-P1']) && $by2['AS-P1']['outOfRange'] === true;
+    })());
+
+    chk('assessment: every op is gated on the roster capability', (function () {
+        foreach (['admin.assessment.instruments', 'admin.assessment.windows', 'admin.assessment.gains',
+                  'admin.assessment.record', 'admin.assessment.sheet', 'admin.assessment.instrument.save'] as $op) {
+            if ((backend_dispatch($op, ['requesterId' => ''])['ok'] ?? false) === true) return false;
+        }
+        return true;
     })());
 })();
 

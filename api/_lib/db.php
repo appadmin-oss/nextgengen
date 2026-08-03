@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 80;
+const NGG_SCHEMA_TARGET = 81;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2087,6 +2087,77 @@ function db_migrate(PDO $db): void {
             ALTER TABLE summer_students ADD COLUMN gradeLevel INTEGER DEFAULT 0;
             ALTER TABLE summer_students ADD COLUMN gradeAsAt TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_sstu_grade ON summer_students (gradeLevel);
+        ",
+        /* 81 — a real learning measurement, with a baseline and an endline.
+         *
+         * Grades from `assignment_submissions` are coursework: different tasks,
+         * different markers, different difficulty week to week. A trend across
+         * them is not a learning gain and cannot be defended as one. What a
+         * funder means by "we measured learning" is the same instrument
+         * administered twice to the same children, and the difference computed
+         * per child.
+         *
+         * Three tables because they are three different things with different
+         * lifetimes. An INSTRUMENT is a test that outlives any cohort and must
+         * not change once results exist — a revised instrument makes every
+         * existing pair incomparable, so `lockedAt` is set the moment the first
+         * score lands. A WINDOW is one administration of it: baseline in week
+         * one, endline in the last week, with dates, so "when was this measured"
+         * is a fact rather than a recollection. A RESULT is one child's raw
+         * score, stored raw with the instrument's max beside it — never as a
+         * percentage, because a percentage cannot be re-based when somebody
+         * discovers the paper was marked out of 40 rather than 50.
+         *
+         * `absent` is its own column and not a zero. A child who did not sit the
+         * test scored nothing; recording that as 0 drags the mean down and
+         * turns an attendance problem into a learning finding. */
+        81 => "
+            CREATE TABLE IF NOT EXISTS assessment_instruments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                instrumentId TEXT UNIQUE,
+                name TEXT DEFAULT '',
+                domain TEXT DEFAULT 'literacy',
+                maxScore INTEGER DEFAULT 100,
+                items INTEGER DEFAULT 0,
+                version INTEGER DEFAULT 1,
+                notes TEXT DEFAULT '',
+                gradeFrom INTEGER DEFAULT 0,
+                gradeTo INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'draft',
+                lockedAt TEXT DEFAULT '',
+                createdById TEXT DEFAULT '',
+                createdAt TEXT,
+                archivedAt TEXT DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS assessment_windows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                windowId TEXT UNIQUE,
+                cohortId TEXT DEFAULT '',
+                instrumentId TEXT DEFAULT '',
+                phase TEXT DEFAULT 'baseline',
+                label TEXT DEFAULT '',
+                opensAt TEXT DEFAULT '',
+                closesAt TEXT DEFAULT '',
+                status TEXT DEFAULT 'open',
+                createdById TEXT DEFAULT '',
+                createdAt TEXT
+            );
+            CREATE TABLE IF NOT EXISTS assessment_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                resultId TEXT UNIQUE,
+                windowId TEXT DEFAULT '',
+                instrumentId TEXT DEFAULT '',
+                studentId TEXT DEFAULT '',
+                score INTEGER DEFAULT 0,
+                absent INTEGER DEFAULT 0,
+                note TEXT DEFAULT '',
+                recordedById TEXT DEFAULT '',
+                recordedAt TEXT,
+                UNIQUE (windowId, studentId)
+            );
+            CREATE INDEX IF NOT EXISTS idx_ares_student ON assessment_results (studentId);
+            CREATE INDEX IF NOT EXISTS idx_ares_window ON assessment_results (windowId);
+            CREATE INDEX IF NOT EXISTS idx_awin_instr ON assessment_windows (instrumentId, phase);
         ",
     ];
 

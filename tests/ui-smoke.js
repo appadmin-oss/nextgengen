@@ -316,9 +316,50 @@ function unzipDocumentXml(buf) {
             : b === 'gates' ? 'SummerGates'
             : b === 'analyst' ? 'AnalystPane'
             : b === 'analytics' ? 'AnalyticsWorkspace'
+            : b === 'assess' ? 'AdminAssessment'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
-  if (b === 'analytics') {
+  if (b === 'assess') {
+    props = {};
+    var GAIN = {
+      instrument: { instrumentId: 'AI-1', name: 'EGRA oral reading', domain: 'literacy',
+                    domainLabel: 'Literacy', maxScore: 50, items: 20, version: 1, locked: true,
+                    gradeFrom: 4, gradeTo: 9, status: 'active', notes: '' },
+      baselineWindow: 'AW-B', endlineWindow: 'AW-E',
+      satBaseline: 40, satEndline: 24, paired: 24,
+      baselineMeanPct: 41.5, endlineMeanPct: 58.0, pairedBaselinePct: 38.0,
+      gain: { n: 24, mean: 8.4, sd: 5.1, lo: 6.2, hi: 10.6, d: 1.65, significant: true, tooThin: false },
+      gainPct: 16.8,
+      bySex: [{ group: 'Female', n: 13, meanGain: 9.1, lo: 6.0, hi: 12.2, d: 1.7, significant: true, tooThin: false },
+              { group: 'Male', n: 11, meanGain: 7.6, lo: 4.1, hi: 11.1, d: 1.4, significant: true, tooThin: false },
+              { group: 'Not recorded', n: 2, meanGain: 3.0, lo: -9.0, hi: 15.0, d: 0.3, significant: false, tooThin: true }],
+      byBand: [{ group: 'Primary 4–6', n: 15, meanGain: 9.0, lo: 6.1, hi: 11.9, d: 1.6, significant: true, tooThin: false }],
+      byCentre: [],
+      attrition: { baselineOnly: 16, endlineOnly: 0,
+                   bias: { leftMean: 33.0, stayedMean: 38.0, deltaPoints: 5.0, direction: 'leavers_were_weaker' } },
+      caveats: [
+        { level: 'method', text: 'Pre/post with no comparison group. This measures how much these children changed, not how much of the change the programme caused — children also get older, and school continues around us.' },
+        { level: 'warn', text: '60% of the children who sat the baseline came back for the endline. Below about 70% the paired group stops representing the cohort.' },
+        { level: 'warn', text: 'The children who did not return scored 5 points lower at baseline than those who did. The gain below is therefore larger than the cohort as a whole achieved.' },
+      ],
+    };
+    window.__gain = GAIN;
+    window.NGGApi.admin.assessGains = function () { return Promise.resolve({ gains: [GAIN] }); };
+    window.NGGApi.admin.assessInstruments = function () { return Promise.resolve({ instruments: [GAIN.instrument] }); };
+    window.NGGApi.admin.assessWindows = function () { return Promise.resolve({ windows: [
+      { windowId: 'AW-B', instrumentId: 'AI-1', phase: 'baseline', label: 'Week 1', opensAt: '2026-07-06', closesAt: '2026-07-10', status: 'open', sat: 40, absent: 2 },
+      { windowId: 'AW-E', instrumentId: 'AI-1', phase: 'endline', label: 'Week 6', opensAt: '2026-08-10', closesAt: '2026-08-14', status: 'open', sat: 24, absent: 1 },
+    ] }); };
+    window.NGGApi.admin.assessSheet = function () { return Promise.resolve({
+      window: { windowId: 'AW-B', phase: 'baseline', label: 'Week 1', status: 'open' },
+      instrument: GAIN.instrument,
+      students: [
+        { studentId: 'S1', name: 'Amina Alpha', centre: 'Egbeda', sex: 'Female', grade: 'Primary 5', gradeLevel: 5, outOfRange: false, noGrade: false, result: { score: 22, absent: false, note: '' } },
+        { studentId: 'S2', name: 'Bola Beta', centre: 'Egbeda', sex: 'Male', grade: 'Primary 1', gradeLevel: 1, outOfRange: true, noGrade: false, result: null },
+        { studentId: 'S3', name: 'Chidi Gamma', centre: 'Ijaiye', sex: 'Male', grade: '', gradeLevel: 0, outOfRange: false, noGrade: true, result: null },
+      ] }); };
+    window.NGGApi.admin.assessRecord = function (w, r) { window.__recorded = { windowId: w, results: r }; return Promise.resolve({ saved: r.length, cleared: 0, rejected: [] }); };
+  } else if (b === 'analytics') {
     props = {};
     var CC = [
       { centreId: 'c1', name: 'Egbeda', code: 'EG', color: '#3B5BDB', enrolled: 96, presentToday: 88, attendanceRate: 91, avgGrade: 71, activities: 54, stars: 210, evidence: 62 },
@@ -4095,6 +4136,82 @@ function unzipDocumentXml(buf) {
     ok('the centre table drills into that centre, not into the page filter',
       JSON.stringify(await an2.evaluate(() => window.__drill)) === '{"metric":"centre-students","centre":"Ayobo Hub"}');
     await an2.close();
+
+    /* ── Baseline & endline ───────────────────────────────────────────────
+       The screen that makes the measurement real. What it must not do is let a
+       reader take the headline without the things that qualify it. */
+    const as = await browser.newPage({ viewport: { width: 1280, height: 1400 } });
+    const asErrs = [];
+    as.on('pageerror', e => asErrs.push(String(e.message)));
+    await as.goto(BASE + '/tests/_boards_fixture.html?board=assess&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await as.waitForSelector('.admin-tile', { timeout: 15000 });
+    await as.waitForTimeout(250);
+    ok('the assessment screen mounts with no script error', asErrs.length === 0);
+    if (asErrs.length) console.error('       ', asErrs.slice(0, 3).join(' | '));
+
+    const asTxt = await as.evaluate(() => document.body.innerText);
+    /* The headline is the PAIRED difference, and the two cohort means sit
+       beside it labelled — quoting the endline mean against the baseline mean
+       is the exact mistake this feature exists to prevent, so both are on
+       screen and neither can be mistaken for the other. */
+    ok('the headline is the per-child gain, with its interval',
+      /\+8\.4/.test(asTxt) && /Mean gain, per child/i.test(asTxt) && /6\.2 to 10\.6/.test(asTxt));
+    ok('…beside the paired baseline AND the whole-cohort baseline, distinguished',
+      /Their baseline/i.test(asTxt) && /38%/.test(asTxt) && /whole cohort 41\.5%/.test(asTxt));
+
+    /* The caveats have to be ABOVE the breakdown. A reader who has absorbed
+       the split by sex will not go back and re-read the number with the
+       qualification applied. */
+    const asOrder = await as.evaluate(() => {
+      const t = document.body.innerText;
+      return { caveat: t.indexOf('not how much of the change the programme caused'),
+               split: t.indexOf('By sex'),
+               attrition: t.indexOf('did not return scored 5 points lower') };
+    });
+    ok('the no-control-group caveat is stated, and above the breakdown',
+      asOrder.caveat > -1 && asOrder.split > -1 && asOrder.caveat < asOrder.split);
+    ok('…as is the direction attrition cuts in',
+      asOrder.attrition > -1 && asOrder.attrition < asOrder.split);
+
+    /* A group under the floor is MARKED. Reporting a mean over two children
+       beside one over thirteen, in the same column, is how a rounding artefact
+       becomes a finding about girls. */
+    ok('a group too small to carry a claim says so instead of showing a number',
+      /too few to say/.test(asTxt) && /clear of zero/.test(asTxt));
+
+    // The register: a child outside the instrument's classes is flagged, not dropped.
+    await as.click('.admin-tab:has-text("Instruments")');
+    await as.waitForTimeout(150);
+    await as.click('button:has-text("Record scores →")');
+    await as.waitForSelector('input[aria-label="Score for Amina Alpha"]', { timeout: 8000 });
+    const reg = await as.evaluate(() => ({
+      prefilled: document.querySelector('input[aria-label="Score for Amina Alpha"]').value,
+      text: document.body.innerText,
+      rows: document.querySelectorAll('input[type=number]').length,
+    }));
+    ok('the register opens pre-filled with what is already recorded',
+      reg.prefilled === '22' && reg.rows === 3);
+    ok('…and flags a child the instrument was not written for rather than hiding them',
+      /outside this instrument's classes/.test(reg.text) && /no class on file/.test(reg.text)
+      && /Bola Beta/.test(reg.text));
+
+    /* Absent disables the score box. Recording an absence as a zero is the
+       single easiest way to turn an attendance problem into a learning
+       finding, so the UI must not let the two be typed together. */
+    await as.check('input[aria-label="Absent: Chidi Gamma"]');
+    await as.waitForTimeout(120);
+    ok('marking a child absent disables their score box — absent is not a zero',
+      await as.locator('input[aria-label="Score for Chidi Gamma"]').isDisabled());
+
+    await as.fill('input[aria-label="Score for Bola Beta"]', '31');
+    await as.click('button:has-text("Save register")');
+    await as.waitForFunction(() => !!window.__recorded, null, { timeout: 8000 });
+    const asSent = await as.evaluate(() => window.__recorded);
+    const asById = {}; asSent.results.forEach(r => { asById[r.studentId] = r; });
+    ok('the whole register saves in one call, with absence sent as absence',
+      asSent.windowId === 'AW-B' && asSent.results.length === 3
+      && asById.S2.score === '31' && asById.S3.absent === true && asById.S1.score === '22');
+    await as.close();
 
     /* ── The shell makes room for it ──────────────────────────────────────
        The pane is a TRACK, not an overlay, which only works if the middle

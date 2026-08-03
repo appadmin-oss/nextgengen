@@ -55,6 +55,7 @@ const ADMIN_SECTIONS = [
   { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
   { id: "qr",          group: "People",   label: "QR codes",     title: "QR codes",            icon: "▦", cap: "summer" },
   { id: "attendance",  group: "People",   label: "Attendance duty", title: "Attendance duty",  icon: "🗓", cap: "summer" },
+  { id: "assessment",  group: "People",   label: "Assessments",  title: "Baseline & endline",  icon: "◑", cap: "summer" },
   { id: "sessions",    group: "Content",  label: "Sessions",     title: "Sessions",            icon: "▢", cap: "content" },
   { id: "missions",    group: "Content",  label: "Missions",     title: "Anchor missions",     icon: "✦", cap: "content" },
   { id: "anchor",      group: "Content",  label: "Anchor app",   title: "Anchor Journal app",  icon: "⚓", cap: "content" },
@@ -200,6 +201,7 @@ function AdminPage({ setPage }) {
           {view === "integrations" && <AdminIntegrations/>}
           {view === "comments" && <AdminComments/>}
           {view === "community" && <AdminCommunity/>}
+          {view === "assessment" && <AdminAssessment/>}
           {view === "donations" && <AdminDonations/>}
         </main>
         {/* The third track. Mounted only when open, so a closed pane costs
@@ -4329,6 +4331,340 @@ function MemberCapsEditor({ member }) {
 // ============================================================================
 // Donations ledger (Paystack)
 // ============================================================================
+
+/* ── Baseline & endline ──────────────────────────────────────────────────────
+ *
+ * The screen that makes the measurement real. An instrument nobody can enter
+ * scores into is not an instrument, and the entry has to be a REGISTER — forty
+ * children off a paper sheet in one save — or it will not be used and the
+ * evidence will not exist.
+ *
+ * Three tabs because there are three jobs, done by different people at
+ * different times: define the test, run a sitting, read the result.
+ */
+function AdminAssessment() {
+  const [tab, setTab] = React.useState("gains");
+  const [inst, setInst] = React.useState(null);
+  const [wins, setWins] = React.useState(null);
+  const [gains, setGains] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const [edit, setEdit] = React.useState(null);      // instrument being edited
+  const [sheet, setSheet] = React.useState(null);    // { window, instrument, students }
+  const [marks, setMarks] = React.useState({});      // studentId → { score, absent }
+
+  const load = React.useCallback(() => {
+    NGGApi.admin.assessInstruments().then(r => setInst(r.instruments || [])).catch(() => setInst([]));
+    NGGApi.admin.assessWindows().then(r => setWins(r.windows || [])).catch(() => setWins([]));
+    NGGApi.admin.assessGains().then(r => setGains(r.gains || [])).catch(() => setGains([]));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const instById = {};
+  (inst || []).forEach(i => { instById[i.instrumentId] = i; });
+
+  const saveInstrument = async () => {
+    setBusy("inst");
+    try {
+      await NGGApi.admin.assessInstrumentSave(edit.instrumentId || "", edit);
+      toast.success("Instrument saved."); setEdit(null); load();
+    } catch (e) {
+      toast.error(e.code === "locked" ? (e.data && e.data.note) || "This instrument is locked."
+        : e.code === "bad_max" ? "The maximum score must be between 1 and 1000."
+        : e.code === "bad_grade_range" ? "The last class cannot come before the first."
+        : (e.code || e.message), e.code === "locked" ? "Locked" : "Could not save");
+    } finally { setBusy(""); }
+  };
+
+  const openSheet = async (w) => {
+    setBusy("sheet");
+    try {
+      const r = await NGGApi.admin.assessSheet(w.windowId, "");
+      setSheet(r);
+      const m = {};
+      (r.students || []).forEach(st => {
+        if (st.result) m[st.studentId] = { score: st.result.absent ? "" : String(st.result.score), absent: st.result.absent };
+      });
+      setMarks(m);
+      setTab("record");
+    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
+  };
+
+  const saveSheet = async () => {
+    if (!sheet) return;
+    setBusy("record");
+    try {
+      const results = (sheet.students || []).map(st => ({
+        studentId: st.studentId,
+        score: (marks[st.studentId] || {}).score ?? "",
+        absent: !!(marks[st.studentId] || {}).absent,
+      }));
+      const r = await NGGApi.admin.assessRecord(sheet.window.windowId, results);
+      /* Rejections are named, not counted. A silent "38 of 40 saved" leaves a
+         coordinator to find the two by eye against a paper register. */
+      if ((r.rejected || []).length) {
+        toast.error(r.rejected.length + " score(s) were outside 0–" + sheet.instrument.maxScore
+          + " and were NOT saved: " + r.rejected.slice(0, 6).join(", "), "Check these");
+      } else {
+        toast.success(r.saved + " recorded" + (r.cleared ? ", " + r.cleared + " cleared" : "") + ".");
+      }
+      load(); openSheet(sheet.window);
+    } catch (e) {
+      toast.error(e.code === "window_closed" ? "This sitting is closed — reopen it to change scores." : (e.code || e.message));
+    } finally { setBusy(""); }
+  };
+
+  const newWindow = async (instrumentId, phase) => {
+    try {
+      await NGGApi.admin.assessWindowSave("", { instrumentId, phase, label: phase === "baseline" ? "Baseline" : "Endline" });
+      load();
+    } catch (e) {
+      toast.error(e.code === "phase_exists"
+        ? "There is already a " + phase + " sitting for this instrument. One per phase — two would leave it ambiguous which score pairs with the endline."
+        : (e.code || e.message));
+    }
+  };
+
+  const tone = (lvl) => ({ error: "#b91c1c", warn: "#b45309", method: "var(--ink-500,#5a6488)" }[lvl] || "var(--ink-500)");
+
+  return (
+    <div>
+      <div className="admin-section-head">
+        <div>
+          <h2 className="admin-h2">Baseline &amp; endline</h2>
+          <p className="admin-hint" style={{ maxWidth: 720 }}>
+            The same test, twice, to the same children — which is what a funder means by measuring learning.
+            Coursework grades are different tasks marked by different people, so a trend across them is not a
+            learning gain and cannot be defended as one.
+          </p>
+        </div>
+      </div>
+
+      <div className="admin-tabs" role="tablist">
+        {[["gains", "Results"], ["instruments", "Instruments"], ["record", "Record scores"]].map(([k, l]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={"admin-tab" + (tab === k ? " is-active" : "")}
+            onClick={() => setTab(k)}>{l}</button>
+        ))}
+      </div>
+
+      {/* ── Results ─────────────────────────────────────────────────────── */}
+      {tab === "gains" && (
+        gains === null ? <div className="admin-empty">Loading…</div>
+        : gains.length === 0 ? <div className="admin-empty">
+            No instrument yet has both a baseline and an endline with scores in them. Define an instrument, open
+            a baseline sitting at the start of the programme and an endline at the end, and the paired result
+            appears here.
+          </div>
+        : gains.map(g => (
+          <div key={g.instrument.instrumentId} className="admin-section">
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+              <h3 className="admin-h3" style={{ margin: 0 }}>{g.instrument.name}</h3>
+              <span className="mono" style={{ fontSize: 12, color: "var(--ink-500)" }}>
+                {g.instrument.domainLabel} · out of {g.instrument.maxScore} · v{g.instrument.version}
+              </span>
+            </div>
+
+            {/* The headline is the PAIRED difference. The two cohort means sit
+                beside it deliberately: quoting the endline mean against the
+                baseline mean is the mistake this whole feature exists to
+                prevent, so both numbers are on screen and labelled. */}
+            <div className="admin-tiles" style={{ marginTop: 14 }}>
+              <div className="admin-tile" style={{ cursor: "default", alignItems: "flex-start" }}>
+                <div className="admin-tile-n" style={{ color: g.gain.mean > 0 ? "#15803d" : g.gain.mean < 0 ? "#b91c1c" : undefined }}>
+                  {g.gain.mean === null ? "—" : (g.gain.mean > 0 ? "+" : "") + g.gain.mean}
+                </div>
+                <div className="mono admin-tile-l">Mean gain, per child</div>
+                {g.gain.lo !== null && <div className="admin-hint" style={{ margin: 0 }}>
+                  95% CI {g.gain.lo} to {g.gain.hi}{g.gain.d !== null ? " · d = " + g.gain.d : ""}
+                </div>}
+              </div>
+              <div className="admin-tile" style={{ cursor: "default", alignItems: "flex-start" }}>
+                <div className="admin-tile-n">{g.paired}</div>
+                <div className="mono admin-tile-l">Sat both papers</div>
+                <div className="admin-hint" style={{ margin: 0 }}>{g.satBaseline} baseline · {g.satEndline} endline</div>
+              </div>
+              <div className="admin-tile" style={{ cursor: "default", alignItems: "flex-start" }}>
+                <div className="admin-tile-n">{g.pairedBaselinePct === null ? "—" : g.pairedBaselinePct + "%"}</div>
+                <div className="mono admin-tile-l">Their baseline</div>
+                <div className="admin-hint" style={{ margin: 0 }}>whole cohort {g.baselineMeanPct === null ? "—" : g.baselineMeanPct + "%"}</div>
+              </div>
+              <div className="admin-tile" style={{ cursor: "default", alignItems: "flex-start" }}>
+                <div className="admin-tile-n" style={{ color: g.attrition.baselineOnly ? "#b45309" : undefined }}>{g.attrition.baselineOnly}</div>
+                <div className="mono admin-tile-l">Did not return</div>
+                {g.attrition.bias && <div className="admin-hint" style={{ margin: 0 }}>
+                  they scored {g.attrition.bias.leftMean}% vs {g.attrition.bias.stayedMean}%
+                </div>}
+              </div>
+            </div>
+
+            {/* Caveats above the breakdown, not below it. A reader who has
+                already absorbed the split by sex will not go back and re-read
+                the number with the caveat applied. */}
+            {(g.caveats || []).length > 0 && (
+              <ul style={{ margin: "16px 0 0", paddingLeft: 18 }}>
+                {g.caveats.map((c, i) => (
+                  <li key={i} style={{ color: tone(c.level), fontSize: 13, lineHeight: 1.55, marginBottom: 4 }}>{c.text}</li>
+                ))}
+              </ul>
+            )}
+
+            {[["bySex", "By sex"], ["byBand", "By class band"], ["byCentre", "By centre"]].map(([k, label]) =>
+              (g[k] || []).length ? (
+                <div key={k} style={{ marginTop: 18 }}>
+                  <h4 style={{ margin: "0 0 6px", fontSize: 13.5 }}>{label}</h4>
+                  <table className="admin-table">
+                    <thead><tr><th>{label.replace("By ", "")}</th><th>Pairs</th><th>Mean gain</th><th>95% CI</th><th/></tr></thead>
+                    <tbody>{g[k].map(r => (
+                      <tr key={r.group}>
+                        <td><b>{r.group}</b></td>
+                        <td className="mono">{r.n}</td>
+                        <td className="mono">{r.meanGain === null ? "—" : (r.meanGain > 0 ? "+" : "") + r.meanGain}</td>
+                        <td className="mono">{r.lo === null ? "—" : r.lo + " to " + r.hi}</td>
+                        <td>{r.tooThin
+                          ? <span className="mono" style={{ fontSize: 11, color: "#b45309" }}>too few to say</span>
+                          : r.significant ? <span className="mono" style={{ fontSize: 11, color: "#15803d" }}>clear of zero</span>
+                          : <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}>within noise</span>}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              ) : null)}
+          </div>
+        ))
+      )}
+
+      {/* ── Instruments ─────────────────────────────────────────────────── */}
+      {tab === "instruments" && (
+        <div className="admin-section">
+          <div className="admin-section-head">
+            <h3 className="admin-h3" style={{ margin: 0 }}>Instruments</h3>
+            <button className="btn btn-primary btn-sm" onClick={() => setEdit({ name: "", domain: "literacy", maxScore: 50, items: 0, gradeFrom: "", gradeTo: "", notes: "" })}>＋ New instrument</button>
+          </div>
+          {inst === null ? <div className="admin-empty">Loading…</div>
+            : inst.length === 0 ? <div className="admin-empty">No instrument defined yet.</div>
+            : <table className="admin-table">
+                <thead><tr><th>Instrument</th><th>Domain</th><th>Out of</th><th>Classes</th><th>Results</th><th>Sittings</th><th/></tr></thead>
+                <tbody>{inst.map(i => (
+                  <tr key={i.instrumentId}>
+                    <td><b>{i.name}</b>{i.version > 1 ? <span className="mono" style={{ fontSize: 11, color: "var(--ink-500)" }}> v{i.version}</span> : null}
+                      {i.locked && <div className="mono" style={{ fontSize: 10.5, color: "var(--gold-700,#7a5600)" }}>locked — has results</div>}</td>
+                    <td>{i.domainLabel}</td>
+                    <td className="mono">{i.maxScore}</td>
+                    <td className="mono">{i.gradeFrom || i.gradeTo ? (i.gradeFrom || "?") + "–" + (i.gradeTo || "?") : "any"}</td>
+                    <td className="mono">{i.results}</td>
+                    <td className="mono">{i.windows}</td>
+                    <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setEdit({ ...i, gradeFrom: i.gradeFrom || "", gradeTo: i.gradeTo || "" })}>Edit</button>
+                      {["baseline", "endline"].map(ph =>
+                        (wins || []).some(w => w.instrumentId === i.instrumentId && w.phase === ph)
+                          ? null
+                          : <button key={ph} className="btn btn-ghost btn-sm" onClick={() => newWindow(i.instrumentId, ph)}>＋ {ph}</button>)}
+                      {i.locked && <button className="btn btn-ghost btn-sm" title="A new version, so old pairs stay comparable"
+                        onClick={async () => { await NGGApi.admin.assessInstrumentRevise(i.instrumentId); load(); }}>New version</button>}
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>}
+
+          <h3 className="admin-h3" style={{ marginTop: 24 }}>Sittings</h3>
+          {(wins || []).length === 0 ? <div className="admin-empty">No sitting opened yet.</div>
+            : <table className="admin-table">
+                <thead><tr><th>Instrument</th><th>Phase</th><th>Dates</th><th>Sat</th><th>Absent</th><th/></tr></thead>
+                <tbody>{(wins || []).map(w => (
+                  <tr key={w.windowId}>
+                    <td><b>{(instById[w.instrumentId] || {}).name || w.instrumentId}</b></td>
+                    <td>{w.phase}</td>
+                    <td className="mono">{w.opensAt || "—"} → {w.closesAt || "—"}</td>
+                    <td className="mono">{w.sat}</td>
+                    <td className="mono">{w.absent}</td>
+                    <td><button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => openSheet(w)}>Record scores →</button></td>
+                  </tr>
+                ))}</tbody>
+              </table>}
+        </div>
+      )}
+
+      {/* ── The register ────────────────────────────────────────────────── */}
+      {tab === "record" && (
+        !sheet ? <div className="admin-empty">Pick a sitting on the Instruments tab.</div>
+        : <div className="admin-section">
+            <div className="admin-section-head">
+              <div>
+                <h3 className="admin-h3" style={{ margin: 0 }}>{sheet.instrument.name} · {sheet.window.phase}</h3>
+                <p className="admin-hint" style={{ margin: "4px 0 0" }}>
+                  Out of {sheet.instrument.maxScore}. Leave blank for a child who has not been marked yet;
+                  tick <b>absent</b> for one who did not sit — that is not a zero, and recording it as one would
+                  turn an attendance problem into a learning finding.
+                </p>
+              </div>
+              <button className="btn btn-primary" disabled={busy === "record"} onClick={saveSheet}>
+                {busy === "record" ? "Saving…" : "Save register"}
+              </button>
+            </div>
+            <table className="admin-table">
+              <thead><tr><th>Child</th><th>Centre</th><th>Class</th><th>Score</th><th>Absent</th></tr></thead>
+              <tbody>{(sheet.students || []).map(st => {
+                const m = marks[st.studentId] || {};
+                return (
+                  <tr key={st.studentId} style={st.outOfRange ? { background: "rgba(245,176,38,.07)" } : undefined}>
+                    <td><b>{st.name}</b>
+                      {st.outOfRange && <div className="mono" style={{ fontSize: 10.5, color: "#b45309" }}>outside this instrument's classes</div>}
+                      {st.noGrade && <div className="mono" style={{ fontSize: 10.5, color: "var(--ink-500)" }}>no class on file</div>}</td>
+                    <td>{st.centre}</td>
+                    <td className="mono">{st.grade || "—"}</td>
+                    <td>
+                      <input className="admin-input" type="number" min={0} max={sheet.instrument.maxScore}
+                        style={{ width: 90 }} value={m.score || ""} disabled={!!m.absent}
+                        aria-label={"Score for " + st.name}
+                        onChange={e => setMarks(x => ({ ...x, [st.studentId]: { ...(x[st.studentId] || {}), score: e.target.value } }))}/>
+                    </td>
+                    <td>
+                      <input type="checkbox" checked={!!m.absent} aria-label={"Absent: " + st.name}
+                        onChange={e => setMarks(x => ({ ...x, [st.studentId]: { ...(x[st.studentId] || {}), absent: e.target.checked } }))}/>
+                    </td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+      )}
+
+      {/* ── The instrument editor ───────────────────────────────────────── */}
+      {edit && (
+        <div className="admin-drawer" role="dialog" aria-modal="true" aria-label="Instrument"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setEdit(null); }}>
+          <div className="admin-drawer-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="admin-drawer-head">
+            <b>{edit.instrumentId ? "Edit instrument" : "New instrument"}</b>
+            <button type="button" className="admin-drawer-close" onClick={() => setEdit(null)}>✕</button>
+          </div>
+          {edit.locked && <p className="admin-hint" style={{ color: "var(--gold-700,#7a5600)" }}>
+            This instrument has results against it. Its name and notes can still be corrected, but what it
+            measures and what it is out of are fixed — changing those would make every existing baseline/endline
+            pair incomparable with nothing in the numbers to show it. Use <b>New version</b> instead.
+          </p>}
+          <Field label="Name" value={edit.name} onChange={v => setEdit(x => ({ ...x, name: v }))}/>
+          <FieldSelect label="Domain" value={edit.domain} onChange={v => setEdit(x => ({ ...x, domain: v }))}
+            options={["literacy", "numeracy", "sel", "gender_attitudes", "other"]}/>
+          <Field label="Maximum score" type="number" value={String(edit.maxScore)} onChange={v => setEdit(x => ({ ...x, maxScore: parseInt(v, 10) || 0 }))}/>
+          <Field label="Number of items (optional)" type="number" value={String(edit.items || "")} onChange={v => setEdit(x => ({ ...x, items: parseInt(v, 10) || 0 }))}/>
+          <div style={{ display: "flex", gap: 10 }}>
+            <FieldSelect label="From class" value={edit.gradeFrom || ""} onChange={v => setEdit(x => ({ ...x, gradeFrom: v }))}
+              options={["", "Primary 1", "Primary 2", "Primary 3", "Primary 4", "Primary 5", "Primary 6", "JSS 1", "JSS 2", "JSS 3", "SSS 1", "SSS 2", "SSS 3"]}/>
+            <FieldSelect label="To class" value={edit.gradeTo || ""} onChange={v => setEdit(x => ({ ...x, gradeTo: v }))}
+              options={["", "Primary 1", "Primary 2", "Primary 3", "Primary 4", "Primary 5", "Primary 6", "JSS 1", "JSS 2", "JSS 3", "SSS 1", "SSS 2", "SSS 3"]}/>
+          </div>
+          <FieldTextarea label="Notes — how it is administered" rows={3} value={edit.notes || ""}
+            onChange={v => setEdit(x => ({ ...x, notes: v }))}/>
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <button className="btn btn-primary" disabled={busy === "inst"} onClick={saveInstrument}>Save</button>
+            <button className="btn btn-ghost" onClick={() => setEdit(null)}>Cancel</button>
+          </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function AdminDonations() {
   const [d, setD] = React.useState(null);

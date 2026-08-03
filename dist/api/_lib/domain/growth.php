@@ -439,7 +439,15 @@ function growth_workspace(array $p): array {
     }
 
     $weeks = max(2, min(12, (int)($p['weeks'] ?? GROWTH_WINDOW_WEEKS)));
-    $weekKeys = growth_week_keys($weeks);
+    /* `asOf` moves the window's right-hand edge. Its real use is reproducing the
+       board as it stood at a past date — "what did we see when we made that
+       call in week two" — which is otherwise unanswerable once the window has
+       rolled past. It only ever moves the window; it changes no other
+       behaviour, and an unparseable value is ignored rather than defaulting to
+       something arbitrary. */
+    $asOf = trim((string)($p['asOf'] ?? ''));
+    $now = $asOf !== '' ? strtotime($asOf . ' UTC') : false;
+    $weekKeys = growth_week_keys($weeks, $now ?: null);
     $cIn = '(' . implode(',', array_fill(0, count($cNames), '?')) . ')';
     $students = db_all("SELECT studentId, fullName, centre, age, enrolledAt FROM summer_students WHERE status = 'active' AND centre IN $cIn", $cNames);
 

@@ -602,6 +602,17 @@
       insightChatAsk: (data, signal) => request('/admin/analytics.php', { body: { action: 'insight.ask', ...(data || {}) }, timeout: 180000, signal }),
       insightChatArchive: (threadId) => request('/admin/analytics.php', { body: { action: 'insight.archive', threadId } }),
       insightChatRename: (threadId, title) => request('/admin/analytics.php', { body: { action: 'insight.rename', threadId, title } }),
+      /* Baseline/endline learning measurement. The gains read is the only one
+         a funder ever sees; the rest is how the scores get in. */
+      assessInstruments: () => request('/admin/assessment.php' + qs({ view: 'instruments' })),
+      assessWindows:     () => request('/admin/assessment.php' + qs({ view: 'windows' })),
+      assessSheet:       (windowId, centre) => request('/admin/assessment.php' + qs({ view: 'sheet', windowId, centre: centre || '' })),
+      assessGains:       (instrumentId) => request('/admin/assessment.php' + qs({ view: 'gains', instrumentId: instrumentId || '' })),
+      assessInstrumentSave:   (instrumentId, data) => request('/admin/assessment.php', { body: { action: 'instrument_save', instrumentId: instrumentId || '', data } }),
+      assessInstrumentRevise: (instrumentId) => request('/admin/assessment.php', { body: { action: 'instrument_revise', instrumentId } }),
+      assessWindowSave:  (windowId, data) => request('/admin/assessment.php', { body: { action: 'window_save', windowId: windowId || '', data } }),
+      // A whole register in one save — forty children typed off a paper sheet.
+      assessRecord:      (windowId, results) => request('/admin/assessment.php', { body: { action: 'record', windowId, results }, timeout: 120000 }),
       analyticsDrill: (metric, filters) => request('/admin/analytics.php', { body: { action: 'drilldown', metric, ...(filters || {}) } }),
       activityAdd:  (data) => request('/admin/analytics.php', { body: { action: 'activity.add', ...data } }),
       championsMint: (period) => request('/admin/analytics.php', { body: { action: 'champions.mint', period: period || '' } }),

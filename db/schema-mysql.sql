@@ -1439,3 +1439,63 @@ ALTER TABLE summer_students ADD COLUMN gradeAsAt VARCHAR(12) DEFAULT '';
 CREATE INDEX idx_sstu_grade ON summer_students(gradeLevel);
 
 INSERT INTO schema_version (version) VALUES (80) ON DUPLICATE KEY UPDATE version = version;
+
+-- 81: a real learning measurement — the same instrument, twice, per child.
+-- Coursework grades are different tasks marked by different people at different
+-- difficulty; a trend across them is not a learning gain and cannot be defended
+-- as one. An instrument outlives a cohort and is LOCKED once results exist,
+-- because a revised instrument makes every existing pair incomparable. Scores
+-- are stored raw with the max beside them, never as a percentage — a percentage
+-- cannot be re-based when the paper turns out to have been marked out of 40.
+-- `absent` is its own column, not a zero: a child who did not sit scored
+-- nothing, and recording that as 0 turns an attendance problem into a learning
+-- finding.
+CREATE TABLE IF NOT EXISTS assessment_instruments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  instrumentId VARCHAR(48) UNIQUE NOT NULL,
+  name VARCHAR(160) DEFAULT '',
+  domain VARCHAR(32) DEFAULT 'literacy',
+  maxScore INT DEFAULT 100,
+  items INT DEFAULT 0,
+  version INT DEFAULT 1,
+  notes TEXT,
+  gradeFrom INT DEFAULT 0,
+  gradeTo INT DEFAULT 0,
+  status VARCHAR(16) DEFAULT 'draft',
+  lockedAt VARCHAR(40) DEFAULT '',
+  createdById VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40),
+  archivedAt VARCHAR(40) DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS assessment_windows (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  windowId VARCHAR(48) UNIQUE NOT NULL,
+  cohortId VARCHAR(48) DEFAULT '',
+  instrumentId VARCHAR(48) DEFAULT '',
+  phase VARCHAR(16) DEFAULT 'baseline',
+  label VARCHAR(120) DEFAULT '',
+  opensAt VARCHAR(12) DEFAULT '',
+  closesAt VARCHAR(12) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'open',
+  createdById VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40),
+  INDEX idx_awin_instr (instrumentId, phase)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS assessment_results (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  resultId VARCHAR(48) UNIQUE NOT NULL,
+  windowId VARCHAR(48) DEFAULT '',
+  instrumentId VARCHAR(48) DEFAULT '',
+  studentId VARCHAR(48) DEFAULT '',
+  score INT DEFAULT 0,
+  absent TINYINT DEFAULT 0,
+  note VARCHAR(255) DEFAULT '',
+  recordedById VARCHAR(64) DEFAULT '',
+  recordedAt VARCHAR(40),
+  UNIQUE KEY idx_ares_unique (windowId, studentId),
+  INDEX idx_ares_student (studentId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (81) ON DUPLICATE KEY UPDATE version = version;

@@ -192,6 +192,17 @@ function backend_dispatch(string $op, array $args = []): array {
                the op — exporting 240 children's names and faces is a roster
                read, not a styling choice. See api/_lib/domain/merge.php. */
             'admin.merge.rows'                  => 'admin_merge_rows',
+            /* Baseline/endline learning measurement. Gated on 'summer' inside
+               the ops: recording a child's test score is roster work, and the
+               analysis reads the same roster. See _lib/domain/assessment.php. */
+            'admin.assessment.instruments'      => 'admin_assessment_instruments',
+            'admin.assessment.instrument.save'  => 'admin_assessment_instrument_save',
+            'admin.assessment.instrument.revise'=> 'admin_assessment_instrument_revise',
+            'admin.assessment.windows'          => 'admin_assessment_windows',
+            'admin.assessment.window.save'      => 'admin_assessment_window_save',
+            'admin.assessment.sheet'            => 'admin_assessment_sheet',
+            'admin.assessment.record'           => 'admin_assessment_record',
+            'admin.assessment.gains'            => 'admin_assessment_gains',
             'admin.registrations.remindBulk' => 'admin_registrations_remind_bulk',
             'admin.centres.list'          => 'admin_centres_list',
             'admin.centres.upsert'        => 'admin_centres_upsert',
