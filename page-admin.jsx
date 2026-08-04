@@ -3276,24 +3276,47 @@ function SummerRoster({ cohortId }) {
   const [q, setQ] = React.useState("");
   const [openId, setOpenId] = React.useState("");
   const [consentFor, setConsentFor] = React.useState(null);
-  const [only, setOnly] = React.useState("all");   // all | pending | noconsent | withdrawn | noid
-  /* School type. SERVER-side, unlike `only` above, because the answer lives in
-     the stored submission rather than in a column and the roster read is
-     capped — filtering here would filter the page, so "show me the private
-     school children" would quietly omit any beyond the cap. */
-  const [stype, setStype] = React.useState("");    // "" | public | private | other | unknown
-  const [meta, setMeta] = React.useState({ total: 0, matched: 0, truncated: false, schoolTypes: null });
+  /* Every filter is a FACET now, all of them server-side, and they compose with
+     AND. Before this the search and the school type went to the server while
+     the situation filter ran on the drawn page — so combining them narrowed two
+     different populations at two different moments, and the second one only ever
+     saw whichever rows had come back first. */
+  const [facets, setFacets] = React.useState({ centre: "", track: "", schoolType: "", status: "", consent: "", id: "", sex: "" });
+  const [meta, setMeta] = React.useState({ total: 0, matched: 0, truncated: false, facets: null, applied: {} });
   const [gaps, setGaps] = React.useState(null);
   const [bulk, setBulk] = React.useState(false);
-  const load = () => NGGApi.admin.summer.students(q, cohortId, { schoolType: stype })
+  const load = () => NGGApi.admin.summer.students(q, cohortId, facets)
     .then(r => {
       setList(r.students || []);
       setMeta({ total: r.total || (r.students || []).length, matched: r.matched || 0,
-                truncated: !!r.truncated, schoolTypes: r.schoolTypes || null });
+                truncated: !!r.truncated, facets: r.facets || null, applied: r.applied || {} });
     })
     .catch(() => setList([]));
   const loadGaps = () => NGGApi.admin.registration.qrGaps().then(setGaps).catch(() => setGaps(null));
-  React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, stype]);
+  /* One effect for all of them: any facet change is the same round trip, and
+     debounced together so typing in the search box while a centre is selected
+     does not fire two overlapping requests whose answers can arrive out of
+     order. */
+  React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); /* eslint-disable-next-line */ },
+    [q, facets.centre, facets.track, facets.schoolType, facets.status, facets.consent, facets.id, facets.sex]);
+  const setFacet = (k, v) => setFacets(f => ({ ...f, [k]: v }));
+  const activeCount = Object.values(facets).filter(Boolean).length + (q ? 1 : 0);
+  const clearAll = () => { setFacets({ centre: "", track: "", schoolType: "", status: "", consent: "", id: "", sex: "" }); setQ(""); };
+  /* " (12)" on an option — and the count is computed with the OTHER facets
+     applied, so it means twelve GIVEN what else is selected. A count over the
+     whole cohort is the faceted-search trap: the option reads (42), you pick it,
+     and the table is empty because your other filters had already excluded them. */
+  const fc = (facet, key) => {
+    const c = meta.facets && meta.facets[facet];
+    return c ? " (" + (c[key] || 0) + ")" : "";
+  };
+  /* Options come from what the roster actually HOLDS, so a centre with no
+     children in this cohort is not offered — an option whose only outcome is an
+     empty table is worse than no option. */
+  const fkeys = (facet) => {
+    const c = (meta.facets && meta.facets[facet]) || {};
+    return Object.keys(c).filter(k => k !== "unknown" && k !== "" && c[k] > 0);
+  };
   React.useEffect(() => { loadGaps(); /* eslint-disable-next-line */ }, []);
   /* Send every ID this cohort is owed, from the screen where somebody notices
      they are missing.
@@ -3339,46 +3362,67 @@ function SummerRoster({ cohortId }) {
     if (!(await dialog.confirm({ title: "Delete " + s.fullName + "?", body: "This permanently removes the student record and their attendance, and frees their QR card for reuse. This can't be undone.", cta: "Delete", danger: true }))) return;
     try { await NGGApi.admin.summer.studentDelete(s.studentId); toast.success("Student deleted."); setOpenId(""); load(); } catch (e) { toast.error(e.code || e.message); }
   };
-  /* " (42)" on an option, or nothing at all before the first load — a "(0)"
-     that only means "not counted yet" is worse than no number. */
-  const stCount = (k) => meta.schoolTypes ? " (" + (meta.schoolTypes[k] || 0) + ")" : "";
-  const rows = (list || []).filter(s => {
-    if (only === "pending") return s.regStatus === "parent_pending";
-    if (only === "noconsent") return !s.consentComplete;
-    // Active children with nothing bound — the ones the complaint was about.
-    if (only === "noid") return s.status === "active" && !s.token;
-    if (only === "withdrawn") return s.status !== "active";
-    return true;
-  });
+  /* No client-side filtering left. Every row the server returned is a row that
+     matched, so the table draws what it was given — which is what makes the
+     count under the filters trustworthy and what lets the filters combine. */
+  const rows = list || [];
   return (
     <div>
       <div className="admin-filters">
         <input className="admin-input" placeholder="Search name / handle / ID" value={q} onChange={e => setQ(e.target.value)} style={{ maxWidth: 280 }}/>
-        <select className="admin-select" value={only} onChange={e => setOnly(e.target.value)} aria-label="Filter children">
-          <option value="all">Everyone</option>
-          <option value="pending">Awaiting parent consent</option>
-          <option value="noconsent">Missing a required consent</option>
-          {/* The complaint this screen could not answer: WHICH children have no
-              ID. It was a fact about the roster with no way to ask for it. */}
-          <option value="noid">No ID issued</option>
-          <option value="withdrawn">Not active</option>
+        {/* Seven pickers, any combination. Each carries counts computed against
+            the others, so choosing one narrows the numbers on the rest instead
+            of leaving them describing a population that is no longer on screen. */}
+        <select className="admin-select" value={facets.centre} onChange={e => setFacet("centre", e.target.value)} aria-label="Filter by centre">
+          <option value="">Any centre</option>
+          {fkeys("centre").map(k => <option key={k} value={k}>{k}{fc("centre", k)}</option>)}
+          {(meta.facets?.centre?.unknown || 0) > 0 && <option value="unknown">No centre recorded{fc("centre", "unknown")}</option>}
         </select>
-        {/* School type. The counts are ON the options, so an admin reads the
-            public/private split without selecting anything — that split is the
-            question this field exists to answer, and a bare dropdown makes you
-            pick each option in turn to find it out.
-            "Not recorded" is an option rather than a hidden remainder: a split
-            quoted without its denominator is the one that ends up wrong in an
-            application. */}
-        <select className="admin-select" value={stype} onChange={e => setStype(e.target.value)} aria-label="Filter by school type">
+        <select className="admin-select" value={facets.track} onChange={e => setFacet("track", e.target.value)} aria-label="Filter by faculty">
+          <option value="">Any faculty</option>
+          {fkeys("track").map(k => <option key={k} value={k}>{k}{fc("track", k)}</option>)}
+          {(meta.facets?.track?.unknown || 0) > 0 && <option value="unknown">No faculty recorded{fc("track", "unknown")}</option>}
+        </select>
+        {/* School type. The public/private split is the first line of most
+            funding applications, and "not recorded" is filterable rather than a
+            hidden remainder because a split without its denominator is the one
+            that ends up wrong in the application. */}
+        <select className="admin-select" value={facets.schoolType} onChange={e => setFacet("schoolType", e.target.value)} aria-label="Filter by school type">
           <option value="">Any school type</option>
-          <option value="public">Public school{stCount("public")}</option>
-          <option value="private">Private school{stCount("private")}</option>
-          {/* Only offered when some row actually holds a value that is neither
-              — otherwise it is an option that can only ever return nothing. */}
-          {(meta.schoolTypes?.other || 0) > 0 && <option value="other">Recorded as something else{stCount("other")}</option>}
-          <option value="unknown">Not recorded{stCount("unknown")}</option>
+          <option value="public">Public school{fc("schoolType", "public")}</option>
+          <option value="private">Private school{fc("schoolType", "private")}</option>
+          {(meta.facets?.schoolType?.other || 0) > 0 && <option value="other">Recorded as something else{fc("schoolType", "other")}</option>}
+          <option value="unknown">No school type recorded{fc("schoolType", "unknown")}</option>
         </select>
+        <select className="admin-select" value={facets.status} onChange={e => setFacet("status", e.target.value)} aria-label="Filter by standing">
+          <option value="">Any standing</option>
+          <option value="active">Active{fc("status", "active")}</option>
+          <option value="inactive">Not active{fc("status", "inactive")}</option>
+        </select>
+        <select className="admin-select" value={facets.consent} onChange={e => setFacet("consent", e.target.value)} aria-label="Filter by consent">
+          <option value="">Any consent state</option>
+          <option value="complete">Consent complete{fc("consent", "complete")}</option>
+          <option value="incomplete">Missing a required consent{fc("consent", "incomplete")}</option>
+        </select>
+        {/* The complaint the roster could not answer at all: WHICH children have
+            no ID. Combine it with a centre and it answers the version somebody
+            actually asks — "who at Egbeda still has no card". */}
+        <select className="admin-select" value={facets.id} onChange={e => setFacet("id", e.target.value)} aria-label="Filter by ID issued">
+          <option value="">ID: any</option>
+          <option value="no">No ID issued{fc("id", "no")}</option>
+          <option value="yes">ID issued{fc("id", "yes")}</option>
+        </select>
+        <select className="admin-select" value={facets.sex} onChange={e => setFacet("sex", e.target.value)} aria-label="Filter by sex">
+          <option value="">Any sex</option>
+          {(meta.facets?.sex?.f || 0) > 0 && <option value="f">Girls{fc("sex", "f")}</option>}
+          {(meta.facets?.sex?.m || 0) > 0 && <option value="m">Boys{fc("sex", "m")}</option>}
+          {(meta.facets?.sex?.unknown || 0) > 0 && <option value="unknown">Sex not recorded{fc("sex", "unknown")}</option>}
+        </select>
+        {activeCount > 0 && (
+          <button className="btn btn-ghost btn-sm" onClick={clearAll} title="Remove every filter">
+            Clear {activeCount} filter{activeCount === 1 ? "" : "s"}
+          </button>
+        )}
         <button className="btn btn-ghost btn-sm" disabled={!rows.length} onClick={() => downloadCsv("summer-students", rows.map(s => ({ studentId: s.studentId, displayId: s.displayId, fullName: s.fullName, handle: s.handle, age: s.age, centre: s.centre, faculty: s.faculty, track: s.track, school: s.school || "",
           /* Both: what the family answered, and the normalised form. The raw
              column is the record, but pivoting on it reproduces the exact
@@ -3397,13 +3441,26 @@ function SummerRoster({ cohortId }) {
           The truncation line matters more than it looks: without it a capped
           roster reads as a complete answer, which is how "we have 1,000 public
           school children" gets quoted from a page that stopped at 1,000. */}
-      {stype && meta.schoolTypes && (
+      {/* What the filters matched, out of what. A filtered roster that only shows
+          its rows leaves the reader to count them, and a count read off a screen
+          is the one that goes into a report. Named per facet so the sentence says
+          which question was asked, not just how many answered it. */}
+      {activeCount > 0 && (
         <div style={{ marginBottom: 12, fontSize: 13, lineHeight: 1.55, color: "var(--ink-600,#3c4460)" }}>
-          <b>{meta.matched}</b> of {meta.total} {meta.total === 1 ? "child" : "children"} in this cohort{" "}
-          {stype === "unknown" ? "have no school type recorded"
-            : stype === "other" ? "have a school type that is neither public nor private"
-            : "are at a " + stype + " school"}.
-          {meta.truncated && <> Showing the first {(list || []).length} — narrow the search to see the rest.</>}
+          <b>{meta.matched}</b> of {meta.total} {meta.total === 1 ? "child" : "children"} in this cohort match
+          {" "}{[
+            facets.centre && (facets.centre === "unknown" ? "no centre recorded" : "centre " + facets.centre),
+            facets.track && (facets.track === "unknown" ? "no faculty recorded" : facets.track),
+            facets.schoolType && (facets.schoolType === "unknown" ? "no school type recorded"
+              : facets.schoolType === "other" ? "a school type that is neither public nor private"
+              : facets.schoolType + " school"),
+            facets.status && (facets.status === "active" ? "still active" : "no longer active"),
+            facets.consent && (facets.consent === "complete" ? "consent complete" : "a missing consent"),
+            facets.id && (facets.id === "no" ? "no ID issued" : "an ID issued"),
+            facets.sex && (facets.sex === "unknown" ? "sex not recorded" : facets.sex === "f" ? "girls" : "boys"),
+            q && ("\u201c" + q + "\u201d"),
+          ].filter(Boolean).join(" · ")}.
+          {meta.truncated && <> Showing the first {rows.length} — narrow it further to see the rest.</>}
         </div>
       )}
       {/* What the button is for, before it is pressed. A bulk action whose size

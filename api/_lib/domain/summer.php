@@ -360,6 +360,90 @@ function summer_row_school_type(array $r): string {
     return school_type_key(is_array($a) ? (string)($a['schoolType'] ?? '') : '');
 }
 
+/**
+ * The roster's facets. Every one of them is applied SERVER-side and ABOVE the
+ * page cap, and they compose with AND.
+ *
+ * Both of those are the point. Before this the search and the school type were
+ * server-side while the situation filter ran on the drawn page, so combining
+ * them narrowed different populations at two different moments — "private
+ * school children with no ID" filtered the private-school children the server
+ * happened to return first, then hid the rest. And a filter applied below the
+ * cap filters the PAGE, which the attendance register already got wrong once.
+ *
+ * `sql` marks the ones that are plain columns and could be pushed into the
+ * query. They are NOT pushed, deliberately: every facet's count has to be
+ * computed against the OTHER facets, so they all have to be evaluated in the
+ * same pass over the same rows. Pushing half of them into SQL would make half
+ * the counts describe a different population from the other half.
+ */
+const ROSTER_FACETS = ['centre', 'track', 'schoolType', 'status', 'consent', 'id', 'sex'];
+
+/** The value of one facet for one raw roster row. '' always means "not
+ *  recorded" and is a real, filterable answer rather than a gap. */
+function roster_facet_value(string $facet, array $r, array $extra): string {
+    switch ($facet) {
+        case 'centre': return trim((string)($r['centre'] ?? ''));
+        case 'track':  return trim((string)($r['track'] ?? ''));
+        case 'schoolType': return summer_row_school_type($r);
+        /* Two states, not five. A coordinator asks "who is still with us"; the
+           exact standing (withdrawn / graduated / promoted) is on the row. */
+        case 'status': return (string)($r['status'] ?? 'active') === 'active' ? 'active' : 'inactive';
+        case 'consent': return $extra['consent'] ?? 'incomplete';
+        /* An ID is issued or it is not. This was the reported complaint the
+           roster could not answer at all. */
+        case 'id': return trim((string)($r['token'] ?? '')) !== '' ? 'yes' : 'no';
+        case 'sex': return strtolower(substr(trim((string)(person_sex($r) ?: '')), 0, 1));
+    }
+    return '';
+}
+
+/** The requested value for a facet, normalised, or null for "no filter". */
+/** Facets whose values are a fixed vocabulary, and are therefore safe to
+ *  lower-case. Centre and track are NOT among them: those are free text typed by
+ *  an admin, "Egbeda" is the value the row holds, and lower-casing the request
+ *  but not the row is a filter that silently matches nothing. */
+const ROSTER_ENUM_FACETS = ['schoolType', 'status', 'consent', 'id', 'sex'];
+
+function roster_facet_want(string $facet, $raw): ?string {
+    $v = trim((string)$raw);
+    if ($v === '' || strtolower($v) === 'all' || strtolower($v) === 'any') return null;
+    /* 'unknown' spells the not-recorded state on the wire for the same reason it
+       does on the school type: an empty string already means "no filter" in
+       every other facet, so a picker where the two share a value cannot express
+       the difference. Checked before the vocabulary split, because "no centre
+       recorded" is as askable as "no school type recorded". */
+    $low = strtolower($v);
+    if ($low === 'unknown' || $low === 'none' || $low === 'blank') return '';
+    if (!in_array($facet, ROSTER_ENUM_FACETS, true)) return $v;    // free text, verbatim
+    if ($facet === 'schoolType') return school_type_filter_key($low);
+    if ($facet === 'sex') return substr($low, 0, 1);
+    return $low;
+}
+
+/** Consent completeness for a batch of students, in one query rather than one
+ *  per child — the filter runs over every scanned row, not just the page. */
+function roster_consent_states(array $studentIds): array {
+    $ids = array_values(array_unique(array_filter(array_map('strval', $studentIds), fn($x) => $x !== '')));
+    if (!$ids) return [];
+    $required = array_keys(array_filter(CONSENT_TYPES, fn($m) => $m['p'] === 0));
+    $granted = [];
+    foreach (array_chunk($ids, 400) as $chunk) {
+        $ph = implode(',', array_fill(0, count($chunk), '?'));
+        foreach (db_all("SELECT studentId, type, status FROM consents WHERE studentId IN ($ph) ORDER BY id", $chunk) as $c) {
+            // Append-only: the LAST row for a type is the current decision.
+            $granted[(string)$c['studentId']][(string)$c['type']] = (string)$c['status'];
+        }
+    }
+    $out = [];
+    foreach ($ids as $id) {
+        $g = $granted[$id] ?? [];
+        $have = count(array_filter($required, fn($t) => ($g[$t] ?? '') === 'granted'));
+        $out[$id] = $have === count($required) ? 'complete' : 'incomplete';
+    }
+    return $out;
+}
+
 function admin_summer_students_list(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
@@ -368,35 +452,56 @@ function admin_summer_students_list(array $p): array {
     $q = strtolower((string)($p['q'] ?? ''));
     if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(handle) LIKE ? OR lower(studentId) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
     $rows = db_all('SELECT * FROM summer_students WHERE ' . implode(' AND ', $where) . ' ORDER BY id DESC LIMIT ' . ROSTER_SCAN_MAX, $params);
+    $total = count($rows);
 
-    /* ── School type ──────────────────────────────────────────────────────
-     * Applied HERE — over the raw rows, above the serialiser and above the
-     * page cap — and not on the drawn list, for the reason the attendance
-     * register already learned the hard way: a filter applied after the cap
-     * filters the PAGE, so "show me the private-school children" returns
-     * whichever of them happened to fall inside the first thousand rows and
-     * silently omits the rest. Cheap to do here: one json_decode per row and
-     * no extra query, whereas summer_student_admin() costs a consents read
-     * per student.
-     *
-     * `schoolTypes` carries the whole split regardless of what is selected, so
-     * the picker states the counts instead of asking an admin to try each
-     * option to find out — and so the not-recorded number, which is the one
-     * that invalidates a funder report, is visible without being asked for. */
-    $counts = ['public' => 0, 'private' => 0, 'other' => 0, '' => 0];
-    $keyOf = [];
+    /* ── Facets ───────────────────────────────────────────────────────────
+     * Evaluated once per row, then filtered and counted in the same pass. All
+     * of it happens here — above the serialiser, which costs a consents read
+     * per student, and above the page cap, so the answer is about the roster
+     * rather than about whichever thousand rows came back first. */
+    $consentOf = roster_consent_states(array_column($rows, 'studentId'));
+    $want = [];
+    foreach (ROSTER_FACETS as $f) {
+        $w = roster_facet_want($f, $p[$f] ?? '');
+        if ($w !== null) $want[$f] = $w;
+    }
+    $vals = [];
     foreach ($rows as $i => $r) {
-        $k = summer_row_school_type($r);
-        $keyOf[$i] = $k;
-        $counts[$k] = ($counts[$k] ?? 0) + 1;
+        $extra = ['consent' => $consentOf[(string)$r['studentId']] ?? 'incomplete'];
+        foreach (ROSTER_FACETS as $f) $vals[$i][$f] = roster_facet_value($f, $r, $extra);
     }
-    $want = school_type_filter_key($p['schoolType'] ?? '');
-    $matched = count($rows);
-    if ($want !== null) {
-        $rows = array_values(array_filter($rows, fn($r, $i) => $keyOf[$i] === $want, ARRAY_FILTER_USE_BOTH));
-        $matched = count($rows);
+    /** Does row $i pass every selected facet except $skip? */
+    $passes = function (int $i, ?string $skip = null) use ($want, $vals): bool {
+        foreach ($want as $f => $w) {
+            if ($f === $skip) continue;
+            if (($vals[$i][$f] ?? '') !== $w) return false;
+        }
+        return true;
+    };
+
+    /* Each facet's counts are computed with the OTHER facets applied — so
+     * "Public (12)" means twelve GIVEN what else is selected. Counting over the
+     * whole cohort instead is the classic faceted-search trap: the option reads
+     * (42), you pick it, and the table comes back empty because the 42 were
+     * counted against a population your other filters had already excluded. */
+    $facets = [];
+    foreach (ROSTER_FACETS as $f) {
+        $c2 = [];
+        foreach ($rows as $i => $_) {
+            if (!$passes($i, $f)) continue;
+            $v = $vals[$i][$f];
+            $c2[$v] = ($c2[$v] ?? 0) + 1;
+        }
+        // '' is a real answer (not recorded); name it on the wire.
+        if (array_key_exists('', $c2)) { $c2['unknown'] = $c2['']; unset($c2['']); }
+        arsort($c2);
+        $facets[$f] = $c2;
     }
-    $total = array_sum($counts);
+
+    $kept = [];
+    foreach ($rows as $i => $r) if ($passes($i)) $kept[] = $r;
+    $matched = count($kept);
+
     /* Blank is ABSENT, not zero. The HTTP route forwards `limit` on every
        request whether the caller set it or not, so `?? ROSTER_PAGE_MAX` never
        fires there — and `(int)''` is 0, which the clamp below would turn into a
@@ -406,24 +511,36 @@ function admin_summer_students_list(array $p): array {
     $limit = ($limRaw === '' || $limRaw === null) ? ROSTER_PAGE_MAX
            : max(ROSTER_PAGE_MIN, min(ROSTER_PAGE_MAX, (int)$limRaw));
     $truncated = $matched > $limit;
-    $rows = array_slice($rows, 0, $limit);
+    $page = array_slice($kept, 0, $limit);
 
     // One read for every card in the roster, not one per student.
     $expiryOf = [];
-    if ($rows) {
-        $ids = array_column($rows, 'studentId');
+    if ($page) {
+        $ids = array_column($page, 'studentId');
         $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
-        foreach (db_all("SELECT studentId, expiresAt FROM qr_codes WHERE status = 'assigned' AND studentId IN $in", $ids) as $q) {
-            $expiryOf[(string)$q['studentId']] = (string)($q['expiresAt'] ?? '');
+        foreach (db_all("SELECT studentId, expiresAt FROM qr_codes WHERE status = 'assigned' AND studentId IN $in", $ids) as $qr) {
+            $expiryOf[(string)$qr['studentId']] = (string)($qr['expiresAt'] ?? '');
         }
     }
     $out = [];
-    foreach ($rows as $r) $out[] = summer_student_admin($r, $expiryOf[(string)$r['studentId']] ?? '');
+    foreach ($page as $r) $out[] = summer_student_admin($r, $expiryOf[(string)$r['studentId']] ?? '');
+
+    /* Echoed back so the screen can show what is actually in force. A filter the
+       server normalised or dropped, still lit up in the UI, is how somebody
+       comes to trust a number that answers a different question. */
+    $applied = [];
+    foreach ($want as $f => $w) $applied[$f] = $w === '' ? 'unknown' : $w;
+
     return ['ok' => true, 'students' => $out, 'cohortId' => $cohortId,
             'total' => $total, 'matched' => $matched, 'truncated' => $truncated,
-            'schoolType' => $want === null ? '' : ($want === '' ? 'unknown' : $want),
-            'schoolTypes' => ['public' => $counts['public'], 'private' => $counts['private'],
-                              'other' => $counts['other'], 'unknown' => $counts['']]];
+            'applied' => $applied, 'facets' => $facets,
+            /* Kept for the callers that read them before facets existed. Same
+               numbers, same meaning — the school-type split, named. */
+            'schoolType' => $applied['schoolType'] ?? '',
+            'schoolTypes' => ['public' => $facets['schoolType']['public'] ?? 0,
+                              'private' => $facets['schoolType']['private'] ?? 0,
+                              'other' => $facets['schoolType']['other'] ?? 0,
+                              'unknown' => $facets['schoolType']['unknown'] ?? 0]];
 }
 
 /**

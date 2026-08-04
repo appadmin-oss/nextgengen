@@ -846,21 +846,55 @@ function unzipDocumentXml(buf) {
     KIDS[1].schoolType = 'govt';     KIDS[1].schoolTypeKey = 'public';
     KIDS[2].schoolType = 'Private';  KIDS[2].schoolTypeKey = 'private';
     KIDS[3].schoolType = '';         KIDS[3].schoolTypeKey = '';
+    KIDS[0].sex = 'Female'; KIDS[1].sex = 'Male'; KIDS[2].sex = 'Female'; KIDS[3].sex = 'Male';
     window.__rosterCalls = [];
+    /* A real facet engine, not a stub that returns a fixed list — the thing
+       under test is that filters COMBINE and that each facet's counts are
+       computed against the OTHERS, and neither can be exercised by a stub that
+       ignores its arguments. Mirrors the server's contract exactly. */
+    var FACETS = ['centre', 'track', 'schoolType', 'status', 'consent', 'id', 'sex'];
+    var fval = function (k, f) {
+      if (f === 'centre') return k.centre || '';
+      if (f === 'track') return k.track || '';
+      if (f === 'schoolType') return k.schoolTypeKey || '';
+      if (f === 'status') return k.status === 'active' ? 'active' : 'inactive';
+      if (f === 'consent') return k.consentComplete ? 'complete' : 'incomplete';
+      if (f === 'id') return k.token ? 'yes' : 'no';
+      if (f === 'sex') return (k.sex || '').toLowerCase().slice(0, 1);
+      return '';
+    };
     window.NGGApi.admin.summer = {
-      /* Honours the filter, because that is the thing under test: the answer
-         lives in the stored submission and the roster read is capped, so this
-         has to be a SERVER filter. A client-side filter would pass an
-         assertion on the drawn rows while quietly filtering only the page. */
       students: function (q, cohortId, opts) {
-        var want = (opts && opts.schoolType) || '';
-        window.__rosterCalls.push(want);
-        var counts = { public: 2, private: 1, other: 0, unknown: 1 };
-        var rows = !want ? KIDS : KIDS.filter(function (k) {
-          return want === 'unknown' ? !k.schoolTypeKey : k.schoolTypeKey === want;
+        var o = opts || {};
+        window.__rosterCalls.push(JSON.stringify(o));
+        var want = {};
+        FACETS.forEach(function (f) {
+          var v = (o[f] || '').trim();
+          if (!v || v === 'all' || v === 'any') return;
+          want[f] = (v === 'unknown' || v === 'none') ? '' : v;
         });
+        var passes = function (k, skip) {
+          return Object.keys(want).every(function (f) { return f === skip || fval(k, f) === want[f]; });
+        };
+        var facets = {};
+        FACETS.forEach(function (f) {
+          var c = {};
+          KIDS.filter(function (k) { return passes(k, f); }).forEach(function (k) {
+            var v = fval(k, f) || 'unknown';
+            c[v] = (c[v] || 0) + 1;
+          });
+          facets[f] = c;
+        });
+        var rows = KIDS.filter(function (k) { return passes(k, null); });
+        var applied = {};
+        Object.keys(want).forEach(function (f) { applied[f] = want[f] === '' ? 'unknown' : want[f]; });
         return Promise.resolve({ students: rows, total: KIDS.length, matched: rows.length,
-                                 truncated: false, schoolType: want, schoolTypes: counts });
+                                 truncated: false, applied: applied, facets: facets,
+                                 schoolType: applied.schoolType || '',
+                                 schoolTypes: { public: facets.schoolType.public || 0,
+                                                private: facets.schoolType.private || 0,
+                                                other: facets.schoolType.other || 0,
+                                                unknown: facets.schoolType.unknown || 0 } });
       },
       studentUpdate: function (id, data) { window.__saved = { id: id, data: data }; return Promise.resolve({ ok: true }); },
       studentStatus: function () { return Promise.resolve({ ok: true }); },
@@ -3349,13 +3383,93 @@ function unzipDocumentXml(buf) {
     ok('…and each child\'s consent standing', /Complete/.test(roBody) && /Awaiting parent/.test(roBody) && /Incomplete/.test(roBody));
 
     const roRows = () => ro.locator('.admin-table tbody tr').count();
+    const roSel = async (label, value) => {
+      /* Through `step`: a missing picker used to throw past every later block in
+         this file, and this section now drives seven of them. */
+      if (!await step('the roster offers a "' + label + '" picker',
+                      () => ro.selectOption('select[aria-label="' + label + '"]', value))) return false;
+      await ro.waitForTimeout(400);        // debounced, then a round trip
+      return true;
+    };
     ok('all four children are listed', await roRows() === 4);
-    await ro.selectOption('select[aria-label="Filter children"]', 'pending');
-    await ro.waitForTimeout(150);
-    ok('filtering to awaiting-parent narrows to the one', await roRows() === 1);
-    await ro.selectOption('select[aria-label="Filter children"]', 'noconsent');
-    await ro.waitForTimeout(150);
-    ok('filtering to missing-consent finds both', await roRows() === 2);
+
+    /* ── Filters that COMBINE ─────────────────────────────────────────────────
+     * The thing that was broken was not a missing picker. Search and school type
+     * went to the server while the situation filter ran on the DRAWN PAGE, so
+     * combining them narrowed two different populations at two different
+     * moments — and the second only ever saw whichever rows came back first.
+     *
+     * Every facet is server-side now and they AND together. Checked by driving
+     * them: each alone selects a set the pair does not.
+     */
+    if (await roSel('Filter by centre', 'Egbeda')) {
+      ok('filtering by centre narrows to that centre', await roRows() === 3);
+      /* And it asked the SERVER, with the centre in the request — a filter
+         applied to the drawn rows would satisfy a row count while quietly
+         filtering only the page. */
+      ok('…by asking the server, with the centre in the request',
+        (await ro.evaluate(() => window.__rosterCalls)).some(c => /"centre":"Egbeda"/.test(c)));
+      /* THE ASSERTION THE REQUEST IS ABOUT. Egbeda is 3, missing-consent is 2,
+         and together they are 1 — narrower than either, which is what AND means
+         and what neither OR nor page-filtering would produce. */
+      if (await roSel('Filter by consent', 'incomplete')) {
+        ok('two filters combine to the intersection, narrower than either alone',
+          await roRows() === 1);
+        const both = await ro.evaluate(() => document.body.innerText);
+        ok('…and it is the right child — Egbeda AND missing a consent',
+          /Bode Beta/.test(both) && !/Chidi Gamma/.test(both) && !/Amina Alpha/.test(both));
+        /* Each picker's counts are computed with the OTHERS applied. Counting
+           over the whole cohort is the faceted-search trap: an option reads (2),
+           gets picked, and the table comes back empty because the 2 were counted
+           against a population the other filters had already excluded. */
+        const cOpts = await ro.evaluate(() => Array.from(
+          document.querySelectorAll('select[aria-label="Filter by consent"] option')).map(o => o.textContent));
+        ok('…and the consent counts describe THIS centre, not the whole cohort',
+          cOpts.some(t => /Consent complete \(2\)/.test(t)) && cOpts.some(t => /Missing a required consent \(1\)/.test(t)));
+        /* A facet does not narrow its OWN options, or there would be no way back
+           to the value you just moved away from. */
+        const ctOpts = await ro.evaluate(() => Array.from(
+          document.querySelectorAll('select[aria-label="Filter by centre"] option')).map(o => o.textContent));
+        ok('…while the centre picker still offers the centre you are not in',
+          ctOpts.some(t => /Ijaiye/.test(t)));
+        /* Says how many filters are on, and takes them all off at once — with
+           three or four pickers set, clearing them one at a time is four round
+           trips and somebody will leave one on. */
+        const clr = await ro.evaluate(() => {
+          const b = Array.from(document.querySelectorAll('button')).find(x => /Clear \d+ filters?/.test(x.textContent || ''));
+          return b ? b.textContent.trim() : null;
+        });
+        ok('…and says how many filters are in force, with one way to drop them all',
+          clr !== null && /Clear 2 filters/.test(clr));
+        if (await step('the clear-filters button can be pressed',
+                       () => ro.getByRole('button', { name: /Clear 2 filters/ }).click())) {
+          await ro.waitForTimeout(400);
+          ok('…which returns the whole roster', await roRows() === 4);
+        }
+      }
+    }
+
+    /* Three at once, and the one somebody actually asks out loud: "who at
+       Egbeda is still active and has no card". */
+    if (await roSel('Filter by centre', 'Egbeda') && await roSel('Filter by standing', 'active')
+        && await roSel('Filter by ID issued', 'no')) {
+      ok('three filters combine — active, at this centre, and no ID issued',
+        await roRows() === 2);
+      const tri = await ro.evaluate(() => document.body.innerText);
+      ok('…excluding the child at the other centre and the one who has a card',
+        !/Chidi Gamma/.test(tri) && !/Amina Alpha/.test(tri)
+        && /Bode Beta/.test(tri) && /Dele Delta/.test(tri));
+      /* A combination nothing matches must come back empty, not fall back to
+         everything — an empty table is a true answer and a full one is a lie. */
+      if (await roSel('Filter by school type', 'private')) {
+        ok('…and a combination nothing matches returns nothing, not everything',
+          await roRows() === 0);
+      }
+      if (await step('clear the filters again',
+                     () => ro.getByRole('button', { name: /Clear \d+ filters?/ }).click())) {
+        await ro.waitForTimeout(400);
+      }
+    }
 
     /* ── School type ──────────────────────────────────────────────────────────
      * The intake has asked public-or-private since it was built and the export
@@ -3364,8 +3478,6 @@ function unzipDocumentXml(buf) {
      * applications, and answering it meant exporting the roster and pivoting it
      * in a spreadsheet.
      */
-    await ro.selectOption('select[aria-label="Filter children"]', 'all');
-    await ro.waitForTimeout(150);
     const stOpts = await ro.evaluate(() => Array.from(
       document.querySelectorAll('select[aria-label="Filter by school type"] option')).map(o => o.textContent));
     /* The split is ON the options. A bare dropdown makes an admin select each
@@ -3375,40 +3487,28 @@ function unzipDocumentXml(buf) {
     /* Not-recorded is an option, not a hidden remainder — a split quoted
        without its denominator is the one that ends up wrong in an application. */
     ok('…and offers "not recorded" as a state you can ask for',
-       stOpts.some(t => /Not recorded \(1\)/.test(t)));
+       stOpts.some(t => /No school type recorded \(1\)/i.test(t)));
     // Nothing is recorded as neither in this fixture, so that option is absent
     // rather than present-and-always-empty.
     ok('…while an option that could only ever return nothing is not offered',
        !stOpts.some(t => /something else/i.test(t)));
 
-    await ro.selectOption('select[aria-label="Filter by school type"]', 'public');
-    await ro.waitForTimeout(400);           // debounced, then a round trip
-    /* THE ASSERTION THAT MATTERS. The answer lives in the stored submission and
-       the roster read is capped, so this has to reach the SERVER — a filter
-       applied to the drawn rows would satisfy a row count while quietly
-       filtering the page, which is the exact bug the attendance register had. */
-    ok('…and asking for public schools asks the SERVER, not the drawn page',
-       (await ro.evaluate(() => window.__rosterCalls)).includes('public'));
-    ok('…returning the two public-school children, both spellings',
-       await roRows() === 2);
-    const stText = await ro.evaluate(() => document.body.innerText);
-    ok('…including the row stored as "govt" rather than only the tidy one',
-       /Amina Alpha/.test(stText) && /Bode Beta/.test(stText) && !/Chidi Gamma/.test(stText));
-    /* Says what it matched out of what. A filtered roster that only shows rows
-       leaves the reader to count them, and a count read off a screen is the one
-       that goes into the report. */
-    ok('…and states the count against the whole cohort',
-       /\b2\b[\s\S]{0,40}of 4 children/.test(stText) && /public school/i.test(stText));
-
-    await ro.selectOption('select[aria-label="Filter by school type"]', 'unknown');
-    await ro.waitForTimeout(400);
-    ok('…and "not recorded" finds the child nobody asked',
-       await roRows() === 1 && /Dele Delta/.test(await ro.evaluate(() => document.body.innerText)));
-    ok('…phrased as a missing answer, not as a school type',
-       /no school type recorded/i.test(await ro.evaluate(() => document.body.innerText)));
-    await ro.selectOption('select[aria-label="Filter by school type"]', '');
-    await ro.waitForTimeout(400);
-    ok('…and clearing it returns everyone', await roRows() === 4);
+    if (await roSel('Filter by school type', 'public')) {
+      ok('…and asking for public schools asks the SERVER, not the drawn page',
+         (await ro.evaluate(() => window.__rosterCalls)).some(c => /"schoolType":"public"/.test(c)));
+      ok('…returning the two public-school children, both spellings',
+         await roRows() === 2);
+      const stText = await ro.evaluate(() => document.body.innerText);
+      ok('…including the row stored as "govt" rather than only the tidy one',
+         /Amina Alpha/.test(stText) && /Bode Beta/.test(stText) && !/Chidi Gamma/.test(stText));
+    }
+    if (await roSel('Filter by school type', 'unknown')) {
+      ok('…and "not recorded" finds the child nobody asked',
+         await roRows() === 1 && /Dele Delta/.test(await ro.evaluate(() => document.body.innerText)));
+    }
+    if (await roSel('Filter by school type', '')) {
+      ok('…and clearing it returns everyone', await roRows() === 4);
+    }
 
     /* ── Children with no ID ──────────────────────────────────────────────────
      * The reported problem. A missing ID was a silent state: the roster looked
@@ -3416,9 +3516,11 @@ function unzipDocumentXml(buf) {
      * when a parent rang up or a gate turned the child away. There was no way to
      * ask WHICH children, and the bulk action skipped exactly them.
      */
-    await ro.selectOption('select[aria-label="Filter children"]', 'noid');
-    await ro.waitForTimeout(200);
-    ok('the roster can be asked which children have no ID', await roRows() === 2);
+    /* The old single-purpose "No ID issued" option meant active AND no token.
+       It is a PAIR of facets now, which is strictly more useful — the same
+       question, plus the version somebody actually asks, narrowed to a centre. */
+    const noIdOk = await roSel('Filter by ID issued', 'no') && await roSel('Filter by standing', 'active');
+    ok('the roster can be asked which children have no ID', noIdOk && await roRows() === 2);
     const noIdText = await ro.evaluate(() => Array.from(document.querySelectorAll('.admin-table tbody tr'))
       .map(r => r.innerText.replace(/\s+/g, ' ')).join(' | '));
     ok('…and says so on the row, distinguishing "never issued" from "consent pending"',
@@ -3426,8 +3528,7 @@ function unzipDocumentXml(buf) {
       && /no ID — consent pending/.test(noIdText) && /no ID issued/.test(noIdText)
       // The withdrawn child is not a gap to chase, and the one WITH a token is not either.
       && !/Chidi/.test(noIdText) && !/Amina/.test(noIdText));
-    await ro.selectOption('select[aria-label="Filter children"]', 'all');
-    await ro.waitForTimeout(150);
+    await roSel('Filter by ID issued', ''); await roSel('Filter by standing', '');
 
     /* The size of the job, before the button is pressed, split by what would
        actually fix each part — a bulk action whose size you cannot see is one

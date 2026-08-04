@@ -759,6 +759,10 @@
         // `opts` rather than another positional: the roster's filters are
         // server-side now, and a fourth, fifth and sixth argument is how a call
         // site ends up passing them in the wrong order.
+        /* `opts` carries the facets — centre, track, schoolType, status,
+           consent, id, sex — and they compose with AND on the server. Passed as
+           an object rather than positionally because there are seven of them and
+           a seventh positional argument is how a call site gets them crossed. */
         students:     (q, cohortId, opts) => request('/admin/summer.php' + qs(Object.assign({ view: 'students', q, cohortId }, opts || {}))),
         consentDocSave: (doc) => request('/admin/summer.php', { body: { action: 'consentDoc', doc } }),
         aiStatus:     (probe) => request('/admin/settings.php' + qs({ view: 'ai', probe: probe ? 1 : '' })),

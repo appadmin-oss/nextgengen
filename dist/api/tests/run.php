@@ -1471,9 +1471,151 @@ chk('roster: consent state travels with the row', (function () use ($SUR) {
     chk('roster: the HTTP route forwards the filter the op reads', (function () {
         $src = (string)@file_get_contents(dirname(__DIR__) . '/admin/summer.php');
         if ($src === '') return false;
-        if (!preg_match("/admin\.summer\.students\.list'.*?\]\);/s", $src, $m)) return false;
-        return strpos($m[0], "'schoolType'") !== false && strpos($m[0], "'limit'") !== false;
+        if (!preg_match("/view === 'students'.*?\n    \}/s", $src, $m)) return false;
+        /* `schoolType` is forwarded through the ROSTER_FACETS loop now rather
+           than by name — asserted by its own test below. `limit` is still passed
+           explicitly, and a route that dropped it would cap every load at one
+           row (see the blank-limit test). */
+        return strpos($m[0], 'ROSTER_FACETS') !== false && strpos($m[0], "'limit'") !== false;
     })());
+
+    /* ── Two or more filters at once ──────────────────────────────────────────
+     *
+     * The thing that was actually broken, and it was not a missing picker. The
+     * search and the school type were server-side while the situation filter ran
+     * on the DRAWN PAGE, so combining them narrowed two different populations at
+     * two different moments: "private-school children with no ID" filtered the
+     * private-school children the server happened to return first and silently
+     * dropped the rest.
+     *
+     * Every facet is server-side now and they compose with AND. */
+    (function () use ($SUR, $cid) {
+        $ids = [];
+        $mk = function (string $id, string $centre, string $track, string $stype, string $status, string $token) use ($cid, &$ids) {
+            db_exec('DELETE FROM summer_students WHERE studentId = ?', [$id]);
+            db_insert('summer_students', ['studentId' => $id, 'cohortId' => $cid, 'fullName' => 'Combo ' . $id,
+                'handle' => strtolower($id), 'centre' => $centre, 'track' => $track, 'status' => $status,
+                'regStatus' => 'verified', 'token' => $token, 'sex' => 'Female',
+                'formData' => json_encode(['schoolType' => $stype])]);
+            $ids[] = $id;
+        };
+        /* Four children across two centres and two school types, so every pair of
+           facets has both a match and a near-miss that differs in exactly one
+           facet. A fixture where the combination happens to select the same rows
+           as either filter alone cannot tell an AND from an OR. */
+        $mk('CMB-1', 'Egbeda', 'Music',  'Public',  'active', '');            // Egbeda · public · no ID
+        $mk('CMB-2', 'Egbeda', 'Music',  'Private', 'active', 'SUMQR-CMB2');  // Egbeda · private · has ID
+        $mk('CMB-3', 'Ijaiye', 'Tech',   'Public',  'active', '');            // Ijaiye · public · no ID
+        $mk('CMB-4', 'Egbeda', 'Tech',   'Public',  'withdrawn', '');         // Egbeda · public · not active
+        $ask = fn(array $f) => backend_dispatch('admin.summer.students.list',
+            array_merge(['requesterId' => $SUR, 'cohortId' => $cid], $f));
+        $got = function (array $f) use ($ask) {
+            $r = $ask($f);
+            return array_values(array_filter(array_column($r['students'], 'studentId'),
+                fn($x) => strpos($x, 'CMB-') === 0));
+        };
+
+        chk('roster: centre is a filter, and it is applied on the server', (function () use ($got, $ask) {
+            $e = $got(['centre' => 'Egbeda']);
+            sort($e);
+            if ($e !== ['CMB-1', 'CMB-2', 'CMB-4']) return false;
+            $r = $ask(['centre' => 'Egbeda']);
+            // Echoed back, so the screen can show what is actually in force.
+            return ($r['applied']['centre'] ?? '') === 'egbeda' || ($r['applied']['centre'] ?? '') === 'Egbeda';
+        })());
+
+        /* THE ASSERTION THE REQUEST IS ABOUT. Each facet alone selects a set the
+           other does not; together they select the intersection. If they ORed, or
+           if the second ran on the page the first returned, this fails. */
+        chk('roster: two filters COMBINE — centre AND school type is the intersection', (function () use ($got) {
+            $eg = $got(['centre' => 'Egbeda']);          // 1, 2, 4
+            $pub = $got(['schoolType' => 'public']);      // 1, 3, 4
+            $both = $got(['centre' => 'Egbeda', 'schoolType' => 'public']);
+            sort($eg); sort($pub); sort($both);
+            return $both === ['CMB-1', 'CMB-4']
+                && count($eg) === 3 && count($pub) === 3   // each alone is wider
+                && $both !== $eg && $both !== $pub;
+        })());
+
+        chk('…and three combine as readily as two', (function () use ($got) {
+            // Egbeda · public · still active → CMB-1 only (CMB-4 is withdrawn).
+            $r = $got(['centre' => 'Egbeda', 'schoolType' => 'public', 'status' => 'active']);
+            return $r === ['CMB-1'];
+        })());
+
+        /* The version somebody actually asks out loud: "who at Egbeda still has
+           no card". Neither facet answers it alone. */
+        chk('…so "no ID, at this centre" is finally a question the roster can answer', (function () use ($got) {
+            $r = $got(['centre' => 'Egbeda', 'id' => 'no', 'status' => 'active']);
+            return $r === ['CMB-1'] && in_array('CMB-3', $got(['id' => 'no', 'status' => 'active']), true);
+        })());
+
+        chk('…and a combination nothing matches returns nothing, not everything', (function () use ($got) {
+            // Ijaiye has no private-school child.
+            return $got(['centre' => 'Ijaiye', 'schoolType' => 'private']) === [];
+        })());
+
+        /* Counts on each picker are computed with the OTHER facets applied. The
+           faceted-search trap is an option that reads (42), gets picked, and
+           returns an empty table because the 42 were counted against a population
+           the other filters had already excluded. */
+        chk('roster: each facet counts against the OTHERS, so a count cannot promise an empty table', (function () use ($ask) {
+            $all = $ask([]);
+            $eg  = $ask(['centre' => 'Egbeda']);
+            // Unfiltered, both centres are offered.
+            if (($all['facets']['centre']['Egbeda'] ?? 0) < 3) return false;
+            if (($all['facets']['centre']['Ijaiye'] ?? 0) < 1) return false;
+            /* Asserted as a RELATIONSHIP, not against a fixture count: the
+               cohort holds children from other tests, and the first version of
+               this pinned "private at Egbeda is 1" and read a correct count as a
+               failure. What matters is that selecting a centre narrows the other
+               facets — CMB-3 is the Ijaiye public child, so the public count must
+               drop when Egbeda is chosen. */
+            $pubAll = (int)($all['facets']['schoolType']['public'] ?? 0);
+            $pubEg  = (int)($eg['facets']['schoolType']['public'] ?? 0);
+            if ($pubEg >= $pubAll) return false;
+            /* And a facet does NOT narrow its OWN counts — otherwise choosing
+               Egbeda would hide Ijaiye from the picker and there would be no way
+               back to it. */
+            return ($eg['facets']['centre']['Ijaiye'] ?? 0) >= 1
+                && ($eg['facets']['centre']['Egbeda'] ?? 0) === ($all['facets']['centre']['Egbeda'] ?? 0);
+        })());
+
+        chk('roster: every facet the domain declares is forwarded by the HTTP route', (function () {
+            /* Both suites talk to the op directly, so a facet the route forgot to
+               forward would pass every test above and ship a picker that does
+               nothing. The route loops ROSTER_FACETS rather than listing them, so
+               this pins the loop is still there. */
+            $src = (string)@file_get_contents(dirname(__DIR__) . '/admin/summer.php');
+            if ($src === '') return false;
+            if (!preg_match("/view === 'students'.*?gs_call\('admin\.summer\.students\.list'.*?\n    \}/s", $src, $m)) return false;
+            return strpos($m[0], 'ROSTER_FACETS') !== false && strpos($m[0], "\$_GET[\$__f]") !== false;
+        })());
+
+        chk('roster: filters compose ABOVE the page cap, not on the page', (function () use ($ask) {
+            /* One row per page. Newest-first puts CMB-4 (withdrawn, Egbeda,
+               public) at the top, so a page of one holds a row the `active`
+               filter must reject. Filter the page and "Egbeda + active" comes
+               back EMPTY; filter the roster and it returns CMB-1. */
+            $bare = $ask(['limit' => 1]);
+            $first = $bare['students'][0]['studentId'] ?? '';
+            // Newest-first, so the page of one is the withdrawn Egbeda child.
+            if ($first !== 'CMB-4') return false;                 // the fixture holds
+            $r = $ask(['limit' => 1, 'centre' => 'Egbeda', 'status' => 'active']);
+            $rows = $r['students'];
+            /* Filter the PAGE and this is EMPTY — the only row on it was CMB-4,
+               which the `active` filter rejects. Filter the roster and it returns
+               a row that genuinely passes, checked off the row's own fields
+               rather than by guessing which id sorts first. */
+            if (count($rows) !== 1) return false;
+            if ((string)$rows[0]['centre'] !== 'Egbeda' || (string)$rows[0]['status'] !== 'active') return false;
+            if ((string)$rows[0]['studentId'] === 'CMB-4') return false;
+            // …and `matched` counts every match in the roster, not the page.
+            return (int)$r['matched'] >= 1 && (int)$r['matched'] <= (int)$bare['matched'];
+        })());
+
+        foreach ($ids as $id) db_exec('DELETE FROM summer_students WHERE studentId = ?', [$id]);
+    })();
 
     /* The normalised key rides along on the row, so the roster and the CSV are
        not two different opinions about what "govt" means. */

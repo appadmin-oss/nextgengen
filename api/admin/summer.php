@@ -7,7 +7,16 @@ $mid = $s['mid'];
 
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'overview');
-    if ($view === 'students')     $res = gs_call('admin.summer.students.list', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '', 'cohortId' => $_GET['cohortId'] ?? '', 'schoolType' => $_GET['schoolType'] ?? '', 'limit' => $_GET['limit'] ?? '']);
+    if ($view === 'students') {
+        /* Every facet forwarded from the query string, driven off ROSTER_FACETS
+         * rather than a hand-written list — a facet added to the domain and
+         * forgotten here is a picker that silently does nothing, which is what
+         * happened the first time and is why there is a test for it. */
+        $args = ['requesterId' => $mid, 'q' => $_GET['q'] ?? '',
+                 'cohortId' => $_GET['cohortId'] ?? '', 'limit' => $_GET['limit'] ?? ''];
+        foreach (ROSTER_FACETS as $__f) $args[$__f] = $_GET[$__f] ?? '';
+        $res = gs_call('admin.summer.students.list', $args);
+    }
     elseif ($view === 'qr')       $res = gs_call('admin.summer.qr.list', ['requesterId' => $mid, 'status' => $_GET['status'] ?? '', 'batch' => $_GET['batch'] ?? '']);
     elseif ($view === 'attendance') $res = gs_call('admin.summer.attendance', ['requesterId' => $mid,
         'cohortId' => $_GET['cohortId'] ?? '', 'centre' => $_GET['centre'] ?? '',
