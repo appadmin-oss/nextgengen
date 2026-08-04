@@ -309,7 +309,55 @@ function summer_student_admin(array $s, ?string $idExpiry = null): array {
     $out['faculty'] = (string)($out['answers']['faculty'] ?? '');
     $out['school'] = (string)($out['answers']['school'] ?? '');
     $out['schoolType'] = (string)($out['answers']['schoolType'] ?? '');
+    /* The normalised form alongside the stored one. The raw value is what the
+       family answered and is what the CSV export must carry; this is what the
+       roster filters and counts on, so a row reading "govt" is not a third
+       category on a screen that only offers two. */
+    $out['schoolTypeKey'] = school_type_key($out['schoolType']);
     return $out;
+}
+
+/** How many roster rows are read before the school-type filter is applied. The
+ *  filter has to happen ABOVE the serialiser's cap (see below), so this bounds
+ *  what a single request will scan on a very large cohort. */
+const ROSTER_SCAN_MAX = 6000;
+/** How many students are serialised and returned by default, and the ceiling a
+ *  caller may ask for. Serialising a row costs a consents read, so this is the
+ *  expensive bound — which is exactly why the school-type filter has to be
+ *  applied above it and not below. Caller-settable and clamped, the same shape
+ *  as the attendance register's own `limit`. */
+const ROSTER_PAGE_MAX = 1000;
+const ROSTER_PAGE_MIN = 1;
+
+/**
+ * Public / private / not recorded, from whatever the family actually typed.
+ *
+ * The form asks this as a dropdown for a reason (see the field in
+ * registration.php), but rows predating that dropdown — and rows migrated in
+ * from a spreadsheet — hold free text: "public", "Public school", "govt",
+ * "LGEA", "state". A filter that compared strings exactly would quietly report
+ * a public/private split that omitted all of them, which is worse than not
+ * offering the filter at all, because the number looks answered.
+ *
+ * '' means NOT RECORDED, and that is a real answer worth filtering for rather
+ * than a gap to hide: the split a funder asks for is meaningless without its
+ * denominator, so "how many did we never ask?" has to be askable.
+ */
+function school_type_key(string $raw): string {
+    $v = strtolower(trim($raw));
+    if ($v === '') return '';
+    // Government schools, under every name a Lagos family or an old import uses.
+    if (preg_match('/\b(public|govt|government|state|federal|lgea|community)\b/', $v)) return 'public';
+    if (preg_match('/\b(private|priv|independent|mission|faith)\b/', $v)) return 'private';
+    return 'other';   // recorded, but not one of the two — never silently a zero
+}
+
+/** The school type of a RAW roster row, without paying for the full serialiser.
+ *  Reads `formData` directly, because that is where the answer lives — there is
+ *  no column for it. */
+function summer_row_school_type(array $r): string {
+    $a = json_decode((string)($r['formData'] ?? ''), true);
+    return school_type_key(is_array($a) ? (string)($a['schoolType'] ?? '') : '');
 }
 
 function admin_summer_students_list(array $p): array {
@@ -319,7 +367,47 @@ function admin_summer_students_list(array $p): array {
     $where = ['cohortId = ?']; $params = [$cohortId];
     $q = strtolower((string)($p['q'] ?? ''));
     if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(handle) LIKE ? OR lower(studentId) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
-    $rows = db_all('SELECT * FROM summer_students WHERE ' . implode(' AND ', $where) . ' ORDER BY id DESC LIMIT 1000', $params);
+    $rows = db_all('SELECT * FROM summer_students WHERE ' . implode(' AND ', $where) . ' ORDER BY id DESC LIMIT ' . ROSTER_SCAN_MAX, $params);
+
+    /* ── School type ──────────────────────────────────────────────────────
+     * Applied HERE — over the raw rows, above the serialiser and above the
+     * page cap — and not on the drawn list, for the reason the attendance
+     * register already learned the hard way: a filter applied after the cap
+     * filters the PAGE, so "show me the private-school children" returns
+     * whichever of them happened to fall inside the first thousand rows and
+     * silently omits the rest. Cheap to do here: one json_decode per row and
+     * no extra query, whereas summer_student_admin() costs a consents read
+     * per student.
+     *
+     * `schoolTypes` carries the whole split regardless of what is selected, so
+     * the picker states the counts instead of asking an admin to try each
+     * option to find out — and so the not-recorded number, which is the one
+     * that invalidates a funder report, is visible without being asked for. */
+    $counts = ['public' => 0, 'private' => 0, 'other' => 0, '' => 0];
+    $keyOf = [];
+    foreach ($rows as $i => $r) {
+        $k = summer_row_school_type($r);
+        $keyOf[$i] = $k;
+        $counts[$k] = ($counts[$k] ?? 0) + 1;
+    }
+    $want = school_type_filter_key($p['schoolType'] ?? '');
+    $matched = count($rows);
+    if ($want !== null) {
+        $rows = array_values(array_filter($rows, fn($r, $i) => $keyOf[$i] === $want, ARRAY_FILTER_USE_BOTH));
+        $matched = count($rows);
+    }
+    $total = array_sum($counts);
+    /* Blank is ABSENT, not zero. The HTTP route forwards `limit` on every
+       request whether the caller set it or not, so `?? ROSTER_PAGE_MAX` never
+       fires there — and `(int)''` is 0, which the clamp below would turn into a
+       roster of ONE row on every unfiltered load. An op must not depend on its
+       route choosing to omit a key. */
+    $limRaw = $p['limit'] ?? '';
+    $limit = ($limRaw === '' || $limRaw === null) ? ROSTER_PAGE_MAX
+           : max(ROSTER_PAGE_MIN, min(ROSTER_PAGE_MAX, (int)$limRaw));
+    $truncated = $matched > $limit;
+    $rows = array_slice($rows, 0, $limit);
+
     // One read for every card in the roster, not one per student.
     $expiryOf = [];
     if ($rows) {
@@ -331,7 +419,27 @@ function admin_summer_students_list(array $p): array {
     }
     $out = [];
     foreach ($rows as $r) $out[] = summer_student_admin($r, $expiryOf[(string)$r['studentId']] ?? '');
-    return ['ok' => true, 'students' => $out, 'cohortId' => $cohortId];
+    return ['ok' => true, 'students' => $out, 'cohortId' => $cohortId,
+            'total' => $total, 'matched' => $matched, 'truncated' => $truncated,
+            'schoolType' => $want === null ? '' : ($want === '' ? 'unknown' : $want),
+            'schoolTypes' => ['public' => $counts['public'], 'private' => $counts['private'],
+                              'other' => $counts['other'], 'unknown' => $counts['']]];
+}
+
+/**
+ * The requested filter, or null for "no filter".
+ *
+ * 'unknown' is spelled out in the wire protocol rather than sent as an empty
+ * string, because an empty string already means "everyone" in every other
+ * filter on this screen — and a picker where "not recorded" and "no filter"
+ * are the same value cannot express the difference at all.
+ */
+function school_type_filter_key($raw): ?string {
+    $v = strtolower(trim((string)$raw));
+    if ($v === '' || $v === 'all') return null;
+    if ($v === 'unknown' || $v === 'none' || $v === 'blank') return '';
+    $k = school_type_key($v);
+    return $k === '' ? null : $k;
 }
 
 function admin_summer_student_status(array $p): array {

@@ -7,7 +7,7 @@ $mid = $s['mid'];
 
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'overview');
-    if ($view === 'students')     $res = gs_call('admin.summer.students.list', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '', 'cohortId' => $_GET['cohortId'] ?? '']);
+    if ($view === 'students')     $res = gs_call('admin.summer.students.list', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '', 'cohortId' => $_GET['cohortId'] ?? '', 'schoolType' => $_GET['schoolType'] ?? '', 'limit' => $_GET['limit'] ?? '']);
     elseif ($view === 'qr')       $res = gs_call('admin.summer.qr.list', ['requesterId' => $mid, 'status' => $_GET['status'] ?? '', 'batch' => $_GET['batch'] ?? '']);
     elseif ($view === 'attendance') $res = gs_call('admin.summer.attendance', ['requesterId' => $mid,
         'cohortId' => $_GET['cohortId'] ?? '', 'centre' => $_GET['centre'] ?? '',

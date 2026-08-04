@@ -3275,11 +3275,23 @@ function SummerRoster({ cohortId }) {
   const [openId, setOpenId] = React.useState("");
   const [consentFor, setConsentFor] = React.useState(null);
   const [only, setOnly] = React.useState("all");   // all | pending | noconsent | withdrawn | noid
+  /* School type. SERVER-side, unlike `only` above, because the answer lives in
+     the stored submission rather than in a column and the roster read is
+     capped — filtering here would filter the page, so "show me the private
+     school children" would quietly omit any beyond the cap. */
+  const [stype, setStype] = React.useState("");    // "" | public | private | other | unknown
+  const [meta, setMeta] = React.useState({ total: 0, matched: 0, truncated: false, schoolTypes: null });
   const [gaps, setGaps] = React.useState(null);
   const [bulk, setBulk] = React.useState(false);
-  const load = () => NGGApi.admin.summer.students(q, cohortId).then(r => setList(r.students || [])).catch(() => setList([]));
+  const load = () => NGGApi.admin.summer.students(q, cohortId, { schoolType: stype })
+    .then(r => {
+      setList(r.students || []);
+      setMeta({ total: r.total || (r.students || []).length, matched: r.matched || 0,
+                truncated: !!r.truncated, schoolTypes: r.schoolTypes || null });
+    })
+    .catch(() => setList([]));
   const loadGaps = () => NGGApi.admin.registration.qrGaps().then(setGaps).catch(() => setGaps(null));
-  React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q]);
+  React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, stype]);
   React.useEffect(() => { loadGaps(); /* eslint-disable-next-line */ }, []);
   /* Send every ID this cohort is owed, from the screen where somebody notices
      they are missing.
@@ -3325,6 +3337,9 @@ function SummerRoster({ cohortId }) {
     if (!(await dialog.confirm({ title: "Delete " + s.fullName + "?", body: "This permanently removes the student record and their attendance, and frees their QR card for reuse. This can't be undone.", cta: "Delete", danger: true }))) return;
     try { await NGGApi.admin.summer.studentDelete(s.studentId); toast.success("Student deleted."); setOpenId(""); load(); } catch (e) { toast.error(e.code || e.message); }
   };
+  /* " (42)" on an option, or nothing at all before the first load — a "(0)"
+     that only means "not counted yet" is worse than no number. */
+  const stCount = (k) => meta.schoolTypes ? " (" + (meta.schoolTypes[k] || 0) + ")" : "";
   const rows = (list || []).filter(s => {
     if (only === "pending") return s.regStatus === "parent_pending";
     if (only === "noconsent") return !s.consentComplete;
@@ -3346,12 +3361,49 @@ function SummerRoster({ cohortId }) {
           <option value="noid">No ID issued</option>
           <option value="withdrawn">Not active</option>
         </select>
-        <button className="btn btn-ghost btn-sm" disabled={!rows.length} onClick={() => downloadCsv("summer-students", rows.map(s => ({ studentId: s.studentId, displayId: s.displayId, fullName: s.fullName, handle: s.handle, age: s.age, centre: s.centre, faculty: s.faculty, track: s.track, school: s.school || "", schoolType: s.schoolType || "", guardianName: s.guardianName, guardianPhone: s.guardianPhone, parentEmail: s.parentEmail, regStatus: s.regStatus, consent: s.consentComplete ? "complete" : "incomplete", status: s.status, attendance: s.attendanceCount })))}>Export CSV{rows.length !== (list || []).length ? " (" + rows.length + ")" : ""}</button>
+        {/* School type. The counts are ON the options, so an admin reads the
+            public/private split without selecting anything — that split is the
+            question this field exists to answer, and a bare dropdown makes you
+            pick each option in turn to find it out.
+            "Not recorded" is an option rather than a hidden remainder: a split
+            quoted without its denominator is the one that ends up wrong in an
+            application. */}
+        <select className="admin-select" value={stype} onChange={e => setStype(e.target.value)} aria-label="Filter by school type">
+          <option value="">Any school type</option>
+          <option value="public">Public school{stCount("public")}</option>
+          <option value="private">Private school{stCount("private")}</option>
+          {/* Only offered when some row actually holds a value that is neither
+              — otherwise it is an option that can only ever return nothing. */}
+          {(meta.schoolTypes?.other || 0) > 0 && <option value="other">Recorded as something else{stCount("other")}</option>}
+          <option value="unknown">Not recorded{stCount("unknown")}</option>
+        </select>
+        <button className="btn btn-ghost btn-sm" disabled={!rows.length} onClick={() => downloadCsv("summer-students", rows.map(s => ({ studentId: s.studentId, displayId: s.displayId, fullName: s.fullName, handle: s.handle, age: s.age, centre: s.centre, faculty: s.faculty, track: s.track, school: s.school || "",
+          /* Both: what the family answered, and the normalised form. The raw
+             column is the record, but pivoting on it reproduces the exact
+             problem the dropdown was introduced to end — "public", "govt",
+             "LGEA" and "State" are four spellings of one number, and a
+             spreadsheet counts them as four. */
+          schoolType: s.schoolType || "", schoolTypeGroup: s.schoolTypeKey || "not recorded", guardianName: s.guardianName, guardianPhone: s.guardianPhone, parentEmail: s.parentEmail, regStatus: s.regStatus, consent: s.consentComplete ? "complete" : "incomplete", status: s.status, attendance: s.attendanceCount })))}>Export CSV{rows.length !== (list || []).length ? " (" + rows.length + ")" : ""}</button>
         <button className="btn btn-primary btn-sm" disabled={bulk} onClick={sendAll} style={{ marginLeft: "auto" }}
           title="Issues an ID to every verified child who has none, and re-sends it to every child who already has one">
           {bulk ? "Sending…" : "Send IDs to everyone"}
         </button>
       </div>
+      {/* What the filter actually matched, out of what. A filtered roster that
+          only shows its rows leaves the reader to count them, and a count read
+          off a screen is the one that goes into a report.
+          The truncation line matters more than it looks: without it a capped
+          roster reads as a complete answer, which is how "we have 1,000 public
+          school children" gets quoted from a page that stopped at 1,000. */}
+      {stype && meta.schoolTypes && (
+        <div style={{ marginBottom: 12, fontSize: 13, lineHeight: 1.55, color: "var(--ink-600,#3c4460)" }}>
+          <b>{meta.matched}</b> of {meta.total} {meta.total === 1 ? "child" : "children"} in this cohort{" "}
+          {stype === "unknown" ? "have no school type recorded"
+            : stype === "other" ? "have a school type that is neither public nor private"
+            : "are at a " + stype + " school"}.
+          {meta.truncated && <> Showing the first {(list || []).length} — narrow the search to see the rest.</>}
+        </div>
+      )}
       {/* What the button is for, before it is pressed. A bulk action whose size
           you cannot see is one people press once and never again — and the three
           numbers are three different problems, so they are never added up:

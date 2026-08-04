@@ -1325,6 +1325,171 @@ chk('roster: consent state travels with the row', (function () use ($SUR) {
     return false;
 })());
 
+/* ── Filtering the roster by school type ──────────────────────────────────────
+ *
+ * The form has asked for public-or-private since the intake was built, and the
+ * CSV export has carried it — but there was no way to ASK the question the field
+ * exists to answer. "How many of the children we serve are in government
+ * schools" is the first line of most funding applications, and answering it
+ * meant exporting the whole roster and pivoting it in a spreadsheet.
+ *
+ * Two things these pin beyond "the filter works". First, the answer lives in the
+ * stored submission rather than in a column, so it is normalised: rows written
+ * before the dropdown — and rows imported from a spreadsheet — say "govt",
+ * "LGEA", "State", and a filter that compared strings exactly would report a
+ * split that silently omitted them. Second, NOT RECORDED is its own answer, not
+ * a remainder: a split quoted without its denominator is the one that ends up
+ * wrong in an application. */
+(function () use ($SUR) {
+    $cohort = summer_ensure_cohort();
+    $cid = (string)$cohort['cohortId'];
+    /* Written straight to formData, which is where the intake puts it. Spelt
+       deliberately inconsistently — that IS the fixture: 'Public' as the form
+       offers it, 'govt' and 'LGEA State' as older rows hold it, 'Private',
+       one homeschooled child, and one with the question never answered. */
+    $mk = function (string $id, string $stored) use ($cid) {
+        db_exec('DELETE FROM summer_students WHERE studentId = ?', [$id]);
+        db_insert('summer_students', ['studentId' => $id, 'cohortId' => $cid, 'fullName' => 'School ' . $id,
+            'handle' => strtolower($id), 'track' => 'Tech', 'centre' => 'Egbeda', 'status' => 'active',
+            'regStatus' => 'verified',
+            'formData' => $stored === '__none__' ? json_encode(['school' => 'Somewhere']) : json_encode(['schoolType' => $stored])]);
+    };
+    $mk('SCH-P1', 'Public');
+    $mk('SCH-P2', 'govt');
+    $mk('SCH-P3', 'LGEA State');
+    $mk('SCH-V1', 'Private');
+    $mk('SCH-V2', 'private');
+    $mk('SCH-O1', 'Homeschooled');
+    $mk('SCH-N1', '__none__');
+    $ids = ['SCH-P1', 'SCH-P2', 'SCH-P3', 'SCH-V1', 'SCH-V2', 'SCH-O1', 'SCH-N1'];
+    $listed = function (string $type) use ($SUR, $cid) {
+        $r = backend_dispatch('admin.summer.students.list',
+            ['requesterId' => $SUR, 'cohortId' => $cid, 'schoolType' => $type]);
+        return [$r, array_column($r['students'], 'studentId')];
+    };
+
+    chk('roster: school type can be filtered on, and reads "govt" as public', (function () use ($listed) {
+        [$r, $got] = $listed('public');
+        // All three spellings of the same fact, and nothing else of ours.
+        foreach (['SCH-P1', 'SCH-P2', 'SCH-P3'] as $id) if (!in_array($id, $got, true)) return false;
+        foreach (['SCH-V1', 'SCH-V2', 'SCH-O1', 'SCH-N1'] as $id) if (in_array($id, $got, true)) return false;
+        return ($r['schoolType'] ?? '') === 'public';
+    })());
+
+    chk('…and private is its own answer, not everything that is not public', (function () use ($listed) {
+        [, $got] = $listed('private');
+        return in_array('SCH-V1', $got, true) && in_array('SCH-V2', $got, true)
+            && !in_array('SCH-P1', $got, true) && !in_array('SCH-P2', $got, true)
+            && !in_array('SCH-O1', $got, true) && !in_array('SCH-N1', $got, true);
+    })());
+
+    /* The one that keeps a funder report honest. Without it the split is quoted
+       off a denominator nobody checked. */
+    chk('…and "not recorded" is a state you can ask for, not a gap it hides', (function () use ($listed) {
+        [, $got] = $listed('unknown');
+        return in_array('SCH-N1', $got, true)
+            && !in_array('SCH-P1', $got, true) && !in_array('SCH-V1', $got, true)
+            && !in_array('SCH-O1', $got, true);   // recorded-but-neither is NOT "not recorded"
+    })());
+
+    chk('…and an answer that is neither is kept apart rather than counted as one', (function () use ($listed) {
+        [, $got] = $listed('other');
+        return in_array('SCH-O1', $got, true)
+            && !in_array('SCH-N1', $got, true) && !in_array('SCH-P1', $got, true);
+    })());
+
+    chk('…with the whole split returned whatever is selected', (function () use ($listed) {
+        [$all] = $listed('');
+        $t = $all['schoolTypes'] ?? null;
+        if (!is_array($t)) return false;
+        foreach (['public', 'private', 'other', 'unknown'] as $k) if (!array_key_exists($k, $t)) return false;
+        /* Counted over the WHOLE cohort, not over what the filter left standing
+           — a picker whose numbers shrink as you use it cannot state a split. */
+        [$one] = $listed('public');
+        if (($one['schoolTypes'] ?? null) !== $t) return false;
+        // Our seven are in it, and the parts sum to the total.
+        return $t['public'] >= 3 && $t['private'] >= 2 && $t['other'] >= 1 && $t['unknown'] >= 1
+            && $t['public'] + $t['private'] + $t['other'] + $t['unknown'] === (int)$all['total'];
+    })());
+
+    chk('…and no filter means everyone, not nobody', (function () use ($listed, $ids) {
+        [$r, $got] = $listed('');
+        foreach ($ids as $id) if (!in_array($id, $got, true)) return false;
+        return ($r['schoolType'] ?? 'x') === '' && count($got) === (int)$r['matched'];
+    })());
+
+    /* ── The ordering, which is the whole design ──────────────────────────────
+     * The filter is applied over the SCANNED rows and above the page cap, not
+     * to the page that comes back. Get that backwards and "show me the private
+     * school children" returns whichever of them happened to fall inside the
+     * first page and silently omits the rest — the exact bug the attendance
+     * register shipped with, where a search returned all 57 rows unchanged.
+     *
+     * Provable only when the cap actually BITES, so it is set to one here. With
+     * the default cap and a small test cohort the two orderings are
+     * indistinguishable, and the first version of these tests passed against a
+     * mutation that removed the cap entirely. */
+    chk('roster: school type filters the ROSTER, above the page cap — not the page', (function () use ($SUR, $cid) {
+        $ask = fn(array $extra) => backend_dispatch('admin.summer.students.list',
+            array_merge(['requesterId' => $SUR, 'cohortId' => $cid, 'limit' => 1], $extra));
+        /* One row per page. Rows come back newest-first, and the newest of our
+           seven is SCH-N1 — the child with no school type — so an unfiltered
+           page of one holds a row that the 'private' filter must reject. Filter
+           the page and 'private' therefore returns NOTHING; filter the roster
+           and it returns a private-school child. */
+        $bare = $ask([]);
+        if (count($bare['students']) !== 1) return false;
+        if ($bare['students'][0]['schoolTypeKey'] !== '') return false;   // the fixture holds
+        $priv = $ask(['schoolType' => 'private']);
+        // One row back, and it is a private-school child rather than an empty page.
+        if (count($priv['students']) !== 1) return false;
+        if ($priv['students'][0]['schoolTypeKey'] !== 'private') return false;
+        /* And `matched` counts every match in the roster, not the one returned —
+           so the screen can say "1 of 2 shown" rather than implying there is one. */
+        return (int)$priv['matched'] >= 2 && !empty($priv['truncated'])
+            && (int)$priv['total'] === (int)$bare['total'];
+    })());
+
+    /* A blank limit is ABSENT, not zero. The HTTP route forwards `limit` on
+       every request, so `?? default` never fires and `(int)''` is 0 — which the
+       clamp would read as a roster of one row on every ordinary load. Found by
+       wiring the route rather than by reading the op. */
+    chk('roster: a blank limit from the route means "no limit", not one row', (function () use ($SUR, $cid, $ids) {
+        foreach (['', null] as $blank) {
+            $r = backend_dispatch('admin.summer.students.list',
+                ['requesterId' => $SUR, 'cohortId' => $cid, 'limit' => $blank]);
+            foreach ($ids as $id) if (!in_array($id, array_column($r['students'], 'studentId'), true)) return false;
+        }
+        return true;
+    })());
+
+    /* The route has to FORWARD what the op reads. Both suites above talk to the
+       op directly — backend_dispatch here, a stubbed NGGApi in the browser — so
+       a route that silently dropped the parameter would pass every one of them
+       and ship a picker that does nothing. Read off the route source, because
+       there is no HTTP-level harness to ask instead. */
+    chk('roster: the HTTP route forwards the filter the op reads', (function () {
+        $src = (string)@file_get_contents(dirname(__DIR__) . '/admin/summer.php');
+        if ($src === '') return false;
+        if (!preg_match("/admin\.summer\.students\.list'.*?\]\);/s", $src, $m)) return false;
+        return strpos($m[0], "'schoolType'") !== false && strpos($m[0], "'limit'") !== false;
+    })());
+
+    /* The normalised key rides along on the row, so the roster and the CSV are
+       not two different opinions about what "govt" means. */
+    chk('…and each row carries the normalised key beside what the family typed', (function () use ($listed) {
+        [$r] = $listed('');
+        $by = [];
+        foreach ($r['students'] as $s) $by[$s['studentId']] = $s;
+        $p2 = $by['SCH-P2'] ?? null;
+        if (!$p2) return false;
+        // Raw preserved for the export, normalised for the screen.
+        return $p2['schoolType'] === 'govt' && $p2['schoolTypeKey'] === 'public';
+    })());
+
+    foreach ($ids as $id) db_exec('DELETE FROM summer_students WHERE studentId = ?', [$id]);
+})();
+
 /* ── The consent record, for the file ─────────────────────────────────────── */
 chk('consent: the record lists every consent type with its standing', (function () use ($SUR) {
     $r = backend_dispatch('admin.summer.consent', ['requesterId' => $SUR, 'studentId' => $GLOBALS['manageId']]);

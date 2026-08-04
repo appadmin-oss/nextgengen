@@ -768,8 +768,30 @@ function unzipDocumentXml(buf) {
     ];
     // STU-1 has one; nobody else does. The roster has to tell them apart.
     KIDS[0].token = 'SUMQR-STU1';
+    /* School type, spelt as the data actually holds it: the dropdown's own
+       'Public', an older row saying 'govt', a 'Private', and one child the
+       question was never asked of. The backend normalises, so the roster must
+       send a KEY and never these strings. */
+    KIDS[0].schoolType = 'Public';   KIDS[0].schoolTypeKey = 'public';
+    KIDS[1].schoolType = 'govt';     KIDS[1].schoolTypeKey = 'public';
+    KIDS[2].schoolType = 'Private';  KIDS[2].schoolTypeKey = 'private';
+    KIDS[3].schoolType = '';         KIDS[3].schoolTypeKey = '';
+    window.__rosterCalls = [];
     window.NGGApi.admin.summer = {
-      students: function () { return Promise.resolve({ students: KIDS }); },
+      /* Honours the filter, because that is the thing under test: the answer
+         lives in the stored submission and the roster read is capped, so this
+         has to be a SERVER filter. A client-side filter would pass an
+         assertion on the drawn rows while quietly filtering only the page. */
+      students: function (q, cohortId, opts) {
+        var want = (opts && opts.schoolType) || '';
+        window.__rosterCalls.push(want);
+        var counts = { public: 2, private: 1, other: 0, unknown: 1 };
+        var rows = !want ? KIDS : KIDS.filter(function (k) {
+          return want === 'unknown' ? !k.schoolTypeKey : k.schoolTypeKey === want;
+        });
+        return Promise.resolve({ students: rows, total: KIDS.length, matched: rows.length,
+                                 truncated: false, schoolType: want, schoolTypes: counts });
+      },
       studentUpdate: function (id, data) { window.__saved = { id: id, data: data }; return Promise.resolve({ ok: true }); },
       studentStatus: function () { return Promise.resolve({ ok: true }); },
       studentDelete: function () { return Promise.resolve({ ok: true }); },
@@ -1155,6 +1177,24 @@ function unzipDocumentXml(buf) {
   await waitForServer(BASE);
   let pass = 0, fail = 0;
   const ok = (l, c) => { c ? pass++ : (fail++, console.error('  ✗ ' + l)); };
+  /* An INTERACTION, reported as an assertion instead of thrown.
+   *
+   * A bare `await page.fill(...)` or `.click()` that cannot find its target
+   * rejects after the Playwright timeout, and because every block in this file
+   * runs inside one async IIFE that rejection propagates straight past all of
+   * them. One missing input on one screen therefore reported itself as a single
+   * crash and silently took every LATER assertion in the suite with it —
+   * hundreds of checks that never ran, in a run that looked like it had found
+   * one problem.
+   *
+   * `step` returns true/false so a block can bail out cleanly on its own
+   * precondition, and emits a failed assertion with the reason when it cannot
+   * proceed. A bail is loud: the suite says which control it could not drive
+   * and keeps going. */
+  const step = async (label, fn) => {
+    try { await fn(); return true; }
+    catch (e) { ok(label + ' [' + String((e && e.message) || e).split('\n')[0].slice(0, 120) + ']', false); return false; }
+  };
   let browser;
   try {
     // Fake camera so the registration photo step can be driven end-to-end;
@@ -3220,6 +3260,59 @@ function unzipDocumentXml(buf) {
     await ro.waitForTimeout(150);
     ok('filtering to missing-consent finds both', await roRows() === 2);
 
+    /* ── School type ──────────────────────────────────────────────────────────
+     * The intake has asked public-or-private since it was built and the export
+     * has carried it, but there was no way to ASK — "how many of the children
+     * we serve are in government schools" is the first line of most funding
+     * applications, and answering it meant exporting the roster and pivoting it
+     * in a spreadsheet.
+     */
+    await ro.selectOption('select[aria-label="Filter children"]', 'all');
+    await ro.waitForTimeout(150);
+    const stOpts = await ro.evaluate(() => Array.from(
+      document.querySelectorAll('select[aria-label="Filter by school type"] option')).map(o => o.textContent));
+    /* The split is ON the options. A bare dropdown makes an admin select each
+       value in turn to learn the very number the field exists to produce. */
+    ok('the school-type picker states the split without being used',
+       stOpts.some(t => /Public school \(2\)/.test(t)) && stOpts.some(t => /Private school \(1\)/.test(t)));
+    /* Not-recorded is an option, not a hidden remainder — a split quoted
+       without its denominator is the one that ends up wrong in an application. */
+    ok('…and offers "not recorded" as a state you can ask for',
+       stOpts.some(t => /Not recorded \(1\)/.test(t)));
+    // Nothing is recorded as neither in this fixture, so that option is absent
+    // rather than present-and-always-empty.
+    ok('…while an option that could only ever return nothing is not offered',
+       !stOpts.some(t => /something else/i.test(t)));
+
+    await ro.selectOption('select[aria-label="Filter by school type"]', 'public');
+    await ro.waitForTimeout(400);           // debounced, then a round trip
+    /* THE ASSERTION THAT MATTERS. The answer lives in the stored submission and
+       the roster read is capped, so this has to reach the SERVER — a filter
+       applied to the drawn rows would satisfy a row count while quietly
+       filtering the page, which is the exact bug the attendance register had. */
+    ok('…and asking for public schools asks the SERVER, not the drawn page',
+       (await ro.evaluate(() => window.__rosterCalls)).includes('public'));
+    ok('…returning the two public-school children, both spellings',
+       await roRows() === 2);
+    const stText = await ro.evaluate(() => document.body.innerText);
+    ok('…including the row stored as "govt" rather than only the tidy one',
+       /Amina Alpha/.test(stText) && /Bode Beta/.test(stText) && !/Chidi Gamma/.test(stText));
+    /* Says what it matched out of what. A filtered roster that only shows rows
+       leaves the reader to count them, and a count read off a screen is the one
+       that goes into the report. */
+    ok('…and states the count against the whole cohort',
+       /\b2\b[\s\S]{0,40}of 4 children/.test(stText) && /public school/i.test(stText));
+
+    await ro.selectOption('select[aria-label="Filter by school type"]', 'unknown');
+    await ro.waitForTimeout(400);
+    ok('…and "not recorded" finds the child nobody asked',
+       await roRows() === 1 && /Dele Delta/.test(await ro.evaluate(() => document.body.innerText)));
+    ok('…phrased as a missing answer, not as a school type',
+       /no school type recorded/i.test(await ro.evaluate(() => document.body.innerText)));
+    await ro.selectOption('select[aria-label="Filter by school type"]', '');
+    await ro.waitForTimeout(400);
+    ok('…and clearing it returns everyone', await roRows() === 4);
+
     /* ── Children with no ID ──────────────────────────────────────────────────
      * The reported problem. A missing ID was a silent state: the roster looked
      * identical whether a child had one or not, so it was only ever discovered
@@ -4266,67 +4359,77 @@ function unzipDocumentXml(buf) {
        is the failure the separation invites; say it before they try. */
     ok('the review desk says it has its own password',
        /own password — not the one used for check-in/i.test(await rvP.evaluate(() => document.body.innerText)));
-    await rvP.fill('input[aria-label="Review desk password"]', 'right');
-    await rvP.getByRole('button', { name: /Unlock/ }).click();
-    await rvP.waitForTimeout(900);
-    const rvText = await rvP.evaluate(() => document.body.innerText);
-    ok('…and unlocks to the queue', /2 waiting/.test(rvText) && /Ada Obi/.test(rvText));
-    /* The queue is an INDEX. Its job is to get somebody to the right
-       submission, not to be where decisions are made — a table asks you to
-       approve from a summary line, which means approving without looking. */
-    ok('…unlocking to a queue that lists rather than decides',
-       /Select all 2 shown/.test(rvText) && /does not show you the photo/.test(rvText)
-       && !/WHAT THEY SUBMITTED/.test(rvText));
-    /* What approving DOES, in the words of the consequence. It used to email the
-       guardian a consent form; a self-serve guardian now consents on the form
-       itself, so approving confirms the place and issues the ID — and a desk
-       that still says "emails the guardian" is describing a step that no longer
-       happens, which is how somebody comes to approve without looking. */
-    ok('…and saying plainly what approving actually does',
-       /Consent is already on file/.test(rvText)
-       && /confirms the place and issues the Genius ID/.test(rvText));
-    /* How long they have waited, in words, not a date to do arithmetic on.
-       This is the number that ought to be embarrassing when it grows, and a
-       timestamp quietly never is. */
-    ok('…telling you how long each family has been waiting',
-       /4 days waiting/.test(rvText) && /1 hour waiting|hours waiting/.test(rvText));
+    /* Everything past the unlock is driven through `step` and reached by early
+       return, because it all DEPENDS on the unlock having worked. A desk that
+       fails to open used to throw out of this whole IIFE and take every later
+       block in the file with it — see the note on `step`. Now it reports which
+       control it could not drive and the suite carries on. */
+    await (async () => {
+      if (!await step('the review desk offers a password field to type into',
+                      () => rvP.fill('input[aria-label="Review desk password"]', 'right'))) return;
+      if (!await step('…and an Unlock button that can be pressed',
+                      () => rvP.getByRole('button', { name: /Unlock/ }).click())) return;
+      await rvP.waitForTimeout(900);
+      const rvText = await rvP.evaluate(() => document.body.innerText);
+      ok('…and unlocks to the queue', /2 waiting/.test(rvText) && /Ada Obi/.test(rvText));
+      /* The queue is an INDEX. Its job is to get somebody to the right
+         submission, not to be where decisions are made — a table asks you to
+         approve from a summary line, which means approving without looking. */
+      ok('…unlocking to a queue that lists rather than decides',
+         /Select all 2 shown/.test(rvText) && /does not show you the photo/.test(rvText)
+         && !/WHAT THEY SUBMITTED/.test(rvText));
+      /* What approving DOES, in the words of the consequence. It used to email
+         the guardian a consent form; a self-serve guardian now consents on the
+         form itself, so approving confirms the place and issues the ID — and a
+         desk that still says "emails the guardian" is describing a step that no
+         longer happens, which is how somebody comes to approve without looking. */
+      ok('…and saying plainly what approving actually does',
+         /Consent is already on file/.test(rvText)
+         && /confirms the place and issues the Genius ID/.test(rvText));
+      /* How long they have waited, in words, not a date to do arithmetic on.
+         This is the number that ought to be embarrassing when it grows, and a
+         timestamp quietly never is. */
+      ok('…telling you how long each family has been waiting',
+         /4 days waiting/.test(rvText) && /1 hour waiting|hours waiting/.test(rvText));
 
-    /* Each submission is its OWN page: its own address, its own back button,
-       one job on the screen. */
-    await rvP.getByRole('button', { name: /Open/ }).first().click();
-    await rvP.waitForTimeout(500);
-    ok('opening a submission gives it its own address',
-       /[?&]s=RC1-0101/.test(await rvP.evaluate(() => window.location.search)));
-    const oneText = await rvP.evaluate(() => document.body.innerText);
-    ok('…with every answer the family gave, against the question asked',
-       /WHAT THEY SUBMITTED/.test(oneText) && /Parent's phone/.test(oneText) && /0803 111 2222/.test(oneText));
-    /* The verdict is next to the photo, not instead of it — and it is advice,
-       never the decision. */
-    ok('…the photo verdict reading as advice, with the duplicate warning',
-       /Worth a look/.test(oneText) && /advice, not the decision/.test(oneText) && /possible duplicate/.test(oneText));
-    /* A duplicate warning that does not say WHICH records is a dead end
-       dressed as a warning — the reviewer still has to go and search the name
-       by hand to tell the same child twice from two children sharing a common
-       one, and those need opposite decisions. */
-    ok('…and the duplicate names the records it collides with',
-       /EG-26-002/.test(oneText) && /AY-26-011/.test(oneText));
-    ok('…in a coordinator\'s words, not the database\'s',
-       /waiting on consent/.test(oneText) && !/parent_pending/.test(oneText));
-    ok('…with enough detail to tell one child from two',
-       /Egbeda/.test(oneText) && /Ayobo/.test(oneText) && /Same centre and same course/.test(oneText));
-    /* A reviewer is checking a registration, not proofing a print run. The
-       card is not theirs to approve and it crowded out the thing that is. */
-    /* Checked structurally, not by wording: a preview reintroduced under any
-       other caption still renders a .idcard, and that is the thing that must
-       not be here. */
-    ok('…and no ID-card preview anywhere on it',
-      (await rvP.locator('.idcard').count()) === 0 && !/card that gets printed/i.test(oneText));
-    /* Back belongs to the browser now, because the page is a real page. */
-    await rvP.goBack();
-    await rvP.waitForTimeout(500);
-    ok('…and Back returns to the queue',
-       !/[?&]s=/.test(await rvP.evaluate(() => window.location.search))
-       && /Select all 2 shown/.test(await rvP.evaluate(() => document.body.innerText)));
+      /* Each submission is its OWN page: its own address, its own back button,
+         one job on the screen. */
+      if (!await step('a queued submission can be opened from the index',
+                      () => rvP.getByRole('button', { name: /Open/ }).first().click())) return;
+      await rvP.waitForTimeout(500);
+      ok('opening a submission gives it its own address',
+         /[?&]s=RC1-0101/.test(await rvP.evaluate(() => window.location.search)));
+      const oneText = await rvP.evaluate(() => document.body.innerText);
+      ok('…with every answer the family gave, against the question asked',
+         /WHAT THEY SUBMITTED/.test(oneText) && /Parent's phone/.test(oneText) && /0803 111 2222/.test(oneText));
+      /* The verdict is next to the photo, not instead of it — and it is advice,
+         never the decision. */
+      ok('…the photo verdict reading as advice, with the duplicate warning',
+         /Worth a look/.test(oneText) && /advice, not the decision/.test(oneText) && /possible duplicate/.test(oneText));
+      /* A duplicate warning that does not say WHICH records is a dead end
+         dressed as a warning — the reviewer still has to go and search the name
+         by hand to tell the same child twice from two children sharing a common
+         one, and those need opposite decisions. */
+      ok('…and the duplicate names the records it collides with',
+         /EG-26-002/.test(oneText) && /AY-26-011/.test(oneText));
+      ok('…in a coordinator\'s words, not the database\'s',
+         /waiting on consent/.test(oneText) && !/parent_pending/.test(oneText));
+      ok('…with enough detail to tell one child from two',
+         /Egbeda/.test(oneText) && /Ayobo/.test(oneText) && /Same centre and same course/.test(oneText));
+      /* A reviewer is checking a registration, not proofing a print run. The
+         card is not theirs to approve and it crowded out the thing that is.
+         Checked structurally, not by wording: a preview reintroduced under any
+         other caption still renders a .idcard, and that is the thing that must
+         not be here. */
+      ok('…and no ID-card preview anywhere on it',
+        (await rvP.locator('.idcard').count()) === 0 && !/card that gets printed/i.test(oneText));
+      /* Back belongs to the browser now, because the page is a real page. */
+      if (!await step('…and the browser Back button works on it', () => rvP.goBack())) return;
+      await rvP.waitForTimeout(500);
+      ok('…and Back returns to the queue',
+         !/[?&]s=/.test(await rvP.evaluate(() => window.location.search))
+         && /Select all 2 shown/.test(await rvP.evaluate(() => document.body.innerText)));
+    })();
     await rvP.close(); await rvT.close();
     try { fs.unlinkSync(path.join(ROOT, 'tests', '_apply_fixture.html')); } catch (_) {}
 

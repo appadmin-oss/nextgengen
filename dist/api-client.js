@@ -756,7 +756,10 @@
       },
       summer: {
         overview:     () => request('/admin/summer.php?view=overview'),
-        students:     (q, cohortId) => request('/admin/summer.php' + qs({ view: 'students', q, cohortId })),
+        // `opts` rather than another positional: the roster's filters are
+        // server-side now, and a fourth, fifth and sixth argument is how a call
+        // site ends up passing them in the wrong order.
+        students:     (q, cohortId, opts) => request('/admin/summer.php' + qs(Object.assign({ view: 'students', q, cohortId }, opts || {}))),
         consentDocSave: (doc) => request('/admin/summer.php', { body: { action: 'consentDoc', doc } }),
         aiStatus:     (probe) => request('/admin/settings.php' + qs({ view: 'ai', probe: probe ? 1 : '' })),
         qrList:       (status, batch) => request('/admin/summer.php' + qs({ view: 'qr', status, batch })),
