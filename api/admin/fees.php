@@ -24,6 +24,8 @@ if ($method === 'GET') {
         'mou'       => 'admin.fees.mou',
         'remindOff' => 'admin.fees.remindOff',
         'accrue'    => 'admin.fees.accrue',
+        'remindPreview' => 'admin.fees.remind.preview',
+        'remindRun'     => 'admin.fees.remind.run',
     ];
     if (!isset($map[$action])) json_error('bad_action', 400);
     $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));

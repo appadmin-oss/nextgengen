@@ -11823,6 +11823,149 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             && strpos($s2[1], "action: 'checkin'") !== false;
     })());
 
+    /* ── Reminders: bounded, and about the right number ───────────────────────
+     *
+     * These go to the guardians of children, most of whom are late because money
+     * is tight rather than because they forgot. So the bounds are the feature,
+     * not a nicety, and each is asserted by DRIVING it rather than by reading the
+     * setting back:
+     *
+     *   payable, not outstanding   chasing a training fee that is being written
+     *                              off is demanding money already forgiven
+     *   the per-family off-switch  a guardian who asked not to be chased
+     *   the cadence floor          a week minimum, whatever the cron's schedule
+     *   a stamp on every attempt   or a failing mailer chases somebody on every
+     *                              single cron tick
+     */
+    chk('fees reminders: nobody is chased for a training fee that service is writing off', (function () use ($ADM, $set) {
+        $set(['remindEnabled' => true, 'remindMinBalance' => 1]);
+        /* NGG-FEE-A has had their MOU accomplished, so the training fee is gone
+           and only the dues remain — they SHOULD be chased for those. The point
+           is which number the decision uses: a member mid-service whose payable
+           is zero must not appear even though their charged is large. */
+        $mid2 = 'NGG-FEE-MID';
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$mid2]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$mid2]);
+        db_insert('members', ['memberId' => $mid2, 'fullName' => 'Mid Service', 'email' => 'mid@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'joinDate' => gmdate('Y-m-d', strtotime('-36 months')), 'parentEmail' => 'midg@example.com',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        // A training charge and nothing else. Three years in, so it is all earned.
+        fees_post($mid2, 'training', 75000, ['periodKey' => 'SES-X', 'note' => 'training']);
+        $bal = fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$mid2]));
+        if ((int)$bal['payable'] !== 0 || (int)$bal['outstanding'] !== 75000) return false;
+        $c = fees_reminder_candidates();
+        $ids = array_column($c['due'], 'memberId');
+        $ok = !in_array($mid2, $ids, true) && (int)$c['skipped']['nothingPayable'] >= 1;
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$mid2]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$mid2]);
+        return $ok;
+    })());
+
+    chk('…and a family who asked not to be chased is not, without disabling anyone else', (function () use ($ADM, $set) {
+        $set(['remindEnabled' => true, 'remindMinBalance' => 1]);
+        db_update('members', ['duesRemindedAt' => ''], ['memberId' => 'NGG-FEE-A']);
+        $before = array_column(fees_reminder_candidates()['due'], 'memberId');
+        if (!in_array('NGG-FEE-A', $before, true)) return false;      // the premise
+        backend_dispatch('admin.fees.remindOff', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A', 'off' => true]);
+        $c = fees_reminder_candidates();
+        $after = array_column($c['due'], 'memberId');
+        backend_dispatch('admin.fees.remindOff', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A', 'off' => false]);
+        // Off for them, still on for the programme.
+        return !in_array('NGG-FEE-A', $after, true) && (int)$c['skipped']['optedOut'] >= 1
+            && !empty(fees_settings()['remindEnabled']);
+    })());
+
+    chk('…and a reminder sent today is not sent again tomorrow', (function () use ($set) {
+        $set(['remindEnabled' => true, 'remindMinBalance' => 1]);
+        db_update('members', ['duesRemindedAt' => ''], ['memberId' => 'NGG-FEE-A']);
+        if (!in_array('NGG-FEE-A', array_column(fees_reminder_candidates()['due'], 'memberId'), true)) return false;
+        // Stamped as of now → inside the floor, so out of the list.
+        db_update('members', ['duesRemindedAt' => now_iso()], ['memberId' => 'NGG-FEE-A']);
+        $c = fees_reminder_candidates();
+        if (in_array('NGG-FEE-A', array_column($c['due'], 'memberId'), true)) return false;
+        if ((int)$c['skipped']['tooSoon'] < 1) return false;
+        // …and back in once the floor has passed.
+        db_update('members', ['duesRemindedAt' => gmdate('Y-m-d\TH:i:s\Z', strtotime('-' . (FEES_REMIND_MIN_DAYS + 1) . ' days'))], ['memberId' => 'NGG-FEE-A']);
+        return in_array('NGG-FEE-A', array_column(fees_reminder_candidates()['due'], 'memberId'), true);
+    })());
+
+    chk('…and the cadence floor is what decides, not how often the cron fires', (function () use ($set) {
+        /* The cron runs every fifteen minutes. Running the dispatcher repeatedly
+           must send at most one message per family per `everyDays` — otherwise the
+           schedule becomes the cadence and "constant reminder" is what a guardian
+           actually receives. */
+        $set(['remindEnabled' => true, 'remindMinBalance' => 1]);
+        db_update('members', ['duesRemindedAt' => ''], ['memberId' => 'NGG-FEE-A']);
+        $first = fees_reminders_run(50);
+        $second = fees_reminders_run(50);
+        $third = fees_reminders_run(50);
+        return (int)$first['due'] >= 1 && (int)$second['due'] === 0 && (int)$third['due'] === 0
+            && (int)$first['everyDays'] >= FEES_REMIND_MIN_DAYS;
+    })());
+
+    chk('…and an attempt is stamped even when the mailer fails, so nobody is chased in a loop', (function () use ($set) {
+        /* There is no SMTP in the test environment, so send_mail fails — which is
+           exactly the case worth pinning. A dispatcher that only stamped on
+           SUCCESS would re-send to the same family on every cron tick for as long
+           as the mailer stayed broken. */
+        $set(['remindEnabled' => true, 'remindMinBalance' => 1]);
+        db_update('members', ['duesRemindedAt' => ''], ['memberId' => 'NGG-FEE-A']);
+        $r = fees_reminders_run(50);
+        $stamp = (string)db_row("SELECT duesRemindedAt FROM members WHERE memberId = 'NGG-FEE-A'")['duesRemindedAt'];
+        return $stamp !== '' && ((int)$r['sent'] + (int)$r['failed']) === (int)$r['due'];
+    })());
+
+    chk('fees reminders: nothing is sent while they are switched off', (function () use ($ADM, $set) {
+        $set(['remindEnabled' => false]);
+        db_update('members', ['duesRemindedAt' => ''], ['memberId' => 'NGG-FEE-A']);
+        $c = fees_reminder_candidates();
+        $r = fees_reminders_run(50);
+        $refused = backend_dispatch('admin.fees.remind.run', ['requesterId' => $ADM]);
+        $ok = count($c['due']) === 0 && (int)$r['sent'] === 0
+            && ($refused['error'] ?? '') === 'reminders_disabled';
+        // …and with fees off entirely, likewise.
+        $set(['enabled' => false, 'remindEnabled' => true]);
+        $ok = $ok && count(fees_reminder_candidates()['due']) === 0;
+        $set(['enabled' => true, 'remindEnabled' => false]);
+        return $ok;
+    })());
+
+    chk('fees reminders: the preview says who and why-not before anything is sent', (function () use ($ADM, $set) {
+        $set(['remindEnabled' => true, 'remindMinBalance' => 1]);
+        db_update('members', ['duesRemindedAt' => ''], ['memberId' => 'NGG-FEE-A']);
+        $p2 = backend_dispatch('admin.fees.remind.preview', ['requesterId' => $ADM]);
+        if (empty($p2['ok'])) return false;
+        $pv = $p2['preview'];
+        foreach (['due', 'count', 'skipped', 'everyDays', 'enabled'] as $k) if (!array_key_exists($k, $pv)) return false;
+        // Every exclusion is NAMED — "it will send 4 of 60" is not checkable.
+        foreach (['off', 'optedOut', 'nothingPayable', 'underMinimum', 'tooSoon', 'noEmail'] as $k) {
+            if (!array_key_exists($k, $pv['skipped'])) return false;
+        }
+        // A preview does not send: the stamp is untouched by looking.
+        $stamp = (string)db_row("SELECT duesRemindedAt FROM members WHERE memberId = 'NGG-FEE-A'")['duesRemindedAt'];
+        return $pv['count'] >= 1 && $stamp === '' && $pv['enabled'] === true;
+    })());
+
+    chk('fees reminders: the dispatcher is wired to the cron, not only to a button', (function () {
+        /* A reminder that only fires when somebody presses something is not a
+           reminder. Read off the source because there is no way to make the cron
+           tick inside this suite — and the guard matters too: a fault here must
+           not take the registration reminders down with it. */
+        $src = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/api/_lib/webcron.php');
+        if ($src === '') return false;
+        if (!preg_match('/function web_cron_reminders\(\).*?\$pending = /s', $src, $m)) return false;
+        return strpos($m[0], 'fees_reminders_run') !== false
+            && strpos($m[0], 'catch (Throwable') !== false;
+    })());
+
+    chk('fees reminders: every reminder op is gated on the roster capability', (function () {
+        foreach (['admin.fees.remind.preview', 'admin.fees.remind.run'] as $op) {
+            if ((backend_dispatch($op, ['requesterId' => ''])['ok'] ?? false) === true) return false;
+        }
+        return true;
+    })());
+
     // Tidy up: the ledger rows and the two members are ours.
     db_exec("DELETE FROM member_ledger WHERE memberId IN ('NGG-FEE-A','NGG-FEE-B')");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-FEE-A','NGG-FEE-B')");

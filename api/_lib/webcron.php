@@ -203,6 +203,20 @@ function web_cron_guard(string $label, callable $fn): void {
  * one re-nudge after 24h, a single registration.stalled escalation after 48h.
  */
 function web_cron_reminders(): void {
+    /* Dues reminders ride the existing reminders job rather than getting a
+     * schedule of their own. The cron cadence is NOT the reminder cadence: this
+     * fires every 15 minutes and `fees_reminder_candidates()` decides per family
+     * against `remindEveryDays` (floored at a week), so running it often costs
+     * nothing and cannot chase anybody faster than the setting allows.
+     *
+     * Guarded so a fault here cannot take the registration reminders below with
+     * it — those are time-critical in a way an account balance is not: a stalled
+     * parent verification blocks a child from attending. */
+    if (function_exists('fees_reminders_run')) {
+        try { fees_reminders_run(25); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'fees.reminders', $e->getMessage()); }
+    }
+
     $pending = db_all("SELECT * FROM summer_students WHERE regStatus = 'parent_pending' ORDER BY id ASC LIMIT 200");
     foreach ($pending as $s) {
         $ageH = (time() - (strtotime((string)$s['enrolledAt']) ?: time())) / 3600;

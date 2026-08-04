@@ -342,6 +342,118 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     return $out;
 }
 
+/**
+ * Who is due a reminder, and why each of the rest is not.
+ *
+ * Returns the reasons as well as the list, because "it sent 4 of 60" is not a
+ * number anybody can check, and the question a coordinator asks when a family
+ * says they were never told is "why not". Every exclusion is named.
+ *
+ * The bounds are all HERE rather than at the send site, so a caller cannot skip
+ * them by calling something else:
+ *
+ *   fees off / reminders off      nothing at all
+ *   duesRemindOff on the member   this family asked not to be chased
+ *   nothing PAYABLE               see below — this is the one that matters
+ *   under remindMinBalance        not worth a message
+ *   reminded within everyDays     the floor, which is 7 days minimum
+ *   no guardian email             nothing to send to
+ *
+ * PAYABLE, not outstanding. A member halfway through their service carries a
+ * large training charge that is being written off as they go; chasing them for
+ * it would be demanding money the programme has already decided they will not
+ * owe. This distinction is the whole reason `payable` exists.
+ */
+function fees_reminder_candidates(?array $cfg = null, int $limit = 200): array {
+    $cfg = $cfg ?? fees_settings();
+    $out = ['due' => [], 'skipped' => ['off' => 0, 'optedOut' => 0, 'nothingPayable' => 0,
+                                       'underMinimum' => 0, 'tooSoon' => 0, 'noEmail' => 0]];
+    if (empty($cfg['enabled']) || empty($cfg['remindEnabled'])) { $out['skipped']['off'] = 1; return $out; }
+    $everyDays = max(FEES_REMIND_MIN_DAYS, (int)$cfg['remindEveryDays']);
+    $minBal = max(1, (int)$cfg['remindMinBalance']);
+    $now = time();
+    foreach (db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . max(1, min(2000, $limit * 5))) as $m) {
+        if (count($out['due']) >= $limit) break;
+        if ((int)($m['duesRemindOff'] ?? 0) === 1) { $out['skipped']['optedOut']++; continue; }
+        $bal = fees_balance($m, $cfg);
+        if ((int)$bal['payable'] <= 0) { $out['skipped']['nothingPayable']++; continue; }
+        if ((int)$bal['payable'] < $minBal) { $out['skipped']['underMinimum']++; continue; }
+        $last = strtotime((string)($m['duesRemindedAt'] ?? '')) ?: 0;
+        if ($last > 0 && ($now - $last) < $everyDays * 86400) { $out['skipped']['tooSoon']++; continue; }
+        $to = trim((string)($m['parentEmail'] ?? ''));
+        if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) { $out['skipped']['noEmail']++; continue; }
+        $out['due'][] = ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'],
+                         'to' => $to, 'payable' => (int)$bal['payable'],
+                         'lastRemindedAt' => (string)($m['duesRemindedAt'] ?? ''), 'row' => $m];
+    }
+    $out['everyDays'] = $everyDays;
+    return $out;
+}
+
+/**
+ * One reminder, written for the person who receives it.
+ *
+ * Deliberately plain: what is owed, what it is for, and how to raise a question.
+ * No deadline, no consequence, no capitals. These go to the guardians of
+ * children, most of whom are late because money is tight rather than because
+ * they forgot — and a threatening note to that family does not produce a payment,
+ * it produces a child who stops coming, which costs the programme more than the
+ * arrears were worth.
+ *
+ * The training fee is named as already-discounted where any of it has been earned
+ * off, because a guardian who was told ₦75,000 and is now asked for less deserves
+ * to know why rather than wondering which figure is real.
+ */
+function fees_reminder_send(array $cand, ?array $cfg = null): bool {
+    $cfg = $cfg ?? fees_settings();
+    $m = $cand['row'];
+    $first = esc_html(explode(' ', trim((string)($m['fullName'] ?? '')))[0] ?: 'your child');
+    $bal = fees_balance($m, $cfg);
+    $money = fn(int $n) => '₦' . number_format($n);
+    $lines = [];
+    foreach (['membership' => 'Membership fee', 'dues' => 'Monthly dues', 'training' => 'Training fee', 'fine' => 'Fines'] as $k => $label) {
+        $v = (int)($bal['byKind'][$k] ?? 0);
+        if ($v > 0) $lines[] = '<tr><td style="padding:2px 12px 2px 0">' . $label . '</td><td style="padding:2px 0">' . $money($v) . '</td></tr>';
+    }
+    $earned = (int)$bal['trainingEarned'];
+    $body = '<p style="margin:0 0 10px">This is a note about ' . $first . '\'s account at Next Generation Genius. '
+          . 'The balance outstanding is <b>' . $money((int)$bal['payable']) . '</b>.</p>';
+    if ($lines) $body .= '<table style="margin:0 0 10px;font-size:14px">' . implode('', $lines) . '</table>';
+    if ($earned > 0) {
+        $body .= '<p style="margin:0 0 10px;color:#5a6488;font-size:13px">' . $money($earned)
+              . ' of the training fee has already been written off against ' . $first . '\'s service, and is not included above.</p>';
+    }
+    $body .= '<p style="margin:0 0 10px">If any of this looks wrong, or if now is a difficult time, please reply to this '
+          . 'message or speak to your centre coordinator — we would rather hear from you than not.</p>';
+    $html = email_template([
+        'title' => 'Account balance', 'intro' => $first . '\'s account has an outstanding balance.',
+        'bodyHtml' => $body,
+        'footNote' => 'You are receiving this because you are ' . $first . '\'s guardian at Next Generation Genius. '
+                    . 'Tell your centre coordinator if you would prefer not to receive these.',
+    ]);
+    $ok = (bool)@send_mail($cand['to'], $first . '\'s account — ' . $money((int)$bal['payable']) . ' outstanding', $html);
+    /* Stamped whether or not the transport succeeded. The alternative is a
+     * mailer that is failing quietly and a family reminded on every single cron
+     * tick because nothing recorded the attempt. */
+    db_update('members', ['duesRemindedAt' => now_iso()], ['memberId' => (string)$m['memberId']]);
+    audit('fees.remind.sent', 'cron', (string)$m['memberId'],
+          ['payable' => (int)$bal['payable'], 'delivered' => $ok], '');
+    return $ok;
+}
+
+/**
+ * The cron entry point. Bounded per run, and safe to call as often as the cron
+ * fires — the per-member `everyDays` gate is what decides, not the schedule.
+ */
+function fees_reminders_run(int $limit = 50): array {
+    $cfg = fees_settings();
+    $c = fees_reminder_candidates($cfg, $limit);
+    $sent = 0; $failed = 0;
+    foreach ($c['due'] as $cand) { if (fees_reminder_send($cand, $cfg)) $sent++; else $failed++; }
+    return ['sent' => $sent, 'failed' => $failed, 'due' => count($c['due']),
+            'skipped' => $c['skipped'], 'everyDays' => $c['everyDays'] ?? 0];
+}
+
 // ── Admin ops ────────────────────────────────────────────────────────────────
 
 function admin_fees_settings_get(array $p): array {
@@ -483,6 +595,37 @@ function admin_fees_accrue(array $p): array {
     }
     audit('fees.accrue', (string)($g['requester']['memberId'] ?? ''), 'fees', $tot, (string)($p['ip'] ?? ''));
     return ['ok' => true, 'accrued' => $tot, 'scanned' => count($rows), 'limit' => $limit];
+}
+
+/**
+ * What a reminder run WOULD do, without sending anything.
+ *
+ * Offered before the button that sends, because the send is not undoable — a
+ * message to sixty guardians cannot be recalled, and "how many and to whom" is
+ * the question worth answering first. Names the exclusions too, so a run that
+ * would send nothing explains itself rather than looking broken.
+ */
+function admin_fees_remind_preview(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $cfg = fees_settings();
+    $c = fees_reminder_candidates($cfg, 200);
+    return ['ok' => true, 'preview' => [
+        'due' => array_map(fn($x) => ['memberId' => $x['memberId'], 'fullName' => $x['fullName'],
+                                      'payable' => $x['payable'], 'lastRemindedAt' => $x['lastRemindedAt']], $c['due']),
+        'count' => count($c['due']), 'skipped' => $c['skipped'],
+        'everyDays' => $c['everyDays'] ?? 0,
+        'enabled' => !empty($cfg['enabled']) && !empty($cfg['remindEnabled']),
+    ]];
+}
+
+/** Send them. Bounded per press, so a mis-click cannot mail an entire roster. */
+function admin_fees_remind_run(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $cfg = fees_settings();
+    if (empty($cfg['enabled']) || empty($cfg['remindEnabled'])) return ['ok' => false, 'error' => 'reminders_disabled'];
+    $r = fees_reminders_run(max(1, min(200, (int)($p['limit'] ?? 50))));
+    audit('fees.remind.run', (string)($g['requester']['memberId'] ?? ''), 'fees', $r, (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'result' => $r];
 }
 
 /**
