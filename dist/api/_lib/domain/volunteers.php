@@ -918,6 +918,10 @@ function volunteer_attendance_analysis(array $only = [], array $opts = []): arra
         'kpis' => ['rate' => null, 'onTimePct' => null, 'sessions' => 0, 'expected' => 0, 'absences' => 0,
                    'lateSessions' => 0, 'halfDays' => 0, 'avgLateMinutes' => null, 'measured' => 0, 'reliable' => 0],
         'trend' => [], 'bands' => [], 'byCentre' => [], 'byRole' => [], 'perVolunteer' => [],
+        /* Empty, not zeroed — the same contract the children's board keeps. "We
+           cannot say yet" and "nobody has left" are different claims, and a
+           consumer must not be able to render the reassuring one by accident. */
+        'retention' => [],
         'pendingDays' => 0, 'caveats' => [],
     ];
     if (!$days || !$vols) {
@@ -1002,6 +1006,20 @@ function volunteer_attendance_analysis(array $only = [], array $opts = []): arra
             'stopped' => $sessions > 0 && $missedRun >= VOL_ATT_STOPPED_RUN,
             'lastSeen' => $lastSeen,
             'band' => $rate === null ? '' : volunteer_att_band($rate)['key'],
+            /* Which of the four retention states this volunteer is in. Named on
+             * the row as well as counted in the aggregate, so the register and
+             * the retention panel cannot disagree about one person.
+             *
+             * `new` is the state volunteers need and children did not. A cohort
+             * of children starts together; volunteers trickle in all term, so
+             * somebody approved on Thursday has had no chance to establish
+             * anything. Counting them as "never came" would put a phone call on
+             * a coordinator's list that should not be there — and, worse, would
+             * make the retention figure look bad every time recruitment went
+             * well. */
+            'retention' => $expected < VOL_ATT_STOPPED_RUN ? 'new'
+                : ($sessions === 0 ? 'never'
+                : ($missedRun >= VOL_ATT_STOPPED_RUN ? 'stopped' : 'coming')),
         ];
         $tSessions += $sessions; $tExpected += $expected; $tLate += $late; $tHalf += $half; $tLateMin += $lateMin;
 
@@ -1054,6 +1072,63 @@ function volunteer_attendance_analysis(array $only = [], array $opts = []): arra
     foreach (VOL_ATT_BANDS as $b) $bands[] = $b + ['count' => $bandCount[$b['key']] ?? 0];
     $measured = array_sum($bandCount);
 
+    /* ── Are we KEEPING our volunteers? ───────────────────────────────────────
+     *
+     * A rate answers "how full were the sessions". It cannot answer this, and it
+     * hides the answer in the flattering direction: a volunteer who stops coming
+     * leaves the numerator AND the denominator together, so a centre that has
+     * lost two of its three mentors still reports a healthy rate off the one who
+     * remains. `bands` cannot answer it either — it only counts volunteers with
+     * three or more expected days, so somebody who came twice and vanished
+     * appears in no band at all.
+     *
+     * The children's board learned this (see attendance_retention()); the
+     * volunteer side had the per-person `stopped` flag and nothing that added it
+     * up, so the register could show one stopped mentor per screen and never
+     * that a centre had lost its whole faculty.
+     *
+     * FOUR states, not three, and they sum to the headcount:
+     *   coming   served in the closing run of open days
+     *   stopped  served at some point, then missed the last VOL_ATT_STOPPED_RUN
+     *   never    had eligible days and served none of them
+     *   new      too few eligible days to say anything — see the note on the row
+     *
+     * Per centre AND per role, because they fail differently: a centre losing
+     * mentors is a supervision problem, and a ROLE losing people everywhere is a
+     * problem with the role itself. */
+    $retention = ['stoppedRun' => VOL_ATT_STOPPED_RUN, 'people' => 0,
+                  'coming' => 0, 'stopped' => 0, 'never' => 0, 'new' => 0];
+    $retBy = ['centre' => [], 'role' => []];
+    foreach ($vols as $vid => $v) {
+        $st = $per[$vid]['retention'] ?? 'new';
+        $retention['people']++; $retention[$st]++;
+        foreach (['centre' => (string)($v['centre'] ?? ''), 'role' => strtolower(trim((string)($v['role'] ?? '')))] as $dim => $key) {
+            if ($key === '') continue;
+            $retBy[$dim][$key] = $retBy[$dim][$key] ?? ['people' => 0, 'coming' => 0, 'stopped' => 0, 'never' => 0, 'new' => 0];
+            $retBy[$dim][$key]['people']++; $retBy[$dim][$key][$st]++;
+        }
+    }
+    /* `settled` is the honest denominator for a percentage: the people who have
+     * been here long enough for the question to mean anything. Dividing by the
+     * headcount instead would report a programme as losing volunteers every time
+     * it recruited some. Returned rather than left implicit, because a reader
+     * cannot otherwise tell which denominator a percentage used. */
+    $pct = function (array $r) {
+        $settled = $r['people'] - $r['new'];
+        return $r + ['settled' => $settled,
+                     'stoppedPct' => $settled > 0 ? round($r['stopped'] / $settled * 100, 1) : 0.0,
+                     'neverPct'   => $settled > 0 ? round($r['never'] / $settled * 100, 1) : 0.0];
+    };
+    $retention = $pct($retention);
+    foreach (['centre', 'role'] as $dim) {
+        $rows = [];
+        foreach ($retBy[$dim] as $k => $r) $rows[] = $pct($r) + [$dim => (string)$k];
+        // Worst first — the point of the table is the site or role in trouble.
+        usort($rows, fn($x, $y) => ($y['stopped'] + $y['never']) <=> ($x['stopped'] + $x['never'])
+                                   ?: strcmp((string)$x[$dim], (string)$y[$dim]));
+        $retention['by' . ucfirst($dim)] = $rows;
+    }
+
     $caveats = [];
     if ($win['basis'] === 'observed') $caveats[] =
         'The programme calendar has not been set, so this is measured against the days the roll was actually '
@@ -1088,6 +1163,7 @@ function volunteer_attendance_analysis(array $only = [], array $opts = []): arra
             'reliable' => ($bandCount['every'] ?? 0) + ($bandCount['reliable'] ?? 0),
         ],
         'trend' => $trend, 'bands' => $bands,
+        'retention' => $retention,
         'byCentre' => $roll($cAgg, 'centre'), 'byRole' => $roll($rAgg, 'role'),
         'perVolunteer' => $per,
         'caveats' => $caveats,
@@ -1186,8 +1262,24 @@ function admin_volunteer_attendance(array $p): array {
     $today = attendance_today();
     $in = db_all("SELECT studentId FROM attendance WHERE date = ?", [$today]);
     $todayBy = []; foreach ($in as $r) $todayBy[(string)$r['studentId']] = true;
-    foreach (db_all("SELECT volunteerId, fullName, firstName, lastName, role, centre, faculty, createdAt
-                     FROM volunteers WHERE status = 'active' ORDER BY fullName") as $v) {
+    $vList = db_all("SELECT volunteerId, fullName, firstName, lastName, role, centre, faculty, createdAt
+                     FROM volunteers WHERE status = 'active' ORDER BY fullName");
+    /* Policy standing, for real.
+     *
+     * This read used to be absent and `scenarios['flagged']` was hardcoded to
+     * zero, under a comment saying volunteers carry no policy standing. They do:
+     * `policy_states_for()` has taken a type since it was written, the policy
+     * settings define a volunteer redline (09:00), an absence limit and a
+     * lateness cap of four, and the enforcement pass already walks volunteers
+     * (see policy.php). So the register offered a filter that could never match
+     * anything, and a volunteer two lates from suspension looked exactly like a
+     * volunteer in good standing on the one screen a coordinator reads.
+     *
+     * One batched read for the whole roster, the same call the children's
+     * register makes — so a warning means the same thing on both screens. */
+    $stateBy = policy_states_for(array_map(fn($v) => (string)$v['volunteerId'], $vList), 'volunteer');
+    $vPolicy = policy_for('volunteer');
+    foreach ($vList as $v) {
         $vid = (string)$v['volunteerId'];
         if ($centre !== '' && (string)$v['centre'] !== $centre) continue;
         $w = $per[$vid] ?? null;
@@ -1204,20 +1296,40 @@ function admin_volunteer_attendance(array $p): array {
             'streak' => $w['streak'] ?? 0, 'lastSeen' => $w['lastSeen'] ?? '',
             'missedRun' => $w['missedRun'] ?? 0, 'pattern' => $w['pattern'] ?? [],
             'stopped' => !empty($w['stopped']),
+            /* Which of the four retention states, straight off the analysis, so
+               the row and the retention panel are the same opinion. */
+            'retention' => $w['retention'] ?? 'new',
             'band' => $w['band'] ?? '', 'presentToday' => isset($todayBy[$vid]),
+            // Policy standing, same shape and same words as the children's register.
+            'state' => $stateBy[$vid]['state'] ?? 'clear',
+            'absences' => $stateBy[$vid]['absences'] ?? 0,
+            /* Lates against the cap the policy actually sets for volunteers, so
+               "two more and it is a suspension" is readable rather than something
+               a coordinator has to know by heart. */
+            'lateCap' => (int)($vPolicy['latenessCap'] ?? 0),
         ];
     }
-    /* Counts over the WHOLE roster, so a chip says how many exist. */
+    /* Counts over the WHOLE roster, so a chip says how many exist.
+     *
+     * `never` means HAD eligible days and served none of them. It used to mean
+     * `present === 0` regardless of how long the volunteer had been on the
+     * board, which put every volunteer approved this week onto the same list as
+     * one placed a month ago who has never appeared — two situations needing
+     * opposite responses, one of them "do nothing". `new` is the count that was
+     * hiding inside the old number, and it is reported rather than dropped so
+     * the two still add up to what the old chip showed. */
     $scen = [
         'all'     => count($rows),
         'present' => count(array_filter($rows, fn($r) => $r['presentToday'])),
         'absent'  => count(array_filter($rows, fn($r) => !$r['presentToday'])),
-        'never'   => count(array_filter($rows, fn($r) => ($r['present'] ?? 0) === 0)),
+        'never'   => count(array_filter($rows, fn($r) => ($r['retention'] ?? '') === 'never')),
+        'new'     => count(array_filter($rows, fn($r) => ($r['retention'] ?? '') === 'new')),
         'stopped' => count(array_filter($rows, fn($r) => !empty($r['stopped']))),
         'atrisk'  => count(array_filter($rows, fn($r) => ($r['rate'] ?? 0) < 50)),
         'late'    => count(array_filter($rows, fn($r) => ($r['lates'] ?? 0) > 0)),
         'half'    => count(array_filter($rows, fn($r) => ($r['halfDays'] ?? 0) > 0)),
-        'flagged' => 0,                       // volunteers carry no policy standing here
+        // No longer a chip that can never match — see the policy read above.
+        'flagged' => count(array_filter($rows, fn($r) => ($r['state'] ?? 'clear') !== 'clear')),
         'perfect' => count(array_filter($rows, fn($r) => ($r['rate'] ?? 0) >= 100)),
     ];
     // Search and situation on the server, for the same reason as the children's
@@ -1228,12 +1340,13 @@ function admin_volunteer_attendance(array $p): array {
         switch ($scenario) {
             case 'present': return !empty($r['presentToday']);
             case 'absent':  return empty($r['presentToday']);
-            case 'never':   return ($r['present'] ?? 0) === 0;
+            case 'never':   return ($r['retention'] ?? '') === 'never';
+            case 'new':     return ($r['retention'] ?? '') === 'new';
             case 'stopped': return !empty($r['stopped']);
             case 'atrisk':  return ($r['rate'] ?? 0) < 50;
             case 'late':    return ($r['lates'] ?? 0) > 0;
             case 'half':    return ($r['halfDays'] ?? 0) > 0;
-            case 'flagged': return false;
+            case 'flagged': return ($r['state'] ?? 'clear') !== 'clear';
             case 'perfect': return ($r['rate'] ?? 0) >= 100;
             default:        return true;
         }

@@ -109,6 +109,24 @@ const STATUS = {
         { role: 'instructor', people: 1, sessions: 5, expected: 5, absences: 0, late: 0, onTime: 5, rate: 100, onTimePct: 100, band: 'every' },
         { role: 'mentor', people: 2, sessions: 15, expected: 20, absences: 5, late: 2, onTime: 13, rate: 75, onTimePct: 87, band: 'reliable' },
       ],
+      /* Retention, shaped as volunteer_attendance_analysis() emits it, and built
+         so it CONTRADICTS the rate above: 80% attendance, and three of the eight
+         settled volunteers are gone. Ghostfield is the case the panel exists for
+         — two volunteers, neither of them ever turning up, so it has no rate at
+         all and is invisible on the rate table. */
+      retention: {
+        stoppedRun: 3, people: 9, coming: 5, stopped: 2, never: 1, new: 1,
+        settled: 8, stoppedPct: 25, neverPct: 12.5,
+        byCentre: [
+          { centre: 'Ghostfield', people: 2, coming: 0, stopped: 1, never: 1, new: 0, settled: 2, stoppedPct: 50, neverPct: 50 },
+          { centre: 'Ijaiye', people: 4, coming: 3, stopped: 1, never: 0, new: 0, settled: 4, stoppedPct: 25, neverPct: 0 },
+          { centre: 'Egbeda', people: 3, coming: 2, stopped: 0, never: 0, new: 1, settled: 2, stoppedPct: 0, neverPct: 0 },
+        ],
+        byRole: [
+          { role: 'mentor', people: 6, coming: 3, stopped: 2, never: 1, new: 0, settled: 6, stoppedPct: 33.3, neverPct: 16.7 },
+          { role: 'instructor', people: 3, coming: 2, stopped: 0, never: 0, new: 1, settled: 2, stoppedPct: 0, neverPct: 0 },
+        ],
+      },
       caveats: ['Expected days are programme days since a volunteer joined. There is no rota in the system, '
               + 'so someone who agreed to come one day a week reads low here.'],
     },
@@ -1287,6 +1305,33 @@ function unzipDocumentXml(buf) {
       /Almost every day/.test(attText) && /Patchy/.test(attText));
     ok('/v-status prints the no-rota caveat where the numbers are',
       /no rota in the system/.test(attText));
+
+    /* ── Are we KEEPING our volunteers? ────────────────────────────────────
+     * The fixture is built so the two figures point opposite ways: 80%
+     * attendance, and three of the eight settled volunteers are gone. A rate
+     * cannot raise that alarm — a volunteer who stops leaves the numerator and
+     * the denominator together, so the rate is undisturbed by their leaving.
+     */
+    ok('/v-status says how many volunteers are still turning up, not only the rate',
+      /Still turning up/i.test(attText) && /2 stopped/.test(attText) && /1 never started/.test(attText));
+    /* "Too new to say" has to be visible, or the reader assumes the panel's
+        denominator is the headcount and the percentages look wrong. */
+    ok('…and keeps the ones too new to judge out of the count, saying so',
+      /too new to say/i.test(attText) && /Who is still with us/.test(attText)
+      && /8 who have been here long enough/.test(attText));
+    /* THE CASE THE PANEL EXISTS FOR. Ghostfield has two volunteers and neither
+       turns up, so it has no rate at all — on the rate table below it is a
+       blank row that reads as "no data" rather than as an emergency. */
+    const vretRows = await vsp.evaluate(() => Array.from(document.querySelectorAll('.vret-row'))
+      .map(r => r.innerText.replace(/\s+/g, ' ')));
+    ok('…and names a centre where NOBODY is turning up, which a rate cannot express',
+      vretRows.some(r => /Ghostfield/.test(r) && /centre/.test(r)));
+    ok('…broken out per role as well as per centre, because they fail differently',
+      vretRows.some(r => /Mentor/i.test(r) && /role/.test(r))
+      && vretRows.some(r => /Ijaiye/.test(r) && /centre/.test(r)));
+    // Worst first: the row that needs reading is the one at the top.
+    ok('…worst first, so the site in trouble is the first row',
+      vretRows.length >= 3 && /Ghostfield/.test(vretRows[0]));
     ok('/v-status Attendance tab mounts clean', vspErrs.length === 0);
     if (vspErrs.length) console.error('      ', vspErrs.slice(0, 3).join(' | '));
 

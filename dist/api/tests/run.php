@@ -10952,9 +10952,9 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     db_exec("DELETE FROM attendance WHERE studentId LIKE 'VOL-ATT-%'");
     db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-ATT-%'");
-    $mkVol = function (string $id, string $role, int $joinedDaysAgo) use ($lab, $D) {
+    $mkVol = function (string $id, string $role, int $joinedDaysAgo, string $centre = '') use ($lab, $D) {
         db_insert('volunteers', ['volunteerId' => $id, 'fullName' => 'Att ' . $id, 'email' => strtolower($id) . '@example.com',
-            'role' => $role, 'centre' => $lab, 'status' => 'active', 'safeguarding' => 'cleared',
+            'role' => $role, 'centre' => $centre !== '' ? $centre : $lab, 'status' => 'active', 'safeguarding' => 'cleared',
             'visibilityConsent' => 0, 'createdAt' => $D($joinedDaysAgo) . ' 08:00:00', 'updatedAt' => now_iso()]);
     };
     /* The cohort id is on these rows because a real badge QR carries it —
@@ -10972,6 +10972,18 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mkVol('VOL-ATT-A', 'mentor', 9);        // perfect, two of them late
     $mkVol('VOL-ATT-B', 'mentor', 9);        // half the days, none recent
     $mkVol('VOL-ATT-C', 'instructor', 4);    // joined late, perfect since
+    /* The two states the four-way retention split needs, and which the old
+       `never` chip could not tell apart: one placed at the start of the term who
+       has never appeared, and one approved yesterday who has had no chance to.
+       They belong on opposite lists — one is a phone call, one is nothing.
+       In a centre of their OWN, for two reasons: it leaves every existing
+       per-centre assertion above measuring exactly what it measured before, and
+       it gives the retention table the case it exists for — a site where not one
+       volunteer is turning up, which the site's attendance RATE cannot express
+       because there is no attendance to take a rate of. */
+    $volGhost = 'Ghostfield ' . substr(md5($lab), 0, 4);
+    $mkVol('VOL-ATT-D', 'mentor', 9, $volGhost);   // ten open days, not one check-in
+    $mkVol('VOL-ATT-E', 'mentor', 1, $volGhost);   // approved yesterday; too new to say
     for ($i = 9; $i >= 0; $i--) $mark('VOL-ATT-A', $i, $i === 3 || $i === 7);
     for ($i = 9; $i >= 5; $i--) $mark('VOL-ATT-B', $i);
     for ($i = 4; $i >= 0; $i--) $mark('VOL-ATT-C', $i);
@@ -11168,6 +11180,123 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('vol attendance: the admin register is gated on the roster capability', (function () {
         return (backend_dispatch('admin.volunteer.attendance', ['requesterId' => ''])['ok'] ?? false) !== true
             && (backend_dispatch('admin.volunteer.attendance', ['requesterId' => 'NGG-2025-0001'])['ok'] ?? false) !== true;
+    })());
+
+    /* ── Are we KEEPING our volunteers? ───────────────────────────────────────
+     *
+     * The register carried a per-person `stopped` flag and nothing that added it
+     * up, so it could show one lapsed mentor per screen and never that a centre
+     * had lost its whole faculty. A rate cannot raise the alarm — a volunteer who
+     * stops leaves the numerator and the denominator together, so a site that has
+     * lost two of three mentors still posts a healthy rate off the one who
+     * remains; and `bands` cannot either, because it only counts volunteers with
+     * three or more open days, so someone who came twice and vanished is in no
+     * band at all.
+     *
+     * Four states rather than three, because volunteers trickle in all term where
+     * a cohort of children starts together. Someone approved yesterday is not a
+     * no-show, and counting them as one would make retention look worse every
+     * time recruitment went well. */
+    chk('vol attendance: retention tells "stopped" from "never came" from "too new"', (function () use ($volGhost) {
+        $A = volunteer_attendance_analysis();
+        $R = $A['retention'] ?? null;
+        if (!is_array($R) || !$R) return false;
+        $p = $A['perVolunteer'];
+        // Each of the four states, on the person who is actually in it.
+        if (($p['VOL-ATT-A']['retention'] ?? '') !== 'coming') return false;   // in every day
+        if (($p['VOL-ATT-B']['retention'] ?? '') !== 'stopped') return false;  // came, then quit
+        if (($p['VOL-ATT-D']['retention'] ?? '') !== 'never') return false;    // ten days, never once
+        if (($p['VOL-ATT-E']['retention'] ?? '') !== 'new') return false;      // approved yesterday
+        /* THE INVARIANT. The four parts are the headcount — a retention block
+           whose states do not sum to the roster is one where somebody has fallen
+           through a gap between two of them. */
+        if ($R['coming'] + $R['stopped'] + $R['never'] + $R['new'] !== $R['people']) return false;
+        // Same threshold the per-person flag uses, so one screen cannot disagree.
+        return (int)$R['stoppedRun'] === VOL_ATT_STOPPED_RUN
+            && $R['stopped'] >= 1 && $R['never'] >= 1 && $R['new'] >= 1 && $R['coming'] >= 2;
+    })());
+
+    chk('…and the percentage is over those who have had a chance, not the headcount', (function () {
+        $R = volunteer_attendance_analysis()['retention'];
+        /* Dividing by the headcount would report a programme as losing
+           volunteers every time it recruited any — the new arrivals would dilute
+           `coming` and inflate nothing. `settled` is returned so a reader can
+           see which denominator the percentage used rather than assume. */
+        if ($R['settled'] !== $R['people'] - $R['new']) return false;
+        if ($R['settled'] >= $R['people']) return false;          // VOL-ATT-E is new
+        $expect = round($R['stopped'] / $R['settled'] * 100, 1);
+        return abs($R['stoppedPct'] - $expect) < 0.05
+            && abs($R['neverPct'] - round($R['never'] / $R['settled'] * 100, 1)) < 0.05;
+    })());
+
+    chk('…and it is broken out per centre AND per role', (function () use ($volGhost, $lab) {
+        $R = volunteer_attendance_analysis()['retention'];
+        $cBy = []; foreach ($R['byCentre'] as $r) $cBy[$r['centre']] = $r;
+        $rBy = []; foreach ($R['byRole'] as $r) $rBy[$r['role']] = $r;
+        /* The case the table exists for: a site where NOBODY is coming. Its
+           attendance rate cannot say so — there is no attendance to take a rate
+           of — so without this it is a blank row that reads as "no data". */
+        $g = $cBy[$volGhost] ?? null;
+        if (!$g || $g['people'] !== 2 || $g['never'] !== 1 || $g['new'] !== 1 || $g['coming'] !== 0) return false;
+        // The lab centre is the opposite: people are coming, and one has stopped.
+        $l = $cBy[$lab] ?? null;
+        if (!$l || $l['coming'] < 2 || $l['stopped'] < 1) return false;
+        /* Per role as well, because they fail differently: a centre losing
+           mentors is a supervision problem, a ROLE losing people everywhere is a
+           problem with the role. */
+        $m = $rBy['mentor'] ?? null;
+        if (!$m || $m['stopped'] < 1 || $m['never'] < 1) return false;
+        // Worst first, so the row that needs reading is the one at the top.
+        $lost = array_values(array_map(fn($r) => $r['stopped'] + $r['never'], $R['byCentre']));
+        for ($i = 1; $i < count($lost); $i++) if ($lost[$i] > $lost[$i - 1]) return false;
+        return count($lost) >= 2;
+    })());
+
+    /* "Never came" used to mean `present === 0` whatever the date they joined,
+       so every volunteer approved this week sat on the same list as one placed a
+       month ago who has never appeared. Two situations needing opposite
+       responses, and one of them is "do nothing". */
+    chk('vol register: "never attended" no longer accuses volunteers approved this week', (function () {
+        $r = backend_dispatch('admin.volunteer.attendance', ['requesterId' => 'NGG-2025-0099'])['volunteers'];
+        $sc = $r['scenarios'];
+        $ids = fn(string $s) => array_column(backend_dispatch('admin.volunteer.attendance',
+            ['requesterId' => 'NGG-2025-0099', 'scenario' => $s])['volunteers']['roster'], 'volunteerId');
+        $never = $ids('never'); $new = $ids('new');
+        return in_array('VOL-ATT-D', $never, true) && !in_array('VOL-ATT-E', $never, true)
+            && in_array('VOL-ATT-E', $new, true) && !in_array('VOL-ATT-D', $new, true)
+            // Both counted, so the pair still adds up to what the old chip showed.
+            && $sc['never'] >= 1 && ($sc['new'] ?? 0) >= 1
+            && count($never) === $sc['never'] && count($new) === $sc['new'];
+    })());
+
+    /* The register offered a "Warned or worse" filter hardcoded to zero, under a
+       comment saying volunteers carry no policy standing. They do: the settings
+       define a volunteer redline, an absence limit and a lateness cap of four,
+       policy_states_for() has taken a type since it was written, and the
+       enforcement pass already walks volunteers. So a volunteer two lates from
+       suspension looked exactly like one in good standing. */
+    chk('vol register: policy standing is read for volunteers instead of assumed clear', (function () {
+        $r = backend_dispatch('admin.volunteer.attendance', ['requesterId' => 'NGG-2025-0099'])['volunteers'];
+        $row = $r['roster'][0] ?? null;
+        if (!$row) return false;
+        // The shape the children's register uses, so a warning means one thing.
+        foreach (['state', 'absences', 'lateCap'] as $k) if (!array_key_exists($k, $row)) return false;
+        // The cap comes from the policy, not from a literal in this file.
+        if ((int)$row['lateCap'] !== (int)policy_for('volunteer')['latenessCap']) return false;
+        /* Driven, not asserted from the seed: give a volunteer a real sanction
+           and the count has to move. A test that only read the existing zero
+           would pass against the hardcoded zero it is here to catch. */
+        $before = (int)$r['scenarios']['flagged'];
+        db_insert('sanctions', ['personId' => 'VOL-ATT-B', 'personType' => 'volunteer', 'kind' => 'warning',
+            'tier' => 1, 'status' => 'active', 'reason' => 'test', 'amount' => 0,
+            'startsAt' => attendance_today(), 'endsAt' => '', 'issuedBy' => 'test', 'createdAt' => now_iso()]);
+        $after = backend_dispatch('admin.volunteer.attendance', ['requesterId' => 'NGG-2025-0099'])['volunteers'];
+        $flaggedIds = array_column(backend_dispatch('admin.volunteer.attendance',
+            ['requesterId' => 'NGG-2025-0099', 'scenario' => 'flagged'])['volunteers']['roster'], 'volunteerId');
+        db_exec("DELETE FROM sanctions WHERE personId = 'VOL-ATT-B' AND reason = 'test'");
+        return (int)$after['scenarios']['flagged'] === $before + 1
+            && in_array('VOL-ATT-B', $flaggedIds, true)
+            && count($flaggedIds) === $before + 1;
     })());
 
     chk('vol attendance: a day the children were scanned and no volunteer was is not everyone\'s absence', (function () use ($D, $today) {

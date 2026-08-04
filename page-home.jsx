@@ -1790,6 +1790,21 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
     { icon: "ph-user-minus", tintBg: "rgba(224,49,49,0.10)", iconColor: "#c0361c", value: String(ak.absences || 0), label: "Absences", foot: (ak.halfDays || 0) + " half day" + ((ak.halfDays || 0) === 1 ? "" : "s") },
     { icon: "ph-calendar-blank", tintBg: "rgba(124,77,255,0.13)", iconColor: "#6a3fc0", value: String((att && att.days) || 0), label: "Days measured", foot: att && att.from ? att.from + " → " + att.to : "no days yet" },
   ];
+  /* Are we KEEPING our volunteers? The rate above cannot answer it, and it hides
+     the answer in the flattering direction: a volunteer who stops turning up
+     leaves the numerator and the denominator together, so a centre that has lost
+     two of three mentors still posts a healthy rate off the one who remains.
+     `null` where the backend could not measure it — rendered as absent, never as
+     a zero that reads like "nobody has left". */
+  const vret = (att && att.retention && att.retention.people > 0) ? att.retention : null;
+  if (vret && vret.settled > 0) attStats.push({
+    icon: "ph-users-three", tintBg: "rgba(224,49,49,0.10)", iconColor: "#c02c2c",
+    value: String(vret.coming), label: "Still turning up",
+    foot: vret.stopped > 0 || vret.never > 0
+      ? [vret.stopped > 0 ? vret.stopped + " stopped" : null, vret.never > 0 ? vret.never + " never started" : null]
+          .filter(Boolean).join(" · ") + (vret.new > 0 ? " · " + vret.new + " too new to say" : "")
+      : "nobody has drifted away" + (vret.new > 0 ? " · " + vret.new + " too new to say" : ""),
+  });
   const attRoleRow = (r) => ({ ...r, meta: VS_ROLE_META[r.role] || VS_ROLE_META.admin });
 
   // Centre detail
@@ -2225,6 +2240,40 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                   </div>
                 </div>
 
+                {/* Who is still with us, per centre and per role.
+                    Deliberately a separate panel from the rate table below and
+                    not another column on it: a centre where nobody is turning up
+                    has no rate at all — there is no attendance to take a rate of
+                    — so on the table below it is a blank row that reads as "no
+                    data" rather than as the emergency it is. */}
+                {vret && vret.settled > 0 && (vret.stopped > 0 || vret.never > 0) && (
+                  <div style={{ marginTop: 20, background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, overflow: "hidden", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
+                    <div style={{ padding: "18px 22px 14px" }}>
+                      <h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, margin: "0 0 4px" }}>Who is still with us</h3>
+                      <p style={{ color: "#8088a6", fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>
+                        The rate above says how full the sessions were. This says whether the volunteers
+                        who signed up are still coming: someone who served and has now missed the last{" "}
+                        {vret.stoppedRun} open days has stopped, not arrived late. Measured over the{" "}
+                        {vret.settled} who have been here long enough to say
+                        {vret.new > 0 ? " (" + vret.new + " " + (vret.new === 1 ? "is" : "are") + " too new)" : ""}.
+                      </p>
+                    </div>
+                    <div className="vret-head">{["", "Still coming", "Stopped", "Never started"].map((h, i) => <span key={i} style={{ textAlign: i ? "right" : "left" }}>{h}</span>)}</div>
+                    {[["centre", vret.byCentre || []], ["role", vret.byRole || []]].map(([dim, rows]) =>
+                      (rows || []).filter(r => r.people > 0).map((r, i) => (
+                        <div key={dim + i} className="vret-row">
+                          <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                            <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 14.5, color: "#0a1130", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textTransform: dim === "role" ? "capitalize" : "none" }}>{r[dim]}</b>
+                            <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6" }}>{dim === "role" ? "role" : "centre"} · {r.people} volunteer{r.people === 1 ? "" : "s"}</span>
+                          </span>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: r.coming > 0 ? "#2f9e44" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.coming}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, fontWeight: r.stopped > 0 ? 700 : 400, color: r.stopped > 0 ? "#c02c2c" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.stopped || "—"}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: r.never > 0 ? "#5a6488" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.never || "—"}</span>
+                        </div>
+                      )))}
+                  </div>
+                )}
+
                 <div className="att-cols" style={{ marginTop: 20 }}>
                   <div style={{ background: "#fff", border: "1px solid #e5e8ee", borderRadius: 18, overflow: "hidden", boxShadow: "0 1px 2px rgba(12,20,50,0.05)" }}>
                     <div style={{ padding: "18px 22px 12px" }}><h3 style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, margin: 0 }}>By centre</h3></div>
@@ -2364,7 +2413,13 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
 .att-head,.att-row{display:grid;grid-template-columns:1.5fr 62px 150px 62px;align-items:center;gap:12px;padding:0 22px}
 .att-head{height:38px;background:#faf6ec;border-top:1px solid #e5e8ee;border-bottom:1px solid #e5e8ee;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:#8088a6}
 .att-row{min-height:58px;border-bottom:1px solid #eef0f4}.att-row:last-child{border-bottom:none}
-@media(max-width:620px){.att-head{display:none}.att-row{grid-template-columns:1fr auto;row-gap:8px;padding:14px 18px}}`}</style>
+@media(max-width:620px){.att-head{display:none}.att-row{grid-template-columns:1fr auto;row-gap:8px;padding:14px 18px}}
+.vret-head,.vret-row{display:grid;grid-template-columns:1.5fr 104px 88px 108px;align-items:center;gap:12px;padding:0 22px}
+.vret-head{height:34px;background:#faf6ec;border-top:1px solid #e5e8ee;border-bottom:1px solid #e5e8ee;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:#8088a6}
+.vret-row{min-height:50px;border-bottom:1px solid #eef0f4}.vret-row:last-child{border-bottom:none}
+/* Narrow: the headers go, so each figure labels itself rather than becoming a
+   column of unexplained numbers. */
+@media(max-width:620px){.vret-head{display:none}.vret-row{grid-template-columns:1fr;row-gap:4px;padding:14px 18px}.vret-row>*{text-align:left!important}.vret-row>*:nth-child(2)::after{content:" still coming"}.vret-row>*:nth-child(3)::after{content:" stopped"}.vret-row>*:nth-child(4)::after{content:" never started"}}`}</style>
     </div>
   );
 }

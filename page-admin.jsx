@@ -8944,7 +8944,11 @@ const ATT_SCENARIOS = [
      different problems that all used to be one number. Ordered so the two that
      need a phone call today sit before the one that needs a timetable talk. */
   { key: "stopped", label: "Stopped coming", hint: "was attending, has missed the last few open days", tone: "bad" },
-  { key: "never", label: "Never attended", hint: "not one check-in in this window", tone: "bad" },
+  { key: "never", label: "Never attended", hint: "had open days and came to none of them", tone: "bad" },
+  /* Split out of "never attended", which used to hold both. Somebody approved
+     this week has had no chance to attend yet, and putting them on the
+     phone-call list is how that list stops being read. */
+  { key: "new", label: "Too new to say", hint: "not enough open days yet to judge", volunteerOnly: true },
   { key: "atrisk", label: "Under 50%", hint: "at risk on attendance", tone: "bad" },
   { key: "late", label: "Late arrivals", hint: "has arrived late", tone: "warn" },
   { key: "half", label: "Half days", hint: "missed the Musing Period", tone: "warn" },
@@ -9266,7 +9270,10 @@ function SummerAttendance() {
         {/* Every scenario carries its own count, so choosing one is no longer
             the only way to discover whether it has anybody in it. */}
         <div className="att-chips" role="group" aria-label="Situation">
-          {ATT_SCENARIOS.map(s => {
+          {/* "Too new to say" only exists on the volunteer side: children enrol
+              at the start of a term together, volunteers arrive all through it,
+              which is why only one of the two registers needs the distinction. */}
+          {ATT_SCENARIOS.filter(s => !s.volunteerOnly || who === "volunteers").map(s => {
             const n = scenarioCount(s.key);
             return (
               /* Nothing in it? Say so and disable it, rather than offering a
