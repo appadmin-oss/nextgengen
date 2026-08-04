@@ -811,6 +811,20 @@ function unzipDocumentXml(buf) {
       mou: function () { return Promise.resolve({ ok: true, writtenOff: 57000 }); },
       remindOff: function () { return Promise.resolve({ ok: true }); },
       accrue: function () { return Promise.resolve({ accrued: { members: 2, membership: 0, dues: 2, training: 0, atCap: 1, noJoinDate: 0 } }); },
+      /* Two due, and a named reason for each of the five who are not — including
+         the one whose training fee is being written off, which is the exclusion
+         that stops the programme chasing money it has already forgiven. */
+      remindPreview: function () {
+        window.__remindPreviews = (window.__remindPreviews || 0) + 1;
+        return Promise.resolve({ preview: {
+          count: 2, everyDays: 14, enabled: true,
+          due: [{ memberId: 'NGG-2026-0001', fullName: 'Ada Obi', payable: 62000, lastRemindedAt: '' },
+                { memberId: 'NGG-2026-0002', fullName: 'Bode Eze', payable: 34000, lastRemindedAt: '2026-06-01T09:00:00Z' }],
+          skipped: { off: 0, optedOut: 1, nothingPayable: 3, underMinimum: 0, tooSoon: 2, noEmail: 1 },
+        } });
+      },
+      remindRun: function () { window.__remindRuns = (window.__remindRuns || 0) + 1;
+        return Promise.resolve({ result: { sent: 2, failed: 0, due: 2, everyDays: 14 } }); },
     };
     props = {};
   } else if (b === 'roster') {
@@ -4710,6 +4724,57 @@ function unzipDocumentXml(buf) {
       /0 means no ceiling/i.test(fzSet));
     ok('…and the reminder floor is stated as a number, not discovered on save',
       /minimum is 7/i.test(fzSet));
+    }
+
+    /* ── Reminders: preview before the un-recallable send ───────────────────
+     * Sixty messages to sixty guardians cannot be recalled, so the screen has
+     * to answer "who, and how many" BEFORE the button, not after it. And it has
+     * to answer "why not" for everybody else, because that is the question a
+     * coordinator gets when a family says they were never told.
+     */
+    if (await step('the fees screen has a Reminders tab',
+                   () => fz.getByRole('button', { name: /^Reminders$/ }).click())) {
+      await fz.waitForTimeout(250);
+      const remIntro = await fz.evaluate(() => document.body.innerText);
+      /* The cron ticks every fifteen minutes; the thing a reader reasonably
+         fears is being told that IS the cadence. Say what actually decides. */
+      ok('the reminders tab says the SPACING decides, not how often the job runs',
+        /at most once every/i.test(remIntro) && /14 days/.test(remIntro)
+        && /checks far more often/i.test(remIntro));
+      /* The distinction the whole ledger turns on, said where somebody about to
+         press Send will read it. */
+      ok('…and says a training fee being written off is not money owed',
+        /payable/i.test(remIntro) && /not money owed/i.test(remIntro));
+      /* Nothing has been sent by arriving on the tab — the preview is a
+         deliberate, separate action. */
+      ok('…and arriving on the tab sends nothing',
+        (await fz.evaluate(() => window.__remindRuns || 0)) === 0);
+
+      if (await step('the reminders tab offers a preview before sending',
+                     () => fz.getByRole('button', { name: /See who would be reminded/ }).click())) {
+        await fz.waitForTimeout(300);
+        const remText = await fz.evaluate(() => document.body.innerText);
+        ok('…which names how many are due, and who',
+          /2 due a reminder now/.test(remText) && /Ada Obi/.test(remText) && /Bode Eze/.test(remText));
+        ok('…with what each of them owes, and when they were last reminded',
+          /₦62,000/.test(remText) && /never/.test(remText) && /2026-06-01/.test(remText));
+        /* WHY NOT, for everyone else — the number that makes the send checkable
+           rather than a leap of faith. */
+        ok('…and a named reason for every family NOT included',
+          /3 nothing payable/.test(remText) && /2 reminded recently/.test(remText)
+          && /1 asked not to be reminded/.test(remText) && /1 no guardian email/.test(remText));
+        // Still nothing sent: previewing is not sending.
+        ok('…and previewing still sends nothing',
+          (await fz.evaluate(() => window.__remindRuns || 0)) === 0
+          && (await fz.evaluate(() => window.__remindPreviews || 0)) >= 1);
+        /* The send button states the number, so the press is not blind. */
+        const sendLabel = await fz.evaluate(() => {
+          const b = Array.from(document.querySelectorAll('button')).find(x => /^Send \d+$/.test((x.textContent || '').trim()));
+          return b ? b.textContent.trim() : null;
+        });
+        ok('…and the send button carries the count rather than saying "Send"',
+          sendLabel === 'Send 2');
+      }
     }
     await fz.close();
 

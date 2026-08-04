@@ -6557,6 +6557,10 @@ function AdminFees() {
   const [meta, setMeta] = React.useState({ defaults: {}, remindMinDays: 7 });
   const [arr, setArr] = React.useState(null);
   const [acct, setAcct] = React.useState(null);
+  /* The preview is loaded and shown BEFORE the send, always. Sixty messages to
+     sixty guardians cannot be recalled, so "who, and how many" is a question
+     that gets answered first rather than discovered afterwards. */
+  const [prev, setPrev] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
@@ -6605,6 +6609,28 @@ function AdminFees() {
           refreshAcct(); loadArr(); }
     catch (e) { toast.error(e.code || e.message); }
   };
+  const loadPreview = () => NGGApi.admin.fees.remindPreview()
+    .then(r => setPrev(r.preview)).catch(e => toast.error(e.code || e.message));
+  const sendReminders = async () => {
+    const n = (prev && prev.count) || 0;
+    if (!n) return;
+    /* The confirm names the NUMBER and the fact that it goes to guardians. A
+       bulk send whose size you cannot see is one people press once and regret,
+       and these land in the inboxes of families, not colleagues. */
+    if (!(await dialog.confirm({
+      title: "Send " + n + " reminder" + (n === 1 ? "" : "s") + "?",
+      body: "This emails " + n + " guardian" + (n === 1 ? "" : "s") + " about their outstanding balance. "
+          + "It cannot be recalled. Nobody will be reminded again for at least "
+          + (prev.everyDays || 7) + " days.",
+      cta: "Send " + n }))) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.fees.remindRun(200);
+      const res = r.result || {};
+      toast.success(res.sent + " sent" + (res.failed ? " · " + res.failed + " could not be delivered" : "") + ".");
+      loadPreview(); loadArr();
+    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
   const runAccrual = async () => {
     if (!(await dialog.confirm({ title: "Bring charges up to date?",
       body: "Adds any membership fee, monthly dues and session training fees that have not been charged yet. Safe to run twice — it cannot charge the same month twice.",
@@ -6634,7 +6660,7 @@ function AdminFees() {
   return (
     <div>
       <div className="admin-filters">
-        {[["arrears", "Who owes"], ["settings", "Amounts"]].map(([k, l]) => (
+        {[["arrears", "Who owes"], ["reminders", "Reminders"], ["settings", "Amounts"]].map(([k, l]) => (
           <button key={k} className={"btn btn-sm " + (tab === k ? "btn-primary" : "btn-ghost")} onClick={() => setTab(k)}>{l}</button>
         ))}
         {!cfg.enabled && <span className="mono" style={{ fontSize: 11, color: "var(--gold-700,#a07400)", marginLeft: 8 }}>
@@ -6644,6 +6670,71 @@ function AdminFees() {
           {busy ? "Working…" : "Bring charges up to date"}
         </button>
       </div>
+
+      {tab === "reminders" && (
+        <div className="admin-card" style={{ maxWidth: 720 }}>
+          {!cfg.remindEnabled || !cfg.enabled ? (
+            <div style={{ fontSize: 13.5, lineHeight: 1.6, color: "var(--ink-600,#3c4460)" }}>
+              Reminders are switched off, so nothing is being sent.
+              {" "}Turn them on under <b>Amounts</b> to start.
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 13.5, lineHeight: 1.65, color: "var(--ink-600,#3c4460)", marginBottom: 14 }}>
+                {/* Says what the schedule actually does, because the cron ticking
+                    every fifteen minutes is the thing people reasonably fear when
+                    they read the word "reminder". */}
+                These go out automatically, at most once every <b>{cfg.remindEveryDays} days</b> per family.
+                The background job checks far more often than that; the spacing above is what decides,
+                so nobody is chased faster than you set it.
+                <div style={{ marginTop: 8, color: "var(--ink-500)" }}>
+                  A family is only included when they have something <b>payable</b> — a training fee
+                  that service is writing off is not money owed, and nobody is chased for it.
+                </div>
+              </div>
+              {!prev
+                ? <button className="btn btn-ghost btn-sm" onClick={loadPreview}>See who would be reminded</button>
+                : (
+                <>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+                    <b style={{ fontSize: 15 }}>{prev.count} due a reminder now</b>
+                    <button className="btn btn-ghost btn-sm" onClick={loadPreview}>Refresh</button>
+                    <button className="btn btn-primary btn-sm" disabled={busy || !prev.count} onClick={sendReminders}>
+                      {busy ? "Sending…" : "Send " + prev.count}
+                    </button>
+                  </div>
+                  {/* WHY NOT, for everyone else. "It will send 4 of 60" is not a
+                      number anybody can check, and "why was I never told" is the
+                      question a coordinator actually gets asked. */}
+                  <div style={{ fontSize: 12.5, color: "var(--ink-500)", lineHeight: 1.7, marginBottom: 14 }}>
+                    Not included:{" "}
+                    {[[prev.skipped.nothingPayable, "nothing payable"],
+                      [prev.skipped.tooSoon, "reminded recently"],
+                      [prev.skipped.optedOut, "asked not to be reminded"],
+                      [prev.skipped.underMinimum, "under the minimum balance"],
+                      [prev.skipped.noEmail, "no guardian email on file"]]
+                      .filter(([n]) => n > 0).map(([n, why]) => n + " " + why).join(" · ") || "nobody — everyone with a balance is on the list"}.
+                  </div>
+                  {prev.count > 0 && (
+                    <table className="admin-table">
+                      <thead><tr><th>Member</th><th>Payable</th><th>Last reminded</th></tr></thead>
+                      <tbody>{prev.due.map(d => (
+                        <tr key={d.memberId}>
+                          <td><b>{d.fullName}</b><div className="mono an-sub-xs">{d.memberId}</div></td>
+                          <td className="mono">{naira(d.payable)}</td>
+                          <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>
+                            {d.lastRemindedAt ? String(d.lastRemindedAt).slice(0, 10) : "never"}
+                          </td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {tab === "settings" && (
         <div className="admin-card" style={{ maxWidth: 620 }}>
