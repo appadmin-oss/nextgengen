@@ -51,6 +51,7 @@ const ADMIN_SECTIONS = [
   { id: "mentors",     group: "People",   label: "Mentors",      title: "Mentors",             icon: "☺", cap: "people" },
   { id: "mentorship",  group: "People",   label: "Mentorship",   title: "Mentorship",          icon: "◐", cap: "people" },
   { id: "behaviour",   group: "People",   label: "Behaviour",    title: "Behaviour monitor",   icon: "◔", cap: "people" },
+  { id: "fees",        group: "People",   label: "Dues & fees",  title: "Dues & fees",         icon: "₦", cap: "people" },
   { id: "staff",       group: "People",   label: "Staff activity", title: "Staff activity",    icon: "◑", cap: "people" },
   { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
   { id: "qr",          group: "People",   label: "QR codes",     title: "QR codes",            icon: "▦", cap: "summer" },
@@ -183,6 +184,7 @@ function AdminPage({ setPage }) {
           {view === "settings" && <AdminSettings/>}
           {view === "forms" && <AdminForms/>}
           {view === "site" && <AdminSite/>}
+          {view === "fees" && <AdminFees/>}
           {view === "status-pages" && <AdminStatusPages/>}
           {view === "sessions" && <AdminSessions/>}
           {view === "missions" && <AdminMissions/>}
@@ -6464,6 +6466,248 @@ function StatusGroup({ label, children }) {
     <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>{label}</div>
     {children}
   </div>;
+}
+/* ── Dues & fees ──────────────────────────────────────────────────────────────
+ * Three admin-defined amounts and one ledger. A member's account is the sum of
+ * its entries, never a stored total, so "how did it get to that?" always has an
+ * answer on the screen.
+ *
+ * Two things this screen is deliberately careful about:
+ *
+ * The TRAINING FEE microcopy. One quiet line under the figure, no emphasis, no
+ * exclamation. It has to be true for the family who leaves early as well as the
+ * one who finishes — they will owe the balance — so it states the condition
+ * rather than promising the outcome. A page that shouted about a full refund
+ * would have promised something the terms do not.
+ *
+ * The ARREARS list is sorted by what is PAYABLE, not by what is charged. A
+ * member mid-service carries a large training charge that is on course to be
+ * written off; ranking by the charge would put them at the top of a call list
+ * they do not belong on.
+ */
+const FEE_KIND_LABEL = {
+  membership: "Membership fee", dues: "Monthly dues", training: "Training fee",
+  fine: "Fine", adjustment: "Adjustment",
+  payment: "Payment received", writeoff: "Written off", waiver: "Waived",
+};
+/* `naira` is defined once further down this module and shared — these files
+   concatenate into one scope, so a second copy is a build error, not a local. */
+
+function AdminFees() {
+  const [tab, setTab] = React.useState("arrears");   // arrears | settings
+  const [cfg, setCfg] = React.useState(null);
+  const [orig, setOrig] = React.useState("");
+  const [meta, setMeta] = React.useState({ defaults: {}, remindMinDays: 7 });
+  const [arr, setArr] = React.useState(null);
+  const [acct, setAcct] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  const loadCfg = () => NGGApi.admin.fees.settings()
+    .then(r => { setCfg(r.fees); setOrig(JSON.stringify(r.fees)); setMeta({ defaults: r.defaults || {}, remindMinDays: r.remindMinDays || 7 }); setErr(""); })
+    .catch(e => setErr(e.code || e.message));
+  const loadArr = () => NGGApi.admin.fees.arrears()
+    .then(setArr).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { loadCfg(); loadArr(); }, []);
+
+  const dirty = cfg && orig && JSON.stringify(cfg) !== orig;
+  const set = (k, v) => setCfg(c => ({ ...c, [k]: v }));
+  const save = async () => {
+    setBusy(true);
+    try { const r = await NGGApi.admin.fees.settingsSet(cfg); setCfg(r.fees); setOrig(JSON.stringify(r.fees));
+          /* Said out loud when the server floors it, rather than silently
+             showing a different number than was typed. */
+          if (r.fees.remindEveryDays !== cfg.remindEveryDays) toast.success("Saved — reminder spacing raised to the " + r.fees.remindEveryDays + "-day minimum.");
+          else toast.success("Saved."); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  const openAcct = (memberId) => NGGApi.admin.fees.member(memberId)
+    .then(r => setAcct(r.account)).catch(e => toast.error(e.code || e.message));
+  const refreshAcct = () => acct && openAcct(acct.memberId);
+
+  const takePayment = async () => {
+    const amt = window.prompt("Amount received (₦)", "");
+    if (!amt) return;
+    try {
+      await NGGApi.admin.fees.payment(acct.memberId, parseInt(amt, 10) || 0, "cash", "", "");
+      toast.success("Recorded."); refreshAcct(); loadArr();
+    } catch (e) { toast.error(e.code || e.message); }
+  };
+  const voidEntry = async (e) => {
+    const reason = window.prompt("Why is this being voided? (kept on the account)", "");
+    if (!reason) return;
+    try { await NGGApi.admin.fees.void(e.entryId, reason); toast.success("Voided."); refreshAcct(); loadArr(); }
+    catch (x) { toast.error(x.code || x.message); }
+  };
+  const completeMou = async () => {
+    if (!(await dialog.confirm({ title: "Mark the MOU accomplished?",
+      body: "This writes off whatever is left of the training fee and records the date. It cannot be undone from here.",
+      cta: "Mark accomplished" }))) return;
+    try { const r = await NGGApi.admin.fees.mou(acct.memberId);
+          toast.success(r.writtenOff > 0 ? naira(r.writtenOff) + " of training fee written off." : "Recorded.");
+          refreshAcct(); loadArr(); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
+  const runAccrual = async () => {
+    if (!(await dialog.confirm({ title: "Bring charges up to date?",
+      body: "Adds any membership fee, monthly dues and session training fees that have not been charged yet. Safe to run twice — it cannot charge the same month twice.",
+      cta: "Run" }))) return;
+    setBusy(true);
+    try { const r = await NGGApi.admin.fees.accrue(500);
+          const a = r.accrued;
+          toast.success([a.dues + " dues", a.training + " training", a.membership + " joining"].join(" · ") + " charged across " + a.members + " members.");
+          if (a.atCap) toast.error(a.atCap + " account(s) are at the ceiling and were not charged further.");
+          loadArr(); refreshAcct(); }
+    catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+
+  if (err) return <div className="admin-empty" style={{ color: "var(--coral)" }}>{err}</div>;
+  if (!cfg) return <div className="admin-empty">Loading…</div>;
+
+  const num = (k, label, hint, extra) => (
+    <label style={{ display: "block", marginBottom: 14 }}>
+      <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>{label}</span>
+      <input className="admin-input" type="number" min="0" value={cfg[k]} style={{ maxWidth: 220, display: "block", marginTop: 6 }}
+        onChange={e => set(k, e.target.value === "" ? 0 : parseInt(e.target.value, 10))}/>
+      {hint && <div data-fee-hint="1" style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 5, lineHeight: 1.5 }}>{hint}</div>}
+      {extra}
+    </label>
+  );
+
+  return (
+    <div>
+      <div className="admin-filters">
+        {[["arrears", "Who owes"], ["settings", "Amounts"]].map(([k, l]) => (
+          <button key={k} className={"btn btn-sm " + (tab === k ? "btn-primary" : "btn-ghost")} onClick={() => setTab(k)}>{l}</button>
+        ))}
+        {!cfg.enabled && <span className="mono" style={{ fontSize: 11, color: "var(--gold-700,#a07400)", marginLeft: 8 }}>
+          Dues are switched off — nothing is being charged.
+        </span>}
+        <button className="btn btn-ghost btn-sm" disabled={busy || !cfg.enabled} onClick={runAccrual} style={{ marginLeft: "auto" }}>
+          {busy ? "Working…" : "Bring charges up to date"}
+        </button>
+      </div>
+
+      {tab === "settings" && (
+        <div className="admin-card" style={{ maxWidth: 620 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 18 }}>
+            <input type="checkbox" checked={!!cfg.enabled} onChange={e => set("enabled", e.target.checked)}/>
+            <b>Charge dues and fees</b>
+          </label>
+          {num("membershipFee", "Membership fee", "Charged once, when a member joins.")}
+          {num("monthlyDues", "Monthly dues", "Charged for each month a member has been active.")}
+          {num("trainingFee", "Training fee, per session",
+            "Charged for each programme session that has started since they joined.",
+            /* THE MICROCOPY. Quiet, one line, no emphasis — and stating the
+               condition rather than promising the outcome, because a member who
+               leaves before the MOU is complete still owes it. */
+            /* The quietest text in the group, and measurably so: smaller than
+               the explanatory line above it, normal weight, muted, italic. The
+               browser test asserts the rendered size rather than the source, so
+               a later edit that promotes this into a selling point fails. */
+            <div data-fee-microcopy="1" style={{ fontSize: 11, color: "var(--ink-400)", marginTop: 4, fontStyle: "italic" }}>
+              Written off in full once the MOU is accomplished.
+            </div>)}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            {num("trainingMonths", "Training months", "")}
+            {num("serviceMonths", "Service months", "")}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--ink-500)", margin: "-4px 0 16px", lineHeight: 1.5 }}>
+            Three years by default: {cfg.trainingMonths} months of training, then {cfg.serviceMonths} of service.
+            Service is what earns the training fee off, a month at a time.
+          </div>
+          {num("balanceCap", "Stop charging at",
+            "A ceiling on one member's balance. Once reached, nothing further is charged. 0 means no ceiling — available, but an account that grows past what anyone can pay pushes a family out of the programme.")}
+          <label style={{ display: "flex", alignItems: "center", gap: 9, margin: "18px 0 10px" }}>
+            <input type="checkbox" checked={!!cfg.remindEnabled} onChange={e => set("remindEnabled", e.target.checked)}/>
+            <b>Remind guardians about arrears</b>
+          </label>
+          {num("remindEveryDays", "No more often than every",
+            "Days between reminders to the same family. The minimum is " + meta.remindMinDays + " — a family reminded daily stops reading anything you send, and your sender gets blocked.")}
+          <button className="btn btn-primary btn-sm" disabled={!dirty || busy} onClick={save}>{busy ? "Saving…" : "Save amounts"}</button>
+        </div>
+      )}
+
+      {tab === "arrears" && (
+        <div>
+          {!arr ? <div className="admin-empty">Loading…</div>
+            : (arr.arrears || []).length === 0 ? <div className="admin-empty">Nobody is in arrears.</div> : (
+            <div className="admin-card" style={{ padding: 0, overflow: "hidden" }}>
+              <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line)", fontSize: 13, color: "var(--ink-600)" }}>
+                <b>{naira(arr.totalPayable)}</b> payable across {arr.matched} member{arr.matched === 1 ? "" : "s"}.
+                {" "}Ranked by what is actually payable — a training fee on course to be written off is not money owed.
+                {arr.truncated && <> Showing the first {(arr.arrears || []).length}.</>}
+              </div>
+              <table className="admin-table">
+                <thead><tr><th>Member</th><th>Centre</th><th>Payable</th><th>Of which training</th><th>Phase</th><th/></tr></thead>
+                <tbody>{arr.arrears.map(a => (
+                  <tr key={a.memberId}>
+                    <td><b>{a.fullName}</b><div className="mono an-sub-xs">{a.memberId}</div></td>
+                    <td>{a.centre}</td>
+                    <td className="mono"><b>{naira(a.payable)}</b>{a.atCap && <div style={{ fontSize: 11, color: "var(--coral)" }}>at the ceiling</div>}</td>
+                    <td className="mono" style={{ color: "var(--ink-500)" }}>{a.trainingEarned > 0 ? "−" + naira(a.trainingEarned) + " earned off" : "—"}</td>
+                    <td style={{ textTransform: "capitalize" }}>{a.phase}{a.remindOff && <div style={{ fontSize: 11, color: "var(--ink-400)" }}>reminders off</div>}</td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={() => openAcct(a.memberId)}>Open →</button></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {acct && (
+        <Modal onClose={() => setAcct(null)} title={acct.fullName + " — account"}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 12, marginBottom: 16 }}>
+            {[["Payable now", naira(acct.balance.payable)],
+              ["Charged", naira(acct.balance.charged)],
+              ["Received", naira(acct.balance.credited)],
+              ["Training earned off", naira(acct.balance.trainingEarned)]].map(([l, v]) => (
+              <div key={l} style={{ background: "var(--surface-2,#faf6ec)", borderRadius: 10, padding: "10px 12px" }}>
+                <div className="mono" style={{ fontSize: 9.5, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-400)" }}>{l}</div>
+                <div style={{ fontWeight: 700, fontSize: 17, marginTop: 3 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--ink-500)", marginBottom: 14, lineHeight: 1.6 }}>
+            {acct.balance.tenure.phase === "unknown"
+              ? "No join date on this record, so the three-year clock cannot be worked out."
+              : <>Month {acct.balance.tenure.months} of {acct.balance.tenure.trainingMonths + acct.balance.tenure.serviceMonths} — currently in <b>{acct.balance.tenure.phase}</b>.
+                 {acct.balance.tenure.phase === "service" && <> {acct.balance.tenure.servedMonths} of {acct.balance.tenure.serviceMonths} service months served.</>}</>}
+            {acct.mouAt && <> MOU accomplished {String(acct.mouAt).slice(0, 10)}.</>}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+            <button className="btn btn-primary btn-sm" onClick={takePayment}>Record a payment</button>
+            {!acct.mouAt && <button className="btn btn-ghost btn-sm" onClick={completeMou}>Mark MOU accomplished</button>}
+            <button className="btn btn-ghost btn-sm" onClick={async () => {
+              try { await NGGApi.admin.fees.remindOff(acct.memberId, !acct.remindOff); refreshAcct(); loadArr(); }
+              catch (e) { toast.error(e.code || e.message); }
+            }}>{acct.remindOff ? "Allow reminders" : "Stop reminders for this family"}</button>
+          </div>
+          <table className="admin-table">
+            <thead><tr><th>What</th><th>When</th><th>Amount</th><th/></tr></thead>
+            <tbody>{acct.entries.map(e => (
+              <tr key={e.entryId} style={e.void ? { opacity: .5 } : undefined}>
+                <td>
+                  {FEE_KIND_LABEL[e.kind] || e.kind}
+                  {e.periodKey && e.periodKey.match(/^\d{4}-\d{2}$/) && <span className="mono" style={{ color: "var(--ink-400)" }}> {e.periodKey}</span>}
+                  {e.note && <div style={{ fontSize: 11.5, color: "var(--ink-500)" }}>{e.note}</div>}
+                  {/* A corrected mistake stays visible with its reason — that is
+                      the point of voiding rather than deleting. */}
+                  {e.void && <div style={{ fontSize: 11.5, color: "var(--coral)" }}>Voided — {e.voidReason}</div>}
+                </td>
+                <td className="mono" style={{ fontSize: 11.5 }}>{String(e.createdAt).slice(0, 10)}</td>
+                <td className="mono" style={{ color: e.direction === "charge" ? "var(--ink-800,#0a1130)" : "var(--green,#2f9e44)" }}>
+                  {e.direction === "charge" ? "" : "−"}{naira(e.amount)}
+                </td>
+                <td>{!e.void && <button className="btn btn-ghost btn-sm" onClick={() => voidEntry(e)}>Void</button>}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </Modal>
+      )}
+    </div>
+  );
 }
 function AdminStatusPages() {
   const [cfg, setCfg] = React.useState(null);

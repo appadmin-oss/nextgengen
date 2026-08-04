@@ -787,6 +787,20 @@
         absenceAlert: (studentId, cohortId) => request('/admin/summer.php', { body: { action: 'absenceAlert', studentId: studentId || '', cohortId: cohortId || '' } }),
         importStudents: (rows) => request('/admin/summer.php', { body: { action: 'import', rows } }),
       },
+      /* Member obligations — membership fee, monthly dues, training fee.
+         A LEDGER: `payment` RECORDS money somebody already handed over by cash
+         or transfer. There is no gateway behind any of these. */
+      fees: {
+        settings:    () => request('/admin/fees.php'),
+        settingsSet: (data) => request('/admin/fees.php', { body: { action: 'settings', data } }),
+        member:      (memberId) => request('/admin/fees.php' + qs({ view: 'member', memberId })),
+        arrears:     (limit) => request('/admin/fees.php' + qs({ view: 'arrears', limit })),
+        payment:     (memberId, amount, method, reference, note) => request('/admin/fees.php', { body: { action: 'payment', memberId, amount, method, reference, note } }),
+        void:        (entryId, reason) => request('/admin/fees.php', { body: { action: 'void', entryId, reason } }),
+        mou:         (memberId) => request('/admin/fees.php', { body: { action: 'mou', memberId } }),
+        remindOff:   (memberId, off) => request('/admin/fees.php', { body: { action: 'remindOff', memberId, off } }),
+        accrue:      (limit) => request('/admin/fees.php', { body: { action: 'accrue', limit } }),
+      },
       /* Programme calendar + Institutional Policy enforcement. The calendar
          decides which days count; the policy engine decides what a missed one
          costs. Both live behind the same 'summer' capability. */

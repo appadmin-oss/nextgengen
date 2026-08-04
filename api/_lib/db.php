@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 82;
+const NGG_SCHEMA_TARGET = 83;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2192,6 +2192,64 @@ function db_migrate(PDO $db): void {
              * of what happened. */
             ALTER TABLE assessment_instruments ADD COLUMN higherIsBetter INTEGER DEFAULT 1;
             CREATE INDEX IF NOT EXISTS idx_ainst_cat ON assessment_instruments (catalogueKey);
+        ",
+
+        /* MEMBER OBLIGATIONS — one append-only ledger, not a balance column.
+         *
+         * A `balance` field on `members` would be the obvious shape and the wrong
+         * one: money questions are always "how did it get to that?", and a single
+         * mutable number cannot answer it. Every charge, payment and write-off is
+         * a row here, and a balance is the sum of them. Corrections VOID a row
+         * rather than editing it, the same way `infractions` and `sanctions`
+         * already work, so the history stays readable after somebody fixes a
+         * mistake.
+         *
+         * `periodKey` is what makes accrual safe to run twice. Monthly dues for
+         * 2026-08 carry periodKey '2026-08', the session training charge carries
+         * the sessionId, and the joining fee carries 'once' — with a UNIQUE index
+         * across (memberId, kind, periodKey), a cron that fires twice, or an admin
+         * who presses Run twice, cannot charge a family for the same month twice.
+         * That is the defect this design exists to make impossible, because it is
+         * the one nobody notices until a guardian complains.
+         *
+         * Amounts are whole naira, matching the existing policy fines. Signed by
+         * `direction` rather than by the sign of `amount`, so a negative amount is
+         * always a bug rather than a convention somebody has to remember. */
+        83 => "
+            CREATE TABLE IF NOT EXISTS member_ledger (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              entryId TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              direction TEXT NOT NULL DEFAULT 'charge',
+              amount INTEGER NOT NULL DEFAULT 0,
+              periodKey TEXT DEFAULT '',
+              sessionId TEXT DEFAULT '',
+              note TEXT DEFAULT '',
+              method TEXT DEFAULT '',
+              reference TEXT DEFAULT '',
+              voidedAt TEXT DEFAULT '',
+              voidedBy TEXT DEFAULT '',
+              voidReason TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now')),
+              createdBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_mledg_accrual ON member_ledger (memberId, kind, periodKey);
+            CREATE INDEX IF NOT EXISTS idx_mledg_member ON member_ledger (memberId, createdAt);
+            CREATE INDEX IF NOT EXISTS idx_mledg_kind ON member_ledger (kind);
+            /* When the MOU was accomplished, and by whom. Recorded as a fact
+             * rather than inferred from the training balance reaching zero:
+             * a balance can reach zero because somebody paid it, and 'they
+             * completed their service' is a different statement from 'nothing is
+             * outstanding'. Reading one as the other would write off an
+             * obligation on the strength of a payment. */
+            ALTER TABLE members ADD COLUMN mouAt TEXT DEFAULT '';
+            ALTER TABLE members ADD COLUMN mouBy TEXT DEFAULT '';
+            /* Per-family reminder off-switch. A guardian who asks to stop being
+             * chased must be able to be taken off the list without anyone
+             * disabling reminders for the whole programme. */
+            ALTER TABLE members ADD COLUMN duesRemindOff INTEGER DEFAULT 0;
+            ALTER TABLE members ADD COLUMN duesRemindedAt TEXT DEFAULT '';
         ",
     ];
 

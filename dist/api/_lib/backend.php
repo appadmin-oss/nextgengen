@@ -117,6 +117,18 @@ function backend_dispatch(string $op, array $args = []): array {
             // Programme calendar + Institutional Policy enforcement
             'admin.policy.settings'       => 'admin_policy_settings',
             'admin.policy.save'           => 'admin_policy_save',
+            /* Member obligations — membership fee, monthly dues, training fee.
+             * All gated on `people`: a fees screen is a roster screen, not a
+             * separate permission somebody could be granted by accident. */
+            'admin.fees.settings.get'     => 'admin_fees_settings_get',
+            'admin.fees.settings.set'     => 'admin_fees_settings_set',
+            'admin.fees.member'           => 'admin_fees_member',
+            'admin.fees.payment'          => 'admin_fees_payment',
+            'admin.fees.void'             => 'admin_fees_void',
+            'admin.fees.mou'              => 'admin_fees_mou',
+            'admin.fees.remindOff'        => 'admin_fees_remind_off',
+            'admin.fees.accrue'           => 'admin_fees_accrue',
+            'admin.fees.arrears'          => 'admin_fees_arrears',
             'admin.policy.day.toggle'     => 'admin_policy_day_toggle',
             'admin.policy.board'          => 'admin_policy_board',
             'admin.policy.person'         => 'admin_policy_person',

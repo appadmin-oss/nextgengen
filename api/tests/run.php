@@ -11415,5 +11415,278 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     else db_exec("DELETE FROM settings WHERE settingKey = 'programme'");
 })();
 
+/* ── Member obligations: membership fee, monthly dues, training fee ───────────
+ *
+ * A LEDGER, not a payment processor. What these guard, in order of how badly
+ * each would hurt if it broke:
+ *
+ *   1. Charging a family twice for the same month. The accrual runs from a cron
+ *      AND from an admin button, so it WILL be run twice; the unique index on
+ *      (memberId, kind, periodKey) is the only thing standing between that and a
+ *      duplicate charge nobody notices until a guardian complains.
+ *   2. The training fee's write-down. It is charged but a member who completes
+ *      their MOU never pays it — get that wrong in either direction and the
+ *      programme either bills somebody who has served their time, or forgives an
+ *      obligation somebody walked away from.
+ *   3. The cap. An account that accrues past what anyone could pay stops being a
+ *      fact about the family and becomes one about the software.
+ *   4. Money must not reach a child's public record, and must not gate a gate.
+ */
+(function () use ($SUR) {
+    $ADM = 'NGG-2025-0099';
+    $keepFees = setting_get('fees');
+    $mk = function (string $id, string $joined) {
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Fee ' . $id, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'joinDate' => $joined, 'parentName' => 'Mrs ' . $id, 'parentPhone' => '08031119001',
+            'parentEmail' => 'g-' . strtolower($id) . '@example.com',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    };
+    $D = fn(int $monthsAgo) => gmdate('Y-m-d', strtotime('-' . $monthsAgo . ' months'));
+    // Joined 20 months ago: 18 months training done, 2 months into service.
+    $mk('NGG-FEE-A', $D(20));
+    // Joined this month: nothing has accrued but the joining fee.
+    $mk('NGG-FEE-B', gmdate('Y-m-d'));
+
+    $set = fn(array $o) => backend_dispatch('admin.fees.settings.set',
+        ['requesterId' => $ADM, 'data' => array_merge(['enabled' => true, 'membershipFee' => 5000,
+            'monthlyDues' => 1000, 'trainingFee' => 75000, 'trainingMonths' => 18, 'serviceMonths' => 18,
+            'balanceCap' => 0, 'remindEnabled' => false], $o)]);
+    $set([]);
+
+    chk('fees: every amount is admin-defined, clamped, and 75k is only a default', (function () use ($ADM) {
+        $d = backend_dispatch('admin.fees.settings.get', ['requesterId' => $ADM]);
+        if (($d['defaults']['trainingFee'] ?? 0) !== 75000) return false;
+        // A slipped keystroke cannot post a 900-million-naira charge.
+        $r = backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM,
+            'data' => ['monthlyDues' => 999999999999, 'trainingFee' => -5]]);
+        $f = $r['fees'];
+        return $f['monthlyDues'] === FEES_AMOUNT_MAX && $f['trainingFee'] === 0;
+    })());
+
+    $set([]);   // back to the working figures
+
+    chk('fees: three years is 18 months training then 18 months service', (function () use ($D) {
+        $a = db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-A'");
+        $t = fees_tenure($a);
+        // 20 months in: training done, two months of service served.
+        return $t['phase'] === 'service' && $t['months'] === 20
+            && $t['trainingMonths'] === 18 && $t['serviceMonths'] === 18 && $t['servedMonths'] === 2
+            && $t['complete'] === false;
+    })());
+
+    chk('fees: accrual charges the joining fee once and the dues once per month', (function () use ($ADM) {
+        $a = db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-A'");
+        fees_accrue_member($a);
+        $acc = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A'])['account'];
+        $k = $acc['balance']['byKind'];
+        // 20 months elapsed → 21 monthly keys from the join month to this one.
+        return ($k['membership'] ?? 0) === 5000 && ($k['dues'] ?? 0) === 21000;
+    })());
+
+    /* THE ONE THAT MATTERS MOST. Accrual runs from a cron and from a button, so
+       it will be run twice; a family charged twice for August finds out by being
+       chased for money they do not owe. */
+    chk('fees: running accrual again does NOT charge the same month twice', (function () use ($ADM) {
+        $a = db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-A'");
+        $before = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A'])['account']['balance'];
+        fees_accrue_member($a); fees_accrue_member($a);
+        backend_dispatch('admin.fees.accrue', ['requesterId' => $ADM]);
+        $after = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A'])['account']['balance'];
+        return (int)$after['charged'] === (int)$before['charged']
+            && (int)$after['outstanding'] === (int)$before['outstanding'];
+    })());
+
+    /* "Deducts as they come." Two months of an eighteen-month service half are
+       served, so a ninth of the training fee has been earned off — not none of
+       it, and not all of it. */
+    chk('fees: the training fee is written down as service is served, not in one step', (function () use ($ADM) {
+        $acc = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A'])['account'];
+        $b = $acc['balance'];
+        if ((int)$b['trainingCharged'] <= 0) return false;
+        $expect = (int)floor($b['trainingCharged'] * (2 / 18));
+        if ((int)$b['trainingEarned'] !== $expect) return false;
+        // Earned is NOT the same as written off — nothing has been forgiven yet.
+        if ((int)$b['trainingWrittenOff'] !== 0) return false;
+        /* And `payable` is less than `outstanding` by exactly what has been
+           earned, so the two figures on the screen cannot be confused. */
+        return (int)$b['payable'] === (int)$b['outstanding'] - (int)$b['trainingEarned'];
+    })());
+
+    chk('fees: a member with no service yet has earned none of the training fee off', (function () use ($ADM) {
+        $b = db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-B'");
+        fees_accrue_member($b);
+        $bal = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-B'"));
+        return $bal['tenure']['phase'] === 'training' && (int)$bal['trainingEarned'] === 0
+            && (int)$bal['payable'] === (int)$bal['outstanding'];
+    })());
+
+    /* Accomplishing the MOU writes off whatever the training fee has left, and
+       records that it happened — the two are different statements and both are
+       needed. */
+    chk('fees: the MOU writes the training fee off completely, and is recorded as a fact', (function () use ($ADM) {
+        $r = backend_dispatch('admin.fees.mou', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A']);
+        if (empty($r['ok'])) return false;
+        $m = db_row("SELECT mouAt, mouBy FROM members WHERE memberId = 'NGG-FEE-A'");
+        if (trim((string)$m['mouAt']) === '' || trim((string)$m['mouBy']) === '') return false;
+        $b = $r['balance'];
+        // Nothing of the training fee is left owing.
+        if ((int)$b['trainingWrittenOff'] !== (int)$b['trainingCharged']) return false;
+        // …and it cannot be done twice, which would write off a second time.
+        $again = backend_dispatch('admin.fees.mou', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A']);
+        return ($again['error'] ?? '') === 'already_done' && (int)$r['writtenOff'] > 0;
+    })());
+
+    chk('fees: what is left owing after the MOU is the dues, not the training fee', (function () use ($ADM) {
+        $acc = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A'])['account'];
+        $b = $acc['balance'];
+        // membership 5000 + dues 21000 = 26000. The 75k training is gone.
+        return (int)$b['payable'] === 26000 && (int)$b['outstanding'] === 26000;
+    })());
+
+    chk('fees: a recorded payment reduces what is payable, and is not a gateway', (function () use ($ADM) {
+        $r = backend_dispatch('admin.fees.payment', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A',
+            'amount' => 6000, 'method' => 'transfer', 'reference' => 'TRF-1']);
+        if (empty($r['ok'])) return false;
+        $b = $r['balance'];
+        if ((int)$b['payable'] !== 20000) return false;
+        // Two payments in one month are two events, not a duplicate.
+        backend_dispatch('admin.fees.payment', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A', 'amount' => 1000, 'method' => 'cash']);
+        $after = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-A'"));
+        return (int)$after['payable'] === 19000
+            && (backend_dispatch('admin.fees.payment', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A', 'amount' => 0])['error'] ?? '') === 'bad_amount';
+    })());
+
+    chk('fees: a correction VOIDS an entry with a reason and keeps it on the account', (function () use ($ADM) {
+        $acc = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A'])['account'];
+        $pay = null;
+        foreach ($acc['entries'] as $e) if ($e['kind'] === 'payment' && !$e['void']) { $pay = $e; break; }
+        if (!$pay) return false;
+        // A void with no reason is refused — "why is this different from last
+        // month" is the question an account has to be able to answer.
+        if ((backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => $pay['entryId'], 'reason' => ''])['error'] ?? '') !== 'reason_required') return false;
+        $r = backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => $pay['entryId'], 'reason' => 'entered twice']);
+        if (empty($r['ok'])) return false;
+        $after = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A'])['account'];
+        $still = null;
+        foreach ($after['entries'] as $e) if ($e['entryId'] === $pay['entryId']) $still = $e;
+        // Visible, flagged, with its reason — and out of the balance.
+        return $still && $still['void'] === true && $still['voidReason'] === 'entered twice'
+            && (int)$after['balance']['payable'] === (int)$acc['balance']['payable'] + (int)$pay['amount']
+            && (backend_dispatch('admin.fees.void', ['requesterId' => $ADM, 'entryId' => $pay['entryId'], 'reason' => 'again'])['error'] ?? '') === 'already_void';
+    })());
+
+    /* The cap is enforced, not merely displayed. An account that keeps charging
+       past what anybody could pay drives the family out of the programme. */
+    chk('fees: a capped account stops accruing instead of growing without limit', (function () use ($ADM, $set) {
+        $set(['balanceCap' => 1000]);
+        $m = db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-B'");
+        $before = fees_balance($m);
+        $r = fees_accrue_member($m);
+        $after = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-B'"));
+        $ok = $r['skipped'] === 'at_cap' && (int)$after['charged'] === (int)$before['charged']
+            && !empty($after['atCap']);
+        $set(['balanceCap' => 0]);
+        return $ok;
+    })());
+
+    /* "Constant reminder" as literally built is how a programme gets its sender
+       blocked and its guardians to stop reading anything it sends. */
+    chk('fees: the reminder cadence has a floor and a per-family off-switch', (function () use ($ADM, $set) {
+        $r = backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM,
+            'data' => ['enabled' => true, 'remindEnabled' => true, 'remindEveryDays' => 1]]);
+        if ((int)$r['fees']['remindEveryDays'] !== FEES_REMIND_MIN_DAYS) return false;
+        $off = backend_dispatch('admin.fees.remindOff', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A', 'off' => true]);
+        if (empty($off['ok'])) return false;
+        $acc = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A'])['account'];
+        // One family off does not disable reminders for the programme.
+        $stillOn = !empty(fees_settings()['remindEnabled']);
+        backend_dispatch('admin.fees.remindOff', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A', 'off' => false]);
+        $set([]);
+        return $acc['remindOff'] === true && $stillOn;
+    })());
+
+    /* Sorted by what is PAYABLE, not by what is charged: a member whose balance
+       is large only because their training fee has not been written off yet is
+       not the person to telephone. */
+    chk('fees: the arrears list ranks by what is payable, not by what is charged', (function () use ($ADM) {
+        $r = backend_dispatch('admin.fees.arrears', ['requesterId' => $ADM]);
+        if (empty($r['ok'])) return false;
+        $by = []; foreach ($r['arrears'] as $a) $by[$a['memberId']] = $a;
+        $b = $by['NGG-FEE-B'] ?? null;
+        if (!$b) return false;
+        // B is mid-training, so their training fee is fully payable; A has had
+        // theirs written off. Ordering is by payable, descending.
+        $vals = array_map(fn($a) => (int)$a['payable'], $r['arrears']);
+        for ($i = 1; $i < count($vals); $i++) if ($vals[$i] > $vals[$i - 1]) return false;
+        return $b['payable'] > 0 && array_key_exists('guardianPhone', $b) && $r['totalPayable'] > 0;
+    })());
+
+    /* MONEY MUST NOT REACH THE CHILD'S PUBLIC RECORD, and must not gate a gate.
+       A child turned away at a door over their guardian's arrears is the failure
+       this is designed against. */
+    chk('fees: no balance reaches the public boards, and no fee gates a check-in', (function () {
+        $j = json_encode(backend_dispatch('public.status', [])) . json_encode(backend_dispatch('public.volunteer.status', []));
+        foreach (['payable', 'outstanding', 'monthlyDues', 'trainingFee', 'arrears', 'mouAt'] as $k) {
+            if (strpos($j, $k) !== false) return false;
+        }
+        /* Structural, not a promise: the gate and scanner code must not read the
+           ledger at all. Grepped, because a future edit that starts reading it
+           would pass every behavioural test above. */
+        foreach (['api/_lib/domain/summer.php', 'api/public/gate.php', 'api/public/checkin.php'] as $f) {
+            $src = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/' . $f);
+            if ($src !== '' && (strpos($src, 'member_ledger') !== false || strpos($src, 'fees_balance') !== false)) return false;
+        }
+        return true;
+    })());
+
+    chk('fees: every op is gated, and a content-only admin cannot see an account', (function () {
+        /* Its own editor rather than one of the shared fixtures: the suite
+           promotes NGG-2025-0002 to `admin` partway through, so a test written
+           against it would assert on whatever the preceding tests had left —
+           and would have read a real gate as a leak. */
+        $ed = 'NGG-FEE-ED';
+        db_exec('DELETE FROM members WHERE memberId = ?', [$ed]);
+        db_insert('members', ['memberId' => $ed, 'fullName' => 'Fees Editor', 'email' => 'feesed@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'centre' => 'Egbeda',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $caps = member_effective_caps(db_row('SELECT * FROM members WHERE memberId = ?', [$ed]));
+        if (in_array('people', $caps, true)) return false;      // the premise, asserted
+        $bad = true;
+        foreach (['admin.fees.settings.get', 'admin.fees.member', 'admin.fees.arrears', 'admin.fees.accrue'] as $op) {
+            if ((backend_dispatch($op, ['requesterId' => ''])['ok'] ?? false) === true) $bad = false;
+            if ((backend_dispatch($op, ['requesterId' => $ed])['ok'] ?? false) === true) $bad = false;
+        }
+        if ((backend_dispatch('admin.fees.payment', ['requesterId' => $ed,
+            'memberId' => 'NGG-FEE-A', 'amount' => 100])['ok'] ?? false) === true) $bad = false;
+        db_exec('DELETE FROM members WHERE memberId = ?', [$ed]);
+        return $bad;
+    })());
+
+    /* The client's fees block must not have been spliced into the middle of
+       another object. Caught exactly this while wiring it: an extra brace closed
+       `summer` early and silently moved qrList/checkin/attendance onto `fees` —
+       the bundle still PARSED, so nothing flagged it. */
+    chk('fees: wiring the client did not move another namespace onto the fees object', (function () {
+        $src = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/api-client.js');
+        if ($src === '') return false;
+        if (!preg_match('/\n      fees: \{(.*?)\n      \},/s', $src, $m)) return false;
+        // Every route inside `fees` is a fees route, and nothing else is.
+        if (preg_match('#/admin/(?!fees\.php)[a-z-]+\.php#', $m[1])) return false;
+        // …and summer kept the methods that belong to it.
+        return preg_match('/\n      summer: \{(.*?)\n      \},/s', $src, $s2) === 1
+            && strpos($s2[1], "view: 'qr'") !== false
+            && strpos($s2[1], "action: 'checkin'") !== false;
+    })());
+
+    // Tidy up: the ledger rows and the two members are ours.
+    db_exec("DELETE FROM member_ledger WHERE memberId IN ('NGG-FEE-A','NGG-FEE-B')");
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-FEE-A','NGG-FEE-B')");
+    if (is_array($keepFees)) setting_set('fees', $keepFees, 'test');
+    else db_exec("DELETE FROM settings WHERE settingKey = 'fees'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS members (
   parentName VARCHAR(255), parentEmail VARCHAR(200), parentPhone VARCHAR(40), school VARCHAR(255),
   bio TEXT, socials TEXT, totpSecret VARCHAR(64), passwordHash VARCHAR(255) DEFAULT '', notes TEXT,
   anchorCode VARCHAR(12),
+  mouAt VARCHAR(40) DEFAULT '', mouBy VARCHAR(64) DEFAULT '',
+  duesRemindOff TINYINT DEFAULT 0, duesRemindedAt VARCHAR(40) DEFAULT '',
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
   INDEX idx_members_email (email), INDEX idx_members_centre (centre), INDEX idx_members_status (status),
   UNIQUE KEY idx_members_anchorcode (anchorCode)
@@ -1512,3 +1514,27 @@ CREATE TABLE IF NOT EXISTS assessment_results (
 INSERT INTO schema_version (version) VALUES (81) ON DUPLICATE KEY UPDATE version = version;
 
 INSERT INTO schema_version (version) VALUES (82) ON DUPLICATE KEY UPDATE version = version;
+
+CREATE TABLE IF NOT EXISTS member_ledger (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  entryId VARCHAR(64) UNIQUE NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  kind VARCHAR(24) NOT NULL,
+  direction VARCHAR(12) NOT NULL DEFAULT 'charge',
+  amount INT NOT NULL DEFAULT 0,
+  periodKey VARCHAR(32) DEFAULT '',
+  sessionId VARCHAR(64) DEFAULT '',
+  note VARCHAR(255) DEFAULT '',
+  method VARCHAR(32) DEFAULT '',
+  reference VARCHAR(120) DEFAULT '',
+  voidedAt VARCHAR(40) DEFAULT '',
+  voidedBy VARCHAR(64) DEFAULT '',
+  voidReason VARCHAR(255) DEFAULT '',
+  createdAt VARCHAR(40),
+  createdBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY idx_mledg_accrual (memberId, kind, periodKey),
+  INDEX idx_mledg_member (memberId, createdAt),
+  INDEX idx_mledg_kind (kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (83) ON DUPLICATE KEY UPDATE version = version;

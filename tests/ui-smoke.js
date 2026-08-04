@@ -418,6 +418,7 @@ function unzipDocumentXml(buf) {
             : b === 'analyst' ? 'AnalystPane'
             : b === 'analytics' ? 'AnalyticsWorkspace'
             : b === 'assess' ? 'AdminAssessment'
+            : b === 'fees' ? 'AdminFees'
             : b === 'gatedesk' ? 'GatePage'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
@@ -761,6 +762,57 @@ function unzipDocumentXml(buf) {
       address: '12 Ijaiye Rd', area: 'Ijaiye', story: 'A story.', gallery: [], volunteers: [], needs: [],
     } }); };
     props = { slug: 'ijaiye', go: function () {}, setPage: function () {} };
+  } else if (b === 'fees') {
+    /* Two members whose accounts point opposite ways, which is the whole reason
+       the arrears list ranks by PAYABLE rather than by what is charged:
+       Bode carries a bigger CHARGE (his training fee is untouched, he is still
+       in training) but Ada is the one further into service, so more of hers has
+       been earned off. Rank by charged and the wrong person is at the top of the
+       call list. */
+    var FEECFG = { enabled: true, currency: 'NGN', membershipFee: 5000, monthlyDues: 1000,
+                   trainingFee: 75000, trainingMonths: 18, serviceMonths: 18,
+                   balanceCap: 500000, remindEnabled: true, remindEveryDays: 14, remindMinBalance: 1 };
+    window.__feesSaved = [];
+    window.NGGApi.admin.fees = {
+      settings: function () { return Promise.resolve({ fees: FEECFG, defaults: FEECFG, amountMax: 10000000, remindMinDays: 7 }); },
+      settingsSet: function (d) { window.__feesSaved.push(d); return Promise.resolve({ fees: Object.assign({}, d, { remindEveryDays: Math.max(7, d.remindEveryDays || 14) }) }); },
+      arrears: function () {
+        return Promise.resolve({
+          totalPayable: 96000, matched: 2, truncated: false,
+          arrears: [
+            { memberId: 'NGG-2026-0001', fullName: 'Ada Obi', centre: 'Egbeda', payable: 62000,
+              outstanding: 80000, trainingEarned: 18000, atCap: false, phase: 'service', remindOff: false, guardianPhone: '08031110001' },
+            { memberId: 'NGG-2026-0002', fullName: 'Bode Eze', centre: 'Ijaiye', payable: 34000,
+              outstanding: 34000, trainingEarned: 0, atCap: true, phase: 'training', remindOff: true, guardianPhone: '08031110002' },
+          ], settings: FEECFG });
+      },
+      member: function (id) {
+        return Promise.resolve({ account: {
+          memberId: id, fullName: 'Ada Obi', centre: 'Egbeda', status: 'active',
+          guardian: { name: 'Mrs Obi', phone: '08031110001', email: 'obi@example.com' },
+          remindOff: false, settings: FEECFG, mouAt: '',
+          balance: { charged: 101000, credited: 21000, outstanding: 80000, payable: 62000,
+                     trainingCharged: 75000, trainingWrittenOff: 0, trainingEarned: 18000,
+                     byKind: { membership: 5000, dues: 21000, training: 75000, payment: 21000 },
+                     cap: 500000, atCap: false, mouAt: '',
+                     tenure: { start: '2024-09-01', months: 22, phase: 'service', trainingMonths: 18,
+                               serviceMonths: 18, servedMonths: 4, complete: false } },
+          entries: [
+            { entryId: 'FEE-1', kind: 'payment', direction: 'credit', amount: 21000, periodKey: 'payment:x',
+              sessionId: '', note: '', method: 'transfer', reference: 'TRF-9', createdAt: '2026-07-02T09:00:00Z', void: false, voidReason: '' },
+            { entryId: 'FEE-2', kind: 'training', direction: 'charge', amount: 75000, periodKey: 'SES-2026',
+              sessionId: 'SES-2026', note: 'Training fee — 2026 session', createdAt: '2026-06-01T09:00:00Z', void: false, voidReason: '' },
+            { entryId: 'FEE-3', kind: 'dues', direction: 'charge', amount: 1000, periodKey: '2026-06',
+              sessionId: '', note: 'Monthly dues 2026-06', createdAt: '2026-06-01T09:00:00Z', void: true, voidReason: 'charged twice' },
+          ] } });
+      },
+      payment: function () { return Promise.resolve({ ok: true, entryId: 'FEE-9' }); },
+      void: function () { return Promise.resolve({ ok: true }); },
+      mou: function () { return Promise.resolve({ ok: true, writtenOff: 57000 }); },
+      remindOff: function () { return Promise.resolve({ ok: true }); },
+      accrue: function () { return Promise.resolve({ accrued: { members: 2, membership: 0, dues: 2, training: 0, atCap: 1, noJoinDate: 0 } }); },
+    };
+    props = {};
   } else if (b === 'roster') {
     window.__consentCalls = [];
     var KIDS = [
@@ -4477,6 +4529,88 @@ function unzipDocumentXml(buf) {
     })();
     await rvP.close(); await rvT.close();
     try { fs.unlinkSync(path.join(ROOT, 'tests', '_apply_fixture.html')); } catch (_) {}
+
+    /* ── Dues & fees ───────────────────────────────────────────────────────
+     * Three admin-defined amounts and a ledger. Two things checked here that
+     * matter more than the table rendering.
+     *
+     * THE MICROCOPY, and specifically that it is PLAYED LOW. It has to be
+     * present — a family should not be surprised by a ₦75,000 line — and it has
+     * to be quiet: no heading, no bold, smaller than the label it sits under. It
+     * also has to state the CONDITION rather than promise the outcome, because a
+     * member who leaves before the MOU is complete still owes the balance, and
+     * copy that shouted "fully refunded" would have promised them otherwise.
+     *
+     * And that arrears rank by what is PAYABLE. Bode's charge is untouched
+     * because he is still in training; Ada is further into service so more of
+     * hers is earned off. Rank by what is charged and the wrong person is at the
+     * top of the call list.
+     */
+    const fz = await browser.newPage();
+    const fzErrs = [];
+    fz.on('pageerror', e => fzErrs.push(String(e.message)));
+    await fz.goto(BASE + '/tests/_boards_fixture.html?board=fees&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await fz.waitForTimeout(700);
+    ok('the fees screen mounts with no script error', fzErrs.length === 0);
+    if (fzErrs.length) console.error('       ', fzErrs.slice(0, 3).join(' | '));
+
+    const fzArr = await fz.evaluate(() => Array.from(document.querySelectorAll('.admin-table tbody tr'))
+      .map(r => r.innerText.replace(/\s+/g, ' ')));
+    ok('arrears list both members with what is payable, not what is charged',
+      fzArr.length === 2 && /Ada Obi/.test(fzArr[0]) && /₦62,000/.test(fzArr[0]) && /Bode Eze/.test(fzArr[1]));
+    /* The training fee already earned off is shown as a deduction on the row, so
+       a coordinator can see WHY the payable figure is below the charge. */
+    ok('…showing how much training fee has been earned off',
+      /18,000 earned off/.test(fzArr[0]) && /—/.test(fzArr[1]));
+    ok('…and flagging the account that has hit the ceiling',
+      /at the ceiling/i.test(fzArr[1]) && /reminders off/i.test(fzArr[1]));
+
+    /* Through `step`, for the reason the review desk block now is: an un-caught
+       click rejection here would throw past every later block in this file. I
+       reintroduced exactly that while writing this and it cost 110 assertions
+       before the helper caught it. */
+    const fzTab = await step('the fees screen has an Amounts tab to open',
+                             () => fz.getByRole('button', { name: /Amounts/ }).click());
+    if (fzTab) {
+    await fz.waitForTimeout(250);
+    const fzSet = await fz.evaluate(() => document.body.innerText);
+    ok('every amount is on the settings tab, 75k among them as a default',
+      /Training fee, per session/i.test(fzSet) && /Membership fee/i.test(fzSet) && /Monthly dues/i.test(fzSet));
+    /* THE MICROCOPY. Present, and saying the thing. */
+    const micro = await fz.evaluate(() => {
+      const els = Array.from(document.querySelectorAll('div'))
+        .filter(d => /Written off in full once the MOU is accomplished/i.test(d.textContent || '') && d.children.length === 0);
+      if (!els.length) return null;
+      const el = els[0], cs = getComputedStyle(el);
+      /* Compared against the field's EXPLANATORY line, not the uppercase mono
+         eyebrow above it — those are different typographic registers, and an
+         eyebrow being small does not make a line below it loud. */
+      const hint = el.parentElement ? el.parentElement.querySelector('[data-fee-hint]') : null;
+      return { text: el.textContent.trim(), size: parseFloat(cs.fontSize),
+               weight: String(cs.fontWeight), style: cs.fontStyle, tag: el.tagName,
+               hintSize: hint ? parseFloat(getComputedStyle(hint).fontSize) : null };
+    });
+    ok('the training fee says it is written off once the MOU is accomplished', micro !== null);
+    /* PLAYED LOW, checked as rendered rather than by reading the source: not a
+       heading, not bold, and no bigger than the label above it. A future edit
+       that promotes this line to a selling point fails here. */
+    ok('…played low — not a heading, not bold, quieter than the line above it',
+      micro !== null && !/^H[1-6]$/.test(micro.tag)
+      && parseInt(micro.weight, 10) <= 400
+      && micro.hintSize !== null && micro.size < micro.hintSize);
+    /* Stating the condition, not promising the outcome. A member who leaves
+       early owes it, so "refunded" and "guaranteed" would be false. */
+    ok('…stating the condition rather than promising a refund',
+      micro !== null && /once the MOU/i.test(micro.text)
+      && !/refund/i.test(fzSet) && !/guarantee/i.test(fzSet));
+    /* The ceiling is explained where it is set, because "0" silently meaning
+       "no limit" is the kind of field somebody zeroes to be tidy. */
+    ok('…and the ceiling explains what 0 means before somebody types it',
+      /0 means no ceiling/i.test(fzSet));
+    ok('…and the reminder floor is stated as a number, not discovered on save',
+      /minimum is 7/i.test(fzSet));
+    }
+    await fz.close();
 
     /* ── The Mentor Portal's door ──────────────────────────────────────────
      * Reported from the field: "I'm unable to login to the mentorship page.
