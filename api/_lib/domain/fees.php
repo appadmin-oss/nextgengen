@@ -95,8 +95,48 @@ const FEES_DEFAULTS = [
     'upratePct' => 0,
     'uprateEveryMonths' => 12,
     'uprateLastAt' => '',
+    /* When the "a review is due" nudge was last journalled. Not a decision and
+       not shown as one — it exists so the reminder cron can say it once a month
+       instead of every fifteen minutes. Written only by `fees_uprate_note()`. */
+    'uprateNotedAt' => '',
 ];
+/** ── Bounds, all of them named ────────────────────────────────────────────
+ *
+ * Every number this file enforces lives here rather than inline at the place it
+ * bites, and the ones a screen has to SAY are handed to the client by
+ * `admin.fees.settings.get` instead of being retyped in the UI. Two reasons,
+ * both learned here: a floor written as `max(7, …)` in one function and as
+ * `|| 7` in a React component drifts the day somebody changes one of them, and
+ * a bound the interface cannot read is a bound it has to hardcode a copy of.
+ *
+ * These are BOUNDS, not policy. The amounts, the cadence and the phase lengths
+ * are all admin-set in `FEES_DEFAULTS` above; what follows is only how far a
+ * form may move them and how much work one pass may do.
+ */
 const FEES_REMIND_MIN_DAYS = 7;
+/** A year. Past this, "remind them" is not what the setting means any more. */
+const FEES_REMIND_MAX_DAYS = 365;
+/** How far apart an uprate interval may be set, in months. */
+const FEES_UPRATE_EVERY_MIN = 1;
+const FEES_UPRATE_EVERY_MAX = 120;
+/** While an uprate is overdue, journal it at most this often — the cron ticks
+ *  every 15 minutes and a nudge that repeats per tick is noise, not a nudge. */
+const FEES_UPRATE_NOTE_DAYS = 30;
+/** Batch sizes. Every one of these is a bound on how much a single press or a
+ *  single cron tick may do, so a mis-click cannot walk an entire roster. */
+const FEES_SCAN_MAX = 2000;          // rows one pass may read, whatever is asked
+const FEES_ACCRUE_BATCH = 500;       // default members per accrual press
+const FEES_REMIND_BATCH = 50;        // default sends per press
+const FEES_REMIND_BATCH_MAX = 200;   // ceiling on one press, however it is asked
+const FEES_REMIND_CRON_BATCH = 25;   // per cron tick: small, because it repeats
+const FEES_CANDIDATE_MAX = 200;      // reminder candidates gathered in one pass
+const FEES_ARREARS_PAGE = 200;       // arrears rows returned by default
+const FEES_ARREARS_PAGE_MAX = 1000;  // …and at most
+/** Free text stored on a ledger row: a payment reference, not a note field. */
+const FEES_REF_MAX = 120;
+/** Months one accrual may reach back over. A row imported with a join date of
+ *  1970 must not post six hundred charges. */
+const FEES_DUE_MONTHS_MAX = 120;
 /** A ceiling on one uprate. Anything above this is a repricing decision that
  *  wants a human typing the new figure, not a percentage applied by a cron. */
 const FEES_UPRATE_MAX_PCT = 50;
@@ -109,6 +149,31 @@ const FEES_UPRATE_ROUND = 10;
  *  undo the protection it exists to provide. */
 const FEES_UPRATE_FIELDS = ['membershipFee', 'monthlyDues', 'trainingFee'];
 
+/**
+ * The bounds, in the shape the client reads them.
+ *
+ * One function so there is exactly one list. The UI takes its input maxima, the
+ * numbers it states in microcopy ("the minimum is 7") and the batch sizes it
+ * asks for from here — never from a literal of its own.
+ */
+function fees_bounds(): array {
+    return [
+        'amountMax'      => FEES_AMOUNT_MAX,
+        'phaseMin'       => FEES_PHASE_MIN,
+        'phaseMax'       => FEES_PHASE_MAX,
+        'remindMinDays'  => FEES_REMIND_MIN_DAYS,
+        'remindMaxDays'  => FEES_REMIND_MAX_DAYS,
+        'uprateMaxPct'   => FEES_UPRATE_MAX_PCT,
+        'uprateEveryMin' => FEES_UPRATE_EVERY_MIN,
+        'uprateEveryMax' => FEES_UPRATE_EVERY_MAX,
+        'uprateRound'    => FEES_UPRATE_ROUND,
+        'uprateFields'   => FEES_UPRATE_FIELDS,
+        'accrueBatch'    => FEES_ACCRUE_BATCH,
+        'remindBatch'    => FEES_REMIND_BATCH_MAX,
+        'arrearsPage'    => FEES_ARREARS_PAGE,
+    ];
+}
+
 /** The charge and credit kinds. `direction` is stored, but these decide it, so a
  *  caller cannot post a payment that increases what is owed. */
 const FEES_CHARGE_KINDS = ['membership', 'dues', 'training', 'fine', 'adjustment'];
@@ -117,6 +182,18 @@ const FEES_CREDIT_KINDS = ['payment', 'writeoff', 'waiver'];
 function fees_settings(): array {
     $cfg = setting_get('fees');
     return (is_array($cfg) ? $cfg : []) + FEES_DEFAULTS;
+}
+
+/** Currency symbols by the code the setting stores. One entry, because the
+ *  programme bills in naira and `currency` is forced to NGN on save — but a map
+ *  rather than a literal, so the symbol lives in exactly one place instead of
+ *  being retyped into every email and every column that shows money. */
+const FEES_CURRENCY_SYMBOL = ['NGN' => '₦'];
+
+/** Money as a family reads it. Whole units — nothing here deals in kobo. */
+function fees_money_text($n, ?array $cfg = null): string {
+    $code = (string)(($cfg ?? fees_settings())['currency'] ?? FEES_DEFAULTS['currency']);
+    return (FEES_CURRENCY_SYMBOL[$code] ?? ($code . ' ')) . number_format((float)$n);
 }
 
 function fees_money($v, int $fallback = 0): int {
@@ -140,16 +217,20 @@ function fees_settings_save(array $in, string $by): array {
         'remindEnabled'  => $bool('remindEnabled'),
         /* Floored, not just validated. An admin who types 1 gets the floor and is
            told, rather than getting a daily chase that nobody asked to defend. */
-        'remindEveryDays' => max(FEES_REMIND_MIN_DAYS, min(365, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']) ?: (int)$cur['remindEveryDays'])),
+        'remindEveryDays' => max(FEES_REMIND_MIN_DAYS, min(FEES_REMIND_MAX_DAYS, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']) ?: (int)$cur['remindEveryDays'])),
         'remindMinBalance' => fees_money($in['remindMinBalance'] ?? null, (int)$cur['remindMinBalance']),
         /* Uprating. `upratePct` of 0 switches it off, which is the default —
            raising what families are charged is not something to inherit. */
         'upratePct' => max(0, min(FEES_UPRATE_MAX_PCT, (int)($in['upratePct'] ?? $cur['upratePct']))),
-        'uprateEveryMonths' => max(1, min(120, (int)($in['uprateEveryMonths'] ?? $cur['uprateEveryMonths']) ?: 12)),
+        'uprateEveryMonths' => max(FEES_UPRATE_EVERY_MIN, min(FEES_UPRATE_EVERY_MAX,
+            (int)($in['uprateEveryMonths'] ?? $cur['uprateEveryMonths']) ?: (int)FEES_DEFAULTS['uprateEveryMonths'])),
         /* Carried, never settable from the form. It records when an uprate was
            APPLIED, and a field an admin can edit is a field that can be used to
            apply one twice in a year. Only `fees_uprate_apply()` writes it. */
         'uprateLastAt' => (string)($cur['uprateLastAt'] ?? ''),
+        /* Carried for the same reason: it is bookkeeping for the nudge, not a
+           setting, and clearing it from a form would restart the nagging. */
+        'uprateNotedAt' => (string)($cur['uprateNotedAt'] ?? ''),
     ];
     setting_set('fees', $clean, $by);
     audit('fees.settings.save', $by, 'fees', [
@@ -173,7 +254,7 @@ function fees_settings_save(array $in, string $by): array {
 function fees_uprate_preview(?array $cfg = null, ?string $asOf = null): array {
     $cfg = $cfg ?? fees_settings();
     $pct = (int)($cfg['upratePct'] ?? 0);
-    $every = max(1, (int)($cfg['uprateEveryMonths'] ?? 12));
+    $every = max(FEES_UPRATE_EVERY_MIN, (int)($cfg['uprateEveryMonths'] ?? FEES_DEFAULTS['uprateEveryMonths']));
     $last = substr((string)($cfg['uprateLastAt'] ?? ''), 0, 10);
     $today = $asOf ?? gmdate('Y-m-d');
     /* Never uprated: due once the interval has passed since it was switched on.
@@ -223,6 +304,48 @@ function fees_uprate_apply(string $by, ?string $asOf = null): array {
 }
 
 /**
+ * Say out loud that a review is due. Journals; never applies.
+ *
+ * The gap this closes: an uprate that is only visible on the tab where it is set
+ * is an uprate nobody performs, because nothing tells you to go and look. So the
+ * reminder cron notes it in the ops journal, where the screen that already
+ * exists for "things needing a human" will show it.
+ *
+ * Two properties, and the tests drive both. It CANNOT apply anything — a nudge
+ * that could raise prices from a cron would be exactly the automatic uprate this
+ * design refuses. And it is bounded to once every `FEES_UPRATE_NOTE_DAYS`: the
+ * cron ticks every fifteen minutes, so an unbounded nudge is not a reminder, it
+ * is a fault log filling up with a to-do item.
+ */
+function fees_uprate_note(?string $asOf = null): array {
+    $cfg = fees_settings();
+    if (empty($cfg['enabled'])) return ['ok' => false, 'error' => 'fees_off'];
+    $pv = fees_uprate_preview($cfg, $asOf);
+    if (empty($pv['enabled'])) return ['ok' => false, 'error' => 'uprate_off'];
+    if (empty($pv['due']))     return ['ok' => false, 'error' => 'not_due'];
+    if (!$pv['changes'])       return ['ok' => false, 'error' => 'nothing_to_change'];
+    $today = $asOf ?? gmdate('Y-m-d');
+    $noted = substr((string)($cfg['uprateNotedAt'] ?? ''), 0, 10);
+    if ($noted !== '' && fees_days_between($noted, $today) < FEES_UPRATE_NOTE_DAYS) {
+        return ['ok' => false, 'error' => 'noted_recently'];
+    }
+    /* Kind `warn`, not `error`: nothing is broken. Somebody has a decision to
+       make. The message is the SIGNATURE ops_events rolls up on, so it stays
+       stable — the changing figures go in the detail, or one drifting month
+       count would mint a new row every time it was noted. */
+    if (function_exists('ops_record')) {
+        ops_record('warn', 'fees.uprate',
+            'Fee amounts are due their ' . $pv['pct'] . '% review',
+            count($pv['changes']) . ' amount(s) would change · last raised '
+            . ($pv['lastAt'] !== '' ? substr($pv['lastAt'], 0, 10) : 'never'));
+    }
+    $next = $cfg;
+    $next['uprateNotedAt'] = now_iso();
+    setting_set('fees', $next, 'cron');
+    return ['ok' => true, 'noted' => count($pv['changes']), 'pct' => $pv['pct']];
+}
+
+/**
  * Where a member is in the three years.
  *
  * Measured from `joinDate` — falling back to `createdAt`, because a row imported
@@ -264,10 +387,18 @@ function fees_months_between(string $a, string $b): int {
     return max(0, $m);
 }
 
+/** Whole days between two dates, floored at zero. Used only to space the uprate
+ *  nudge, where months are too coarse and a negative would mean "nudge now". */
+function fees_days_between(string $a, string $b): int {
+    $x = strtotime($a . ' 00:00:00 UTC'); $y = strtotime($b . ' 00:00:00 UTC');
+    if ($x === false || $y === false || $y <= $x) return 0;
+    return (int)floor(($y - $x) / 86400);
+}
+
 /** The YYYY-MM keys from a member's start month up to and including `$upto`,
  *  bounded so an ancient or malformed join date cannot generate ten thousand
  *  charges in one accrual run. */
-function fees_due_months(string $start, string $upto, int $max = 120): array {
+function fees_due_months(string $start, string $upto, int $max = FEES_DUE_MONTHS_MAX): array {
     $out = [];
     $t = strtotime(substr($start, 0, 8) . '01 00:00:00 UTC');
     $end = substr($upto, 0, 7);
@@ -311,7 +442,7 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
         'sessionId' => (string)($opts['sessionId'] ?? ''),
         'note' => substr((string)($opts['note'] ?? ''), 0, 240),
         'method' => substr((string)($opts['method'] ?? ''), 0, 32),
-        'reference' => substr((string)($opts['reference'] ?? ''), 0, 120),
+        'reference' => substr((string)($opts['reference'] ?? ''), 0, FEES_REF_MAX),
         'createdAt' => now_iso(), 'createdBy' => (string)($opts['by'] ?? ''),
     ];
     try {
@@ -462,7 +593,7 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
  * it would be demanding money the programme has already decided they will not
  * owe. This distinction is the whole reason `payable` exists.
  */
-function fees_reminder_candidates(?array $cfg = null, int $limit = 200): array {
+function fees_reminder_candidates(?array $cfg = null, int $limit = FEES_CANDIDATE_MAX): array {
     $cfg = $cfg ?? fees_settings();
     $out = ['due' => [], 'skipped' => ['off' => 0, 'optedOut' => 0, 'nothingPayable' => 0,
                                        'underMinimum' => 0, 'tooSoon' => 0, 'noEmail' => 0]];
@@ -470,7 +601,7 @@ function fees_reminder_candidates(?array $cfg = null, int $limit = 200): array {
     $everyDays = max(FEES_REMIND_MIN_DAYS, (int)$cfg['remindEveryDays']);
     $minBal = max(1, (int)$cfg['remindMinBalance']);
     $now = time();
-    foreach (db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . max(1, min(2000, $limit * 5))) as $m) {
+    foreach (db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . max(1, min(FEES_SCAN_MAX, $limit * 5))) as $m) {
         if (count($out['due']) >= $limit) break;
         if ((int)($m['duesRemindOff'] ?? 0) === 1) { $out['skipped']['optedOut']++; continue; }
         $bal = fees_balance($m, $cfg);
@@ -507,7 +638,7 @@ function fees_reminder_send(array $cand, ?array $cfg = null): bool {
     $m = $cand['row'];
     $first = esc_html(explode(' ', trim((string)($m['fullName'] ?? '')))[0] ?: 'your child');
     $bal = fees_balance($m, $cfg);
-    $money = fn(int $n) => '₦' . number_format($n);
+    $money = fn(int $n) => fees_money_text($n, $cfg);
     $lines = [];
     foreach (['membership' => 'Membership fee', 'dues' => 'Monthly dues', 'training' => 'Training fee', 'fine' => 'Fines'] as $k => $label) {
         $v = (int)($bal['byKind'][$k] ?? 0);
@@ -543,7 +674,7 @@ function fees_reminder_send(array $cand, ?array $cfg = null): bool {
  * The cron entry point. Bounded per run, and safe to call as often as the cron
  * fires — the per-member `everyDays` gate is what decides, not the schedule.
  */
-function fees_reminders_run(int $limit = 50): array {
+function fees_reminders_run(int $limit = FEES_REMIND_BATCH): array {
     $cfg = fees_settings();
     $c = fees_reminder_candidates($cfg, $limit);
     $sent = 0; $failed = 0;
@@ -556,8 +687,14 @@ function fees_reminders_run(int $limit = 50): array {
 
 function admin_fees_settings_get(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    /* Every bound the screen has to state or enforce goes with the settings, so
+       the interface never carries a second copy of a number this file owns. A
+       floor the UI hardcodes is a floor that disagrees with the server the day
+       one of them changes, and the disagreement shows up as an admin being told
+       one minimum and given another. */
     return ['ok' => true, 'fees' => fees_settings(), 'defaults' => FEES_DEFAULTS,
-            'amountMax' => FEES_AMOUNT_MAX, 'remindMinDays' => FEES_REMIND_MIN_DAYS];
+            'amountMax' => FEES_AMOUNT_MAX, 'remindMinDays' => FEES_REMIND_MIN_DAYS,
+            'bounds' => fees_bounds()];
 }
 
 function admin_fees_settings_set(array $p): array {
@@ -681,7 +818,7 @@ function admin_fees_accrue(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $cfg = fees_settings();
     if (empty($cfg['enabled'])) return ['ok' => false, 'error' => 'fees_disabled'];
-    $limit = max(1, min(2000, (int)($p['limit'] ?? 500)));
+    $limit = max(1, min(FEES_SCAN_MAX, (int)($p['limit'] ?? FEES_ACCRUE_BATCH)));
     $rows = db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . $limit);
     $tot = ['members' => 0, 'membership' => 0, 'dues' => 0, 'training' => 0, 'atCap' => 0, 'noJoinDate' => 0];
     foreach ($rows as $m) {
@@ -706,7 +843,7 @@ function admin_fees_accrue(array $p): array {
 function admin_fees_remind_preview(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $cfg = fees_settings();
-    $c = fees_reminder_candidates($cfg, 200);
+    $c = fees_reminder_candidates($cfg, FEES_CANDIDATE_MAX);
     return ['ok' => true, 'preview' => [
         'due' => array_map(fn($x) => ['memberId' => $x['memberId'], 'fullName' => $x['fullName'],
                                       'payable' => $x['payable'], 'lastRemindedAt' => $x['lastRemindedAt']], $c['due']),
@@ -723,7 +860,7 @@ function admin_fees_uprate_preview(array $p): array {
             /* Named so the screen can say what is NOT included. Fines live in the
                policy settings and are not reachable from here; an admin who
                expects them to move with the dues should be told they do not. */
-            'fields' => FEES_UPRATE_FIELDS];
+            'fields' => FEES_UPRATE_FIELDS, 'bounds' => fees_bounds()];
 }
 
 /** Apply it. Settings only — never a balance already accrued. */
@@ -739,7 +876,7 @@ function admin_fees_remind_run(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $cfg = fees_settings();
     if (empty($cfg['enabled']) || empty($cfg['remindEnabled'])) return ['ok' => false, 'error' => 'reminders_disabled'];
-    $r = fees_reminders_run(max(1, min(200, (int)($p['limit'] ?? 50))));
+    $r = fees_reminders_run(max(1, min(FEES_REMIND_BATCH_MAX, (int)($p['limit'] ?? FEES_REMIND_BATCH))));
     audit('fees.remind.run', (string)($g['requester']['memberId'] ?? ''), 'fees', $r, (string)($p['ip'] ?? ''));
     return ['ok' => true, 'result' => $r];
 }
@@ -754,7 +891,7 @@ function admin_fees_remind_run(array $p): array {
 function admin_fees_arrears(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $cfg = fees_settings();
-    $limit = max(1, min(1000, (int)($p['limit'] ?? 200)));
+    $limit = max(1, min(FEES_ARREARS_PAGE_MAX, (int)($p['limit'] ?? FEES_ARREARS_PAGE)));
     $owedBy = [];
     foreach (db_all("SELECT memberId, direction, amount, kind FROM member_ledger WHERE voidedAt = '' OR voidedAt IS NULL") as $e) {
         $id = (string)$e['memberId'];

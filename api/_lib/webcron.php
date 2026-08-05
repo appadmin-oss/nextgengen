@@ -213,8 +213,18 @@ function web_cron_reminders(): void {
      * it — those are time-critical in a way an account balance is not: a stalled
      * parent verification blocks a child from attending. */
     if (function_exists('fees_reminders_run')) {
-        try { fees_reminders_run(25); }
+        try { fees_reminders_run(FEES_REMIND_CRON_BATCH); }
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'fees.reminders', $e->getMessage()); }
+    }
+
+    /* And note — never apply — an overdue amounts review. An uprate that is only
+     * visible on the tab where it is set is an uprate nobody performs, because
+     * nothing tells you to look. This journals it as a `warn` so the ops screen
+     * surfaces it, bounded to once a month; raising the amounts stays a human
+     * press. Guarded separately: a nudge must not cost the sends above. */
+    if (function_exists('fees_uprate_note')) {
+        try { fees_uprate_note(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'fees.uprate', $e->getMessage()); }
     }
 
     $pending = db_all("SELECT * FROM summer_students WHERE regStatus = 'parent_pending' ORDER BY id ASC LIMIT 200");

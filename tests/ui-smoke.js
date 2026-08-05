@@ -775,7 +775,15 @@ function unzipDocumentXml(buf) {
                    upratePct: 15, uprateEveryMonths: 12, uprateLastAt: '' };
     window.__feesSaved = [];
     window.NGGApi.admin.fees = {
-      settings: function () { return Promise.resolve({ fees: FEECFG, defaults: FEECFG, amountMax: 10000000, remindMinDays: 7 }); },
+      /* The bounds travel with the settings, exactly as the server sends them —
+         the screen has no copy of any of these numbers, so a fixture that omits
+         them renders nothing, which is the point. */
+      settings: function () { return Promise.resolve({ fees: FEECFG, defaults: FEECFG,
+        amountMax: 10000000, remindMinDays: 7,
+        bounds: { amountMax: 10000000, phaseMin: 1, phaseMax: 120, remindMinDays: 7, remindMaxDays: 365,
+                  uprateMaxPct: 50, uprateEveryMin: 1, uprateEveryMax: 120, uprateRound: 10,
+                  uprateFields: ['membershipFee', 'monthlyDues', 'trainingFee'],
+                  accrueBatch: 500, remindBatch: 200, arrearsPage: 200 } }); },
       settingsSet: function (d) { window.__feesSaved.push(d); return Promise.resolve({ fees: Object.assign({}, d, { remindEveryDays: Math.max(7, d.remindEveryDays || 14) }) }); },
       arrears: function () {
         return Promise.resolve({
@@ -4702,8 +4710,26 @@ function unzipDocumentXml(buf) {
        click rejection here would throw past every later block in this file. I
        reintroduced exactly that while writing this and it cost 110 assertions
        before the helper caught it. */
+    /* ── The nudge, on the screen ──────────────────────────────────────────
+       An overdue review that is only visible once you open the tab where it is
+       set is a review nobody performs. So it is announced from the tab bar,
+       reachable from wherever you already are. */
+    const fzNudge = await fz.evaluate(() => {
+      const b = Array.from(document.querySelectorAll('button')).find(x => /review due/i.test(x.textContent || ''));
+      return { text: b ? b.textContent.replace(/\s+/g, ' ').trim() : null,
+               dot: !!document.querySelector('[data-uprate-due]') };
+    });
+    ok('an overdue amounts review is announced from the tab bar, not only inside it',
+      fzNudge.text !== null && /13 months ago/.test(fzNudge.text) && fzNudge.dot === true);
+    if (fzNudge.text !== null && await step('…and the nudge itself opens the Amounts tab',
+                                            () => fz.getByRole('button', { name: /review due/i }).click())) {
+      await fz.waitForTimeout(250);
+      ok('…landing on the tab where the amounts are set',
+        /Keeping up with inflation/i.test(await fz.evaluate(() => document.body.innerText)));
+    }
+
     const fzTab = await step('the fees screen has an Amounts tab to open',
-                             () => fz.getByRole('button', { name: /Amounts/ }).click());
+                             () => fz.getByRole('button', { name: /^Amounts$/ }).click());
     if (fzTab) {
     await fz.waitForTimeout(250);
     const fzSet = await fz.evaluate(() => document.body.innerText);
@@ -4768,6 +4794,26 @@ function unzipDocumentXml(buf) {
     });
     ok('…and the proposal never offers to raise the debt ceiling',
       upRows !== null && upRows.length === 3 && !/ceiling|Stop charging/i.test(upRows.join(' ')));
+    /* Stated from the server's bounds rather than a sentence in the component —
+       both the list of what moves and the rounding step. */
+    ok('…stating what moves and the rounding step, from the server\'s own bounds',
+      /membership fee, monthly dues, training fee move/i.test(fzSet)
+      && /nearest ₦10/.test(fzSet));
+    /* The input cannot offer what the save would clamp: same number, one owner. */
+    const fzMax = await fz.evaluate(() => {
+      const out = {};
+      Array.from(document.querySelectorAll('label')).forEach(l => {
+        const t = (l.innerText || '').toLowerCase(), i = l.querySelector('input[type=number]');
+        if (!i) return;
+        if (t.indexOf('raise amounts by') === 0) out.pct = i.getAttribute('max');
+        if (t.indexOf('no more often than every') === 0) out.every = out.every || i.getAttribute('max');
+        if (t.indexOf('membership fee') === 0) out.money = i.getAttribute('max');
+      });
+      return out;
+    });
+    ok('…and every input carries the server\'s maximum, not one of its own',
+      fzMax.pct === '50' && fzMax.money === '10000000' && fzMax.every !== null);
+
     /* Arriving on the tab has applied nothing. Looking is not doing. */
     ok('…and reading the proposal raises nothing',
       (await fz.evaluate(() => window.__uprateApplies || 0)) === 0

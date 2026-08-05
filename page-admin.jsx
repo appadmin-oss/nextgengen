@@ -4908,7 +4908,8 @@ function AdminDonations() {
   const [err, setErr] = React.useState("");
   const load = () => NGGApi.admin.donations().then(setD).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
-  const naira = (n) => "₦" + (n || 0).toLocaleString();
+  /* Uses the module's shared `naira` — this had a local copy of the same
+     formatter, which is one more place the currency would have to be changed. */
   const rows = d ? d.donations : null;
   return (
     <div className="admin-section">
@@ -6559,7 +6560,11 @@ function AdminFees() {
   const [tab, setTab] = React.useState("arrears");   // arrears | settings
   const [cfg, setCfg] = React.useState(null);
   const [orig, setOrig] = React.useState("");
-  const [meta, setMeta] = React.useState({ defaults: {}, remindMinDays: 7 });
+  /* `bounds` comes from the server with the settings — every maximum this form
+     enforces and every number it states. Nothing here keeps its own copy: a
+     floor written twice is a floor that disagrees with itself the day one of the
+     two changes, and the admin is the one who finds out. */
+  const [meta, setMeta] = React.useState({ defaults: {}, bounds: null });
   const [arr, setArr] = React.useState(null);
   const [acct, setAcct] = React.useState(null);
   /* The preview is loaded and shown BEFORE the send, always. Sixty messages to
@@ -6572,9 +6577,14 @@ function AdminFees() {
   const [up, setUp] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  /* The server's bounds, under a short name because every number on this screen
+     comes through here. Empty until the settings land; the render waits for it
+     rather than guessing, since a form that guesses its own maximum is the
+     hardcoded copy this is meant to remove. */
+  const B = meta.bounds || {};
 
   const loadCfg = () => NGGApi.admin.fees.settings()
-    .then(r => { setCfg(r.fees); setOrig(JSON.stringify(r.fees)); setMeta({ defaults: r.defaults || {}, remindMinDays: r.remindMinDays || 7 }); setErr(""); })
+    .then(r => { setCfg(r.fees); setOrig(JSON.stringify(r.fees)); setMeta({ defaults: r.defaults || {}, bounds: r.bounds || null }); setErr(""); })
     .catch(e => setErr(e.code || e.message));
   const loadArr = () => NGGApi.admin.fees.arrears()
     .then(setArr).catch(e => setErr(e.code || e.message));
@@ -6659,11 +6669,11 @@ function AdminFees() {
       title: "Send " + n + " reminder" + (n === 1 ? "" : "s") + "?",
       body: "This emails " + n + " guardian" + (n === 1 ? "" : "s") + " about their outstanding balance. "
           + "It cannot be recalled. Nobody will be reminded again for at least "
-          + (prev.everyDays || 7) + " days.",
+          + prev.everyDays + " days.",
       cta: "Send " + n }))) return;
     setBusy(true);
     try {
-      const r = await NGGApi.admin.fees.remindRun(200);
+      const r = await NGGApi.admin.fees.remindRun(B.remindBatch);
       const res = r.result || {};
       toast.success(res.sent + " sent" + (res.failed ? " · " + res.failed + " could not be delivered" : "") + ".");
       loadPreview(); loadArr();
@@ -6674,7 +6684,7 @@ function AdminFees() {
       body: "Adds any membership fee, monthly dues and session training fees that have not been charged yet. Safe to run twice — it cannot charge the same month twice.",
       cta: "Run" }))) return;
     setBusy(true);
-    try { const r = await NGGApi.admin.fees.accrue(500);
+    try { const r = await NGGApi.admin.fees.accrue(B.accrueBatch);
           const a = r.accrued;
           toast.success([a.dues + " dues", a.training + " training", a.membership + " joining"].join(" · ") + " charged across " + a.members + " members.");
           if (a.atCap) toast.error(a.atCap + " account(s) are at the ceiling and were not charged further.");
@@ -6683,12 +6693,22 @@ function AdminFees() {
   };
 
   if (err) return <div className="admin-empty" style={{ color: "var(--coral)" }}>{err}</div>;
-  if (!cfg) return <div className="admin-empty">Loading…</div>;
+  if (!cfg || !meta.bounds) return <div className="admin-empty">Loading…</div>;
 
-  const num = (k, label, hint, extra) => (
+  /* Due AND with something to change: a percentage set against amounts that are
+     all zero is not a review anybody needs to be nudged about. */
+  const upDue = !!(up && up.enabled && up.due && Object.keys(up.changes || {}).length);
+
+  /* `attrs` defaults to the money bounds because most of these fields ARE money.
+     Every one of them comes from the server: the input's own max is the same
+     number the save clamps to, so the form cannot offer what the backend will
+     silently reduce. */
+  const num = (k, label, hint, extra, attrs) => (
     <label style={{ display: "block", marginBottom: 14 }}>
       <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>{label}</span>
-      <input className="admin-input" type="number" min="0" value={cfg[k]} style={{ maxWidth: 220, display: "block", marginTop: 6 }}
+      <input className="admin-input" type="number" value={cfg[k]} style={{ maxWidth: 220, display: "block", marginTop: 6 }}
+        min={(attrs && attrs.min !== undefined) ? attrs.min : 0}
+        max={(attrs && attrs.max !== undefined) ? attrs.max : B.amountMax}
         onChange={e => set(k, e.target.value === "" ? 0 : parseInt(e.target.value, 10))}/>
       {hint && <div data-fee-hint="1" style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 5, lineHeight: 1.5 }}>{hint}</div>}
       {extra}
@@ -6699,8 +6719,26 @@ function AdminFees() {
     <div>
       <div className="admin-filters">
         {[["arrears", "Who owes"], ["reminders", "Reminders"], ["settings", "Amounts"]].map(([k, l]) => (
-          <button key={k} className={"btn btn-sm " + (tab === k ? "btn-primary" : "btn-ghost")} onClick={() => setTab(k)}>{l}</button>
+          <button key={k} className={"btn btn-sm " + (tab === k ? "btn-primary" : "btn-ghost")} onClick={() => setTab(k)}>
+            {l}
+            {/* A dot on the tab, because an overdue review that is only visible
+                once you open the tab is a review nobody performs — nothing tells
+                you to look. The ops journal carries the same nudge monthly. */}
+            {/* aria-hidden: the dot is decoration beside a label that already
+                names the tab, and a `title` on it would otherwise be read out as
+                part of the button's name. The nudge beside the tabs says it in
+                words for anybody who cannot see a 7px circle. */}
+            {k === "settings" && upDue && <span data-uprate-due="1" aria-hidden="true" title="A review of the amounts is due"
+              style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", marginLeft: 6,
+                       background: "var(--gold-700,#a07400)", verticalAlign: "middle" }}/>}
+          </button>
         ))}
+        {upDue && tab !== "settings" && (
+          <button className="btn btn-ghost btn-sm" onClick={() => setTab("settings")}
+            style={{ color: "var(--gold-700,#a07400)", fontSize: 12 }}>
+            Amounts last raised {up.lastAt ? up.monthsSince + " months ago" : "never"} — review due →
+          </button>
+        )}
         {!cfg.enabled && <span className="mono" style={{ fontSize: 11, color: "var(--gold-700,#a07400)", marginLeft: 8 }}>
           Dues are switched off — nothing is being charged.
         </span>}
@@ -6795,8 +6833,8 @@ function AdminFees() {
               Written off in full once the MOU is accomplished.
             </div>)}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            {num("trainingMonths", "Training months", "")}
-            {num("serviceMonths", "Service months", "")}
+            {num("trainingMonths", "Training months", "", null, { min: B.phaseMin, max: B.phaseMax })}
+            {num("serviceMonths", "Service months", "", null, { min: B.phaseMin, max: B.phaseMax })}
           </div>
           <div style={{ fontSize: 12, color: "var(--ink-500)", margin: "-4px 0 16px", lineHeight: 1.5 }}>
             Three years by default: {cfg.trainingMonths} months of training, then {cfg.serviceMonths} of service.
@@ -6809,7 +6847,8 @@ function AdminFees() {
             <b>Remind guardians about arrears</b>
           </label>
           {num("remindEveryDays", "No more often than every",
-            "Days between reminders to the same family. The minimum is " + meta.remindMinDays + " — a family reminded daily stops reading anything you send, and your sender gets blocked.")}
+            "Days between reminders to the same family. The minimum is " + B.remindMinDays + " — a family reminded daily stops reading anything you send, and your sender gets blocked.",
+            null, { min: B.remindMinDays, max: B.remindMaxDays })}
           <button className="btn btn-primary btn-sm" disabled={!dirty || busy} onClick={save}>{busy ? "Saving…" : "Save amounts"}</button>
         </div>
       )}
@@ -6825,15 +6864,21 @@ function AdminFees() {
             Keeping up with inflation
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            {num("upratePct", "Raise amounts by", "Per cent. 0 switches it off." + (up && up.maxPct ? " At most " + up.maxPct + "% at a time." : ""))}
-            {num("uprateEveryMonths", "No more often than every", "Months. Twelve is a yearly review.")}
+            {num("upratePct", "Raise amounts by", "Per cent. 0 switches it off. At most " + B.uprateMaxPct + "% at a time.",
+              null, { min: 0, max: B.uprateMaxPct })}
+            {num("uprateEveryMonths", "No more often than every",
+              "Months. " + (meta.defaults.uprateEveryMonths || B.uprateEveryMax) + " is a yearly review.",
+              null, { min: B.uprateEveryMin, max: B.uprateEveryMax })}
           </div>
           <div style={{ fontSize: 12.5, color: "var(--ink-500)", lineHeight: 1.6, margin: "-4px 0 14px" }}>
             {/* Both halves matter. The first is what people fear; the second is
                 what they'd otherwise assume moved with it and be wrong about. */}
-            Only the membership fee, monthly dues and training fee move.
+            {/* The list of what moves is the server's list, not a sentence somebody
+                has to remember to edit when the fields change. */}
+            Only the {(B.uprateFields || []).map(f => (FEE_SETTING_LABEL[f] || f).toLowerCase()).join(", ")} move,
+            rounded to the nearest {naira(B.uprateRound)}.
             {" "}<b>Charges already on an account stay exactly as they were</b> — a family quoted
-            ₦{cfg.monthlyDues} for a month owes that for that month, whatever the figure becomes later.
+            {" " + naira(cfg.monthlyDues)} for a month owes that for that month, whatever the figure becomes later.
             <div style={{ marginTop: 6, color: "var(--ink-400)" }}>
               Fines are not included — those live under <b>Policy</b> and are set there.
             </div>

@@ -11997,6 +11997,147 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         return (string)fees_settings()['uprateLastAt'] === $stamped;
     })());
 
+    /* ── The nudge: said out loud, and still not automatic ────────────────
+     *
+     * An uprate that is only visible on the tab where it is set is an uprate
+     * nobody performs, because nothing tells you to look. So the reminder cron
+     * journals it. The two properties that matter are that it CANNOT raise
+     * anything (a nudge that could would be the automatic uprate this design
+     * refuses) and that it is spaced — the cron ticks every fifteen minutes.
+     */
+    chk('fees uprate: an overdue review is journalled, not applied', (function () use ($setU) {
+        $setU(['monthlyDues' => 1000, 'upratePct' => 20, 'uprateEveryMonths' => 12, 'uprateLastAt' => '']);
+        db_exec('DELETE FROM ops_events WHERE source = ?', ['fees.uprate']);
+        $before = (int)fees_settings()['monthlyDues'];
+        $r = fees_uprate_note();
+        if (empty($r['ok'])) return false;
+        $row = db_row('SELECT * FROM ops_events WHERE source = ? LIMIT 1', ['fees.uprate']);
+        return $row
+            && (string)$row['kind'] === 'warn'          // a decision to make, not a fault
+            && strpos((string)$row['message'], '20%') !== false
+            /* THE ASSERTION: nothing was raised. */
+            && (int)fees_settings()['monthlyDues'] === $before
+            && (string)fees_settings()['uprateLastAt'] === '';
+    })());
+
+    chk('…and it is noted once a month, not once every cron tick', (function () use ($setU) {
+        $setU(['monthlyDues' => 1000, 'upratePct' => 20, 'uprateEveryMonths' => 12, 'uprateLastAt' => '']);
+        db_exec('DELETE FROM ops_events WHERE source = ?', ['fees.uprate']);
+        $cfg = fees_settings(); $cfg['uprateNotedAt'] = ''; setting_set('fees', $cfg, 'test');
+        if (empty(fees_uprate_note()['ok'])) return false;
+        $hits = (int)(db_row('SELECT hits FROM ops_events WHERE source = ? LIMIT 1', ['fees.uprate'])['hits'] ?? 0);
+        /* Ninety-six ticks a day: if the spacing did not hold, this is where a
+           to-do item turns the ops journal into a scrolling wall. */
+        for ($i = 0; $i < 5; $i++) {
+            if ((fees_uprate_note()['error'] ?? '') !== 'noted_recently') return false;
+        }
+        $after = (int)(db_row('SELECT hits FROM ops_events WHERE source = ? LIMIT 1', ['fees.uprate'])['hits'] ?? 0);
+        if ($after !== $hits) return false;
+        // …and it speaks again once the spacing has passed.
+        $cfg = fees_settings();
+        $cfg['uprateNotedAt'] = gmdate('Y-m-d\TH:i:s\Z', strtotime('-' . (FEES_UPRATE_NOTE_DAYS + 1) . ' days'));
+        setting_set('fees', $cfg, 'test');
+        return !empty(fees_uprate_note()['ok']);
+    })());
+
+    chk('…and it says nothing when there is nothing to say', (function () use ($setU) {
+        // Uprating off.
+        $setU(['monthlyDues' => 1000, 'upratePct' => 0, 'uprateLastAt' => '']);
+        if ((fees_uprate_note()['error'] ?? '') !== 'uprate_off') return false;
+        // Not due yet.
+        $setU(['monthlyDues' => 1000, 'upratePct' => 20, 'uprateEveryMonths' => 12]);
+        $cfg = fees_settings();
+        $cfg['uprateLastAt'] = gmdate('Y-m-d\TH:i:s\Z', strtotime('-1 month'));
+        $cfg['uprateNotedAt'] = '';
+        setting_set('fees', $cfg, 'test');
+        if ((fees_uprate_note()['error'] ?? '') !== 'not_due') return false;
+        // Fees switched off entirely: nobody is being charged, so nothing to review.
+        $setU(['enabled' => false, 'monthlyDues' => 1000, 'upratePct' => 20, 'uprateLastAt' => '']);
+        $off = (fees_uprate_note()['error'] ?? '');
+        $setU(['enabled' => true]);
+        return $off === 'fees_off';
+    })());
+
+    chk('…and the note stamp is carried by the settings form, not cleared by it', (function () use ($ADM, $setU) {
+        $setU(['monthlyDues' => 1000, 'upratePct' => 20, 'uprateEveryMonths' => 12, 'uprateLastAt' => '']);
+        $cfg = fees_settings(); $cfg['uprateNotedAt'] = ''; setting_set('fees', $cfg, 'test');
+        fees_uprate_note();
+        $stamped = (string)fees_settings()['uprateNotedAt'];
+        if ($stamped === '') return false;
+        backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM,
+            'data' => ['uprateNotedAt' => '', 'monthlyDues' => 1000]]);
+        // Clearing it from a form would restart the nagging.
+        return (string)fees_settings()['uprateNotedAt'] === $stamped;
+    })());
+
+    /* The cron carries it, guarded, and the reminder dispatch is not in its
+       shadow — a nudge failing must not cost anybody their reminder. */
+    chk('…and the reminders cron carries the nudge in its own guard', (function () {
+        $src = (string)@file_get_contents(dirname(__DIR__) . '/_lib/webcron.php');
+        if ($src === '') return false;
+        if (!preg_match('/function web_cron_reminders\(\).*?\n\}/s', $src, $m)) return false;
+        $body = $m[0];
+        return strpos($body, 'fees_uprate_note()') !== false
+            && strpos($body, 'fees_reminders_run(FEES_REMIND_CRON_BATCH)') !== false
+            // Two separate try/catch blocks, not one shared one.
+            && substr_count($body, 'catch (Throwable') >= 2;
+    })());
+
+    /* ── Nothing hardcoded: one owner per number ───────────────────────────
+     *
+     * Every bound this subsystem enforces belongs to fees.php, and the screen
+     * READS them. The failure this prevents is quiet: a floor written `max(7,…)`
+     * in PHP and `|| 7` in React agrees until somebody changes one, and then an
+     * admin is told one minimum and given another.
+     */
+    chk('fees: every bound the screen needs travels with the settings', (function () use ($ADM) {
+        $r = backend_dispatch('admin.fees.settings.get', ['requesterId' => $ADM]);
+        $b = $r['bounds'] ?? null;
+        if (!is_array($b)) return false;
+        foreach (['amountMax', 'phaseMin', 'phaseMax', 'remindMinDays', 'remindMaxDays',
+                  'uprateMaxPct', 'uprateEveryMin', 'uprateEveryMax', 'uprateRound',
+                  'uprateFields', 'accrueBatch', 'remindBatch', 'arrearsPage'] as $k) {
+            if (!array_key_exists($k, $b)) return false;
+        }
+        // And they are the SAME numbers the server enforces, not a second copy.
+        return (int)$b['remindMinDays'] === FEES_REMIND_MIN_DAYS
+            && (int)$b['uprateMaxPct'] === FEES_UPRATE_MAX_PCT
+            && (int)$b['uprateRound'] === FEES_UPRATE_ROUND
+            && $b['uprateFields'] === FEES_UPRATE_FIELDS
+            && (int)$b['amountMax'] === FEES_AMOUNT_MAX;
+    })());
+
+    chk('…and the fees screen keeps no copy of a number the server owns', (function () {
+        $src = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/page-admin.jsx');
+        if ($src === '') return false;
+        $i = strpos($src, 'function AdminFees()');
+        if ($i === false) return false;
+        // The component, up to the next top-level function.
+        $j = strpos($src, "\nfunction ", $i + 10);
+        $body = substr($src, $i, ($j === false ? strlen($src) : $j) - $i);
+        /* Batch sizes asked for as literals, and fallback copies of a floor —
+           both are the shape this regressed into before. */
+        if (preg_match('/\.(remindRun|accrue)\(\s*\d/', $body)) return false;
+        if (preg_match('/(remindMinDays|everyDays|maxPct|everyMonths)\s*\|\|\s*\d/', $body)) return false;
+        // The bounds are read, and read from the server's object.
+        return strpos($body, 'meta.bounds') !== false
+            && strpos($body, 'B.remindMinDays') !== false
+            && strpos($body, 'B.uprateMaxPct') !== false;
+    })());
+
+    chk('…and the naira sign is written once on each side, not per screen', (function () {
+        $php = (string)@file_get_contents(dirname(__DIR__) . '/_lib/domain/fees.php');
+        $jsx = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/page-admin.jsx');
+        if ($php === '' || $jsx === '') return false;
+        /* In PHP the symbol appears in the currency map and in prose/comments,
+           never as a second formatter: no `'₦' . number_format(` anywhere. */
+        if (preg_match("/'₦'\s*\.\s*number_format/", $php)) return false;
+        if (!function_exists('fees_money_text')) return false;
+        if (fees_money_text(1000) !== '₦1,000') return false;
+        // One `naira` in the client, not a per-component copy.
+        return preg_match_all('/const naira = /', $jsx) === 1;
+    })());
+
     chk('fees uprate: both ops are gated on the roster capability', (function () {
         foreach (['admin.fees.uprate.preview', 'admin.fees.uprate.apply'] as $op) {
             if ((backend_dispatch($op, ['requesterId' => ''])['ok'] ?? false) === true) return false;
