@@ -494,6 +494,8 @@
       stateGet:  (keys) => request('/member/state.php' + qs({ keys: Array.isArray(keys) ? keys.join(',') : keys })),
       stateSet:  (key, value) => request('/member/state.php', { body: { key, value } }),
       momentum:     () => request('/member/momentum.php'),
+      /* Read-only. There is no member-side write to the ledger. */
+      fees:         () => request('/member/fees.php'),
       coach:        (messages) => request('/member/coach.php', { body: { messages } }),
       circle:       () => request('/member/circle.php'),
       circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
@@ -799,10 +801,15 @@
         settingsSet: (data) => request('/admin/fees.php', { body: { action: 'settings', data } }),
         member:      (memberId) => request('/admin/fees.php' + qs({ view: 'member', memberId })),
         arrears:     (limit) => request('/admin/fees.php' + qs({ view: 'arrears', limit })),
+        /* Find anybody's account, not only a debtor's — the arrears list holds
+           people who owe, so it could never answer "has Ada paid?". */
+        lookup:      (q) => request('/admin/fees.php' + qs({ view: 'lookup', q })),
         payment:     (memberId, amount, method, reference, note) => request('/admin/fees.php', { body: { action: 'payment', memberId, amount, method, reference, note } }),
         void:        (entryId, reason) => request('/admin/fees.php', { body: { action: 'void', entryId, reason } }),
         mou:         (memberId) => request('/admin/fees.php', { body: { action: 'mou', memberId } }),
         remindOff:   (memberId, off) => request('/admin/fees.php', { body: { action: 'remindOff', memberId, off } }),
+        charge:      (memberId, kind, amount, reason, note) => request('/admin/fees.php', { body: { action: 'charge', memberId, kind, amount, reason, note } }),
+        waive:       (memberId, amount, reason) => request('/admin/fees.php', { body: { action: 'waive', memberId, amount, reason } }),
         accrue:      (limit) => request('/admin/fees.php', { body: { action: 'accrue', limit } }),
         remindPreview: () => request('/admin/fees.php', { body: { action: 'remindPreview' } }),
         remindRun:     (limit) => request('/admin/fees.php', { body: { action: 'remindRun', limit } }),

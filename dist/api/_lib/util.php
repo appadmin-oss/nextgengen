@@ -638,6 +638,43 @@ function total_weeks(array $s): int {
     return max(1, (int)ceil($days / 7));
 }
 
+/**
+ * The badges a member can earn, with the threshold that earns each one.
+ *
+ * One catalogue: the award test and the human label live together, so a badge
+ * cannot be granted under a name nothing can display — which is what happened
+ * before. The dashboard was handed six slugs and showed only a COUNT, because
+ * the words for them existed nowhere on either side.
+ *
+ * `metric` is which running total the threshold is read against. Order is the
+ * order they appear on a member's record.
+ */
+const MEMBER_BADGES = [
+    'first-mission' => ['label' => 'First mission',   'metric' => 'xp',        'at' => 100],
+    'half-k-club'   => ['label' => '500 XP',          'metric' => 'xp',        'at' => 500],
+    'one-k-club'    => ['label' => '1,000 XP',        'metric' => 'xp',        'at' => 1000],
+    'week-streak'   => ['label' => '7-day streak',    'metric' => 'streak',    'at' => 7],
+    'month-streak'  => ['label' => '30-day streak',   'metric' => 'streak',    'at' => 30],
+    'week-finisher' => ['label' => 'A dozen missions', 'metric' => 'completed', 'at' => 12],
+];
+
+/** Which badges these totals have earned, in catalogue order. */
+function member_badges_for(int $xp, int $streak, int $completed): array {
+    $have = ['xp' => $xp, 'streak' => $streak, 'completed' => $completed];
+    $out = [];
+    foreach (MEMBER_BADGES as $id => $b) {
+        if (($have[$b['metric']] ?? 0) >= (int)$b['at']) $out[] = $id;
+    }
+    return $out;
+}
+
+/** id => label, for a screen that has earned ids and no words for them. */
+function member_badge_labels(): array {
+    $out = [];
+    foreach (MEMBER_BADGES as $id => $b) $out[$id] = (string)$b['label'];
+    return $out;
+}
+
 function public_session(array $s): array {
     return [
         'sessionId' => $s['sessionId'],
@@ -707,13 +744,7 @@ function recompute_member_stats(string $memberId): void {
         }
     }
 
-    $badges = [];
-    if ($xp >= 100) $badges[] = 'first-mission';
-    if ($xp >= 500) $badges[] = 'half-k-club';
-    if ($xp >= 1000) $badges[] = 'one-k-club';
-    if ($streak >= 7) $badges[] = 'week-streak';
-    if ($streak >= 30) $badges[] = 'month-streak';
-    if ($completed >= 12) $badges[] = 'week-finisher';
+    $badges = member_badges_for($xp, $streak, $completed);
 
     $week = $sc['current'] ? week_of_session($sc['current']) : 1;
     $row = [

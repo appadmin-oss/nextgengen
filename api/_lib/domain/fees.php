@@ -179,6 +179,31 @@ function fees_bounds(): array {
 const FEES_CHARGE_KINDS = ['membership', 'dues', 'training', 'fine', 'adjustment'];
 const FEES_CREDIT_KINDS = ['payment', 'writeoff', 'waiver'];
 
+/** ── Kinds a human posts, as opposed to kinds the accrual posts ────────────
+ *
+ * `membership`, `dues` and `training` are the machine's: they come from the
+ * settings, on a schedule, idempotently. These three are somebody's decision,
+ * and are treated differently for that reason — each needs a REASON on the row,
+ * and each is audited under its own event with the reason in it. "Who decided
+ * this, and why" is the first question asked about any charge on a child's
+ * account, and it has to be answerable from the ledger alone.
+ */
+const FEES_MANUAL_CHARGE_KINDS = ['fine', 'adjustment'];
+
+/** Why a fine was issued. A fixed vocabulary rather than free text, because a
+ *  fine is the one charge a family will dispute, and "late three times in
+ *  August" is answerable where "misconduct" is not. `other` exists so nobody
+ *  mislabels to fit the list — and it REQUIRES a written reason. */
+const FEES_FINE_REASONS = [
+    'late'      => 'Late arrival',
+    'absent'    => 'Missed a session without notice',
+    'equipment' => 'Equipment lost or damaged',
+    'conduct'   => 'Conduct',
+    'other'     => 'Other (say why)',
+];
+/** How many members a lookup returns. It is a find-a-person box, not a report. */
+const FEES_LOOKUP_MAX = 25;
+
 function fees_settings(): array {
     $cfg = setting_get('fees');
     return (is_array($cfg) ? $cfg : []) + FEES_DEFAULTS;
@@ -753,6 +778,184 @@ function admin_fees_payment(array $p): array {
 /** Void an entry. Corrections do not edit or delete — a mistake somebody fixed
  *  stays on the account with its reason, because "why is this different from
  *  last month" is the question an account has to be able to answer. */
+/**
+ * Post a fine or an adjustment. Somebody's decision, on the record as one.
+ *
+ * Three things separate this from the accrual. A REASON is required and stored
+ * on the row — a fine is the charge a family disputes, and "late three times in
+ * August" is answerable where "misconduct" is not. It is audited under its own
+ * event with the reason in it. And it is never idempotent: two fines in one month
+ * are two real events, so each gets its own period key.
+ *
+ * ON THE CEILING. `balanceCap` stops the ACCRUAL — the machine, running monthly,
+ * with nobody watching. A human posting a fine can push an account past it, and
+ * the response says so rather than silently refusing: the cap exists to stop an
+ * unattended process running a family into a number nobody will pay, not to
+ * overrule the coordinator standing in front of them. The screen states the new
+ * balance and that it is over the ceiling, so the decision is made with the
+ * consequence visible.
+ */
+function admin_fees_charge(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $id = trim((string)($p['memberId'] ?? ''));
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $kind = (string)($p['kind'] ?? 'fine');
+    if (!in_array($kind, FEES_MANUAL_CHARGE_KINDS, true)) return ['ok' => false, 'error' => 'bad_kind'];
+    $amount = fees_money($p['amount'] ?? null, 0);
+    if ($amount <= 0) return ['ok' => false, 'error' => 'bad_amount'];
+    $note = trim((string)($p['note'] ?? ''));
+    /* A fine carries a reason from the vocabulary; an adjustment is by nature
+       a one-off, so it carries a written one. Either way something is stored. */
+    $reason = (string)($p['reason'] ?? '');
+    if ($kind === 'fine') {
+        if (!isset(FEES_FINE_REASONS[$reason])) return ['ok' => false, 'error' => 'bad_reason'];
+        // `other` is the escape hatch, so it cannot also be the silent one.
+        if ($reason === 'other' && $note === '') return ['ok' => false, 'error' => 'note_required'];
+        $label = FEES_FINE_REASONS[$reason];
+    } else {
+        if ($note === '') return ['ok' => false, 'error' => 'note_required'];
+        $reason = 'adjustment';
+        $label = 'Adjustment';
+    }
+    $by = (string)($g['requester']['memberId'] ?? '');
+    $e = fees_post($id, $kind, $amount, [
+        'note' => $note !== '' ? $label . ' — ' . $note : $label,
+        'method' => $reason, 'by' => $by,
+    ]);
+    if (!$e) return ['ok' => false, 'error' => 'post_failed'];
+    audit('fees.' . $kind, $by, $id,
+          ['amount' => $amount, 'reason' => $reason, 'note' => $note], (string)($p['ip'] ?? ''));
+    $bal = fees_balance($m);
+    return ['ok' => true, 'entryId' => $e['entryId'], 'balance' => $bal,
+            /* Surfaced, not enforced: see the note above. */
+            'overCap' => !empty($bal['atCap'])];
+}
+
+/**
+ * Waive part of what is owed. A recorded mercy, not a deletion.
+ *
+ * This is what voiding was being used for, wrongly. Voiding says "that charge
+ * should never have existed"; a waiver says "it existed and we are not asking
+ * for it". A family in a hard month needs the second, and a ledger that can only
+ * do the first loses the reason the moment somebody edits history to be kind.
+ *
+ * Clamped to what is actually outstanding, because waiving more than is owed
+ * would mint a credit out of nothing and the next month would look prepaid.
+ */
+function admin_fees_waive(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $id = trim((string)($p['memberId'] ?? ''));
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $reason = trim((string)($p['reason'] ?? ''));
+    // No vocabulary here: a waiver is a judgement about one family's month, and
+    // a dropdown would flatten the only part of it worth reading later.
+    if ($reason === '') return ['ok' => false, 'error' => 'reason_required'];
+    $before = fees_balance($m);
+    $asked = fees_money($p['amount'] ?? null, 0);
+    if ($asked <= 0) return ['ok' => false, 'error' => 'bad_amount'];
+    $amount = min($asked, (int)$before['outstanding']);
+    if ($amount <= 0) return ['ok' => false, 'error' => 'nothing_outstanding'];
+    $by = (string)($g['requester']['memberId'] ?? '');
+    $e = fees_post($id, 'waiver', $amount, ['note' => substr($reason, 0, 240), 'by' => $by]);
+    if (!$e) return ['ok' => false, 'error' => 'post_failed'];
+    audit('fees.waive', $by, $id,
+          ['amount' => $amount, 'asked' => $asked, 'reason' => $reason], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'entryId' => $e['entryId'], 'waived' => $amount,
+            /* Said out loud when less was waived than was typed, rather than
+               leaving somebody to wonder why the balance did not reach zero. */
+            'clamped' => $amount < $asked, 'balance' => fees_balance($m)];
+}
+
+/**
+ * Find a member's account by name or ID.
+ *
+ * The gap this fills: the arrears list only holds people who OWE, and it was the
+ * only way into an account. So "has Ada paid?" was unanswerable for anybody who
+ * had — the paid-up, the square and the in-credit were all unreachable from the
+ * screen. A ledger you can only enter through the debtors' list is a ledger that
+ * cannot be checked.
+ */
+function admin_fees_lookup(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $q = trim((string)($p['q'] ?? ''));
+    if (strlen($q) < 2) return ['ok' => true, 'members' => [], 'q' => $q, 'tooShort' => true];
+    $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
+    $rows = db_all("SELECT * FROM members WHERE status <> 'deleted' AND (fullName LIKE ? OR memberId LIKE ? OR email LIKE ?)
+                    ORDER BY fullName LIMIT " . (FEES_LOOKUP_MAX + 1), [$like, $like, $like]);
+    $cfg = fees_settings();
+    $out = [];
+    foreach (array_slice($rows, 0, FEES_LOOKUP_MAX) as $m) {
+        $b = fees_balance($m, $cfg);
+        $out[] = ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'],
+                  'centre' => (string)($m['centre'] ?? ''), 'type' => (string)($m['type'] ?? ''),
+                  'status' => (string)($m['status'] ?? ''),
+                  /* Both figures: `payable` is what to ask for, `charged` proves
+                     an account exists at all for somebody who owes nothing. */
+                  'payable' => (int)$b['payable'], 'charged' => (int)$b['charged'],
+                  'credited' => (int)$b['credited'], 'phase' => (string)$b['tenure']['phase']];
+    }
+    return ['ok' => true, 'members' => $out, 'q' => $q,
+            'truncated' => count($rows) > FEES_LOOKUP_MAX, 'max' => FEES_LOOKUP_MAX];
+}
+
+/**
+ * A member's own account, read-only.
+ *
+ * THE GAP THIS CLOSES. We charge members and email their guardians a figure
+ * every fortnight, and the member could not see any of it. Worse: the training
+ * fee is written down as they SERVE — the most encouraging number in the whole
+ * subsystem — and the person earning it off had no way to watch it happen.
+ *
+ * Read-only by construction. There is no member-side op that posts, voids or
+ * pays anything, and nothing here can change a balance. And it is NGG-only: a
+ * summer student is a child on a short programme whose money is their guardian's
+ * business, and putting a debt on a child's own screen is the thing this
+ * subsystem has refused from the start.
+ */
+function member_fees_account(array $p): array {
+    $id = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $cfg = fees_settings();
+    /* Switched off, or not this member's kind of membership: answered plainly
+       with `enabled: false` rather than an error, so the dashboard simply shows
+       nothing instead of an error card about money. */
+    if (empty($cfg['enabled']) || (string)($m['type'] ?? '') !== 'NGG') {
+        return ['ok' => true, 'account' => null, 'enabled' => false];
+    }
+    $bal = fees_balance($m, $cfg);
+    $entries = [];
+    foreach (fees_entries($id) as $e) {
+        $entries[] = [
+            'kind' => (string)$e['kind'], 'direction' => (string)$e['direction'],
+            'amount' => (int)$e['amount'], 'note' => (string)$e['note'],
+            'createdAt' => (string)$e['createdAt'],
+            'void' => trim((string)($e['voidedAt'] ?? '')) !== '',
+            /* Deliberately absent: `createdBy`, `voidedBy`, `method`,
+               `reference`. Which member of staff posted a row and which bank
+               reference cleared it are operational details, not the member's
+               record of what they owe. */
+        ];
+    }
+    return ['ok' => true, 'enabled' => true, 'account' => [
+        'memberId' => (string)$m['memberId'],
+        'payable' => (int)$bal['payable'],
+        'outstanding' => (int)$bal['outstanding'],
+        'charged' => (int)$bal['charged'],
+        'credited' => (int)$bal['credited'],
+        'trainingCharged' => (int)$bal['trainingCharged'],
+        'trainingEarned' => (int)$bal['trainingEarned'],
+        'trainingWrittenOff' => (int)$bal['trainingWrittenOff'],
+        'mouAt' => (string)$bal['mouAt'],
+        'tenure' => $bal['tenure'],
+        'entries' => array_reverse($entries),      // newest first for reading
+        'remindOff' => (int)($m['duesRemindOff'] ?? 0) === 1,
+        'currency' => (string)$cfg['currency'],
+    ]];
+}
+
 function admin_fees_void(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $entryId = trim((string)($p['entryId'] ?? ''));

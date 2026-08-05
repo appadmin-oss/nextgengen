@@ -6553,8 +6553,144 @@ const FEE_KIND_LABEL = {
 const FEE_SETTING_LABEL = {
   membershipFee: "Membership fee", monthlyDues: "Monthly dues", trainingFee: "Training fee",
 };
+/* Why a fine was issued. Mirrors FEES_FINE_REASONS on the server; the server
+   validates, this only names them. A dropdown rather than free text because a
+   fine is the charge a family disputes, and "late three times in August" is
+   answerable where "misconduct" is not. */
+const FEE_FINE_REASONS = [
+  ["late", "Late arrival"],
+  ["absent", "Missed a session without notice"],
+  ["equipment", "Equipment lost or damaged"],
+  ["conduct", "Conduct"],
+  ["other", "Other (say why)"],
+];
+/* The server's refusals, in words. A money screen that prints `note_required`
+   at somebody has told them nothing. */
+const ENTRY_ERROR = {
+  bad_amount: "Enter an amount above zero.",
+  bad_reason: "Choose why this fine is being issued.",
+  note_required: "Say why — this one needs a written reason.",
+  reason_required: "Say why this is being waived. It stays on the account.",
+  nothing_outstanding: "There is nothing outstanding to waive.",
+  bad_kind: "That is not something this screen can post.",
+};
+const ENTRY_TITLE = {
+  payment: "Record a payment", fine: "Issue a fine",
+  adjustment: "Adjust the account", waiver: "Waive what is owed",
+};
 /* `naira` is defined once further down this module and shared — these files
    concatenate into one scope, so a second copy is a build error, not a local. */
+
+/**
+ * The panel both fee dialogs sit in.
+ *
+ * WHY THIS EXISTS. Both of them were written against `<Modal>`, and there is no
+ * `Modal` in this bundle — never has been. So opening an account from the fees
+ * screen threw `Modal is not defined` and blanked the whole pane, and nothing
+ * caught it because no test had ever clicked "Open →". It is the drawer idiom
+ * every other admin panel uses, with the escape key, the focus trap and the
+ * click-outside that come with `useAdminDrawer`.
+ */
+function FeeModal({ title, onClose, children }) {
+  const { panelRef, close } = useAdminDrawer(onClose, false);
+  return (
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className="admin-drawer-panel admin-drawer-wide">
+        <div className="admin-drawer-head">
+          <h3>{title}</h3>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
+        </div>
+        <div style={{ padding: "16px 20px 20px" }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One form for every money entry.
+ *
+ * Payment, fine, adjustment and waiver differ only in which fields they need, so
+ * they share a component: an amount, and then whatever makes the entry
+ * answerable six months later. The alternative — a prompt per action — is what
+ * was here, and it could not carry a bank reference or a reason at all.
+ */
+function FeeEntryForm({ kind, account, busy, onCancel, onSubmit }) {
+  const [f, setF] = React.useState({
+    kind, amount: "", method: "cash", reference: "", note: "",
+    reason: kind === "fine" ? FEE_FINE_REASONS[0][0] : "",
+  });
+  const set = (k, v) => setF(x => Object.assign({}, x, { [k]: v }));
+  const isPay = kind === "payment", isFine = kind === "fine", isWaive = kind === "waiver";
+  const owed = account.balance.outstanding;
+  return (
+    <FeeModal onClose={onCancel} title={ENTRY_TITLE[kind] + " — " + account.fullName}>
+      <div data-fee-entry={kind}>
+        <label style={{ display: "block", marginBottom: 12 }}>
+          <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>
+            Amount
+          </span>
+          <input className="admin-input" type="number" min="1" autoFocus value={f.amount}
+            onChange={e => set("amount", e.target.value)} style={{ maxWidth: 200, display: "block", marginTop: 6 }}/>
+          {/* What is actually owed, next to the box, so a waiver is typed against
+              a figure rather than from memory. */}
+          <div style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 5 }}>
+            {naira(owed)} outstanding{isWaive && owed > 0 ? " — more than this is capped to it" : ""}.
+          </div>
+        </label>
+        {isPay && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <label>
+              <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>How it came</span>
+              <select className="admin-input" value={f.method} onChange={e => set("method", e.target.value)} style={{ marginTop: 6 }}>
+                <option value="cash">Cash</option>
+                <option value="transfer">Bank transfer</option>
+                <option value="pos">POS</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label>
+              <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>Reference</span>
+              <input className="admin-input" value={f.reference} placeholder="TRF-… or receipt no."
+                onChange={e => set("reference", e.target.value)} style={{ marginTop: 6 }}/>
+            </label>
+          </div>
+        )}
+        {isFine && (
+          <label style={{ display: "block", marginBottom: 12 }}>
+            <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>Why</span>
+            <select className="admin-input" value={f.reason} onChange={e => set("reason", e.target.value)} style={{ marginTop: 6 }}>
+              {FEE_FINE_REASONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </label>
+        )}
+        <label style={{ display: "block", marginBottom: 14 }}>
+          <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>
+            {isWaive ? "Why it is being waived" : "Note"}
+            {(isWaive || kind === "adjustment" || (isFine && f.reason === "other")) && " · required"}
+          </span>
+          <textarea className="admin-input" rows={2} value={f.note} onChange={e => set("note", e.target.value)}
+            placeholder={isWaive ? "Hard month at home — agreed with the coordinator" : ""}
+            style={{ display: "block", marginTop: 6, width: "100%", resize: "vertical" }}/>
+          {isWaive && (
+            <div style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 5, lineHeight: 1.5 }}>
+              {/* The distinction that keeps the ledger honest, said where the
+                  choice is made rather than in a document nobody opens. */}
+              A waiver keeps the charge and records that you are not asking for it.
+              Voiding says it should never have existed — that is a different thing.
+            </div>
+          )}
+        </label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onSubmit(f)}>
+            {busy ? "Saving…" : ENTRY_TITLE[kind]}
+          </button>
+          <button className="btn btn-ghost btn-sm" disabled={busy} onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </FeeModal>
+  );
+}
 
 function AdminFees() {
   const [tab, setTab] = React.useState("arrears");   // arrears | settings
@@ -6575,6 +6711,15 @@ function AdminFees() {
      presses anything. A price rise applied sight-unseen is the version of this
      feature that gets switched off again a week later. */
   const [up, setUp] = React.useState(null);
+  /* Finding somebody who does NOT owe. The arrears list was the only door into
+     an account, so a paid-up member was unreachable and "has Ada paid?" could
+     not be answered on the screen that exists to answer it. */
+  const [q, setQ] = React.useState("");
+  const [found, setFound] = React.useState(null);
+  /* One form for every money entry — payment, fine, adjustment, waiver. A
+     `window.prompt` for the amount could not carry a method, a reference or a
+     reason, which is most of what makes an entry answerable later. */
+  const [entry, setEntry] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   /* The server's bounds, under a short name because every number on this screen
@@ -6605,16 +6750,44 @@ function AdminFees() {
     .then(r => setAcct(r.account)).catch(e => toast.error(e.code || e.message));
   const refreshAcct = () => acct && openAcct(acct.memberId);
 
-  const takePayment = async () => {
-    const amt = window.prompt("Amount received (₦)", "");
-    if (!amt) return;
+  const doLookup = async (term) => {
+    const t = (term === undefined ? q : term).trim();
+    if (t.length < 2) { setFound(null); return; }
+    try { const r = await NGGApi.admin.fees.lookup(t); setFound(r); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
+  /* Submits whatever kind of entry the form was opened for. One path, because
+     every one of them is "an amount, a reason, and who did it" — and a second
+     code path is where the audit line goes missing. */
+  const submitEntry = async (f) => {
+    const amount = parseInt(f.amount, 10) || 0;
+    if (amount <= 0) { toast.error("Enter an amount."); return; }
+    setBusy(true);
     try {
-      await NGGApi.admin.fees.payment(acct.memberId, parseInt(amt, 10) || 0, "cash", "", "");
-      toast.success("Recorded."); refreshAcct(); loadArr();
-    } catch (e) { toast.error(e.code || e.message); }
+      if (f.kind === "payment") {
+        await NGGApi.admin.fees.payment(acct.memberId, amount, f.method, f.reference, f.note);
+        toast.success(naira(amount) + " recorded.");
+      } else if (f.kind === "waiver") {
+        const r = await NGGApi.admin.fees.waive(acct.memberId, amount, f.note);
+        /* Said out loud when less was waived than was typed — otherwise somebody
+           wonders why the balance did not reach zero. */
+        toast.success(naira(r.waived) + " waived." + (r.clamped ? " That was all that was outstanding." : ""));
+      } else {
+        const r = await NGGApi.admin.fees.charge(acct.memberId, f.kind, amount, f.reason, f.note);
+        toast.success(naira(amount) + " charged.");
+        if (r.overCap) toast.error("This account is now past the ceiling. Nothing further will accrue automatically.");
+      }
+      setEntry(null); refreshAcct(); loadArr(); if (found) doLookup();
+    } catch (e) {
+      toast.error(ENTRY_ERROR[e.code] || e.code || e.message);
+    } finally { setBusy(false); }
   };
   const voidEntry = async (e) => {
-    const reason = window.prompt("Why is this being voided? (kept on the account)", "");
+    const reason = await dialog.prompt({
+      title: "Void this entry?",
+      body: "Voiding says the entry should never have existed. If the charge was real and you are choosing not to ask for it, waive it instead — that keeps the reason on the account.",
+      label: "Why is this being voided?", placeholder: "Charged twice", cta: "Void it",
+    });
     if (!reason) return;
     try { await NGGApi.admin.fees.void(e.entryId, reason); toast.success("Voided."); refreshAcct(); loadArr(); }
     catch (x) { toast.error(x.code || x.message); }
@@ -6925,6 +7098,45 @@ function AdminFees() {
 
       {tab === "arrears" && (
         <div>
+          {/* Above the list, because the list is only the people who owe. Anybody
+              paid up, square or in credit was previously unreachable from here. */}
+          <div className="admin-card" style={{ marginBottom: 14, padding: "12px 14px" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input className="admin-input" value={q} placeholder="Find any account by name or ID…"
+                onChange={e => { setQ(e.target.value); if (!e.target.value.trim()) setFound(null); }}
+                onKeyDown={e => { if (e.key === "Enter") doLookup(); }}
+                style={{ maxWidth: 320 }} aria-label="Find an account"/>
+              <button className="btn btn-ghost btn-sm" onClick={() => doLookup()}>Find</button>
+              {found && <button className="btn btn-ghost btn-sm" onClick={() => { setFound(null); setQ(""); }}>Clear</button>}
+            </div>
+            {found && (found.tooShort
+              ? <div style={{ fontSize: 12.5, color: "var(--ink-500)", marginTop: 8 }}>Two letters at least.</div>
+              : (found.members || []).length === 0
+                ? <div style={{ fontSize: 12.5, color: "var(--ink-500)", marginTop: 8 }}>Nobody matches “{found.q}”.</div>
+                : (
+                <table className="admin-table" style={{ marginTop: 10 }}>
+                  <thead><tr><th>Member</th><th>Centre</th><th>Payable</th><th>Charged</th><th>Received</th><th/></tr></thead>
+                  <tbody>{found.members.map(mm => (
+                    <tr key={mm.memberId}>
+                      <td><b>{mm.fullName}</b><div className="mono an-sub-xs">{mm.memberId} · {mm.type}</div></td>
+                      <td>{mm.centre}</td>
+                      {/* Zero shown as "nothing owed" rather than ₦0 — the answer
+                          to "has Ada paid?" is a sentence, not a figure. */}
+                      <td className="mono">{mm.payable > 0 ? <b>{naira(mm.payable)}</b>
+                        : <span style={{ color: "var(--green,#2f9e44)" }}>nothing owed</span>}</td>
+                      <td className="mono" style={{ color: "var(--ink-500)" }}>{naira(mm.charged)}</td>
+                      <td className="mono" style={{ color: "var(--ink-500)" }}>{naira(mm.credited)}</td>
+                      <td><button className="btn btn-ghost btn-sm" onClick={() => openAcct(mm.memberId)}>Open →</button></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              ))}
+            {found && found.truncated && (
+              <div style={{ fontSize: 12, color: "var(--ink-400)", marginTop: 6 }}>
+                First {found.max} matches — narrow it to see the rest.
+              </div>
+            )}
+          </div>
           {!arr ? <div className="admin-empty">Loading…</div>
             : (arr.arrears || []).length === 0 ? <div className="admin-empty">Nobody is in arrears.</div> : (
             <div className="admin-card" style={{ padding: 0, overflow: "hidden" }}>
@@ -6952,7 +7164,7 @@ function AdminFees() {
       )}
 
       {acct && (
-        <Modal onClose={() => setAcct(null)} title={acct.fullName + " — account"}>
+        <FeeModal onClose={() => setAcct(null)} title={acct.fullName + " — account"}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 12, marginBottom: 16 }}>
             {[["Payable now", naira(acct.balance.payable)],
               ["Charged", naira(acct.balance.charged)],
@@ -6972,7 +7184,16 @@ function AdminFees() {
             {acct.mouAt && <> MOU accomplished {String(acct.mouAt).slice(0, 10)}.</>}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-            <button className="btn btn-primary btn-sm" onClick={takePayment}>Record a payment</button>
+            <button className="btn btn-primary btn-sm" onClick={() => setEntry("payment")}>Record a payment</button>
+            {/* Both of these existed as valid ledger kinds and neither could be
+                posted — the reminder email even rendered a Fines line that could
+                never appear. A waiver is the one that matters most: without it,
+                forgiving a hard month meant voiding a real charge. */}
+            <button className="btn btn-ghost btn-sm" onClick={() => setEntry("fine")}>Issue a fine</button>
+            <button className="btn btn-ghost btn-sm" disabled={acct.balance.outstanding <= 0}
+              title={acct.balance.outstanding <= 0 ? "Nothing outstanding to waive" : ""}
+              onClick={() => setEntry("waiver")}>Waive</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setEntry("adjustment")}>Adjust</button>
             {!acct.mouAt && <button className="btn btn-ghost btn-sm" onClick={completeMou}>Mark MOU accomplished</button>}
             <button className="btn btn-ghost btn-sm" onClick={async () => {
               try { await NGGApi.admin.fees.remindOff(acct.memberId, !acct.remindOff); refreshAcct(); loadArr(); }
@@ -6999,7 +7220,12 @@ function AdminFees() {
               </tr>
             ))}</tbody>
           </table>
-        </Modal>
+        </FeeModal>
+      )}
+
+      {acct && entry && (
+        <FeeEntryForm kind={entry} account={acct} busy={busy}
+          onCancel={() => setEntry(null)} onSubmit={submitEntry}/>
       )}
     </div>
   );

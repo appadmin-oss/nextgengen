@@ -217,6 +217,20 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
     NGGApi.member.momentum().then(r => { if (alive) setMomentum(r.momentum); }).catch(() => {});
     return () => { alive = false; };
   }, [mutateSeq]);
+
+  /* The member's own account. We charge members and email their guardian a figure
+     every fortnight, and until now the member could see none of it — including the
+     training fee being written off as they serve, which is the most encouraging
+     number in the whole subsystem. Fetched separately and failing silently: an
+     account that will not load must not take the dashboard with it. */
+  const [account, setAccount] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.member.fees()
+      .then(r => { if (alive) setAccount(r && r.enabled ? r.account : null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [mutateSeq]);
   const prog = canonicalProgress(s, momentum);
 
   // Optimistic RSVP: flip local state now (authoritative once the request
@@ -259,6 +273,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
               <DashboardStats stats={s} prog={prog}/>
               <DashboardMomentum momentum={momentum}/>
               {mentor && <DashboardMentor mentor={mentor}/>}
+              {account && <DashboardObligations account={account}/>}
               <DashboardEvents events={events} onRsvp={onRsvp}/>
               <DashboardNotifications notes={notes} onRead={onRead}/>
               <DashboardShortcuts setPage={setPage}/>
@@ -871,6 +886,19 @@ function DashboardStats({ stats, prog }) {
         <span>{prog.total.toLocaleString()} XP</span>
         <span>{prog.next ? "→ " + prog.next.name + " at " + prog.next.at.toLocaleString() : "Top rank reached ★"}</span>
       </div>
+      {/* The badges themselves, not just how many. The ids were already in the
+          payload and only the COUNT was rendered — a member could see they had
+          three and not which three. Labels come from the server, so there is no
+          second copy of the catalogue here. */}
+      {(stats.badges || []).length > 0 && (
+        <div className="dash-badges">
+          {stats.badges.map(b => {
+            const id = typeof b === "string" ? b : (b && (b.id || b.name)) || "";
+            const label = (stats.badgeLabels && stats.badgeLabels[id]) || id.replace(/-/g, " ");
+            return <span key={id} className="chip chip-sm dash-badge" title={label}>{label}</span>;
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -913,6 +941,102 @@ function DashboardMomentum({ momentum }) {
     </div>
   );
 }
+
+/**
+ * Your account — what a member owes, and what their service has earned off.
+ *
+ * THE TONE IS THE DESIGN. This is a young person reading a debt on their own
+ * screen, so it says the figure plainly, never in red, with no deadline and no
+ * consequence — and it leads with the training fee being written off as they
+ * serve, because that is the true story of the number and the part they earn.
+ * A threatening panel produces a member who stops opening the dashboard, not a
+ * payment; and the money conversation belongs with their guardian, who is the
+ * one the reminders go to.
+ *
+ * Read-only, structurally: there is no member-side op that posts, pays or voids
+ * anything, so there is nothing here to press.
+ */
+function DashboardObligations({ account }) {
+  const [open, setOpen] = React.useState(false);
+  const a = account;
+  const t = a.tenure || {};
+  const owed = a.payable;
+  const entries = a.entries || [];
+  return (
+    <div className="dash-card dash-account">
+      <div className="dash-card-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 className="dash-card-h-sm">Your account.</h3>
+        {a.mouAt && <span className="chip chip-lime" title={"MOU accomplished " + String(a.mouAt).slice(0, 10)}>MOU DONE</span>}
+      </div>
+
+      {owed > 0 ? (
+        <React.Fragment>
+          <div className="dash-account-figure">{naira(owed)}</div>
+          <div className="dash-account-sub">outstanding</div>
+        </React.Fragment>
+      ) : (
+        <React.Fragment>
+          <div className="dash-account-figure is-clear">All clear</div>
+          <div className="dash-account-sub">nothing outstanding</div>
+        </React.Fragment>
+      )}
+
+      {/* The write-down, said as what it is: something service earns, not a
+          discount granted. This is the line worth putting above the ledger. */}
+      {a.trainingCharged > 0 && (
+        <div className="dash-account-earned">
+          <b>{naira(a.trainingEarned + a.trainingWrittenOff)}</b> of your {naira(a.trainingCharged)} training fee
+          {a.mouAt ? " has been written off — your MOU is complete." : " has been earned off by your service so far."}
+        </div>
+      )}
+
+      {t.phase && t.phase !== "unknown" && (
+        <div className="dash-account-phase mono">
+          MONTH {t.months} OF {(t.trainingMonths || 0) + (t.serviceMonths || 0)} · {String(t.phase).toUpperCase()}
+          {t.phase === "service" && typeof t.servedMonths === "number"
+            && <> · {t.servedMonths}/{t.serviceMonths} SERVED</>}
+        </div>
+      )}
+
+      <button className="btn btn-ghost btn-sm dash-account-toggle" onClick={() => setOpen(o => !o)}>
+        {open ? "Hide the detail" : "See every entry"}
+      </button>
+
+      {open && (
+        <div className="dash-account-list">
+          {entries.length === 0 && <div className="dash-account-empty">Nothing on the account yet.</div>}
+          {entries.map((e, i) => (
+            <div key={i} className={"dash-account-row" + (e.void ? " is-void" : "")}>
+              <div>
+                <div className="dash-account-row-what">{ACCOUNT_KIND_LABEL[e.kind] || e.kind}</div>
+                {e.note && <div className="dash-account-row-note">{e.note}</div>}
+                <div className="mono dash-account-row-when">{String(e.createdAt).slice(0, 10)}{e.void && " · cancelled"}</div>
+              </div>
+              <div className={"mono dash-account-row-amt" + (e.direction === "charge" ? "" : " is-credit")}>
+                {e.direction === "charge" ? "" : "−"}{naira(e.amount)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="dash-account-foot">
+        {/* Where to go with a question, because the screen cannot answer one and
+            a family in difficulty needs a person, not a figure. */}
+        Something look wrong, or is this a difficult month? Speak to your centre
+        coordinator — they would rather hear from you.
+      </div>
+    </div>
+  );
+}
+
+/* A member's words for the ledger kinds. Plainer than the admin labels: nobody
+   outside an office calls a payment "payment received". */
+const ACCOUNT_KIND_LABEL = {
+  membership: "Membership fee", dues: "Monthly dues", training: "Training fee",
+  fine: "Fine", adjustment: "Adjustment",
+  payment: "You paid", writeoff: "Written off", waiver: "Waived",
+};
 
 function DashboardMentor({ mentor }) {
   return (
@@ -973,12 +1097,31 @@ function DashboardEventRow({ e, onRsvp }) {
 }
 
 function DashboardNotifications({ notes, onRead }) {
-  if (!notes.length) return null;
+  /* The dashboard payload carries UNREAD only, capped at eight, and there was no
+     way to see anything already read — so a member who tapped a notice to clear
+     it could never find it again. `member.notifications` has always returned the
+     last fifty including read ones; nothing asked for them. */
+  const [all, setAll] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+  const showing = all || notes;
+  const loadAll = () => {
+    setLoading(true);
+    NGGApi.member.notifications()
+      .then(r => setAll(r.notifications || []))
+      .catch(() => toast.error("Couldn't load the earlier ones."))
+      .finally(() => setLoading(false));
+  };
+  if (!notes.length && !all) return null;
   return (
     <div className="dash-card">
-      <div className="dash-card-head"><h3 className="dash-card-h-sm">Activity.</h3></div>
+      <div className="dash-card-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <h3 className="dash-card-h-sm">Activity.</h3>
+        {all
+          ? <button className="btn btn-ghost btn-sm" onClick={() => setAll(null)}>Unread only</button>
+          : <button className="btn btn-ghost btn-sm" disabled={loading} onClick={loadAll}>{loading ? "…" : "Everything"}</button>}
+      </div>
       <div className="dash-notes">
-        {notes.slice(0, 5).map(n => (
+        {showing.slice(0, all ? 50 : 5).map(n => (
           <button key={n.notifId} className={"dash-note" + (n.readAt ? "" : " is-unread")} onClick={() => onRead(n.notifId)}>
             <div className="dash-note-kind" data-kind={n.kind}/>
             <div className="dash-note-body">

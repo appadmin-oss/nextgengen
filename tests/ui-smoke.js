@@ -419,6 +419,7 @@ function unzipDocumentXml(buf) {
             : b === 'analytics' ? 'AnalyticsWorkspace'
             : b === 'assess' ? 'AdminAssessment'
             : b === 'fees' ? 'AdminFees'
+            : b === 'account' ? 'DashboardObligations'
             : b === 'gatedesk' ? 'GatePage'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
   var props;
@@ -848,11 +849,48 @@ function unzipDocumentXml(buf) {
                                trainingFee: { from: 75000, to: 86250 } } },
           maxPct: 50, round: 10, fields: ['membershipFee', 'monthlyDues', 'trainingFee'] });
       },
+      /* Two results, and the one that matters is the member who owes NOTHING —
+         invisible to the arrears list by design, which is the whole reason this
+         box exists. */
+      lookup: function (q) {
+        window.__lookups = (window.__lookups || 0) + 1;
+        return Promise.resolve({ q: q, truncated: false, max: 25, members: [
+          { memberId: 'NGG-2026-0001', fullName: 'Ada Obi', centre: 'Egbeda', type: 'NGG',
+            status: 'active', payable: 62000, charged: 101000, credited: 21000, phase: 'service' },
+          { memberId: 'NGG-2026-0009', fullName: 'Sade Squared', centre: 'Ayobo', type: 'NGG',
+            status: 'active', payable: 0, charged: 6000, credited: 6000, phase: 'training' },
+        ] });
+      },
+      charge: function (memberId, kind, amount, reason, note) {
+        window.__charges = (window.__charges || []).concat([{ kind: kind, amount: amount, reason: reason, note: note }]);
+        return Promise.resolve({ entryId: 'FEE-N', balance: { outstanding: 80000 }, overCap: false });
+      },
+      waive: function (memberId, amount, reason) {
+        window.__waives = (window.__waives || []).concat([{ amount: amount, reason: reason }]);
+        return Promise.resolve({ entryId: 'FEE-W', waived: Math.min(amount, 80000), clamped: amount > 80000 });
+      },
       uprateApply: function () { window.__uprateApplies = (window.__uprateApplies || 0) + 1;
         return Promise.resolve({ applied: { monthlyDues: { from: 1000, to: 1150 } }, pct: 15,
                                  fees: Object.assign({}, FEECFG, { monthlyDues: 1150 }) }); },
     };
     props = {};
+  } else if (b === 'account') {
+    /* The member's own account, mid-service: a real balance, and a training fee
+       part-earned-off — the number the card exists to show them. */
+    var ACC = {
+        memberId: 'NGG-2024-0117', payable: 44000, outstanding: 62000,
+        charged: 101000, credited: 39000,
+        trainingCharged: 75000, trainingEarned: 18000, trainingWrittenOff: 0,
+        mouAt: '', currency: 'NGN', remindOff: false,
+        tenure: { start: '2024-09-01', months: 22, phase: 'service', trainingMonths: 18,
+                  serviceMonths: 18, servedMonths: 4, complete: false },
+        entries: [
+          { kind: 'payment', direction: 'credit', amount: 21000, note: '', createdAt: '2026-07-02T09:00:00Z', void: false },
+          { kind: 'training', direction: 'charge', amount: 75000, note: 'Training fee — 2026 session', createdAt: '2026-06-01T09:00:00Z', void: false },
+          { kind: 'fine', direction: 'charge', amount: 500, note: 'Late arrival — three times in August', createdAt: '2026-05-11T09:00:00Z', void: false },
+          { kind: 'waiver', direction: 'credit', amount: 1000, note: 'Hard month at home', createdAt: '2026-05-01T09:00:00Z', void: false },
+        ] };
+    props = { account: ACC };
   } else if (b === 'roster') {
     window.__consentCalls = [];
     var KIDS = [
@@ -4842,6 +4880,97 @@ function unzipDocumentXml(buf) {
     }
     }
 
+    /* ── Finding somebody who does not owe ────────────────────────────────
+       The arrears list holds debtors, and it was the only door in. So the one
+       question a coordinator is asked most — "has Ada paid?" — could not be
+       answered for anybody who had. */
+    if (await step('the fees screen has a Who owes tab', () => fz.getByRole('button', { name: /Who owes/ }).click())) {
+      await fz.waitForTimeout(200);
+      if (await step('…with a box to find any account, not only a debtor',
+                     () => fz.getByLabel('Find an account').fill('sade'))) {
+        await fz.getByRole('button', { name: /^Find$/ }).click();
+        await fz.waitForTimeout(300);
+        const lk = await fz.evaluate(() => {
+          const t = Array.from(document.querySelectorAll('.admin-table'))
+            .find(x => /Received/i.test(x.innerText || ''));
+          return t ? t.innerText.replace(/\s+/g, ' ') : null;
+        });
+        /* THE ASSERTION: the member who owes nothing is findable, and is told to
+           be square in words rather than as a bare ₦0. */
+        ok('…which finds the member who owes nothing, and says so plainly',
+          lk !== null && /Sade Squared/.test(lk) && /nothing owed/i.test(lk));
+        ok('…while still showing what a debtor owes',
+          lk !== null && /Ada Obi/.test(lk) && /₦62,000/.test(lk));
+      }
+    }
+
+    /* ── Fines and waivers: the entries nothing could post ────────────────── */
+    if (await step('an account opens from the arrears list',
+                   () => fz.getByRole('button', { name: /Open →/ }).first().click())) {
+      await fz.waitForTimeout(300);
+      const acts = await fz.evaluate(() => Array.from(document.querySelectorAll('button')).map(b => (b.textContent || '').trim()));
+      ok('the account offers a fine, a waiver and an adjustment — all previously unpostable',
+        acts.indexOf('Issue a fine') >= 0 && acts.indexOf('Waive') >= 0 && acts.indexOf('Adjust') >= 0);
+
+      if (await step('a fine asks WHY before it can be issued',
+                     () => fz.getByRole('button', { name: /^Issue a fine$/ }).click())) {
+        await fz.waitForTimeout(250);
+        const form = await fz.evaluate(() => {
+          const el = document.querySelector('[data-fee-entry="fine"]');
+          if (!el) return null;
+          const sel = el.querySelector('select');
+          return { text: el.innerText.replace(/\s+/g, ' '),
+                   reasons: sel ? Array.from(sel.options).map(o => o.textContent.trim()) : [],
+                   hasAmount: !!el.querySelector('input[type=number]') };
+        });
+        /* A vocabulary, not a free-text box: a fine is the charge a family
+           disputes, and "late three times in August" is answerable where
+           "misconduct" is not. */
+        ok('…offering named reasons rather than a blank box',
+          form !== null && form.hasAmount && form.reasons.length >= 4
+          && form.reasons.join(' | ').indexOf('Late arrival') >= 0);
+        ok('…and showing what is outstanding beside the amount, not from memory',
+          form !== null && /outstanding/i.test(form.text));
+        // Nothing posted by opening the form.
+        ok('…and opening it charges nothing',
+          (await fz.evaluate(() => (window.__charges || []).length)) === 0);
+        if (await step('…and issuing it sends the reason with the amount', async () => {
+          await fz.locator('[data-fee-entry="fine"] input[type=number]').fill('500');
+          await fz.locator('[data-fee-entry="fine"] textarea').fill('Third time this month');
+          await fz.getByRole('button', { name: /^Issue a fine$/ }).last().click();
+        })) {
+          await fz.waitForTimeout(350);
+          const ch = await fz.evaluate(() => (window.__charges || [])[0] || null);
+          ok('…so the entry carries an amount, a kind and a reason',
+            ch !== null && ch.kind === 'fine' && ch.amount === 500 && !!ch.reason
+            && ch.note === 'Third time this month');
+        }
+      }
+
+      /* The distinction the ledger turns on, said where the choice is made. */
+      if (await step('a waiver explains that it is not the same as voiding',
+                     () => fz.getByRole('button', { name: /^Waive$/ }).click())) {
+        await fz.waitForTimeout(250);
+        const wv = await fz.evaluate(() => {
+          const el = document.querySelector('[data-fee-entry="waiver"]');
+          return el ? el.innerText.replace(/\s+/g, ' ') : null;
+        });
+        ok('…keeping the charge and recording the decision, in words',
+          wv !== null && /keeps the charge/i.test(wv) && /should never have existed/i.test(wv));
+        ok('…and asking why, as a required field',
+          wv !== null && /required/i.test(wv) && /why it is being waived/i.test(wv));
+      }
+      /* Escape closes it — the drawer's own key handler, which the fees dialogs
+         did not have when they were written against a component that did not
+         exist. Also leaves the screen clickable for the block below. */
+      await fz.keyboard.press('Escape');
+      await fz.waitForTimeout(200);
+      await fz.keyboard.press('Escape');
+      await fz.waitForTimeout(250);
+      ok('…and Escape closes the fee dialogs rather than trapping the screen',
+        (await fz.evaluate(() => document.querySelectorAll('.admin-drawer').length)) === 0);
+    }
+
     /* ── Reminders: preview before the un-recallable send ───────────────────
      * Sixty messages to sixty guardians cannot be recalled, so the screen has
      * to answer "who, and how many" BEFORE the button, not after it. And it has
@@ -4893,6 +5022,64 @@ function unzipDocumentXml(buf) {
       }
     }
     await fz.close();
+
+    /* ── The member's own account ──────────────────────────────────────────
+     *
+     * We charge members and email their guardian a figure every fortnight, and
+     * the member could see none of it. The card that closes that has one job
+     * beyond the figure: this is a young person reading a debt on their own
+     * screen, so the tone is the design. It leads with what their service has
+     * earned off, says nothing in alarm colours, and sets no deadline.
+     */
+    const acp = await browser.newPage({ viewport: { width: 420, height: 1200 } });
+    const acErrs = [];
+    acp.on('pageerror', e => acErrs.push(e.message));
+    await acp.goto(BASE + '/tests/_boards_fixture.html?board=account&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await acp.waitForTimeout(500);
+    ok('the member account card mounts with no script error', acErrs.length === 0);
+    if (acErrs.length) console.error('       ', acErrs.slice(0, 2).join(' | '));
+    const acText = await acp.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
+    ok('…showing what is outstanding, as a figure and in plain words',
+      /₦44,000/.test(acText) && /outstanding/i.test(acText));
+    /* THE LINE THAT MATTERS. Their service earning the training fee off is the
+       most encouraging number in the subsystem and the one they could not see. */
+    ok('…and leading with what their service has already earned off',
+      /₦18,000/.test(acText) && /₦75,000 training fee/.test(acText)
+      && /earned off by your service/i.test(acText));
+    ok('…and where they are in the three years',
+      /MONTH 22 OF 36/.test(acText) && /SERVICE/.test(acText) && /4\/18 SERVED/.test(acText));
+    /* No deadline, no consequence, nobody threatened — and a person to talk to.
+       A panel that alarms produces a member who stops opening the dashboard. */
+    ok('…with no threat, no deadline, and a person to speak to',
+      !/(overdue|immediately|must pay|penalt|suspend|deadline|failure to)/i.test(acText)
+      && /centre coordinator/i.test(acText));
+    /* Not red. Checked as rendered, because "we would never colour it red" is
+       exactly the kind of intention a later edit loses. */
+    const acColour = await acp.evaluate(() => {
+      const el = document.querySelector('.dash-account-figure');
+      if (!el) return null;
+      const c = getComputedStyle(el).color.match(/\d+/g).map(Number);
+      return { r: c[0], g: c[1], b: c[2] };
+    });
+    ok('…and the figure is not rendered in an alarm colour',
+      acColour !== null && !(acColour.r > 150 && acColour.r > acColour.g * 1.6 && acColour.r > acColour.b * 1.6));
+    // The detail is there when asked for, and folded away until then.
+    const acBefore = await acp.evaluate(() => document.querySelectorAll('.dash-account-row').length);
+    if (await step('the account folds its history away until asked',
+                   () => acp.getByRole('button', { name: /See every entry/ }).click())) {
+      await acp.waitForTimeout(250);
+      const rows = await acp.evaluate(() => Array.from(document.querySelectorAll('.dash-account-row')).map(r => r.innerText.replace(/\s+/g, ' ')));
+      ok('…then listing every entry in the member\'s own words',
+        acBefore === 0 && rows.length === 4
+        && /You paid/.test(rows.join(' ')) && /Waived/.test(rows.join(' '))
+        && /Fine/.test(rows.join(' ')));
+      /* Their record, not our operational one: no staff id, no bank reference,
+         no entry id. The server withholds them; this proves the screen cannot
+         leak them either. */
+      ok('…and never a staff name, a bank reference or an entry id',
+        !/NGG-2025|FEE-[0-9A-F]{6}|TRF-/.test(rows.join(' ')));
+    }
+    await acp.close();
 
     /* ── The Mentor Portal's door ──────────────────────────────────────────
      * Reported from the field: "I'm unable to login to the mentorship page.

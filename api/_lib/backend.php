@@ -133,6 +133,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.fees.uprate.preview'   => 'admin_fees_uprate_preview',
             'admin.fees.uprate.apply'     => 'admin_fees_uprate_apply',
             'admin.fees.arrears'          => 'admin_fees_arrears',
+            'admin.fees.charge'           => 'admin_fees_charge',
+            'admin.fees.waive'            => 'admin_fees_waive',
+            'admin.fees.lookup'           => 'admin_fees_lookup',
             'admin.policy.day.toggle'     => 'admin_policy_day_toggle',
             'admin.policy.board'          => 'admin_policy_board',
             'admin.policy.person'         => 'admin_policy_person',
@@ -256,6 +259,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.security'             => 'member_security',
             'member.sessions.revoke'      => 'member_sessions_revoke',
             'member.momentum'             => 'member_momentum',
+            /* A member's own obligations, read-only. There is deliberately no
+               member-side op that posts, pays or voids anything. */
+            'member.fees'                 => 'member_fees_account',
             'member.coach'                => 'member_coach',
             'member.circle'               => 'member_circle',
             'member.circle.rotate'        => 'member_circle_rotate',

@@ -62,6 +62,11 @@ function member_dashboard(array $p): array {
             'level' => (int)($stats['level'] ?? 1),
             'streak' => (int)($stats['streak'] ?? 0),
             'badges' => safe_json($stats['badges'] ?? null) ?: [],
+            /* The words for them. The dashboard had the earned ids and showed
+               only a count, because nothing told it what 'half-k-club' is
+               called — and a label typed into the component would be a second
+               copy of a list util.php owns. */
+            'badgeLabels' => member_badge_labels(),
             'badgeCount' => (int)($stats['badgeCount'] ?? 0),
             'currentWeek' => $week,
             'completedThisSession' => (int)($stats['completedThisSession'] ?? 0),
@@ -268,6 +273,15 @@ function member_export(array $p): array {
         'assignments' => db_all('SELECT assignmentId, answerText, status, grade, feedback, submittedAt FROM assignment_submissions WHERE memberId = ?', [$mid]),
         'notifications' => db_all('SELECT title, body, kind, createdAt FROM notifications WHERE memberId = ?', [$mid]),
         'devices' => db_all("SELECT ip, userAgent, createdAt, lastSeenAt FROM device_sessions WHERE memberId = ?", [$mid]),
+        /* What we charged them. This was missing, which meant a member who asked
+           for their data got their journal, their devices and their reflections —
+           and nothing about the money. The one part of the record with a
+           financial consequence is the part it must not omit.
+           `createdBy`/`voidedBy` are left out: which member of staff posted a row
+           is our operational detail, and it is another person's identity. */
+        'ledger' => db_all("SELECT entryId, kind, direction, amount, periodKey, note, method, reference,
+                                   createdAt, voidedAt, voidReason
+                            FROM member_ledger WHERE memberId = ? ORDER BY id", [$mid]),
         'exportedAt' => now_iso(),
     ]];
 }
@@ -286,6 +300,24 @@ function member_erase(string $mid, string $by, string $ip = ''): array {
     ], ['id' => $m['id']]);
     db_update('device_sessions', ['revokedAt' => now_iso()], ['memberId' => $mid]);
     db_exec('DELETE FROM journal WHERE memberId = ?', [$mid]);
+    /* ── The ledger, said explicitly ──────────────────────────────────────
+     * A financial record is KEPT: amounts, kinds and dates stay, because what a
+     * programme charged and received is its own account of itself and deleting
+     * it on request would make the books unauditable. What goes is the free
+     * text, which is where a name ends up — "Ada's mother paid cash", a
+     * reference typed with a family's details in it. So the row survives as a
+     * figure and stops being a description of a person.
+     *
+     * Stated here rather than left to inference: for a money table, silence
+     * about erasure is itself a decision, and this one should be readable. */
+    try {
+        db_exec("UPDATE member_ledger SET note = '', reference = '', voidReason = '' WHERE memberId = ?", [$mid]);
+    } catch (Throwable $e) {
+        /* An erasure must never fail because of the ledger — the member asked to
+           be forgotten and the rest of it has already happened. Journalled so a
+           scrub that did not run is visible rather than assumed. */
+        if (function_exists('ops_record')) ops_record('warn', 'member.erase', 'ledger scrub failed', $e->getMessage());
+    }
     audit('member.erase', $by ?: null, $mid, [], $ip);
     return ['ok' => true];
 }

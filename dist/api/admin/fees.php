@@ -13,6 +13,7 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'settings');
     if ($view === 'member')       $res = gs_call('admin.fees.member', ['requesterId' => $mid, 'memberId' => $_GET['memberId'] ?? '']);
     elseif ($view === 'arrears')  $res = gs_call('admin.fees.arrears', ['requesterId' => $mid, 'limit' => $_GET['limit'] ?? '']);
+    elseif ($view === 'lookup')   $res = gs_call('admin.fees.lookup', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '']);
     else                          $res = gs_call('admin.fees.settings.get', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -23,6 +24,8 @@ if ($method === 'GET') {
         'void'      => 'admin.fees.void',
         'mou'       => 'admin.fees.mou',
         'remindOff' => 'admin.fees.remindOff',
+        'charge'    => 'admin.fees.charge',
+        'waive'     => 'admin.fees.waive',
         'accrue'    => 'admin.fees.accrue',
         'remindPreview' => 'admin.fees.remind.preview',
         'remindRun'     => 'admin.fees.remind.run',

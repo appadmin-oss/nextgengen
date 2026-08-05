@@ -12138,6 +12138,329 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         return preg_match_all('/const naira = /', $jsx) === 1;
     })());
 
+    /* ── Fines, adjustments and waivers: the kinds nothing could post ──────
+     *
+     * `fine`, `adjustment` and `waiver` were declared valid kinds from the
+     * start. The reminder email even rendered a "Fines" line. Nothing could
+     * create any of them, so that line was unreachable and the only way to
+     * forgive a hard month was to VOID a real charge — rewriting history to be
+     * kind, which is how a ledger loses its reason.
+     */
+    chk('fees: a fine can be issued, with a reason, and it lands on the ledger', (function () use ($ADM, $setU) {
+        $setU(['monthlyDues' => 1000, 'balanceCap' => 0, 'upratePct' => 0]);
+        $id = 'NGG-FEE-FINE';
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Fine Test', 'email' => 'fine@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'joinDate' => gmdate('Y-m-d', strtotime('-3 months')), 'parentEmail' => 'fineg@example.com',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $r = backend_dispatch('admin.fees.charge', ['requesterId' => $ADM, 'memberId' => $id,
+            'kind' => 'fine', 'amount' => 500, 'reason' => 'late', 'note' => 'Three times in August']);
+        if (empty($r['ok'])) return false;
+        $row = db_row('SELECT * FROM member_ledger WHERE entryId = ?', [$r['entryId']]);
+        // On the row: a charge, the reason, and who did it.
+        $ok = $row && (string)$row['kind'] === 'fine' && (string)$row['direction'] === 'charge'
+            && (int)$row['amount'] === 500
+            && strpos((string)$row['note'], 'Late arrival') !== false
+            && strpos((string)$row['note'], 'Three times in August') !== false
+            && (string)$row['createdBy'] === $ADM;
+        // …and in the audit trail, under its own event, with the reason.
+        $a = db_row("SELECT * FROM audit_log WHERE event = 'fees.fine' AND subject = ? ORDER BY id DESC LIMIT 1", [$id]);
+        $ok = $ok && $a && strpos((string)$a['meta'], 'late') !== false;
+        // It shows up in what the member owes.
+        $b = fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$id]));
+        $ok = $ok && (int)($b['byKind']['fine'] ?? 0) === 500;
+        return $ok;
+    })());
+
+    chk('…and two fines in one month are two fines, not one', (function () use ($ADM) {
+        $id = 'NGG-FEE-FINE';
+        foreach ([300, 400] as $amt) {
+            backend_dispatch('admin.fees.charge', ['requesterId' => $ADM, 'memberId' => $id,
+                'kind' => 'fine', 'amount' => $amt, 'reason' => 'absent']);
+        }
+        /* The accrual's unique index makes dues idempotent on purpose. A fine is
+           an event, not a period, so the same guard must NOT swallow the second
+           one — somebody late twice is late twice. */
+        $n = (int)(db_row('SELECT COUNT(*) c FROM member_ledger WHERE memberId = ? AND kind = ?', [$id, 'fine'])['c'] ?? 0);
+        return $n === 3;
+    })());
+
+    chk('…and a fine without a reason is refused', (function () use ($ADM) {
+        $id = 'NGG-FEE-FINE';
+        $bad = backend_dispatch('admin.fees.charge', ['requesterId' => $ADM, 'memberId' => $id,
+            'kind' => 'fine', 'amount' => 500, 'reason' => '']);
+        $made = backend_dispatch('admin.fees.charge', ['requesterId' => $ADM, 'memberId' => $id,
+            'kind' => 'fine', 'amount' => 500, 'reason' => 'invented_reason']);
+        /* `other` exists so nobody mislabels to fit the list — which means it
+           cannot also be the one that needs no explanation. */
+        $mute = backend_dispatch('admin.fees.charge', ['requesterId' => $ADM, 'memberId' => $id,
+            'kind' => 'fine', 'amount' => 500, 'reason' => 'other', 'note' => '']);
+        $said = backend_dispatch('admin.fees.charge', ['requesterId' => $ADM, 'memberId' => $id,
+            'kind' => 'fine', 'amount' => 500, 'reason' => 'other', 'note' => 'Broke a window']);
+        return ($bad['error'] ?? '') === 'bad_reason'
+            && ($made['error'] ?? '') === 'bad_reason'
+            && ($mute['error'] ?? '') === 'note_required'
+            && !empty($said['ok']);
+    })());
+
+    chk('…and only a manual KIND can be posted this way', (function () use ($ADM) {
+        $id = 'NGG-FEE-FINE';
+        $bad = [];
+        /* The machine's kinds stay the machine's: `dues` posted by hand would
+           collide with the accrual's period key and break its idempotence. And
+           a credit cannot be smuggled in through the charge door. */
+        foreach (['dues', 'training', 'membership', 'payment', 'writeoff', 'waiver'] as $k) {
+            $r = backend_dispatch('admin.fees.charge', ['requesterId' => $ADM, 'memberId' => $id,
+                'kind' => $k, 'amount' => 100, 'reason' => 'late', 'note' => 'x']);
+            $bad[] = ($r['error'] ?? '');
+        }
+        return $bad === array_fill(0, 6, 'bad_kind');
+    })());
+
+    chk('fees: a waiver forgives what is owed and says so on the record', (function () use ($ADM) {
+        $id = 'NGG-FEE-FINE';
+        $m = fn() => db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
+        $before = (int)fees_balance($m())['outstanding'];
+        if ($before <= 0) return false;
+        $r = backend_dispatch('admin.fees.waive', ['requesterId' => $ADM, 'memberId' => $id,
+            'amount' => 200, 'reason' => 'Hard month at home']);
+        if (empty($r['ok'])) return false;
+        $after = (int)fees_balance($m())['outstanding'];
+        $row = db_row('SELECT * FROM member_ledger WHERE entryId = ?', [$r['entryId']]);
+        return $after === $before - 200
+            /* A CREDIT, not a deletion: the charge it forgives is still there,
+               which is the whole difference from voiding. */
+            && $row && (string)$row['direction'] === 'credit' && (string)$row['kind'] === 'waiver'
+            && strpos((string)$row['note'], 'Hard month') !== false;
+    })());
+
+    chk('…and it cannot waive more than is owed, nor waive nothing', (function () use ($ADM) {
+        $id = 'NGG-FEE-FINE';
+        $m = fn() => db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
+        $owed = (int)fees_balance($m())['outstanding'];
+        // Ask for far more than the balance.
+        $r = backend_dispatch('admin.fees.waive', ['requesterId' => $ADM, 'memberId' => $id,
+            'amount' => $owed + 999999, 'reason' => 'Written off entirely']);
+        if (empty($r['ok']) || (int)$r['waived'] !== $owed || empty($r['clamped'])) return false;
+        /* Overshooting must not mint a credit out of nothing — a member who owes
+           nothing would otherwise look prepaid next month. */
+        $now = fees_balance($m());
+        if ((int)$now['outstanding'] !== 0 || (int)$now['payable'] !== 0) return false;
+        $again = backend_dispatch('admin.fees.waive', ['requesterId' => $ADM, 'memberId' => $id,
+            'amount' => 100, 'reason' => 'again']);
+        $noReason = backend_dispatch('admin.fees.waive', ['requesterId' => $ADM, 'memberId' => $id,
+            'amount' => 100, 'reason' => '  ']);
+        return ($again['error'] ?? '') === 'nothing_outstanding'
+            && ($noReason['error'] ?? '') === 'reason_required';
+    })());
+
+    chk('…and a fine may pass the ceiling, but the answer says it did', (function () use ($ADM, $setU) {
+        /* `balanceCap` stops the ACCRUAL — the machine, monthly, unattended. A
+           human issuing a fine can exceed it, and the response has to say so, so
+           the decision is made with the consequence in view rather than silently
+           refused at somebody standing in front of a coordinator. */
+        $id = 'NGG-FEE-FINE';
+        $setU(['monthlyDues' => 1000, 'balanceCap' => 1000]);
+        $r = backend_dispatch('admin.fees.charge', ['requesterId' => $ADM, 'memberId' => $id,
+            'kind' => 'fine', 'amount' => 5000, 'reason' => 'equipment']);
+        $ok = !empty($r['ok']) && !empty($r['overCap']) && (int)$r['balance']['outstanding'] >= 5000;
+        // …and the accrual, which is the unattended one, still refuses to add to it.
+        $before = (int)fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$id]))['charged'];
+        fees_accrue_member(db_row('SELECT * FROM members WHERE memberId = ?', [$id]));
+        $after = (int)fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$id]))['charged'];
+        $setU(['balanceCap' => 0]);
+        return $ok && $after === $before;
+    })());
+
+    chk('fees: the lookup finds an account that owes NOTHING', (function () use ($ADM) {
+        /* The gap: arrears only lists people who owe, and it was the only way in.
+           "Has Ada paid?" was unanswerable for anybody who had. */
+        $id = 'NGG-FEE-SQUARE';
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Sade Squared', 'email' => 'sq@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Ayobo',
+            'joinDate' => gmdate('Y-m-d', strtotime('-2 months')), 'parentEmail' => 'sqg@example.com',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        // Nothing charged, nothing owed: invisible to the arrears list by design.
+        $arr = backend_dispatch('admin.fees.arrears', ['requesterId' => $ADM]);
+        $inArrears = in_array($id, array_column($arr['arrears'] ?? [], 'memberId'), true);
+        $look = backend_dispatch('admin.fees.lookup', ['requesterId' => $ADM, 'q' => 'Sade Squ']);
+        $ids = array_column($look['members'] ?? [], 'memberId');
+        $byId = backend_dispatch('admin.fees.lookup', ['requesterId' => $ADM, 'q' => $id]);
+        $ok = !$inArrears && in_array($id, $ids, true)
+            && in_array($id, array_column($byId['members'] ?? [], 'memberId'), true);
+        // A one-letter search is not a search.
+        $short = backend_dispatch('admin.fees.lookup', ['requesterId' => $ADM, 'q' => 'S']);
+        $ok = $ok && !empty($short['tooShort']) && ($short['members'] ?? []) === [];
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        return $ok;
+    })());
+
+    /* ── The member's own account ──────────────────────────────────────────
+     *
+     * We charge members and email their guardian a figure every fortnight, and
+     * the member could see none of it — including the training fee being written
+     * off as they serve, which is the number they earn.
+     */
+    chk('member: a member can see their own account, and it agrees with the desk', (function () use ($ADM) {
+        $id = 'NGG-FEE-MINE';
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Mine Own', 'email' => 'mine@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'joinDate' => gmdate('Y-m-d', strtotime('-20 months')), 'parentEmail' => 'mineg@example.com',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        fees_accrue_member(db_row('SELECT * FROM members WHERE memberId = ?', [$id]));
+        $mine = backend_dispatch('member.fees', ['memberId' => $id]);
+        if (empty($mine['ok']) || empty($mine['enabled']) || !is_array($mine['account'] ?? null)) return false;
+        $a = $mine['account'];
+        $desk = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => $id])['account'];
+        /* One figure, two screens. A member told a different number from the
+           coordinator they are about to phone is worse than not being told. */
+        return (int)$a['payable'] === (int)$desk['balance']['payable']
+            && (int)$a['outstanding'] === (int)$desk['balance']['outstanding']
+            && (int)$a['trainingEarned'] === (int)$desk['balance']['trainingEarned']
+            && count($a['entries']) === count($desk['entries'])
+            && ($a['tenure']['phase'] ?? '') === ($desk['balance']['tenure']['phase'] ?? 'x');
+    })());
+
+    chk('…and it is READ-ONLY: no member-side op can touch the ledger', (function () {
+        /* Structural, not a permission check. The member namespace has one fees
+           op and it is a read; a member confirming their own payment is not
+           something this ledger will ever accept. */
+        $src = (string)@file_get_contents(dirname(__DIR__) . '/_lib/backend.php');
+        if ($src === '') return false;
+        preg_match_all("/'(member\.[a-zA-Z.]+)'\s*=>\s*'([a-z_]+)'/", $src, $m, PREG_SET_ORDER);
+        foreach ($m as $pair) {
+            if (strpos($pair[1], 'fees') === false) continue;
+            if ($pair[1] !== 'member.fees' || $pair[2] !== 'member_fees_account') return false;
+        }
+        // And the route has no POST branch at all.
+        $route = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/api/member/fees.php');
+        return $route !== '' && strpos($route, 'read_json_body') === false
+            && strpos($route, 'POST') === false;
+    })());
+
+    chk('…and it never reaches a summer child, nor anybody when fees are off', (function () use ($setU) {
+        /* A summer student is a child on a short programme whose money is their
+           guardian's business. Putting a balance on a child's own screen is the
+           thing this subsystem has refused from the start. */
+        $kid = 'NGG-FEE-KID';
+        db_exec('DELETE FROM members WHERE memberId = ?', [$kid]);
+        db_insert('members', ['memberId' => $kid, 'fullName' => 'Summer Child', 'email' => 'kid@example.com',
+            'type' => 'Summer', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'joinDate' => gmdate('Y-m-d', strtotime('-2 months')), 'parentEmail' => 'kidg@example.com',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $r = backend_dispatch('member.fees', ['memberId' => $kid]);
+        $hidden = !empty($r['ok']) && $r['account'] === null && empty($r['enabled']);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$kid]);
+        // Fees switched off: an empty answer, not an error card about money.
+        $setU(['enabled' => false]);
+        $off = backend_dispatch('member.fees', ['memberId' => 'NGG-FEE-MINE']);
+        $setU(['enabled' => true]);
+        return $hidden && !empty($off['ok']) && $off['account'] === null && empty($off['enabled']);
+    })());
+
+    chk('…and it withholds which member of staff posted each row', (function () {
+        /* Their own record, not our operational one. Who keyed a payment and
+           which bank reference cleared it are ours; the amount is theirs. */
+        $a = backend_dispatch('member.fees', ['memberId' => 'NGG-FEE-MINE'])['account'];
+        if (!$a || !$a['entries']) return false;
+        foreach ($a['entries'] as $e) {
+            foreach (['createdBy', 'voidedBy', 'method', 'reference', 'entryId'] as $k) {
+                if (array_key_exists($k, $e)) return false;
+            }
+        }
+        return true;
+    })());
+
+    chk('member: the data export carries the ledger', (function () {
+        /* It carried the journal, the devices and the reflections — and nothing
+           about the money. The one part of the record with a financial
+           consequence is the part an export must not omit. */
+        $ex = backend_dispatch('member.export', ['memberId' => 'NGG-FEE-MINE']);
+        $led = $ex['export']['ledger'] ?? null;
+        if (!is_array($led) || !$led) return false;
+        $row = $led[0];
+        return array_key_exists('amount', $row) && array_key_exists('kind', $row)
+            && array_key_exists('createdAt', $row)
+            // …and not another person's identity.
+            && !array_key_exists('createdBy', $row) && !array_key_exists('voidedBy', $row);
+    })());
+
+    chk('member: erasure keeps the figures and scrubs the words', (function () use ($ADM) {
+        $id = 'NGG-FEE-ERASE';
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Erase Me', 'email' => 'er@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'joinDate' => gmdate('Y-m-d', strtotime('-2 months')), 'parentEmail' => 'erg@example.com',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        backend_dispatch('admin.fees.payment', ['requesterId' => $ADM, 'memberId' => $id,
+            'amount' => 2500, 'method' => 'transfer', 'reference' => 'TRF-ADAS-MUM',
+            'note' => "Ada's mother paid at the centre"]);
+        member_erase($id, $ADM);
+        $rows = db_all('SELECT * FROM member_ledger WHERE memberId = ?', [$id]);
+        if (count($rows) !== 1) return false;              // the figure is KEPT
+        $r = $rows[0];
+        $ok = (int)$r['amount'] === 2500 && (string)$r['kind'] === 'payment'
+            /* …and the free text, which is where a name ends up, is gone. */
+            && (string)$r['note'] === '' && (string)$r['reference'] === '';
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        return $ok;
+    })());
+
+    chk('fees: the new desk ops are gated on the roster capability', (function () {
+        foreach (['admin.fees.charge', 'admin.fees.waive', 'admin.fees.lookup'] as $op) {
+            if ((backend_dispatch($op, ['requesterId' => ''])['ok'] ?? false) === true) return false;
+        }
+        return true;
+    })());
+
+    chk('badges: one catalogue owns both the threshold and the word for it', (function () {
+        /* The dashboard was handed six slugs and could only show a COUNT, because
+           the words for them existed on neither side. */
+        if (!function_exists('member_badges_for') || !function_exists('member_badge_labels')) return false;
+        $labels = member_badge_labels();
+        // Every awardable badge has a label, and every label an awardable badge.
+        $all = member_badges_for(999999, 999, 999);
+        if (!$all || array_keys($labels) !== array_keys(MEMBER_BADGES)) return false;
+        foreach ($all as $id) { if (($labels[$id] ?? '') === '') return false; }
+        /* Each one appears exactly AT its threshold and not one below it —
+           read from the catalogue, so a deliberate change stays green. */
+        foreach (MEMBER_BADGES as $id => $b) {
+            $at = (int)$b['at'];
+            $hit = ['xp' => 0, 'streak' => 0, 'completed' => 0];
+            $hit[$b['metric']] = $at;
+            if (!in_array($id, member_badges_for($hit['xp'], $hit['streak'], $hit['completed']), true)) return false;
+            $under = $hit; $under[$b['metric']] = $at - 1;
+            if (in_array($id, member_badges_for($under['xp'], $under['streak'], $under['completed']), true)) return false;
+        }
+        /* And the six figures themselves, pinned. Rewriting the award logic as a
+           catalogue was supposed to preserve behaviour exactly; a threshold that
+           drifted in the move would otherwise pass every test above. */
+        $pins = ['first-mission' => 100, 'half-k-club' => 500, 'one-k-club' => 1000,
+                 'week-streak' => 7, 'month-streak' => 30, 'week-finisher' => 12];
+        foreach ($pins as $id => $at) { if ((int)MEMBER_BADGES[$id]['at'] !== $at) return false; }
+        return member_badges_for(0, 0, 0) === []
+            && member_badges_for(100, 0, 0) === ['first-mission']
+            && member_badges_for(1000, 7, 12) === ['first-mission', 'half-k-club', 'one-k-club', 'week-streak', 'week-finisher'];
+    })());
+
+    chk('…and the dashboard is given the words, not asked to invent them', (function () {
+        $d = backend_dispatch('member.dashboard', ['memberId' => 'NGG-FEE-MINE']);
+        $labels = $d['stats']['badgeLabels'] ?? null;
+        if (!is_array($labels) || !$labels) return false;
+        // No copy of the catalogue in the component.
+        $src = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/page-dashboard.jsx');
+        return $src !== '' && strpos($src, 'stats.badgeLabels') !== false
+            && strpos($src, 'half-k-club') === false;
+    })());
+
     chk('fees uprate: both ops are gated on the roster capability', (function () {
         foreach (['admin.fees.uprate.preview', 'admin.fees.uprate.apply'] as $op) {
             if ((backend_dispatch($op, ['requesterId' => ''])['ok'] ?? false) === true) return false;
