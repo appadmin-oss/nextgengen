@@ -771,7 +771,8 @@ function unzipDocumentXml(buf) {
        call list. */
     var FEECFG = { enabled: true, currency: 'NGN', membershipFee: 5000, monthlyDues: 1000,
                    trainingFee: 75000, trainingMonths: 18, serviceMonths: 18,
-                   balanceCap: 500000, remindEnabled: true, remindEveryDays: 14, remindMinBalance: 1 };
+                   balanceCap: 500000, remindEnabled: true, remindEveryDays: 14, remindMinBalance: 1,
+                   upratePct: 15, uprateEveryMonths: 12, uprateLastAt: '' };
     window.__feesSaved = [];
     window.NGGApi.admin.fees = {
       settings: function () { return Promise.resolve({ fees: FEECFG, defaults: FEECFG, amountMax: 10000000, remindMinDays: 7 }); },
@@ -825,6 +826,23 @@ function unzipDocumentXml(buf) {
       },
       remindRun: function () { window.__remindRuns = (window.__remindRuns || 0) + 1;
         return Promise.resolve({ result: { sent: 2, failed: 0, due: 2, everyDays: 14 } }); },
+      /* An uprate that is DUE, so the screen has to show the proposal and the
+         button. The balance ceiling is deliberately absent from the changes — the debt
+         ceiling is a protection, not a price, and the test below asserts the
+         screen never offers to raise it. */
+      upratePreview: function () {
+        window.__upratePreviews = (window.__upratePreviews || 0) + 1;
+        return Promise.resolve({
+          uprate: { enabled: true, pct: 15, everyMonths: 12, lastAt: '2025-07-01T09:00:00Z',
+                    monthsSince: 13, due: true,
+                    changes: { membershipFee: { from: 5000, to: 5750 },
+                               monthlyDues: { from: 1000, to: 1150 },
+                               trainingFee: { from: 75000, to: 86250 } } },
+          maxPct: 50, round: 10, fields: ['membershipFee', 'monthlyDues', 'trainingFee'] });
+      },
+      uprateApply: function () { window.__uprateApplies = (window.__uprateApplies || 0) + 1;
+        return Promise.resolve({ applied: { monthlyDues: { from: 1000, to: 1150 } }, pct: 15,
+                                 fees: Object.assign({}, FEECFG, { monthlyDues: 1150 }) }); },
     };
     props = {};
   } else if (b === 'roster') {
@@ -4724,6 +4742,58 @@ function unzipDocumentXml(buf) {
       /0 means no ceiling/i.test(fzSet));
     ok('…and the reminder floor is stated as a number, not discovered on save',
       /minimum is 7/i.test(fzSet));
+
+    /* ── Uprating: proposed on screen, never silently applied ──────────────
+     * The one thing an admin has to believe correctly before pressing this is
+     * that it does NOT reach back into balances already charged. If they think
+     * it reprices August, they will never use it; if they think it forgives
+     * arrears, they will use it for the wrong reason. So the screen says so, and
+     * the confirm says so again next to the actual figures.
+     */
+    ok('the amounts tab proposes an inflation uprate, with the figures',
+      /Keeping up with inflation/i.test(fzSet)
+      && /5,750/.test(fzSet) && /1,150/.test(fzSet) && /86,250/.test(fzSet));
+    ok('…saying plainly that charges already on an account do not move',
+      /already on an account stay exactly as they were/i.test(fzSet));
+    /* Named because an admin who assumes fines rose with the dues will under-set
+       them for a year and never know. */
+    ok('…and naming what is NOT included, rather than leaving it to be assumed',
+      /Fines are not included/i.test(fzSet) && /Policy/.test(fzSet));
+    /* THE DEBT CEILING. Absent from the proposal — it is a protection, not a
+       price, and inflating it every year quietly undoes what it is for. */
+    const upRows = await fz.evaluate(() => {
+      const t = Array.from(document.querySelectorAll('.admin-table'))
+        .find(x => /Would become/i.test(x.innerText || ''));
+      return t ? Array.from(t.querySelectorAll('tbody tr')).map(r => r.innerText.replace(/\s+/g, ' ')) : null;
+    });
+    ok('…and the proposal never offers to raise the debt ceiling',
+      upRows !== null && upRows.length === 3 && !/ceiling|Stop charging/i.test(upRows.join(' ')));
+    /* Arriving on the tab has applied nothing. Looking is not doing. */
+    ok('…and reading the proposal raises nothing',
+      (await fz.evaluate(() => window.__uprateApplies || 0)) === 0
+      && (await fz.evaluate(() => window.__upratePreviews || 0)) >= 1);
+
+    if (await step('the uprate offers a button that asks before it raises anything',
+                   () => fz.getByRole('button', { name: /^Raise the amounts$/ }).first().click())) {
+      await fz.waitForTimeout(300);
+      const upDlg = await fz.evaluate(() => {
+        const d = document.querySelector('.dialog, [role="dialog"], .modal');
+        return d ? d.innerText.replace(/\s+/g, ' ') : null;
+      });
+      ok('…and the confirm names every figure, old and new',
+        upDlg !== null && /15%/.test(upDlg)
+        && /₦1,000 → ₦1,150/.test(upDlg) && /₦75,000 → ₦86,250/.test(upDlg));
+      ok('…and repeats that balances already charged are untouched',
+        upDlg !== null && /not touched/i.test(upDlg) && /12 months/.test(upDlg));
+      /* Backing out is a real no. This is the assertion that would have caught a
+         confirm wired to fire regardless of the answer. */
+      if (await step('…and backing out of the confirm raises nothing',
+                     () => fz.getByRole('button', { name: /^Cancel$/ }).click())) {
+        await fz.waitForTimeout(250);
+        ok('…nothing was raised when the confirm was declined',
+          (await fz.evaluate(() => window.__uprateApplies || 0)) === 0);
+      }
+    }
     }
 
     /* ── Reminders: preview before the un-recallable send ───────────────────

@@ -806,6 +806,8 @@
         accrue:      (limit) => request('/admin/fees.php', { body: { action: 'accrue', limit } }),
         remindPreview: () => request('/admin/fees.php', { body: { action: 'remindPreview' } }),
         remindRun:     (limit) => request('/admin/fees.php', { body: { action: 'remindRun', limit } }),
+        upratePreview: () => request('/admin/fees.php', { body: { action: 'upratePreview' } }),
+        uprateApply:   () => request('/admin/fees.php', { body: { action: 'uprateApply' } }),
       },
       /* Programme calendar + Institutional Policy enforcement. The calendar
          decides which days count; the policy engine decides what a missed one

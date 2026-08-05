@@ -6547,6 +6547,11 @@ const FEE_KIND_LABEL = {
   fine: "Fine", adjustment: "Adjustment",
   payment: "Payment received", writeoff: "Written off", waiver: "Waived",
 };
+/* The settings an uprate can move, by the name they carry on the form — so the
+   confirm dialog names the field an admin just read rather than its key. */
+const FEE_SETTING_LABEL = {
+  membershipFee: "Membership fee", monthlyDues: "Monthly dues", trainingFee: "Training fee",
+};
 /* `naira` is defined once further down this module and shared — these files
    concatenate into one scope, so a second copy is a build error, not a local. */
 
@@ -6561,6 +6566,10 @@ function AdminFees() {
      sixty guardians cannot be recalled, so "who, and how many" is a question
      that gets answered first rather than discovered afterwards. */
   const [prev, setPrev] = React.useState(null);
+  /* Same rule for the uprate: what it WOULD do, field by field, before anybody
+     presses anything. A price rise applied sight-unseen is the version of this
+     feature that gets switched off again a week later. */
+  const [up, setUp] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
@@ -6569,7 +6578,7 @@ function AdminFees() {
     .catch(e => setErr(e.code || e.message));
   const loadArr = () => NGGApi.admin.fees.arrears()
     .then(setArr).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { loadCfg(); loadArr(); }, []);
+  React.useEffect(() => { loadCfg(); loadArr(); loadUprate(); }, []);
 
   const dirty = cfg && orig && JSON.stringify(cfg) !== orig;
   const set = (k, v) => setCfg(c => ({ ...c, [k]: v }));
@@ -6611,6 +6620,35 @@ function AdminFees() {
   };
   const loadPreview = () => NGGApi.admin.fees.remindPreview()
     .then(r => setPrev(r.preview)).catch(e => toast.error(e.code || e.message));
+  const loadUprate = () => NGGApi.admin.fees.upratePreview()
+    .then(r => setUp({ ...r.uprate, maxPct: r.maxPct, fields: r.fields || [] }))
+    .catch(e => toast.error(e.code || e.message));
+  const applyUprate = async () => {
+    const ch = (up && up.changes) || {};
+    const keys = Object.keys(ch);
+    if (!keys.length) return;
+    /* The confirm lists every figure, old → new, and says the one thing an admin
+       most needs to hear: balances already on accounts do not move. Somebody who
+       believes this reprices August will never press it; somebody who believes it
+       silently forgives arrears will press it for the wrong reason. */
+    if (!(await dialog.confirm({
+      title: "Raise the amounts by " + up.pct + "%?",
+      body: keys.map(k => (FEE_SETTING_LABEL[k] || k) + ": " + naira(ch[k].from) + " → " + naira(ch[k].to)).join(" · ")
+          + ". This changes what is charged from now on. Balances already on accounts are not touched, "
+          + "and it cannot be applied again for " + up.everyMonths + " months.",
+      cta: "Raise the amounts" }))) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.fees.uprateApply();
+      setCfg(r.fees); setOrig(JSON.stringify(r.fees));
+      toast.success(Object.keys(r.applied || {}).length + " amount(s) raised by " + r.pct + "%.");
+      loadUprate(); loadArr();
+    } catch (e) {
+      toast.error(e.code === "not_due" ? "Already raised inside the last " + ((up && up.everyMonths) || 12) + " months."
+                : (e.code || e.message));
+      loadUprate();
+    } finally { setBusy(false); }
+  };
   const sendReminders = async () => {
     const n = (prev && prev.count) || 0;
     if (!n) return;
@@ -6773,6 +6811,70 @@ function AdminFees() {
           {num("remindEveryDays", "No more often than every",
             "Days between reminders to the same family. The minimum is " + meta.remindMinDays + " — a family reminded daily stops reading anything you send, and your sender gets blocked.")}
           <button className="btn btn-primary btn-sm" disabled={!dirty || busy} onClick={save}>{busy ? "Saving…" : "Save amounts"}</button>
+        </div>
+      )}
+
+      {/* ── Keeping the amounts worth what they were ───────────────────────────
+          A fixed naira figure loses value every year it is left alone, so a
+          programme that never revisits its amounts is quietly taking a pay cut.
+          This raises them on a schedule — but only ever as a proposal an admin
+          presses, never from the cron, and never over a balance already charged. */}
+      {tab === "settings" && (
+        <div className="admin-card" style={{ maxWidth: 620, marginTop: 16 }}>
+          <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 10 }}>
+            Keeping up with inflation
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            {num("upratePct", "Raise amounts by", "Per cent. 0 switches it off." + (up && up.maxPct ? " At most " + up.maxPct + "% at a time." : ""))}
+            {num("uprateEveryMonths", "No more often than every", "Months. Twelve is a yearly review.")}
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--ink-500)", lineHeight: 1.6, margin: "-4px 0 14px" }}>
+            {/* Both halves matter. The first is what people fear; the second is
+                what they'd otherwise assume moved with it and be wrong about. */}
+            Only the membership fee, monthly dues and training fee move.
+            {" "}<b>Charges already on an account stay exactly as they were</b> — a family quoted
+            ₦{cfg.monthlyDues} for a month owes that for that month, whatever the figure becomes later.
+            <div style={{ marginTop: 6, color: "var(--ink-400)" }}>
+              Fines are not included — those live under <b>Policy</b> and are set there.
+            </div>
+          </div>
+          {!up ? <div className="admin-empty" style={{ padding: "8px 0" }}>Checking…</div>
+            : !up.enabled ? (
+            <div style={{ fontSize: 13, color: "var(--ink-500)" }}>
+              Switched off. Set a percentage above and save to use it.
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 13.5, marginBottom: 10 }}>
+                {up.lastAt
+                  ? <>Last raised {String(up.lastAt).slice(0, 10)}{up.monthsSince !== null && <> · {up.monthsSince} month{up.monthsSince === 1 ? "" : "s"} ago</>}.</>
+                  : <>Never raised.</>}
+                {" "}
+                {up.due ? <b style={{ color: "var(--gold-700,#a07400)" }}>Due now.</b>
+                        : <span style={{ color: "var(--ink-500)" }}>Not due for another {Math.max(0, up.everyMonths - (up.monthsSince || 0))} month(s).</span>}
+              </div>
+              {Object.keys(up.changes || {}).length === 0
+                ? <div style={{ fontSize: 13, color: "var(--ink-500)" }}>Nothing to raise — no amount is set.</div>
+                : (
+                <>
+                  <table className="admin-table" style={{ marginBottom: 12 }}>
+                    <thead><tr><th>Amount</th><th>Now</th><th>Would become</th></tr></thead>
+                    <tbody>{Object.keys(up.changes).map(k => (
+                      <tr key={k}>
+                        <td>{FEE_SETTING_LABEL[k] || k}</td>
+                        <td className="mono" style={{ color: "var(--ink-500)" }}>{naira(up.changes[k].from)}</td>
+                        <td className="mono"><b>{naira(up.changes[k].to)}</b></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                  <button className="btn btn-primary btn-sm" disabled={busy || !up.due} onClick={applyUprate}>
+                    {busy ? "Working…" : "Raise the amounts"}
+                  </button>
+                  <button className="btn btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={loadUprate}>Recheck</button>
+                </>
+              )}
+            </>
+          )}
         </div>
       )}
 

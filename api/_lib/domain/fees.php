@@ -79,8 +79,35 @@ const FEES_DEFAULTS = [
     'remindEnabled' => false,
     'remindEveryDays' => 14,
     'remindMinBalance' => 1,
+    /* ── Uprating ─────────────────────────────────────────────────────────
+     * Naira inflation erodes a fixed figure fast: ₦75,000 set today is worth
+     * noticeably less in two years, and a programme that never revisits its
+     * amounts is quietly taking a pay cut. This raises the AMOUNTS on a
+     * schedule so they hold their real value.
+     *
+     * It touches the settings and NOTHING ELSE. A charge already posted keeps
+     * the figure it was posted at, because a family told ₦1,000 for August owes
+     * ₦1,000 for August — reaching back into a balance somebody has already been
+     * quoted is how a ledger stops being trustworthy.
+     *
+     * Off by default, and PROPOSED rather than automatic: see
+     * `fees_uprate_apply()`. */
+    'upratePct' => 0,
+    'uprateEveryMonths' => 12,
+    'uprateLastAt' => '',
 ];
 const FEES_REMIND_MIN_DAYS = 7;
+/** A ceiling on one uprate. Anything above this is a repricing decision that
+ *  wants a human typing the new figure, not a percentage applied by a cron. */
+const FEES_UPRATE_MAX_PCT = 50;
+/** Uprated amounts round to the nearest ₦10. A due of ₦1,173.50 is arithmetic,
+ *  not a price, and a figure ending in 3 naira reads to a family like an error. */
+const FEES_UPRATE_ROUND = 10;
+/** Which amounts an uprate moves. Deliberately the three CHARGES and not
+ *  `balanceCap`: the cap is a safety limit on how far a family's debt may run,
+ *  not a price, and inflating a debt ceiling alongside the prices would quietly
+ *  undo the protection it exists to provide. */
+const FEES_UPRATE_FIELDS = ['membershipFee', 'monthlyDues', 'trainingFee'];
 
 /** The charge and credit kinds. `direction` is stored, but these decide it, so a
  *  caller cannot post a payment that increases what is owed. */
@@ -115,6 +142,14 @@ function fees_settings_save(array $in, string $by): array {
            told, rather than getting a daily chase that nobody asked to defend. */
         'remindEveryDays' => max(FEES_REMIND_MIN_DAYS, min(365, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']) ?: (int)$cur['remindEveryDays'])),
         'remindMinBalance' => fees_money($in['remindMinBalance'] ?? null, (int)$cur['remindMinBalance']),
+        /* Uprating. `upratePct` of 0 switches it off, which is the default —
+           raising what families are charged is not something to inherit. */
+        'upratePct' => max(0, min(FEES_UPRATE_MAX_PCT, (int)($in['upratePct'] ?? $cur['upratePct']))),
+        'uprateEveryMonths' => max(1, min(120, (int)($in['uprateEveryMonths'] ?? $cur['uprateEveryMonths']) ?: 12)),
+        /* Carried, never settable from the form. It records when an uprate was
+           APPLIED, and a field an admin can edit is a field that can be used to
+           apply one twice in a year. Only `fees_uprate_apply()` writes it. */
+        'uprateLastAt' => (string)($cur['uprateLastAt'] ?? ''),
     ];
     setting_set('fees', $clean, $by);
     audit('fees.settings.save', $by, 'fees', [
@@ -122,6 +157,69 @@ function fees_settings_save(array $in, string $by): array {
         'trainingFee' => $clean['trainingFee'], 'membershipFee' => $clean['membershipFee'],
     ], '');
     return $clean;
+}
+
+/**
+ * What an uprate WOULD do, and whether one is due.
+ *
+ * Computed and shown; never applied on its own. Raising what families are
+ * charged is a decision somebody should make on purpose — a percentage that
+ * fires from a cron would mean the first anyone hears of a price rise is a
+ * bigger reminder email, and nobody would be able to say who decided it.
+ *
+ * `due` is only about the CLOCK. It says the interval has elapsed, not that
+ * anything has happened; `apply` is a separate, audited, human act.
+ */
+function fees_uprate_preview(?array $cfg = null, ?string $asOf = null): array {
+    $cfg = $cfg ?? fees_settings();
+    $pct = (int)($cfg['upratePct'] ?? 0);
+    $every = max(1, (int)($cfg['uprateEveryMonths'] ?? 12));
+    $last = substr((string)($cfg['uprateLastAt'] ?? ''), 0, 10);
+    $today = $asOf ?? gmdate('Y-m-d');
+    /* Never uprated: due once the interval has passed since it was switched on.
+     * With no record of a first application there is nothing to measure from, so
+     * the honest answer is "due now" and the admin decides. */
+    $monthsSince = $last !== '' ? fees_months_between($last, $today) : null;
+    $due = $pct > 0 && ($monthsSince === null || $monthsSince >= $every);
+    $changes = [];
+    foreach (FEES_UPRATE_FIELDS as $f) {
+        $from = (int)($cfg[$f] ?? 0);
+        if ($from <= 0) continue;                       // nothing to raise
+        $to = min(FEES_AMOUNT_MAX, (int)(round($from * (1 + $pct / 100) / FEES_UPRATE_ROUND) * FEES_UPRATE_ROUND));
+        if ($to === $from) continue;
+        $changes[$f] = ['from' => $from, 'to' => $to];
+    }
+    return ['enabled' => $pct > 0, 'pct' => $pct, 'everyMonths' => $every,
+            'lastAt' => (string)($cfg['uprateLastAt'] ?? ''),
+            'monthsSince' => $monthsSince, 'due' => $due, 'changes' => $changes];
+}
+
+/**
+ * Apply the uprate. Settings only.
+ *
+ * The property this function has to keep, and which its test pins: a charge
+ * ALREADY POSTED is untouched. The ledger stores the amount on the row, so a
+ * family quoted ₦1,000 for August owes ₦1,000 for August however many times the
+ * price is revised afterwards. Uprating a balance somebody has already been told
+ * is the single thing that would make this ledger untrustworthy.
+ *
+ * Refused when not due, so a second press inside the interval cannot raise
+ * prices twice — the same lesson the accrual's unique index taught.
+ */
+function fees_uprate_apply(string $by, ?string $asOf = null): array {
+    $cfg = fees_settings();
+    $pv = fees_uprate_preview($cfg, $asOf);
+    if (empty($pv['enabled'])) return ['ok' => false, 'error' => 'uprate_off'];
+    if (empty($pv['due']))     return ['ok' => false, 'error' => 'not_due', 'monthsSince' => $pv['monthsSince'],
+                                       'everyMonths' => $pv['everyMonths']];
+    if (!$pv['changes'])       return ['ok' => false, 'error' => 'nothing_to_change'];
+    $next = $cfg;
+    foreach ($pv['changes'] as $f => $c) $next[$f] = (int)$c['to'];
+    $next['uprateLastAt'] = now_iso();
+    setting_set('fees', $next, $by);
+    audit('fees.uprate', $by, 'fees',
+          ['pct' => $pv['pct'], 'changes' => $pv['changes']], '');
+    return ['ok' => true, 'applied' => $pv['changes'], 'pct' => $pv['pct'], 'fees' => fees_settings()];
 }
 
 /**
@@ -616,6 +714,24 @@ function admin_fees_remind_preview(array $p): array {
         'everyDays' => $c['everyDays'] ?? 0,
         'enabled' => !empty($cfg['enabled']) && !empty($cfg['remindEnabled']),
     ]];
+}
+
+/** What an uprate would do to each amount, and whether one is due. */
+function admin_fees_uprate_preview(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    return ['ok' => true, 'uprate' => fees_uprate_preview(), 'maxPct' => FEES_UPRATE_MAX_PCT,
+            /* Named so the screen can say what is NOT included. Fines live in the
+               policy settings and are not reachable from here; an admin who
+               expects them to move with the dues should be told they do not. */
+            'fields' => FEES_UPRATE_FIELDS];
+}
+
+/** Apply it. Settings only — never a balance already accrued. */
+function admin_fees_uprate_apply(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $r = fees_uprate_apply((string)($g['requester']['memberId'] ?? ''));
+    if (empty($r['ok'])) return $r;
+    return ['ok' => true, 'applied' => $r['applied'], 'pct' => $r['pct'], 'fees' => $r['fees']];
 }
 
 /** Send them. Bounded per press, so a mis-click cannot mail an entire roster. */

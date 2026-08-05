@@ -11823,6 +11823,187 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             && strpos($s2[1], "action: 'checkin'") !== false;
     })());
 
+    /* ── Uprating: the amounts keep their real value, balances do not move ────
+     *
+     * Naira inflation erodes a fixed figure fast — ₦75,000 set today is worth
+     * noticeably less in two years, and a programme that never revisits its
+     * amounts is quietly taking a pay cut. So the AMOUNTS can be raised on a
+     * schedule.
+     *
+     * The load-bearing property, and the first test below: a charge ALREADY
+     * POSTED does not move. A family quoted ₦1,000 for August owes ₦1,000 for
+     * August however many times the price is revised afterwards. Reaching back
+     * into a balance somebody has already been told is the one thing that would
+     * make this ledger untrustworthy, and it is the mistake a naive
+     * implementation makes — recompute from the settings and every historic
+     * charge silently reprices.
+     */
+    /* `uprateLastAt` is deliberately NOT accepted from the settings form — a
+       field an admin can clear is a field that can raise prices twice in a year,
+       and there is a test below pinning that. So a test that needs a clean slate
+       writes the stamp straight to the setting instead of pretending the form
+       can do it. Everything else still goes through the ordinary save. */
+    $setU = function (array $o) use ($set) {
+        $stamp = array_key_exists('uprateLastAt', $o) ? (string)$o['uprateLastAt'] : null;
+        unset($o['uprateLastAt']);
+        $set($o);
+        if ($stamp !== null) {
+            $cfg = fees_settings();
+            $cfg['uprateLastAt'] = $stamp;
+            setting_set('fees', $cfg, 'test');
+        }
+        return fees_settings();
+    };
+
+    chk('fees uprate: raising the amounts does NOT reprice a charge already posted', (function () use ($ADM, $setU) {
+        $setU(['monthlyDues' => 1000, 'trainingFee' => 75000, 'upratePct' => 20,
+               'uprateEveryMonths' => 12, 'uprateLastAt' => '']);
+        $id = 'NGG-FEE-UP';
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Uprate Test', 'email' => 'up@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'joinDate' => gmdate('Y-m-d', strtotime('-2 months')), 'parentEmail' => 'upg@example.com',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        // Charge at today's prices.
+        fees_accrue_member(db_row('SELECT * FROM members WHERE memberId = ?', [$id]));
+        $before = fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$id]));
+        $duesBefore = (int)($before['byKind']['dues'] ?? 0);
+        if ($duesBefore <= 0) return false;
+        // Raise the prices by a fifth.
+        $r = fees_uprate_apply($ADM);
+        if (empty($r['ok'])) return false;
+        $cfg = fees_settings();
+        if ((int)$cfg['monthlyDues'] !== 1200 || (int)$cfg['trainingFee'] !== 90000) return false;
+        /* THE ASSERTION. The balance is byte-for-byte what it was: the rows carry
+           their own amounts and nothing recomputes them from the settings. */
+        $after = fees_balance(db_row('SELECT * FROM members WHERE memberId = ?', [$id]));
+        $ok = (int)($after['byKind']['dues'] ?? 0) === $duesBefore
+            && (int)$after['charged'] === (int)$before['charged']
+            && (int)$after['payable'] === (int)$before['payable'];
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        return $ok;
+    })());
+
+    chk('…and the NEXT month is charged at the new figure, not the old one', (function () use ($ADM, $setU) {
+        $setU(['monthlyDues' => 1000, 'trainingFee' => 0, 'membershipFee' => 0,
+              'upratePct' => 20, 'uprateEveryMonths' => 12, 'uprateLastAt' => '']);
+        $id = 'NGG-FEE-UP2';
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Uprate Next', 'email' => 'up2@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'joinDate' => gmdate('Y-m-d', strtotime('-1 month')), 'parentEmail' => 'up2g@example.com',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $m = fn() => db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
+        // Charge last month at 1000, then raise, then charge this month.
+        fees_accrue_member($m(), null, gmdate('Y-m-d', strtotime('-1 month')));
+        fees_uprate_apply('test');
+        fees_accrue_member($m());
+        $amounts = array_map('intval', array_column(
+            db_all('SELECT amount FROM member_ledger WHERE memberId = ? AND kind = ? ORDER BY id', [$id, 'dues']), 'amount'));
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        // Two months, at two different prices — the old one preserved.
+        return $amounts === [1000, 1200];
+    })());
+
+    chk('fees uprate: it is PROPOSED, never applied on its own', (function () use ($ADM, $setU) {
+        /* A percentage that fired from a cron would mean the first anyone hears
+           of a price rise is a bigger reminder email, and nobody could say who
+           decided it. So the preview computes and the apply is a separate act. */
+        $setU(['monthlyDues' => 1000, 'upratePct' => 20, 'uprateEveryMonths' => 12, 'uprateLastAt' => '']);
+        $pv = backend_dispatch('admin.fees.uprate.preview', ['requesterId' => $ADM]);
+        if (empty($pv['ok'])) return false;
+        $u = $pv['uprate'];
+        if (empty($u['due']) || ($u['changes']['monthlyDues']['to'] ?? 0) !== 1200) return false;
+        // Looking changed nothing.
+        if ((int)fees_settings()['monthlyDues'] !== 1000) return false;
+        // Accrual does not sneak an uprate in either.
+        $before = (string)fees_settings()['uprateLastAt'];
+        backend_dispatch('admin.fees.accrue', ['requesterId' => $ADM]);
+        return (int)fees_settings()['monthlyDues'] === 1000
+            && (string)fees_settings()['uprateLastAt'] === $before;
+    })());
+
+    chk('…and a second press inside the interval is refused, so prices cannot double-rise', (function () use ($ADM, $setU) {
+        $setU(['monthlyDues' => 1000, 'upratePct' => 20, 'uprateEveryMonths' => 12, 'uprateLastAt' => '']);
+        $first = backend_dispatch('admin.fees.uprate.apply', ['requesterId' => $ADM]);
+        if (empty($first['ok']) || (int)fees_settings()['monthlyDues'] !== 1200) return false;
+        $second = backend_dispatch('admin.fees.uprate.apply', ['requesterId' => $ADM]);
+        // Refused, with the reason, and the price unmoved.
+        return ($second['error'] ?? '') === 'not_due' && (int)fees_settings()['monthlyDues'] === 1200
+            && (int)($second['everyMonths'] ?? 0) === 12;
+    })());
+
+    chk('…and it becomes due again once the interval has passed', (function () use ($ADM, $setU) {
+        $setU(['monthlyDues' => 1000, 'upratePct' => 10, 'uprateEveryMonths' => 12]);
+        // Stamp it as applied 13 months ago — past the interval.
+        $cfg = fees_settings();
+        $cfg['uprateLastAt'] = gmdate('Y-m-d\TH:i:s\Z', strtotime('-13 months'));
+        setting_set('fees', $cfg, 'test');
+        $pv = fees_uprate_preview();
+        if (empty($pv['due']) || (int)$pv['monthsSince'] < 12) return false;
+        // …and NOT due at 11 months.
+        $cfg['uprateLastAt'] = gmdate('Y-m-d\TH:i:s\Z', strtotime('-11 months'));
+        setting_set('fees', $cfg, 'test');
+        return empty(fees_uprate_preview()['due']);
+    })());
+
+    chk('fees uprate: rounded to something a family could read, and clamped', (function () use ($setU) {
+        // ₦1,173.50 is arithmetic, not a price. Nearest ₦10.
+        $setU(['monthlyDues' => 1055, 'upratePct' => 11, 'uprateEveryMonths' => 12, 'uprateLastAt' => '']);
+        $to = fees_uprate_preview()['changes']['monthlyDues']['to'] ?? 0;
+        if ($to % FEES_UPRATE_ROUND !== 0) return false;
+        // 1055 * 1.11 = 1171.05 → 1170.
+        if ((int)$to !== 1170) return false;
+        /* And the percentage itself is capped: above the ceiling it is a
+           repricing decision that wants a human typing the figure. */
+        $r = backend_dispatch('admin.fees.settings.set', ['requesterId' => 'NGG-2025-0099', 'data' => ['upratePct' => 900]]);
+        return (int)$r['fees']['upratePct'] === FEES_UPRATE_MAX_PCT;
+    })());
+
+    chk('fees uprate: the debt ceiling is not inflated along with the prices', (function () use ($ADM, $setU) {
+        /* `balanceCap` is a safety limit on how far a family's arrears may run,
+           not a price. Raising it with the dues would quietly undo the protection
+           it exists to provide, every year, without anybody choosing to. */
+        $setU(['monthlyDues' => 1000, 'balanceCap' => 50000, 'upratePct' => 20,
+              'uprateEveryMonths' => 12, 'uprateLastAt' => '']);
+        $pv = fees_uprate_preview();
+        if (array_key_exists('balanceCap', $pv['changes'])) return false;
+        backend_dispatch('admin.fees.uprate.apply', ['requesterId' => $ADM]);
+        $cfg = fees_settings();
+        return (int)$cfg['balanceCap'] === 50000 && (int)$cfg['monthlyDues'] === 1200;
+    })());
+
+    chk('fees uprate: switched off by default, and off means nothing is due', (function () use ($ADM, $setU) {
+        if ((int)FEES_DEFAULTS['upratePct'] !== 0) return false;   // not inherited
+        $setU(['monthlyDues' => 1000, 'upratePct' => 0, 'uprateLastAt' => '']);
+        $pv = fees_uprate_preview();
+        return empty($pv['enabled']) && empty($pv['due'])
+            && (backend_dispatch('admin.fees.uprate.apply', ['requesterId' => $ADM])['error'] ?? '') === 'uprate_off';
+    })());
+
+    chk('fees uprate: the last-applied stamp cannot be set from the settings form', (function () use ($ADM, $setU) {
+        /* A field an admin can edit is a field that can be used to apply an
+           uprate twice in a year. Only the apply writes it. */
+        $setU(['monthlyDues' => 1000, 'upratePct' => 20, 'uprateEveryMonths' => 12, 'uprateLastAt' => '']);
+        backend_dispatch('admin.fees.uprate.apply', ['requesterId' => $ADM]);
+        $stamped = (string)fees_settings()['uprateLastAt'];
+        if ($stamped === '') return false;
+        // Try to clear it through the ordinary settings save.
+        backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => ['uprateLastAt' => '', 'monthlyDues' => 1200]]);
+        return (string)fees_settings()['uprateLastAt'] === $stamped;
+    })());
+
+    chk('fees uprate: both ops are gated on the roster capability', (function () {
+        foreach (['admin.fees.uprate.preview', 'admin.fees.uprate.apply'] as $op) {
+            if ((backend_dispatch($op, ['requesterId' => ''])['ok'] ?? false) === true) return false;
+        }
+        return true;
+    })());
+
     /* ── Reminders: bounded, and about the right number ───────────────────────
      *
      * These go to the guardians of children, most of whom are late because money
