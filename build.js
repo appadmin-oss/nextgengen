@@ -41,6 +41,7 @@ const ORDER = [
   'command.jsx',
   'tweaks-panel.jsx',
   'components.jsx',
+  'table.jsx',
   'card-template.jsx',
   'page-home.jsx',
   'page-club.jsx',
