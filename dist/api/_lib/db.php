@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 83;
+const NGG_SCHEMA_TARGET = 84;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2250,6 +2250,30 @@ function db_migrate(PDO $db): void {
              * disabling reminders for the whole programme. */
             ALTER TABLE members ADD COLUMN duesRemindOff INTEGER DEFAULT 0;
             ALTER TABLE members ADD COLUMN duesRemindedAt TEXT DEFAULT '';
+        ",
+        /* Weekly engagement snapshots — one row per person per ISO week, carrying
+         * their centre, so trends are readable per member AND groupable per
+         * centre. Written by the weekly snapshot job (idempotent per week via the
+         * UNIQUE index); read by admin.engagement.trends. `stats` is the same
+         * JSON component breakdown the live view shows, kept for auditability. */
+        84 => "
+            CREATE TABLE IF NOT EXISTS engagement_snapshots (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              weekStart TEXT NOT NULL,
+              role TEXT NOT NULL,
+              personId TEXT NOT NULL,
+              name TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              engagement INTEGER NOT NULL DEFAULT 0,
+              band TEXT DEFAULT '',
+              windowDays INTEGER NOT NULL DEFAULT 7,
+              stats TEXT DEFAULT '',
+              createdAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_engsnap_unique ON engagement_snapshots (weekStart, role, personId);
+            CREATE INDEX IF NOT EXISTS idx_engsnap_week ON engagement_snapshots (weekStart);
+            CREATE INDEX IF NOT EXISTS idx_engsnap_centre ON engagement_snapshots (centre, weekStart);
+            CREATE INDEX IF NOT EXISTS idx_engsnap_person ON engagement_snapshots (role, personId, weekStart);
         ",
     ];
 

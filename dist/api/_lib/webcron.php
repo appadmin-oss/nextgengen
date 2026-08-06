@@ -175,6 +175,10 @@ function web_cron_run(): void {
                 if (web_cron_due('deliver', web_cron_cfg('deliver', 60)))       web_cron_guard('deliveries_dispatch', fn() => deliveries_dispatch(8));
                 if (web_cron_due('reminders', web_cron_cfg('reminders', 900)))  web_cron_guard('reminders', 'web_cron_reminders');
                 if (web_cron_due('maint', web_cron_cfg('maint', 3600)))         web_cron_guard('maintenance', 'web_cron_maintenance');
+                // Weekly engagement snapshot — captured opportunistically at most
+                // once every 7 days even with no external cron. Idempotent per
+                // week, so a slightly-early or -late firing just refreshes the row.
+                if (web_cron_due('eng_snapshot', web_cron_cfg('eng_snapshot', 604800))) web_cron_guard('engagement_snapshot', fn() => engagement_snapshot_week());
             } finally { @flock($lock, LOCK_UN); }
         }
         @fclose($lock);

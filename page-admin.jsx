@@ -709,74 +709,157 @@ function engActivity(r) {
   return "";
 }
 
+const ENG_LINE = { all: "#111827", volunteer: "#2b8a3e", instructor: "#1971c2", mentor: "#9c36b5" };
+
+// Compact inline-SVG line chart of weekly average engagement (overall + per role).
+function EngTrendChart({ series }) {
+  if (!series || !series.length) return <div className="admin-empty">No snapshots yet — the weekly job hasn't run.</div>;
+  const W = 720, H = 180, padL = 30, padR = 12, padT = 12, padB = 24, n = series.length;
+  const x = i => padL + (n === 1 ? (W - padL - padR) / 2 : i * (W - padL - padR) / (n - 1));
+  const y = v => padT + (100 - v) * (H - padT - padB) / 100;
+  const keys = ["all", "volunteer", "instructor", "mentor"];
+  const path = k => { let d = "", on = false; series.forEach((s, i) => { const v = s[k]; if (v == null) { on = false; return; } d += (on ? " L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1); on = true; }); return d; };
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <svg viewBox={"0 0 " + W + " " + H} style={{ width: "100%", minWidth: 520, height: "auto" }} role="img" aria-label="Weekly engagement trend">
+        {[0, 50, 75, 100].map(g => (
+          <g key={g}>
+            <line x1={padL} x2={W - padR} y1={y(g)} y2={y(g)} stroke={g === 75 ? "#137a3a55" : g === 50 ? "#9a5b0055" : "#e7e9ee"} strokeDasharray={(g === 50 || g === 75) ? "4 4" : ""}/>
+            <text x={padL - 5} y={y(g) + 3} textAnchor="end" fontSize="10" fill="var(--ink-400,#5f6874)">{g}</text>
+          </g>
+        ))}
+        {keys.map(k => <path key={k} d={path(k)} fill="none" stroke={ENG_LINE[k]} strokeWidth={k === "all" ? 2.5 : 1.5} opacity={k === "all" ? 1 : 0.85}/>)}
+        {series.map((s, i) => <text key={i} x={x(i)} y={H - 7} textAnchor="middle" fontSize="9" fill="var(--ink-400,#5f6874)">{String(s.weekStart).slice(5)}</text>)}
+      </svg>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: ".8rem", marginTop: 2 }}>
+        {keys.map(k => <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 14, height: 3, background: ENG_LINE[k], display: "inline-block", borderRadius: 2 }}/>{k === "all" ? "Overall" : ENG_ROLE_LABEL[k]}</span>)}
+      </div>
+    </div>
+  );
+}
+
 function EngagementPanel() {
   const DT = (typeof window !== "undefined") ? window.DataTable : null;
-  const [days, setDays] = React.useState(30);
+  const [tab, setTab] = React.useState("now");
   const [role, setRole] = React.useState("");
+  // Now tab
+  const [days, setDays] = React.useState(30);
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
+  // Trends tab
+  const [weeks, setWeeks] = React.useState(12);
+  const [centre, setCentre] = React.useState("");
+  const [trends, setTrends] = React.useState(null);
+  const [tErr, setTErr] = React.useState("");
+
   const load = () => { setErr(""); setData(null); return NGGApi.admin.engagement({ days, role }).then(setData).catch(e => setErr(e.code || e.message || "load_failed")); };
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [days, role]);
+  React.useEffect(() => { if (tab === "now") load(); /* eslint-disable-next-line */ }, [tab, days, role]);
+  const loadTrends = () => { setTErr(""); setTrends(null); return NGGApi.admin.engagementTrends({ weeks, centre, role }).then(setTrends).catch(e => setTErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { if (tab === "trends") loadTrends(); /* eslint-disable-next-line */ }, [tab, weeks, centre, role]);
 
   const rows = (data && data.rows) || [];
   const summary = (data && data.summary) || {};
+  const detail = (trends && trends.detail) || [];
+  const centres = (trends && trends.centres) || [];
+
+  const roleSelect = (
+    <select className="admin-select" value={role} onChange={e => setRole(e.target.value)} aria-label="Role" style={{ maxWidth: 150 }}>
+      <option value="">All roles</option><option value="volunteer">Volunteers</option>
+      <option value="instructor">Instructors</option><option value="mentor">Mentors</option>
+    </select>
+  );
 
   const columns = React.useMemo(() => [
     { accessorKey: "name", header: "Name" },
     { accessorKey: "role", header: "Role", cell: c => ENG_ROLE_LABEL[c.getValue()] || c.getValue() },
-    { accessorKey: "engagement", header: "Engagement",
-      cell: c => <span className="chip" style={Object.assign({ fontWeight: 800 }, ENG_BAND_STYLE[c.row.original.band] || {})}>{c.getValue()}%</span> },
+    { accessorKey: "engagement", header: "Engagement", cell: c => <span className="chip" style={Object.assign({ fontWeight: 800 }, ENG_BAND_STYLE[c.row.original.band] || {})}>{c.getValue()}%</span> },
     { id: "activity", header: "Activity", enableSorting: false, cell: c => <span className="mono" style={{ fontSize: 12 }}>{engActivity(c.row.original)}</span> },
     { accessorKey: "lastActive", header: "Last active", cell: c => c.getValue() || "—" },
   ], [data]);
 
-  const exportCsv = () => {
-    const head = ["Name", "Role", "Engagement", "Band", "LastActive", "Activity"];
-    const body = rows.map(r => [r.name, ENG_ROLE_LABEL[r.role] || r.role, r.engagement, r.band, r.lastActive, engActivity(r).replace(/·/g, "-")]);
-    const csv = [head].concat(body).map(row => row.map(v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"').join(",")).join("\r\n");
+  const tColumns = React.useMemo(() => [
+    { accessorKey: "weekStart", header: "Week" },
+    { accessorKey: "name", header: "Name" },
+    { accessorKey: "role", header: "Role", cell: c => ENG_ROLE_LABEL[c.getValue()] || c.getValue() },
+    { accessorKey: "centre", header: "Centre", cell: c => c.getValue() || "—" },
+    { accessorKey: "engagement", header: "Engagement", cell: c => <span className="chip" style={Object.assign({ fontWeight: 800 }, ENG_BAND_STYLE[c.row.original.band] || {})}>{c.getValue()}%</span> },
+  ], [trends]);
+
+  const dl = (name, headArr, bodyArr) => {
+    const csv = [headArr].concat(bodyArr).map(row => row.map(v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"').join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a"); a.href = url; a.download = "engagement-" + days + "d" + (role ? "-" + role : "") + ".csv";
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   };
+  const exportNow = () => dl("engagement-" + days + "d" + (role ? "-" + role : "") + ".csv",
+    ["Name", "Role", "Engagement", "Band", "LastActive", "Activity"],
+    rows.map(r => [r.name, ENG_ROLE_LABEL[r.role] || r.role, r.engagement, r.band, r.lastActive, engActivity(r).replace(/·/g, "-")]));
+  const exportTrends = () => dl("engagement-trends" + (centre ? "-" + centre : "") + (role ? "-" + role : "") + ".csv",
+    ["Week", "Name", "Role", "Centre", "Engagement", "Band"],
+    detail.map(r => [r.weekStart, r.name, ENG_ROLE_LABEL[r.role] || r.role, r.centre, r.engagement, r.band]));
+
+  const tabBtn = (id, label) => <button className={"btn btn-sm" + (tab === id ? "" : " btn-ghost")} onClick={() => setTab(id)}>{label}</button>;
 
   return (
     <div className="admin-section">
       <div className="admin-section-head">
         <h2 className="admin-h2">Team engagement</h2>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <select className="admin-select" value={role} onChange={e => setRole(e.target.value)} aria-label="Role" style={{ maxWidth: 150 }}>
-            <option value="">All roles</option>
-            <option value="volunteer">Volunteers</option>
-            <option value="instructor">Instructors</option>
-            <option value="mentor">Mentors</option>
-          </select>
-          <select className="admin-select" value={days} onChange={e => setDays(Number(e.target.value))} aria-label="Window" style={{ maxWidth: 150 }}>
-            <option value={7}>Last 7 days</option>
-            <option value={30}>Last 30 days</option>
-            <option value={90}>Last 90 days</option>
-          </select>
-          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
-        </div>
+        <div style={{ display: "flex", gap: 6 }}>{tabBtn("now", "Now")}{tabBtn("trends", "Trends")}</div>
       </div>
-      <p className="admin-hint">Rolling {days}-day engagement for volunteers, instructors and mentors — duty completion, class delivery, mentee coverage and recency, most-at-risk first. 🟢 ≥75 · 🟡 50–74 · 🔴 &lt;50.</p>
-      {err ? <ErrorState code={err} onRetry={load}/> :
-        !data ? <div className="dash-spinner"/> :
+
+      {tab === "now" ?
         <React.Fragment>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, margin: "6px 0 18px" }}>
-            {["volunteer", "instructor", "mentor"].map(r => {
-              const st = summary[r] || { count: 0, avg: 0, atRisk: 0 };
-              return (
-                <div key={r} style={{ border: "1px solid var(--line,#e7e9ee)", borderRadius: 12, padding: "12px 14px" }}>
-                  <div className="mono" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--ink-400,#5f6874)" }}>{ENG_ROLE_LABEL[r]}s</div>
-                  <div style={{ fontSize: "1.5rem", fontWeight: 800 }}>{st.avg}%<span style={{ fontSize: ".8rem", fontWeight: 600, color: "var(--ink-400,#5f6874)" }}> avg</span></div>
-                  <div style={{ fontSize: ".82rem", color: "var(--ink-400,#5f6874)" }}>{st.count} tracked · {st.atRisk} at-risk</div>
-                </div>
-              );
-            })}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 6px" }}>
+            {roleSelect}
+            <select className="admin-select" value={days} onChange={e => setDays(Number(e.target.value))} aria-label="Window" style={{ maxWidth: 150 }}>
+              <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
+            </select>
+            <button className="btn btn-ghost btn-sm" onClick={exportNow} disabled={!rows.length}>Export CSV</button>
           </div>
-          {!DT ? <div className="admin-empty">Table component unavailable — reload the page.</div> :
-            rows.length === 0 ? <EmptyState title="No engagement data yet" message="Once volunteers take attendance duty, instructors log classes and mentors award stars, their engagement appears here."/> :
-            <DT columns={columns} data={rows} searchable dense pageSize={25} searchPlaceholder="Search people…"/>}
+          <p className="admin-hint">Rolling {days}-day engagement — duty completion, class delivery, mentee coverage and recency, most-at-risk first. 🟢 ≥75 · 🟡 50–74 · 🔴 &lt;50.</p>
+          {err ? <ErrorState code={err} onRetry={load}/> :
+            !data ? <div className="dash-spinner"/> :
+            <React.Fragment>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, margin: "6px 0 18px" }}>
+                {["volunteer", "instructor", "mentor"].map(r => {
+                  const st = summary[r] || { count: 0, avg: 0, atRisk: 0 };
+                  return (
+                    <div key={r} style={{ border: "1px solid var(--line,#e7e9ee)", borderRadius: 12, padding: "12px 14px" }}>
+                      <div className="mono" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--ink-400,#5f6874)" }}>{ENG_ROLE_LABEL[r]}s</div>
+                      <div style={{ fontSize: "1.5rem", fontWeight: 800 }}>{st.avg}%<span style={{ fontSize: ".8rem", fontWeight: 600, color: "var(--ink-400,#5f6874)" }}> avg</span></div>
+                      <div style={{ fontSize: ".82rem", color: "var(--ink-400,#5f6874)" }}>{st.count} tracked · {st.atRisk} at-risk</div>
+                    </div>
+                  );
+                })}
+              </div>
+              {!DT ? <div className="admin-empty">Table component unavailable — reload the page.</div> :
+                rows.length === 0 ? <EmptyState title="No engagement data yet" message="Once volunteers take attendance duty, instructors log classes and mentors award stars, their engagement appears here."/> :
+                <DT columns={columns} data={rows} searchable dense pageSize={25} searchPlaceholder="Search people…"/>}
+            </React.Fragment>}
+        </React.Fragment>
+      :
+        <React.Fragment>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 6px" }}>
+            {roleSelect}
+            <select className="admin-select" value={centre} onChange={e => setCentre(e.target.value)} aria-label="Centre" style={{ maxWidth: 170 }}>
+              <option value="">All centres</option>
+              {centres.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select className="admin-select" value={weeks} onChange={e => setWeeks(Number(e.target.value))} aria-label="Weeks" style={{ maxWidth: 150 }}>
+              <option value={6}>Last 6 weeks</option><option value={12}>Last 12 weeks</option><option value={26}>Last 26 weeks</option>
+            </select>
+            <button className="btn btn-ghost btn-sm" onClick={exportTrends} disabled={!detail.length}>Export CSV</button>
+          </div>
+          <p className="admin-hint">Weekly engagement snapshots — one row per member per centre, captured every week. Trend lines are headcount-weighted averages; the table below is the detail per member per centre.</p>
+          {tErr ? <ErrorState code={tErr} onRetry={loadTrends}/> :
+            !trends ? <div className="dash-spinner"/> :
+            <React.Fragment>
+              <div style={{ border: "1px solid var(--line,#e7e9ee)", borderRadius: 12, padding: "12px 14px", margin: "6px 0 16px" }}>
+                <EngTrendChart series={trends.series || []}/>
+              </div>
+              {!DT ? <div className="admin-empty">Table component unavailable — reload the page.</div> :
+                detail.length === 0 ? <EmptyState title="No snapshots yet" message="The weekly job captures a row per member each week. Once it has run (or you run api/tools/engagement-snapshot.php), the per-member, per-centre history appears here."/> :
+                <DT columns={tColumns} data={detail} searchable dense pageSize={25} searchPlaceholder="Search snapshots…"/>}
+            </React.Fragment>}
         </React.Fragment>
       }
     </div>

@@ -694,6 +694,7 @@
       },
       overview:     () => request('/admin/overview.php'),
       engagement:   (opts) => request('/admin/engagement.php' + qs(opts || {})),
+      engagementTrends: (opts) => request('/admin/engagement.php' + qs(Object.assign({ view: 'trends' }, opts || {}))),
       dashboard:    () => request('/admin/dashboard.php'),
       statusPages:  () => request('/admin/status-pages.php'),
       statusPagesSet: (data) => request('/admin/status-pages.php', { body: { data } }),

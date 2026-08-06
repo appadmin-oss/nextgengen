@@ -1538,3 +1538,25 @@ CREATE TABLE IF NOT EXISTS member_ledger (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (83) ON DUPLICATE KEY UPDATE version = version;
+
+-- Weekly engagement snapshots — one row per person per ISO week, carrying their
+-- centre, so trends read per member and group per centre. Written weekly
+-- (idempotent via the unique index); read by admin.engagement.trends.
+CREATE TABLE IF NOT EXISTS engagement_snapshots (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  weekStart VARCHAR(12) NOT NULL,
+  role VARCHAR(16) NOT NULL,
+  personId VARCHAR(64) NOT NULL,
+  name VARCHAR(190) DEFAULT '',
+  centre VARCHAR(80) DEFAULT '',
+  engagement INT NOT NULL DEFAULT 0,
+  band VARCHAR(12) DEFAULT '',
+  windowDays INT NOT NULL DEFAULT 7,
+  stats TEXT,
+  createdAt VARCHAR(40),
+  UNIQUE KEY idx_engsnap_unique (weekStart, role, personId),
+  INDEX idx_engsnap_week (weekStart),
+  INDEX idx_engsnap_centre (centre, weekStart),
+  INDEX idx_engsnap_person (role, personId, weekStart)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (84) ON DUPLICATE KEY UPDATE version = version;

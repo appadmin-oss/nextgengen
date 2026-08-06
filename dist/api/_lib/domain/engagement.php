@@ -62,9 +62,9 @@ function _eng_latest(array $dates): string {
     return $best;
 }
 
-function _eng_row(string $role, string $id, string $name, int $pct, array $stats, string $lastActive): array {
+function _eng_row(string $role, string $id, string $name, string $centre, int $pct, array $stats, string $lastActive): array {
     return [
-        'role' => $role, 'id' => $id, 'name' => $name !== '' ? $name : $id,
+        'role' => $role, 'id' => $id, 'name' => $name !== '' ? $name : $id, 'centre' => $centre,
         'engagement' => $pct, 'band' => _eng_band($pct),
         'lastActive' => $lastActive, 'stats' => $stats,
     ];
@@ -103,7 +103,7 @@ function _eng_volunteers(string $cutoff, int $nowTs, int $window): array {
 
         $score = ENG_W_VOL['duty'] * $dutyScore + ENG_W_VOL['points'] * $pointsScore + ENG_W_VOL['recency'] * $recency;
         $name = trim((string)($v['fullName'] ?? '')) ?: trim(((string)($v['firstName'] ?? '')) . ' ' . ((string)($v['lastName'] ?? '')));
-        $rows[] = _eng_row('volunteer', $vid, $name, (int)round($score * 100), [
+        $rows[] = _eng_row('volunteer', $vid, $name, (string)($v['centre'] ?? ''), (int)round($score * 100), [
             'centre' => (string)($v['centre'] ?? ''), 'title' => (string)($v['role'] ?? 'Volunteer'),
             'dutyAssigned' => $assigned, 'dutyCompleted' => $completed,
             'dutyRate' => $assigned > 0 ? (int)round($dutyScore * 100) : null,
@@ -127,6 +127,14 @@ function _eng_instructors(string $cutoff, int $nowTs, int $window): array {
                      FROM course_sessions WHERE date >= ? GROUP BY instructorId", [$cutoff]) as $r) {
         $win[(string)$r['instructorId']] = $r;
     }
+    // Dominant centre in-window (an instructor may teach across centres; the
+    // snapshot needs one centre per person, so we take where they taught most).
+    $centreBy = [];
+    foreach (db_all("SELECT instructorId, centre, COUNT(*) c FROM course_sessions
+                     WHERE date >= ? GROUP BY instructorId, centre", [$cutoff]) as $r) {
+        $iid = (string)$r['instructorId'];
+        if (!isset($centreBy[$iid]) || (int)$r['c'] > (int)$centreBy[$iid]['c']) $centreBy[$iid] = ['centre' => (string)$r['centre'], 'c' => (int)$r['c']];
+    }
     $target = max(1, (int)round($window / 7)); // ~one class a week over the window
 
     $rows = [];
@@ -141,7 +149,7 @@ function _eng_instructors(string $cutoff, int $nowTs, int $window): array {
         $recency = _eng_recency($lastActive, $nowTs, $window);
 
         $score = ENG_W_INS['delivery'] * $deliveryScore + ENG_W_INS['recency'] * $recency;
-        $rows[] = _eng_row('instructor', $iid, (string)($ins['instructorName'] ?? ''), (int)round($score * 100), [
+        $rows[] = _eng_row('instructor', $iid, (string)($ins['instructorName'] ?? ''), (string)($centreBy[$iid]['centre'] ?? ''), (int)round($score * 100), [
             'sessions' => $delivered, 'target' => $target, 'learnersMarked' => $present,
         ], $lastActive);
     }
@@ -150,7 +158,7 @@ function _eng_instructors(string $cutoff, int $nowTs, int $window): array {
 
 /* ── Mentors ────────────────────────────────────────────────────────────── */
 function _eng_mentors(string $cutoff, int $nowTs, int $window): array {
-    $roster = db_all("SELECT mentorId, fullName, email, maxMentees, checkedAt, updatedAt
+    $roster = db_all("SELECT mentorId, fullName, email, centre, maxMentees, checkedAt, updatedAt
                       FROM mentors WHERE COALESCE(status,'active') <> 'inactive' ORDER BY fullName");
     if (!$roster) return [];
 
@@ -197,7 +205,7 @@ function _eng_mentors(string $cutoff, int $nowTs, int $window): array {
         $recency = _eng_recency($lastActive, $nowTs, $window);
 
         $score = ENG_W_MEN['coverage'] * $coverageScore + ENG_W_MEN['cadence'] * $cadenceScore + ENG_W_MEN['recency'] * $recency;
-        $rows[] = _eng_row('mentor', $mid, (string)($m['fullName'] ?? ''), (int)round($score * 100), [
+        $rows[] = _eng_row('mentor', $mid, (string)($m['fullName'] ?? ''), (string)($m['centre'] ?? ''), (int)round($score * 100), [
             'activeMentees' => $n, 'menteeTarget' => $target, 'stars' => $stars,
             'linked' => $memberId !== '',
         ], $lastActive);
@@ -206,16 +214,11 @@ function _eng_mentors(string $cutoff, int $nowTs, int $window): array {
 }
 
 /**
- * admin.engagement — engagement rates across the three portal roles.
- * Params: days (int, default 30, 1..365), role ('volunteer'|'instructor'|'mentor'|'' = all).
+ * Compute engagement rows + summary over a rolling window. Gate-free core,
+ * shared by the live admin view and the weekly snapshot job.
  */
-function admin_engagement(array $p): array {
-    $g = admin_cap_gate($p, 'audit'); if (!$g['ok']) return $g;
-
-    $days = (int)($p['days'] ?? 30);
+function engagement_compute(int $days, string $roleFilter = ''): array {
     if ($days < 1) $days = 1; if ($days > 365) $days = 365;
-    $roleFilter = (string)($p['role'] ?? '');
-
     $nowTs  = strtotime(date('Y-m-d') . ' 23:59:59');
     $cutoff = date('Y-m-d', $nowTs - ($days - 1) * 86400);
 
@@ -237,7 +240,6 @@ function admin_engagement(array $p): array {
     }
 
     return [
-        'ok' => true,
         'window' => ['days' => $days, 'from' => $cutoff, 'to' => date('Y-m-d')],
         'generatedAt' => date('c'),
         'weights' => ['volunteer' => ENG_W_VOL, 'instructor' => ENG_W_INS, 'mentor' => ENG_W_MEN],
@@ -245,4 +247,103 @@ function admin_engagement(array $p): array {
         'summary' => $summary,
         'rows' => $rows,
     ];
+}
+
+/**
+ * admin.engagement — live engagement rates across the three portal roles.
+ * Params: days (int, default 30, 1..365), role ('volunteer'|'instructor'|'mentor'|'' = all).
+ */
+function admin_engagement(array $p): array {
+    $g = admin_cap_gate($p, 'audit'); if (!$g['ok']) return $g;
+    return ['ok' => true] + engagement_compute((int)($p['days'] ?? 30), (string)($p['role'] ?? ''));
+}
+
+/** Monday (YYYY-MM-DD, UTC) of the ISO week containing $ts (default now). */
+function _eng_week_start(?int $ts = null): string {
+    $ts = $ts ?? time();
+    $dow = (int)gmdate('N', $ts); // 1=Mon … 7=Sun
+    return gmdate('Y-m-d', $ts - ($dow - 1) * 86400);
+}
+
+/**
+ * Capture this week's engagement — one row per person (carrying their centre)
+ * into engagement_snapshots, idempotent per (weekStart, role, personId) so a
+ * re-run just refreshes the week in progress. Runs weekly (web-cron +
+ * api/tools/engagement-snapshot.php). Uses a trailing 7-day window by default.
+ */
+function engagement_snapshot_week(?string $weekStart = null, int $windowDays = 7): array {
+    $weekStart = $weekStart ?: _eng_week_start();
+    $c = engagement_compute($windowDays, '');
+    $now = now_iso();
+    $written = 0;
+    foreach (($c['rows'] ?? []) as $r) {
+        db_exec("DELETE FROM engagement_snapshots WHERE weekStart = ? AND role = ? AND personId = ?",
+            [$weekStart, (string)$r['role'], (string)$r['id']]);
+        db_insert('engagement_snapshots', [
+            'weekStart' => $weekStart, 'role' => (string)$r['role'], 'personId' => (string)$r['id'],
+            'name' => (string)$r['name'], 'centre' => (string)($r['centre'] ?? ''),
+            'engagement' => (int)$r['engagement'], 'band' => (string)$r['band'],
+            'windowDays' => $windowDays, 'stats' => json_encode($r['stats'] ?? [], JSON_UNESCAPED_SLASHES),
+            'createdAt' => $now,
+        ]);
+        $written++;
+    }
+    return ['ok' => true, 'weekStart' => $weekStart, 'written' => $written, 'roles' => $c['summary'] ?? []];
+}
+
+/**
+ * admin.engagement.trends — weekly engagement history for charting plus a
+ * detailed per-member-per-centre table. Params (all optional): weeks (default
+ * 12, 1..52), centre, role, personId.
+ */
+function admin_engagement_trends(array $p): array {
+    $g = admin_cap_gate($p, 'audit'); if (!$g['ok']) return $g;
+    $weeks  = (int)($p['weeks'] ?? 12); if ($weeks < 1) $weeks = 1; if ($weeks > 52) $weeks = 52;
+    $centre = trim((string)($p['centre'] ?? ''));
+    $role   = (string)($p['role'] ?? '');
+    $person = trim((string)($p['personId'] ?? ''));
+
+    // Most recent $weeks distinct weeks present (LIMIT is a validated int → inlined).
+    $allWeeks = array_map(fn($r) => (string)$r['weekStart'],
+        db_all("SELECT DISTINCT weekStart FROM engagement_snapshots ORDER BY weekStart DESC LIMIT " . $weeks));
+    if (!$allWeeks) return ['ok' => true, 'weeks' => [], 'series' => [], 'detail' => [], 'centres' => [],
+                            'filters' => ['weeks' => $weeks, 'centre' => $centre, 'role' => $role, 'personId' => $person]];
+    sort($allWeeks); // ascending, for the chart
+    $earliest = $allWeeks[0];
+
+    $where = ['weekStart >= ?']; $args = [$earliest];
+    if ($centre !== '') { $where[] = 'centre = ?';   $args[] = $centre; }
+    if ($role !== '')   { $where[] = 'role = ?';     $args[] = $role; }
+    if ($person !== '') { $where[] = 'personId = ?'; $args[] = $person; }
+    $w = implode(' AND ', $where);
+
+    // Weekly averages per role (+ a headcount-weighted overall) for the trend lines.
+    $agg = db_all("SELECT weekStart, role, COUNT(*) n, AVG(engagement) avg,
+                          SUM(CASE WHEN band = 'at_risk' THEN 1 ELSE 0 END) atRisk
+                   FROM engagement_snapshots WHERE $w GROUP BY weekStart, role", $args);
+    $byWeek = [];
+    foreach ($allWeeks as $wk) $byWeek[$wk] = ['weekStart' => $wk, 'all' => null, 'volunteer' => null, 'instructor' => null, 'mentor' => null, 'count' => 0, 'atRisk' => 0];
+    $wkParts = [];
+    foreach ($agg as $r) {
+        $wk = (string)$r['weekStart']; if (!isset($byWeek[$wk])) continue;
+        $byWeek[$wk][(string)$r['role']] = (int)round((float)$r['avg']);
+        $byWeek[$wk]['count'] += (int)$r['n'];
+        $byWeek[$wk]['atRisk'] += (int)$r['atRisk'];
+        $wkParts[$wk][] = ['n' => (int)$r['n'], 'avg' => (float)$r['avg']];
+    }
+    foreach ($wkParts as $wk => $parts) {
+        $tot = array_sum(array_map(fn($x) => $x['n'], $parts));
+        $byWeek[$wk]['all'] = $tot ? (int)round(array_sum(array_map(fn($x) => $x['n'] * $x['avg'], $parts)) / $tot) : null;
+    }
+    $series = array_values($byWeek);
+
+    // The detailed grid: per member, per centre, per week (newest first).
+    $detail = db_all("SELECT weekStart, role, personId, name, centre, engagement, band
+                      FROM engagement_snapshots WHERE $w
+                      ORDER BY weekStart DESC, engagement ASC LIMIT 3000", $args);
+    $centres = array_map(fn($r) => (string)$r['centre'],
+        db_all("SELECT DISTINCT centre FROM engagement_snapshots WHERE centre <> '' ORDER BY centre"));
+
+    return ['ok' => true, 'weeks' => $allWeeks, 'series' => $series, 'detail' => $detail, 'centres' => $centres,
+            'filters' => ['weeks' => $weeks, 'centre' => $centre, 'role' => $role, 'personId' => $person]];
 }
