@@ -53,6 +53,7 @@ const ADMIN_SECTIONS = [
   { id: "behaviour",   group: "People",   label: "Behaviour",    title: "Behaviour monitor",   icon: "◔", cap: "people" },
   { id: "fees",        group: "People",   label: "Dues & fees",  title: "Dues & fees",         icon: "₦", cap: "people" },
   { id: "staff",       group: "People",   label: "Staff activity", title: "Staff activity",    icon: "◑", cap: "people" },
+  { id: "engagement",  group: "People",   label: "Engagement",   title: "Team engagement",     icon: "📈", cap: "audit" },
   { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
   { id: "qr",          group: "People",   label: "QR codes",     title: "QR codes",            icon: "▦", cap: "summer" },
   { id: "attendance",  group: "People",   label: "Attendance duty", title: "Attendance duty",  icon: "🗓", cap: "summer" },
@@ -195,6 +196,7 @@ function AdminPage({ setPage }) {
           {view === "photos" && <AdminPhotos/>}
           {view === "broadcast" && <AdminBroadcast/>}
           {view === "attendance" && <AdminAttendanceDuty/>}
+          {view === "engagement" && <EngagementPanel/>}
           {view === "access" && <AdminAccess/>}
           {view === "audit" && <AdminAudit/>}
           {view === "ops" && <AdminOps/>}
@@ -684,6 +686,99 @@ function AdminAttendanceDuty() {
             <tr key={v.volunteerId}><td className="mono">{v.rank}</td><td>{v.fullName} <span className="chip" style={{ fontSize: 10 }}>{v.role}</span></td><td>L{v.level} · {v.levelName}</td><td>{v.streak}d</td><td><b>{v.points}</b></td></tr>
           ))}</tbody>
         </table></div>}
+    </div>
+  );
+}
+
+// ============================================================================
+// Team engagement — volunteers / instructors / mentors (M&E · audit cap)
+// ============================================================================
+
+const ENG_BAND_STYLE = {
+  engaged:  { background: "#e6f7ec", color: "#137a3a" },
+  slipping: { background: "#fff4e0", color: "#9a5b00" },
+  at_risk:  { background: "#fdecec", color: "#c0322b" },
+};
+const ENG_ROLE_LABEL = { volunteer: "Volunteer", instructor: "Instructor", mentor: "Mentor" };
+
+function engActivity(r) {
+  const s = r.stats || {};
+  if (r.role === "volunteer")  return (s.dutyCompleted || 0) + "/" + (s.dutyAssigned || 0) + " rolls · " + (s.points || 0) + " pts";
+  if (r.role === "instructor") return (s.sessions || 0) + "/" + (s.target || 0) + " classes · " + (s.learnersMarked || 0) + " marked";
+  if (r.role === "mentor")     return (s.activeMentees || 0) + "/" + (s.menteeTarget || 0) + " mentees · " + (s.stars || 0) + " stars" + (s.linked ? "" : " (unlinked)");
+  return "";
+}
+
+function EngagementPanel() {
+  const DT = (typeof window !== "undefined") ? window.DataTable : null;
+  const [days, setDays] = React.useState(30);
+  const [role, setRole] = React.useState("");
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => { setErr(""); setData(null); return NGGApi.admin.engagement({ days, role }).then(setData).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [days, role]);
+
+  const rows = (data && data.rows) || [];
+  const summary = (data && data.summary) || {};
+
+  const columns = React.useMemo(() => [
+    { accessorKey: "name", header: "Name" },
+    { accessorKey: "role", header: "Role", cell: c => ENG_ROLE_LABEL[c.getValue()] || c.getValue() },
+    { accessorKey: "engagement", header: "Engagement",
+      cell: c => <span className="chip" style={Object.assign({ fontWeight: 800 }, ENG_BAND_STYLE[c.row.original.band] || {})}>{c.getValue()}%</span> },
+    { id: "activity", header: "Activity", enableSorting: false, cell: c => <span className="mono" style={{ fontSize: 12 }}>{engActivity(c.row.original)}</span> },
+    { accessorKey: "lastActive", header: "Last active", cell: c => c.getValue() || "—" },
+  ], [data]);
+
+  const exportCsv = () => {
+    const head = ["Name", "Role", "Engagement", "Band", "LastActive", "Activity"];
+    const body = rows.map(r => [r.name, ENG_ROLE_LABEL[r.role] || r.role, r.engagement, r.band, r.lastActive, engActivity(r).replace(/·/g, "-")]);
+    const csv = [head].concat(body).map(row => row.map(v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"').join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a"); a.href = url; a.download = "engagement-" + days + "d" + (role ? "-" + role : "") + ".csv";
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Team engagement</h2>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <select className="admin-select" value={role} onChange={e => setRole(e.target.value)} aria-label="Role" style={{ maxWidth: 150 }}>
+            <option value="">All roles</option>
+            <option value="volunteer">Volunteers</option>
+            <option value="instructor">Instructors</option>
+            <option value="mentor">Mentors</option>
+          </select>
+          <select className="admin-select" value={days} onChange={e => setDays(Number(e.target.value))} aria-label="Window" style={{ maxWidth: 150 }}>
+            <option value={7}>Last 7 days</option>
+            <option value={30}>Last 30 days</option>
+            <option value={90}>Last 90 days</option>
+          </select>
+          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
+        </div>
+      </div>
+      <p className="admin-hint">Rolling {days}-day engagement for volunteers, instructors and mentors — duty completion, class delivery, mentee coverage and recency, most-at-risk first. 🟢 ≥75 · 🟡 50–74 · 🔴 &lt;50.</p>
+      {err ? <ErrorState code={err} onRetry={load}/> :
+        !data ? <div className="dash-spinner"/> :
+        <React.Fragment>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, margin: "6px 0 18px" }}>
+            {["volunteer", "instructor", "mentor"].map(r => {
+              const st = summary[r] || { count: 0, avg: 0, atRisk: 0 };
+              return (
+                <div key={r} style={{ border: "1px solid var(--line,#e7e9ee)", borderRadius: 12, padding: "12px 14px" }}>
+                  <div className="mono" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--ink-400,#5f6874)" }}>{ENG_ROLE_LABEL[r]}s</div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 800 }}>{st.avg}%<span style={{ fontSize: ".8rem", fontWeight: 600, color: "var(--ink-400,#5f6874)" }}> avg</span></div>
+                  <div style={{ fontSize: ".82rem", color: "var(--ink-400,#5f6874)" }}>{st.count} tracked · {st.atRisk} at-risk</div>
+                </div>
+              );
+            })}
+          </div>
+          {!DT ? <div className="admin-empty">Table component unavailable — reload the page.</div> :
+            rows.length === 0 ? <EmptyState title="No engagement data yet" message="Once volunteers take attendance duty, instructors log classes and mentors award stars, their engagement appears here."/> :
+            <DT columns={columns} data={rows} searchable dense pageSize={25} searchPlaceholder="Search people…"/>}
+        </React.Fragment>
+      }
     </div>
   );
 }

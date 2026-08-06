@@ -693,6 +693,7 @@
         set:      (data) => request('/admin/anchor.php', { body: { data } }),
       },
       overview:     () => request('/admin/overview.php'),
+      engagement:   (opts) => request('/admin/engagement.php' + qs(opts || {})),
       dashboard:    () => request('/admin/dashboard.php'),
       statusPages:  () => request('/admin/status-pages.php'),
       statusPagesSet: (data) => request('/admin/status-pages.php', { body: { data } }),

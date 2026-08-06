@@ -159,6 +159,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.remark.ack'            => 'remark_ack',
             'admin.course.skills'         => 'admin_course_skills_save',
             'admin.staff.performance'     => 'admin_staff_performance',
+            'admin.engagement'            => 'admin_engagement',
             'admin.ops.status'            => 'admin_ops_status',
             'admin.ops.clear'             => 'admin_ops_clear',
             'admin.ops.run'               => 'admin_ops_run_cron',
