@@ -1031,7 +1031,34 @@ function DesignerPage() {
     </div>
   );
 
-  if (!isSignedIn) return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 20 }}>Staff sign-in required</h1></div>);
+  /* The gate has to be a door, not a wall. Landing on /designer directly — a
+     bookmark, a shared link, or a session that lapsed — used to show only the
+     words "Staff sign-in required" with nothing to click, because this screen
+     has no top-nav of its own to sign in from. That reads as "the designer is
+     broken": the page loads and nothing works. Now it offers the same sign-in
+     the rest of the app does (the modal mounts here too — DialogHost is in the
+     own-chrome shell), waits quietly while the session is still resolving, and
+     falls back to the console if openSignIn is somehow unavailable. */
+  if (!isSignedIn) return shell(
+    <div style={{ textAlign: "center", padding: "80px 20px" }}>
+      {auth && auth.loading
+        ? <p style={{ fontSize: 14, color: "rgba(230,238,255,.6)" }}>Checking your session…</p>
+        : <>
+            <h1 style={{ fontSize: 22, margin: "0 0 8px", fontWeight: 800 }}>Staff sign-in required</h1>
+            <p style={{ color: "rgba(230,238,255,.6)", margin: "0 0 20px", fontSize: 14 }}>
+              Sign in with your staff account to open the Design Studio.
+            </p>
+            {auth && typeof auth.openSignIn === "function"
+              ? <button onClick={() => auth.openSignIn()}
+                  style={{ background: DSN_GOLD, color: "#2b2100", border: "none", borderRadius: 10,
+                           padding: "11px 22px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Sign in</button>
+              : <a href="/nextadmin"
+                  style={{ display: "inline-block", background: DSN_GOLD, color: "#2b2100", borderRadius: 10,
+                           padding: "11px 22px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
+                  Sign in at the admin console</a>}
+          </>}
+    </div>
+  );
 
   const errs = problems.filter(p => p.level === "error");
   const warns = problems.filter(p => p.level === "warn");
