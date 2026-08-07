@@ -363,6 +363,57 @@ function photo_store_find(string $id): string {
     return '';
 }
 
+/** The directories we treat as DURABLE — the store's data location and the
+ *  canonical storage fallback, but never the cache directory, which exists to
+ *  be purged. These are the targets a heal copies INTO. */
+function photo_store_durable_dirs(): array {
+    $dirs = [];
+    $base = (string)($GLOBALS['CONFIG']['db']['sqlite_path'] ?? '');
+    if ($base !== '') $dirs[] = dirname($base) . '/photos';
+    $dirs[] = __DIR__ . '/../../storage/photos';
+    $seen = []; $out = [];
+    foreach ($dirs as $d) { $k = @realpath($d) ?: $d; if (isset($seen[$k])) continue; $seen[$k] = true; $out[] = $d; }
+    return $out;
+}
+
+/**
+ * Self-heal on view: if a served image is living somewhere disposable (the
+ * cache fallback) while a durable directory is writable, copy it into the
+ * durable one so a cache purge can no longer lose it. The store writes to the
+ * cache only while api/storage is unwritable; the day that is fixed, the next
+ * view of each stranded photo migrates it — no re-upload, no shell.
+ *
+ * Best-effort and silent: this is a bonus on top of a read that already
+ * succeeded, and must never turn one into an error. Content-addressed + atomic
+ * (temp then rename), so concurrent views healing the same id race harmlessly
+ * to identical bytes. Returns the durable path if it healed (or the file was
+ * already durable), else ''.
+ */
+function photo_store_heal(string $id, string $foundPath): string {
+    if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', $id)) return '';
+    $foundReal = @realpath($foundPath) ?: $foundPath;
+    foreach (photo_store_durable_dirs() as $dir) {
+        $target = $dir . '/' . $id;
+        // Already durable — here or in an earlier durable dir. Nothing to do.
+        if ((@realpath($target) ?: $target) === $foundReal) return $target;
+        if (is_file($target)) return $target;
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true)) continue;
+        if (!is_writable($dir)) continue;
+        // A newly-created durable dir must not be browsable — same guard
+        // photo_store_dir() applies to the dir it picks.
+        $ht = $dir . '/.htaccess';
+        if (!is_file($ht)) {
+            @file_put_contents($ht, "<IfModule mod_authz_core.c>\n  Require all denied\n</IfModule>\n"
+                . "<IfModule !mod_authz_core.c>\n  Order allow,deny\n  Deny from all\n</IfModule>\nOptions -Indexes\n");
+        }
+        $rnd = function_exists('rand_hex') ? rand_hex(4) : bin2hex(random_bytes(4));
+        $tmp = $target . '.' . $rnd . '.part';
+        if (@copy($foundPath, $tmp) && @rename($tmp, $target)) return $target;
+        @unlink($tmp);
+    }
+    return '';
+}
+
 /** Absolute form, for anything off-site that has to FETCH the image — the
  *  vision model and Cloudinary both do. Empty when no origin is configured,
  *  which is the honest answer rather than a URL nobody can resolve. */

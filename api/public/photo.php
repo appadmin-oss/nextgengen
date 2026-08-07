@@ -50,7 +50,22 @@ header('X-Content-Type-Options: nosniff');
    which is already a content hash. */
 $etag = '"' . $p . '"';
 header('ETag: ' . $etag);
-if (trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '')) === $etag) { http_response_code(304); exit; }
+if (trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '')) === $etag) {
+    http_response_code(304);
+    photo_heal($p, $path);   // migrate off disposable storage even on a cache hit
+    exit;
+}
 
 header('Content-Length: ' . filesize($path));
 readfile($path);
+
+// Self-heal AFTER the bytes are out, so it never delays delivery: if this
+// served from the disposable cache fallback while a durable directory is
+// writable, copy it there so a cache purge can no longer lose it. Best-effort;
+// wrapped so a storage hiccup can never turn a successful read into a 500.
+photo_heal($p, $path);
+
+function photo_heal(string $id, string $path): void {
+    if (!function_exists('photo_store_heal')) return;
+    try { photo_store_heal($id, $path); } catch (Throwable $e) { /* a bonus, never fatal */ }
+}
