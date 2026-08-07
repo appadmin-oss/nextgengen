@@ -1,14 +1,14 @@
 {
-  "buildId": "ae6c73504f",
-  "builtAt": "2026-08-07T08:15:31.269Z",
+  "buildId": "ffaaa40eea",
+  "builtAt": "2026-08-07T10:13:55.238Z",
   "bundle": {
-    "file": "app.faade520ec.min.js",
-    "bytes": 1680694,
-    "gzipBytes": 416217,
+    "file": "app.db96057a98.min.js",
+    "bytes": 1680873,
+    "gzipBytes": 416339,
     "files": 20
   },
   "assets": {
-    "app.min.js": "app.faade520ec.min.js",
+    "app.min.js": "app.db96057a98.min.js",
     "styles.css": "styles.fbe3e529ae.css",
     "styles-app.css": "styles-app.cb210d1d5a.css",
     "data.js": "data.29d3739700.js",

@@ -611,8 +611,27 @@ function insight_prewarm(): void {
  * Level 7. Returns the cached panel unless the evidence has changed or the
  * caller forces a re-run.
  */
-function insight_panel(array $p): array {
+/**
+ * The Analyst gate.
+ *
+ * Levels 1-6 are computed and free, and stay open to any staffer (the
+ * "Analytics" section is `cap: null`). The Analyst — Level 7's panel and chat —
+ * is the one part that spends money on an AI provider on every use, and it is
+ * an M&E instrument, so it is gated to the roles whose job that is: the
+ * read-only 'audit' role and the 'summer' coordinators (super_admin holds both).
+ * A plain admin or editor reaches the dashboard but not the model-backed panel.
+ */
+const ANALYST_CAPS = ['audit', 'summer'];
+function analyst_gate(array $p): array {
     $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+    $caps = member_effective_caps($g['requester']);
+    foreach (ANALYST_CAPS as $c) if (in_array($c, $caps, true)) return $g;
+    return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:audit|summer'];
+}
+
+function insight_panel(array $p): array {
+    $g = analyst_gate($p);
     if (!$g['ok']) return $g;
 
     $ev = insight_evidence($p);

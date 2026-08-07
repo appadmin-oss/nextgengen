@@ -118,11 +118,18 @@ function AdminPage({ setPage }) {
      is remembered, because a pane that shuts itself on every navigation is one
      nobody leaves open. ⌘J / Ctrl-J toggles — the shortcut is on the button so
      it is discoverable rather than folklore. */
+  /* The Analyst spends money on an AI provider on every use and is an M&E
+     instrument, so it is gated to the 'audit' and 'summer' capabilities (the
+     backend enforces the same on every insight op). A staffer without either
+     never sees the button, the shortcut is inert for them, and the pane cannot
+     be opened even if a stale localStorage flag says it was. */
+  const canAnalyst = hasCap("audit") || hasCap("summer");
   const [analyst, setAnalyst] = React.useState(() => {
     try { return localStorage.getItem("ngg.analyst.open") === "1"; } catch { return false; }
   });
   React.useEffect(() => { try { localStorage.setItem("ngg.analyst.open", analyst ? "1" : "0"); } catch (_) {} }, [analyst]);
   React.useEffect(() => {
+    if (!canAnalyst) return;
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "j" || e.key === "J")) {
         e.preventDefault();
@@ -131,7 +138,7 @@ function AdminPage({ setPage }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [canAnalyst]);
 
   if (loading) return <div className="page admin"><div className="container" style={{padding:"120px 0"}}><div className="dash-spinner"/></div></div>;
   if (!isAdmin) {
@@ -167,8 +174,8 @@ function AdminPage({ setPage }) {
   return (
     <div className="page admin" data-screen-label="08 Admin">
       <AdminTopbar section={section} setSection={setSection} setPage={setPage} member={member}
-        analyst={analyst} toggleAnalyst={() => setAnalyst(a => !a)}/>
-      <div className={"admin-shell" + (analyst ? " has-analyst" : "")}>
+        analyst={analyst} toggleAnalyst={() => setAnalyst(a => !a)} canAnalyst={canAnalyst}/>
+      <div className={"admin-shell" + (analyst && canAnalyst ? " has-analyst" : "")}>
         <AdminNav section={view} setSection={setSection} hasCap={hasCap}/>
         <main className="admin-main">
           {view === "home" && <AdminHome setSection={setSection} hasCap={hasCap} member={member}/>}
@@ -211,7 +218,7 @@ function AdminPage({ setPage }) {
         {/* The third track. Mounted only when open, so a closed pane costs
             nothing — it holds an open conversation, a poll of the thread list
             and a live scope subscription. */}
-        {analyst && <AnalystPane onClose={() => setAnalyst(false)}/>}
+        {analyst && canAnalyst && <AnalystPane onClose={() => setAnalyst(false)}/>}
       </div>
     </div>
   );
@@ -333,7 +340,7 @@ function adminExpiryLabel(exp) {
   return { text: Math.round(s / 86400) + "d left", warn: false };
 }
 
-function AdminTopbar({ section, setSection, setPage, member, analyst, toggleAnalyst }) {
+function AdminTopbar({ section, setSection, setPage, member, analyst, toggleAnalyst, canAnalyst }) {
   const { sessionExp, lockAdmin } = (typeof useAuth === "function") ? useAuth() : {};
   const exp = adminExpiryLabel(sessionExp);
   return (
@@ -349,11 +356,15 @@ function AdminTopbar({ section, setSection, setPage, member, analyst, toggleAnal
         <span className="mono" style={{color:"rgba(255,255,255,0.6)"}}>{member.fullName} · {member.role}</span>
         {/* The Analyst, reachable from every section rather than from the bottom
             of one. The shortcut is printed on the button because a keystroke
-            nobody can see is a keystroke nobody uses. */}
-        <button className={"admin-analyst-btn" + (analyst ? " is-on" : "")} onClick={toggleAnalyst}
-          aria-pressed={!!analyst} title="Ask the analyst about what you are looking at (⌘J)">
-          ✦ Analyst<kbd>⌘J</kbd>
-        </button>
+            nobody can see is a keystroke nobody uses. Shown only to staff with
+            the M&E capability ('audit' or 'summer') — it is what the backend
+            gates every insight op on. */}
+        {canAnalyst && (
+          <button className={"admin-analyst-btn" + (analyst ? " is-on" : "")} onClick={toggleAnalyst}
+            aria-pressed={!!analyst} title="Ask the analyst about what you are looking at (⌘J)">
+            ✦ Analyst<kbd>⌘J</kbd>
+          </button>
+        )}
         {exp && <span className={"admin-session-chip" + (exp.warn ? " warn" : "")} title={sessionExp ? "Your sign-in ends " + new Date(sessionExp * 1000).toLocaleString() : ""}>🔑 {exp.text}</span>}
         {Array.isArray(member.caps) && member.caps.indexOf("summer") !== -1 && (
           <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("summer-admin")}>Summer ↗</button>

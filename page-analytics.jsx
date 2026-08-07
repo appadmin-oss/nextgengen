@@ -984,6 +984,12 @@ function AnActivityDrawer({ opts, defaults, onClose, onSaved }) {
 const AN_BLANK = { week: "", day: "", centre: "", department: "", category: "" };
 
 function AnalyticsWorkspace() {
+  // Levels 1-6 are computed and free — any staffer who can open Analytics sees
+  // them. Level 7 (the model-backed Analyst panel) is gated to the M&E caps,
+  // the same 'audit'/'summer' the backend enforces, so it and its nav anchor are
+  // hidden from staff who would only get a 403 if they clicked into it.
+  const { hasCap } = (typeof useAuth === "function") ? useAuth() : { hasCap: () => false };
+  const canAnalyst = hasCap("audit") || hasCap("summer");
   const [filters, setFilters] = useState(AN_BLANK);
   const [ws, setWs] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1116,7 +1122,7 @@ function AnalyticsWorkspace() {
         <a href="#an-exec">Executive</a><a href="#an-research">Research</a>
         <a href="#an-ops">Operations</a><a href="#an-centres">Centres</a>
         <a href="#an-evidence">Evidence</a><a href="#an-growth">Growth</a>
-        <a href="#an-depth">Depth</a><a href="#an-insight">Analyst</a>
+        <a href="#an-depth">Depth</a>{canAnalyst && <a href="#an-insight">Analyst</a>}
       </nav>
       <AnFilterBar filters={filters} opts={opts} onChange={setFilters}
         views={views} onSaveView={onSaveView} onApplyView={onApplyView} onDeleteView={onDeleteView}
@@ -1420,8 +1426,10 @@ function AnalyticsWorkspace() {
     {/* ── Level 6 · Depth — comparison, segmentation, rigour, narrative ── */}
     <AnDepth filters={filters}/>
 
-    {/* ── Level 7 · what a panel of analysts makes of levels 1–6 ── */}
-    <AnInsight filters={filters}/>
+    {/* ── Level 7 · what a panel of analysts makes of levels 1–6 ──
+        M&E-gated: it spends provider budget and the backend refuses it without
+        the 'audit'/'summer' cap, so it is not shown to staff who cannot run it. */}
+    {canAnalyst && <AnInsight filters={filters}/>}
 
     {/* Level 7b — the same panel, asked something specific — used to sit here,
         at the bottom of seven sections. It is now docked in the shell as the

@@ -564,7 +564,7 @@ function ichat_budget_ok(string $memberId): bool {
  * the affordance only appears when there is something behind it.
  */
 function insight_chat_threads(array $p): array {
-    $g = admin_gate($p);
+    $g = analyst_gate($p);
     if (!$g['ok']) return $g;
     $me = (string)($g['requester']['memberId'] ?? '');
     $wantArchived = !empty($p['archived']);
@@ -588,7 +588,7 @@ function insight_chat_threads(array $p): array {
 
 /** One thread with its turns. */
 function insight_chat_thread(array $p): array {
-    $g = admin_gate($p);
+    $g = analyst_gate($p);
     if (!$g['ok']) return $g;
     $tid = trim((string)($p['threadId'] ?? ''));
     $t = db_row("SELECT * FROM insight_threads WHERE threadId = ? LIMIT 1", [$tid]);
@@ -605,7 +605,7 @@ function insight_chat_thread(array $p): array {
 }
 
 function insight_chat_archive(array $p): array {
-    $g = admin_gate($p);
+    $g = analyst_gate($p);
     if (!$g['ok']) return $g;
     $tid = trim((string)($p['threadId'] ?? ''));
     $t = db_row("SELECT * FROM insight_threads WHERE threadId = ? LIMIT 1", [$tid]);
@@ -633,7 +633,7 @@ function insight_chat_archive(array $p): array {
  * the obvious place for "Tunde's attendance problem" to end up.
  */
 function insight_chat_rename(array $p): array {
-    $g = admin_gate($p);
+    $g = analyst_gate($p);
     if (!$g['ok']) return $g;
     $tid = trim((string)($p['threadId'] ?? ''));
     $t = db_row("SELECT ownerId FROM insight_threads WHERE threadId = ? LIMIT 1", [$tid]);
@@ -654,7 +654,7 @@ function insight_chat_rename(array $p): array {
  */
 function insight_chat_ask(array $p): array {
     $t0 = microtime(true);
-    $g = admin_gate($p);
+    $g = analyst_gate($p);
     if (!$g['ok']) return $g;
     $me = (string)($g['requester']['memberId'] ?? '');
 
@@ -1076,7 +1076,7 @@ function irep_synthesis(array $turns, array $checks, string $title): array {
  * model call spent restating a paragraph.
  */
 function insight_chat_report(array $p): array {
-    $g = admin_gate($p);
+    $g = analyst_gate($p);
     if (!$g['ok']) return $g;
     $me = (string)($g['requester']['memberId'] ?? '');
     $tid = trim((string)($p['threadId'] ?? ''));
