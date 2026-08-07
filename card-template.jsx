@@ -583,27 +583,185 @@ function _ngQrDataUrl(payload) {
     catch (e) { return ""; }
   });
 }
+/* The one place that decides what a member card's QR points at, so a card the
+   member downloads and a card an admin batch-prints resolve to the same page:
+   the circle-invite short link when we have one, else the member deep link. */
+function _ngMemberQrPayload(m) {
+  m = m || {};
+  var origin = (typeof location !== "undefined") ? location.origin : "";
+  if (m.anchorCode) return origin + "/q/" + m.anchorCode;
+  if (m.memberId) return origin + "/?m=" + encodeURIComponent(m.memberId);
+  return origin;
+}
+/* A print-shop-safe file stem for one member: "surname-first-MEMBERID", ASCII
+   only, so a ZIP of two hundred lands on any filesystem intact. Indexed so two
+   members who share a name never collide in the archive. */
+function _ngMemberFileStem(m, i) {
+  m = m || {};
+  var raw = String(m.fullName || "member");
+  var base = (raw.normalize ? raw.normalize("NFKD") : raw)
+    .replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "member";
+  var id = String(m.memberId || "").replace(/[^A-Za-z0-9]+/g, "");
+  return (id ? base + "-" + id : base) + "-" + String(i + 1);
+}
+/* Resolve when every <img> under `node` has settled (loaded or errored), or
+   after `ms`. html2canvas inlines images itself, but a card rasterised before
+   its photograph has painted comes back with the fallback monogram — so we
+   wait for the paint, with a deadline so one dead photo host cannot stall a run. */
+function _ngWaitImages(node, ms) {
+  var imgs = node ? Array.prototype.slice.call(node.querySelectorAll("img")) : [];
+  var pending = imgs.filter(function (im) { return !im.complete; });
+  if (!pending.length) return Promise.resolve();
+  return new Promise(function (res) {
+    var done = 0, settled = false;
+    function tick() { if (!settled && ++done >= pending.length) { settled = true; res(); } }
+    pending.forEach(function (im) {
+      im.addEventListener("load", tick, { once: true });
+      im.addEventListener("error", tick, { once: true });
+    });
+    setTimeout(function () { if (!settled) { settled = true; res(); } }, ms || 8000);
+  });
+}
+
+/* ============================================================================
+   MemberIDCardBatch — one design, every member, one file.
+
+   The member card is hand-coded, not a Fabric template, so the studio's merge
+   engine (which drives a template over a roster) cannot print it. This is the
+   member equivalent: it mounts each card off-screen, rasterises it on the same
+   CardExport path the single download uses, and assembles the run three ways —
+
+     "pdf"    one page per member at the 54×85 trim size (a print shop's cut file)
+     "sheet"  imposed on A4 with bleed + crop marks (the prepress module)
+     "zip"    a PNG per member, named for them (what gets emailed)
+
+   Rendered one at a time and yielding between members, so a run of the whole
+   cohort neither locks the tab nor holds two hundred canvases in memory at once,
+   and cancellable via opts.cancel(). Returns { made, failed, mode }.
+   ============================================================================ */
+function MemberIDCardBatch(members, opts) {
+  members = members || []; opts = opts || {};
+  var React = window.React, h = React.createElement, RD = window.ReactDOM;
+  var mode = opts.mode || "zip";
+  var dpi = Math.max(96, Math.min(600, Number(opts.dpi) || 300));
+
+  return (async function () {
+    if (!RD || !RD.createRoot) throw new Error("the renderer is not available");
+    var CE = await loadVendor("cardExport");
+
+    // One off-screen host for the whole run. Kept in the layout tree (not
+    // display:none) because html2canvas needs real geometry to measure.
+    var host = document.createElement("div");
+    host.setAttribute("aria-hidden", "true");
+    host.style.cssText = "position:fixed;left:-100000px;top:0;opacity:0;pointer-events:none;z-index:-1;";
+    document.body.appendChild(host);
+
+    var doc = null, faces = [], files = [], pages = 0;
+    var failed = [];
+    try {
+      for (var i = 0; i < members.length; i++) {
+        if (opts.cancel && opts.cancel()) break;
+        var m = members[i] || {};
+        if (opts.onProgress) opts.onProgress(i, members.length, m);
+
+        var qr = "";
+        try { qr = await _ngQrDataUrl(_ngMemberQrPayload(m)); } catch (e) { qr = ""; }
+
+        var mount = document.createElement("div");
+        mount.style.cssText = "display:inline-block;";
+        host.appendChild(mount);
+        var root = RD.createRoot(mount);
+        root.render(h(MemberIDCard, { member: m, downloadable: false, qrUrl: qr }));
+        // Let React commit and the browser lay the card out, then wait on the
+        // photograph before we freeze the pixels.
+        await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+        await _ngWaitImages(mount, 8000);
+
+        var node = mount.firstElementChild;
+        var px = null;
+        try {
+          if (!node) throw new Error("no card node");
+          if (mode === "sheet") {
+            px = await CE.renderFace(node, { trimW_mm: 54, trimH_mm: 85, bleed_mm: 3, dpi: dpi, bg: "#ffffff" });
+          } else {
+            var scale = CE.scaleForDpi(node.offsetWidth || 300, 54, dpi);
+            px = await CE.nodeToImage(node, { scale: scale, bg: "#ffffff" });
+          }
+        } catch (e) {
+          failed.push(String(m.fullName || m.memberId || ("#" + (i + 1))));
+        }
+        try { root.unmount(); } catch (e) {}
+        try { host.removeChild(mount); } catch (e) {}
+
+        if (px) {
+          if (mode === "pdf") {
+            if (!doc) {
+              var jl = await loadVendor("jspdf");
+              var JsPDF = jl.jsPDF; if (!JsPDF) throw new Error("the PDF library is not loaded");
+              doc = new JsPDF({ unit: "mm", format: [54, 85], orientation: "portrait" });
+            } else {
+              doc.addPage([54, 85], "portrait");
+            }
+            doc.addImage(px.dataUrl, "PNG", 0, 0, 54, 85, undefined, "FAST");
+            pages++;
+          } else if (mode === "sheet") {
+            faces.push({ dataUrl: px.dataUrl, wPx: px.wPx, hPx: px.hPx,
+                         bleedPx: px.bleedPx, trimWPx: px.trimWPx, trimHPx: px.trimHPx });
+          } else {
+            files.push({ name: _ngMemberFileStem(m, i) + ".png", bytes: CE.dataUrlToBytes(px.dataUrl) });
+          }
+        }
+        // Yield so the progress line paints and the tab stays responsive.
+        await new Promise(function (r) { setTimeout(r, 0); });
+      }
+
+      var made = mode === "pdf" ? pages : mode === "sheet" ? faces.length : files.length;
+      if (made > 0) {
+        if (opts.onProgress) opts.onProgress(members.length, members.length, { fullName: "writing the file…" });
+        var stem = "ngg-member-ids-" + made;
+        if (mode === "pdf") {
+          doc.save(stem + ".pdf");
+        } else if (mode === "sheet") {
+          var pdf = await CE.buildImpositionPDF(faces, {
+            sheet: "A4", trimW_mm: 54, trimH_mm: 85, bleed_mm: 3, safe_mm: 3,
+            marks: true, layers: true, intent: "FOGRA39", jobName: "NGG Member IDs",
+            date: new Date().toISOString().slice(0, 10),
+          });
+          CE.download(pdf, stem + "-imposed.pdf", "application/pdf");
+        } else {
+          var zip = await CE.zipStore(files);
+          CE.download(zip, stem + ".zip", "application/zip");
+        }
+      }
+      return { made: made, failed: failed, mode: mode };
+    } finally {
+      try { document.body.removeChild(host); } catch (e) {}
+    }
+  })();
+}
 
 function MemberIDCard(props) {
   var React = window.React, h = React.createElement;
   var m = props.member || {};
   var downloadable = props.downloadable !== false;
   var cardRef = React.useRef(null);
-  var qs = React.useState(""); var qrUrl = qs[0], setQr = qs[1];
+  var qs = React.useState(props.qrUrl || ""); var qrUrl = qs[0], setQr = qs[1];
   var bs = React.useState(""); var busy = bs[0], setBusy = bs[1];
 
   var name = String(m.fullName || "").trim() || "NGG Member";
   var initials = name.split(/\s+/).map(function (w) { return w[0]; }).join("").slice(0, 2).toUpperCase();
   var hasPhoto = m.photoUrl && /^https?:\/\//.test(String(m.photoUrl));
-  var origin = (typeof location !== "undefined") ? location.origin : "";
-  var payload = m.anchorCode ? (origin + "/q/" + m.anchorCode) : (m.memberId ? (origin + "/?m=" + encodeURIComponent(m.memberId)) : origin);
+  var payload = _ngMemberQrPayload(m);
   var validYear = String(new Date().getFullYear());
 
   React.useEffect(function () {
+    // A caller (the batch printer) may hand us the QR already rendered, so the
+    // card can be rasterised the instant it mounts rather than one paint later.
+    if (props.qrUrl != null) { setQr(props.qrUrl); return; }
     var alive = true;
     _ngQrDataUrl(payload).then(function (u) { if (alive) setQr(u); });
     return function () { alive = false; };
-  }, [payload]);
+  }, [payload, props.qrUrl]);
 
   function exportNode() { return loadVendor("cardExport").then(function (CE) { return CE.nodeToImage(cardRef.current, { scale: 3, bg: "#ffffff" }).then(function (img) { return { CE: CE, img: img }; }); }); }
   function downloadPng() {
@@ -673,5 +831,5 @@ Object.assign(window, {
   tplMmPerUnit, tplQrModules,
   TPL_QR_GOOD_MODULE_MM, TPL_QR_MIN_MODULE_MM,
   tplBindValue, tplResolve, tplFitSize, tplToFabric, tplPreflight,
-  MemberIDCard,
+  MemberIDCard, MemberIDCardBatch,
 });

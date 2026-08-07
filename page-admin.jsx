@@ -879,6 +879,7 @@ function AdminMembers() {
   const [meta, setMeta] = React.useState({ total: 0, pageSize: 50 });
   const [editing, setEditing] = React.useState(null);
   const [viewing, setViewing] = React.useState(null);
+  const [printing, setPrinting] = React.useState(false);
 
   const [exporting, setExporting] = React.useState(false);
   const exportCsv = async () => {
@@ -906,6 +907,7 @@ function AdminMembers() {
         <h2 className="admin-h2">Members {meta.total ? <span className="admin-count mono">{meta.total.toLocaleString()}</span> : null}</h2>
         <div className="admin-section-actions">
           <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting || !meta.total} title="Exports all members matching the current filters">{exporting ? "Exporting…" : "Export CSV"}</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setPrinting(true)} disabled={!meta.total} title="Print ID cards for every member matching the current filters">Print IDs</button>
           <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
         </div>
       </div>
@@ -954,6 +956,113 @@ function AdminMembers() {
       }
       {editing && <AdminMemberEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
       {viewing && <AdminMemberDetail memberId={viewing} onClose={() => setViewing(null)} onEdit={(m) => { setViewing(null); setEditing(m); }} onChanged={load}/>}
+      {printing && <AdminMemberIdBatch filters={filters} total={meta.total} onClose={() => setPrinting(false)}/>}
+    </div>
+  );
+}
+
+// ============================================================================
+// Batch ID cards — one file, every member the filters match.
+//
+// The member ID card is hand-coded (window.MemberIDCard), not a Fabric template,
+// so the ID Card Studio's merge engine — which drives a designed template over a
+// roster — cannot print it. This is the member equivalent: it reads the same
+// filtered roster the table and the CSV export use, renders each card on the
+// on-demand CardExport path, and hands back one of three files. Rendering runs
+// entirely in the browser (the host has no headless renderer), one card at a
+// time, cancellable, so the whole cohort neither locks the tab nor blows memory.
+// ============================================================================
+function AdminMemberIdBatch({ filters, total, onClose }) {
+  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const [mode, setMode] = React.useState("zip");
+  const [dpi, setDpi] = React.useState(300);
+  const [run, setRun] = React.useState(null);        // { i, n, note } while rendering
+  const cancelRef = React.useRef(false);
+  const doneRef = React.useRef(false);
+
+  const MODES = [
+    { value: "zip", label: "ZIP of images", hint: "A PNG per member, named for them — for emailing or a print merge." },
+    { value: "pdf", label: "PDF · a page each", hint: "One page per member at the 54×85mm trim size — a print shop's cut file." },
+    { value: "sheet", label: "PDF · imposed sheet", hint: "As many as fit an A4 sheet, with bleed and crop marks, for a print run." },
+  ];
+
+  const start = async () => {
+    if (run) return;
+    if (!window.MemberIDCardBatch) { toast.error("The card renderer isn't loaded — reload and try again."); return; }
+    cancelRef.current = false;
+    setRun({ i: 0, n: total || 0, note: "reading the roster…" });
+    let members = [];
+    try {
+      const r = await NGGApi.admin.members.list(Object.assign({}, filters, { all: 1 }));
+      members = r.members || [];
+    } catch (e) { toast.error(e.code || e.message || "Couldn't read the roster", "Print failed"); setRun(null); return; }
+    if (!members.length) { toast.error("Nobody matches these filters."); setRun(null); return; }
+    setRun({ i: 0, n: members.length, note: "" });
+    try {
+      const out = await window.MemberIDCardBatch(members, {
+        mode, dpi,
+        cancel: () => cancelRef.current,
+        onProgress: (i, n, m) => setRun({ i, n, note: (m && m.fullName) || "" }),
+      });
+      doneRef.current = true;
+      if (out.made > 0) {
+        const msg = out.made + " card" + (out.made === 1 ? "" : "s")
+          + (out.failed.length ? " · " + out.failed.length + " could not be rendered (" + out.failed.slice(0, 3).join(", ") + (out.failed.length > 3 ? ", …" : "") + ")" : "");
+        out.failed.length ? toast.error(msg, "Printed with gaps") : toast.success(msg, "Printed");
+        if (!cancelRef.current) { close(); return; }
+      } else {
+        toast.error(cancelRef.current ? "Cancelled before anything was written." : "Nothing could be rendered.");
+      }
+    } catch (e) {
+      toast.error(e.message || "The run failed", "Print failed");
+    }
+    setRun(null);
+  };
+
+  const hintFor = (MODES.find(x => x.value === mode) || {}).hint || "";
+  return (
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+      onMouseDown={(e) => { if (e.target === e.currentTarget && !run) close(); }}>
+      <div className="admin-drawer-panel">
+        <div className="admin-drawer-head">
+          <h3>Print member ID cards</h3>
+          <button type="button" className="admin-drawer-close" onClick={() => { if (!run) close(); }}>✕</button>
+        </div>
+        <div className="admin-fields">
+          <p className="admin-hint">
+            One card for every member the current filters match — <b>{(total || 0).toLocaleString()}</b> in all.
+            Narrow the list first (centre, type, status) to print a subset.
+          </p>
+          <label className="admin-field"><span className="admin-label">What to make</span>
+            <select className="admin-select" value={mode} onChange={e => setMode(e.target.value)} disabled={!!run}>
+              {MODES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+          <p className="admin-hint" style={{ marginTop: -6 }}>{hintFor}</p>
+          <label className="admin-field"><span className="admin-label">Resolution</span>
+            <select className="admin-select" value={dpi} onChange={e => setDpi(Number(e.target.value))} disabled={!!run}>
+              <option value={150}>150dpi · proof</option>
+              <option value={300}>300dpi · print</option>
+              <option value={600}>600dpi · fine</option>
+            </select>
+          </label>
+          {run && (
+            <p className="admin-hint" role="status" style={{ marginTop: 4 }}>
+              {run.note === "reading the roster…" || run.note === "writing the file…"
+                ? run.note
+                : "Rendering " + Math.min(run.i + 1, run.n) + " of " + run.n + (run.note ? " — " + run.note : "")}
+            </p>
+          )}
+        </div>
+        <div className="admin-drawer-foot">
+          {run
+            ? <button type="button" className="btn btn-ghost" onClick={() => { cancelRef.current = true; }}>Stop</button>
+            : <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>}
+          <button type="button" className="btn btn-primary" onClick={start} disabled={!!run || !total}>
+            {run ? "Working…" : "Print " + (total || 0).toLocaleString()}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

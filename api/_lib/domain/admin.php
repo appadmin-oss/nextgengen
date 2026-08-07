@@ -118,6 +118,11 @@ function admin_members_with_consent(array $rows): array {
     return array_map(function ($r) use ($byId, $decide) {
         $m = public_member($r);
         $mid = (string)$r['memberId'];
+        // The circle-invite short code, so a batch-printed ID card's QR resolves
+        // to the same place the member's own downloaded card does. Only present
+        // once a member has generated one; the card falls back to a member deep
+        // link otherwise. Not added to public_member — this is a staff read.
+        if (!empty($r['anchorCode'])) $m['anchorCode'] = (string)$r['anchorCode'];
         $cs = $byId[$mid] ?? [];
         $d = $decide[$mid] ?? ['mayName' => true, 'gated' => false];
         $m['consent'] = [
