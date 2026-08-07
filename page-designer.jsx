@@ -1221,9 +1221,12 @@ function DesignerPage() {
                     <span className="dsn-merge-meta">{(r.centre && r.centre.name) || "—"}</span>
                     {mf.audience === "students" && <span className="dsn-merge-meta">{r.attended} day{r.attended === 1 ? "" : "s"}</span>}
                     {/* Said on the row rather than only in the summary: this is
-                        the thing an operator scans the list for. */}
-                    {!r.photoUrl && <span className="dsn-merge-flag">no photo</span>}
-                    {!r.token && <span className="dsn-merge-flag">no card</span>}
+                        the thing an operator scans the list for. A green "ready"
+                        badge makes a clean row scannable at a glance across
+                        hundreds; the problems keep their own colours. */}
+                    {r.photoUrl && r.token && <span className="dsn-merge-flag dsn-merge-flag--ok">ready</span>}
+                    {!r.photoUrl && <span className="dsn-merge-flag dsn-merge-flag--photo">no photo</span>}
+                    {!r.token && <span className="dsn-merge-flag dsn-merge-flag--card">no card</span>}
                   </label>
                 );
               })}

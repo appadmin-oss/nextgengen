@@ -5562,3 +5562,117 @@ body.own-chrome .fab-top { display: none; }
   .admin-health-banner { flex-wrap: wrap; }
   .admin-health-banner .ahb-actions { width: 100%; }
 }
+
+/* =====================================================================
+   NGG ID Designer — Canva-style refresh.
+   A presentation/UX layer over the existing designer DOM (page-designer.jsx):
+   a grouped top toolbar, a real workspace backdrop for the canvas, cleaner
+   rails, and — the point of this pass — a roster panel built to stay scannable
+   while a coordinator processes hundreds of IDs at once. Pure additive CSS on
+   the existing classes; the Fabric engine, refs, state and handlers are
+   untouched. Keeps NGG's navy/gold studio identity rather than importing
+   Canva's greys. Source-order-later, so these win over the base .dsn-* rules.
+   ===================================================================== */
+:root { --dsn-panel:rgba(255,255,255,0.055); --dsn-line:rgba(255,255,255,0.14);
+        --dsn-line-2:rgba(255,255,255,0.22); --dsn-gold:#f5b026; --dsn-ink:#eef2fb;
+        --dsn-muted:rgba(230,238,255,0.6); --dsn-ok:#6fdc9d; --dsn-warn:#ffce54; --dsn-bad:#ff8f8f; }
+
+/* ---- top toolbar: one grounded strip, sticky, with the file/export row ---- */
+.dsn-bar {
+  position: sticky; top: 0; z-index: 20; margin: -4px -4px 16px; padding: 12px 16px;
+  background: linear-gradient(180deg, rgba(18,26,48,0.96), rgba(18,26,48,0.86));
+  backdrop-filter: blur(8px); border: 1px solid var(--dsn-line);
+  border-radius: 14px; box-shadow: 0 10px 30px -18px rgba(0,0,0,0.7);
+}
+.dsn-bar .btn-primary { box-shadow: 0 1px 0 rgba(0,0,0,0.15); font-weight: 700; }
+
+/* ---- tool row: a floating Canva-style pill of icon buttons ---- */
+.dsn-tools { border-radius: 12px; padding: 7px 10px; }
+.dsn-tool-grp { border-right: 1px solid var(--dsn-line); }
+.dsn-tool-grp:last-of-type { border-right: 0; }
+.dsn-tool {
+  width: 34px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--dsn-ink);
+  font-size: 15px; cursor: pointer; transition: background .12s, border-color .12s, transform .06s;
+}
+.dsn-tool:hover:not(:disabled) { background: rgba(255,255,255,0.1); border-color: var(--dsn-line-2); }
+.dsn-tool:active:not(:disabled) { transform: translateY(1px); }
+.dsn-tool:disabled { opacity: 0.32; }
+.dsn-tool.is-on { background: rgba(245,176,38,0.18); border-color: var(--dsn-gold); color: #ffe1a3; }
+
+/* ---- editor workspace: canvas floats on a real backdrop, not a flat panel ---- */
+.dsn-grid { grid-template-columns: 232px minmax(0,1fr) 300px; gap: 16px; }
+.dsn-rail {
+  background: var(--dsn-panel); border: 1px solid var(--dsn-line); border-radius: 14px;
+  max-height: min(72vh, 760px);
+}
+.dsn-rail-head {
+  position: sticky; top: 0; z-index: 1; margin: -12px -12px 8px; padding: 12px 12px 8px;
+  background: linear-gradient(180deg, rgba(20,28,50,0.98), rgba(20,28,50,0.7));
+  border-bottom: 1px solid var(--dsn-line);
+}
+.dsn-stage {
+  background:
+    radial-gradient(1200px 500px at 50% -10%, rgba(245,176,38,0.06), transparent 60%),
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.02) 0 10px, transparent 10px 20px),
+    #10182b;
+  border: 1px solid var(--dsn-line); border-radius: 16px; padding: 28px 18px;
+  min-height: 480px; justify-content: center;
+}
+.dsn-canvas-host { box-shadow: 0 24px 60px -20px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05); }
+.dsn-stage-note {
+  padding: 4px 12px; border-radius: 999px; background: rgba(0,0,0,0.3);
+  border: 1px solid var(--dsn-line); backdrop-filter: blur(4px);
+}
+
+/* ---- BATCH: the roster, built to scan at scale ------------------------------
+   Filters read as a toolbar; the picks bar and column header stick while the
+   list scrolls; rows align into columns and carry a coloured status so a
+   coordinator can sweep hundreds and spot the ones that need a photo. */
+.dsn-merge {
+  border: 1px solid var(--dsn-line-2); border-radius: 16px; padding: 16px 18px 14px;
+  background: linear-gradient(180deg, rgba(245,176,38,0.05), rgba(255,255,255,0.03));
+  box-shadow: 0 16px 40px -26px rgba(0,0,0,0.8);
+}
+.dsn-merge-head b { font-size: 15px; letter-spacing: -0.01em; }
+.dsn-merge-filters {
+  background: rgba(0,0,0,0.18); border: 1px solid var(--dsn-line); border-radius: 12px;
+  padding: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.dsn-merge-picks {
+  position: sticky; top: 0; z-index: 2; padding: 8px 2px; margin: 12px 0 0;
+  background: linear-gradient(180deg, rgba(16,24,43,0.98), rgba(16,24,43,0.85));
+  border-bottom: 1px solid var(--dsn-line); backdrop-filter: blur(6px);
+}
+.dsn-merge-picks .dsn-merge-note { text-align: right; }
+/* Denser, taller viewport so more of a big roster is visible at once. */
+.dsn-merge-list {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 6px;
+  max-height: min(52vh, 520px); padding: 8px 4px 2px;
+}
+/* One scannable line per person: [check] name  id · centre · days  [status →].
+   Flex (not grid) so the several meta spans flow inline instead of stacking,
+   and the status cluster is pushed to the right edge of every row. */
+.dsn-merge-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+  padding: 8px 11px; border-radius: 10px; background: rgba(255,255,255,0.035);
+  border-color: var(--dsn-line); transition: background .1s, border-color .1s;
+}
+.dsn-merge-row:hover { background: rgba(255,255,255,0.075); border-color: var(--dsn-line-2); }
+.dsn-merge-row.is-on { border-color: var(--dsn-gold); background: rgba(245,176,38,0.12); }
+.dsn-merge-row input[type="checkbox"] { flex: none; width: 16px; height: 16px; accent-color: var(--dsn-gold); }
+.dsn-merge-who { flex: 0 1 auto; font-weight: 600; color: var(--dsn-ink); font-size: 13px; }
+.dsn-merge-row .dsn-merge-meta { flex: none; max-width: 96px; }
+/* First status badge pushes the whole status cluster to the right edge; any
+   second badge sits just after it. */
+.dsn-merge-row .dsn-merge-flag { margin-left: auto; }
+.dsn-merge-row .dsn-merge-flag ~ .dsn-merge-flag { margin-left: 6px; }
+.dsn-merge-flag { border-radius: 999px; padding: 3px 9px; font-size: 9px; }
+.dsn-merge-flag--ok    { color: var(--dsn-ok);   border-color: rgba(111,220,157,0.5);  background: rgba(111,220,157,0.12); }
+.dsn-merge-flag--photo { color: var(--dsn-warn); border-color: rgba(255,206,84,0.5);   background: rgba(255,206,84,0.12); }
+.dsn-merge-flag--card  { color: var(--dsn-bad);  border-color: rgba(255,143,143,0.5);  background: rgba(255,143,143,0.14); }
+.dsn-merge-run {
+  position: sticky; bottom: 0; margin: 12px -18px -14px; padding: 12px 18px;
+  background: linear-gradient(0deg, rgba(16,24,43,0.98), rgba(16,24,43,0.8));
+  border-top: 1px solid var(--dsn-line-2); border-radius: 0 0 16px 16px;
+}
