@@ -557,9 +557,121 @@ const TPL_REQUIRED = {
   graphic: [],
 };
 
+/* ============================================================================
+   MemberIDCard — the member-facing NGG ID card.
+
+   A self-contained, hand-coded credential (like CardFront / VolunteerCardFront)
+   that every NGG member can see and download from their dashboard, without an
+   admin having to design a template first. Renders name, member id, centre,
+   track, photo and a QR (to the member's profile), and exports itself to PNG or
+   a print-size PDF via the on-demand CardExport / jsPDF vendors. 54 × 85 mm.
+   ============================================================================ */
+function _ngEnsureQrcode() {
+  return new Promise(function (res) {
+    if (window.qrcode) return res(window.qrcode);
+    var s = document.createElement("script");
+    s.src = "/vendor/qrcode.min.js";
+    s.onload = function () { res(window.qrcode || null); };
+    s.onerror = function () { res(null); };
+    document.head.appendChild(s);
+  });
+}
+function _ngQrDataUrl(payload) {
+  return _ngEnsureQrcode().then(function (qr) {
+    if (!qr) return "";
+    try { var q = qr(0, "M"); q.addData(String(payload || "")); q.make(); return q.createDataURL(6, 8); }
+    catch (e) { return ""; }
+  });
+}
+
+function MemberIDCard(props) {
+  var React = window.React, h = React.createElement;
+  var m = props.member || {};
+  var downloadable = props.downloadable !== false;
+  var cardRef = React.useRef(null);
+  var qs = React.useState(""); var qrUrl = qs[0], setQr = qs[1];
+  var bs = React.useState(""); var busy = bs[0], setBusy = bs[1];
+
+  var name = String(m.fullName || "").trim() || "NGG Member";
+  var initials = name.split(/\s+/).map(function (w) { return w[0]; }).join("").slice(0, 2).toUpperCase();
+  var hasPhoto = m.photoUrl && /^https?:\/\//.test(String(m.photoUrl));
+  var origin = (typeof location !== "undefined") ? location.origin : "";
+  var payload = m.anchorCode ? (origin + "/q/" + m.anchorCode) : (m.memberId ? (origin + "/?m=" + encodeURIComponent(m.memberId)) : origin);
+  var validYear = String(new Date().getFullYear());
+
+  React.useEffect(function () {
+    var alive = true;
+    _ngQrDataUrl(payload).then(function (u) { if (alive) setQr(u); });
+    return function () { alive = false; };
+  }, [payload]);
+
+  function exportNode() { return loadVendor("cardExport").then(function (CE) { return CE.nodeToImage(cardRef.current, { scale: 3, bg: "#ffffff" }).then(function (img) { return { CE: CE, img: img }; }); }); }
+  function downloadPng() {
+    if (!cardRef.current || busy) return; setBusy("png");
+    exportNode().then(function (r) { r.CE.download(r.img.bytes, "ngg-id-" + (m.memberId || "card") + ".png", "image/png"); })
+      .catch(function () { if (window.toast) toast.error("Couldn't export the card"); })
+      .then(function () { setBusy(""); });
+  }
+  function downloadPdf() {
+    if (!cardRef.current || busy) return; setBusy("pdf");
+    Promise.all([loadVendor("cardExport"), loadVendor("jspdf")]).then(function (libs) {
+      return libs[0].nodeToImage(cardRef.current, { scale: 4, bg: "#ffffff" }).then(function (img) {
+        var JsPDF = libs[1].jsPDF; var doc = new JsPDF({ unit: "mm", format: [54, 85], orientation: "portrait" });
+        doc.addImage(img.dataUrl, "PNG", 0, 0, 54, 85); doc.save("ngg-id-" + (m.memberId || "card") + ".pdf");
+      });
+    }).catch(function () { if (window.toast) toast.error("Couldn't export the PDF"); })
+      .then(function () { setBusy(""); });
+  }
+
+  var NAVY = "#0a2a4d", NAVY2 = "#0e3f68", GOLD = "#f5b301", INK = "#12233a", MUT = "#5f6874", LINE = "#e7e9ee";
+  var chip = function (txt, key) { return h("span", { key: key, style: { display: "inline-block", background: "#eef2f7", color: INK, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700, marginRight: 6, marginTop: 6 } }, txt); };
+
+  var card = h("div", {
+    ref: cardRef,
+    style: { width: 300, background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid " + LINE, color: INK, fontFamily: "inherit", boxShadow: "0 10px 30px -18px rgba(0,0,0,.5)" }
+  }, [
+    h("div", { key: "hd", style: { background: "linear-gradient(120deg," + NAVY + "," + NAVY2 + ")", color: "#fff", padding: "16px 18px" } }, [
+      h("div", { key: "t", style: { fontWeight: 800, letterSpacing: ".12em", fontSize: 12, color: GOLD } }, "NEXT GENERATION GENIUS"),
+      h("div", { key: "s", style: { fontSize: 11, opacity: .85, marginTop: 3, letterSpacing: ".04em" } }, "Afrovanguard · Member ID"),
+    ]),
+    h("div", { key: "bd", style: { display: "flex", gap: 14, alignItems: "center", padding: "16px 18px" } }, [
+      hasPhoto
+        ? h("img", { key: "ph", src: m.photoUrl, alt: "", crossOrigin: "anonymous", style: { width: 74, height: 74, borderRadius: 12, objectFit: "cover", border: "2px solid " + GOLD } })
+        : h("div", { key: "ph", style: { width: 74, height: 74, borderRadius: 12, background: NAVY, color: GOLD, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 24 } }, initials || "★"),
+      h("div", { key: "info", style: { minWidth: 0 } }, [
+        h("div", { key: "n", style: { fontWeight: 800, fontSize: 17, lineHeight: 1.15 } }, name),
+        h("div", { key: "id", style: { fontFamily: "ui-monospace,Menlo,monospace", fontSize: 12, color: MUT, marginTop: 2 } }, m.memberId || ""),
+        h("div", { key: "chips" }, [
+          m.centre ? chip("CACENTRE " + m.centre, "c") : null,
+          m.track ? chip(m.track, "t") : null,
+        ]),
+      ]),
+    ]),
+    h("div", { key: "ft", style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", padding: "14px 18px", borderTop: "1px dashed " + LINE } }, [
+      qrUrl
+        ? h("img", { key: "qr", src: qrUrl, alt: "QR", style: { width: 76, height: 76, imageRendering: "pixelated" } })
+        : h("div", { key: "qr", style: { width: 76, height: 76, background: "#f1f3f6", borderRadius: 8 } }),
+      h("div", { key: "meta", style: { textAlign: "right" } }, [
+        h("div", { key: "r", style: { fontWeight: 800, color: NAVY, letterSpacing: ".08em" } }, "MEMBER"),
+        h("div", { key: "v", style: { fontSize: 11, color: MUT, marginTop: 2 } }, "Valid " + validYear),
+      ]),
+    ]),
+  ]);
+
+  if (!downloadable) return card;
+  return h("div", { style: { display: "inline-block" } }, [
+    card,
+    h("div", { key: "act", style: { display: "flex", gap: 8, marginTop: 12 } }, [
+      h("button", { key: "png", className: "btn btn-sm", disabled: !!busy, onClick: downloadPng }, busy === "png" ? "Preparing…" : "Download PNG"),
+      h("button", { key: "pdf", className: "btn btn-ghost btn-sm", disabled: !!busy, onClick: downloadPdf }, busy === "pdf" ? "Preparing…" : "Download PDF"),
+    ]),
+  ]);
+}
+
 Object.assign(window, {
   TPL_FIELDS, TPL_SYSTEM, TPL_REQUIRED, TPL_PRESETS, TPL_BRAND, TPL_FONTS,
   tplMmPerUnit, tplQrModules,
   TPL_QR_GOOD_MODULE_MM, TPL_QR_MIN_MODULE_MM,
   tplBindValue, tplResolve, tplFitSize, tplToFabric, tplPreflight,
+  MemberIDCard,
 });

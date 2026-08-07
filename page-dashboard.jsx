@@ -270,6 +270,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
             {/* RIGHT RAIL */}
             <div className="dash-rail">
+              <DashboardIdCard m={m}/>
               <DashboardStats stats={s} prog={prog}/>
               <DashboardMomentum momentum={momentum}/>
               {mentor && <DashboardMentor mentor={mentor}/>}
@@ -956,6 +957,20 @@ function DashboardMomentum({ momentum }) {
  * Read-only, structurally: there is no member-side op that posts, pays or voids
  * anything, so there is nothing here to press.
  */
+// The member's own NGG ID card — rendered + downloadable straight from the rail.
+function DashboardIdCard({ m }) {
+  const Card = window.MemberIDCard;
+  if (!Card || !m) return null;
+  return (
+    <div className="dash-card">
+      <div className="dash-card-head"><h3 className="dash-card-h-sm">Your ID card.</h3></div>
+      <div style={{ display: "flex", justifyContent: "center", padding: "6px 0 4px" }}>
+        <Card member={m} downloadable/>
+      </div>
+    </div>
+  );
+}
+
 function DashboardObligations({ account }) {
   const [open, setOpen] = React.useState(false);
   const a = account;
