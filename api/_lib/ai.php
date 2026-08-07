@@ -341,17 +341,36 @@ function ai_photo_review(string $imageUrl): array {
  *
  * Never returns the key, or any part of it.
  */
+/* Per profile: what it does, and — the part an operator acts on — what happens
+ * when no provider answers. Most features here degrade to a deterministic rules
+ * path and keep working. The Analyst (the insight_* profiles) does NOT: it has
+ * no rules fallback and simply becomes unavailable, so `ai_disabled` on the
+ * board and a silent word-list on the moderation queue are genuinely different
+ * failures and must not read the same on this screen. */
+const AI_RULES_FALLBACK = 'Falls back to fixed rules — still works, just not intelligent.';
+const AI_NO_FALLBACK = 'No rules fallback — the Analyst is simply unavailable until a key is configured.';
 const AI_PROFILE_USES = [
-    'behaviour'  => 'Classifies mentor observations into category and severity.',
-    'moderation' => 'Screens community posts before they publish.',
-    'coach'      => 'The Anchor Journal coaching replies.',
-    'analysis'   => 'Narrative summaries on the analytics boards.',
-    'photo'      => 'Checks uploaded headshots are usable.',
+    'behaviour'         => ['Classifies mentor observations into category and severity.', AI_RULES_FALLBACK],
+    'moderation'        => ['Screens community posts before they publish.', AI_RULES_FALLBACK],
+    'coach'             => ['The Anchor Journal coaching replies.', AI_RULES_FALLBACK],
+    'analysis'          => ['Narrative summaries on the analytics boards.', AI_RULES_FALLBACK],
+    'photo'             => ['Checks uploaded headshots are usable.', AI_RULES_FALLBACK],
+    // The Analyst (Level 7). Listed so an operator seeing "the analyst is
+    // unavailable" on the board can tell here whether a key is missing or a
+    // provider is rejecting it — none of these was visible before.
+    'insight_router'    => ['Analyst — plans each question (which lenses to run).', AI_NO_FALLBACK],
+    'insight_answer'    => ['Analyst — answers each question and composes the reply.', AI_NO_FALLBACK],
+    'insight_mechanism' => ['Analyst panel — the “why is this happening” lens.', AI_NO_FALLBACK],
+    'insight_action'    => ['Analyst panel — the “what to do about it” lens.', AI_NO_FALLBACK],
+    'insight_risk'      => ['Analyst panel — the “what could go wrong” lens.', AI_NO_FALLBACK],
+    'insight_equity'    => ['Analyst panel — the “who is left out” lens.', AI_NO_FALLBACK],
+    'insight_synth'     => ['Analyst — synthesises the panel and multi-finding reports.', AI_NO_FALLBACK],
 ];
 
 function ai_status(bool $probe = false): array {
     $out = [];
-    foreach (AI_PROFILE_USES as $profile => $what) {
+    foreach (AI_PROFILE_USES as $profile => $use) {
+        [$what, $off] = is_array($use) ? $use : [$use, AI_RULES_FALLBACK];
         $cands = ai_profile_candidates($profile);
         $row = [
             'profile' => $profile,
@@ -361,7 +380,7 @@ function ai_status(bool $probe = false): array {
             'model' => $cands ? (string)$cands[0]['model'] : '',
             'fallbacks' => max(0, count($cands) - 1),
             // What actually happens today, in words an operator can act on.
-            'behaviourWhenOff' => 'Falls back to fixed rules — still works, just not intelligent.',
+            'behaviourWhenOff' => $off,
         ];
         if ($probe && $row['enabled']) {
             // One tiny real request. Cheap, and the only way to tell a working

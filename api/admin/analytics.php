@@ -37,7 +37,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             exit;
         }
     } elseif ($action === 'insight.archive') {
-        $res = gs_call('analytics.insight.archive', ['requesterId' => $s['mid'], 'threadId' => $in['threadId'] ?? '']);
+        $res = gs_call('analytics.insight.archive', ['requesterId' => $s['mid'], 'threadId' => $in['threadId'] ?? '', 'restore' => !empty($in['restore'])]);
     } elseif ($action === 'insight.rename') {
         $res = gs_call('analytics.insight.rename', ['requesterId' => $s['mid'],
             'threadId' => $in['threadId'] ?? '', 'title' => $in['title'] ?? '']);
@@ -109,7 +109,7 @@ if (($_GET['view'] ?? '') === 'insight') {
 if (($_GET['view'] ?? '') === 'chat') {
     $op = (string)($_GET['op'] ?? 'threads');
     if ($op === 'threads') {
-        $res = gs_call('analytics.insight.threads', ['requesterId' => $s['mid']]);
+        $res = gs_call('analytics.insight.threads', ['requesterId' => $s['mid'], 'archived' => ($_GET['archived'] ?? '') === '1']);
     } elseif ($op === 'thread') {
         $res = gs_call('analytics.insight.thread', ['requesterId' => $s['mid'], 'threadId' => $_GET['threadId'] ?? '']);
     } else {

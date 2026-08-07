@@ -555,19 +555,35 @@ function ichat_budget_ok(string $memberId): bool {
 
 /* ── The ops ──────────────────────────────────────────────────────────────── */
 
-/** List this admin's threads, newest first. */
+/**
+ * List this admin's threads, newest first.
+ *
+ * `archived` flips the list to the put-away ones, so archiving is no longer a
+ * one-way trip with nothing on the other side of it — the pane can offer to show
+ * them and restore one. The active list always reports how many are archived, so
+ * the affordance only appears when there is something behind it.
+ */
 function insight_chat_threads(array $p): array {
     $g = admin_gate($p);
     if (!$g['ok']) return $g;
     $me = (string)($g['requester']['memberId'] ?? '');
+    $wantArchived = !empty($p['archived']);
+    $clause = $wantArchived
+        ? "archivedAt IS NOT NULL AND archivedAt != ''"
+        : "(archivedAt IS NULL OR archivedAt = '')";
     $rows = db_all("SELECT threadId, title, centre, rangeLabel, turns, createdAt, updatedAt
-                    FROM insight_threads WHERE ownerId = ? AND (archivedAt IS NULL OR archivedAt = '')
+                    FROM insight_threads WHERE ownerId = ? AND $clause
                     ORDER BY updatedAt DESC LIMIT 40", [$me]);
-    return ['ok' => true, 'threads' => array_map(fn($r) => [
+    $out = ['ok' => true, 'archived' => $wantArchived, 'threads' => array_map(fn($r) => [
         'threadId' => (string)$r['threadId'], 'title' => (string)$r['title'],
         'centre' => (string)$r['centre'], 'rangeLabel' => (string)$r['rangeLabel'],
         'turns' => (int)$r['turns'], 'updatedAt' => (string)$r['updatedAt'],
     ], $rows)];
+    if (!$wantArchived) {
+        $out['archivedCount'] = (int)(db_row("SELECT COUNT(*) n FROM insight_threads
+            WHERE ownerId = ? AND archivedAt IS NOT NULL AND archivedAt != ''", [$me])['n'] ?? 0);
+    }
+    return $out;
 }
 
 /** One thread with its turns. */
@@ -595,8 +611,12 @@ function insight_chat_archive(array $p): array {
     $t = db_row("SELECT * FROM insight_threads WHERE threadId = ? LIMIT 1", [$tid]);
     if (!$t) return ['ok' => false, 'error' => 'not_found'];
     if ((string)$t['ownerId'] !== (string)($g['requester']['memberId'] ?? '')) return ['ok' => false, 'error' => 'not_yours'];
-    db_update('insight_threads', ['archivedAt' => now_iso(), 'updatedAt' => now_iso()], ['threadId' => $tid]);
-    return ['ok' => true];
+    // `restore` puts it back — the inverse of archiving, so a thread put away by
+    // mistake is one click to recover rather than gone. Archiving stays soft:
+    // the turns are never deleted either way.
+    $restore = !empty($p['restore']);
+    db_update('insight_threads', ['archivedAt' => $restore ? '' : now_iso(), 'updatedAt' => now_iso()], ['threadId' => $tid]);
+    return ['ok' => true, 'archived' => !$restore];
 }
 
 /**
@@ -659,8 +679,15 @@ function insight_chat_ask(array $p): array {
      * wrong for something that has already decided to answer. This is a plain
      * hourly bucket in the cache, per member, and it exists because every turn
      * spends real money on somebody else's API key. */
-    if (!ichat_budget_ok($me)) return ['ok' => false, 'error' => 'rate_limited',
-        'note' => 'That is ' . ICHAT_TURNS_PER_HOUR . ' questions in an hour. The panel above is still free to read — it is already paid for.'];
+    if (!ichat_budget_ok($me)) {
+        // When the bucket resets — the top of the next clock hour, since the
+        // budget keys on floor(time()/3600). Given so the UI can say "try again
+        // in N minutes" rather than leaving the operator to guess.
+        $resetsInMin = (int)max(1, ceil(((floor(time() / 3600) + 1) * 3600 - time()) / 60));
+        return ['ok' => false, 'error' => 'rate_limited', 'resetsInMin' => $resetsInMin,
+            'note' => 'That is ' . ICHAT_TURNS_PER_HOUR . ' questions in an hour — the budget resets in about '
+                . $resetsInMin . ' minute' . ($resetsInMin === 1 ? '' : 's') . '. The panel above is still free to read; it is already paid for.'];
+    }
 
     if (!ai_enabled(ICHAT_ANSWER_PROFILE) && !ai_enabled(INSIGHT_ANALYSTS[0]['profile']) && !ai_enabled('default')) {
         return ['ok' => false, 'error' => 'ai_disabled'];

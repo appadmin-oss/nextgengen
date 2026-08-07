@@ -714,12 +714,15 @@
          panel and for the same reason — a router pass, up to three lenses and a
          composition will not finish inside the default write ceiling, and a
          client that gives up at 30s bills for work it then discards. */
-      insightChatThreads: () => request('/admin/analytics.php' + qs({ view: 'chat', op: 'threads' })),
+      // `archived` lists the put-away threads instead of the active ones, so
+      // archiving is recoverable rather than a one-way trip.
+      insightChatThreads: (archived) => request('/admin/analytics.php' + qs({ view: 'chat', op: 'threads', archived: archived ? '1' : '' })),
       insightChatThread: (threadId) => request('/admin/analytics.php' + qs({ view: 'chat', op: 'thread', threadId })),
       /* `signal` so the pane can offer Stop. A question that takes half a minute
          and cannot be abandoned is a frozen screen with a spinner on it. */
       insightChatAsk: (data, signal) => request('/admin/analytics.php', { body: { action: 'insight.ask', ...(data || {}) }, timeout: 180000, signal }),
-      insightChatArchive: (threadId) => request('/admin/analytics.php', { body: { action: 'insight.archive', threadId } }),
+      // `restore: true` un-archives a thread; omit to archive.
+      insightChatArchive: (threadId, restore) => request('/admin/analytics.php', { body: { action: 'insight.archive', threadId, restore: !!restore } }),
       insightChatRename: (threadId, title) => request('/admin/analytics.php', { body: { action: 'insight.rename', threadId, title } }),
       insightChatReport: (threadId, seqs) => request('/admin/analytics.php', { body: { action: 'insight.report', threadId, seqs: seqs || [] }, timeout: 120000 }),
       /* Baseline/endline learning measurement. The gains read is the only one

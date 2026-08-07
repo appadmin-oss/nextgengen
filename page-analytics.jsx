@@ -1804,6 +1804,16 @@ function AnInsight({ filters }) {
       {state === "ready" && d && (d.disabled || d.empty || d.failed) && (
         <div className="an-card" style={{ padding: 18 }}>
           <p style={{ margin: 0 }}>{d.note}</p>
+          {/* A transient failure (every lens errored) and a disabled provider
+              are both recoverable from here — the first by re-running, the
+              second once a key is added — so this branch is no longer a
+              dead-end. Only `empty` (no evidence in this range) offers no
+              retry, because re-asking the same range cannot change the answer. */}
+          {(d.failed || d.disabled) && (
+            <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => run(true)}>
+              {d.disabled ? "Check again" : "Try again"}
+            </button>
+          )}
         </div>
       )}
 
@@ -2078,7 +2088,17 @@ function AnpChart({ chart }) {
           {last.y - pts[0].y > 0 ? "+" : ""}{Math.round((last.y - pts[0].y) * 10) / 10}{chart.unit}
         </b>}
       </div>
-      <svg viewBox={"0 0 " + W + " " + H} style={{ width: "100%", height: "auto", display: "block", overflow: "visible" }}>
+      {/* A screen reader gets the shape of the series in words — a bare polyline
+          announces nothing. The visible label carries the delta already, so this
+          restates the endpoints and the threshold, which the picture alone
+          cannot speak. */}
+      <svg viewBox={"0 0 " + W + " " + H} role="img"
+        aria-label={(chart.label || "Series") + ": " + (chart.kind === "bar" ? "bar chart" : "line") + ", "
+          + pts.length + " point" + (pts.length === 1 ? "" : "s")
+          + (pts.length > 1 ? ", from " + pts[0].y + (chart.unit || "") + " at " + pts[0].x
+              + " to " + last.y + (chart.unit || "") + " at " + last.x + " (" + (down ? "down" : "up") + ")" : ", " + last.y + (chart.unit || ""))
+          + (chart.watch != null ? ", watch line at " + chart.watch + (chart.unit || "") : "") + "."}
+        style={{ width: "100%", height: "auto", display: "block", overflow: "visible" }}>
         {[max, (max + min) / 2, min].map((v, i) => (
           <text key={"y" + i} x={L - 6} y={y(v) + 3.5} textAnchor="end" fontSize="9" fill="#8891a6"
             fontFamily="var(--font-mono, monospace)">{Math.round(v)}</text>
@@ -2116,6 +2136,8 @@ function AnalystPane({ onClose }) {
      says "not scoped" rather than one implying a filter it cannot see. */
   const scope = useNggScope();
   const [threads, setThreads] = React.useState([]);
+  const [archivedCount, setArchivedCount] = React.useState(0);
+  const [archView, setArchView] = React.useState(false); // listing the put-away ones
   const [thread, setThread] = React.useState(null);   // { threadId, turns: [] }
   const [q, setQ] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -2135,9 +2157,15 @@ function AnalystPane({ onClose }) {
   const boxRef = React.useRef(null);
   const abortRef = React.useRef(null);
 
-  const loadThreads = React.useCallback(() => {
-    NGGApi.admin.insightChatThreads().then(r => setThreads(r.threads || [])).catch(() => {});
-  }, []);
+  const loadThreads = React.useCallback((archived) => {
+    const arch = archived != null ? archived : archView;
+    NGGApi.admin.insightChatThreads(arch).then(r => {
+      setThreads(r.threads || []);
+      // The active read reports how many are archived, so the affordance to see
+      // them only appears when there is something behind it.
+      if (!arch && r.archivedCount != null) setArchivedCount(r.archivedCount);
+    }).catch(() => {});
+  }, [archView]);
   React.useEffect(() => { loadThreads(); }, [loadThreads]);
   React.useEffect(() => {
     if (endRef.current) endRef.current.scrollIntoView({ block: "end", behavior: "smooth" });
@@ -2165,7 +2193,20 @@ function AnalystPane({ onClose }) {
     try {
       await NGGApi.admin.insightChatArchive(threadId);
       if (thread && thread.threadId === threadId) setThread(null);
-      loadThreads();
+      // Reload the active list AND refresh the archived count (loadThreads only
+      // refreshes the count when reading the active list, which this is).
+      loadThreads(false);
+    } catch (e) { setErr({ code: e.code, text: e.code || e.message }); }
+  };
+
+  /* The inverse of archive — a thread put away by mistake is one click back,
+     rather than gone. Refreshes the count too, so switching to Active shows the
+     restored one without a stale badge. */
+  const unarchive = async (threadId) => {
+    try {
+      await NGGApi.admin.insightChatArchive(threadId, true);
+      loadThreads(true);
+      NGGApi.admin.insightChatThreads(false).then(r => { if (r.archivedCount != null) setArchivedCount(r.archivedCount); }).catch(() => {});
     } catch (e) { setErr({ code: e.code, text: e.code || e.message }); }
   };
 
@@ -2435,9 +2476,17 @@ function AnalystPane({ onClose }) {
              teaches nothing and they will do it again on a surface that has no
              gate. */
           ? "That question names or identifies someone (" + reasons.join(", ") + "). Nothing was sent. Ask about a centre, an age band or a period instead — the analyst only ever sees counts and rates."
-          : e.code === "rate_limited" ? ((e.data && e.data.note) || "Too many questions this hour.")
+          : e.code === "rate_limited"
+          ? ((e.data && e.data.note)
+              || ("Too many questions this hour" + (e.data && e.data.resetsInMin ? " — try again in about " + e.data.resetsInMin + " minute" + (e.data.resetsInMin === 1 ? "" : "s") : "") + "."))
           : e.code === "ai_disabled" ? "No AI provider is configured, so there is no analyst to ask. The computed levels on the page are unaffected."
           : e.code === "no_evidence" ? "There is nothing to analyse in this range yet."
+          // Length bounds and thread errors used to fall through to the raw
+          // code — a coordinator does not need to read "question_too_short".
+          : e.code === "question_too_short" ? "That is too short to work with — ask in a sentence, about a centre, an age band or a period."
+          : e.code === "question_too_long" ? "That question is too long. Trim it to the one thing you want answered."
+          : e.code === "thread_failed" ? "The conversation could not be started. Nothing was saved — try again."
+          : e.code === "not_yours" ? "That conversation belongs to another admin. Start a new one with ＋ New."
           : e.code === "privacy_refused"
           ? "Refused to send: the payload would have contained " + reasons.join(", ") + ". Nothing was sent. This is a bug — report it."
           : e.code === "timeout" ? "The analyst did not finish in time. Nothing was saved — try a narrower question, or Quick depth."
@@ -2497,16 +2546,22 @@ function AnalystPane({ onClose }) {
       </div>
 
       {/* ── Earlier conversations ──────────────────────────────────────── */}
-      {showThreads && threads.length > 0 && (
+      {showThreads && (threads.length > 0 || archivedCount > 0 || archView) && (
         <div className="anp-threads">
           <div className="anp-threads-h">
-            <span>Recent threads</span>
+            <span>{archView ? "Archived" : "Recent threads"}</span>
             <span style={{ flex: 1 }}/>
-            {threads.length > 4 && (
+            {!archView && threads.length > 4 && (
               <button className="anp-link" onClick={() => setAllThreads(a => !a)}>
                 {allThreads ? "Fewer" : "All " + threads.length} ▸
               </button>
             )}
+            {/* Archiving is no longer a one-way trip: this switches the list to
+                the put-away threads, where each can be restored. */}
+            {archView
+              ? <button className="anp-link" onClick={() => { setArchView(false); setAllThreads(false); }}>← Active</button>
+              : archivedCount > 0 && <button className="anp-link" onClick={() => { setArchView(true); setAllThreads(false); }}>
+                  Archived {archivedCount} ▸</button>}
           </div>
           {(allThreads ? threads : threads.slice(0, 4)).map(t => {
             const on = thread && thread.threadId === t.threadId;
@@ -2518,13 +2573,21 @@ function AnalystPane({ onClose }) {
                   <span className="anp-thread-t">{t.title || "Untitled"}</span>
                   <span className="anp-thread-n">{t.turns}</span>
                 </button>
-                <button className="anp-thread-ic" title="Rename" aria-label={"Rename " + (t.title || "conversation")}
-                  onClick={() => rename(t)}>✎</button>
-                <button className="anp-thread-ic" title="Archive" aria-label={"Archive " + (t.title || "conversation")}
-                  onClick={() => archive(t.threadId)}>✕</button>
+                {archView ? (
+                  <button className="anp-thread-ic" title="Restore" aria-label={"Restore " + (t.title || "conversation")}
+                    onClick={() => unarchive(t.threadId)}>⤺</button>
+                ) : (<>
+                  <button className="anp-thread-ic" title="Rename" aria-label={"Rename " + (t.title || "conversation")}
+                    onClick={() => rename(t)}>✎</button>
+                  <button className="anp-thread-ic" title="Archive" aria-label={"Archive " + (t.title || "conversation")}
+                    onClick={() => archive(t.threadId)}>✕</button>
+                </>)}
               </div>
             );
           })}
+          {archView && threads.length === 0 && (
+            <div className="anp-thread" style={{ opacity: 0.7, padding: "6px 8px", fontSize: 12 }}>Nothing archived.</div>
+          )}
         </div>
       )}
 
