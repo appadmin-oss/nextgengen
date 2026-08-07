@@ -253,31 +253,71 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
   const [editProfile, setEditProfile] = React.useState(false);
 
+  // Portal-style chrome: a sticky sidebar rail + top-bar strip + KPI row wrap
+  // the member's existing cards, so the NGG dashboard shares the Afrovanguard
+  // member portal's LAYOUT system while keeping NGG's own navy/gold/cream skin
+  // and typefaces. The cards themselves are unchanged — each is wrapped in a
+  // <section id> so the rail can navigate to it.
+  const first = String(m.fullName || "").split(" ")[0] || "Member";
+  const greeting = hourGreeting();
+  const unread = notes.filter(n => !n.readAt).length;
+  const owed = account ? account.payable : 0;
+
   return (
     <React.Fragment>
-      <DashboardHero m={m} session={session} refreshing={refreshing} onSignOut={onSignOut} onEditProfile={() => setEditProfile(true)}/>
       {editProfile && <DashboardProfileModal m={m} onClose={() => setEditProfile(false)} onSaved={() => { setEditProfile(false); onMutate(); }}/>}
-      <section className="dash-section">
-        <div className="container">
-          <div className="dash-grid">
-            {/* LEFT MAIN COLUMN */}
-            <div className="dash-main">
-              <DashboardToday today={today} member={m} onMutate={onMutate} session={session}/>
-              <DashboardAssignments assignments={data.assignments || []} onMutate={onMutate}/>
-              <DashboardActivityFeed memberId={m.memberId} session={session} reloadKey={mutateSeq}/>
-              <DashboardJournal onMutate={onMutate}/>
+      <section className="dash-section ngg-dash" data-screen-label="05 Dashboard">
+        <div className="container ngg-dash-wrap">
+
+          <DashboardSidebar
+            m={m} first={first} account={account}
+            counts={{ today: today.length, events: events.length, notes: unread }}
+            onSignOut={onSignOut} onEditProfile={() => setEditProfile(true)}/>
+
+          <div className="ngg-main">
+            <div className="ngg-top">
+              <div className="ngg-crumb">
+                <span>Next Generation Genius</span>
+                <span className="ngg-crumb-sep">/</span>
+                <span className="ngg-crumb-here">My dashboard</span>
+                {refreshing && <span className="dash-refreshing" title="Refreshing…" aria-hidden="true"/>}
+              </div>
+              <div className="ngg-top-actions">
+                <button className="btn btn-ghost btn-sm" onClick={() => setEditProfile(true)}>Edit profile</button>
+                <button className="btn btn-ghost btn-sm" onClick={onSignOut}>Sign out</button>
+              </div>
             </div>
 
-            {/* RIGHT RAIL */}
-            <div className="dash-rail">
-              <DashboardIdCard m={m}/>
-              <DashboardStats stats={s} prog={prog}/>
-              <DashboardMomentum momentum={momentum}/>
-              {mentor && <DashboardMentor mentor={mentor}/>}
-              {account && <DashboardObligations account={account}/>}
-              <DashboardEvents events={events} onRsvp={onRsvp}/>
-              <DashboardNotifications notes={notes} onRead={onRead}/>
-              <DashboardShortcuts setPage={setPage}/>
+            <div className="ngg-scroll">
+              <header className="ngg-head">
+                <div className="mono ngg-head-eyebrow">{greeting.toUpperCase()} · {m.memberId}</div>
+                <h1 className="ngg-head-name">{greeting}, {first}.</h1>
+                <p className="ngg-head-sub">Your Anchor 12 room — today's missions, your tally, your mentor and your account, all in one place.</p>
+              </header>
+
+              <DashboardKpis session={session} prog={prog} stats={s} account={account}/>
+
+              <div className="dash-grid">
+                {/* LEFT MAIN COLUMN */}
+                <div className="dash-main">
+                  <section id="sec-today" className="ngg-anchor"><DashboardToday today={today} member={m} onMutate={onMutate} session={session}/></section>
+                  <section id="sec-assignments" className="ngg-anchor"><DashboardAssignments assignments={data.assignments || []} onMutate={onMutate}/></section>
+                  <section id="sec-activity" className="ngg-anchor"><DashboardActivityFeed memberId={m.memberId} session={session} reloadKey={mutateSeq}/></section>
+                  <section id="sec-journal" className="ngg-anchor"><DashboardJournal onMutate={onMutate}/></section>
+                </div>
+
+                {/* RIGHT RAIL */}
+                <div className="dash-rail">
+                  <section id="sec-id" className="ngg-anchor"><DashboardIdCard m={m}/></section>
+                  <section id="sec-stats" className="ngg-anchor"><DashboardStats stats={s} prog={prog}/></section>
+                  <section id="sec-momentum" className="ngg-anchor"><DashboardMomentum momentum={momentum}/></section>
+                  {mentor && <section id="sec-mentor" className="ngg-anchor"><DashboardMentor mentor={mentor}/></section>}
+                  {account && <section id="sec-account" className="ngg-anchor"><DashboardObligations account={account}/></section>}
+                  <section id="sec-events" className="ngg-anchor"><DashboardEvents events={events} onRsvp={onRsvp}/></section>
+                  <section id="sec-notifs" className="ngg-anchor"><DashboardNotifications notes={notes} onRead={onRead}/></section>
+                  <section id="sec-shortcuts" className="ngg-anchor"><DashboardShortcuts setPage={setPage}/></section>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -286,45 +326,124 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
   );
 }
 
-// ----------------------------------------------------------------------------
-
-function DashboardHero({ m, session, refreshing, onSignOut, onEditProfile }) {
-  const first = String(m.fullName || "").split(" ")[0] || "Member";
-  const greeting = hourGreeting();
+// The portal-style sidebar rail: member identity, in-page section nav (with a
+// scrollspy + a mobile collapse), and the sign-out/edit actions.
+function DashboardSidebar({ m, first, account, counts, onSignOut, onEditProfile }) {
+  const [open, setOpen] = React.useState(false);
+  const [active, setActive] = React.useState("sec-today");
+  const owed = account ? account.payable : 0;
   const hasPhoto = m.photoUrl && /^https?:\/\//.test(m.photoUrl);
+
+  const groups = [
+    { g: "Today", items: [
+      { id: "sec-today", label: "Today's missions", badge: counts.today || null },
+      { id: "sec-assignments", label: "Assignments" },
+      { id: "sec-activity", label: "Activity" },
+      { id: "sec-journal", label: "Journal" },
+    ] },
+    { g: "You", items: [
+      { id: "sec-id", label: "Member ID" },
+      { id: "sec-stats", label: "Your tally" },
+      { id: "sec-momentum", label: "Momentum" },
+      ...(account ? [{ id: "sec-account", label: "Your account", badge: owed > 0 ? naira(owed) : null }] : []),
+      { id: "sec-events", label: "Events", badge: counts.events || null },
+      { id: "sec-notifs", label: "Notifications", badge: counts.notes || null },
+    ] },
+  ];
+
+  // Scrollspy — highlight the section currently in view. Runs once; observes
+  // whatever section ids are present in the DOM.
+  React.useEffect(() => {
+    const ids = groups.reduce((a, grp) => a.concat(grp.items.map(i => i.id)), []);
+    const els = ids.map(id => document.getElementById(id)).filter(Boolean);
+    if (!("IntersectionObserver" in window) || !els.length) return;
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(en => { if (en.isIntersecting) setActive(en.target.id); });
+    }, { rootMargin: "-40% 0px -55% 0px" });
+    els.forEach(el => io.observe(el));
+    return () => io.disconnect();
+  }, []); // eslint-disable-line
+
+  const go = (id) => (e) => {
+    e.preventDefault();
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    setOpen(false);
+  };
+
   return (
-    <section className="dash-hero">
-      <div className="container">
-        <div className="dash-hero-row">
-          <div className="dash-hero-id">
-            <button className="dash-hero-avatar-btn" onClick={onEditProfile} title="Edit your profile" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", borderRadius: "50%", lineHeight: 0 }}>
-              {hasPhoto
-                ? <img src={m.photoUrl} alt="" style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--gold-500)" }} onError={(e) => { e.target.style.display = "none"; }}/>
-                : <Avatar seed={m.memberId.charCodeAt(m.memberId.length - 1) % 20 + 1} size={64} ring/>}
-            </button>
-            <div>
-              <div className="mono dash-hero-meta">
-                {greeting.toUpperCase()} · {m.memberId}
-                {refreshing && <span className="dash-refreshing" aria-hidden="true" title="Refreshing…"/>}
-              </div>
-              <h1 className="dash-hero-name">{first}.</h1>
-              <div className="dash-hero-sub">
-                <span className="chip chip-on-dark">{m.type === "Summer" ? "Summer Student" : m.role === "super_admin" || m.role === "admin" ? "Admin · " + (m.role) : "Genius"}</span>
-                <span className="chip chip-on-dark">CACENTRE {m.centre}</span>
-                {m.track && <span className="chip chip-on-dark">{m.track}</span>}
-              </div>
+    <aside className={"ngg-side" + (open ? " is-open" : "")}>
+      <button className="ngg-side-toggle btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)}>☰ Sections</button>
+      <div className="ngg-side-inner">
+        <button className="ngg-side-brand" onClick={onEditProfile} title="Edit your profile">
+          {hasPhoto
+            ? <img src={m.photoUrl} alt="" className="ngg-side-avatar-img" onError={(e) => { e.target.style.display = "none"; }}/>
+            : <Avatar seed={m.memberId.charCodeAt(m.memberId.length - 1) % 20 + 1} size={40} ring/>}
+          <span className="ngg-side-brand-text"><b>{first}</b><span className="mono">{m.memberId}</span></span>
+        </button>
+        <nav className="ngg-nav">
+          {groups.map(grp => (
+            <div className="ngg-nav-group" key={grp.g}>
+              <div className="ngg-nav-title">{grp.g}</div>
+              {grp.items.map(it => (
+                <a key={it.id} href={"#" + it.id} onClick={go(it.id)}
+                   className={"ngg-nav-link" + (active === it.id ? " is-active" : "")}>
+                  <span className="ngg-nav-dot"/>
+                  <span className="ngg-nav-label">{it.label}</span>
+                  {it.badge && <span className="ngg-nav-badge">{it.badge}</span>}
+                </a>
+              ))}
             </div>
-          </div>
-          <div className="dash-hero-actions">
-            <DashboardSessionBadge session={session}/>
-            <button className="btn btn-on-dark-ghost btn-sm" onClick={onEditProfile}>Edit profile</button>
-            <button className="btn btn-on-dark-ghost btn-sm" onClick={onSignOut}>Sign out</button>
-          </div>
+          ))}
+        </nav>
+        <div className="ngg-side-user">
+          <button className="btn btn-ghost btn-sm" onClick={onEditProfile}>Edit profile</button>
+          <button className="btn btn-ghost btn-sm" onClick={onSignOut}>Sign out</button>
         </div>
       </div>
-    </section>
+    </aside>
   );
 }
+
+// The KPI row — the four headline numbers, read from the same data the cards
+// below use, so nothing can disagree.
+function DashboardKpis({ session, prog, stats, account }) {
+  const now = new Date();
+  let sessN = "—", sessSub = "no active session";
+  if (session) {
+    const start = new Date(session.startDate), end = new Date(session.endDate);
+    const wk = " · week " + session.weekOf + "/" + session.totalWeeks;
+    if (now < start) { sessN = Math.ceil((start - now) / 86400000) + "d"; sessSub = "to start" + wk; }
+    else { sessN = Math.max(0, Math.ceil((end - now) / 86400000)) + "d"; sessSub = "left" + wk; }
+  }
+  const owed = account ? account.payable : null;
+  return (
+    <div className="ngg-kpis">
+      <div className="ngg-kpi">
+        <div className="ngg-kpi-top"><span className="ngg-kpi-l">Session</span>{session && <span className="chip chip-gold">{session.code}</span>}</div>
+        <div className="ngg-kpi-n">{sessN}</div>
+        <div className="ngg-kpi-s">{sessSub}</div>
+      </div>
+      <div className="ngg-kpi">
+        <div className="ngg-kpi-top"><span className="ngg-kpi-l">Level</span><span className="chip chip-gold">{prog.rank.name}</span></div>
+        <div className="ngg-kpi-n">{String(prog.level).padStart(2, "0")}</div>
+        <div className="ngg-kpi-s">{prog.total.toLocaleString()} XP{prog.next ? " · next at " + prog.next.at.toLocaleString() : " · top rank"}</div>
+      </div>
+      <div className="ngg-kpi">
+        <div className="ngg-kpi-top"><span className="ngg-kpi-l">Streak</span></div>
+        <div className="ngg-kpi-n">{stats.streak}<span className="ngg-kpi-u">d</span></div>
+        <div className="ngg-kpi-s">{stats.badgeCount} badge{stats.badgeCount === 1 ? "" : "s"} earned</div>
+      </div>
+      <div className="ngg-kpi">
+        <div className="ngg-kpi-top"><span className="ngg-kpi-l">Account</span>{owed != null && <span className={"chip " + (owed > 0 ? "chip-coral" : "chip-lime")}>{owed > 0 ? "Due" : "Clear"}</span>}</div>
+        <div className={"ngg-kpi-n" + (owed === 0 ? " is-clear" : "")}>{account ? (owed > 0 ? naira(owed) : "Clear") : "—"}</div>
+        <div className="ngg-kpi-s">{account ? (owed > 0 ? "outstanding" : "nothing outstanding") : "loading…"}</div>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
 
 // Compact member profile editor with a Cloudinary avatar upload.
 function DashboardProfileModal({ m, onClose, onSaved }) {
@@ -511,30 +630,6 @@ function DashboardAccount({ m }) {
     </div>
   );
 }
-
-function DashboardSessionBadge({ session }) {
-  if (!session) {
-    return <div className="dash-session-badge"><div className="mono">NO ACTIVE SESSION</div></div>;
-  }
-  const today = new Date();
-  const end = new Date(session.endDate);
-  const daysLeft = Math.max(0, Math.ceil((end - today) / (1000 * 60 * 60 * 24)));
-  const start = new Date(session.startDate);
-  const upcoming = today < start;
-  const daysToStart = upcoming ? Math.ceil((start - today) / (1000 * 60 * 60 * 24)) : 0;
-  return (
-    <div className="dash-session-badge">
-      <div className="mono" style={{color:"var(--gold-400)"}}>{session.code} · {session.year}</div>
-      <div className="dash-session-num">
-        {upcoming ? daysToStart : daysLeft}
-        <span className="dash-session-unit">{upcoming ? " days to start" : " days left"}</span>
-      </div>
-      <div className="mono" style={{color:"rgba(255,255,255,0.55)"}}>WEEK {session.weekOf}/{session.totalWeeks}</div>
-    </div>
-  );
-}
-
-// ----------------------------------------------------------------------------
 
 function DashboardToday({ today, member, onMutate, session }) {
   const [busy, setBusy] = React.useState({});
