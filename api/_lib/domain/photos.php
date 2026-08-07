@@ -318,6 +318,51 @@ function photo_store_url(string $id): string {
     return $id === '' ? '' : '/api/public/photo.php?p=' . rawurlencode($id);
 }
 
+/**
+ * Every directory a stored image could be in — not just the one a fresh write
+ * would pick. photo_store_dir() returns a SINGLE winner (the first writable
+ * candidate), which is right for writing but wrong for reading: an image
+ * written to the cache fallback while api/storage was briefly unwritable, or
+ * one written before the store's base path last moved, then 404s from the
+ * serving route even though its id is still on the record. This lists them all
+ * so the reader can look everywhere. Read-only apart from the dir photo_store_dir
+ * itself would create.
+ */
+function photo_store_dirs(): array {
+    $dirs = [];
+    $base = (string)($GLOBALS['CONFIG']['db']['sqlite_path'] ?? '');
+    if ($base !== '') $dirs[] = dirname($base) . '/photos';   // primary (data dir)
+    $dirs[] = __DIR__ . '/../../storage/photos';              // canonical fallback base
+    $cache = (string)($GLOBALS['CONFIG']['cache_dir'] ?? '');
+    if ($cache !== '') $dirs[] = rtrim($cache, '/') . '/photos'; // degraded (cache) fallback
+    $dirs[] = photo_store_dir();                               // whatever a write would pick now
+    // De-dupe, preferring realpath so two spellings of one directory collapse.
+    $seen = []; $out = [];
+    foreach ($dirs as $d) {
+        if ($d === '') continue;
+        $key = @realpath($d) ?: $d;
+        if (isset($seen[$key])) continue;
+        $seen[$key] = true;
+        $out[] = $d;
+    }
+    return $out;
+}
+
+/**
+ * Resolve a store id to an existing file, searching every candidate directory.
+ * A bad id and a file that is genuinely absent everywhere both return '' — the
+ * caller must not be able to tell them apart (no "which photos exist" oracle),
+ * exactly as photo_store_path intends.
+ */
+function photo_store_find(string $id): string {
+    if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', $id)) return '';
+    foreach (photo_store_dirs() as $dir) {
+        $path = $dir . '/' . $id;
+        if (is_file($path)) return $path;
+    }
+    return '';
+}
+
 /** Absolute form, for anything off-site that has to FETCH the image — the
  *  vision model and Cloudinary both do. Empty when no origin is configured,
  *  which is the honest answer rather than a URL nobody can resolve. */

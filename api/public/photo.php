@@ -25,7 +25,12 @@ require_method('GET');
 rate_limit_check('photo');
 
 $p = (string)($_GET['p'] ?? '');
-$path = function_exists('photo_store_path') ? photo_store_path($p) : '';
+// Search every candidate store directory, not just the one a fresh write would
+// pick: an image written to the cache fallback (api/storage briefly unwritable)
+// or before the store's base path last moved is still on disk, and must serve
+// rather than 404 while its id is on the record.
+$path = function_exists('photo_store_find') ? photo_store_find($p)
+      : (function_exists('photo_store_path') ? photo_store_path($p) : '');
 // A bad id and a missing file are the same answer on purpose: distinguishing
 // them would turn this into an oracle for which photos exist.
 if ($path === '' || !is_file($path)) { http_response_code(404); exit; }
