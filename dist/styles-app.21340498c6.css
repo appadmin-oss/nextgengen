@@ -5530,3 +5530,35 @@ body.own-chrome .fab-top { display: none; }
 @media (max-width: 720px) {
   .ngg-kpis { grid-template-columns: 1fr 1fr; }
 }
+
+/* =====================================================================
+   Admin health banner — surfaces storage faults (a DEGRADED local photo
+   store, or a Cloudinary that is refusing / exhausted / unreachable) that
+   otherwise only show up as a blank photo frame. Full-width under the
+   topbar; dismissible until the situation itself changes.
+   ===================================================================== */
+.admin-health-banner {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 13px clamp(16px, 3vw, 30px);
+  background: var(--navy-900, #0c1432);
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 4px 0 0 var(--gold-500, #f5b026);
+}
+.admin-health-banner .ahb-ico {
+  flex: none; font-size: 18px; line-height: 1.4; color: var(--gold-400, #ffc34d);
+}
+.admin-health-banner .ahb-text { flex: 1; min-width: 0; }
+.admin-health-banner .ahb-title {
+  display: block; font-family: var(--font-display, inherit); font-size: 15px;
+  font-weight: 700; letter-spacing: -0.01em; margin-bottom: 4px;
+}
+.admin-health-banner .ahb-list { margin: 0; padding-left: 18px; }
+.admin-health-banner .ahb-list li { font-size: 13px; line-height: 1.5; color: rgba(255, 255, 255, 0.82); margin: 3px 0; }
+.admin-health-banner .ahb-list b { color: #fff; }
+.admin-health-banner .ahb-action { color: var(--gold-300, #ffd680); }
+.admin-health-banner .ahb-actions { display: flex; gap: 8px; flex: none; align-items: center; }
+@media (max-width: 720px) {
+  .admin-health-banner { flex-wrap: wrap; }
+  .admin-health-banner .ahb-actions { width: 100%; }
+}

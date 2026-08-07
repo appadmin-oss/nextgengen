@@ -99,6 +99,91 @@ function takePendingAdminTab(fallback) {
   return t;
 }
 
+// Read the ops health payload and distil the two storage faults an admin can
+// actually act on: a DEGRADED/failed local photo store, and a Cloudinary that
+// is refusing, exhausted or unreachable. Returns a list + a signature so a
+// dismissal sticks only until the situation itself changes.
+function computeHealthIssues(health) {
+  const c = (health && health.checks) || {};
+  const list = [];
+
+  const ph = c.photos || {};
+  if (ph.where === "cache_fallback") {
+    list.push({
+      key: "photos:cache_fallback",
+      label: "Photo storage is DEGRADED",
+      detail: "New headshots are being written to the disposable cache directory because the storage folder isn’t writable"
+        + (ph.dir ? " (" + ph.dir + ")" : "") + ". They can be lost when the cache is cleared.",
+      action: "In your host’s File Manager, make that folder writable (0755). Stored photos then self-heal to durable storage the next time each is viewed.",
+    });
+  } else if (ph.where === "unwritable") {
+    list.push({
+      key: "photos:unwritable",
+      label: "Photo storage is FAILING",
+      detail: "There is no writable directory for headshots" + (ph.dir ? " (" + ph.dir + ")" : "")
+        + " — without Cloudinary, uploaded photos are being dropped.",
+      action: "In your host’s File Manager, make that folder writable (0755) now.",
+    });
+  }
+
+  const cl = c.cloudinary || {};
+  if (cl.configured && cl.state && cl.state !== "ok" && cl.state !== "not_configured") {
+    const label = {
+      bad_credentials: "Cloudinary is refusing these keys",
+      exhausted: "Cloudinary plan is exhausted / rate-limited",
+      unreachable: "Cloudinary is unreachable",
+    }[cl.state] || ("Cloudinary: " + cl.state);
+    const action = {
+      bad_credentials: "Check the Cloudinary API key and secret in api/config.php — they look rotated or wrong. Until fixed, uploads silently fall back to local storage.",
+      exhausted: "Upgrade the plan or wait for the quota to reset. Uploads fall back to local storage meanwhile.",
+      unreachable: "Check outbound network/proxy access to api.cloudinary.com. Uploads fall back to local storage meanwhile.",
+    }[cl.state] || "";
+    list.push({ key: "cloud:" + cl.state, label, detail: cl.detail || "", action });
+  }
+
+  return { list, sig: list.map(i => i.key).join("|") };
+}
+
+// A control-room banner for storage faults that otherwise only surface as a
+// blank photo frame. Fetches ops health once (settings-gated, so it no-ops for
+// staff without that cap) and shows only when something is actually wrong.
+function AdminHealthBanner({ hasCap, setSection }) {
+  const [issues, setIssues] = React.useState(null);
+  const [dismissed, setDismissed] = React.useState(() => {
+    try { return localStorage.getItem("ngg.health.dismiss") || ""; } catch (_) { return ""; }
+  });
+
+  React.useEffect(() => {
+    if (!hasCap || !hasCap("settings")) return; // /admin/ops.php is settings-gated
+    let alive = true;
+    NGGApi.admin.ops.status()
+      .then(r => { if (alive) setIssues(computeHealthIssues(r && r.health)); })
+      .catch(() => {/* a diagnostics call must never break the console */});
+    return () => { alive = false; };
+  }, []); // eslint-disable-line
+
+  if (!issues || !issues.list.length || dismissed === issues.sig) return null;
+  const dismiss = () => { try { localStorage.setItem("ngg.health.dismiss", issues.sig); } catch (_) {} setDismissed(issues.sig); };
+
+  return (
+    <div className="admin-health-banner" role="alert">
+      <span className="ahb-ico" aria-hidden="true">⚠</span>
+      <div className="ahb-text">
+        <b className="ahb-title">{issues.list.length === 1 ? "A storage issue needs your attention" : "Storage issues need your attention"}</b>
+        <ul className="ahb-list">
+          {issues.list.map((it) => (
+            <li key={it.key}><b>{it.label}.</b> {it.detail}{it.action ? <span className="ahb-action"> {it.action}</span> : null}</li>
+          ))}
+        </ul>
+      </div>
+      <div className="ahb-actions">
+        <button className="btn btn-sm btn-on-dark-ghost" onClick={() => setSection && setSection("settings")}>Open Diagnostics</button>
+        <button className="btn btn-sm btn-on-dark-ghost" onClick={dismiss} title="Hide until this changes">Dismiss</button>
+      </div>
+    </div>
+  );
+}
+
 function AdminPage({ setPage }) {
   const { member, isAdmin, adminOk, loading, openSignIn, setAdminOk, hasCap } = useAuth();
   const [section, setSection] = React.useState("home");
@@ -175,6 +260,7 @@ function AdminPage({ setPage }) {
     <div className="page admin" data-screen-label="08 Admin">
       <AdminTopbar section={section} setSection={setSection} setPage={setPage} member={member}
         analyst={analyst} toggleAnalyst={() => setAnalyst(a => !a)} canAnalyst={canAnalyst}/>
+      <AdminHealthBanner hasCap={hasCap} setSection={setSection}/>
       <div className={"admin-shell" + (analyst && canAnalyst ? " has-analyst" : "")}>
         <AdminNav section={view} setSection={setSection} hasCap={hasCap}/>
         <main className="admin-main">
