@@ -923,7 +923,14 @@ function member_fees_account(array $p): array {
        with `enabled: false` rather than an error, so the dashboard simply shows
        nothing instead of an error card about money. */
     if (empty($cfg['enabled']) || (string)($m['type'] ?? '') !== 'NGG') {
-        return ['ok' => true, 'account' => null, 'enabled' => false];
+        /* Say WHY there is nothing, without leaking amounts, so the dashboard can
+           stop rendering a silent void that reads as "broken": an NGG member
+           whose org simply has not switched fees on yet gets a plain note and a
+           pointer; anyone the feature does not apply to (Summer, card sessions)
+           still gets nothing at all. */
+        $applies = ((string)($m['type'] ?? '') === 'NGG');
+        return ['ok' => true, 'account' => null, 'enabled' => false,
+                'reason' => ($applies && empty($cfg['enabled'])) ? 'disabled' : 'not_applicable'];
     }
     $bal = fees_balance($m, $cfg);
     $entries = [];

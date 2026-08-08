@@ -224,13 +224,22 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
      number in the whole subsystem. Fetched separately and failing silently: an
      account that will not load must not take the dashboard with it. */
   const [account, setAccount] = React.useState(null);
+  // Distinct states so the account panel is never a silent void. A member who
+  // sees nothing should learn whether fees simply aren't switched on for them,
+  // or a read failed and can be retried — not be left guessing it's broken.
+  const [acctState, setAcctState] = React.useState("loading"); // loading|ok|disabled|hidden|error
+  const [acctRetry, setAcctRetry] = React.useState(0);
   React.useEffect(() => {
     let alive = true;
     NGGApi.member.fees()
-      .then(r => { if (alive) setAccount(r && r.enabled ? r.account : null); })
-      .catch(() => {});
+      .then(r => {
+        if (!alive) return;
+        if (r && r.enabled) { setAccount(r.account); setAcctState("ok"); }
+        else { setAccount(null); setAcctState(r && r.reason === "disabled" ? "disabled" : "hidden"); }
+      })
+      .catch(() => { if (alive) { setAccount(null); setAcctState("error"); } });
     return () => { alive = false; };
-  }, [mutateSeq]);
+  }, [mutateSeq, acctRetry]);
   const prog = canonicalProgress(s, momentum);
 
   // Optimistic RSVP: flip local state now (authoritative once the request
@@ -295,7 +304,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                 <p className="ngg-head-sub">Your Anchor 12 room — today's missions, your tally, your mentor and your account, all in one place.</p>
               </header>
 
-              <DashboardKpis session={session} prog={prog} stats={s} account={account}/>
+              <DashboardKpis session={session} prog={prog} stats={s} account={account} acctState={acctState}/>
 
               <div className="dash-grid">
                 {/* LEFT MAIN COLUMN */}
@@ -312,7 +321,21 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                   <section id="sec-stats" className="ngg-anchor"><DashboardStats stats={s} prog={prog}/></section>
                   <section id="sec-momentum" className="ngg-anchor"><DashboardMomentum momentum={momentum}/></section>
                   {mentor && <section id="sec-mentor" className="ngg-anchor"><DashboardMentor mentor={mentor}/></section>}
-                  {account && <section id="sec-account" className="ngg-anchor"><DashboardObligations account={account}/></section>}
+                  {(account || acctState === "disabled" || acctState === "error") && (
+                    <section id="sec-account" className="ngg-anchor">
+                      {account
+                        ? <DashboardObligations account={account}/>
+                        : <div className="dash-card dash-account">
+                            <div className="dash-card-head"><h3 className="dash-card-h-sm">Your account.</h3></div>
+                            {acctState === "error"
+                              ? <React.Fragment>
+                                  <p className="dash-account-sub" style={{ margin: "8px 0 12px" }}>Couldn't load your account just now.</p>
+                                  <button className="btn btn-ghost btn-sm" onClick={() => setAcctRetry(n => n + 1)}>Try again</button>
+                                </React.Fragment>
+                              : <p className="dash-account-sub" style={{ margin: "8px 0 0" }}>Dues &amp; fees aren't switched on yet.</p>}
+                          </div>}
+                    </section>
+                  )}
                   <section id="sec-events" className="ngg-anchor"><DashboardEvents events={events} onRsvp={onRsvp}/></section>
                   <section id="sec-notifs" className="ngg-anchor"><DashboardNotifications notes={notes} onRead={onRead}/></section>
                   <section id="sec-shortcuts" className="ngg-anchor"><DashboardShortcuts setPage={setPage}/></section>
@@ -407,7 +430,7 @@ function DashboardSidebar({ m, first, account, counts, onSignOut, onEditProfile 
 
 // The KPI row — the four headline numbers, read from the same data the cards
 // below use, so nothing can disagree.
-function DashboardKpis({ session, prog, stats, account }) {
+function DashboardKpis({ session, prog, stats, account, acctState }) {
   const now = new Date();
   let sessN = "—", sessSub = "no active session";
   if (session) {
@@ -437,7 +460,11 @@ function DashboardKpis({ session, prog, stats, account }) {
       <div className="ngg-kpi">
         <div className="ngg-kpi-top"><span className="ngg-kpi-l">Account</span>{owed != null && <span className={"chip " + (owed > 0 ? "chip-coral" : "chip-lime")}>{owed > 0 ? "Due" : "Clear"}</span>}</div>
         <div className={"ngg-kpi-n" + (owed === 0 ? " is-clear" : "")}>{account ? (owed > 0 ? naira(owed) : "Clear") : "—"}</div>
-        <div className="ngg-kpi-s">{account ? (owed > 0 ? "outstanding" : "nothing outstanding") : "loading…"}</div>
+        <div className="ngg-kpi-s">{account ? (owed > 0 ? "outstanding" : "nothing outstanding")
+          : acctState === "disabled" ? "not enabled yet"
+          : acctState === "error" ? "unavailable"
+          : acctState === "hidden" ? "—"
+          : "loading…"}</div>
       </div>
     </div>
   );
