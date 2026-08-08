@@ -264,6 +264,7 @@ function backend_dispatch(string $op, array $args = []): array {
             /* A member's own obligations, read-only. There is deliberately no
                member-side op that posts, pays or voids anything. */
             'member.fees'                 => 'member_fees_account',
+            'member.compliance'           => 'member_compliance',
             'member.coach'                => 'member_coach',
             'member.circle'               => 'member_circle',
             'member.circle.rotate'        => 'member_circle_rotate',

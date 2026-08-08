@@ -496,6 +496,7 @@
       momentum:     () => request('/member/momentum.php'),
       /* Read-only. There is no member-side write to the ledger. */
       fees:         () => request('/member/fees.php'),
+      compliance:   () => request('/member/compliance.php'),
       coach:        (messages) => request('/member/coach.php', { body: { messages } }),
       circle:       () => request('/member/circle.php'),
       circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
@@ -828,7 +829,7 @@
         settings:  () => request('/admin/policy.php' + qs({ view: 'settings' })),
         board:     () => request('/admin/policy.php' + qs({ view: 'board' })),
         person:    (personId, personType) => request('/admin/policy.php' + qs({ view: 'person', personId, personType })),
-        save:      (programme, policy) => request('/admin/policy.php', { body: { action: 'save', programme, policy } }),
+        save:      (programme, policy, memberProgramme) => request('/admin/policy.php', { body: { action: 'save', programme, policy, memberProgramme } }),
         dayToggle: (date, runs) => request('/admin/policy.php', { body: { action: 'dayToggle', date, runs } }),
         infraction:(personId, personType, kind, date, note) => request('/admin/policy.php', { body: { action: 'infraction', personId, personType, kind, date, note } }),
         void:      (infractionId, reason) => request('/admin/policy.php', { body: { action: 'void', infractionId, reason } }),

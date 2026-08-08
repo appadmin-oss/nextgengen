@@ -57,6 +57,7 @@ $log['gate_passwords'] = gates_rotate_due();
 require_once $root . '/_lib/domain/summer.php';
 require_once $root . '/_lib/domain/policy.php';
 $log['policy_sweep'] = policy_sweep_absences();
+$log['policy_sweep_member'] = policy_sweep_member_absences();
 
 // 8) Push the Sheets mirror if configured.
 if (trim((string)($CONFIG['apps_script_url'] ?? '')) !== '') {

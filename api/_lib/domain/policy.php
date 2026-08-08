@@ -149,6 +149,60 @@ function programme_settings_save(array $in, string $by): array {
     return $clean;
 }
 
+/**
+ * NGG members' weekly attendance calendar — the member-side twin of
+ * programme_settings(). Same shape and the same active-session window fallback,
+ * but its own setting key and a Saturday default, because members run a weekly
+ * cadence rather than the summer daily one. The shared calendar engine
+ * (programme_is_day / programme_days_between) already takes a cfg, so this only
+ * has to PRODUCE the member cfg — no second copy of the date logic.
+ *
+ * Unlike the summer calendar, a never-configured member calendar stays OFF:
+ * there is no pre-existing member behaviour to preserve, and member enforcement
+ * is gated on its own switch regardless.
+ */
+function member_programme_settings(): array {
+    $cfg = setting_get('memberProgramme');
+    $cfg = is_array($cfg) ? $cfg : [];
+    if (!array_key_exists('enabled', $cfg)) {
+        [$start, $end] = programme_window_from_session();
+        if ($start !== '' && $end !== '') {
+            $cfg['startDate'] = $cfg['startDate'] ?? $start;
+            $cfg['endDate']   = $cfg['endDate'] ?? $end;
+            $cfg['derivedFromSession'] = true;
+        }
+    }
+    $defaults = ['enabled' => false, 'startDate' => '', 'endDate' => '',
+        'weekdays' => [6], 'holidays' => [], 'extraDays' => []];
+    $p = $cfg + $defaults;
+    $p['weekdays']  = array_values(array_unique(array_filter(array_map('intval', (array)$p['weekdays']), fn($d) => $d >= 1 && $d <= 7)));
+    $p['holidays']  = programme_clean_dates($p['holidays']);
+    $p['extraDays'] = programme_clean_dates($p['extraDays']);
+    sort($p['weekdays']);
+    return $p;
+}
+
+function member_programme_settings_save(array $in, string $by): array {
+    $cur = member_programme_settings();
+    $clean = [
+        'enabled'   => !empty($in['enabled']),
+        'startDate' => programme_clean_dates([$in['startDate'] ?? $cur['startDate']])[0] ?? '',
+        'endDate'   => programme_clean_dates([$in['endDate'] ?? $cur['endDate']])[0] ?? '',
+        'weekdays'  => array_key_exists('weekdays', $in)
+            ? array_values(array_unique(array_filter(array_map('intval', (array)$in['weekdays']), fn($d) => $d >= 1 && $d <= 7)))
+            : $cur['weekdays'],
+        'holidays'  => array_key_exists('holidays', $in) ? programme_clean_dates($in['holidays']) : $cur['holidays'],
+        'extraDays' => array_key_exists('extraDays', $in) ? programme_clean_dates($in['extraDays']) : $cur['extraDays'],
+    ];
+    if ($clean['startDate'] !== '' && $clean['endDate'] !== '' && $clean['startDate'] > $clean['endDate']) {
+        [$clean['startDate'], $clean['endDate']] = [$clean['endDate'], $clean['startDate']];
+    }
+    $clean['extraDays'] = array_values(array_diff($clean['extraDays'], $clean['holidays']));
+    sort($clean['weekdays']);
+    setting_set('memberProgramme', $clean, $by);
+    return $clean;
+}
+
 /** Is `$date` (Y-m-d) a day the programme runs? With the calendar disabled
  *  every day counts, which is the pre-calendar behaviour. */
 function programme_is_day(string $date, ?array $cfg = null): bool {
@@ -261,6 +315,21 @@ const POLICY_DEFAULTS = [
         'suspensionDays'         => 14,
         'reviewMissedCap'        => 2,   // §2.3 — missed Review Times → dormancy
     ],
+    /* NGG members are enforced on their OWN switch (this block's `enabled`),
+     * never the global `policy.enabled` that governs summer students and
+     * volunteers — turning on strict summer enforcement must not silently start
+     * fining year-round members. The meeting calendar is separate too
+     * (`memberProgramme`), because members run a weekly cadence, not the summer
+     * daily one. Amounts default to the student band and are admin-editable. */
+    'member' => [
+        'enabled'                => false,
+        'lateRedline'            => '09:00',
+        'absenceLimit'           => 2,
+        'latenessCap'            => 3,
+        'postSuspensionLateness' => 2,
+        'fine'                   => 5000,
+        'suspensionDays'         => 14,
+    ],
     'musing' => ['enabled' => true, 'endsAt' => '08:00'],  // §"The Musing Period"
     'idCard' => ['secondOffenceFine' => 1000, 'lostFine' => 2000],
     'reinstatement' => ['coolOffDays' => 365, 'fine' => 10000, 'training' => 'CIMC 1'],
@@ -269,7 +338,7 @@ const POLICY_DEFAULTS = [
 function policy_settings(): array {
     $cfg = setting_get('policy');
     $p = (is_array($cfg) ? $cfg : []) + POLICY_DEFAULTS;
-    foreach (['student', 'volunteer', 'musing', 'idCard', 'reinstatement'] as $k) {
+    foreach (['student', 'volunteer', 'member', 'musing', 'idCard', 'reinstatement'] as $k) {
         $p[$k] = (array)($p[$k] ?? []) + POLICY_DEFAULTS[$k];
     }
     return $p;
@@ -278,7 +347,44 @@ function policy_settings(): array {
 /** Per-member-type block, with 'student' as the fallback for unknown types. */
 function policy_for(string $type): array {
     $p = policy_settings();
-    return $type === 'volunteer' ? $p['volunteer'] : $p['student'];
+    if ($type === 'volunteer') return $p['volunteer'];
+    if ($type === 'member')    return $p['member'];
+    return $p['student'];
+}
+
+/** Resolve a person's policy type from an explicit hint, or by looking them up:
+ *  an NGG member → 'member', someone on the volunteer roster → 'volunteer',
+ *  otherwise 'student'. Members are checked first so a member id is never
+ *  mistaken for a summer student. */
+function policy_person_type(string $id, string $given = ''): string {
+    if ($given !== '') return $given;
+    if (db_row("SELECT 1 x FROM members WHERE memberId = ? AND type = 'NGG'", [$id])) return 'member';
+    if (db_row('SELECT 1 x FROM volunteers WHERE volunteerId = ?', [$id])) return 'volunteer';
+    return 'student';
+}
+
+/**
+ * Is enforcement switched on for this person type? NGG members ride their own
+ * switch (policy.member.enabled) so member enforcement is opt-in independently
+ * of the summer-programme switch; everyone else rides the global policy.enabled.
+ */
+function policy_enabled_for(string $type): bool {
+    $p = policy_settings();
+    return $type === 'member'
+        ? !empty($p['member']['enabled'])
+        : !empty($p['enabled']);
+}
+
+/** The attendance calendar that governs this type — members run the weekly
+ *  `memberProgramme` calendar, everyone else the summer `programme` one. */
+function policy_calendar_for(string $type): array {
+    return $type === 'member' ? member_programme_settings() : programme_settings();
+}
+
+/** Does the programme run for this type on `$date`? Type-aware wrapper over the
+ *  shared calendar engine, which already accepts a cfg. */
+function policy_is_day(string $date, string $type): bool {
+    return programme_is_day($date, policy_calendar_for($type));
 }
 
 function policy_hhmm(string $v, string $fallback): string {
@@ -293,7 +399,7 @@ function policy_settings_save(array $in, string $by): array {
         'autoEnforce'      => array_key_exists('autoEnforce', $in) ? !empty($in['autoEnforce']) : !empty($cur['autoEnforce']),
         'checkoutRequired' => array_key_exists('checkoutRequired', $in) ? !empty($in['checkoutRequired']) : !empty($cur['checkoutRequired']),
     ];
-    foreach (['student', 'volunteer'] as $type) {
+    foreach (['student', 'volunteer', 'member'] as $type) {
         $src = is_array($in[$type] ?? null) ? $in[$type] : [];
         $c = $cur[$type];
         $clean[$type] = [
@@ -306,6 +412,10 @@ function policy_settings_save(array $in, string $by): array {
         ];
         if ($type === 'volunteer') {
             $clean[$type]['reviewMissedCap'] = max(1, min(60, (int)($src['reviewMissedCap'] ?? $c['reviewMissedCap'])));
+        }
+        // Members carry their own enforcement switch, separate from the global.
+        if ($type === 'member') {
+            $clean[$type]['enabled'] = array_key_exists('enabled', $src) ? !empty($src['enabled']) : !empty($c['enabled']);
         }
     }
     $m = is_array($in['musing'] ?? null) ? $in['musing'] : [];
@@ -354,7 +464,7 @@ function policy_log(string $personId, string $type, string $kind, string $date, 
     if ($personId === '' || !in_array($kind, POLICY_INFRACTIONS, true)) return false;
     try {
         db_insert('infractions', [
-            'personId' => $personId, 'personType' => $type === 'volunteer' ? 'volunteer' : 'student',
+            'personId' => $personId, 'personType' => in_array($type, ['student', 'volunteer', 'member'], true) ? $type : 'student',
             'kind' => $kind, 'date' => $date, 'note' => substr($note, 0, 240),
             'byId' => substr($byId, 0, 64), 'createdAt' => now_iso(),
         ]);
@@ -389,7 +499,7 @@ function policy_issue(string $personId, string $type, string $kind, int $tier, a
     $now = now_iso();
     try {
         db_insert('sanctions', [
-            'personId' => $personId, 'personType' => $type === 'volunteer' ? 'volunteer' : 'student',
+            'personId' => $personId, 'personType' => in_array($type, ['student', 'volunteer', 'member'], true) ? $type : 'student',
             'kind' => $kind, 'tier' => $tier,
             'reason' => substr((string)($extra['reason'] ?? ''), 0, 240),
             'amount' => (int)($extra['amount'] ?? 0),
@@ -641,7 +751,7 @@ function policy_apply(string $personId, string $type): array {
  * Returns ['ok'=>true] or ['ok'=>false,'error'=>…,'state'=>…].
  */
 function policy_gate_checkin(string $personId, string $type): array {
-    if (empty(policy_settings()['enabled'])) return ['ok' => true];
+    if (!policy_enabled_for($type)) return ['ok' => true];
     $st = policy_state($personId, $type);
     if ($st['state'] === 'evicted') {
         return ['ok' => false, 'error' => 'policy_evicted', 'state' => $st,
@@ -667,7 +777,7 @@ function policy_punctuality(string $type, ?int $at = null): array {
     $soft = attendance_punctuality($type, $at);     // resumption + grace
     $pol = policy_settings();
     $out = ['status' => $soft['status'], 'lateMinutes' => (int)$soft['lateMinutes'], 'redline' => 0, 'halfDay' => 0];
-    if (empty($pol['enabled'])) return $out;
+    if (!policy_enabled_for($type)) return $out;
     $cfg = policy_for($type);
     $now = attendance_minutes_at($at);
     if ($now >= policy_minutes((string)$cfg['lateRedline'])) {
@@ -684,8 +794,8 @@ function policy_punctuality(string $type, ?int $at = null): array {
 
 /** Record the infractions a completed check-in earned, then re-evaluate. */
 function policy_on_checkin(string $personId, string $type, string $date, array $punc): array {
-    if (empty(policy_settings()['enabled'])) return [];
-    if (!programme_is_day($date)) return [];        // a scan on a closed day is not late
+    if (!policy_enabled_for($type)) return [];
+    if (!policy_is_day($date, $type)) return [];    // a scan on a closed day is not late
     if (!empty($punc['redline'])) policy_log($personId, $type, 'late', $date, 'Scanned at or after the lateness redline.');
     elseif (($punc['status'] ?? '') === 'tardy') policy_log($personId, $type, 'tardy', $date, 'Scanned after resumption, inside the redline.');
     if (!empty($punc['halfDay'])) policy_log($personId, $type, 'halfday', $date, 'Missed the compulsory Musing Period — half-day.');
@@ -755,27 +865,81 @@ function policy_sweep_absences(?string $upto = null): array {
     return ['ok' => true, 'days' => count($days), 'absences' => $absences, 'noCheckout' => $noCheckout, 'swept' => $days[count($days) - 1], 'evaluated' => count($touched)];
 }
 
+/**
+ * The member-side twin of policy_sweep_absences(): logs an absence against each
+ * active NGG member with no check-in on a member programme day, then re-derives
+ * their sanctions. Runs only when member enforcement AND the member calendar
+ * are on, on its own cursor (policy_member_swept_through) so it never collides
+ * with the summer sweep.
+ *
+ * Members check in through the attendance webhook, which is check-in only, so
+ * the summer §1.3 no-checkout rule does not apply — a member is simply present
+ * or absent for the day.
+ */
+function policy_sweep_member_absences(?string $upto = null): array {
+    if (!policy_enabled_for('member')) return ['ok' => true, 'skipped' => 'member_policy_disabled'];
+    $cal = member_programme_settings();
+    if (empty($cal['enabled'])) return ['ok' => true, 'skipped' => 'no_member_calendar'];
+
+    $today = attendance_today();
+    $end = $upto ?? gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC') - 86400);
+    $last = (string)(setting_raw('policy_member_swept_through') ?? '');
+    $start = $last !== ''
+        ? gmdate('Y-m-d', (int)strtotime($last . ' 00:00:00 UTC') + 86400)
+        : (string)$cal['startDate'];
+    if ($start === '' || $start > $end) return ['ok' => true, 'days' => 0, 'absences' => 0, 'swept' => $last];
+
+    $days = array_slice(programme_days_between($start, $end, $cal), 0, 14);
+    if (!$days) { setting_set('policy_member_swept_through', $end, 'system'); return ['ok' => true, 'days' => 0, 'absences' => 0, 'swept' => $end]; }
+
+    $members = db_all("SELECT memberId FROM members WHERE type = 'NGG' AND status = 'active'");
+    $absences = 0;
+    foreach ($days as $d) {
+        $present = [];
+        foreach (db_all("SELECT studentId FROM attendance WHERE date = ?", [$d]) as $r) {
+            $present[(string)$r['studentId']] = true;   // members share the attendance table, keyed by memberId in studentId
+        }
+        foreach ($members as $row) {
+            $id = (string)$row['memberId'];
+            if (!array_key_exists($id, $present)) {
+                if (policy_log($id, 'member', 'absence', $d, 'No check-in on a member programme day.')) $absences++;
+            }
+        }
+        setting_set('policy_member_swept_through', $d, 'system');
+    }
+    $touched = db_all("SELECT DISTINCT personId FROM infractions WHERE personType = 'member' AND date >= ? AND date <= ?", [$days[0], $days[count($days) - 1]]);
+    foreach ($touched as $t) policy_apply((string)$t['personId'], 'member');
+
+    return ['ok' => true, 'days' => count($days), 'absences' => $absences, 'swept' => $days[count($days) - 1], 'evaluated' => count($touched)];
+}
+
 // ── Admin endpoints ─────────────────────────────────────────────────────────
 
 /** Everything the Policy screen needs in one round trip. */
 function admin_policy_settings(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $cfg = programme_settings();
+    $mcfg = member_programme_settings();
     $today = attendance_today();
     $elapsed = programme_days_elapsed($today, $cfg);
+    $calFor = function (array $c, string $cursorKey) use ($today) {
+        return [
+            'today' => $today,
+            'isProgrammeDay' => programme_is_day($today, $c),
+            'nextDay' => programme_next_day($today, $c),
+            'elapsed' => count(programme_days_elapsed($today, $c)),
+            'total' => count(programme_days_between((string)$c['startDate'], (string)$c['endDate'], $c)),
+            'sweptThrough' => (string)(setting_raw($cursorKey) ?? ''),
+            'upcoming' => array_slice(programme_days_between($today, gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC') + 45 * 86400), $c), 0, 14),
+        ];
+    };
     return ['ok' => true,
         'programme' => $cfg,
+        'memberProgramme' => $mcfg,
         'policy' => policy_settings(),
         'attendance' => attendance_settings(),
-        'calendar' => [
-            'today' => $today,
-            'isProgrammeDay' => programme_is_day($today, $cfg),
-            'nextDay' => programme_next_day($today, $cfg),
-            'elapsed' => count($elapsed),
-            'total' => count(programme_days_between((string)$cfg['startDate'], (string)$cfg['endDate'], $cfg)),
-            'sweptThrough' => (string)(setting_raw('policy_swept_through') ?? ''),
-            'upcoming' => array_slice(programme_days_between($today, gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC') + 45 * 86400), $cfg), 0, 14),
-        ],
+        'calendar' => $calFor($cfg, 'policy_swept_through'),
+        'memberCalendar' => $calFor($mcfg, 'policy_member_swept_through'),
     ];
 }
 
@@ -783,6 +947,7 @@ function admin_policy_save(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $out = [];
     if (is_array($p['programme'] ?? null)) $out['programme'] = programme_settings_save($p['programme'], (string)$g['requester']['memberId']);
+    if (is_array($p['memberProgramme'] ?? null)) $out['memberProgramme'] = member_programme_settings_save($p['memberProgramme'], (string)$g['requester']['memberId']);
     if (is_array($p['policy'] ?? null))    $out['policy'] = policy_settings_save($p['policy'], (string)$g['requester']['memberId']);
     audit('policy.settings.set', (string)$g['requester']['memberId'], '', ['keys' => array_keys($out)], (string)($p['ip'] ?? ''));
     return ['ok' => true] + $out + ['calendar' => admin_policy_settings($p)['calendar'] ?? []];
@@ -818,7 +983,7 @@ function admin_policy_person(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $id = trim((string)($p['personId'] ?? ''));
     if ($id === '') return ['ok' => false, 'error' => 'bad_person'];
-    $type = (string)($p['personType'] ?? '') ?: (db_row('SELECT 1 x FROM volunteers WHERE volunteerId = ?', [$id]) ? 'volunteer' : 'student');
+    $type = policy_person_type($id, (string)($p['personType'] ?? ''));
     return ['ok' => true,
         'personId' => $id, 'personType' => $type,
         'state' => policy_state($id, $type),
@@ -836,7 +1001,7 @@ function admin_policy_infraction(array $p): array {
     $kind = trim((string)($p['kind'] ?? ''));
     $manual = ['idcard_missing', 'idcard_lost', 'review_missed', 'misconduct'];
     if ($id === '' || !in_array($kind, $manual, true)) return ['ok' => false, 'error' => 'bad_infraction'];
-    $type = (string)($p['personType'] ?? '') ?: (db_row('SELECT 1 x FROM volunteers WHERE volunteerId = ?', [$id]) ? 'volunteer' : 'student');
+    $type = policy_person_type($id, (string)($p['personType'] ?? ''));
     $date = programme_clean_dates([$p['date'] ?? ''])[0] ?? attendance_today();
     $logged = policy_log($id, $type, $kind, $date, (string)($p['note'] ?? ''), (string)$g['requester']['memberId']);
     $issued = policy_apply($id, $type);
@@ -922,7 +1087,7 @@ function admin_policy_sanction_issue(array $p): array {
     $kind = (string)($p['kind'] ?? '');
     $reason = trim((string)($p['reason'] ?? ''));
     if ($id === '' || !in_array($kind, POLICY_SANCTIONS, true) || $reason === '') return ['ok' => false, 'error' => 'reason_required'];
-    $type = (string)($p['personType'] ?? '') ?: (db_row('SELECT 1 x FROM volunteers WHERE volunteerId = ?', [$id]) ? 'volunteer' : 'student');
+    $type = policy_person_type($id, (string)($p['personType'] ?? ''));
     $cfg = policy_for($type);
     $today = attendance_today();
     $days = max(1, min(365, (int)($p['days'] ?? $cfg['suspensionDays'])));
@@ -950,7 +1115,7 @@ function admin_policy_reinstate(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $id = trim((string)($p['personId'] ?? ''));
     if ($id === '') return ['ok' => false, 'error' => 'bad_person'];
-    $type = (string)($p['personType'] ?? '') ?: (db_row('SELECT 1 x FROM volunteers WHERE volunteerId = ?', [$id]) ? 'volunteer' : 'student');
+    $type = policy_person_type($id, (string)($p['personType'] ?? ''));
     $r = policy_settings()['reinstatement'];
     $ev = db_row("SELECT * FROM sanctions WHERE personId = ? AND kind = 'eviction' AND status IN ('active','proposed') ORDER BY issuedAt DESC LIMIT 1", [$id]);
     if (!$ev) return ['ok' => false, 'error' => 'not_evicted'];
@@ -986,6 +1151,7 @@ function admin_policy_board(array $p): array {
     $names = [];
     foreach (db_all("SELECT studentId id, fullName FROM summer_students WHERE status = 'active'") as $r) $names[(string)$r['id']] = ['name' => (string)$r['fullName'], 'type' => 'student'];
     foreach (db_all("SELECT volunteerId id, fullName FROM volunteers WHERE status = 'active'") as $r) $names[(string)$r['id']] = ['name' => (string)$r['fullName'], 'type' => 'volunteer'];
+    foreach (db_all("SELECT memberId id, fullName FROM members WHERE type = 'NGG' AND status = 'active'") as $r) $names[(string)$r['id']] = ['name' => (string)$r['fullName'], 'type' => 'member'];
     // Only people with something on their ledger — a clean roster costs nothing.
     $ids = db_all("SELECT DISTINCT personId FROM infractions WHERE voidedAt IS NULL OR voidedAt = ''");
     foreach (db_all("SELECT DISTINCT personId FROM sanctions WHERE status IN ('active','proposed','pending')") as $r) $ids[] = $r;
@@ -1012,7 +1178,8 @@ function admin_policy_board(array $p): array {
     usort($rows, fn($a, $b) => [$rank[$a['state']], $a['awaitingReview'] ? 0 : 1] <=> [$rank[$b['state']], $b['awaitingReview'] ? 0 : 1]);
     $pol = policy_settings();
     return ['ok' => true, 'board' => $rows, 'tally' => $tally,
-            'policyEnabled' => !empty($pol['enabled']), 'autoEnforce' => !empty($pol['autoEnforce'])];
+            'policyEnabled' => !empty($pol['enabled']), 'autoEnforce' => !empty($pol['autoEnforce']),
+            'memberPolicyEnabled' => !empty($pol['member']['enabled'])];
 }
 
 /** Run the absence sweep on demand — the "catch up now" button beside the
@@ -1020,6 +1187,7 @@ function admin_policy_board(array $p): array {
 function admin_policy_sweep(array $p): array {
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
     $r = policy_sweep_absences();
+    $r['member'] = policy_sweep_member_absences();
     audit('policy.sweep', (string)$g['requester']['memberId'], '', $r, (string)($p['ip'] ?? ''));
     return $r;
 }

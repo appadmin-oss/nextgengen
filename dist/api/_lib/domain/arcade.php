@@ -354,7 +354,10 @@ function arcade_round_start(array $p): array {
 
     // A suspended or evicted person is barred from the digital channels, and
     // the arcade is one of them — the same gate the community sign-in uses.
-    if (function_exists('policy_gate_checkin') && $who['type'] !== 'member') {
+    // Members are gated too now that they carry enforcement — policy_gate_checkin
+    // is a no-op for any type whose switch is off, so this stays inert until an
+    // admin turns member enforcement on.
+    if (function_exists('policy_gate_checkin')) {
         $gate = policy_gate_checkin($playerId, $who['type']);
         if (!$gate['ok']) return ['ok' => false, 'error' => $gate['error'], 'message' => $gate['message'] ?? ''];
     }

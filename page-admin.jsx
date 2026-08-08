@@ -9683,13 +9683,16 @@ function SummerPolicy() {
   const [board, setBoard] = React.useState(null);
   const [person, setPerson] = React.useState(null);
   const [newDate, setNewDate] = React.useState("");
+  const [mprog, setMprog] = React.useState(null);   // members' own weekly calendar
+  const [newMDate, setNewMDate] = React.useState("");
 
   // Fall back to the server's own defaults rather than leaving prog/pol null:
   // a partial response would otherwise spin forever with nothing to retry from.
   const load = () => NGGApi.admin.policy.settings().then(r => {
     setD(r || {});
     setProg((r && r.programme) || { enabled: false, startDate: "", endDate: "", weekdays: [1, 2, 3, 4, 5], holidays: [], extraDays: [] });
-    setPol((r && r.policy) || { enabled: false, student: {}, volunteer: {}, musing: {}, idCard: {}, reinstatement: {} });
+    setMprog((r && r.memberProgramme) || { enabled: false, startDate: "", endDate: "", weekdays: [6], holidays: [], extraDays: [] });
+    setPol((r && r.policy) || { enabled: false, student: {}, volunteer: {}, member: {}, musing: {}, idCard: {}, reinstatement: {} });
     setErr("");
   }).catch(e => setErr(e.code || e.message || "load_failed"));
   const loadBoard = () => NGGApi.admin.policy.board().then(setBoard).catch(() => setBoard({ board: [], tally: {} }));
@@ -9697,7 +9700,7 @@ function SummerPolicy() {
 
   const save = async () => {
     setBusy("save");
-    try { const r = await NGGApi.admin.policy.save(prog, pol); setD(o => ({ ...o, calendar: r.calendar || o.calendar })); toast.success("Saved"); load(); }
+    try { const r = await NGGApi.admin.policy.save(prog, pol, mprog); setD(o => ({ ...o, calendar: r.calendar || o.calendar })); toast.success("Saved"); load(); }
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
   };
   const setP = (k, v) => setProg(o => ({ ...o, [k]: v }));
@@ -9712,6 +9715,18 @@ function SummerPolicy() {
     setNewDate("");
   };
   const dropException = (list, date) => setProg(o => ({ ...o, [list]: (o[list] || []).filter(x => x !== date) }));
+  // The member calendar's own mutators — same shapes, its own state.
+  const setMP = (k, v) => setMprog(o => ({ ...o, [k]: v }));
+  const toggleMDow = (n) => setMprog(o => {
+    const has = (o.weekdays || []).includes(n);
+    return { ...o, weekdays: has ? o.weekdays.filter(x => x !== n) : [...o.weekdays, n].sort() };
+  });
+  const addMException = (list) => {
+    if (!newMDate) return;
+    setMprog(o => ({ ...o, [list]: Array.from(new Set([...(o[list] || []), newMDate])).sort() }));
+    setNewMDate("");
+  };
+  const dropMException = (list, date) => setMprog(o => ({ ...o, [list]: (o[list] || []).filter(x => x !== date) }));
 
   const sweep = async () => {
     setBusy("sweep");
@@ -9725,8 +9740,9 @@ function SummerPolicy() {
   const openPerson = (row) => NGGApi.admin.policy.person(row.personId, row.personType).then(setPerson).catch(e => toast.error(e.code || e.message));
 
   if (err) return <ErrorState title="Couldn't load" code={err} onRetry={load}/>;
-  if (!d || !prog || !pol) return <div className="dash-spinner"/>;
+  if (!d || !prog || !pol || !mprog) return <div className="dash-spinner"/>;
   const cal = d.calendar || {};
+  const mcal = d.memberCalendar || {};
 
   return (
     <div>
@@ -9907,6 +9923,123 @@ function SummerPolicy() {
           <span className="admin-hint" style={{ margin: 0 }}>
             The sweep runs automatically with the daily jobs. Swept through <span className="mono">{cal.sweptThrough || "—"}</span>.
           </span>
+        </div>
+      </div>
+
+      {/* ── NGG member enforcement (separate switch + weekly calendar) ── */}
+      <div className="admin-panel" style={{ marginBottom: 18 }}>
+        <div className="admin-section-head" style={{ marginBottom: 6 }}>
+          <h3 className="admin-h3">NGG member enforcement</h3>
+          <label className="fb-toggle">
+            <input type="checkbox" checked={!!(pol.member || {}).enabled} onChange={e => setPol2("member", "enabled", e.target.checked)}/>
+            <span>Enforce policy for members</span>
+          </label>
+        </div>
+        <p className="admin-hint">
+          A separate switch and a separate weekly calendar for year-round NGG members — the summer
+          switch above does not touch them. Members check in through the attendance webhook; absences
+          are swept against the member calendar and the same ladder issues warnings, suspension,
+          fines and eviction. Fines appear on each member's own dashboard.
+        </p>
+
+        <div className="admin-section-head" style={{ margin: "10px 0 6px" }}>
+          <h4 className="admin-h3" style={{ fontSize: 15 }}>Member meeting days</h4>
+          <label className="fb-toggle">
+            <input type="checkbox" checked={!!mprog.enabled} onChange={e => setMP("enabled", e.target.checked)}/>
+            <span>Use a member calendar</span>
+          </label>
+        </div>
+        {mprog.derivedFromSession && (
+          <div className="policy-callout" data-tone="warn">
+            <b>Taken from the active session.</b> Using the session's dates ({mprog.startDate || "—"} → {mprog.endDate || "—"}).
+            Check them and press Save to make them yours — member absence counts off this.
+          </div>
+        )}
+        {mprog.enabled && (
+          <div className="policy-callout" data-tone={mcal.isProgrammeDay ? "ok" : "muted"}>
+            {mcal.isProgrammeDay
+              ? <><b>Today ({mcal.today}) is a member day.</b> {mcal.elapsed} of {mcal.total} member days have run.</>
+              : <><b>Today ({mcal.today}) is not a member day.</b>{mcal.nextDay ? <> Next is <b>{mcal.nextDay}</b>.</> : " The window has ended."}</>}
+          </div>
+        )}
+
+        <div className="admin-fields">
+          <Field label="Term starts" type="date" value={mprog.startDate} onChange={v => setMP("startDate", v)}/>
+          <Field label="Term ends" type="date" value={mprog.endDate} onChange={v => setMP("endDate", v)}/>
+        </div>
+
+        <div className="admin-fields-h" style={{ marginTop: 10, fontWeight: 700 }}>Days of the week</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+          {DOW.map(([n, lbl]) => {
+            const on = (mprog.weekdays || []).includes(Number(n));
+            return (
+              <button key={n} type="button" onClick={() => toggleMDow(Number(n))}
+                className={"chip " + (on ? "chip-gold" : "")}
+                style={{ cursor: "pointer", border: "1px solid var(--line, rgba(0,0,0,.14))", opacity: on ? 1 : .55 }}
+                aria-pressed={on}>{lbl}</button>
+            );
+          })}
+        </div>
+
+        <div className="admin-fields-h" style={{ marginTop: 16, fontWeight: 700 }}>Exceptions</div>
+        <p className="admin-hint" style={{ marginTop: 2 }}>A holiday cancels a day that would otherwise run. An extra day adds one that wouldn't.</p>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+          <input type="date" className="admin-input" style={{ width: 175 }} value={newMDate} onChange={e => setNewMDate(e.target.value)} aria-label="Member exception date"/>
+          <button className="btn btn-ghost btn-sm" disabled={!newMDate} onClick={() => addMException("holidays")}>Cancel this day</button>
+          <button className="btn btn-ghost btn-sm" disabled={!newMDate} onClick={() => addMException("extraDays")}>Add this day</button>
+        </div>
+        {[["holidays", "Cancelled", "var(--coral)"], ["extraDays", "Added", "var(--lime-ink, #6e9c1d)"]].map(([key, lbl, col]) => (
+          (mprog[key] || []).length > 0 && (
+            <div key={key} style={{ marginTop: 10 }}>
+              <div className="eyebrow" style={{ marginBottom: 6, color: col }}>{lbl.toUpperCase()} · {(mprog[key] || []).length}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {(mprog[key] || []).map(dt => (
+                  <span key={dt} className="chip mono" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    {dt}
+                    <button onClick={() => dropMException(key, dt)} aria-label={"Remove " + dt}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )
+        ))}
+
+        <div className="admin-fields-h" style={{ marginTop: 16, fontWeight: 700 }}>Member thresholds</div>
+        <p className="admin-hint" style={{ margin: "2px 0 8px" }}>The ladder for members — full enforcement, so the 3rd absence evicts and post-suspension lateness fines.</p>
+        <div className="admin-fields">
+          <label className="admin-field"><span>Lateness redline</span>
+            <input type="time" className="admin-input" value={(pol.member || {}).lateRedline || ""} onChange={e => setPol2("member", "lateRedline", e.target.value)}/>
+          </label>
+          <label className="admin-field"><span>Absences allowed</span>
+            <input type="number" min={1} max={60} className="admin-input" value={(pol.member || {}).absenceLimit} onChange={e => setPol2("member", "absenceLimit", Number(e.target.value))}/>
+          </label>
+          <label className="admin-field"><span>Lateness cap → suspension</span>
+            <input type="number" min={1} max={60} className="admin-input" value={(pol.member || {}).latenessCap} onChange={e => setPol2("member", "latenessCap", Number(e.target.value))}/>
+          </label>
+          <label className="admin-field"><span>Suspension length (days)</span>
+            <input type="number" min={1} max={365} className="admin-input" value={(pol.member || {}).suspensionDays} onChange={e => setPol2("member", "suspensionDays", Number(e.target.value))}/>
+          </label>
+          <label className="admin-field"><span>Post-suspension lates → fine</span>
+            <input type="number" min={1} max={60} className="admin-input" value={(pol.member || {}).postSuspensionLateness} onChange={e => setPol2("member", "postSuspensionLateness", Number(e.target.value))}/>
+          </label>
+          <label className="admin-field"><span>Fine (₦)</span>
+            <input type="number" min={0} step={500} className="admin-input" value={(pol.member || {}).fine} onChange={e => setPol2("member", "fine", Number(e.target.value))}/>
+          </label>
+        </div>
+
+        {mprog.enabled && (mcal.upcoming || []).length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>NEXT MEMBER DAYS</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {(mcal.upcoming || []).map(dt => <span key={dt} className="chip mono">{dt}</span>)}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 18, flexWrap: "wrap" }}>
+          <button className="btn btn-primary" disabled={busy === "save"} onClick={save}>{busy === "save" ? "Saving…" : "Save member enforcement"}</button>
+          <span className="admin-hint" style={{ margin: 0 }}>Swept through <span className="mono">{mcal.sweptThrough || "—"}</span>.</span>
         </div>
       </div>
 

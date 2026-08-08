@@ -2003,6 +2003,72 @@ chk('the sweep does not run without a calendar', (function () use ($SU) {
     return ($r['skipped'] ?? '') === 'no_programme_calendar';
 })());
 
+/* ── NGG member enforcement ──────────────────────────────────────────────────
+ * Members are a first-class policy type on their OWN switch and their OWN weekly
+ * calendar, escalating through the full ladder (incl. auto-eviction) and
+ * surfacing fines to the dashboard via member.compliance. Everything here runs
+ * on dedicated NGG-MEM-* ids and is torn down at the end so the rest of the
+ * suite sees no member-policy state. */
+(function () {
+    $keepPolicy = policy_settings();
+    $keepProg   = programme_settings();
+    foreach (['NGG-MEM-1', 'NGG-MEM-2'] as $id) {
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Mem ' . $id, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'joinDate' => gmdate('Y-m-d', strtotime('-4 months')), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    $wide = ['startDate' => gmdate('Y-m-d', strtotime('-40 days')), 'endDate' => gmdate('Y-m-d', strtotime('+40 days')), 'weekdays' => [1, 2, 3, 4, 5, 6, 7]];
+
+    // The switch is genuinely separate: turning the global policy on does NOT
+    // enforce members, and turning member enforcement on does NOT depend on it.
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true], 'test');
+    chk('member switch is independent of the global policy switch',
+        policy_enabled_for('student') === true && policy_enabled_for('member') === false);
+
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true, 'member' => ['enabled' => true,
+        'absenceLimit' => 2, 'latenessCap' => 3, 'postSuspensionLateness' => 2, 'fine' => 5000,
+        'suspensionDays' => 14, 'lateRedline' => '09:00']], 'test');
+    member_programme_settings_save(['enabled' => true] + $wide, 'test');
+    chk('member enforcement switches on by itself', policy_enabled_for('member') === true);
+    chk('member calendar runs on its configured days', policy_is_day(gmdate('Y-m-d'), 'member') === true);
+
+    // Automatic fine (§2.2 ID card) → surfaced to the dashboard by member.compliance.
+    policy_log('NGG-MEM-1', 'member', 'idcard_missing', gmdate('Y-m-d', strtotime('-5 days')));
+    policy_log('NGG-MEM-1', 'member', 'idcard_missing', gmdate('Y-m-d', strtotime('-3 days')));
+    policy_apply('NGG-MEM-1', 'member');
+    chk('member: a second ID-card miss raises an automatic fine', policy_state('NGG-MEM-1', 'member')['finesOwed'] >= 1000);
+    $mc = member_compliance(['memberId' => 'NGG-MEM-1']);
+    chk('member.compliance surfaces the fine for the dashboard',
+        !empty($mc['enabled']) && (int)$mc['finesOwed'] >= 1000 && count($mc['fines']) >= 1);
+
+    // Full ladder: absences past the limit auto-evict (decision: members treated strictly).
+    foreach (['-9 days', '-8 days', '-7 days'] as $d) policy_log('NGG-MEM-2', 'member', 'absence', gmdate('Y-m-d', strtotime($d)));
+    policy_apply('NGG-MEM-2', 'member');
+    chk('member: absences past the limit auto-evict (full ladder)', policy_state('NGG-MEM-2', 'member')['state'] === 'evicted');
+
+    // The sweep is inert without a member calendar, and logs absences with one.
+    member_programme_settings_save(['enabled' => false] + $wide, 'test');
+    chk('member sweep skips when the member calendar is off', (policy_sweep_member_absences()['skipped'] ?? '') === 'no_member_calendar');
+    member_programme_settings_save(['enabled' => true] + $wide, 'test');
+    setting_set('policy_member_swept_through', gmdate('Y-m-d', strtotime('-11 days')), 'system');
+    $sw = policy_sweep_member_absences(gmdate('Y-m-d', strtotime('-10 days')));
+    chk('member absence sweep logs absences against the member calendar', (int)($sw['absences'] ?? 0) >= 1);
+
+    // Member rows are stored with their real type, not mislabelled 'student'.
+    chk('member infractions carry personType=member',
+        (int)db_row("SELECT COUNT(*) c FROM infractions WHERE personId = 'NGG-MEM-1' AND personType = 'member'")['c'] >= 2);
+
+    // Teardown — leave no member-policy state behind for later tests.
+    db_exec("DELETE FROM infractions WHERE personType = 'member'");
+    db_exec("DELETE FROM sanctions WHERE personType = 'member'");
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-MEM-1','NGG-MEM-2')");
+    setting_set('policy_member_swept_through', '', 'system');
+    member_programme_settings_save(['enabled' => false], 'test');
+    policy_settings_save($keepPolicy, 'test');
+    programme_settings_save($keepProg, 'test');
+})();
+
 // Attendance analytics must read the calendar, not the scan log.
 $att2 = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU])['attendance'];
 chk('analytics reports the programme calendar', !empty($att2['programme']['enabled']) && $att2['programme']['termStart'] === '2026-07-06');

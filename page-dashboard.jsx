@@ -240,7 +240,22 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
       .catch(() => { if (alive) { setAccount(null); setAcctState("error"); } });
     return () => { alive = false; };
   }, [mutateSeq, acctRetry]);
+
+  // Policy fines + compliance standing — a SEPARATE ledger from dues/fees
+  // (these are disciplinary sanctions), fetched independently and never gated
+  // by the fees feature toggle.
+  const [compliance, setCompliance] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.member.compliance()
+      .then(r => { if (alive) setCompliance(r || null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [mutateSeq]);
+
   const prog = canonicalProgress(s, momentum);
+  const showFines = !!(compliance && (compliance.finesOwed > 0 || (compliance.fines || []).length > 0
+    || ["warned", "suspended", "evicted", "dormant"].includes(compliance.state) || compliance.awaitingReview));
 
   // Optimistic RSVP: flip local state now (authoritative once the request
   // succeeds), roll back + toast on failure. We deliberately do NOT trigger
@@ -280,6 +295,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
           <DashboardSidebar
             m={m} first={first} account={account}
+            fines={showFines ? (compliance.finesOwed || 0) : null}
             counts={{ today: today.length, events: events.length, notes: unread }}
             onSignOut={onSignOut} onEditProfile={() => setEditProfile(true)}/>
 
@@ -336,6 +352,9 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                           </div>}
                     </section>
                   )}
+                  {showFines && (
+                    <section id="sec-fines" className="ngg-anchor"><DashboardFines c={compliance}/></section>
+                  )}
                   <section id="sec-events" className="ngg-anchor"><DashboardEvents events={events} onRsvp={onRsvp}/></section>
                   <section id="sec-notifs" className="ngg-anchor"><DashboardNotifications notes={notes} onRead={onRead}/></section>
                   <section id="sec-shortcuts" className="ngg-anchor"><DashboardShortcuts setPage={setPage}/></section>
@@ -351,7 +370,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
 // The portal-style sidebar rail: member identity, in-page section nav (with a
 // scrollspy + a mobile collapse), and the sign-out/edit actions.
-function DashboardSidebar({ m, first, account, counts, onSignOut, onEditProfile }) {
+function DashboardSidebar({ m, first, account, fines, counts, onSignOut, onEditProfile }) {
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState("sec-today");
   const owed = account ? account.payable : 0;
@@ -369,6 +388,7 @@ function DashboardSidebar({ m, first, account, counts, onSignOut, onEditProfile 
       { id: "sec-stats", label: "Your tally" },
       { id: "sec-momentum", label: "Momentum" },
       ...(account ? [{ id: "sec-account", label: "Your account", badge: owed > 0 ? naira(owed) : null }] : []),
+      ...(fines != null ? [{ id: "sec-fines", label: "Policy fines", badge: fines > 0 ? naira(fines) : null }] : []),
       { id: "sec-events", label: "Events", badge: counts.events || null },
       { id: "sec-notifs", label: "Notifications", badge: counts.notes || null },
     ] },
@@ -1162,6 +1182,65 @@ function DashboardObligations({ account }) {
             a family in difficulty needs a person, not a figure. */}
         Something look wrong, or is this a difficult month? Speak to your centre
         coordinator — they would rather hear from you.
+      </div>
+    </div>
+  );
+}
+
+/* Policy FINES — a separate ledger from dues/fees. These are disciplinary
+   sanctions under the institutional policy (lateness, absence, ID-card), shown
+   with the reason and status so a member sees exactly what they owe and why,
+   plus a compliance banner when they are warned/suspended/evicted. Rendered
+   only when there is something to show (see `showFines`). */
+const FINE_STATE_LABEL = { warned: "Warning on record", dormant: "Dormant", suspended: "Suspended", evicted: "Evicted" };
+function DashboardFines({ c }) {
+  const owed = c.finesOwed || 0;
+  const fines = c.fines || [];
+  const state = c.state || "clear";
+  return (
+    <div className="dash-card dash-account">
+      <div className="dash-card-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 className="dash-card-h-sm">Policy fines.</h3>
+        {state !== "clear" && <span className="chip chip-coral">{FINE_STATE_LABEL[state] || state}</span>}
+      </div>
+
+      {owed > 0 ? (
+        <React.Fragment>
+          <div className="dash-account-figure">{naira(owed)}</div>
+          <div className="dash-account-sub">in fines outstanding</div>
+        </React.Fragment>
+      ) : (
+        <React.Fragment>
+          <div className="dash-account-figure is-clear">All clear</div>
+          <div className="dash-account-sub">no fines outstanding</div>
+        </React.Fragment>
+      )}
+
+      {state !== "clear" && c.reason && (
+        <div className="dash-account-earned">
+          {c.reason}{c.until ? " Until " + String(c.until).slice(0, 10) + "." : ""}
+        </div>
+      )}
+
+      {fines.length > 0 && (
+        <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0 }}>
+          {fines.map((f, i) => (
+            <li key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", padding: "8px 0", borderTop: "1px solid var(--hair, rgba(20,24,48,.08))" }}>
+              <span style={{ fontSize: 13, color: "var(--ink-500, #5a6178)", lineHeight: 1.35 }}>
+                {f.reason || "Fine"}
+                {f.issuedAt ? <span style={{ opacity: 0.6 }}> · {String(f.issuedAt).slice(0, 10)}</span> : null}
+              </span>
+              <span style={{ whiteSpace: "nowrap", fontWeight: 700 }}>
+                {naira(f.amount)} <span className={"chip " + (f.status === "pending" ? "chip-gold" : "chip-coral")}>{f.status}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="dash-account-foot">
+        Fines are issued under the institutional policy. To query or clear one,
+        speak to your centre coordinator.
       </div>
     </div>
   );

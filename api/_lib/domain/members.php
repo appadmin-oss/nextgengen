@@ -90,6 +90,42 @@ function week_of_session_from_public(array $s): int {
     return max(1, (int)($s['weekOf'] ?? 1));
 }
 
+/**
+ * A member's discipline standing, for their own dashboard: whether member
+ * enforcement is switched on, their derived compliance state, and the policy
+ * FINES they owe. This is deliberately separate from member_fees_account() —
+ * dues/training are one ledger, disciplinary fines (sanctions) are another —
+ * and it is NOT gated by the fees feature toggle.
+ */
+function member_compliance(array $p): array {
+    $memberId = (string)($p['memberId'] ?? '');
+    $member = db_row('SELECT memberId FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$member) return ['ok' => false, 'error' => 'not_found'];
+
+    $enabled = function_exists('policy_enabled_for') ? policy_enabled_for('member') : false;
+    $state = policy_state($memberId, 'member');
+    $fines = [];
+    foreach (db_all("SELECT amount, reason, status, issuedAt FROM sanctions WHERE personId = ? AND kind = 'fine' AND status IN ('active','pending') ORDER BY issuedAt DESC", [$memberId]) as $f) {
+        $fines[] = [
+            'amount'   => (int)$f['amount'],
+            'reason'   => (string)$f['reason'],
+            'status'   => (string)$f['status'],
+            'issuedAt' => (string)$f['issuedAt'],
+        ];
+    }
+    return [
+        'ok'             => true,
+        'enabled'        => $enabled,
+        'state'          => $state['state'],
+        'until'          => $state['until'],
+        'reason'         => $state['reason'],
+        'finesOwed'      => (int)$state['finesOwed'],
+        'awaitingReview' => !empty($state['awaitingReview']),
+        'blocked'        => !empty($state['blocked']),
+        'fines'          => $fines,
+    ];
+}
+
 function member_update(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
