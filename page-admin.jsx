@@ -2949,13 +2949,22 @@ function ConsentRecorder({ rows, scope, scopeCount, scopeCentre, onClose, onDone
   );
 }
 
-/* ── ID cards — deep link into the full-screen studio ─────────────────────── */
+/* ── ID cards — deep links into the full-screen studios ───────────────────── */
 function SummerCardsLink() {
   return (
-    <div className="card" style={{ padding: 28, textAlign: "center", maxWidth: 520 }}>
-      <h3 className="display" style={{ fontSize: 24, margin: "0 0 8px" }}>ID Card Studio</h3>
-      <p style={{ color: "var(--ink-500)", margin: "0 0 18px" }}>Design, manage centres, and print the 54×92mm ID cards for verified students in the full-screen studio.</p>
-      <a className="btn btn-primary" href="/cards" target="_blank" rel="noreferrer">Open the Card Studio ↗</a>
+    <div className="card" style={{ padding: 28, textAlign: "center", maxWidth: 560 }}>
+      <h3 className="display" style={{ fontSize: 24, margin: "0 0 8px" }}>Card &amp; Design Studios</h3>
+      <p style={{ color: "var(--ink-500)", margin: "0 0 18px" }}>
+        Print and manage the 54×92mm ID cards in the Card Studio, or design new card
+        templates, posters and batch runs in the full-screen Design Studio.
+      </p>
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+        <a className="btn btn-primary" href="/cards" target="_blank" rel="noreferrer">Open the Card Studio ↗</a>
+        {/* The Design Studio (/designer) renders its own full-screen chrome and
+            had no nav of its own — reachable only by typing the URL. Surface it
+            here, beside the print tool, so staff can actually find it. */}
+        <a className="btn btn-ghost" href="/designer" target="_blank" rel="noreferrer">Open the Design Studio ↗</a>
+      </div>
     </div>
   );
 }
