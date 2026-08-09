@@ -1802,6 +1802,8 @@ chk('policy enforcement can be switched on', policy_settings()['enabled'] === tr
 // Self-executing by the Governing Council's instruction: the thresholds bite
 // without a human in the loop ("no manual overrides, no verbal adjustments").
 chk('the thresholds are self-executing by default', policy_settings()['autoEnforce'] === true);
+// …but eviction, the one irreversible sanction, is admin-confirmed by default.
+chk('eviction requires admin confirmation by default', policy_settings()['confirmEviction'] === true);
 // The review-first stance is still supported and still has to work, because it
 // is the only thing standing between a broken scanner and an eviction.
 chk('review-first: a third absence proposes eviction rather than imposing it', (function () use ($SU) {
@@ -1829,14 +1831,34 @@ chk('confirming a proposed eviction is what makes it bite', (function () use ($S
 })());
 // Back to the shipped stance for the threshold tests that follow.
 backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true, 'autoEnforce' => true]]);
-chk('a third absence evicts outright with enforcement strict', (function () use ($SU) {
+chk('eviction is admin-confirmed even under strict enforcement — a third absence proposes, never imposes', (function () use ($SU) {
     backend_dispatch('admin.summer.qr.mint', ['requesterId' => $SU, 'count' => 5]);   // blanks run out
     $p = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Strict Sikiru', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech']]);
     if (empty($p['studentId'])) return false;
     for ($i = 6; $i <= 8; $i++) policy_log($p['studentId'], 'student', 'absence', '2026-07-0' . $i);
     policy_apply($p['studentId'], 'student');
     $st = policy_state($p['studentId'], 'student');
-    return $st['state'] === 'evicted' && $st['awaitingReview'] === false && $st['blocked'] === true;
+    // autoEnforce is ON, yet eviction still only proposes: the student is on the
+    // Dormant Track and flagged for review — not expelled, not gate-blocked —
+    // until an admin confirms the proposal.
+    return $st['state'] === 'dormant' && $st['awaitingReview'] === true && $st['blocked'] === false
+        && ($st['proposed'][0]['kind'] ?? '') === 'eviction';
+})());
+// The admin toggle: turning confirmEviction OFF restores the blueprint's fully
+// automatic stance — eviction then follows autoEnforce and bites outright.
+chk('an admin can toggle eviction back to automatic', (function () use ($SU) {
+    backend_dispatch('admin.summer.qr.mint', ['requesterId' => $SU, 'count' => 5]);
+    backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true, 'autoEnforce' => true, 'confirmEviction' => false]]);
+    $ok0 = policy_settings()['confirmEviction'] === false;
+    $p = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Auto Ajayi', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech']]);
+    if (empty($p['studentId'])) return false;
+    for ($i = 6; $i <= 8; $i++) policy_log($p['studentId'], 'student', 'absence', '2026-07-0' . $i);
+    policy_apply($p['studentId'], 'student');
+    $st = policy_state($p['studentId'], 'student');
+    $ok = $ok0 && $st['state'] === 'evicted' && $st['blocked'] === true && $st['awaitingReview'] === false;
+    // Restore the shipped default (admin-confirmed) for the tests that follow.
+    backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'policy' => ['enabled' => true, 'autoEnforce' => true, 'confirmEviction' => true]]);
+    return $ok;
 })());
 $pid = $enr['studentId'];
 chk('a clear ledger reads clear', policy_state($pid, 'student')['state'] === 'clear');
@@ -1853,13 +1875,27 @@ chk('the same absence logged twice is still one strike', (function () use ($pid)
 })());
 policy_log($pid, 'student', 'absence', '2026-07-08');
 policy_apply($pid, 'student');
-chk('absence 3 is eviction', policy_state($pid, 'student')['state'] === 'evicted');
+chk('absence 3 proposes eviction rather than imposing it', (function () use ($pid) {
+    $st = policy_state($pid, 'student');
+    return $st['state'] === 'dormant' && ($st['proposed'][0]['kind'] ?? '') === 'eviction';
+})());
+chk('confirming the proposed eviction is what evicts', (function () use ($SU, $pid) {
+    $sid = (int)db_row("SELECT id FROM sanctions WHERE personId = ? AND kind = 'eviction' AND status = 'proposed' ORDER BY issuedAt DESC LIMIT 1", [$pid])['id'];
+    $r = backend_dispatch('admin.policy.sanction.update', ['requesterId' => $SU, 'sanctionId' => $sid, 'status' => 'active']);
+    return $r['state']['state'] === 'evicted';
+})());
 // A fresh student, because a scan only reaches the gate when there is no row
 // for today yet — you cannot un-check-in someone who is already present.
 $evicted = backend_dispatch('admin.summer.enroll', ['requesterId' => $SU, 'data' => ['fullName' => 'Emeka Evicted', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Tech']]);
 for ($i = 6; $i <= 8; $i++) policy_log($evicted['studentId'], 'student', 'absence', '2026-07-0' . $i);
 policy_apply($evicted['studentId'], 'student');
-chk('an evicted student cannot check in', backend_dispatch('admin.summer.checkin', ['requesterId' => $SU, 'token' => $evicted['token']])['error'] === 'policy_evicted');
+// A proposed eviction is visible but does not close the gate on its own.
+chk('a proposed eviction does not block check-in by itself', policy_gate_checkin($evicted['studentId'], 'student')['ok'] === true);
+chk('a confirmed eviction blocks check-in', (function () use ($SU, $evicted) {
+    $sid = (int)db_row("SELECT id FROM sanctions WHERE personId = ? AND kind = 'eviction' AND status = 'proposed' ORDER BY issuedAt DESC LIMIT 1", [$evicted['studentId']])['id'];
+    backend_dispatch('admin.policy.sanction.update', ['requesterId' => $SU, 'sanctionId' => $sid, 'status' => 'active']);
+    return backend_dispatch('admin.summer.checkin', ['requesterId' => $SU, 'token' => $evicted['token']])['error'] === 'policy_evicted';
+})());
 chk('a blocked scan leaves no attendance row', db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$evicted['studentId']])['c'] === 0);
 
 // Voiding a wrongly logged fact must undo everything it caused, immediately.
@@ -1873,7 +1909,14 @@ chk('a void without a reason is refused', backend_dispatch('admin.policy.void', 
 // Reinstatement (Part IV) — refuses with the specific unmet condition.
 policy_log($pid, 'student', 'absence', '2026-07-09');
 policy_apply($pid, 'student');
-chk('re-evicted after a fresh third absence', policy_state($pid, 'student')['state'] === 'evicted');
+// The re-cross re-proposes eviction (the voided one was lifted); an admin
+// confirms it so the Part IV reinstatement path below has a live eviction.
+chk('a fresh third absence re-proposes eviction, confirmed by an admin', (function () use ($SU, $pid) {
+    $sid = (int)db_row("SELECT id FROM sanctions WHERE personId = ? AND kind = 'eviction' AND status = 'proposed' ORDER BY issuedAt DESC LIMIT 1", [$pid])['id'];
+    if (!$sid) return false;
+    $r = backend_dispatch('admin.policy.sanction.update', ['requesterId' => $SU, 'sanctionId' => $sid, 'status' => 'active']);
+    return $r['state']['state'] === 'evicted';
+})());
 $rein = backend_dispatch('admin.policy.reinstate', ['requesterId' => $SU, 'personId' => $pid]);
 chk('reinstatement refuses inside the cool-off period', $rein['error'] === 'conditions_unmet' && count($rein['unmet']) === 3);
 chk('…and names the cool-off, the training and the fine', (function () use ($rein) {
@@ -2042,10 +2085,21 @@ chk('the sweep does not run without a calendar', (function () use ($SU) {
     chk('member.compliance surfaces the fine for the dashboard',
         !empty($mc['enabled']) && (int)$mc['finesOwed'] >= 1000 && count($mc['fines']) >= 1);
 
-    // Full ladder: absences past the limit auto-evict (decision: members treated strictly).
+    // Full ladder: absences past the limit PROPOSE eviction. Eviction is the one
+    // irreversible sanction, so it is always admin-confirmed — members included —
+    // and an admin confirming the proposal is what actually expels.
+    $SU = 'NGG-2025-0099';
     foreach (['-9 days', '-8 days', '-7 days'] as $d) policy_log('NGG-MEM-2', 'member', 'absence', gmdate('Y-m-d', strtotime($d)));
     policy_apply('NGG-MEM-2', 'member');
-    chk('member: absences past the limit auto-evict (full ladder)', policy_state('NGG-MEM-2', 'member')['state'] === 'evicted');
+    chk('member: absences past the limit propose eviction, not impose it', (function () {
+        $st = policy_state('NGG-MEM-2', 'member');
+        return $st['state'] === 'dormant' && $st['awaitingReview'] === true && ($st['proposed'][0]['kind'] ?? '') === 'eviction';
+    })());
+    chk('member: an admin confirming the proposal is what evicts', (function () use ($SU) {
+        $sid = (int)db_row("SELECT id FROM sanctions WHERE personId = 'NGG-MEM-2' AND kind = 'eviction' AND status = 'proposed' ORDER BY issuedAt DESC LIMIT 1")['id'];
+        $r = backend_dispatch('admin.policy.sanction.update', ['requesterId' => $SU, 'sanctionId' => $sid, 'status' => 'active']);
+        return $r['state']['state'] === 'evicted';
+    })());
 
     // The sweep is inert without a member calendar, and logs absences with one.
     member_programme_settings_save(['enabled' => false] + $wide, 'test');

@@ -281,22 +281,29 @@ function programme_next_day(string $date, ?array $cfg = null): string {
  */
 const POLICY_DEFAULTS = [
     'enabled' => false,          // strict enforcement is opt-in per deployment
-    /* Whether the two irreversible outcomes — suspension and eviction — take
+    /* Whether the reversible sanctions — suspension chief among them — take
      * effect the moment the counter crosses, or are raised for an admin to
      * confirm first. ON by the Governing Council's instruction: the blueprint
      * says "the AI system automatically flags the profile", "no manual
      * overrides, no verbal adjustments", and the institution wants the
      * thresholds to bite without a human in the loop.
      *
-     * What that costs, so it is on the record: §1.3 counts a failure to scan as
-     * a full absence, so a broken scanner or a flat kiosk battery evicts a
-     * student on the third occurrence with no one asked. The correction path is
-     * the ledger — void the wrongly logged fact with a reason and every
-     * sanction it caused lifts immediately — and Part IV reinstatement for
-     * anything already served. Set this to false to have suspension and
-     * eviction raised for review instead; the counters and the board are
-     * identical either way. */
+     * Eviction is governed separately by `confirmEviction` below, not by this
+     * flag — expulsion is the one sanction that cannot be walked back, so it
+     * gets its own switch. Set this to false to have suspension raised for
+     * review too; the counters and the board are identical either way. */
     'autoEnforce' => true,
+    /* Whether an eviction — total termination of association — must be confirmed
+     * by an admin before it takes effect. ON by default: the threshold crossing
+     * is still auto-flagged, but as a *proposed* eviction that shows on the board
+     * as awaiting review and blocks no one until an admin confirms it. This
+     * exists because §1.3 counts a failure to scan as a full absence, so a broken
+     * scanner or a flat kiosk battery would otherwise expel a member on the third
+     * occurrence with no one asked — and there is no undo for an expulsion, only
+     * the Part IV reinstatement gauntlet. An admin who wants the blueprint's
+     * fully-automatic stance can turn this off, and eviction then follows
+     * `autoEnforce` like the other sanctions. */
+    'confirmEviction' => true,
     'checkoutRequired' => true,  // §1.3 — scan IN and OUT, or the day is absent
     'student' => [
         'lateRedline'            => '08:30',
@@ -397,6 +404,7 @@ function policy_settings_save(array $in, string $by): array {
     $clean = [
         'enabled'          => array_key_exists('enabled', $in) ? !empty($in['enabled']) : !empty($cur['enabled']),
         'autoEnforce'      => array_key_exists('autoEnforce', $in) ? !empty($in['autoEnforce']) : !empty($cur['autoEnforce']),
+        'confirmEviction'  => array_key_exists('confirmEviction', $in) ? !empty($in['confirmEviction']) : !empty($cur['confirmEviction']),
         'checkoutRequired' => array_key_exists('checkoutRequired', $in) ? !empty($in['checkoutRequired']) : !empty($cur['checkoutRequired']),
     ];
     foreach (['student', 'volunteer', 'member'] as $type) {
@@ -662,6 +670,9 @@ function policy_apply(string $personId, string $type): array {
     // human. It appears on the board as needing review, and does NOT block the
     // scanner until an admin confirms it into 'active'.
     $grave = !empty(policy_settings()['autoEnforce']) ? 'active' : 'proposed';
+    // Eviction has its own switch: ON (default) holds every eviction as a
+    // proposal for an admin to confirm; OFF lets it follow $grave like the rest.
+    $evict = !empty(policy_settings()['confirmEviction']) ? 'proposed' : $grave;
 
     // §1.1 Attendance — strike 1 warning, strike 2 dormancy, strike 3 eviction.
     $limit = (int)$cfg['absenceLimit'];
@@ -674,9 +685,16 @@ function policy_apply(string $personId, string $type): array {
         if (policy_issue($personId, $type, $kind, $n, ['reason' => $label])) $issued[] = $kind;
     }
     if ($abs > $limit) {
+        // Eviction — total termination of association — is admin-confirmed by
+        // default ($evict = 'proposed'): the threshold crossing is auto-flagged,
+        // but the irreversible act waits for an admin to confirm the proposal
+        // into 'active'. An admin can turn confirmEviction off, and it then
+        // follows $grave (autoEnforce) like the reversible sanctions.
+        $reason = "Absence {$abs} — past the {$limit}-absence limit. Eviction under §1.1"
+            . ($evict === 'proposed' ? ' (awaiting admin confirmation).' : '.');
         if (policy_issue($personId, $type, 'eviction', $abs, [
-            'status' => $grave,
-            'reason' => "Absence {$abs} — past the {$limit}-absence limit. Eviction under §1.1.",
+            'status' => $evict,
+            'reason' => $reason,
         ])) $issued[] = 'eviction';
     }
 

@@ -142,17 +142,24 @@ irreversible outcomes gated behind an explicit admin action:
 | Strike 1 | **Warning** issued automatically |
 | Strike 2 / dormancy threshold | **Dormant** issued automatically; awards eligibility frozen |
 | Suspension threshold | **14-day ban applied automatically**; the scanner and the community door both refuse |
-| Eviction threshold | **applied automatically**; blocked everywhere, awards forfeited |
+| Eviction threshold | **proposed for an admin to confirm — never applied automatically**; once confirmed, blocked everywhere, awards forfeited |
 | Fines (₦1k/₦2k/₦5k/₦10k) | recorded as owed on the person's ledger; not auto-charged |
 | Reinstatement | 365-day gate + CIMC-1 + ₦10k checklist an admin clears |
 
-**`autoEnforce` is ON.** The Governing Council's instruction is that the
-thresholds bite without a human in the loop — "the AI system automatically
-flags the profile", "no manual overrides, no verbal adjustments".
+**`autoEnforce` is ON**, and it governs the *reversible* sanctions. The
+Governing Council's instruction is that the thresholds bite without a human in
+the loop — "the AI system automatically flags the profile", "no manual
+overrides, no verbal adjustments" — so warnings, dormancy, suspension and fines
+all take effect the moment the counter crosses.
 
-The cost of that, on the record: §1.3 counts a failure to scan as a full
-absence, so a broken scanner or a flat kiosk battery evicts a student on the
-third occurrence with nobody asked. Two things mitigate it, and coordinators
+**Eviction is the exception, and is always admin-confirmed.** It is the one
+irreversible sanction — a total termination of association — so the threshold
+crossing is auto-flagged as a *proposed* eviction (it shows on the board as
+*awaiting review*), but the expulsion itself never takes effect until an admin
+confirms it, `autoEnforce` or not. This closes the worst failure mode: §1.3
+counts a failure to scan as a full absence, so without the hold a broken scanner
+or a flat kiosk battery would expel a student on the third occurrence with
+nobody asked. Two things still mitigate a wrongly logged fact, and coordinators
 should know both:
 
 1. **Void the fact, not the sanction.** Voiding a wrongly logged infraction
@@ -163,10 +170,16 @@ should know both:
    programme calendar before the nightly sweep runs and no absence is logged
    for it at all.
 
-Setting `autoEnforce` to false switches to review-first: suspension and
-eviction are raised as **proposed**, show on the board as *awaiting review*,
-and do not block anyone until an admin confirms them. The counters, the ledger
-and the board are identical either way — only the moment of effect changes.
+Setting `autoEnforce` to false extends review-first to **suspension** as well,
+so it too is raised as *proposed* and blocks no one until an admin confirms it.
+The counters, the ledger and the board are identical either way — only the
+moment of effect changes.
+
+**`confirmEviction`** is the dedicated switch for the gravest sanction, exposed
+in the admin console ("Require an admin to confirm every eviction"). ON by
+default and independent of `autoEnforce`, it holds every eviction as *proposed*
+for review. Turn it off to restore the blueprint's fully automatic stance, and
+eviction then follows `autoEnforce` like the other sanctions.
 
 ### Two layers: facts and consequences
 **Infractions** are facts (`absence`, `late`, `tardy`, `halfday`,

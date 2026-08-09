@@ -9928,6 +9928,10 @@ function SummerPolicy() {
           <span>Require a check-OUT scan — a day with no scan out counts as an absence (§1.3)</span>
         </label>
         <label className="fb-toggle" style={{ marginTop: 6 }}>
+          <input type="checkbox" checked={pol.confirmEviction !== false} onChange={e => setPol(o => ({ ...o, confirmEviction: e.target.checked }))}/>
+          <span>Require an admin to confirm every eviction — the eviction threshold proposes it for review instead of expelling automatically</span>
+        </label>
+        <label className="fb-toggle" style={{ marginTop: 6 }}>
           <input type="checkbox" checked={!!(pol.musing || {}).enabled} onChange={e => setPol2("musing", "enabled", e.target.checked)}/>
           <span>Missing the Musing Period downgrades the day to a half-day</span>
         </label>
@@ -10021,7 +10025,7 @@ function SummerPolicy() {
         ))}
 
         <div className="admin-fields-h" style={{ marginTop: 16, fontWeight: 700 }}>Member thresholds</div>
-        <p className="admin-hint" style={{ margin: "2px 0 8px" }}>The ladder for members — full enforcement, so the 3rd absence evicts and post-suspension lateness fines.</p>
+        <p className="admin-hint" style={{ margin: "2px 0 8px" }}>The ladder for members — full enforcement, so the 3rd absence proposes eviction for an admin to confirm, and post-suspension lateness fines.</p>
         <div className="admin-fields">
           <label className="admin-field"><span>Lateness redline</span>
             <input type="time" className="admin-input" value={(pol.member || {}).lateRedline || ""} onChange={e => setPol2("member", "lateRedline", e.target.value)}/>
