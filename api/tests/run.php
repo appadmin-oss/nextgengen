@@ -2059,7 +2059,27 @@ chk('the sweep does not run without a calendar', (function () use ($SU) {
     chk('member infractions carry personType=member',
         (int)db_row("SELECT COUNT(*) c FROM infractions WHERE personId = 'NGG-MEM-1' AND personType = 'member'")['c'] >= 2);
 
+    // Scan-time grading through the webhook: a member scan carrying a real
+    // scannedAt is judged AT THE SCAN (redline 00:00 makes any time late), while
+    // a past-dated scan with no scan time is recorded present but never graded.
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true, 'member' => ['enabled' => true,
+        'absenceLimit' => 2, 'latenessCap' => 3, 'postSuspensionLateness' => 2, 'fine' => 5000,
+        'suspensionDays' => 14, 'lateRedline' => '00:00']], 'test');
+    member_programme_settings_save(['enabled' => true] + $wide, 'test');
+    db_exec("DELETE FROM attendance WHERE studentId IN ('NGG-MEM-1','NGG-MEM-2')");
+    db_exec("DELETE FROM infractions WHERE personId = 'NGG-MEM-1' AND kind = 'late'");
+    hooks_attendance(['source' => 'test', 'events' => [['ref' => 'NGG-MEM-1', 'scannedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 3600)]]]);
+    chk('member webhook grades lateness at the real scan time',
+        (int)db_row("SELECT COUNT(*) c FROM infractions WHERE personId = 'NGG-MEM-1' AND kind = 'late' AND personType = 'member'")['c'] >= 1);
+    $yst = gmdate('Y-m-d', strtotime('-1 day'));
+    db_exec("DELETE FROM infractions WHERE personId = 'NGG-MEM-2' AND kind = 'late'");
+    hooks_attendance(['source' => 'test', 'events' => [['ref' => 'NGG-MEM-2', 'date' => $yst]]]);
+    chk('member webhook records presence but never fabricates lateness without a scan time',
+        (int)db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = 'NGG-MEM-2' AND date = ?", [$yst])['c'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM infractions WHERE personId = 'NGG-MEM-2' AND kind = 'late'")['c'] === 0);
+
     // Teardown — leave no member-policy state behind for later tests.
+    db_exec("DELETE FROM attendance WHERE studentId IN ('NGG-MEM-1','NGG-MEM-2')");
     db_exec("DELETE FROM infractions WHERE personType = 'member'");
     db_exec("DELETE FROM sanctions WHERE personType = 'member'");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-MEM-1','NGG-MEM-2')");

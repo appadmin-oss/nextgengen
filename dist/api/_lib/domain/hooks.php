@@ -17,10 +17,15 @@ function hook_verify_signature(string $secret, string $ts, string $rawBody, stri
 
 /**
  * Process a batch of attendance events from an external app.
- * Each event: { ref | token, date?, kind? } where
- *   ref   = summer studentId (SUM-…), member memberId (NGG-…) or handle
- *   token = an assigned QR token (SUMQR-…)
- *   date  = Y-m-d (defaults to today, UTC)
+ * Each event: { ref | token, date?, scannedAt?, kind? } where
+ *   ref       = summer studentId (SUM-…), member memberId (NGG-…) or handle
+ *   token     = an assigned QR token (SUMQR-…)
+ *   scannedAt = the real scan time, ISO-8601. Optional but preferred: it is
+ *               what member lateness is judged against and what stamps
+ *               checkInAt. Clamped to the last 24h (attendance_scan_time), so a
+ *               wrong clock cannot backdate a scan. `at` is accepted as an alias.
+ *   date      = Y-m-d. Defaults to the scan's own local day when scannedAt is
+ *               given, else today.
  * Returns a per-item result list; duplicates are 'already', not errors.
  */
 function hooks_attendance(array $p): array {
@@ -33,7 +38,17 @@ function hooks_attendance(array $p): array {
         if (!is_array($e)) { $results[] = ['status' => 'bad_event']; continue; }
         $ref = trim((string)($e['ref'] ?? ''));
         $token = trim((string)($e['token'] ?? ''));
-        $date = (string)($e['date'] ?? gmdate('Y-m-d'));
+        // Real scan time, if the caller sends one. attendance_scan_time() parses
+        // and clamps it to the last 24h (never future), falling back to now. We
+        // separately record whether a genuine, in-window time was supplied —
+        // only then do we judge lateness at the scan rather than at delivery.
+        $rawScan = $e['scannedAt'] ?? $e['at'] ?? null;
+        $hasScanTime = is_string($rawScan) && $rawScan !== ''
+            && ($ts0 = strtotime($rawScan)) !== false && $ts0 <= time() && $ts0 >= time() - 86400;
+        $scanTs  = attendance_scan_time(is_string($rawScan) ? $rawScan : null);
+        $scanIso = gmdate('Y-m-d\TH:i:s\Z', $scanTs);
+        $date = trim((string)($e['date'] ?? ''));
+        if ($date === '') $date = $hasScanTime ? attendance_today($scanTs) : gmdate('Y-m-d');
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) { $results[] = ['ref' => $ref, 'status' => 'bad_date']; continue; }
 
         // Resolve who this is: QR token → summer student → member → handle.
@@ -54,19 +69,21 @@ function hooks_attendance(array $p): array {
         $dupe = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$sid, $date]);
         if ($dupe) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'already']; $already++; continue; }
         /* NGG members are enforced on their own switch and their own weekly
-         * calendar. When both are on and this scan is for today, grade
-         * punctuality so the row carries the same late/half-day facts a gate
-         * scan would, and feed the check-in to the sanction engine. The webhook
-         * has no scan timestamp — checkInAt is delivery time — so lateness is
-         * judged at delivery, and only ever for today's date. */
-        $applyMember = $isMember && $date === gmdate('Y-m-d')
+         * calendar. On a member programme day, grade punctuality so the row
+         * carries the same late/half-day facts a gate scan would and feed the
+         * check-in to the sanction engine. With a real scannedAt we judge
+         * lateness AT THE SCAN, on the scan's own day; without one we fall back
+         * to delivery time, and only for today — a past day whose scan time we
+         * do not know is recorded as present but not graded for lateness. */
+        $applyMember = $isMember
             && function_exists('policy_enabled_for') && policy_enabled_for('member')
-            && policy_is_day($date, 'member');
-        $punc = $applyMember ? policy_punctuality('member') : null;
+            && policy_is_day($date, 'member')
+            && ($hasScanTime || $date === gmdate('Y-m-d'));
+        $punc = $applyMember ? policy_punctuality('member', $hasScanTime ? $scanTs : null) : null;
         try {
             $row = [
                 'cohortId' => $cohortId, 'studentId' => $sid, 'token' => $token,
-                'date' => $date, 'checkInAt' => now_iso(), 'method' => 'webhook',
+                'date' => $date, 'checkInAt' => $scanIso, 'method' => 'webhook',
                 'byId' => 'hook:' . $source, 'device' => substr($source, 0, 64), 'createdAt' => now_iso(),
             ];
             if ($punc) {
