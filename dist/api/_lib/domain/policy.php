@@ -293,15 +293,17 @@ const POLICY_DEFAULTS = [
      * gets its own switch. Set this to false to have suspension raised for
      * review too; the counters and the board are identical either way. */
     'autoEnforce' => true,
-    /* Whether an eviction — total termination of association — must be confirmed
-     * by an admin before it takes effect. ON by default: the threshold crossing
-     * is still auto-flagged, but as a *proposed* eviction that shows on the board
-     * as awaiting review and blocks no one until an admin confirms it. This
-     * exists because §1.3 counts a failure to scan as a full absence, so a broken
-     * scanner or a flat kiosk battery would otherwise expel a member on the third
-     * occurrence with no one asked — and there is no undo for an expulsion, only
-     * the Part IV reinstatement gauntlet. An admin who wants the blueprint's
-     * fully-automatic stance can turn this off, and eviction then follows
+    /* Whether an NGG member's eviction — total termination of association — must
+     * be confirmed by an admin before it takes effect. Applies to members ONLY;
+     * summer students and volunteers keep the fully-automatic stance regardless.
+     * ON by default: a member's threshold crossing is still auto-flagged, but as
+     * a *proposed* eviction that shows on the board as awaiting review and blocks
+     * no one until an admin confirms it. This exists because §1.3 counts a
+     * failure to scan as a full absence, so a broken scanner or a flat kiosk
+     * battery would otherwise expel a member on the third occurrence with no one
+     * asked — and there is no undo for an expulsion, only the Part IV
+     * reinstatement gauntlet. An admin who wants members held to the same
+     * automatic stance can turn this off, and a member's eviction then follows
      * `autoEnforce` like the other sanctions. */
     'confirmEviction' => true,
     'checkoutRequired' => true,  // §1.3 — scan IN and OUT, or the day is absent
@@ -670,9 +672,11 @@ function policy_apply(string $personId, string $type): array {
     // human. It appears on the board as needing review, and does NOT block the
     // scanner until an admin confirms it into 'active'.
     $grave = !empty(policy_settings()['autoEnforce']) ? 'active' : 'proposed';
-    // Eviction has its own switch: ON (default) holds every eviction as a
-    // proposal for an admin to confirm; OFF lets it follow $grave like the rest.
-    $evict = !empty(policy_settings()['confirmEviction']) ? 'proposed' : $grave;
+    // Eviction confirmation is scoped to NGG members: ON (default) holds a
+    // member's eviction as a proposal for an admin to confirm. Summer students
+    // and volunteers are unaffected — their eviction follows $grave (autoEnforce)
+    // as before, per the Governing Council's fully-automatic stance for them.
+    $evict = ($type === 'member' && !empty(policy_settings()['confirmEviction'])) ? 'proposed' : $grave;
 
     // §1.1 Attendance — strike 1 warning, strike 2 dormancy, strike 3 eviction.
     $limit = (int)$cfg['absenceLimit'];
