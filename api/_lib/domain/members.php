@@ -77,6 +77,15 @@ function member_dashboard(array $p): array {
         'events' => $events,
         'notifications' => $notes,
         'mentor' => $mentor,
+        // NGV standing — set once this member has been promoted up the chain of
+        // command into the volunteer tier, so the dashboard can show it.
+        'ngv' => (function () use ($member) {
+            if ((string)($member['ngvVolunteerId'] ?? '') === '') return null;
+            $v = db_row("SELECT volunteerId, role, token, status FROM volunteers WHERE volunteerId = ? LIMIT 1", [(string)$member['ngvVolunteerId']]);
+            if (!$v) return null;
+            return ['volunteerId' => (string)$v['volunteerId'], 'role' => (string)$v['role'],
+                'status' => (string)$v['status'], 'token' => (string)$v['token'], 'since' => (string)($member['ngvAt'] ?? '')];
+        })(),
         // Assignments surfaced inline so the dashboard card renders without a
         // second round-trip.
         'assignments' => assignment_list_for_member(['memberId' => $memberId])['assignments'] ?? [],

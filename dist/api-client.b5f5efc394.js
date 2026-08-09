@@ -639,6 +639,9 @@
         // obtained (paper form, phone, in person) and the server requires it.
         consent:       (memberId, type, status, method) => request('/admin/members.php', { body: { action: 'consent', memberId, type, status, method } }),
         remove: (memberId) => request('/admin/members.php', { body: { action: 'delete', memberId } }),
+        // Promote an NGG member into the NGV / volunteer tier — auto-provisions
+        // their volunteer record + ID card (idempotent).
+        promoteNgv: (memberId, role) => request('/admin/members.php', { body: { action: 'promoteNgv', memberId, role } }),
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),

@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS members (
   anchorCode VARCHAR(12),
   mouAt VARCHAR(40) DEFAULT '', mouBy VARCHAR(64) DEFAULT '',
   duesRemindOff TINYINT DEFAULT 0, duesRemindedAt VARCHAR(40) DEFAULT '',
+  ngvVolunteerId VARCHAR(40) DEFAULT '', ngvAt VARCHAR(40) DEFAULT '',
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
   INDEX idx_members_email (email), INDEX idx_members_centre (centre), INDEX idx_members_status (status),
   UNIQUE KEY idx_members_anchorcode (anchorCode)
@@ -414,6 +415,7 @@ CREATE TABLE IF NOT EXISTS volunteers (
   id INT AUTO_INCREMENT PRIMARY KEY,
   volunteerId VARCHAR(32) NOT NULL UNIQUE,
   applicationId INT,
+  memberId VARCHAR(40) DEFAULT '',
   fullName VARCHAR(255), email VARCHAR(200), phone VARCHAR(24) DEFAULT '',
   firstName VARCHAR(80) DEFAULT '', lastName VARCHAR(80) DEFAULT '',
   otherName VARCHAR(80) DEFAULT '', dob VARCHAR(40) DEFAULT '',
@@ -423,7 +425,8 @@ CREATE TABLE IF NOT EXISTS volunteers (
   safeguarding VARCHAR(16) DEFAULT 'pending',
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
   INDEX idx_vol_email (email),
-  INDEX idx_vol_token (token)
+  INDEX idx_vol_token (token),
+  INDEX idx_vol_member (memberId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS volunteer_certs (

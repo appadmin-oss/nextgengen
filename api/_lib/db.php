@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 84;
+const NGG_SCHEMA_TARGET = 85;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2274,6 +2274,18 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_engsnap_week ON engagement_snapshots (weekStart);
             CREATE INDEX IF NOT EXISTS idx_engsnap_centre ON engagement_snapshots (centre, weekStart);
             CREATE INDEX IF NOT EXISTS idx_engsnap_person ON engagement_snapshots (role, personId, weekStart);
+        ",
+        /* NGV promotion — an NGG member advancing up the chain of command
+         * (Part III) into the volunteer tier gets a volunteer record provisioned
+         * automatically, rather than filing a fresh volunteer application. The
+         * link is two-way: the volunteer row remembers which member it belongs
+         * to, and the member row remembers its NGV volunteer id + when it was
+         * promoted, so the promotion is idempotent and reversible. */
+        85 => "
+            ALTER TABLE volunteers ADD COLUMN memberId TEXT DEFAULT '';
+            ALTER TABLE members ADD COLUMN ngvVolunteerId TEXT DEFAULT '';
+            ALTER TABLE members ADD COLUMN ngvAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_vol_member ON volunteers (memberId);
         ",
     ];
 

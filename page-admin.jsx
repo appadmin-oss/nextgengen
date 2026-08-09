@@ -6600,6 +6600,11 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
     setBusy(true); try { await NGGApi.admin.members.upsert({ memberId, status }); toast.success("Status → " + status); await load(); onChanged && onChanged(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
   const assign = async (mentorId) => { setBusy(true); try { await NGGApi.admin.assignMentor({ memberId, mentorId }); toast.success(mentorId ? "Mentor assigned" : "Mentor cleared"); await load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
+  const promoteNgv = async () => {
+    const ok = await dialog.confirm({ title: "Promote to NGV?", body: "This advances " + ((m && m.fullName) || "this member") + " up the chain of command into the volunteer tier and auto-provisions their NGV record + ID card. It's idempotent, and reversible by deactivating the volunteer record later.", cta: "Promote", cancel: "Cancel" });
+    if (!ok) return;
+    setBusy(true); try { const r = await NGGApi.admin.members.promoteNgv(memberId); toast.success((r.already ? "Already an NGV · " : "Promoted to NGV · ") + r.volunteerId); await load(); onChanged && onChanged(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
 
   const m = d && d.member;
   return (
@@ -6642,6 +6647,16 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
                   {mentors.map(mt => <option key={mt.mentorId} value={mt.mentorId}>{mt.fullName}{mt.tracks && mt.tracks.length ? " · " + mt.tracks.join(", ") : ""}</option>)}
                 </select>
               </div>
+            </div>
+
+            <div className="admin-detail-section">
+              <div className="admin-detail-h">Chain of command</div>
+              {m.ngvVolunteerId
+                ? <div className="admin-hint" style={{ margin: 0 }}>Promoted to <b>NGV</b> — volunteer id <span className="mono">{m.ngvVolunteerId}</span>{m.ngvAt ? " · " + String(m.ngvAt).slice(0, 10) : ""}. Their NGV dashboard is active.</div>
+                : <div className="admin-detail-actions" style={{ alignItems: "center" }}>
+                    <button className="btn btn-ghost btn-sm" disabled={busy || m.type !== "NGG" || m.status !== "active"} onClick={promoteNgv}>Promote to NGV</button>
+                    <span className="admin-hint" style={{ margin: 0 }}>Advances an active NGG member into the volunteer tier and creates their NGV dashboard automatically.</span>
+                  </div>}
             </div>
 
             <div className="admin-detail-section">

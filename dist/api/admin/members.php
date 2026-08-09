@@ -43,6 +43,8 @@ if ($method === 'POST') {
             'ip' => client_ip()]);
     } elseif ($action === 'resetPassword') {
         $res = gs_call('admin.members.resetPassword', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
+    } elseif ($action === 'promoteNgv') {
+        $res = gs_call('admin.members.promoteNgv', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'role' => $body['role'] ?? '', 'ip' => client_ip()]);
     } else {
         $res = gs_call('admin.members.upsert', ['requesterId' => $s['mid'], 'data' => $body, 'ip' => client_ip()]);
     }

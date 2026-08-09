@@ -200,6 +200,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
   const session = data.session;
   const today = data.today || [];
   const mentor = data.mentor;
+  const ngv = data.ngv;   // set once promoted up the chain into the NGV/volunteer tier
 
   // Events + notifications are held locally so RSVP and mark-as-read feel
   // instant (optimistic), then reconcile with the next server payload.
@@ -294,7 +295,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
         <div className="container ngg-dash-wrap">
 
           <DashboardSidebar
-            m={m} first={first} account={account}
+            m={m} first={first} account={account} ngv={!!ngv}
             fines={showFines ? (compliance.finesOwed || 0) : null}
             counts={{ today: today.length, events: events.length, notes: unread }}
             onSignOut={onSignOut} onEditProfile={() => setEditProfile(true)}/>
@@ -334,6 +335,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                 {/* RIGHT RAIL */}
                 <div className="dash-rail">
                   <section id="sec-id" className="ngg-anchor"><DashboardIdCard m={m}/></section>
+                  {ngv && <section id="sec-ngv" className="ngg-anchor"><DashboardNgv ngv={ngv}/></section>}
                   <section id="sec-stats" className="ngg-anchor"><DashboardStats stats={s} prog={prog}/></section>
                   <section id="sec-momentum" className="ngg-anchor"><DashboardMomentum momentum={momentum}/></section>
                   {mentor && <section id="sec-mentor" className="ngg-anchor"><DashboardMentor mentor={mentor}/></section>}
@@ -370,7 +372,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
 // The portal-style sidebar rail: member identity, in-page section nav (with a
 // scrollspy + a mobile collapse), and the sign-out/edit actions.
-function DashboardSidebar({ m, first, account, fines, counts, onSignOut, onEditProfile }) {
+function DashboardSidebar({ m, first, account, ngv, fines, counts, onSignOut, onEditProfile }) {
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState("sec-today");
   const owed = account ? account.payable : 0;
@@ -385,6 +387,7 @@ function DashboardSidebar({ m, first, account, fines, counts, onSignOut, onEditP
     ] },
     { g: "You", items: [
       { id: "sec-id", label: "Member ID" },
+      ...(ngv ? [{ id: "sec-ngv", label: "Your NGV role" }] : []),
       { id: "sec-stats", label: "Your tally" },
       { id: "sec-momentum", label: "Momentum" },
       ...(account ? [{ id: "sec-account", label: "Your account", badge: owed > 0 ? naira(owed) : null }] : []),
@@ -1108,6 +1111,29 @@ function DashboardIdCard({ m }) {
       <div className="dash-card-head"><h3 className="dash-card-h-sm">Your ID card.</h3></div>
       <div style={{ display: "flex", justifyContent: "center", padding: "6px 0 4px" }}>
         <Card member={m} downloadable/>
+      </div>
+    </div>
+  );
+}
+
+/* NGV standing — shown once a member has been promoted up the chain of command
+   into the volunteer tier. It confirms the new role and surfaces the volunteer
+   ID that now backs their check-in and volunteer surfaces. */
+const NGV_ROLE_LABEL = { volunteer: "Volunteer", instructor: "Instructor", mentor: "Mentor" };
+function DashboardNgv({ ngv }) {
+  return (
+    <div className="dash-card dash-account">
+      <div className="dash-card-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 className="dash-card-h-sm">Your NGV role.</h3>
+        <span className="chip chip-gold">NGV</span>
+      </div>
+      <div className="dash-account-figure is-clear" style={{ fontSize: 22 }}>{NGV_ROLE_LABEL[ngv.role] || "Volunteer"}</div>
+      <div className="dash-account-sub">
+        Promoted into the volunteer tier{ngv.since ? " · " + String(ngv.since).slice(0, 10) : ""}
+      </div>
+      <div className="dash-account-earned">
+        You now carry a volunteer ID — <b className="mono">{ngv.volunteerId}</b> — which backs your
+        check-in and volunteer surfaces alongside your member account.
       </div>
     </div>
   );

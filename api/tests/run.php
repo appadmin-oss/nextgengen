@@ -2089,6 +2089,48 @@ chk('the sweep does not run without a calendar', (function () use ($SU) {
     programme_settings_save($keepProg, 'test');
 })();
 
+/* ── NGV promotion: an NGG member advancing into the volunteer tier gets their
+ * volunteer record + ID auto-provisioned, idempotently, and their dashboard
+ * shows the new standing. Dedicated ids, torn down after. */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    db_exec("DELETE FROM volunteers WHERE memberId = 'NGG-NGV-1'");
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-NGV-1','SUM-NGV-X')");
+    db_insert('members', ['memberId' => 'NGG-NGV-1', 'fullName' => 'Ngv One', 'email' => 'ngv1@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'joinDate' => gmdate('Y-m-d'), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    $r1 = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-NGV-1']);
+    chk('promote to NGV creates a volunteer record', !empty($r1['ok']) && !empty($r1['created']) && !empty($r1['volunteerId']));
+    $vid = (string)($r1['volunteerId'] ?? '');
+    chk('the NGV volunteer is linked back to the member',
+        (string)(db_row("SELECT memberId FROM volunteers WHERE volunteerId = ?", [$vid])['memberId'] ?? '') === 'NGG-NGV-1');
+    chk('the member records its NGV volunteer id + promotion time', (function () use ($vid) {
+        $m = db_row("SELECT ngvVolunteerId, ngvAt FROM members WHERE memberId = 'NGG-NGV-1'");
+        return (string)$m['ngvVolunteerId'] === $vid && (string)$m['ngvAt'] !== '';
+    })());
+    chk('the NGV gets a bound check-in token / ID card',
+        (int)db_row("SELECT COUNT(*) c FROM qr_codes WHERE studentId = ?", [$vid])['c'] === 1);
+
+    $r2 = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-NGV-1']);
+    chk('promoting again is idempotent — no duplicate volunteer row',
+        !empty($r2['already']) && (string)$r2['volunteerId'] === $vid
+        && (int)db_row("SELECT COUNT(*) c FROM volunteers WHERE memberId = 'NGG-NGV-1'")['c'] === 1);
+
+    $dash = backend_dispatch('member.dashboard', ['memberId' => 'NGG-NGV-1']);
+    chk('the member dashboard surfaces the NGV standing',
+        is_array($dash['ngv'] ?? null) && (string)($dash['ngv']['volunteerId'] ?? '') === $vid);
+
+    db_insert('members', ['memberId' => 'SUM-NGV-X', 'fullName' => 'Not Ngg', 'email' => 'xngv@example.com',
+        'type' => 'Summer', 'status' => 'active', 'role' => 'member', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r3 = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'SUM-NGV-X']);
+    chk('only NGG members can be promoted to NGV', empty($r3['ok']) && ($r3['error'] ?? '') === 'not_ngg');
+
+    db_exec("DELETE FROM qr_codes WHERE studentId = ?", [$vid]);
+    db_exec("DELETE FROM volunteers WHERE memberId = 'NGG-NGV-1'");
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-NGV-1','SUM-NGV-X')");
+})();
+
 // Attendance analytics must read the calendar, not the scan log.
 $att2 = backend_dispatch('admin.summer.attendance', ['requesterId' => $SU])['attendance'];
 chk('analytics reports the programme calendar', !empty($att2['programme']['enabled']) && $att2['programme']['termStart'] === '2026-07-06');

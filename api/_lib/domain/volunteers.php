@@ -688,6 +688,66 @@ function admin_volunteer_approve(array $p): array {
     return ['ok' => true, 'volunteer' => volunteer_public($v) + ['token' => $token], 'idSent' => $sent];
 }
 
+/**
+ * Promote an NGG member up the chain of command (Part III) into the NGV /
+ * volunteer tier, provisioning their volunteer record automatically instead of
+ * making them file a fresh volunteer application. This is what stands their
+ * "NGV dashboard" up: a volunteers row derived from the member (so every
+ * volunteer surface — profile, check-in, mentor/teaching tools, the /q ID —
+ * resolves them), a bound check-in token + ID card, and a two-way link so the
+ * member's own dashboard can show the new standing.
+ *
+ * Idempotent: a member already promoted keeps their single NGV record (it is
+ * re-activated and re-linked rather than duplicated). No email is sent — this
+ * is an internal advancement recorded by an admin, not a public application
+ * approval; deliver the ID explicitly with volunteer_send_id() if wanted.
+ */
+function admin_member_promote_ngv(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $memberId = trim((string)($p['memberId'] ?? ''));
+    if ($memberId === '') return ['ok' => false, 'error' => 'no_member'];
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)($m['type'] ?? '') !== 'NGG') return ['ok' => false, 'error' => 'not_ngg'];
+
+    // Already promoted? Keep the one record — re-activate + re-link, never mint
+    // a second volunteer row for the same person.
+    $existing = db_row("SELECT * FROM volunteers WHERE memberId = ? LIMIT 1", [$memberId]);
+    if (!$existing && (string)($m['ngvVolunteerId'] ?? '') !== '') {
+        $existing = db_row("SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1", [(string)$m['ngvVolunteerId']]);
+    }
+    if ($existing) {
+        if ((string)$existing['status'] !== 'active') db_update('volunteers', ['status' => 'active', 'updatedAt' => now_iso()], ['id' => (int)$existing['id']]);
+        if ((string)($existing['memberId'] ?? '') === '') db_update('volunteers', ['memberId' => $memberId, 'updatedAt' => now_iso()], ['id' => (int)$existing['id']]);
+        db_update('members', ['ngvVolunteerId' => (string)$existing['volunteerId'], 'ngvAt' => (string)($m['ngvAt'] ?? '') ?: now_iso(), 'updatedAt' => now_iso()], ['memberId' => $memberId]);
+        return ['ok' => true, 'already' => true, 'volunteerId' => (string)$existing['volunteerId'], 'volunteer' => volunteer_public($existing)];
+    }
+
+    $role = in_array((string)($p['role'] ?? ''), ['volunteer', 'instructor', 'mentor'], true) ? (string)$p['role'] : 'volunteer';
+    $tier = vol_tier_for($role);
+    $volunteerId = volunteer_display_id((string)$tier['code']);
+    $token = 'VOLQR-' . strtoupper(rand_hex(4));
+    while (db_row('SELECT id FROM qr_codes WHERE token = ?', [$token])) $token = 'VOLQR-' . strtoupper(rand_hex(4));
+    $c = summer_ensure_cohort();
+
+    db_insert('volunteers', [
+        'volunteerId' => $volunteerId, 'memberId' => $memberId, 'applicationId' => null,
+        'fullName' => (string)$m['fullName'], 'email' => (string)($m['email'] ?? ''), 'phone' => (string)($m['phone'] ?? ''),
+        'role' => $role, 'courses' => '', 'centre' => (string)($m['centre'] ?? ''), 'faculty' => '',
+        'token' => $token, 'photoUrl' => (string)($m['photoUrl'] ?? ''),
+        'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
+    ]);
+    db_insert('qr_codes', ['token' => $token, 'batch' => 'VOL', 'cohortId' => $c['cohortId'], 'status' => 'assigned',
+        'studentId' => $volunteerId, 'assignedName' => (string)$m['fullName'], 'createdAt' => now_iso(),
+        'assignedAt' => now_iso(), 'expiresAt' => idcard_expiry_for()]);
+    db_update('members', ['ngvVolunteerId' => $volunteerId, 'ngvAt' => now_iso(), 'updatedAt' => now_iso()], ['memberId' => $memberId]);
+
+    audit('member.promote.ngv', (string)$g['requester']['memberId'], $memberId, ['volunteerId' => $volunteerId, 'role' => $role], (string)($p['ip'] ?? ''));
+    event_emit('member.promoted.ngv', ['memberId' => $memberId, 'volunteerId' => $volunteerId, 'name' => (string)$m['fullName']]);
+    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ?', [$volunteerId]);
+    return ['ok' => true, 'created' => true, 'volunteerId' => $volunteerId, 'volunteer' => volunteer_public($v) + ['token' => $token]];
+}
+
 /** Deliver the digital ID — email always; SMS when the admin has it on. */
 function volunteer_send_id(string $volunteerId): array {
     $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
