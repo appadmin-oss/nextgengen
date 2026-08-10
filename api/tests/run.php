@@ -12779,5 +12779,47 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     else db_exec("DELETE FROM settings WHERE settingKey = 'fees'");
 })();
 
+/* ── M4: the dues ledger is gated by its own `fees` capability, not `people` ──
+ * A member-desk admin (people, not fees) must be refused; granting `fees` per
+ * person opens it; super_admin holds it by role; and the one-time backfill seed
+ * grants `fees` to pre-split admins so nobody is locked out on deploy. */
+(function () {
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-FEECAP-DESK','NGG-FEECAP-OLD')");
+    db_insert('members', ['memberId' => 'NGG-FEECAP-DESK', 'fullName' => 'Desk Admin', 'email' => 'desk-feecap@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    // The gate is the first statement in every fee op, so a denied requester is
+    // rejected before any params are read — minimal payloads are fine.
+    $deskDenied = true;
+    foreach (['admin.fees.settings.get', 'admin.fees.member', 'admin.fees.accrue',
+              'admin.fees.charge', 'admin.fees.void', 'admin.fees.waive'] as $op) {
+        $r = backend_dispatch($op, ['requesterId' => 'NGG-FEECAP-DESK', 'memberId' => 'NGG-FEE-A']);
+        if (($r['ok'] ?? false) !== false || ($r['error'] ?? '') !== 'forbidden') { $deskDenied = false; break; }
+    }
+    chk('a people-only admin is refused every fee op (missing_cap:fees)', $deskDenied);
+
+    backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-FEECAP-DESK', 'caps' => ['fees']]);
+    chk('granting the fees cap (capsExtra) opens fee ops',
+        (backend_dispatch('admin.fees.settings.get', ['requesterId' => 'NGG-FEECAP-DESK'])['ok'] ?? false) === true);
+    chk('super_admin still reaches fee ops by role',
+        (backend_dispatch('admin.fees.settings.get', ['requesterId' => 'NGG-2025-0099'])['ok'] ?? false) === true);
+
+    // Backfill seed: a pre-split member-desk admin gains `fees` once, no role change.
+    db_insert('members', ['memberId' => 'NGG-FEECAP-OLD', 'fullName' => 'Legacy Fee Admin', 'email' => 'legacy-feecap@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $keepSeed = setting_raw('seed_fees_cap_v1');
+    setting_set('seed_fees_cap_v1', '0', 'system');   // re-arm the one-time seed
+    db_run_seeds(db_conn());
+    $old = member_effective_caps(db_row('SELECT role, capsExtra FROM members WHERE memberId = ?', ['NGG-FEECAP-OLD']) ?: []);
+    chk('backfill grants fees to a pre-split member-desk admin', in_array('fees', $old, true));
+    $saExtra = safe_json((string)(db_row('SELECT capsExtra FROM members WHERE memberId = ?', ['NGG-2025-0099'])['capsExtra'] ?? ''));
+    chk('backfill leaves super_admin capsExtra untouched (fees is by role)', !is_array($saExtra) || !in_array('fees', $saExtra, true));
+    setting_set('seed_fees_cap_v1', $keepSeed === '' ? '1' : $keepSeed, 'system');
+
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-FEECAP-DESK','NGG-FEECAP-OLD')");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

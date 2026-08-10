@@ -51,7 +51,7 @@ const ADMIN_SECTIONS = [
   { id: "mentors",     group: "People",   label: "Mentors",      title: "Mentors",             icon: "☺", cap: "people" },
   { id: "mentorship",  group: "People",   label: "Mentorship",   title: "Mentorship",          icon: "◐", cap: "people" },
   { id: "behaviour",   group: "People",   label: "Behaviour",    title: "Behaviour monitor",   icon: "◔", cap: "people" },
-  { id: "fees",        group: "People",   label: "Dues & fees",  title: "Dues & fees",         icon: "₦", cap: "people" },
+  { id: "fees",        group: "People",   label: "Dues & fees",  title: "Dues & fees",         icon: "₦", cap: "fees" },
   { id: "staff",       group: "People",   label: "Staff activity", title: "Staff activity",    icon: "◑", cap: "people" },
   { id: "engagement",  group: "People",   label: "Engagement",   title: "Team engagement",     icon: "📈", cap: "audit" },
   { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
@@ -243,7 +243,7 @@ function AdminPage({ setPage }) {
   }
   // Coordinator-only accounts (summer/club, no console caps) belong in their
   // own stand-alone portal, not the admin console.
-  const hasConsole = ["content", "people", "inbox", "settings", "rbac", "audit"].some(c => hasCap(c));
+  const hasConsole = ["content", "people", "inbox", "settings", "rbac", "audit", "fees"].some(c => hasCap(c));
   if (!hasConsole && (hasCap("summer") || hasCap("club"))) {
     const dest = hasCap("summer") ? "summer-admin" : "club-admin";
     const label = hasCap("summer") ? "Summer School" : "NGG Club";
@@ -4706,7 +4706,7 @@ function AdminBroadcast() {
 // Effective capabilities per role — mirrors util.php admin_role_caps() so the
 // roster can show what each staffer can actually do (read-only display).
 const ROLE_CAPS = {
-  super_admin: ["content", "people", "inbox", "settings", "rbac", "summer", "club"],
+  super_admin: ["content", "people", "inbox", "settings", "rbac", "summer", "club", "audit", "journal", "fees"],
   admin: ["content", "people", "inbox"],
   editor: ["content"],
   summer_admin: ["summer"],
@@ -4785,7 +4785,7 @@ function AdminAccess() {
 }
 
 // Per-member capability editor (super only): grant caps beyond the role.
-const ALL_CAPS = ["content", "people", "inbox", "settings", "rbac", "summer", "club", "audit"];
+const ALL_CAPS = ["content", "people", "inbox", "settings", "rbac", "summer", "club", "audit", "fees"];
 function MemberCapsEditor({ member }) {
   const roleCaps = ROLE_CAPS[member.role] || [];
   const [extra, setExtra] = React.useState(() => new Set(member.capsExtra || []));

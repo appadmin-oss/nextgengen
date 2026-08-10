@@ -294,7 +294,11 @@ function push_notification(string $memberId, array $n): void {
  */
 function admin_role_caps($role): array {
     switch (strtolower((string)($role ?? ''))) {
-        case 'super_admin':  return ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'audit', 'journal'];
+        case 'super_admin':  return ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'audit', 'journal', 'fees'];
+        // NB: 'admin' deliberately does NOT include 'fees'. The fee ledger is a
+        // separate financial capability (audit M4) — a member-desk admin only
+        // gets ledger access when 'fees' is granted per-person (capsExtra), just
+        // like 'journal'. Existing admins are backfilled once (seed fees_cap_v1).
         case 'admin':        return ['content', 'people', 'inbox'];
         case 'summer_admin': return ['summer'];   // Summer School portal only
         case 'club_admin':   return ['club'];      // NGG Club portal only

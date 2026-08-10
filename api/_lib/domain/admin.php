@@ -256,7 +256,9 @@ function admin_member_caps_set(array $p): array {
     // 'journal' is the journalist role: who may author Programme Journal
     // entries. Grantable on its own, so somebody can write the record without
     // being handed content or people access.
-    $valid = ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'audit', 'journal'];
+    // 'fees' is the financial capability: who may read/write the dues ledger,
+    // grantable on its own so a member-desk admin need not also hold the money.
+    $valid = ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'audit', 'journal', 'fees'];
     $roleCaps = admin_role_caps((string)$m['role']);
     $in = is_array($p['caps'] ?? null) ? $p['caps'] : [];
     // Store only extras that the role doesn't already grant.

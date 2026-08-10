@@ -272,11 +272,20 @@ storage, and cache dirs (7 per-dir `.htaccess` present).
    `page-other.jsx` (~500KB, 11+ unrelated top-level pages), `page-home.jsx`
    (~217KB), `page-analytics.jsx` (~200KB); backend `domain/registration.php`
    (~200KB). No module boundaries; the worst maintainability risk in the repo.
-4. **All fee ops gate on the `people` cap only** (`admin_cap_gate($p,'people')`)
-   — there is no separate *financial* capability, so any member-desk admin has
-   full ledger write (post/void/waive/uprate). A human `fees_charge` can also
-   push an account past `balanceCap` by design (surfaced as `overCap`, not
-   refused), bounded only by the per-amount ₦10M cap, not a per-account ceiling.
+4. ~~**All fee ops gate on the `people` cap only**~~ **[cap separation RESOLVED
+   2026-08-10.]** All 16 fee ops now gate on a dedicated **`fees`** capability
+   (`admin_cap_gate($p,'fees')`), grantable per-person via `capsExtra` like
+   `journal`; `super_admin` holds it by role, and a plain `admin` no longer does.
+   A one-time, driver-agnostic data seed (`fees_cap_v1` in `db_run_seeds` — no
+   schema bump needed, `capsExtra` already exists) backfills `fees` to every
+   pre-split non-super_admin account that already held `people`, so no current fee
+   admin is locked out on deploy. Client: the "Dues & fees" section, the caps
+   editor (`ALL_CAPS`), and console visibility now key on `fees`; the grantable-
+   caps whitelist (`admin.php`) includes it. Tests added (deny people-only / grant
+   opens / super_admin by role / backfill). — _Still open (separate concern):_ a
+   human `fees_charge` can push an account past `balanceCap` by design (surfaced
+   as `overCap`, not refused), bounded only by the per-amount ₦10M cap, not a
+   per-account ceiling.
 5. **`fees_balance()` recomputes by scanning a member's whole ledger on every
    read**; `admin_fees_arrears` loads the entire non-void ledger into PHP —
    O(rows) on arrears/lookup screens (a scaling, not correctness, concern).

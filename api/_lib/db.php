@@ -300,6 +300,29 @@ function db_run_seeds(PDO $db): void {
             $db->exec("DELETE FROM form_defs WHERE status = 'live' AND publishedBy = 'system' AND formId = 'summer-reg'");
             setting_set('seed_dob_v1', '1', 'system');
         }
+        /* Seed `fees_cap_v1`: the dues ledger used to gate on the `people` cap;
+         * it now has its own `fees` capability so financial write is separable
+         * from the member desk (audit M4). super_admin holds `fees` by role. To
+         * avoid locking out anyone who administered fees BEFORE the split, grant
+         * `fees` (as a capsExtra extra) to every existing non-super_admin account
+         * whose effective caps already include `people`. Idempotent and driver-
+         * agnostic; skips accounts that already have it. */
+        if (setting_raw('seed_fees_cap_v1') !== '1'
+            && db_table_exists($db, 'members')
+            && function_exists('member_effective_caps')) {
+            foreach (db_all("SELECT id, role, capsExtra FROM members") as $r) {
+                if (strtolower((string)($r['role'] ?? '')) === 'super_admin') continue; // holds 'fees' by role
+                $caps = member_effective_caps($r);
+                if (!in_array('people', $caps, true)) continue; // only those who had fee access
+                if (in_array('fees', $caps, true)) continue;    // already granted
+                $extra = safe_json((string)($r['capsExtra'] ?? ''));
+                if (!is_array($extra)) $extra = [];
+                $extra[] = 'fees';
+                $extra = array_values(array_unique(array_filter(array_map('strval', $extra))));
+                db_update('members', ['capsExtra' => json_encode($extra, JSON_UNESCAPED_SLASHES), 'updatedAt' => now_iso()], ['id' => $r['id']]);
+            }
+            setting_set('seed_fees_cap_v1', '1', 'system');
+        }
     } catch (Throwable $e) {
         error_log('[db] seed: ' . $e->getMessage());
     }

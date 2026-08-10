@@ -711,7 +711,7 @@ function fees_reminders_run(int $limit = FEES_REMIND_BATCH): array {
 // ── Admin ops ────────────────────────────────────────────────────────────────
 
 function admin_fees_settings_get(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     /* Every bound the screen has to state or enforce goes with the settings, so
        the interface never carries a second copy of a number this file owns. A
        floor the UI hardcodes is a floor that disagrees with the server the day
@@ -723,14 +723,14 @@ function admin_fees_settings_get(array $p): array {
 }
 
 function admin_fees_settings_set(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $in = is_array($p['data'] ?? null) ? $p['data'] : [];
     return ['ok' => true, 'fees' => fees_settings_save($in, (string)($g['requester']['memberId'] ?? ''))];
 }
 
 /** One member's account: the balance, the tenure, and every entry behind it. */
 function admin_fees_member(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
@@ -759,7 +759,7 @@ function admin_fees_member(array $p): array {
 /** Record a payment received. Admin-entered: this is the reconciliation step,
  *  not a gateway callback. */
 function admin_fees_payment(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
@@ -796,7 +796,7 @@ function admin_fees_payment(array $p): array {
  * consequence visible.
  */
 function admin_fees_charge(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
@@ -844,7 +844,7 @@ function admin_fees_charge(array $p): array {
  * would mint a credit out of nothing and the next month would look prepaid.
  */
 function admin_fees_waive(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
@@ -878,7 +878,7 @@ function admin_fees_waive(array $p): array {
  * cannot be checked.
  */
 function admin_fees_lookup(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $q = trim((string)($p['q'] ?? ''));
     if (strlen($q) < 2) return ['ok' => true, 'members' => [], 'q' => $q, 'tooShort' => true];
     $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
@@ -964,7 +964,7 @@ function member_fees_account(array $p): array {
 }
 
 function admin_fees_void(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $entryId = trim((string)($p['entryId'] ?? ''));
     $reason = trim((string)($p['reason'] ?? ''));
     if ($reason === '') return ['ok' => false, 'error' => 'reason_required'];
@@ -987,7 +987,7 @@ function admin_fees_void(array $p): array {
  * obligation gets written off on the strength of a payment.
  */
 function admin_fees_mou(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
@@ -1008,7 +1008,7 @@ function admin_fees_mou(array $p): array {
 /** Turn reminders off (or back on) for one family, without touching anybody
  *  else's. A guardian who asks not to be chased has asked for this. */
 function admin_fees_remind_off(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
     if (!db_row('SELECT 1 x FROM members WHERE memberId = ? LIMIT 1', [$id])) return ['ok' => false, 'error' => 'not_found'];
     $off = !empty($p['off']) ? 1 : 0;
@@ -1025,7 +1025,7 @@ function admin_fees_remind_off(array $p): array {
  * an unbounded roster inside a web request.
  */
 function admin_fees_accrue(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $cfg = fees_settings();
     if (empty($cfg['enabled'])) return ['ok' => false, 'error' => 'fees_disabled'];
     $limit = max(1, min(FEES_SCAN_MAX, (int)($p['limit'] ?? FEES_ACCRUE_BATCH)));
@@ -1051,7 +1051,7 @@ function admin_fees_accrue(array $p): array {
  * would send nothing explains itself rather than looking broken.
  */
 function admin_fees_remind_preview(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $cfg = fees_settings();
     $c = fees_reminder_candidates($cfg, FEES_CANDIDATE_MAX);
     return ['ok' => true, 'preview' => [
@@ -1065,7 +1065,7 @@ function admin_fees_remind_preview(array $p): array {
 
 /** What an uprate would do to each amount, and whether one is due. */
 function admin_fees_uprate_preview(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     return ['ok' => true, 'uprate' => fees_uprate_preview(), 'maxPct' => FEES_UPRATE_MAX_PCT,
             /* Named so the screen can say what is NOT included. Fines live in the
                policy settings and are not reachable from here; an admin who
@@ -1075,7 +1075,7 @@ function admin_fees_uprate_preview(array $p): array {
 
 /** Apply it. Settings only — never a balance already accrued. */
 function admin_fees_uprate_apply(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $r = fees_uprate_apply((string)($g['requester']['memberId'] ?? ''));
     if (empty($r['ok'])) return $r;
     return ['ok' => true, 'applied' => $r['applied'], 'pct' => $r['pct'], 'fees' => $r['fees']];
@@ -1083,7 +1083,7 @@ function admin_fees_uprate_apply(array $p): array {
 
 /** Send them. Bounded per press, so a mis-click cannot mail an entire roster. */
 function admin_fees_remind_run(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $cfg = fees_settings();
     if (empty($cfg['enabled']) || empty($cfg['remindEnabled'])) return ['ok' => false, 'error' => 'reminders_disabled'];
     $r = fees_reminders_run(max(1, min(FEES_REMIND_BATCH_MAX, (int)($p['limit'] ?? FEES_REMIND_BATCH))));
@@ -1099,7 +1099,7 @@ function admin_fees_remind_run(array $p): array {
  * person to call.
  */
 function admin_fees_arrears(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $cfg = fees_settings();
     $limit = max(1, min(FEES_ARREARS_PAGE_MAX, (int)($p['limit'] ?? FEES_ARREARS_PAGE)));
     $owedBy = [];
