@@ -245,14 +245,27 @@ storage, and cache dirs (7 per-dir `.htaccess` present).
 
 **HIGH**
 1. **CSP still permits `unsafe-inline` + `unsafe-eval` in production**
-   (`.htaccess:97`). The prod build strips Babel, so the `eval` allowance is
-   unnecessary in `dist/`, yet the same `.htaccess` ships there. Any
-   stored-content XSS (posts, community, journal) would execute freely. The
-   in-file comment acknowledging "remove when you switch to a precompiled
-   bundle" has never been actioned.
-2. **`page-other.jsx` (~500KB) contains non-UTF8 / binary bytes** (grep reports a
-   binary match). A source file with stray bytes is a latent build/encoding
-   hazard and blocks text tooling — worth locating and cleaning.
+   (`.htaccess:97`, shipped identically in `dist/`). **[2026-08-10 — verified NOT
+   a quick fix.]** The prod bundle strips Babel and the app/api-client/data code
+   use no `eval`/`Function`, but `unsafe-eval` still cannot simply be dropped:
+   several shipped vendor libs call `new Function` — `filerobot-image-editor`,
+   `tui-image-editor`, `tui-color-picker` (the ID Designer's image editor), plus
+   `docx`/`jszip` (exports). This is an SPA (every route serves the same
+   `index.html` and the editor lazy-loads), so a per-route CSP via `.htaccess`
+   can't scope the allowance to the designer only. `unsafe-inline` likewise backs
+   2 inline boot scripts in `index.html`. Real remediation (larger, deliberate):
+   sandbox the image editor in an iframe with its own CSP (or replace the
+   `Function`-using libs), add nonces/hashes for the inline boot scripts, then
+   drop both allowances from the `dist/` `.htaccess` only (dev keeps them for
+   in-browser Babel). Until then, stored-content XSS risk stands — mitigate by
+   escaping/sanitising posts/community/journal render paths.
+2. ~~**`page-other.jsx` (~500KB) contains non-UTF8 / binary bytes**~~ **[RESOLVED
+   2026-08-10.]** The single stray byte was a raw NUL (U+0000) embedded in the
+   `NO_CENTRE` filter sentinel string literal. Replaced the raw byte with an
+   explicit U+0000 escape: same runtime value (still a NUL-prefixed, non-colliding
+   client-only sentinel — never sent to the backend), but the source is now clean
+   UTF-8 and greppable. The compiled `dist/` bundle is byte-for-byte unchanged and
+   the build + build-integrity tests pass.
 
 **MEDIUM**
 3. **Giant single-file globals** — `page-admin.jsx` (~694KB / 10,440 LOC),

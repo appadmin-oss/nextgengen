@@ -4952,7 +4952,7 @@ const CARD_DESIGN_H = 972;
    collide with it — centre names come from the admin list and are trimmed
    non-empty — and it keeps the filter a single value rather than a value plus
    a boolean that can disagree with it. */
-const NO_CENTRE = " none";
+const NO_CENTRE = "\u0000none";
 
 function CardQR({ token, size }) {
   const [src, setSrc] = React.useState("");
