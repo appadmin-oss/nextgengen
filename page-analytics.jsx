@@ -988,7 +988,11 @@ function AnalyticsWorkspace() {
   // them. Level 7 (the model-backed Analyst panel) is gated to the M&E caps,
   // the same 'audit'/'summer' the backend enforces, so it and its nav anchor are
   // hidden from staff who would only get a 403 if they clicked into it.
-  const { hasCap } = (typeof useAuth === "function") ? useAuth() : { hasCap: () => false };
+  // Guard both halves: useAuth may be absent, AND (rendered without an
+  // AuthProvider — a preview/no-context mount) it can return a context default
+  // that carries no hasCap. Assuming hasCap exists crashed the whole workspace.
+  const _auth = (typeof useAuth === "function") ? useAuth() : null;
+  const hasCap = (_auth && typeof _auth.hasCap === "function") ? _auth.hasCap : () => false;
   const canAnalyst = hasCap("audit") || hasCap("summer");
   const [filters, setFilters] = useState(AN_BLANK);
   const [ws, setWs] = useState(null);

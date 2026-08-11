@@ -9839,7 +9839,7 @@ function SummerPolicy() {
         </div>
 
         <div className="admin-fields-h" style={{ marginTop: 10, fontWeight: 700 }}>Days of the week</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+        <div role="group" aria-label="Summer programme days" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
           {DOW.map(([n, lbl]) => {
             const on = (prog.weekdays || []).includes(Number(n));
             return (
@@ -10014,7 +10014,7 @@ function SummerPolicy() {
         </div>
 
         <div className="admin-fields-h" style={{ marginTop: 10, fontWeight: 700 }}>Days of the week</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+        <div role="group" aria-label="Member programme days" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
           {DOW.map(([n, lbl]) => {
             const on = (mprog.weekdays || []).includes(Number(n));
             return (

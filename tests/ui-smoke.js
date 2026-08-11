@@ -221,6 +221,7 @@ function unzipDocumentXml(buf) {
 </head><body><div id="root"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>
+<script src="/dist/vendor/tanstack-table.min.js"></script>
 <script src="/dist/data.js"></script>
 <script src="/dist/photos.js"></script>
 <script>
@@ -2548,9 +2549,13 @@ function unzipDocumentXml(buf) {
       /not a programme day/i.test(polBody) && /2026-07-20/.test(polBody));
     ok('…offers the term window and the weekday picker',
       await pol.locator('input[type=date]').count() >= 2
-      && await pol.getByRole('button', { name: 'Mon', exact: true }).count() === 1);
-    const dowOn = await pol.evaluate(() => Array.from(document.querySelectorAll('[aria-pressed]'))
-      .filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.textContent.trim()));
+      // Scope to the summer-programme picker: the page now also carries a member-
+      // programme picker, so an unscoped "Mon" matches two buttons.
+      && await pol.getByRole('group', { name: 'Summer programme days' }).getByRole('button', { name: 'Mon', exact: true }).count() === 1);
+    const dowOn = await pol.evaluate(() => {
+      const g = document.querySelector('[role="group"][aria-label="Summer programme days"]');
+      return g ? Array.from(g.querySelectorAll('[aria-pressed="true"]')).map(b => b.textContent.trim()) : [];
+    });
     ok('…shows Mon–Fri selected and the weekend off (' + dowOn.join(',') + ')',
       dowOn.join(',') === 'Mon,Tue,Wed,Thu,Fri');
     ok('…lists the cancelled and added dates', /2026-07-15/.test(polBody) && /2026-07-11/.test(polBody));
@@ -2562,7 +2567,7 @@ function unzipDocumentXml(buf) {
       (await pol.locator('input[type=time]').count()) >= 2 && /Redline 08:30/.test(polBody) && /Redline 09:00/.test(polBody));
 
     // Turning a weekday off has to reach the save payload, not just the chip.
-    await pol.getByRole('button', { name: 'Fri', exact: true }).click();
+    await pol.getByRole('group', { name: 'Summer programme days' }).getByRole('button', { name: 'Fri', exact: true }).click();
     await pol.getByRole('button', { name: /Save programme/ }).click();
     await pol.waitForTimeout(200);
     const saved = await pol.evaluate(() => window.__saved);
