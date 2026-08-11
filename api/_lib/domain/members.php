@@ -83,8 +83,15 @@ function member_dashboard(array $p): array {
             if ((string)($member['ngvVolunteerId'] ?? '') === '') return null;
             $v = db_row("SELECT volunteerId, role, token, status FROM volunteers WHERE volunteerId = ? LIMIT 1", [(string)$member['ngvVolunteerId']]);
             if (!$v) return null;
+            // Enough for the dashboard's NGV section to stand in as the volunteer's
+            // own view: identity + QR token, live sessions attended + service
+            // hours, and the next few sessions to shadow (duties).
+            $att = (int)(db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = ?", [(string)$v['volunteerId']])['c'] ?? 0);
             return ['volunteerId' => (string)$v['volunteerId'], 'role' => (string)$v['role'],
-                'status' => (string)$v['status'], 'token' => (string)$v['token'], 'since' => (string)($member['ngvAt'] ?? '')];
+                'status' => (string)$v['status'], 'token' => (string)$v['token'], 'since' => (string)($member['ngvAt'] ?? ''),
+                'sessions' => $att,
+                'profileUrl' => '/q/' . (string)$v['token'],
+                'upcoming' => function_exists('volunteer_upcoming_sessions') ? volunteer_upcoming_sessions(3) : []];
         })(),
         // Assignments surfaced inline so the dashboard card renders without a
         // second round-trip.

@@ -641,7 +641,10 @@
         remove: (memberId) => request('/admin/members.php', { body: { action: 'delete', memberId } }),
         // Promote an NGG member into the NGV / volunteer tier — auto-provisions
         // their volunteer record + ID card (idempotent).
-        promoteNgv: (memberId, role) => request('/admin/members.php', { body: { action: 'promoteNgv', memberId, role } }),
+        promoteNgv: (memberId, role, opts) => request('/admin/members.php', { body: Object.assign({ action: 'promoteNgv', memberId, role }, (opts && opts.sendId !== undefined) ? { sendId: opts.sendId } : {}) }),
+        // Reverse an NGV promotion: deactivate the volunteer record + unlink the
+        // member (non-destructive; a later promoteNgv re-activates the same record).
+        demoteNgv: (memberId) => request('/admin/members.php', { body: { action: 'demoteNgv', memberId } }),
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),

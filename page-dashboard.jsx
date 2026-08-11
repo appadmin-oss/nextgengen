@@ -1120,21 +1120,58 @@ function DashboardIdCard({ m }) {
    into the volunteer tier. It confirms the new role and surfaces the volunteer
    ID that now backs their check-in and volunteer surfaces. */
 const NGV_ROLE_LABEL = { volunteer: "Volunteer", instructor: "Instructor", mentor: "Mentor" };
+function ngvWhen(iso) {
+  try {
+    var d = new Date(iso);
+    return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })
+      + " · " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  } catch (e) { return String(iso || "").slice(0, 16).replace("T", " "); }
+}
 function DashboardNgv({ ngv }) {
+  const active = (ngv.status || "active") === "active";
+  const upcoming = Array.isArray(ngv.upcoming) ? ngv.upcoming : [];
+  const sessions = typeof ngv.sessions === "number" ? ngv.sessions : null;
   return (
     <div className="dash-card dash-account">
       <div className="dash-card-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h3 className="dash-card-h-sm">Your NGV role.</h3>
-        <span className="chip chip-gold">NGV</span>
+        <span className="chip chip-gold" style={active ? undefined : { opacity: 0.55 }}>{active ? "NGV" : "NGV · paused"}</span>
       </div>
       <div className="dash-account-figure is-clear" style={{ fontSize: 22 }}>{NGV_ROLE_LABEL[ngv.role] || "Volunteer"}</div>
       <div className="dash-account-sub">
-        Promoted into the volunteer tier{ngv.since ? " · " + String(ngv.since).slice(0, 10) : ""}
+        Volunteer ID <b className="mono">{ngv.volunteerId}</b>
+        {ngv.since ? " · since " + String(ngv.since).slice(0, 10) : ""}
+        {sessions !== null ? " · " + sessions + " session" + (sessions === 1 ? "" : "s") + " served" : ""}
       </div>
-      <div className="dash-account-earned">
-        You now carry a volunteer ID — <b className="mono">{ngv.volunteerId}</b> — which backs your
-        check-in and volunteer surfaces alongside your member account.
-      </div>
+      {ngv.profileUrl && (
+        <a href={ngv.profileUrl} target="_blank" rel="noopener noreferrer"
+          style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px",
+            borderRadius: 10, background: "var(--gold, #e8961f)", color: "#1a1205", fontWeight: 700,
+            fontSize: 13, textDecoration: "none" }}>
+          Open my volunteer ID &amp; check-in QR →
+        </a>
+      )}
+      {upcoming.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div className="dash-card-h-sm" style={{ fontSize: 12, opacity: 0.75, marginBottom: 4 }}>Sessions to shadow</div>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+            {upcoming.map((e, i) => (
+              <li key={e.eventId || i} style={{ display: "flex", justifyContent: "space-between", gap: 8,
+                padding: "5px 0", borderTop: i ? "1px solid rgba(128,128,128,.18)" : "none", fontSize: 13 }}>
+                <span>{e.title}</span>
+                <span className="muted" style={{ whiteSpace: "nowrap" }}>
+                  {ngvWhen(e.startAt)}{e.spotsLeft != null ? " · " + e.spotsLeft + " left" : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {!active && (
+        <div className="dash-account-earned" style={{ marginTop: 10 }}>
+          Your NGV standing is currently paused — an admin can reinstate it.
+        </div>
+      )}
     </div>
   );
 }

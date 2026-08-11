@@ -698,9 +698,13 @@ function admin_volunteer_approve(array $p): array {
  * member's own dashboard can show the new standing.
  *
  * Idempotent: a member already promoted keeps their single NGV record (it is
- * re-activated and re-linked rather than duplicated). No email is sent — this
- * is an internal advancement recorded by an admin, not a public application
- * approval; deliver the ID explicitly with volunteer_send_id() if wanted.
+ * re-activated and re-linked rather than duplicated).
+ *
+ * Delivery: a NEW promotion emails/SMSes the volunteer their digital ID (QR +
+ * welcome) by default so they actually receive their credentials — pass
+ * sendId:false to suppress. A re-press never re-sends unless sendId:true is
+ * passed (so the promote button can't spam on repeated clicks, but a "Resend
+ * ID" affordance can). The channels reached come back as `sent`.
  */
 function admin_member_promote_ngv(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
@@ -720,7 +724,10 @@ function admin_member_promote_ngv(array $p): array {
         if ((string)$existing['status'] !== 'active') db_update('volunteers', ['status' => 'active', 'updatedAt' => now_iso()], ['id' => (int)$existing['id']]);
         if ((string)($existing['memberId'] ?? '') === '') db_update('volunteers', ['memberId' => $memberId, 'updatedAt' => now_iso()], ['id' => (int)$existing['id']]);
         db_update('members', ['ngvVolunteerId' => (string)$existing['volunteerId'], 'ngvAt' => (string)($m['ngvAt'] ?? '') ?: now_iso(), 'updatedAt' => now_iso()], ['memberId' => $memberId]);
-        return ['ok' => true, 'already' => true, 'volunteerId' => (string)$existing['volunteerId'], 'volunteer' => volunteer_public($existing)];
+        $resent = !empty($p['sendId']) ? volunteer_send_id((string)$existing['volunteerId']) : null;
+        $out = ['ok' => true, 'already' => true, 'volunteerId' => (string)$existing['volunteerId'], 'volunteer' => volunteer_public($existing)];
+        if ($resent !== null) $out['sent'] = $resent;
+        return $out;
     }
 
     $role = in_array((string)($p['role'] ?? ''), ['volunteer', 'instructor', 'mentor'], true) ? (string)$p['role'] : 'volunteer';
@@ -744,8 +751,39 @@ function admin_member_promote_ngv(array $p): array {
 
     audit('member.promote.ngv', (string)$g['requester']['memberId'], $memberId, ['volunteerId' => $volunteerId, 'role' => $role], (string)($p['ip'] ?? ''));
     event_emit('member.promoted.ngv', ['memberId' => $memberId, 'volunteerId' => $volunteerId, 'name' => (string)$m['fullName']]);
+    // Deliver the digital ID by default so the new volunteer receives their
+    // QR + welcome; suppressible with sendId:false.
+    $send = array_key_exists('sendId', $p) ? !empty($p['sendId']) : true;
+    $sent = $send ? volunteer_send_id($volunteerId) : [];
     $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ?', [$volunteerId]);
-    return ['ok' => true, 'created' => true, 'volunteerId' => $volunteerId, 'volunteer' => volunteer_public($v) + ['token' => $token]];
+    return ['ok' => true, 'created' => true, 'volunteerId' => $volunteerId, 'sent' => $sent, 'volunteer' => volunteer_public($v) + ['token' => $token]];
+}
+
+/**
+ * Reverse an NGV promotion. Deactivates the volunteer record (status → inactive,
+ * which drops them from every active-volunteer view and blocks volunteer
+ * check-in) and unlinks the member so their dashboard no longer shows NGV
+ * standing. Non-destructive and reversible: the volunteers row, its QR token and
+ * all attendance/hours history are preserved, so a later re-promote simply
+ * re-activates and re-links the SAME record. Idempotent — a member who is not an
+ * NGV is a no-op.
+ */
+function admin_member_demote_ngv(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $memberId = trim((string)($p['memberId'] ?? ''));
+    if ($memberId === '') return ['ok' => false, 'error' => 'no_member'];
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $vid = (string)($m['ngvVolunteerId'] ?? '');
+    $v = $vid !== '' ? db_row("SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1", [$vid]) : null;
+    if (!$v) $v = db_row("SELECT * FROM volunteers WHERE memberId = ? LIMIT 1", [$memberId]);
+    if (!$v && $vid === '') return ['ok' => true, 'already' => true, 'note' => 'not_promoted'];
+    if ($v) db_update('volunteers', ['status' => 'inactive', 'updatedAt' => now_iso()], ['id' => (int)$v['id']]);
+    db_update('members', ['ngvVolunteerId' => '', 'ngvAt' => '', 'updatedAt' => now_iso()], ['memberId' => $memberId]);
+    $doneVid = $vid !== '' ? $vid : (string)($v['volunteerId'] ?? '');
+    audit('member.demote.ngv', (string)$g['requester']['memberId'], $memberId, ['volunteerId' => $doneVid], (string)($p['ip'] ?? ''));
+    event_emit('member.demoted.ngv', ['memberId' => $memberId, 'volunteerId' => $doneVid]);
+    return ['ok' => true, 'demoted' => true, 'volunteerId' => $doneVid];
 }
 
 /** Deliver the digital ID — email always; SMS when the admin has it on. */

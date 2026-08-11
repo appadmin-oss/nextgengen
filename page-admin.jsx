@@ -6587,6 +6587,7 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
   const [err, setErr] = React.useState("");
   const [mentors, setMentors] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
+  const [ngvRole, setNgvRole] = React.useState("volunteer");
   const load = () => { setErr(""); return NGGApi.admin.memberDetail(memberId).then(r => setD(r.detail)).catch(e => { setErr(e.code || e.message || "load_failed"); }); };
   React.useEffect(() => { load(); NGGApi.admin.mentors.list().then(r => setMentors(r.mentors || [])).catch(() => {}); /* eslint-disable-next-line */ }, [memberId]);
   const STATUS_LABEL = { active: "Activate", suspended: "Suspend", "graduated-ngg": "Graduate from NGG", "graduated-vanguard": "Graduate as Vanguard", inactive: "Deactivate" };
@@ -6601,9 +6602,27 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
   };
   const assign = async (mentorId) => { setBusy(true); try { await NGGApi.admin.assignMentor({ memberId, mentorId }); toast.success(mentorId ? "Mentor assigned" : "Mentor cleared"); await load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
   const promoteNgv = async () => {
-    const ok = await dialog.confirm({ title: "Promote to NGV?", body: "This advances " + ((m && m.fullName) || "this member") + " up the chain of command into the volunteer tier and auto-provisions their NGV record + ID card. It's idempotent, and reversible by deactivating the volunteer record later.", cta: "Promote", cancel: "Cancel" });
+    const ok = await dialog.confirm({ title: "Promote to NGV?", body: "This advances " + ((m && m.fullName) || "this member") + " into the volunteer tier as a " + ngvRole + ", auto-provisions their NGV record + ID card, and emails them their digital ID. It's idempotent and reversible — you can revoke the NGV standing here later.", cta: "Promote", cancel: "Cancel" });
     if (!ok) return;
-    setBusy(true); try { const r = await NGGApi.admin.members.promoteNgv(memberId); toast.success((r.already ? "Already an NGV · " : "Promoted to NGV · ") + r.volunteerId); await load(); onChanged && onChanged(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.members.promoteNgv(memberId, ngvRole);
+      const via = Array.isArray(r.sent) && r.sent.length ? " · ID sent by " + r.sent.join(" + ") : "";
+      toast.success((r.already ? "Already an NGV · " : "Promoted to NGV · ") + r.volunteerId + via);
+      await load(); onChanged && onChanged();
+    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  const resendNgvId = async () => {
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.members.promoteNgv(memberId, undefined, { sendId: true });
+      toast.success(Array.isArray(r.sent) && r.sent.length ? "ID re-sent by " + r.sent.join(" + ") : "No delivery channel on file (add an email/phone).");
+    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+  };
+  const demoteNgv = async () => {
+    const ok = await dialog.confirm({ title: "Revoke NGV standing?", body: "This deactivates " + ((m && m.fullName) || "this member") + "'s volunteer record and removes their NGV standing. Their attendance and hours history is kept, and you can re-promote them later to reactivate the same record.", cta: "Revoke", cancel: "Cancel", danger: true });
+    if (!ok) return;
+    setBusy(true); try { await NGGApi.admin.members.demoteNgv(memberId); toast.success("NGV standing revoked"); await load(); onChanged && onChanged(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
 
   const m = d && d.member;
@@ -6652,10 +6671,21 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
             <div className="admin-detail-section">
               <div className="admin-detail-h">Chain of command</div>
               {m.ngvVolunteerId
-                ? <div className="admin-hint" style={{ margin: 0 }}>Promoted to <b>NGV</b> — volunteer id <span className="mono">{m.ngvVolunteerId}</span>{m.ngvAt ? " · " + String(m.ngvAt).slice(0, 10) : ""}. Their NGV dashboard is active.</div>
-                : <div className="admin-detail-actions" style={{ alignItems: "center" }}>
+                ? <div>
+                    <div className="admin-hint" style={{ margin: "0 0 8px" }}>Promoted to <b>NGV</b> — volunteer id <span className="mono">{m.ngvVolunteerId}</span>{m.ngvAt ? " · " + String(m.ngvAt).slice(0, 10) : ""}. Their NGV dashboard is active.</div>
+                    <div className="admin-detail-actions" style={{ alignItems: "center" }}>
+                      <button className="btn btn-ghost btn-sm" disabled={busy} onClick={resendNgvId}>Resend ID</button>
+                      <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} disabled={busy} onClick={demoteNgv}>Revoke NGV</button>
+                    </div>
+                  </div>
+                : <div className="admin-detail-actions" style={{ alignItems: "center", flexWrap: "wrap" }}>
+                    <select className="admin-select" value={ngvRole} disabled={busy || m.type !== "NGG" || m.status !== "active"} onChange={(e) => setNgvRole(e.target.value)} aria-label="Volunteer role">
+                      <option value="volunteer">Volunteer</option>
+                      <option value="instructor">Instructor</option>
+                      <option value="mentor">Mentor</option>
+                    </select>
                     <button className="btn btn-ghost btn-sm" disabled={busy || m.type !== "NGG" || m.status !== "active"} onClick={promoteNgv}>Promote to NGV</button>
-                    <span className="admin-hint" style={{ margin: 0 }}>Advances an active NGG member into the volunteer tier and creates their NGV dashboard automatically.</span>
+                    <span className="admin-hint" style={{ margin: 0 }}>Advances an active NGG member into the volunteer tier, provisions their NGV ID, and emails it to them.</span>
                   </div>}
             </div>
 

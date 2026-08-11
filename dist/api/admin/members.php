@@ -44,7 +44,11 @@ if ($method === 'POST') {
     } elseif ($action === 'resetPassword') {
         $res = gs_call('admin.members.resetPassword', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'promoteNgv') {
-        $res = gs_call('admin.members.promoteNgv', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'role' => $body['role'] ?? '', 'ip' => client_ip()]);
+        $args = ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'role' => $body['role'] ?? '', 'ip' => client_ip()];
+        if (array_key_exists('sendId', $body)) $args['sendId'] = $body['sendId']; // only forward when the client set it (domain defaults to send on create)
+        $res = gs_call('admin.members.promoteNgv', $args);
+    } elseif ($action === 'demoteNgv') {
+        $res = gs_call('admin.members.demoteNgv', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
     } else {
         $res = gs_call('admin.members.upsert', ['requesterId' => $s['mid'], 'data' => $body, 'ip' => client_ip()]);
     }

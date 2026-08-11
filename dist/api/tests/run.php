@@ -2163,6 +2163,32 @@ chk('the sweep does not run without a calendar', (function () use ($SU) {
     $r3 = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'SUM-NGV-X']);
     chk('only NGG members can be promoted to NGV', empty($r3['ok']) && ($r3['error'] ?? '') === 'not_ngg');
 
+    // A fresh promotion attempts to deliver the digital ID (the `sent` channel
+    // list is present; empty here where mail is unconfigured — never throws).
+    chk('promotion attempts to deliver the volunteer ID', is_array($r1['sent'] ?? null));
+
+    // The dashboard NGV section carries enough to stand in as the volunteer's own
+    // view: QR token, a /q profile link, a sessions count, and upcoming duties.
+    chk('the dashboard NGV standing carries token + duties + profile link',
+        !empty($dash['ngv']['token']) && is_array($dash['ngv']['upcoming'] ?? null)
+        && array_key_exists('sessions', (array)($dash['ngv'] ?? [])) && strpos((string)($dash['ngv']['profileUrl'] ?? ''), '/q/') === 0);
+
+    // Reverse path: demote deactivates the volunteer record and unlinks the member.
+    $d1 = backend_dispatch('admin.members.demoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-NGV-1']);
+    chk('demote NGV deactivates the volunteer and unlinks the member',
+        !empty($d1['demoted']) && (string)$d1['volunteerId'] === $vid
+        && (string)(db_row("SELECT status FROM volunteers WHERE volunteerId = ?", [$vid])['status'] ?? '') === 'inactive'
+        && (string)(db_row("SELECT ngvVolunteerId FROM members WHERE memberId = 'NGG-NGV-1'")['ngvVolunteerId'] ?? 'x') === '');
+    chk('a demoted member drops NGV standing from the dashboard',
+        (backend_dispatch('member.dashboard', ['memberId' => 'NGG-NGV-1'])['ngv'] ?? null) === null);
+
+    // Re-promote reuses the SAME record (reactivate + re-link), never a second row.
+    $r4 = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-NGV-1']);
+    chk('re-promoting after demote reactivates the same volunteer record',
+        !empty($r4['ok']) && (string)$r4['volunteerId'] === $vid
+        && (string)(db_row("SELECT status FROM volunteers WHERE volunteerId = ?", [$vid])['status'] ?? '') === 'active'
+        && (int)db_row("SELECT COUNT(*) c FROM volunteers WHERE memberId = 'NGG-NGV-1'")['c'] === 1);
+
     db_exec("DELETE FROM qr_codes WHERE studentId = ?", [$vid]);
     db_exec("DELETE FROM volunteers WHERE memberId = 'NGG-NGV-1'");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-NGV-1','SUM-NGV-X')");
