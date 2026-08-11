@@ -1223,9 +1223,13 @@ chk('…and a CSV import carries the date through rather than dropping it', (fun
     return $s && (string)$s['dob'] === $dob && (int)$s['age'] === dob_age($dob);
 })());
 // Check-OUT stamps a departure time on today's row (Kofi checked in above).
+// Query the row by attendance_today() — the exact date key the handler writes —
+// not gmdate(), so a non-zero attendance tzOffset near a UTC midnight can't make
+// the row and the assertion disagree about which day "today" is.
 chk('checkout stamps a departure time', (function () use ($enr) {
     $r = backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-2025-0099', 'token' => $enr['token']]);
-    return !empty($r['ok']) && $r['already'] === false && !empty($r['checkOutAt']) && !empty(db_row('SELECT checkOutAt FROM attendance WHERE studentId=? AND date=?', [$enr['studentId'], gmdate('Y-m-d')])['checkOutAt']);
+    $row = db_row('SELECT checkOutAt FROM attendance WHERE studentId=? AND date=?', [$enr['studentId'], attendance_today()]);
+    return !empty($r['ok']) && ($r['already'] ?? null) === false && !empty($r['checkOutAt']) && !empty($row['checkOutAt']);
 })());
 chk('a second checkout is idempotent', backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-2025-0099', 'token' => $enr['token']])['already'] === true);
 chk('checkout without a check-in is refused', backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-2025-0099', 'token' => $enr2['token']])['error'] === 'not_checked_in');
@@ -8101,7 +8105,9 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     // Gated like every other settings read.
     chk('AI status is settings-gated', backend_dispatch('admin.ai.status', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
     $ok = backend_dispatch('admin.ai.status', ['requesterId' => $SU]);
-    chk('…and an admin can read it', !empty($ok['ok']) && count($ok['ai']) === 5 && $ok['anyEnabled'] === true);
+    // Every declared AI profile must be reported (was hard-coded to 5, which went
+    // stale when the Analyst/insight profiles were added — assert the live count).
+    chk('…and an admin can read it', !empty($ok['ok']) && count($ok['ai']) === count(AI_PROFILE_USES) && $ok['anyEnabled'] === true);
     chk('…with a plain-English note on what each profile is for',
         strpos((string)$ok['ai'][0]['what'], 'observations') !== false);
 
