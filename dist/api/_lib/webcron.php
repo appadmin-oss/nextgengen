@@ -231,6 +231,16 @@ function web_cron_reminders(): void {
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'fees.uprate', $e->getMessage()); }
     }
 
+    /* Seasonal nudges — the dated encouragement/appreciation/reminder emails to
+     * volunteers, students and parents. Same-day only and logged once per
+     * recipient (see api/_lib/nudges.php), so firing every 15 minutes just
+     * drains the day's message in bounded batches and then no-ops. Guarded so a
+     * send fault can't take the reminders above down with it. */
+    if (function_exists('nudges_run')) {
+        try { nudges_run(attendance_today(), NUDGE_CRON_BATCH); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'nudges', $e->getMessage()); }
+    }
+
     $pending = db_all("SELECT * FROM summer_students WHERE regStatus = 'parent_pending' ORDER BY id ASC LIMIT 200");
     foreach ($pending as $s) {
         $ageH = (time() - (strtotime((string)$s['enrolledAt']) ?: time())) / 3600;

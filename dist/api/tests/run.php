@@ -71,6 +71,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
+require $ROOT . '/_lib/nudges.php';
 /* Every domain file, discovered rather than listed.
  *
  * This used to be a hand-maintained copy of the list in bootstrap.php, and a
@@ -12851,6 +12852,67 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     setting_set('seed_fees_cap_v1', $keepSeed === '' ? '1' : $keepSeed, 'system');
 
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-FEECAP-DESK','NGG-FEECAP-OLD')");
+})();
+
+/* ── Seasonal nudges: dated encouragement/appreciation/reminder EMAILS to
+ * volunteers, students and parents — same-day only, once per recipient. Uses the
+ * mail sink so nothing actually sends. ── */
+(function () {
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'V-NUDGE-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-NUDGE-1'");
+    db_exec("DELETE FROM summer_students WHERE studentId = 'SS-NUDGE-1'");
+    db_insert('volunteers', ['volunteerId' => 'V-NUDGE-1', 'fullName' => 'Val Unteer', 'email' => 'val-nudge@example.com',
+        'role' => 'volunteer', 'status' => 'active', 'token' => 'VOLQR-NUDGE', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'NGG-NUDGE-1', 'fullName' => 'Stu Dent', 'email' => 'stu-nudge@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'parentName' => 'Pat Parent', 'parentEmail' => 'par-nudge@example.com', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('summer_students', ['studentId' => 'SS-NUDGE-1', 'cohortId' => 'SUM-2026', 'fullName' => 'Summer Kid',
+        'status' => 'active', 'regStatus' => 'verified', 'guardianName' => 'Gee Guard', 'parentEmail' => 'spar-nudge@example.com',
+        'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    $sink = function () { $GLOBALS['__mail_sink'] = []; return $GLOBALS['__mail_sink']; };
+    $tos  = fn() => array_map(fn($m) => $m['to'], $GLOBALS['__mail_sink']);
+
+    // Aug 13 carries a volunteer reminder + a parent check-in (no student note).
+    $sink();
+    $r = nudges_run('2026-08-13', 100);
+    chk('nudge emails the volunteer their dated note',
+        (bool)array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'val-nudge@example.com' && strpos($m['subject'], 'shift') !== false));
+    chk('nudge reaches BOTH an NGG parent and a summer-student parent',
+        in_array('par-nudge@example.com', $tos(), true) && in_array('spar-nudge@example.com', $tos(), true));
+    chk('nudge bodies are HTML email, not SMS text', (function () {
+        if (!count($GLOBALS['__mail_sink'])) return false;
+        foreach ($GLOBALS['__mail_sink'] as $m) if (strpos($m['html'], '<') === false) return false; return true;
+    })());
+    chk('the run summary counts exactly the sends made (all active recipients, ≥ our 3)',
+        ($r['sent'] ?? -1) === count($GLOBALS['__mail_sink']) && ($r['sent'] ?? 0) >= 3);
+
+    // Idempotent: a second run of the same day re-sends nothing.
+    $sink();
+    $r2 = nudges_run('2026-08-13', 100);
+    chk('re-running the same day is idempotent (once per recipient)', ($r2['sent'] ?? -1) === 0 && count($GLOBALS['__mail_sink']) === 0);
+
+    // No backfill: a date with no scheduled message is silent.
+    $sink();
+    chk('a date with no message sends nothing (never backfills)', (nudges_run('2026-08-12', 100)['sent'] ?? -1) === 0);
+
+    // Students get their OWN dated note (Aug 16 has a volunteer + a student one).
+    $sink();
+    $r3 = nudges_run('2026-08-16', 100);
+    chk('the NGG student receives their own dated nudge', in_array('stu-nudge@example.com', $tos(), true));
+
+    // Pause switch.
+    setting_set('nudges_enabled', '0', 'test');
+    $sink();
+    $r4 = nudges_run('2026-08-23', 100);
+    chk('nudges_enabled=0 pauses the whole campaign', ($r4['skipped'] ?? '') === 'disabled' && count($GLOBALS['__mail_sink']) === 0);
+
+    unset($GLOBALS['__mail_sink']);
+    db_exec("DELETE FROM settings WHERE settingKey = 'nudges_enabled'");
+    db_exec("DELETE FROM nudge_log WHERE recipient IN ('val-nudge@example.com','par-nudge@example.com','spar-nudge@example.com','stu-nudge@example.com')");
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'V-NUDGE-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-NUDGE-1'");
+    db_exec("DELETE FROM summer_students WHERE studentId = 'SS-NUDGE-1'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

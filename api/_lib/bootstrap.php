@@ -105,6 +105,7 @@ require_once __DIR__ . '/superadmin.php';
 require_once __DIR__ . '/rate-limit.php';
 require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
+require_once __DIR__ . '/nudges.php';
 require_once __DIR__ . '/webcron.php';
 
 // CSRF check happens once per request, for every write method. The

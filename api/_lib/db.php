@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 85;
+const NGG_SCHEMA_TARGET = 86;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2309,6 +2309,19 @@ function db_migrate(PDO $db): void {
             ALTER TABLE members ADD COLUMN ngvVolunteerId TEXT DEFAULT '';
             ALTER TABLE members ADD COLUMN ngvAt TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_vol_member ON volunteers (memberId);
+        ",
+        /* Seasonal nudges — one row per (message, recipient) actually sent, so the
+         * periodic campaign (api/_lib/nudges.php) can never double-send however
+         * often the web-cron fires. The UNIQUE index is the idempotency guard. */
+        86 => "
+            CREATE TABLE IF NOT EXISTS nudge_log (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              messageKey TEXT NOT NULL,
+              recipient TEXT NOT NULL,
+              channel TEXT DEFAULT 'email',
+              sentAt TEXT DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_nudge_once ON nudge_log (messageKey, recipient);
         ",
     ];
 

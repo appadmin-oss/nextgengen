@@ -1563,3 +1563,23 @@ CREATE TABLE IF NOT EXISTS engagement_snapshots (
   INDEX idx_engsnap_person (role, personId, weekStart)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (84) ON DUPLICATE KEY UPDATE version = version;
+
+-- v85 — NGV promotion: two-way link between an NGG member and their volunteer
+-- record (was added to the SQLite ladder but not mirrored here).
+ALTER TABLE volunteers ADD COLUMN memberId VARCHAR(64) DEFAULT '';
+ALTER TABLE members ADD COLUMN ngvVolunteerId VARCHAR(64) DEFAULT '';
+ALTER TABLE members ADD COLUMN ngvAt VARCHAR(40) DEFAULT '';
+CREATE INDEX idx_vol_member ON volunteers (memberId);
+INSERT INTO schema_version (version) VALUES (85) ON DUPLICATE KEY UPDATE version = version;
+
+-- v86 — seasonal nudges: one row per (message, recipient) sent. The UNIQUE index
+-- makes the periodic campaign idempotent (api/_lib/nudges.php).
+CREATE TABLE IF NOT EXISTS nudge_log (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  messageKey VARCHAR(64) NOT NULL,
+  recipient VARCHAR(200) NOT NULL,
+  channel VARCHAR(16) DEFAULT 'email',
+  sentAt VARCHAR(40),
+  UNIQUE KEY idx_nudge_once (messageKey, recipient)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (86) ON DUPLICATE KEY UPDATE version = version;
