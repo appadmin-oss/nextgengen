@@ -1583,3 +1583,8 @@ CREATE TABLE IF NOT EXISTS nudge_log (
   UNIQUE KEY idx_nudge_once (messageKey, recipient)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (86) ON DUPLICATE KEY UPDATE version = version;
+
+-- v87 — NGGC member ID redesign: printed display id + up to two disciplines.
+ALTER TABLE members ADD COLUMN displayId VARCHAR(24) DEFAULT '';
+ALTER TABLE members ADD COLUMN disciplines VARCHAR(120) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (87) ON DUPLICATE KEY UPDATE version = version;

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 86;
+const NGG_SCHEMA_TARGET = 87;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2322,6 +2322,14 @@ function db_migrate(PDO $db): void {
               sentAt TEXT DEFAULT (datetime('now'))
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_nudge_once ON nudge_log (messageKey, recipient);
+        ",
+        /* NGGC member ID redesign (A5): a member carries a printed display id
+         * (year-chapter-serial, e.g. 26-AM-135) and up to two disciplines
+         * (e.g. TECH, MEDIA) shown on the card — both distinct from the raw
+         * memberId and the single `track`. */
+        87 => "
+            ALTER TABLE members ADD COLUMN displayId TEXT DEFAULT '';
+            ALTER TABLE members ADD COLUMN disciplines TEXT DEFAULT '';
         ",
     ];
 

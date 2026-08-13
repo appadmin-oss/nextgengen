@@ -34,6 +34,7 @@ const TPL_FIELDS = {
   "displayId":    { label: "Printed ID",   get: r => r.displayId || r.studentId || r.volunteerId || "" },
   "handle":       { label: "Handle",       get: r => r.handle ? "@" + r.handle : "" },
   "track":        { label: "Course",       get: r => r.track || "" },
+  "disciplines":  { label: "Disciplines (1–2)", get: r => (Array.isArray(r.disciplines) ? r.disciplines.join(" / ") : (r.disciplines || r.track || "")) },
   "faculty":      { label: "Faculty",      get: r => r.faculty || "" },
   "role":         { label: "Role",         get: r => r.role || (r.tier && r.tier.name) || "" },
   "roleFaculty":  { label: "Role · faculty", get: r => [r.role || (r.tier && r.tier.name) || "", r.faculty || ""].filter(Boolean).join(" · ") },
@@ -826,10 +827,135 @@ function MemberIDCard(props) {
   ]);
 }
 
+/* ============================================================================
+   NGGC Member ID — the A5 redesign (docs consultation "NGGC Member ID Card",
+   REV 1 · Aug 2026 · "3A recommended"). PRINT/EXPORT ONLY — the on-screen
+   MemberIDCard above is untouched. One layout renders at two physical sizes:
+   'a5' (148×210mm, the spec) and 'wallet' (54×85mm, the current print size in
+   the new look). Photo is auto-approximated (navy duotone + amber mark behind);
+   a proper cut-out portrait shows the mark through the transparency, a plain
+   headshot simply carries the navy wash. Six values vary per card: printed id,
+   given + family name, one or two disciplines, role, photo and QR.
+   ============================================================================ */
+
+var NGGC_FONTS_HREF = "https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap";
+
+/** Ensure Poppins + IBM Plex Mono are loaded before a card is rasterised (the
+ *  app itself ships Sora/JetBrains, so this design brings its own type). */
+function nggcEnsureFonts() {
+  try {
+    if (!document.getElementById("nggc-fonts")) {
+      var l = document.createElement("link");
+      l.id = "nggc-fonts"; l.rel = "stylesheet"; l.href = NGGC_FONTS_HREF;
+      document.head.appendChild(l);
+    }
+  } catch (e) {}
+  if (!document.fonts || !document.fonts.load) return Promise.resolve();
+  return Promise.all([
+    document.fonts.load("300 23pt Poppins"), document.fonts.load("600 23pt Poppins"),
+    document.fonts.load("700 23pt Poppins"), document.fonts.load("500 9pt 'IBM Plex Mono'"),
+    document.fonts.load("400 7pt 'IBM Plex Mono'"),
+  ]).then(function () { return document.fonts.ready; }).catch(function () {});
+}
+
+/** Printed id — year-chapter-serial, e.g. 26-AM-135. Uses the member's own
+ *  displayId when set, else falls back to the raw member id. */
+function nggcDisplayId(m) { m = m || {}; return String(m.displayId || m.memberId || "").toUpperCase(); }
+
+/** One or two disciplines, uppercase. Reads the new `disciplines` field
+ *  (array or comma/slash/pipe string); falls back to the single `track`. */
+function nggcDisciplines(m) {
+  m = m || {};
+  var raw = m.disciplines != null ? m.disciplines : "";
+  var list = Array.isArray(raw) ? raw.slice() : String(raw).split(/[,/|]/);
+  list = list.map(function (s) { return String(s).trim().toUpperCase(); }).filter(Boolean);
+  if (!list.length && m.track) list = [String(m.track).trim().toUpperCase()];
+  return list.slice(0, 2);
+}
+
+/** Given name (rendered 700) + family name (rendered 300), both uppercase. */
+function nggcName(m) {
+  var full = String((m && m.fullName) || "").trim().replace(/\s+/g, " ");
+  if (!full) return { given: "NGG", family: "MEMBER" };
+  var parts = full.split(" ");
+  return { given: parts[0].toUpperCase(), family: parts.slice(1).join(" ").toUpperCase() };
+}
+
+function NggcMemberCard(props) {
+  var React = window.React, h = React.createElement;
+  var m = props.member || {};
+  var size = props.size === "wallet" ? "wallet" : "a5";
+  var qrUrl = props.qrUrl || "";
+  var nm = nggcName(m), disc = nggcDisciplines(m), did = nggcDisplayId(m);
+  var role = String(m.role || (m.tier && m.tier.name) || "MEMBER").toUpperCase();
+  var photo = (m.photoUrl && /^https?:\/\//.test(String(m.photoUrl))) ? m.photoUrl : "";
+
+  var NAVY = "#0B1F51", AMBER = "#FCB316", SEC = "#5C6474", CAP = "#9AA0AC", HAIR = "#E6E8EC", DIV = "#C9CCD4";
+  var wallet = size === "wallet";
+  var S = wallet
+    ? { W: 54, H: 85, padX: 5, padB: 5, photoW: 48, pillPt: 5.4, namePt: 11, discPt: 5.6, gap: 2.4, hair: 0.3, footTop: 3, qr: 13, logoW: 12, rolePt: 4.8, capPt: 4.2, divH: 2.6, mark: 34, gapD: 2, pillPad: "1.3mm 3.4mm", pillTrk: ".2em" }
+    : { W: 148, H: 210, padX: 14, padB: 12, photoW: 130, pillPt: 8.5, namePt: 23, discPt: 10.5, gap: 4.5, hair: 0.5, footTop: 7, qr: 20, logoW: 22, rolePt: 7, capPt: 7, divH: 4.5, mark: 95, gapD: 3.5, pillPad: "2.4mm 6.5mm", pillTrk: ".3em" };
+  var mm = function (v) { return v + "mm"; }, pt = function (v) { return v + "pt"; };
+
+  // Name fit (§4): one line by default; ≥22 chars steps to 20pt; ≥28 breaks
+  // after the given name, both lines at line-height 1.02.
+  var full = (nm.given + " " + nm.family).trim(), namePt = S.namePt, twoLine = false;
+  if (!wallet) { if (full.length > 28) twoLine = true; else if (full.length > 22) namePt = 20; }
+  var nameChildren = twoLine
+    ? [h("span", { key: "g", style: { display: "block", fontWeight: 700 } }, nm.given),
+       h("span", { key: "f", style: { display: "block", fontWeight: 300 } }, nm.family)]
+    : [h("span", { key: "g", style: { fontWeight: 700 } }, nm.given), nm.family ? " " : "",
+       nm.family ? h("span", { key: "f", style: { fontWeight: 300 } }, nm.family) : null];
+
+  var amber = h("svg", { key: "mark", viewBox: "0 0 200 150", width: mm(S.mark), height: "auto", "aria-hidden": "true",
+      style: { position: "absolute", top: mm(wallet ? -5 : -13), right: mm(wallet ? -3 : -8), zIndex: 0 } },
+    h("path", { d: "M18 118 C18 44 66 22 106 40 C150 60 150 108 108 118 C82 124 62 100 92 82",
+      fill: "none", stroke: AMBER, strokeWidth: 32, strokeLinecap: "round", strokeLinejoin: "round" }));
+
+  var photoWrap = h("div", { key: "pw", style: { width: mm(S.photoW), margin: "0 auto", flex: "none", position: "relative" } }, [
+    amber,
+    photo
+      ? h("div", { key: "pi", style: { position: "relative", zIndex: 1, WebkitMaskImage: "linear-gradient(#000 84%,transparent)", maskImage: "linear-gradient(#000 84%,transparent)" } }, [
+          h("img", { key: "im", src: photo, crossOrigin: "anonymous", alt: "", style: { width: "100%", display: "block", filter: "grayscale(1) contrast(1.03)" } }),
+          h("div", { key: "tint", style: { position: "absolute", inset: 0, background: NAVY, opacity: 0.34, mixBlendMode: "multiply" } }),
+        ])
+      : h("div", { key: "ph", style: { position: "relative", zIndex: 1, width: "100%", height: mm(S.photoW * 1.12), background: "#eef0f4" } }),
+  ]);
+
+  var pill = h("span", { key: "pill", style: { fontFamily: "'IBM Plex Mono',monospace", fontWeight: 500, fontSize: pt(S.pillPt), letterSpacing: S.pillTrk, color: "#fff", background: NAVY, borderRadius: "999px", padding: S.pillPad, whiteSpace: "nowrap" } }, did || "—");
+  var nameEl = h("span", { key: "nm", style: { textAlign: "center", lineHeight: 1.02, fontFamily: "'Poppins',sans-serif", fontWeight: 300, fontSize: pt(namePt), letterSpacing: "-.01em", color: NAVY } }, nameChildren);
+  var discEl = disc.length ? h("span", { key: "dc", style: { display: "flex", alignItems: "center", gap: mm(S.gapD), fontFamily: "'Poppins',sans-serif", fontSize: pt(S.discPt), color: SEC } }, [
+    h("span", { key: "d0", style: { fontWeight: 600, letterSpacing: ".08em", color: NAVY } }, disc[0]),
+    disc[1] ? h("span", { key: "dv", style: { width: ".4mm", height: mm(S.divH), background: DIV, display: "block" } }) : null,
+    disc[1] ? h("span", { key: "d1", style: { fontWeight: 300, letterSpacing: ".08em" } }, disc[1]) : null,
+  ]) : null;
+  var identity = h("div", { key: "id", style: { display: "flex", flexDirection: "column", alignItems: "center", gap: mm(S.gap), flex: "none", marginTop: wallet ? mm(1.6) : 0 } }, [pill, nameEl, discEl]);
+
+  var footer = h("div", { key: "ft", style: { marginTop: mm(S.footTop), display: "flex", alignItems: "center", justifyContent: "space-between", gap: mm(wallet ? 3 : 8), flex: "none" } }, [
+    h("div", { key: "l", style: { display: "flex", alignItems: "center", gap: mm(wallet ? 2.4 : 4.5) } }, [
+      qrUrl ? h("img", { key: "qr", src: qrUrl, alt: "Verification QR", style: { width: mm(S.qr), height: mm(S.qr), display: "block" } })
+            : h("div", { key: "qr", style: { width: mm(S.qr), height: mm(S.qr), background: "#eef0f4" } }),
+      h("span", { key: "rc", style: { display: "flex", flexDirection: "column", gap: mm(1.5), fontFamily: "'IBM Plex Mono',monospace", fontWeight: 400 } }, [
+        h("span", { key: "r", style: { fontSize: pt(S.rolePt), letterSpacing: ".24em", color: NAVY } }, role),
+        h("span", { key: "c", style: { fontSize: pt(S.capPt), letterSpacing: ".16em", color: CAP } }, "SCAN TO VERIFY"),
+      ]),
+    ]),
+    h("img", { key: "logo", src: "/assets/logo.png", alt: "Next Generation Genius", crossOrigin: "anonymous", style: { width: mm(S.logoW), display: "block" } }),
+  ]);
+
+  return h("div", { style: { width: mm(S.W), height: mm(S.H), background: "#fff", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", padding: "0 " + mm(S.padX) + " " + mm(S.padB), boxSizing: "border-box", fontFamily: "'Poppins',sans-serif", WebkitFontSmoothing: "antialiased" } }, [
+    photoWrap, identity,
+    h("div", { key: "sp", style: { flex: "1", minHeight: mm(wallet ? 3 : 6) } }),
+    h("div", { key: "hr", style: { height: mm(S.hair), background: HAIR, flex: "none" } }),
+    footer,
+  ]);
+}
+
 Object.assign(window, {
   TPL_FIELDS, TPL_SYSTEM, TPL_REQUIRED, TPL_PRESETS, TPL_BRAND, TPL_FONTS,
   tplMmPerUnit, tplQrModules,
   TPL_QR_GOOD_MODULE_MM, TPL_QR_MIN_MODULE_MM,
   tplBindValue, tplResolve, tplFitSize, tplToFabric, tplPreflight,
   MemberIDCard, MemberIDCardBatch,
+  NggcMemberCard, nggcEnsureFonts, nggcDisplayId, nggcDisciplines, nggcName,
 });
