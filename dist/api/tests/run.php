@@ -12915,5 +12915,23 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM summer_students WHERE studentId = 'SS-NUDGE-1'");
 })();
 
+/* ── NGGC ID redesign: a member carries a printed displayId + disciplines that
+ * the upsert persists and public_member surfaces (they feed the A5 card). ── */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-IDCARD-1'");
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => $ADM, 'data' => [
+        'memberId' => 'NGG-IDCARD-1', 'fullName' => 'Teslim Aderohunmu', 'email' => 'idcard1@example.com',
+        'type' => 'NGG', 'centre' => 'Egbeda', 'displayId' => '26-AM-135', 'disciplines' => 'TECH, MEDIA']]);
+    $mid = (string)($r['memberId'] ?? '');
+    chk('a member saves a printed displayId + disciplines', !empty($r['ok']) && $mid !== ''
+        && (string)(db_row("SELECT displayId FROM members WHERE memberId = ?", [$mid])['displayId'] ?? '') === '26-AM-135'
+        && (string)(db_row("SELECT disciplines FROM members WHERE memberId = ?", [$mid])['disciplines'] ?? '') === 'TECH, MEDIA');
+    $pub = public_member(db_row("SELECT * FROM members WHERE memberId = ?", [$mid]) ?: []);
+    chk('public_member surfaces displayId + disciplines for the card',
+        ($pub['displayId'] ?? '') === '26-AM-135' && ($pub['disciplines'] ?? '') === 'TECH, MEDIA');
+    db_exec("DELETE FROM members WHERE memberId = ?", [$mid]);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -951,11 +951,82 @@ function NggcMemberCard(props) {
   ]);
 }
 
+/* Batch export of the A5 redesign, mirroring MemberIDCardBatch but at the new
+ * design and a chosen physical size ('a5' 148×210mm or 'wallet' 54×85mm). Fonts
+ * are ensured first. A5 is already a full page, so a 'sheet' (imposed) request
+ * for A5 becomes one A5 page per card. */
+function NggcMemberCardExport(members, opts) {
+  members = members || []; opts = opts || {};
+  var React = window.React, h = React.createElement, RD = window.ReactDOM;
+  var mode = opts.mode || "zip";
+  var size = opts.size === "wallet" ? "wallet" : "a5";
+  var W = size === "wallet" ? 54 : 148, H = size === "wallet" ? 85 : 210;
+  var dpi = Math.max(96, Math.min(600, Number(opts.dpi) || 300));
+  if (size === "a5" && mode === "sheet") mode = "pdf";
+
+  return (async function () {
+    if (!RD || !RD.createRoot) throw new Error("the renderer is not available");
+    var CE = await loadVendor("cardExport");
+    if (window.nggcEnsureFonts) { try { await window.nggcEnsureFonts(); } catch (e) {} }
+
+    var host = document.createElement("div");
+    host.setAttribute("aria-hidden", "true");
+    host.style.cssText = "position:fixed;left:-100000px;top:0;opacity:0;pointer-events:none;z-index:-1;";
+    document.body.appendChild(host);
+
+    var doc = null, faces = [], files = [], pages = 0, failed = [];
+    try {
+      for (var i = 0; i < members.length; i++) {
+        if (opts.cancel && opts.cancel()) break;
+        var m = members[i] || {};
+        if (opts.onProgress) opts.onProgress(i, members.length, m);
+        var qr = "";
+        try { qr = await _ngQrDataUrl(_ngMemberQrPayload(m)); } catch (e) { qr = ""; }
+        var mount = document.createElement("div"); mount.style.cssText = "display:inline-block;";
+        host.appendChild(mount);
+        var root = RD.createRoot(mount);
+        root.render(h(NggcMemberCard, { member: m, size: size, qrUrl: qr }));
+        await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+        await _ngWaitImages(mount, 8000);
+        var node = mount.firstElementChild, px = null;
+        try {
+          if (!node) throw new Error("no card node");
+          if (mode === "sheet") { px = await CE.renderFace(node, { trimW_mm: W, trimH_mm: H, bleed_mm: 3, dpi: dpi, bg: "#ffffff" }); }
+          else { var scale = CE.scaleForDpi(node.offsetWidth || 300, W, dpi); px = await CE.nodeToImage(node, { scale: scale, bg: "#ffffff" }); }
+        } catch (e) { failed.push(String(m.fullName || m.memberId || ("#" + (i + 1)))); }
+        try { root.unmount(); } catch (e) {}
+        try { host.removeChild(mount); } catch (e) {}
+        if (px) {
+          if (mode === "pdf") {
+            if (!doc) { var jl = await loadVendor("jspdf"); var JsPDF = jl.jsPDF; if (!JsPDF) throw new Error("the PDF library is not loaded"); doc = new JsPDF({ unit: "mm", format: [W, H], orientation: "portrait" }); }
+            else { doc.addPage([W, H], "portrait"); }
+            doc.addImage(px.dataUrl, "PNG", 0, 0, W, H, undefined, "FAST"); pages++;
+          } else if (mode === "sheet") {
+            faces.push({ dataUrl: px.dataUrl, wPx: px.wPx, hPx: px.hPx, bleedPx: px.bleedPx, trimWPx: px.trimWPx, trimHPx: px.trimHPx });
+          } else { files.push({ name: _ngMemberFileStem(m, i) + ".png", bytes: CE.dataUrlToBytes(px.dataUrl) }); }
+        }
+        await new Promise(function (r) { setTimeout(r, 0); });
+      }
+      var made = mode === "pdf" ? pages : mode === "sheet" ? faces.length : files.length;
+      if (made > 0) {
+        if (opts.onProgress) opts.onProgress(members.length, members.length, { fullName: "writing the file…" });
+        var stem = "nggc-member-ids-" + size + "-" + made;
+        if (mode === "pdf") { doc.save(stem + ".pdf"); }
+        else if (mode === "sheet") {
+          var pdf = await CE.buildImpositionPDF(faces, { sheet: "A4", trimW_mm: W, trimH_mm: H, bleed_mm: 3, safe_mm: 3, marks: true, layers: true, intent: "FOGRA39", jobName: "NGGC Member IDs", date: new Date().toISOString().slice(0, 10) });
+          CE.download(pdf, stem + "-imposed.pdf", "application/pdf");
+        } else { var zip = await CE.zipStore(files); CE.download(zip, stem + ".zip", "application/zip"); }
+      }
+      return { made: made, failed: failed, mode: mode };
+    } finally { try { document.body.removeChild(host); } catch (e) {} }
+  })();
+}
+
 Object.assign(window, {
   TPL_FIELDS, TPL_SYSTEM, TPL_REQUIRED, TPL_PRESETS, TPL_BRAND, TPL_FONTS,
   tplMmPerUnit, tplQrModules,
   TPL_QR_GOOD_MODULE_MM, TPL_QR_MIN_MODULE_MM,
   tplBindValue, tplResolve, tplFitSize, tplToFabric, tplPreflight,
   MemberIDCard, MemberIDCardBatch,
-  NggcMemberCard, nggcEnsureFonts, nggcDisplayId, nggcDisciplines, nggcName,
+  NggcMemberCard, NggcMemberCardExport, nggcEnsureFonts, nggcDisplayId, nggcDisciplines, nggcName,
 });

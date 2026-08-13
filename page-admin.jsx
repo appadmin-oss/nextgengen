@@ -1073,6 +1073,7 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
   const { panelRef, close } = useAdminDrawer(onClose, false);
   const [mode, setMode] = React.useState("zip");
   const [dpi, setDpi] = React.useState(300);
+  const [design, setDesign] = React.useState("classic"); // classic | a5 | a5-wallet
   const [run, setRun] = React.useState(null);        // { i, n, note } while rendering
   const cancelRef = React.useRef(false);
   const doneRef = React.useRef(false);
@@ -1085,7 +1086,8 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
 
   const start = async () => {
     if (run) return;
-    if (!window.MemberIDCardBatch) { toast.error("The card renderer isn't loaded — reload and try again."); return; }
+    const exportFn = design === "classic" ? window.MemberIDCardBatch : window.NggcMemberCardExport;
+    if (!exportFn) { toast.error("The card renderer isn't loaded — reload and try again."); return; }
     cancelRef.current = false;
     setRun({ i: 0, n: total || 0, note: "reading the roster…" });
     let members = [];
@@ -1096,8 +1098,9 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
     if (!members.length) { toast.error("Nobody matches these filters."); setRun(null); return; }
     setRun({ i: 0, n: members.length, note: "" });
     try {
-      const out = await window.MemberIDCardBatch(members, {
+      const out = await exportFn(members, {
         mode, dpi,
+        size: design === "a5-wallet" ? "wallet" : "a5",
         cancel: () => cancelRef.current,
         onProgress: (i, n, m) => setRun({ i, n, note: (m && m.fullName) || "" }),
       });
@@ -1130,6 +1133,13 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
             One card for every member the current filters match — <b>{(total || 0).toLocaleString()}</b> in all.
             Narrow the list first (centre, type, status) to print a subset.
           </p>
+          <label className="admin-field"><span className="admin-label">Card design</span>
+            <select className="admin-select" value={design} onChange={e => setDesign(e.target.value)} disabled={!!run}>
+              <option value="classic">Classic · 54×85mm</option>
+              <option value="a5">NGGC redesign · A5 (148×210mm)</option>
+              <option value="a5-wallet">NGGC redesign · wallet (54×85mm)</option>
+            </select>
+          </label>
           <label className="admin-field"><span className="admin-label">What to make</span>
             <select className="admin-select" value={mode} onChange={e => setMode(e.target.value)} disabled={!!run}>
               {MODES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -1232,6 +1242,13 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
           <div className="admin-fields-row">
             <FieldSelect label="Status" value={d.status||"active"} onChange={v => set("status", v)} options={MEMBER_STATUS_OPTS}/>
             <Field label="Track" value={d.track||""} onChange={v => set("track", v)}/>
+          </div>
+          {/* ID-card (NGGC redesign): printed year-chapter-serial + up to two
+              disciplines shown on the card. Blank falls back to the member id
+              and the single track respectively. */}
+          <div className="admin-fields-row">
+            <Field label="Printed ID" value={d.displayId||""} onChange={v => set("displayId", v)} placeholder="26-AM-135"/>
+            <Field label="Disciplines (1–2)" value={d.disciplines||""} onChange={v => set("disciplines", v)} placeholder="TECH, MEDIA"/>
           </div>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
           <Field label="Parent email" value={d.parentEmail||""} onChange={v => set("parentEmail", v)} type="email"/>

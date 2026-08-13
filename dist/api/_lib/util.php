@@ -823,6 +823,8 @@ function public_member(array $m): array {
         'centre' => $m['centre'],
         'photoUrl' => normalize_image_url($m['photoUrl'] ?? ''),
         'track' => $m['track'],
+        'displayId' => $m['displayId'] ?? '',
+        'disciplines' => $m['disciplines'] ?? '',
         'cohort' => $m['cohort'],
         'bio' => $m['bio'],
         'socials' => safe_json($m['socials'] ?? null),

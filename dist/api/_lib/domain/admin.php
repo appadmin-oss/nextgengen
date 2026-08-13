@@ -193,7 +193,7 @@ function admin_members_upsert(array $p): array {
         elseif (!in_array($data['role'], ['member', 'editor', 'summer_admin', 'club_admin', 'audit', 'admin', 'super_admin'], true)) unset($data['role']);
     }
 
-    $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes'];
+    $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes','displayId','disciplines'];
     $existing = $memberId ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]) : null;
 
     if ($existing) {
