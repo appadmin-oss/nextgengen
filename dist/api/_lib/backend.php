@@ -443,6 +443,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.community.overview'      => 'admin_community_overview',
             'admin.community.channel.upsert'=> 'admin_community_channel_upsert',
             'admin.community.queue'         => 'admin_community_queue',
+            'admin.community.moderation' => 'admin_community_moderation_set',
             'admin.community.moderate'      => 'admin_community_moderate',
             'public.newsletter'       => 'public_newsletter',
             'public.newsletter.unsubscribe' => 'public_newsletter_unsubscribe',

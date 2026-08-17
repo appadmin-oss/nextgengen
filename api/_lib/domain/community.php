@@ -261,11 +261,43 @@ function community_photo_for(string $id): string {
  * 'reason'=>string, 'crisis'=>bool]. Crisis (self-harm/abuse) always blocks
  * with a safeguarding signal, regardless of whether AI is configured.
  */
+/**
+ * How hard the feed is moderated. Admin-set, three positions.
+ *
+ *   strict — the default. Borderline posts are HELD for a mentor before anyone
+ *            sees them, and every video waits for review.
+ *   flag   — nothing is held. Everything publishes immediately; borderline
+ *            posts are flagged so staff review them after the fact.
+ *   off    — no automatic screening at all.
+ *
+ * Graded rather than a plain on/off switch because the middle position is
+ * usually the one people actually want: "stop holding my members' posts up for
+ * hours" is a complaint about LATENCY, not a wish for no oversight, and `flag`
+ * fixes the latency without giving up the record.
+ *
+ * Reporting, deletion and the moderation queue work in every mode — those are
+ * how a human deals with something the machine did not catch, and no setting
+ * turns them off.
+ */
+function community_moderation_mode(): string {
+    $v = setting_get('community_moderation');
+    $v = is_string($v) ? strtolower(trim($v)) : (is_array($v) ? strtolower((string)($v['mode'] ?? '')) : '');
+    return in_array($v, ['strict', 'flag', 'off'], true) ? $v : 'strict';
+}
+
 function community_screen(string $text): array {
     $text = trim($text);
     if ($text === '') return ['verdict' => 'ok', 'reason' => '', 'crisis' => false];
+    /* The crisis check is NOT content moderation and is deliberately outside
+     * the setting. It does not hide a post to keep the feed tidy — it catches a
+     * child writing about harming themselves and answers with help. Wiring that
+     * to an admin toggle would mean a child in trouble typing into a box and
+     * getting nothing back. */
     if (function_exists('coach_is_crisis') && coach_is_crisis($text)) {
         return ['verdict' => 'block', 'reason' => 'safeguarding', 'crisis' => true];
+    }
+    if (community_moderation_mode() === 'off') {
+        return ['verdict' => 'ok', 'reason' => '', 'crisis' => false];
     }
     if (!function_exists('ai_enabled') || !ai_enabled('moderation')) {
         return ['verdict' => 'ok', 'reason' => '', 'crisis' => false]; // admin post-moderation + reporting still apply
@@ -642,12 +674,25 @@ function community_post_create(array $p): array {
         return ['ok' => false, 'error' => $screen['crisis'] ? 'crisis' : 'blocked',
             'message' => $screen['crisis'] ? coach_crisis_reply() : 'That post can\'t be shared here — it looks unsafe for this community. A mentor can help if this is a mistake.'];
     }
-    $status = $screen['verdict'] === 'review' ? 'pending' : 'published';
+    /* `strict` HOLDS a borderline post; `flag` and `off` publish it and leave a
+     * flag for staff. Held-vs-flagged is the whole difference between the modes:
+     * in both cases a human still sees it, but only `strict` makes a child wait. */
+    $mode = community_moderation_mode();
+    $flagged = 0;
+    if ($screen['verdict'] === 'review') {
+        if ($mode === 'strict') $status = 'pending';
+        else { $status = 'published'; $flagged = 1; }
+    } else {
+        $status = 'published';
+    }
     if ($mediaType === 'video') {
         // Best-effort free-tier AI frame check; a bad frame blocks, otherwise it
         // still waits for a mentor (frames aren't the whole clip).
         if (community_screen_video($mediaUrl) === 'block') return ['ok' => false, 'error' => 'blocked', 'message' => 'That video can\'t be shared here.'];
-        $status = 'pending';
+        // A clip is the one thing `flag` still holds: frames are not the whole
+        // video, so "published and flagged" would mean the unreviewed part is
+        // already on screen. `off` publishes it, which is what off means.
+        if ($mode === 'strict' || $mode === 'flag') { $status = 'pending'; $flagged = 0; }
     }
 
     $author = community_author($viewer);
@@ -662,7 +707,15 @@ function community_post_create(array $p): array {
         'authorName' => $author['name'] . ($author['initial'] ? ' ' . $author['initial'] : ''), 'authorCentre' => $author['centre'],
         'body' => $body, 'kind' => $kind, 'pollOptions' => $kind === 'poll' ? json_encode($pollOptions, JSON_UNESCAPED_SLASHES) : '',
         'mediaType' => $mediaType, 'mediaUrl' => $mediaUrl, 'mediaPoster' => trim((string)($d['mediaPoster'] ?? '')),
-        'altText' => $alt, 'status' => $status, 'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason'], 'by' => 'ai', 'at' => $now], JSON_UNESCAPED_SLASHES),
+        'altText' => $alt, 'status' => $status,
+        'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason'],
+                                     'by' => 'ai', 'at' => $now, 'mode' => $mode,
+                                     'autoFlagged' => $flagged === 1], JSON_UNESCAPED_SLASHES),
+        /* A flagged-but-published post rides the EXISTING reported queue rather
+         * than getting a column of its own — reportCount > 0 is already what
+         * "somebody should look at this" means here, so the console surfaces it
+         * with no new plumbing and no second place for staff to check. */
+        'reportCount' => $flagged,
         'linkPreview' => $preview ? json_encode($preview, JSON_UNESCAPED_SLASHES) : '',
         'viewCount' => 0, 'createdAt' => $now, 'updatedAt' => $now,
     ]);
@@ -811,13 +864,18 @@ function community_comment_create(array $p): array {
         return ['ok' => false, 'error' => $screen['crisis'] ? 'crisis' : 'blocked',
             'message' => $screen['crisis'] ? coach_crisis_reply() : 'That comment can\'t be posted — it looks unsafe for this community.'];
     }
-    $status = $screen['verdict'] === 'review' ? 'pending' : 'published';
+    // Same rule as a post: only `strict` makes a child wait for a mentor.
+    $mode = community_moderation_mode();
+    $status = ($screen['verdict'] === 'review' && $mode === 'strict') ? 'pending' : 'published';
     $author = community_author($viewer);
     $id = 'CC-' . strtoupper(rand_hex(6));
     $now = now_iso();
     db_insert('community_comments', [
         'commentId' => $id, 'postId' => $pid, 'memberId' => $viewer, 'memberName' => $author['name'] . ($author['initial'] ? ' ' . $author['initial'] : ''),
-        'body' => $body, 'status' => $status, 'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason']], JSON_UNESCAPED_SLASHES), 'createdAt' => $now,
+        'body' => $body, 'status' => $status,
+        'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason'], 'mode' => $mode,
+                                     'autoFlagged' => $screen['verdict'] === 'review' && $mode !== 'strict'], JSON_UNESCAPED_SLASHES),
+        'createdAt' => $now,
     ]);
     audit('community.comment', $viewer, $id, ['postId' => $pid, 'status' => $status], (string)($p['ip'] ?? ''));
     if ($status === 'published') {
@@ -962,7 +1020,54 @@ function admin_community_overview(array $p): array {
     $pendingPosts = (int)(db_row("SELECT COUNT(*) c FROM community_posts WHERE status = 'pending'")['c'] ?? 0);
     $pendingComments = (int)(db_row("SELECT COUNT(*) c FROM community_comments WHERE status = 'pending'")['c'] ?? 0);
     $reported = (int)(db_row("SELECT COUNT(*) c FROM community_posts WHERE reportCount > 0 AND status <> 'removed'")['c'] ?? 0);
-    return ['ok' => true, 'channels' => $channels, 'pending' => ['posts' => $pendingPosts, 'comments' => $pendingComments, 'reported' => $reported]];
+    return ['ok' => true, 'channels' => $channels,
+            'moderation' => community_moderation_mode(),
+            'pending' => ['posts' => $pendingPosts, 'comments' => $pendingComments, 'reported' => $reported]];
+}
+
+/**
+ * Set how hard the feed is moderated.
+ *
+ * Super admin only, and audited, because it changes what children can put in
+ * front of each other without an adult seeing it first. That is not a
+ * preference like a channel colour, and it should be answerable later — "who
+ * turned this off, and when" is the first question after an incident.
+ *
+ * Releasing the backlog is deliberate. Loosening the setting while leaving
+ * yesterday's held posts sitting in the queue is the shape of a bug: staff
+ * change the mode, assume it applied, and a child's post stays invisible for
+ * days. So going to `flag` or `off` publishes what was waiting, and says how
+ * many.
+ */
+function admin_community_moderation_set(array $p): array {
+    if (!admin_is_super($p)) return ['ok' => false, 'error' => 'forbidden'];
+    $mode = strtolower(trim((string)($p['mode'] ?? '')));
+    if (!in_array($mode, ['strict', 'flag', 'off'], true)) return ['ok' => false, 'error' => 'bad_mode'];
+    $was = community_moderation_mode();
+    /* Stored as an OBJECT, not the bare string. setting_set writes the value
+     * verbatim but setting_get pipes it through safe_json, which returns null
+     * for anything that is not an array — so a scalar setting silently reads
+     * back as "never set". Wrapping it round-trips through both. */
+    setting_set('community_moderation', ['mode' => $mode], (string)($p['requesterId'] ?? ''));
+
+    $released = 0;
+    if ($mode !== 'strict') {
+        /* Text held only by the screen is released. A held VIDEO is not: frames
+         * are not the whole clip, so nobody has actually looked at it yet, and
+         * publishing it here would be the one case where relaxing a setting put
+         * genuinely unreviewed footage in front of children. Staff clear those
+         * from the queue by hand. */
+        $rows = db_all("SELECT postId FROM community_posts WHERE status = 'pending' AND mediaType <> 'video'");
+        foreach ($rows as $r) {
+            db_update('community_posts', ['status' => 'published', 'reportCount' => 1, 'updatedAt' => now_iso()], ['postId' => (string)$r['postId']]);
+            $released++;
+        }
+        $released += db_exec("UPDATE community_comments SET status = 'published' WHERE status = 'pending'");
+    }
+    audit('community.moderation', (string)($p['requesterId'] ?? ''), 'community',
+          ['from' => $was, 'to' => $mode, 'released' => $released], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'mode' => $mode, 'was' => $was, 'released' => $released,
+            'videosStillHeld' => (int)(db_row("SELECT COUNT(*) c FROM community_posts WHERE status = 'pending' AND mediaType = 'video'")['c'] ?? 0)];
 }
 
 function admin_community_channel_upsert(array $p): array {

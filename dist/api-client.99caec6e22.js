@@ -784,6 +784,8 @@
         queue:         (status) => request('/admin/community.php' + qs({ view: 'queue', status: status || 'pending' })),
         channelUpsert: (data) => request('/admin/community.php', { body: { action: 'channel', data } }),
         moderate:      (kind, id, act) => request('/admin/community.php', { body: { action: 'moderate', kind, id, do: act } }),
+        // How hard the feed is screened: 'strict' | 'flag' | 'off'. Super admin.
+        moderation:    (mode) => request('/admin/community.php', { body: { action: 'moderation', mode } }),
       },
       summer: {
         overview:     () => request('/admin/summer.php?view=overview'),

@@ -15,6 +15,10 @@ if ($method === 'GET') {
         $res = gs_call('admin.community.channel.upsert', ['requesterId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => client_ip()]);
     } elseif ($action === 'moderate') {
         $res = gs_call('admin.community.moderate', ['requesterId' => $s['mid'], 'kind' => $b['kind'] ?? 'post', 'id' => $b['id'] ?? '', 'action' => $b['do'] ?? '', 'ip' => client_ip()]);
+    } elseif (($b['action'] ?? '') === 'moderation') {
+        // How hard the feed is screened. Super-admin only, enforced in the
+        // domain layer, and audited — see admin_community_moderation_set.
+        $res = gs_call('admin.community.moderation', ['requesterId' => $s['mid'], 'mode' => $b['mode'] ?? '', 'ip' => client_ip()]);
     } else {
         json_error('unknown_action', 400);
     }

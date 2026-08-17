@@ -1,6 +1,6 @@
 {
-  "buildId": "3e44db2385",
-  "builtAt": "2026-08-17T07:55:32.702Z",
+  "buildId": "a16ab1741c",
+  "builtAt": "2026-08-17T11:42:42.020Z",
   "bundle": {
     "file": "app.0f5be4ae6b.min.js",
     "bytes": 1736366,
@@ -13,7 +13,7 @@
     "styles-app.css": "styles-app.3a47f20d29.css",
     "data.js": "data.29d3739700.js",
     "photos.js": "photos.fffb7d55bb.js",
-    "api-client.js": "api-client.1fe32eeefa.js",
+    "api-client.js": "api-client.99caec6e22.js",
     "outbox.js": "outbox.042a8c9122.js"
   },
   "node": "v22.22.2"

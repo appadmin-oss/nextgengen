@@ -13473,5 +13473,93 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('a player can see the tournaments they are in', !empty($mine['ok']) && count($mine['tournaments']) >= 1);
 })();
 
+/* ── Moderation modes ─────────────────────────────────────────────────────
+ * Three positions rather than an on/off switch, because the middle one is
+ * usually what people actually want: "stop holding my members' posts up for
+ * hours" is a complaint about latency, not a wish for no oversight.
+ */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    chk('the feed is strictly moderated unless somebody changes it', community_moderation_mode() === 'strict');
+    chk('an unknown mode is refused',
+        backend_dispatch('admin.community.moderation', ['requesterId' => $ADM, 'mode' => 'loose'])['error'] === 'bad_mode');
+    /* Changing this changes what children can put in front of each other
+     * without an adult seeing it first. That is not a preference like a channel
+     * colour, so it is super-admin only. */
+    chk('an ordinary admin cannot change how hard the feed is moderated',
+        backend_dispatch('admin.community.moderation', ['requesterId' => 'NGG-2025-0710', 'mode' => 'off'])['error'] === 'forbidden');
+
+    // A held post and a held comment, as if the screen had queued them.
+    community_ensure_channels();
+    $ch = db_row("SELECT channelId FROM community_channels WHERE slug = 'commons' LIMIT 1");
+    $now = now_iso();
+    db_insert('community_posts', ['postId' => 'CP-HELD1', 'channelId' => (string)$ch['channelId'],
+        'authorId' => 'NGG-2025-0001', 'authorName' => 'Held P', 'body' => 'waiting on a mentor',
+        'kind' => 'post', 'mediaType' => 'none', 'status' => 'pending', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('community_posts', ['postId' => 'CP-HELDVID', 'channelId' => (string)$ch['channelId'],
+        'authorId' => 'NGG-2025-0001', 'authorName' => 'Held V', 'body' => 'a clip',
+        'kind' => 'post', 'mediaType' => 'video', 'mediaUrl' => 'https://cdn.example.org/c.mp4',
+        'status' => 'pending', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('community_comments', ['commentId' => 'CC-HELD1', 'postId' => 'CP-HELD1', 'memberId' => 'NGG-2025-0002',
+        'memberName' => 'Held C', 'body' => 'me too', 'status' => 'pending', 'createdAt' => $now]);
+
+    $r = backend_dispatch('admin.community.moderation', ['requesterId' => $ADM, 'mode' => 'flag']);
+    chk('a super admin can relax moderation', !empty($r['ok']) && ($r['mode'] ?? '') === 'flag' && ($r['was'] ?? '') === 'strict');
+    /* Loosening the setting while leaving yesterday's held posts in the queue is
+     * the shape of a bug: staff change the mode, assume it applied, and a
+     * child's post stays invisible for days. */
+    chk('…and the text that was being held is released',
+        (string)(db_row("SELECT status FROM community_posts WHERE postId = 'CP-HELD1'")['status'] ?? '') === 'published'
+        && (string)(db_row("SELECT status FROM community_comments WHERE commentId = 'CC-HELD1'")['status'] ?? '') === 'published');
+    chk('…and it says how much it released', (int)($r['released'] ?? 0) >= 2);
+    /* Frames are not the whole clip, so a held video has genuinely not been
+     * looked at. Publishing it on a settings change would be the one case where
+     * relaxing a preference put unreviewed footage in front of children. */
+    chk('a held VIDEO is NOT released — nobody has actually watched it',
+        (string)(db_row("SELECT status FROM community_posts WHERE postId = 'CP-HELDVID'")['status'] ?? '') === 'pending'
+        && (int)($r['videosStillHeld'] ?? 0) >= 1);
+    chk('a released post lands in the reported queue so staff still see it',
+        (int)(db_row("SELECT reportCount FROM community_posts WHERE postId = 'CP-HELD1'")['reportCount'] ?? 0) === 1);
+    chk('the mode is reported to the console', (string)(backend_dispatch('admin.community.overview', ['requesterId' => $ADM])['moderation'] ?? '') === 'flag');
+    chk('the change is in the audit log, with what it was before',
+        (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'community.moderation'")['c'] ?? 0) >= 1);
+
+    /* The crisis path is NOT content moderation and is deliberately outside the
+     * setting: it does not hide a post to keep the feed tidy, it catches a child
+     * writing about harming themselves and answers with help. Wiring that to an
+     * admin toggle would mean a child in trouble typing into a box and getting
+     * nothing back. */
+    backend_dispatch('admin.community.moderation', ['requesterId' => $ADM, 'mode' => 'off']);
+    chk('moderation can be turned off entirely', community_moderation_mode() === 'off');
+    /* A member of their own, because the spam throttle is per person and the
+       earlier suites have already used the shared fixtures to post. */
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-MODTEST'");
+    db_insert('members', ['memberId' => 'NGG-MODTEST', 'fullName' => 'Mod Test', 'email' => 'modtest@example.com',
+        'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'member', 'status' => 'active',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('…and an ordinary post publishes with no screening', (function () {
+        $r = community_post_create(['memberId' => 'NGG-MODTEST', 'data' => ['channel' => 'commons', 'body' => 'Hello everyone, good morning.']]);
+        return !empty($r['ok']) && empty($r['queued']);
+    })());
+    /* The crisis reply is not moderation and does not answer to this setting.
+       Checked against the real detector rather than a stub — if the detector
+       ever stops firing, this test should fail rather than quietly pass. */
+    if (function_exists('coach_is_crisis') && coach_is_crisis('i want to kill myself')) {
+        chk('…but a child writing about self-harm is STILL caught, whatever the setting',
+            (function () {
+                $r = community_screen('i want to kill myself');
+                return ($r['verdict'] ?? '') === 'block' && !empty($r['crisis']);
+            })());
+    }
+
+    // Back to strict, and the queue behaves as before.
+    backend_dispatch('admin.community.moderation', ['requesterId' => $ADM, 'mode' => 'strict']);
+    chk('moderation can be turned back on', community_moderation_mode() === 'strict');
+    chk('going back to strict does not retroactively hide what was published',
+        (string)(db_row("SELECT status FROM community_posts WHERE postId = 'CP-HELD1'")['status'] ?? '') === 'published');
+    db_exec("DELETE FROM community_posts WHERE postId IN ('CP-HELD1','CP-HELDVID')");
+    db_exec("DELETE FROM community_comments WHERE commentId = 'CC-HELD1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
