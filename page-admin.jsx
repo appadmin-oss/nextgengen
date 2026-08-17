@@ -883,7 +883,9 @@ function EngagementPanel() {
   ], [trends]);
 
   const dl = (name, headArr, bodyArr) => {
-    const csv = [headArr].concat(bodyArr).map(row => row.map(v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"').join(",")).join("\r\n");
+    // nggCsvCell, not hand-rolled quoting: these rows carry names typed into
+    // public forms, and a leading = makes the cell a formula when staff open it.
+    const csv = [headArr].concat(bodyArr).map(row => row.map(nggCsvCell).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   };

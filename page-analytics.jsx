@@ -32,7 +32,10 @@ const AN_RATE_TONE = (r) => (r >= 80 ? AN_TONE.good : r >= 55 ? AN_TONE.warn : A
 const AN_RATE_LABEL = (r) => (r >= 80 ? "On track" : r >= 55 ? "Watch" : "Needs attention");
 
 function anFmt(n) { return (n === null || n === undefined || n !== n) ? "—" : Number(n).toLocaleString(); }
-function anCsv(v) { const s = String(v ?? ""); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+/* Always quoted, and always formula-guarded. The old version quoted only when
+   the value contained a comma or a quote, which left `=cmd|...` unquoted AND
+   unescaped — the exact shape of a CSV-injection payload. */
+function anCsv(v) { return nggCsvCell(v); }
 function anDownload(name, text, mime) {
   const blob = new Blob([text], { type: mime || "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
