@@ -382,6 +382,41 @@ function fees_uprate_note(?string $asOf = null): array {
  * the service length so a member three years past their MOU cannot earn off
  * more than they owed.
  */
+/**
+ * The date the training write-down stops counting for this member, or '' if it
+ * is still running.
+ *
+ * "These only happen if they consistently follow the MoU." The write-down is
+ * not a gift for surviving thirty-six months on the calendar — it is what
+ * SERVICE earns off, and a member who has stopped serving has stopped earning.
+ *
+ * The two states that mean that are already recorded, with the dates they
+ * began, so nothing has to be invented or back-filled:
+ *
+ *   evicted    association is terminated. Earning stops the day it was issued.
+ *   suspended  barred from the premises and the digital channels. Earning is
+ *              paused from the day the suspension started; it resumes when the
+ *              suspension is lifted, because a suspension is a pause, not an end.
+ *
+ * `warned` and `dormant` do NOT stop it. A warning is the programme telling a
+ * child to correct something, and taking their money at the same moment turns a
+ * correction into a punishment nobody explained.
+ */
+function fees_compliance_cutoff(array $member): array {
+    if (!function_exists('policy_state')) return ['cutoff' => '', 'state' => 'clear'];
+    $id = (string)($member['memberId'] ?? '');
+    if ($id === '') return ['cutoff' => '', 'state' => 'clear'];
+    try { $st = policy_state($id, 'member'); } catch (\Throwable $e) { return ['cutoff' => '', 'state' => 'clear']; }
+    $state = (string)($st['state'] ?? 'clear');
+    if ($state === 'evicted') {
+        return ['cutoff' => substr((string)($st['evictedAt'] ?? ''), 0, 10), 'state' => $state, 'final' => true];
+    }
+    if ($state === 'suspended') {
+        return ['cutoff' => substr((string)($st['suspendedFrom'] ?? ''), 0, 10), 'state' => $state, 'final' => false];
+    }
+    return ['cutoff' => '', 'state' => $state, 'final' => false];
+}
+
 function fees_tenure(array $member, ?array $cfg = null, ?string $asOf = null): array {
     $cfg = $cfg ?? fees_settings();
     $start = substr((string)($member['joinDate'] ?? ''), 0, 10);
@@ -393,12 +428,34 @@ function fees_tenure(array $member, ?array $cfg = null, ?string $asOf = null): a
     $today = $asOf ?? gmdate('Y-m-d');
     $months = fees_months_between($start, $today);
     $tm = (int)$cfg['trainingMonths']; $sm = (int)$cfg['serviceMonths'];
-    $served = max(0, min($sm, $months - $tm));
+
+    /* Service months are counted to the day the member stopped serving, not to
+     * today. A suspension pauses the clock; an eviction stops it. The phase and
+     * the elapsed month count are still reported against the real calendar,
+     * because "how far through are they" and "how much have they earned" are
+     * different questions and a screen showing one as the other is a screen
+     * nobody can reconcile. */
+    $comp = fees_compliance_cutoff($member);
+    $creditTo = ($comp['cutoff'] !== '' && $comp['cutoff'] < $today) ? $comp['cutoff'] : $today;
+    $creditMonths = fees_months_between($start, $creditTo);
+    $served = max(0, min($sm, $creditMonths - $tm));
+
+    /* The training half also ENDS. Kept here so the accrual and the dashboard
+     * agree on the last date a session may be charged: without it, training
+     * charges carried on for as long as the member stayed enrolled, which is
+     * not eighteen months of training, it is forever. */
+    $trainingEndsAt = gmdate('Y-m-d', (int)strtotime($start . ' 00:00:00 UTC +' . $tm . ' months'));
+
     return [
         'start' => $start, 'months' => $months,
         'phase' => $months < $tm ? 'training' : ($months < $tm + $sm ? 'service' : 'complete'),
         'trainingMonths' => $tm, 'serviceMonths' => $sm,
+        'trainingEndsAt' => $trainingEndsAt,
         'servedMonths' => $served, 'complete' => $months >= $tm + $sm,
+        // Why the write-down is paused or stopped, so a screen can say it.
+        'standing' => (string)$comp['state'],
+        'creditPausedAt' => ($comp['cutoff'] !== '' && $comp['cutoff'] < $today) ? $comp['cutoff'] : '',
+        'creditStopped' => !empty($comp['final']),
     ];
 }
 
@@ -586,6 +643,12 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
             $sd = substr((string)($s['startDate'] ?? ''), 0, 10);
             if ($sd === '' || $sd > $today) continue;
             if ($sd < $ten['start']) continue;                 // before they joined
+            /* …and after the training half is over, nothing more is charged.
+             * This was missing: a member kept picking up a training fee for
+             * every session for as long as they stayed enrolled, so the balance
+             * grew through the very period it was supposed to be shrinking. The
+             * eighteen months are a training PERIOD, not a rate. */
+            if ((string)($ten['trainingEndsAt'] ?? '') !== '' && $sd >= (string)$ten['trainingEndsAt']) continue;
             if (fees_post($memberId, 'training', (int)$cfg['trainingFee'],
                           ['periodKey' => (string)$s['sessionId'], 'sessionId' => (string)$s['sessionId'],
                            'note' => 'Training fee — ' . ((string)($s['name'] ?? $s['sessionId'])), 'by' => 'accrual'])) {
@@ -946,8 +1009,39 @@ function member_fees_account(array $p): array {
                record of what they owe. */
         ];
     }
+    /* The per-session schedule, which is the thing a member actually wants to
+     * see: what each session cost, which ones have already been charged, and
+     * which are still to come before the training half ends. Built from the
+     * calendar rather than from the ledger alone, so a member three sessions in
+     * can see the whole shape of what they signed up to instead of only the
+     * part that has already happened. */
+    $schedule = [];
+    $ten = $bal['tenure'];
+    $chargedBySession = [];
+    foreach (fees_entries($id) as $e) {
+        if ((string)$e['kind'] !== 'training' || trim((string)($e['voidedAt'] ?? '')) !== '') continue;
+        $chargedBySession[(string)$e['sessionId']] = (int)$e['amount'];
+    }
+    if ($ten['start'] !== '') {
+        $today = gmdate('Y-m-d');
+        foreach (db_all('SELECT sessionId, name, startDate FROM sessions ORDER BY startDate') as $s) {
+            $sd = substr((string)($s['startDate'] ?? ''), 0, 10);
+            if ($sd === '' || $sd < $ten['start']) continue;
+            if ($sd >= (string)$ten['trainingEndsAt']) continue;     // past the training half
+            $sid = (string)$s['sessionId'];
+            $schedule[] = [
+                'sessionId' => $sid, 'name' => (string)($s['name'] ?? $sid), 'startDate' => $sd,
+                'amount' => $chargedBySession[$sid] ?? (int)$cfg['trainingFee'],
+                // 'charged' = already on the account; 'upcoming' = still to come.
+                'state' => isset($chargedBySession[$sid]) ? 'charged' : ($sd > $today ? 'upcoming' : 'due'),
+            ];
+        }
+    }
+
     return ['ok' => true, 'enabled' => true, 'account' => [
         'memberId' => (string)$m['memberId'],
+        'trainingFeePerSession' => (int)$cfg['trainingFee'],
+        'schedule' => $schedule,
         'payable' => (int)$bal['payable'],
         'outstanding' => (int)$bal['outstanding'],
         'charged' => (int)$bal['charged'],

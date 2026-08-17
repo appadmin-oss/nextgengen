@@ -5799,3 +5799,25 @@ body.own-chrome .fab-top { display: none; }
   letter-spacing: .1em; text-transform: uppercase; color: #fff; background: rgba(0,0,0,.6);
   padding: 3px 7px; border-radius: 5px; }
 .yt-cover:focus-visible { outline: 3px solid #1b6ef3; outline-offset: 2px; }
+
+/* ── Dashboard: the training-fee schedule ─────────────────────────────────
+   A member asking "what am I paying?" wants the sessions, not a total. */
+.dash-sched { margin-top: 12px; border-top: 1px solid rgba(12,20,50,.1); padding-top: 10px; }
+.dash-sched-head { font-size: 13.5px; color: var(--ink-700, #3b4459); margin-bottom: 8px; }
+.dash-sched-head b { font-size: 15px; color: var(--ink-900, #16223e); }
+.dash-sched-head span { color: var(--ink-500, #5b6478); }
+.dash-sched-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.dash-sched-row { display: grid; gap: 4px 10px; align-items: baseline;
+  grid-template-columns: minmax(0, 1fr) auto auto; padding: 6px 0;
+  border-bottom: 1px solid rgba(12,20,50,.06); font-size: 13px; }
+.dash-sched-name { font-weight: 600; color: var(--ink-900, #16223e); min-width: 0; }
+.dash-sched-when { font-size: 11.5px; color: var(--ink-500, #5b6478); }
+.dash-sched-amt { font-variant-numeric: tabular-nums; font-weight: 700; }
+.dash-sched-tag { grid-column: 1 / -1; font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink-500, #5b6478); }
+.dash-sched-row.is-charged .dash-sched-tag { color: #2f7a3f; }
+.dash-sched-row.is-upcoming { opacity: .62; }
+.dash-sched-foot { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-500, #5b6478); line-height: 1.45; }
+.dash-account-halt { margin-top: 10px; padding: 9px 12px; border-radius: 10px; font-size: 13px; line-height: 1.45;
+  background: #fdeaee; border: 1px solid #e4032b; color: #8c0119; }
+.dash-account-halt.is-paused { background: #fff6e2; border-color: #d99400; color: #6b4600; }

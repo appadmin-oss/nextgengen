@@ -13751,5 +13751,115 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     }
 })();
 
+/* ── Training fee: the eighteen-month halves, and the MoU condition ───────
+ * Accrue for eighteen months, then earn it back over eighteen — but only while
+ * the member is actually keeping to the MoU.
+ */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    $cfg = fees_settings();
+    $save = $cfg;
+    fees_settings_save(['enabled' => true, 'trainingFee' => 75000, 'trainingMonths' => 18,
+                        'serviceMonths' => 18, 'membershipFee' => 0, 'monthlyDues' => 0, 'balanceCap' => 0], 'test');
+
+    $joined = gmdate('Y-m-d', strtotime('-24 months'));
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-TFEE%'");
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-TFEE%'");
+    foreach (['NGG-TFEE-A', 'NGG-TFEE-B', 'NGG-TFEE-C'] as $id) {
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Fee ' . $id, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'member', 'status' => 'active',
+            'joinDate' => $joined, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    // Sessions inside the training half, and one well past it.
+    db_exec("DELETE FROM sessions WHERE sessionId LIKE 'TFS-%'");
+    foreach ([['TFS-1', -23], ['TFS-2', -20], ['TFS-3', -14], ['TFS-4', -3]] as [$sid, $off]) {
+        db_insert('sessions', ['sessionId' => $sid, 'name' => 'Session ' . $sid, 'year' => (int)gmdate('Y'),
+            'startDate' => gmdate('Y-m-d', strtotime($off . ' months')),
+            'endDate' => gmdate('Y-m-d', strtotime(($off + 2) . ' months'))]);
+    }
+
+    $m = db_row("SELECT * FROM members WHERE memberId = 'NGG-TFEE-A'");
+    $t = fees_tenure($m);
+    chk('the training half has an end date, eighteen months after joining',
+        (string)$t['trainingEndsAt'] === gmdate('Y-m-d', strtotime($joined . ' +18 months')));
+    chk('a member two years in is in the service half', $t['phase'] === 'service');
+
+    fees_accrue_member($m);
+    $charged = db_all("SELECT sessionId FROM member_ledger WHERE memberId = 'NGG-TFEE-A' AND kind = 'training' AND (voidedAt IS NULL OR voidedAt = '')");
+    $ids = array_column($charged, 'sessionId');
+    /* THE BUG THIS FIXES: training used to be charged for every session for as
+     * long as the member stayed enrolled, so the balance grew through the very
+     * period it was supposed to be shrinking. Eighteen months is a training
+     * PERIOD, not a rate. */
+    chk('training is charged for the sessions inside the training half',
+        in_array('TFS-1', $ids, true) && in_array('TFS-2', $ids, true) && in_array('TFS-3', $ids, true));
+    chk('…and NOT for a session after the training half ended', !in_array('TFS-4', $ids, true));
+    /* Counted against the fixtures only: the real calendar already carries the
+       programme's four annual sessions, and any of those inside the window are
+       legitimately charged too. */
+    chk('…so the account stops growing once the service half begins',
+        count(array_filter($ids, fn($x) => strpos((string)$x, 'TFS-') === 0)) === 3);
+
+    // Straight-line earn-off while in good standing.
+    $balA = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-TFEE-A'"));
+    chk('a member in good standing is earning the training fee off',
+        (int)$balA['trainingEarned'] > 0 && (int)$balA['payable'] < (int)$balA['outstanding']);
+    chk('…and nothing is written off yet, because it is earned, not granted',
+        (int)$balA['trainingWrittenOff'] === 0);
+
+    /* ── The MoU condition ────────────────────────────────────────────────
+     * The write-down is what SERVICE earns off. A member who has stopped
+     * serving has stopped earning, and the dates are already on the sanction,
+     * so nothing has to be invented. */
+    if (function_exists('policy_state')) {
+        $stopAt = gmdate('Y-m-d\TH:i:s\Z', strtotime('-6 months'));
+        db_insert('sanctions', ['personId' => 'NGG-TFEE-B', 'personType' => 'member', 'kind' => 'suspension',
+            'status' => 'active', 'reason' => 'test suspension', 'startsAt' => $stopAt,
+            'endsAt' => gmdate('Y-m-d\TH:i:s\Z', strtotime('+6 months')), 'issuedAt' => $stopAt, 'issuedBy' => $ADM]);
+        db_insert('sanctions', ['personId' => 'NGG-TFEE-C', 'personType' => 'member', 'kind' => 'eviction',
+            'status' => 'active', 'reason' => 'test eviction', 'startsAt' => $stopAt,
+            'issuedAt' => $stopAt, 'issuedBy' => $ADM]);
+
+        $mB = db_row("SELECT * FROM members WHERE memberId = 'NGG-TFEE-B'");
+        $mC = db_row("SELECT * FROM members WHERE memberId = 'NGG-TFEE-C'");
+        $tB = fees_tenure($mB); $tC = fees_tenure($mC);
+        chk('a suspension pauses the service credit on the day it started',
+            $tB['standing'] === 'suspended' && (string)$tB['creditPausedAt'] === substr($stopAt, 0, 10)
+            && (int)$tB['servedMonths'] < (int)$t['servedMonths']);
+        chk('…and it is a pause, not an end', empty($tB['creditStopped']));
+        chk('an eviction stops the service credit outright',
+            $tC['standing'] === 'evicted' && !empty($tC['creditStopped']));
+        chk('the elapsed month count still reads against the real calendar',
+            (int)$tB['months'] === (int)$t['months'] && (int)$tC['months'] === (int)$t['months']);
+        /* A warning is the programme telling a child to correct something.
+         * Taking their money at the same moment turns a correction into a
+         * punishment nobody explained. */
+        db_insert('sanctions', ['personId' => 'NGG-TFEE-A', 'personType' => 'member', 'kind' => 'warning',
+            'status' => 'active', 'reason' => 'test warning', 'issuedAt' => $stopAt, 'issuedBy' => $ADM]);
+        $tA2 = fees_tenure(db_row("SELECT * FROM members WHERE memberId = 'NGG-TFEE-A'"));
+        chk('a warning does NOT stop the write-down',
+            (int)$tA2['servedMonths'] === (int)$t['servedMonths'] && (string)$tA2['creditPausedAt'] === '');
+        db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-TFEE%'");
+    }
+
+    /* ── What the member's dashboard is handed ── */
+    $acct = member_fees_account(['memberId' => 'NGG-TFEE-A']);
+    chk('the dashboard is told the fee per session', (int)($acct['account']['trainingFeePerSession'] ?? 0) === 75000);
+    $sched = $acct['account']['schedule'] ?? [];
+    chk('…and the per-session schedule, one row per session inside the window',
+        count(array_filter($sched, fn($x) => strpos((string)$x['sessionId'], 'TFS-') === 0)) === 3
+        && count($sched) >= 3);
+    chk('…covering only the training half', count(array_filter($sched, fn($x) => $x['sessionId'] === 'TFS-4')) === 0);
+    chk('…marked with what has already been charged',
+        count(array_filter($sched, fn($x) => strpos((string)$x['sessionId'], 'TFS-') === 0 && $x['state'] === 'charged')) === 3);
+    chk('…each carrying the amount actually posted, not the current setting',
+        count(array_filter($sched, fn($x) => (int)$x['amount'] <= 0)) === 0);
+
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-TFEE%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-TFEE%'");
+    db_exec("DELETE FROM sessions WHERE sessionId LIKE 'TFS-%'");
+    fees_settings_save($save, 'test');
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
